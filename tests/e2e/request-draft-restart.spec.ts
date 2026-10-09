@@ -9,6 +9,9 @@ import { hostEntityKey } from '../../src/shared/clientIdentity'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 
+const evidence = evidenceDirectory('artifacts/request-drafts')
+const questionChoicesEvidence = evidenceDirectory('artifacts/question-choices')
+
 const form: AgentRequest = { id: 'durable-form', kind: 'question', text: 'Native restart fixture', options: [], questions: [
   { id: 'place', question: 'Where should we go?', multiSelect: false, allowFreeText: true, options: [{ id: 'coast', label: 'Coast' }, { id: 'hills', label: 'Hills' }] },
   { id: 'checks', question: 'Which checks?', multiSelect: true, allowFreeText: false, options: [{ id: 'unit', label: 'Unit checks' }, { id: 'types', label: 'Type checks' }] },
@@ -95,9 +98,9 @@ test(`thread structured text and selections survive a full app restart with hist
     expect(await launched.app.evaluate(() => globalThis.draftAnswerCalls)).toBe(0)
     const composer = await page.evaluate(async id => (await window.sotto!.agents!.get()).threadDrafts!.find(draft => draft.threadId === id)!.text, await clientThreadId(page, id))
     expect(composer).toBe('Independent threaded composer')
-    await mkdir(evidenceDirectory('artifacts/request-drafts'), { recursive: true })
+    await mkdir(evidence, { recursive: true })
     await card(page).getByRole('textbox', { name: 'Travel notes' }).scrollIntoViewIfNeeded()
-    await page.screenshot({ path: join(evidenceDirectory('artifacts/request-drafts'), 'thread-restarted.png') })
+    await page.screenshot({ path: join(evidence, 'thread-restarted.png') })
     // Only this explicit click delivers. Accepted content is removed without touching the other request or composer.
     await card(page).getByRole('button', { name: 'Send answers' }).click()
     await expect(card(page)).toHaveCount(0)
@@ -133,9 +136,9 @@ test(`thread full-process restart restores an interrupted answer as held and nev
     await expect(card(page).getByRole('button', { name: 'Send answers' })).toBeDisabled()
     await expect(card(page).getByRole('textbox', { name: 'Travel notes' })).toHaveValue('Held through restart')
     expect(await launched.app.evaluate(() => globalThis.draftAnswerCalls)).toBe(0)
-    await mkdir(evidenceDirectory('artifacts/request-drafts'), { recursive: true })
+    await mkdir(evidence, { recursive: true })
     await card(page).getByRole('button', { name: 'Check again' }).scrollIntoViewIfNeeded()
-    await page.screenshot({ path: join(evidenceDirectory('artifacts/request-drafts'), 'thread-held-restarted.png') })
+    await page.screenshot({ path: join(evidence, 'thread-held-restarted.png') })
     await card(page).getByRole('button', { name: 'Check again' }).click()
     await expect(card(page)).toHaveAttribute('data-phase', 'idle')
     expect(await launched.app.evaluate(() => globalThis.draftAnswerCalls)).toBe(0)
@@ -162,9 +165,9 @@ test('a real atomic save failure retains the visible answer, blocks sending and 
     await expect(card(page).getByRole('alert')).toContainText('Could not save this answer draft')
     await expect(card(page).getByRole('button', { name: 'Send answers' })).toBeDisabled()
     await expect(card(page).getByRole('textbox', { name: 'Travel notes' })).toHaveValue('Recover this answer after the disk failure')
-    await mkdir(evidenceDirectory('artifacts/request-drafts'), { recursive: true })
+    await mkdir(evidence, { recursive: true })
     await card(page).getByRole('button', { name: 'Save again' }).scrollIntoViewIfNeeded()
-    await page.screenshot({ path: join(evidenceDirectory('artifacts/request-drafts'), 'save-failure.png') })
+    await page.screenshot({ path: join(evidence, 'save-failure.png') })
     await rmdir(join(profile, 'request-drafts.json'))
     await card(page).getByRole('button', { name: 'Save again' }).click()
     await expect(card(page)).toHaveAttribute('data-save', 'saved')
@@ -194,9 +197,9 @@ test('invalid request draft storage remains unchanged and is honestly shown as u
     expect(await readFile(join(profile, 'request-drafts.json'), 'utf8')).toBe(invalid)
     expect((await readdir(profile)).filter(name => name.startsWith('request-drafts.json'))).toEqual(['request-drafts.json'])
     expect(await launched.app.evaluate(() => globalThis.draftAnswerCalls)).toBe(0)
-    await mkdir(evidenceDirectory('artifacts/request-drafts'), { recursive: true })
+    await mkdir(evidence, { recursive: true })
     await card(page).getByRole('alert').scrollIntoViewIfNeeded()
-    await page.screenshot({ path: join(evidenceDirectory('artifacts/request-drafts'), 'invalid-storage.png') })
+    await page.screenshot({ path: join(evidence, 'invalid-storage.png') })
   } finally { await closeSotto(launched) }
 })
 
@@ -258,7 +261,7 @@ test('legacy option choices survive a full restart, stay bound to the original q
     await expect(recovery).toContainText('changed this question. This answer was not sent.')
     expect(await launched.app.evaluate(() => globalThis.draftAnswerPayloads)).toEqual([])
     await live(page, original).getByRole('radio', { name: /Coast/u }).scrollIntoViewIfNeeded()
-    await page.screenshot({ path: join(evidenceDirectory('artifacts/question-choices'), 'legacy-choice-restarted.png'), animations: 'disabled' })
+    await page.screenshot({ path: join(questionChoicesEvidence, 'legacy-choice-restarted.png'), animations: 'disabled' })
     for (const [width, height] of [[1280, 800], [820, 560]] as const) {
       await launched.app.evaluate(({ BrowserWindow }, [width, height]) => {
         BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!.setContentSize(width, height)
@@ -269,7 +272,7 @@ test('legacy option choices survive a full restart, stay bound to the original q
       // Hidden native legends retain their 1px accessible-only geometry instead of inheriting visible question widths.
       const legends = await live(page, original).locator('legend').evaluateAll(elements => elements.map(element => element.getBoundingClientRect().width))
       expect(legends).toEqual([1])
-      await page.screenshot({ path: join(evidenceDirectory('artifacts/question-choices'), `legacy-choice-restarted-${width}.png`), animations: 'disabled' })
+      await page.screenshot({ path: join(questionChoicesEvidence, `legacy-choice-restarted-${width}.png`), animations: 'disabled' })
     }
 
     await live(page, original).getByRole('button', { name: 'Send answer', exact: true }).click()

@@ -6,6 +6,9 @@ import { hostKeysPerTest } from './support/hostKeys'
 import { closeSotto, launchSotto, openThreads, paneMenuAction, type LaunchedSotto } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 
+const evidence = evidenceDirectory('artifacts/crossing')
+const questionChoicesEvidence = evidenceDirectory('artifacts/question-choices')
+
 // #52 in the complete app: AppShell, Threads page, main controller, IPC and preload are real. Only the provider
 // effects come from the explicit unpackaged E2E host, and requests arrive through window.sottoE2E.agentEvent.
 
@@ -147,7 +150,7 @@ async function capture(launched: LaunchedSotto, name: string, scrollTo?: Locator
       await expect(launched.page.locator('html')).toHaveAttribute('data-theme', appearance)
       if (scrollTo) await scrollTo.evaluate(element => element.scrollIntoView({ block: 'start' }))
       await expectRoomy(launched.page, minimumLog)
-      await launched.page.screenshot({ path: join(evidenceDirectory('artifacts/crossing'), `phase3-requests-${name}-${width}-${appearance}.png`), animations: 'disabled' })
+      await launched.page.screenshot({ path: join(evidence, `request-forms-${name}-${width}-${appearance}.png`), animations: 'disabled' })
     }
   }
   await resize(launched, 1280, 860)
@@ -312,7 +315,7 @@ test('offers only native approval choices, keeps a refused answer, and sends a h
     await selectThread(page, 'Workshop')
     await expect(card(page).getByText('Sending…', { exact: true })).toBeVisible()
     await expect(card(page).getByRole('button', { name: 'Deny' })).toBeDisabled()
-    await page.screenshot({ path: join(evidenceDirectory('artifacts/crossing'), 'phase3-requests-permission-sending-1280-dark.png'), animations: 'disabled' })
+    await page.screenshot({ path: join(evidence, 'request-forms-permission-sending-1280-dark.png'), animations: 'disabled' })
     await release(app)
     await expect(card(page)).toHaveCount(0)
 
@@ -402,7 +405,7 @@ test('keeps model choices above the message bar until an explicit answer, preser
         for (const reducedMotion of ['no-preference', 'reduce'] as const) {
           await page.emulateMedia({ reducedMotion })
           if (reducedMotion === 'reduce') expect(await form.evaluate(element => getComputedStyle(element).animationName)).toBe('none')
-          await page.screenshot({ path: join(evidenceDirectory('artifacts/question-choices'), `choices-${width}x${height}-${appearance}-${reducedMotion}.png`), animations: 'disabled' })
+          await page.screenshot({ path: join(questionChoicesEvidence, `choices-${width}x${height}-${appearance}-${reducedMotion}.png`), animations: 'disabled' })
           await expectRoomy(page, 60)
           await expect(prompt).toBeInViewport()
         }
@@ -422,7 +425,7 @@ test('keeps model choices above the message bar until an explicit answer, preser
       const box = element.getBoundingClientRect()
       return element.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2))
     })).toBe(true)
-    await page.screenshot({ path: join(evidenceDirectory('artifacts/question-choices'), 'choices-820x560-light-send-focused.png'), animations: 'disabled' })
+    await page.screenshot({ path: join(questionChoicesEvidence, 'choices-820x560-light-send-focused.png'), animations: 'disabled' })
     // Sending a recommendation retains the provider's exact ID, including its suffix.
     await send.press('Enter')
     await expect(panel).toHaveCount(0)
@@ -459,7 +462,7 @@ test('keeps a question and its message bar reachable in a short stacked pane', a
     }] })
     const form = pane.locator('.thread-questions .agent-request')
     await expect(form.getByRole('radio', { name: /Review the links/u })).toBeEnabled()
-    await page.screenshot({ path: join(evidenceDirectory('artifacts/question-choices'), 'choices-short-stacked-pane-before-choice-dark.png'), animations: 'disabled' })
+    await page.screenshot({ path: join(questionChoicesEvidence, 'choices-short-stacked-pane-before-choice-dark.png'), animations: 'disabled' })
     await form.getByRole('radio', { name: /Edit the footer/u }).click()
     await form.getByRole('radio', { name: 'Write my own answer', exact: true }).click()
     const custom = form.getByRole('textbox', { name: 'Other answer to: Choose the next step.' })
@@ -475,7 +478,7 @@ test('keeps a question and its message bar reachable in a short stacked pane', a
     const send = form.getByRole('button', { name: 'Send answer', exact: true })
     await send.focus()
     await resize(launched, 1280, 620)
-    await page.screenshot({ path: join(evidenceDirectory('artifacts/question-choices'), 'choices-short-stacked-pane-dark.png'), animations: 'disabled' })
+    await page.screenshot({ path: join(questionChoicesEvidence, 'choices-short-stacked-pane-dark.png'), animations: 'disabled' })
     const layout = await pane.evaluate(element => {
       const paneBox = element.getBoundingClientRect()
       const compose = element.querySelector('.thread-workspace__compose')!.getBoundingClientRect()
@@ -544,7 +547,7 @@ test('keeps simultaneous question and permission controls reachable in a short s
     await question.getByRole('radio', { name: /Every footer link/u }).click()
     await expect(question.getByRole('radio', { name: /Every footer link/u })).toBeChecked()
     expect(await answers(app)).toEqual([])
-    await page.screenshot({ path: join(evidenceDirectory('artifacts/question-choices'), 'choices-short-mixed-question-dark.png'), animations: 'disabled' })
+    await page.screenshot({ path: join(questionChoicesEvidence, 'choices-short-mixed-question-dark.png'), animations: 'disabled' })
     // Keyboard focus must reveal the native decision even while the question stays expanded.
     const deny = approval.getByRole('button', { name: 'Deny', exact: true })
     await deny.focus()
@@ -552,7 +555,7 @@ test('keeps simultaneous question and permission controls reachable in a short s
       const box = element.getBoundingClientRect()
       return element.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2))
     })).toBe(true)
-    await page.screenshot({ path: join(evidenceDirectory('artifacts/question-choices'), 'choices-short-mixed-permission-dark.png'), animations: 'disabled' })
+    await page.screenshot({ path: join(questionChoicesEvidence, 'choices-short-mixed-permission-dark.png'), animations: 'disabled' })
     await deny.press('Enter')
     await expect(approval).toHaveCount(0)
     await expect(transcript).toBeHidden()

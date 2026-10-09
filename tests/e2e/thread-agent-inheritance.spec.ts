@@ -6,6 +6,8 @@ import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 
+const evidence = evidenceDirectory('artifacts/new-thread-setup')
+
 test('new threads inherit Agents despite a saved Grok override and wait if that agent disconnects', async () => {
   const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-agent-default-'))
   const root = join(profile, 'fixture'), projectPath = join(root, 'project')
@@ -39,8 +41,8 @@ test('new threads inherit Agents despite a saved Grok override and wait if that 
     await page.getByRole('tab', { name: 'Providers', exact: true }).click()
     await expect(page.getByText('New threads use the agent selected in Settings → Agents.')).toBeVisible()
     await expect(page.getByRole('combobox', { name: /default thread model/ })).toHaveCount(0)
-    await mkdir(evidenceDirectory('artifacts/new-thread-setup'), { recursive: true })
-    await page.screenshot({ path: join(evidenceDirectory('artifacts/new-thread-setup'), 'providers-inherit-agent.png'), animations: 'disabled' })
+    await mkdir(evidence, { recursive: true })
+    await page.screenshot({ path: join(evidence, 'providers-inherit-agent.png'), animations: 'disabled' })
     await openThreads(page)
     const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
     // The pen opens the thread at once, on the inherited Agents model, with no dialog to confirm it in (issue #347).
@@ -61,7 +63,7 @@ test('new threads inherit Agents despite a saved Grok override and wait if that 
     // sidebar shows other such errors, losing nothing.
     await page.getByRole('button', { name: 'New thread in Inheritance check', exact: true }).click()
     await expect(sidebar.getByRole('alert')).toContainText('That model or account is unavailable')
-    await page.screenshot({ path: join(evidenceDirectory('artifacts/new-thread-setup'), 'inherited-agent-unavailable.png'), animations: 'disabled' })
+    await page.screenshot({ path: join(evidence, 'inherited-agent-unavailable.png'), animations: 'disabled' })
     await page.evaluate(async () => window.sotto!.agents!.command({ type: 'connect', provider: 'claude' }))
     await page.getByRole('button', { name: 'New thread in Inheritance check', exact: true }).click()
     await expect.poll(() => page.evaluate(async () => {

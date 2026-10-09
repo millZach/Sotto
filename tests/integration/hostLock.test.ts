@@ -5,7 +5,7 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { acquireHostLock, HostLockError, processAlive, readBootId, releaseHostLock, type HostLease } from '../../../src/host/lock'
+import { acquireHostLock, HostLockError, processAlive, readBootId, releaseHostLock, type HostLease } from '../../src/host/lock'
 
 let root: string, path: string
 const events: string[] = []

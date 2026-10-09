@@ -42,7 +42,7 @@ The new unit tests were written first and failed against the old code: 7 failure
 
 In every capture, the layout check asserts: the composer is fully inside the window, the transcript ends above the composer, the transcript is at least 180px tall (160px in the refused state, where the pane's error banner takes about 40px), and neither the page nor the card scrolls horizontally.
 
-Screenshots were inspected. They are untracked in this worktree at `artifacts/crossing/phase3-requests-*.png`: `workshop-form`, `workshop-form-footer`, `docs-required-unavailable`, `permission-no-choices`, `permission-choices` and `permission-refused`, each at 1280 and 820 in dark and light, plus `permission-sending-1280-dark`.
+Screenshots were inspected. They are untracked in this worktree at `artifacts/crossing/request-forms-*.png`: `workshop-form`, `workshop-form-footer`, `docs-required-unavailable`, `permission-no-choices`, `permission-choices` and `permission-refused`, each at 1280 and 820 in dark and light, plus `permission-sending-1280-dark`.
 
 ## Tastify acceptance (scoped edit inside the existing Crossing request card)
 

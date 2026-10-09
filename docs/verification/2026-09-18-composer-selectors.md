@@ -19,7 +19,7 @@ The composer's one option pill ("Fable · High · Auto") is now three chips: the
 ## Evidence
 
 - `artifacts/crossing/composer-provider-models.png`: the three chips in the composer footer of a new thread, dark, with the model menu open over the model chip.
-- `artifacts/crossing/phase-one-model-picker-light.png`: the same menu, light, on a thread whose provider has not set permissions, so the third chip reads "Permissions" and its list offers "Provider default" as unchoosable.
+- `artifacts/crossing/workspace-journey-model-picker-light.png`: the same menu, light, on a thread whose provider has not set permissions, so the third chip reads "Permissions" and its list offers "Provider default" as unchoosable.
 - `artifacts/crossing/new-thread-options.png`: the New thread dialog's model field with the provider mark beside the name.
 - `artifacts/crossing/composer-chips-820.png`: the chips and the open model menu at the 820x560 minimum window, nothing overflowing (`thread-creation.spec.ts` also asserts no horizontal overflow there).
 - `artifacts/composer-selectors-prototypes/`: the three prototype variants the pick was made from.

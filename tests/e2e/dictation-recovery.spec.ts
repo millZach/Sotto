@@ -1,14 +1,15 @@
 import { mkdir } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { E2E_PRESERVED_CLIPBOARD, E2E_TRANSCRIPT } from '../../src/shared/e2e'
 import { closeSotto, launchSotto, openPage, resizeWindow } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 
+const evidence = evidenceDirectory('artifacts/review-380')
+
 test('completed dictation survives clipboard failure, navigation and later dictation with history off', async () => {
   const launched = await launchSotto('clipboard-recovery')
   const { page } = launched
-  const evidence = evidenceDirectory('artifacts/review-380')
   await mkdir(evidence, { recursive: true })
   try {
     await page.evaluate(async () => window.sotto!.updateSettings({ onboardingComplete: true, historyEnabled: false, autoPaste: true, reducedMotion: 'on' }))
@@ -33,7 +34,7 @@ test('completed dictation survives clipboard failure, navigation and later dicta
         await expect(page.getByRole('button', { name: 'Copy text', exact: true })).toBeInViewport({ ratio: 1 })
         await expect(page.getByRole('button', { name: 'Dismiss text', exact: true })).toBeInViewport({ ratio: 1 })
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-        await page.screenshot({ path: resolve(evidence, `recovery-${width}-${appearance}.png`) })
+        await page.screenshot({ path: join(evidence, `recovery-${width}-${appearance}.png`) })
       }
     }
     await openPage(page, 'Settings')

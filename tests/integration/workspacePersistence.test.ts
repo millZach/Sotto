@@ -28,7 +28,7 @@ async function onDisk(directory: string, name: string): Promise<string> {
 }
 
 async function fixture() {
-  const directory = await mkdtemp(join(tmpdir(), 'sotto-phase-one-'))
+  const directory = await mkdtemp(join(tmpdir(), 'sotto-workspace-persistence-'))
   let historyEnabled = true
   const adapters = { codex: new FakeProviderHost(), claude: new FakeProviderHost(), grok: new FakeProviderHost() }
   for (const adapter of Object.values(adapters)) {
@@ -63,7 +63,7 @@ async function fixture() {
   }
   cleanup.push(async () => {
     await close()
-    if (dirname(resolve(directory)) !== resolve(tmpdir()) || !directory.includes('sotto-phase-one-')) throw new Error('Unexpected fixture directory')
+    if (dirname(resolve(directory)) !== resolve(tmpdir()) || !directory.includes('sotto-workspace-persistence-')) throw new Error('Unexpected fixture directory')
     await rm(directory, { recursive: true, force: true })
   })
   return { adapters, directory, setHistory: (enabled: boolean) => { historyEnabled = enabled }, get control() { return current.control },

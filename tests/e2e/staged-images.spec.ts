@@ -4,11 +4,12 @@ import { expect, test, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, openThreads, resizeWindow } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 
+const run = evidenceDirectory('artifacts/review-385')
+
 /** Every capture this spec takes; the verification note cites a few, copied to artifacts/staged-images/. */
 const RUN = evidenceDirectory('artifacts/staged-images-run')
 
 test('repairs a missing staged screenshot when the user attaches the same image again', async () => {
-  const run = evidenceDirectory('artifacts/review-385')
   await mkdir(run, { recursive: true })
   const icon = await readFile('build/icon.png')
   const image = icon.toString('base64')

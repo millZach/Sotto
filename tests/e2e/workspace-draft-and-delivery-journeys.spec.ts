@@ -7,8 +7,10 @@ import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto, userMessageTexts } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 
+const evidence = evidenceDirectory('artifacts/crossing')
+
 const screenshot = {
-  name: 'phase-one-reference.png', mimeType: 'image/png',
+  name: 'workspace-journey-reference.png', mimeType: 'image/png',
   buffer: readFileSync(join(process.cwd(), 'build/icon.png')),
 }
 
@@ -43,13 +45,13 @@ async function captureModes(launched: LaunchedSotto, name: string, width = 820):
   for (const appearance of ['dark', 'light'] as const) {
     await launched.page.evaluate(async mode => window.sotto!.updateSettings({ appearance: mode, accent: 'blue' }), appearance)
     await expect(launched.page.locator('html')).toHaveAttribute('data-theme', appearance)
-    await launched.page.screenshot({ path: join(evidenceDirectory('artifacts/crossing'), `phase-one-${name}-${appearance}.png`), animations: 'disabled' })
+    await launched.page.screenshot({ path: join(evidence, `workspace-journey-${name}-${appearance}.png`), animations: 'disabled' })
   }
 }
 
 test('independent text and image drafts survive navigation, renderer reload and a full Electron restart', async () => {
   test.setTimeout(60_000)
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-phase-one-'))
+  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-workspace-journey-'))
   let launched: LaunchedSotto | undefined
   try {
     launched = await launchSotto('success', profile)
@@ -131,17 +133,17 @@ test('rich answers remain safe and readable without pulling the reader away from
     })
     await page.evaluate(async () => window.sotto!.updateSettings({ appearance: 'light' }))
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
-    await page.screenshot({ path: join(evidenceDirectory('artifacts/crossing'), 'phase-one-rich-light.png'), animations: 'disabled' })
+    await page.screenshot({ path: join(evidence, 'workspace-journey-rich-light.png'), animations: 'disabled' })
     await page.evaluate(async () => window.sotto!.updateSettings({ appearance: 'dark' }))
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
-    await page.screenshot({ path: join(evidenceDirectory('artifacts/crossing'), 'phase-one-rich-dark.png'), animations: 'disabled' })
+    await page.screenshot({ path: join(evidence, 'workspace-journey-rich-dark.png'), animations: 'disabled' })
     await app.evaluate(({ BrowserWindow }) => {
       const window = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!
       window.setMinimumSize(760, 700)
       window.setContentSize(760, 800)
     })
     await expect.poll(() => page.evaluate(() => window.innerWidth)).toBe(760)
-    await page.screenshot({ path: join(evidenceDirectory('artifacts/crossing'), 'phase-one-rich-minimum.png'), animations: 'disabled' })
+    await page.screenshot({ path: join(evidence, 'workspace-journey-rich-minimum.png'), animations: 'disabled' })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 
     await page.evaluate(async () => {
@@ -182,7 +184,7 @@ test('rich answers remain safe and readable without pulling the reader away from
       await window.sottoE2E!.agentEvent!({ type: 'ready', threadId: 'workshop', status: 'running', text: '## In progress\n\nPartial **bold\n\n```typescript\nconst pending = ' })
     })
     await expect(transcript).toContainText('const pending =')
-    await page.screenshot({ path: join(evidenceDirectory('artifacts/crossing'), 'phase-one-streaming-light-reduced-motion.png'), animations: 'disabled' })
+    await page.screenshot({ path: join(evidence, 'workspace-journey-streaming-light-reduced-motion.png'), animations: 'disabled' })
   } finally { await closeSotto(launched) }
 })
 
@@ -225,7 +227,7 @@ test('project settlement preserves individual choices, drafts and running work i
     for (const appearance of ['dark', 'light'] as const) {
       await page.evaluate(async mode => window.sotto!.updateSettings({ appearance: mode, accent: 'blue' }), appearance)
       await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
-      await page.screenshot({ path: join(evidenceDirectory('artifacts/crossing'), `phase-one-projects-${appearance}.png`), animations: 'disabled' })
+      await page.screenshot({ path: join(evidence, `workspace-journey-projects-${appearance}.png`), animations: 'disabled' })
     }
     await app.evaluate(({ BrowserWindow }) => {
       const window = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!
@@ -233,7 +235,7 @@ test('project settlement preserves individual choices, drafts and running work i
       window.setContentSize(760, 800)
     })
     await expect.poll(() => page.evaluate(() => window.innerWidth)).toBe(760)
-    await page.screenshot({ path: join(evidenceDirectory('artifacts/crossing'), 'phase-one-projects-minimum.png'), animations: 'disabled' })
+    await page.screenshot({ path: join(evidence, 'workspace-journey-projects-minimum.png'), animations: 'disabled' })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     await page.getByRole('textbox', { name: 'Prompt', exact: true }).focus()
     await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toBeFocused()
@@ -255,7 +257,7 @@ test('light provider controls remain readable and uncertain delivery can be chec
       window.setMinimumSize(760, 700)
       window.setContentSize(760, 800)
     })
-    await page.screenshot({ path: join(evidenceDirectory('artifacts/crossing'), 'phase-one-new-thread-light.png'), animations: 'disabled' })
+    await page.screenshot({ path: join(evidence, 'workspace-journey-new-thread-light.png'), animations: 'disabled' })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     await dialog.getByRole('button', { name: 'Close new thread dialog', exact: true }).click()
     await selectThread(page, 'Docs')
@@ -263,7 +265,7 @@ test('light provider controls remain readable and uncertain delivery can be chec
     const model = page.getByRole('combobox', { name: 'Thread model', exact: true })
     await model.click()
     await expect(page.getByRole('listbox')).toBeVisible()
-    await page.screenshot({ path: join(evidenceDirectory('artifacts/crossing'), 'phase-one-model-picker-light.png'), animations: 'disabled' })
+    await page.screenshot({ path: join(evidence, 'workspace-journey-model-picker-light.png'), animations: 'disabled' })
     // Escape closes the menu and hands focus back to the model chip.
     await page.keyboard.press('Escape')
     await expect(model).toBeFocused()

@@ -1,15 +1,17 @@
 import { mkdir } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { closeSotto, launchSotto, resizeWindow } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
+
+const evidence = evidenceDirectory('artifacts/review-386')
+const onboardingEvidence = evidenceDirectory('artifacts/pkg-18-e2e/onboarding')
 
 for (const skip of [false, true]) {
   test(`onboarding resolves the microphone step before continuing (${skip ? 'explicit skip' : 'successful test'})`, async () => {
     test.setTimeout(120_000)
     const launched = await launchSotto(skip ? 'microphone-denied-once' : 'success')
     const { page } = launched
-    const evidence = evidenceDirectory('artifacts/review-386')
     await mkdir(evidence, { recursive: true })
     try {
       await page.evaluate(async () => window.sotto!.updateSettings({ reducedMotion: 'on' }))
@@ -31,7 +33,7 @@ for (const skip of [false, true]) {
           await next.scrollIntoViewIfNeeded()
           await expect(next).toBeInViewport()
           expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-          await page.screenshot({ path: resolve(evidence, `${skip ? 'denied' : 'untested'}-${width}-${appearance}.png`) })
+          await page.screenshot({ path: join(evidence, `${skip ? 'denied' : 'untested'}-${width}-${appearance}.png`) })
         }
       }
       // Keyboard activation keeps the existing Test / Skip actions and four-step focus flow.
@@ -63,8 +65,7 @@ for (const skip of [false, true]) {
 test('onboarding notices an ended microphone and allows retry', async () => {
   const launched = await launchSotto('microphone-browser')
   const { page } = launched
-  const evidence = evidenceDirectory('artifacts/pkg-18-e2e/onboarding')
-  await mkdir(evidence, { recursive: true })
+  await mkdir(onboardingEvidence, { recursive: true })
   try {
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ reducedMotion: 'on' })
@@ -98,7 +99,7 @@ test('onboarding notices an ended microphone and allows retry', async () => {
         await retry.scrollIntoViewIfNeeded()
         await expect(retry).toBeInViewport()
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-        await page.screenshot({ path: resolve(evidence, `ended-${width}-${appearance}.png`) })
+        await page.screenshot({ path: join(onboardingEvidence, `ended-${width}-${appearance}.png`) })
       }
     }
     await page.getByRole('button', { name: 'Try microphone again' }).focus()

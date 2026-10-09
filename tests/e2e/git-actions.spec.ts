@@ -51,6 +51,7 @@ const notice = (page: Page) => pane(page).locator('.git-action-notice')
 // The captures for the Git interface's verification note (#272). The run writes every one here, uncommitted; the note
 // copies the ones it cites to artifacts/git-interface/.
 const SHOTS = evidenceDirectory('artifacts/git-interface-run')
+const WORKSPACE_GIT_SHOTS = evidenceDirectory('artifacts/pkg-34-workspace-git')
 /** One state at 1280x800 and the 820x560 minimum, dark and light: nothing scrolls sideways, and each is captured. */
 async function captureMatrix(launched: LaunchedSotto, name: string, ready?: () => Promise<void>): Promise<void> {
   const { page } = launched
@@ -310,7 +311,7 @@ node "${hold.replaceAll('\\', '/')}" "${directory.replaceAll('\\', '/')}"
       await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
       await expect(prompt).toBeVisible()
       await expect(pane(page)).toContainText(copy)
-      await page.screenshot({ animations: 'disabled', path: join(evidenceDirectory('artifacts/pkg-34-workspace-git'), `refused-send-${width}-${appearance}.png`) })
+      await page.screenshot({ animations: 'disabled', path: join(WORKSPACE_GIT_SHOTS, `refused-send-${width}-${appearance}.png`) })
     }
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await expect(prompt).toHaveValue('Keep this refused message')
@@ -333,7 +334,7 @@ node "${hold.replaceAll('\\', '/')}" "${directory.replaceAll('\\', '/')}"
       await resize(launched, width, height)
       await expect(pane(page)).toContainText(refusalCopy)
       await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-      await page.screenshot({ animations: 'disabled', path: join(evidenceDirectory('artifacts/pkg-34-workspace-git'), `failed-queue-${width}-${appearance}.png`) })
+      await page.screenshot({ animations: 'disabled', path: join(WORKSPACE_GIT_SHOTS, `failed-queue-${width}-${appearance}.png`) })
     }
     await page.evaluate(async threadId => {
       const state = await window.sotto!.agents!.get()

@@ -8,6 +8,8 @@ import type { RequestDraft } from '../../src/shared/requestDrafts'
 import { closeSotto, launchSotto, openPage, type LaunchedSotto } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 
+const evidence = evidenceDirectory('artifacts/remove-personal-chats')
+
 const notice = 'Saved chat history could not be fully cleared. Some local chat data was left in place. Repair local storage, then save Settings or restart Sotto to try again.'
 const answerNotice = 'Saved answer cleanup could not finish. The original file was preserved. Repair local storage, then restart Sotto to try again.'
 const crashCopy = 'chats.json.tmp-123-12345678-1234-1234-1234-123456789abc'
@@ -145,8 +147,8 @@ test.describe('retired Chats follow Keep local history', () => {
         Math.max(0, document.documentElement.scrollHeight - innerHeight),
       ])).toEqual([0, 0])
       await expect(launched.page.getByRole('status').filter({ hasText: answerNotice })).toBeVisible()
-      await mkdir(evidenceDirectory('artifacts/remove-personal-chats'), { recursive: true })
-      await launched.page.screenshot({ path: join(evidenceDirectory('artifacts/remove-personal-chats'), 'answer-cleanup-notice-820x560.png'),
+      await mkdir(evidence, { recursive: true })
+      await launched.page.screenshot({ path: join(evidence, 'answer-cleanup-notice-820x560.png'),
         clip: { x: 0, y: 0, width: 820, height: 560 }, scale: 'css' })
 
       await writeFile(formsFile, sourceForms, 'utf8')
@@ -189,8 +191,8 @@ test.describe('retired Chats follow Keep local history', () => {
         Math.max(0, document.documentElement.scrollWidth - innerWidth),
         Math.max(0, document.documentElement.scrollHeight - innerHeight),
       ])).toEqual([0, 0])
-      await mkdir(evidenceDirectory('artifacts/remove-personal-chats'), { recursive: true })
-      await page.screenshot({ path: join(evidenceDirectory('artifacts/remove-personal-chats'), 'privacy-cleanup-notice-820x560.png'),
+      await mkdir(evidence, { recursive: true })
+      await page.screenshot({ path: join(evidence, 'privacy-cleanup-notice-820x560.png'),
         clip: { x: 0, y: 0, width: 820, height: 560 }, scale: 'css' })
     })
   })

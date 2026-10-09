@@ -7,6 +7,8 @@ import { expect, it } from 'vitest'
 import { CodexAppServerHost } from '../../src/main/agents/codex'
 import { ClaudeStreamJsonHost } from '../../src/main/agents/claude'
 
+const artifacts = evidenceDirectory('artifacts/phase-five-compaction')
+
 for (const provider of ['codex', 'claude'] as const) it.runIf(process.env.SOTTO_PHASE5_COMPACTION_NATIVE === '1')(`installed ${provider} native manual compaction on one owned synthetic thread`, async () => {
   const root = await mkdtemp(join(tmpdir(), `sotto-phase5-${provider}-compact-`))
   const host = provider === 'codex' ? new CodexAppServerHost({ userDataPath: root }) : new ClaudeStreamJsonHost({ userDataPath: root })
@@ -32,7 +34,7 @@ for (const provider of ['codex', 'claude'] as const) it.runIf(process.env.SOTTO_
   } catch (error) { evidence.failure = error instanceof Error ? error.message : String(error); evidence.after = (await host.snapshot().catch(() => undefined))?.threads[0]; throw error }
   finally {
     host.disconnect(); await host.closed()
-    await mkdir(evidenceDirectory('artifacts/phase-five-compaction'), { recursive: true })
-    await writeFile(join(evidenceDirectory('artifacts/phase-five-compaction'), `${provider}-native.json`), JSON.stringify(evidence, null, 2))
+    await mkdir(artifacts, { recursive: true })
+    await writeFile(join(artifacts, `${provider}-native.json`), JSON.stringify(evidence, null, 2))
   }
 }, 160000)

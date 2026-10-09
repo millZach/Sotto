@@ -4,13 +4,15 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { expect, test } from '@playwright/test'
 import { closeSotto, launchSotto, openThreads, resizeWindow } from './support/sottoLaunch'
 
+const evidence = evidenceDirectory('artifacts/review-384')
+
 test('Closed keeps a native terminal row and reopens it with fresh output', async () => {
   test.skip(process.platform !== 'win32', 'Native Windows ConPTY acceptance')
   test.setTimeout(120_000)
   const launched = await launchSotto()
   const { page } = launched
   try {
-    await mkdir(evidenceDirectory('artifacts/review-384'), { recursive: true })
+    await mkdir(evidence, { recursive: true })
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true, reducedMotion: 'on' })
       await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
@@ -44,7 +46,7 @@ test('Closed keeps a native terminal row and reopens it with fresh output', asyn
       for (const appearance of ['dark', 'light'] as const) {
         await page.evaluate(async appearance => window.sotto!.updateSettings({ appearance }), appearance)
         await expect(shelf.getByRole('button', { name: 'Reopen Closed shelf check', exact: true })).toBeInViewport()
-        await page.screenshot({ path: join(evidenceDirectory('artifacts/review-384'), `closed-${width}-${appearance}.png`), animations: 'disabled' })
+        await page.screenshot({ path: join(evidence, `closed-${width}-${appearance}.png`), animations: 'disabled' })
       }
     }
     const reopen = shelf.getByRole('button', { name: 'Reopen Closed shelf check', exact: true })
@@ -56,7 +58,7 @@ test('Closed keeps a native terminal row and reopens it with fresh output', asyn
         receivesPointer: element.contains(document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2)),
         opacity: getComputedStyle(element.parentElement!).opacity }
     })
-    await writeFile(join(evidenceDirectory('artifacts/review-384'), 'reopen-hit.json'), JSON.stringify(hit, null, 2) + '\n')
+    await writeFile(join(evidence, 'reopen-hit.json'), JSON.stringify(hit, null, 2) + '\n')
     expect(hit.receivesPointer).toBe(true)
     expect(hit.opacity).toBe('1')
     await reopen.focus()
@@ -72,6 +74,6 @@ test('Closed keeps a native terminal row and reopens it with fresh output', asyn
     await input.press('Enter')
     await expect.poll(async () => (await read()).output).toContain('SOTTO_REOPEN_READY')
     await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
-    await page.screenshot({ path: join(evidenceDirectory('artifacts/review-384'), 'reopened.png'), animations: 'disabled' })
+    await page.screenshot({ path: join(evidence, 'reopened.png'), animations: 'disabled' })
   } finally { await closeSotto(launched) }
 })

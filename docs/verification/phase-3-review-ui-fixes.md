@@ -88,7 +88,7 @@ existing app (the permission card's head, tag and context blocks; the placed-pan
   `phase-three-requests` and `phase-three-personal-requests` pass 5/5.
 - Screenshots those neighbour specs rewrote were restored or deleted and are not part of this change. Two of them now
   differ, as expected, and both were inspected: `phase-three-layout/five-row-compact-1600` shows the switch beside Close,
-  and the `phase3-requests-workshop-form` fixture's separate `text` ("Settings page questions") now shows as its explanation.
+  and the `request-forms-workshop-form` fixture's separate `text` ("Settings page questions") now shows as its explanation.
 - Not run: full unit or E2E suites, native providers, macOS.
 
 ## Tastify results

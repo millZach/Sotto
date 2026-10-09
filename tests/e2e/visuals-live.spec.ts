@@ -6,6 +6,8 @@ import { captureWindow, firstSottoWindow, openThreads } from './support/sottoLau
 import type { ProviderId } from '../../src/shared/agents'
 import { evidenceDirectory } from '../fixtures/evidence'
 
+const evidenceRoot = evidenceDirectory('artifacts/visuals-live')
+
 // A real Claude Code, Codex or Grok Build thread asked to draw a visual through `visualize`, in the production app
 // over an isolated profile (tests/fixtures/nativeThreadsMain.cjs). Each run sends real subscription turns, so it is
 // opt-in: `npm run build`, then `SOTTO_VISUALS_LIVE=1 npx playwright test tests/e2e/visuals-live.spec.ts`, with
@@ -35,7 +37,7 @@ for (const provider of ['claude', 'codex', 'grok'] as const) {
     await mkdir(profile); await mkdir(project)
     await writeFile(join(profile, 'settings.json'), JSON.stringify({ onboardingComplete: true }))
     // Outside test-results, which Playwright clears at every run, so each provider's run keeps its captures.
-    const artifacts = resolve(evidenceDirectory('artifacts/visuals-live'), provider)
+    const artifacts = join(evidenceRoot, provider)
     await mkdir(artifacts, { recursive: true })
     let app: ElectronApplication | undefined
     let current: Page | undefined

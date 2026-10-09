@@ -3,6 +3,8 @@ import { evidenceDirectory } from '../fixtures/evidence'
 import { expect, test } from '@playwright/test'
 import { closeSotto, launchSotto, openThreads, resizeWindow } from './support/sottoLaunch'
 
+const evidence = evidenceDirectory('artifacts/crossing')
+
 test('permissions keep composer focus and failed answers remain on their own thread', async () => {
   const launched = await launchSotto()
   const { page } = launched
@@ -49,7 +51,7 @@ test('permissions keep composer focus and failed answers remain on their own thr
         await page.emulateMedia({ reducedMotion: 'reduce' })
         await expect(failure).toBeVisible()
         await expect(answer).toBeVisible()
-        await page.screenshot({ animations: 'disabled', path: join(evidenceDirectory('artifacts/crossing'), `pkg-43-${appearance}-${width}.png`) })
+        await page.screenshot({ animations: 'disabled', path: join(evidence, `pkg-43-${appearance}-${width}.png`) })
       }
     }
     await answer.fill('Go right')

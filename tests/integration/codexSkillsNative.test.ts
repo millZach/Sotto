@@ -6,6 +6,8 @@ import { dirname, join, resolve } from 'node:path'
 import { expect, it } from 'vitest'
 import { CodexAppServerHost } from '../../src/main/agents/codex'
 
+const artifacts = evidenceDirectory('artifacts/skills-native')
+
 // Explicit opt-in: reads the installed account's catalog, never creates a thread,
 // starts a turn, changes account/configuration, or reads skill instructions.
 it.skipIf(process.env.SOTTO_VERIFY_CODEX_SKILLS !== '1')('reads the installed native catalog for the actual workspace', async () => {
@@ -21,7 +23,7 @@ it.skipIf(process.env.SOTTO_VERIFY_CODEX_SKILLS !== '1')('reads the installed na
     expect(refreshed.status).toBe('ready')
     expect(initial.cwd).toBe(cwd)
     expect((await host.snapshot()).threads).toEqual([])
-    const artifact = join(evidenceDirectory('artifacts/skills-native'), 'catalog-probe.json')
+    const artifact = join(artifacts, 'catalog-probe.json')
     await mkdir(dirname(artifact), { recursive: true })
     await writeFile(artifact, JSON.stringify({ checkedAt: new Date().toISOString(), version: snapshot.version, cwd,
       initialCount: initial.skills.length, refreshedCount: refreshed.skills.length,

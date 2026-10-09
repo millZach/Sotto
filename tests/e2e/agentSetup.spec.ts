@@ -4,6 +4,8 @@ import { expect, test } from '@playwright/test'
 import type { SottoE2EBridge } from '../../src/shared/e2e'
 import { closeSotto, launchSottoWithVoice } from './support/sottoLaunch'
 
+const evidence = evidenceDirectory('artifacts/agent-control-smoke')
+
 test('failed connection leaves one actionable error and allows a successful retry', async () => {
   const launched = await launchSottoWithVoice()
   const { page } = launched
@@ -24,10 +26,10 @@ test('failed connection leaves one actionable error and allows a successful retr
     await expect(page.getByRole('alert')).toHaveText(error)
     await expect(page.getByRole('button', { name: 'Connect providers', exact: true })).toBeEnabled()
     await expect(page.getByText(error, { exact: true })).toHaveCount(1)
-    await page.screenshot({ path: join(evidenceDirectory('artifacts/agent-control-smoke'), 'connection-failed-e2e.png') })
+    await page.screenshot({ path: join(evidence, 'connection-failed-e2e.png') })
     await page.getByRole('button', { name: 'Connect providers', exact: true }).click()
     await expect(page.getByRole('status')).toHaveText('Codex connected')
     await expect(page.getByRole('alert')).toHaveCount(0)
-    await page.screenshot({ path: join(evidenceDirectory('artifacts/agent-control-smoke'), 'connection-retry-e2e.png') })
+    await page.screenshot({ path: join(evidence, 'connection-retry-e2e.png') })
   } finally { await closeSotto(launched) }
 })

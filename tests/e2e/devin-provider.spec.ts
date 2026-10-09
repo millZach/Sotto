@@ -7,6 +7,8 @@ import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 
+const evidence = evidenceDirectory('artifacts/devin-local-provider')
+
 /** Resolve theme colors through the browser, including color-mix and translucent surfaces. */
 async function textContrast(locator: Locator): Promise<number> {
   return locator.evaluate(element => {
@@ -35,7 +37,7 @@ test('uses Devin through the native adapter and preserves explicit thread decisi
   const root = join(profile, 'devin-fixture')
   const projectPath = join(root, 'project')
   await mkdir(projectPath, { recursive: true })
-  await mkdir(evidenceDirectory('artifacts/devin-local-provider'), { recursive: true })
+  await mkdir(evidence, { recursive: true })
   const previousRoot = process.env.SOTTO_E2E_DEVIN_ROOT
   const previousExecutable = process.env.SOTTO_E2E_DEVIN_EXECUTABLE
   process.env.SOTTO_E2E_DEVIN_ROOT = root
@@ -64,7 +66,7 @@ test('uses Devin through the native adapter and preserves explicit thread decisi
         const ratio = await textContrast(panel.locator('.provider-models__empty').filter({ hasText: 'Uses your Devin account' }))
         expect(ratio).toBeGreaterThanOrEqual(4.5)
         contrasts.push({ surface: 'Devin disclosure', width, appearance, ratio })
-        await page.screenshot({ animations: 'disabled', path: join(evidenceDirectory('artifacts/devin-local-provider'), `settings-${width}-${appearance}.png`) })
+        await page.screenshot({ animations: 'disabled', path: join(evidence, `settings-${width}-${appearance}.png`) })
       }
     }
     await resizeWindow(launched, 1280, 800)
@@ -120,7 +122,7 @@ test('uses Devin through the native adapter and preserves explicit thread decisi
         const ratio = await textContrast(page.getByRole('button', { name: 'Allow once', exact: true }))
         expect(ratio).toBeGreaterThanOrEqual(4.5)
         contrasts.push({ surface: 'Allow once', width, appearance, ratio })
-        await page.screenshot({ animations: 'disabled', path: join(evidenceDirectory('artifacts/devin-local-provider'), `permission-${width}-${appearance}.png`) })
+        await page.screenshot({ animations: 'disabled', path: join(evidence, `permission-${width}-${appearance}.png`) })
       }
     }
     await page.getByRole('button', { name: 'Deny', exact: true }).focus()
@@ -138,7 +140,7 @@ test('uses Devin through the native adapter and preserves explicit thread decisi
     await expect.poll(async () => (await state()).status).toBe('idle')
     await resizeWindow(launched, 1280, 800)
     await page.evaluate(() => window.sotto!.updateSettings({ appearance: 'dark' }))
-    await page.screenshot({ animations: 'disabled', path: join(evidenceDirectory('artifacts/devin-local-provider'), 'thread-complete.png') })
+    await page.screenshot({ animations: 'disabled', path: join(evidence, 'thread-complete.png') })
     await prompt.fill('Synthetic cancellation prompt')
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
     await expect(prompt).toHaveValue('')
@@ -163,7 +165,7 @@ test('uses Devin through the native adapter and preserves explicit thread decisi
     expect(Object.values(restored).some(alias => alias.devinSessionId === nativeId)).toBe(true)
     expect(await page.evaluate(async () => (await window.sotto!.getSettings()).voiceCoordinatorEnabled)).toBe(false)
     expect(await readFile(join(root, 'violations.jsonl'), 'utf8').catch(() => '')).toBe('')
-    await writeFile(join(evidenceDirectory('artifacts/devin-local-provider'), 'contrast.json'), JSON.stringify(contrasts, null, 2))
+    await writeFile(join(evidence, 'contrast.json'), JSON.stringify(contrasts, null, 2))
   } finally {
     if (launched) await closeSotto(launched)
     if (previousRoot === undefined) delete process.env.SOTTO_E2E_DEVIN_ROOT; else process.env.SOTTO_E2E_DEVIN_ROOT = previousRoot

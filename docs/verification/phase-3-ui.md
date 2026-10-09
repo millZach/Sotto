@@ -43,7 +43,7 @@ Unit coverage for the same surfaces:
 Captures:
 - `artifacts/phase-three-ui/`: tools and Chats, from this review
 - `artifacts/thread-activity/`: #64/#65
-- `artifacts/crossing/phase3-requests-*`: request card journeys, from the requests worker
+- `artifacts/crossing/request-forms-*`: request card journeys, from the requests worker
 
 ### Capture limitation: the embedded page
 

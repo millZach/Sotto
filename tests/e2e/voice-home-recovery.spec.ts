@@ -5,6 +5,8 @@ import { expect, test } from '@playwright/test'
 import { closeSotto, launchSottoWithVoice } from './support/sottoLaunch'
 import { completeVoiceJourneySetup, openVoiceJourneyAgents } from './support/voiceJourney'
 
+const evidence = evidenceDirectory('artifacts/voice-home-recovery')
+
 test('reveals voice drafting, pauses without loss, answers conversation and explicitly resumes saved text', async () => {
   const launched = await launchSottoWithVoice()
   const { page, app } = launched
@@ -25,13 +27,13 @@ test('reveals voice drafting, pauses without loss, answers conversation and expl
     await speak('Hey Sotto')
     await expect(page.getByRole('heading', { name: 'Drafting for Workshop' })).toBeVisible()
     await expect(page.getByText('Try “what needs my attention?”')).toHaveCount(0)
-    await mkdir(evidenceDirectory('artifacts/voice-home-recovery'), { recursive: true })
+    await mkdir(evidence, { recursive: true })
     for (const [width, height] of [[1280, 900], [820, 560]]) {
       await app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows().find(win => win.webContents.getURL().endsWith('/index.html'))!.setSize(...size), [width!, height!] as const)
       for (const appearance of ['dark', 'light'] as const) {
         await page.evaluate(appearance => window.sotto!.updateSettings({ appearance }), appearance)
         await page.getByRole('button', { name: 'Talk to Sotto', exact: true }).scrollIntoViewIfNeeded()
-        await page.screenshot({ path: join(evidenceDirectory('artifacts/voice-home-recovery'), `drafting-${width}-${appearance}.png`), animations: 'disabled' })
+        await page.screenshot({ path: join(evidence, `drafting-${width}-${appearance}.png`), animations: 'disabled' })
       }
     }
     await page.getByRole('button', { name: 'Review draft', exact: true }).click()
@@ -48,7 +50,7 @@ test('reveals voice drafting, pauses without loss, answers conversation and expl
     await page.getByRole('button', { name: 'Open Workshop', exact: true }).click()
     await expect(page.getByLabel('Prompt', { exact: true })).toHaveValue('Keep the existing colors.')
     await expect(page.getByRole('button', { name: 'Resume draft', exact: true })).toBeVisible()
-    await page.screenshot({ path: join(evidenceDirectory('artifacts/voice-home-recovery'), 'paused-editor-820-light.png'), animations: 'disabled' })
+    await page.screenshot({ path: join(evidence, 'paused-editor-820-light.png'), animations: 'disabled' })
     await page.getByRole('button', { name: 'Resume draft', exact: true }).click()
     await page.getByLabel('Prompt', { exact: true }).fill('Keep the existing colors. Add keyboard controls.')
     await page.getByRole('button', { name: 'Close Workshop', exact: true }).click()

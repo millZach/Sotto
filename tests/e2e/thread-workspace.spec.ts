@@ -10,6 +10,8 @@ import { hostKeys } from './support/hostKeys'
 import { closeSotto, enableVoiceCoordinator, launchSotto, openThreads, userMessageTexts } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 
+const evidence = evidenceDirectory('artifacts/crossing')
+
 test('a saved draft elsewhere does not close the manual composer, including while the thread runs', async () => {
   const launched = await launchSotto()
   const { page } = launched
@@ -41,7 +43,7 @@ test('a saved draft elsewhere does not close the manual composer, including whil
     const queue = page.getByRole('region', { name: 'Queued messages' })
     await expect(queue).toContainText('Prepare the next message while Docs runs.')
     await expect(prompt).toHaveValue('')
-    await page.screenshot({ animations: 'disabled', path: join(evidenceDirectory('artifacts/crossing'), 'thread-workspace-foreign-draft.png') })
+    await page.screenshot({ animations: 'disabled', path: join(evidence, 'thread-workspace-foreign-draft.png') })
     const state = await page.evaluate(async () => window.sotto!.agents!.get())
     expect(state).toMatchObject({ draft: 'Keep this saved draft in Workshop.', draftThreadId: key('workshop'), assignments: [] })
     expect(await userMessageTexts(page, 'docs')).toHaveLength(1)
@@ -113,7 +115,7 @@ test('a queued follow-up keeps its skill reference and order through a reload, s
     const queued = await page.evaluate(async () => window.sotto!.agents!.get())
     expect(queued.followups!.map(item => [item.text, item.skills ?? []])).toEqual([['Then post the preview link.', []], ['Then run $deploy for staging.', [skill]]])
     expect(await userMessageTexts(page, 'docs')).toHaveLength(1)
-    await page.screenshot({ animations: 'disabled', path: join(evidenceDirectory('artifacts/crossing'), 'thread-workspace-queue.png') })
+    await page.screenshot({ animations: 'disabled', path: join(evidence, 'thread-workspace-queue.png') })
 
     await page.reload()
     await openThreads(page)
@@ -170,7 +172,7 @@ test('workspace sends a manual prompt to the selected thread without granting ma
     await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('')
     await page.getByRole('button', { name: 'Workshop', exact: true }).click()
     await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('Keep this draft in Workshop.')
-    await page.screenshot({ animations: 'disabled', path: join(evidenceDirectory('artifacts/crossing'), 'thread-workspace-manual.png') })
+    await page.screenshot({ animations: 'disabled', path: join(evidence, 'thread-workspace-manual.png') })
     await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'permission', threadId: 'workshop', requestId: 'manual-permission', text: 'Allow the manual test step?' }))
     await page.getByRole('button', { name: 'Allow', exact: true }).click()
     await expect.poll(() => page.evaluate(async id => (await window.sotto!.agents!.get()).host.threads.find(thread => thread.id === id)!.requests.length, workshop)).toBe(0)
@@ -217,7 +219,7 @@ test('settled work stays off attention and session pills, with real timestamps a
     const releaseNotes = (await hostKeys(page))('release-notes')
     await expect(page.getByRole('heading', { name: 'Release notes 1.4', exact: true })).toBeVisible()
     await expect(page.getByLabel('Thread transcript')).toContainText('Release notes are in the draft release.')
-    await page.screenshot({ animations: 'disabled', path: join(evidenceDirectory('artifacts/crossing'), 'thread-workspace-settled.png') })
+    await page.screenshot({ animations: 'disabled', path: join(evidence, 'thread-workspace-settled.png') })
     await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Start a new manual task in this thread.')
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
     await expect(page.getByLabel('Thread transcript')).toContainText('Start a new manual task in this thread.')
@@ -233,7 +235,7 @@ test('settled work stays off attention and session pills, with real timestamps a
     })
     expect(scrollbar.thumb).not.toBe('')
     expect(scrollbar.actual).toBe(`${scrollbar.thumb} rgba(0, 0, 0, 0)`)
-    await page.screenshot({ animations: 'disabled', path: join(evidenceDirectory('artifacts/crossing'), 'agent-configuration-scrollbar.png') })
+    await page.screenshot({ animations: 'disabled', path: join(evidence, 'agent-configuration-scrollbar.png') })
   } finally {
     await closeSotto(launched)
     await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })

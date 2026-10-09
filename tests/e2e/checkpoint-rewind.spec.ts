@@ -7,6 +7,8 @@ import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { closeSotto, launchSotto, openThreads } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 
+const shots = evidenceDirectory('artifacts/phase-four-git')
+
 test('inspects a completed checkpoint and explicitly rewinds files and the same conversation', async () => {
   test.setTimeout(120000)
   const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-phase4-checkpoint-'))
@@ -51,7 +53,7 @@ test('inspects a completed checkpoint and explicitly rewinds files and the same 
     await expect(review).toContainText('export const greeting = "Hello"')
     await expect(review).toContainText('export const greeting = "Hello, Sotto"')
     await expect(review.getByRole('button', { name: 'Revert files and conversation' })).toBeDisabled()
-    const shots = evidenceDirectory('artifacts/phase-four-git'); await mkdir(shots, { recursive: true })
+    await mkdir(shots, { recursive: true })
     for (const [width, height] of [[1280, 860], [1600, 1000], [820, 560]]) {
       await app.evaluate(({ BrowserWindow }, [width, height]) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!.setContentSize(width!, height!), [width, height])
       for (const appearance of ['dark', 'light'] as const) {

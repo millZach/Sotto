@@ -6,6 +6,8 @@ import type { SottoBridge, SottoWidgetBridge } from '../../src/shared/contracts'
 import { closeSotto, launchSottoWithVoice, userMessageTexts } from './support/sottoLaunch'
 import { completeVoiceJourneySetup, openVoiceJourneyAgents } from './support/voiceJourney'
 
+const evidence = evidenceDirectory('artifacts/voice-journey')
+
 async function command(page: Page, request: AgentCommand): Promise<AgentCommandReceipt> {
   return page.evaluate(async value => {
     const bridge = (globalThis as unknown as { sotto: SottoBridge }).sotto.agents
@@ -53,7 +55,7 @@ test('routes activated voice through the real controller, retains paused prompts
     await expect(page.getByLabel('Prompt')).toHaveValue('Build a small engineering tool.')
     await speak(page, 'Keep the existing controls.')
     await expect(page.getByLabel('Prompt')).toHaveValue('Build a small engineering tool. Keep the existing controls.')
-    await page.screenshot({ animations: 'disabled', path: join(evidenceDirectory('artifacts/voice-journey'), 'paused-prompt.png') })
+    await page.screenshot({ animations: 'disabled', path: join(evidence, 'paused-prompt.png') })
     await speak(page, 'stop listening')
     await expect.poll(async () => (await state(page)).voice.status).toBe('wake')
     expect(await userMessageTexts(page, 'workshop')).toHaveLength(0)
