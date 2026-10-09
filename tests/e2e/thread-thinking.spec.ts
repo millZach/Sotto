@@ -5,13 +5,14 @@ import { join, resolve } from 'node:path'
 import { _electron as electron, expect, test, type ElectronApplication } from '@playwright/test'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { firstSottoWindow, openThreads } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 /**
  * Production main and the production Claude adapter over the scripted Claude Code CLI (#768). The CLI streams a
  * thinking block and holds its reply, so the thread is seen with only the thinking arrived: the Thinking row must be
  * there before any reply text. The words are invented.
  */
-const evidence = resolve('artifacts/show-thinking')
+const evidence = evidenceDirectory('artifacts/show-thinking')
 const wait = { timeout: 30_000 }
 const THINKING = 'Check the parser before the tests, then compare the two outputs.'
 const REPLY = 'The parser keeps the trailing newline.'

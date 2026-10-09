@@ -1,7 +1,7 @@
 import { mkdir } from 'node:fs/promises'
 import { expect, test, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, openPage, openThreads, paneMenuAction, type LaunchedSotto } from './support/sottoLaunch'
-import { evidenceDirectory } from './support/evidence'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 const ARTIFACTS = evidenceDirectory('artifacts/command-receipt')
 

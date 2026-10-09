@@ -8,7 +8,7 @@ import { PhonePlayer } from '../../../../src/renderer/src/tools/PhonePlayer'
 import { CloudIphoneStore } from '../../../../src/renderer/src/tools/cloudIphoneStore'
 import { PhonePlayerStore } from '../../../../src/renderer/src/tools/phonePlayerStore'
 import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
-import { threadsStateFixture } from '../liveAgentState'
+import { threadsStateFixture } from '../../../fixtures/renderer/liveAgentState'
 
 const ok = <T,>(value: T): ToolsResult<T> => ({ ok: true, value })
 

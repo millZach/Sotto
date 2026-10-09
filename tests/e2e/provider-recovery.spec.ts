@@ -7,6 +7,9 @@ import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { defaultAgentConfiguration } from '../../src/shared/agents'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, launchSotto, openThreads, userMessageTexts } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
+
+const evidence = evidenceDirectory('artifacts/provider-recovery')
 
 const draft = 'Review this synthetic recovered drawing before deciding what to send.'
 const attachment = { id: 'synthetic-image', name: 'recovered-drawing.png', mimeType: 'image/png',
@@ -32,10 +35,10 @@ async function seed(): Promise<string> {
 }
 
 async function capture(page: Page, name: string): Promise<void> {
-  await mkdir('artifacts/provider-recovery', { recursive: true })
-  await page.screenshot({ path: `artifacts/provider-recovery/${name}-desktop.png`, animations: 'disabled' })
+  await mkdir(evidence, { recursive: true })
+  await page.screenshot({ path: join(evidence, `${name}-desktop.png`), animations: 'disabled' })
   await page.setViewportSize({ width: 760, height: 850 })
-  await page.screenshot({ path: `artifacts/provider-recovery/${name}-760.png`, animations: 'disabled' })
+  await page.screenshot({ path: join(evidence, `${name}-760.png`), animations: 'disabled' })
   const notice = page.getByRole('region', { name: 'Recovered work', exact: true })
   const bounds = await (await notice.count() ? notice : page.getByRole('region', { name: 'Thread workspace' })).boundingBox()
   expect(bounds).not.toBeNull()

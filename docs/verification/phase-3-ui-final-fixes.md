@@ -15,6 +15,6 @@ The worker inspected the saved light/dark short-window images and live-editor te
 - [Short Tools view, light](../../artifacts/phase-three-ui-final-fixes/tools-path-diff-820x560-light.png), [dark](../../artifacts/phase-three-ui-final-fixes/tools-path-diff-820x560-dark.png).
 - The Tools view images were re-shot on September 23, 2026 for the Changes rebuild (#268), so they show Changes as T3's diff rather than the file list this note measured; the footer they prove is unchanged.
 - [Retained terminal during live editing](../../artifacts/phase-three-ui-final-fixes/terminal-live-editor-1280-dark.png), [same shell after changes](../../artifacts/phase-three-ui-final-fixes/terminal-after-themes-dark.png).
-- `tests/e2e/phase-three-ui-final-fixes.spec.ts` verifies the two actual application journeys. `phase-three-ui-recovery.spec.ts` separately verifies browser refusal/retry, asynchronous personal-send recovery and selected terminal text contrast.
+- `tests/e2e/tools-footer-and-terminal-themes.spec.ts` verifies the two actual application journeys. `browser-retry-and-terminal-themes.spec.ts` separately verifies browser refusal/retry, asynchronous personal-send recovery and selected terminal text contrast.
 
 Node/web typechecks, scoped lint and the worker build passed. This checkpoint does not claim final widget branding verification, the final repository suite or macOS behavior.

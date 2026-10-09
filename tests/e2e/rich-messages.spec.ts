@@ -2,10 +2,11 @@ import { execFileSync } from 'node:child_process'
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 // Real Windows Electron renders of the rich message components inside the Threads layout classes.
 // The fixture is built per worktree into test-results/rich-messages-fixture; the Threads page wiring is checked by the workspace lane.
-const shots = resolve(process.cwd(), 'artifacts/rich-messages')
+const shots = evidenceDirectory('artifacts/rich-messages')
 
 interface FixtureRecord { opened: string[]; navigations: string[]; popups: string[] }
 declare global { interface Window { richFixture?: { stream: (text: string, streaming: boolean) => void } } }

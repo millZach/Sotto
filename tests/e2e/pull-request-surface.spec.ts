@@ -4,12 +4,13 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 // The Pull request surface (#269), the merge checklist, against a real repository, an owned bare remote and a scripted
 // gh (tests/fixtures/fakeGh.mjs): nothing to merge yet, Checkout pull request from the branch picker, the badge opening
 // the checklist in Tools, Ready for review as a line's own press, an approval read on Refresh, the merge method chosen
 // from the keyboard, the merge only after its confirmation, and the linked pull requests folded below.
-const SHOTS = resolve('artifacts/pull-request-surface')
+const SHOTS = evidenceDirectory('artifacts/pull-request-surface')
 const git = (cwd: string, ...args: string[]): string => {
   for (let attempt = 0; ; attempt += 1) {
     try { return execFileSync('git', ['-c', 'user.name=Sotto E2E', '-c', 'user.email=e2e@sotto.invalid', '-c', 'init.defaultBranch=main', '-c', 'core.autocrlf=false', '-c', 'commit.gpgSign=false', ...args], { cwd, encoding: 'utf8', windowsHide: true }).trim() }

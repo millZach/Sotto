@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import type { SottoE2EBridge } from '../../src/shared/e2e'
+import { evidenceDirectory } from '../fixtures/evidence'
 import { bareEntityId, closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 
 // Babysitting a pull request, variant C of ADR-0061 (#825), over the built app, the scripted provider and a scripted gh
@@ -11,7 +12,7 @@ import { bareEntityId, closeSotto, launchSotto, openThreads, type LaunchedSotto 
 // on GitHub bringing a wake-up into the thread as Sotto's, a later one waiting in the follow-up queue and removed there,
 // Stop, and a merge ending babysitting with the line saying why. The Settings switch closes it. A babysitting pass runs
 // when the journey asks (src/main/e2e/babysitPass.ts) rather than on its two-minute timer.
-const SHOTS = process.env.SOTTO_E2E_CAPTURES ?? resolve('artifacts/babysitting-surfaces-run')
+const SHOTS = process.env.SOTTO_E2E_CAPTURES ?? evidenceDirectory('artifacts/babysitting-surfaces-run')
 const REPOSITORY = 'https://github.com/sotto-fixture/owned'
 const URL = `${REPOSITORY}/pull/74`
 

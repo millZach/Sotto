@@ -1,11 +1,16 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { evidenceDirectory } from '../fixtures/evidence'
 import { expect, test } from '@playwright/test'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { defaultAgentConfiguration } from '../../src/shared/agents'
 import { hostKeys } from './support/hostKeys'
 import { closeSotto, launchSotto,  openThreads, resizeWindow } from './support/sottoLaunch'
+
+const savedDraftEvidence = evidenceDirectory('artifacts/new-thread-saved-draft')
+
+const evidence = evidenceDirectory('artifacts/new-thread-setup')
 
 const screenshot = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5FoAAAAASUVORK5CYII=', 'base64')
 
@@ -63,7 +68,7 @@ test('creates a project thread without replacing a leftover draft from an earlie
     await expect(page.getByLabel('Thread transcript')).toContainText('Only send this new prompt')
     await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('')
     expect(await page.evaluate(async () => window.sotto!.agents!.get())).toMatchObject({ draft: leftover, draftThreadId })
-    await page.screenshot({ animations: 'disabled', path: 'artifacts/new-thread-saved-draft/created-and-sent.png' })
+    await page.screenshot({ animations: 'disabled', path: join(savedDraftEvidence, 'created-and-sent.png') })
   } finally {
     await closeSotto(launched)
     await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
@@ -92,7 +97,7 @@ test('creates a thread in a centered popup, configures it, and sends file and pa
       return Math.abs(rect.x + rect.width / 2 - innerWidth / 2) < 2 && Math.abs(rect.y + rect.height / 2 - innerHeight / 2) < 2
     })
     expect(centered).toBe(true)
-    await page.screenshot({ animations: 'disabled', path: 'artifacts/new-thread-setup/new-thread-picker.png' })
+    await page.screenshot({ animations: 'disabled', path: join(evidence, 'new-thread-picker.png') })
     // Choosing the folder opens the thread at once, on defaults from Settings → Agents; there is no options
     // form left to fill in here (issue #347). The rest of this test configures it from its own composer instead.
     await dialog.getByRole('button', { name: /Local folder/ }).click()
@@ -104,12 +109,12 @@ test('creates a thread in a centered popup, configures it, and sends file and pa
 
     await page.getByRole('combobox', { name: 'Thread model' }).click()
     await expect(page.getByRole('dialog', { name: 'Choose model' })).toBeVisible()
-    await page.screenshot({ animations: 'disabled', path: 'artifacts/new-thread-setup/composer-provider-models.png' })
+    await page.screenshot({ animations: 'disabled', path: join(evidence, 'composer-provider-models.png') })
     // At the 820x560 minimum the chips and the open menu stay inside the window.
     await resizeWindow(launched, 820, 560)
     await expect(page.getByRole('dialog', { name: 'Choose model' })).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-    await page.screenshot({ animations: 'disabled', path: 'artifacts/new-thread-setup/composer-chips-820.png' })
+    await page.screenshot({ animations: 'disabled', path: join(evidence, 'composer-chips-820.png') })
     await resizeWindow(launched, 1280, 800)
     await page.getByRole('option', { name: 'Claude Test', exact: true }).click()
     await page.getByRole('combobox', { name: 'Thread reasoning' }).click()
@@ -123,7 +128,7 @@ test('creates a thread in a centered popup, configures it, and sends file and pa
     await page.getByLabel('Screenshot files').setInputFiles({ name: 'screen.png', mimeType: 'image/png', buffer: screenshot })
     await expect(page.getByRole('img', { name: 'screen.png' })).toBeVisible()
     await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Review this screenshot.')
-    await page.screenshot({ animations: 'disabled', path: 'artifacts/new-thread-setup/thread-screenshot-draft.png' })
+    await page.screenshot({ animations: 'disabled', path: join(evidence, 'thread-screenshot-draft.png') })
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
     await expect(page.getByLabel('Thread transcript')).toContainText('screen.png')
     await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('')

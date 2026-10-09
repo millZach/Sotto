@@ -1,7 +1,13 @@
+import { join } from 'node:path'
+import { evidenceDirectory } from '../fixtures/evidence'
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import type { AgentRequest, AgentState } from '../../src/shared/agents'
 import { hostEntityKey } from '../../src/shared/clientIdentity'
 import { closeSotto, launchSotto,  openThreads, type LaunchedSotto } from './support/sottoLaunch'
+
+const agentQuestionsEvidence = evidenceDirectory('artifacts/codex-questions-thread-agents')
+
+const evidence = evidenceDirectory('artifacts/sidebar-question')
 
 // A provider's question or permission on a thread with no assignment never enters the coordinator's attention
 // queue, which holds requests only for threads with one. The sidebar row still has to say the thread is waiting on you,
@@ -64,13 +70,13 @@ async function expectWaiting(page: Page, title: string, waiting: 'question' | 'a
   await expect(status).toHaveAttribute('data-state', 'needs')
   await expect(status).toHaveAttribute('data-waiting', waiting)
   await expect(row(page, title).locator('.thread-nav__ring')).toHaveAttribute('data-waiting', waiting)
-  await page.screenshot({ path: `artifacts/sidebar-question/${capture}.png`, animations: 'disabled' })
+  await page.screenshot({ path: join(evidence, `${capture}.png`), animations: 'disabled' })
   await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
   const rail = page.locator(`.thread-nav__rail-thread[aria-label="${title}"]`)
   await expect(rail).toHaveAttribute('title', `${title} · ${label}`)
   await expect(rail.locator('.thread-nav__ring')).toHaveAttribute('data-state', 'needs')
   await expect(rail.locator('.thread-nav__ring')).toHaveAttribute('data-waiting', waiting)
-  await page.screenshot({ path: `artifacts/sidebar-question/${capture}-rail.png`, animations: 'disabled' })
+  await page.screenshot({ path: join(evidence, `${capture}-rail.png`), animations: 'disabled' })
   await page.getByRole('button', { name: 'Expand sidebar', exact: true }).click()
   await expect(row(page, title)).toBeVisible()
 }
@@ -109,7 +115,7 @@ test('shows a question on a thread you run in its sidebar row until you answer i
       await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
       await expect(form.getByRole('radio', { name: /The weekly report/u })).toBeVisible()
       expect(await form.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
-      await page.screenshot({ path: `artifacts/codex-questions-thread-agents/question-${width}-${appearance}.png`, animations: 'disabled' })
+      await page.screenshot({ path: join(agentQuestionsEvidence, `question-${width}-${appearance}.png`), animations: 'disabled' })
     }
   }
   await resize(app, page, 1280, 800)
@@ -119,7 +125,7 @@ test('shows a question on a thread you run in its sidebar row until you answer i
   await expect(form).toHaveCount(0)
   await expect.poll(() => pending(page, 'workshop')).toEqual([])
   await expectClear(page, 'Workshop')
-  await page.screenshot({ path: 'artifacts/sidebar-question/question-answered-1280x800-dark.png', animations: 'disabled' })
+  await page.screenshot({ path: join(evidence, 'question-answered-1280x800-dark.png'), animations: 'disabled' })
 })
 
 test('shows a permission the same way at the minimum window in light', async () => {

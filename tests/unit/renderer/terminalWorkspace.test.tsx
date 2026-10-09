@@ -12,8 +12,8 @@ import { SplitLayoutStore } from '../../../src/renderer/src/agents/splitLayout'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { TerminalWorkspaceStore } from '../../../src/renderer/src/terminals/terminalWorkspaceStore'
 import type { TerminalViewFactory, TerminalViewHandlers } from '../../../src/renderer/src/tools/terminalStore'
-import { liveAgentState, threadsStateFixture } from './liveAgentState'
-import { paneMenuItem } from './paneMenu'
+import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
+import { paneMenuItem } from '../../fixtures/renderer/paneMenu'
 
 vi.mock('../../../src/renderer/src/tools/terminalView', () => { throw new Error('Chunk unavailable') })
 

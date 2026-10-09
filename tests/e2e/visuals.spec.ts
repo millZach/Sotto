@@ -1,15 +1,16 @@
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import type { AgentMessage } from '../../src/shared/agents'
 import { closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
 import { quietShot, scrollToCard, slowMotion, textContrasts, visualize, type ToolReply } from './support/visualCards'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 // A visual an agent draws in its thread (ADR-0056, #792), in the running app: the visualize tool is called as the
 // thread's agent would call it, and the card lands in the open thread between the words before and after the call.
-const SHOTS = resolve('artifacts/visual-in-thread')
+const SHOTS = evidenceDirectory('artifacts/visual-in-thread')
 // A minute ago, so the folded turn's "Worked for" line reads as the short turn it was.
 const START = Date.now() - 60_000
 const at = (second: number): string => new Date(START + second * 1000).toISOString()

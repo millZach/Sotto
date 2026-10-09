@@ -25,12 +25,12 @@ Rendered review on 2026-09-13, branch `work/phase3-ui` at 713e426, built with `n
 
 | Journey | Spec | Real | Fixture (labeled) | Result |
 |---|---|---|---|---|
-| Changes, Terminal, Browser, per-link menu, reduced motion | `tests/e2e/phase-three-ui.spec.ts` (tools) | AppShell, renderer, preload, IPC, the production Git, PTY and browser services, a Git working copy inside the owned profile, PowerShell, a local HTTP page | The coding provider (`success` E2E scenario) supplies the Workshop thread and its link message | pass, 3 of 3 repeats |
-| Start, continue, disconnect, restart, unsupported default | `tests/e2e/phase-three-ui.spec.ts` (chats) | AppShell, renderer, preload, IPC, the production personal chat service and its saved store, a restart on the same profile | The personal Codex connection (`E2EPersonalChatHost`) replies with fixed markdown and offers the `brainstorm` skill | pass, 3 of 3 repeats |
+| Changes, Terminal, Browser, per-link menu, reduced motion | `tests/e2e/tools-workspace.spec.ts` (tools) | AppShell, renderer, preload, IPC, the production Git, PTY and browser services, a Git working copy inside the owned profile, PowerShell, a local HTTP page | The coding provider (`success` E2E scenario) supplies the Workshop thread and its link message | pass, 3 of 3 repeats |
+| Start, continue, disconnect, restart, unsupported default | `tests/e2e/tools-workspace.spec.ts` (chats) | AppShell, renderer, preload, IPC, the production personal chat service and its saved store, a restart on the same profile | The personal Codex connection (`E2EPersonalChatHost`) replies with fixed markdown and offers the `brainstorm` skill | pass, 3 of 3 repeats |
 | Shared tools panel file browsing | `tests/e2e/files-panel.spec.ts` | as above | coding provider | pass |
 | Activity rows, live line, restored history, minimum width, reduced motion | `tests/e2e/thread-activity.spec.ts` | as above | coding provider activities | pass (4 tests) |
-| Provider skills in the thread composer | `tests/e2e/phase-three-skills-bridge.spec.ts` | as above | coding provider skills | pass |
-| Terminal output across reload, Git diff containment, embedded page isolation | `tests/e2e/phase-three-tools-bridge.spec.ts` | as above | coding provider | pass (2 tests) |
+| Provider skills in the thread composer | `tests/e2e/provider-native-skills.spec.ts` | as above | coding provider skills | pass |
+| Terminal output across reload, Git diff containment, embedded page isolation | `tests/e2e/native-tool-ownership.spec.ts` | as above | coding provider | pass (2 tests) |
 
 Every journey runs on an owned temporary profile seeded with `onboardingComplete: true`. None reads the user's profile, and no installed native client or paid provider ran.
 
@@ -43,7 +43,7 @@ Unit coverage for the same surfaces:
 Captures:
 - `artifacts/phase-three-ui/`: tools and Chats, from this review
 - `artifacts/thread-activity/`: #64/#65
-- `artifacts/crossing/phase3-requests-*`: request card journeys, from the requests worker
+- `artifacts/crossing/request-forms-*`: request card journeys, from the requests worker
 
 ### Capture limitation: the embedded page
 
@@ -101,7 +101,7 @@ The browser page is a main-owned `WebContentsView` layered over the window, and 
 
 ### Known gaps for integration
 
-- **Requests spec assertion.** `tests/e2e/phase-three-requests.spec.ts:260` (requests worker) expects "Jump to latest" to be visible at scrollTop 0 in 820x560 with the approval card in view. 2e12d20 deliberately hides Jump while a request card reaches its bottom band, so that one assertion now fails. With only that line changed to `toHaveCount(0)`, the whole spec passes. I checked this with a throwaway copy that was not committed.
+- **Requests spec assertion.** `tests/e2e/native-request-forms.spec.ts:260` (requests worker) expects "Jump to latest" to be visible at scrollTop 0 in 820x560 with the approval card in view. 2e12d20 deliberately hides Jump while a request card reaches its bottom band, so that one assertion now fails. With only that line changed to `toHaveCount(0)`, the whole spec passes. I checked this with a throwaway copy that was not committed.
 - **Stale request tests.** `tests/unit/renderer/threadsView.test.tsx` has 2 stale request tests. They fail on the baseline too (see requests-result.md), and they still fail after merging main at 10439a8. This branch did not cause them.
 - **Provider name casing.** The backend's unsupported-reasoning reason names the provider by its lower-case id ("claude"), and Chats shows it verbatim.
 

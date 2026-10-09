@@ -10,7 +10,7 @@ import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import {
   detectSkillTrigger, hasSkillMention, insertSkill, pickableSkills, retainSkillReferences, skillLimitReached, skillSigils, skillToken,
 } from '../../../src/renderer/src/agents/composerSkills'
-import { liveAgentState, threadsStateFixture } from './liveAgentState'
+import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 

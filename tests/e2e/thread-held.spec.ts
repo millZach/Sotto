@@ -5,9 +5,10 @@ import type { AgentActivity } from '../../src/shared/agentActivity'
 import type { SottoE2EBridge } from '../../src/shared/e2e'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 import { hostKeysPerTest } from './support/hostKeys'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 type HostEvent = Parameters<NonNullable<SottoE2EBridge['agentEvent']>>[0]
-const evidence = resolve('artifacts/held-action')
+const evidence = evidenceDirectory('artifacts/held-action')
 /** Mirrors HELD_AFTER_MS. A copy, so a change to the rule has to be made deliberately here too. */
 const HELD_AFTER_MS = 20_000
 const command = 'npm test -- --maxWorkers=2'

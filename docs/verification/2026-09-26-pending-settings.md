@@ -8,7 +8,9 @@ fixture host. Through the e2e bridge the spec holds its thread settings changes 
 (`settings` with `hold` and `release`), has the next one refused outright (`refuse`) or refused with a reason
 (`reject`), or has it answered with no result and an error, as a lost answer is (`settings-unconfirmed`), keeping the
 change for the thread's next start, which `apply` stands for. The captures it cites are in `artifacts/pending-settings/`;
-every capture the run takes lands in the ignored `artifacts/pending-settings-run/`. The design is variant A of the
+current runs put every capture in ignored `artifacts/e2e-runs/pending-settings-run/` by default, or
+`artifacts/pending-settings-run/` with `SOTTO_E2E_EVIDENCE=publish`. See [E2e evidence](../ci.md#e2e-evidence)
+for the root override. The design is variant A of the
 mock-up, recorded in `docs/plans/2026-09-26-pending-settings.md`.
 
 The fixture's model names its provider "Claude" and its threads carry no provider, so the running app says "Claude"

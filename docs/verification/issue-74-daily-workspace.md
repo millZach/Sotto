@@ -24,7 +24,7 @@ The fixture provider intentionally starts from seeded provider history after res
 npx playwright test tests/e2e/daily-workspace.spec.ts --workers=1 --output=test-results/issue74-daily
 ```
 
-Run `npm run build` first when source changed. Curated captures and the actual local commit identities are written to `artifacts/issue-74-daily-workspace/`. The test failure captures are diagnostics, not passing acceptance evidence.
+Run `npm run build` first when source changed. Captures and the actual local commit identities are written to ignored `artifacts/e2e-runs/issue-74-daily-workspace/` by default, or `artifacts/issue-74-daily-workspace/` with `SOTTO_E2E_EVIDENCE=publish`. See [E2e evidence](../ci.md#e2e-evidence) for the root override. The test failure captures are diagnostics, not passing acceptance evidence.
 
 Verified on Windows on 2026-09-14 against the rebuilt app: **2/2 passed in 27.1 seconds** (daily tools/publish 20.3 s; recovery 6.2 s). Scoped ESLint passed. The saved local proof records distinct original/committed hashes, confirms the bare remote has exactly the reviewed new commit, and records zero renderer errors and zero real GitHub writes.
 
@@ -40,7 +40,7 @@ The pane tab strip correctly replaces the side-by-side layout when Tools reduces
 
 ## Complementary coverage and release limits
 
-- Personal chat/provider ownership: `phase-four-personal-providers.spec.ts`; editable prompt generation: `phase-four-prompts.spec.ts`; native skill references: `phase-three-skills-bridge.spec.ts`.
+- Personal chat/provider ownership: `phase-four-personal-providers.spec.ts`; editable prompt generation: `phase-four-prompts.spec.ts`; native skill references: `provider-native-skills.spec.ts`.
 - Voice routing uses the deterministic microphone/transcription fixtures in `phase-five-personal-voice.spec.ts`; physical microphone, transcription latency and actual voice playback remain deferred for issue 74.
 - Real native provider/account checks and long-history local-feedback/stream/pane measurements are separate issue-74 lanes; their reports must distinguish network latency from local renderer timing.
 - This harness runs on Windows. Important journeys have not been repeated on supported Apple-silicon macOS in this session and must not be called cross-platform verified.

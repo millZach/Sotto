@@ -42,7 +42,7 @@ Grok imports Claude plugin settings independently of some compatibility flags. S
 
 ## Validation and limits
 
-The focused Grok suite runs real subprocess fixtures while replacing only the external client. It covers native default/model/effort discovery, exact selection acknowledgements, sign-out without fallback, wrong/unavailable choices, private output handling, size/time bounds, permission/tool rejection, and temporary session cleanup. Run `npx vitest run tests/unit/main/subscriptionGrok.test.ts`. The live checks used the production class bundled by the existing esbuild dependency into an owned temporary directory, then called `status()` and `complete(system, input, 'grok-4.5', 'low')`.
+The focused Grok suite runs real subprocess fixtures while replacing only the external client. It covers native default/model/effort discovery, exact selection acknowledgements, sign-out without fallback, wrong/unavailable choices, private output handling, size/time bounds, permission/tool rejection, and temporary session cleanup. Run `npx vitest run tests/integration/subscriptionGrok.test.ts`. The live checks used the production class bundled by the existing esbuild dependency into an owned temporary directory, then called `status()` and `complete(system, input, 'grok-4.5', 'low')`.
 
 Launches use an absolute native executable, argument arrays, no shell, hidden windows, bounded output, a 20-second status deadline and a 180-second completion deadline. Sotto waits for native process close before deleting the temporary session, with a bounded force-kill escalation. The user's native login and configuration remain outside that cleanup tree.
 

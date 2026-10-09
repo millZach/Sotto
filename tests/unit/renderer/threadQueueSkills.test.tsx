@@ -11,7 +11,7 @@ import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftSt
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { ThreadComposer } from '../../../src/renderer/src/agents/ThreadComposer'
 import { describeThreads } from '../../../src/renderer/src/agents/threadFacts'
-import { liveAgentState, threadsStateFixture } from './liveAgentState'
+import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 

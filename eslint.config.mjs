@@ -5,6 +5,7 @@ export default tseslint.config(
   {
     ignores: [
       'artifacts/voice-control-removal/merged-setup/**',
+      'artifacts/e2e-runs/**',
       'artifacts/linux-hyprland-paste/**',
       'artifacts/linux-no-window-controls/**',
       'artifacts/visuals-live/**',

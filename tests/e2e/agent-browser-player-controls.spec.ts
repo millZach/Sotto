@@ -1,14 +1,15 @@
 import { createServer } from 'node:http'
 import { mkdir, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 // Evidence for the browser player's keyboard and pointer resize/move path, and the corner-resize jump fix
 // (two-axis review of #331's floating player). `agent-browser.spec.ts` and `tools-sidecar.spec.ts` already cover
 // the player's layout, contrast and lifecycle at every window size; this spec covers what those never drove with
 // real pointer and keyboard input.
-const SHOTS = resolve('artifacts/thread-browser-player')
+const SHOTS = evidenceDirectory('artifacts/thread-browser-player')
 const CONTENT = `<!doctype html><html><head><title>Fieldnotes</title></head><body><h1>Fieldnotes</h1></body></html>`
 
 async function resize(launched: LaunchedSotto, width: number, height: number): Promise<void> {

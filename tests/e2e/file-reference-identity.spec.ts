@@ -4,8 +4,9 @@ import { expect, test } from '@playwright/test'
 import type { AgentCommand, AgentCommandReceipt } from '../../src/shared/agents'
 import { hostKeys } from './support/hostKeys'
 import { closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
-const ARTIFACTS = 'artifacts/review-381/electron'
+const ARTIFACTS = evidenceDirectory('artifacts/review-381/electron')
 type Prompt = Extract<AgentCommand, { type: 'manual-send' }>
 type Receipt = Pick<AgentCommandReceipt, 'error' | 'notice' | 'deliveries' | 'deliveredDrafts' | 'followups'>
 interface Evidence {

@@ -1,10 +1,13 @@
 import { mkdir, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 import type { AgentActivity, ObservedAgent } from '../../src/shared/agentActivity'
+import { evidenceDirectory } from '../fixtures/evidence'
 
-const shots = resolve('artifacts/agents-view')
+const questionEvidence = evidenceDirectory('artifacts/codex-questions-thread-agents')
+
+const shots = evidenceDirectory('artifacts/agents-view')
 async function activity(page: Page, children: ObservedAgent[]): Promise<void> {
   await page.evaluate(async agents => {
     const observedAt = new Date().toISOString()
@@ -101,7 +104,7 @@ test('Agents follows the approved roomier view, keeps history, and reports live 
     await page.getByRole('button', { name: 'Tools', exact: true }).click()
     await expect(page.getByText('No agents spawned in this thread yet.')).toBeVisible()
     await expect(roster.locator('.subagent-item')).toHaveCount(0)
-    await page.screenshot({ path: resolve('artifacts/codex-questions-thread-agents/agents-selected-docs-pinned-workshop.png'), animations: 'disabled' })
+    await page.screenshot({ path: join(questionEvidence, 'agents-selected-docs-pinned-workshop.png'), animations: 'disabled' })
     await page.getByRole('tab', { name: 'Files', exact: true }).click()
     await expect(page.locator('.tools-panel__thread-title')).toHaveText('Workshop')
     await page.getByRole('button', { name: 'Unpin from Workshop', exact: true }).click()

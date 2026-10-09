@@ -4,9 +4,10 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 import type { SottoE2EBridge } from '../../src/shared/e2e'
 import { closeSotto, launchSotto,  openThreads, userMessageTexts, type LaunchedSotto } from './support/sottoLaunch'
 import { hostKeysPerTest } from './support/hostKeys'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 type HostEvent = Parameters<NonNullable<SottoE2EBridge['agentEvent']>>[0]
-const evidence = resolve('artifacts/process-creature')
+const evidence = evidenceDirectory('artifacts/process-creature')
 const longTask = { id: '295a79c7-ae96-4126-b926-f724eb24483b', label: 'Watching the pull request checks while the build and integration suites finish. '.repeat(4).slice(0, 240).trimEnd() }
 const secondTask = { id: '9460a2b0-2368-4cc0-8fe8-91a0144d6b87', label: 'Watching the deployment result' }
 const monitorTask = { id: '56d13d2c-f6d0-4968-a9ed-18c87a7d5b5a', label: 'Watching the build checks' }
@@ -254,7 +255,7 @@ test('completion notice keeps the live process perch, draft, and send action usa
   } finally { await closeSotto(launched) }
 })
 
-const workingEvidence = resolve('artifacts/working-creature')
+const workingEvidence = evidenceDirectory('artifacts/working-creature')
 const agents = ['Review the diff for standards', 'Audit the renderer for performance', 'Check every claim against its callers',
   'Verify the release notes', 'Diagnose the effort meter', 'Source the provider mark', 'Summarise the findings']
   .map((label, index) => ({ id: `6f0c1a2e-8f4b-4d3c-9a1e-${String(index).padStart(12, '0')}`, label, type: 'subagent' as const }))
@@ -368,7 +369,7 @@ test('background work sends agents out from the readout, yields to a watch, and 
   } finally { await closeSotto(launched) }
 })
 
-const commandEvidence = resolve('artifacts/background-command')
+const commandEvidence = evidenceDirectory('artifacts/background-command')
 const gates = (startedAt = new Date(Date.now() - 252_000).toISOString()) =>
   ({ id: '7a1d2b3c-8f4b-4d3c-9a1e-000000000000', label: 'Run all CI gates', type: 'command' as const, startedAt })
 

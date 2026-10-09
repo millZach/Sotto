@@ -17,7 +17,7 @@ import type { AgentBridge, AgentState } from '../../../src/shared/agents'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 import { agentBridgeFor, agentWireBridge } from '../../fixtures/agentBridge'
 import { handleOf, PIXEL_PNG, stageInto } from '../../fixtures/stagedImages'
-import { threadsStateFixture } from './liveAgentState'
+import { threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 

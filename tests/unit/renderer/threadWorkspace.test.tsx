@@ -10,8 +10,8 @@ import { sendThreadRevision } from '../../../src/renderer/src/agents/ThreadCompo
 import { ThreadDraftStore, submissionStatus } from '../../../src/renderer/src/agents/threadDraftStore'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { describeThreads, organizeWorkspace } from '../../../src/renderer/src/agents/threadFacts'
-import { liveAgentState, threadsStateFixture } from './liveAgentState'
-import { openPaneMenu, paneMenuItem } from './paneMenu'
+import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
+import { openPaneMenu, paneMenuItem } from '../../fixtures/renderer/paneMenu'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 

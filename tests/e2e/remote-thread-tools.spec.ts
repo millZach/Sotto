@@ -8,8 +8,9 @@ import { build } from 'vite'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, launchSotto, openPage, type LaunchedSotto } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
-const SHOTS = resolve('artifacts/remote-thread-tools')
+const SHOTS = evidenceDirectory('artifacts/remote-thread-tools')
 
 async function resize(app: ElectronApplication, width: number, height: number): Promise<void> {
   await app.evaluate(({ BrowserWindow }, size) => {

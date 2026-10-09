@@ -59,7 +59,7 @@ All results are on Windows, from the final working tree:
 - `tests/e2e/workspace-performance.spec.ts`: passed twice after the fix, both history sizes, with every guard.
 - A 91-case Playwright run covered the earlier 79-case set plus the daily workflow, Phase 3 UI, attention, controller, visual-fix and voice recovery specs: **89 passed, 2 failed**.
   - Personal voice dictation failed once in the long run and once in four focused reruns. The fault was in the test, not the app: it typed into the composer right after clicking New chat, before the new chat was selected, so the text sometimes landed in the previous chat's draft and the new chat held only the transcript. The saved drafts from a failing run confirmed it. `phase-five-personal-voice.spec.ts` and `phase-four-personal-providers.spec.ts`, which had the same race, now wait for a newly selected chat and a focused composer. Afterwards the voice spec passed 8 of 8 runs and the providers spec 3 of 3.
-  - `phase-three-final-visual-fixes.spec.ts:116` expects theme preview badges that the Settings redesign (6c72d7d, #73) no longer renders. It fails identically without this work, so it is a stale test outside #74, not fixed here.
+  - `theme-editor-and-request-layout.spec.ts:116` expects theme preview badges that the Settings redesign (6c72d7d, #73) no longer renders. It fails identically without this work, so it is a stale test outside #74, not fixed here.
 - `npm run package:dir` passed: packaged resources, provenance, SQLite memory store, packaged terminal (`SOTTO_PTY_PACKAGE_OK`) and the audio smoke check. No installer was built or published.
 
 Still pending: Apple silicon macOS (deferred by Zach), physical microphone (#81), and publishing through review and merge.

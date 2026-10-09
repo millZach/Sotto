@@ -9,7 +9,7 @@ On September 21 `%APPDATA%\sotto` held 31.8 GB in 758,435 files. `thread-worktre
 ## Unit and integration
 
 ```powershell
-npx vitest run tests/unit/main/threadWorktrees.test.ts tests/unit/main/worktreeCleanup.test.ts tests/unit/main/workspace.test.ts tests/unit/renderer/threadWorktreeReclaim.test.tsx tests/unit/shared/settings.test.ts --maxWorkers=2
+npx vitest run tests/unit/main/threadWorktrees.test.ts tests/integration/worktreeCleanup.test.ts tests/unit/main/workspace.test.ts tests/unit/renderer/threadWorktreeReclaim.test.tsx tests/unit/shared/settings.test.ts --maxWorkers=2
 ```
 
 - `threadWorktrees.test.ts` (3 new, real Git): a clean worktree is reclaimed and `restore` puts it back on its branch with its commits; uncommitted work goes only with the user's answer and never for a rule, even one told `withUncommittedChanges`; a rule leaves alone a folder with `out/` among its ignored files; a `node_modules` junction to a folder outside the worktree is refused and the folder behind it is untouched; a detached HEAD and a shared folder are refused.

@@ -1,11 +1,12 @@
 import { createServer } from 'node:http'
 import { mkdir, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import type { BrowserTask } from '../../src/shared/browser'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
-const SHOTS = resolve('artifacts/test-iphone')
+const SHOTS = evidenceDirectory('artifacts/test-iphone')
 // A small phone app, like an Expo web build: a list taller than the screen, a field and a button that answer touch.
 const APP = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Daybook</title><style>*{box-sizing:border-box}body{margin:0;background:#f4f3f8;color:#1d1b29;font:16px system-ui}main{padding:56px 22px 40px}h1{font-size:32px;margin:0 0 4px;letter-spacing:-.02em}small{color:#6e6b80;letter-spacing:.1em;text-transform:uppercase;font-size:11px}#habit{display:block;width:100%;margin:22px 0 10px;padding:12px 14px;border:2px solid #7b5cc2;border-radius:14px;font:inherit;background:#fff}#add{width:100%;padding:13px;border:0;border-radius:14px;background:#7b5cc2;color:#fff;font:600 16px system-ui}ul{list-style:none;padding:0;margin:22px 0 0}li{background:#fff;border-radius:14px;padding:16px;margin-bottom:10px}</style></head><body><main><h1>Daybook</h1><small>Your routines</small><input id="habit" placeholder="New habit" aria-label="New habit"><button id="add" ontouchend="window.touched=true">Add habit</button><ul id="list">${Array.from({ length: 12 }, (_, index) => `<li>Routine ${index + 1}</li>`).join('')}</ul></main><script>const add=()=>{const v=document.querySelector('#habit').value.trim();if(!v)return;const li=document.createElement('li');li.textContent=v;document.querySelector('#list').prepend(li);document.querySelector('#habit').value=''};document.querySelector('#add').addEventListener('click',add);document.querySelector('#habit').addEventListener('keydown',e=>{if(e.key==='Enter')add()})</script></body></html>`
 

@@ -71,7 +71,7 @@ Ranked hypotheses recorded after that red run and before the fix:
 Verification after this separate fix:
 
 - `atomicJsonStoreRename.test.ts` plus the existing `atomicJsonStore.test.ts`: **35 passed, 1 skipped** in 2.86 seconds. The skip is the existing Windows symlink-permission case. New coverage checks both transient codes, bounded permanent denial, same temporary-file reuse, original-file preservation, temporary cleanup, immediate unrelated/platform-specific failures, and queued write ordering.
-- The original `codexHost.test.ts` cases matching `late send acknowledgement|rejection arrives after the deadline`: **both passed in five consecutive runs**, with no fixture or provider changes.
+- The original `codexAdapterBoundary.test.ts` cases matching `late send acknowledgement|rejection arrives after the deadline`: **both passed in five consecutive runs**, with no fixture or provider changes.
 - Node typechecking, ESLint on both changed TypeScript files, and `git diff --check` passed.
 
 No full suite was run for the storage follow-up. The bounded retry addresses temporary replacement denials; permanent filesystem failure still reaches the caller rather than being reported as durable success.

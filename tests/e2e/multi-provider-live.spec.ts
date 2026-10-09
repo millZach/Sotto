@@ -6,6 +6,9 @@ import type { AgentState, ProviderId } from '../../src/shared/agents'
 import { PROVIDER_LABELS } from '../../src/shared/agents'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { firstSottoWindow, openThreads } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
+
+const artifacts = evidenceDirectory('artifacts/multi-provider-live')
 
 // Opt in separately from the single-provider smoke. Exactly three native turns;
 // restore-only mode never creates a thread or sends another prompt.
@@ -102,7 +105,6 @@ test('three native providers coexist independently of Sotto reasoning and surviv
     // Prevent legacy-profile migration; all provider connections use the real UI.
     await writeFile(join(profile, 'settings.json'), JSON.stringify({ onboardingComplete: true }))
   }
-  const artifacts = resolve('artifacts/multi-provider-live')
   await mkdir(artifacts, { recursive: true })
   const evidence: Record<string, unknown> = { root, project, syntheticOnly: true, restoreOnly: !!restoreRoot,
     startedAt: new Date().toISOString(), submittedProviders: [] }

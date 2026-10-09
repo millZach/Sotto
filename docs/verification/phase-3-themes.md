@@ -38,7 +38,7 @@ Other checks:
 - `npm run notices:verify` verified 170 components.
 - The full suite is root's final gate and was not run here.
 
-Electron, after `npm run build`, `SOTTO_THEMES_E2E=1 npx playwright test tests/e2e/phase-three-themes.spec.ts --workers=1`: 3 passed (about 37 s). One earlier run of the whole file failed test 1 at 8.4 s on a visibility check, and that run's output was overwritten. The next two whole-file runs and three repeats of test 1 passed.
+Electron, after `npm run build`, `SOTTO_THEMES_E2E=1 npx playwright test tests/e2e/theme-library-evidence.spec.ts --workers=1`: 3 passed (about 37 s). One earlier run of the whole file failed test 1 at 8.4 s on a visibility check, and that run's output was overwritten. The next two whole-file runs and three repeats of test 1 passed.
 
 1. **The whole themes journey (about 22 s).** Every item in the checklist above, plus:
    - keyboard activation of a theme card keeps focus;
