@@ -92,7 +92,7 @@ Each case still gets fresh state; no mutable coordinator, repository or app is s
 ### 4. Skips, environments and the record
 
 - Every skip shows its reason.
-- `tests/integration/adapterContract.ts` and `tests/integration/hostServiceContract.ts` decide a capability skip before starting the fixture.
+- `tests/integration/adapterContract.ts` and `tests/integration/hostServiceContract.ts` decide skips for known fixture features before constructing or connecting the fixture. Thread-settings result checks still wait for the connected provider's configuration capability and advertised model modes before deciding whether an alternative setting exists.
 - Pure tests that inherit jsdom get the node environment header.
 - `docs/ci.md` records the new baseline next to the old one.
 - The PR reports wall time before and after, and closes #123.

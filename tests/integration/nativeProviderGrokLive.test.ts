@@ -17,9 +17,6 @@ describe("requires SOTTO_PHASE3_GROK_LIVE=1", () => {
       expect((await host.snapshot()).threads[0]).toMatchObject({ modelId: 'grok-4.6', reasoningEffort: 'low', status: 'idle' })
     } finally { host.disconnect(); await host.closed() }
   }, 30000)
-})
-
-describe("requires SOTTO_PHASE3_GROK_LIVE=1", () => {
   it.skipIf(process.env.SOTTO_PHASE3_GROK_LIVE !== '1')('Grok native selected/manual expansion, command result and history reload', async () => {
     const root = await mkdtemp(join(tmpdir(), 'sotto-phase3-grok-adapter-')); const nonce = `EXPANDED_${randomUUID().replaceAll('-', '')}`
     const name = 'sotto-phase3-check'; const path = join(root, '.grok', 'skills', name)

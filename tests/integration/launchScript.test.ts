@@ -320,8 +320,6 @@ describe("POSIX shell and version-manager probe", () => {
     hosts.push(outcome.messages.at(-1)!.pid as number)
     await expect(readFile(mark, 'utf8')).resolves.toBe('')
   })
-})
-describe("POSIX shell and version-manager probe", () => {
   it.skipIf(!posix)('reports a Node too old for the archive as node-too-old with its version, and starts nothing', async () => {
     const configuration = await fixture()
     await writeFile(join(configuration.installPath, 'runtime-manifest.json'), JSON.stringify({ node: '>=99 <100' }))
