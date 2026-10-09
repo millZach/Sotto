@@ -95,6 +95,17 @@
 .terminal-search button:hover { color: var(--tt-text); background: var(--tt-hover); }
 .terminal-search button:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
 .terminal-search button:disabled { opacity: .45; cursor: default; }
+.terminal-links { position: absolute; inset: 48px 12px auto; z-index: 3; max-height: calc(100% - 56px); display: flex; flex-direction: column; padding: 8px; border: 1px solid var(--tt-hairline); border-radius: 9px; background: var(--tt-panel); color: var(--tt-text); box-shadow: var(--tt-shadow-overlay); }
+.terminal-links[hidden] { display: none; }
+.terminal-links header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 4px 6px; }
+.terminal-links strong { font-size: 12.5px; }
+.terminal-links button { border: 0; border-radius: 6px; background: transparent; color: var(--tt-text); font: inherit; cursor: pointer; text-align: left; padding: 6px 8px; }
+.terminal-links button:hover { background: var(--tt-hover); }
+.terminal-links button:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
+.terminal-links__list { min-height: 0; overflow: auto; }
+.terminal-links__list button { display: block; width: 100%; overflow-wrap: anywhere; }
+.terminal-links small { display: block; color: var(--tt-text-muted); font-size: 12px; }
+.terminal-links p { margin: 8px; color: var(--tt-text-muted); font-size: 12.5px; }
 .terminal-view .xterm { height: 100%; }
 /* xterm paints its viewport #000 whatever the theme; the part below the last whole row would show as a black band. */
 .terminal-view .xterm .xterm-viewport { background-color: transparent; scrollbar-width: thin; scrollbar-color: var(--tt-terminal-scrollbar, var(--tt-scrollbar)) transparent; }

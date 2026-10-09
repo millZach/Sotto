@@ -8,6 +8,7 @@ vi.mock('@xterm/addon-webgl', () => ({ WebglAddon: class { dispose(): void {} on
 vi.mock('@xterm/xterm', () => ({
   Terminal: class {
     readonly unicode = { activeVersion: "6" }
+    readonly parser = { registerOscHandler: () => ({ dispose() {} }) }
     readonly options: Record<string, unknown>
     keys?: KeyHandler
     selection = 'selected text'

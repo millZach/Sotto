@@ -4,7 +4,7 @@ import { SearchAddon } from '@xterm/addon-search'
 const HIGHLIGHT_LIMIT = 1_000
 
 /** The approved inline search bar, owned by the view so hiding a pane keeps its query and scrollback. */
-export function terminalSearch(terminal: Terminal, element: HTMLElement, resolve: (css: string) => string | null, onVisibilityChange?: (open: boolean) => void) {
+export function terminalSearch(terminal: Terminal, element: HTMLElement, resolve: (css: string) => string | null, onVisibilityChange?: (open: boolean) => void, onOpenLinks?: () => void) {
   const addon = new SearchAddon({ highlightLimit: HIGHLIGHT_LIMIT })
   terminal.loadAddon(addon)
   const bar = document.createElement('div')
@@ -31,6 +31,11 @@ export function terminalSearch(terminal: Terminal, element: HTMLElement, resolve
   const next = button('Next match', 'Next match (Enter)', 'm6 9 6 6 6-6')
   const close = button('Close search', 'Close search (Escape)', 'M18 6 6 18M6 6l12 12')
   bar.append(input, count, previous, next, close)
+  if (onOpenLinks) {
+    const links = button('Open terminal link', 'Open terminal link', 'M15 3h6v6M10 14 21 3M21 14v7H3V3h7')
+    links.addEventListener('click', onOpenLinks)
+    bar.insertBefore(links, close)
+  }
   const resultChanges = addon.onDidChangeResults(result => {
     const total = `${result.resultCount}${result.resultCount >= HIGHLIGHT_LIMIT ? '+' : ''}`
     count.textContent = !input.value ? '' : result.resultCount === 0 ? 'No matches' : result.resultIndex < 0 ? `${total} matches` : `${result.resultIndex + 1} of ${total}`

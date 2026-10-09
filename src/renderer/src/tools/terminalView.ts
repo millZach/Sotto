@@ -6,7 +6,7 @@ import { Unicode11Addon } from '@xterm/addon-unicode11'
 import '@xterm/xterm/css/xterm.css'
 import type { TerminalViewHandlers, TerminalViewLike } from './terminalStore'
 import { writeClipboard } from '../agents/richActions'
-import { externalLinkSchema } from '../../../shared/externalLinks'
+import { isTerminalLink, TERMINAL_URL_PATTERN, terminalLinkCatalog, terminalLinkPicker } from './terminalLinks'
 import { terminalSearch } from './terminalSearch'
 import { followTerminalFontSize, terminalFontSize, terminalShortcut, zoomTerminal } from './terminalPreferences'
 
@@ -130,26 +130,29 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
   const seeThrough = (): boolean => handlers.followsFrost === true && document.documentElement.dataset.frost !== undefined
   let theme = terminalTheme(document.documentElement, resolveColor, seeThrough())
   let painted = JSON.stringify(theme)
-  const openLink = (event: MouseEvent, uri: string): void => {
-    if (event.button !== 0 || event.altKey || !(platform === 'darwin' ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey)) return
-    if (!externalLinkSchema.safeParse(uri).success || !/^https?:/iu.test(uri)) return
-    event.preventDefault()
+  const openLink = (uri: string): void => {
+    if (!isTerminalLink(uri)) return
     const open = window.sotto?.openExternalLink
     if (!open) { handlers.onNotice?.('The link could not open. Copy it into your browser.'); return }
     void open(uri).then(result => {
       if (!disposed) handlers.onNotice?.(result.ok ? null : 'The link could not open. Copy it into your browser.')
     }, () => { if (!disposed) handlers.onNotice?.('The link could not open. Copy it into your browser.') })
   }
+  const clickLink = (event: MouseEvent, uri: string): void => {
+    if (event.button !== 0 || event.altKey || !(platform === 'darwin' ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey)) return
+    event.preventDefault()
+    openLink(uri)
+  }
   const terminal = new Terminal({
     // Search decorations and the Unicode provider are xterm's proposed APIs, supplied by its pinned addons.
     fontFamily: monoFont(), fontSize: terminalFontSize(), lineHeight: 1.25, scrollback: 5_000, cursorBlink: blinks(), allowProposedApi: true,
-    linkHandler: { activate: openLink, allowNonHttpProtocols: false },
+    linkHandler: { activate: clickLink, allowNonHttpProtocols: false },
     theme, minimumContrastRatio: 4.5, disableStdin: true, convertEol: false, screenReaderMode: false, allowTransparency: handlers.followsFrost === true,
     ...(platform === 'win32' ? { windowsPty: { backend: 'conpty' as const } } : {}),
   })
   const fit = new FitAddon()
   terminal.loadAddon(fit)
-  terminal.loadAddon(new WebLinksAddon(openLink))
+  terminal.loadAddon(new WebLinksAddon(clickLink, { urlRegex: TERMINAL_URL_PATTERN }))
   terminal.loadAddon(new Unicode11Addon())
   terminal.unicode.activeVersion = '11'
   const element = document.createElement('div')
@@ -163,12 +166,14 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
   let opened = false
   let inputEnabled = false
   let disposed = false
+  const catalog = terminalLinkCatalog(terminal)
+  const picker = terminalLinkPicker(element, catalog, openLink)
   const search = terminalSearch(terminal, element, resolveColor, visible => {
     element.toggleAttribute('data-search-open', visible)
     const grid = view.fit()
     if (grid) handlers.onResize?.(grid)
     respace()
-  })
+  }, () => picker.open())
   let selectionRevision = 0
   const selectionChanges = terminal.onSelectionChange(() => { selectionRevision++ })
   // xterm reports a dragged selection on release. Protect it from queued copies from the first press.
@@ -224,13 +229,13 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
     if (shortcut) {
       event.preventDefault()
       event.stopPropagation()
-      if (shortcut === 'search') search.open()
+      if (shortcut === 'search') { picker.close(); search.open() }
       else void zoomTerminal(shortcut).then(saved => {
         if (!saved && !disposed) handlers.onNotice?.('The text size could not be saved. Try the shortcut again.')
       })
       return true
     }
-    if (!event.isComposing && event.key === 'Escape' && search.close()) { event.preventDefault(); event.stopPropagation(); return true }
+    if (!event.isComposing && event.key === 'Escape' && (picker.close() || search.close())) { event.preventDefault(); event.stopPropagation(); return true }
     return false
   }
   // Capture also covers the search controls; only keys from this view can claim terminal shortcuts.
@@ -303,7 +308,7 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
     },
     unmount() { if (element.contains(document.activeElement)) reportFocus(false); releaseRenderer(); element.remove() },
     write(data, done) { terminal.write(data, done) },
-    reset() { terminal.reset() },
+    reset() { catalog.clear(); terminal.reset() },
     setInputEnabled(enabled) {
       inputEnabled = enabled
       terminal.options.disableStdin = !enabled
@@ -328,6 +333,8 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
       systemMotion.removeEventListener('change', followMotion)
       stopFollowingFont()
       search.dispose()
+      picker.dispose()
+      catalog.dispose()
       releaseRenderer()
       terminal.dispose()
       element.remove()
