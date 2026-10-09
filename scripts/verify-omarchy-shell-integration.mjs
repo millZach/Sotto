@@ -10,7 +10,7 @@ import { appendFileSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, 
 import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { setTimeout as wait } from 'node:timers/promises'
-import { assertPlainTree, copyRegularTree, prepareSandboxHome, snapshotTree } from './omarchy-shell-sandbox.mjs'
+import { assertPlainTree, copyRegularTree, prepareSandboxHome, rewriteSandboxConfig, snapshotTree, validateSandboxConfig } from './omarchy-shell-sandbox.mjs'
 import { assertProofInstancesPreserved, createOwnedProofProcesses, installProofCleanup, isProofProcessAlive, snapshotProofInstances, terminateThenCleanup } from './owned-proof-processes.mjs'
 
 const run = promisify(execFile)
@@ -230,11 +230,7 @@ async function orchestrate() {
     symlinkSync(join(live.XDG_RUNTIME_DIR, b.wl_socket), join(runtime, b.wl_socket))
     assert.ok(Buffer.byteLength(join(runtime, 'hypr', b.instance, '.socket.sock')) < 108)
     prepareSandboxHome(home, omarchy)
-    const config = JSON.parse(readFileSync(join(home, '.config/omarchy/shell.json'), 'utf8'))
-    // Clipboard.qml starts by pkill-ing watchers globally, including the live shell's.
-    // It must never load in this sandbox; its cache writes would also reach beyond our session.
-    // Battery can change the machine's power profile when its power source changes.
-    config.disabledPlugins = ['omarchy.polkit', 'omarchy.lock', 'omarchy.idle', 'omarchy.nightlight', 'omarchy.weather', 'omarchy.system-update', 'omarchy.clipboard', 'omarchy.battery']
+    const config = rewriteSandboxConfig(home)
     // A deterministic bar: the glyph is the centre anchor; clock on the right.
     config.bar.centerAnchor = 'sotto.dictation'
     config.bar.layout = { left: [{ id: 'omarchy.workspaces' }], center: [{ id: 'omarchy.indicators' }], right: [{ id: 'omarchy.clock', format: 'HH:mm' }] }
@@ -252,6 +248,7 @@ async function orchestrate() {
     const backgrounds = readdirSync(join(theme, 'backgrounds')).sort()
     copyRegularTree(join(home, '.local/state/omarchy/current/theme/backgrounds', backgrounds[0]), join(home, '.local/state/omarchy/current/background'))
     assertPlainTree(join(home, '.config/omarchy'))
+    validateSandboxConfig(home)
     startIsolated('nested Omarchy shell', 'dbus-run-session', ['--', 'quickshell', '-p', join(omarchy, 'shell')], logOptions('shell'))
     await until('isolated shell answers', async () => { try { await run('omarchy-shell', ['shell', 'ping'], { env }); return true } catch { return false } }, 30000)
     assertPlainTree(join(home, '.config/omarchy'))

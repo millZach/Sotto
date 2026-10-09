@@ -397,13 +397,9 @@ hypr_b dismissnotify >/dev/null
 sandbox setup "$home" "$omarchy_path" || fail "could not build a link-free sandbox HOME"
 # Services that would reach past the nested session stay off in the copy.
 config=$home/.config/omarchy/shell.json
-# Clipboard.qml starts by killing every matching clipboard watcher, including
-# the live shell's. Never load that unrelated service in a nested proof. The
-# battery service sets the system's power profile when the power source
-# changes, which the live shell does already.
-sandbox check "$home/.config/omarchy" || fail "linked sandbox configuration"
-jq '.disabledPlugins = ((.disabledPlugins // []) + ["omarchy.polkit", "omarchy.lock", "omarchy.idle", "omarchy.nightlight", "omarchy.clipboard", "omarchy.battery"] | unique)' \
-  "$config" >"$config.tmp" && mv "$config.tmp" "$config"
+# A rewrite or validation failure must stop here, before any Quickshell starts.
+sandbox configure "$home" || fail "sandbox shell.json rewrite failed"
+sandbox validate "$home" || fail "sandbox shell.json validation failed"
 
 make_theme() {
   local next=$home/.local/state/omarchy/current/next-theme current=$home/.local/state/omarchy/current/theme
@@ -473,7 +469,7 @@ in_shell() { sandbox check "$home/.config/omarchy" || fail "linked sandbox confi
 
 shell_up() { in_shell omarchy-shell shell ping >/dev/null 2>&1; }
 start_shell() {
-  sandbox check "$home/.config/omarchy" || fail "linked sandbox configuration"
+  sandbox validate "$home" || fail "sandbox shell.json validation failed before startup"
   scoped omarchy-shell "$work/env-shell" dbus-run-session -- quickshell -p "$omarchy_path/shell"
   wait_for 30 shell_up || fail "the nested Omarchy shell did not answer"
   sleep 2

@@ -5,7 +5,7 @@ import process from 'node:process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { assertPlainTree, copyRegularTree, prepareSandboxHome, removePlainTree, snapshotTree } from './omarchy-shell-sandbox.mjs'
+import { assertPlainTree, copyRegularTree, prepareSandboxHome, removePlainTree, rewriteSandboxConfig, snapshotTree, validateSandboxConfig } from './omarchy-shell-sandbox.mjs'
 
 const root = mkdtempSync(join(tmpdir(), 'sotto-shell-sandbox-fixture-'))
 const originalHome = process.env.HOME
@@ -34,6 +34,30 @@ try {
   const linkedSource = join(stock, 'config/foot/linked-file')
   symlinkSync(join(target, 'shell.json'), linkedSource)
   assert.throws(() => copyRegularTree(join(stock, 'config/foot'), join(root, 'rejected-nested-copy')), /Refusing linked/u)
+  rmSync(linkedSource)
+  rewriteSandboxConfig(sandbox)
+  validateSandboxConfig(sandbox)
+  for (const [name, text, expected] of [['malformed', '{broken json', /JSON/u], ['unsupported-version', '{"version":2}', /version: 1/u]]) {
+    const path = join(sandbox, '.config/omarchy/shell.json')
+    writeFileSync(path, text)
+    assert.throws(() => rewriteSandboxConfig(sandbox), expected)
+    assert.throws(() => validateSandboxConfig(sandbox), expected)
+    assert.equal(readFileSync(path, 'utf8'), text)
+    console.log(`PASS: ${name} is refused by rewrite and pre-start validation; original file unchanged`)
+  }
+  const path = join(sandbox, '.config/omarchy/shell.json')
+  writeFileSync(path, '{"version":1}')
+  assert.throws(() => validateSandboxConfig(sandbox), /disabledPlugins/u)
+  const temp = `${path}.sandbox-tmp`
+  symlinkSync(join(target, 'shell.json'), temp)
+  assert.throws(() => rewriteSandboxConfig(sandbox), /Refusing linked/u)
+  assert.equal(readFileSync(path, 'utf8'), '{"version":1}')
+  rmSync(temp)
+  const configured = rewriteSandboxConfig(sandbox)
+  configured.disabledPlugins.pop()
+  writeFileSync(path, JSON.stringify(configured))
+  assert.throws(() => validateSandboxConfig(sandbox), /must disable/u)
+  console.log('PASS: rewrite failure and missing exclusions stop configuration; no fallback to shell defaults')
   assert.deepEqual(snapshotTree(target), before)
   console.log('PASS: linked fake live config stays byte-for-byte unchanged; linked sources, destinations and mutations refused')
 } finally {

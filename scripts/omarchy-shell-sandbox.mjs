@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import console from 'node:console'
 import process from 'node:process'
-import { constants, closeSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, readlinkSync, rmSync, writeFileSync } from 'node:fs'
+import { constants, closeSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, readlinkSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -74,6 +74,46 @@ export function prepareSandboxHome(home, omarchyPath) {
   copyRegularTree(join(omarchyPath, 'config/foot'), join(home, '.config/foot'))
 }
 
+const excludedPlugins = ['omarchy.polkit', 'omarchy.lock', 'omarchy.idle', 'omarchy.nightlight', 'omarchy.weather', 'omarchy.system-update', 'omarchy.clipboard', 'omarchy.battery']
+
+function readShellConfig(path) {
+  assertPlainTree(path)
+  const config = JSON.parse(readFileSync(path, 'utf8'))
+  assert.ok(config && !Array.isArray(config) && config.version === 1, 'Sandbox shell.json must carry version: 1')
+  return config
+}
+
+function validateConfigFile(path) {
+  const config = readShellConfig(path)
+  assert.ok(Array.isArray(config.disabledPlugins), 'Sandbox shell.json needs disabledPlugins')
+  for (const id of excludedPlugins) assert.ok(config.disabledPlugins.includes(id), `Sandbox shell.json must disable ${id}`)
+  return config
+}
+
+export function validateSandboxConfig(home) {
+  assertPlainTree(join(home, '.config/omarchy'))
+  return validateConfigFile(join(home, '.config/omarchy/shell.json'))
+}
+
+export function rewriteSandboxConfig(home) {
+  const path = join(home, '.config/omarchy/shell.json'), temporary = `${path}.sandbox-tmp`
+  assertPlainTree(join(home, '.config/omarchy'))
+  const config = readShellConfig(path)
+  assert.ok(config.disabledPlugins === undefined || Array.isArray(config.disabledPlugins), 'Invalid disabledPlugins in sandbox shell.json')
+  config.disabledPlugins = [...new Set([...(config.disabledPlugins || []), ...excludedPlugins])].sort()
+  let created = false
+  try {
+    assertPlainPath(temporary)
+    writeFileSync(temporary, `${JSON.stringify(config, null, 2)}\n`, { flag: 'wx', mode: 0o600 })
+    created = true
+    validateConfigFile(temporary)
+    assertPlainTree(join(home, '.config/omarchy'))
+    renameSync(temporary, path)
+    created = false
+    return validateSandboxConfig(home)
+  } finally { if (created) removePlainTree(temporary) }
+}
+
 // A preservation check, not a copy: record links without walking their targets.
 export function snapshotTree(root) {
   const entries = []
@@ -95,5 +135,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   else if (action === 'copy' && args.length === 2) copyRegularTree(...args)
   else if (action === 'remove' && args.length === 1) removePlainTree(args[0])
   else if (action === 'stamp' && args.length) console.log(JSON.stringify(args.map(snapshotTree)))
-  else throw new Error('Expected setup, check, copy, remove or stamp with sandbox paths')
+  else if (action === 'configure' && args.length === 1) rewriteSandboxConfig(args[0])
+  else if (action === 'validate' && args.length === 1) validateSandboxConfig(args[0])
+  else throw new Error('Expected setup, check, copy, remove, stamp, configure or validate with sandbox paths')
 }
