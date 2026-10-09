@@ -39,10 +39,11 @@ Item {
   readonly property string edge: draggedEdge !== "" ? draggedEdge : savedEdge
   onSavedEdgeChanged: draggedEdge = ""
 
-  // What to say when a command did not get through, for a few seconds or
-  // until Sotto moves on to another state.
+  // What to say when a command did not get through. A notice about a
+  // dictation still on screen keeps the pill and its buttons, and stays
+  // until Sotto writes another state or the user presses again; any other
+  // lasts a few seconds. A failed command never puts a dictation away.
   property string notice: ""
-  property string noticeKey: ""
   property string noticeShownFor: ""
 
   readonly property bool shown: dictation.active || notice !== ""
@@ -103,6 +104,7 @@ Item {
   }
 
   function run(verb, argument) {
+    endNotice()
     commands.run(verb, argument)
   }
 
@@ -113,22 +115,20 @@ Item {
   }
 
   function dismiss() {
+    endNotice()
     dictation.dismiss()
   }
 
-  function showNotice(verb, text) {
-    // Saving the pill's edge failing says nothing about the dictation; any
-    // other command Sotto did not take means it is not there to finish it.
-    noticeKey = verb !== "place" && dictation.active ? Model.key(dictation.record) : ""
+  function showNotice(verb, started) {
+    var state = dictation.status
     noticeShownFor = Model.key(dictation.record)
-    notice = text
-    noticeTimer.restart()
+    notice = Model.failureNotice(verb, started, state)
+    if (Model.noticeHolds(verb, state)) noticeTimer.stop()
+    else noticeTimer.restart()
   }
 
   function endNotice() {
     noticeTimer.stop()
-    if (noticeKey !== "" && noticeKey === Model.key(dictation.record)) dictation.dismiss()
-    noticeKey = ""
     noticeShownFor = ""
     notice = ""
   }
@@ -147,7 +147,7 @@ Item {
   Commands {
     id: commands
     command: root.command
-    onFailed: function(verb, text) { root.showNotice(verb, text) }
+    onFailed: function(verb, started) { root.showNotice(verb, started) }
   }
 
   Timer {

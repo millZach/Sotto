@@ -13,7 +13,7 @@ Item {
   property string command: "sotto"
 
   // The command could not start, or Sotto did not take it.
-  signal failed(string verb, string notice)
+  signal failed(string verb, bool started)
 
   function run(verb, argument) {
     var argv = [Model.cleanCommand(root.command), "dictation", String(verb)]
@@ -35,7 +35,7 @@ Item {
       function finish(ok) {
         if (done) return
         done = true
-        if (!ok) root.failed(verb, Model.failureNotice(verb, began))
+        if (!ok) root.failed(verb, began)
         destroy()
       }
 

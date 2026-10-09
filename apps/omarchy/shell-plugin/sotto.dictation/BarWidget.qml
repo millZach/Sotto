@@ -64,8 +64,8 @@ BarWidget {
   Commands {
     id: ownCommands
     command: root.commandSetting
-    onFailed: function(verb, text) {
-      root.notice = text
+    onFailed: function(verb, started) {
+      root.notice = Model.failureNotice(verb, started, root.status)
       noticeTimer.restart()
     }
   }

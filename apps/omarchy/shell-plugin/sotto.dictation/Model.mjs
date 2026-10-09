@@ -6,6 +6,10 @@
 export const STATES = ["idle", "starting", "listening", "transcribing", "delivered", "copied", "failed"]
 export const EDGES = ["top", "bottom", "left", "right"]
 
+// A dictation under way, or a failure still on screen: what a failed command
+// must never put away, since Sotto may still be recording or holding it.
+export const ACTIVE = ["starting", "listening", "transcribing", "failed"]
+
 // Sotto writes idle again on its own; these only stop a finished dictation
 // from staying on screen if that write never comes.
 export const HOLD_MS = { delivered: 1500, copied: 4000 }
@@ -31,9 +35,6 @@ export function finiteNumber(value) {
   return typeof value === "number" && isFinite(n) ? n : 0
 }
 
-// Schema v1. Anything else, a version this plugin does not know included,
-// reads as idle, so a newer Sotto never leaves a pill on screen that the
-// plugin cannot explain.
 // JSON or null. Only a malformed file is expected; anything else is a fault.
 function parseJson(text) {
   try {
@@ -44,6 +45,9 @@ function parseJson(text) {
   }
 }
 
+// Schema v1. Anything else, a version this plugin does not know included,
+// reads as idle, so a newer Sotto never leaves a pill on screen that the
+// plugin cannot explain.
 export function parse(text) {
   var data = parseJson(text)
   if (!data || typeof data !== "object" || data.version !== 1) return idle()
@@ -90,27 +94,42 @@ export function formatElapsed(since, now) {
   return (minutes < 10 ? "0" : "") + minutes + ":" + (seconds < 10 ? "0" : "") + seconds
 }
 
-// The pill's words and buttons for one state. `buttons` lists verbs; a
-// verb of "dismiss" is the plugin's own and runs no command.
-export function pillFor(state, record, notice) {
-  if (notice) return { glyph: "alert", tone: "error", message: notice, buttons: [] }
+// The pill's buttons for one state, as verbs. A verb of "dismiss" is the
+// plugin's own and runs no command.
+export function buttonsFor(state, record) {
   switch (state) {
   case "starting":
   case "listening":
-    return { glyph: "sotto", tone: "live", message: "", buttons: ["stop", "cancel"] }
+    return ["stop", "cancel"]
   case "transcribing":
-    return { glyph: "sand", tone: "", message: "Transcribing", buttons: ["cancel"] }
-  case "delivered":
-    return { glyph: "check", tone: "", message: "Pasted", buttons: [] }
-  case "copied":
-    return { glyph: "copy", tone: "", message: "Copied, paste with Super+V", buttons: [] }
+    return ["cancel"]
   case "failed":
-    if (record.kept) {
-      return { glyph: "retry", tone: "error", message: record.detail || "Transcription failed. Recording kept.", buttons: ["retry", "discard"] }
-    }
-    return { glyph: "alert", tone: "error", message: record.detail || "Dictation failed. Nothing was kept.", buttons: ["dismiss"] }
+    return record && record.kept ? ["retry", "discard"] : ["dismiss"]
   }
-  return { glyph: "sotto", tone: "", message: "", buttons: [] }
+  return []
+}
+
+// The pill's words and buttons for one state. A notice takes the words and
+// keeps the state's buttons, so a command that did not get through can be
+// pressed again.
+export function pillFor(state, record, notice) {
+  if (notice) return { glyph: "alert", tone: "error", message: notice, buttons: buttonsFor(state, record) }
+  var buttons = buttonsFor(state, record)
+  switch (state) {
+  case "starting":
+  case "listening":
+    return { glyph: "sotto", tone: "live", message: "", buttons: buttons }
+  case "transcribing":
+    return { glyph: "sand", tone: "", message: "Transcribing", buttons: buttons }
+  case "delivered":
+    return { glyph: "check", tone: "", message: "Pasted", buttons: buttons }
+  case "copied":
+    return { glyph: "copy", tone: "", message: "Copied, paste with Super+V", buttons: buttons }
+  case "failed":
+    if (record.kept) return { glyph: "retry", tone: "error", message: record.detail || "Transcription failed. Recording kept.", buttons: buttons }
+    return { glyph: "alert", tone: "error", message: record.detail || "Dictation failed. Nothing was kept.", buttons: buttons }
+  }
+  return { glyph: "sotto", tone: "", message: "", buttons: buttons }
 }
 
 export const BUTTON_TEXT = { stop: "Stop", cancel: "Cancel", retry: "Try again", discard: "Discard", dismiss: "Dismiss" }
@@ -227,10 +246,28 @@ export function cleanCommand(value) {
   return text.length > 0 ? text : "sotto"
 }
 
-// A command that could not run, or that Sotto did not take, in plain words
-// short enough for the pill.
-export function failureNotice(verb, started) {
-  if (!started) return "Could not run sotto. Check the command path."
+// A command that did not get through, in plain words for the pill. While a
+// dictation is under way the pill keeps its buttons and says what to do in
+// Sotto, since the recording may still be running or still be kept.
+export function failureNotice(verb, started, state) {
+  var recording = state === "starting" || state === "listening"
   if (verb === "place") return "Sotto did not save this edge. Open Sotto and drag again."
+  if (verb === "stop" || (verb === "toggle" && recording)) {
+    return "Stop did not get through. Recording may still be running. Open Sotto to stop it."
+  }
+  if (verb === "cancel") {
+    return recording
+      ? "Cancel did not get through. Recording may still be running. Open Sotto to cancel it."
+      : "Cancel did not get through. Open Sotto to cancel."
+  }
+  if (verb === "retry") return "Try again did not get through. Recording kept. Open Sotto to try again."
+  if (verb === "discard") return "Discard did not get through. Recording kept. Open Sotto to discard it."
+  if (!started) return "Could not run sotto. Check the command path."
   return "Sotto did not answer. Open Sotto and try again."
+}
+
+// A notice about a dictation still on screen stays until Sotto writes
+// another state or the user presses again; any other lasts NOTICE_MS.
+export function noticeHolds(verb, state) {
+  return verb !== "place" && ACTIVE.indexOf(state) !== -1
 }

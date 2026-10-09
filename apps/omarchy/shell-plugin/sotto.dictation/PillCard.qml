@@ -22,15 +22,15 @@ BorderSurface {
 
   readonly property color ink: Color.popups.text
   readonly property int pad: Style.space(12)
-  // Room for Sotto's longest failure sentence, about 60 characters, while
-  // an upright pill still fits a 1280x800 display beside a top bar.
+  // Room for Sotto's longest failure sentence, about 60 characters, on one
+  // line. Longer words, such as a command that did not get through, wrap.
   readonly property int maxMessageWidth: Style.space(470)
 
   color: Util.alpha(Color.background, 0.97)
   borderSpec: Border.surfaceSpec("popups", "border", Color.popups.border, Math.max(1, Style.space(2)))
   radius: Style.cornerRadius
   width: Math.ceil(card.borderLeft + card.pad + row.implicitWidth + card.pad + card.borderRight)
-  height: Style.space(44)
+  height: Math.max(Style.space(44), Math.ceil(row.implicitHeight) + 2 * Style.space(8))
 
   Accessible.role: look.tone === "error" ? Accessible.AlertMessage : Accessible.StatusBar
   Accessible.name: card.live ? "Sotto is listening" : (look.message || "Sotto dictation")
@@ -122,8 +122,9 @@ BorderSurface {
       text: card.look.message
       font: messageMetrics.font
       color: card.ink
+      wrapMode: Text.Wrap
+      maximumLineCount: 3
       elide: Text.ElideRight
-      maximumLineCount: 1
     }
 
     Row {
