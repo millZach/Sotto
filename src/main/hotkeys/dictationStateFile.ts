@@ -9,6 +9,7 @@ import { assertDictationDirectories, validateDictationRuntime, type DictationDir
 
 export interface ShellDictationState {
   readonly version: 1
+  readonly pid: number
   readonly state: 'idle' | 'starting' | 'listening' | 'transcribing' | 'delivered' | 'copied' | 'failed'
   readonly since: number
   readonly updatedAt: number
@@ -93,7 +94,7 @@ export class DictationStateFile {
     this.path = join(dirname(dictationSocketPath(runtimeDirectory)), 'dictation-state.json')
     this.directories = [...validateDictationRuntime(runtimeDirectory), validateDictationFolder(dirname(this.path))]
     const now = Date.now()
-    this.state = { version: 1, state: 'idle', since: now, updatedAt: now, detail: null, kept: false, edge }
+    this.state = { version: 1, pid: process.pid, state: 'idle', since: now, updatedAt: now, detail: null, kept: false, edge }
     this.flush()
   }
 

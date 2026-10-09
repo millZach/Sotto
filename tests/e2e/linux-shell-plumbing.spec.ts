@@ -25,6 +25,7 @@ test('publishes private shell state, retries and discards, remembers placement a
   let launched: LaunchedSotto | undefined
   let rawApp: ChildProcess | undefined
   let rawAppClosed: Promise<number | null> | undefined
+  let mainPid: number | undefined
   const launch = async (scenario: E2EScenario): Promise<LaunchedSotto> => {
     const app = await launchSotto(scenario, profile, {
       createProfile: async () => { throw new Error('Use the owned profile') },
@@ -33,8 +34,9 @@ test('publishes private shell state, retries and discards, remembers placement a
       removeProfile: path => rm(requireOwnedE2EProfile(path), { recursive: true, force: true }),
     })
     console.log(`Built app PID ${app.app.process().pid}; isolated profile; scripted microphone and transcription`)
+    mainPid = app.app.process().pid
     await openPage(app.page, 'Dictate')
-    await expect.poll(read).toMatchObject({ version: 1, state: 'idle' })
+    await expect.poll(read).toMatchObject({ version: 1, pid: mainPid, state: 'idle' })
     return app
   }
   const command = (...args: string[]) => run(join(process.cwd(), 'apps/omarchy/sotto'), ['dictation', ...args], { env: { ...process.env, XDG_RUNTIME_DIR: profile } })
@@ -46,10 +48,11 @@ test('publishes private shell state, retries and discards, remembers placement a
     }
   }
   const showState = async (label: string, state: string, extra: object = {}): Promise<void> => {
-    await expect.poll(read).toMatchObject({ version: 1, state, ...extra })
+    expect(mainPid).toBeGreaterThan(0)
+    await expect.poll(read).toMatchObject({ version: 1, pid: mainPid, state, ...extra })
     const raw = (await readFile(statePath, 'utf8')).trim()
     expect(raw).not.toContain(E2E_TRANSCRIPT)
-    expect(Object.keys(JSON.parse(raw)).sort()).toEqual(['version', 'state', 'since', 'updatedAt', 'detail', 'kept', 'edge'].sort())
+    expect(Object.keys(JSON.parse(raw)).sort()).toEqual(['version', 'pid', 'state', 'since', 'updatedAt', 'detail', 'kept', 'edge'].sort())
     const published = JSON.parse(raw)
     if (published.detail !== null) expect(published.detail.length).toBeLessThan(60)
     if (published.kept) expect(published.detail).toContain('Recording kept.')
@@ -192,6 +195,7 @@ const timer = setInterval(() => {
       env: { ...e2eEnvironment('success', profile), HOME: home, XDG_CONFIG_HOME: config }, stdio: 'ignore',
     })
     const forcedPid = rawApp.pid
+    mainPid = forcedPid
     rawAppClosed = new Promise<number | null>((resolve, reject) => {
       rawApp!.once('error', reject)
       rawApp!.once('close', resolve)

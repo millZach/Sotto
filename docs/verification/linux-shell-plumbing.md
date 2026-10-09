@@ -1,12 +1,12 @@
 # Dictation state and commands for the Omarchy shell
 
-October 9, 2026. Ticket [#850](https://github.com/millZach/Sotto/issues/850), Sotto plumbing only, on `feat/linux-omarchy-shell-plumbing` from `6495c602`. Review fixes follow `55028971`; merge commit `bd1bcc75` brings in `origin/main` at `f77c40f2`, including the accepted Linux desktop ADR and AGENTS platform guidance.
+October 9, 2026. Ticket [#850](https://github.com/millZach/Sotto/issues/850), Sotto plumbing only, on `feat/linux-omarchy-shell-plumbing` from `6495c602`. The contract addendum follows `e691a9c6`, with the HOME-folder change in `a410b110`. Review fixes follow `55028971`; merge commit `bd1bcc75` brings in `origin/main` at `f77c40f2`, including the accepted Linux desktop ADR and AGENTS platform guidance.
 
 **VERIFIED on forge:** the built, unpackaged Electron 43.1.0 app, with isolated profiles and HOME folders, driven through the checkout’s actual `apps/omarchy/sotto dictation …` command and Unix socket. Node 24.21.0 ran every Node command. Microphone samples, transcription failures and output effects used the existing development-only e2e fixtures; no paid provider or live microphone was needed. This verifies Sotto’s command, controller, state publication, placement and window boundaries, not provider availability or the separately built Quickshell plugin.
 
 ## Evidence
 
-- [Real-check output](../../artifacts/linux-shell-plumbing/real-check.txt), verbatim, includes every state JSON, folder mode `700`, file mode `600`, five shell-journey app PIDs, the absent state file after graceful and forced exits, the nested compositor PID and process and temporary-folder cleanup results.
+- [Real-check output](../../artifacts/linux-shell-plumbing/real-check.txt), verbatim, includes every state JSON with its actual main-process `pid`, folder mode `700`, file mode `600`, five shell-journey app PIDs, the absent state file after graceful and forced exits, the nested compositor PID and process and temporary-folder cleanup results.
 - [Plugin folder present](../../artifacts/linux-shell-plumbing/plugin-present.png): the main window remains and the Electron widget is absent. Both Electron visibility and Hyprland’s mapped client list were checked before capture. The proof requests a native main-window frame first because the locked parent can suspend frame callbacks; compositor tiling and frame timing still control these captures.
 - [Plugin folder removed](../../artifacts/linux-shell-plumbing/widget-returned.png): the Electron widget returns during dictation. Its placement here is controlled by the nested compositor; the shell pill’s layer-shell placement belongs to the other half of #850.
 
@@ -21,7 +21,7 @@ mise exec node@24.21.0 -- npm run build
 mise exec node@24.21.0 -- node scripts/verify-shell-plumbing.mjs tests/e2e/linux-dictation-command.spec.ts tests/e2e/linux-platform-profile.spec.ts tests/e2e/linux-shell-plumbing.spec.ts
 ```
 
-The wrapper creates one short owned `/tmp/sp-XXXXXX` folder with mode `0700`. Profiles, caches, Playwright transforms and test results, the nested compositor config and `TMPDIR` all live there, so Unix socket paths stay short regardless of the checkout path. Cleanup stops the owned processes before removing that folder, including on interruption, and prints the removed path. No root ignores conceal proof debris. The journey waits for published idle state before sending to a restarted app, rather than treating window readiness as socket readiness. The other Linux specs regenerate their existing captures; restore those incidental changes when the look was not changed on purpose. This change does not update design baselines.
+The wrapper creates one short owned `/tmp/sp-XXXXXX` folder with mode `0700`. Profiles and their isolated HOME folders, caches, Playwright transforms and test results, the nested compositor config and `TMPDIR` all live there, so Unix socket paths stay short regardless of the checkout path. Cleanup stops the owned processes before removing that folder, including on interruption, and prints the removed path. No root ignores conceal proof debris. The journey waits for published idle state before sending to a restarted app, rather than treating window readiness as socket readiness. The other Linux specs regenerate their existing captures; restore those incidental changes when the look was not changed on purpose. This change does not update design baselines.
 
 ## What was driven
 
@@ -35,7 +35,7 @@ The state publisher takes only widget snapshots and reviewed static copy. It rec
 | --- | --- |
 | `npm run typecheck` | PASS |
 | `npm run lint` | PASS |
-| `npm test -- --maxWorkers=2` | PASS, 628 files and 9,352 tests; 50 files and 182 tests skipped |
+| `npm test -- --maxWorkers=2` | PASS, 628 files and 9,353 tests; 50 files and 182 tests skipped |
 | `npm run notices:verify` | PASS, 174 components |
 | `npm run build` | PASS |
 | Three Linux Playwright specs in the nested session | PASS, 5 tests |
@@ -52,7 +52,7 @@ The state publisher takes only widget snapshots and reviewed static copy. It rec
 
 Standards review: production changes are Linux-only; the widget’s Windows and macOS paths and defaults remain pinned by tests. Main adds no external module beyond the reviewed inventory. No transcript, audio, provider body or key enters this runtime file or an operational log. No runtime dependency, host, setting or permission grant was added. The plugin source and the main checkout were not edited.
 
-Ticket review: the implementation follows the owner’s last #850 comment, including centred saved edges, top on Linux, the existing retry and dismiss actions, and folder-based widget ownership. No new ADR decision was needed. Merge commit `bd1bcc75` brings in main’s accepted Linux guidance. Commit `9e3c503b` keeps the owl decision under its unique ADR-0064 number; that commit is retained as requested after the same correction landed through #873. The new term shell pill is added to CONTEXT. README and guide describe the new verbs, folder and schema.
+Ticket review: the implementation follows the owner’s #850 decisions and [version-1 contract addendum](https://github.com/millZach/Sotto/issues/850#issuecomment-6084649108), including centred saved edges, top on Linux, the existing retry and dismiss actions, HOME-based widget ownership and the main-process pid in every state write. No new ADR decision was needed. Merge commit `bd1bcc75` brings in main’s accepted Linux guidance. Commit `9e3c503b` keeps the owl decision under its unique ADR-0064 number; that commit is retained as requested after the same correction landed through #873. The new term shell pill is added to CONTEXT. README and guide describe the new verbs, folder and schema.
 
 ## Kept-failure copy
 
@@ -86,4 +86,10 @@ The file is replaced by rename; watch the containing folder or re-arm a file wat
 
 ## Contract addendum: plugin folder
 
-The watch follows Omarchy’s `PluginRegistry.qml`: `$HOME/.config/omarchy/plugins/sotto.dictation/`, regardless of `XDG_CONFIG_HOME`. The monitor no longer accepts a config-home override. Its regression test leaves a plugin installed under an alternate XDG config folder and observes only HOME-folder installation and removal. The built-app journey uses an isolated HOME inside its owned temporary profile and leaves the alternate XDG plugin in place while the HOME plugin hides, restores and hides the widget across restart. The two focused monitor and lifecycle files pass all 9 tests. The complete gates and nested proof are rerun with the pid addition below.
+The watch follows Omarchy’s `PluginRegistry.qml`: `$HOME/.config/omarchy/plugins/sotto.dictation/`, regardless of `XDG_CONFIG_HOME`. The monitor no longer accepts a config-home override. Its regression test leaves a plugin installed under an alternate XDG config folder and observes only HOME-folder installation and removal. The built-app journey uses an isolated HOME inside its owned temporary profile and leaves the alternate XDG plugin in place while the HOME plugin hides, restores and hides the widget across restart. The two focused monitor and lifecycle files pass all 9 tests. The complete gates and nested proof passed again with the pid addition below. The alternate XDG plugin remained installed while the HOME plugin was removed; the Electron widget returned and mapped in the nested compositor. Both cited captures were opened and inspected.
+
+## Contract addendum: main process ID
+
+The additive version-1 field `pid` is initialized from `process.pid` in main and retained through state and placement updates. Atomic-write tests inspect it in the old and replacement JSON; debounce tests reject a caller-supplied pid, and failure-copy tests inspect every serialized write. The built-app journey compares each published pid with its actual Electron main PID across five launches, including startup, listening, processing, failure, success, placement and the forced-exit check. Readers still use version 1. The file has no heartbeat, so a long dictation does not change `updatedAt` merely to show liveness. The plugin’s process-liveness handling belongs to its separate branch.
+
+The latest proof passed all five tests across the three Linux specs in 27.6 seconds. Main PID `899178` published listening while the isolated HOME plugin was present; restart published PID `899718`, and the other launches published `899906`, `900126` and `900274`. Every state kept version 1, folder mode `700` and file mode `600`. The allowlist printed `allowlist check: PASS` before the proof. Incidental Linux paste captures were restored; only the cited shell-plumbing evidence is updated. Cleanup stopped nested Hyprland PID `898291` and Playwright PID `898305`, reported empty recorded-PID, cgroup and owned-process lists, preserved earlier Hyprland instances and removed `/tmp/sp-pMQVFA`. The checkout root has no proof profiles, Chromium scope folders, transform caches or `tools/`; the empty test-results folder from the unit gate was removed.
