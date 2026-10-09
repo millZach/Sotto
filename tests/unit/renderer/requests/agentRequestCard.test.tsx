@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentRequest } from '../../../../src/shared/agents'
 import type { RequestDraft, RequestDraftBridge, RequestDraftOwner, RequestDraftStatus } from '../../../../src/shared/requestDrafts'
 import { AgentRequestCard, requestExplanation } from '../../../../src/renderer/src/agents/requests/AgentRequestCard'
+import { textLinks } from '../../../../src/renderer/src/agents/requests/LinkedText'
 import { claudePending } from '../../../../src/main/agents/claudeRequests'
 import { pendingRequest } from '../../../../src/main/agents/codexRequests'
 import { grokPending } from '../../../../src/main/agents/grokRequests'
@@ -485,6 +486,29 @@ describe('native request explanation and tool context', () => {
   })
 })
 
+describe('links in a question', () => {
+  it('finds http and https addresses in text, without the punctuation that ends a sentence', () => {
+    expect(textLinks('See https://host.ts.net/proto/, then (http://a.b/x_(y)). Not file:///c or javascript:alert(1).')).toEqual([
+      { text: 'See ' }, { text: 'https://host.ts.net/proto/', url: 'https://host.ts.net/proto/' }, { text: ', then (' },
+      { text: 'http://a.b/x_(y)', url: 'http://a.b/x_(y)' }, { text: '). Not file:///c or javascript:alert(1).' },
+    ])
+    expect(textLinks('https://user:pass@host.example/ and https://')).toEqual([{ text: 'https://user:pass@host.example/ and https://' }])
+  })
+
+  it('opens a link in a question or a choice without picking the choice', async () => {
+    const openExternalLink = vi.fn(async () => ({ ok: true }))
+    window.sotto = { openExternalLink } as unknown as NonNullable<typeof window.sotto>
+    try {
+      const { user } = setup(structured([{ id: 'q-variant', question: 'Which variant? All three are at https://laptop.tail.ts.net/states/', multiSelect: false, allowFreeText: false,
+        options: [{ id: 'b', label: 'B', description: 'Sorted, as at https://laptop.tail.ts.net/states/?variant=B' }, { id: 'a', label: 'A' }] }]))
+      await user.click(screen.getByRole('link', { name: 'https://laptop.tail.ts.net/states/' }))
+      expect(openExternalLink).toHaveBeenLastCalledWith('https://laptop.tail.ts.net/states/')
+      await user.click(screen.getByRole('link', { name: 'https://laptop.tail.ts.net/states/?variant=B' }))
+      expect(openExternalLink).toHaveBeenLastCalledWith('https://laptop.tail.ts.net/states/?variant=B')
+      expect(screen.getByRole('radio', { name: /^B/u })).not.toBeChecked()
+    } finally { delete window.sotto }
+  })
+})
 
 describe('composer question choices', () => {
   it('keeps a dedicated custom answer through choice changes and collapse, and sends only the explicit choice', async () => {
