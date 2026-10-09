@@ -8,6 +8,12 @@ export const HYPRLAND_KEY_HOLD_MS = 50
 export const MODIFIER_RELEASE_POLL_MS = 25
 export const MODIFIER_RELEASE_WAIT_MS = 300
 
+const TERMINAL_CLASSES = new Set([
+  'foot', 'foot-client', 'org.codeberg.dnkl.foot', 'alacritty', 'kitty',
+  'ghostty', 'com.mitchellh.ghostty', 'wezterm', 'org.wezfurlong.wezterm',
+  'konsole', 'org.kde.konsole', 'ptyxis', 'org.gnome.ptyxis', 'xterm',
+])
+
 // is_key_down reads physical state. repl returns the Lua result; eval only returns "ok".
 export const MODIFIERS_HELD_QUERY = 'return hl.is_key_down("Super_L") or hl.is_key_down("Super_R") or hl.is_key_down("Control_L") or hl.is_key_down("Control_R") or hl.is_key_down("Shift_L") or hl.is_key_down("Shift_R") or hl.is_key_down("Alt_L") or hl.is_key_down("Alt_R")'
 
@@ -18,7 +24,10 @@ export function buildLinuxPasteInvocation(): PasteInvocation {
 export function hyprlandPasteChord(activeWindow: unknown): { mods: 'CTRL' | 'SHIFT'; key: 'V' | 'Insert' } {
   const tags = activeWindow && typeof activeWindow === 'object' && 'tags' in activeWindow
     ? activeWindow.tags : undefined
-  const terminal = Array.isArray(tags) && tags.some(tag => tag === 'terminal' || tag === 'terminal*')
+  const className = activeWindow && typeof activeWindow === 'object' && 'class' in activeWindow
+    ? activeWindow.class : undefined
+  const terminal = (Array.isArray(tags) && tags.some(tag => tag === 'terminal' || tag === 'terminal*'))
+    || (typeof className === 'string' && TERMINAL_CLASSES.has(className.toLowerCase()))
   return terminal ? { mods: 'SHIFT', key: 'Insert' } : { mods: 'CTRL', key: 'V' }
 }
 

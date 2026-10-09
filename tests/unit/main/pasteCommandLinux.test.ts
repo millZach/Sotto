@@ -38,6 +38,27 @@ describe('Hyprland paste', () => {
     expect(hyprlandPasteChord(window)).toEqual({ mods, key })
   })
 
+  it.each([
+    'foot', 'foot-client', 'org.codeberg.dnkl.foot', 'Alacritty', 'kitty',
+    'Ghostty', 'com.mitchellh.ghostty', 'WezTerm', 'org.wezfurlong.wezterm',
+    'Konsole', 'org.kde.konsole', 'Ptyxis', 'org.gnome.ptyxis', 'xterm',
+  ])('uses Shift+Insert and PRIMARY for untagged terminal class %s in any case', async className => {
+    for (const name of [className, className.toUpperCase()]) {
+      expect(hyprlandPasteChord({ class: name, tags: [] })).toEqual({ mods: 'SHIFT', key: 'Insert' })
+      const h = harness()
+      const base = h.run.getMockImplementation()!
+      h.run.mockImplementation(i => i.args[0] === 'activewindow'
+        ? Promise.resolve(JSON.stringify({ address: '0x1234', class: name })) : base(i))
+      await expect(h.adapter.run(buildLinuxPasteInvocation())).resolves.toBe(true)
+      expect(h.copyToPrimary).toHaveBeenCalledOnce()
+      expect(dispatched(h.run)).toEqual([buildHyprlandKeyInvocation({ mods: 'SHIFT', key: 'Insert' })])
+    }
+  })
+
+  it.each(['Chromium', 'browser-ghostty-docs', 'kitty-cat', 'alacritty-other', null, 1234])('keeps Ctrl+V for unknown or malformed class %j', className => {
+    expect(hyprlandPasteChord({ class: className, tags: [] })).toEqual({ mods: 'CTRL', key: 'V' })
+  })
+
   it.each([[], ['terminal'], ['terminal*']])('constructs a single Lua request with a compositor-owned release timer for tags %j', async (...tags) => {
     const h = harness(tags.flat())
     await expect(h.adapter.run(buildLinuxPasteInvocation())).resolves.toBe(true)
