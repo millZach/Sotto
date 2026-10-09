@@ -1,10 +1,10 @@
 # Linux compositor dictation — issue 837
 
-Checked on forge on October 8, 2026: Omarchy, Hyprland on Wayland, Electron 43.1.0, Node 24.21.0 and Sotto 0.1.33. This branch is stacked on `feat/linux-platform-profile` at `c08e9a9aa4189c43d9928a9db21a6763eb1db66d` (PR #848). The first review build’s main entry has SHA-256 `de43c69a2bc424cc5311099f15f74589c1f239775895fbd7aea117d8fbab2e32`.
+Checked on forge on October 8, 2026: Omarchy, Hyprland on Wayland, Electron 43.1.0, Node 24.21.0 and Sotto 0.1.33. The first review was stacked on `feat/linux-platform-profile` at `c08e9a9aa4189c43d9928a9db21a6763eb1db66d` (PR #848). The first review build’s main entry has SHA-256 `de43c69a2bc424cc5311099f15f74589c1f239775895fbd7aea117d8fbab2e32`.
 
 ## Choice and scope
 
-The Unix socket is the selected transport. The command is `sotto dictation start|stop|toggle|cancel` in the packaged launcher layout, or `/absolute/checkout/apps/omarchy/sotto dictation start|stop|toggle|cancel` after building a checkout. Its tiny client runs with bundled Electron in Node mode, so packaged users need no separate Node. Main validates the absolute runtime folder and its ancestors before creating anything, requires current-UID ownership and mode 0700, and opens a private `dictation-<pid>-<random>.sock` inside its own 0700 folder. The socket is 0600. It publishes `$XDG_RUNTIME_DIR/sotto/dictation.sock` as an exclusive relative symlink. It accepts four fixed words, bounds input and clients, refuses linked folders and unrelated endpoints, leaves an active listener alone, recovers dead instances and closes on quit without unlinking a replacement public endpoint. No text, audio or key crosses this command channel. No dependency or contacted host was added.
+The Unix socket is the selected transport. The command is `sotto dictation start|stop|toggle|cancel` in the packaged launcher layout, or `/absolute/checkout/apps/omarchy/sotto dictation start|stop|toggle|cancel` after building a checkout. Its tiny client runs with bundled Electron in Node mode, so packaged users need no separate Node. Main validates the absolute runtime folder and its ancestors before creating anything, requires current-UID ownership and mode 0700, and opens a private `dictation-<pid>-<random>.sock` inside its own 0700 folder. The socket is 0600. It publishes `$XDG_RUNTIME_DIR/sotto/dictation.sock` as an exclusive relative symlink. It accepts four fixed commands with an optional bounded event stamp, bounds input and clients, refuses linked folders and unrelated endpoints, leaves an active listener alone, recovers dead instances and closes on quit without unlinking a replacement public endpoint. No text, audio or key crosses this command channel. No dependency or contacted host was added.
 
 The existing preload command subscription routes to the dictation controller. That controller already ignores an unpaired stop and a repeated start, and remembers stop during microphone startup; push-to-talk adds no alternative recording lifecycle. Windows and macOS keep global toggle and Escape registration. Linux registers neither, keeps the saved hotkey for settings reset/rollback, and explains compositor bindings in Settings. Onboarding and Dictate name F9 and Super+Ctrl+X and still say to paste copied text. Escape inside Sotto and a compositor `cancel` command follow the existing cancellation rules.
 
@@ -221,3 +221,71 @@ Stopped by PID: 3028893, 3028897, 3028898, 3028900, 3028932, 3028934, 3028951, 3
 ```
 
 Real capture, all four command routes, normal cleanup, replacement preservation and hostile-link refusal are VERIFIED on the built forge checkout. Successful real transcription and clipboard delivery remain unavailable without an OpenRouter key. The screen stayed locked, so physical key-down/key-up and screenshots were not checked. Native Windows/macOS execution and a released Linux installer were not checked in this final round. The latency table and ASAR results above belong to the first review run; they were not remeasured here. Probe scripts and output stay uncommitted in `.cache/`, as requested.
+
+
+## Bug-bot review fixes on PR 858
+
+Checked the five findings against `3f6b0a62`, which already includes main, on the same forge Wayland session. This build is Sotto 0.1.34 with Node 24.21.0. Each finding has its own review-fix commit:
+
+| Finding | Outcome | Commit |
+| --- | --- | --- |
+| `ptt-start-stop-reorder` | Fixed. The binding evaluates `date +%s%N` through an explicit `sh -c` before the launcher boots. The client carries epoch nanoseconds without rounding. Main remembers the newest accepted stamped stop or cancel, including an unpaired one, and suppresses an older or equal start. Renderer delivery is serialized through window recreation. Unstamped commands retain their behavior. | `47769312` |
+| `client-fails-after-delivery` | Fixed. Main sends `accepted` and stops its idle timer after parsing a valid request. The client stops its own timer on that reply and waits for the final delivery result. A built client against a real socket with 1.5-second dispatch exits 0. Fragmented acceptance is also covered. | `6226b714` |
+| `linux-widget-advertises-dead-shortcut` | Fixed on Linux: idle says “F9 to talk”; the listening announcement says “Release F9 or press Super+Ctrl+X to finish”. Tests preserve the Windows and macOS accelerator text. **Declined by the lead agent:** the X11 part is outside the supported desktop; Omarchy is Wayland-only, under ADR-0062 on #843. This is not an owner decision. | `9dc97c92` |
+| `socket-path-length-tests` | Fixed. Socket integration runtimes use `mkdtempSync(join(tmpdir(), 'sotto-'))`, independent of checkout depth. Ownership, private permissions and cleanup still apply. | `c0fcd92e` |
+| `test-rmsync-symlink-node24` | Fixed. The fixture removes the folder link with `unlinkSync`, leaving its target alone and avoiding Node 24 directory-removal differences. All checks here used the required Node 24.21.0; older Node releases were not run. | `aea398e4` |
+
+Stamps must be no more than **5 seconds old** or **250 ms ahead** of main's clock when accepted. These inclusive bounds allow startup and small clock skew while preventing an old or far-future release from suppressing later holds. Invalid stamps do not advance the remembered release. Input is capped at 40 bytes for the optional stamp, with the existing 32-client cap and one-second pre-acceptance idle timeout. The same-user threat model, socket permissions, contacted hosts and production dependencies are unchanged.
+
+The focused transport tests passed 76 cases; widget tests passed 88. They cover reversed stop/start and cancel/start, equal-stamp replay, normal and subsequent holds, a release received during pending delivery, a later-arriving older release, both time bounds, precision through the client, unstamped commands and slow delivery. A Lua-only mock loaded `/usr/share/omarchy/default/hypr/helpers.lua` and the snippet: three stamped shell commands, paired F9 release, and two prior chords unbound. The mock never calls the live compositor.
+
+Final local gates, with every Node command under `mise exec node@24.21.0 --` and one test suite at a time:
+
+| Check | Output/result |
+| --- | --- |
+| `npm run typecheck` | Exit 0, all three TypeScript projects; repeated after Playwright changes |
+| `npm run lint` | Exit 0; repeated after Playwright changes |
+| `npm test -- --maxWorkers=2` | Exit 0: 617 files passed, 50 skipped; 9,096 tests passed, 182 skipped; zero failures; 490.01 seconds |
+| `npm run notices:verify` | `Verified 174 third-party notice components.` |
+| `luac -p apps/omarchy/bindings.lua` | Exit 0, no output |
+| `npm run build` | Exit 0; main, preload and renderer built |
+| Playwright `linux-dictation-command.spec.ts` and `linux-platform-profile.spec.ts`, one worker | `2 passed (6.0s)`; includes stamped inversion, idle/listening widget copy, light/dark/reduced-motion layout checks at 1600×1000, 1280×800 and 820×560, and Linux copy-only output |
+
+The full suite emitted the existing canvas and optional OpenSlide warnings. Playwright emitted the existing `NO_COLOR`/`FORCE_COLOR` warning. Neither suite failed. `app.spec.ts` was not run; `artifacts/review-quit-drain/before-quit.png` was not changed.
+
+The two-axis diff review found the requested fixes implemented within the existing Linux command surface: no new host, dependency, permission authority, IPC channel, stylesheet or window chrome. Windows/macOS behavior stays on the existing branches. The X11 extension is the sole declined part, by the lead agent for the supported-desktop reason above. No unresolved in-scope finding remained.
+
+The native probe launched the built checkout with Quickshell's session environment, an isolated configuration/runtime under this worktree, the real microphone and inspector port 9341. It observed accepted recording publications and actual socket arrival order. Each of the 20 rapid pairs kept a 0–15 ms key-event stamp gap; wrappers spawned at that gap and delayed one client boot by 200 ms to script a seeded random delivery order. Every pair settled with no active recording. The reordered unpaired release sent no renderer start at all. The normal stamped hold reached real listening and then stopped.
+
+Two probe setup attempts failed before sending any commands: an early inspector evaluation returned “Promise was collected”, then the observer's injected newline needed escaping. The readiness wait and escaping were fixed in the uncommitted probe, and all 15 recorded PIDs from those attempts were stopped. The first successful run and the final run below each passed all 20 pairs. The final run checked idle widget text after an actual cancellation, once the widget had received its idle snapshot. All recorded native and Playwright processes were checked and stopped; none remained alive. No product change or repeated full suite was needed for these probe adjustments. Scripts and raw logs remain in this worktree's ignored `.cache/`.
+
+Final native evidence, verbatim:
+
+```text
+Launched built checkout PID 3377704; inspector 9341; isolated XDG_CONFIG_HOME and XDG_RUNTIME_DIR.
+Build main SHA-256: a44f06c35afaec703b9b9b6556015cccd36049b50ee6e543c69b864f11cc53f3
+Inspector PID matches the launched app: 3377704
+{"ready":true,"version":"0.1.34","platform":"linux","wayland":"/run/user/1000/wayland-1","session":"wayland","keyPresent":false}
+Socket permissions: runtime 700; folder 700; private socket 600; stable endpoint is a symlink: true
+unpaired stop -> idle
+stamped stop, then start stamped 15 ms earlier -> idle; renderer start deliveries: 0; listening transitions: 0
+start -> listening (real microphone)
+Linux widget listening hint: Listening. Release F9 or press Super+Ctrl+X to finish
+stop -> error (TRANSCRIPTION_UNCONFIGURED)
+toggle -> listening
+toggle -> error (TRANSCRIPTION_UNCONFIGURED)
+cancel -> cancelled
+Linux widget idle hint: F9 to talk
+normal stamped hold -> listening, then error (TRANSCRIPTION_UNCONFIGURED); recording: false
+20 rapid stamped pairs; event gaps (ms): 0, 15, 4, 3, 2, 15, 1, 12, 14, 1, 9, 7, 7, 11, 3, 4, 8, 14, 15, 8
+Random delivery order (seed 858): start first 9; stop first 11; pairs ending with recording 0/20
+Final recording: false; final status: error
+No OpenRouter key was provided. Real capture and command state transitions were reached; successful transcription and clipboard delivery were not reached.
+Live Hyprland bindings were not changed. Physical key-down/key-up was not exercised while the screen was locked.
+Operational events: []
+Client processes exited: 51/51
+Stopped app and command helper processes by PID: 3377704, 3377708, 3377709, 3377711, 3377749, 3377751, 3377784, 3377794, 3377816, 3377826, 3377827, 3378030, 3378059, 3378083, 3378107, 3378142, 3378173, 3378201, 3378229, 3378256, 3378280, 3378322, 3378350, 3378378, 3378417, 3378445, 3378476, 3378503, 3378545, 3378572, 3378596
+Recorded processes still alive: 0
+```
+
+VERIFIED: real microphone capture, all four commands, normal stamped holding, reordered release suppression, randomized rapid pairs, and the corrected Linux widget text on the built forge checkout. Successful real transcription and clipboard delivery could not be reached without an OpenRouter key. Physical key events were not exercised while the screen was locked; no live Hyprland file or binding changed. Native Windows/macOS execution and a released Linux installer were not checked in this round. PR 858 remains open and its review threads remain unresolved.

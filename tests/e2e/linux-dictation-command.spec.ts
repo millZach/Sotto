@@ -27,8 +27,8 @@ test('compositor commands reach Linux dictation and Settings explains the bindin
   test.skip(process.platform !== 'linux', 'Linux compositor commands')
   const launched = await launchSotto('success')
   const { page, userData } = launched
-  const command = async (verb: string): Promise<void> => {
-    await run(join(process.cwd(), 'apps/omarchy/sotto'), ['dictation', verb], { env: { ...process.env, XDG_RUNTIME_DIR: userData } })
+  const command = async (verb: string, at?: bigint): Promise<void> => {
+    await run(join(process.cwd(), 'apps/omarchy/sotto'), ['dictation', verb, ...(at === undefined ? [] : ['--at', String(at)])], { env: { ...process.env, XDG_RUNTIME_DIR: userData } })
   }
   try {
     await expect(page.getByText(/Hold F9 to talk after installing/)).toBeVisible()
@@ -49,8 +49,15 @@ test('compositor commands reach Linux dictation and Settings explains the bindin
     const room = page.getByRole('region', { name: 'Dictation', exact: true })
     await command('stop')
     await expect(room).toHaveAttribute('data-status', 'idle')
+    const at = BigInt(Date.now()) * 1_000_000n
+    await command('stop', at)
+    await command('start', at - 15_000_000n)
+    await expect(room).toHaveAttribute('data-status', 'idle')
+    const widget = launched.app.windows().find(window => window.url().includes('/widget.html'))!
+    await expect(widget.locator('.widget-sliver__prompt-keys')).toHaveText('F9 to talk')
     await command('start')
     await expect(room).toHaveAttribute('data-status', 'listening')
+    await expect(widget.getByRole('status')).toContainText('Release F9 or press Super+Ctrl+X to finish')
     await command('start')
     await expect(room).toHaveAttribute('data-status', 'listening')
     await command('stop')
