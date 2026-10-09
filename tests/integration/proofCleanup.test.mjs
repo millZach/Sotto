@@ -6,7 +6,7 @@ import { createServer } from 'node:http'
 import { once } from 'node:events'
 import process from 'node:process'
 import { describe, expect, it } from 'vitest'
-import { createOwnedProofProcesses, isProofProcessAlive, proofSystemdEnvironment, terminateThenCleanup } from '../../scripts/owned-proof-processes.mjs'
+import { createOwnedProofProcesses, installProofCleanup, isProofProcessAlive, proofSystemdEnvironment, terminateThenCleanup } from '../../scripts/owned-proof-processes.mjs'
 import { fetchProofJson, openProofDebugger } from '../../scripts/proof-debugger.mjs'
 
 async function fakeDebugger(mode, check) {
@@ -64,6 +64,20 @@ const hasUserSystemd = () => {
   catch { return false }
 }
 describe('proof cleanup ordering', () => {
+  it('shares one cleanup between repeated calls and refuses further work', async () => {
+    let calls = 0
+    const lifecycle = installProofCleanup(async () => { calls++ }, () => undefined)
+    lifecycle.assertRunning()
+    const first = lifecycle.cleanup()
+    expect(lifecycle.cleanup()).toBe(first)
+    expect(() => lifecycle.assertRunning()).toThrow('cleaning up')
+    await first
+    expect(calls).toBe(1)
+  })
+  it('bounds an unresponsive cleanup', async () => {
+    const lifecycle = installProofCleanup(() => new Promise(() => {}), () => undefined, 100)
+    await expect(lifecycle.cleanup()).rejects.toThrow('cleanup deadline')
+  })
   it.each([false, true])('terminates first and keeps discovery errors (termination failure=%s)', async failure => {
     const calls = []
     const discoveryError = new Error('Runtime discovery refused')

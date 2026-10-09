@@ -9,7 +9,7 @@ import { join, resolve } from 'node:path'
 import { URL } from 'node:url'
 import { performance } from 'node:perf_hooks'
 import { setTimeout as wait } from 'node:timers/promises'
-import { createOwnedProofProcesses, terminateThenCleanup } from './owned-proof-processes.mjs'
+import { createOwnedProofProcesses, installProofCleanup, terminateThenCleanup } from './owned-proof-processes.mjs'
 import { fetchProofJson, openProofDebugger } from './proof-debugger.mjs'
 
 const checkout = process.cwd()
@@ -31,6 +31,7 @@ const results = {}
 const poll = async (label, check, child, timeoutMs = 20000) => {
   const deadline = performance.now() + timeoutMs
   while (performance.now() < deadline) {
+    lifecycle.assertRunning()
     if (child?.proofError) throw child.proofError
     if (child && (child.exitCode !== null || child.signalCode !== null)) throw new Error(`${label}: process exited`)
     const result = await check(Math.max(1, deadline - performance.now()))
@@ -49,6 +50,7 @@ const discover = (port, child) => poll('Debugger discovery', async remaining => 
   catch { return undefined }
 }, child)
 const assertNested = () => {
+  lifecycle.assertRunning()
   assert.notEqual(sig, liveSig, 'Never dispatch to the live instance')
   assert.notEqual(sock, live.WAYLAND_DISPLAY, 'Never use the live display')
   assert.ok(sig && sock && instances().some(instance => instance.pid === hypr.pid && instance.instance === sig && instance.wl_socket === sock), 'The spawned compositor must own both the instance and display')
@@ -65,6 +67,44 @@ const assertDebuggerListener = (port, child) => {
     try { return readlinkSync(`/proc/${child.pid}/fd/${fd}`) === expected } catch { return false }
   }), 'The browser started by this proof must own the debugger socket')
 }
+
+const lifecycle = installProofCleanup(() => terminateThenCleanup(() => owned.stop(), [
+  () => { for (const debuggerClient of debuggers) debuggerClient.close() },
+  () => {
+    // Startup may fail before discovery completes. A lock naming our PID still
+    // establishes ownership; never infer it from a newly appeared directory.
+    if (hypr?.pid && !runtimeIdentity) {
+      for (const candidate of readdirSync(join(runtime, 'hypr'))) {
+        if (candidate === liveSig) continue
+        const folder = join(runtime, 'hypr', candidate)
+        try {
+          const [pid, display] = readFileSync(join(folder, 'hyprland.lock'), 'utf8').split('\n')
+          if (Number(pid) === hypr.pid && display !== live.WAYLAND_DISPLAY) {
+            sig = candidate; sock = display; runtimeIdentity = statSync(folder)
+            break
+          }
+        } catch { /* No owned runtime folder was created here. */ }
+      }
+    }
+    const folder = sig && join(runtime, 'hypr', sig)
+    if (folder && sig !== liveSig && runtimeIdentity && existsSync(folder)) {
+      const current = statSync(folder)
+      assert.ok(current.ino === runtimeIdentity.ino && current.dev === runtimeIdentity.dev, 'Never remove a replaced runtime folder')
+      const lock = join(folder, 'hyprland.lock')
+      if (existsSync(lock)) {
+        const [pid, display] = readFileSync(lock, 'utf8').split('\n')
+        assert.equal(Number(pid), hypr.pid, 'Only remove the spawned compositor runtime folder')
+        assert.equal(display, sock)
+      }
+      rmSync(folder, { recursive: true, force: true })
+    }
+  },
+  () => {
+    const remaining = readdirSync(join(runtime, 'hypr'))
+    console.log('Hyprland instance folders after cleanup:', JSON.stringify(remaining))
+    assert.deepEqual(remaining, [liveSig], 'Only the live session instance folder may remain')
+  },
+]), console.log)
 
 try {
   writeFileSync(join(out, 'hyprland.lua'), [
@@ -199,41 +239,5 @@ try {
   writeFileSync(join(out, 'results.json'), JSON.stringify(results, null, 2) + '\n')
   console.log('PASS: exact paste into foot, Alacritty and Chromium')
 } finally {
-  await terminateThenCleanup(() => owned.stop(), [
-    () => { for (const debuggerClient of debuggers) debuggerClient.close() },
-    () => {
-      // Startup may fail before discovery completes. A lock naming our PID still
-      // establishes ownership; never infer it from a newly appeared directory.
-      if (hypr?.pid && !runtimeIdentity) {
-        for (const candidate of readdirSync(join(runtime, 'hypr'))) {
-          if (candidate === liveSig) continue
-          const folder = join(runtime, 'hypr', candidate)
-          try {
-            const [pid, display] = readFileSync(join(folder, 'hyprland.lock'), 'utf8').split('\n')
-            if (Number(pid) === hypr.pid && display !== live.WAYLAND_DISPLAY) {
-              sig = candidate; sock = display; runtimeIdentity = statSync(folder)
-              break
-            }
-          } catch { /* No owned runtime folder was created here. */ }
-        }
-      }
-      const folder = sig && join(runtime, 'hypr', sig)
-      if (folder && sig !== liveSig && runtimeIdentity && existsSync(folder)) {
-        const current = statSync(folder)
-        assert.ok(current.ino === runtimeIdentity.ino && current.dev === runtimeIdentity.dev, 'Never remove a replaced runtime folder')
-        const lock = join(folder, 'hyprland.lock')
-        if (existsSync(lock)) {
-          const [pid, display] = readFileSync(lock, 'utf8').split('\n')
-          assert.equal(Number(pid), hypr.pid, 'Only remove the spawned compositor runtime folder')
-          assert.equal(display, sock)
-        }
-        rmSync(folder, { recursive: true, force: true })
-      }
-    },
-    () => {
-      const remaining = readdirSync(join(runtime, 'hypr'))
-      console.log('Hyprland instance folders after cleanup:', JSON.stringify(remaining))
-      assert.deepEqual(remaining, [liveSig], 'Only the live session instance folder may remain')
-    },
-  ])
+  await lifecycle.cleanup()
 }

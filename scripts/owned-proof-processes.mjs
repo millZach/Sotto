@@ -1,5 +1,6 @@
 // Each run owns a systemd slice. Per-command scopes contain descendants across setsid/reparenting.
 import assert from 'node:assert/strict'
+import console from 'node:console'
 import process from 'node:process'
 import { execFile, spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
@@ -7,6 +8,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { setTimeout as wait } from 'node:timers/promises'
+import { setTimeout, clearTimeout } from 'node:timers'
 
 const run = promisify(execFile)
 export const proofSystemdEnvironment = () => {
@@ -32,6 +34,39 @@ export async function terminateThenCleanup(terminate, tasks) {
     try { await task() } catch (error) { errors.push(error) }
   }
   if (errors.length) throw new AggregateError(errors, 'Proof cleanup failed after process termination')
+}
+
+export function installProofCleanup(performCleanup, report, timeoutMs = 12000) {
+  let pending, interrupted
+  const onInt = () => onSignal('SIGINT', 130)
+  const onTerm = () => onSignal('SIGTERM', 143)
+  const cleanup = () => {
+    if (pending) return pending
+    let timer
+    const deadline = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error('Proof cleanup deadline')), timeoutMs)
+    })
+    pending = Promise.race([Promise.resolve().then(performCleanup), deadline]).finally(() => {
+      clearTimeout(timer)
+      process.off('SIGINT', onInt)
+      process.off('SIGTERM', onTerm)
+    })
+    return pending
+  }
+  const onSignal = (signal, code) => {
+    if (interrupted) return
+    interrupted = signal
+    process.exitCode = code
+    report(`Interrupted by ${signal}; cleaning up`)
+    // The main body may be waiting on a debugger. Exit only after the shared cleanup.
+    void cleanup().then(() => process.exit(code), error => { console.error(error); process.exit(code) })
+  }
+  process.on('SIGINT', onInt)
+  process.on('SIGTERM', onTerm)
+  return {
+    cleanup,
+    assertRunning() { assert.ok(!interrupted && !pending, 'The proof has been interrupted or is cleaning up') },
+  }
 }
 
 export function createOwnedProofProcesses(report) {

@@ -7,7 +7,7 @@ import { setTimeout, clearTimeout } from 'node:timers'
 import { execFileSync } from 'node:child_process'
 import { mkdir, open, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { createOwnedProofProcesses, terminateThenCleanup } from './owned-proof-processes.mjs'
+import { createOwnedProofProcesses, installProofCleanup, terminateThenCleanup } from './owned-proof-processes.mjs'
 import { fetchProofJson, openProofDebugger } from './proof-debugger.mjs'
 
 const root = process.cwd()
@@ -47,17 +47,28 @@ Object.assign(env, {
 })
 await writeFile(env.SOTTO_HYPRCTL_LOG, '')
 const bootLog = await open(join(scratch, 'electron-boot.log'), 'w')
-const child = owned.start('Electron and clipboard children', join(root, 'node_modules/electron/dist/electron'), ['--inspect=9345', root], { env, stdio: ['ignore', bootLog.fd, bootLog.fd] })
-let debuggerClient
+let child, debuggerClient
 const lines = []
 const report = (name, value) => { const line = `${name}: ${JSON.stringify(value)}`; lines.push(line); console.log(line) }
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 let childExited = false
-child.once('exit', () => { childExited = true })
+const lifecycle = installProofCleanup(() => terminateThenCleanup(() => owned.stop(), [
+  () => debuggerClient?.close(),
+  () => bootLog.close(),
+  () => rm(env.XDG_CONFIG_HOME, { recursive: true, force: true }),
+  async () => {
+    const remainingInstances = await readdir(join(env.XDG_RUNTIME_DIR, 'hypr'))
+    console.log('Hyprland instance folders after cleanup:', JSON.stringify(remainingInstances))
+    assert.deepEqual(remainingInstances, [session.HYPRLAND_INSTANCE_SIGNATURE])
+  },
+]), console.log)
 try {
+  child = owned.start('Electron and clipboard children', join(root, 'node_modules/electron/dist/electron'), ['--inspect=9345', root], { env, stdio: ['ignore', bootLog.fd, bootLog.fd] })
+  child.once('exit', () => { childExited = true })
   let target
   const deadline = Date.now() + 20000
   while (!target && Date.now() < deadline && !childExited) {
+    lifecycle.assertRunning()
     try { target = (await fetchProofJson('http://127.0.0.1:9345/json/list'))[0] } catch { await wait(100) }
   }
   assert.ok(target, 'Main inspector did not start')
@@ -67,6 +78,7 @@ try {
   const windowExpression = "process.mainModule.require('electron').BrowserWindow.getAllWindows().find(w => w.webContents.getURL().endsWith('/index.html'))"
   let ready = false
   while (!ready && Date.now() < deadline) {
+    lifecycle.assertRunning()
     try {
       ready = await evaluate(`(() => { if (!process.mainModule) return false; const w = ${windowExpression}; return Boolean(w && !w.webContents.isLoading()); })()`, 2000, false)
     } catch (error) {
@@ -103,14 +115,5 @@ try {
   report('live key dispatch', 'NONE — every dispatch used a recording stub')
   await writeFile(join(evidence, 'clipboard-proof.txt'), `${lines.join('\n')}\n`)
 } finally {
-  await terminateThenCleanup(() => owned.stop(), [
-    () => debuggerClient?.close(),
-    () => bootLog.close(),
-    () => rm(env.XDG_CONFIG_HOME, { recursive: true, force: true }),
-    async () => {
-      const remainingInstances = await readdir(join(env.XDG_RUNTIME_DIR, 'hypr'))
-      console.log('Hyprland instance folders after cleanup:', JSON.stringify(remainingInstances))
-      assert.deepEqual(remainingInstances, [session.HYPRLAND_INSTANCE_SIGNATURE])
-    },
-  ])
+  await lifecycle.cleanup()
 }
