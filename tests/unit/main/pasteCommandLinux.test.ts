@@ -112,8 +112,9 @@ describe('Hyprland paste', () => {
   it('bounds a slow modifier query by the remaining budget and sends no keys', async () => {
     vi.useFakeTimers()
     try {
-      const run = vi.fn(async (i: PasteInvocation, _timeout?: number) => {
+      const run = vi.fn(async (i: PasteInvocation, timeout?: number) => {
         if (i.args[0] === 'locked') return '{"locked":false}'
+        expect(timeout).toBe(300)
         return new Promise<string>(resolve => setTimeout(() => resolve('false'), 301))
       })
       const adapter = createHyprlandPasteAdapter(run, undefined, () => performance.now())
