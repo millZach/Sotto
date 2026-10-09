@@ -1,6 +1,6 @@
 # First-run setup and the owl
 
-October 8, 2026, branch `feat/onboarding-and-logo` (ADR-0062, ADR-0063).
+October 8, 2026, branch `feat/onboarding-and-logo` (ADR-0064, ADR-0063).
 
 ## The owl
 
