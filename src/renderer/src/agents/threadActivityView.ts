@@ -178,6 +178,25 @@ export function currentAction(thread: Pick<AgentThread, 'activities'>, turnId: s
  */
 export const HELD_AFTER_MS = 20_000
 
+/**
+ * The one pose the composer has room for, taken by the strongest claim (ADR-0021, ADR-0023, ADR-0061): a watch the
+ * provider confirmed, then background agents it confirmed, then one action held past the threshold, then a command
+ * left waiting in the background once the turn is over, and last babysitting, which is Sotto's own claim and steps
+ * aside while a turn runs.
+ */
+export type OrnamentPose = 'monitoring' | 'working' | 'held' | 'waiting' | 'babysitting'
+export function ornamentPose(facts: {
+  readonly monitoring: boolean; readonly agents: boolean; readonly held: boolean; readonly commands: boolean
+  readonly babysitting: boolean; readonly running: boolean
+}): OrnamentPose | undefined {
+  if (facts.monitoring) return 'monitoring'
+  if (facts.agents) return 'working'
+  if (facts.held) return 'held'
+  if (facts.running) return undefined
+  if (facts.commands) return 'waiting'
+  return facts.babysitting ? 'babysitting' : undefined
+}
+
 /** An action Sotto can time, so the readout never has to answer what it would say without a start. */
 export type HeldAction = AgentActivity & { readonly startedAt: string }
 

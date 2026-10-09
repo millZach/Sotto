@@ -182,6 +182,33 @@ describe('babysitting on the thread\'s record', () => {
     await babysitter.close()
   })
 
+  it('keeps why babysitting ended on its own through a restart, until the pull request is babysat again', async () => {
+    const f = await fixture()
+    await linkedThread(f)
+    const thread = (host: WorkspaceHost) => host.workspaceSnapshot().threads.find(item => item.id === 'local')!
+    await f.host.recordBabysitEnded('local', url, 'merged')
+    expect(thread(f.host).babysitEnded).toEqual([{ url, number: 1, reason: 'merged', endedAt: expect.any(String) }])
+    // A later ending of the same pull request replaces the earlier one.
+    await f.host.recordBabysitEnded('local', url, 'unreadable')
+    expect(thread(f.host).babysitEnded).toEqual([expect.objectContaining({ url, reason: 'unreadable' })])
+    await f.stop()
+
+    const reopened = await fixture(f.root)
+    expect(thread(reopened.host).babysitEnded).toEqual([expect.objectContaining({ url, number: 1, reason: 'unreadable' })])
+    const { babysitter } = babysitterOver(reopened.host, { number: 1 }, { now: () => START })
+    await expect(babysitter.start('local', url, 'user')).resolves.toMatchObject({ started: true })
+    expect(thread(reopened.host).babysitEnded).toBeUndefined()
+    await babysitter.close()
+  })
+
+  it('reads a thread whose ending a later host words with a reason this build does not know, without the ending', () => {
+    const thread = { id: 't', projectId: 'p', title: 'T', modelId: 'm', status: 'idle', messages: [], requests: [],
+      babysitEnded: [{ url, number: 1, reason: 'a-later-reason', endedAt: new Date(START).toISOString() }] }
+    const parsed = agentThreadSchema.safeParse(thread)
+    expect(parsed.success).toBe(true)
+    expect(parsed.data?.babysitEnded).toBeUndefined()
+  })
+
   it('leaves the thread readable by a client that predates the field, and drops what a client was never meant to have', () => {
     const thread = { id: 't', projectId: 'p', title: 'T', modelId: 'm', status: 'idle', messages: [], requests: [],
       babysitting: [{ url, number: 1, startedBy: 'agent', startedAt: new Date(START).toISOString(), told: { head: 'x' } }] }

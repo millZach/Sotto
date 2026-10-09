@@ -15,6 +15,19 @@ export type GitPullRequestAction = z.infer<typeof gitPullRequestActionSchema>
 /** A GitHub pull request URL, the only kind Sotto links or acts on (ADR-0027: GitHub only). */
 export const GITHUB_PULL_REQUEST_URL = /^https:\/\/github\.com\/([^/\s?#]+)\/([^/\s?#]+)\/pull\/(\d+)(?:[/?#][^\s]*)?$/iu
 export const gitPullRequestUrlSchema = z.string().max(2_048).regex(GITHUB_PULL_REQUEST_URL, 'Use a GitHub pull request URL.')
+/** Where a GitHub pull request URL points: its owner, repository and number. */
+export function pullRequestAddress(url: string): { readonly owner: string; readonly name: string; readonly number: number } | null {
+  const match = GITHUB_PULL_REQUEST_URL.exec(url.trim())
+  return match ? { owner: match[1]!, name: match[2]!, number: Number(match[3]) } : null
+}
+/**
+ * The one spelling two URLs of the same pull request share, whatever their case, the space around them or their
+ * trailing path: `owner/name#number`, lowercased. The host keys its records by it and every window matches by it.
+ */
+export function pullRequestKey(url: string): string | null {
+  const address = pullRequestAddress(url)
+  return address ? `${address.owner}/${address.name}#${address.number}`.toLowerCase() : null
+}
 const gitHubUrlSchema = z.string().max(2_048).regex(/^https:\/\/github\.com\//iu)
 
 /**

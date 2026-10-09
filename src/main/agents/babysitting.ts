@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { BABYSITTING_PER_THREAD_MAX, type AgentBabysitting, type BabysitStarter } from '../../shared/babysitting'
 import { isRateLimitAnswer, refusalReading, type GitHubRateLimit, type GitHubRateLimitReading } from './github'
 import { DETAIL_QUERY, FINGERPRINT_PER_QUERY, fingerprintQuery, readDetail, readFingerprint, type DetailAnswer, type PullRequestFingerprint } from './githubBabysitReads'
-import { pullRequestAddress, pullRequestKey } from './gitPullRequests'
+import { pullRequestAddress, pullRequestKey } from '../../shared/gitPullRequests'
 import { runGitStatusCommand, type RunGitCommand } from './gitStatus'
 import { FAILED_READ_LIMIT, findNews, printable, publishedBabysitting, toldAtStart, type BabysitEnding, type BabysitNews, type BabysitRecord, type BabysitTold } from './babysitNews'
 
