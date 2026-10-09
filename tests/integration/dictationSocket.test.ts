@@ -3,8 +3,10 @@ import { spawn, spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readlinkSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { createConnection, createServer } from 'node:net'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { isBuiltin } from 'node:module'
+import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { build } from 'vite'
 import { DictationSocket } from '../../src/main/hotkeys/dictationSocket'
 import { DICTATION_REQUEST_MAX_BYTES, dictationSocketPath, type CompositorDictationCommand } from '../../src/main/hotkeys/dictationCommand'
 import { validateDictationRuntime } from '../../src/main/hotkeys/dictationRuntime'
@@ -27,7 +29,7 @@ describe.skipIf(process.platform !== 'linux')('dictation Unix socket', () => {
       socket.setTimeout(5_000, () => socket.destroy(new Error('No command reply')))
       socket.on('error', reject)
       socket.on('data', data => { reply += data })
-      socket.once('end', () => resolve(reply))
+      socket.once('end', () => resolve(reply.replace(/^accepted\n/, '')))
       socket.once('connect', () => socket.write(input))
     })
   }
@@ -122,6 +124,35 @@ describe.skipIf(process.platform !== 'linux')('dictation Unix socket', () => {
   it.each([false, 'throw'])('reports failed delivery (%s) without crashing', async result => {
     await service(vi.fn(async () => { if (result === 'throw') throw new Error('private failure'); return false })).start()
     expect(await send('start\n')).toBe('unavailable\n')
+  })
+  it('answers the real client with exit zero after delivery takes longer than the idle deadline', async () => {
+    await build({ configFile: false, logLevel: 'silent', build: {
+      ssr: resolve('src/main/hotkeys/dictationClient.ts'), target: 'node24', outDir: runtime, emptyOutDir: false,
+      rollupOptions: { external: id => isBuiltin(id), output: { format: 'cjs', entryFileNames: 'client.cjs' } },
+    } })
+    const dispatch = vi.fn(async () => {
+      // Script slow window recreation past both original one-second idle timers.
+      await new Promise(resolve => setTimeout(resolve, 1_500))
+      return true
+    })
+    await service(dispatch).start()
+    const client = spawn(process.execPath, [join(runtime, 'client.cjs'), 'dictation', 'toggle'], {
+      env: { ...process.env, XDG_RUNTIME_DIR: runtime }, stdio: ['ignore', 'ignore', 'pipe'],
+    })
+    let error = ''
+    client.stderr.on('data', data => { error += data })
+    const exited = new Promise<number | null>((resolve, reject) => {
+      client.once('error', reject)
+      client.once('exit', resolve)
+    })
+    try {
+      expect(await exited).toBe(0)
+      expect(error).toBe('')
+      expect(dispatch.mock.calls).toEqual([['toggle']])
+    } finally {
+      if (client.exitCode === null && client.signalCode === null) process.kill(client.pid!, 'SIGTERM')
+      await exited
+    }
   })
   it('leaves an active listener intact when another profile starts', async () => {
     const first = service()

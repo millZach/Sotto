@@ -164,6 +164,10 @@ export class DictationSocket {
       socket.removeAllListeners('data')
       const request = parseDictationRequest(input.slice(0, -1))
       if (request === null || !input.endsWith('\n') || !this.acceptStamp(request)) { socket.end('invalid\n'); return }
+      socket.setTimeout(0)
+      // Acceptance ends both peers' input/connection idle deadlines. The final
+      // reply still reports delivery, even when recreating the window is slow.
+      socket.write('accepted\n')
       // Keep delivery ordered too: recreating the main window must not let a
       // later release dispatch first, followed by a delayed microphone start.
       const delivery = this.delivery.then(() => {

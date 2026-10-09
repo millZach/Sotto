@@ -97,4 +97,22 @@ describe('dictation command client endpoint validation', () => {
     socket.emit('connect')
     expect(socket.write).toHaveBeenCalledWith('start --at 1791486000123456789\n')
   })
+  it('stops its idle timer on a fragmented acceptance reply and waits for delivery', async () => {
+    const socket = Object.assign(new EventEmitter(), {
+      setTimeout: vi.fn(), setEncoding: vi.fn(), write: vi.fn(), destroy: vi.fn(),
+    })
+    connect.mockReturnValue(socket)
+    await import('../../../src/main/hotkeys/dictationClient')
+    expect(socket.setTimeout).toHaveBeenCalledWith(1_000, expect.any(Function))
+    socket.emit('connect')
+    socket.emit('data', 'accept')
+    expect(socket.setTimeout).not.toHaveBeenCalledWith(0)
+    socket.emit('data', 'ed\n')
+    expect(socket.setTimeout).toHaveBeenCalledWith(0)
+    expect(socket.destroy).not.toHaveBeenCalled()
+    socket.emit('data', 'ok\n')
+    socket.emit('end')
+    expect(process.exitCode).toBeUndefined()
+    expect(guidance).not.toHaveBeenCalled()
+  })
 })

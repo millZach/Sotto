@@ -33,10 +33,11 @@ if (request === null) {
     socket.setEncoding('utf8')
     socket.on('data', data => {
       reply += data
+      if (reply.startsWith('accepted\n')) socket.setTimeout(0)
       if (reply.length > 32) fail()
     })
     socket.once('end', () => {
-      if (reply !== 'ok\n') fail()
+      if (reply !== 'ok\n' && reply !== 'accepted\nok\n') fail()
       else { finished = true; socket.destroy() }
     })
     socket.once('close', () => { if (!finished) fail() })
