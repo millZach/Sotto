@@ -500,12 +500,15 @@ describe('links in a question', () => {
     window.sotto = { openExternalLink } as unknown as NonNullable<typeof window.sotto>
     try {
       const { user } = setup(structured([{ id: 'q-variant', question: 'Which variant? All three are at https://laptop.tail.ts.net/states/', multiSelect: false, allowFreeText: false,
-        options: [{ id: 'b', label: 'B', description: 'Sorted, as at https://laptop.tail.ts.net/states/?variant=B' }, { id: 'a', label: 'A' }] }]))
+        options: [{ id: 'b', label: 'B', description: 'Sorted, as at https://laptop.tail.ts.net/states/?variant=B' }, { id: 'a', label: 'A, at https://laptop.tail.ts.net/states/?variant=A' }] }]))
       await user.click(screen.getByRole('link', { name: 'https://laptop.tail.ts.net/states/' }))
       expect(openExternalLink).toHaveBeenLastCalledWith('https://laptop.tail.ts.net/states/')
       await user.click(screen.getByRole('link', { name: 'https://laptop.tail.ts.net/states/?variant=B' }))
       expect(openExternalLink).toHaveBeenLastCalledWith('https://laptop.tail.ts.net/states/?variant=B')
+      await user.click(screen.getByRole('link', { name: 'https://laptop.tail.ts.net/states/?variant=A' }))
+      expect(openExternalLink).toHaveBeenLastCalledWith('https://laptop.tail.ts.net/states/?variant=A')
       expect(screen.getByRole('radio', { name: /^B/u })).not.toBeChecked()
+      expect(screen.getByRole('radio', { name: /^A/u })).not.toBeChecked()
     } finally { delete window.sotto }
   })
 })

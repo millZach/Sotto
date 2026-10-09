@@ -183,7 +183,7 @@ function PermissionActions({ request, disabled, pressed, onChoose }: {
 /** Only a recommendation present in the provider's label is called one. IDs and answers stay untouched. */
 function OptionLabel({ label }: { readonly label: string }): ReactNode {
   const recommendation = /\s*\(recommended\)\s*$/iu.exec(label)
-  return <span className="agent-request__label">{recommendation ? label.slice(0, recommendation.index) : label}
+  return <span className="agent-request__label"><LinkedText text={recommendation ? label.slice(0, recommendation.index) : label} />
     {recommendation ? <> <span className="agent-request__recommended">(recommended)</span></> : null}</span>
 }
 
