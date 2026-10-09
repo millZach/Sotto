@@ -42,17 +42,29 @@ describe.skipIf(process.platform !== 'linux')('dictation Unix socket', () => {
     expect(readlinkSync(server.path)).toMatch(/^dictation-\d+-[a-f0-9]{8}\.sock$/)
     expect(statSync(server.path).mode & 0o777).toBe(0o600)
     expect(statSync(server.path).isSocket()).toBe(true)
-    for (const command of ['start', 'stop', 'toggle', 'cancel']) expect(await send(`${command}\n`)).toBe('ok\n')
-    expect(dispatch.mock.calls).toEqual([['start'], ['stop'], ['toggle'], ['cancel']])
+    for (const command of ['start', 'stop', 'toggle', 'cancel', 'retry', 'discard', 'place top', 'place bottom', 'place left', 'place right']) expect(await send(`${command}\n`)).toBe('ok\n')
+    expect(dispatch.mock.calls).toEqual([['start'], ['stop'], ['toggle'], ['cancel'], ['retry'], ['discard'], ['place top'], ['place bottom'], ['place left'], ['place right']])
     server.dispose()
     server.dispose()
     expect(existsSync(server.path)).toBe(false)
     expect(readdirSync(dirname(server.path))).toEqual([])
   })
+  it('validates stamps on shell verbs without treating them as push-to-talk releases', async () => {
+    const dispatch = vi.fn(async () => true)
+    await service(dispatch).start()
+    const at = BigInt(Date.now()) * 1_000_000n
+    for (const command of ['retry', 'discard', 'place top', 'place bottom', 'place left', 'place right']) {
+      expect(await send(`${command} --at ${at - 6_000_000_000n}\n`)).toBe('invalid\n')
+      expect(await send(`${command} --at ${at + 10_000_000_000n}\n`)).toBe('invalid\n')
+      expect(await send(`${command} --at ${at}\n`)).toBe('ok\n')
+    }
+    expect(await send(`start --at ${at - 15_000_000n}\n`)).toBe('ok\n')
+    expect(dispatch.mock.calls).toEqual([['retry'], ['discard'], ['place top'], ['place bottom'], ['place left'], ['place right'], ['start']])
+  })
   it('rejects text, multiple commands, and oversized messages without dispatch', async () => {
     const dispatch = vi.fn(async () => true)
     await service(dispatch).start()
-    for (const input of ['retry\n', 'start\nstop\n', `${'x'.repeat(DICTATION_REQUEST_MAX_BYTES)}\n`, 'start \n', 'start --at 123\nstop\n']) expect(await send(input)).toBe('invalid\n')
+    for (const input of ['unknown\n', 'place centre\n', 'place ../left\n', 'place left;id\n', 'place left right\n', 'start\nstop\n', `${'x'.repeat(DICTATION_REQUEST_MAX_BYTES)}\n`, 'start \n', 'start --at 123\nstop\n']) expect(await send(input)).toBe('invalid\n')
     expect(dispatch).not.toHaveBeenCalled()
   })
   it.each(['stop', 'cancel'])('does not start recording when an unpaired stamped %s arrives before an older start', async end => {

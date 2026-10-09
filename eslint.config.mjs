@@ -4,6 +4,10 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   {
     ignores: [
+      'playwright-transform-cache-*/**',
+      'sotto-e2e-*/**',
+      'scoped_dir*/**',
+      'artifacts/linux-shell-plumbing/**',
       'artifacts/linux-hyprland-paste/**',
       'artifacts/linux-no-window-controls/**',
       'artifacts/visuals-live/**',

@@ -171,3 +171,12 @@ artifacts/linux-hyprland-paste/*
 !artifacts/linux-hyprland-paste/clipboard-failure-widget.png
 !artifacts/linux-hyprland-paste/clipboard-recovery-820x560-light.png
 !artifacts/linux-hyprland-paste/clipboard-recovery-820x560-dark.png
+
+# Linux shell plumbing proof; retain only the evidence cited in its verification note.
+artifacts/linux-shell-plumbing/*
+!artifacts/linux-shell-plumbing/real-check.txt
+!artifacts/linux-shell-plumbing/plugin-present.png
+!artifacts/linux-shell-plumbing/widget-returned.png
+/sotto-e2e-*/
+/scoped_dir*/
+/playwright-transform-cache-*/

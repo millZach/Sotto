@@ -2818,3 +2818,55 @@ describe('parseDevelopmentRendererSources', () => {
     },
   )
 })
+
+
+describe('Linux shell widget ownership', () => {
+  const linux = { platform: 'linux', chrome: platformProfile('linux') } as const
+  it('steps aside, refuses other reveals and returns when the plugin goes away', async () => {
+    const { manager, windows } = createHarness(linux)
+    await manager.showWidget()
+    const widget = windows[0]!
+    expect(widget.showInactive).toHaveBeenCalledTimes(1)
+    await manager.setWidgetSuppressed(true)
+    expect(widget.hide).toHaveBeenCalledTimes(1)
+    await manager.showWidget()
+    expect(widget.showInactive).toHaveBeenCalledTimes(1)
+    await manager.setWidgetSuppressed(false)
+    expect(widget.showInactive).toHaveBeenCalledTimes(2)
+  })
+  it('keeps a pending reveal hidden when the plugin arrives during widget creation', async () => {
+    const load = createDeferred<void>()
+    const { manager, windows } = createHarness(linux, window => window.loadFile.mockReturnValue(load.promise))
+    const reveal = manager.showWidget()
+    await manager.setWidgetSuppressed(true)
+    load.resolve()
+    await reveal
+    expect(windows[0]!.showInactive).not.toHaveBeenCalled()
+    await manager.setWidgetSuppressed(false)
+    expect(windows[0]!.showInactive).toHaveBeenCalledTimes(1)
+  })
+  it('does not resurrect a widget hidden by its normal visibility policy', async () => {
+    const { manager, windows } = createHarness(linux)
+    await manager.showWidget()
+    await manager.setWidgetSuppressed(true)
+    manager.hideWidget()
+    await manager.setWidgetSuppressed(false)
+    expect(windows[0]!.showInactive).toHaveBeenCalledTimes(1)
+  })
+  it.each(['win32', 'darwin'] as const)('leaves %s reveals and the bottom default unchanged', async platform => {
+    const { manager, windows } = createHarness({ platform, chrome: platformProfile(platform) })
+    await manager.setWidgetSuppressed(true)
+    await manager.showWidget()
+    expect(windows[0]!.showInactive).toHaveBeenCalledTimes(1)
+    expect(windows[0]!.bounds.y).toBeGreaterThan(800)
+  })
+  it('defaults to the top on Linux and applies a saved shell edge to an already-created widget', async () => {
+    const { manager, windows } = createHarness(linux)
+    await manager.showWidget()
+    expect(windows[0]!.bounds.y).toBeLessThan(200)
+    await manager.setWidgetSuppressed(true)
+    await manager.setWidgetPlacement({ edge: 'bottom' })
+    await manager.setWidgetSuppressed(false)
+    expect(windows[0]!.bounds.y).toBeGreaterThan(800)
+  })
+})
