@@ -268,14 +268,31 @@ process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x
           await linkControl.focus(); await linkControl.press('Enter')
           await expect(namedLink).toBeFocused()
           const linksBox = await picker.boundingBox()
-          expect(linksBox!.x).toBeGreaterThanOrEqual(bounds!.x)
-          expect(linksBox!.x + linksBox!.width).toBeLessThanOrEqual(bounds!.x + bounds!.width)
-          expect(linksBox!.y + linksBox!.height).toBeLessThanOrEqual(bounds!.y + bounds!.height)
+          const viewport = page.viewportSize() ?? { width, height }
+          expect(linksBox!.x).toBeGreaterThanOrEqual(0)
+          expect(linksBox!.x + linksBox!.width).toBeLessThanOrEqual(viewport.width)
+          expect(linksBox!.y).toBeGreaterThanOrEqual(0)
+          expect(linksBox!.y + linksBox!.height).toBeLessThanOrEqual(viewport.height)
           await page.screenshot({ path: join(SHOTS, `${surface}-links-${width}x${height}-${appearance}.png`) })
           await namedLink.press('Escape'); await find.focus()
         }
       }
       expect(errors).toEqual([])
+      if (surface === 'drawer') {
+        const divider = scope.getByRole('separator', { name: 'Resize terminal' })
+        await divider.press('Home')
+        await expect(divider).toHaveAttribute('aria-valuenow', '184')
+        await input.press('Control+f'); await find.fill('needle')
+        const tinyOutput = await scope.locator('.terminal-view__output').boundingBox()
+        expect(tinyOutput!.height).toBeGreaterThanOrEqual(40)
+        await expect(scope.locator('.xterm-decoration-top')).not.toHaveCount(0)
+        await linkControl.press('Enter'); await expect(namedLink).toBeInViewport()
+        await namedLink.press('Escape'); await linkControl.press('Escape')
+        await divider.press('Home'); await expect(divider).toHaveAttribute('aria-valuenow', '120')
+        await input.press('Control+f'); await expect(divider).toHaveAttribute('aria-valuenow', '184')
+        await find.press('Control+k')
+        await expect(page.locator('.history-find__input')).toBeFocused()
+      }
       if (surface === 'workspace') {
         await input.press('Control+b')
         await input.press('Control+f'); await find.fill('many-match')

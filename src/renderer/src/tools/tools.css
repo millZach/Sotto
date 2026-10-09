@@ -95,7 +95,7 @@
 .terminal-search button:hover { color: var(--tt-text); background: var(--tt-hover); }
 .terminal-search button:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
 .terminal-search button:disabled { opacity: .45; cursor: default; }
-.terminal-links { position: absolute; inset: 48px 12px auto; z-index: 3; max-height: calc(100% - 56px); display: flex; flex-direction: column; padding: 8px; border: 1px solid var(--tt-hairline); border-radius: 9px; background: var(--tt-panel); color: var(--tt-text); box-shadow: var(--tt-shadow-overlay); }
+.terminal-links { position: fixed; inset: auto; margin: 0; z-index: 3; display: flex; flex-direction: column; padding: 8px; border: 1px solid var(--tt-hairline); border-radius: 9px; background: var(--tt-panel); color: var(--tt-text); box-shadow: var(--tt-shadow-overlay); }
 .terminal-links[hidden] { display: none; }
 .terminal-links header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 4px 6px; }
 .terminal-links strong { font-size: 12.5px; }

@@ -122,8 +122,10 @@ export function terminalLinkPicker(element: HTMLElement, catalog: ReturnType<typ
   panel.hidden = true
   panel.setAttribute('role', 'dialog')
   panel.setAttribute('aria-label', 'Open terminal link')
+  panel.setAttribute('popover', 'auto')
   let returnFocus: HTMLElement | null = null
-  const hide = (): void => { panel.hidden = true; panel.remove(); returnFocus?.focus() }
+  const hide = (): void => { panel.hidePopover?.(); panel.hidden = true; panel.remove(); returnFocus?.focus() }
+  panel.addEventListener('toggle', event => { if ((event as ToggleEvent).newState === 'closed' && !panel.hidden) hide() })
   return {
     open(): void {
       returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -145,6 +147,16 @@ export function terminalLinkPicker(element: HTMLElement, catalog: ReturnType<typ
       }
       if (!list.childElementCount) { const empty = document.createElement('p'); empty.textContent = 'No web links in this output.'; list.append(empty) }
       panel.append(list); panel.hidden = false; element.append(panel)
+      // The top layer escapes a short drawer's clipping while the DOM stays inside its keyboard/focus boundary.
+      const anchor = returnFocus?.getBoundingClientRect() ?? element.getBoundingClientRect()
+      const width = Math.min(360, window.innerWidth - 24)
+      panel.style.width = `${width}px`
+      panel.style.left = `${Math.max(12, Math.min(anchor.right - width, window.innerWidth - width - 12))}px`
+      panel.style.top = '12px'
+      panel.style.maxHeight = `${window.innerHeight - 24}px`
+      panel.showPopover?.()
+      const height = panel.getBoundingClientRect().height
+      panel.style.top = `${Math.max(12, Math.min(anchor.bottom + 8 + height <= window.innerHeight - 12 ? anchor.bottom + 8 : anchor.top - height - 8, window.innerHeight - height - 12))}px`
       ;(list.querySelector('button') ?? close).focus()
     },
     close(): boolean { if (panel.hidden) return false; hide(); return true },

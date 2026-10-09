@@ -119,6 +119,7 @@ export function terminalSearch(terminal: Terminal, element: HTMLElement, resolve
   previous.disabled = next.disabled = true
   return {
     mount(): void { element.append(bar) },
+    isOpen(): boolean { return !bar.hidden },
     open(): void { if (bar.hidden) { bar.hidden = false; onVisibilityChange?.(true); find(false, true) } input.focus(); input.select() },
     close(): boolean { if (bar.hidden) return false; hide(); return true },
     // The addon caches by query, not decoration colours. Rebuild highlights when the theme or grid changes.

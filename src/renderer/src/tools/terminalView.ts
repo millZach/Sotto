@@ -170,6 +170,7 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
   const picker = terminalLinkPicker(element, catalog, openLink)
   const search = terminalSearch(terminal, element, resolveColor, visible => {
     element.toggleAttribute('data-search-open', visible)
+    handlers.onSearchVisibilityChange?.(visible)
     const grid = view.fit()
     if (grid) handlers.onResize?.(grid)
     respace()
@@ -318,9 +319,10 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
       if (!opened) { terminal.open(output); search.mount(); opened = true }
       // The GPU renderer draws box/block glyphs to cell edges, independent of font and line spacing.
       paintGrid()
+      handlers.onSearchVisibilityChange?.(search.isOpen())
       void fonts?.load(`${terminal.options.fontSize}px ${monoFont()}`).then(fontLoaded, () => undefined)
     },
-    unmount() { if (element.contains(document.activeElement)) reportFocus(false); releaseRenderer(); element.remove() },
+    unmount() { if (element.contains(document.activeElement)) reportFocus(false); releaseRenderer(); element.remove(); handlers.onSearchVisibilityChange?.(false) },
     write(data, done) { terminal.write(data, done) },
     reset() { catalog.clear(); terminal.reset() },
     setInputEnabled(enabled) {

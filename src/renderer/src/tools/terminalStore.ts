@@ -31,6 +31,8 @@ export interface TerminalViewHandlers {
   readonly followsFrost?: boolean | undefined
   /** Font zoom changes the cell grid as well as the renderer; main must resize the PTY. */
   readonly onResize?: ((size: { cols: number; rows: number }) => void) | undefined
+  /** A drawer reserves enough height for search and at least one output row, restoring its saved height on close. */
+  readonly onSearchVisibilityChange?: ((visible: boolean) => void) | undefined
 }
 
 export type TerminalViewFactory = (handlers: TerminalViewHandlers) => TerminalViewLike

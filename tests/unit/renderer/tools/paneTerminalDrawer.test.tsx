@@ -72,6 +72,19 @@ beforeEach(() => { vi.stubGlobal('ResizeObserver', class { observe() {} disconne
 afterEach(() => { vi.unstubAllGlobals() })
 
 describe('the pane terminal drawer', () => {
+  it('temporarily raises a short drawer minimum for search and restores its saved height on close', async () => {
+    const terminal = fakeTerminal([session(ID_1)])
+    const { chromeStore, views } = setup(terminal)
+    act(() => { chromeStore.setHeight('thread-a', 120); chromeStore.setOpen('thread-a', true) })
+    await waitFor(() => expect(views).toHaveLength(1))
+    const divider = screen.getByRole('separator', { name: 'Resize terminal' })
+    expect(divider).toHaveAttribute('aria-valuenow', '120')
+    act(() => views[0]!.handlers.onSearchVisibilityChange!(true))
+    expect(divider).toHaveAttribute('aria-valuemin', '184')
+    expect(divider).toHaveAttribute('aria-valuenow', '184')
+    act(() => views[0]!.handlers.onSearchVisibilityChange!(false))
+    expect(divider).toHaveAttribute('aria-valuenow', '120')
+  })
   it('toggles open and starts a shell on its own, with no empty "Start terminal" step', async () => {
     const terminal = fakeTerminal()
     setup(terminal)
