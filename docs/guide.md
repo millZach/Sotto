@@ -486,7 +486,7 @@ On Linux, the keys live in Hyprland as **compositor bindings**. Install [Sotto�
 
 An error stays on the widget until you dismiss it with its **×**, press **Dismiss** or `Escape` in Sotto's window, or start another dictation. When transcription fails, Sotto keeps the recording in memory, never on disk: the widget reads **Click to try again**, with what went wrong in its tooltip, and Dictate says what happened and offers **Try again** and **Discard recording**. A long dictation goes up in parts, so Try again sends only the parts that did not come back. If Try again is turned away too, the widget says **Still busy · retry** (or **Failed again · retry**) and Dictate says so; the recording is still kept. Cancelling a Try again while it runs keeps the recording as well. Discarding it, `Escape` in Sotto's window, starting another dictation or closing Sotto lets it go. In other apps `Escape` is theirs: on Windows and macOS Sotto claims that key across every app only while you dictate. On Linux, cancellation outside Sotto uses a compositor binding.
 
-**Show floating widget when idle** keeps the small dictation sliver on screen between sessions. Turning it off hides the idle sliver. While the coordinator is on, thread activity still brings the widget back.
+**Show floating widget when idle** keeps the small dictation sliver on screen between sessions. On Linux its shortcut hint names the compositor binding: F9 to talk. Turning it off hides the idle sliver. While the coordinator is on, thread activity still brings the widget back.
 
 Settings:
 
