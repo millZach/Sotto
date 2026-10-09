@@ -530,7 +530,8 @@ export class ThreadDraftStore {
       current.saving = null
       const status = result === null ? 'unsaved' : persistence(result, threadId, draft.draftId)
       current.saved ||= status === 'saved'
-      if (current.saved) current.observed = true
+      // Durability in a command reply does not mean its publication has reached the window.
+      // Until receive sees this revision, a shell queued before the save cannot clear it.
       current.error = current.saved || status === 'saving' ? null : SAVE_ERROR
       this.emit(new Set([threadId]))
     }

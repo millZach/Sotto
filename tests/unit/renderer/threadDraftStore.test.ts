@@ -34,6 +34,24 @@ beforeEach(() => { vi.useFakeTimers() })
 afterEach(() => { vi.useRealTimers() })
 
 describe('ThreadDraftStore revisions and saves', () => {
+  it('keeps a saved draft until its revision reaches the published state', async () => {
+    const held = heldCommand()
+    const store = new ThreadDraftStore(held.command, 250, uuids())
+    store.receive(baseState())
+    store.edit('thread', { text: 'Keep this pane draft.' })
+    store.flush('thread')
+    const save = held.saves()[0]!
+    held.calls[0]!.resolve(published(save))
+    await Promise.resolve()
+    // A shell already queued for paint can still precede the save's publication.
+    store.receive(baseState())
+    expect(store.draft('thread').text).toBe(save.text)
+    expect(store.snapshot('thread').save).toBe('saved')
+    store.receive(published(save))
+    store.receive(baseState({ threadDraftPersistence: [{ threadId: 'thread', draftId: 'cleared-elsewhere', status: 'saved' }] }))
+    expect(store.draft('thread').text).toBe('')
+  })
+
   it.each(['receipt', 'delivery', 'queue'] as const)('retires a recovered alias on exact %s ownership without a renderer submission', evidence => {
     const store = new ThreadDraftStore(heldCommand().command, 250, uuids())
     store.edit('source', { text: 'A'.repeat(60_000) })
