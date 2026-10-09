@@ -380,9 +380,24 @@ chmod +x "$work/bin/sotto" "$work/checkout/apps/omarchy/sotto" "$work/failing/so
 checkout_sotto=$work/checkout/apps/omarchy/sotto
 
 # A stand-in for Sotto's main process, which every state file names in
-# `pid`; the plugin checks it is alive while a dictation shows.
+# `pid`, with its start time in `pidStart`; the plugin checks it is alive
+# while a dictation shows. Start times are read when a stand-in starts, so
+# a file can still name one after it is killed.
+declare -A starts=()
+start_of() { # pid -> field 22 of its stat, read after the last parenthesis
+  local stat
+  local -a fields
+  stat=$(cat "/proc/$1/stat" 2>/dev/null) || return 1
+  stat=${stat##*) }
+  read -ra fields <<<"$stat"
+  echo "${fields[19]}"
+}
+stand_in() { # name
+  scoped "$1" "$work/env-sotto" sleep infinity
+  starts[$last_pid]=$(start_of "$last_pid") || fail "the $1 stand-in did not start"
+}
 printf '%s\n' "PATH=/usr/bin:/bin" >"$work/env-sotto"
-scoped sotto-main "$work/env-sotto" sleep infinity
+stand_in sotto-main
 sotto_pid=$last_pid
 
 printf '%s\n' "HOME=$home" "USER=$USER" "LANG=en_US.UTF-8" "PATH=$work/bin:$omarchy_path/bin:/usr/local/bin:/usr/bin:/bin" \
@@ -443,19 +458,37 @@ park() {
 # ------------------------------------------------------------- scenes
 
 state_file=$rt/sotto/dictation-state.json
-# The process the state files name: Sotto's stand-in unless a scene sets
-# `state_pid`, to a stand-in it kills or to none, as an older Sotto writes.
-state_pid=""
+# What the state files say beyond their state, as Sotto writes it unless a
+# scene sets otherwise for one write:
+# - `pid`, Sotto's stand-in unless `state_pid` names a stand-in the scene
+#   kills, or none, as an older Sotto writes;
+# - `pidStart`, that process's start time unless `state_start` gives
+#   another, or none;
+# - `dictation`, a new identifier after go_idle or new_dictation and the
+#   same one until then, unless `state_dictation` is none;
+# - and `state_mode` makes the file one the shell cannot read.
+state_pid="" state_start="" state_dictation="" state_mode=""
+dictations=0 dictation=""
+new_dictation() { dictations=$((dictations + 1)); dictation="proof-$token-$dictations"; }
 write_state() { # state kept detail edge since-ago-ms
-  local now detail=null pid=${state_pid:-$sotto_pid} pid_field=""
+  local now detail=null pid=${state_pid:-$sotto_pid} start=$state_start fields=""
   now=$(date +%s%3N)
   [[ -n ${3:-} ]] && detail=$(jq -Rn --arg d "$3" '$d')
-  [[ $pid == none ]] || pid_field=",\"pid\":$pid"
+  if [[ $pid != none ]]; then
+    fields+=",\"pid\":$pid"
+    [[ -n $start ]] || start=${starts[$pid]:-none}
+    [[ $start == none ]] || fields+=",\"pidStart\":$start"
+  fi
+  if [[ $state_dictation != none ]]; then
+    [[ -n $dictation ]] || new_dictation
+    fields+=",\"dictation\":\"$dictation\""
+  fi
   printf '{"version":1,"state":"%s","since":%s,"updatedAt":%s,"detail":%s,"kept":%s,"edge":"%s"%s}\n' \
-    "$1" $((now - ${5:-0})) "$now" "$detail" "${2:-false}" "${4:-top}" "$pid_field" >"$rt/sotto/.state.tmp"
+    "$1" $((now - ${5:-0})) "$now" "$detail" "${2:-false}" "${4:-top}" "$fields" >"$rt/sotto/.state.tmp"
+  [[ -z $state_mode ]] || chmod "$state_mode" "$rt/sotto/.state.tmp"
   mv "$rt/sotto/.state.tmp" "$state_file"
 }
-go_idle() { rm -f "$state_file"; sleep 1.5; }
+go_idle() { rm -f "$state_file"; dictation=""; sleep 1.5; }
 capture() { WAYLAND_DISPLAY=$b_wl grim -o "${2:-WAYLAND-1}" "$evidence/raw/$1.png"; }
 pcapture() { park; capture "$@"; }
 baseline() {
@@ -472,6 +505,14 @@ pill() { # capture [output]
     -colorspace gray -threshold 6% -format '%@' info: 2>/dev/null |
     sed -nE 's/^([0-9]+)x([0-9]+)\+([0-9]+)\+([0-9]+)$/\1 \2 \3 \4/p' |
     awk -v dx="$strip_x" -v dy="$strip_y" '$1 > 30 && $2 > 30 {print $1, $2, $3 + dx, $4 + dy}'
+}
+# Whether the bar glyph differs from the idle baseline, in a box around it
+# that keeps the clock out.
+glyph_changed() { # capture
+  local mean
+  mean=$(magick "$evidence/raw/base-WAYLAND-1.png" "$evidence/raw/$1.png" -compose difference -composite \
+    -crop "40x26+$((glyph_x - 20))+0" +repage -colorspace gray -threshold 6% -format '%[fx:mean]' info:)
+  awk -v m="$mean" 'BEGIN { exit !(m > 0.02) }'
 }
 near() { (($1 - $2 <= 2 && $2 - $1 <= 2)); }
 last_verb() { tail -n1 "$work/verbs.log" | cut -f2; }
@@ -666,7 +707,7 @@ check '[[ $(last_runner) == "$checkout_sotto" && $(last_verb) == "dictation stop
 
 say "--- Sotto quits"
 # A second stand-in, which this scene kills as a crash would.
-scoped sotto-crash "$work/env-sotto" sleep infinity
+stand_in sotto-crash
 crash_pid=$last_pid
 baseline
 state_pid=$crash_pid write_state listening false "" top 8000
@@ -692,12 +733,79 @@ n=$(verbs)
 click $((x + w - 47)) $((y + h / 2))
 pcapture crash-kept-dismissed
 check '[[ -n $w && -z $(pill crash-kept-dismissed) && $(verbs) == "$n" ]]' "a kept recording whose Sotto has quit is shown as lost, with Dismiss rather than Discard (${w}x${h})"
+# Sotto's PID taken by another process: the file names a running process,
+# but one that started at another time, from the first read.
 baseline
-state_pid=none write_state listening false "" top 8000
+state_start=$((${starts[$sotto_pid]} + 1)) write_state listening false "" top 8000
+sleep 3.5
+pcapture crash-reused
+read -r w h x y <<<"$(pill crash-reused)"
+check '[[ -n $w ]] && ((h > 44))' "a file whose PID now belongs to a process started at another time says Sotto quit, from its first read (${w}x${h})"
+check 'kill -0 "$sotto_pid"' "the process with that PID is still running"
+baseline
+state_start=none write_state listening false "" top 8000
+sleep 4.5
+pcapture pid-alone
+read -r w h x y <<<"$(pill pid-alone)"
+check '[[ -n $w ]] && ((w < 400))' "a state file with pid and no pidStart is checked by its PID alone"
+baseline
+state_pid=none state_dictation=none write_state listening false "" top 8000
 sleep 4.5
 pcapture older-sotto
 read -r w h x y <<<"$(pill older-sotto)"
 check '[[ -n $w ]] && ((w < 400))' "a state file without pid, from an older Sotto, is taken at its word"
+
+say "--- a state file that cannot be read"
+baseline
+write_state listening false "" top 8000
+sleep 1
+pcapture unreadable-before
+read -r w0 h0 x0 y0 <<<"$(pill unreadable-before)"
+state_mode=000 write_state listening false "" top 8000
+sleep 1.5
+pcapture unreadable
+read -r w h x y <<<"$(pill unreadable)"
+check '[[ -n $w ]] && ((w > w0 + 100))' "a state file that cannot be read keeps the pill and its buttons, and says so (${w}x${h} at $x,$y)"
+n=$(verbs)
+click $((x + w - 103)) $((y + h / 2))
+check '[[ $(verbs) == $((n + 1)) && $(last_verb) == "dictation stop" ]]' "its Stop still runs: sotto dictation stop"
+sleep 4
+pcapture unreadable-later
+check '[[ $(pill unreadable-later) == "$w $h $x $y" ]]' "five seconds later the pill and its notice are still there"
+write_state listening false "" top 8000
+sleep 3.5
+pcapture unreadable-recovered
+read -r w h x y <<<"$(pill unreadable-recovered)"
+check '[[ -n $w ]] && near "$w" "$w0"' "once the file can be read again, the notice goes and the dictation shows as before (${w}x${h})"
+# Sotto quitting while the file cannot be read: the plugin still checks it.
+stand_in sotto-unreadable
+gone_pid=$last_pid
+state_pid=$gone_pid write_state listening false "" top 8000
+sleep 1
+state_pid=$gone_pid state_mode=000 write_state listening false "" top 8000
+sleep 1.5
+kill -KILL "$gone_pid"
+wait_for 3 '! kill -0 "$gone_pid" 2>/dev/null' || fail "the stand-in did not stop"
+sleep 3.5
+pcapture unreadable-quit
+read -r w h x y <<<"$(pill unreadable-quit)"
+check '[[ -n $w ]] && ((h > 44))' "when Sotto quits while its file cannot be read, the pill says the dictation was lost (${w}x${h})"
+click $((x + w - 47)) $((y + h / 2))
+pcapture unreadable-dismissed
+check '[[ -z $(pill unreadable-dismissed) ]] && glyph_changed unreadable-dismissed' "after Dismiss no pill shows, and the glyph still says the file cannot be read"
+# A file that cannot be read from the first, with nothing on screen.
+rm -f "$state_file"
+sleep 3.5
+dictation=""
+pcapture unreadable-cleared
+check '! glyph_changed unreadable-cleared' "once the file is gone, the glyph is back at rest"
+state_mode=000 write_state listening false "" top 8000
+sleep 1.5
+pcapture unreadable-first
+check '[[ -z $(pill unreadable-first) ]] && glyph_changed unreadable-first' "a file that cannot be read from the first shows no pill, only the glyph in the urgent colour"
+rm -f "$state_file"
+dictation=""
+sleep 3.5
 
 say "--- rule A: the display focused when dictation starts"
 # Both baselines with the pointer on the second display, where a dictation
@@ -755,6 +863,7 @@ for previous in copied kept; do
   capture "$previous-shows-1" WAYLAND-1
   capture "$previous-shows-2" WAYLAND-2
   check '[[ -n $(pill "$previous-shows-1" WAYLAND-1) && -z $(pill "$previous-shows-2" WAYLAND-2) ]]' "$previous: the result shows on the first display, where its dictation started, with the pointer on the second"
+  new_dictation
   write_state starting false "" top 0
   sleep 0.8
   capture "after-$previous-1" WAYLAND-1
@@ -764,7 +873,7 @@ for previous in copied kept; do
 done
 # Sotto quitting while the pointer is on the other display: the notice
 # stays where the dictation was, rather than reopening where focus is.
-scoped sotto-crash-elsewhere "$work/env-sotto" sleep infinity
+stand_in sotto-crash-elsewhere
 crash_pid=$last_pid
 move_to 1300 600
 sleep 1.2
@@ -780,6 +889,43 @@ capture quit-elsewhere-2 WAYLAND-2
 read -r w h x y <<<"$(pill quit-elsewhere-1 WAYLAND-1)"
 check '[[ -n $w && -z $(pill quit-elsewhere-2 WAYLAND-2) ]] && ((h > 44))' "when Sotto quits, its notice stays on the display the dictation was on (${w}x${h})"
 go_idle
+
+say "--- rule A: two dictations' states written as one"
+# A connects on the first display; the pointer moves to the second; A is
+# cancelled as B starts, and only A's starting and B's listening are
+# written, as Sotto's 50 ms coalescing can leave them. Once with Sotto's
+# dictation identifiers, once without, as an older Sotto writes.
+hypr_b dismissnotify >/dev/null
+go_idle
+move_to 2240 420
+sleep 1.2
+capture base-WAYLAND-1 WAYLAND-1
+capture base-WAYLAND-2 WAYLAND-2
+for named in named unnamed; do
+  [[ $named == named ]] && state_dictation="" || state_dictation=none
+  move_to 1300 600
+  sleep 1.2
+  new_dictation
+  write_state starting false "" top 0
+  sleep 0.6
+  move_to 2240 420
+  sleep 1.2
+  capture "coalesced-$named-a-1" WAYLAND-1
+  capture "coalesced-$named-a-2" WAYLAND-2
+  check '[[ -n $(pill "coalesced-$named-a-1" WAYLAND-1) && -z $(pill "coalesced-$named-a-2" WAYLAND-2) ]]' "$named: A's starting shows on the first display, with the pointer now on the second"
+  new_dictation
+  write_state listening false "" top 0
+  sleep 0.8
+  capture "coalesced-$named-b-1" WAYLAND-1
+  capture "coalesced-$named-b-2" WAYLAND-2
+  if [[ $named == named ]]; then
+    check '[[ -z $(pill coalesced-named-b-1 WAYLAND-1) && -n $(pill coalesced-named-b-2 WAYLAND-2) ]]' "B's listening, under its own identifier, opens on the focused second display"
+  else
+    check '[[ -n $(pill coalesced-unnamed-b-1 WAYLAND-1) && -z $(pill coalesced-unnamed-b-2 WAYLAND-2) ]]' "without identifiers, as from an older Sotto, the pair reads as one dictation and stays on the first display"
+  fi
+  go_idle
+done
+state_dictation=""
 
 say "--- an upright failure on a small display, then a scaled one"
 # B's second display shrinks to the 820x560 minimum, then becomes a full-HD
@@ -898,6 +1044,14 @@ uninstall() { # name [env assignment]
 }
 mkdir -m 700 "$work/no-shell"
 check '! uninstall uninstall-without-shell XDG_RUNTIME_DIR="$work/no-shell" && [[ -d $plugin_dir ]] && on_bar' "without a running shell --uninstall fails and removes nothing"
+# shell.json that cannot be read while the shell keeps its layout.
+config_mode=$(stat -c %a "$config")
+chmod 000 "$config"
+uninstall uninstall-unreadable && unreadable_status=0 || unreadable_status=$?
+chmod "$config_mode" "$config"
+check '((unreadable_status != 0)) && [[ -d $plugin_dir ]] && grep -q "^.*Could not read $config to see whether Sotto.s glyph is on the bar: .*Permission denied. Nothing was removed." "$work/uninstall-unreadable.out"' "with shell.json unreadable, --uninstall keeps the plugin folder and says why"
+sleep 1
+check 'on_bar' "the glyph is still on the bar after that"
 check 'uninstall uninstall && [[ ! -e $plugin_dir ]] && ! on_bar && grep -q "glyph off the bar" "$work/uninstall.out"' "--uninstall takes the glyph off the bar, then removes the plugin folder"
 # A glyph left on the bar after its folder was deleted by hand.
 jq '.bar.layout.center += [{"id": "sotto.dictation"}]' "$config" >"$config.tmp" && mv "$config.tmp" "$config"
@@ -916,7 +1070,8 @@ magick $(for s in idle starting listening transcribing delivered copied failed-k
 magick $(for s in light-idle light-listening light-transcribing light-failed; do crop_top "$s"; done) -append "$evidence/curated/states-catppuccin-latte.png"
 magick $(for s in notice-missing notice-cleared; do crop_top "$s"; done) -append "$evidence/curated/notices.png"
 magick $(for s in stop-before stop-failed stop-failed-later cancel-failed; do crop_top "$s"; done) -append "$evidence/curated/failed-stop-keeps-pill.png"
-magick $(for s in crash-before crash-listening crash-kept older-sotto; do crop_top "$s"; done) -append "$evidence/curated/sotto-quit.png"
+magick $(for s in crash-before crash-listening crash-kept crash-reused older-sotto; do crop_top "$s"; done) -append "$evidence/curated/sotto-quit.png"
+magick $(for s in unreadable-before unreadable unreadable-later unreadable-recovered unreadable-quit unreadable-first; do crop_top "$s"; done) -append "$evidence/curated/read-failure-keeps-pill.png"
 magick $(for s in still-listening still-transcribing; do crop_top "$s"; done) -append "$evidence/curated/without-motion.png"
 magick \( drag-to-left.png snapped-left.png +append \) \( drag-to-bottom.png snapped-bottom.png +append \) \
   \( drag-to-right.png snapped-right.png +append \) \( drag-to-top.png snapped-top.png +append \) -append -resize 35% "$evidence/curated/drag-and-snap.png"
@@ -929,6 +1084,10 @@ for frame in copied-shows after-copied; do
   magick "$frame-1.png" "$frame-2.png" -background black -gravity north +append "$evidence/curated/.$frame.png"
 done
 magick "$evidence/curated/.copied-shows.png" "$evidence/curated/.after-copied.png" -append -resize 35% "$evidence/curated/rule-a-after-copied.png"
+for frame in coalesced-named-a coalesced-named-b; do
+  magick "$frame-1.png" "$frame-2.png" -background black -gravity north +append "$evidence/curated/.$frame.png"
+done
+magick "$evidence/curated/.coalesced-named-a.png" "$evidence/curated/.coalesced-named-b.png" -append -resize 35% "$evidence/curated/rule-a-coalesced.png"
 magick \( small-upright.png -crop 300x560+0+0 +repage \) \( -size 20x560 xc:black \) \
   \( scaled-upright.png -crop 600x1080+0+0 +repage -resize 50% \) -background black -gravity north +append "$evidence/curated/upright-small-displays.png"
 cp listening.png "$evidence/curated/desktop-tokyo-night.png"
