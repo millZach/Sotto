@@ -75,7 +75,11 @@ export function createHyprlandPasteAdapter(
           await delay(Math.min(MODIFIER_RELEASE_POLL_MS, deadline - now()))
         }
         // Query after Sotto's paste delay and modifier release, as close to dispatch as possible.
-        const chord = hyprlandPasteChord(JSON.parse(await run(invocation)))
+        const activeWindow: unknown = JSON.parse(await run(invocation))
+        const address = activeWindow && typeof activeWindow === 'object' && 'address' in activeWindow
+          ? activeWindow.address : undefined
+        if (typeof address !== 'string' || address.trim() === '') return false
+        const chord = hyprlandPasteChord(activeWindow)
         if (chord.mods === 'SHIFT') await copyToPrimary()
         // Modifier polling and target lookup can outlast the initial lock check.
         // The compositor owns the release timer even if this request loses its reply.

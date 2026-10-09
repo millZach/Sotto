@@ -6,7 +6,7 @@ appendFileSync(process.env.SOTTO_HYPRCTL_LOG, `${JSON.stringify(args)}\n`)
 switch (args[0]) {
   case 'locked': console.log('{"locked":false}'); break
   case 'repl': console.log('false'); break
-  case 'activewindow': console.log(JSON.stringify({ tags: process.env.SOTTO_HYPRCTL_TAGS === 'terminal' ? ['terminal*'] : ['browser'] })); break
+  case 'activewindow': console.log(JSON.stringify({ address: '0x1234', tags: process.env.SOTTO_HYPRCTL_TAGS === 'terminal' ? ['terminal*'] : ['browser'] })); break
   case 'eval':
     if (process.env.SOTTO_HYPRCTL_FAIL === 'exit') process.exitCode = 1
     else console.log(process.env.SOTTO_HYPRCTL_FAIL === 'reply' ? 'Invalid dispatcher' : 'ok')

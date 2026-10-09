@@ -15,7 +15,7 @@ function harness(tags: unknown = []) {
     switch (invocation.args[0]) {
       case 'locked': return '{"locked":false}'
       case 'repl': return 'false'
-      case 'activewindow': return JSON.stringify({ tags })
+      case 'activewindow': return JSON.stringify({ address: '0x1234', tags })
       default: return 'ok'
     }
   })
@@ -76,6 +76,21 @@ describe('Hyprland paste', () => {
     h.copyToPrimary.mockRejectedValue(new Error('unavailable'))
     await expect(h.adapter.run(buildLinuxPasteInvocation())).resolves.toBe(false)
     expect(dispatched(h.run)).toEqual([])
+  })
+
+  it.each([{}, null, [], { address: '' }, { address: '  ' }, { address: 1234 }])('reports copied without keys or PRIMARY writes when focus is %j', async activeWindow => {
+    const h = harness(['terminal'])
+    const base = h.run.getMockImplementation()!
+    h.run.mockImplementation(i => i.args[0] === 'activewindow' ? Promise.resolve(JSON.stringify(activeWindow)) : base(i))
+    const clipboard = { writeText: vi.fn() }
+    const output = new OutputService({
+      clipboard, widget: { hideWidget: vi.fn(), showWidget: vi.fn() }, delay: vi.fn(),
+      process: h.adapter, buildPasteInvocation: buildLinuxPasteInvocation,
+    })
+    await expect(output.deliver('safe copied text', { autoPaste: true, pasteDelayMs: 80 })).resolves.toBe('copied')
+    expect(clipboard.writeText).toHaveBeenCalledWith('safe copied text')
+    expect(dispatched(h.run)).toEqual([])
+    expect(h.copyToPrimary).not.toHaveBeenCalled()
   })
 
   it('waits briefly for physical modifiers to be released before querying the target', async () => {
