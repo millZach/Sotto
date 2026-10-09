@@ -177,6 +177,3 @@ artifacts/linux-shell-plumbing/*
 !artifacts/linux-shell-plumbing/real-check.txt
 !artifacts/linux-shell-plumbing/plugin-present.png
 !artifacts/linux-shell-plumbing/widget-returned.png
-/sotto-e2e-*/
-/scoped_dir*/
-/playwright-transform-cache-*/
