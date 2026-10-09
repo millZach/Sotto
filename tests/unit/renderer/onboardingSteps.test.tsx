@@ -268,7 +268,8 @@ describe('ComputersStep', () => {
     const onHostsChange = vi.fn()
     render(<ComputersStep heading={<div />} bridge={bridge} onHostsChange={onHostsChange} />)
     expect(await screen.findByText('Build box')).toBeVisible()
-    expect(onHostsChange).toHaveBeenCalledWith(1)
+    // The count is reported from an effect after the render that shows the host.
+    await waitFor(() => expect(onHostsChange).toHaveBeenCalledWith(1))
   })
 
   it('reports zero hosts when none are saved', async () => {
@@ -276,7 +277,7 @@ describe('ComputersStep', () => {
     const onHostsChange = vi.fn()
     render(<ComputersStep heading={<div />} bridge={bridge} onHostsChange={onHostsChange} />)
     await screen.findByRole('button', { name: 'Add a computer' })
-    expect(onHostsChange).toHaveBeenCalledWith(0)
+    await waitFor(() => expect(onHostsChange).toHaveBeenCalledWith(0))
   })
 
   it('opens the Add a computer dialog on press', async () => {
