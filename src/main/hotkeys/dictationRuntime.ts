@@ -21,6 +21,14 @@ export function validateDictationRuntime(runtimeDirectory: string | undefined): 
   if (runtime.stat.uid !== process.getuid?.() || (runtime.stat.mode & 0o7777) !== 0o700) {
     throw new Error('Dictation needs a desktop runtime folder that only you can access.')
   }
+  for (const ancestor of directories.slice(0, -1)) {
+    const { stat } = ancestor
+    // StrictModes-style ancestry: a sticky shared folder cannot rename our entry.
+    if (!stat.isDirectory() || (stat.uid !== 0 && stat.uid !== process.getuid?.()) ||
+      ((stat.mode & 0o022) !== 0 && (stat.mode & 0o1000) === 0)) {
+      throw new Error('Dictation needs runtime folders that only you or the system can change.')
+    }
+  }
   return directories
 }
 

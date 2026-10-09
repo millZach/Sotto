@@ -1,15 +1,23 @@
 import { createConnection } from 'node:net'
+import { dirname, join } from 'node:path'
 import { dictationSocketPath, parseDictationArguments } from './dictationCommand'
-import { validateDictationRuntime } from './dictationRuntime'
+import { readDictationEndpoint, validateDictationFolder } from './dictationEndpoint'
+import { assertDictationDirectories, validateDictationRuntime } from './dictationRuntime'
 
 const command = parseDictationArguments(process.argv.slice(2))
 if (command === null) {
   console.error('Use: sotto dictation start|stop|toggle|cancel')
   process.exitCode = 2
 } else {
+  let guidance = 'Dictation needs a private desktop runtime folder owned by you, with no folder links. Open Sotto in a desktop session that provides one, then try again.'
   try {
-    validateDictationRuntime(process.env.XDG_RUNTIME_DIR)
-    const socket = createConnection(dictationSocketPath(process.env.XDG_RUNTIME_DIR))
+    const directories = validateDictationRuntime(process.env.XDG_RUNTIME_DIR)
+    guidance = 'Sotto’s dictation socket is unavailable. Open Sotto in this desktop session, then try again.'
+    const path = dictationSocketPath(process.env.XDG_RUNTIME_DIR)
+    directories.push(validateDictationFolder(dirname(path)))
+    const endpoint = readDictationEndpoint(path)
+    assertDictationDirectories(directories)
+    const socket = createConnection(endpoint.target === null ? path : join(dirname(path), endpoint.target))
     let finished = false
     const fail = (): void => {
       if (finished) return
@@ -33,7 +41,7 @@ if (command === null) {
     })
     socket.once('close', () => { if (!finished) fail() })
   } catch {
-    console.error('Dictation needs a private desktop runtime folder owned by you, with no folder links. Open Sotto in a desktop session that provides one, then try again.')
+    console.error(guidance)
     process.exitCode = 1
   }
 }

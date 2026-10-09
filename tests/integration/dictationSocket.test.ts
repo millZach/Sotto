@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { spawn, spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readlinkSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
-import { createConnection } from 'node:net'
+import { createConnection, createServer } from 'node:net'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DictationSocket } from '../../src/main/hotkeys/dictationSocket'
@@ -159,6 +159,50 @@ describe.skipIf(process.platform !== 'linux')('dictation Unix socket', () => {
     expect(existsSync(oldSocket)).toBe(false)
     expect(await send('toggle\n')).toBe('ok\n')
     expect(readdirSync(folder)).toHaveLength(2)
+  })
+  it('removes an unpublished private socket left by a crash', async () => {
+    const folder = join(runtime, 'sotto')
+    mkdirSync(folder, { mode: 0o700 })
+    const oldSocket = join(folder, 'dictation-123-1a2b3c4d.sock')
+    const abandoned = spawnSync(process.execPath, ['-e', 'require("node:net").createServer().listen(process.argv[1], () => process.exit(0))', oldSocket])
+    expect(abandoned.status).toBe(0)
+    expect(lstatSync(oldSocket).isSocket()).toBe(true)
+    expect(existsSync(dictationSocketPath(runtime))).toBe(false)
+    await service().start()
+    expect(existsSync(oldSocket)).toBe(false)
+    expect(await send('start\n')).toBe('ok\n')
+    expect(readdirSync(folder)).toHaveLength(2)
+  })
+  it('preserves live unpublished listeners, files, links and unrelated socket names', async () => {
+    const folder = join(runtime, 'sotto')
+    mkdirSync(folder, { mode: 0o700 })
+    const livePath = join(folder, 'dictation-123-1a2b3c4d.sock')
+    const file = join(folder, 'dictation-123-2a2b3c4d.sock')
+    const link = join(folder, 'dictation-123-3a2b3c4d.sock')
+    const unrelated = join(folder, 'other.sock')
+    writeFileSync(file, 'keep')
+    symlinkSync('dictation-123-2a2b3c4d.sock', link)
+    const abandoned = spawnSync(process.execPath, ['-e', 'require("node:net").createServer().listen(process.argv[1], () => process.exit(0))', unrelated])
+    expect(abandoned.status).toBe(0)
+    const listener = createServer(socket => {
+      socket.on('error', () => socket.destroy())
+      socket.end('still live\n')
+    })
+    await new Promise<void>(resolve => listener.listen(livePath, resolve))
+    try {
+      await service().start()
+      expect(lstatSync(file).isFile()).toBe(true)
+      expect(readlinkSync(link)).toBe('dictation-123-2a2b3c4d.sock')
+      expect(lstatSync(unrelated).isSocket()).toBe(true)
+      const reply = await new Promise<string>((resolve, reject) => {
+        const socket = createConnection(livePath)
+        let reply = ''
+        socket.on('error', reject)
+        socket.on('data', data => { reply += data })
+        socket.once('end', () => resolve(reply))
+      })
+      expect(reply).toBe('still live\n')
+    } finally { await new Promise<void>(resolve => listener.close(() => resolve())) }
   })
   it('recovers a dead instance\'s link when its private socket is already gone', async () => {
     mkdirSync(join(runtime, 'sotto'), { mode: 0o700 })
