@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.node.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"]
+  },
+  "include": [
+    "src/main/**/*.ts",
+    "src/host/**/*.ts",
+    "src/preload/**/*.ts",
+    "src/shared/**/*.ts",
+    "tests/**/*.ts"
+  ],
+  "exclude": ["tests/integration/widgetSync.test.ts"]
+}
