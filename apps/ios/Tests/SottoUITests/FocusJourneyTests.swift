@@ -73,8 +73,14 @@ import XCTest
         capture("terminals-more-choices-on-computer")
         app.alerts.buttons["Done"].tap()
         yes.tap()
-        XCTAssertTrue(text("Sending").waitForExistence(timeout: 10))
-        XCTAssertTrue(text("Answered").waitForExistence(timeout: 10))
+        // The fixture confirms after 650 ms and the Answered card leaves after 900 ms. XCTest may
+        // finish its tap after those messages have gone; assert this exact terminal's durable result.
+        let working = app.buttons.matching(identifier: "terminal-\(laptop)/terminal/33333333-3333-4333-8333-333333333333")
+            .matching(NSPredicate(format: "label CONTAINS %@", "Working")).firstMatch
+        XCTAssertTrue(working.waitForExistence(timeout: 10), "The confirmed answer returns this terminal to Working")
+        XCTAssertFalse(app.buttons["terminal-answer-yes"].exists)
+        XCTAssertFalse(app.buttons["terminal-answer-no"].exists)
+        reveal(working)
         capture("terminals-permission-answered")
     }
 
