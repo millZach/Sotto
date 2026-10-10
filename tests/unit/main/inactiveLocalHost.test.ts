@@ -13,6 +13,9 @@ it('leaves saved workspace data intact and constructs no provider or thread stor
     await writeFile(join(directory, 'workspace.json'), saved)
     const runtime = await inactiveLocalHost(directory)
     expect(runtime.agentControl.shell().host.threads).toEqual([])
+    // Main reads this computer's host ID at start and for every held answer, so it must not refuse.
+    expect(runtime.agentControl.hostId()).toBe(runtime.agentControl.shell().hostId)
+    expect(runtime.agentControl.hostId()).toMatch(/^[0-9a-f-]{36}$/u)
     expect(runtime.threadRegistry).toBeNull()
     await expect(runtime.hostService.command({ type: 'connect' }, desktopWindowClient())).rejects.toThrow('local host is off')
     expect(() => runtime.agentHost.workingCopyOptions('project')).toThrow('local host is off')

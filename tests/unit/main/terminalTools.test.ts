@@ -14,7 +14,7 @@ import { deferred } from '../../fixtures/deferred'
 const unwrap = <T>(result: ToolsResult<T>): T => { if (!result.ok) throw new Error(JSON.stringify(result)); return result.value }
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { for (const dispose of cleanup.splice(0).reverse()) await dispose() })
-async function fixture(options: Pick<TerminalDependencies, 'env' | 'platform' | 'executableExists' | 'acquireStart'> = {}) {
+async function fixture(options: Pick<TerminalDependencies, 'env' | 'platform' | 'executableExists' | 'acquireStart' | 'projectFolder'> = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-terminal-unit-'))
   cleanup.push(() => rm(directory, { recursive: true, force: true }))
   const other = join(directory, 'other'); await mkdir(other)
@@ -227,6 +227,48 @@ describe('persistent terminal service', () => {
     expect(f.service.hasRunningTerminal('a')).toBe(true)
     unwrap(await f.service.close({ ...f.target, sessionId: drawer.session.id }))
     expect(f.service.hasRunningTerminal('a')).toBe(false)
+  })
+  it('starts a drawer shell in the project folder and a Tools shell in the working copy', async () => {
+    const project = await mkdtemp(join(tmpdir(), 'sotto-terminal-project-'))
+    cleanup.push(() => rm(project, { recursive: true, force: true }))
+    const projectFolder = vi.fn((projectId: string) => projectId === 'project' ? project : undefined)
+    const f = await fixture({ projectFolder })
+    const tools = unwrap(await f.service.create(f.target))
+    const drawer = unwrap(await f.service.create({ ...f.target, place: 'drawer' }))
+    expect(f.spawn).toHaveBeenNthCalledWith(1, expect.any(String), expect.any(Array), expect.objectContaining({ cwd: tools.session.workspace.workingDirectory }))
+    expect(f.spawn).toHaveBeenNthCalledWith(2, expect.any(String), expect.any(Array), expect.objectContaining({ cwd: project }))
+    expect(projectFolder).toHaveBeenCalledWith('project')
+    unwrap(await f.service.close({ ...f.target, sessionId: tools.session.id }))
+    f.change()
+    expect(await f.service.hasRunningTerminalInCheckout(project)).toBe(true)
+    expect(await f.service.hasRunningTerminalInCheckout(drawer.session.workspace.workingDirectory)).toBe(true)
+    unwrap(await f.service.close({ ...f.target, sessionId: drawer.session.id }))
+    expect(await f.service.hasRunningTerminalInCheckout(project)).toBe(false)
+    expect(await f.service.hasRunningTerminalInCheckout(drawer.session.workspace.workingDirectory)).toBe(false)
+  })
+  it.each(['project', 'working-copy'] as const)('refuses a drawer start while its %s folder is reserved and releases every start reservation', async folder => {
+    const project = await mkdtemp(join(tmpdir(), 'sotto-terminal-project-'))
+    cleanup.push(() => rm(project, { recursive: true, force: true }))
+    const checkouts = new CheckoutMutations()
+    const acquireStart = vi.fn(async (owner: Parameters<NonNullable<TerminalDependencies['acquireStart']>>[0]) =>
+      checkouts.acquire(owner.workingDirectory, 'send', { kind: 'terminal-start' }))
+    const f = await fixture({ projectFolder: () => project, acquireStart })
+    const release = await checkouts.acquire(folder === 'project' ? project : f.directory, 'mutation', { kind: 'remove-folder' })
+    try {
+      expect(await f.service.create({ ...f.target, place: 'drawer' })).toEqual({ ok: false, error: { code: 'busy', message: 'Sotto is removing this folder. The terminal did not start. Try again when it finishes.' } })
+      expect(f.spawn).not.toHaveBeenCalled()
+      expect(unwrap(await f.service.list(f.target)).capacity.count).toBe(0)
+      if (folder === 'project') (await checkouts.acquire(f.directory, 'mutation'))()
+    } finally { release() }
+    acquireStart.mockClear()
+    unwrap(await f.service.create({ ...f.target, place: 'drawer' }))
+    expect(acquireStart.mock.calls.map(([owner]) => owner.workingDirectory)).toEqual([f.directory, project])
+    for (const directory of [f.directory, project]) (await checkouts.acquire(directory, 'mutation'))()
+  })
+  it('starts a drawer shell in the working copy when the project folder is gone', async () => {
+    const f = await fixture({ projectFolder: () => join(tmpdir(), 'sotto-terminal-missing-project', 'gone') })
+    const created = unwrap(await f.service.create({ ...f.target, place: 'drawer' }))
+    expect(f.spawn).toHaveBeenCalledWith(expect.any(String), expect.any(Array), expect.objectContaining({ cwd: created.session.workspace.workingDirectory }))
   })
   it('reopens a drawer shell back into the drawer, never into Tools', async () => {
     const f = await fixture()

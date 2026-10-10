@@ -33,6 +33,8 @@ A job that is not needed reports as skipped, not failed. A change that should ha
 
 Each gate is its own named step, so a red check names the gate that failed.
 
+`tsconfig.node.json` checks main, host, preload and shared code with Node types and no DOM, so a browser-only global there fails the typecheck. `tsconfig.tests.node.json` checks every `tests/**/*.ts` file, with that code and the DOM, which Playwright's page callbacks and imported renderer modules need.
+
 `tsconfig.tests.json` checks every `tests/**/*.tsx` file, including renderer tests,
 benchmarks and fixture views, with the web project's JSX and DOM assumptions plus
 Node, Vitest and Testing Library types. Vitest executes these files but does not

@@ -1,7 +1,7 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "lib": ["ES2023"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "types": ["node", "vitest/globals", "@testing-library/jest-dom"]
@@ -13,8 +13,6 @@
     "src/main/**/*.ts",
     "src/host/**/*.ts",
     "src/preload/**/*.ts",
-    "src/shared/**/*.ts",
-    "tests/**/*.ts"
-  ],
-  "exclude": ["tests/integration/widgetSync.test.ts"]
+    "src/shared/**/*.ts"
+  ]
 }

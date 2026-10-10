@@ -87,8 +87,8 @@ function headlessHostBuild(): Plugin {
 
 export default defineConfig({
   main: {
-    // Runtime assets keep their verified resource path; emit the tray PNG under out/ with ?asset.
-    publicDir: 'resources/runtime',
+    // No public folder: nothing is copied into out/ wholesale; the Linux tray icon is emitted there with ?asset.
+    publicDir: false,
     build: { rollupOptions: { external: ['node-pty'], input: {
       index: resolve(__dirname, 'src/main/index.ts'),
       dictationClient: resolve(__dirname, 'src/main/hotkeys/dictationClient.ts'),
