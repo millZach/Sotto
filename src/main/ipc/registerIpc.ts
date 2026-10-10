@@ -73,6 +73,7 @@ import {
 } from '../../shared/settings'
 import type { RendererRole } from '../security'
 import type { RecoveryNotice } from '../../shared/recoveryNotice'
+import { OMARCHY_THEME_ID } from '../../shared/themes/omarchy'
 
 const noPayloadSchema = z.undefined()
 const settingKeys = [
@@ -155,6 +156,13 @@ const looseSettingsPatchSchema = settingsSchema
   .superRefine((patch, context) => {
     if (Object.values(patch).some((value) => value === undefined)) {
       context.addIssue({ code: 'custom', message: 'Undefined settings fields are not allowed' })
+    }
+    if (process.platform !== 'linux') {
+      for (const key of ['lightTheme', 'darkTheme'] as const) {
+        if (patch[key] === OMARCHY_THEME_ID) {
+          context.addIssue({ code: 'custom', path: [key], message: 'Unknown theme selection' })
+        }
+      }
     }
   })
 
