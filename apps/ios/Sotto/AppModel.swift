@@ -1543,10 +1543,14 @@ struct HeldDetail {
         if item.kind == "terminal-answer" {
             let current = shell?.terminals?.first { $0.id == item.terminalID }
             let confirmed = receipt?.confirmsAnswer == true
-            // Absence on an old host is not evidence that a terminal's approval left.
-            let noLongerWaiting = shell?.terminals != nil && (current != nil || shell?.terminalsComplete == true) && (current?.state != .needsYou
-                || current?.approval?.runId != item.runID || current?.approval?.requestId != item.requestID
-                || current?.approval?.approvalId != item.approvalID)
+            // A binding can be withheld while this answer awaits its hook acknowledgement. Needs you with
+            // no binding is not departure evidence, and neither is a terminal omitted by an unreadable row.
+            let terminalLeft = current == nil && shell?.terminalsComplete == true
+            let stateLeft = current.map { $0.state != .needsYou } ?? false
+            let requestChanged = current?.approval.map { approval in
+                approval.valid && (approval.runId != item.runID || approval.requestId != item.requestID || approval.approvalId != item.approvalID)
+            } ?? false
+            let noLongerWaiting = terminalLeft || stateLeft || requestChanged
             guard confirmed || noLongerWaiting else { return }
             if confirmed, let terminalID = item.terminalID, let runID = item.runID, let requestID = item.requestID, let approvalID = item.approvalID {
                 confirmedTerminalAnswers.insert(TerminalRef(hostID: item.hostID, terminalID: terminalID).id + "/" + runID + "/" + requestID + "/" + approvalID)

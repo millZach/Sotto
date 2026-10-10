@@ -5,7 +5,8 @@ final class TerminalModelTests: XCTestCase {
     private let hostID = "11111111-1111-4111-8111-111111111111"
     private let terminalID = "33333333-3333-4333-8333-333333333333"
     private var ref: TerminalRef { TerminalRef(hostID: hostID, terminalID: terminalID) }
-    @MainActor private func fixture(feature: Bool = true, mayAnswer: Bool = true, provider: String = "claude", state: String = "needs-you") async throws -> AppModel {
+    @MainActor private func fixture(feature: Bool = true, mayAnswer: Bool = true, provider: String = "claude", state: String = "needs-you",
+                                   receiptSleep: @escaping @Sendable (UInt64) async throws -> Void = { try await Task.sleep(nanoseconds: $0) }) async throws -> AppModel {
         TestKeychain.items = [:]; TestKeychain.locked = false; TestKeychain.unreadableAccount = nil; TestKeychain.unwritableAccount = nil
         HostConnection.instances = []; HostConnection.features = feature ? ["terminals"] : []
         HostConnection.mayAnswer = mayAnswer; HostConnection.failConnect = false; HostConnection.failDetail = false; HostConnection.holdDetail = false
@@ -17,18 +18,19 @@ final class TerminalModelTests: XCTestCase {
         try TestKeychain.store.write(SavedComputer(address: "https://laptop.example.ts.net:8443", pairing: pairing, reportedName: "Laptop"), account: ComputerStore.account(hostID))
         HostConnection.shell = shell(provider: provider, state: state)
         HostConnection.terminalHandler = { op, _, _ in op == "terminal-approval" ? self.preview() : .null }
-        let model = AppModel(keychain: TestKeychain.store)
+        let model = AppModel(keychain: TestKeychain.store, receiptSleep: receiptSleep)
         model.phase(.active); await model.waitForActivation()
         return model
     }
-    private func shell(provider: String = "claude", state: String = "needs-you", request: String = "request-1", mayAnswer: Bool? = nil, includeTerminals: Bool = true) -> JSONValue {
+    private func shell(provider: String = "claude", state: String = "needs-you", request: String = "request-1", mayAnswer: Bool? = nil,
+                       includeTerminals: Bool = true, includeApproval: Bool = true) -> JSONValue {
         var value: [String: JSONValue] = ["hostId": .string(hostID), "host": .object(["hostId": .string(hostID), "name": .string("Laptop"),
             "threads": .array([]), "projects": .array([.object(["id": .string("p"), "title": .string("Sotto")])]),
             "capabilities": .object(["submit": .bool(true), "interrupt": .bool(true), "questions": .bool(true), "permissions": .bool(true)])])]
         if includeTerminals {
             var terminal: [String: JSONValue] = ["id": .string(terminalID), "projectId": .string("p"), "title": .string("Fix tooltips"),
                 "providerId": .string(provider), "state": .string(state), "stateDetection": .string("available"), "openedAt": .number(1_800_000_000_000)]
-            if state == "needs-you" && provider == "claude" { terminal["approval"] = .object(["runId": .string("run-1"), "requestId": .string(request), "approvalId": .string("approval-1")]) }
+            if state == "needs-you" && provider == "claude" && includeApproval { terminal["approval"] = .object(["runId": .string("run-1"), "requestId": .string(request), "approvalId": .string("approval-1")]) }
             value["terminals"] = .array([.object(terminal)])
         }
         if let mayAnswer { value["clientCapabilities"] = .object(["mayAnswer": .bool(mayAnswer)]) }
@@ -186,5 +188,35 @@ final class TerminalModelTests: XCTestCase {
         await model.checkDelivery(hostID)
         XCTAssertEqual(model.pending.count, 1)
         XCTAssertFalse(model.terminalAnswerConfirmed(approval, in: ref))
+    }
+    @MainActor func testWithheldApprovalBindingKeepsPendingAnswerUntilHookReceiptConfirmsIt() async throws {
+        // Script the receipt wait so this regression never waits on a real hook or sleeps for its deadline.
+        let model = try await fixture(receiptSleep: { _ in throw CancellationError() })
+        defer { model.phase(.background); HostConnection.terminalHandler = nil }
+        await model.readTerminalApproval(ref)
+        let approval = try XCTUnwrap(model.terminal(ref)?.approval), connection = try XCTUnwrap(HostConnection.instances.last)
+        var commandID: String?
+        var sends = 0
+        HostConnection.terminalHandler = { op, _, id in
+            if op == "answer-terminal" { sends += 1; commandID = id; throw ClientError.uncertain }
+            return .null
+        }
+        await model.answerTerminal(ref, approval: approval, decision: .allow)
+        let marker = try XCTUnwrap(model.pending.first), id = try XCTUnwrap(commandID)
+        XCTAssertEqual(marker.id, id)
+        HostConnection.shell = shell(includeApproval: false)
+        connection.push(.shell(try HostConnection.shell.decode(Shell.self)))
+        XCTAssertNil(model.terminal(ref)?.approval)
+        XCTAssertEqual(model.pending, [marker], "A withheld binding while still Needs you does not prove the request left")
+        HostConnection.receipts[id] = .object(["status": .string("pending")])
+        await model.checkDelivery(hostID)
+        XCTAssertEqual(model.pending, [marker])
+        XCTAssertEqual(try TestKeychain.store.read([PendingOperation].self, account: ComputerStore.pendingAccount), [marker])
+        XCTAssertFalse(model.terminalAnswerConfirmed(approval, in: ref))
+        HostConnection.receipts[id] = .object(["status": .string("completed"), "answerDelivered": .bool(true)])
+        await model.checkDelivery(hostID)
+        XCTAssertTrue(model.pending.isEmpty)
+        XCTAssertTrue(model.terminalAnswerConfirmed(approval, in: ref))
+        XCTAssertEqual(sends, 1, "Receipt reconciliation must never resend the answer")
     }
 }
