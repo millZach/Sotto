@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { deferred } from '../../fixtures/deferred'
 import type { AgentVoiceTiming } from '../../../src/shared/agents'
 import { afterEach, describe, expect, it, vi } from 'vitest'

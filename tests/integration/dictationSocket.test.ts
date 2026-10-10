@@ -12,7 +12,7 @@ import { DictationSocket } from '../../src/main/hotkeys/dictationSocket'
 import { DICTATION_REQUEST_MAX_BYTES, dictationSocketPath, type CompositorDictationCommand } from '../../src/main/hotkeys/dictationCommand'
 import { validateDictationRuntime } from '../../src/main/hotkeys/dictationRuntime'
 
-describe.skipIf(process.platform !== 'linux')('dictation Unix socket', () => {
+describe.skipIf(process.platform !== 'linux')("dictation Unix socket (Linux Unix-socket dictation)", () => {
   let runtime: string
   const services: DictationSocket[] = []
   beforeEach(() => { runtime = mkdtempSync(join(tmpdir(), 'sotto-')) })

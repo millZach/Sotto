@@ -4,6 +4,17 @@ artifacts/design/app-review/manifest.json text eol=lf
 
 # The executable launcher must retain its Unix shebang in Windows checkouts too.
 apps/omarchy/sotto text eol=lf
+
+
+# The Omarchy shell plugin, its installer and its proof run on Linux from any checkout, so a
+# Windows checkout must not give a shebang or a Bash line a carriage return.
+apps/omarchy/**/*.sh text eol=lf
+apps/omarchy/**/*.qml text eol=lf
+apps/omarchy/**/*.mjs text eol=lf
+apps/omarchy/**/*.mts text eol=lf
+apps/omarchy/**/*.c text eol=lf
+scripts/verify-omarchy-shell-plugin.sh text eol=lf
+scripts/omarchy-nested-pointer.c text eol=lf
 apps/omarchy/install.sh text eol=lf
 apps/omarchy/PKGBUILD text eol=lf
 apps/omarchy/sotto.desktop text eol=lf

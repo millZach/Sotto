@@ -7,9 +7,9 @@ import { isImmutableActivities, subscribeActivitySnapshots } from '../../src/mai
 import { WorkspaceHost } from '../../src/main/agents/workspace'
 import type { AgentHostSnapshot } from '../../src/shared/agents'
 import { describeAdapterContract } from './adapterContract'
-import { devinFixture } from '../fixtures/devinFixture'
+import { devinFixture, devinFixtureSkips } from '../fixtures/devinFixture'
 
-describeAdapterContract('Devin ACP', session => devinFixture(undefined, undefined, undefined, session))
+describeAdapterContract('Devin ACP', session => devinFixture(undefined, undefined, undefined, session), devinFixtureSkips)
 
 describe('Devin dispatch and decision boundaries', () => {
   let f: Awaited<ReturnType<typeof devinFixture>>

@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { deferred } from '../../fixtures/deferred'
 import { threadsStateFixture } from '../../fixtures/agentState'
 import { afterEach, describe, expect, it, vi } from 'vitest'

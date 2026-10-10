@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { publicProviderEntityId, type AgentModel } from '../../../src/shared/agents'
 import { baseModelId, catalogEntry, chosenModelId, resolveModel } from '../../../src/shared/modelCatalog'

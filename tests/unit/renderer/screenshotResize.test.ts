@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
 import { dataUrlBlob, fitLongEdge, prepareScreenshot, readImageHeader, SCREENSHOT_MAX_DECODE_PIXELS, SCREENSHOT_MAX_LONG_EDGE, wasResized, type ScreenshotDecoder } from '../../../src/renderer/src/agents/screenshotResize'
 import type { AgentImageSize } from '../../../src/shared/agents'
