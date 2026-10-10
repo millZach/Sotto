@@ -40,6 +40,7 @@ Sotto's look is quiet: one room under a thin strip, set in Figtree, dark by defa
 - Desktop-native: a window with a drag strip, a tray and a floating widget, not a page in a frame. Verify at 1600x1000, 1280x800 and the 820x560 minimum; nothing overflows or clips at the minimum.
 - The whole app works from the keyboard, and the keyboard path is designed rather than inherited. Focus moves in the order the eye does, every control has an accessible name that says what a press does, anything that opens answers Escape, controls inside the drag strip opt out of dragging, and a new shortcut checks against the global dictation hotkey before it claims a chord.
 - Memory is gated for the beta (ADR-0013). Anything that reads memory asks the gate before it exists: `useMemoryEnabled()` in the renderer, the setting read once at start in main. Gate it and leave it whole; the setting turning back on restores all of it, tests included. Voice control was removed, not gated (ADR-0068): dictation is the only thing that listens, and nothing speaks.
+- Watcher is gated to Sotto Owl builds (ADR-0072). Anything that is Watcher's asks the gate before it exists: `useWatcherEnabled()` in the renderer, the release track read once at start in main. With the gate off, stable shows and starts nothing of Watcher and keeps its saved records whole, so a profile moves between Owl and stable without losing them.
 - When the direction is not settled (a new surface, a restyle, anything with two good answers) build an HTML mock-up first, offer variants, and record the user's pick in the plan or ADR. An affordance added to a surface that already exists needs no mock-up. Load the `tastify` skill when it is available.
 
 ## Gotchas the code does not confess
@@ -88,3 +89,5 @@ These documents are how Sotto remembers itself, so a change that makes one wrong
 Issues are GitHub Issues on `millZach/Sotto` through `gh`: `docs/agents/issue-tracker.md`, with the triage labels in `docs/agents/triage-labels.md`.
 
 Releases are cut by hand on the Windows PC and the Apple silicon Mac and published to `millZach/Sotto-releases`. The procedure is `docs/release/releasing.md`; read it before touching `electron-builder.yml`, the `package:*` scripts or the version.
+
+**Every change reaches Sotto Owl before Sotto (ADR-0072).** Owl is built from `main` once a day when anything has merged, and published as a prerelease. A stable release ships only a commit a published Owl build already carried: it is promoted from the latest Owl build Zach has run, never cut from whatever is newest on `main`, and `npm run release:check` refuses anything else. macOS has no Owl build yet, so the Mac stable build ships the same promoted commit without an Owl stage.

@@ -1,6 +1,6 @@
 # Watcher naming on Windows
 
-October 10, 2026. Branch: `command-center`, based on `fd774f849`. This is a naming change before the first preview writes these records to a real profile. The approved owl choices are recorded in ADR-0070 and the plan; this change adds no renderer layout or behavior.
+October 10, 2026. Branch: `command-center`, based on `fd774f849`. This is a naming change before the first preview writes these records to a real profile. The approved owl choices are recorded in ADR-0071 and the plan; this change adds no renderer layout or behavior.
 
 ## Checks
 
@@ -18,7 +18,7 @@ The changed source and test files have the same parsed structure apart from iden
 
 All 29 moves used `git mv`:
 
-- `docs/adr/0070-watcher-coordinates-threads-with-its-providers-own-tools.md`
+- `docs/adr/0071-watcher-coordinates-threads-with-its-providers-own-tools.md`
 - `docs/research/2026-10-08-watcher-coordinator-agents.md`
 - `docs/research/2026-10-08-watcher-parallel-workbenches.md`
 - `docs/research/2026-10-08-watcher-vendor-agent-managers.md`

@@ -1,0 +1,26 @@
+# Sotto Owl is a Windows preview release track
+
+Accepted by Zach on October 9, 2026. Amended October 10, 2026, when Zach made Owl the stage every change passes through (below). **Number provisional until merge:** 0072 is above every ADR on `origin/main` at `b102359a1`, Watcher's 0071 and the 0070 that open #906 claims; recheck and renumber all references before merging (docs/agents/domain.md).
+
+Zach chose [T3 Code's nightly model](https://github.com/pingdotgg/t3code/blob/main/docs/operations/release.md) to run Watcher before it reaches main. **Sotto Owl** is the preview release track and its builds. **Watcher** is the coordinating thread, a separate thing. Owl replaces Sotto on a machine: app ID, product name, executable, installer identity, shortcuts and data directory stay Sotto's. Of the release artifacts, only the installer filename and release title say Sotto Owl. The running build says it from the version-derived track: its window title, tray tooltip and version lines read "Sotto Owl", and the sidebar's top row and the strip show the Sotto mark alone as a 24-pixel tile where stable shows the mark beside "Sotto" (Zach's choice, from the approved mock-up). Sentences in which Sotto is the app or the speaker, and the window controls' names, keep "Sotto".
+
+An Owl version is `<next stable patch>-owl.<UTC YYYYMMDD>.<positive daily number>`. Package version `0.1.34` produces `0.1.35-owl.20261009.1`. The release lead chooses the day's next number. `package:owl` overrides packaged metadata without changing either source package manifest. Builds come from `main` (see October 10 below).
+
+Windows Owl releases are GitHub prereleases on the existing public `millZach/Sotto-releases` repository, never marked latest, with `owl.yml` and NSIS blockmaps. The installed electron-updater GitHub provider selects the `owl` prerelease identifier from Atom tags, ignoring stable tags even when GitHub marks old stable releases as prereleases. A validating provider requires an Owl manifest version matching that tag before an offer can become downloadable, including the upstream provider's `latest.yml` fallback within the selected Owl release. Setting a channel enables downgrades upstream, so Owl explicitly disables them. The normal semantic-version gate admits only a strictly newer build. Stable keeps its existing `allowPrerelease = false`, GitHub latest release and `latest.yml` behavior. Owl is never made GitHub's latest release and receives no stable manifest for publication.
+
+Both tracks keep automatic download and installation on quit disabled. Existing consent, check cadence and privacy settings stay in force. No new host, permission grant, IPC channel or production dependency is added. `UpdateStatus.releaseTrack` and `useReleaseTrack()` expose the track through existing update information, including when updates are unsupported.
+
+This track is Windows only. macOS still has no updater (ADR-0001); a later Owl Mac build would be cut by hand on Zach's Mac. Linux is out of scope. Stable package commands, output names and platform targets are unchanged.
+
+Installing a stable installer switches back to its stable feed. Before Watcher reached `main`, stable dropped Watcher's records when it saved the shared profile; [the verification note](../verification/2026-10-09-sotto-owl.md) records those load and save paths. With Watcher's code on `main` behind the gate below, stable reads and keeps those records, so the profile moves between the two tracks without losing them.
+
+## October 10, 2026: every change reaches Owl before Sotto
+
+Zach chose to make Owl the stage every change passes through, the way T3 Code's stable releases promote a nightly its users already ran:
+
+- **Stable ships only a commit a published Owl build already carried.** A stable release is promoted from the latest Owl build Zach has run: it builds that Owl build's source commit, with the stable version set at packaging the way `package:owl` sets the Owl version, never whatever is newest on `main`. The `Release X.Y.Z` pull request then records the version on `main`. `npm run release:check` refuses a stable build whose source no published Owl build carried; an Owl build names its source commit in its release.
+- **Owl is built from `main` once a day** when anything has merged since the last Owl build, not after every merge, so Owl does not ask to restart all day. The version rule above is unchanged; the base is the next patch of `main`'s package version.
+- **Watcher is on `main` behind a gate.** Zach merged Watcher into `main` before it is finished, so Owl can build from `main`. Watcher is on only in Owl builds: anything that is Watcher's asks the gate before it exists, `useWatcherEnabled()` in the renderer and the release track read once at start in main, the way memory is gated (ADR-0013). With the gate off, stable shows nothing of Watcher, starts none of it, and keeps its saved records whole. Promoting Watcher to stable is a later decision that turns the gate on for both tracks.
+- **macOS has no Owl build yet.** Zach agreed that the Mac stable build ships the same promoted commit without an Owl stage of its own, until a Mac Owl build is cut by hand.
+
+Stable 0.1.35 shipped from `main` on October 10 before this rule; it is the last stable release cut that way.

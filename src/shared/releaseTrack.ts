@@ -9,7 +9,7 @@ export function getReleaseTrack(version: string): ReleaseTrack {
 
 /**
  * What the running build calls itself in words: the window title, the tray's tooltip and the version line. Only
- * the words change; the app's name, identity and data stay Sotto's on either track (ADR-0071).
+ * the words change; the app's name, identity and data stay Sotto's on either track (ADR-0072).
  */
 export function releaseTrackName(track: ReleaseTrack): string {
   return track === 'owl' ? `${APP_NAME} Owl` : APP_NAME

@@ -603,7 +603,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // current theme halves, so a theme change repaints the widget mid-session.
   let widgetPresentation = widgetPresentationFor(await settings.get())
   let handleRendererProcessGone: (kind: 'main' | 'widget') => void = () => undefined
-  // Packaging can override the version without editing the source manifest, so it is read from the app (ADR-0071).
+  // Packaging can override the version without editing the source manifest, so it is read from the app (ADR-0072).
   const appRunningVersion = runningVersion(app.getVersion(), process.versions.electron, appVersion)
   // What this build calls itself in words: the main window's title and the tray's tooltip, "Sotto Owl" on that track.
   const buildName = releaseTrackName(getReleaseTrack(appRunningVersion))

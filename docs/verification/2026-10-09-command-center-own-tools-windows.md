@@ -2,7 +2,7 @@ The feature is now called Watcher (October 9, 2026); the dated evidence below ke
 
 # Command center with native provider tools on Windows - October 9, 2026
 
-Watcher (the current command center) passed the repaired four-step live check on all three providers. The lead approved a fresh budget of four model turns per provider after diagnosing Codex's elevated Windows sandbox setup failure. This run began October 9 and finished shortly after midnight October 10, 2026, Pacific time. [ADR-0070](../adr/0070-watcher-coordinates-threads-with-its-providers-own-tools.md) records the unelevated override and the mandatory launch probe. Sandbox repair: `efb8e138cda72c00a28fff8dee19b02b745d2f5e`. The earlier run and its corrections remain below as history.
+Watcher (the current command center) passed the repaired four-step live check on all three providers. The lead approved a fresh budget of four model turns per provider after diagnosing Codex's elevated Windows sandbox setup failure. This run began October 9 and finished shortly after midnight October 10, 2026, Pacific time. [ADR-0071](../adr/0071-watcher-coordinates-threads-with-its-providers-own-tools.md) records the unelevated override and the mandatory launch probe. Sandbox repair: `efb8e138cda72c00a28fff8dee19b02b745d2f5e`. The earlier run and its corrections remain below as history.
 
 The signed-in adapters used disposable projects, synthetic source and sentinel files, and a scoped stand-in `sotto_threads.list_threads`. No provider configuration or credential file was read, copied, moved or changed by the harness. Providers loaded their own normal settings and sign-ins. Evidence contains only check names, versions, counters, dates, exit codes and booleans; no prompt text, model output, tool arguments, tokens, protocol bodies or account details. No renderer surface or packaged app was exercised.
 
@@ -36,7 +36,7 @@ The final gates passed in order: `npm run typecheck`; `npm run lint`; `npm test 
 
 ## Earlier run and review correction (history)
 
-The rework is implemented. Live verification is **incomplete**. Implementation: `e75a234d164ab0855105eaad57d2418e624e98d1`. [ADR-0070](../adr/0070-watcher-coordinates-threads-with-its-providers-own-tools.md) records Zach's October 9 choice after the earlier checks and benchmark. No renderer surface was changed or visually verified in this ticket.
+The rework is implemented. Live verification is **incomplete**. Implementation: `e75a234d164ab0855105eaad57d2418e624e98d1`. [ADR-0071](../adr/0071-watcher-coordinates-threads-with-its-providers-own-tools.md) records Zach's October 9 choice after the earlier checks and benchmark. No renderer surface was changed or visually verified in this ticket.
 
 The real signed-in adapters used fresh temporary projects, a synthetic source marker and an unchanged sentinel, and a scoped stand-in `sotto_threads.list_threads`. No answer command was submitted. No provider configuration or credential file was read, copied or changed by the harness. Providers still loaded their own normal settings and native session/cache behavior. Check evidence contains no prompts, output, tokens, tool arguments, protocol bodies or account details.
 

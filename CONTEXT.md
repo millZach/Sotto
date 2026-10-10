@@ -6,7 +6,7 @@ Sotto is a desktop dictation app with manual coding threads across native provid
 
 ## Threads
 
-**Watcher.** The one current native agent thread on a computer, using its provider's own tools and settings, with Sotto's bounded thread tools and a pinned asking permission mode (ADR-0070). It reads and searches natively; its own changes ask on normal request cards. Its system prompt guides coordination but grants no authority. Earlier conversations become Watcher history when its provider changes. Avoid: "command center", the old "Coordinator", "assignment", "Agents room".
+**Watcher.** The one current native agent thread on a computer, using its provider's own tools and settings, with Sotto's bounded thread tools and a pinned asking permission mode (ADR-0071). It reads and searches natively; its own changes ask on normal request cards. Its system prompt guides coordination but grants no authority. Earlier conversations become Watcher history when its provider changes. Avoid: "command center", the old "Coordinator", "assignment", "Agents room".
 
 **Watcher history.** An earlier Watcher conversation retained for reading when its provider changes. It cannot be resumed as Watcher.
 
