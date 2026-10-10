@@ -31,7 +31,12 @@ struct ThreadView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) { barTitle }
-            ToolbarItem(placement: .topBarTrailing) { barPill }
+            ToolbarItem(placement: .topBarTrailing) {
+                HStack(spacing: Space.s1) {
+                    barPill
+                    if model.compactionOffered(ref) { ThreadMenu(ref: ref) }
+                }
+            }
         }
         .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         .toolbarBackground(stuck ? .visible : .hidden, for: .navigationBar)
@@ -117,6 +122,36 @@ private struct ThreadStatePill: View {
         if state.workInProgress { return Palette.accent.opacity(Tint.accentPill) }
         if state == .failed { return Palette.danger.opacity(0.12) }
         return Palette.fillSoft
+    }
+}
+
+/// The thread's actions behind ••• beside its state: Compact context, while the thread's provider offers it. A press asks
+/// the provider to compact; one that can't go now says why under its name. Its progress shows as Compacting in the bar.
+private struct ThreadMenu: View {
+    @EnvironmentObject var model: AppModel
+    /// Watched so whether there is history to compact follows the thread as it is read.
+    @EnvironmentObject var detailStore: DetailStore
+    let ref: ThreadRef
+    var body: some View {
+        let held = model.compactionHeld(ref)
+        Menu {
+            Button { Task { await model.compact(ref) } } label: {
+                Text("Compact context")
+                Text(held ?? "Summarize earlier messages to free room")
+            }
+            .disabled(held != nil)
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Palette.ink)
+                .frame(width: 32, height: 32)
+                .background(Palette.fillSoft, in: Circle())
+                .overlay(Circle().strokeBorder(Palette.hairline, lineWidth: 1))
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel("Show thread actions")
+        .accessibilityIdentifier("thread-actions")
     }
 }
 
@@ -1188,6 +1223,10 @@ private struct UnconfirmedRow: View {
         switch item.kind {
         case "answer": return ("Sending your answer…", "Your answer isn’t confirmed. Check the thread before you answer again.")
         case "interrupt": return ("Stopping…", "Stop isn’t confirmed. Check whether the thread is still working.")
+        case "queue": return ("Queuing…", "Queuing isn’t confirmed. Check the thread’s queue before you send it again.")
+        case "steer": return ("Steering…", "Steer isn’t confirmed. Check the thread before you steer again.")
+        case "remove": return ("Removing…", "Removing isn’t confirmed. Check the thread’s queue before you remove it again.")
+        case "compact": return ("Compacting…", "Compacting isn’t confirmed. Check the thread before you compact it again.")
         default: return ("Sending…", "Not confirmed. Check the thread before you send it again.")
         }
     }
@@ -1241,6 +1280,7 @@ private struct ReplyDock: View, Equatable {
             if let problem = model.detailProblem, model.online(ref.hostID) {
                 problemNote(problem)
             }
+            FollowupStack(ref: ref)
             dock
         }
         .padding(.horizontal, Space.s3)
@@ -1324,7 +1364,7 @@ private struct ReplyDock: View, Equatable {
                     .disabled(model.preparingSends.contains(ref.id))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            trailingButton
+            trailingButtons
         }
         .padding(6)
         .glass(in: shape)
@@ -1339,35 +1379,148 @@ private struct ReplyDock: View, Equatable {
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.4), value: focused)
     }
 
-    @ViewBuilder private var trailingButton: some View {
-        if model.canInterrupt(ref) {
-            Button { Task { await model.interrupt(ref) } } label: {
-                RoundedRectangle(cornerRadius: 3.5, style: .continuous)
-                    .frame(width: 13, height: 13)
-                    .frame(width: 44, height: 44)
-                    .foregroundStyle(Palette.ink)
-                    .background(Palette.fillSoft, in: Circle())
-                    .overlay(Circle().strokeBorder(Palette.hairline, lineWidth: 1))
-                    .contentShape(Circle())
-            }
-            .buttonStyle(PressStyle())
-            .accessibilityLabel("Stop this turn")
-        } else {
-            let preparing = model.preparingSends.contains(ref.id)
-            let canSend = model.canSendReply(ref)
-            Button { Task { await model.send(ref) } } label: {
-                Group {
-                    if preparing { ProgressView().tint(Palette.onAccent) }
-                    else { Image(systemName: "arrow.up").font(.system(size: 17, weight: .semibold)) }
-                }
+    /// Stop while the turn can be stopped, and beside it, once the box holds something, the button that queues it for
+    /// after the turn. Otherwise Send, as before.
+    @ViewBuilder private var trailingButtons: some View {
+        let stops = model.canInterrupt(ref)
+        let written = !(model.drafts[ref.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.photos(ref).isEmpty
+        if stops { stopButton }
+        if !stops || written { sendButton }
+    }
+
+    private var stopButton: some View {
+        Button { Task { await model.interrupt(ref) } } label: {
+            RoundedRectangle(cornerRadius: 3.5, style: .continuous)
+                .frame(width: 13, height: 13)
                 .frame(width: 44, height: 44)
-                .foregroundStyle(canSend || preparing ? Palette.onAccent : Palette.muted)
-                .background(canSend || preparing ? Palette.accent : Palette.fillSoft, in: Circle())
+                .foregroundStyle(Palette.ink)
+                .background(Palette.fillSoft, in: Circle())
+                .overlay(Circle().strokeBorder(Palette.hairline, lineWidth: 1))
                 .contentShape(Circle())
+        }
+        .buttonStyle(PressStyle())
+        .accessibilityLabel("Stop this turn")
+    }
+
+    /// Sends the reply now, or while the thread works, queues it to go when the turn ends.
+    private var sendButton: some View {
+        let preparing = model.preparingSends.contains(ref.id)
+        let canSend = model.canSendReply(ref)
+        let queues = model.queuesReply(ref)
+        return Button { Task { await model.send(ref) } } label: {
+            Group {
+                if preparing { ProgressView().tint(Palette.onAccent) }
+                else { Image(systemName: queues ? "text.badge.plus" : "arrow.up").font(.system(size: 17, weight: .semibold)) }
             }
-            .buttonStyle(PressStyle())
-            .disabled(!canSend)
-            .accessibilityLabel(preparing ? "Sending reply" : "Send reply")
+            .frame(width: 44, height: 44)
+            .foregroundStyle(canSend || preparing ? Palette.onAccent : Palette.muted)
+            .background(canSend || preparing ? Palette.accent : Palette.fillSoft, in: Circle())
+            .contentShape(Circle())
+        }
+        .buttonStyle(PressStyle())
+        .disabled(!canSend)
+        .accessibilityLabel(queues ? (preparing ? "Queuing reply" : "Queue for after this turn") : (preparing ? "Sending reply" : "Send reply"))
+    }
+}
+
+/// The thread's queued messages over the reply box, in order: two, and a press on the count of the rest shows them all.
+private struct FollowupStack: View {
+    @EnvironmentObject var model: AppModel
+    let ref: ThreadRef
+    @State private var all = false
+    var body: some View {
+        let items = model.followups(ref)
+        if !items.isEmpty {
+            let hidden = items.count - FollowupQueue.shownCards
+            VStack(alignment: .leading, spacing: Space.s2) {
+                ForEach(Array(all ? items[...] : items.prefix(FollowupQueue.shownCards))) { item in
+                    FollowupCard(ref: ref, item: item)
+                }
+                if hidden > 0 {
+                    Button(all ? "Show fewer" : "\(hidden) more queued") { all.toggle() }
+                        .font(.sotto(.small, .semibold))
+                        .foregroundStyle(Palette.accentText)
+                        .frame(minHeight: 44)
+                        .padding(.horizontal, Space.s4)
+                        .accessibilityLabel(all ? "Show fewer queued messages" : "Show \(hidden) more queued messages")
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+/// One queued message: where it stands, its words on one line, and what can be done with it. Steer now sends it into
+/// the running turn instead of after it, where the provider takes that; Remove takes it out unsent. Neither answers
+/// anything for the user, and neither is sent again on its own.
+private struct FollowupCard: View {
+    @EnvironmentObject var model: AppModel
+    let ref: ThreadRef
+    let item: Followup
+    var body: some View {
+        let steers = model.steerOffered(item, in: ref)
+        let removable = FollowupQueue.removable(item)
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack(spacing: 6) {
+                Image(systemName: symbol).accessibilityHidden(true)
+                Text(FollowupQueue.state(item))
+            }
+            .font(.sotto(.caption, .semibold))
+            .foregroundStyle(tone)
+            if item.status == "failed", let error = item.error, !error.isEmpty {
+                Text(error).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+            }
+            Text(words)
+                .font(.sotto(.body))
+                .foregroundStyle(Palette.ink)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            if steers || removable {
+                HStack(spacing: Space.s2) {
+                    if steers {
+                        Button { Task { await model.steer(item, in: ref) } } label: {
+                            Label("Steer now", systemImage: "arrow.turn.up.right")
+                        }
+                        .buttonStyle(PillButtonStyle(kind: .primary))
+                        .disabled(!model.canSteer(item, in: ref))
+                        .accessibilityHint("Sends this message into the running turn instead of after it.")
+                    }
+                    if removable {
+                        Button("Remove") { Task { await model.removeFollowup(item, in: ref) } }
+                            .buttonStyle(PillButtonStyle(kind: .ghost))
+                            .disabled(!model.canRemove(item, in: ref))
+                            .accessibilityLabel(item.wakeUp == true ? "Remove the wake-up from the queue" : "Remove this message from the queue")
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, Space.s4)
+        .padding(.vertical, Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glass(in: RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .accessibilityElement(children: .contain)
+    }
+    /// The message on one line, and how many photos go with it.
+    private var words: String {
+        let photos = item.attachmentCount == 1 ? "1 photo" : "\(item.attachmentCount) photos"
+        let text = item.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if item.attachmentCount == 0 { return text }
+        return text.isEmpty ? photos : text + " · " + photos
+    }
+    private var symbol: String {
+        switch item.status {
+        case "dispatching": return "arrow.up.circle"
+        case "uncertain": return "exclamationmark.triangle"
+        case "failed": return "exclamationmark.circle"
+        case "paused": return "pause.circle"
+        default: return "text.badge.plus"
+        }
+    }
+    private var tone: ThemeRole {
+        switch item.status {
+        case "failed": return Palette.dangerText
+        case "uncertain": return Palette.warningText
+        default: return Palette.muted
         }
     }
 }
@@ -1417,19 +1570,35 @@ private struct RequestSheet: View {
     @ViewBuilder private func content(_ current: AgentRequest, _ thread: ThreadSummary) -> some View {
         let provider = Words.provider(thread.providerId)
         let permission = current.kind == "permission"
-        let from = permission ? "Permission for \(provider) in \(thread.title)" : "Question from \(provider) in \(thread.title)"
+        let count = current.questions?.count ?? 0
+        let from = permission ? "Permission for \(provider) in \(thread.title)"
+            : count > 1 ? "\(count) questions from \(provider) in \(thread.title)" : "Question from \(provider) in \(thread.title)"
         HStack(spacing: Space.s2) {
             Light(tone: .warning)
             Text(from).font(.sotto(.small)).foregroundStyle(Palette.muted).lineLimit(2)
         }
         .accessibilityElement(children: .combine)
-        Text(title(current, provider))
-            .font(.sotto(.title, .semibold))
-            .tracking(-0.4)
-            .foregroundStyle(Palette.ink)
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.top, Space.s3)
-            .accessibilityAddTraits(.isHeader)
+        // Several questions have no headline: each carries its own, and the text a provider built from them would only
+        // repeat them.
+        if let headline = title(current, provider) {
+            Text(headline)
+                .font(.sotto(.title, .semibold))
+                .tracking(-0.4)
+                .foregroundStyle(Palette.ink)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, Space.s3)
+                .accessibilityAddTraits(.isHeader)
+        }
+        if !permission, count > 0, let explanation = RequestText.explanation(current) {
+            Text(explanation).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true).padding(.top, Space.s3)
+        }
+        // Every link in a question, together above its choices. Opening one answers nothing, so it shows on an iPhone
+        // that can't answer too.
+        if !permission {
+            let links = WebLinks.find(in: current)
+            if !links.isEmpty { LinkRows(links: links).padding(.top, Space.s4) }
+        }
         if let context = current.context {
             if let command = context.command { PermissionCommand(command: command).padding(.top, Space.s5) }
             if let cwd = context.cwd { runsIn(cwd) }
@@ -1460,11 +1629,13 @@ private struct RequestSheet: View {
         }
     }
 
-    private func title(_ request: AgentRequest, _ provider: String) -> String {
+    /// The sheet's headline: what a permission is for, a lone question, or a request's own words when it has no
+    /// structured questions. Nil for several questions.
+    private func title(_ request: AgentRequest, _ provider: String) -> String? {
         if request.kind == "permission" {
             return request.context?.command != nil ? "\(provider) wants to run a command" : "\(provider) is asking permission"
         }
-        if let questions = request.questions, questions.count == 1 { return questions[0].question }
+        if let questions = request.questions, !questions.isEmpty { return questions.count == 1 ? questions[0].question : nil }
         return request.text
     }
 
@@ -1548,31 +1719,36 @@ private struct RequestSheet: View {
 
     // MARK: Question
 
+    /// The choices wait while the answer can't be sent; the links above them still open.
     @ViewBuilder private func question(_ current: AgentRequest) -> some View {
         let enabled = model.canAnswer(current, in: ref)
         VStack(alignment: .leading, spacing: Space.s5) {
             if let questions = current.questions, !questions.isEmpty {
-                ForEach(questions) { item in questionField(item, showsTitle: questions.count > 1) }
-            } else if !current.options.isEmpty {
-                VStack(spacing: Space.s2) {
-                    ForEach(current.options) { option in
-                        Button { choice = option.id } label: {
-                            OptionLabel(title: option.label, detail: option.description, chosen: choice == option.id)
+                ForEach(questions) { item in questionField(item, showsTitle: questions.count > 1, enabled: enabled) }
+            } else {
+                Group {
+                    if !current.options.isEmpty {
+                        VStack(spacing: Space.s2) {
+                            ForEach(current.options) { option in
+                                Button { choice = option.id } label: {
+                                    OptionLabel(title: option.label, detail: option.description, chosen: choice == option.id)
+                                }
+                                .buttonStyle(ChoiceStyle(chosen: choice == option.id))
+                                .accessibilityAddTraits(choice == option.id ? .isSelected : [])
+                                .accessibilityIdentifier("request-option-\(option.id)")
+                            }
                         }
-                        .buttonStyle(ChoiceStyle(chosen: choice == option.id))
-                        .accessibilityAddTraits(choice == option.id ? .isSelected : [])
-                        .accessibilityIdentifier("request-option-\(option.id)")
+                    } else {
+                        answerField(text: $text, id: "answer", label: "Your answer")
                     }
                 }
-            } else {
-                answerField(text: $text, id: "answer", label: "Your answer")
+                .disabled(!enabled)
             }
         }
-        .disabled(!enabled)
         .padding(.top, Space.s5)
     }
 
-    private func questionField(_ item: Question, showsTitle: Bool) -> some View {
+    private func questionField(_ item: Question, showsTitle: Bool, enabled: Bool) -> some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             if showsTitle {
                 Text(item.question).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink).fixedSize(horizontal: false, vertical: true)
@@ -1580,29 +1756,34 @@ private struct RequestSheet: View {
             if let reason = item.unavailableReason {
                 Text(reason).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
             }
-            ForEach(item.options) { option in
-                let chosen = answers[item.id]?.optionIds.contains(option.id) == true
-                Button { pick(option, in: item, chosen: chosen) } label: {
-                    OptionLabel(title: option.label, detail: option.description, chosen: chosen, multiple: item.multiSelect)
-                }
-                .buttonStyle(ChoiceStyle(chosen: chosen))
-                .accessibilityAddTraits(chosen ? .isSelected : [])
-                .accessibilityIdentifier("request-option-\(option.id)")
-                .disabled(item.unavailableReason != nil)
+            choices(item).disabled(!enabled)
+        }
+    }
+
+    /// A question's choices and its own-answer box.
+    @ViewBuilder private func choices(_ item: Question) -> some View {
+        ForEach(item.options) { option in
+            let chosen = answers[item.id]?.optionIds.contains(option.id) == true
+            Button { pick(option, in: item, chosen: chosen) } label: {
+                OptionLabel(title: option.label, detail: option.description, chosen: chosen, multiple: item.multiSelect)
             }
-            if item.allowFreeText {
-                if item.options.isEmpty {
-                    ownAnswer(item)
-                } else {
-                    let open = writingOwn(item)
-                    Button { toggleOwn(item) } label: {
-                        OptionLabel(title: "Write your own answer", detail: "Say it in your own words.", chosen: open, multiple: item.multiSelect)
-                    }
-                    .buttonStyle(ChoiceStyle(chosen: open))
-                    .accessibilityAddTraits(open ? .isSelected : [])
-                    .disabled(item.unavailableReason != nil)
-                    if open { ownAnswer(item) }
+            .buttonStyle(ChoiceStyle(chosen: chosen))
+            .accessibilityAddTraits(chosen ? .isSelected : [])
+            .accessibilityIdentifier("request-option-\(option.id)")
+            .disabled(item.unavailableReason != nil)
+        }
+        if item.allowFreeText {
+            if item.options.isEmpty {
+                ownAnswer(item)
+            } else {
+                let open = writingOwn(item)
+                Button { toggleOwn(item) } label: {
+                    OptionLabel(title: "Write your own answer", detail: "Say it in your own words.", chosen: open, multiple: item.multiSelect)
                 }
+                .buttonStyle(ChoiceStyle(chosen: open))
+                .accessibilityAddTraits(open ? .isSelected : [])
+                .disabled(item.unavailableReason != nil)
+                if open { ownAnswer(item) }
             }
         }
     }
@@ -1708,6 +1889,47 @@ private struct RequestSheet: View {
             .padding(.bottom, Space.s2)
             .background { SheetBackdrop(wash: false) }
             .overlay(alignment: .top) { Rectangle().fill(Palette.hairline).frame(height: 1) }
+        }
+    }
+}
+
+/// The web links in a question, each a row of its own above the choices: a tap opens the page in Safari and never picks
+/// a choice. The question's own words stay as the agent wrote them.
+private struct LinkRows: View {
+    let links: [URL]
+    @Environment(\.openURL) private var openURL
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+        VStack(spacing: Space.s2) {
+            ForEach(links, id: \.absoluteString) { url in
+                Button { openURL(url) } label: {
+                    HStack(spacing: Space.s3) {
+                        Image(systemName: "link")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(Palette.accentText)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Open the link").font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
+                            Text(WebLinks.place(url))
+                                .font(.sotto(.small))
+                                .foregroundStyle(Palette.muted)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                        Spacer(minLength: 0)
+                        Image(systemName: "arrow.up.right.square")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(Palette.muted)
+                    }
+                    .padding(.horizontal, Space.s4)
+                    .padding(.vertical, Space.s3)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .background(Palette.fillSofter, in: shape)
+                    .overlay(shape.strokeBorder(Palette.hairline, lineWidth: 1))
+                    .contentShape(shape)
+                }
+                .buttonStyle(PressStyle())
+                .accessibilityLabel("Open the link, \(url.host ?? WebLinks.place(url))")
+            }
         }
     }
 }
