@@ -70,7 +70,7 @@ async function measure(label: string, files: File[], attachments: AgentAttachmen
 // Reads real multi-megabyte files through jsdom and asserts no time, so it runs only under `SOTTO_PERF_BENCH=1`
 // (`tests/fixtures/perfBench.ts`):
 //   SOTTO_PERF_BENCH=1 npx vitest run tests/perf/screenshotTotal.perf.test.tsx --maxWorkers=1 --disable-console-intercept
-describe.skipIf(!PERF_BENCH)('refusing screenshots that total more than 20 MB', () => {
+describe.skipIf(!PERF_BENCH)("refusing screenshots that total more than 20 MB (timing benchmark; requires SOTTO_PERF_BENCH=1)", () => {
   it('floor: nine small screenshots, refused by count before any read on every version', async () => {
     const files = Array.from({ length: 9 }, (_, index) => screenshot(`${index}.png`, 8))
     const report = await measure('floor: 9 x 8 B refused by count', files, [], /Attach up to 8 screenshots/u)

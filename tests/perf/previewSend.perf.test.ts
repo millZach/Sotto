@@ -46,7 +46,7 @@ class TimedHost extends E2EAgentHost {
 const roots: string[] = []
 afterAll(async () => { for (const root of roots) await rm(root, { recursive: true, force: true }) })
 
-describe.skipIf(!PERF_BENCH)('send with an image', () => {
+describe.skipIf(!PERF_BENCH)("send with an image (timing benchmark; requires SOTTO_PERF_BENCH=1)", () => {
   it.each([0, 10, 50])('reports admission to provider acknowledgement with %i MiB of previews already stored', async stored => {
     const root = await mkdtemp(join(tmpdir(), 'sotto-perf-preview-send-')); roots.push(root)
     // Earlier sends, dated now so retention keeps them, one 1 MiB screenshot each.

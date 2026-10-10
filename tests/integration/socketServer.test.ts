@@ -30,7 +30,14 @@ const raws: SocketFrames[] = []
 afterEach(async () => {
   for (const frames of raws.splice(0)) frames.close()
   for (const other of others.splice(0)) await other.close()
-  await listener?.close(); if (directory) await rm(directory, { recursive: true, force: true })
+  try {
+    await listener?.close()
+    if (directory) await rm(directory, { recursive: true, force: true })
+  } finally {
+    listener = undefined
+    directory = undefined
+    captured.server = undefined
+  }
 })
 it('closes refused streams cleanly and handles listener errors after startup', async () => {
   directory = await mkdtemp(join(tmpdir(), 'sotto-listener-'))

@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { deferred as gate } from '../../../fixtures/deferred'
 import { describe, expect, it, vi } from 'vitest'
 import { RequestAnswerStore } from '../../../../src/renderer/src/agents/requests/requestAnswers'

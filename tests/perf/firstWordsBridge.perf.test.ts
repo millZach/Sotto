@@ -54,7 +54,7 @@ afterAll(async () => {
   }
 })
 
-describe.skipIf(!PERF_BENCH)('first streamed chunk to the window’s bridge', () => {
+describe.skipIf(!PERF_BENCH)("first streamed chunk to the window’s bridge (timing benchmark; requires SOTTO_PERF_BENCH=1)", () => {
   it('reports the wait for the first chunk and the sends the rest became', async () => {
     const root = await mkdtemp(join(tmpdir(), 'sotto-first-words-')); roots.push(root)
     const provider = new StreamingProvider()

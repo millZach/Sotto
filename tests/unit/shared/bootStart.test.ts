@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { bootChangeRestarts, bootStatusSchema, bootUnsupportedSentence, hostBootCommandSchema, lingerAccount } from '../../../src/shared/bootStart'
 import { hostsCommandSchema } from '../../../src/shared/hosts'

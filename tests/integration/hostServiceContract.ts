@@ -1,9 +1,10 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import type { AdapterSessionOptions, HostServiceFixture, RecordedRpc } from '../fixtures/adapterFixture'
+import type { AdapterContractSkips, AdapterSessionOptions, HostServiceFixture, RecordedRpc } from '../fixtures/adapterFixture'
+import { skipUnsupportedFixture, withFixtureSkip } from '../fixtures/contractSkip'
 
-export function describeHostServiceContract(name: string, factory: (session?: AdapterSessionOptions) => Promise<HostServiceFixture>): void {
+export function describeHostServiceContract(name: string, factory: (session?: AdapterSessionOptions) => Promise<HostServiceFixture>, skips: AdapterContractSkips): void {
   describe(name + ' host service contract', () => {
     let f: HostServiceFixture
     let threadId: string
@@ -21,7 +22,8 @@ export function describeHostServiceContract(name: string, factory: (session?: Ad
     const permissionDecision = (record: RecordedRpc): boolean | undefined => f.protocol
       ? f.protocol.permissionDecision(record)
       : record.result?.decision === 'accept' ? true : record.result?.decision === 'decline' ? false : undefined
-    beforeEach(async () => {
+    beforeEach(async context => {
+      skipUnsupportedFixture(context)
       f = await factory({ reaperSweepMs: 20, sessionIdleMs: 150 })
       expect((await command({ type: 'connect', provider: f.provider })).error).toBeNull()
       const state = await command({ type: 'create-project', provider: f.provider, title: 'Contract project', path: f.root, useExisting: true })
@@ -30,7 +32,7 @@ export function describeHostServiceContract(name: string, factory: (session?: Ad
       threadId = await create('Contract thread')
       await command({ type: 'observe-threads', threadIds: [threadId] })
     })
-    afterEach(async () => { await f?.cleanup() })
+    afterEach(async () => { const previous = f; f = undefined!; await previous?.cleanup() })
 
     it('creates and streams through Sotto identities and exposes the event history', async () => {
       expect(await f.nativeStarted(threadId)).toBe(false)
@@ -78,8 +80,7 @@ export function describeHostServiceContract(name: string, factory: (session?: Ad
       expect((await f.driver.requests()).some(record => permissionDecision(record) === true)).toBe(false)
     })
 
-    it('reconciles a lost prompt acknowledgement without resending', async context => {
-      if (f.skips?.uncertain) { context.skip(); return }
+    it('reconciles a lost prompt acknowledgement without resending', withFixtureSkip(skips.uncertain), async () => {
       const method = f.protocol?.promptMethod ?? 'turn/start'
       await f.driver.delayNextAck(method)
       await send()
@@ -87,8 +88,7 @@ export function describeHostServiceContract(name: string, factory: (session?: Ad
       expect((await f.driver.requests()).filter(record => record.method === method)).toHaveLength(1)
     })
 
-    it('keeps the same thread and saved messages across host restart during a run', async context => {
-      if (f.skips?.restart) { context.skip(); return }
+    it('keeps the same thread and saved messages across host restart during a run', withFixtureSkip(skips.restart), async () => {
       await send()
       const before = thread().messages
       const identity = f.service.state().hostId
@@ -100,21 +100,20 @@ export function describeHostServiceContract(name: string, factory: (session?: Ad
       expect(thread().id).toBe(threadId)
     })
 
-    it('reaps an unwatched idle session beside a running one and resumes it on send with its history', async context => {
-      if (!f.sessions || f.skips?.lazy) { context.skip(); return }
+    it('reaps an unwatched idle session beside a running one and resumes it on send with its history', withFixtureSkip(skips.lazy), async () => {
       await send()
       await expect.poll(() => thread().status).toBe('running')
-      const runningStarts = await f.sessions.starts(threadId)
+      const runningStarts = await f.sessions!.starts(threadId)
       const quiet = await create('Quiet thread')
       await send('Quiet prompt', quiet)
       await f.driver.completeTurn(quiet, 'Quiet reply')
       await expect.poll(() => thread(quiet).status).toBe('idle')
       await command({ type: 'select-thread', threadId })
       await command({ type: 'observe-threads', threadIds: [threadId] })
-      const starts = await f.sessions.starts(quiet)
+      const starts = await f.sessions!.starts(quiet)
       await expect.poll(() => f.sessions!.stopped(quiet)).toBe(true)
       expect(thread().status).toBe('running')
-      expect(await f.sessions.starts(threadId)).toBe(runningStarts)
+      expect(await f.sessions!.starts(threadId)).toBe(runningStarts)
       expect(f.service.events(0, quiet).some(event => event.event.kind === 'message-added')).toBe(true)
       expect((await send('After reaping', quiet)).error).toBeNull()
       await expect.poll(() => f.sessions!.starts(quiet)).toBeGreaterThan(starts)

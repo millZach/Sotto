@@ -1,6 +1,8 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { describeThreads, groupThreads, listThreads, providerKey } from '../../../../src/renderer/src/agents/threadFacts'
-import { NOW, stateFixture } from '../../../fixtures/renderer/threadsViewHarness'
+import { threadsStateFixture as stateFixture } from '../../../fixtures/agentState'
+import { E2E_THREADS_NOW as NOW } from '../../../../src/shared/e2e'
 
 describe('thread grouping and states from Sotto state', () => {
   it('groups explicit settled work separately from open idle and running threads', () => {

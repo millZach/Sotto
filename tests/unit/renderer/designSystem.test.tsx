@@ -13,10 +13,11 @@ import { ShortcutKey } from '../../../src/renderer/src/components/ShortcutKey'
 import { ToastRegion } from '../../../src/renderer/src/components/ToastRegion'
 import { Toggle } from '../../../src/renderer/src/components/Toggle'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
-import { MODES, THEME_IDS, contrast, over, resolveColor, rootDeclarations } from '../../fixtures/renderer/themeTokenResolver'
+import { MODES, THEME_IDS, contrast, over, parseTokenBlocks, resolveColor, rootDeclarations } from '../../fixtures/renderer/themeTokenResolver'
 
 const globalCss = readFileSync(join(process.cwd(), 'src/renderer/src/styles/global.css'), 'utf8')
 const tokensCss = readFileSync(join(process.cwd(), 'src/renderer/src/styles/tokens.css'), 'utf8')
+const tokenBlocks = parseTokenBlocks(tokensCss)
 const onboardingSource = readFileSync(join(process.cwd(), 'src/renderer/src/features/onboarding/Onboarding.tsx'), 'utf8')
 
 afterEach(cleanup)
@@ -174,7 +175,7 @@ describe('Sotto design-system primitives', () => {
   it('keeps control borders at 3:1 and every text tier and the activity accent at 4.5:1 in every room and built-in theme', () => {
     for (const mode of MODES) {
       for (const themeId of THEME_IDS) {
-        const declarations = rootDeclarations(mode, themeId)
+        const declarations = rootDeclarations(mode, themeId, {}, tokenBlocks)
         const canvas = resolveColor('--tt-canvas', declarations)
         const color = (name: string) => over(resolveColor(`--tt-${name}`, declarations), canvas)
         for (const surface of ['canvas', 'surface', 'surface-elevated'] as const) {

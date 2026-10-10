@@ -300,7 +300,7 @@ function runPowerShell(script: string): Promise<string> {
 const shouldRun =
   process.platform === 'win32' && process.env.SOTTO_NATIVE_PASTE_SMOKE === '1'
 
-describe.runIf(shouldRun)('Windows native paste integration', () => {
+describe.runIf(shouldRun)("Windows native paste integration (requires SOTTO_NATIVE_PASTE_SMOKE=1)", () => {
   it('pastes the clipboard into an established ordinary foreground text field', async () => {
     const target = spawn(
       'powershell.exe',
@@ -388,7 +388,7 @@ describe.runIf(shouldRun)('Windows native paste integration', () => {
 const shouldRunEdge =
   process.platform === 'win32' && process.env.SOTTO_BROWSER_PASTE_SMOKE === '1'
 
-describe.runIf(shouldRunEdge)('Windows Edge paste integration', () => {
+describe.runIf(shouldRunEdge)("Windows Edge paste integration (requires SOTTO_BROWSER_PASTE_SMOKE=1)", () => {
   it('pastes the clipboard into a natively focused Edge textarea', async () => {
     const browser = await chromium.launch({ channel: 'msedge', headless: false })
     const guardian = spawn(

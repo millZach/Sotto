@@ -89,20 +89,22 @@ describe('activity summaries for a long thread (#701)', () => {
     expect(summaryDelta / wholeDelta).toBeLessThan(0.1)
   })
 
-  it.skipIf(!PERF_BENCH)('reports what making the summaries costs the host, once per update', () => {
-    const time = (work: () => unknown): number => {
-      for (let index = 0; index < 5; index++) work()
-      const samples: number[] = []
-      for (let index = 0; index < 40; index++) { const started = performance.now(); work(); samples.push(performance.now() - started) }
-      return round(median(samples), 3)
-    }
-    const report = {
-      summariseDetailMs: time(() => detailWithActivitySummaries(detail)),
-      stringifyWholeDetailMs: time(() => JSON.stringify(detailFrame(detail))),
-      stringifySummaryDetailMs: time(() => JSON.stringify(detailFrame(detailWithActivitySummaries(detail)))),
-      summariseDeltaMs: time(() => deltaWithActivitySummaries(delta)),
-    }
-    console.info(`activity summaries timing: ${JSON.stringify(report)}`)
-    expect(report.summariseDetailMs).toBeGreaterThanOrEqual(0)
+  describe("timing benchmark; requires SOTTO_PERF_BENCH=1", () => {
+    it.skipIf(!PERF_BENCH)('reports what making the summaries costs the host, once per update', () => {
+      const time = (work: () => unknown): number => {
+        for (let index = 0; index < 5; index++) work()
+        const samples: number[] = []
+        for (let index = 0; index < 40; index++) { const started = performance.now(); work(); samples.push(performance.now() - started) }
+        return round(median(samples), 3)
+      }
+      const report = {
+        summariseDetailMs: time(() => detailWithActivitySummaries(detail)),
+        stringifyWholeDetailMs: time(() => JSON.stringify(detailFrame(detail))),
+        stringifySummaryDetailMs: time(() => JSON.stringify(detailFrame(detailWithActivitySummaries(detail)))),
+        summariseDeltaMs: time(() => deltaWithActivitySummaries(delta)),
+      }
+      console.info(`activity summaries timing: ${JSON.stringify(report)}`)
+      expect(report.summariseDetailMs).toBeGreaterThanOrEqual(0)
+    })
   })
 })

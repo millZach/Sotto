@@ -25,7 +25,7 @@ const exec = promisify(execFile)
 const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, windowsHide: true, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
 interface Row { beforeMs: number; afterMs: number; beforeReads: number; beforeReadBytes: number; beforeListings: number; afterReads: number; rewrote: boolean }
 
-describe.skipIf(!PERF_BENCH)('the checkpoint step of a send', () => {
+describe.skipIf(!PERF_BENCH)("the checkpoint step of a send (timing benchmark; requires SOTTO_PERF_BENCH=1)", () => {
   let root: string
   const bundles: Record<string, string> = {}
   const copies: Record<string, { path: string; mode: 'unchanged' | 'edit' | 'commit'; seeded?: 'seeded' | 'history' }> = {}

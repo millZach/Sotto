@@ -35,7 +35,7 @@ function report(label: string, samples: Array<{ ms: number; git: number }>) {
   console.log(`${label}: send to provider median ${round(median(times))} ms (min ${round(Math.min(...times))}, max ${round(Math.max(...times))}); Git processes before the provider heard it median ${median(processes)} (min ${Math.min(...processes)}, max ${Math.max(...processes)})`)
 }
 
-describe.skipIf(!PERF_BENCH)('Git on a send\'s path', () => {
+describe.skipIf(!PERF_BENCH)("Git on a send's path (timing benchmark; requires SOTTO_PERF_BENCH=1)", () => {
   it.each(['independent', 'shared'] as const)('a thread on a ready %s working copy', async workingCopy => {
     const f = await repository()
     await startedThread(f, 'bench', workingCopy)
