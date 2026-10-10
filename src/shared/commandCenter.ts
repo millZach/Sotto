@@ -4,7 +4,6 @@ import { commandCenterGroupSchema, COMMAND_CENTER_GROUPS } from './commandCenter
 
 export const COMMAND_CENTER_PROMPT_BYTES_MAX = 32 * 1_024
 export const COMMAND_CENTER_READ_BYTES_MAX = 64 * 1_024
-export const COMMAND_CENTER_FILE_BYTES_MAX = 1_024 * 1_024
 export const COMMAND_CENTER_TITLE_MAX = 512
 export const COMMAND_CENTER_ROSTER_MAX = 100
 export const COMMAND_CENTER_MESSAGES_MAX = 50
@@ -85,11 +84,6 @@ const paging = { cursor: cursor.optional(), limit: z.number().int().min(1).max(C
 const page = { nextCursor: cursor.nullable(), observedAt: time, staleHosts: z.array(staleHost).max(100) }
 const mutation = { requestId: z.uuid(), retryKey: z.uuid() }
 const deliveryMode = z.enum(['now', 'queue', 'steer'])
-const relativePath = z.string().max(4_096).refine(value => !/^(?:[\\/]|[a-z]:)/iu.test(value)
-  && !value.includes(':') && !/[\p{Cc}]/u.test(value) && !value.split(/[\\/]/u).includes('..'), 'Use a relative path within the project.')
-const entry = z.object({ path: relativePath, kind: z.enum(['file', 'directory']), sizeBytes: counter.nullable(), modifiedAt: time.nullable() }).strict()
-const coverage = z.object({ filesScanned: counter, bytesScanned: counter, directoriesScanned: counter, elapsedMs: counter,
-  complete: z.boolean() }).strict()
 const operationState = z.object({ status: z.enum(['idle', 'running', 'error', 'unavailable']), stopped: z.boolean(), settled: z.boolean(),
   backgroundWorkCount: counter, observedAt: time.nullable(), freshness }).strict()
 const receiptResult = { receipt: commandCenterDeliveryReceiptSchema, limits: commandCenterLimitsSchema }
@@ -143,23 +137,6 @@ export const commandCenterToolSchemas = {
     output: result({ project: commandCenterProjectTargetSchema, revision: cursor, choices: z.array(z.object({ choiceId: id,
       kind: z.enum(['shared', 'new-worktree', 'existing-worktree']), branch: z.string().max(512).nullable(), occupied: z.boolean(), locked: z.boolean(),
       limitations: z.array(shortText).max(20) }).strict()).max(100), baseRefs: z.array(z.object({ choiceId: id, name: z.string().max(512) }).strict()).max(100), ...page }),
-  },
-  list_project_files: {
-    input: z.object({ project: commandCenterProjectTargetSchema, directory: relativePath.default(''), ...paging }).strict(),
-    output: result({ project: commandCenterProjectTargetSchema, entries: z.array(entry).max(100), nextCursor: cursor.nullable(), truncated: z.boolean() }),
-  },
-  search_project_files: {
-    input: z.object({ project: commandCenterProjectTargetSchema, text: utf8(COMMAND_CENTER_PROMPT_BYTES_MAX).min(1), directory: relativePath.optional(),
-      glob: z.string().min(1).max(512).optional(), limit: z.number().int().min(1).max(100).default(100) }).strict(),
-    output: boundedRead(result({ project: commandCenterProjectTargetSchema, matches: z.array(z.object({ path: relativePath, line: z.number().int().positive(),
-      snippet: shortText }).strict()).max(100), coverage, truncated: z.boolean() })),
-  },
-  read_project_file: {
-    input: z.object({ project: commandCenterProjectTargetSchema, path: relativePath.min(1), startLine: z.number().int().positive().default(1),
-      lineLimit: z.number().int().min(1).max(200).default(200) }).strict(),
-    output: boundedRead(result({ project: commandCenterProjectTargetSchema, path: relativePath.min(1), text: utf8(COMMAND_CENTER_READ_BYTES_MAX),
-      sizeBytes: counter.max(COMMAND_CENTER_FILE_BYTES_MAX), readAt: time, contentRevision: id, startLine: z.number().int().positive(),
-      nextLine: z.number().int().positive().nullable(), truncated: z.boolean() })),
   },
   read_operation: {
     input: z.object({ operationId: z.uuid() }).strict(),

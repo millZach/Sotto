@@ -18,5 +18,3 @@ export function validateCommandCenterProfile(profile: CommandCenterLaunchProfile
     throw new CommandCenterProfileRefusal('The command center’s tool server could not be verified. Nothing was sent. Reopen the command center to try again.')
   }
 }
-
-export const COMMAND_CENTER_PERMISSION_FAILURE = 'The command center asked for permission outside its read-only profile. Its session and tools were stopped. Reopen the command center to recover.'

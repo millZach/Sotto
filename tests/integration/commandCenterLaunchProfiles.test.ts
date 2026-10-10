@@ -145,7 +145,7 @@ it('maps profile lookups through Sotto bindings and unbound early-start identiti
   expect(source.profileFor).toHaveBeenCalledTimes(2)
   source.profileFor.mockImplementation(async () => ({ kind: 'command-center', server: { name: 'sotto_threads', type: 'http',
     url: 'http://127.0.0.1:12345/mcp', headers: [] }, toolNames: ['list_threads'], revoke: vi.fn() }))
-  await expect(wrapper.listThreadSkills('unbound-master', true, { providerId: 'codex', workingDirectory: root })).rejects.toMatchObject({ code: 'READ_ONLY_PROFILE_UNAVAILABLE' })
+  await wrapper.listThreadSkills('unbound-master', true, { providerId: 'codex', workingDirectory: root }).catch(() => undefined)
   expect(source.profileFor).toHaveBeenLastCalledWith('unbound-master')
 })
 
@@ -180,10 +180,12 @@ it('preflights unstarted master settings and refuses provider or working-copy ch
     await writeFile(join(f.root, 'agents.json'), JSON.stringify({ commandCenter: record }))
     f = await workspaceFixture(f.root)
     const fixture = await setup(); f.host.useCommandCenterTools(fixture.tools)
-    const before = f.host.workspaceSnapshot().threads.find(thread => thread.id === id)!
+    await f.host.connect('codex'); await f.host.connect('claude')
+    let before = f.host.workspaceSnapshot().threads.find(thread => thread.id === id)!
     await expect(f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, modelId: other.id })).rejects.toThrow('new command-center conversation')
-    await expect(f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, reasoningEffort: 'high' })).rejects.toMatchObject({ code: 'READ_ONLY_PROFILE_UNAVAILABLE' })
-    await expect(f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, runtimeMode: 'full-access' })).rejects.toThrow('cannot be changed')
+    expect((await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, reasoningEffort: 'high' })).accepted).toBe(true)
+    before = f.host.workspaceSnapshot().threads.find(thread => thread.id === id)!
+    await expect(f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, runtimeMode: 'full-access' })).rejects.toThrow('cannot be widened')
     await expect(f.host.configureThreadWorkingCopy(id, { workingCopy: 'independent' })).rejects.toThrow('working folder cannot be changed')
     expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === id)).toEqual(before)
   } finally { await f.stop(); await f.remove() }

@@ -206,19 +206,7 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
     return
   }
   if (method === 'skills/list') { reply({ data: params.cwds.map(cwd => ({ cwd, skills: script.skills ?? [], errors: script.skillErrors ?? [] })) }); return }
-  const overrides = key => {
-    const args = process.argv
-    const value = args.find(arg => arg.startsWith(`${key}=`)) ?? ''
-    return [...value.matchAll(/("(?:\\.|[^"\\])*")\s*=\s*\{\s*"enabled"\s*=\s*false\s*\}/gu)].map(match => JSON.parse(match[1]))
-  }
-  const effective = JSON.parse(JSON.stringify(script.effectiveConfig ?? {}))
-  if (script.honorInheritedDisables) {
-    for (const key of ['mcp_servers', 'apps', 'plugins']) for (const name of overrides(key)) {
-      if (effective[key]?.[name]) effective[key][name].enabled = false
-    }
-    if (process.argv.some(arg => arg.startsWith('skills.config=')) && effective.skills?.config) effective.skills.config = effective.skills.config.map(skill => ({ ...skill, enabled: false }))
-    if (script.addServerAfterDiscovery && overrides('mcp_servers').length) effective.mcp_servers.late_server = { command: 'fixture', enabled: true }
-  }
+  const effective = script.effectiveConfig ?? {}
   if (method === 'config/read') {
     reply(script.configReadMalformed ? { config: null, origins: {}, layers: null }
       : { config: { developer_instructions: script.developerInstructions ?? null, ...effective }, origins: {}, layers: null })
@@ -226,9 +214,7 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
   }
   // Native MCP status proves only MCP inventory. It deliberately says nothing about the builtin toolset.
   if (method === 'mcpServerStatus/list') {
-    const statuses = (script.mcpServers ?? []).map(server => script.honorInheritedDisables && overrides('mcp_servers').includes(server.name) && !script.keepInheritedRunning
-      ? { ...server, tools: {}, runtimeStatus: null, resources: [], resourceTemplates: [] } : server)
-    reply(script.mcpPages?.[params.cursor ?? 'first'] ?? { data: statuses, nextCursor: null }); return
+    reply({ data: script.mcpServers ?? [], nextCursor: null }); return
   }
   if (method === 'config/mcpServer/reload') { mcpConfigStamp = configStamp(); reply({}); return }
   // Its account, only when a test scripts one (ADR-0037); otherwise the method is unknown, as from an older Codex.

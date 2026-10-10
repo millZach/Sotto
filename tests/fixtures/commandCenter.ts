@@ -38,12 +38,6 @@ export const commandCenterToolFixtures: Record<CommandCenterToolName, { input: u
     controlAvailable: false, readsAvailable: true, readOnlyProfileAvailable: false, freshness: 'fresh' }], ...page } },
   list_working_copies: { input: { project: centerProject }, output: { status: 'ok', project: centerProject, revision: 'choices-1',
     choices: [{ choiceId: 'shared-1', kind: 'shared', branch: 'main', occupied: false, locked: false, limitations: [] }], baseRefs: [{ choiceId: 'base-1', name: 'main' }], ...page } },
-  list_project_files: { input: { project: centerProject }, output: { status: 'ok', project: centerProject,
-    entries: [{ path: 'README.md', kind: 'file', sizeBytes: 4, modifiedAt: centerTime }], nextCursor: null, truncated: false } },
-  search_project_files: { input: { project: centerProject, text: 'needle' }, output: { status: 'ok', project: centerProject,
-    matches: [{ path: 'README.md', line: 1, snippet: 'needle' }], coverage: { filesScanned: 1, bytesScanned: 6, directoriesScanned: 1, elapsedMs: 1, complete: true }, truncated: false } },
-  read_project_file: { input: { project: centerProject, path: 'README.md' }, output: { status: 'ok', project: centerProject, path: 'README.md',
-    text: 'text', sizeBytes: 4, readAt: centerTime, contentRevision: 'revision-1', startLine: 1, nextLine: null, truncated: false } },
   read_operation: { input: { operationId: centerOperationId }, output: { status: 'ok', receipt, limits, action: 'send', state } },
 }
 

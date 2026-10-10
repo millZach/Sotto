@@ -37,7 +37,7 @@ export function aroundTurnStart(requests: readonly RecordedRpc[]): { before: Rec
   return { before: requests.slice(0, start), after: requests.slice(start) }
 }
 // The deadline also covers the fake app server's process start; see the note on claudeFixture.
-export async function codexFixture(root?: string, wrapped = false, requestTimeoutMs = 2000, session: AdapterSessionOptions & Pick<CodexAppServerHostOptions, 'pollIntervalMs' | 'commandCenterAdmissions'> = {}) {
+export async function codexFixture(root?: string, wrapped = false, requestTimeoutMs = 2000, session: AdapterSessionOptions & Pick<CodexAppServerHostOptions, 'pollIntervalMs'> = {}) {
   root ??= await mkdtemp(join(tmpdir(), 'sotto-codex-'))
   const adapter = new CodexAppServerHost({ userDataPath: root, executable: process.execPath,
     args: [resolve('tests/fixtures/fakeCodexAppServer.mjs'), root], codexHome: join(root, 'home'), requestTimeoutMs, pollIntervalMs: 15, ...session })

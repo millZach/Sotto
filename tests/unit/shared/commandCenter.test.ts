@@ -19,7 +19,7 @@ function withUnknownFields(value: unknown): unknown[] {
 describe('closed command-center contracts', () => {
   it('offers exactly the twelve bounded tools', () => {
     expect(Object.keys(commandCenterToolSchemas)).toEqual(['list_threads', 'read_thread', 'start_thread', 'send_to_thread', 'stop_thread', 'settle_thread',
-      'list_projects', 'list_working_copies', 'list_project_files', 'search_project_files', 'read_project_file', 'read_operation'])
+      'list_projects', 'list_working_copies', 'read_operation'])
   })
   for (const [name, schemas] of Object.entries(commandCenterToolSchemas)) {
     const fixture = commandCenterToolFixtures[name as keyof typeof commandCenterToolFixtures]
@@ -58,7 +58,7 @@ describe('closed command-center contracts', () => {
     expect(commandCenterToolSchemas.start_thread.output.safeParse({ ...output, effectiveChoices: { ...output.effectiveChoices, reasoningEffort: null } }).success).toBe(true)
     expect(commandCenterToolSchemas.start_thread.output.safeParse({ ...output, effectiveChoices: { ...output.effectiveChoices, reasoningEffort: '' } }).success).toBe(false)
   })
-  it('bounds prompts by UTF-8 bytes, titles, pages, cursors and file windows', () => {
+  it('bounds prompts by UTF-8 bytes, titles, pages and cursors', () => {
     const base = commandCenterToolFixtures.send_to_thread.input as object
     expect(commandCenterToolSchemas.send_to_thread.input.safeParse({ ...base, text: 'a'.repeat(COMMAND_CENTER_PROMPT_BYTES_MAX) }).success).toBe(true)
     for (const text of ['a'.repeat(COMMAND_CENTER_PROMPT_BYTES_MAX + 1), 'é'.repeat(COMMAND_CENTER_PROMPT_BYTES_MAX / 2 + 1), '   ']) {
@@ -66,15 +66,13 @@ describe('closed command-center contracts', () => {
     }
     expect(commandCenterToolSchemas.start_thread.input.safeParse({ ...(commandCenterToolFixtures.start_thread.input as object), title: 'a'.repeat(513) }).success).toBe(false)
     for (const [name, schemas] of Object.entries(commandCenterToolSchemas)) {
-      if (!['list_threads', 'list_projects', 'list_working_copies', 'list_project_files', 'search_project_files', 'read_thread'].includes(name)) continue
+      if (!['list_threads', 'list_projects', 'list_working_copies', 'read_thread'].includes(name)) continue
       const input = commandCenterToolFixtures[name as keyof typeof commandCenterToolFixtures].input as object
       const max = name === 'read_thread' ? 50 : 100
       for (const limit of [0, max + 1, 1.5]) expect(schemas.input.safeParse({ ...input, limit }).success).toBe(false)
     }
     expect(commandCenterToolSchemas.list_threads.input.safeParse({ cursor: 'a'.repeat(2_049) }).success).toBe(false)
     expect(commandCenterToolSchemas.read_thread.input.safeParse({ target: centerTarget, position: { historyEpoch: -1, afterPosition: 0 } }).success).toBe(false)
-    expect(commandCenterToolSchemas.read_project_file.input.safeParse({ ...(commandCenterToolFixtures.read_project_file.input as object), lineLimit: 201 }).success).toBe(false)
-    expect(commandCenterToolSchemas.read_project_file.output.safeParse({ ...(commandCenterToolFixtures.read_project_file.output as object), sizeBytes: 1_048_577 }).success).toBe(false)
   })
   it('bounds whole read responses, including metadata, rather than each message alone', () => {
     const base = commandCenterToolFixtures.read_thread.output as { messages: object[] }
@@ -82,11 +80,6 @@ describe('closed command-center contracts', () => {
       messages: [{ ...base.messages[0], text: 'a'.repeat(COMMAND_CENTER_READ_BYTES_MAX) }] }).success).toBe(false)
     expect(commandCenterToolSchemas.read_thread.output.safeParse({ ...base,
       messages: Array.from({ length: 50 }, (_, i) => ({ ...base.messages[0], id: `m-${i}`, text: 'a'.repeat(1_400) })) }).success).toBe(false)
-  })
-  it('rejects absolute, device, traversal and alternate-stream paths before any broker dispatch', () => {
-    for (const path of ['../secret', 'sub/../../secret', 'C:/secret', '\\\\server\\share', '\\\\?\\C:\\secret', '/secret', 'file:token', 'file\u0000']) {
-      expect(commandCenterToolSchemas.read_project_file.input.safeParse({ ...(commandCenterToolFixtures.read_project_file.input as object), path }).success).toBe(false)
-    }
   })
   it('represents cursor recovery and delivery uncertainty without an answer capability', () => {
     expect(commandCenterRefusalSchema.parse({ status: 'refused', code: 'CURSOR_EXPIRED', message: 'Read the list again.', retryable: true, restartCursor: 'restart' }).restartCursor).toBe('restart')

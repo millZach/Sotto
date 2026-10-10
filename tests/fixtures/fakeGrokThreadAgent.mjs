@@ -106,10 +106,10 @@ record({ method: 'fixture/process', params: { pid: process.pid, version: startup
 const defaultCatalog = { currentModelId: 'fixture-model', availableModels: [{ modelId: 'fixture-model', name: 'Fixture Grok', _meta: { supportsReasoningEffort: true, reasoningEffort: 'high', reasoningEfforts: [{ id: 'high' }] } }] }
 // script.json may carry a whole catalog, so a case can reproduce Grok's own highest-first level list.
 const catalogOf = script => script.catalog ?? defaultCatalog
-// Profiled model changes report the session's confirmed selection on load; ordinary fixture behavior stays intact.
+// Command-center model changes report the session's confirmed selection on load; ordinary fixture behavior stays intact.
 function sessionCatalog(script, session) {
  const catalog = catalogOf(script)
- if (!session?.requestedProfile || !session.modelId || script.unconfirmedModel) return catalog
+ if (!session?.systemPromptOverride || !session.modelId || script.unconfirmedModel) return catalog
  return { ...catalog, currentModelId: session.modelId, availableModels: catalog.availableModels.map(model => model.modelId === session.modelId
   ? { ...model, _meta: { ...model._meta, reasoningEffort: session.reasoningEffort ?? model._meta?.reasoningEffort } } : model) }
 }
@@ -120,15 +120,7 @@ let heldCreate
 // loaded while not resident; loading a resident session can add always-approve but never removes it.
 const nativeMode = meta => meta?.yoloMode ? 'bypassPermissions' : meta?.autoMode ? 'auto' : 'default'
 // Sotto must always state both flags explicitly, never both on, and never swap the agent profile.
-function checkPolicy(meta, servers) {
- if (meta?.agentProfile?.name === 'sotto-command-center') {
-  const p = meta.agentProfile
-  if (meta.yoloMode !== false || meta.autoMode !== false || p.injectDefaultTools !== false || p.discoverSkills !== false || p.inheritSkills !== false || p.agentsMd !== false
-   || p.mcpInheritance !== 'none' || p.memory !== null || Object.keys(p.hooks ?? {}).length || p.skills?.length || p.mcpServers?.length
-   || JSON.stringify(p.toolConfig?.tools.map(tool => tool.id)) !== JSON.stringify(['GrokBuild:search_tool','GrokBuild:use_tool'])
-   || servers?.length !== 1 || servers[0].name !== 'sotto_threads') appendFileSync(path('violations.jsonl'),JSON.stringify({reason:'Command center configuration wrong'})+'\n')
-  return
- }
+function checkPolicy(meta) {
  if (typeof meta?.yoloMode !== 'boolean' || typeof meta?.autoMode !== 'boolean' || (meta.yoloMode && meta.autoMode) || meta.agentProfile) appendFileSync(path('violations.jsonl'),JSON.stringify({reason:'Coding session policy wrong',meta})+'\n')
 }
 function update(sessionId, update, extension = false, notify = true, meta = {}) {
@@ -183,8 +175,7 @@ createInterface({input:process.stdin}).on('line', line => {
  else if (frame.method === 'session/new') {
   checkPolicy(p._meta, p.mcpServers)
   const sessionId = randomUUID(); sessions[sessionId] = {cwd:p.cwd,updates:[],permissionMode:nativeMode(p._meta),
-   ...(p._meta?.agentProfile ? {requestedProfile:p._meta.agentProfile,offeredNativeTools:p._meta.agentProfile.toolConfig?.tools.map(tool => tool.id),mcpServers:p.mcpServers} : {})}; resident.add(sessionId); holding(sessionId, true); save()
-  if (p._meta?.agentProfile) record({method:'fixture/offered-tools',params:{sessionId,nativeTools:sessions[sessionId].offeredNativeTools,servers:p.mcpServers.map(server=>server.name)}})
+   mcpServers:p.mcpServers,systemPromptOverride:p._meta?.systemPromptOverride}; resident.add(sessionId); holding(sessionId, true); save()
   record({method:'fixture/session-resident',params:{sessionId,resident:true}})
   const reply = () => send({id:frame.id,result:{sessionId,models:catalogOf(script)}})
   // `holdCreate` keeps the answer until a `release-create` command, so a test can act while a create is open.
@@ -197,10 +188,6 @@ createInterface({input:process.stdin}).on('line', line => {
   else if (script.rejectLoad) { letGo(p.sessionId); send({id:frame.id,error:{code:-32603,message:'Rejected load'}}) }
   else {
    const session = sessions[p.sessionId]
-   if (p._meta?.agentProfile) {
-    session.requestedProfile=p._meta.agentProfile; session.offeredNativeTools=p._meta.agentProfile.toolConfig?.tools.map(tool=>tool.id); session.mcpServers=p.mcpServers
-    record({method:'fixture/offered-tools',params:{sessionId:p.sessionId,nativeTools:session.offeredNativeTools,servers:p.mcpServers.map(server=>server.name)}})
-   }
    if (!resident.has(p.sessionId)) session.permissionMode = nativeMode(p._meta)
    else if (p._meta?.yoloMode) session.permissionMode = 'bypassPermissions'
    resident.add(p.sessionId); holding(p.sessionId, true); save()
@@ -218,7 +205,7 @@ createInterface({input:process.stdin}).on('line', line => {
  else if (frame.method === 'session/set_model') {
   if (script.rejectModel) send({id:frame.id,error:{code:-32602,message:'Rejected model'}})
   else {
-   if (hold(p.sessionId)?.requestedProfile) { sessions[p.sessionId].modelId=p.modelId; sessions[p.sessionId].reasoningEffort=p._meta?.reasoningEffort; save() }
+   if (hold(p.sessionId)?.systemPromptOverride) { sessions[p.sessionId].modelId=p.modelId; sessions[p.sessionId].reasoningEffort=p._meta?.reasoningEffort; save() }
    if (!script.modelNotificationAfterResponse) send({method:'_x.ai/session_notification',params:{sessionId:p.sessionId,update:{sessionUpdate:'model_changed',model_id:p.modelId,reasoning_effort:p._meta?.reasoningEffort ?? 'high'}}})
    send({id:frame.id,result:{_meta:{model:{Ok:p.modelId}}}})
   }
@@ -289,7 +276,7 @@ function run(command) {
  if (command.type === 'inherited-exit') {spawn(process.execPath,['-e','setTimeout(()=>{},1000)'],{stdio:['ignore',process.stdout,process.stderr],windowsHide:true});process.exit(0)}
  if (command.type === 'permission' || command.type === 'question') {
   const id = ++serial; pending.set(id,{kind:command.type,text:command.text})
-  if (command.type === 'permission') send({id,method:'session/request_permission',params:{sessionId:command.sessionId,toolCall:{toolCallId:String(id),title:command.text,...(command.rawInput===undefined?{}:{rawInput:command.rawInput})},options:[{optionId:'yes',name:'Allow once',kind:'allow_once'},{optionId:'no',name:'Deny',kind:'reject_once'}]}})
+  if (command.type === 'permission') send({id,method:'session/request_permission',params:{sessionId:command.sessionId,toolCall:{toolCallId:String(id),title:command.text,...(command.rawInput===undefined?{}:{rawInput:command.rawInput})},options:command.options ?? [{optionId:'yes',name:'Allow once',kind:'allow_once'},{optionId:'no',name:'Deny',kind:'reject_once'}]}})
   // 1.0.40 puts a question's own parameters straight under the underscored method; earlier clients
   // wrapped them in an envelope naming the method again. Both are the same request.
   else {

@@ -42,8 +42,7 @@ import { BABYSITTING_PER_THREAD_MAX, type BabysitEndedReason } from '../../share
 import { migrateWorkspaceThreadKinds } from './commandCenterRecords'
 import { CommandCenterLaunchProfiles } from './commandCenterLaunchProfiles'
 import { CommandCenterProfileRefusal } from './commandCenterProfile'
-import { preflightCommandCenterConfiguration } from './commandCenterPreflight'
-import type { CommandCenterAdmission } from './commandCenterAdmission'
+import { assertCommandCenterPermission } from './commandCenterProviderTools'
 import type { CommandCenterProfileTools } from './host'
 
 /** Keep a Unicode character whole at an event boundary so SQLite preserves its text. */
@@ -1169,8 +1168,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
 
   constructor(private readonly inner: AgentHost, private readonly directory: string, private readonly historyEnabled: () => boolean = () => true,
-    private readonly worktreeRefreshDelayMs: number = WORKTREE_REFRESH_DELAY_MS,
-    private readonly commandCenterAdmissions?: readonly CommandCenterAdmission[]) {
+    private readonly worktreeRefreshDelayMs: number = WORKTREE_REFRESH_DELAY_MS) {
     this.concurrentProviders = inner.concurrentProviders === true
     this.launchProfiles = new CommandCenterLaunchProfiles(directory, () => this.hostId,
       id => this.state.snapshot.threads.find(thread => thread.id === id))
@@ -2512,16 +2510,17 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     await this.initialize()
     const commandProfile = 'threadId' in command ? await this.launchProfiles.profileFor(command.threadId) : undefined
     if ('threadId' in command) {
-      if (commandProfile && (command.type === 'configure-thread' && (command.runtimeMode !== undefined || command.providerMode !== undefined)
-        || command.type === 'create-thread' && (command.workingCopy === 'independent' || command.existingWorktreePath !== undefined))) {
-        throw new CommandCenterProfileRefusal('The command center’s read-only profile and working folder cannot be changed. Choose only its model and effort.')
+      if (commandProfile) {
+        assertCommandCenterPermission(command)
+        if (command.type === 'create-thread') command = { ...command, runtimeMode: 'approval-required' }
+      }
+      if (commandProfile && (command.type === 'create-thread' && (command.workingCopy === 'independent' || command.existingWorktreePath !== undefined))) {
+        throw new CommandCenterProfileRefusal('The command center’s asking mode and working folder cannot be changed. Choose only its model and effort.')
       }
       if (commandProfile && command.type === 'configure-thread') {
         const thread = this.thread(command.threadId)
         const model = resolveModel(this.state.snapshot.models, command.modelId ?? thread.modelId)
         if (model?.providerId !== thread.providerId) throw new CommandCenterProfileRefusal('Changing the command center’s provider needs a new command-center conversation. This conversation was kept.')
-        const version = this.state.snapshot.providers?.find(provider => provider.id === thread.providerId)?.version ?? this.state.snapshot.version
-        preflightCommandCenterConfiguration(commandProfile, thread.providerId, version, model!.id, this.commandCenterAdmissions)
       }
     }
     let preparedSkills: AgentSkillReference[] | undefined
@@ -2558,8 +2557,6 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       const model = resolveModel(this.state.snapshot.models, command.modelId)!
       if (commandProfile) {
         await this.launchProfiles.assertCreationBinding(command.threadId, command.projectId, model.providerId)
-        const version = this.state.snapshot.providers?.find(provider => provider.id === model.providerId)?.version ?? this.state.snapshot.version
-        preflightCommandCenterConfiguration(commandProfile, model.providerId, version, model.id, this.commandCenterAdmissions)
       }
       this.requireCreation(model.providerId)
       const thread: AgentThread = { hostId: this.hostId, id: command.threadId, projectId: command.projectId, title: command.title, modelId: command.modelId,

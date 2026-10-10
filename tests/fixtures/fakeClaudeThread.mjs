@@ -33,22 +33,12 @@ if (args.includes('--no-session-persistence') && value('--output-format') === 'j
 }
 const metadata = args.includes('--no-session-persistence')
 const session = metadata ? 'metadata' : value(args.includes('--resume') ? '--resume' : '--session-id')
-const commandCenter = args.includes('--restricted')
-const commandCenterConfig = commandCenter ? JSON.parse(readFileSync(value('--mcp-config'), 'utf8')) : undefined
-const commandCenterPolicy = commandCenter ? JSON.parse(value('--managed-settings')) : undefined
-const commandCenterTools = commandCenter ? Object.entries(commandCenterConfig.mcpServers).flatMap(([name]) => {
-  const position = args.indexOf('--allowedTools')
-  const following = args.slice(position + 1)
-  return following.slice(0, following.findIndex(argument => argument.startsWith('--')) < 0 ? following.length : following.findIndex(argument => argument.startsWith('--')))
-    .filter(tool => tool.startsWith(`mcp__${name}__`))
-}) : []
-if (commandCenter) {
-  if (args.includes('--bare') || value('--tools') !== 'AskUserQuestion' || value('--permission-mode') !== 'manual'
-    || value('--setting-sources') !== '' || !['--strict-mcp-config', '--disable-slash-commands', '--safe-mode', '--no-chrome'].every(flag => args.includes(flag))
-    || Object.keys(commandCenterConfig.mcpServers).join() !== 'sotto_threads'
-    || !commandCenterPolicy.disableAllHooks || !commandCenterPolicy.disableCommandPluginSources || !commandCenterPolicy.disableSkillShellExecution
-    || !commandCenterTools.length) throw new Error('The command-center launch did not retain its restrictive profile')
-} else if (!metadata && (args.includes('--tools') || args.includes('--safe-mode') || value('--permission-prompts') !== 'host' || !['default', 'acceptEdits', 'auto', 'bypassPermissions'].includes(value('--permission-mode')))) throw new Error('Coding threads must retain tools and host permission decisions')
+const commandCenter = args.includes('--append-system-prompt')
+const mcpConfig = args.includes('--mcp-config') ? JSON.parse(readFileSync(value('--mcp-config'), 'utf8')) : { mcpServers: {} }
+const position = args.indexOf('--allowedTools')
+const following = position < 0 ? [] : args.slice(position + 1)
+const allowance = following.slice(0, following.findIndex(argument => argument.startsWith('--')) < 0 ? following.length : following.findIndex(argument => argument.startsWith('--')))
+if (!metadata && (args.includes('--tools') || args.includes('--safe-mode') || value('--permission-prompts') !== 'host' || !['default', 'manual', 'acceptEdits', 'auto', 'bypassPermissions'].includes(value('--permission-mode')))) throw new Error('Coding threads must retain tools and host permission decisions')
 // Both permission flags or none of the surface: the real CLI treats --permission-prompts host as
 // permission to ask and --permission-prompt-tool stdio as the thing that makes this process the asker.
 // Dropping the second is silent there, so it is loud here.
@@ -56,7 +46,7 @@ if (!metadata && value('--permission-prompt-tool') !== 'stdio') throw new Error(
 // The native CLI refuses bypassPermissions unless bypassing was explicitly allowed at launch; never allow it for other modes.
 if (!metadata && (value('--permission-mode') === 'bypassPermissions') !== args.includes('--allow-dangerously-skip-permissions')) throw new Error('bypassPermissions requires --allow-dangerously-skip-permissions, and only that mode may carry it')
 record(args.includes('--resume') ? 'resume' : 'launch', { source: 'child-process-argv', args, executable: process.execPath, cwd: process.cwd(), compactionEnvironment: Object.fromEntries(['DISABLE_AUTO_COMPACT', 'DISABLE_COMPACT', 'CLAUDE_AUTOCOMPACT_PCT_OVERRIDE', 'CLAUDE_CODE_AUTO_COMPACT_WINDOW'].filter(key => process.env[key] !== undefined).map(key => [key, process.env[key]])) })
-if (commandCenter) record('command-center-profile', { policy: commandCenterPolicy, serverNames: Object.keys(commandCenterConfig.mcpServers), tools: ['AskUserQuestion', ...commandCenterTools] })
+if (commandCenter) record('command-center-launch', { serverNames: Object.keys(mcpConfig.mcpServers), allowedTools: allowance, nativeTools: ['Read', 'Grep', 'Glob', 'Edit', 'Bash'] })
 // The isolated Electron journey uses the adapter's normal ~/.claude discovery path.
 const folder = join(process.env.SOTTO_FAKE_CLAUDE_HOME ?? join(root, 'home'), 'projects', process.cwd().replace(/[^a-zA-Z0-9]/gu, '-'))
 const log = join(folder, session + '.jsonl')
@@ -219,14 +209,14 @@ lines.on('line', line => {
         if (initialized && !metadata) record('initialize-answered', { session })
         output({ type: 'control_response', response: script.fail
           ? { subtype: 'error', request_id: frame.request_id, error: 'Synthetic initialization rejected' }
-          : { subtype: 'success', request_id: frame.request_id, response: { models, commands: existsSync(join(root, 'skills.json')) ? JSON.parse(readFileSync(join(root, 'skills.json'), 'utf8')) : [], agents: commandCenter ? [{ name: 'claude', description: 'Fixture built-in' }, { name: 'Explore', description: 'Fixture built-in' }, { name: 'general-purpose', description: 'Fixture built-in' }, { name: 'Plan', description: 'Fixture built-in' }] : [], hooks_applied: true, session_state: 'idle', current_permission_mode: commandCenter ? 'default' : settings.mode, ...(installed !== undefined ? { claude_code_version: installed } : {}), ...script.initializeReport } } })
+          : { subtype: 'success', request_id: frame.request_id, response: { models, commands: existsSync(join(root, 'skills.json')) ? JSON.parse(readFileSync(join(root, 'skills.json'), 'utf8')) : [], agents: [], hooks_applied: true, session_state: 'idle', current_permission_mode: settings.mode, ...(installed !== undefined ? { claude_code_version: installed } : {}), ...script.initializeReport } } })
         // A started session announces its tools, and AskUserQuestion is in that list only where someone
         // can answer it. `approvalSurface: false` is the CLI that took the flag and offered no surface.
         if (!script.fail && !metadata && !script.omitInit) {
           const init = { type: 'system', subtype: 'init', session_id: session, ...(installed !== undefined ? { claude_code_version: installed } : {}),
-            tools: commandCenter ? ['AskUserQuestion', ...commandCenterTools] : ['Task', 'Bash', 'Edit', 'Glob', 'Grep', 'Read', 'Write', ...(script.approvalSurface === false ? [] : ['AskUserQuestion'])],
-            mcp_servers: commandCenter ? [{ name: 'sotto_threads', status: 'connected' }] : [],
-            permissionMode: commandCenter ? 'default' : settings.mode, model: settings.model, slash_commands: [], agents: [], skills: [], plugins: [], ...script.initReport }
+            tools: ['Task', 'Bash', 'Edit', 'Glob', 'Grep', 'Read', 'Write', ...(script.approvalSurface === false ? [] : ['AskUserQuestion'])],
+            mcp_servers: Object.keys(mcpConfig.mcpServers).map(name => ({ name, status: 'connected' })),
+            permissionMode: settings.mode, model: settings.model, slash_commands: [], agents: [], skills: [], plugins: [], ...script.initReport }
           if (script.initAtTurn) deferredInit = init
           else output(init)
         }
@@ -236,13 +226,6 @@ lines.on('line', line => {
         writeFileSync(join(root, 'initialize-waiting'), session)
         const gate = setInterval(() => { if (existsSync(join(root, 'initialize-release'))) { clearInterval(gate); respond() } }, 5)
       } else respond()
-    }
-    else if (frame.request.subtype === 'mcp_set_servers') {
-      const scriptPath = join(root, 'initialize-script.json')
-      const script = existsSync(scriptPath) ? JSON.parse(readFileSync(scriptPath, 'utf8')) : {}
-      if (!commandCenter || JSON.stringify(frame.request.servers) !== JSON.stringify(commandCenterConfig.mcpServers)) violation('Only the command center may attach its supplied MCP server')
-      output({ type: 'control_response', response: { subtype: 'success', request_id: frame.request_id,
-        response: { added: ['sotto_threads'], removed: [], errors: {}, ...script.dynamicMcpReport } } })
     }
     else if (frame.request.subtype === 'get_settings') {
       const scriptPath = join(root, 'initialize-script.json')

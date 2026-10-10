@@ -1,5 +1,7 @@
 # Command-center live checks on Windows
 
+October 9, 2026: the design changed to provider-native tools and pinned asking permissions ([ADR-0069](../adr/0069-command-center-is-a-read-only-thread.md)). The results below describe the superseded isolated profile.
+
 October 9, 2026. Windows 11 laptop `LAPTOP-RUSSH2J5`, x64. Branch `command-center`. Each provider ran alone, through its real native client and Zach's existing sign-in, against a freshly created synthetic project. No provider configuration or credential files were read, copied or changed directly by the agent. Clients used their normal authentication and provider-owned session/cache storage; configuration was inspected only through their supported protocols. Temporary diagnostics contained only key names, counts, built-in names and Sotto's refusal text; they were removed before committing.
 
 ## Result and account budget

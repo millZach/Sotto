@@ -256,3 +256,6 @@ artifacts/omarchy-shell-integration/*
 !artifacts/omarchy-shell-integration/f-sotto-quit.png
 !artifacts/omarchy-shell-integration/g-two-outputs.png
 !artifacts/omarchy-shell-integration/h-widget-returned.png
+
+artifacts/command-center-own-tools-live/
+artifacts/command-center-own-tools-windows/

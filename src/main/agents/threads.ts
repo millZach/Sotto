@@ -7,7 +7,6 @@ import type { AgentHostSnapshot, ProviderId } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose, ThreadSessionDraft, ThreadLaunchProfiles } from './host'
 import { subscribeActivitySnapshots } from './activitySnapshots'
-import { CommandCenterProfileRefusal } from './commandCenterProfile'
 
 const bindingSchema = z.object({
   threadId: z.string().min(1), provider: z.string().min(1), sessionId: z.string().min(1),
@@ -176,7 +175,7 @@ export class SottoThreadHost implements AgentHost {
 
   async listThreadSkills(threadId: string, forceReload = false, scope?: AgentSkillScope) {
     await this.registry.load()
-    if (await this.launchProfiles?.profileFor(threadId)) throw new CommandCenterProfileRefusal('The command center cannot use native skills. Nothing was started.')
+    await this.launchProfiles?.profileFor(threadId)
     const binding = this.registry.byThread(threadId)
     if (binding && binding.provider !== this.provider || !binding && scope?.providerId !== this.provider) throw new Error('This thread is not known to this provider.')
     if (!this.inner.listThreadSkills) throw new Error('This provider does not expose skills.')
