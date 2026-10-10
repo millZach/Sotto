@@ -197,9 +197,13 @@ it('pushes changed or withdrawn preview fingerprints without sending screen text
   expect(terminals.phoneApproval(terminalId)).toBeNull()
 })
 
-it('never uses a screen-only question to review an outstanding permission hook', async () => {
+it.each([
+  'Which option?\r\n❯ 1. First\r\n  2. Second\r\n  3. Type something.',
+  'Do you want to proceed?\r\n❯ 1. Yes\r\n  2. No\r\n  3. Type something.',
+  'Do you want to proceed?\r\n❯ 1. Yes\r\n  2. No',
+])('never uses question chrome to review an outstanding permission hook: %s', async question => {
   await hello(); request(); const answer = await preview()
-  data(screen('Which option?\r\n❯ 1. First\r\n  2. Second\r\n  3. Type something.\r\nenter to select · ↑/↓ to navigate · esc to cancel'))
+  data(screen(`${question}\r\nenter to select · ↑/↓ to navigate · esc to cancel`))
   expect(terminals.phoneRows()[0]).toMatchObject({ state: 'needs-you' })
   expect(terminals.phoneRows()[0]).not.toHaveProperty('approval')
   expect(await call({ op: 'terminal-approval', terminalId })).toMatchObject({ ok: true, result: null })

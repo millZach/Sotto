@@ -227,15 +227,16 @@ export class TerminalScreenRules {
       const work = /^[✶✻✽✢·*]\s+\S[^\r\n]*(?:esc to interrupt|ctrl\+c to interrupt)[^\r\n]*$/imu.test(text)
       if (work) return { detection: 'available', state: 'working', failed }
       if (bottom.slice(-4).some(line => /^❯\s*$/u.test(line)) && /(?:^|\s)\? for shortcuts(?:\s+[·|].*)?$/iu.test(bottom.at(-1) ?? '')) return { detection: 'available', state: 'idle', failed }
-      const choices = /^(?:❯\s*)?1\.\s+Yes(?:,|$)/mu.test(text) && /^(?:❯\s*)?[2-9]\.\s+No(?:,|$)/mu.test(text)
-        && /^❯\s*[1-9]\.\s+\S.+/mu.test(text)
-      const prompt = /^(?:Do you want to proceed\?|Allow .+\?|Do you want to .+\?)$/mu.test(text)
-      const controls = /(?:Enter to confirm|Esc to cancel|esc to cancel)/u.test(footer)
-      if (choices && prompt && controls) return { detection: 'available', state: 'needs-you', requestKind: 'permission' }
       // The bundled 2.1.295 AskUserQuestion component uses numbered choices, its built-in Other row and select/navigation/cancel chrome.
       const questionChoices = /^❯\s*\d+\.\s+\S.+/mu.test(text) && /^\d+\.\s+(?:Type something\.?|Chat about this)$/mu.test(text)
       const questionControls = /enter to select/iu.test(footer) && /(?:↑\/↓ to navigate|Tab\/Arrow keys to navigate)/iu.test(footer) && /(?:esc|escape) to cancel/iu.test(footer)
       if (questionChoices && questionControls) return { detection: 'available', state: 'needs-you', requestKind: 'question' }
+      const choices = /^(?:❯\s*)?1\.\s+Yes(?:,|$)/mu.test(text) && /^(?:❯\s*)?[2-9]\.\s+No(?:,|$)/mu.test(text)
+        && /^❯\s*[1-9]\.\s+\S.+/mu.test(text)
+      const prompt = /^(?:Do you want to proceed\?|Allow .+\?|Do you want to .+\?)$/mu.test(text)
+      // Question footers also say Esc to cancel. Even an incomplete question must never authorize a tool permission.
+      const controls = /(?:Enter to confirm|Esc to cancel|esc to cancel)/u.test(footer) && !/enter to select/iu.test(footer)
+      if (choices && prompt && controls) return { detection: 'available', state: 'needs-you', requestKind: 'permission' }
     } else if (this.provider === 'codex') {
       // The native status row owns an elapsed clock and interrupt hint. Reduced motion omits its leading activity bullet.
       const work = /^(?:•\s+)?[\p{L}\p{N}][^()>\r\n]*\((?:\d+h \d{2}m \d{2}s|\d+m \d{2}s|\d+s) • esc to interrupt\)(?: • \S.*)?$/mu.test(text)
