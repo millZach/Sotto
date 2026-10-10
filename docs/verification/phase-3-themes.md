@@ -1,5 +1,7 @@
 # Phase 3 themes
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 Scope: branch `work/phase3-themes`. The built-ins were renamed late at the user's request; any older note or capture that says T3 Code, T3 Chat, Grove, Ocean, Ember or Iris means Sotto, Rose, Fern, Tide, Copper or Dusk. The main window's Accent chooser is replaced with T3 Code's Themes capability, from reference pin `d1d15c67f4a5fb82fd8d5e01e5e3b288296789c3` (MIT, T3 Tools Inc.). Decision record: ADR-0011. This records the phase as it was verified: the Threads page redesign later gave the Sotto card Sotto's own palette and made it the default for both halves, so every "Tide the default" and "falls back to Tide" line below reads Sotto now (ADR-0011's September 18 amendment). Open VSX hardening is recorded separately in `phase-3-themes-network.md`. Target: Windows desktop Electron, pointer and keyboard. Phone layouts are out of scope.
 
 ## Acceptance checklist

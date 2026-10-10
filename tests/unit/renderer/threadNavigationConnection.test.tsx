@@ -84,7 +84,7 @@ describe('thread draft recovery through the real connection and disk', () => {
       await f.control.command({ type: 'select-thread', threadId: 'workshop' })
       expect((await f.disk()).deliveries).toContainEqual(expect.objectContaining({ draftId: oldId, status: 'uncertain' }))
       vi.stubGlobal('sotto', { agents: agentWireBridge(f.bridge) })
-      render(<AgentProvider settings={null} dictation={{ status: 'idle' }}><ThreadsView onOpenAgents={() => undefined} /></AgentProvider>)
+      render(<AgentProvider settings={null}><ThreadsView /></AgentProvider>)
       const check = await screen.findByRole('button', { name: 'Check again' })
       expect(screen.getByLabelText('Pending message')).not.toHaveTextContent('Original unconfirmed prompt')
       expect(screen.getByLabelText('Pending message')).not.toHaveTextContent('Independent newer draft')
@@ -162,7 +162,7 @@ describe('thread draft recovery through the real connection and disk', () => {
       expect(execute.mock.calls.filter(([request]) => request.type === 'send')).toEqual([[expect.objectContaining({ text: 'Send revision A' })]])
       expect(store.draft('workshop').text).toBe('Keep newer revision B')
       expect((await f.disk()).threadDrafts).toContainEqual(expect.objectContaining({ threadId: 'workshop', text: 'Keep newer revision B' }))
-      expect(f.control.get().assignments).toEqual([])
+      expect(f.control.get()).not.toHaveProperty('assignments')
     } finally { await act(async () => { release(); await previous; await sending }); await f.close() }
   })
 
@@ -173,7 +173,7 @@ describe('thread draft recovery through the real connection and disk', () => {
     const image = handleOf(PIXEL_PNG, 'retained-image', 'pixel.png')
     let controls!: ReturnType<typeof useAgents>
     function Observer() { controls = useAgents(); return null }
-    const page = (shown: boolean) => <AgentProvider settings={null} dictation={{ status: 'idle' }}><Observer />{shown ? <ThreadsView onOpenAgents={() => undefined} /> : null}</AgentProvider>
+    const page = (shown: boolean) => <AgentProvider settings={null}><Observer />{shown ? <ThreadsView /> : null}</AgentProvider>
     let spy: ReturnType<typeof vi.spyOn> | undefined
     try {
       await f.control.command({ type: 'select-thread', threadId: 'workshop' })
@@ -198,7 +198,7 @@ describe('thread draft recovery through the real connection and disk', () => {
       }
       view.rerender(page(false))
       // Unrelated state can echo the in-memory draft while the page is absent.
-      await act(async () => { await controls.command({ type: 'voice-state', status: 'off', error: null }) })
+      await act(async () => { await controls.command({ type: 'observe-threads', threadIds: ['workshop'] }) })
       view.rerender(page(true))
       expect(controls.threadDrafts).toBe(store)
       expect(promptText(screen.getByRole('textbox', { name: 'Prompt' }))).toBe('Keep this unsaved draft')
@@ -282,13 +282,13 @@ describe('thread navigation through the real renderer connection and controller'
     }
   })
 
-  it.each(['refresh', 'reasoning'] as const)('renders authoritative cached selection while %s is still pending', async pending => {
+  it('renders authoritative cached selection while refresh is pending', async () => {
     const root = await mkdtemp(join(tmpdir(), 'sotto-navigation-connection-'))
     if (dirname(resolve(root)) !== resolve(tmpdir()) || !root.includes('sotto-navigation-connection-')) throw new Error('Unexpected fixture directory')
     const host = new E2EAgentHost()
     const observeThreads = vi.fn<(ids: string[]) => void>()
     const execute = vi.spyOn(host, 'execute')
-    const reasoner = { ...e2eAgentReasoner, intent: vi.fn(e2eAgentReasoner.intent) }
+    const reasoner = { ...e2eAgentReasoner }
     const credentials = await testCredentials(root, { mode: 'unavailable' })
     const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host: Object.assign(host, { observeThreads }), credentials, reasoner,
     })
@@ -299,7 +299,7 @@ describe('thread navigation through the real renderer connection and controller'
     try {
       await control.start(); await stageInto(control, PIXEL_PNG); await control.command({ type: 'connect' })
       await control.command({ type: 'select-thread', threadId: 'workshop' })
-      if (pending === 'refresh') await control.command({ type: 'compose', text: 'Bound to A' })
+      await control.command({ type: 'compose', text: 'Bound to A' })
       const cached = control.get()
       const bridge: AgentBridge = agentBridgeFor(control)
       const { result } = renderHook(() => {
@@ -307,24 +307,23 @@ describe('thread navigation through the real renderer connection and controller'
         return { ...connection, title: connection.state?.host.threads.find(thread => thread.id === connection.state?.activeThreadId)?.title }
       })
       await waitFor(() => expect(result.current.title).toBe('Workshop'))
-      if (pending === 'refresh') vi.spyOn(host, 'snapshot').mockImplementationOnce(async () => { await gate; return cached.host })
-      else reasoner.intent.mockImplementationOnce(async () => { await gate; return { type: 'compose', threadId: 'workshop', text: 'For A' } })
-      act(() => { operation = result.current.command(pending === 'refresh' ? { type: 'refresh' } : { type: 'utterance', text: 'Prepare my request' }) })
+      vi.spyOn(host, 'snapshot').mockImplementationOnce(async () => { await gate; return cached.host })
+      act(() => { operation = result.current.command({ type: 'refresh' }) })
       await waitFor(() => expect(result.current.state?.globalLaneBusy).toBe(true))
       act(() => { selection = result.current.command({ type: 'select-thread', threadId: 'docs' }) })
       await waitFor(() => expect(result.current.title).toBe('Docs'))
       expect(result.current.state?.globalLaneBusy).toBe(true)
-      expect(observeThreads).toHaveBeenLastCalledWith(['docs'])
+      expect(observeThreads).toHaveBeenLastCalledWith(['docs', 'workshop'])
       expect(execute).not.toHaveBeenCalled()
-      expect(result.current.state?.assignments).toEqual([])
-      if (pending === 'refresh') expect(result.current.state).toMatchObject({ draft: 'Bound to A', draftThreadId: 'workshop' })
+      expect(result.current.state).not.toHaveProperty('assignments')
+      expect(result.current.state).toMatchObject({ draft: 'Bound to A', draftThreadId: 'workshop' })
       await act(async () => { release(); await operation; await selection })
       expect(result.current.title).toBe('Docs')
       // The shell carrying these fields holds for its animation frame before it commits.
       await waitFor(() => expect(result.current.state?.draftThreadId).toBe('workshop'))
       await act(async () => { await result.current.command({ type: 'send' }) })
-      expect(execute).not.toHaveBeenCalled()
-      await waitFor(() => expect(result.current.state?.error).toMatch(/Assign/))
+      expect(execute).toHaveBeenCalledWith(expect.objectContaining({ type: 'send', threadId: 'workshop', text: 'Bound to A' }))
+      await waitFor(() => expect(result.current.state?.error).toBeNull())
     } finally {
       await act(async () => { release(); await operation; await selection })
       cleanup(); control.dispose()
@@ -346,7 +345,7 @@ describe('thread navigation through the real renderer connection and controller'
       await f.control.command({ type: 'select-thread', threadId: 'workshop' })
       f.host.event({ type: 'manual', threadId: 'workshop', text: 'Start the long job' })
       vi.stubGlobal('sotto', { agents: agentWireBridge(f.bridge) })
-      render(<AgentProvider settings={null} dictation={{ status: 'idle' }}><Observer /><ThreadsView onOpenAgents={() => undefined} /></AgentProvider>)
+      render(<AgentProvider settings={null}><Observer /><ThreadsView /></AgentProvider>)
       const prompt = await screen.findByRole('textbox', { name: 'Prompt' })
       await screen.findByRole('button', { name: 'Stop agent' })
       act(() => controls.threadDrafts.edit('workshop', { text: 'Then run $deploy', skills: [skill] }))

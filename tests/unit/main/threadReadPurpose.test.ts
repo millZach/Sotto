@@ -7,7 +7,6 @@ import { afterEach, describe, expect, it } from 'vitest'
 import type { AgentControl } from '../../../src/main/agents/control'
 import type { AgentHost, AgentHostCommand, AgentHostResult, ThreadReadPurpose } from '../../../src/main/agents/host'
 import { ConfiguredProviderHost } from '../../../src/main/agents/providerSwitch'
-import type { AgentReasoner } from '../../../src/main/agents/reasoning'
 import { SottoThreadHost, ThreadRegistry } from '../../../src/main/agents/threads'
 import { WorkspaceHost } from '../../../src/main/agents/workspace'
 import { E2EAgentHost } from '../../../src/main/e2e/agentEffects'
@@ -154,10 +153,10 @@ describe('a workspace that keeps history from events asks its reads and settings
 })
 
 describe('the coordinator marks only its reads immediately before a send', () => {
-  async function coordinator(decide?: AgentReasoner['decide']): Promise<{ host: ReadRecordingHost; control: AgentControl }> {
+  async function coordinator(): Promise<{ host: ReadRecordingHost; control: AgentControl }> {
     const root = await directory()
     const host = new ReadRecordingHost()
-    const control = await manualSendCoordinator(root, host, decide)
+    const control = await manualSendCoordinator(root, host)
     cleanup.push(async () => { control.dispose(); await control.privacyChanged() })
     await control.start(); expect((await control.command({ type: 'connect' })).error).toBeNull()
     host.reads.length = 0
@@ -173,24 +172,13 @@ describe('the coordinator marks only its reads immediately before a send', () =>
     expect(host.reads[0]).toEqual(beforeSend(host))
   })
 
-  it('a coordinator draft send, and not the assign read before it', async () => {
+  it('a saved draft send, and not the selection read before it', async () => {
     const { host, control } = await coordinator()
-    await control.command({ type: 'assign', threadId: 'workshop' })
-    expect(host.reads).toEqual([plain])
+    await control.command({ type: 'select-thread', threadId: 'workshop' })
+    expect(host.reads.every(read => read.purpose === undefined)).toBe(true)
     await control.command({ type: 'compose', text: 'Drafted prompt' })
     host.reads.length = 0
     expect((await control.command({ type: 'send' })).error).toBeNull()
-    expect(host.reads[0]).toEqual(beforeSend(host))
-  })
-
-  it('a supervision follow-up', async () => {
-    const { host, control } = await coordinator(async () => ({ decision: 'followup', text: 'Fix the failing test within the assigned scope.' }))
-    await control.command({ type: 'configure', patch: { reasoning: 'openrouter', reasoningModel: 'fixture-model' } })
-    await control.command({ type: 'assign', threadId: 'workshop', instruction: 'Fix the existing failing tests.' })
-    host.reads.length = 0
-    host.event({ type: 'ready', threadId: 'workshop', text: 'First test failed.', status: 'idle' })
-    await expect.poll(() => control.get().assignments[0]?.followups).toBe(1)
-    await expect.poll(() => control.get().host.threads.find(thread => thread.id === 'workshop')?.status).toBe('running')
     expect(host.reads[0]).toEqual(beforeSend(host))
   })
 

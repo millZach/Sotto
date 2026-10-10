@@ -1,5 +1,7 @@
 # Issue 24: current native Threads acceptance
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 On September 14, 2026, the Windows production Electron build at main `0e12b1c` passed all three actual native Threads journeys in `tests/e2e/native-threads-live.spec.ts` (3 passed, 1.0 minute). No production changes were necessary for these journeys.
 
 | Provider | Installed native catalog selection | Result |

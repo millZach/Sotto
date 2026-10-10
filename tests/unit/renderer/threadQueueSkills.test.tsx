@@ -32,7 +32,7 @@ const CATALOG: AgentSkillCatalog = {
 
 function manualState({ running = false, capabilities = {} }: { readonly running?: boolean; readonly capabilities?: Partial<AgentCapabilities> } = {}): AgentState {
   const state = threadsStateFixture()
-  state.assignments = []
+
   state.activeThreadId = THREAD
   state.host.capabilities = { ...BASE, ...capabilities }
   if (running) state.host.threads.find(item => item.id === THREAD)!.status = 'running'
@@ -42,7 +42,7 @@ function manualState({ running = false, capabilities = {} }: { readonly running?
 function mount(state: AgentState, options: Parameters<typeof liveAgentState>[1] = {}) {
   const live = liveAgentState(state, options)
   vi.mocked(useAgents).mockImplementation(live.useLive)
-  const view = render(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+  const view = render(<ThreadsView now={NOW} />)
   return { live, view, prompt: () => screen.getByRole('textbox', { name: 'Prompt' }) as HTMLElement }
 }
 

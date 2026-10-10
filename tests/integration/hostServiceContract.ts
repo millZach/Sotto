@@ -15,7 +15,7 @@ export function describeHostServiceContract(name: string, factory: (session?: Ad
     const send = (text = 'Synthetic prompt', id = threadId) => command({ type: 'manual-send', threadId: id, text })
     const create = async (title: string): Promise<string> => {
       const id = randomUUID()
-      const state = await command({ type: 'create-thread', threadId: id, projectId, title, modelId: f.modelId, workingCopy: 'shared', managed: false })
+      const state = await command({ type: 'create-thread', threadId: id, projectId, title, modelId: f.modelId, workingCopy: 'shared' })
       expect(state.error).toBeNull()
       return id
     }

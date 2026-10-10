@@ -1,6 +1,4 @@
 import { ownedE2EProfile, removeOwnedE2EProfile } from './e2eProfile'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
 
 import { _electron as electron, expect, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 
@@ -52,6 +50,14 @@ export async function firstSottoWindow(application: ElectronApplication): Promis
     await page.waitForLoadState('domcontentloaded')
     return page.url().endsWith('/index.html')
   } })
+}
+
+/** The widget is created after onboarding; wait for its page and navigation to arrive. */
+export async function sottoWidget(application: ElectronApplication): Promise<Page> {
+  await expect.poll(() => application.windows().some(page => page.url().endsWith('/widget.html'))).toBe(true)
+  const widget = application.windows().find(page => page.url().endsWith('/widget.html'))!
+  await widget.waitForLoadState('domcontentloaded')
+  return widget
 }
 
 const defaultDependencies: LaunchDependencies = {
@@ -169,14 +175,18 @@ export async function completeFirstRunSetup(page: Page, options: FirstRunSetupOp
 
 /**
  * Opens the Threads page from wherever the window happens to be. Sotto now
- * opens on Threads, so the common case is that the sidebar is already there and
- * nothing is clicked. Otherwise the page is reached through the footer link on
+ * opens on Threads, so the common case is that the workspace is already there and
+ * nothing is clicked. The sidebar alone also appears beside Dictate, History and Help.
+ * Otherwise the page is reached through the footer link on
  * the pages that still have a footer, and through the Dictate/Threads switch on
  * the pages that do not.
  */
 export async function openThreads(page: Page): Promise<void> {
   const sidebar = threadSidebar(page)
-  if (await sidebar.isVisible()) return
+  if (await page.locator('.threads-view').isVisible()) {
+    await expect(sidebar).toBeVisible()
+    return
+  }
   const link = page.getByRole('link', { name: 'Threads', exact: true })
   if ((await link.count()) > 0) await link.click()
   else await page.getByRole('tab', { name: 'Threads', exact: true }).click()
@@ -200,43 +210,6 @@ export async function openPage(page: Page, name: SottoPageName): Promise<void> {
 }
 
 /**
- * Turns the voice coordinator, and memory with it, on in a profile before its
- * window opens. The beta hides the Agents room, the wake phrase and every "let
- * Sotto manage" control behind `voiceCoordinatorEnabled`, and the Memory page
- * with the questionnaire that greets the Agents room behind `memoryEnabled`, so
- * a spec that still exercises them has to seed the settings. Whatever else the spec already wrote is kept; a profile with
- * no settings file yet gets one holding only the flag, which the main process
- * fills out from the defaults when it reads it.
- */
-export async function enableVoiceCoordinator(userData: string): Promise<void> {
-  const file = join(userData, 'settings.json')
-  let persisted: Record<string, unknown> = {}
-  try {
-    const parsed: unknown = JSON.parse(await readFile(file, 'utf8'))
-    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) persisted = parsed as Record<string, unknown>
-  } catch {
-    // No settings file yet, or one this profile is about to replace anyway.
-  }
-  await mkdir(userData, { recursive: true })
-  await writeFile(file, `${JSON.stringify({ ...persisted, voiceCoordinatorEnabled: true, memoryEnabled: true }, null, 2)}\n`, 'utf8')
-}
-
-/**
- * Launches with the voice coordinator already on, in a throwaway profile this
- * module still owns, so the spec's own cleanup removes it as usual.
- */
-export async function launchSottoWithVoice(scenario: E2EScenario = 'success'): Promise<LaunchedSotto> {
-  return launchSotto(scenario, undefined, {
-    ...defaultDependencies,
-    createProfile: async () => {
-      const owner = await ownedE2EProfile({ prefix: 'sotto-e2e-voice-' })
-      const profile = owner.directory
-      try { await enableVoiceCoordinator(profile); return profile } catch (error) { await owner.dispose(); throw error }
-    },
-  })
-}
-
-/**
  * The texts of a thread's user messages, read through the thread-detail bridge: the shell that
  * `agents.get()` answers with summarises every history instead of carrying it.
  */
@@ -249,7 +222,7 @@ export async function userMessageTexts(page: Page, threadId: string): Promise<st
 
 /**
  * Runs one of a pane's More-menu actions. The pane header keeps a single menu
- * button now; Rename, Manage, Reconnect, Settle and their kin sit behind it.
+ * button now; Rename, Reconnect, Settle and their kin sit behind it.
  * Scoped to a pane locator when several panes are open, or to the page when
  * one pane is.
  */

@@ -22,7 +22,7 @@ function snapshot(): AgentState {
   return threadsStateFixture({ cloneOverrides: false,
     configuration: defaultAgentConfiguration(),
     host: { projects: [], threads: [], models: [] },
-    topLevel: { assignments: [], queue: [], activeThreadId: null, activeProjectId: null,  } })
+    topLevel: { activeThreadId: null, activeProjectId: null,  } })
 }
 afterEach(() => { cleanup(); resetBranchNoticeDismissals() })
 
@@ -115,7 +115,7 @@ describe('a thread pane whose worktree moved', () => {
   const THREAD = 'grok-previews'
   function stateWith(worktree: AgentWorktree): AgentState {
     const state = threadsStateFixture()
-    state.assignments = []
+
     state.activeThreadId = THREAD
     state.host.connected = true
     Object.assign(state.host.threads.find(item => item.id === THREAD) as AgentThread, { worktree, workingDirectory: worktreePath })
@@ -131,7 +131,7 @@ describe('a thread pane whose worktree moved', () => {
     legacy.nativeSessionStarted = true
     const live = liveAgentState(state)
     vi.mocked(useAgents).mockImplementation(live.useLive)
-    render(<ThreadsView onOpenAgents={vi.fn()} now={E2E_THREADS_NOW} />)
+    render(<ThreadsView now={E2E_THREADS_NOW} />)
     fireEvent(window, new Event('focus'))
     // The window's own read, which asks GitHub only as the timer would (#820).
     await waitFor(() => expect(live.command).toHaveBeenCalledWith({ type: 'refresh-thread-worktree', threadId: THREAD, background: true }))
@@ -141,7 +141,7 @@ describe('a thread pane whose worktree moved', () => {
   it('waits for text in the pane composer, then re-reads the folder and says the branch changed', async () => {
     const live = liveAgentState(stateWith(moved))
     vi.mocked(useAgents).mockImplementation(live.useLive)
-    render(<ThreadsView onOpenAgents={vi.fn()} now={E2E_THREADS_NOW} />)
+    render(<ThreadsView now={E2E_THREADS_NOW} />)
     expect(screen.queryByText(/Branch changed/u)).toBeNull()
     const reads = (): AgentCommand[] => live.command.mock.calls.map(([request]) => request).filter(request => request.type === 'refresh-thread-worktree')
     expect(reads()).toEqual([])

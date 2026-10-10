@@ -161,7 +161,7 @@ it('leaves the coordinator\'s saved intent in place when the CLI never answers, 
   const { f, id, events } = await fixture()
   const credentials = await testCredentials(join(f.root, 'vault'), { mode: 'plain' })
   const control = createAgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
-    reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
+    reasoner: {},
   })
   const outbox = async (): Promise<unknown[]> => (JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')) as { outbox: unknown[] }).outbox
   try {

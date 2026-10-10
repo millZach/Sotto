@@ -1,21 +1,13 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
 import { type Rectangle } from '../../../src/main/windows/windowManager'
-import { createHarness, setWidgetPresentation, reportWidgetDrag, createMutableTwoDisplayAdapter, registerWidgetMonitorTimers } from '../../fixtures/windowManager'
+import { createHarness, createMutableTwoDisplayAdapter, registerWidgetMonitorTimers, reportWidgetDrag, setWidgetPresentation } from '../../fixtures/windowManager'
 
 describe('WindowManager cursor monitor following', () => {
   registerWidgetMonitorTimers()
 
   it('follows the cursor monitor in every widget presentation', async () => {
     const presentations = [
-      {
-        presentation: 'pill-controls' as const,
-        bounds: { x: 1_440, y: 896, width: 320, height: 88 },
-      },
-      {
-        presentation: 'threads-expanded' as const,
-        bounds: { x: 1_390, y: 424, width: 420, height: 560 },
-      },
       {
         presentation: 'idle-resting' as const,
         bounds: { x: 1_538, y: 930, width: 124, height: 54 },

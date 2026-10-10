@@ -1,6 +1,6 @@
 import { mkdir } from 'node:fs/promises'
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { closeSotto, launchSottoWithVoice, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
 import { REMOTE_PERMISSION_DENIED } from '../../src/main/agents/authority'
 import { evidenceDirectory } from '../fixtures/evidence'
 
@@ -72,7 +72,7 @@ async function across(launched: LaunchedSotto, name: string, rows: Map<string, s
 test('a permission choice shows at once, marked pending with what is in force; a refusal puts it back with Try again, and a lost answer keeps it', async () => {
   test.setTimeout(240_000)
   await mkdir(ARTIFACTS, { recursive: true })
-  const launched = await launchSottoWithVoice()
+  const launched = await launchSotto()
   const { page } = launched
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
@@ -80,7 +80,7 @@ test('a permission choice shows at once, marked pending with what is in force; a
     await page.emulateMedia({ reducedMotion: 'no-preference' })
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', reducedMotion: 'system' })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
       await window.sotto!.agents!.command({ type: 'select-thread', threadId: 'workshop' })
       await window.sotto!.agents!.command({ type: 'configure-thread', threadId: 'workshop', runtimeMode: 'approval-required' })

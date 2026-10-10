@@ -3,13 +3,13 @@ import { AtomicJsonStore } from '../main/storage/atomicJsonStore'
 import { resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { createAgentRuntime, type AgentRuntimeOptions } from '../main/agents/runtime'
+import { removeRetiredVoiceCache } from '../main/agents/retiredVoiceCache'
 import { loadHostIdentity } from '../main/agents/hostIdentity'
 import { MISSING_REMOTE_ATTACHMENT } from '../main/agents/attachmentStore'
 import { SecureSettings } from '../main/agents/secureSettings'
 import { createStorageRepositories } from '../main/storage/repositories'
 import { RecoveryNoticeCenter } from '../main/storage/recoveryNoticeCenter'
 import { openRuntimeMemory } from '../main/memory/runtime'
-import { MemoryProfile } from '../main/memory/profile'
 import { PolicyStore } from '../main/memory/policies'
 import { join } from 'node:path'
 import { openHostCredentials } from './credentials'
@@ -92,6 +92,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     throw new HostKeyMigrationError('The OpenRouter key could not be stored securely and was removed from settings. Enter it again on the host machine after restoring storage access. Start the host with --key-file <file>.')
   })
   await repositories.settings.migrateProjectWorkingCopyDefaults(await loadHostIdentity(directory))
+  await repositories.settings.save(await repositories.settings.get()).catch(() => console.warn('retired-voice-settings-save-failed'))
+  await removeRetiredVoiceCache(directory)
   const startup = await settings.get()
   const memory = openRuntimeMemory(join(directory, 'memory.sqlite'), event => options.log?.(event))
   try {
@@ -100,10 +102,9 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     let peersConnected = (): boolean => false
     const runtime = await createAgentRuntime({
       observeActiveThread: false, directory, credentials, settings: () => startup, writingSettings: () => settings.get(),
-      historyEnabled: () => startup.historyEnabled, coordinatorEnabled: () => startup.voiceCoordinatorEnabled,
+      historyEnabled: () => startup.historyEnabled,
       gitStatus: { fetchIntervalMs: () => startup.gitFetchIntervalSeconds * 1000, foreground: () => peersConnected(), log: event => options.log?.(event) },
       ...(policy ? { authority: policy } : {}),
-      ...(memory && startup.memoryEnabled ? { preferences: new MemoryProfile(memory) } : {}),
       ...(options.providers ? { providers: options.providers } : {}),
       ...(options.reasoner ? { reasoner: options.reasoner } : {}),
       ...(options.clients ? { clients: options.clients } : {}),

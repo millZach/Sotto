@@ -1,14 +1,13 @@
 import { threadsStateFixture } from '../../../../fixtures/agentState'
-import { deferred, baseProps, copy, selectCategory } from '../../../../fixtures/renderer/settingsViewHarness'
+import { baseProps, copy, deferred, selectCategory } from '../../../../fixtures/renderer/settingsViewHarness'
 import React from 'react'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { useOptionalAgents } from '../../../../../src/renderer/src/agents/AgentContext'
 import { SettingsView } from '../../../../../src/renderer/src/features/settings/SettingsView'
-import { useVoiceCoordinatorEnabled } from '../../../../../src/renderer/src/state/voiceCoordinator'
 import { defaultAgentConfiguration, type AgentState } from '../../../../../src/shared/agents'
-import { DEFAULT_SETTINGS } from '../../../../../src/shared/settings'
+import { DEFAULT_SETTINGS, parseSettings } from '../../../../../src/shared/settings'
 import { agentContextFixture } from '../../../../fixtures/agentContext'
 
 describe('SettingsView', () => {
@@ -128,12 +127,14 @@ describe('SettingsView', () => {
     expect(screen.getByRole('combobox', { name: 'History retention' })).toBeVisible()
   })
 
-  it('places Hosts, Phones and Agents after Providers and exposes Reasoning account inline', async () => {
+})
+
+it('places Hosts, Phones and Agents after Providers and keeps new-thread defaults inline', async () => {
     const capabilities = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true }
     const state: AgentState = threadsStateFixture({ cloneOverrides: false,
     configuration: { ...defaultAgentConfiguration(), reasoning: 'claude' },
     host: { connected: false, name: 'Providers', version: '', capabilities, projects: [], models: [], threads: [] },
-    topLevel: { connection: 'disconnected', assignments: [], queue: [], activeThreadId: null, activeProjectId: null } })
+    topLevel: { connection: 'disconnected', activeThreadId: null, activeProjectId: null } })
     vi.mocked(useOptionalAgents).mockReturnValue(agentContextFixture(state, vi.fn(async () => state)))
     const { container } = render(<SettingsView {...baseProps()} />)
     await selectCategory('Agents')
@@ -143,28 +144,28 @@ describe('SettingsView', () => {
     ])
     const agents = container.querySelector('#settings-agents') as HTMLElement
     expect(within(agents).queryByRole('button', { name: 'Configure agents' })).toBeNull()
-    expect(within(agents).getByRole('combobox', { name: 'Reasoning account' })).toHaveValue('claude')
+    expect(within(agents).queryByRole('combobox', { name: 'Reasoning account' })).toBeNull()
+    expect(within(agents).queryByRole('textbox', { name: 'Automatic follow-up limit' })).toBeNull()
+    expect(within(agents).queryByLabelText('Reasoning API key')).toBeNull()
     expect(screen.queryByRole('dialog', { name: 'Agent configuration' })).toBeNull()
   })
 
-  it('leaves the reasoning account in Agents but no voice or wake settings while the coordinator is hidden', async () => {
+it('preserves saved defaults without dormant reasoning, voice or wake controls', async () => {
     const capabilities = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true }
     const state: AgentState = threadsStateFixture({ cloneOverrides: false,
     configuration: { ...defaultAgentConfiguration(), reasoning: 'claude' },
     host: { connected: false, name: 'Providers', version: '', capabilities, projects: [], models: [], threads: [] },
-    topLevel: { connection: 'disconnected', assignments: [], queue: [], activeThreadId: null, activeProjectId: null } })
+    topLevel: { connection: 'disconnected', activeThreadId: null, activeProjectId: null } })
     vi.mocked(useOptionalAgents).mockReturnValue(agentContextFixture(state, vi.fn(async () => state)))
     const { container, rerender } = render(<SettingsView {...baseProps()} />)
     await selectCategory('Agents')
     const agents = container.querySelector('#settings-agents') as HTMLElement
-    expect(within(agents).getByText('Reasoning, new threads & projects')).toBeInTheDocument()
+    expect(within(agents).getByText('New threads & projects')).toBeInTheDocument()
     expect(within(agents).queryByText('Advanced wake settings')).toBeNull()
     expect(within(agents).queryByRole('button', { name: 'Stop speech' })).toBeNull()
-    expect(within(agents).getByRole('combobox', { name: 'Reasoning account' })).toHaveValue('claude')
-    // Nothing is deleted: turning the coordinator on brings the same controls back.
-    vi.mocked(useVoiceCoordinatorEnabled).mockReturnValue(true)
-    rerender(<SettingsView {...baseProps({ settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, voiceCoordinatorEnabled: true } })} />)
-    expect(within(agents).getByText('Reasoning, voice, new threads & projects')).toBeInTheDocument()
-    expect(within(agents).getByText('Advanced wake settings')).toBeInTheDocument()
+    expect(within(agents).queryByRole('combobox', { name: 'Reasoning account' })).toBeNull()
+    // A legacy flag cannot restore the removed controls.
+    rerender(<SettingsView {...baseProps({ settings: parseSettings({ ...DEFAULT_SETTINGS, onboardingComplete: true, voiceCoordinatorEnabled: true }) })} />)
+    expect(within(agents).getByText('New threads & projects')).toBeInTheDocument()
+    expect(within(agents).queryByText('Advanced wake settings')).toBeNull()
   })
-})

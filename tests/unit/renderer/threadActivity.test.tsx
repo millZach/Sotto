@@ -22,7 +22,7 @@ const lifecycle = (patch: Partial<AgentActivity> = {}): AgentActivity => activit
 
 function stateWith(patch: Partial<AgentThread>, connected = true): AgentState {
   const state = threadsStateFixture()
-  state.assignments = []
+
   state.activeThreadId = THREAD
   state.host.connected = connected
   const thread = state.host.threads.find(item => item.id === THREAD)!
@@ -33,7 +33,7 @@ function stateWith(patch: Partial<AgentThread>, connected = true): AgentState {
 function mount(state: AgentState) {
   const live = liveAgentState(state)
   vi.mocked(useAgents).mockImplementation(live.useLive)
-  render(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+  render(<ThreadsView now={NOW} />)
   return { live, transcript: screen.getByRole('log', { name: 'Thread transcript' }) }
 }
 

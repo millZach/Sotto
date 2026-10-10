@@ -67,7 +67,7 @@ async function fixture(profiles = false) {
   }
   const state = client.shell()
   const create = { type: 'create-thread', projectId: state.host.projects[0]!.id, modelId: state.host.models[0]!.id,
-    title: 'Permission fixture', managed: false } as const
+    title: 'Permission fixture' } as const
   return { client, pair, allowAnswers, create, service: host.service, identity: { clientId, user: 'Permission fixture', transport: 'socket' as const } }
 }
 

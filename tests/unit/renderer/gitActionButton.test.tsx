@@ -20,7 +20,7 @@ function thread(git: GitStatus | undefined, over: Partial<AgentThread> = {}): Ag
 }
 const state = (current: AgentThread, extra: Partial<AgentState> = {}): AgentState => (threadsStateFixture({ cloneOverrides: false,
     host: {models: [],  projects: [project], threads: [current] },
-    topLevel: { notice: null as unknown as string, assignments: [], queue: [], activeProjectId: null, activeThreadId: current.id, ...extra } , ...extra}))
+    topLevel: { notice: null as unknown as string, activeProjectId: null, activeThreadId: current.id, ...extra } , ...extra}))
 const files = (listed: GitChangedFiles['files'] = [{ path: 'src/app.ts', status: 'modified', insertions: 4, deletions: 1 }, { path: 'docs/new.md', status: 'untracked', insertions: 2, deletions: 0 }, { path: 'logo.png', status: 'modified', insertions: null, deletions: null }]): GitChangedFiles => ({ isRepository: true, files: listed, truncated: false })
 function mount(current: AgentThread, options: { command?: (request: AgentCommand) => Promise<AgentState | null>; changed?: GitChangedFiles; openExternalLink?: ReturnType<typeof vi.fn>; explained?: (error: string | null) => void } = {}) {
   const gitChangedFiles = vi.fn(async () => options.changed ?? files())

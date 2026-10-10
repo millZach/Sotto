@@ -67,7 +67,7 @@ async function coordinator(host: ThreeClients, run: (executable: string, args: r
     clients: new ProviderClients({ run, npmPath: async () => join(prefix, 'npm-cli.js'),
       fetchImpl: async url => new Response(JSON.stringify({ version: PUBLISHED[IDS.find(id => url.includes(encodeURIComponent(CLIENT_PACKAGES[id]!.split('/')[0]!)))!] }), { status: 200 }) }),
     locateClient: async provider => join(prefix, `${provider}.exe`),
-    reasoner: { intent: async () => ({ type: 'clarify', text: '' }), decide: async () => ({ decision: 'human', text: '' }) },
+    reasoner: {},
   })
   await control.start()
   await control.command({ type: 'connect' })
@@ -294,9 +294,8 @@ describe('the client update line', () => {
     })()
     const directory = await mkdtemp(join(tmpdir(), 'sotto-client-steps-')); roots.push(directory)
     const credentials = await testCredentials(join(directory, 'vault'), { mode: 'plain' })
-
     const control = createAgentControl({ schedule: immediatePublishScheduler, directory, host, credentials, clients, locateClient: async () => undefined,
-      reasoner: { intent: async () => ({ type: 'clarify', text: '' }), decide: async () => ({ decision: 'human', text: '' }) },
+      reasoner: {},
     })
     await control.start()
     try {

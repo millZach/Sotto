@@ -21,8 +21,7 @@ const WIDE = 1200
 /** Manual threads only, with a controller that moves the selection when asked. */
 function mount(options: { readonly width?: number; readonly height?: number; readonly store?: SplitLayoutStore; readonly tools?: (props: ThreadToolsProps) => React.ReactNode; readonly activeThreadId?: string; readonly slots?: Partial<ThreadsViewProps> } = {}) {
   const initial = threadsStateFixture()
-  initial.assignments = []
-  initial.queue = []
+
   initial.activeThreadId = options.activeThreadId ?? 'grok-previews'
   const live = liveAgentState(initial)
   const held: { threadId: string; release: () => void }[] = []
@@ -38,7 +37,7 @@ function mount(options: { readonly width?: number; readonly height?: number; rea
   })
   vi.mocked(useAgents).mockImplementation(() => ({ ...live.useLive(), command }))
   const store = options.store ?? new SplitLayoutStore()
-  const view = (width: number, height?: number) => <ThreadsView onOpenAgents={vi.fn()} now={NOW} layoutStore={store} paneAreaWidth={width} paneAreaHeight={height} tools={options.tools} {...options.slots} />
+  const view = (width: number, height?: number) => <ThreadsView now={NOW} layoutStore={store} paneAreaWidth={width} paneAreaHeight={height} tools={options.tools} {...options.slots} />
   const rendered = render(view(options.width ?? WIDE, options.height))
   const pane = (title: string) => screen.getByRole('region', { name: title })
   const prompt = (title: string) => within(pane(title)).getByRole('textbox', { name: 'Prompt' })
@@ -237,7 +236,7 @@ describe('split thread workspace', () => {
     await act(async () => { fireEvent.click(openBesideButton('Streaming WAV stall')) })
     expect(screen.getByRole('complementary', { name: 'Tools' })).toHaveTextContent('wav-stall')
     view.rendered.unmount()
-    render(<ThreadsView onOpenAgents={vi.fn()} now={NOW} layoutStore={store} paneAreaWidth={WIDE} />)
+    render(<ThreadsView now={NOW} layoutStore={store} paneAreaWidth={WIDE} />)
     expect(within(screen.getByRole('group', { name: 'Thread panes' })).getAllByRole('region')).toHaveLength(2)
     expect(seen).toContain('wav-stall')
   })

@@ -31,10 +31,10 @@ function fullState(threads: AgentThread[], activeThreadId: string): AgentState {
     configuration: { ...defaultAgentConfiguration(), enabled: true },
     host: { ...EMPTY_AGENT_HOST, connected: true, threads },
     topLevel: {
-      connection: 'connected', assignments: [], queue: [], activeThreadId, activeProjectId: null, draft: '',
+      connection: 'connected', activeThreadId, activeProjectId: null, draft: '',
       draftThreadId: null, composing: false, draftRequestId: null, draftAttachments: [], deliveredDrafts: [],
-      threadDrafts: [], deliveries: [], pendingRequest: '', globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' },
-      voice: { status: 'off', error: null, action: 'none', revision: 0 }, credentials: { reasoning: false, grokSpeech: false, secure: false },
+      threadDrafts: [], deliveries: [], globalLaneBusy: false, notice: '', error: null,
+      credentials: { reasoning: false, secure: false },
       reasoningAccounts: [], historyEnabled: true,
     },
   })

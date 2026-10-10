@@ -2,7 +2,7 @@ import { act, fireEvent } from '@testing-library/react'
 import { setPromptSelection as select, type PromptEditorElement } from '../../../../src/renderer/src/agents/promptSelection'
 import { promptDocSkills, promptDocText, textToPromptDoc } from '../../../../src/renderer/src/agents/promptDocument'
 
-/** Mixed handoff tests also drive the managed composer's unchanged textarea. */
+/** Set text through Tiptap while also supporting ordinary textarea fields. */
 export function setPromptText(element: HTMLElement, text: string): void {
   if (element instanceof HTMLTextAreaElement) { fireEvent.change(element, { target: { value: text } }); return }
   const field = element as PromptEditorElement

@@ -10,7 +10,7 @@ import { ThreadsView, type ThreadsViewProps } from './ThreadsView'
 import { ThreadWorkingCopy, ThreadWorkingCopyNotice } from './ThreadWorkingCopy'
 
 /** Connect the shared tools surface, each pane's actual working copy and its own terminal drawer to the workspace. */
-export function ThreadWorkspace(props: Pick<ThreadsViewProps, 'onOpenAgents' | 'now' | 'updateControl'>): ReactNode {
+export function ThreadWorkspace(props: Pick<ThreadsViewProps, 'now' | 'updateControl'>): ReactNode {
   const { command, state } = useAgents()
   const chrome = useToolsPanelChrome()
   const panes = useRef<readonly string[]>([])

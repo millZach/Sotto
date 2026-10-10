@@ -24,7 +24,7 @@ async function ownedProfile(prefix: string): Promise<string> {
 async function connectAndOpenThreads(page: Page): Promise<void> {
   await page.evaluate(async () => {
     await window.sotto!.updateSettings({ onboardingComplete: true })
-    await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+    await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
     await window.sotto!.agents!.command({ type: 'connect' })
   })
   await page.reload()
@@ -162,7 +162,7 @@ test('project folders hold several threads, settle and restore threads and proje
     await page.keyboard.press('Enter')
     await expect(page.getByLabel('Thread transcript')).toContainText('Outline the release steps.')
     await expect.poll(async () => (await page.evaluate(async () => (await window.sotto!.agents!.get()).host.threads.find(thread => thread.title === 'Plan the release')!)).nativeSessionStarted).toBe(true)
-    expect(await page.evaluate(async () => (await window.sotto!.agents!.get()).assignments)).toHaveLength(0)
+
     await mkdir(ARTIFACTS, { recursive: true })
     await page.screenshot({ animations: 'disabled', path: join(ARTIFACTS, 'projects-desktop.png') })
 
@@ -301,8 +301,8 @@ async function designProfile(prefix: string, settings: Record<string, unknown> =
   const profile = (await ownedE2EProfile({ prefix: prefix })).directory
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, ...settings }))
   await writeFile(join(profile, 'agents.json'), JSON.stringify({
-    configuration: { ...defaultAgentConfiguration(), enabled: true, speak: false }, assignments: [], queue: [],
-    activeThreadId: 'visual-gate', activeProjectId: 'workshop', draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', outbox: [],
+    configuration: { ...defaultAgentConfiguration(), enabled: true, },
+    activeThreadId: 'visual-gate', activeProjectId: 'workshop', draft: '', draftThreadId: null, draftRequestId: null, composing: false, outbox: [],
   }))
   return profile
 }

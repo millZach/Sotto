@@ -1,5 +1,7 @@
 # New threads keep their starting defaults
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 Zach reported that New thread opened settled work, ignored the saved default model, and showed a blank field over the default effort slider in Settings.
 
 The empty-thread reuse check read provider settlement but missed workspace settlement on the thread and its project. It also accepted threads with older model and effort choices. It now uses the shared lifecycle helpers and the same starting-option resolution as creation. An empty thread is reusable only when its known starting choices still match. The managed creation form also now reads the new-thread model setting instead of the coordinator's model.

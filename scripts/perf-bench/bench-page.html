@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>Sotto inference bench</title>
+    <title>Historical local-ASR inference bench</title>
     <script type="importmap">
       {
         "imports": {
@@ -18,7 +18,7 @@
   </head>
   <body>
     <script type="module">
-      // Mirrors src/renderer/src/transcription/worker.ts + environment.ts config.
+      // Reproduces the historical local-ASR experiment configuration.
       import { env, pipeline } from '/dist/transformers.web.js'
 
       function parseWav(buffer) {
@@ -69,7 +69,7 @@
           } catch { info.webgpuAdapter = null }
         }
 
-        // environment.ts: min(4, hardwareConcurrency - 1)
+        // Historical thread count: min(4, hardwareConcurrency - 1)
         const threads =
           threadsOverride ?? Math.min(4, Math.max(1, (navigator.hardwareConcurrency ?? 2) - 1))
         env.allowRemoteModels = remote === true

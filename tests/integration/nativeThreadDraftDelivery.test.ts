@@ -14,7 +14,7 @@ it('restores drafts and reconciles a lost native acknowledgement under the origi
   const threadId = randomUUID(); const draftId = randomUUID(); const newerId = randomUUID()
   const credentials = await testCredentials(join(f.root, 'vault'), { mode: 'unavailable' })
   const create = () => createAgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
-    reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
+    reasoner: {},
   })
   let control = create()
   try {

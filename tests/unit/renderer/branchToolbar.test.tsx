@@ -25,7 +25,7 @@ function state(threads: AgentThread[]): AgentState {
   return threadsStateFixture({ cloneOverrides: false,
     configuration: defaultAgentConfiguration(),
     host: { connected: true, name: 'Codex', version: 'test', capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true }, projects: [project], threads, models: [] },
-    topLevel: { assignments: [], queue: [], activeProjectId: null, activeThreadId: threads[0]?.id ?? null } })
+    topLevel: { activeProjectId: null, activeThreadId: threads[0]?.id ?? null } })
 }
 function row(current: AgentThread): ThreadRow { return { thread: current, project, provider: 'Codex', providerId: 'codex', connected: true } as unknown as ThreadRow }
 function mount(current: AgentThread, options: { refs?: (request: { query?: string; cursor?: number }) => GitRefsPage | Promise<GitRefsPage>; others?: AgentThread[]; command?: (request: AgentCommand) => Promise<AgentState | null>; focused?: boolean; openExternalLink?: ReturnType<typeof vi.fn> } = {}) {

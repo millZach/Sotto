@@ -28,14 +28,6 @@ export interface WorkAreaRect {
 }
 
 const EXPECTED_WIDGET_SIZES = {
-  'pill-controls': {
-    horizontal: Object.freeze({ width: 320, height: 88 }),
-    vertical: Object.freeze({ width: 88, height: 320 }),
-  },
-  'threads-expanded': {
-    horizontal: Object.freeze({ width: 420, height: 560 }),
-    vertical: Object.freeze({ width: 420, height: 560 }),
-  },
   'idle-resting': {
     horizontal: Object.freeze({ width: 124, height: 54 }),
     vertical: Object.freeze({ width: 54, height: 124 }),

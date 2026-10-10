@@ -14,9 +14,9 @@ afterEach(cleanup)
 
 function fixture() {
   const state = threadsStateFixture()
-  state.assignments = []
+
   state.host.threads.forEach(thread => { thread.requests = [] })
-  state.queue = []
+
   const command = vi.fn<(request: AgentCommand) => Promise<AgentState | null>>(async () => state)
   const store = new ThreadDraftStore(command)
   const composer = (threadId = 'grok-previews') => <ThreadComposer
@@ -29,7 +29,7 @@ function questionFixture() {
   const f = fixture()
   const thread = f.state.host.threads.find(thread => thread.id === 'visual-gate')!
   thread.requests = [{ id: 'direction', kind: 'question', text: 'Which direction?', options: [] }]
-  f.state.queue = [{ id: 'direction', threadId: thread.id, kind: 'question', text: 'Which direction?', requestId: 'direction', createdAt: new Date(E2E_THREADS_NOW).toISOString(), deferred: false }]
+
   return { ...f, thread }
 }
 

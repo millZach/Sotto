@@ -30,8 +30,6 @@ async function advanceToFinish(user: ReturnType<typeof userEvent.setup>): Promis
   }
 }
 
-
-
 describe('first-run onboarding', () => {
   it.each(['idle', 'requesting', 'denied', 'missing', 'error'] as const)('keeps %s at the microphone step until the user explicitly skips', async microphoneState => {
     const complete = vi.fn()

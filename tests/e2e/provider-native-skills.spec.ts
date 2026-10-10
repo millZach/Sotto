@@ -19,7 +19,7 @@ test('the full workspace inserts provider-native skills and retains selections w
     try {
       await page.evaluate(async () => {
         await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', accent: 'teal' })
-        await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+        await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true } })
         await window.sotto!.agents!.command({ type: 'connect' })
         await window.sotto!.agents!.command({ type: 'select-thread', threadId: 'grok-previews' })
       })
@@ -57,7 +57,7 @@ test('the full workspace inserts provider-native skills and retains selections w
       await expect(page.getByText(/takes one skill per message/)).toBeVisible()
       const state = await agentState(page)
       expect(state.host.threads.map(thread => [thread.id, thread.messages.length])).toEqual(before)
-      expect(state.assignments).toEqual([])
+      expect(state).not.toHaveProperty('assignments')
     } finally { await closeSotto(launched) }
   } finally { await profileOwner.dispose() }
 })

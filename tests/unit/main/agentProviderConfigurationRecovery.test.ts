@@ -3,12 +3,11 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-
-import { agentCommandSchema, PROVIDER_LABELS } from '../../../src/shared/agents'
-import { olderDesktopAccountSchema } from '../../fixtures/olderDesktopAccountSchema'
-import { hostHelloSchema, hostPushSchema, shellForProtocolV1 } from '../../../src/shared/hostProtocol'
-import { ROUTER_KEY, OPENAI_KEY, encryption, UnacknowledgedCreationHost, fixture, registerAgentControlRecoveryCleanup } from '../../fixtures/agentControlRecovery'
 import { testCredentials } from '../../fixtures/testCredentials'
+import { PROVIDER_LABELS } from '../../../src/shared/agents'
+import { hostHelloSchema, hostPushSchema, shellForProtocolV1 } from '../../../src/shared/hostProtocol'
+import { encryption, fixture, registerAgentControlRecoveryCleanup, ROUTER_KEY, UnacknowledgedCreationHost } from '../../fixtures/agentControlRecovery'
+import { olderDesktopAccountSchema } from '../../fixtures/olderDesktopAccountSchema'
 
 registerAgentControlRecoveryCleanup()
 
@@ -50,80 +49,6 @@ it('does not reconnect again after a native adapter replaces its process while c
 })
 
 describe('reasoning account route isolation', () => {
-  it('defaults to Grok Altair and preserves an explicit Kokoro selection across restart', async () => {
-    const f = await fixture()
-    expect(f.control.get().configuration).toMatchObject({ speechProvider: 'grok', grokSpeechVoice: 'altair' })
-    await f.control.command(agentCommandSchema.parse({ type: 'configure', patch: { speechProvider: 'kokoro', grokSpeechVoice: 'my-custom-voice' } }))
-    await f.restart()
-    expect(f.control.get().configuration).toMatchObject({ speechProvider: 'kokoro', grokSpeechVoice: 'my-custom-voice' })
-  })
-  it('persists Grok speech credentials separately and preserves both voices through unrelated settings and restart', async () => {
-    const f = await fixture()
-    await f.account()
-    const key = 'fixture-dedicated-grok-speech-key'
-    await f.control.command({ type: 'credential', slot: 'grokSpeech', value: key })
-    await f.control.command({ type: 'configure', patch: { speechProvider: 'grok', grokSpeechVoice: 'my-custom-voice', speechVoice: 'M3' } })
-    await f.control.command(agentCommandSchema.parse({ type: 'configure', patch: { followupLimit: 4 } }))
-    await f.restart()
-    expect(f.control.get().configuration).toMatchObject({ speechProvider: 'grok', grokSpeechVoice: 'my-custom-voice', speechVoice: 'M3', reasoning: 'openrouter' })
-    expect(f.control.get().credentials).toMatchObject({ grokSpeech: true, reasoning: true })
-    expect(JSON.stringify(f.control.get())).not.toContain(key)
-    expect(await readFile(join(f.credentialsDirectory, 'credentials.json'), 'utf8')).not.toContain(key)
-    expect(await readFile(join(f.root, 'agents.json'), 'utf8')).not.toContain(key)
-    const reloaded = await testCredentials(f.credentialsDirectory, { encryption: encryption })
-
-    expect(reloaded.get('grokSpeech')).toBe(key)
-    expect(reloaded.get('reasoning')).toBe(ROUTER_KEY)
-    await f.control.command({ type: 'configure', patch: { reasoning: 'openai', speechProvider: 'natural' } })
-    expect(f.credentials.get('grokSpeech')).toBe(key)
-    await f.control.command({ type: 'credential', slot: 'grokSpeech', value: '' })
-    expect(f.control.get().credentials.grokSpeech).toBe(false)
-  })
-
-  it.each([
-    ['openrouter', ROUTER_KEY, 'https://openrouter.ai', 'openai', OPENAI_KEY, 'https://api.openai.com'],
-    ['openai', OPENAI_KEY, 'https://api.openai.com', 'openrouter', ROUTER_KEY, 'https://openrouter.ai'],
-  ] as const)('requires a new key when switching %s to another provider', async (before, oldKey, oldOrigin, after, newKey, newOrigin) => {
-    const f = await fixture()
-    await f.account(before, oldKey)
-    await f.control.command({ type: 'utterance', text: 'Choose the test project.' })
-    await f.control.command({ type: 'configure', patch: { reasoning: after } })
-    const missing = await f.control.command({ type: 'utterance', text: 'Choose the test project again.' })
-    expect(missing.credentials.reasoning).toBe(false)
-    expect(missing.error).toMatch(/connect.*reasoning api account/iu)
-    expect(f.requests).toHaveLength(1)
-    await f.control.command({ type: 'credential', slot: 'reasoning', value: newKey })
-    await f.control.command({ type: 'utterance', text: 'Choose the test project with the new account.' })
-    expect(f.requests.map(({ origin, authorization }) => ({ origin, authorization }))).toEqual([
-      { origin: oldOrigin, authorization: `Bearer ${oldKey}` },
-      { origin: newOrigin, authorization: `Bearer ${newKey}` },
-    ])
-  })
-
-  it('retains the current provider key when only its model changes', async () => {
-    const f = await fixture()
-    await f.account()
-    await f.control.command({ type: 'configure', patch: { reasoningModel: 'another-fixture-model' } })
-    const state = await f.control.command({ type: 'utterance', text: 'Choose the test project.' })
-    expect(state.error).toBeNull()
-    expect(f.requests[0]).toMatchObject({ origin: 'https://openrouter.ai', authorization: `Bearer ${ROUTER_KEY}` })
-  })
-
-  it('loads retired endpoint configuration without losing assignments or drafts', async () => {
-    const f = await fixture()
-    await f.control.command({ type: 'assign', threadId: 'workshop' })
-    await f.control.command({ type: 'save-thread-draft', threadId: 'workshop', draftId: '643812b8-aed2-4eaf-8cc5-cd5174103c1a', text: 'Keep this draft.' })
-    f.control.dispose()
-    const file = join(f.root, 'agents.json')
-    const saved = JSON.parse(await readFile(file, 'utf8'))
-    saved.configuration.membershipEndpoint = 'https://retired.example'
-    await writeFile(file, JSON.stringify(saved))
-    await f.restart()
-    expect(f.control.get().assignments).toEqual(saved.assignments)
-    expect(f.control.get().threadDrafts).toEqual(saved.threadDrafts)
-    expect(f.control.configuration()).not.toHaveProperty('membershipEndpoint')
-    expect(JSON.parse(await readFile(file, 'utf8')).configuration).not.toHaveProperty('membershipEndpoint')
-  })
 
   it('clears retired encrypted slots at start and tolerates absent slots on the next start', async () => {
     const f = await fixture()
@@ -160,34 +85,18 @@ describe('reasoning account route isolation', () => {
     expect(current).not.toHaveProperty('membership')
     expect(current.configuration).not.toHaveProperty('membershipEndpoint')
     const wire = shellForProtocolV1(current)
+    const compatibility = { ...current, legacyManagement: false }
     const hello = hostHelloSchema.parse({ hostId: randomUUID(), clientId: 'older-host', shell: wire,
       capabilities: { mayAnswer: false }, sottoVersion: '0.1.21', features: [], events: [], latestSeq: 0, hasMore: false })
-    expect(hello.shell).toEqual(current)
+    expect(hello.shell).toEqual(compatibility)
     expect(olderDesktopAccountSchema.parse(wire)).toMatchObject({ membership: { status: 'beta' }, configuration: { membershipEndpoint: '' } })
     for (const state of [current, wire]) {
       const parsed = hostPushSchema.parse({ v: 1, event: 'shell', state })
-      expect(parsed).toMatchObject({ state: current })
+      expect(parsed).toMatchObject({ state: compatibility })
       if (parsed.event !== 'shell') throw new Error('Expected shell')
       expect(parsed.state).not.toHaveProperty('membership')
       expect(parsed.state.configuration).not.toHaveProperty('membershipEndpoint')
     }
-  })
-
-  it('changes the default provider while preserving assignments and unrelated reasoning credentials', async () => {
-    const f = await fixture()
-    await f.control.command({ type: 'credential', slot: 'reasoning', value: 'fixture-reasoning-token' })
-    await f.control.command({ type: 'assign', threadId: 'workshop' })
-    const updated = await f.control.command({ type: 'configure', patch: { provider: 'claude' } })
-    expect(updated.error).toBeNull()
-    expect(updated.configuration.provider).toBe('claude')
-    expect(updated.connection).toBe('connected')
-    expect(updated.assignments).toMatchObject([{ threadId: 'workshop' }])
-    await f.control.command({ type: 'unassign', threadId: 'workshop' })
-    const changed = await f.control.command({ type: 'configure', patch: { provider: 'claude' } })
-    expect(changed).toMatchObject({ error: null, configuration: { provider: 'claude' }, connection: 'connected', credentials: { reasoning: true } })
-    expect(f.credentials.get('reasoning')).toBe('fixture-reasoning-token')
-    const reloaded = await testCredentials(f.credentialsDirectory, { encryption: encryption });
-    expect(reloaded.get('reasoning')).toBe('fixture-reasoning-token')
   })
 
   it('keeps an uncertain creation bound when the default provider changes', async () => {
@@ -211,8 +120,7 @@ describe('reasoning account route isolation', () => {
     const state = await f.control.command({ type: 'configure', patch: { reasoning: 'openai' } })
     expect(state.error).not.toBeNull()
     expect(state.configuration.reasoning).toBe('openrouter')
-    await f.control.command({ type: 'utterance', text: 'Choose the test project.' })
-    expect(f.requests[0]).toMatchObject({ origin: 'https://openrouter.ai', authorization: `Bearer ${ROUTER_KEY}` })
+    expect(f.credentials.get('reasoning')).toBe(ROUTER_KEY)
   })
 
   it('durably deletes the old key before attempting to persist the new provider', async () => {
@@ -226,7 +134,108 @@ describe('reasoning account route isolation', () => {
     const reloaded = await testCredentials(f.credentialsDirectory, { encryption: encryption })
 
     expect(reloaded.has('reasoning')).toBe(false)
-    await f.control.command({ type: 'utterance', text: 'Choose the test project.' })
-    expect(f.requests).toEqual([])
+    expect(f.credentials.has('reasoning')).toBe(false)
   })
 })
+
+it('says nothing when Sotto reconnects on its own at start, and says it connected when asked', async () => {
+  const f = await fixture()
+  expect(f.control.get().notice).toMatch(/connected$/)
+  await f.restart()
+  await vi.waitFor(() => expect(f.control.get().host.connected).toBe(true))
+  expect(f.control.get().notice).toBe('')
+})
+
+it.each([
+  ['setup', undefined],
+  ['Settings, Providers', 'codex'],
+] as const)('leaves no connection notice from %s, while a Threads connection still says it connected', async (_surface, provider) => {
+  const f = await fixture()
+  await f.restart()
+  const connect = vi.spyOn(f.host, 'connect')
+  const connected = await f.control.command({ type: 'connect', ...(provider ? { provider } : {}), notice: false })
+  expect(connected).toMatchObject({ connection: 'connected', notice: '', error: null })
+  expect(connect).toHaveBeenCalledWith(...(provider ? [provider] : []))
+  const requested = await f.control.command({ type: 'connect', ...(provider ? { provider } : {}) })
+  expect(requested.notice).toBe('Codex connected')
+})
+
+it('leaves every installed agent setup connection quiet, while each Threads connection still announces itself', async () => {
+  const installed = ['codex', 'claude', 'grok'] as const
+  const f = await fixture(undefined, { installedProviders: async () => installed })
+  await f.restart()
+  const connect = vi.spyOn(f.host, 'connect')
+  const connections = await Promise.all(installed.map(provider => f.control.command({ type: 'connect', provider, notice: false })))
+  expect(connections).toHaveLength(installed.length)
+  for (const connected of connections) expect(connected).toMatchObject({ connection: 'connected', notice: '', error: null })
+  expect(f.control.get().notice).toBe('')
+  for (const provider of installed) expect(connect).toHaveBeenCalledWith(provider)
+  for (const provider of installed) {
+    const requested = await f.control.command({ type: 'connect', provider })
+    expect(requested.notice).toBe(`${PROVIDER_LABELS[provider]} connected`)
+  }
+})
+
+it('clears the retired speech key on reload while preserving reasoning credentials', async () => {
+    const f = await fixture()
+    await f.account()
+    const key = 'fixture-dedicated-grok-speech-key'
+    await f.credentials.set('grokSpeech', key)
+    await f.credentials.load()
+    await f.restart()
+    expect(f.control.get().configuration).toMatchObject({ reasoning: 'openrouter' })
+    expect(f.control.get().credentials).toMatchObject({ reasoning: true })
+    expect(f.control.get().credentials).not.toHaveProperty('grokSpeech')
+    expect(JSON.stringify(f.control.get())).not.toContain(key)
+    expect(await readFile(join(f.credentialsDirectory, 'credentials.json'), 'utf8')).not.toContain(key)
+    expect(await readFile(join(f.root, 'agents.json'), 'utf8')).not.toContain(key)
+    const reloaded = await testCredentials(f.credentialsDirectory, { encryption })
+    expect(reloaded.get('grokSpeech')).toBe('')
+    expect(reloaded.get('reasoning')).toBe(ROUTER_KEY)
+    await f.control.command({ type: 'configure', patch: { reasoning: 'openai' } })
+    expect(f.credentials.get('grokSpeech')).toBe('')
+    expect(f.control.get().credentials).not.toHaveProperty('grokSpeech')
+  })
+
+it.each(['openrouter', 'openai'] as const)('clears the saved key when switching away from %s', async before => {
+    const f = await fixture(); await f.account(before)
+    const changed = await f.control.command({ type: 'configure', patch: { reasoning: before === 'openai' ? 'openrouter' : 'openai' } })
+    expect(changed.credentials.reasoning).toBe(false)
+    await f.restart(); expect(f.credentials.has('reasoning')).toBe(false)
+  })
+
+it('retains the saved key when only its model changes', async () => {
+    const f = await fixture(); await f.account()
+    const state = await f.control.command({ type: 'configure', patch: { reasoningModel: 'another-fixture-model' } })
+    expect(state.error).toBeNull(); expect(f.credentials.get('reasoning')).toBe(ROUTER_KEY)
+  })
+
+it('loads retired endpoint configuration without losing drafts', async () => {
+    const f = await fixture()
+    await f.control.command({ type: 'save-thread-draft', threadId: 'workshop', draftId: '643812b8-aed2-4eaf-8cc5-cd5174103c1a', text: 'Keep this draft.' })
+    f.control.dispose()
+    const file = join(f.root, 'agents.json')
+    const saved = JSON.parse(await readFile(file, 'utf8'))
+    saved.configuration.membershipEndpoint = 'https://retired.example'
+    await writeFile(file, JSON.stringify(saved))
+    await f.restart()
+    expect(f.control.get()).not.toHaveProperty('assignments')
+    expect(f.control.get().threadDrafts).toEqual(saved.threadDrafts)
+    expect(f.control.configuration()).not.toHaveProperty('membershipEndpoint')
+    expect(JSON.parse(await readFile(file, 'utf8')).configuration).not.toHaveProperty('membershipEndpoint')
+  })
+
+it('changes the default provider while preserving threads and unrelated reasoning credentials', async () => {
+    const f = await fixture()
+    await f.control.command({ type: 'credential', slot: 'reasoning', value: 'fixture-reasoning-token' })
+    const updated = await f.control.command({ type: 'configure', patch: { provider: 'claude' } })
+    expect(updated.error).toBeNull()
+    expect(updated.configuration.provider).toBe('claude')
+    expect(updated.connection).toBe('connected')
+    expect(updated.host.threads).toHaveLength(2)
+    const changed = await f.control.command({ type: 'configure', patch: { provider: 'claude' } })
+    expect(changed).toMatchObject({ error: null, configuration: { provider: 'claude' }, connection: 'connected', credentials: { reasoning: true } })
+    expect(f.credentials.get('reasoning')).toBe('fixture-reasoning-token')
+    const reloaded = await testCredentials(f.credentialsDirectory, { encryption })
+    expect(reloaded.get('reasoning')).toBe('fixture-reasoning-token')
+  })

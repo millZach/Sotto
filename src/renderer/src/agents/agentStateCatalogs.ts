@@ -30,7 +30,7 @@ const wrapped = new WeakMap<AgentWireBridge, AgentBridge>()
  * whole state read through `get()` listed is kept apart from it, with no revision, as the last resort for a
  * receipt whose recovery fails (`createReceiptCompleter`).
  *
- * `bridge` is `window.sotto.agents` or `window.sottoWidget.agents`, whichever a window has. Wrapping is
+ * `bridge` is `window.sotto.agents`. Wrapping is
  * memoized by the underlying bridge's own identity, so calling this again on the same bridge — as a
  * component that re-renders would — returns the same wrapped bridge rather than a new one, which keeps
  * the object stable for callers that key their own effects on it.

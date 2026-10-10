@@ -311,7 +311,6 @@ it('formats a text-only and multi-select answer for the clipboard', () => {
     .toBe('Where should we go?\nNo answer\n\nWhich checks?\nType checks\n\nTravel notes\nNo answer\n\nBudget\nNo answer')
 })
 
-
 it('keeps a legacy draft in its live card and shows recovery when the same request ID changes', async () => {
   const request: AgentRequest = { id: 'legacy', kind: 'question', text: 'Choose the route', options: [{ id: 'coast', label: 'Coast' }] }
   const retained = draft({ selections: { legacy: { optionIds: ['coast'], other: false, text: '' } } }, { requestId: request.id, questions: requestDraftQuestions(request) })

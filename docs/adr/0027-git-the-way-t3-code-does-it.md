@@ -1,5 +1,7 @@
 # Git the way T3 Code does it
 
+October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-management.md) records the removal. The supervision follow-up send path described below has been removed. Manual sends, queued user follow-ups and explicit babysitting wake-ups retain the read before a send and checkpoint rules.
+
 Accepted September 23, 2026. Issue #127; the plan is `docs/plans/2026-09-23-git-interface.md`. Amended September 23 and 24, 2026, once for each ticket or pair that decided something of its own (#265 to #267, #268, #269, #270, #271), in that order below. Where an amendment changes an earlier line it says so there. The whole interface is proved in the built app in `docs/verification/2026-09-24-git-interface.md`.
 
 ## Context

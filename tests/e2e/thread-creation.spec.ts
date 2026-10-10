@@ -1,10 +1,13 @@
 import { expectPromptText, fillPrompt, promptField } from './support/prompt'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { writeFile } from 'node:fs/promises'
 import { agentState } from './support/agentAccess'
 import { join } from 'node:path'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { expect, test } from '@playwright/test'
+import { defaultAgentConfiguration } from '../../src/shared/agents'
 import { hostKeys } from './support/hostKeys'
-import { closeSotto, launchSotto, launchSottoWithVoice, openThreads, paneMenuAction, resizeWindow } from './support/sottoLaunch'
+import { closeSotto, launchSotto,  openThreads, resizeWindow } from './support/sottoLaunch'
 
 const savedDraftEvidence = evidenceDirectory('artifacts/new-thread-saved-draft')
 
@@ -12,58 +15,76 @@ const evidence = evidenceDirectory('artifacts/new-thread-setup')
 
 const screenshot = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5FoAAAAASUVORK5CYII=', 'base64')
 
-test('creates a project thread while the hidden coordinator retains another thread draft', async () => {
-  const launched = await launchSotto()
+test('creates a project thread without replacing a leftover draft from an earlier thread', async () => {
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-thread-creation-' })).directory
+  const leftover = 'Keep the earlier thread draft'
+  // Upgrade state can retain a prompt whose thread is no longer listed (CONTEXT.md: Leftover draft).
+  await writeFile(join(profile, 'agents.json'), JSON.stringify({
+    configuration: defaultAgentConfiguration(), activeThreadId: null, activeProjectId: 'project',
+    draft: leftover, draftThreadId: 'removed-thread', draftRequestId: null, composing: false, outbox: [],
+  }), 'utf8')
+  const launched = await launchSotto('success', profile).catch(async error => {
+    await removeOwnedE2EProfile(profile)
+    throw error
+  })
   const { page } = launched
   try {
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
-      await window.sotto!.agents!.command({ type: 'select-thread', threadId: 'workshop' })
-      await window.sotto!.agents!.command({ type: 'compose', text: 'Keep the other thread draft' })
-      await window.sotto!.agents!.command({ type: 'select-thread', threadId: 'docs' })
     })
     await page.reload()
     await openThreads(page)
-    await expectPromptText(promptField(page), '')
-    expect(await page.evaluate(async () => (await window.sotto!.getSettings()).voiceCoordinatorEnabled)).toBe(false)
+    await expect(page.getByRole('heading', { name: 'A draft from an earlier thread is saved.', exact: true })).toBeVisible()
+    await expect(page.getByRole('textbox', { name: 'Saved draft', exact: true })).toHaveValue(leftover)
+    await expect(page.getByRole('button', { name: 'New thread with this draft', exact: true })).toBeEnabled()
+    expect(await page.evaluate(async () => window.sotto!.getSettings())).not.toHaveProperty('voiceCoordinatorEnabled')
     // The pen opens the thread at once, on defaults, with no dialog to fill in (issue #347).
     await page.getByRole('button', { name: 'New thread in Sotto test', exact: true }).click()
     await expect(page.getByRole('dialog', { name: 'New thread', exact: true })).toHaveCount(0)
     await expect(page.getByRole('heading', { name: 'New thread', exact: true })).toBeVisible()
     await expect(promptField(page)).toBeEnabled()
-    // The optimistic pane shows and focuses the thread before main confirms creation; wait for that confirmation.
-    // (The exact `activeThreadId` this build reports can be bare or host-qualified depending on when host
-    // scoping takes effect during startup, so the check that matters is that the new thread exists and is
-    // the active project's, not a byte-for-byte ID match.)
-    await expect.poll(async () => page.evaluate(async () => {
+    await expectPromptText(promptField(page), '')
+    // Wait for confirmation of the thread this pane opened; the singleton draft keeps its earlier owner.
+    const pane = page.getByRole('region', { name: 'New thread', exact: true })
+    const threadId = await pane.getAttribute('data-thread-id')
+    expect(threadId).not.toBeNull()
+    await expect.poll(async () => page.evaluate(async threadId => {
       const state = await window.sotto!.agents!.get()
-      return !state.globalLaneBusy && state.host.threads.some(thread => thread.title === 'New thread' && thread.projectId === state.activeProjectId)
-    })).toBe(true)
+      return !state.globalLaneBusy && state.host.threads.some(thread => thread.id === threadId
+        && thread.title === 'New thread' && thread.projectId === state.activeProjectId)
+    }, threadId)).toBe(true)
     const state = await agentState(page)
     expect(state.error).toBeNull()
-    expect(state.host.threads).toContainEqual(expect.objectContaining({ id: state.activeThreadId, title: 'New thread' }))
+    expect(state.host.threads).toContainEqual(expect.objectContaining({ id: threadId, title: 'New thread', projectId: state.activeProjectId }))
     const key = await hostKeys(page)
-    expect(state).toMatchObject({ draft: 'Keep the other thread draft', draftThreadId: key('workshop'), assignments: [] })
+    const draftThreadId = key('removed-thread')
+    expect(state.draftThreadId).toBe(draftThreadId)
+    expect(state.host.threads.some(thread => thread.id === draftThreadId)).toBe(false)
+    expect(state).toMatchObject({ draft: leftover, draftThreadId, draftRequestId: null })
+    expect(state).not.toHaveProperty('assignments')
     await fillPrompt(promptField(page), 'Only send this new prompt')
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
     await expect(page.getByLabel('Thread transcript')).toContainText('Only send this new prompt')
     await expectPromptText(promptField(page), '')
-    expect(await agentState(page)).toMatchObject({ draft: 'Keep the other thread draft', draftThreadId: key('workshop') })
+    expect(await agentState(page)).toMatchObject({ draft: leftover, draftThreadId })
     await page.screenshot({ animations: 'disabled', path: join(savedDraftEvidence, 'created-and-sent.png') })
-  } finally { await closeSotto(launched) }
+  } finally {
+    await closeSotto(launched)
+    await removeOwnedE2EProfile(profile)
+  }
 })
 
 test('creates a thread in a centered popup, configures it, and sends file and pasted screenshots', async () => {
   const previousFolder = process.env.SOTTO_E2E_PROJECT_DIRECTORY
   process.env.SOTTO_E2E_PROJECT_DIRECTORY = process.cwd()
-  const launched = await launchSottoWithVoice()
+  const launched = await launchSotto()
   const { page } = launched
   try {
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload()
@@ -86,7 +107,7 @@ test('creates a thread in a centered popup, configures it, and sends file and pa
     await expect(dialog).toHaveCount(0)
     await expect(page.getByRole('heading', { name: 'New thread', exact: true })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Threads', exact: true })).toBeAttached()
-    expect(await page.evaluate(async () => (await window.sotto!.agents!.get()).assignments)).toHaveLength(0)
+
     await page.getByRole('combobox', { name: 'Thread model' }).click()
     await expect(page.getByRole('dialog', { name: 'Choose model' })).toBeVisible()
     await page.screenshot({ animations: 'disabled', path: join(evidence, 'composer-provider-models.png') })
@@ -135,21 +156,20 @@ test('creates a thread in a centered popup, configures it, and sends file and pa
     const created = (await page.evaluate(async id => window.sotto!.agents!.threadDetail!(id), state.activeThreadId!))!
     expect(created.messages.filter(message => message.role === 'user')).toHaveLength(2)
     expect(created.messages.at(-1)).toMatchObject({ text: '', attachments: [{ name: 'pasted.png' }] })
-    expect(state.assignments).toHaveLength(0)
+
     await page.getByRole('button', { name: 'Stop agent', exact: true }).click()
-    await paneMenuAction(page, 'Manage')
-    await expect(page.getByRole('button', { name: 'Send it', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Send prompt', exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Attach screenshots' })).toBeEnabled()
-    await page.getByLabel('Screenshot files').setInputFiles({ name: 'managed.png', mimeType: 'image/png', buffer: screenshot })
-    await expect(page.getByRole('img', { name: 'managed.png' })).toBeVisible()
+    await page.getByLabel('Screenshot files').setInputFiles({ name: 'retained.png', mimeType: 'image/png', buffer: screenshot })
+    await expect(page.getByRole('img', { name: 'retained.png' })).toBeVisible()
     await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'reject', threadId: (await window.sotto!.agents!.get()).activeThreadId!, text: 'Temporary provider failure' }))
-    await page.getByRole('button', { name: 'Send it', exact: true }).click()
+    await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
     await expect(page.getByRole('alert')).toContainText('Temporary provider failure')
-    await expect(page.getByRole('img', { name: 'managed.png' })).toBeVisible()
-    await page.getByRole('button', { name: 'Send it', exact: true }).click()
-    await expect(page.getByLabel('Thread transcript')).toContainText('managed.png')
-    await expect(page.getByLabel('Attached screenshots').getByRole('img', { name: 'managed.png' })).toHaveCount(0)
-    await expect(page.getByLabel('Thread transcript').getByRole('img', { name: 'managed.png' })).toBeVisible()
+    await expect(page.getByRole('img', { name: 'retained.png' })).toBeVisible()
+    await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
+    await expect(page.getByLabel('Thread transcript')).toContainText('retained.png')
+    await expect(page.getByLabel('Attached screenshots').getByRole('img', { name: 'retained.png' })).toHaveCount(0)
+    await expect(page.getByLabel('Thread transcript').getByRole('img', { name: 'retained.png' })).toBeVisible()
   } finally {
     if (previousFolder === undefined) delete process.env.SOTTO_E2E_PROJECT_DIRECTORY
     else process.env.SOTTO_E2E_PROJECT_DIRECTORY = previousFolder
