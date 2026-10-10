@@ -1,3 +1,4 @@
+import { threadsStateFixture } from '../../../../fixtures/agentState'
 import { deferred, baseProps, copy, selectCategory } from '../../../../fixtures/renderer/settingsViewHarness'
 import React from 'react'
 import { render, screen, within } from '@testing-library/react'
@@ -129,14 +130,10 @@ describe('SettingsView', () => {
 
   it('places Hosts, Phones and Agents after Providers and exposes Reasoning account inline', async () => {
     const capabilities = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true }
-    const state: AgentState = {
-      configuration: { ...defaultAgentConfiguration(), reasoning: 'claude' }, connection: 'disconnected',
-      host: { connected: false, name: 'Providers', version: '', capabilities, projects: [], models: [], threads: [] },
-      assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
-      draftRequestId: null, pendingRequest: '', globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' },
-      voice: { status: 'off', error: null, action: 'none', revision: 0 },
-      credentials: { reasoning: false, grokSpeech: false, secure: true }, reasoningAccounts: [],
-    }
+    const state: AgentState = threadsStateFixture({ cloneOverrides: false,
+    configuration: { ...defaultAgentConfiguration(), reasoning: 'claude' },
+    host: { connected: false, name: 'Providers', version: '', capabilities, projects: [], models: [], threads: [] },
+    topLevel: { connection: 'disconnected', assignments: [], queue: [], activeThreadId: null, activeProjectId: null } })
     vi.mocked(useOptionalAgents).mockReturnValue(agentContextFixture(state, vi.fn(async () => state)))
     const { container } = render(<SettingsView {...baseProps()} />)
     await selectCategory('Agents')
@@ -152,14 +149,10 @@ describe('SettingsView', () => {
 
   it('leaves the reasoning account in Agents but no voice or wake settings while the coordinator is hidden', async () => {
     const capabilities = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true }
-    const state: AgentState = {
-      configuration: { ...defaultAgentConfiguration(), reasoning: 'claude' }, connection: 'disconnected',
-      host: { connected: false, name: 'Providers', version: '', capabilities, projects: [], models: [], threads: [] },
-      assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
-      draftRequestId: null, pendingRequest: '', globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' },
-      voice: { status: 'off', error: null, action: 'none', revision: 0 },
-      credentials: { reasoning: false, grokSpeech: false, secure: true }, reasoningAccounts: [],
-    }
+    const state: AgentState = threadsStateFixture({ cloneOverrides: false,
+    configuration: { ...defaultAgentConfiguration(), reasoning: 'claude' },
+    host: { connected: false, name: 'Providers', version: '', capabilities, projects: [], models: [], threads: [] },
+    topLevel: { connection: 'disconnected', assignments: [], queue: [], activeThreadId: null, activeProjectId: null } })
     vi.mocked(useOptionalAgents).mockReturnValue(agentContextFixture(state, vi.fn(async () => state)))
     const { container, rerender } = render(<SettingsView {...baseProps()} />)
     await selectCategory('Agents')

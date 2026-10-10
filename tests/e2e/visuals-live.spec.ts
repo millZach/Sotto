@@ -1,6 +1,6 @@
 import { fillPrompt, promptField } from './support/prompt'
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { ownedE2EProfile } from './support/e2eProfile'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { captureWindow, firstSottoWindow, openThreads } from './support/sottoLaunch'
@@ -32,7 +32,7 @@ const ask = (title: string) => [
 for (const provider of ['claude', 'codex', 'grok'] as const) {
   test(`${provider}: a real thread draws a visual between its words`, async () => {
     test.skip(!enabled || (!!selected && selected !== provider), 'Explicit live visuals opt-in required.')
-    const root = await mkdtemp(join(tmpdir(), 'sotto-e2e-native-'))
+    const root = (await ownedE2EProfile({ prefix: 'sotto-e2e-native-' })).directory
     const profile = join(root, 'profile')
     const project = join(root, 'project')
     await mkdir(profile); await mkdir(project)

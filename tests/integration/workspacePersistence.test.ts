@@ -1,11 +1,12 @@
 // @vitest-environment node
+import { createAgentControl } from '../fixtures/agentControlFixture'
+import { testCredentials } from '../fixtures/testCredentials'
 import { randomUUID } from 'node:crypto'
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { AgentControl } from '../../src/main/agents/control'
-import { AgentCredentials } from '../../src/main/agents/credentials'
+
 import { ConfiguredProviderHost } from '../../src/main/agents/providerSwitch'
 import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
@@ -36,9 +37,7 @@ async function fixture() {
     adapter.state.capabilities.configureThread = true
     adapter.state.models[0]!.supportsImages = true
   }
-  const credentials = new AgentCredentials(directory, { isEncryptionAvailable: () => false,
-    encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
-  await credentials.load()
+  const credentials = await testCredentials(directory, { mode: 'unavailable' })
   const create = async () => {
     const registry = new ThreadRegistry(directory)
     const native = new ConfiguredProviderHost({ directory,
@@ -47,7 +46,7 @@ async function fixture() {
       provider: () => 'codex', enabledProviders: () => ['codex', 'claude', 'grok'],
       threadProvider: id => registry.byThread(id)?.provider })
     const host = new WorkspaceHost(native, directory, () => historyEnabled)
-    const control = new AgentControl({ schedule: immediatePublishScheduler, directory, host, credentials, historyEnabled: () => historyEnabled,
+    const control = createAgentControl({ schedule: immediatePublishScheduler, directory, host, credentials, historyEnabled: () => historyEnabled,
       reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
     })
     await control.start(); await stageInto(control, PIXEL_PNG)

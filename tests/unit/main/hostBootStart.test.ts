@@ -7,6 +7,7 @@ import { SshFailure } from '../../../src/main/hosts/sshFailure'
 import { LAUNCH_SCRIPT_SOURCE } from '../../../src/main/hosts/launchScript'
 import { posix } from 'node:path'
 import type { BootStatus, HostBootState } from '../../../src/shared/bootStart'
+import { deferred } from '../../fixtures/deferred'
 
 const ID = '11111111-1111-4111-8111-111111111111'
 const HOST_ID = '22222222-2222-4222-8222-222222222222'
@@ -160,7 +161,7 @@ describe('start at boot changes (ADR-0054)', () => {
   it('says a lost connection in its own words, and refuses another change while one runs', async () => {
     const { boot, hosts, settled } = setup()
     let finish!: (result: SshBootResult) => void
-    hosts.answer = () => new Promise(resolve => { finish = resolve })
+    hosts.answer = () => { const pending = deferred<SshBootResult>(); finish = pending.resolve; return pending.promise }
     await boot.command(ID, 'install')
     expect(boot.busy(ID)).toBe('Sotto is changing whether the host on forge starts at boot. Nothing was changed. Wait for it to finish, then try again.')
     await expect(boot.command(ID, 'remove')).rejects.toThrow('Sotto is already changing whether the host on forge starts at boot. Wait for it to finish.')
@@ -222,7 +223,7 @@ describe('start at boot changes (ADR-0054)', () => {
     const { boot, hosts, threads } = setup()
     threads.set(['a'])
     let stopped!: () => void
-    threads.interrupt = threadId => { threads.interrupted.push(threadId); return new Promise(resolve => { stopped = () => { threads.busy = []; resolve() } }) }
+    threads.interrupt = threadId => { threads.interrupted.push(threadId); const pending = deferred(); stopped = () => { threads.busy = []; pending.resolve() }; return pending.promise }
     await boot.command(ID, 'install')
     const stopping = boot.command(ID, 'stop-threads')
     await Promise.resolve()

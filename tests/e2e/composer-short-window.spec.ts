@@ -1,4 +1,6 @@
 import { expectPromptText, fillPrompt, promptField } from './support/prompt'
+import { agentState } from './support/agentAccess'
+import { resizeContentWindow } from './support/sottoWindow'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { hostEntityKey } from '../../src/shared/clientIdentity'
 import { closeSotto, launchSottoWithVoice, openThreads, paneMenuAction, userMessageTexts, type LaunchedSotto } from './support/sottoLaunch'
@@ -11,7 +13,7 @@ const DRAFT = 'My unsent draft:\n  keep  the  spacing, “quotes” and trailing
 // Panes are keyed by the host that owns their thread; main's bridge still takes the bare thread ID.
 let hostId: string | undefined
 const pane = (page: Page, id: string) => page.locator(`section.thread-pane[data-thread-id="${hostEntityKey(hostId, id)}"]`)
-const agents = (page: Page) => page.evaluate(async () => window.sotto!.agents!.get())
+const agents = (page: Page) => agentState(page)
 
 async function start(launched: LaunchedSotto): Promise<void> {
   await launched.page.evaluate(async () => {
@@ -24,13 +26,7 @@ async function start(launched: LaunchedSotto): Promise<void> {
 }
 
 async function size(launched: LaunchedSotto, width: number, height: number): Promise<void> {
-  await launched.app.evaluate(({ BrowserWindow }, [width, height]) => {
-    const window = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().endsWith('/index.html'))!
-    // The shipped minimum is enforced on the outer frame; lower it so the content is exactly the size under test.
-    window.setMinimumSize(700, 500)
-    window.setContentSize(width, height)
-  }, [width, height] as const)
-  await expect.poll(() => launched.page.evaluate(() => `${window.innerWidth}x${window.innerHeight}`)).toBe(`${width}x${height}`)
+  await resizeContentWindow(launched, width, height, [700, 500])
   await launched.page.waitForTimeout(200)
 }
 

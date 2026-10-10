@@ -1,10 +1,11 @@
 // @vitest-environment node
+import { launchScriptChild } from '../fixtures/launchScriptRunner'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir, userInfo } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { HOST_STOP_DRAIN_MS, LAUNCH_SCRIPT_SOURCE, type LaunchOperation } from '../../src/main/hosts/launchScript'
+import { HOST_STOP_DRAIN_MS, type LaunchOperation } from '../../src/main/hosts/launchScript'
 import { bootStatusSchema } from '../../src/shared/bootStart'
 import { fakeSystemd, type FakeSystemd, type FakeSystemdState } from '../fixtures/fakeSystemd'
 
@@ -40,9 +41,7 @@ interface Outcome { readonly messages: Record<string, unknown>[]; readonly resul
 /** One operation the way the desktop sends it, under the fakes. */
 async function run(configuration: Configuration, operation: LaunchOperation | Record<string, unknown>, env: NodeJS.ProcessEnv = {}): Promise<Outcome> {
   const { systemd: fake, ...settings } = configuration
-  const child = spawn(process.execPath, ['--input-type=commonjs', '-', JSON.stringify({ ...settings, ...operation })], { shell: false, windowsHide: true, env: { ...fake.env, ...env } })
-  children.push(child)
-  child.stdin.end(LAUNCH_SCRIPT_SOURCE)
+  const child = launchScriptChild({ ...settings, ...operation }, { ...fake.env, ...env }, child => children.push(child))
   let output = ''
   child.stdout.on('data', chunk => { output += String(chunk) })
   await new Promise(resolve => child.once('close', resolve))
@@ -76,7 +75,7 @@ async function installed(state: FakeSystemdState = {}) {
 /** The calls since `from`, without the state reads, which say nothing about what the script changed. */
 const changes = async (from = 0) => (await systemd!.calls()).slice(from).filter(call => !call.startsWith('systemctl show') && !call.startsWith('systemctl is-system-running') && !call.startsWith('loginctl show-user'))
 
-describe.skipIf(process.platform === 'darwin')('start at boot in the launch script (ADR-0054)', () => {
+describe.skipIf(process.platform === 'darwin')("start at boot in the launch script (ADR-0054) (Windows or Linux start at boot; macOS only checks refusal)", () => {
   it('says start at boot is not supported on a machine that does not run systemd, and changes nothing', async () => {
     const configuration = await fixture({ systemd: false, userManager: false })
     const status = await run(configuration, { op: 'boot-status' })
@@ -501,8 +500,10 @@ await import('./fake.mjs')\n`)
   })
 })
 
-it.runIf(process.platform === 'darwin')('says start at boot is not supported on macOS, and asks systemd nothing', async () => {
-  const configuration = await fixture()
-  expect((await run(configuration, { op: 'boot-status' })).result).toEqual({ type: 'boot-status', supported: false, reason: 'macos', installed: false, enabled: false, active: false, linger: false, nodeDrift: false })
-  expect(await systemd!.calls()).toEqual([])
+describe("macOS start-at-boot refusal", () => {
+  it.runIf(process.platform === 'darwin')('says start at boot is not supported on macOS, and asks systemd nothing', async () => {
+    const configuration = await fixture()
+    expect((await run(configuration, { op: 'boot-status' })).result).toEqual({ type: 'boot-status', supported: false, reason: 'macos', installed: false, enabled: false, active: false, linger: false, nodeDrift: false })
+    expect(await systemd!.calls()).toEqual([])
+  })
 })

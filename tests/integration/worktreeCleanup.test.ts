@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { initializeGitRepository } from '../fixtures/gitRepository'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -20,9 +21,7 @@ const commit = (cwd: string, message: string) => git(cwd, ['-c', 'user.name=Fixt
 async function repository() {
   const root = await mkdtemp(join(tmpdir(), 'sotto-cleanup-test-')); roots.push(root)
   const project = join(root, 'project'); await mkdir(project)
-  await git(project, ['init', '-b', 'main'])
-  await writeFile(join(project, 'tracked.txt'), 'baseline'); await writeFile(join(project, '.gitignore'), 'node_modules/\n')
-  await git(project, ['add', '.']); await commit(project, 'Baseline')
+  await initializeGitRepository(project, { files: { 'tracked.txt': 'baseline', '.gitignore': 'node_modules/\n' } })
   const worktrees = new ThreadWorktrees(root)
   const checkout = async () => worktrees.inspect(await worktrees.ensure(await worktrees.allocate(project, 'independent')))
   return { root, project, worktrees, checkout }

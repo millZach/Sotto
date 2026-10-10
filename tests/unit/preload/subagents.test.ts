@@ -1,11 +1,13 @@
+// @vitest-environment node
+import { preloadElectron } from '../../fixtures/preloadElectron'
 import { describe, expect, it, vi } from 'vitest'
-vi.mock('electron', () => ({ contextBridge: { exposeInMainWorld: vi.fn() }, ipcRenderer: { invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn() } }))
+vi.mock('electron', async () => (await import('../../fixtures/preloadElectron')).preloadElectron())
 import { createSottoBridge, createSottoWidgetBridge } from '../../../src/preload'
 import { SUBAGENTS_PAGE, SUBAGENTS_CHANGED, EMPTY_SUBAGENT_SUMMARY, type SubagentPageRequest } from '../../../src/shared/subagents'
 
 describe('subagent preload contract', () => {
   it('exposes typed observational reads only to the main window and validates incoming events', async () => {
-    const ipc = { invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn() }
+    const ipc = preloadElectron().ipcRenderer
     const bridge = createSottoBridge(ipc, 'win32').subagents!
     expect(Object.keys(bridge).sort()).toEqual(['assignments', 'onChanged', 'page'])
     expect(Object.isFrozen(bridge)).toBe(true)

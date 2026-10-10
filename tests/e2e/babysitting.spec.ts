@@ -1,6 +1,7 @@
 import { fillPrompt, promptField } from './support/prompt'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { ownedE2EProfile } from './support/e2eProfile'
+import { resizeContentWindow } from './support/sottoWindow'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import type { SottoE2EBridge } from '../../src/shared/e2e'
@@ -23,12 +24,7 @@ const check = (name: string, status: string, conclusion: string | null): Check =
   ({ __typename: 'CheckRun', name, workflowName: 'CI', status, conclusion, detailsUrl: `${REPOSITORY}/actions/runs/4182/job/${name === 'Lint' ? 9922 : 9921}` })
 
 async function resize(launched: LaunchedSotto, width: number, height: number): Promise<void> {
-  await launched.app.evaluate(({ BrowserWindow }, size) => {
-    const window = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!
-    window.setMinimumSize(800, 540)
-    window.setContentSize(size.width, size.height)
-  }, { width, height })
-  await expect.poll(() => launched.page.evaluate(() => `${innerWidth}x${innerHeight}`)).toBe(`${width}x${height}`)
+  await resizeContentWindow(launched, width, height, [800, 540])
 }
 /** The whole window, or only the part `subject` names, so each capture shows its own state. */
 async function capture(page: Page, name: string, subject?: Locator): Promise<void> {
@@ -111,7 +107,7 @@ async function expectReadable(targets: Record<string, Locator>): Promise<void> {
 
 test('a thread babysits its pull request from the surface, gets a wake-up as Sotto’s, and stops', async () => {
   test.setTimeout(240_000)
-  const directory = await mkdtemp(join(tmpdir(), 'sotto-e2e-babysitting-'))
+  const directory = (await ownedE2EProfile({ prefix: 'sotto-e2e-babysitting-' })).directory
   const ghState = join(directory, 'gh-state.json')
   const readState = async (): Promise<GhState> => JSON.parse(await readFile(ghState, 'utf8')) as GhState
   const changeState = async (change: (state: GhState) => void): Promise<void> => { const state = await readState(); change(state); await writeFile(ghState, JSON.stringify(state)) }

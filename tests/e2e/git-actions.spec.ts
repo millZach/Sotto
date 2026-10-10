@@ -1,7 +1,10 @@
 import { expectPromptText, fillPrompt, promptField } from './support/prompt'
-import { execFileSync } from 'node:child_process'
+import { initializeGitRepository, initializeBareGitRepository } from '../fixtures/gitRepository'
+import { e2eGit as git } from './support/git'
+import { ownedE2EProfile } from './support/e2eProfile'
+import { resizeContentWindow } from './support/sottoWindow'
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
@@ -11,15 +14,7 @@ import { evidenceDirectory } from '../fixtures/evidence'
 // T3's Git action in the pane header, against a real repository and an owned bare remote. GitHub is a scripted gh
 // (tests/fixtures/fakeGh.mjs) reached through the host's test seam, so the pull request is "created" without a network.
 /** The host reads these folders on its own timer, and Git's index lock is held for a moment each time; a test command that meets it tries again. */
-const git = (cwd: string, ...args: string[]): string => {
-  for (let attempt = 0; ; attempt += 1) {
-    try { return execFileSync('git', ['-c', 'user.name=Sotto E2E', '-c', 'user.email=e2e@sotto.invalid', '-c', 'init.defaultBranch=main', '-c', 'core.autocrlf=false', '-c', 'commit.gpgSign=false', ...args], { cwd, encoding: 'utf8', windowsHide: true }).trim() }
-    catch (error) {
-      if (attempt >= 30 || !/index\.lock/u.test(error instanceof Error ? error.message : '')) throw error
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100)
-    }
-  }
-}
+
 async function activeThread(page: Page) {
   return page.evaluate(async () => {
     const state = await window.sotto!.agents!.get()
@@ -27,12 +22,7 @@ async function activeThread(page: Page) {
   })
 }
 async function resize(launched: LaunchedSotto, width: number, height: number): Promise<void> {
-  await launched.app.evaluate(({ BrowserWindow }, size) => {
-    const window = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!
-    window.setMinimumSize(800, 540)
-    window.setContentSize(size.width, size.height)
-  }, { width, height })
-  await expect.poll(() => launched.page.evaluate(() => `${innerWidth}x${innerHeight}`)).toBe(`${width}x${height}`)
+  await resizeContentWindow(launched, width, height, [800, 540])
 }
 /** The host reads the folder again with its remote, the way a refresh does; the button follows the record. */
 async function refresh(page: Page): Promise<void> {
@@ -103,15 +93,13 @@ async function launch(folders: readonly (readonly [string, string])[]): Promise<
 
 test('the Git action commits and pushes from the header, asks before the default branch, opens a pull request through gh, pulls, and initializes Git', async () => {
   test.setTimeout(420_000)
-  const directory = await mkdtemp(join(tmpdir(), 'sotto-e2e-git-actions-'))
+  const directory = (await ownedE2EProfile({ prefix: 'sotto-e2e-git-actions-' })).directory
   const repository = join(directory, 'project'), remote = join(directory, 'owned-remote.git'), other = join(directory, 'other'), plain = join(directory, 'plain')
   const ghState = join(directory, 'gh-state.json')
   await mkdir(repository); await mkdir(plain)
-  git(repository, 'init', '-q', '-b', 'main')
+  await initializeGitRepository(repository, { files: { 'greeting.txt': 'Hello\n' }, message: 'Owned baseline', identity: { name: 'Sotto E2E', email: 'e2e@sotto.invalid' } })
   git(repository, 'config', 'core.hooksPath', join(directory, 'no-hooks'))
-  await writeFile(join(repository, 'greeting.txt'), 'Hello\n')
-  git(repository, 'add', '.'); git(repository, 'commit', '-qm', 'Owned baseline')
-  git(directory, 'init', '--bare', '-q', '-b', 'main', remote); git(repository, 'remote', 'add', 'origin', remote)
+  await initializeBareGitRepository(remote, { identity: { name: 'Sotto E2E', email: 'e2e@sotto.invalid' } }); git(repository, 'remote', 'add', 'origin', remote)
   git(repository, 'push', '-q', '-u', 'origin', 'main'); git(repository, 'remote', 'set-head', 'origin', 'main')
   // origin is written as GitHub's URL and Git rewrites it to the owned remote: the status reader asks gh only about a
   // repository on GitHub (#820).
@@ -264,16 +252,14 @@ async function removeRefusalFixture(directory: string): Promise<void> {
 }
 
 test('a sibling Git action refuses a send and keeps the composer text for retry', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'sotto-e2e-git-refusal-'))
+  const directory = (await ownedE2EProfile({ prefix: 'sotto-e2e-git-refusal-' })).directory
   const repository = join(directory, 'project'), hooks = join(directory, 'hooks')
   let launched: LaunchedSotto | undefined, committing: Promise<unknown> | undefined
   const release = join(directory, 'release')
   try {
     await mkdir(repository); await mkdir(hooks)
-    git(repository, 'init', '-q', '-b', 'main')
+    await initializeGitRepository(repository, { files: { 'file.txt': 'Baseline' }, message: 'Baseline', identity: { name: 'Sotto E2E', email: 'e2e@sotto.invalid' } })
     git(repository, 'config', 'core.hooksPath', hooks)
-    await writeFile(join(repository, 'file.txt'), 'Baseline')
-    git(repository, 'add', '.'); git(repository, 'commit', '-qm', 'Baseline')
     const hold = join(directory, 'hold.mjs')
     await writeFile(hold, `import { existsSync, watch, writeFileSync } from 'node:fs';
 import { join } from 'node:path';

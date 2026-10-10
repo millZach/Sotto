@@ -1,5 +1,6 @@
 // @vitest-environment node
-import { execFileSync } from 'node:child_process'
+import { deferred } from '../fixtures/deferred'
+import { initializeGitRepository, runFixtureGit } from '../fixtures/gitRepository'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { request as httpRequest } from 'node:http'
@@ -23,9 +24,8 @@ describe('socket client isolation and reconnect', () => {
     // The host reads the folder; the client only reads the record, over the socket, the way any other field arrives.
     await fixture.native.initializeWorkingFolders(join(fixture.root, 'workspaces'))
     const folder = join(fixture.root, 'workspaces', 'project') // where initializeWorkingFolders puts the fixture project
-    const git = (...args: string[]) => execFileSync('git', args, { cwd: folder, windowsHide: true, encoding: 'utf8' })
-    git('init', '-q', '-b', 'main'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid'); git('config', 'commit.gpgSign', 'false')
-    await writeFile(join(folder, 'work.txt'), 'first\n'); git('add', '.'); git('commit', '-qm', 'First')
+    const git = (...args: string[]) => runFixtureGit(folder, ...args)
+    await initializeGitRepository(folder, { files: { 'work.txt': 'first\n' }, message: 'First' })
     const { client } = await pair()
     await client.command({ type: 'configure', patch: { enabledProviders: ['codex'], provider: 'codex' } })
     await client.command({ type: 'connect', provider: 'codex' })
@@ -52,10 +52,8 @@ describe('socket client isolation and reconnect', () => {
   it('reads a thread\'s Files, Changes and Agents over the socket the way the desktop\'s own tools read them (ADR-0025, October 5 amendment)', async () => {
     await fixture.native.initializeWorkingFolders(join(fixture.root, 'workspaces'))
     const folder = join(fixture.root, 'workspaces', 'project')
-    const git = (...args: string[]) => execFileSync('git', args, { cwd: folder, windowsHide: true, encoding: 'utf8' })
-    git('init', '-q', '-b', 'main'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid'); git('config', 'commit.gpgSign', 'false')
     await mkdir(join(folder, 'notes'))
-    await writeFile(join(folder, 'work.txt'), 'first\n'); await writeFile(join(folder, 'notes', 'plan.md'), '# Plan\n'); git('add', '.'); git('commit', '-qm', 'First')
+    await initializeGitRepository(folder, { files: { 'work.txt': 'first\n', 'notes/plan.md': '# Plan\n' }, message: 'First' })
     const { client } = await pair()
     await client.command({ type: 'configure', patch: { enabledProviders: ['codex'], provider: 'codex' } })
     await client.command({ type: 'connect', provider: 'codex' })
@@ -167,8 +165,9 @@ describe('socket client isolation and reconnect', () => {
     const server = await startSocketServer({ service: fixture.host.service, pairing })
     const session = pairing.signSession(paired.clientId)
     const key = randomBytes(16).toString('base64')
-    let resolveMessage: (value: unknown) => void = () => undefined
-    const reply = new Promise<unknown>(resolve => { resolveMessage = resolve })
+
+    const { promise: reply, resolve: resolveMessage } = deferred<unknown>()
+
     const frames = await new Promise<SocketFrames>((resolve, reject) => {
       const request = httpRequest('http://127.0.0.1:' + server.descriptor.port + '/v1/socket', { headers: { Upgrade: 'websocket', Connection: 'Upgrade', 'Sec-WebSocket-Version': '13', 'Sec-WebSocket-Key': key, Authorization: 'Bearer ' + session } })
       request.on('error', reject)
@@ -344,7 +343,7 @@ it('keeps no receipts for selections and drops settled ones, so a long-running h
   const service: HostService = {
     shell: () => fixture.host.service.shell(), state: () => fixture.host.service.state(), threadDetail: id => fixture.host.service.threadDetail(id),
     // An interrupt here stays pending until the test lets it go, standing in for work that is still running.
-    command: async (command, identity) => { if (command.type === 'interrupt') await new Promise<void>(resolve => release.push(resolve)); return fixture.host.service.command(command, identity) },
+    command: async (command, identity) => { if (command.type === 'interrupt') { const held = deferred(); release.push(held.resolve); await held.promise } return fixture.host.service.command(command, identity) },
     events: (afterSeq, threadId, limit) => fixture.host.service.events(afterSeq, threadId, limit), subscribe: listener => fixture.host.service.subscribe(listener),
   }
   const server = await startSocketServer({ service, pairing: fixture.host.pairing, receipts: new CommandReceipts({ lifetimeMs: 1000, limit: 2, now: () => now }) })

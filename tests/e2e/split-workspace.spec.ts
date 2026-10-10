@@ -1,11 +1,11 @@
 import { expectPromptText, fillPrompt, promptField } from './support/prompt'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { agentState } from './support/agentAccess'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { defaultAgentConfiguration } from '../../src/shared/agents'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { hostKeys } from './support/hostKeys'
 import { closeSotto, launchSotto, openThreads, userMessageTexts, type LaunchedSotto } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
@@ -35,7 +35,7 @@ const threadStatus = (page: Page, id: string) => page.evaluate(async threadId =>
 
 test('two threads split the workspace and stay independent through resize, narrow focus and close', async () => {
   test.setTimeout(120_000)
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-split-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-split-' })).directory
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'dark', accent: 'teal' }))
   await writeFile(join(profile, 'agents.json'), JSON.stringify({
     configuration: { ...defaultAgentConfiguration(), enabled: true, speak: false },
@@ -71,7 +71,7 @@ test('two threads split the workspace and stay independent through resize, narro
     await expect(panes.getByRole('region', { name: 'Footer links', exact: true })).toBeVisible()
     await expect(panes.locator('section.thread-pane[role="region"]:not([data-hidden])')).toHaveCount(2)
     await expect(footer).toHaveAttribute('data-focused')
-    await expect.poll(async () => (await page.evaluate(async () => window.sotto!.agents!.get())).activeThreadId).toBe(key('footer-links'))
+    await expect.poll(async () => (await agentState(page)).activeThreadId).toBe(key('footer-links'))
     const divider = page.getByRole('separator', { name: 'Resize panes' })
     await expect(divider).toHaveAttribute('aria-valuenow', '50')
     const [left, right] = [(await previews.boundingBox())!, (await footer.boundingBox())!]
@@ -93,7 +93,7 @@ test('two threads split the workspace and stay independent through resize, narro
     await expect(previews.getByLabel('Thread transcript')).not.toContainText('Check the footer link targets.')
     await expectPromptText(previewsPrompt, 'Keep this draft with the previews thread.')
     await expectPromptText(footerPrompt, '')
-    const afterSend = await page.evaluate(async () => window.sotto!.agents!.get())
+    const afterSend = await agentState(page)
     await expect.poll(async () => (await userMessageTexts(page, 'footer-links')).filter(text => text === 'Check the footer link targets.')).toHaveLength(1)
     expect((await userMessageTexts(page, 'grok-previews')).some(text => text.includes('footer link targets'))).toBe(false)
     expect(afterSend.assignments).toHaveLength(0)
@@ -111,7 +111,7 @@ test('two threads split the workspace and stay independent through resize, narro
     await page.keyboard.press('F6')
     await expect(previewsPrompt).toBeFocused()
     await expect(previews).toHaveAttribute('data-focused')
-    await expect.poll(async () => (await page.evaluate(async () => window.sotto!.agents!.get())).activeThreadId).toBe(key('grok-previews'))
+    await expect.poll(async () => (await agentState(page)).activeThreadId).toBe(key('grok-previews'))
 
     // The shipped minimum width shows one pane at a time and keeps the arrangement for later.
     await size(launched, 820, 800)
@@ -136,7 +136,7 @@ test('two threads split the workspace and stay independent through resize, narro
     await expect(panes.locator('section.thread-pane[role="region"]:not([data-hidden])')).toHaveCount(1)
     await expect(divider).toHaveCount(0)
     expect(await threadStatus(page, key('footer-links'))).toBe('running')
-    await expect.poll(async () => (await page.evaluate(async () => window.sotto!.agents!.get())).activeThreadId).toBe(key('grok-previews'))
+    await expect.poll(async () => (await agentState(page)).activeThreadId).toBe(key('grok-previews'))
     await expect(sidebar.getByRole('button', { name: 'Footer links', exact: true })).toBeVisible()
     await sidebar.getByRole('button', { name: 'Footer links', exact: true }).hover()
     await sidebar.getByRole('button', { name: 'Open Footer links beside', exact: true }).click()
@@ -156,6 +156,6 @@ test('two threads split the workspace and stay independent through resize, narro
     await launched.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!.webContents.setZoomFactor(1))
   } finally {
     await closeSotto(launched)
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 })

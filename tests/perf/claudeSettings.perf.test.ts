@@ -41,7 +41,7 @@ const report = (label: string, measured: Awaited<ReturnType<typeof press>>): voi
     minMs: round(Math.min(...measured.ms)), maxMs: round(Math.max(...measured.ms)), cliStartsPerPress: measured.startsPerPress, settingsRequestsPerPress: measured.requestsPerPress })}`)
 }
 
-describe.skipIf(!PERF_BENCH)('Claude chip press to adapter accepted', () => {
+describe.skipIf(!PERF_BENCH)("Claude chip press to adapter accepted (timing benchmark; requires SOTTO_PERF_BENCH=1)", () => {
   it('on a thread whose CLI is not running', async () => {
     let f = await claudeFixture(undefined, 15_000)
     try {

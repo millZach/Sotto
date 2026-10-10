@@ -1,13 +1,14 @@
 import { expectPromptText, fillPrompt, promptField } from './support/prompt'
+import { agentState } from './support/agentAccess'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { resizeContentWindow } from './support/sottoWindow'
 import { hostEntityKey } from '../../src/shared/clientIdentity'
 import { execFileSync } from 'node:child_process'
 import { createServer } from 'node:http'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, launchSotto, openThreads, userMessageTexts, type LaunchedSotto } from './support/sottoLaunch'
 import { terminalOutput } from './support/terminal'
 import { evidenceDirectory } from '../fixtures/evidence'
@@ -17,14 +18,10 @@ import { evidenceDirectory } from '../fixtures/evidence'
 const SHOTS = evidenceDirectory('artifacts/issue-74-daily-workspace')
 const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', windowsHide: true, timeout: 15000 }).trim()
 async function size(launched: LaunchedSotto, width = 1600, height = 1000): Promise<void> {
-  await launched.app.evaluate(({ BrowserWindow }, [width, height]) => {
-    const window = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!
-    window.setMinimumSize(800, 540); window.setContentSize(width, height)
-  }, [width, height] as const)
-  await expect.poll(() => launched.page.evaluate(() => `${innerWidth}x${innerHeight}`)).toBe(`${width}x${height}`)
+  await resizeContentWindow(launched, width, height, [800, 540])
 }
 async function profile(): Promise<string> {
-  const directory = await mkdtemp(join(tmpdir(), 'sotto-e2e-daily-workspace-'))
+  const directory = (await ownedE2EProfile({ prefix: 'sotto-e2e-daily-workspace-' })).directory
   await writeFile(join(directory, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'dark' }))
   return directory
 }
@@ -204,7 +201,7 @@ test('daily mixed-provider workspace joins independent work, tools, reviewed com
     await capture(page, 'owned-push-fixture-pr')
     await focusThread(page, second, 'Daily review')
     await expectPromptText(prompt(second), 'Keep this review draft private to this pane.')
-    const state = await page.evaluate(async () => window.sotto!.agents!.get())
+    const state = await agentState(page)
     expect(state.assignments).toEqual([])
     for (const [id, own, foreign] of [[first, 'Make the greeting friendlier.', 'Review the greeting independently.'], [second, 'Review the greeting independently.', 'Make the greeting friendlier.']]) {
       const messages = await userMessageTexts(page, id!)
@@ -219,7 +216,7 @@ test('daily mixed-provider workspace joins independent work, tools, reviewed com
     for (const [key, value] of [['SOTTO_E2E_GH_SCRIPT', previousGh.script], ['SOTTO_E2E_GH_EXECUTABLE', previousGh.executable], ['FAKE_GH_STATE', previousGh.state]] as const) {
       if (value === undefined) delete process.env[key]; else process.env[key] = value
     }
-    await rm(requireOwnedE2EProfile(directory), { recursive: true, force: true })
+    await removeOwnedE2EProfile(directory)
   }
 })
 
@@ -267,7 +264,7 @@ test('mixed pane drafts, queued work, settlement and preferences recover without
     await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'disconnect', threadId: 'footer-links', text: '' }))
     await expectPromptText(prompt('footer-links'), 'Newer unsent Codex draft.')
     await page.evaluate(async () => window.sotto!.agents!.command({ type: 'connect' }))
-    const before = await page.evaluate(async () => window.sotto!.agents!.get())
+    const before = await agentState(page)
     expect(before.followups).toEqual([expect.objectContaining({ threadId: key('footer-links'), text: 'Queued Codex follow-up after this turn.' })])
     expect(before.host.threads.flatMap(thread => thread.messages).some(message => message.text === 'Queued Codex follow-up after this turn.')).toBe(false)
     await capture(page, 'reconnect-pinned-drafts-light')
@@ -286,7 +283,7 @@ test('mixed pane drafts, queued work, settlement and preferences recover without
     await expect(page.getByRole('complementary', { name: 'Tools' }).getByRole('button', { name: 'Pin to Footer links', exact: true })).toBeVisible()
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
     expect(await page.evaluate(async () => window.sotto!.getSettings())).toMatchObject({ appearance: 'light', lightTheme: 'linen', darkTheme: 'nocturne', webLinkDestination: 'embedded' })
-    const restored = await page.evaluate(async () => window.sotto!.agents!.get())
+    const restored = await agentState(page)
     expect(restored.followups).toEqual([expect.objectContaining({ threadId: key('footer-links'), text: 'Queued Codex follow-up after this turn.' })])
     expect((await userMessageTexts(page, 'footer-links')).some(text => text === 'Queued Codex follow-up after this turn.')).toBe(false)
     expect(restored.assignments).toEqual([])
@@ -295,7 +292,7 @@ test('mixed pane drafts, queued work, settlement and preferences recover without
     await queue.getByRole('button', { name: 'Resume queue', exact: true }).click()
     await expect.poll(() => userMessageTexts(page, 'footer-links').then(texts => texts.filter(text => text === 'Queued Codex follow-up after this turn.').length)).toBe(1)
     await page.evaluate(async () => window.sotto!.agents!.command({ type: 'connect' }))
-    const delivered = await page.evaluate(async () => window.sotto!.agents!.get())
+    const delivered = await agentState(page)
     expect((await userMessageTexts(page, 'footer-links')).filter(text => text === 'Queued Codex follow-up after this turn.')).toHaveLength(1)
     for (const thread of delivered.host.threads.filter(thread => thread.id !== key('footer-links'))) {
       expect((await userMessageTexts(page, thread.id)).some(text => text === 'Queued Codex follow-up after this turn.'), thread.id).toBe(false)
@@ -307,7 +304,5 @@ test('mixed pane drafts, queued work, settlement and preferences recover without
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     await capture(page, 'restored-queue-minimum-light')
   } catch (error) { await capture(launched.page, 'recovery-failure').catch(() => undefined); throw error }
-  finally { await closeSotto(launched); await rm(requireOwnedE2EProfile(directory), { recursive: true, force: true }) }
+  finally { await closeSotto(launched); await removeOwnedE2EProfile(directory) }
 })
-
-

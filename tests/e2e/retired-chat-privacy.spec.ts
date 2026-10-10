@@ -1,8 +1,7 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import type { RequestDraft } from '../../src/shared/requestDrafts'
 import { closeSotto, launchSotto, openPage, type LaunchedSotto } from './support/sottoLaunch'
@@ -54,7 +53,7 @@ interface Fixture {
 }
 
 async function withProfile(historyEnabled: boolean, chats: string | null, run: (fixture: Fixture) => Promise<void>, forms: string = sourceForms): Promise<void> {
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-retired-privacy-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-retired-privacy-' })).directory
   let launched: LaunchedSotto | undefined
   try {
     const personalDirectory = join(profile, 'personal-chat')
@@ -75,7 +74,7 @@ async function withProfile(historyEnabled: boolean, chats: string | null, run: (
     await run({ launched, chatsFile, formsFile, personalDirectory })
   } finally {
     if (launched) await closeSotto(launched)
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 }
 

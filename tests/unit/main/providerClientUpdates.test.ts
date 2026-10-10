@@ -5,7 +5,7 @@ import { mkdir, readdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
+
 import { clientVersionOf, compareClientVersions } from '../../../src/main/agents/clientVersions'
 import { installerDetail } from '../../../src/main/agents/installerDetail'
 import { clearLeftoverPackage, detectClientChannel, ProviderClients, updateActionFor, type RunLike } from '../../../src/main/agents/providerClients'
@@ -13,6 +13,9 @@ import { E2EAgentHost } from '../../../src/main/e2e/agentEffects'
 import type { AgentHostSnapshot, ProviderId } from '../../../src/shared/agents'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 import { root, codexPackage, codexInstall } from '../../fixtures/providerClientInstallFixture'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
+import { deferred } from '../../fixtures/deferred'
 
 const answer = (version: string): Response => new Response(JSON.stringify({ version }), { status: 200 })
 
@@ -164,13 +167,15 @@ describe("what an earlier update left behind", () => {
     expect((await readdir(scope)).sort()).toEqual(['.codex-short', '.grok-6TeUjdn8', 'codex', 'codex-6TeUjdn8'])
   })
 
-  it.runIf(process.platform === 'win32')('clears the leftover before npm runs, so npm finds its folder free', async () => {
-    const { scope, executable } = await codexInstall()
-    await codexPackage(scope, '.codex-6TeUjdn8')
-    let seen: string[] = []
-    const clients = new ProviderClients({ npmPath: async () => 'npm-cli.js', run: async () => { seen = await readdir(scope); return { ok: true } } })
-    expect(await clients.install('codex', executable, {})).toMatchObject({ ok: true })
-    expect(seen).toEqual(['codex'])
+  describe("Windows npm package-folder cleanup", () => {
+    it.runIf(process.platform === 'win32')('clears the leftover before npm runs, so npm finds its folder free', async () => {
+      const { scope, executable } = await codexInstall()
+      await codexPackage(scope, '.codex-6TeUjdn8')
+      let seen: string[] = []
+      const clients = new ProviderClients({ npmPath: async () => 'npm-cli.js', run: async () => { seen = await readdir(scope); return { ok: true } } })
+      expect(await clients.install('codex', executable, {})).toMatchObject({ ok: true })
+      expect(seen).toEqual(['codex'])
+    })
   })
 })
 
@@ -216,11 +221,9 @@ async function coordinator(host: VersionedHost, run: RunLike, published: string 
   const prefix = join(directory, 'npm')
   await mkdir(join(prefix, 'node_modules', '@xai-official', 'grok'), { recursive: true })
   await writeFile(join(prefix, 'node_modules', '@xai-official', 'grok', 'package.json'), '{}')
-  const credentials = new AgentCredentials(join(directory, 'vault'), {
-    isEncryptionAvailable: () => true, encryptString: value => Buffer.from(value), decryptString: value => value.toString(),
-  })
-  await credentials.load()
-  const control = new AgentControl({
+  const credentials = await testCredentials(join(directory, 'vault'), { mode: 'plain' })
+
+  const control = createAgentControl({
     schedule: immediatePublishScheduler, directory, host, credentials,
     clients: new ProviderClients({ run, npmPath: async () => join(prefix, 'npm.cmd'),
       ...typeof published === 'string' ? { fetchImpl: async () => answer(published) }
@@ -390,8 +393,8 @@ describe('updating a client from the app', () => {
 
   it('never runs two updates at once', async () => {
     const host = new VersionedHost()
-    let release!: () => void
-    const running = new Promise<void>(resolve => { release = resolve })
+
+    const { promise: running, resolve: release } = deferred<void>()
     let installs = 0
     const { control } = await coordinator(host, async () => { installs += 1; await running; host.onDisk = '1.0.40'; return { ok: true } })
     try {
@@ -409,8 +412,8 @@ describe('updating a client from the app', () => {
 
   it('connects a provider pressed while an install runs, rather than refusing it', async () => {
     const host = new VersionedHost()
-    let release!: () => void
-    const running = new Promise<void>(resolve => { release = resolve })
+
+    const { promise: running, resolve: release } = deferred<void>()
     let installs = 0
     const { control } = await coordinator(host, async () => { installs += 1; await running; host.onDisk = '1.0.40'; return { ok: true } })
     try {
@@ -430,8 +433,8 @@ describe('updating a client from the app', () => {
 
   it('leaves every other surface working while npm runs', async () => {
     const host = new VersionedHost()
-    let release!: () => void
-    const running = new Promise<void>(resolve => { release = resolve })
+
+    const { promise: running, resolve: release } = deferred<void>()
     let installs = 0
     const { control } = await coordinator(host, async () => { installs += 1; await running; return { ok: true } })
     try {

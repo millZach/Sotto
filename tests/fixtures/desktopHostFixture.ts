@@ -1,17 +1,19 @@
 // @vitest-environment node
+import { deferred } from './deferred'
+import { testCredentials } from './testCredentials'
 import { randomUUID } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterAll, afterEach, beforeAll, beforeEach } from 'vitest'
-import { startHeadlessHost } from '../../src/host'
+import { startFixtureHeadlessHost as startHeadlessHost } from './desktopHostStack'
 import { HostCredentialEncryption } from '../../src/host/credentials'
 import { AgentCredentials } from '../../src/main/agents/credentials'
 import { desktopWindowClient } from '../../src/main/agents/hostService'
 import { RetainedDraftStore, type RetainedDraft } from '../../src/main/agents/retainedDraftStore'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
-import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
+
 import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
 import { DesktopHosts } from '../../src/main/hosts/desktopHosts'
 import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
@@ -133,7 +135,9 @@ export function useDesktopHostFixture() {
       if (askOnConnect) {
         askOnConnect = undefined
         callbacks.onPrompt?.({ id: 'prompt-1', kind: 'passphrase', text: 'Enter passphrase for key' })
-        await new Promise<void>((resolve, reject) => { this.waiting = { resolve, reject } })
+        const waiting = deferred()
+        this.waiting = waiting
+        await waiting.promise
       }
       const failure = failures.shift()
       if (failure) throw failure
@@ -168,10 +172,10 @@ export function useDesktopHostFixture() {
     // Tailscale is not running on the host unless a test says so, so a host Add host saves stays on SSH (ADR-0053).
     hostTailscaleRunning = false
     const standIn = hostTailscale.tailscale
-    host = await startHeadlessHost({ dataDirectory: join(root, 'remote'), port: 0, providers: { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost() }, reasoner: e2eAgentReasoner,
+    host = await startHeadlessHost({ dataDirectory: join(root, 'remote'), port: 0,
       tailscale: { ...standIn, status: async () => hostTailscaleRunning ? standIn.status() : { state: 'missing' } } })
     reportedHostId = host.descriptor!.hostId
-    credentials = new AgentCredentials(join(root, 'desktop'), new HostCredentialEncryption('synthetic-desktop-credential-key')); await credentials.load()
+    credentials = await testCredentials(join(root, 'desktop'), { encryption: new HostCredentialEncryption('synthetic-desktop-credential-key') });
     router = new DesktopHostRouter(emptyDesktopState)
     launchers.length = 0; failures.length = 0; stops.length = 0; answers.length = 0; askOnConnect = undefined; onConnect = undefined; opened.length = 0; scheduled.length = 0; retryDelay = () => 0; owned = true; stopResult = true; beforeStopReply = async () => undefined; tunnelUrl = undefined; updateHost = noUpdates; desktopAnswersFailure = undefined; tailnetAt = () => serveWithNothingBehind()
     operations.length = 0; hostRunning = true; bootLeftOnStop = false; revokeFails = false; revokeError = undefined; bootStart = undefined; boot = noBoot; boots.length = 0

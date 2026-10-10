@@ -1,3 +1,4 @@
+import { deferred } from '../../../../fixtures/deferred'
 import { DEVICES, RUNNING, host, fixture, openAddHost, typeAHost, settings } from '../../../../fixtures/renderer/hostsSettingsHarness'
 import { act, cleanup, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -142,7 +143,7 @@ it('shows Tailscale under This computer, and connects it from Add host', async (
   cleanup()
 
   let finish: ((outcome: TailscaleConnectOutcome) => void) | undefined
-  const off = fixture([], undefined, { tailscale: { state: 'off' }, connect: () => new Promise(resolve => { finish = resolve }) })
+  const off = fixture([], undefined, { tailscale: { state: 'off' }, connect: () => { const pending = deferred<TailscaleConnectOutcome>(); finish = pending.resolve; return pending.promise } })
   settings(off.bridge)
   const offRow = await screen.findByRole('region', { name: 'Tailscale' })
   await waitFor(() => expect(offRow.textContent).toContain('Off on this computer. Connect to reach your other machines.'))

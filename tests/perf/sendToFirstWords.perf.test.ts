@@ -20,8 +20,9 @@
  * `SOTTO_PERF_LARGE_FILES` and `SOTTO_PERF_LARGE_MIB` change the large working copy (defaults 3843 and 278);
  * `SOTTO_PERF_SENDS` the number of timed sends after the first (default 7).
  */
+import { initializeGitRepository } from '../fixtures/gitRepository'
+import { testCredentials } from '../fixtures/testCredentials'
 import { randomUUID } from 'node:crypto'
-import { execFileSync } from 'node:child_process'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -29,7 +30,6 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { threadSummaryOf, type AgentCommand, type AgentState, type ProviderId } from '../../src/shared/agents'
 import { createAgentRuntime } from '../../src/main/agents/runtime'
-import { AgentCredentials } from '../../src/main/agents/credentials'
 import { desktopWindowClient } from '../../src/main/agents/hostService'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { SEND_STAGE_FIELDS, SendStageClock, type SendStageMark } from '../../src/main/agents/sendStages'
@@ -72,9 +72,7 @@ async function workingCopy(root: string, files: number, mib: number): Promise<vo
     // A header per file, so no two files are the same blob.
     await writeFile(join(folder, `file-${index}.txt`), `${index}\n${body}`)
   }
-  const git = (...args: string[]) => execFileSync('git', ['-c', 'core.autocrlf=false', '-c', 'user.name=Sotto benchmark', '-c', 'user.email=benchmark@example.invalid', ...args],
-    { cwd: root, stdio: 'ignore', windowsHide: true })
-  git('init', '-q', '-b', 'main'); git('add', '-A'); git('commit', '-q', '-m', 'Filler')
+  await initializeGitRepository(root, { files: {}, message: 'Filler', identity: { name: 'Sotto benchmark', email: 'benchmark@example.invalid' } })
 }
 
 interface Counts { reads: number; git: number; writes: number; stores: Record<string, number>; checkpointMs: number }
@@ -106,8 +104,7 @@ async function bench(provider: typeof PROVIDERS[number], repository: string): Pr
   const adapter = f.adapter as unknown as { refreshThread: (...args: unknown[]) => Promise<unknown> }
   const refresh = adapter.refreshThread.bind(adapter)
   adapter.refreshThread = (...args: unknown[]) => { whole.reads++; return refresh(...args) }
-  const credentials = new AgentCredentials(join(f.root, 'vault'), { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
-  await credentials.load()
+  const credentials = await testCredentials(join(f.root, 'vault'), { mode: 'unavailable' })
   const runtime = await createAgentRuntime({
     directory: f.root, credentials, settings: () => DEFAULT_SETTINGS, writingSettings: async () => DEFAULT_SETTINGS,
     historyEnabled: () => true, coordinatorEnabled: () => false, openExternal: async () => undefined, reasoner: e2eAgentReasoner,
@@ -203,7 +200,7 @@ const medians = (samples: readonly Sample[]) => ({
   storeWritesByFile: samples.at(-1)!.whole.stores, storeWritesBeforeWrittenByFile: samples.at(-1)!.beforeWritten.stores,
 })
 
-describe.skipIf(!PERF_BENCH)('Send to first words', () => {
+describe.skipIf(!PERF_BENCH)("Send to first words (timing benchmark; requires SOTTO_PERF_BENCH=1)", () => {
   const repositories = new Map<string, string>()
   beforeAll(async () => {
     instrument()

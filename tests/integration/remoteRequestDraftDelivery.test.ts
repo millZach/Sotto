@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { deferred } from '../fixtures/deferred'
 import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -256,10 +257,11 @@ it.each(['unknown', 'uncertain'] as const)('keeps a held answer and reports a de
 
 it.each([true, false])('rechecks a pending receipt after its command finishes with native acceptance %s when the question was already absent and its direct acknowledgement was lost', async accepted => {
   const { native, client, router, drafts, owner } = await fixture('claude')
-  let enteredNative: () => void = () => undefined
-  let releaseNative: () => void = () => undefined
-  const nativeEntered = new Promise<void>(resolve => { enteredNative = resolve })
-  const nativeRelease = new Promise<void>(resolve => { releaseNative = resolve })
+
+  const { promise: nativeEntered, resolve: enteredNative } = deferred<void>()
+
+  const { promise: nativeRelease, resolve: releaseNative } = deferred<void>()
+
   const executeOriginal = native.execute.bind(native)
   const execute = vi.spyOn(native, 'execute').mockImplementation(async command => {
     const result = await executeOriginal(command)
@@ -309,8 +311,9 @@ it.each([true, false])('rechecks a pending receipt after its command finishes wi
 
 it.each([true, false])('settles a late native answer completion %s after a negative receipt with an absent question and idle command', async accepted => {
   const f = await fixture('claude')
-  let settle: (accepted: boolean) => void = () => undefined
-  const answerCompletion = new Promise<boolean>(resolve => { settle = resolve })
+
+  const { promise: answerCompletion, resolve: settle } = deferred<boolean>()
+
   const original = f.native.execute.bind(f.native)
   const execute = vi.spyOn(f.native, 'execute').mockImplementation(async command => {
     const result = await original(command)
@@ -353,8 +356,9 @@ it.each([true, false])('settles a late native answer completion %s after a negat
 
 it.each([false, true])('confirms its pending remote write when it completes during Check (read fails %s)', async fails => {
   const f = await fixture('claude')
-  let settle: (accepted: boolean) => void = () => undefined
-  const answerCompletion = new Promise<boolean>(resolve => { settle = resolve })
+
+  const { promise: answerCompletion, resolve: settle } = deferred<boolean>()
+
   const original = f.native.execute.bind(f.native)
   const execute = vi.spyOn(f.native, 'execute').mockImplementation(async command => {
     const result = await original(command)
@@ -390,7 +394,6 @@ it.each([false, true])('confirms its pending remote write when it completes duri
     expect(execute.mock.calls.filter(([command]) => command.type === 'answer')).toHaveLength(1)
   } finally { settle(false) }
 })
-
 
 it('restores accepted remote status while its original native card remains, without receipt reads or replay', async () => {
   const f = await fixture('claude')

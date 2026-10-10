@@ -69,7 +69,7 @@ import {
 } from 'electron'
 import { spawn } from 'node:child_process'
 import { appendFile, rename, stat, writeFile } from 'node:fs/promises'
-import { release as osRelease } from 'node:os'
+import { homedir, release as osRelease } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 
 import {
@@ -87,7 +87,9 @@ import { installGuiPath } from './app/guiPath'
 import { NativeMessageDelivery } from './app/nativeMessageDelivery'
 import { NativeDictationLifecycle } from './app/nativeDictationLifecycle'
 import { HotkeyManager, syncEscapeForWidgetSnapshot } from './hotkeys/hotkeyManager'
-import { DictationSocket } from './hotkeys/dictationSocket'
+import { parseDictationEdge } from './hotkeys/dictationCommand'
+import { LinuxDictationShell } from './hotkeys/linuxDictationShell'
+import { ShellWidgetMonitor } from './windows/shellWidgetMonitor'
 import { isAuthorizedIpcSender, registerIpc } from './ipc/registerIpc'
 import { createMicrophoneAccessGate } from './media/microphoneAccess'
 import {
@@ -252,6 +254,8 @@ type NativeDiagnostic =
   | 'native-main-send-failed'
   | 'native-widget-state-delivery-failed'
   | 'native-widget-show-failed'
+  | 'native-dictation-state-write-failed'
+  | 'native-dictation-pid-start-unavailable'
   | 'settings-update-failed'
   | 'secure-key-migration-unavailable'
   | 'memory-store-open-failed'
@@ -604,6 +608,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     join(userDataPath, 'widget-placement.json'),
   )
   let widgetPlacement: StoredWidgetPlacement | null = await widgetPlacementStore.get()
+  let linuxDictationShell: LinuxDictationShell | null = null
   let showWidgetWhenIdle = (await settings.get()).showWidgetWhenIdle
   // Main owns the widget's presentation: every snapshot is stamped with the
   // current theme halves, so a theme change repaints the widget mid-session.
@@ -628,6 +633,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     onWidgetMoved: (placement) => {
       widgetPlacement = { kind: 'edge', ...placement }
       void widgetPlacementStore.save(placement)
+      linuxDictationShell?.place(placement.edge)
     },
     windowFrost: windowFrostFor(profile.platform, osRelease()),
     frostedWindow: () => workingCopySettings.frostedWindow,
@@ -1194,6 +1200,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
 
   const dictationLifecycle = new NativeDictationLifecycle({
     delivery: messageDelivery,
+    publishShellState: (state) => linuxDictationShell?.publish(state),
     getTrayState: () => currentTrayState,
     updateTray(state): void {
       currentTrayState = state
@@ -1225,18 +1232,31 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           request: () => systemPreferences.askForMediaAccess('microphone'),
         })
       : null
-  let dictationSocket: DictationSocket | null = null
-  return new NativeRuntimeController({
-    ...(platform === 'linux' ? { dictationCommands: {
-      async start(): Promise<void> {
-        dictationSocket = new DictationSocket(
-          e2eConfiguration?.userDataPath ?? process.env.XDG_RUNTIME_DIR,
-          command => messageDelivery.sendToMain(DICTATION_COMMAND, { type: command }),
-        )
-        await dictationSocket.start()
+  if (platform === 'linux') {
+    linuxDictationShell = new LinuxDictationShell(
+      e2eConfiguration?.userDataPath ?? process.env.XDG_RUNTIME_DIR,
+      new ShellWidgetMonitor(
+        platform, homedir(),
+        present => { void windows.setWidgetSuppressed(present).catch(() => logOperational('native-widget-show-failed')) },
+      ),
+      async command => {
+        if (command.startsWith('place ')) {
+          const edge = parseDictationEdge(command.slice(6))
+          if (edge === null) return false
+          widgetPlacement = { kind: 'edge', edge }
+          await widgetPlacementStore.save({ edge })
+          linuxDictationShell?.place(edge)
+          await windows.setWidgetPlacement({ edge })
+          return true
+        }
+        return messageDelivery.sendToMain(DICTATION_COMMAND, { type: command === 'discard' ? 'dismiss' : command })
       },
-      dispose(): void { dictationSocket?.dispose() },
-    } } : {}),
+      () => windows.getWidgetPlacement().edge,
+      logOperational,
+    )
+  }
+  return new NativeRuntimeController({
+    ...(linuxDictationShell === null ? {} : { dictationCommands: linuxDictationShell }),
     windows,
     hotkeys,
     tray,

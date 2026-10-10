@@ -1,23 +1,20 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
 import { registerMemoryIpc } from '../../../src/main/memory/ipc'
-import type { IpcInvocationEvent, IpcMainAdapter, TrustedIpcSender } from '../../../src/main/ipc/registerIpc'
+import type { IpcInvocationEvent } from '../../../src/main/ipc/registerIpc'
 import { MEMORY_COMMAND, MEMORY_GET } from '../../../src/shared/memory'
+import { ipcRegistry } from '../../fixtures/ipcHarness'
 
 function fixture(available = true) {
-  const handlers = new Map<string, (event: IpcInvocationEvent, ...args: unknown[]) => unknown>()
-  const ipc: IpcMainAdapter = { handle: (channel, handler) => { handlers.set(channel, handler) }, removeHandler: channel => { handlers.delete(channel) } }
-  const sender = (role: 'main' | 'widget'): TrustedIpcSender => {
-    const url = `file:///${role}.html`, mainFrame = { parent: null, url }
-    return { role, url, webContents: { mainFrame, getURL: () => url, isDestroyed: () => false } }
-  }
-  const main = sender('main'), widget = sender('widget')
+  const registry = ipcRegistry()
+  const { ipc, handlers } = registry
+  const { main, widget } = registry
   const snapshot = { available: true, questionnaireCompletedAt: null, memories: [], policies: [] }
   const profile = { snapshot: vi.fn(() => snapshot), command: vi.fn(() => snapshot) }, changed = vi.fn()
   const dispose = registerMemoryIpc(ipc, available ? profile : undefined, () => [main, widget], changed)
   const event: IpcInvocationEvent = { sender: main.webContents, senderFrame: main.webContents.mainFrame }
   return { handlers, main, widget, event, profile, changed, snapshot, dispose,
-    invoke: async (channel: string, source = event, ...args: unknown[]) => handlers.get(channel)!(source, ...args) }
+    invoke: async (channel: string, source = event, ...args: unknown[]) => registry.invoke(channel, args, source) }
 }
 
 describe('memory IPC', () => {

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import type { BabysitStart, BabysitListing } from '../../../src/main/agents/babysitting'
 import { BABYSITTING_SWITCHED_OFF, PULL_REQUEST_MCP_SERVER, PullRequestToolServer, pullRequestToolDefinitions, type PullRequestToolHandlers } from '../../../src/main/agents/pullRequestTools'
 import { pullRequestKey } from '../../../src/shared/gitPullRequests'
+import { deferred } from '../../fixtures/deferred'
 
 /**
  * `sotto_pull_requests` (ADR-0061 decision 2): which pull request a call means, the words each answer is in, and what the
@@ -106,7 +107,9 @@ describe('the pull request tools', () => {
 
   it('refuses a call whose link was still being made when the switch was turned off, and starts nothing', async () => {
     let linked!: () => void
-    const h = harness({ link: async () => { await new Promise<void>(resolve => { linked = resolve }); return { link: { url: url(6) } } } })
+    const h = harness({ link: async () => { const pending1 = deferred<void>();
+linked = pending1.resolve;
+await pending1.promise; return { link: { url: url(6) } } } })
     const call = h.call('babysit_pull_request', { pull_request: url(6) })
     await expect.poll(() => linked).toBeDefined()
     h.setEnabled(false)

@@ -1,9 +1,16 @@
+import { parseProviderRecords, writeProviderAction } from './providerRecords'
 import { randomUUID } from 'node:crypto'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { GrokAcpHost } from '../../src/main/agents/grok'
-import type { AdapterSessionOptions, RecordedRpc } from './adapterFixture'
+import type { AdapterContractSkips, AdapterSessionOptions, RecordedRpc } from './adapterFixture'
+
+export const grokFixtureSkips: AdapterContractSkips = {
+ backgroundWork: 'The fixture has no background-work driver.',
+ liveSettings: 'The fixture must apply settings to a live provider session.',
+ settingsConfirmation: 'The fixture cannot lose a settings-change confirmation.',
+}
 /** A log may not exist before its first event; any other read failure is evidence, not an empty trace. */
 async function readLog(path: string): Promise<string> {
  try { return await readFile(path, 'utf8') }
@@ -11,7 +18,7 @@ async function readLog(path: string): Promise<string> {
 }
 /** The frames the fake client's one-shot mode was sent, grouped into Sotto's side calls (ADR-0026). */
 async function sideCalls(root: string): Promise<{ cwd: string; model: string | undefined; material: string }[]> {
- const frames = (await readFile(join(root,'oneshot.jsonl'),'utf8').catch(()=>'')).trim().split('\n').filter(Boolean).map(line => (JSON.parse(line) as { frame: { method?: string; params?: Record<string, unknown> } }).frame)
+ const frames = parseProviderRecords<{ frame: { method?: string; params?: Record<string, unknown> } }>(await readFile(join(root,'oneshot.jsonl'),'utf8').catch(() => '')).map(record => record.frame)
  const opened = frames.filter(frame => frame.method === 'session/new')
  return opened.map((open, index) => ({ cwd: String(open.params?.cwd),
   model: frames.filter(frame => frame.method === 'session/set_model')[index]?.params?.modelId as string | undefined,
@@ -25,16 +32,16 @@ export async function grokFixture(root?: string, requestTimeoutMs = 2000, pollIn
  const requests = async (): Promise<RecordedRpc[]> => {
   await checkViolations()
   const text = await readLog(join(root,'requests.jsonl'))
-  return text.trim().split('\n').filter(Boolean).map(line=>JSON.parse(line))
+  return parseProviderRecords<RecordedRpc>(text)
  }
  const script = (value: unknown) => writeFile(join(root,'script.json'),JSON.stringify(value))
  const realId = async (id: string): Promise<string> => JSON.parse(await readFile(join(root,'grok-threads.json'),'utf8'))[id].grokSessionId
  // Each thread session has its own fake process (one ACP process per session). The one holding the session
  // takes the command; `at` lets another take it once nobody has. The wall clock, because tests mock Date.now.
- const action = async (id: string, value: Record<string,unknown>) => { await writeFile(join(root,'control.json'),JSON.stringify({id:randomUUID(),sessionId:await realId(id),...value})) }
+ const action = async (id: string, value: Record<string,unknown>) => { const actionId = randomUUID(); await writeProviderAction(join(root, 'control.json'), value, { sessionId: await realId(id) }, actionId) }
  // Each thread session is its own Grok process, not a proxy to a shared leader, so a turn ends when Sotto
  // closes its process; the adapter says it was interrupted rather than leave it running forever.
- return {host:adapter,adapter,root,projectId:'project',modelId:'fixture-model',realId,script,action,restartStatus:'idle' as const,
+ return {host:adapter,adapter,root,projectId:'project',modelId:'fixture-model',realId,script,action,restartStatus:'idle' as const,skips:grokFixtureSkips,
   // A permission change comes back with the snapshot Grok's reload confirmed (#318).
   settings:{snapshot:true},
   // Every Grok process started from now on reports the newer client.

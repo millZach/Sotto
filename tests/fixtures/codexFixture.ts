@@ -1,3 +1,4 @@
+import { parseProviderRecords, writeProviderAction, providerArgument as flag } from './providerRecords'
 import { randomUUID } from 'node:crypto'
 import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -5,16 +6,20 @@ import { dirname, join, resolve } from 'node:path'
 import { CodexAppServerHost } from '../../src/main/agents/codex'
 import type { AgentHost } from '../../src/main/agents/host'
 import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
-import type { AdapterSessionOptions, RecordedRpc } from './adapterFixture'
+import type { AdapterContractSkips, AdapterSessionOptions, RecordedRpc } from './adapterFixture'
+
+export const codexFixtureSkips: AdapterContractSkips = {
+  backgroundWork: 'The fixture has no background-work driver.',
+  liveSettings: 'The fixture must apply settings to a live provider session.',
+}
 
 export function rolloutLine(ordinal: number, payload: unknown, type = 'event_msg'): string {
   return JSON.stringify({ timestamp: new Date().toISOString(), ordinal, type, payload }) + '\n'
 }
 /** What the fake client's one-shot mode recorded for each of Sotto's side calls (ADR-0026). */
 async function oneShots(root: string): Promise<Record<string, unknown>[]> {
-  return (await readFile(join(root, 'oneshot.jsonl'), 'utf8').catch(() => '')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line) as Record<string, unknown>)
+  return parseProviderRecords<Record<string, unknown>>(await readFile(join(root, 'oneshot.jsonl'), 'utf8').catch(() => ''))
 }
-const flag = (args: unknown, name: string): string | undefined => { const list = args as string[]; return list.includes(name) ? list[list.indexOf(name) + 1] : undefined }
 /** The fake's own number for a request Sotto holds: Sotto's key also names the app-server that asked it. */
 export const nativeRequestId = (requestId: string): string | number => JSON.parse(requestId.replace(/^rpc:[^:]+:/u, '')) as string | number
 /** What the fake recorded of the app-servers Sotto started: each one's introduction, and each thread start or resume on it. */
@@ -48,7 +53,7 @@ export async function codexFixture(root?: string, wrapped = false, requestTimeou
   }
   const requests = async (): Promise<RecordedRpc[]> => {
     await checkViolations()
-    return (await readFile(join(root, 'requests.jsonl'), 'utf8').catch(() => '')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line))
+    return parseProviderRecords(await readFile(join(root, 'requests.jsonl'), 'utf8').catch(() => ''))
   }
   const realId = async (sessionId: string): Promise<string> => {
     const aliases = JSON.parse(await readFile(join(root, 'codex-threads.json'), 'utf8'))
@@ -57,7 +62,7 @@ export async function codexFixture(root?: string, wrapped = false, requestTimeou
   /** Hand the fake an action and answer the ID it acknowledges it by. */
   const action = async (sessionId: string, value: Record<string, unknown>): Promise<string> => {
     const id = randomUUID()
-    await writeFile(join(root, 'control.json'), JSON.stringify({ id, threadId: await realId(sessionId), ...value }))
+    await writeProviderAction(join(root, 'control.json'), value, { threadId: await realId(sessionId) }, id)
     return id
   }
   /** Whether the fake has carried out the action `action` answered with this ID. */
@@ -71,7 +76,7 @@ export async function codexFixture(root?: string, wrapped = false, requestTimeou
     await writeFile(path, rolloutLine(0, { id: codexThreadId }, 'session_meta'), { flag: 'wx' }).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'EEXIST') throw error })
     await appendFile(path, rolloutLine(Date.now(), { type: 'item_completed', item: { type: 'UserMessage', id: randomUUID(), content: [{ type: 'text', text }] } }))
   }
-  const fixture = { root, adapter, registry, host, projectId: 'project', modelId: 'fixture-model', script, realId, typeUnseen,
+  const fixture = { root, adapter, registry, host, projectId: 'project', modelId: 'fixture-model', script, realId, typeUnseen, skips: codexFixtureSkips,
     // A settings change comes back with the snapshot Codex's confirmation produced; a delayed reply loses it (#318).
     settings: { snapshot: true, loseConfirmation: () => script({ delay: { method: 'thread/settings/update', ms: requestTimeoutMs + 1000 }, suppressNotifications: true }) },
     // Every app-server started from now on answers `initialize` as the newer client.
@@ -90,7 +95,7 @@ export async function codexFixture(root?: string, wrapped = false, requestTimeou
       restart: async () => { host.disconnect(); await adapter.closed(); return codexFixture(root, wrapped, requestTimeoutMs, session) },
     },
     /** Every app-server the fake saw start, and what each was asked to start or resume. */
-    servers: async (): Promise<ServedRecord[]> => (await readFile(join(root, 'servers.jsonl'), 'utf8').catch(() => '')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line) as ServedRecord),
+    servers: async (): Promise<ServedRecord[]> => parseProviderRecords<ServedRecord>(await readFile(join(root, 'servers.jsonl'), 'utf8').catch(() => '')),
     /** The process id of the app-server that last started or resumed this thread. */
     serverOf: async (sessionId: string): Promise<number | undefined> => {
       const codexThreadId = await realId(sessionId)

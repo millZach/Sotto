@@ -11,12 +11,7 @@ import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
 
 const OK = Object.freeze({ ok: true as const })
 
-function deferred<Value>() {
-  let resolve!: (value: Value) => void
-  let reject!: (reason?: unknown) => void
-  const promise = new Promise<Value>((done, fail) => { resolve = done; reject = fail })
-  return { promise, reject, resolve }
-}
+
 
 function createBridge(overrides: Partial<SottoBridge> = {}): SottoBridge {
   return {
@@ -96,10 +91,16 @@ async function openPage(destination: AppNavigation): Promise<void> {
   act(() => shell.navigate(destination))
 }
 
+/** A microphone test that opens and hears a voice at once, as speaking into a working microphone does. */
+const heardStart = async (onLevel: (level: number) => void): Promise<'ready'> => {
+  onLevel(0.6)
+  return 'ready'
+}
+
 function renderApp(
   bridge: SottoBridge,
   createMicrophoneTest: () => MicrophoneTestController = () => ({
-    start: vi.fn(async () => 'ready' as const),
+    start: vi.fn(heardStart),
     stop: vi.fn(async () => undefined),
   }),
   strict = false,
@@ -131,7 +132,7 @@ async function finishRemainingSteps(user: ReturnType<typeof userEvent.setup>): P
 async function completeReadySetup(user: ReturnType<typeof userEvent.setup>): Promise<void> {
   await reachMicrophoneStep(user)
   await user.click(screen.getByRole('button', { name: /test microphone/i }))
-  await waitFor(() => expect(screen.getByText(/microphone ready/i)).toBeVisible())
+  await waitFor(() => expect(screen.getByText(/Sotto heard you/i)).toBeVisible())
   await user.click(screen.getByRole('button', { name: /continue/i }))
   await waitFor(() => expect(screen.getByText(/connect your openrouter key/i)).toBeVisible())
   await finishRemainingSteps(user)
@@ -158,4 +159,6 @@ afterEach(() => {
   localStorage.clear()
 })
 
-export { OK, deferred, createBridge, createController, shell, NavigationProbe, openPage, renderApp, reachMicrophoneStep, finishRemainingSteps, completeReadySetup, setupThreadsTourTests }
+export { OK, heardStart, createBridge, createController, shell, NavigationProbe, openPage, renderApp, reachMicrophoneStep, finishRemainingSteps, completeReadySetup, setupThreadsTourTests }
+
+export { deferred } from '../deferred'

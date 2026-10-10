@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { expect, it } from 'vitest'

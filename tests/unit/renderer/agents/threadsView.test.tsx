@@ -1,4 +1,5 @@
 import { setPromptText, promptText } from '../helpers/promptEditor'
+import { deferred } from '../../../fixtures/deferred'
 import { voice, NOW, stateFixture, connectionStores, connection, renderThreads } from '../../../fixtures/renderer/threadsViewHarness'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -130,7 +131,7 @@ describe('ThreadsView workspace', () => {
     const bridge = window.sotto
     vi.stubGlobal('sotto', { ...bridge, agents: { ...bridge?.agents, stageAttachment: async (request: AgentAttachmentStageRequest) => handleOf(request.bytes, crypto.randomUUID(), request.name) } })
     onTestFinished(() => { vi.unstubAllGlobals() })
-    vi.stubGlobal('createImageBitmap', async () => { await new Promise<void>(resolve => { decoded = resolve }); return { width: 3840, height: 2160, close: () => undefined } })
+    vi.stubGlobal('createImageBitmap', async () => { await (() => { const pending = deferred<void>(); decoded = pending.resolve; return pending.promise })(); return { width: 3840, height: 2160, close: () => undefined } })
     vi.stubGlobal('OffscreenCanvas', class {
       constructor(readonly width: number, readonly height: number) {}
       getContext() { return { drawImage: () => undefined } }

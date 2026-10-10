@@ -5,14 +5,15 @@ import { describe, expect, it, vi } from 'vitest'
 import { RequestDraftService, requestQuestionsDigest, type RequestDraftOwnerState } from '../../../src/main/agents/requestDrafts'
 import { type RequestDraftTarget } from '../../../src/shared/requestDrafts'
 import { questions, target, submittedAnswers, owner, request, draft, directory, disk, registerRequestDraftFixture } from '../../fixtures/requestDrafts'
+import { deferred } from '../../fixtures/deferred'
 
 registerRequestDraftFixture()
 
 it('publishes only owner identities after a durable write, never failed writes or unsubscribed listeners', async () => {
-  let releaseWrite: () => void = () => undefined
-  let startedWrite: () => void = () => undefined
-  const started = new Promise<void>(resolve => { startedWrite = resolve })
-  const gate = new Promise<void>(resolve => { releaseWrite = resolve })
+  const { promise: heldReleaseWrite, resolve: releaseWrite } = deferred<void>()
+  const { promise: heldStartedWrite, resolve: startedWrite } = deferred<void>()
+  const started = heldStartedWrite
+  const gate = heldReleaseWrite
   const write = vi.fn(async (value: unknown) => {
     startedWrite()
     await gate

@@ -6,28 +6,26 @@ import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
 import { createAgentRuntime, type AgentRuntimeOptions } from '../../../src/main/agents/runtime'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
+
 import { desktopWindowClient } from '../../../src/main/agents/hostService'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { startHeadlessHost } from '../../../src/host'
 import { threadTitleRequest } from '../../../src/main/llm/threadTitle'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { deferred } from '../../fixtures/deferred'
 
 const roots: string[] = []
 async function directory(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'sotto-runtime-shutdown-')); roots.push(root); return root
 }
-const deferred = () => {
-  let resolve!: () => void
-  const promise = new Promise<void>(done => { resolve = done })
-  return { promise, resolve }
-}
+
 async function runtime(options: Partial<AgentRuntimeOptions> = {}) {
   const root = await directory()
-  const credentials = new AgentCredentials(root, {
+  const credentials = await testCredentials(root, { encryption: {
     isEncryptionAvailable: () => false, encryptString: () => { throw new Error('No test key') }, decryptString: () => '',
-  })
-  await credentials.load()
+  } })
+
   return createAgentRuntime({
     directory: root, credentials, settings: () => DEFAULT_SETTINGS, writingSettings: async () => DEFAULT_SETTINGS,
     historyEnabled: () => true, coordinatorEnabled: () => false, openExternal: async () => undefined,

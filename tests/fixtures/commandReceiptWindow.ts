@@ -1,14 +1,16 @@
+import { createAgentControl } from './agentControlFixture'
+import { testCredentials } from './testCredentials'
 import { deserialize, serialize } from 'node:v8'
 import { vi } from 'vitest'
 import { AgentControl, type PublishScheduler } from '../../src/main/agents/control'
-import { AgentCredentials } from '../../src/main/agents/credentials'
+
 import { LocalHostService } from '../../src/main/agents/hostService'
 import { AgentStateBroadcaster } from '../../src/main/agents/agentStateBroadcast'
 import { registerAgentIpc } from '../../src/main/agents/ipc'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
 import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
-import type { IpcInvocationEvent, IpcMainAdapter, TrustedIpcSender } from '../../src/main/ipc/registerIpc'
+import { ipcRegistry } from './ipcHarness'
 import { createSottoBridge } from '../../src/preload'
 import { wrapAgentBridge } from '../../src/renderer/src/agents/agentStateCatalogs'
 import { AGENT_COMMAND, AGENT_STATE, type AgentBridge, type AgentHostSnapshot, type AgentModel, type AgentState, type AgentWireBridge } from '../../src/shared/agents'
@@ -60,9 +62,8 @@ export interface CommandReceiptWindow {
 
 export async function commandReceiptWindow(root: string, schedule: PublishScheduler): Promise<CommandReceiptWindow> {
   const host = new CatalogHost()
-  const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: bytes => bytes.toString() })
-  await credentials.load()
-  const control = new AgentControl({ schedule, directory: root, host, credentials, reasoner: e2eAgentReasoner,
+  const credentials = await testCredentials(root, { mode: 'unavailable' })
+  const control = createAgentControl({ schedule, directory: root, host, credentials, reasoner: e2eAgentReasoner,
   })
   await control.start(); await control.command({ type: 'connect' })
 
@@ -70,15 +71,12 @@ export async function commandReceiptWindow(root: string, schedule: PublishSchedu
   router.add({ hostId: RECEIPT_HOST_ID, name: 'This computer', kind: 'local', service: new LocalHostService({ control }),
     detail: threadId => control.threadDetail(threadId), preview: () => null })
 
-  const handlers = new Map<string, (event: IpcInvocationEvent, ...args: unknown[]) => unknown>()
-  const ipc: IpcMainAdapter = { handle: (channel, handler) => { handlers.set(channel, handler) }, removeHandler: channel => { handlers.delete(channel) } }
-  const url = 'file:///main.html'
-  const main: TrustedIpcSender = { role: 'main', url, webContents: { mainFrame: { parent: null, url }, isDestroyed: () => false, getURL: () => url } }
-  const event: IpcInvocationEvent = { sender: main.webContents, senderFrame: main.webContents.mainFrame }
+  const registry = ipcRegistry({ mainUrl: 'file:///main.html' })
+  const { ipc, main } = registry
   const broadcaster = new AgentStateBroadcaster()
   const unregister = registerAgentIpc(ipc, router, router, () => [main], 'win32', { status: vi.fn(), download: vi.fn() },
     { synthesize: vi.fn(), voices: vi.fn(), cancel: vi.fn() }, { synthesize: vi.fn(), cancel: vi.fn() }, { voiceCoordinatorEnabled: true, wakeControl: control, encodeReceipt: broadcaster.encodeReceipt })
-  const handle = (channel: string, ...args: unknown[]): Promise<unknown> => Promise.resolve(handlers.get(channel)!(event, ...args))
+  const handle = (channel: string, ...args: unknown[]): Promise<unknown> => registry.invoke(channel, args)
 
   const wire: Array<{ channel: string; payload: unknown }> = []
   const seen: AgentState[] = []

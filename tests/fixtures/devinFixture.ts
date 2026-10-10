@@ -1,9 +1,17 @@
+import { parseProviderRecords } from './providerRecords'
 import { randomUUID } from 'node:crypto'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { DevinAcpHost } from '../../src/main/agents/devin'
-import type { AdapterSessionOptions, RecordedRpc } from './adapterFixture'
+import type { AdapterContractSkips, AdapterSessionOptions, RecordedRpc } from './adapterFixture'
+
+export const devinFixtureSkips: AdapterContractSkips = {
+  backgroundWork: 'The fixture has no background-work driver.',
+  liveSettings: 'The fixture must apply settings to a live provider session.',
+  settingsConfirmation: 'The fixture cannot lose a settings-change confirmation.',
+  clientUpdate: 'The fixture must install a client update and the adapter must accept it.',
+}
 
 /** What a test of the send path changes about how the adapter waits. */
 export interface DevinPaceOptions {
@@ -30,7 +38,7 @@ export async function devinFixture(root?: string, requestTimeoutMs = 2000, pollI
   }
   const requests = async (): Promise<RecordedRpc[]> => {
     await checkViolations()
-    return (await readFile(join(root, 'requests.jsonl'), 'utf8').catch(() => '')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line))
+    return parseProviderRecords(await readFile(join(root, 'requests.jsonl'), 'utf8').catch(() => ''))
   }
   const realId = async (id: string): Promise<string> => {
     const native = JSON.parse(await readFile(join(root, 'devin-threads.json'), 'utf8'))[id].devinSessionId as string
@@ -50,7 +58,7 @@ export async function devinFixture(root?: string, requestTimeoutMs = 2000, pollI
     history.messages.push({ id: randomUUID(), role: 'user', text, timestamp: new Date().toISOString() })
     await writeFile(file, JSON.stringify(history))
   }
-  return { host: adapter, adapter, root, projectId: 'project', modelId: 'fixture-model', realId, script, action,
+  return { host: adapter, adapter, root, projectId: 'project', modelId: 'fixture-model', realId, script, action, skips: devinFixtureSkips,
     restartStatus: 'idle' as const,
     // A permission change comes back with the snapshot that records it (#318).
     settings: { snapshot: true },

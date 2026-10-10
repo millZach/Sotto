@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { hostIsNewer, hostIsOlder } from '../../../src/shared/hostProtocol'
 import { HOST_ARCHIVE_PATTERN, hostArchiveName, hostUpdateCommandSchema, threadKeepsHostBusy } from '../../../src/shared/hostUpdates'

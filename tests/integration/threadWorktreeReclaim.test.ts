@@ -1,5 +1,6 @@
 // @vitest-environment node
 
+import { initializeGitRepository } from '../fixtures/gitRepository'
 import { lstat, mkdir, readFile, rename, rm, symlink, unlink, writeFile } from 'node:fs/promises'
 
 import { join } from 'node:path'
@@ -216,10 +217,9 @@ describe("independent working-copy allocation", () => {
   })
   it.each(['none', 'some', 'all'])('counts nested repository commits not on a remote (%s published)', async published => {
     const f = await fixture(); const a = await f.service.ensure(await f.service.allocate(f.project, 'independent'))
-    const nested = join(a.path!, 'nested'); await mkdir(nested); await git(nested, ['init'])
+    const nested = join(a.path!, 'nested'); await mkdir(nested);
     await writeFile(join(nested, 'saved.txt'), 'first')
-    await git(nested, ['add', '.'])
-    await git(nested, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'First'])
+    await initializeGitRepository(nested, { files: {}, message: "First", identity: { name: "Fixture", email: "fixture@example.invalid" } })
     const first = (await git(nested, ['rev-parse', 'HEAD'])).trim()
     await writeFile(join(nested, 'saved.txt'), 'second')
     await git(nested, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-am', 'Second'])

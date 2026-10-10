@@ -1,10 +1,9 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type Locator } from '@playwright/test'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, launchSotto, openPage } from './support/sottoLaunch'
 
 /**
@@ -15,7 +14,7 @@ import { closeSotto, launchSotto, openPage } from './support/sottoLaunch'
  */
 test('Phones: sets up through the checklist, pairs a phone with a code, and closes when turned off', async () => {
   test.setTimeout(240_000)
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-phones-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-phones-' })).directory
   const tailscale = (fixture: Record<string, unknown>) => writeFile(join(profile, 'e2e-tailscale.json'), JSON.stringify(fixture))
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, reducedMotion: 'on' }))
   await tailscale({ state: 'not-running' })
@@ -132,6 +131,6 @@ test('Phones: sets up through the checklist, pairs a phone with a code, and clos
   } finally {
     await Promise.all(phones.map(phone => phone.close()))
     await closeSotto(launched)
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 })

@@ -1,4 +1,5 @@
 import { expectPromptText, fillPrompt, promptField } from './support/prompt'
+import { agentState } from './support/agentAccess'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
@@ -144,7 +145,7 @@ test('long histories retain local send, streaming and four-pane responsiveness i
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload()
-    const hostId = (await page.evaluate(() => window.sotto!.agents!.get())).hostId
+    const hostId = (await agentState(page)).hostId
     const key = (id: string): string => hostEntityKey(hostId, id)
     await launched.app.evaluate(({ BrowserWindow }) => {
       const window = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!

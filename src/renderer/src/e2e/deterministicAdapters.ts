@@ -53,8 +53,9 @@ function createE2EFactories(scenario: E2EScenario): ProductionControllerFactorie
       return {
         async transcribe(options) {
           if (scenario === 'transcription-failure') throw new Error('DETERMINISTIC_TRANSCRIPTION_FAILURE')
-          // The provider turns the first two requests away and accepts the next, as a rate-limit burst does.
-          if (scenario === 'transcription-turned-away-twice' && turnedAway < 2) {
+          // A rate-limit burst, followed by a successful retry of the kept recording.
+          const refusals = scenario === 'transcription-turned-away-once' ? 1 : scenario === 'transcription-turned-away-twice' ? 2 : 0
+          if (turnedAway < refusals) {
             turnedAway += 1
             throw new TranscriptionError('rate-limited')
           }

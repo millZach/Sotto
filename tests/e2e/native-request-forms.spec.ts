@@ -1,8 +1,9 @@
 import { expectPromptText, fillPrompt, promptField } from './support/prompt'
+import { agentState as state } from './support/agentAccess'
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
-import type { AgentCommand, AgentRequest, AgentState } from '../../src/shared/agents'
+import type { AgentCommand, AgentRequest } from '../../src/shared/agents'
 import { hostKeysPerTest } from './support/hostKeys'
 import { closeSotto, launchSotto, openThreads, paneMenuAction, type LaunchedSotto } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
@@ -92,7 +93,6 @@ const hold = (app: ElectronApplication): Promise<void> => app.evaluate(() => {
   recorder.hold = new Promise(resolve => { recorder.release = () => { recorder.hold = null; recorder.release = null; resolve() } })
 })
 const release = (app: ElectronApplication): Promise<void> => app.evaluate(() => { globalThis.requestJourney!.release?.() })
-const state = (page: Page): Promise<AgentState> => page.evaluate(() => window.sotto!.agents!.get())
 const pending = async (page: Page, threadId: string): Promise<string[]> => (await state(page)).host.threads.find(thread => thread.id === key(threadId))!.requests.map(request => request.id)
 
 async function emit(page: Page, threadId: string, request: AgentRequest): Promise<void> {
@@ -331,7 +331,6 @@ test('offers only native approval choices, keeps a refused answer, and sends a h
   } finally { await closeSotto(launched) }
 })
 
-
 test('keeps model choices above the message bar until an explicit answer, preserving a separate prompt draft', async () => {
   test.setTimeout(120_000)
   const launched = await launchSotto()
@@ -437,7 +436,6 @@ test('keeps model choices above the message bar until an explicit answer, preser
   } finally { await closeSotto(launched) }
 })
 
-
 test('keeps a question and its message bar reachable in a short stacked pane', async () => {
   test.setTimeout(120_000)
   const launched = await launchSotto('design-threads')
@@ -504,7 +502,6 @@ test('keeps a question and its message bar reachable in a short stacked pane', a
     expect(await answers(app)).toHaveLength(1)
   } finally { await closeSotto(launched) }
 })
-
 
 test('keeps simultaneous question and permission controls reachable in a short stacked pane', async () => {
   test.setTimeout(120_000)

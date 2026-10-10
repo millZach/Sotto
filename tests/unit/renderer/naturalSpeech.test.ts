@@ -1,3 +1,5 @@
+// @vitest-environment node
+import { deferred } from '../../fixtures/deferred'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { defaultAgentConfiguration, type AgentBridge, type AgentConfiguration, type AgentVoiceModelStatus } from '../../../src/shared/agents'
@@ -30,11 +32,7 @@ class AudioFixture {
   readonly pause = vi.fn()
   constructor(public src: string) { players.push(this) }
 }
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>(finish => { resolve = finish })
-  return { promise, resolve }
-}
+
 const flush = async () => { for (let i = 0; i < 6; i++) await Promise.resolve() }
 
 function setup(configuration: AgentConfiguration = { ...defaultAgentConfiguration(), speechProvider: 'natural' }) {

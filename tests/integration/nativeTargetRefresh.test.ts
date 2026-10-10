@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { deferred } from '../fixtures/deferred'
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -11,10 +12,9 @@ import type { AgentHost, AgentHostResult } from '../../src/main/agents/host'
 // Gate only the unrelated native history I/O; prompt transport and persistence stay real.
 it.each(['codex', 'claude', 'grok'] as const)('%s sends and confirms while another thread history read is blocked', async provider => {
   const f = provider === 'codex' ? await codexFixture() : provider === 'claude' ? await claudeFixture() : await grokFixture()
-  let release!: () => void
-  let entered!: () => void
-  const gate = new Promise<void>(resolve => { release = resolve })
-  const reading = new Promise<void>(resolve => { entered = resolve })
+
+  const { promise: gate, resolve: release } = deferred<void>()
+  const { promise: reading, resolve: entered } = deferred<void>()
   let sending: Promise<AgentHostResult> | undefined
   let background: ReturnType<AgentHost['snapshot']> | undefined
   let backgroundSettled = false

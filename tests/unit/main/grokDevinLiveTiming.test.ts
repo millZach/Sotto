@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { mergeAgentActivities } from '../../../src/shared/agentActivity'
 import { grokActivities } from '../../../src/main/agents/grokActivity'

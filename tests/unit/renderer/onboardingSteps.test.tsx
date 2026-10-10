@@ -1,12 +1,14 @@
+import { hostsBridgeFixture, hostsState, hostStatus, phonesBridgeFixture, phonesState } from '../../fixtures/renderer/hostBridges'
+import { threadsStateFixture } from '../../fixtures/agentState'
 import React from 'react'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { defaultAgentConfiguration, type AgentCapabilities, type AgentProject, type AgentProviderStatus, type AgentState } from '../../../src/shared/agents'
+import { defaultAgentConfiguration, type AgentCapabilities, type AgentProject, type AgentProviderStatus, type AgentState, type ProviderId } from '../../../src/shared/agents'
 import { PROVIDER_INSTALL_GUIDES } from '../../../src/shared/hostProviders'
-import type { HostsBridge, HostsState, HostStatus } from '../../../src/shared/hosts'
-import { IPHONE_BETA_URL, type PhonesBridge, type PhonesCommand, type PhonesState } from '../../../src/shared/phones'
+import type { HostsBridge, HostStatus } from '../../../src/shared/hosts'
+import { IPHONE_BETA_URL, type PhonesBridge, type PhonesState } from '../../../src/shared/phones'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings'
 import { useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { Onboarding } from '../../../src/renderer/src/features/onboarding/Onboarding'
@@ -25,15 +27,12 @@ afterEach(() => { cleanup(); vi.clearAllMocks(); appearancePreview.reset() })
 
 const CAPS: AgentCapabilities = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true }
 
-function agentState(providers: readonly AgentProviderStatus[], projects: readonly AgentProject[] = [], options: { stale?: boolean } = {}): AgentState {
-  return {
-    configuration: defaultAgentConfiguration(), connection: 'connected',
+/** `installed` is what the last Connect providers found; `off` the clients the user turned off. */
+function agentState(providers: readonly AgentProviderStatus[], projects: readonly AgentProject[] = [], options: { stale?: boolean; installed?: readonly ProviderId[]; off?: readonly ProviderId[] } = {}): AgentState {
+  return threadsStateFixture({ cloneOverrides: false,
+    configuration: { ...defaultAgentConfiguration(), ...(options.off ? { disconnectedProviders: [...options.off] } : {}) },
     host: { connected: true, name: 'Test', version: '1.0', capabilities: CAPS, projects: [...projects], providers: [...providers], models: [], threads: [] },
-    assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false,
-    pendingRequest: '', globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' }, voice: { status: 'off', error: null, action: 'none', revision: 0 },
-    credentials: { reasoning: false, grokSpeech: false, secure: true }, reasoningAccounts: [],
-    ...(options.stale ? { stale: true } : {}),
-  }
+    topLevel: { assignments: [], queue: [], activeThreadId: null, activeProjectId: null, ...(options.stale ? { stale: true } : {}), ...(options.installed ? { installedProviders: [...options.installed] } : {}) } })
 }
 
 function provide(state: AgentState | null, command = vi.fn(async () => state)): void {
@@ -109,7 +108,18 @@ describe('AgentsStep', () => {
     expect(command).toHaveBeenCalledTimes(1)
   })
 
-  it('never auto-connects when a provider is already connected, and Check again retries only the clients with a problem', async () => {
+  it('runs Connect providers on arrival even when a client is already connected, so every installed one connects', async () => {
+    const providers: AgentProviderStatus[] = [
+      { id: 'codex', connection: 'connected', name: 'Codex', version: '1.2.3', capabilities: CAPS },
+      { id: 'claude', connection: 'disconnected', name: 'Claude Code', version: '', capabilities: CAPS },
+    ]
+    const command = vi.fn(async () => agentState(providers))
+    provide(agentState(providers), command)
+    render(<AgentsStep heading={<div />} onOpenLink={vi.fn(async () => true)} />)
+    await waitFor(() => expect(command).toHaveBeenCalledExactlyOnceWith({ type: 'connect' }))
+  })
+
+  it('retries the clients with a problem on Check again, and runs Connect providers again to find any installed since', async () => {
     const providers: AgentProviderStatus[] = [
       { id: 'codex', connection: 'connected', name: 'Codex', version: '1.2.3', capabilities: CAPS },
       { id: 'grok', connection: 'error', name: 'Grok Build', version: '', capabilities: CAPS, problem: 'signed-out' },
@@ -118,25 +128,47 @@ describe('AgentsStep', () => {
     provide(agentState(providers), command)
     const user = userEvent.setup()
     render(<AgentsStep heading={<div />} onOpenLink={vi.fn(async () => true)} />)
-    expect(command).not.toHaveBeenCalled()
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Check again' })).toBeEnabled())
+    command.mockClear()
     await user.click(screen.getByRole('button', { name: 'Check again' }))
-    await waitFor(() => expect(command).toHaveBeenCalledExactlyOnceWith({ type: 'refresh', provider: 'grok' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect' }))
+    expect(command).toHaveBeenCalledWith({ type: 'refresh', provider: 'grok' })
+    expect(command).not.toHaveBeenCalledWith({ type: 'refresh', provider: 'codex' })
   })
 
-  it('runs Connect providers again on Check again while no client is connected', async () => {
-    const providers: AgentProviderStatus[] = [{ id: 'claude', connection: 'error', name: 'Claude Code', version: '', capabilities: CAPS, problem: 'signed-out' }]
-    const command = vi.fn(async () => agentState(providers))
-    provide(agentState(providers), command)
+  it('says Not installed, with its install guide, for a client Connect providers looked for and did not find', async () => {
+    const providers: AgentProviderStatus[] = [
+      { id: 'codex', connection: 'connected', name: 'Codex', version: '1.2.3', capabilities: CAPS },
+      { id: 'claude', connection: 'disconnected', name: 'Claude Code', version: '', capabilities: CAPS },
+    ]
+    const state = agentState(providers, [], { installed: ['codex'] })
+    provide(state, vi.fn(async () => state))
+    render(<AgentsStep heading={<div />} onOpenLink={vi.fn(async () => true)} />)
+    const claudeRow = screen.getByText('Claude Code').closest('li')!
+    await waitFor(() => expect(claudeRow).toHaveTextContent('Not installed'))
+    expect(claudeRow).toHaveTextContent('Not found on this computer.')
+    expect(screen.getByRole('button', { name: 'Open the Claude Code install guide' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Connect Claude Code' })).toBeNull()
+  })
+
+  it('says Turned off, with Connect, for a client the user turned off, even when it is installed', async () => {
+    const providers: AgentProviderStatus[] = [
+      { id: 'codex', connection: 'connected', name: 'Codex', version: '1.2.3', capabilities: CAPS },
+      { id: 'grok', connection: 'disconnected', name: 'Grok Build', version: '', capabilities: CAPS },
+    ]
+    const state = agentState(providers, [], { installed: ['codex', 'grok'], off: ['grok'] })
+    const command = vi.fn(async () => state)
+    provide(state, command)
     const user = userEvent.setup()
     render(<AgentsStep heading={<div />} onOpenLink={vi.fn(async () => true)} />)
-    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect' }))
-    command.mockClear()
-    await user.click(await screen.findByRole('button', { name: 'Check again' }))
-    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect' }))
-    expect(command).toHaveBeenCalledWith({ type: 'refresh', provider: 'claude' })
+    const grokRow = screen.getByText('Grok Build').closest('li')!
+    await waitFor(() => expect(grokRow).toHaveTextContent('Turned off'))
+    await user.click(screen.getByRole('button', { name: 'Connect Grok Build' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect', provider: 'grok' }))
   })
 
-  it('says Not connected, never Not installed, for a client main has not tried, and connects it on Connect', async () => {
+  it('says Not connected, never Not installed, for a client Sotto has not looked for, and connects it on Connect', async () => {
     const providers: AgentProviderStatus[] = [
       { id: 'codex', connection: 'connected', name: 'Codex', version: '1.2.3', capabilities: CAPS },
       { id: 'claude', connection: 'disconnected', name: 'Claude Code', version: '', capabilities: CAPS },
@@ -146,11 +178,11 @@ describe('AgentsStep', () => {
     const user = userEvent.setup()
     render(<AgentsStep heading={<div />} onOpenLink={vi.fn(async () => true)} />)
     const claudeRow = screen.getByText('Claude Code').closest('li')!
-    expect(claudeRow).toHaveTextContent('Not connected')
+    await waitFor(() => expect(claudeRow).toHaveTextContent('Not connected'))
     expect(claudeRow).not.toHaveTextContent('Not installed')
     expect(screen.queryByRole('button', { name: 'Open the Claude Code install guide' })).toBeNull()
     await user.click(screen.getByRole('button', { name: 'Connect Claude Code' }))
-    await waitFor(() => expect(command).toHaveBeenCalledExactlyOnceWith({ type: 'connect', provider: 'claude' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect', provider: 'claude' }))
   })
 
   it('maps each provider problem to its row label and detail', () => {
@@ -287,25 +319,18 @@ describe('ProjectStep', () => {
 })
 
 function hostsFixture(hosts: HostStatus[] = []): { readonly bridge: HostsBridge } {
-  const state: HostsState = { hosts, localHostEnabled: true, localHostRunning: true }
-  const bridge: HostsBridge = {
-    get: async () => state,
-    command: vi.fn(async () => state),
-    onChanged: () => () => undefined,
+  return hostsBridgeFixture({ initial: hostsState({ hosts }), commands: {
     devices: vi.fn(async () => ({ tailscale: { state: 'running' as const, user: 'zach', loginName: 'zach@github', deviceCount: 1 }, devices: [] })),
     tailscale: vi.fn(async () => ({ state: 'running' as const, user: 'zach', loginName: 'zach@github', deviceCount: 1 })),
     connectTailscale: vi.fn(async () => 'connected' as const),
-    openTailscaleDownload: vi.fn(async () => undefined),
-    providerAction: vi.fn(async () => ({})) as HostsBridge['providerAction'],
-    updateClients: vi.fn(async () => ({})) as HostsBridge['updateClients'],
-    signIn: vi.fn(async () => null),
-  }
-  return { bridge }
+  } })
 }
 
 describe('ComputersStep', () => {
   function host(patch: Partial<HostStatus> = {}): HostStatus {
-    return { id: 'host-1', name: 'Build box', target: 'zach@build', identityFile: '', installPath: '/opt/sotto', dataDirectory: '/data', phase: 'connected', enabled: true, ...patch }
+    const status = hostStatus({ id: 'host-1', name: 'Build box', target: 'zach@build', ...patch })
+    delete status.hostId
+    return status
   }
 
   it('lists hosts from the bridge and reports their count', async () => {
@@ -335,19 +360,12 @@ describe('ComputersStep', () => {
 })
 
 function phonesFixture(initial: Partial<PhonesState> = {}): { readonly bridge: PhonesBridge; readonly command: ReturnType<typeof vi.fn> } {
-  let state: PhonesState = {
-    enabled: false, localHostRunning: true, phase: 'off',
-    tailscale: { status: 'waiting' }, serve: { status: 'waiting' },
-    address: null, computerName: 'This computer', defaultName: 'This computer',
-    code: null, phones: [], answersAvailable: true, ...initial,
-  }
-  const command = vi.fn(async (request: PhonesCommand) => {
-    if (request.type === 'show-code') state = { ...state, code: { code: '12345678', expiresAt: new Date(Date.now() + 300_000).toISOString() } }
-    if (request.type === 'cancel-code') state = { ...state, code: null }
-    return state
-  })
-  const bridge: PhonesBridge = { get: async () => state, command, onChanged: () => () => undefined }
-  return { bridge, command }
+  return phonesBridgeFixture({ initial: phonesState({ computerName: 'This computer', defaultName: 'This computer', ...initial }),
+    answer: (request, state) => {
+      if (request.type === 'show-code') return { ...state, code: { code: '12345678', expiresAt: new Date(Date.now() + 300_000).toISOString() } }
+      if (request.type === 'cancel-code') return { ...state, code: null }
+      return state
+    } })
 }
 
 describe('PhoneStep', () => {
@@ -423,8 +441,12 @@ describe('Onboarding forward button labels', () => {
     expect(screen.getByRole('heading', { name: 'Check your microphone' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Skip for now' })).toBeVisible()
 
+    // Access alone is not the test passing; hearing a voice is.
+    await user.click(screen.getByRole('button', { name: 'Test microphone' }))
     rerender(<Onboarding {...base} microphoneState="ready" />)
-    expect(screen.getByRole('button', { name: 'Continue' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Skip for now' })).toBeVisible()
+    rerender(<Onboarding {...base} microphoneState="ready" microphoneLevel={0.4} />)
+    expect(await screen.findByRole('button', { name: 'Continue' })).toBeVisible()
   })
 
   it('reads Skip for now on the key step while the key is empty', async () => {
@@ -432,7 +454,7 @@ describe('Onboarding forward button labels', () => {
     render(<Onboarding {...base} microphoneState="ready" />)
     await user.click(screen.getByRole('button', { name: 'Get started' }))
     await user.click(screen.getByRole('button', { name: 'Continue' }))
-    await user.click(screen.getByRole('button', { name: 'Continue' }))
+    await user.click(screen.getByRole('button', { name: 'Skip for now' }))
     expect(screen.getByRole('heading', { name: 'Connect your OpenRouter key' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Skip for now' })).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Skip for now' }))

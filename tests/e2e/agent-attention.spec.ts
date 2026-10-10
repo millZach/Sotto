@@ -1,10 +1,9 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { defaultAgentConfiguration } from '../../src/shared/agents'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, enableVoiceCoordinator, launchSotto, launchSottoWithVoice } from './support/sottoLaunch'
 import { completeVoiceJourneySetup, openVoiceJourneyAgents } from './support/voiceJourney'
 import { hostKeys } from './support/hostKeys'
@@ -13,7 +12,7 @@ import { evidenceDirectory } from '../fixtures/evidence'
 const evidence = evidenceDirectory('artifacts/crossing')
 
 test('saved attention does not cover the room while its provider is disconnected', async () => {
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-attention-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-attention-' })).directory
   const savedQueue = [{ id: 'old-update', threadId: 'missing-thread', kind: 'ready', text: 'Saved update from a previous connection.', createdAt: new Date().toISOString(), deferred: false }]
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true }))
   await enableVoiceCoordinator(profile)
@@ -28,7 +27,7 @@ test('saved attention does not cover the room while its provider is disconnected
     await launched.page.screenshot({ path: join(evidence, 'attention-disconnected.png') })
   } finally {
     await closeSotto(launched)
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 })
 

@@ -1,3 +1,4 @@
+import { threadsStateFixture } from '../agentState'
 import { cleanup, render } from '@testing-library/react'
 import React from 'react'
 import { afterEach, vi } from 'vitest'
@@ -9,17 +10,15 @@ import { defaultAgentConfiguration, PROVIDER_LABELS, providerIdSchema, type Agen
 
 export const caps = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true }
 export function fixture(thread: Partial<AgentThread> = {}): AgentState {
-  return {
-    configuration: { ...defaultAgentConfiguration(), enabledProviders: ['codex', 'claude', 'grok'] }, connection: 'connected',
+  return threadsStateFixture({ cloneOverrides: false,
+    configuration: { ...defaultAgentConfiguration(), enabledProviders: ['codex', 'claude', 'grok'] },
     host: { connected: true, name: 'Providers', version: '', capabilities: caps, projects: [],
       providers: providerIdSchema.options.map(id => ({ id, name: PROVIDER_LABELS[id], version: '1.2.3', connection: 'connected', capabilities: caps })),
       models: providerIdSchema.options.map(id => ({ id: `${id}:model`, name: `${PROVIDER_LABELS[id]} model`, provider: PROVIDER_LABELS[id], providerId: id, ready: true,
         reasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultReasoningEffort: 'medium', runtimeModes: ['approval-required', 'auto-accept-edits', 'auto', 'full-access'] })),
       threads: [{ id: 'thread', providerId: 'claude', projectId: 'project', title: 'Claude work', modelId: 'claude:model', status: 'idle', messages: [], requests: [], nativeSessionStarted: false, reasoningEffort: 'high', runtimeMode: 'auto', ...thread }],
-    }, assignments: [], queue: [], activeThreadId: 'thread', activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false,
-    pendingRequest: '', globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' }, voice: { status: 'off', error: null, action: 'none', revision: 0 },
-    credentials: { reasoning: false, grokSpeech: false, secure: true }, reasoningAccounts: [],
-  }
+    },
+    topLevel: { assignments: [], queue: [], activeThreadId: 'thread', activeProjectId: null } })
 }
 export function mount(state = fixture()) {
   const command = vi.fn(async () => state)

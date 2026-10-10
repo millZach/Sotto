@@ -1,4 +1,5 @@
 import { setPromptText, promptText } from './helpers/promptEditor'
+import { deferred } from '../../fixtures/deferred'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -66,7 +67,7 @@ describe('thread composer recovery', () => {
     const f = questionFixture()
     const { thread } = f
     let finish!: (result: AgentState | null) => void
-    f.command.mockImplementation(async request => request.type === 'answer' ? new Promise(done => { finish = done }) : f.state)
+    f.command.mockImplementation(async request => request.type === 'answer' ? (() => { const pending = deferred<AgentState | null>(); finish = pending.resolve; return pending.promise })() : f.state)
     const view = render(f.composer(thread.id))
     const answer = screen.getByRole('textbox', { name: 'Your answer' })
     setPromptText(answer, 'Go left')
@@ -92,7 +93,7 @@ describe('thread composer recovery', () => {
     const f = questionFixture()
     const { thread } = f
     let finish!: (result: AgentState | null) => void
-    f.command.mockImplementation(async request => request.type === 'answer' ? new Promise(done => { finish = done }) : f.state)
+    f.command.mockImplementation(async request => request.type === 'answer' ? (() => { const pending = deferred<AgentState | null>(); finish = pending.resolve; return pending.promise })() : f.state)
     const view = render(f.composer(thread.id))
     setPromptText(screen.getByRole('textbox', { name: 'Your answer' }), 'Go left')
     fireEvent.keyDown(screen.getByRole('textbox', { name: 'Your answer' }), { key: 'Enter' })

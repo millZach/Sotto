@@ -1,27 +1,13 @@
+import { agentCommand as command, agentState as state } from './support/agentAccess'
 import { join } from 'node:path'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { expect, test, type Page } from '@playwright/test'
-import type { AgentCommand, AgentCommandReceipt, AgentState } from '../../src/shared/agents'
-import type { SottoBridge, SottoWidgetBridge } from '../../src/shared/contracts'
+import type { SottoWidgetBridge } from '../../src/shared/contracts'
 import { closeSotto, launchSottoWithVoice, userMessageTexts } from './support/sottoLaunch'
 import { completeVoiceJourneySetup, openVoiceJourneyAgents } from './support/voiceJourney'
 
 const evidence = evidenceDirectory('artifacts/voice-journey')
 
-async function command(page: Page, request: AgentCommand): Promise<AgentCommandReceipt> {
-  return page.evaluate(async value => {
-    const bridge = (globalThis as unknown as { sotto: SottoBridge }).sotto.agents
-    if (!bridge) throw new Error('Agent bridge unavailable')
-    return bridge.command(value)
-  }, request)
-}
-async function state(page: Page): Promise<AgentState> {
-  return page.evaluate(async () => {
-    const bridge = (globalThis as unknown as { sotto: SottoBridge }).sotto.agents
-    if (!bridge) throw new Error('Agent bridge unavailable')
-    return bridge.get()
-  })
-}
 async function speak(page: Page, text: string): Promise<void> {
   await page.evaluate(value => {
     const target = globalThis as unknown as {

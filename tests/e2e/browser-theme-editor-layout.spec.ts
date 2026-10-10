@@ -1,6 +1,7 @@
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { captureSotto } from './support/sottoCapture'
 import { createServer } from 'node:http'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
@@ -17,7 +18,7 @@ type Mode = 'dark' | 'light'
 type Box = { x: number; y: number; width: number; height: number }
 
 async function ownedProfile(prefix: string): Promise<string> {
-  const profile = await mkdtemp(join(tmpdir(), prefix))
+  const profile = (await ownedE2EProfile({ prefix: prefix })).directory
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'dark', accent: 'blue' }))
   return profile
 }
@@ -39,20 +40,11 @@ async function composed(launched: LaunchedSotto, name: string): Promise<void> {
   await mkdir(SHOTS, { recursive: true })
   const title = `Sotto visual fixes ${name}`
   await launched.app.evaluate(({ BrowserWindow }, title) => {
-    const window = BrowserWindow.getAllWindows().find(candidate => candidate.webContents.getURL().endsWith('/index.html'))!
-    window.setTitle(title)
-    window.show()
+    const window = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().endsWith('/index.html'))!
+    window.setTitle(title); window.show()
   }, title)
   await new Promise(done => setTimeout(done, 700))
-  const png = await launched.app.evaluate(async ({ BrowserWindow, desktopCapturer, screen }, title) => {
-    const bounds = BrowserWindow.getAllWindows().find(candidate => candidate.getTitle() === title)!.getBounds()
-    const scale = screen.getDisplayMatching(bounds).scaleFactor
-    const sources = await desktopCapturer.getSources({ types: ['window'], thumbnailSize: { width: Math.round(bounds.width * scale), height: Math.round(bounds.height * scale) } })
-    const source = sources.find(candidate => candidate.name === title)
-    if (!source) throw new Error(`No window capture named ${title}`)
-    return source.thumbnail.toPNG().toString('base64')
-  }, title)
-  await writeFile(join(SHOTS, `${name}.png`), Buffer.from(png, 'base64'))
+  await captureSotto(launched, join(SHOTS, `${name}.png`), { mode: 'native-window', title, retries: 0, retryDelayMs: 500 })
 }
 
 async function hostViews(app: ElectronApplication): Promise<{ url: string; id: number; bounds: Electron.Rectangle }[]> {
@@ -255,7 +247,7 @@ test('shows the live page beside a minimized theme editor, and steps aside under
     test.info().annotations.push({ type: 'geometry', description: JSON.stringify({ resting, restingOverlaps, wideOverlaps, watchingExternal }) })
   } finally {
     await closeSotto(launched)
-    await rm(launched.userData, { recursive: true, force: true }).catch(() => undefined)
+    await removeOwnedE2EProfile(launched.userData).catch(() => undefined)
     await new Promise(done => server.close(done))
   }
 })

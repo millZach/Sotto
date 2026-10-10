@@ -1,3 +1,4 @@
+import { threadsStateFixture } from '../../fixtures/agentState'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -12,7 +13,10 @@ const ready: WorkingCopyThread = { id: 'thread-1', nativeSessionStarted: false, 
 const failed: WorkingCopyThread = { id: 'thread-1', nativeSessionStarted: false,
   worktree: { mode: 'independent', status: 'error', path: worktreePath, repositoryRoot: project.path, branch, error: 'This Git repository has no commit to branch from.' } }
 function snapshot(error: string | null = null): AgentState {
-  return { configuration: defaultAgentConfiguration(), connection: 'connected', error } as unknown as AgentState
+  return threadsStateFixture({ cloneOverrides: false,
+    configuration: defaultAgentConfiguration(),
+    host: { projects: [], threads: [], models: [] },
+    topLevel: { assignments: [], queue: [], activeThreadId: null, activeProjectId: null, error } })
 }
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 

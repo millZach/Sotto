@@ -1,4 +1,5 @@
 import { expectPromptText, fillPrompt, promptField } from './support/prompt'
+import { agentState } from './support/agentAccess'
 import { join } from 'node:path'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { readFile } from 'node:fs/promises'
@@ -54,7 +55,7 @@ test('pasting screenshots previews, sends image-only input, and queues another s
     await prompt.press('Enter')
     const queue = page.getByRole('region', { name: 'Queued messages' })
     await expect(queue).toContainText('Check this next.')
-    const state = await page.evaluate(async () => window.sotto!.agents!.get())
+    const state = await agentState(page)
     expect(state.followups).toContainEqual(expect.objectContaining({ attachments: [expect.objectContaining({ name: 'Next screenshot.png' })] }))
     expect(state.assignments).toEqual([])
     await page.screenshot({ path: join(evidence, 'sent-and-queued.png'), animations: 'disabled' })

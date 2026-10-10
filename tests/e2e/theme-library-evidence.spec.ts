@@ -1,11 +1,9 @@
 import { fillPrompt, promptField } from './support/prompt'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { resizeContentWindow } from './support/sottoWindow'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-
 import { expect, test, type Locator, type Page } from '@playwright/test'
-
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { defaultAgentConfiguration } from '../../src/shared/agents'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../src/shared/settings'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
@@ -30,7 +28,7 @@ const SIZES = [
 ] as const
 
 async function createProfile(settings: Partial<AppSettings> = {}): Promise<string> {
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-themes-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-themes-' })).directory
   // Seeded before launch, so the first frame is the finished app, not onboarding.
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, ...settings }), 'utf8')
   await writeFile(join(profile, 'agents.json'), JSON.stringify({
@@ -42,13 +40,7 @@ async function createProfile(settings: Partial<AppSettings> = {}): Promise<strin
 }
 
 async function setWindowSize(launched: LaunchedSotto, width: number, height: number): Promise<void> {
-  await launched.app.evaluate(({ BrowserWindow }, size) => {
-    const window = BrowserWindow.getAllWindows().find(candidate => candidate.webContents.getURL().endsWith('/index.html'))!
-    // The minimum is on the frame; lowering it lets the content be exactly the smallest supported size.
-    window.setMinimumSize(400, 300)
-    window.setContentSize(size.width, size.height)
-  }, { width, height })
-  await expect.poll(() => launched.page.evaluate(() => [window.innerWidth, window.innerHeight])).toEqual([width, height])
+  await resizeContentWindow(launched, width, height, [400, 300])
 }
 
 async function settled(page: Page): Promise<void> {
@@ -100,7 +92,7 @@ test('themes: imports JSON with comments and trailing commas by paste and file',
     await shot(page, 'jsonc-imports', section.locator('.theme-halves'))
   } finally {
     await closeSotto(launched)
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 })
 
@@ -388,7 +380,7 @@ test('themes: halves, system, contrast, glass, editor, inspector, import, Open V
   } finally {
     await writeFile(resolve(artifacts, 'journey-notes.txt'), `${notes.join('\n')}\n`, 'utf8').catch(() => undefined)
     if (launched !== undefined) await closeSotto(launched)
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 })
 
@@ -456,7 +448,7 @@ test('themes: a spotlight over a drawn diagram goes quiet, and still follows new
     await writeFile(resolve(artifacts, 'inspector-diagram-notes.txt'), `Idle for 2600 ms with Background spotlit over a drawn diagram: ${JSON.stringify(idle)}.\nA second reply refreshed the spotlight, then the page went quiet again.\n`, 'utf8')
   } finally {
     if (launched !== undefined) await closeSotto(launched)
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 })
 
@@ -539,6 +531,6 @@ test('themes: a minimized editor is one row that leaves Send and the page links 
     await expect(editor).toHaveCount(0)
   } finally {
     if (launched !== undefined) await closeSotto(launched)
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 })

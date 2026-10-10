@@ -7,7 +7,8 @@ import { type AgentHostSnapshot } from '../../../src/shared/agents'
 
 import { ThreadWorktrees } from '../../../src/main/agents/threadWorktrees'
 
-import { fixture, local, send, deferred } from '../../fixtures/workspaceTestFixture'
+import { fixture, local, send } from '../../fixtures/workspaceTestFixture'
+import { deferred } from '../../fixtures/deferred'
 
 describe("durable project/thread organization", () => {
   it('reads a folder for a refresh only once a send has set it up or put it back, so the refresh marks no error', async () => {
@@ -21,12 +22,12 @@ describe("durable project/thread organization", () => {
     // `git worktree add` makes the folder first and keeps the worktree locked until it is done, so an inspection
     // in between would be refused. The test holds Git there.
     let locked = false
-    let gitAtWork: { started: ReturnType<typeof deferred>; finish: ReturnType<typeof deferred> } | undefined
+    let gitAtWork: { started: ReturnType<typeof deferred<void>>; finish: ReturnType<typeof deferred<void>> } | undefined
     const worktreeAdd = async () => {
       const hold = gitAtWork
       await mkdir(checkout, { recursive: true })
       if (!hold) return
-      locked = true; hold.started.release(); await hold.finish.promise; locked = false
+      locked = true; hold.started.resolve(); await hold.finish.promise; locked = false
     }
     vi.spyOn(ThreadWorktrees.prototype, 'allocate').mockResolvedValue({ ...record, status: 'pending' })
     vi.spyOn(ThreadWorktrees.prototype, 'ensure').mockImplementation(async () => { await worktreeAdd(); return record })
@@ -46,7 +47,7 @@ describe("durable project/thread organization", () => {
     const first = f.host.execute(send())
     await hold.started.promise
     const refreshed = f.host.updateThreadWorktree('local', false)
-    gitAtWork = undefined; hold.finish.release()
+    gitAtWork = undefined; hold.finish.resolve()
     await Promise.all([first, refreshed])
     expect(worktree()?.status).toBe('ready'); expect(worktree()?.error).toBeUndefined()
     f.adapters.codex.state.threads.at(-1)!.status = 'idle'; f.adapters.codex.emit()
@@ -57,7 +58,7 @@ describe("durable project/thread organization", () => {
     const again = f.host.execute({ ...send(), commandId: 'again', messageId: 'again' })
     await hold.started.promise
     const refreshedAgain = f.host.updateThreadWorktree('local', false)
-    gitAtWork = undefined; hold.finish.release()
+    gitAtWork = undefined; hold.finish.resolve()
     // The send goes to the folder it put back, and the refresh after it finds that folder sound.
     await expect(again).resolves.toMatchObject({ accepted: true })
     await refreshedAgain

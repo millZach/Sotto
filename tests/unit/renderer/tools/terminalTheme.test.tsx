@@ -1,3 +1,4 @@
+import { deferred } from '../../../fixtures/deferred'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const xterm = vi.hoisted(() => ({ selection: 'terminal selection', range: { start: { x: 0, y: 0 }, end: { x: 18, y: 0 } }, instances: [] as { options: Record<string, unknown>; themes: unknown[]; key: (event: KeyboardEvent) => boolean; clearSelection: ReturnType<typeof vi.fn>; selectionChange: () => void }[] }))
@@ -105,7 +106,7 @@ afterEach(() => {
 it('keeps the terminal selection until copying succeeds and explains a failed copy', async () => {
   vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }))
   let fail!: (error: Error) => void
-  const deliverOutput = vi.fn(() => new Promise((_resolve, reject) => { fail = reject }))
+  const deliverOutput = vi.fn(() => { const pending = deferred<unknown>(); fail = pending.reject; return pending.promise })
   vi.stubGlobal('sotto', { deliverOutput })
   const onNotice = vi.fn()
   const view = createXtermView({ onInput() {}, onInterrupt() {}, onNotice }, { resolveColor: value => value })

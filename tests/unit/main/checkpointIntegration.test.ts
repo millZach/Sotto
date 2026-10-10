@@ -9,6 +9,7 @@ import { FilesService } from '../../../src/main/files/service'
 import { resolveFilesBinding } from '../../../src/main/files/binding'
 import type { GitActions } from '../../../src/main/agents/gitActions'
 import type { AgentControl } from '../../../src/main/agents/control'
+import { deferred } from '../../fixtures/deferred'
 
 it('excludes an unallocated worktree from shared-folder checkpoint guards while retaining active shared-thread protection', async () => {
   const f = await workspaceFixture()
@@ -44,9 +45,9 @@ it('excludes an unallocated worktree from shared-folder checkpoint guards while 
     // A revert holds the checkpoint queue while validating files. Git commands
     // hold the real host lane while consulting the integration guard.
     const internals = integration.checkpoints as unknown as { locks: Set<string>; serial<T>(work: () => Promise<T>): Promise<T> }
-    let release!: () => void, entered!: () => void
-    const paused = new Promise<void>(resolve => { release = resolve })
-    const checking = new Promise<void>(resolve => { entered = resolve })
+
+    const { promise: paused, resolve: release } = deferred<void>()
+    const { promise: checking, resolve: entered } = deferred<void>()
     const revert = internals.serial(async () => {
       internals.locks.add('ready'); entered(); await paused
       await f.host.rollbackThread('ready', 1, []).catch(() => undefined)

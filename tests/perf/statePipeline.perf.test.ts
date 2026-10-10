@@ -7,6 +7,9 @@
  *   Set SOTTO_PERF_BENCH=1 and SOTTO_PERF_DATA=<folder with workspace.json and attachment-previews.json>.
  *   npx vitest run tests/perf/statePipeline.perf.test.ts --maxWorkers=1
  */
+import { round } from '../fixtures/perfBench'
+import { upperMedian as median } from './support/statistics.mjs'
+import { threadsStateFixture } from '../fixtures/agentState'
 import { mkdtemp, readFile, copyFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -20,11 +23,6 @@ import { AttachmentStore } from '../../src/main/agents/attachmentStore'
 
 const ITERATIONS = 20
 
-function median(samples: number[]): number {
-  const sorted = [...samples].sort((a, b) => a - b)
-  return sorted[Math.floor(sorted.length / 2)]!
-}
-
 function time(work: () => void): number {
   const samples: number[] = []
   for (let index = 0; index < ITERATIONS; index++) {
@@ -36,14 +34,18 @@ function time(work: () => void): number {
 }
 
 function stateAround(host: AgentHostSnapshot): AgentState {
-  return {
-    configuration: defaultAgentConfiguration(), connection: 'connected', host,
-    assignments: [], queue: [], activeThreadId: host.threads[0]?.id ?? null, activeProjectId: host.projects[0]?.id ?? null,
-    draft: '', draftThreadId: null, composing: false, draftRequestId: null, draftAttachments: [], deliveredDrafts: [], threadDrafts: [], deliveries: [],
-    pendingRequest: '', globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' },
-    voice: { status: 'off', error: null, action: 'none', revision: 0 },
-    credentials: { reasoning: false, grokSpeech: false, secure: true }, reasoningAccounts: [],
-  }
+  return threadsStateFixture({
+    cloneOverrides: false,
+    configuration: defaultAgentConfiguration(),
+    host,
+    topLevel: {
+      connection: 'connected', assignments: [], queue: [], activeThreadId: host.threads[0]?.id ?? null, activeProjectId: host.projects[0]?.id ?? null,
+      draft: '', draftThreadId: null, composing: false, draftRequestId: null, draftAttachments: [], deliveredDrafts: [],
+      threadDrafts: [], deliveries: [], pendingRequest: '', globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' },
+      voice: { status: 'off', error: null, action: 'none', revision: 0 }, credentials: { reasoning: false, grokSpeech: false, secure: true },
+      reasoningAccounts: [],
+    },
+  })
 }
 
 describe('state pipeline cost', async () => {
@@ -61,105 +63,105 @@ describe('state pipeline cost', async () => {
   })
   afterAll(async () => { if (directory) await rm(directory, { recursive: true, force: true }) })
 
-  it.skipIf(!present)('reports the cost of one published state', async context => {
-    const workspace = JSON.parse(await readFile(join(directory, 'workspace.json'), 'utf8')) as { snapshot: AgentHostSnapshot }
-    await hydratePerfHistory(workspace.snapshot, directory)
-    // The attachment store is read too: a version 1 preview file on disk is converted by staging its images.
-    const content = new AttachmentStore(directory); await content.load()
-    const previews = new AttachmentPreviews(directory, content)
-    await previews.load()
-    const state = stateAround(workspace.snapshot)
-    const messages = state.host.threads.reduce((count, thread) => count + thread.messages.length, 0)
+  describe("requires SOTTO_PERF_BENCH=1 and SOTTO_PERF_DATA containing workspace.json", () => {
+    it.skipIf(!present)('reports the cost of one published state', async context => {
+      const workspace = JSON.parse(await readFile(join(directory, 'workspace.json'), 'utf8')) as { snapshot: AgentHostSnapshot }
+      await hydratePerfHistory(workspace.snapshot, directory)
+      // The attachment store is read too: a version 1 preview file on disk is converted by staging its images.
+      const content = new AttachmentStore(directory); await content.load()
+      const previews = new AttachmentPreviews(directory, content)
+      await previews.load()
+      const state = stateAround(workspace.snapshot)
+      const messages = state.host.threads.reduce((count, thread) => count + thread.messages.length, 0)
 
-    const clone = time(() => { structuredClone(state) })
-    const decorated = structuredClone(state)
-    const decorate = time(() => { previews.decorate(structuredClone(state).host) })
-    previews.decorate(decorated.host)
-    const bytes = serialize(decorated).byteLength
-    const bare = serialize(state).byteLength
-    const send = time(() => { serialize(decorated) })
-    const wire = serialize(decorated)
-    const receive = time(() => { deserialize(wire) })
-    const received = deserialize(wire) as unknown
-    // What preload does now: the state channel carries Sotto's own state from Sotto's own main
-    // process, so it is checked for shape alone. The schema parse it replaced is still measured,
-    // to keep what the structural guard buys visible.
-    const guard = time(() => { void (typeof received === 'object' && received !== null && 'host' in received) })
-    const parse = time(() => { agentStateSchema.safeParse(received) })
-    const total = clone + decorate + send + receive + guard
+      const clone = time(() => { structuredClone(state) })
+      const decorated = structuredClone(state)
+      const decorate = time(() => { previews.decorate(structuredClone(state).host) })
+      previews.decorate(decorated.host)
+      const bytes = serialize(decorated).byteLength
+      const bare = serialize(state).byteLength
+      const send = time(() => { serialize(decorated) })
+      const wire = serialize(decorated)
+      const receive = time(() => { deserialize(wire) })
+      const received = deserialize(wire) as unknown
+      // What preload does now: the state channel carries Sotto's own state from Sotto's own main
+      // process, so it is checked for shape alone. The schema parse it replaced is still measured,
+      // to keep what the structural guard buys visible.
+      const guard = time(() => { void (typeof received === 'object' && received !== null && 'host' in received) })
+      const parse = time(() => { agentStateSchema.safeParse(received) })
+      const total = clone + decorate + send + receive + guard
 
-    const report = {
-      threads: state.host.threads.length, messages,
-      payloadKB: Math.round(bytes / 1024), payloadWithoutPreviewsKB: Math.round(bare / 1024),
-      ms: { clone: round(clone), decorate: round(decorate), serialize: round(send), deserialize: round(receive),
-        schemaParse: round(guard), schemaParseSkipped: round(parse), total: round(total) },
-    }
-    console.info(`state pipeline: ${JSON.stringify(report)}`)
-    expect(report.threads).toBeGreaterThan(0)
+      const report = {
+        threads: state.host.threads.length, messages,
+        payloadKB: Math.round(bytes / 1024), payloadWithoutPreviewsKB: Math.round(bare / 1024),
+        ms: { clone: round(clone, 2), decorate: round(decorate, 2), serialize: round(send, 2), deserialize: round(receive, 2),
+          schemaParse: round(guard, 2), schemaParseSkipped: round(parse, 2), total: round(total, 2) },
+      }
+      console.info(`state pipeline: ${JSON.stringify(report)}`)
+      expect(report.threads).toBeGreaterThan(0)
 
-    // The shell alone: what every provider event now costs, with no thread's history in it and so
-    // nothing for the preview decoration to do.
-    const shellClone = time(() => { structuredClone(agentShell(state)) })
-    const shell = structuredClone(agentShell(state))
-    const shellBytes = serialize(shell).byteLength
-    const shellSend = time(() => { serialize(shell) })
-    const shellWire = serialize(shell)
-    const shellReceive = time(() => { deserialize(shellWire) })
-    const shellReceived = deserialize(shellWire) as unknown
-    const shellGuard = time(() => { void (typeof shellReceived === 'object' && shellReceived !== null && 'host' in shellReceived) })
-    const shellTotal = shellClone + shellSend + shellReceive + shellGuard
+      // The shell alone: what every provider event now costs, with no thread's history in it and so
+      // nothing for the preview decoration to do.
+      const shellClone = time(() => { structuredClone(agentShell(state)) })
+      const shell = structuredClone(agentShell(state))
+      const shellBytes = serialize(shell).byteLength
+      const shellSend = time(() => { serialize(shell) })
+      const shellWire = serialize(shell)
+      const shellReceive = time(() => { deserialize(shellWire) })
+      const shellReceived = deserialize(shellWire) as unknown
+      const shellGuard = time(() => { void (typeof shellReceived === 'object' && shellReceived !== null && 'host' in shellReceived) })
+      const shellTotal = shellClone + shellSend + shellReceive + shellGuard
 
-    // One viewed thread's history, which is what a streaming burst actually moves now.
-    const weight = (thread: (typeof state.host.threads)[number]): number => thread.messages.length + (thread.activities?.length ?? 0)
-    const busiest = state.host.threads.filter(thread => thread.messages.length > 0).sort((first, second) => weight(second) - weight(first))[0]!
-    if (!busiest) context.skip('The profile has no retained messages to measure streaming.')
-    const detail = { threadId: busiest.id, revision: 1, messages: structuredClone(busiest.messages), activities: structuredClone(busiest.activities ?? []) }
-    previews.decorate({ ...state.host, threads: [{ ...busiest, messages: detail.messages }] })
-    const detailClone = time(() => { structuredClone(detail) })
-    const detailBytes = serialize(detail).byteLength
+      // One viewed thread's history, which is what a streaming burst actually moves now.
+      const weight = (thread: (typeof state.host.threads)[number]): number => thread.messages.length + (thread.activities?.length ?? 0)
+      const busiest = state.host.threads.filter(thread => thread.messages.length > 0).sort((first, second) => weight(second) - weight(first))[0]!
+      if (!busiest) context.skip('The profile has no retained messages to measure streaming.')
+      const detail = { threadId: busiest.id, revision: 1, messages: structuredClone(busiest.messages), activities: structuredClone(busiest.activities ?? []) }
+      previews.decorate({ ...state.host, threads: [{ ...busiest, messages: detail.messages }] })
+      const detailClone = time(() => { structuredClone(detail) })
+      const detailBytes = serialize(detail).byteLength
 
-    const shellReport = {
-      threads: shell.host.threads.length, messages: 0,
-      payloadKB: Math.round(shellBytes / 1024),
-      detailThread: busiest.id.slice(0, 8), detailMessages: busiest.messages.length,
-      detailActivities: busiest.activities?.length ?? 0,
-      detailPayloadKB: Math.round(detailBytes / 1024), detailCloneMs: round(detailClone),
-      ms: { clone: round(shellClone), decorate: 0, serialize: round(shellSend), deserialize: round(shellReceive),
-        schemaParse: round(shellGuard), total: round(shellTotal) },
-    }
-    console.info(`state pipeline (shell): ${JSON.stringify(shellReport)}`)
-    expect(shellBytes).toBeLessThan(bare)
+      const shellReport = {
+        threads: shell.host.threads.length, messages: 0,
+        payloadKB: Math.round(shellBytes / 1024),
+        detailThread: busiest.id.slice(0, 8), detailMessages: busiest.messages.length,
+        detailActivities: busiest.activities?.length ?? 0,
+        detailPayloadKB: Math.round(detailBytes / 1024), detailCloneMs: round(detailClone, 2),
+        ms: { clone: round(shellClone, 2), decorate: 0, serialize: round(shellSend, 2), deserialize: round(shellReceive, 2),
+          schemaParse: round(shellGuard, 2), total: round(shellTotal, 2) },
+      }
+      console.info(`state pipeline (shell): ${JSON.stringify(shellReport)}`)
+      expect(shellBytes).toBeLessThan(bare)
 
-    // One streaming chunk into that thread. Before: the whole detail again, copied, sent and taken back
-    // apart. After: the difference from the revision the window holds, diffed at the end of the window
-    // and applied against what it already has.
-    const held: AgentThreadDetail = { threadId: busiest.id, revision: 1, messages: detail.messages, activities: detail.activities }
-    const chunk = 'x'.repeat(40)
-    const last = held.messages.length - 1
-    const grown = { messages: held.messages.map((message, index) => index === last ? { ...message, text: message.text + chunk } : message),
-      activities: held.activities }
-    const fullSend = time(() => { serialize(detail) })
-    const fullWire = serialize(detail)
-    const fullReceive = time(() => { deserialize(fullWire) })
-    const diff = time(() => { diffAgentThreadDetail(held, grown, 2) })
-    const streamed = diffAgentThreadDetail(held, grown, 2)!
-    const streamedWire = serialize(streamed)
-    const streamedSend = time(() => { serialize(streamed) })
-    const streamedReceive = time(() => { deserialize(streamedWire) })
-    const apply = time(() => { applyAgentThreadDetailDelta(held, streamed) })
+      // One streaming chunk into that thread. Before: the whole detail again, copied, sent and taken back
+      // apart. After: the difference from the revision the window holds, diffed at the end of the window
+      // and applied against what it already has.
+      const held: AgentThreadDetail = { threadId: busiest.id, revision: 1, messages: detail.messages, activities: detail.activities }
+      const chunk = 'x'.repeat(40)
+      const last = held.messages.length - 1
+      const grown = { messages: held.messages.map((message, index) => index === last ? { ...message, text: message.text + chunk } : message),
+        activities: held.activities }
+      const fullSend = time(() => { serialize(detail) })
+      const fullWire = serialize(detail)
+      const fullReceive = time(() => { deserialize(fullWire) })
+      const diff = time(() => { diffAgentThreadDetail(held, grown, 2) })
+      const streamed = diffAgentThreadDetail(held, grown, 2)!
+      const streamedWire = serialize(streamed)
+      const streamedSend = time(() => { serialize(streamed) })
+      const streamedReceive = time(() => { deserialize(streamedWire) })
+      const apply = time(() => { applyAgentThreadDetailDelta(held, streamed) })
 
-    const streamingReport = {
-      thread: busiest.id.slice(0, 8), messages: held.messages.length, activities: held.activities!.length,
-      full: { payloadKB: Math.round(detailBytes / 1024), produceMs: round(detailClone), serializeMs: round(fullSend),
-        deserializeMs: round(fullReceive), totalMs: round(detailClone + fullSend + fullReceive) },
-      delta: { payloadBytes: streamedWire.byteLength, produceMs: round(diff), serializeMs: round(streamedSend),
-        deserializeMs: round(streamedReceive), applyMs: round(apply),
-        totalMs: round(diff + streamedSend + streamedReceive + apply) },
-    }
-    console.info(`state pipeline (streaming delta): ${JSON.stringify(streamingReport)}`)
-    expect(streamedWire.byteLength).toBeLessThan(detailBytes)
-    expect(applyAgentThreadDetailDelta(held, streamed)!.messages.at(-1)!.text.endsWith(chunk)).toBe(true)
+      const streamingReport = {
+        thread: busiest.id.slice(0, 8), messages: held.messages.length, activities: held.activities!.length,
+        full: { payloadKB: Math.round(detailBytes / 1024), produceMs: round(detailClone, 2), serializeMs: round(fullSend, 2),
+          deserializeMs: round(fullReceive, 2), totalMs: round(detailClone + fullSend + fullReceive, 2) },
+        delta: { payloadBytes: streamedWire.byteLength, produceMs: round(diff, 2), serializeMs: round(streamedSend, 2),
+          deserializeMs: round(streamedReceive, 2), applyMs: round(apply, 2),
+          totalMs: round(diff + streamedSend + streamedReceive + apply, 2) },
+      }
+      console.info(`state pipeline (streaming delta): ${JSON.stringify(streamingReport)}`)
+      expect(streamedWire.byteLength).toBeLessThan(detailBytes)
+      expect(applyAgentThreadDetailDelta(held, streamed)!.messages.at(-1)!.text.endsWith(chunk)).toBe(true)
+    })
   })
 })
-
-function round(value: number): number { return Math.round(value * 100) / 100 }

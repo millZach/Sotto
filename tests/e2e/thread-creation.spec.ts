@@ -1,4 +1,5 @@
 import { expectPromptText, fillPrompt, promptField } from './support/prompt'
+import { agentState } from './support/agentAccess'
 import { join } from 'node:path'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { expect, test } from '@playwright/test'
@@ -40,7 +41,7 @@ test('creates a project thread while the hidden coordinator retains another thre
       const state = await window.sotto!.agents!.get()
       return !state.globalLaneBusy && state.host.threads.some(thread => thread.title === 'New thread' && thread.projectId === state.activeProjectId)
     })).toBe(true)
-    const state = await page.evaluate(async () => window.sotto!.agents!.get())
+    const state = await agentState(page)
     expect(state.error).toBeNull()
     expect(state.host.threads).toContainEqual(expect.objectContaining({ id: state.activeThreadId, title: 'New thread' }))
     const key = await hostKeys(page)
@@ -49,7 +50,7 @@ test('creates a project thread while the hidden coordinator retains another thre
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
     await expect(page.getByLabel('Thread transcript')).toContainText('Only send this new prompt')
     await expectPromptText(promptField(page), '')
-    expect(await page.evaluate(async () => window.sotto!.agents!.get())).toMatchObject({ draft: 'Keep the other thread draft', draftThreadId: key('workshop') })
+    expect(await agentState(page)).toMatchObject({ draft: 'Keep the other thread draft', draftThreadId: key('workshop') })
     await page.screenshot({ animations: 'disabled', path: join(savedDraftEvidence, 'created-and-sent.png') })
   } finally { await closeSotto(launched) }
 })
@@ -129,7 +130,7 @@ test('creates a thread in a centered popup, configures it, and sends file and pa
     // Pending transcript content appears before the native delivery receipt clears the draft.
     await expect(page.getByLabel('Attached screenshots').getByRole('img', { name: 'pasted.png' })).toHaveCount(0)
     await expect(page.getByLabel('Thread transcript').getByRole('img', { name: 'pasted.png' })).toBeVisible()
-    const state = await page.evaluate(async () => window.sotto!.agents!.get())
+    const state = await agentState(page)
     // The shell summarises histories; the detail bridge carries the messages themselves.
     const created = (await page.evaluate(async id => window.sotto!.agents!.threadDetail!(id), state.activeThreadId!))!
     expect(created.messages.filter(message => message.role === 'user')).toHaveLength(2)

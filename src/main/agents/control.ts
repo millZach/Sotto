@@ -3943,12 +3943,16 @@ export class AgentControl {
     this.automaticConnects.add(command)
     return command
   }
-  /** On a Connect providers press, point a missing selection at the clients that are installed, then remember that choice. */
+  /**
+   * On a Connect providers press, turn on every client installed here that the user has not turned off, then remember
+   * that choice. What was found is kept in the state, so setup can tell a client that is missing from one that is off.
+   */
   private async useInstalledProviders(): Promise<void> {
     const detect = this.dependencies.installedProviders
     if (!detect) return
     let installed: readonly ProviderId[]
     try { installed = await detect() } catch { return }
+    this.state.installedProviders = [...new Set(installed)]
     const selection = selectInstalledProviders(this.state.configuration, installed)
     if (!selection) return
     this.state.configuration = { ...this.state.configuration, ...selection }

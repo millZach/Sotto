@@ -20,7 +20,7 @@ const SENDS = 6
  * window's draft store, the coordinator and the real adapter over its fake client, with the provider's thread
  * store grown to the size it was on the development machine. Each run is a fresh process on a fresh profile.
  */
-describe.skipIf(!PERF_BENCH)('durable writes between Send and the provider hearing the prompt', () => {
+describe.skipIf(!PERF_BENCH)("durable writes between Send and the provider hearing the prompt (timing benchmark; requires SOTTO_PERF_BENCH=1)", () => {
   let root: string
   const bundles: Record<string, string> = {}
   beforeAll(async () => {

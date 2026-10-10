@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { GrokSpeechService } from '../../../src/main/agents/grokSpeech'
+import { deferred } from '../../fixtures/deferred'
 
 function wave(): Buffer {
   const audio = Buffer.alloc(48)
@@ -153,7 +154,7 @@ describe('GrokSpeechService', () => {
   it('cancels promptly and allows a new request even when the old network ignores cancellation', async () => {
     let release!: (response: Response) => void
     const fetchFn = vi.fn<typeof fetch>()
-      .mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+      .mockImplementationOnce(() => { const pending = deferred<Response>(); release = pending.resolve; return pending.promise })
       .mockImplementationOnce(async () => audioResponse())
     const { service } = setup(fetchFn)
     const first = service.synthesize('Old reply', 'eve')
@@ -173,7 +174,8 @@ describe('GrokSpeechService', () => {
     let releaseCatalog!: (response: Response) => void
     const fetchFn = vi.fn<typeof fetch>().mockImplementation((url, request) => {
       signals.push(request!.signal!)
-      if (String(url).endsWith('/voices')) return new Promise(resolve => { releaseCatalog = resolve })
+      const pending1 = deferred<Response>();
+      if (String(url).endsWith('/voices')) { releaseCatalog = pending1.resolve; return pending1.promise }
       return new Promise(() => undefined)
     })
     const { service } = setup(fetchFn)

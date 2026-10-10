@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { deferred } from '../fixtures/deferred'
 import { expect, it, vi } from 'vitest'
 import type { ThreadReadPurpose } from '../../src/main/agents/host'
 import { desktopWindowClient } from '../../src/main/agents/hostService'
@@ -53,9 +54,9 @@ it.each(['answer', 'send', 'voice'] as const)('preserves a new %s answer reserva
     Object.assign(f.host, { refreshThread: refresh })
     const control = f.control as unknown as { persist(): Promise<void> }
     const persist = control.persist.bind(control)
-    let entered: () => void = () => undefined
-    const reserved = new Promise<void>(resolve => { entered = resolve })
-    const blocked = new Promise<void>(resolve => { release = resolve })
+    const { promise: reserved, resolve: entered } = deferred<void>()
+    const { promise: blocked, resolve: blockedResolve } = deferred<void>()
+    release = blockedResolve
     vi.spyOn(control, 'persist').mockImplementationOnce(async () => { entered(); await blocked; await persist() })
     answer = route === 'voice' ? f.command({ type: 'utterance', text: 'send it' }) : route === 'send' ? f.command({ type: 'send' })
       : f.command({ type: 'answer', threadId: target.threadId, requestId: request.id, answer: '', questionAnswers: { q: { optionIds: [], text: 'Blue' } } })
@@ -82,9 +83,9 @@ it.each([['answer', false, 'send it'], ['answer', true, 'send it'], ['send', fal
     if (route !== 'answer') await f.command({ type: 'assign', threadId: target.threadId, instruction: 'Work' })
     f.host.event({ type: 'question', threadId: target.threadId, text: '', request: { ...request, delivery: undefined, answerRetryReady: true } })
     if (route !== 'answer') await f.command({ type: 'select-thread', threadId: target.threadId })
-    let entered: () => void = () => undefined
-    const started = new Promise<void>(resolve => { entered = resolve })
-    const gate = new Promise<void>(resolve => { release = resolve })
+    const { promise: started, resolve: entered } = deferred<void>()
+    const { promise: gate, resolve: gateResolve } = deferred<void>()
+    release = gateResolve
     if (route === 'answer') {
       Object.assign(f.host, { loadEarlierMessages: async () => { entered(); await gate; return f.host.snapshot() } })
       predecessor = f.command({ type: 'load-earlier-messages', threadId: target.threadId })
@@ -94,9 +95,9 @@ it.each([['answer', false, 'send it'], ['answer', true, 'send it'], ['send', fal
       predecessor = f.command({ type: 'compose', text: 'Blue' })
     }
     await started
-    let readEntered: () => void = () => undefined
-    const reading = new Promise<void>(resolve => { readEntered = resolve })
-    const readGate = new Promise<void>(resolve => { releaseRead = resolve })
+    const { promise: reading, resolve: readEntered } = deferred<void>()
+    const { promise: readGate, resolve: readGateResolve } = deferred<void>()
+    releaseRead = readGateResolve
     const refresh = vi.fn(async (id: string, purpose?: ThreadReadPurpose) => {
       if (duringRead && id === target.threadId && purpose?.retryUncertainAnswers) { readEntered(); await readGate }
       return f.host.snapshot()
@@ -137,9 +138,9 @@ it('keeps unrelated global work, native Checks and direct answers independent of
     const other = { ...target, threadId: 'docs', requestId: 'other-question' }
     f.host.event({ type: 'question', threadId: target.threadId, text: '', request })
     f.host.event({ type: 'question', threadId: other.threadId, text: '', request: { ...request, id: other.requestId, delivery: undefined } })
-    let entered: () => void = () => undefined
-    const started = new Promise<void>(resolve => { entered = resolve })
-    const blocked = new Promise<void>(resolve => { release = resolve })
+    const { promise: started, resolve: entered } = deferred<void>()
+    const { promise: blocked, resolve: blockedResolve } = deferred<void>()
+    release = blockedResolve
     const refresh = vi.fn(async (id: string) => {
       if (id === target.threadId) { entered(); await blocked }
       return f.host.snapshot()
@@ -179,9 +180,9 @@ it.each(['empty', 'different'] as const)('owns a queued socket Send by its selec
       await f.command({ type: 'compose', text: 'Green' })
     }
     const client = { clientId: 'paired-client', user: 'User', transport: 'socket' as const, selectedThreadId: target.threadId }
-    let entered: () => void = () => undefined
-    const started = new Promise<void>(resolve => { entered = resolve })
-    const gate = new Promise<void>(resolve => { release = resolve })
+    const { promise: started, resolve: entered } = deferred<void>()
+    const { promise: gate, resolve: gateResolve } = deferred<void>()
+    release = gateResolve
     // A snapshot's save runs once the code that accepted it has run on. Let it start, so the gate below holds the
     // save this test is about.
     await new Promise<void>(resolve => setImmediate(resolve))
@@ -224,9 +225,9 @@ it.each(['send', 'voice', 'socket', 'socket-legacy'] as const)(
       text: 'Saved text', requestId: null })
     const client = route.startsWith('socket')
       ? { clientId: 'paired-client', user: 'User', transport: 'socket' as const, selectedThreadId: target.threadId } : desktopWindowClient()
-    let entered: () => void = () => undefined
-    const started = new Promise<void>(resolve => { entered = resolve })
-    const gate = new Promise<void>(resolve => { release = resolve })
+    const { promise: started, resolve: entered } = deferred<void>()
+    const { promise: gate, resolve: gateResolve } = deferred<void>()
+    release = gateResolve
     const control = f.control as unknown as { persist(): Promise<void> }, persist = control.persist.bind(control)
     vi.spyOn(control, 'persist').mockImplementationOnce(async () => { entered(); await gate; await persist() })
     pending.push(f.command({ type: 'configure', patch: { orbColor: 'ice' } }))
@@ -266,9 +267,9 @@ it.each(['send', 'voice'] as const)('keeps queued %s on its admitted owner when 
     f.host.event({ type: 'question', threadId: other.threadId, text: '', request: { ...request, id: other.requestId, delivery: undefined } })
     const execute = vi.spyOn(f.host, 'execute').mockResolvedValueOnce({ accepted: false, uncertain: true })
     await f.command({ type: 'answer', threadId: other.threadId, requestId: other.requestId, answer: 'Earlier answer' })
-    let entered: () => void = () => undefined
-    const started = new Promise<void>(resolve => { entered = resolve })
-    const gate = new Promise<void>(resolve => { release = resolve })
+    const { promise: started, resolve: entered } = deferred<void>()
+    const { promise: gate, resolve: gateResolve } = deferred<void>()
+    release = gateResolve
     const control = f.control as unknown as { persist(): Promise<void> }, persist = control.persist.bind(control)
     vi.spyOn(control, 'persist').mockImplementationOnce(async () => { entered(); await gate; await persist() })
     pending.push(f.command({ type: 'configure', patch: { orbColor: 'ice' } }))
@@ -304,9 +305,9 @@ it.each(['send', 'voice', 'socket'] as const)('allows Compose then %s queued on 
     await f.command({ type: 'assign', threadId: target.threadId, instruction: 'Work' })
     await f.command({ type: 'select-thread', threadId: target.threadId })
     f.host.event({ type: 'question', threadId: target.threadId, text: '', request: { ...request, delivery: undefined } })
-    let entered: () => void = () => undefined
-    const started = new Promise<void>(resolve => { entered = resolve })
-    const gate = new Promise<void>(resolve => { release = resolve })
+    const { promise: started, resolve: entered } = deferred<void>()
+    const { promise: gate, resolve: gateResolve } = deferred<void>()
+    release = gateResolve
     const control = f.control as unknown as { persist(): Promise<void> }, persist = control.persist.bind(control)
     vi.spyOn(control, 'persist').mockImplementationOnce(async () => { entered(); await gate; await persist() })
     pending.push(f.command({ type: 'configure', patch: { orbColor: 'ice' } }))
@@ -339,11 +340,12 @@ it.each(['local', 'socket'] as const)('preserves an unresolved answer across the
     const execute = vi.spyOn(f.host, 'execute').mockResolvedValueOnce({ accepted: false, uncertain: true })
     await f.command({ type: 'answer', threadId: target.threadId, requestId: request.id, answer: 'Earlier answer' })
     const original = (await f.disk()).outbox
-    let readEntered: () => void = () => undefined, composeEntered: () => void = () => undefined
-    const reading = new Promise<void>(resolve => { readEntered = resolve })
-    const readGate = new Promise<void>(resolve => { releaseRead = resolve })
-    const composing = new Promise<void>(resolve => { composeEntered = resolve })
-    const composeGate = new Promise<void>(resolve => { releaseCompose = resolve })
+    const { promise: reading, resolve: readEntered } = deferred<void>()
+    const { promise: readGate, resolve: readGateResolve } = deferred<void>()
+    releaseRead = readGateResolve
+    const { promise: composing, resolve: composeEntered } = deferred<void>()
+    const { promise: composeGate, resolve: composeGateResolve } = deferred<void>()
+    releaseCompose = composeGateResolve
     Object.assign(f.host, { refreshThread: vi.fn(async (id: string, purpose?: ThreadReadPurpose) => {
       const snapshot = await f.host.snapshot()
       if (purpose?.retryUncertainAnswers) {

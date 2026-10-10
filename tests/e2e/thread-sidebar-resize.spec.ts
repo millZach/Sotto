@@ -1,4 +1,5 @@
 import { expectPromptText, fillPrompt, promptField } from './support/prompt'
+import { resizeContentWindow } from './support/sottoWindow'
 import { join } from 'node:path'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { expect, test, type Locator, type Page } from '@playwright/test'
@@ -7,12 +8,7 @@ import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } fr
 const evidence = evidenceDirectory('artifacts/thread-sidebar')
 
 async function resize(launched: LaunchedSotto, width: number, height: number): Promise<void> {
-  await launched.app.evaluate(({ BrowserWindow }, size) => {
-    const window = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().endsWith('/index.html'))!
-    window.setMinimumSize(800, 540)
-    window.setContentSize(size.width, size.height)
-  }, { width, height })
-  await expect.poll(() => launched.page.evaluate(() => `${innerWidth}x${innerHeight}`)).toBe(`${width}x${height}`)
+  await resizeContentWindow(launched, width, height, [800, 540])
 }
 
 async function prepare(launched: LaunchedSotto): Promise<void> {
