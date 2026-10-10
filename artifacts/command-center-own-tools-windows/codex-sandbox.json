@@ -1,0 +1,25 @@
+{
+  "zeroModelTurns": true,
+  "failure": true,
+  "rejection": {
+    "code": -32603,
+    "alreadyConfigured": false,
+    "failedSetup": true,
+    "restricted": false,
+    "missingSetup": false,
+    "readOnlyUnsupported": false,
+    "helperMissing": false,
+    "unknownVariant": false,
+    "missingField": false,
+    "sandbox": true,
+    "windows": true,
+    "denied": false,
+    "accessRequired": false,
+    "accessMissing": false,
+    "sandboxSetup": true,
+    "unsupported": false
+  },
+  "unchanged": true,
+  "denied": false,
+  "sandboxError": false
+}

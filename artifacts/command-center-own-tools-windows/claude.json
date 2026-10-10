@@ -1,0 +1,102 @@
+{
+  "provider": "claude",
+  "platform": "win32",
+  "date": "2026-10-10T05:18:38.954Z",
+  "version": "2.1.296",
+  "turnsSubmitted": 4,
+  "turnsCompleted": 4,
+  "cardsSeen": 1,
+  "answersSent": 0,
+  "checks": [
+    {
+      "name": "native-model-available",
+      "passed": true
+    },
+    {
+      "name": "turn-budget",
+      "passed": true
+    },
+    {
+      "name": "scoped-tool-accepted",
+      "passed": true
+    },
+    {
+      "name": "scoped-tool-no-card",
+      "passed": true
+    },
+    {
+      "name": "scoped-tool-completed",
+      "passed": true
+    },
+    {
+      "name": "scoped-tool-called",
+      "passed": true
+    },
+    {
+      "name": "turn-budget",
+      "passed": true
+    },
+    {
+      "name": "native-read-search-accepted",
+      "passed": true
+    },
+    {
+      "name": "native-read-search-no-card",
+      "passed": true
+    },
+    {
+      "name": "native-read-search-completed",
+      "passed": true
+    },
+    {
+      "name": "native-read-content",
+      "passed": true
+    },
+    {
+      "name": "native-read-tool-observed",
+      "passed": true
+    },
+    {
+      "name": "turn-budget",
+      "passed": true
+    },
+    {
+      "name": "edit-accepted",
+      "passed": true
+    },
+    {
+      "name": "edit-permission-card",
+      "passed": true
+    },
+    {
+      "name": "sentinel-unchanged-after-interrupt",
+      "passed": true
+    },
+    {
+      "name": "turn-budget",
+      "passed": true
+    },
+    {
+      "name": "cold-resume-accepted",
+      "passed": true
+    },
+    {
+      "name": "cold-resume-no-card",
+      "passed": true
+    },
+    {
+      "name": "cold-resume-completed",
+      "passed": true
+    },
+    {
+      "name": "cold-resume-scoped-tool-called",
+      "passed": true
+    },
+    {
+      "name": "sentinel-still-unchanged",
+      "passed": true
+    }
+  ],
+  "result": "passed",
+  "failedCheck": ""
+}

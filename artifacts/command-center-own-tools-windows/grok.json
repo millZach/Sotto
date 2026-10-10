@@ -1,0 +1,70 @@
+{
+  "provider": "grok",
+  "platform": "win32",
+  "date": "2026-10-10T05:19:17.062Z",
+  "version": "1.0.50",
+  "turnsSubmitted": 3,
+  "turnsCompleted": 2,
+  "cardsSeen": 1,
+  "answersSent": 0,
+  "checks": [
+    {
+      "name": "native-model-available",
+      "passed": true
+    },
+    {
+      "name": "turn-budget",
+      "passed": true
+    },
+    {
+      "name": "scoped-tool-accepted",
+      "passed": true
+    },
+    {
+      "name": "scoped-tool-no-card",
+      "passed": true
+    },
+    {
+      "name": "scoped-tool-completed",
+      "passed": true
+    },
+    {
+      "name": "scoped-tool-called",
+      "passed": true
+    },
+    {
+      "name": "turn-budget",
+      "passed": true
+    },
+    {
+      "name": "native-read-search-accepted",
+      "passed": true
+    },
+    {
+      "name": "native-read-search-no-card",
+      "passed": true
+    },
+    {
+      "name": "native-read-search-completed",
+      "passed": true
+    },
+    {
+      "name": "native-read-content",
+      "passed": true
+    },
+    {
+      "name": "native-read-tool-observed",
+      "passed": true
+    },
+    {
+      "name": "turn-budget",
+      "passed": true
+    },
+    {
+      "name": "edit-accepted",
+      "passed": false
+    }
+  ],
+  "result": "failed",
+  "failedCheck": "edit"
+}

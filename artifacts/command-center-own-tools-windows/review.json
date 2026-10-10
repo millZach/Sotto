@@ -1,0 +1,47 @@
+{
+  "date": "2026-10-09",
+  "platform": "win32",
+  "result": "incomplete",
+  "additionalModelTurnsSubmitted": 0,
+  "originalAnswersSentField": "counts explicit Sotto answer commands only; native denial replies were not measured",
+  "codex": {
+    "turnsSubmitted": 2,
+    "nativeReadToolActivityObserved": false,
+    "windowsSandboxResult": "setup-failed-before-command-result",
+    "unaskedWriteEnforcementProved": false,
+    "editCard": "not-run",
+    "coldResume": "not-run"
+  },
+  "claude": {
+    "turnsSubmitted": 4,
+    "scopedTool": true,
+    "nativeReadSearch": true,
+    "editPermissionCard": true,
+    "sentinelUnchanged": true,
+    "coldResumeScopedTool": true,
+    "cancellationWithoutReplyProved": false,
+    "sourceReview": "ordinary interrupt declines pending permission before cancelling"
+  },
+  "grok": {
+    "turnsSubmitted": 3,
+    "scopedTool": true,
+    "nativeReadSearch": true,
+    "editCardSeen": true,
+    "editCardKind": "not-recorded-before-acknowledgement-failure",
+    "sentinelUnchanged": "not-checked-before-cleanup",
+    "coldResume": "not-run",
+    "cancellationWithoutReplyProved": false,
+    "sourceReview": "ordinary disconnect declines held requests"
+  },
+  "finalHarness": {
+    "waitsForCardBeforeGrokSendAcknowledgement": true,
+    "nativePermissionReplyCounter": true,
+    "detachesOnlyDisposableThreadHeldRequestsBeforeNativeCancel": true,
+    "noReplyCancellationFakeTestsPassed": true,
+    "reservesTurnBudgetBeforeDispatch": true,
+    "refusesRepeatAfterBudgetUse": true,
+    "retainsSentinelResultOnFailure": true
+  },
+  "macOS": "not-checked",
+  "providerConfigurationOrCredentialContentsAccessedByHarness": false
+}
