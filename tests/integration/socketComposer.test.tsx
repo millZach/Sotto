@@ -1,4 +1,5 @@
 import { deferred } from '../fixtures/deferred'
+import { promptText, setPromptText } from '../unit/renderer/helpers/promptEditor'
 import React from 'react'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
@@ -390,15 +391,15 @@ it('retains the latest manual edit when a held autosave loses its connection', a
     const unsubscribe = client.subscribe(state => { view.rerender(manualComposer(state, command, store, thread.id)) })
     try {
       await act(async () => {
-        fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Fix' } })
+        setPromptText(screen.getByRole('textbox', { name: 'Prompt' }), 'Fix')
         await expect.poll(() => received.length).toBe(1)
-        fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Fix the parser and add tests' } })
+        setPromptText(screen.getByRole('textbox', { name: 'Prompt' }), 'Fix the parser and add tests')
       })
       expect(received).toEqual([expect.objectContaining({ type: 'save-thread-draft', threadId: thread.id, text: 'Fix' })])
       await act(async () => { await client!.close(); await Promise.all(writes) })
       release(); spy.mockRestore()
       await act(async () => { await client!.connect() })
-      expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('Fix the parser and add tests')
+      expect(promptText(screen.getByRole('textbox', { name: 'Prompt' }))).toBe('Fix the parser and add tests')
       expect(host.service.shell()).not.toHaveProperty('assignments')
       expect(host.service.threadDetail(thread.id)!.messages.filter(message => message.role === 'user')).toHaveLength(0)
     } finally { unsubscribe(); store.flushAll(); view.unmount(); spy.mockRestore() }
@@ -433,20 +434,20 @@ it('keeps successive socket edits active in the manual composer and sends the pi
     const unsubscribe = client.subscribe(state => { view.rerender(manualComposer(state, command, store, remote.id)) })
     try {
       await act(async () => {
-        fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'First edit' } })
+        setPromptText(screen.getByRole('textbox', { name: 'Prompt' }), 'First edit')
         await expect.poll(() => calls.filter(call => call.type === 'save-thread-draft').length).toBe(1)
         expect(client!.shell().threadDrafts).toContainEqual(expect.objectContaining({ threadId: remote.id, text: 'First edit' }))
       })
-      expect(screen.getByRole('textbox', { name: 'Prompt' })).not.toHaveAttribute('readonly')
+      expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveAttribute('contenteditable', 'true')
       expect(screen.queryByRole('button', { name: 'Resume draft' })).not.toBeInTheDocument()
       await host.service.command({ type: 'select-thread', threadId: local!.id }, desktopWindowClient())
       await act(async () => { await host.service.command({ type: 'compose', text: 'Host draft' }, desktopWindowClient()) })
       await act(async () => {
-        fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Second edit' } })
+        setPromptText(screen.getByRole('textbox', { name: 'Prompt' }), 'Second edit')
         await expect.poll(() => calls.filter(call => call.type === 'save-thread-draft').length).toBe(2)
         expect(client!.shell().threadDrafts).toContainEqual(expect.objectContaining({ threadId: remote.id, text: 'Second edit' }))
       })
-      expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('Second edit')
+      expect(promptText(screen.getByRole('textbox', { name: 'Prompt' }))).toBe('Second edit')
       await act(async () => {
         expect(screen.getByRole('button', { name: 'Send prompt' })).not.toBeDisabled()
         fireEvent.click(screen.getByRole('button', { name: 'Send prompt' }))
