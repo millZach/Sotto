@@ -15,6 +15,7 @@ import { parseTokenBlocks, rootDeclarations, resolveColor, contrast, over } from
 
 const entries = Object.entries(fixtures.themes)
 const blocks = parseTokenBlocks(readFileSync('src/renderer/src/styles/tokens.css', 'utf8'))
+const widgetBlocks = parseTokenBlocks(readFileSync('src/renderer/src/widget/widget-tokens.css', 'utf8'))
 const rgb = (value: string) => parseThemeRgb(value, { r: 0, g: 0, b: 0 })
 
 describe('Omarchy M3 and readability check', () => {
@@ -42,6 +43,16 @@ describe('Omarchy M3 and readability check', () => {
       expect(contrast(color(ink), color(surface)), `${name}: ${ink} on ${surface}`).toBeGreaterThanOrEqual(4.5)
     }
     expect(contrast(color('focus-ring'), color('canvas'))).toBeGreaterThanOrEqual(3)
+  })
+  it.each(entries)('%s keeps widget status text readable through the widget token projection', (name, fixture) => {
+    const theme = parseOmarchyTheme(fixture.rendered, name)
+    const declarations = rootDeclarations(theme.appearance, DEFAULT_THEME_ID, { colors: theme.colors }, widgetBlocks)
+    const canvas = resolveColor('--tt-canvas', declarations)
+    const color = (token: string) => over(resolveColor(`--tt-${token}`, declarations), canvas)
+    // Pasted/Copied use primary here; the main window uses primary only for heading glyphs.
+    for (const ink of ['text', 'text-muted', 'primary', 'error']) for (const surface of ['canvas', 'surface', 'surface-elevated', 'surface-sunken']) {
+      expect(contrast(color(ink), color(surface)), `${name}: widget ${ink} on ${surface}`).toBeGreaterThanOrEqual(4.5)
+    }
   })
   it('accounts for every --tt token used as color in the main and widget stylesheets', () => {
     const covered = new Set([...OMARCHY_CSS_TEXT_PAIRS.map(([ink]) => ink), ...OMARCHY_GRAPHIC_COLOR_TOKENS])
