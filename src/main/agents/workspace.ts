@@ -26,6 +26,8 @@ import { resolveModel } from '../../shared/modelCatalog'
 import { resolveThreadWorkingDirectory } from '../../shared/threadWorkingDirectory'
 import { isThreadArchived, isThreadSettled, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { checkoutIdentity, existingWorkingDirectory, runWorktreeGit, ThreadWorktrees } from './threadWorktrees'
+import { claudeSkillFolder, claudeSkillPath } from './claudeSkills'
+import { providerTakesNoSkills } from './providerSwitch'
 import { gitStatusFingerprint, type GitStatus } from '../../shared/gitStatus'
 import type { GitStatusSource } from './gitStatus'
 import { GitActionRefusal, type GitActionEvent, type GitActions } from './gitActions'
@@ -62,6 +64,16 @@ const GIT_ACTION_SAVE_ERROR = 'The Git action finished, but its record could not
 /** Work that can leave the worktree on another branch: a finished turn, a shell command it ran, or files it changed. */
 const HEAD_MOVING_KINDS: ReadonlySet<AgentActivity['kind']> = new Set(['turn', 'command', 'file-change', 'tool'])
 /** The finished records that could have moved HEAD, by ID, so only new ones ask for a re-read. */
+/**
+ * A skill picked from the project folder's catalog, named as the same skill in the thread's own working copy. A skill
+ * file inside the project moves with it; a Claude skill is named by the folder it was listed in, so it takes the new one.
+ */
+async function skillInWorkingCopy(selected: AgentSkillReference, projectPath: string, workingDirectory: string): Promise<AgentSkillReference> {
+  const listedIn = claudeSkillFolder(selected.path)
+  if (listedIn !== undefined) return sameFolder(listedIn, projectPath) ? { ...selected, path: claudeSkillPath(await existingWorkingDirectory(workingDirectory), selected.name) } : selected
+  const local = relative(projectPath, selected.path)
+  return { ...selected, path: !isAbsolute(local) && local !== '..' && !local.startsWith(`..${sep}`) ? join(workingDirectory, local) : selected.path }
+}
 function settledHeadMovers(activities: readonly AgentActivity[] | undefined): Set<string> {
   return new Set((activities ?? []).filter(activity => HEAD_MOVING_KINDS.has(activity.kind) && isTerminalActivity(activity.status)).map(activity => activity.id))
 }
@@ -2488,14 +2500,12 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if ((command.type === 'send' || command.type === 'steer') && command.skills?.length) {
       const thread = this.thread(command.threadId)
       const capabilities = this.state.snapshot.providers?.find(provider => provider.id === thread.providerId)?.capabilities ?? this.state.snapshot.capabilities
+      if (!capabilities.skills && thread.providerId) throw providerTakesNoSkills(thread.providerId)
       if (!capabilities.skills || !this.inner.listThreadSkills) throw new Error('Selected skills are unavailable or belong to another provider. Refresh this draft’s skill catalog.')
       const catalog = await this.listThreadSkills(command.threadId, true)
       if (thread.nativeSessionStarted === false && thread.worktree?.path && thread.workingDirectory) {
         const projectPath = await existingWorkingDirectory(this.state.snapshot.projects.find(item => item.id === thread.projectId)!.path)
-        preparedSkills = command.skills.map(selected => {
-          const local = relative(projectPath, selected.path)
-          return { ...selected, path: !isAbsolute(local) && local !== '..' && !local.startsWith(`..${sep}`) ? join(thread.workingDirectory!, local) : selected.path }
-        })
+        preparedSkills = await Promise.all(command.skills.map(selected => skillInWorkingCopy(selected, projectPath, thread.workingDirectory!)))
       }
       if (catalog.status !== 'ready' || catalog.providerId !== thread.providerId || (preparedSkills ?? command.skills).some(selected => !catalog.skills.some(skill => skill.name === selected.name && skill.path === selected.path && skill.enabled !== false && skill.userInvocable !== false))) {
         throw new Error('Selected skills are unavailable or belong to another provider. Refresh this draft’s skill catalog.')
@@ -2593,11 +2603,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         if (command.skills?.length) {
           const projectPath = await existingWorkingDirectory(this.state.snapshot.projects.find(project => project.id === thread.projectId)!.path)
           const catalog = await this.listThreadSkills(thread.id, true)
-          const skills = (preparedSkills ?? command.skills).map(selected => {
-            const local = relative(projectPath, selected.path)
-            const path = !isAbsolute(local) && local !== '..' && !local.startsWith(`..${sep}`) ? join(workingDirectory, local) : selected.path
-            return { ...selected, path }
-          })
+          const skills = await Promise.all((preparedSkills ?? command.skills).map(selected => skillInWorkingCopy(selected, projectPath, workingDirectory)))
           if (catalog.status !== 'ready' || skills.some(selected => !catalog.skills.some(skill => skill.name === selected.name && skill.path === selected.path && skill.enabled !== false && skill.userInvocable !== false))) {
             throw new Error('A selected skill is unavailable in the chosen working copy. Refresh the skill catalog and select it again. Your prompt has not been sent.')
           }
