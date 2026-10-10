@@ -2,6 +2,136 @@ import Foundation
 import SwiftUI
 import SottoCore
 
+// Terminal-mode state and one-time hook answers. A terminal has no thread history or reply box.
+extension AppModel {
+    func supportsTerminals(_ hostID: String) -> Bool { live[hostID]?.features.contains("terminals") == true }
+    var terminalRows: [HostedTerminal] {
+        computers.flatMap { computer -> [HostedTerminal] in
+            guard supportsTerminals(computer.hostID), let state = live[computer.hostID], let shell = state.shell else { return [] }
+            return (shell.terminals ?? []).filter { UUID(uuidString: $0.id) != nil }.map { terminal in
+                HostedTerminal(ref: TerminalRef(hostID: computer.hostID, terminalID: terminal.id), computer: computer.name,
+                    status: state.status, project: shell.host.projects.first { $0.id == terminal.projectId }?.title, terminal: terminal)
+            }
+        }
+    }
+    func terminal(_ ref: TerminalRef) -> TerminalSummary? {
+        guard supportsTerminals(ref.hostID) else { return nil }
+        return live[ref.hostID]?.shell?.terminals?.first { $0.id == ref.terminalID }
+    }
+    func terminalPending(_ ref: TerminalRef) -> PendingOperation? {
+        scoped(ref.hostID).first { $0.kind == "terminal-answer" && $0.terminalID == ref.terminalID }
+    }
+    func terminalAnswerConfirmed(_ approval: TerminalApproval, in ref: TerminalRef) -> Bool {
+        confirmedTerminalAnswers.contains(ref.id + "/" + approval.id)
+    }
+    func canAnswerTerminal(_ ref: TerminalRef, approval: TerminalApproval?) -> Bool {
+        guard online(ref.hostID), supportsTerminals(ref.hostID), mayAnswer(ref.hostID), !answering(ref.hostID),
+              let current = terminal(ref), current.hasAnswerChannel, let approval, current.approval == approval,
+              !terminalAnswerConfirmed(approval, in: ref), let preview = terminalPreviews[ref.id] else { return false }
+        return preview.matches(current)
+    }
+    private func clearTerminalPreviews(_ hostID: String) {
+        let prefix = hostID + "/terminal/"
+        terminalPreviews = terminalPreviews.filter { !$0.key.hasPrefix(prefix) }
+        terminalPreviewProblems = terminalPreviewProblems.filter { !$0.key.hasPrefix(prefix) }
+        terminalPreviewReads = terminalPreviewReads.filter { !$0.key.hasPrefix(prefix) }
+        readingTerminalPreviews = readingTerminalPreviews.filter { !$0.hasPrefix(prefix) }
+    }
+    /// A foreground open detail is visible; list cards, previews and notifications are not.
+    func selectTerminal(_ ref: TerminalRef?) async {
+        if ref != nil { await select(nil) }
+        let previous = selectedTerminal
+        selectedTerminal = ref
+        #if DEBUG && os(iOS)
+        if isUIFixture {
+            if let ref { try? changeFixtureTerminal(ref, state: "idle", onlyIfFinished: true) }
+            return
+        }
+        #endif
+        if let previous, previous.hostID != ref?.hostID { try? await observeTerminals(previous.hostID) }
+        if let hostID = ref?.hostID ?? previous?.hostID { try? await observeTerminals(hostID) }
+    }
+    private func observeTerminals(_ hostID: String) async throws {
+        guard supportsTerminals(hostID), online(hostID), let connection = connections[hostID] else { return }
+        let epoch = generations[hostID]
+        let visible = foreground && selectedTerminal?.hostID == hostID ? selectedTerminal : nil
+        _ = try await connection.call(["op": .string("observe-terminals"), "terminalIds": .array(visible.map { [.string($0.terminalID)] } ?? [])])
+        let now = foreground && selectedTerminal?.hostID == hostID ? selectedTerminal : nil
+        if generations[hostID] == epoch && now != visible { try await observeTerminals(hostID) }
+    }
+    /// Read once for this card and request, or explicitly refresh. The host returns null when the live bottom
+    /// cannot safely explain the pending approval. No output is subscribed to or saved.
+    func readTerminalApproval(_ ref: TerminalRef, force: Bool = false) async {
+        guard online(ref.hostID), supportsTerminals(ref.hostID), let current = terminal(ref), current.hasAnswerChannel,
+              let connection = connections[ref.hostID] else { return }
+        if !force, terminalPreviews[ref.id].map({ $0.matches(current) }) == true { return }
+        let epoch = generations[ref.hostID], token = UUID()
+        terminalPreviewReads[ref.id] = token; readingTerminalPreviews.insert(ref.id)
+        terminalPreviews[ref.id] = nil; terminalPreviewProblems[ref.id] = nil
+        defer {
+            if terminalPreviewReads[ref.id] == token { terminalPreviewReads[ref.id] = nil; readingTerminalPreviews.remove(ref.id) }
+        }
+        do {
+            let preview = try await connection.call(["op": .string("terminal-approval"), "terminalId": .string(ref.terminalID)], as: Optional<TerminalApprovalPreview>.self)
+            guard generations[ref.hostID] == epoch, terminalPreviewReads[ref.id] == token, terminal(ref)?.approval == current.approval,
+                  terminal(ref)?.hasAnswerChannel == true else { return }
+            guard let preview, preview.matches(current) else {
+                terminalPreviewProblems[ref.id] = "This approval can't be shown safely yet. Review it on \(name(ref.hostID))."
+                return
+            }
+            terminalPreviews[ref.id] = preview
+        } catch {
+            guard generations[ref.hostID] == epoch, terminalPreviewReads[ref.id] == token else { return }
+            terminalPreviewProblems[ref.id] = "This permission could not be loaded. Nothing was answered. Try again or review it on \(name(ref.hostID))."
+        }
+    }
+    func answerTerminal(_ ref: TerminalRef, approval: TerminalApproval, decision: TerminalDecision) async {
+        guard canAnswerTerminal(ref, approval: approval), let current = terminal(ref), let preview = terminalPreviews[ref.id],
+              let computer = computer(ref.hostID) else { return }
+        #if DEBUG && os(iOS)
+        if isUIFixture {
+            // Synthetic UI journey only. Production confirmation always comes from the hook receipt below.
+            try? await Task.sleep(nanoseconds: 650_000_000)
+            if terminal(ref)?.approval == approval, mayAnswer(ref.hostID) {
+                confirmedTerminalAnswers.insert(ref.id + "/" + approval.id)
+                try? changeFixtureTerminal(ref, state: decision == .allow ? "working" : "idle")
+            }
+            return
+        }
+        #endif
+        guard let connection = connections[ref.hostID] else { return }
+        let epoch = generations[ref.hostID]
+        let operation = PendingOperation(hostID: ref.hostID, clientID: computer.pairing.clientId, threadID: "", requestID: approval.requestId,
+            kind: "terminal-answer", terminalID: ref.terminalID, runID: approval.runId, approvalID: approval.approvalId)
+        do {
+            let answer = try Terminals.answer(decision, terminal: current, preview: preview)
+            try remember(operation)
+            dispatchingOperations[operation.id] = .some(epoch)
+            defer { dispatchingOperations[operation.id] = nil }
+            do {
+                _ = try await connection.call(answer, as: TerminalAnswerResult.self, id: operation.id)
+                guard generations[ref.hostID] == epoch else { return }
+                // Only this stable command's receipt proves delivery to the blocking hook.
+                await checkDelivery(ref.hostID)
+            } catch let error as HostRefusal {
+                guard generations[ref.hostID] == epoch else { return }
+                if ["invalid_request", "stale_request", "forbidden", "busy"].contains(error.failure.code) {
+                    try rejectOperation(operation)
+                    terminalPreviews[ref.id] = nil
+                }
+                if error.failure.code == "forbidden" { update(ref.hostID) { $0.mayAnswer = false } }
+                feedback = error.localizedDescription
+            } catch {
+                guard generations[ref.hostID] == epoch else { return }
+                if let token = claimReceipt(operation.id, over: epoch) { await followReceipt(operation, on: connection, epoch: epoch, token: token) }
+            }
+            if generations[ref.hostID] == epoch, pending.contains(where: { $0.id == operation.id }) {
+                operationFeedback("Delivery is unconfirmed. Reconnect and check the terminal on \(name(ref.hostID)) before answering again. Nothing was resent.", operations: [operation.id])
+            }
+        } catch { feedback = error.localizedDescription }
+    }
+}
+
 /// A computer step 1 of adding found at a private address, with the health it answered.
 struct FoundHost: Equatable {
     let endpoint: HostEndpoint; let health: Health
@@ -102,6 +232,13 @@ struct HeldDetail {
     @Published private(set) var computers: [SavedComputer] = []
     @Published private(set) var live: [String: Live] = [:]
     @Published private(set) var selected: ThreadRef?
+    @Published private(set) var selectedTerminal: TerminalRef?
+    /// Approval-card previews live in memory only and are discarded on a changed request or connection.
+    @Published private(set) var terminalPreviews: [String: TerminalApprovalPreview] = [:]
+    @Published private(set) var terminalPreviewProblems: [String: String] = [:]
+    @Published private(set) var readingTerminalPreviews: Set<String> = []
+    @Published private(set) var confirmedTerminalAnswers: Set<String> = []
+    private var terminalPreviewReads: [String: UUID] = [:]
     @Published private(set) var pending: [PendingOperation] = []
     /// Finding or pairing a computer.
     @Published private(set) var working = false
@@ -169,7 +306,7 @@ struct HeldDetail {
     @Published private var receiptFollowers: [String: ReceiptFollower] = [:]
     private struct ReceiptFollower { let token: UUID; let generation: UUID? }
     /// The kinds that read as sending. A thread or project creation keeps its own sheet and its own wait.
-    private static let sendingKinds: Set<String> = ["reply", "answer", "interrupt"]
+    private static let sendingKinds: Set<String> = ["reply", "answer", "terminal-answer", "interrupt"]
     /// A receipt the computer says is still being carried out is read again this often, this many times: about ten minutes.
     private static let receiptInterval: UInt64 = 2_000_000_000
     private static let receiptReads = 300
@@ -257,6 +394,7 @@ struct HeldDetail {
         let laptop = "11111111-1111-4111-8111-111111111111"
         let studio = "22222222-2222-4222-8222-222222222222"
         let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--ui-terminal-light") { UserDefaults.standard.set("light", forKey: PhonePreferenceKey.appearance) }
         // The question journey: the working thread asks a question, and the laptop lets this iPhone answer it.
         let asking = arguments.contains("--ui-question-while-reading")
         let caps: [String: Bool] = ["submit": false, "interrupt": false, "questions": false, "permissions": false, "projects": true, "threads": true]
@@ -336,25 +474,56 @@ struct HeldDetail {
         fixtureSlowDetail = arguments.contains("--ui-slow-detail")
         fixtureReconnecting = arguments.contains("--ui-reconnecting")
         for (host, name) in [(laptop, "Laptop"), (studio, "Studio Mac")] {
-            let answers = asking && host == laptop
+            let answers = (asking || arguments.contains("--ui-terminal-can-answer")) && host == laptop
             let hostCaps = answers ? answeringCaps : caps
             let pairing = decode(Pairing.self, ["v": 1, "hostId": host, "clientId": "ui-fixture", "token": "not-a-credential"])
             computers.append(SavedComputer(address: "https://fixture.invalid.ts.net", pairing: pairing, reportedName: name))
-            let shellObject: [String: Any] = ["hostId": host, "host": ["hostId": host, "name": name,
+            var shellObject: [String: Any] = ["hostId": host, "host": ["hostId": host, "name": name,
                 "threads": threads[host] ?? [], "projects": [["id": "sotto", "title": "Sotto", "path": "D:\\Talk to Text Application"],
                     ["id": "panel", "title": "Panel tools", "path": "D:\\Engineering\\Panel tools"], ["id": "house", "title": "House", "path": "D:\\House"]],
                 "models": [["id": "fixture-model", "name": "GPT-6.1 Sol", "provider": "Codex", "providerId": "codex", "ready": true,
                     "reasoningEfforts": ["low", "medium", "high"], "defaultReasoningEffort": "high", "runtimeModes": ["approval-required", "full-access"]]],
                 "providers": [["id": "codex", "connection": "connected", "capabilities": hostCaps]], "capabilities": hostCaps]]
+            if arguments.contains("--ui-terminals"), host == laptop {
+                shellObject["terminals"] = Self.fixtureTerminals
+                let id = "33333333-3333-4333-8333-333333333333"
+                terminalPreviews[TerminalRef(hostID: laptop, terminalID: id).id] = decode(TerminalApprovalPreview.self,
+                    ["terminalId": id, "runId": "fixture-run", "requestId": "fixture-request", "approvalId": "fixture-approval",
+                     "previewId": String(repeating: "a", count: 64), "lines": Self.fixtureTerminalScreen])
+            }
             fixtureShells[host] = shellObject
             let shell = decode(Shell.self, shellObject)
-            live[host] = Live(status: host == laptop ? .online : .unreachable, shell: shell, mayAnswer: answers, features: ["host-folders"])
+            live[host] = Live(status: host == laptop ? .online : .unreachable, shell: shell, mayAnswer: answers,
+                features: arguments.contains("--ui-terminals") && host == laptop ? ["host-folders", "terminals"] : ["host-folders"])
         }
         storageReady = true
         if arguments.contains("--ui-streaming") { streamFixture(host: laptop) }
         if arguments.contains("--ui-feedback-request-gone") { feedback = Self.requestNoLongerWaiting }
         if arguments.contains("--ui-feedback-markers-unreadable") { feedback = Self.markersUnreadable }
         if arguments.contains("--ui-feedback-computer-unreadable") { feedback = "Recovered the saved computer list. " + Self.pairingWarning(1) }
+    }
+    private static let fixtureTerminalScreen = ["Bash command", "  npm run typecheck", "", "Do you want to proceed?",
+        "❯ 1. Yes", "  2. Yes, and don't ask again", "  3. No, and tell Claude what to do differently"]
+    private static let fixtureTerminals: [[String: Any]] = [
+        ["id": "33333333-3333-4333-8333-333333333333", "projectId": "sotto", "title": "Fix tooltips", "providerId": "claude",
+         "state": "needs-you", "stateDetection": "available", "openedAt": 1_800_000_000_000,
+         "approval": ["runId": "fixture-run", "requestId": "fixture-request", "approvalId": "fixture-approval"]],
+        ["id": "66666666-6666-4666-8666-666666666666", "projectId": "sotto", "title": "Review the drawer", "providerId": "codex",
+         "state": "needs-you", "stateDetection": "available", "openedAt": 1_800_000_000_001],
+        ["id": "44444444-4444-4444-8444-444444444444", "projectId": "panel", "title": "Build the panel list", "providerId": "grok",
+         "state": "working", "stateDetection": "available", "openedAt": 1_800_000_000_002],
+        ["id": "55555555-5555-4555-8555-555555555555", "projectId": "sotto", "title": "Finish terminal states", "providerId": "claude",
+         "state": "just-finished", "stateDetection": "available", "openedAt": 1_800_000_000_003]
+    ]
+    private func changeFixtureTerminal(_ ref: TerminalRef, state: String, onlyIfFinished: Bool = false) throws {
+        guard var object = fixtureShells[ref.hostID], var rows = object["terminals"] as? [[String: Any]],
+              let index = rows.firstIndex(where: { $0["id"] as? String == ref.terminalID }),
+              !onlyIfFinished || (rows[index]["state"] as? String) == "just-finished" else { return }
+        rows[index]["state"] = state; rows[index].removeValue(forKey: "approval")
+        object["terminals"] = rows; fixtureShells[ref.hostID] = object
+        let shell = try JSONDecoder().decode(Shell.self, from: JSONSerialization.data(withJSONObject: object))
+        update(ref.hostID) { $0.shell = shell }
+        terminalPreviews[ref.id] = nil
     }
     /// The streaming journeys: the working thread's update grows by a word every 50 milliseconds, as often as a computer
     /// sends, and each time the computer's thread list comes again unchanged, as it does while a thread streams.
@@ -506,7 +675,7 @@ struct HeldDetail {
     private func capabilities(for ref: ThreadRef) -> ProviderCapabilities? { provider(for: ref)?.capabilities ?? live[ref.hostID]?.shell?.host.capabilities }
     /// An answer this iPhone sent to that computer that it hasn't confirmed. Cards wait for it, so a card that
     /// moves under a finger after the first answer can't take a second tap meant for the first.
-    func answering(_ hostID: String) -> Bool { scoped(hostID).contains { $0.kind == "answer" } }
+    func answering(_ hostID: String) -> Bool { scoped(hostID).contains { $0.kind == "answer" || $0.kind == "terminal-answer" } }
     private func canAct(on ref: ThreadRef) -> Bool { online(ref.hostID) && thread(ref) != nil && pending(for: ref).isEmpty }
     func canSend(_ ref: ThreadRef) -> Bool {
         guard canAct(on: ref), let thread = self.thread(ref), thread.status != "running", thread.requests.isEmpty else { return false }
@@ -647,6 +816,12 @@ struct HeldDetail {
         #if DEBUG && os(iOS)
         if isUIFixture { return }
         #endif
+        // Inactive also withdraws visibility: a phone behind another surface is not showing its terminal.
+        Task {
+            for hostID in computers.map(\.hostID).filter({ online($0) && supportsTerminals($0) }) {
+                try? await observeTerminals(hostID)
+            }
+        }
         if phase == .active {
             let wasStorageReady = storageReady
             loadComputers()
@@ -654,6 +829,7 @@ struct HeldDetail {
             guard storageReady else { return }
             activationConnection = Task { await reconnectAll() }
         } else if phase == .background {
+            terminalPreviews.removeAll(); terminalPreviewProblems.removeAll()
             cancelDetailReload()
             retries.values.forEach { $0.cancel() }; retries.removeAll(); retryAttempts.removeAll(); retryingSince.removeAll()
             active = false; pairGeneration = UUID(); working = false; holdDetail()
@@ -710,6 +886,7 @@ struct HeldDetail {
         shellSequences[hostID] = 0; watches[hostID] = nil
         defer { if generations[hostID] == current { connecting.remove(hostID) } }
         update(hostID) { $0.status = .connecting; $0.mayAnswer = false; $0.problem = nil }
+        clearTerminalPreviews(hostID)
         if selected?.hostID == hostID { cancelDetailReload(); holdDetail(); detailProblem = nil }
         do {
             guard let endpoint = saved.endpoint else { throw ClientError.invalidHost }
@@ -741,12 +918,14 @@ struct HeldDetail {
         // A refused or slow thread read does not mean the computer's connection was lost.
         do { try await observeAndRead(hostID) }
         catch { if generations[hostID] == current { detailProblem = "This thread could not be loaded. Nothing was lost. Try again." } }
+        try? await observeTerminals(hostID)
         await checkDelivery(hostID)
     }
     /// A connection that failed or was lost. A computer that has been online is tried again quietly, reading
     /// Connecting, until its quiet retries run out; any other gives up: it reads Can't reach it, with the problem on its
     /// own page, and nothing connects it until the user presses Try again or Reconnect.
     private func connectionEnded(_ hostID: String, problem: String, retrying: Bool) {
+        clearTerminalPreviews(hostID)
         let since = retryingSince[hostID] ?? Date()
         if retrying, active, wasOnline.contains(hostID), (retryAttempts[hostID] ?? 0) < Self.quietRetries,
            Date().timeIntervalSince(since) < Self.quietRetryWindow {
@@ -951,6 +1130,10 @@ struct HeldDetail {
     // MARK: The open thread
 
     func select(_ ref: ThreadRef?) async {
+        if ref != nil, let terminal = selectedTerminal {
+            selectedTerminal = nil
+            try? await observeTerminals(terminal.hostID)
+        }
         cancelDetailReload()
         let previous = selected
         // The thread let go of stays on screen if it is opened again, until a fresh copy is read; another thread
@@ -1357,6 +1540,21 @@ struct HeldDetail {
         feedback = words; feedbackOperations = operations
     }
     private func settle(_ item: PendingOperation, receipt: Receipt? = nil, shell: Shell?) throws {
+        if item.kind == "terminal-answer" {
+            let current = shell?.terminals?.first { $0.id == item.terminalID }
+            let confirmed = receipt?.confirmsAnswer == true
+            // Absence on an old host is not evidence that a terminal's approval left.
+            let noLongerWaiting = shell?.terminals != nil && (current != nil || shell?.terminalsComplete == true) && (current?.state != .needsYou
+                || current?.approval?.runId != item.runID || current?.approval?.requestId != item.requestID
+                || current?.approval?.approvalId != item.approvalID)
+            guard confirmed || noLongerWaiting else { return }
+            if confirmed, let terminalID = item.terminalID, let runID = item.runID, let requestID = item.requestID, let approvalID = item.approvalID {
+                confirmedTerminalAnswers.insert(TerminalRef(hostID: item.hostID, terminalID: terminalID).id + "/" + runID + "/" + requestID + "/" + approvalID)
+            }
+            try forgetMarker(item.id)
+            if feedback == nil || feedbackOperations.contains(item.id) { feedback = confirmed ? "Answer sent." : Self.requestNoLongerWaiting }
+            return
+        }
         // A phone-minted Sotto ID identifies this exact creation even after its receipt expired.
         if item.kind == "create-thread", shell?.host.threads.contains(where: { $0.id == item.threadID }) == true {
             try forgetMarker(item.id)
@@ -1617,12 +1815,17 @@ struct HeldDetail {
             if let allowed = next.clientCapabilities?.mayAnswer { $0.mayAnswer = allowed }
         }
         noticeChanges(next, from: hostID)
+        for (key, preview) in terminalPreviews where key.hasPrefix(hostID + "/terminal/") {
+            if next.terminals?.first(where: { $0.id == preview.terminalId }).map({ preview.matches($0) }) != true {
+                terminalPreviews[key] = nil
+            }
+        }
         // Live evidence can arrive after the acknowledgement timed out. Never resend to settle it.
         // A Keychain write failure is local feedback, not a lost connection to the computer.
         for item in scoped(hostID) {
             // A connect, dispatch or solicited shell is followed by a receipt check. Keep its
             // answer markers through intervening pushes until their own receipts are read.
-            if item.kind == "answer", !reconcileAnswers || connecting.contains(hostID) || dispatchingOperations.keys.contains(item.id) || (deliveryChecks[hostID] ?? 0) > 0 { continue }
+            if item.kind == "answer" || item.kind == "terminal-answer", !reconcileAnswers || connecting.contains(hostID) || dispatchingOperations.keys.contains(item.id) || (deliveryChecks[hostID] ?? 0) > 0 { continue }
             do { try settle(item, shell: next) }
             catch { feedback = error.localizedDescription }
         }

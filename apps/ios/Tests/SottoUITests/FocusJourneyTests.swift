@@ -38,6 +38,64 @@ import XCTest
     }
 
     private func row(_ id: String) -> XCUIElement { app.buttons["thread-\(laptop)/\(id)"] }
+    private func terminal(_ id: String) -> XCUIElement { app.buttons["terminal-\(laptop)/terminal/\(id)"] }
+
+    func testTerminalPermissionKeepsCanAnswerWordingAndScreenOnlyProviders() {
+        launch(Self.fixture + ["--ui-terminals"])
+        let permission = terminal("33333333-3333-4333-8333-333333333333")
+        reveal(permission)
+        let note = text("This iPhone can’t answer on Laptop yet.")
+        reveal(note)
+        XCTAssertTrue(note.exists)
+        XCTAssertFalse(app.buttons["terminal-answer-yes"].exists)
+        XCTAssertTrue(byID("terminal-approval-preview").exists)
+        capture("terminals-permission-cannot-answer-dark")
+        let codex = terminal("66666666-6666-4666-8666-666666666666")
+        reveal(codex)
+        codex.tap()
+        XCTAssertTrue(text("Answer this one in the terminal on Laptop.").waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["terminal-answer-yes"].exists)
+        XCTAssertFalse(byID("terminal-approval-preview").exists)
+        capture("terminals-screen-only-detail")
+    }
+
+    func testTerminalPermissionUsesOneTimeNoAndYesAndExplainsMoreChoices() {
+        launch(Self.fixture + ["--ui-terminals", "--ui-terminal-can-answer"])
+        let yes = app.buttons["terminal-answer-yes"]
+        reveal(yes)
+        XCTAssertTrue(yes.isEnabled)
+        XCTAssertTrue(app.buttons["terminal-answer-no"].exists)
+        capture("terminals-permission-can-answer-dark")
+        app.buttons["More choices"].firstMatch.tap()
+        XCTAssertTrue(app.alerts["More choices"].waitForExistence(timeout: 10))
+        XCTAssertTrue(text("Review this permission in the terminal on Laptop.").exists)
+        capture("terminals-more-choices-on-computer")
+        app.alerts.buttons["Done"].tap()
+        yes.tap()
+        XCTAssertTrue(text("Sending").waitForExistence(timeout: 10))
+        XCTAssertTrue(text("Answered").waitForExistence(timeout: 10))
+        capture("terminals-permission-answered")
+    }
+
+    func testTerminalSearchAndOpeningClearsJustFinishedInLight() {
+        launch(Self.fixture + ["--ui-terminals", "--ui-terminal-light"])
+        let search = app.textFields["thread-search"]
+        XCTAssertEqual(search.label, "Search threads and terminals")
+        search.tap(); search.typeText("Finish terminal states\n")
+        let finished = terminal("55555555-5555-4555-8555-555555555555")
+        reveal(finished)
+        XCTAssertTrue(finished.label.contains("Just finished"))
+        capture("terminals-just-finished-light")
+        finished.tap()
+        XCTAssertTrue(app.navigationBars["Terminal"].waitForExistence(timeout: 10))
+        XCTAssertTrue(text("Open this terminal on Laptop to read its screen or type into it.").exists)
+        XCTAssertTrue(app.textFields.allElementsBoundByIndex.filter { $0.isHittable }.isEmpty)
+        capture("terminals-idle-detail-light")
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(finished.waitForExistence(timeout: 10))
+        XCTAssertFalse(finished.label.contains("Just finished"))
+        capture("terminals-finished-cleared-light")
+    }
     /// Any element by its accessibility identifier, whatever kind of element it is.
     private func byID(_ id: String) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
     /// Any element whose label starts with these words.
@@ -892,7 +950,7 @@ import XCTest
         filter.tap()
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Laptop")).firstMatch.tap()
         XCTAssertEqual(search.value as? String, "lighting")
-        XCTAssertTrue(app.staticTexts["No matching threads."].exists)
+        XCTAssertTrue(app.staticTexts["No matching threads or terminals."].exists)
         filter.tap()
         app.buttons["All computers"].tap()
         reveal(lighting)

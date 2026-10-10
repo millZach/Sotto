@@ -1,6 +1,270 @@
 import SwiftUI
 import SottoCore
 
+// MARK: - Terminal-mode rows and approval cards
+
+/// Uses the existing Glow Permission surface. The screen excerpt explains this one hook request;
+/// it is neither a terminal stream nor an input surface.
+private struct TerminalRequestCard: View, Equatable {
+    @EnvironmentObject var model: AppModel
+    let row: HostedTerminal
+    var inFlight = false
+    var retained = false
+    var detail = false
+    let send: (TerminalDecision) -> Void
+    @State private var more = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    static func == (left: Self, right: Self) -> Bool {
+        left.row.ref == right.row.ref && left.row.terminal == right.row.terminal && left.row.computer == right.row.computer
+            && left.row.status == right.row.status && left.inFlight == right.inFlight && left.retained == right.retained && left.detail == right.detail
+    }
+    private enum Phase: Equatable { case idle, sending, answered, gone, unconfirmed }
+    private var phase: Phase {
+        if inFlight { return .sending }
+        if let marker = model.terminalPending(row.ref) { return model.isSending(marker) ? .sending : .unconfirmed }
+        if let approval = row.terminal.approval, model.terminalAnswerConfirmed(approval, in: row.ref) { return .answered }
+        if retained && model.terminal(row.ref)?.approval != row.terminal.approval { return .gone }
+        return .idle
+    }
+    private var preview: TerminalApprovalPreview? {
+        guard let value = model.terminalPreviews[row.id], value.matches(row.terminal) else { return nil }
+        return value
+    }
+    private var previewTaskID: String { row.id + "/" + (row.terminal.approval?.id ?? "screen-only") + "/" + String(model.online(row.ref.hostID)) }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if detail { summary }
+            else {
+                NavigationLink(value: TerminalRoute(ref: row.ref)) { summary }
+                    .buttonStyle(PressStyle())
+                    .accessibilityLabel("\(row.terminal.title), \(row.terminal.hasAnswerChannel ? "Permission" : "Needs you"), terminal on \(row.computer)")
+                    .accessibilityHint("Opens the terminal's state")
+                    .accessibilityIdentifier("terminal-\(row.id)")
+            }
+            if let preview, phase == .idle {
+                Text(preview.lines.joined(separator: "\n"))
+                    .font(.mono).foregroundStyle(Palette.codeInk)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Space.s3).padding(.vertical, Space.s2)
+                    .background(Palette.code, in: RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
+                    .padding(.horizontal, Space.s4).padding(.bottom, Space.s2)
+                    .accessibilityLabel("The end of the terminal's screen. " + preview.lines.joined(separator: "\n"))
+                    .accessibilityIdentifier("terminal-approval-preview")
+            }
+            actions.padding(.horizontal, Space.s4).padding(.bottom, Space.s3)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .sottoCard(phase == .answered ? .answered : .needsYou)
+        .animation(reduceMotion ? .easeInOut(duration: 0.15) : .easeInOut(duration: 0.4), value: phase)
+        .task(id: previewTaskID) { await model.readTerminalApproval(row.ref) }
+        .alert("More choices", isPresented: $more) {
+            Button("Done", role: .cancel) {}
+        } message: {
+            Text("Review this permission in the terminal on \(row.computer). Choices that change future permissions stay on the computer.")
+        }
+    }
+    private var summary: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack(spacing: Space.s2) {
+                Light(tone: phase == .answered ? .accent : .warning)
+                Text(row.terminal.hasAnswerChannel ? "Permission" : "Needs you")
+                    .font(.sotto(.caption, .semibold)).foregroundStyle(phase == .answered ? Palette.accentText : Palette.warningText)
+                Label("Terminal", systemImage: "terminal").font(.sotto(.caption)).foregroundStyle(Palette.muted)
+                Spacer(minLength: 0)
+            }
+            Text(row.terminal.title).font(.sotto(.lead, .semibold)).foregroundStyle(Palette.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("\(Words.terminalProvider(row.terminal.providerId)) on \(row.computer)")
+                .font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, Space.s4).padding(.top, Space.s4).padding(.bottom, Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+    }
+    @ViewBuilder private var actions: some View {
+        switch phase {
+        case .sending:
+            HStack(spacing: Space.s2) { Spacer(minLength: 0); ProgressView().controlSize(.small); Text("Sending…") }
+                .font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted).frame(minHeight: 44)
+                .accessibilityElement(children: .combine)
+        case .answered:
+            HStack(spacing: Space.s2) { Spacer(minLength: 0); Image(systemName: "checkmark").accessibilityHidden(true); Text("Answered") }
+                .font(.sotto(.small, .semibold)).foregroundStyle(Palette.accentText).frame(minHeight: 44)
+                .accessibilityElement(children: .combine)
+        case .gone:
+            Text("No longer waiting").font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted).frame(minHeight: 44)
+        case .unconfirmed:
+            VStack(alignment: .leading, spacing: Space.s2) {
+                review("Not confirmed yet. Check the terminal on \(row.computer) before answering again.")
+                Button("Check again") { Task { await model.checkDelivery(row.ref.hostID) } }
+                    .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
+                    .disabled(!model.online(row.ref.hostID))
+                    .accessibilityHint("Checks this answer's receipt without sending the answer again")
+            }
+        case .idle:
+            idleActions
+        }
+    }
+    @ViewBuilder private var idleActions: some View {
+        if !row.terminal.hasAnswerChannel {
+            review("Answer this one in the terminal on \(row.computer).")
+        } else if !model.mayAnswer(row.ref.hostID) {
+            review("This iPhone can’t answer on \(row.computer) yet.")
+        } else if !model.online(row.ref.hostID) {
+            review("Reconnect to \(row.computer) to review this permission.")
+        } else if preview != nil {
+            VStack(alignment: .leading, spacing: Space.s2) {
+                HStack(spacing: Space.s2) {
+                    Button { send(.deny) } label: { Text("No").frame(maxWidth: .infinity) }
+                        .buttonStyle(PillButtonStyle(kind: .soft, wide: true))
+                        .accessibilityIdentifier("terminal-answer-no")
+                    Button { send(.allow) } label: { Text("Yes").frame(maxWidth: .infinity) }
+                        .buttonStyle(PillButtonStyle(kind: .primary, wide: true))
+                        .accessibilityIdentifier("terminal-answer-yes")
+                }
+                .frame(maxWidth: .infinity)
+                .disabled(!model.canAnswerTerminal(row.ref, approval: row.terminal.approval))
+                Button("More choices") { more = true }.buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
+                    .frame(maxWidth: .infinity)
+            }
+        } else if model.readingTerminalPreviews.contains(row.id) {
+            HStack(spacing: Space.s2) { ProgressView().controlSize(.small); Text("Reading permission…") }
+                .font(.sotto(.small)).foregroundStyle(Palette.muted).frame(minHeight: 44)
+        } else {
+            VStack(alignment: .leading, spacing: Space.s2) {
+                Text(model.terminalPreviewProblems[row.id] ?? "Read the current permission before answering.")
+                    .font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                Button("Refresh permission") { Task { await model.readTerminalApproval(row.ref, force: true) } }
+                    .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
+                    .disabled(!model.online(row.ref.hostID))
+            }
+        }
+    }
+    private func review(_ note: String) -> some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            Text(note).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+            if detail {
+                Text(!model.mayAnswer(row.ref.hostID) && row.terminal.hasAnswerChannel
+                    ? "On \(row.computer), open Settings > Phones and turn on Can answer for this iPhone."
+                    : "Open this terminal on \(row.computer) to review and answer it.")
+                    .font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+            } else {
+                NavigationLink(value: TerminalRoute(ref: row.ref)) { Text(row.terminal.hasAnswerChannel ? "Review permission" : "Review on computer") }
+                    .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
+            }
+        }
+    }
+}
+
+private struct TerminalWorkingCard: View {
+    let row: HostedTerminal
+    var body: some View {
+        NavigationLink(value: TerminalRoute(ref: row.ref)) {
+            VStack(alignment: .leading, spacing: Space.s2) {
+                HStack(spacing: Space.s2) {
+                    Light(tone: .accent, breathing: true)
+                    Text(row.terminal.stateWords).font(.sotto(.caption, .semibold)).foregroundStyle(Palette.accentText)
+                    Label("Terminal", systemImage: "terminal").font(.sotto(.caption)).foregroundStyle(Palette.muted)
+                }
+                Text(row.terminal.title).font(.sotto(.lead, .semibold)).foregroundStyle(Palette.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("\(Words.terminalProvider(row.terminal.providerId)) on \(row.computer)").font(.sotto(.small)).foregroundStyle(Palette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(Space.s4).frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(alignment: .bottom) { Runner() }.sottoCard(.working).contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle()).accessibilityIdentifier("terminal-\(row.id)")
+        .accessibilityLabel("\(row.terminal.title), \(row.terminal.stateWords), terminal on \(row.computer)")
+    }
+}
+
+private struct TerminalRow: View {
+    @EnvironmentObject var model: AppModel
+    let row: HostedTerminal
+    private var unread: Bool { row.finishedUnread && model.selectedTerminal != row.ref }
+    private var state: String { unread ? "Just finished" : row.terminal.state == .justFinished ? "Idle" : row.terminal.stateWords }
+    var body: some View {
+        NavigationLink(value: TerminalRoute(ref: row.ref)) {
+            HStack(alignment: .top, spacing: Space.s3) {
+                Light(tone: unread ? .accent : .off).padding(.top, 6)
+                VStack(alignment: .leading, spacing: Space.s1) {
+                    Label(row.terminal.title, systemImage: "terminal").font(.sotto(.body, unread ? .bold : .semibold)).foregroundStyle(Palette.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("\(row.reachable ? state : row.status.words) · \(Words.terminalProvider(row.terminal.providerId)) on \(row.computer)")
+                        .font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, Space.s4).padding(.vertical, Space.s3)
+            .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading).contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle()).accessibilityIdentifier("terminal-\(row.id)")
+        .accessibilityLabel("\(row.terminal.title), \(row.reachable ? state : row.status.words), terminal on \(row.computer)")
+    }
+}
+
+/// Small state view, with the same approval card when needed. Showing this view clears Just finished
+/// through the host's visibility set, for both devices. There is no shell input or screen history.
+struct TerminalView: View {
+    @EnvironmentObject var model: AppModel
+    let ref: TerminalRef
+    @State private var sending = false
+    @State private var answeredRow: HostedTerminal?
+    @State private var leaving = false
+    private var row: HostedTerminal? { model.terminalRows.first { $0.ref == ref } }
+    var body: some View {
+        SheetPage(warm: row?.terminal.state == .needsYou) {
+            if let row {
+                PageHeading(row.terminal.title, subtitle: "\(Words.terminalProvider(row.terminal.providerId)) on \(row.computer)") { Image(systemName: "terminal").foregroundStyle(Palette.muted) }
+                HStack(spacing: Space.s2) {
+                    Light(tone: row.reachable && row.terminal.state == .needsYou ? .warning : row.reachable && row.terminal.state == .working ? .accent : .off,
+                          breathing: row.reachable && row.terminal.state == .working)
+                    Text(row.reachable ? (row.terminal.state == .justFinished ? "Idle" : row.terminal.stateWords) : row.status.words)
+                        .font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
+                }
+                .padding(.top, Space.s2)
+                FeedbackBanner().padding(.top, Space.s3)
+                if row.terminal.providerId != nil && row.terminal.stateDetection != "available" {
+                    Text("State detection is unavailable. Review this terminal on \(row.computer).")
+                        .font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true).padding(.top, Space.s4)
+                }
+                if row.terminal.state == .needsYou || answeredRow != nil {
+                    TerminalRequestCard(row: answeredRow ?? row, inFlight: sending, retained: answeredRow != nil, detail: true) { decision in
+                        guard let approval = row.terminal.approval else { return }
+                        answeredRow = row; sending = true
+                        Task { await model.answerTerminal(ref, approval: approval, decision: decision); sending = false; resolveAnswer() }
+                    }
+                    .equatable()
+                    .padding(.top, Space.s4)
+                } else {
+                    Text("Open this terminal on \(row.computer) to read its screen or type into it.")
+                        .font(.sotto(.body)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true).padding(.top, Space.s5)
+                }
+            } else {
+                Text("This terminal is no longer shared. Review it on \(model.name(ref.hostID)).")
+                    .font(.sotto(.body)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true).padding(.top, Space.s5)
+            }
+        }
+        .navigationTitle("Terminal").navigationBarTitleDisplayMode(.inline).toolbar(.hidden, for: .tabBar)
+        .task(id: ref) { await model.selectTerminal(ref) }
+        .onDisappear { Task { if model.selectedTerminal == ref { await model.selectTerminal(nil) } } }
+        .onChange(of: model.pending) { _, _ in resolveAnswer() }
+        .onChange(of: model.live) { _, _ in resolveAnswer() }
+    }
+    private func resolveAnswer() {
+        guard !sending, !leaving, let answeredRow, model.terminalPending(ref) == nil, let approval = answeredRow.terminal.approval else { return }
+        if !model.terminalAnswerConfirmed(approval, in: ref), model.terminal(ref)?.approval == approval { self.answeredRow = nil; return }
+        leaving = true
+        Task {
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            self.answeredRow = nil; leaving = false
+        }
+    }
+}
+
 /// A request shown on a Needs you card: the thread, and the first request waiting in it.
 private struct NeedsItem {
     let row: HostedThread
@@ -39,6 +303,9 @@ struct ThreadsView: View {
     @State private var query = ""
     @State private var settledExpanded = false
     @State private var sent: [String: CardAnswer] = [:]
+    @State private var sentTerminals: [String: HostedTerminal] = [:]
+    @State private var sendingTerminals: Set<String> = []
+    @State private var leavingTerminals: Set<String> = []
     @State private var searchBox = FrameBox()
     @FocusState private var searching: Bool
     @Environment(\.sottoTheme) private var theme
@@ -47,7 +314,7 @@ struct ThreadsView: View {
     var body: some View {
         let groups = FocusThreads(model.lists, show: model.show, query: query, opened: model.selected)
         let unsearched = query.isEmpty ? groups : FocusThreads(model.lists, show: model.show, opened: model.selected)
-        SheetPage(warm: unsearched.requestCount > 0) {
+        SheetPage(warm: unsearched.requestCount > 0 || terminalRows().contains { $0.reachable && $0.terminal.state == .needsYou }) {
             heading
             controls(unsearched)
             searchPill
@@ -64,7 +331,9 @@ struct ThreadsView: View {
         .toolbar(.hidden, for: .navigationBar)
         .onChange(of: model.pending) { _, _ in
             for id in Array(sent.keys) { resolve(id) }
+            resolveTerminalCards()
         }
+        .onChange(of: model.live) { _, _ in resolveTerminalCards() }
         .sheet(isPresented: $creating) { NewThreadSheet(opened: openCreated) }
     }
 
@@ -85,11 +354,13 @@ struct ThreadsView: View {
             HStack(spacing: Space.s3) {
                 ComputerMenu()
                 Spacer(minLength: Space.s2)
-                ThreadCounts(working: all.working.count, needs: all.questions.count)
+                ThreadCounts(working: all.working.count + terminalRows().filter { $0.reachable && $0.terminal.state == .working }.count,
+                             needs: all.questions.count + terminalRows().filter { $0.reachable && $0.terminal.state == .needsYou }.count)
             }
             VStack(alignment: .leading, spacing: Space.s2) {
                 ComputerMenu()
-                ThreadCounts(working: all.working.count, needs: all.questions.count)
+                ThreadCounts(working: all.working.count + terminalRows().filter { $0.reachable && $0.terminal.state == .working }.count,
+                             needs: all.questions.count + terminalRows().filter { $0.reachable && $0.terminal.state == .needsYou }.count)
             }
         }
         .padding(.top, Space.s3)
@@ -98,7 +369,7 @@ struct ThreadsView: View {
     private var searchPill: some View {
         HStack(spacing: Space.s2) {
             Image(systemName: "magnifyingglass").foregroundStyle(Palette.muted).accessibilityHidden(true)
-            TextField("Search threads", text: $query, prompt: Text("Search threads").foregroundStyle(Palette.placeholder))
+            TextField("Search threads and terminals", text: $query, prompt: Text("Search threads and terminals").foregroundStyle(Palette.placeholder))
                 .focused($searching)
                 .font(.sotto(.body))
                 .foregroundStyle(Palette.ink)
@@ -106,7 +377,7 @@ struct ThreadsView: View {
                 .autocorrectionDisabled()
                 .submitLabel(.search)
                 .onSubmit { searching = false }
-                .accessibilityLabel("Search threads")
+                .accessibilityLabel("Search threads and terminals")
                 .accessibilityIdentifier("thread-search")
             if !query.isEmpty {
                 Button { query = ""; searching = true } label: {
@@ -160,7 +431,7 @@ struct ThreadsView: View {
                 Text(trying ? "Checking \(computer.name)…" : "Can’t reach \(computer.name).")
                     .font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
                 if !trying {
-                    Text("Showing its last shared threads.").font(.sotto(.small)).foregroundStyle(Palette.muted)
+                    Text(model.supportsTerminals(computer.hostID) ? "Showing its last shared threads and terminals." : "Showing its last shared threads.").font(.sotto(.small)).foregroundStyle(Palette.muted)
                 }
             }
             .fixedSize(horizontal: false, vertical: true)
@@ -189,21 +460,32 @@ struct ThreadsView: View {
     // MARK: Sections
 
     @ViewBuilder private func sections(_ groups: FocusThreads) -> some View {
+        let terminals = terminalRows(query: query)
+        let terminalNeeds = terminalNeedsItems(terminals)
+        let terminalWorking = terminals.filter { $0.reachable && $0.terminal.state == .working && sentTerminals[$0.id] == nil }
+        let terminalRecent = terminals.filter { (!$0.reachable || ($0.terminal.state != .needsYou && $0.terminal.state != .working)) && sentTerminals[$0.id] == nil }
         let needs = needsItems(groups)
         let departing = Set(needs.map { $0.row.id }).subtracting(groups.questions.map { $0.id })
         let working = groups.working.filter { !departing.contains($0.id) }
         let recent = groups.recent.filter { !departing.contains($0.id) }
         let settled = groups.settled.filter { !departing.contains($0.id) }
         let unread = Set((recent + settled).filter { groups.isUnreadFinish($0) }.map { $0.id })
-        if needs.isEmpty && working.isEmpty && recent.isEmpty && settled.isEmpty {
-            Text(groups.searching ? "No matching threads." : model.anyConnecting ? "Reading threads…" : "No threads here yet. Tap New thread to start one.")
+        if needs.isEmpty && working.isEmpty && recent.isEmpty && settled.isEmpty && terminals.isEmpty && terminalNeeds.isEmpty {
+            Text(groups.searching ? "No matching threads or terminals." : model.anyConnecting ? "Reading threads…" : "No threads or terminals here yet. Tap New thread to start one.")
                 .font(.sotto(.body)).foregroundStyle(Palette.muted)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.vertical, Space.s7)
         }
-        if !needs.isEmpty {
-            SectionHeading("Needs you", count: needs.count, light: .warning)
+        if !needs.isEmpty || !terminalNeeds.isEmpty {
+            SectionHeading("Needs you", count: needs.count + terminalNeeds.count, light: .warning)
             VStack(spacing: Space.s3) {
+                ForEach(terminalNeeds) { row in
+                    TerminalRequestCard(row: row, inFlight: sendingTerminals.contains(row.id), retained: sentTerminals[row.id] != nil) { decision in
+                        answerTerminal(row, decision: decision)
+                    }
+                    .equatable()
+                    .transition(reduceMotion ? AnyTransition.opacity : AnyTransition.opacity.combined(with: .scale(scale: 0.96)))
+                }
                 ForEach(Array(needs.enumerated()), id: \.element.row.id) { index, item in
                     RequestCard(row: item.row, request: item.request, answer: sent[item.row.id]) { choice, busy, done in
                         answer(item, choice: choice, busy: busy, done: done, index: index)
@@ -212,15 +494,26 @@ struct ThreadsView: View {
                 }
             }
         }
-        if !working.isEmpty {
-            SectionHeading("Working now", count: working.count, light: .accent)
+        if !working.isEmpty || !terminalWorking.isEmpty {
+            SectionHeading("Working now", count: working.count + terminalWorking.count, light: .accent)
             VStack(spacing: Space.s3) {
+                ForEach(terminalWorking) { row in TerminalWorkingCard(row: row) }
                 ForEach(working) { row in WorkingCard(row: row) }
             }
         }
-        if !recent.isEmpty {
-            SectionHeading("Recent", count: recent.count)
-            ThreadRowList(rows: recent, unread: unread)
+        if !recent.isEmpty || !terminalRecent.isEmpty {
+            SectionHeading("Recent", count: recent.count + terminalRecent.count)
+            VStack(spacing: 0) {
+                ForEach(terminalRecent) { row in
+                    TerminalRow(row: row)
+                    if row.id != terminalRecent.last?.id || !recent.isEmpty { Rectangle().fill(Palette.hairline).frame(height: 1).padding(.leading, Space.s4 + 20) }
+                }
+                ForEach(Array(recent.enumerated()), id: \.element.id) { index, row in
+                    if index > 0 { Rectangle().fill(Palette.hairline).frame(height: 1).padding(.leading, Space.s4 + 20) }
+                    ThreadRow(row: row, unread: unread.contains(row.id))
+                }
+            }
+            .sottoCard(.plain)
         }
         if !settled.isEmpty {
             if groups.searching {
@@ -268,6 +561,42 @@ struct ThreadsView: View {
             items.insert(NeedsItem(row: answer.row, request: answer.request), at: min(answer.index, items.count))
         }
         return items
+    }
+
+    private func terminalRows(query: String = "") -> [HostedTerminal] { Terminals.filtered(model.terminalRows, show: model.show, query: query) }
+    private func terminalNeedsItems(_ rows: [HostedTerminal]) -> [HostedTerminal] {
+        var items = rows.filter { $0.reachable && $0.terminal.state == .needsYou }
+        for row in sentTerminals.values.filter({ model.show.admits($0.ref.hostID) }).sorted(by: { $0.terminal.openedAt > $1.terminal.openedAt }) {
+            if let index = items.firstIndex(where: { $0.id == row.id }) { items[index] = row }
+            else { items.append(row) }
+        }
+        return items
+    }
+    private func answerTerminal(_ row: HostedTerminal, decision: TerminalDecision) {
+        guard let approval = row.terminal.approval else { return }
+        sentTerminals[row.id] = row; sendingTerminals.insert(row.id)
+        Task {
+            await model.answerTerminal(row.ref, approval: approval, decision: decision)
+            sendingTerminals.remove(row.id)
+            resolveTerminalCards()
+        }
+    }
+    private func resolveTerminalCards() {
+        for (id, row) in sentTerminals {
+            guard !sendingTerminals.contains(id), !leavingTerminals.contains(id), model.terminalPending(row.ref) == nil,
+                  let approval = row.terminal.approval else { continue }
+            if !model.terminalAnswerConfirmed(approval, in: row.ref), model.terminal(row.ref)?.approval == approval {
+                sentTerminals[id] = nil
+                continue
+            }
+            leavingTerminals.insert(id)
+            Task {
+                try? await Task.sleep(nanoseconds: 900_000_000)
+                withAnimation(reduceMotion ? .easeInOut(duration: 0.15) : .easeInOut(duration: 0.42)) {
+                    sentTerminals[id] = nil; leavingTerminals.remove(id)
+                }
+            }
+        }
     }
 
     // MARK: Answering in place
