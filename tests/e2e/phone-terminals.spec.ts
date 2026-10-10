@@ -90,8 +90,32 @@ test('a paired phone reviews and answers a built desktop terminal through its li
     expect(lines.join('\n')).toContain('Do you want to make this edit')
     const shell = await call({ op: 'shell' })
     expect(JSON.stringify(shell.result)).not.toMatch(/PRIVATE_|Do you want to make this edit|tool_input|HOOK_SECRET/u)
+    const screen = page.locator('.terminal-pane').locator('.xterm-screen')
+    let capture: Buffer | undefined
+    // Main's ready state can precede the GPU frame. Prove text is painted before retaining visual evidence.
+    await expect.poll(async () => {
+      const box = await screen.boundingBox()
+      if (!box) return 0
+      const png = await page.screenshot({ scale: 'css' })
+      const ink = await page.evaluate(async ({ base64, box }) => {
+        const image = new Image(); image.src = `data:image/png;base64,${base64}`; await image.decode()
+        const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height
+        const context = canvas.getContext('2d')!; context.drawImage(image, 0, 0)
+        const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data
+        let ink = 0
+        for (let y = Math.floor(box.y); y < Math.min(canvas.height, box.y + box.height); y++) {
+          for (let x = Math.floor(box.x); x < Math.min(canvas.width, box.x + box.width); x++) {
+            const index = (y * canvas.width + x) * 4
+            if (pixels[index]! > 150 && pixels[index + 1]! > 150 && pixels[index + 2]! > 150) ink++
+          }
+        }
+        return ink
+      }, { base64: png.toString('base64'), box })
+      if (ink > 500) capture = png
+      return ink
+    }).toBeGreaterThan(500)
     const folder = resolve('artifacts/phone-terminals'); await mkdir(folder, { recursive: true })
-    await page.screenshot({ path: join(folder, 'desktop-live-approval.png') })
+    await writeFile(join(folder, 'desktop-live-approval.png'), capture!)
     const answer = { ...binding, decision: 'deny' }
     expect(await call({ op: 'answer-terminal', answer })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
     await page.evaluate(async clientId => { await window.sotto!.phones!.command({ type: 'set-can-answer', clientId, allowed: true }) }, paired.clientId)
