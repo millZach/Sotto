@@ -1,6 +1,6 @@
 # Terminal truths (#879)
 
-Windows built Electron app: **VERIFIED**. Native macOS and Linux desktop: **NOT VERIFIED**. Checked Sotto 0.1.34 on October 9, 2026, using the Windows build at `a92a2edb2`. The final merged revision is `16909d9f1`, including `origin/main` at `09ea3f423`; its Windows/npm source and test trees are identical to the verified build. Isolated temporary profiles use real Windows shells and Git worktrees, with scripted Claude Code, Codex and Grok commands that exit with code 7. No paid provider account or model turn is involved.
+Windows built Electron app: **VERIFIED**. Linux on Forge: unit suite and Linux specs **VERIFIED**, with one harness failure explained under "Linux on Forge". Native macOS desktop: **NOT VERIFIED**. Checked Sotto 0.1.34 on October 9, 2026, using the Windows build at `a92a2edb2`. The final merged revision is `16909d9f1`, including `origin/main` at `09ea3f423`; its Windows/npm source and test trees are identical to the verified build. Isolated temporary profiles use real Windows shells and Git worktrees, with scripted Claude Code, Codex and Grok commands that exit with code 7. No paid provider account or model turn is involved.
 
 ## What was proved
 
@@ -32,7 +32,7 @@ The final independent review used Sol (`gpt-6.1-sol`) at max reasoning, one revi
 
 Both found the earlier-lifecycle branch-read variant, fixed by retaining prior preparation in Restart. Follow-up reviews through `c1396f8b2` and `b8b6cec7d` report no unresolved code findings. The proposed generic exception rename was rejected because `CheckoutSendRefusal` specifically identifies the `send` reservation; read/mutation reservations use `GitActionRefusal`. Its inaccurate provider-only comment was corrected, and the reviewer withdrew the naming suggestion. This note fixes the finding that verification counts still described an earlier revision.
 
-The earlier run could not complete native Forge verification: two SSH attempts required a Tailscale identity check and timed out before any remote command executed. Native Linux verification remains outstanding before a PR under AGENTS.md and ADR-0062. This merge update runs the owner's requested Windows gates below; no pull request was opened.
+The earlier run could not reach Forge: two SSH attempts required a Tailscale identity check and timed out before any remote command executed. Forge was reachable later the same night, and the Linux checks below ran there.
 
 ## Merge and Windows gates
 
@@ -60,8 +60,24 @@ Per spec: pane-terminal **1/1**, terminal-closed-output **5/5**, terminal-displa
 
 The first build/Electron invocation was interrupted by the ignored Python log wrapper's Windows console encoding when Vite printed a checkmark. The wrapper was changed to emit UTF-8, and the complete build/Electron command then passed. No product source fix was needed, and the full suite was not repeated.
 
+## Linux on Forge
+
+ADR-0062 asks for Forge's unit suite, Linux end-to-end specs and verification scripts before a pull request. They ran on October 9 at merge revision `68f0271a3`, in a fresh worktree on Forge (Omarchy, kernel 7.2.5-3-omarchy, Hyprland) with Node 24.21.0 and its own `npm ci`.
+
+| Command | Exact result |
+| --- | --- |
+| `npm ci`, `npm run typecheck`, `npm run lint` | Exit 0. |
+| `npm test -- --maxWorkers=2` | Exit 0: 717 files passed, 52 skipped; 8,994 tests passed, 184 skipped; zero failures; 498.10 seconds. |
+| `npm run notices:verify` | Exit 0: 182 components verified. |
+| `npm run build` | Exit 0. |
+| The four terminal specs with `linux-platform-profile.spec.ts` and `linux-dictation-command.spec.ts` | 5 passed, 1 failed, 7 skipped. The Linux dictation command and all three Linux platform-profile tests pass, as does the Tools refusal journey. The seven skips are the native ConPTY journeys, which run on Windows only. |
+
+The one failure is the drawer refusal journey, and it is in the test harness rather than the product. Hyprland tiles Sotto's main window shortly after it maps, at 933x1026 on Forge's 1920x1080 display, and then ignores `BrowserWindow.setSize`, so `resizeWindow` in `tests/e2e/support/sottoLaunch.ts` times out waiting for a 1600-pixel width (667 pixels off). A logged run showed the window size unchanged across all three requested sizes. The same journey in Tools passed in this run and failed in others, depending on whether the resize landed before the tiling; `dictation-recovery.spec.ts`, which resizes straight after launch, passed three runs of three. Making `resizeWindow` float the window on Hyprland first is a follow-up for the e2e support, not part of #879.
+
+Before the merge, `linux-dictation-command.spec.ts` failed on this branch and passed on `main`. Main's `6cdfced38` had updated it for the current setup steps, and it passes after the merge. `npm run runtime:verify` no longer exists on `main` since #880 removed the voice runtime.
+
 ## Limits
 
-macOS/Linux behavior is covered by platform injection, not a native desktop run. No packaged installer or release was exercised. The native Windows provider-exit journey uses real ConPTY with scripted clients, not paid provider turns. The UI refusal journeys script IPC rather than driving a live Git removal from the UI; service regressions exercise the actual checkout guard.
+macOS behaviour is covered by platform injection, not a native desktop run. On Linux, the native ConPTY journeys are Windows-only specs, so Linux shells are covered by the unit suite and platform injection. No packaged installer or release was exercised. The native Windows provider-exit journey uses real ConPTY with scripted clients, not paid provider turns. The UI refusal journeys script IPC rather than driving a live Git removal from the UI; service regressions exercise the actual checkout guard.
 
 Local throwaway prototypes under `.cache/terminal-truths/` compared copy and drawer overflow. The issue's explicit no-new-UI instruction kept the existing surface, and this run authorizes only `fix/terminal-truths`, so no prototype branch or tag was published. No user-selected variant is claimed; the reversible copy and scrolling choices followed the supplied review and observed clipping.
