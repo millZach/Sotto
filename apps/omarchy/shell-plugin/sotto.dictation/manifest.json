@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "id": "sotto.dictation",
+  "name": "Sotto dictation",
+  "version": "1.0.0",
+  "author": "Sotto",
+  "license": "MIT",
+  "description": "Sotto's glyph in the bar, and a pill with Stop and Cancel while you dictate.",
+  "kinds": [
+    "service",
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Sotto dictation",
+    "description": "Click to start or stop dictating with Sotto. While you dictate, a pill shows what Sotto is doing; drag it to another edge of the screen.",
+    "category": "Input",
+    "allowMultiple": false,
+    "defaultSection": "center",
+    "defaults": {
+      "command": "sotto"
+    },
+    "schema": [
+      {
+        "key": "command",
+        "type": "string",
+        "label": "Sotto command",
+        "defaultValue": "sotto",
+        "description": "The sotto launcher, by name on PATH or as an absolute path, such as a checkout's apps/omarchy/sotto."
+      }
+    ]
+  }
+}
