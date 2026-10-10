@@ -6,12 +6,12 @@ import { Button } from '../components/Button'
 import type { AgentConnection } from './AgentContext'
 import { composerEnterIntent, readComposerKey } from './composerKeys'
 import { retainFileReferences } from './composerFiles'
-import { retainSkillReferences, skillSigils } from './composerSkills'
+import { skillSigils } from './composerSkills'
 import { hasDraftContent, queueAdmissionOpen, submissionStatus, UNCONFIRMED_SUBMISSION, useSubmissions, useThreadComposer, type Submission, type ThreadDraftStore } from './threadDraftStore'
 import type { ThreadRow } from './threadFacts'
 import { isWakeUpFollowup } from './babysitting'
 import { SottoMark } from '../components/SottoMark'
-import type { AgentSkillCatalog } from '../../../shared/agentSkills'
+import type { AgentSkillCatalog, AgentSkillReference } from '../../../shared/agentSkills'
 import { PromptEditor, setPromptSelection, type PromptEditorElement } from './PromptEditor'
 
 type Command = AgentConnection['command']
@@ -69,10 +69,11 @@ function FollowupEditor({ item, current, catalog, providerId, saving, error, onS
   readonly providerId: string | undefined
   readonly saving: boolean
   readonly error: string | null
-  readonly onSave: (text: string) => void
+  readonly onSave: (text: string, skills: readonly AgentSkillReference[]) => void
   readonly onClose: () => void
 }): ReactNode {
   const [text, setText] = useState(item.text)
+  const [skills, setSkills] = useState<readonly AgentSkillReference[]>(item.skills ?? [])
   const dialog = useRef<HTMLDialogElement>(null)
   const field = useRef<PromptEditorElement>(null)
   const titleId = useId()
@@ -89,7 +90,7 @@ function FollowupEditor({ item, current, catalog, providerId, saving, error, onS
   const locked = current === undefined ? 'This message has left the queue.' : followupEditable(current) ? null : 'Sotto has started sending this message, so it can’t be changed.'
   const empty = text.trim() === '' && item.attachments.length === 0
   const canSave = locked === null && !saving && !empty
-  const save = (): void => { if (canSave) onSave(text) }
+  const save = (): void => { if (canSave) onSave(text, skills) }
   return <dialog ref={dialog} className="followup-editor" aria-labelledby={titleId}
     onCancel={event => { event.preventDefault(); if (!saving) onClose() }}
     onKeyDown={event => {
@@ -98,8 +99,8 @@ function FollowupEditor({ item, current, catalog, providerId, saving, error, onS
       if (!saving) onClose()
     }}>
     <h2 id={titleId}>Edit queued message</h2>
-    <PromptEditor fieldRef={field} label="Edit queued message" aria-describedby={hintId} text={text} skills={item.skills ?? []}
-      sigils={skillSigils(providerId)} catalog={catalog} editable={!saving} onChange={value => setText(value)}
+    <PromptEditor fieldRef={field} label="Edit queued message" aria-describedby={hintId} text={text} skills={skills}
+      sigils={skillSigils(providerId)} catalog={catalog} editable={!saving} onChange={(value, pills) => { setText(value); setSkills(pills) }}
       onKeyDown={event => {
         if (composerEnterIntent(readComposerKey(event, false)) !== 'send') return
         event.preventDefault()
@@ -372,7 +373,7 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
     </ol> : null}
     {editing ? <FollowupEditor key={editing.id} item={editing} current={items.find(item => item.id === editing.id)} providerId={row.providerId} catalog={catalog}
       saving={busy?.itemId === editing.id && busy.error === null} error={busy?.itemId === editing.id ? busy.error : null} onClose={() => closeEditor()}
-      onSave={text => run(editing.id, { type: 'edit-followup', threadId, itemId: editing.id, text, attachments: [...editing.attachments], skills: retainSkillReferences(text, editing.skills ?? [], skillSigils(row.providerId)), ...(editing.files?.length ? { files: retainFileReferences(text, editing.files) } : {}) },
+      onSave={(text, skills) => run(editing.id, { type: 'edit-followup', threadId, itemId: editing.id, text, attachments: [...editing.attachments], skills: [...skills], ...(editing.files?.length ? { files: retainFileReferences(text, editing.files) } : {}) },
         next => followupsFor(next, threadId).some(candidate => candidate.id === editing.id && candidate.text === text), 'Sotto could not confirm this edit. Check the queue before editing again.', closeEditor)} />
       : null}
   </section>

@@ -52,6 +52,44 @@ describe('the plain Tiptap prompt', () => {
     expect(paste).toHaveBeenCalledOnce()
     expect(promptText(prompt)).toBe('')
   })
+  it.each(['type', 'paste'] as const)('keeps both pill boundaries during %s and undoes the added space with the text', async method => {
+    render(<Field initial="$review" />)
+    const prompt = screen.getByRole('textbox', { name: 'Prompt' }) as PromptEditorElement
+    await waitFor(() => expect(prompt.querySelector('[data-skill-token]')).toBeInTheDocument())
+    const insert = (text: string): void => {
+      if (method === 'type') act(() => { prompt.editor.commands.insertContent(text) })
+      else fireEvent.paste(prompt, { clipboardData: { items: [], getData: () => text } })
+    }
+    setPromptSelection(prompt, 0)
+    insert('before')
+    expect(promptText(prompt)).toBe('before $review')
+    setPromptSelection(prompt, 'before $review'.length)
+    insert('after')
+    expect(promptText(prompt)).toBe('before $review after')
+    expect(prompt.querySelectorAll('[data-skill-token]')).toHaveLength(1)
+    act(() => { prompt.editor.commands.undo() })
+    expect(promptText(prompt)).toBe('before $review')
+  })
+  it('keeps valid sentence punctuation beside a pill', async () => {
+    render(<Field initial="$review" />)
+    const prompt = screen.getByRole('textbox', { name: 'Prompt' }) as PromptEditorElement
+    await waitFor(() => expect(prompt.querySelector('[data-skill-token]')).toBeInTheDocument())
+    setPromptSelection(prompt, '$review'.length)
+    act(() => { prompt.editor.commands.insertContent(', next') })
+    expect(promptText(prompt)).toBe('$review, next')
+    expect(prompt.querySelectorAll('[data-skill-token]')).toHaveLength(1)
+  })
+  it('reports pill removal even when replacing it with the same plain text', async () => {
+    const change = vi.fn()
+    render(<Field initial="$review" onChange={change} />)
+    const prompt = screen.getByRole('textbox', { name: 'Prompt' }) as PromptEditorElement
+    await waitFor(() => expect(prompt.querySelector('[data-skill-token]')).toBeInTheDocument())
+    setPromptSelection(prompt, 0, '$review'.length)
+    act(() => { prompt.editor.commands.insertContent('$review') })
+    expect(promptText(prompt)).toBe('$review')
+    expect(prompt.querySelector('[data-skill-token]')).toBeNull()
+    expect(change).toHaveBeenCalledWith('$review')
+  })
   it('keeps plain typed tokens plain and supports newline and history', () => {
     render(<Field initial="" />)
     const prompt = screen.getByRole('textbox', { name: 'Prompt' }) as PromptEditorElement

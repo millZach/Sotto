@@ -1,10 +1,9 @@
 // Usage: npm run build; node scripts/verify-skill-composer.mjs (one Electron journey, synthetic providers).
 /* global window */
-import { _electron as electron, chromium, expect } from '@playwright/test'
+import { _electron as electron, expect } from '@playwright/test'
 import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import process from 'node:process'
 import { log } from 'node:console'
 import { requireOwnedE2EProfile } from '../scripts/e2e-profile-policy.mjs'
@@ -39,6 +38,12 @@ try {
   }
   const hostId = await page.evaluate(async () => (await window.sotto.agents.get()).hostId)
   const paneFor = id => page.locator(`section.thread-pane[data-thread-id="host:${hostId}:${id}"]`)
+  const caretAfterFirstPill = async (prompt, tail) => {
+    // Home → Right can select the atom. Approach through the following text to place a caret instead.
+    await prompt.press('End')
+    for (let offset = 0; offset < tail.length; offset++) await prompt.press('ArrowLeft')
+    await expect.poll(() => prompt.evaluate(element => ({ from: element.editor.state.selection.from, to: element.editor.state.selection.to }))).toEqual({ from: 2, to: 2 })
+  }
   for (const [threadId, token] of [['grok-previews', '/review'], ['release-notes', '$review'], ['benchmark', '/review']]) {
     await page.evaluate(id => window.sotto.agents.command({ type: 'select-thread', threadId: id }), threadId)
     const pane = paneFor(threadId)
@@ -53,13 +58,32 @@ try {
     await prompt.locator('.composer-skill').hover()
     await expect(page.locator('.skill-card')).toContainText('Review the current changes.')
     await page.screenshot({ path: join(output, `${threadId}-hover.png`) })
+    // Real keyboard edits must preserve atom identity and only atoms retain selected references.
     await prompt.press('End')
-    await prompt.press('ArrowLeft')
-    await expect.poll(() => prompt.evaluate(element => element.editor.state.selection.from)).toBe(2)
+    await prompt.pressSequentially(token)
+    await prompt.press('Escape')
+    await expect(prompt).toHaveAttribute('data-prompt-text', `${token} ${token}`)
+    await expect(prompt.locator('[data-skill-token]')).toHaveCount(1)
+    await caretAfterFirstPill(prompt, ` ${token}`)
+    await prompt.pressSequentially('ing')
+    await expect(prompt).toHaveAttribute('data-prompt-text', `${token} ing ${token}`)
+    await expect(prompt.locator('[data-skill-token]')).toHaveCount(1)
+    await expect.poll(() => page.evaluate(async id => (await window.sotto.agents.get()).threadDrafts?.find(draft => draft.threadId === id)?.skills?.length, `host:${hostId}:${threadId}`)).toBe(1)
+    await page.screenshot({ path: join(output, `${threadId}-typed-boundary.png`) })
+    await caretAfterFirstPill(prompt, ` ing ${token}`)
+    await prompt.press('Backspace')
+    await expect(prompt).toHaveAttribute('data-prompt-text', ` ing ${token}`)
+    await expect(prompt.locator('[data-skill-token]')).toHaveCount(0)
+    await expect.poll(() => page.evaluate(async id => (await window.sotto.agents.get()).threadDrafts?.find(draft => draft.threadId === id)?.skills ?? [], `host:${hostId}:${threadId}`)).toEqual([])
+    // Pick a fresh pill for the original whole-node deletion journey.
+    await prompt.fill('$rev')
+    await prompt.press('Tab')
+    await expect(prompt).toHaveAttribute('data-prompt-text', `${token} `)
+    await caretAfterFirstPill(prompt, ' ')
     await prompt.press('Backspace')
     await expect(prompt).toHaveAttribute('data-prompt-text', ' ')
     await expect.poll(() => page.evaluate(async id => (await window.sotto.agents.get()).threadDrafts?.find(draft => draft.threadId === id)?.skills ?? [], `host:${hostId}:${threadId}`)).toEqual([])
-    evidence.push({ threadId, token, picked: true, hover: true, atomicDelete: true })
+    evidence.push({ threadId, token, picked: true, hover: true, atomicDelete: true, handTypedTokenStayedPlain: true, adjacentTextKeptPillAndReference: true, deletingPillDroppedReferenceDespiteTypedToken: true })
   }
   await page.evaluate(() => window.sotto.agents.command({ type: 'select-thread', threadId: 'grok-previews' }))
   const prompt = paneFor('grok-previews').getByRole('textbox', { name: 'Prompt', exact: true })
@@ -149,12 +173,3 @@ try {
   await app.close()
   await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 }
-
-const browser = await chromium.launch({ channel: 'msedge', headless: true })
-try {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
-  for (const [file, variant] of [['skill-selected-prototype.html', 'A'], ['skill-symbol-prototype.html', 'D']]) {
-    await page.goto(`${pathToFileURL(join(root, 'docs/prototypes', file)).href}?variant=${variant}`)
-    await page.screenshot({ path: join(output, `reference-${variant}.png`) })
-  }
-} finally { await browser.close() }

@@ -31,4 +31,12 @@ describe('a prompt document is an exact view of its text', () => {
     // A caret requested inside a pill goes to its far side, never into the atom.
     expect(promptPositionToOffset(doc, promptOffsetToPosition(doc, 3))).toBe(9)
   })
+  it('converts only the first boundary-matched occurrence per reference in external text', () => {
+    const text = 'prefix$review $review-long /review then $review and /review'
+    const doc = textToPromptDoc(text, [skills[0]!, skills[0]!], ['$', '/'])
+    expect(doc.content![0]!.content!.filter(node => node.type === 'skill').map(node => node.attrs)).toEqual([
+      { ...skills[0], token: '/review' },
+    ])
+    expect(promptDocText(doc)).toBe(text)
+  })
 })

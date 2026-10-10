@@ -45,7 +45,10 @@ test('the full workspace inserts provider-native skills and retains selections w
     const prompt = promptField(page.locator(`section.thread-pane[data-thread-id="${key('grok-previews')}"]`))
     await expectPromptText(prompt, '/review ')
     await expect(prompt.locator('[data-skill-token="/review"]')).toHaveCount(1)
-    await fillPrompt(prompt, '/review $plan')
+    // Append to the chosen atom; replacing the entire field would deliberately remove its selection.
+    await prompt.press('End')
+    await prompt.pressSequentially('$plan')
+    await expectPromptText(prompt, '/review $plan')
     const plan = page.getByRole('listbox', { name: 'Skills' }).getByRole('option')
     await expect(plan).toHaveAttribute('aria-disabled', 'true')
     await expect(page.getByText(/takes one skill per message/)).toBeVisible()

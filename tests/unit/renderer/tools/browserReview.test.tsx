@@ -206,7 +206,7 @@ describe('the browser player', () => {
   })
   it('hides on request, leaving Tools > Browser as the way back, and moves focus to the composer', async () => {
     const browser = fake(); const store = new ToolsPanelStore(); const playerStore = new BrowserPlayerStore()
-    render(<><section className="thread-pane" data-focused><form className="thread-prompt"><textarea aria-label="Message" /></form></section>
+    render(<><section className="thread-pane" data-focused><form className="thread-prompt"><div className="prompt-editor" role="textbox" contentEditable aria-label="Message" tabIndex={0} /></form></section>
       <BrowserPlayer state={threadsStateFixture()} focusedThreadId="visual-gate" bridge={browser.bridge} store={store} playerStore={playerStore} /></>)
     await screen.findByRole('complementary', { name: 'Browser for Visual gate flake' })
     fireEvent.click(screen.getByRole('button', { name: 'Hide the browser; the agent keeps working' }))
@@ -216,7 +216,7 @@ describe('the browser player', () => {
   })
   it('shrinks the player and returns focus to the composer on Escape', async () => {
     const browser = fake(); const store = new ToolsPanelStore(); const playerStore = new BrowserPlayerStore()
-    render(<><section className="thread-pane" data-focused><form className="thread-prompt"><textarea aria-label="Message" /></form></section>
+    render(<><section className="thread-pane" data-focused><form className="thread-prompt"><div className="prompt-editor" role="textbox" contentEditable aria-label="Message" tabIndex={0} /></form></section>
       <BrowserPlayer state={threadsStateFixture()} focusedThreadId="visual-gate" bridge={browser.bridge} store={store} playerStore={playerStore} /></>)
     const player = await screen.findByRole('complementary', { name: 'Browser for Visual gate flake' })
     fireEvent.keyDown(player, { key: 'Escape' })

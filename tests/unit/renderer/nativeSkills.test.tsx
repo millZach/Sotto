@@ -80,7 +80,39 @@ describe('native skill tokens', () => {
 })
 
 describe('provider skill picker', () => {
-  it('undo restores repeated pills with one skill reference', () => {
+  it('keeps a second hand-typed $review plain and drops the reference when its chosen pill is deleted', async () => {
+    const { live, prompt } = mount({ ...CLAUDE, providerId: 'codex' })
+    type(prompt(), '$rev')
+    await screen.findByRole('listbox', { name: 'Skills' })
+    fireEvent.keyDown(prompt(), { key: 'Tab' })
+    const field = prompt() as PromptEditorElement
+    act(() => { field.editor.commands.insertContent('$review') })
+    expect(promptText(field)).toBe('$review $review')
+    expect(field.querySelectorAll('[data-skill-token]')).toHaveLength(1)
+    expect(live.threadDrafts.draft(THREAD).skills).toEqual([{ name: 'review', path: path('review') }])
+    setPromptSelection(field, '$review'.length)
+    fireEvent.keyDown(field, { key: 'Backspace' })
+    expect(promptText(field)).toBe(' $review')
+    expect(field.querySelector('[data-skill-token]')).toBeNull()
+    expect(live.threadDrafts.draft(THREAD).skills).toEqual([])
+  })
+  it('keeps the chosen pill, its reference and a boundary when typing ing immediately after it', async () => {
+    const { live, prompt } = mount({ ...CLAUDE, providerId: 'codex' })
+    type(prompt(), '$rev')
+    await screen.findByRole('listbox', { name: 'Skills' })
+    fireEvent.keyDown(prompt(), { key: 'Tab' })
+    const field = prompt() as PromptEditorElement
+    setPromptSelection(field, '$review'.length)
+    act(() => { field.editor.commands.insertContent('ing') })
+    expect(promptText(field)).toBe('$review ing ')
+    expect(field.querySelectorAll('[data-skill-token]')).toHaveLength(1)
+    expect(live.threadDrafts.draft(THREAD).skills).toEqual([{ name: 'review', path: path('review') }])
+    expect(field.editor.state.selection.$from.nodeBefore?.text).toBe(' ing')
+    act(() => { field.editor.commands.undo() })
+    expect(promptText(field)).toBe('$review ')
+    expect(live.threadDrafts.draft(THREAD).skills).toEqual([{ name: 'review', path: path('review') }])
+  })
+  it('undo restores a pill and repeated plain token with one skill reference', () => {
     const { live, prompt } = mount(CLAUDE)
     const reference = { name: 'review', path: path('review') }
     act(() => { live.threadDrafts.edit(THREAD, { text: '/review /review ', skills: [reference] }) })

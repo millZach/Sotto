@@ -10,6 +10,7 @@ import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
+import type { PromptEditorElement } from '../../../src/renderer/src/agents/promptSelection'
 import { ThreadComposer } from '../../../src/renderer/src/agents/ThreadComposer'
 import { describeThreads } from '../../../src/renderer/src/agents/threadFacts'
 import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
@@ -185,7 +186,7 @@ describe('follow-up queue in the Threads composer', () => {
   it('edits, reorders and removes queued items and resumes a paused queue without touching the composer', async () => {
     const state = manualState({ running: true })
     state.followups = [
-      followup({ id: '10000000-0000-4000-8000-000000000001', text: 'First follow-up', skills: [{ name: 'deploy', path: CATALOG.skills[1]!.path }] }),
+      followup({ id: '10000000-0000-4000-8000-000000000001', text: 'First follow-up $deploy', skills: [{ name: 'deploy', path: CATALOG.skills[1]!.path }] }),
       followup({ id: '10000000-0000-4000-8000-000000000002', text: 'Second follow-up', status: 'paused', error: 'The turn was interrupted. Resume when ready.' }),
     ]
     const { live, prompt } = mount(state)
@@ -216,6 +217,34 @@ describe('follow-up queue in the Threads composer', () => {
     await waitFor(() => expect(within(queue).queryByText('First follow-up, then $deploy')).not.toBeInTheDocument())
     expect(requests(live, 'remove-followup')).toEqual([{ type: 'remove-followup', threadId: THREAD, itemId: state.followups[0]!.id }])
     expect(promptText(prompt())).toBe('Unrelated draft')
+  })
+
+  it.each(['suffix', 'remove'] as const)('saves queued skill references from the remaining pills after %s', async action => {
+    const state = manualState({ running: true, capabilities: { skills: true } })
+    const reference = { name: 'deploy', path: CATALOG.skills[1]!.path }
+    state.followups = [followup({ id: '20000000-0000-4000-8000-000000000004', text: '$deploy ', skills: [reference] })]
+    const { live } = mount(state, { catalog: () => CATALOG })
+    fireEvent.click(screen.getByRole('button', { name: 'Edit queued message 1' }))
+    const editor = screen.getByRole('textbox', { name: 'Edit queued message' }) as PromptEditorElement
+    await waitFor(() => expect(editor.querySelector('[data-skill-token]')).toBeInTheDocument())
+    if (action === 'suffix') {
+      setPromptSelection(editor, '$deploy'.length)
+      act(() => { editor.editor.commands.insertContent('ing') })
+      expect(promptText(editor)).toBe('$deploy ing ')
+    } else {
+      setPromptSelection(editor, '$deploy '.length)
+      act(() => { editor.editor.commands.insertContent('$deploy') })
+      expect(editor.querySelectorAll('[data-skill-token]')).toHaveLength(1)
+      setPromptSelection(editor, '$deploy'.length)
+      fireEvent.keyDown(editor, { key: 'Backspace' })
+      expect(promptText(editor)).toBe(' $deploy')
+      expect(editor.querySelector('[data-skill-token]')).toBeNull()
+    }
+    fireEvent.keyDown(editor, { key: 'Enter' })
+    await waitFor(() => expect(requests(live, 'edit-followup')).toHaveLength(1))
+    expect(requests(live, 'edit-followup')[0]).toMatchObject({
+      text: action === 'suffix' ? '$deploy ing ' : ' $deploy', skills: action === 'suffix' ? [reference] : [],
+    })
   })
 
   it('never offers changes to a dispatching or unconfirmed item and tells an unconfirmed one apart from a failed one', () => {

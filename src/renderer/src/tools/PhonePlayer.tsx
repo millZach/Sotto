@@ -1,3 +1,4 @@
+import { focusedComposerField } from '../agents/promptSelection'
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import { PanelRight, Pause, Play, RotateCw, Smartphone, Square, X } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
@@ -20,7 +21,7 @@ function host(page: BrowserPage): string {
   try { return new URL(page.url).host || page.url } catch { return page.url }
 }
 
-const focusComposer = (): void => { requestAnimationFrame(() => document.querySelector<HTMLElement>('.thread-pane[data-focused] .thread-prompt :is(.prompt-editor, textarea)')?.focus()) }
+const focusComposer = (): void => { requestAnimationFrame(() => focusedComposerField()?.focus()) }
 
 export interface PhonePlayerProps {
   readonly state: AgentState

@@ -25,14 +25,27 @@ export function textToPromptDoc(text: string, skills: readonly AgentSkillReferen
     })
   }
   let offset = 0
+  const placed: AgentSkillReference[] = []
   for (const match of matches) {
-    if (match.start < offset) continue
+    if (match.start < offset || placed.some(skill => skill.name === match.skill.name && skill.path === match.skill.path)) continue
     plain(text.slice(offset, match.start))
     content.push({ type: 'skill', attrs: { ...match.skill, token: match.token } })
+    placed.push(match.skill)
     offset = match.end
   }
   plain(text.slice(offset))
   return { type: 'doc', content: [{ type: 'paragraph', content }] }
+}
+
+/** Only atoms carry references while editing; repeated plain tokens carry none. */
+export function promptDocSkills(doc: ProseMirrorNode): AgentSkillReference[] {
+  const skills: AgentSkillReference[] = []
+  doc.descendants(node => {
+    if (node.type.name !== 'skill') return
+    const skill = { name: node.attrs.name as string, path: node.attrs.path as string }
+    if (!skills.some(item => item.name === skill.name && item.path === skill.path)) skills.push(skill)
+  })
+  return skills
 }
 
 export function promptDocText(doc: JSONContent): string {

@@ -7,7 +7,7 @@ import type { AgentConnection } from './AgentContext'
 import { composerEnterIntent, isCompositionKey, readComposerKey, runComposerMenuKey } from './composerKeys'
 import { browseFolder, fileLimitReached, insertFile, retainFileReferences, sameFileReferences, type FileEntry } from './composerFiles'
 import { composerFilesBridge, FilePicker, fileOptionId, useFilePicker } from './FilePicker'
-import { insertSkill, retainSkillReferences, sameSkillReferences, skillLimitReached, skillSigils } from './composerSkills'
+import { insertSkill, sameSkillReferences, skillLimitReached, skillSigils } from './composerSkills'
 import { ProviderMark } from './ProviderMark'
 import { requestMode } from './requests/requestAnswers'
 import { composeReviewMessage, reviewCommentStore, reviewLabel, useReviewComments, type ReviewComment, type ReviewCommentStore } from './reviewComments'
@@ -147,7 +147,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const readingImages = useScreenshotReads(store, threadId).pending > 0
   // The row under the footer where the option chips say what happened to a refused or unconfirmed change.
   const [settingsNotices, setSettingsNotices] = useState<HTMLDivElement | null>(null)
-  const textarea = useRef<PromptEditorElement>(null)
+  const field = useRef<PromptEditorElement>(null)
   const caretAfterInsert = useRef<number | null>(null)
   const pendingRequest = row.request?.requestId === undefined ? undefined : row.thread.requests.find(request => request.id === row.request!.requestId)
   const question = row.request?.kind === 'question' && row.request.requestId && (pendingRequest === undefined || requestMode(pendingRequest) === 'legacy-text') ? row.request : undefined
@@ -194,8 +194,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const send = (submittedAt: number, mode: SubmissionMode = queueing ? 'queue' : 'send'): void => {
     if (mode === 'steer' ? !canSteer : !canSend) return
     // Sent from a button, which the emptied draft is about to disable: the next prompt starts where the last was written.
-    const field = textarea.current
-    if (field !== null && document.activeElement !== field && field.closest('form')?.contains(document.activeElement)) field.focus()
+    const input = field.current
+    if (input !== null && document.activeElement !== input && input.closest('form')?.contains(document.activeElement)) input.focus()
     if (question?.requestId) {
       if (draft.requestId !== question.requestId) store.edit(threadId, { requestId: question.requestId })
       // Main keeps no draft for an answer, so this window saves the revision it answers with.
@@ -225,7 +225,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     const buttons = [...(button.closest('.review-chips')?.querySelectorAll<HTMLElement>('.review-chip__remove') ?? [])]
     const next = buttons[buttons.indexOf(button) + 1] ?? buttons[buttons.indexOf(button) - 1]
     reviewComments.remove(threadId, comment.id)
-    if (next) next.focus(); else textarea.current?.focus()
+    if (next) next.focus(); else field.current?.focus()
   }
 
   const status = saveError !== null && save === 'unsaved'
@@ -250,7 +250,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
         <Button variant="secondary" onClick={() => store.edit(threadId, { text: '', attachments: [], skills: [], files: [], requestId: null })}>Discard answer</Button></div> : null}
       <ThreadComposerEditor key={threadId} row={row} state={state} command={command} store={store} composerId={composerId}
         editable={editable} answering={answering} placeholder={placeholder} supported={row.model?.supportsImages === true && !answering && !permission}
-        textarea={textarea} caretAfterInsert={caretAfterInsert} leavePickers={leavePickers} onMenuChange={setMenuOpen}
+        field={field} caretAfterInsert={caretAfterInsert} leavePickers={leavePickers} onMenuChange={setMenuOpen}
         edit={edit} onSend={() => send(performance.now())}>
         {comments.length > 0 ? <ul className="review-chips" aria-label="Review comments">
           {comments.map(comment => {
@@ -264,7 +264,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
           })}
         </ul> : null}
         {comments.length > 0 && answering ? <p className="review-chips__note">These comments go with your next prompt, not this answer.</p> : null}
-        <label className="tt-visually-hidden" htmlFor={composerId} onClick={() => textarea.current?.focus()}>{answering ? 'Your answer' : 'Prompt'}</label>
+        <label className="tt-visually-hidden" htmlFor={composerId} onClick={() => field.current?.focus()}>{answering ? 'Your answer' : 'Prompt'}</label>
       </ThreadComposerEditor>
       <div className="thread-prompt__footer">
         <div className="thread-prompt__meta" id={statusId}>
@@ -273,7 +273,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
             {threadHost.kind === 'local' ? <Laptop size={14} aria-hidden="true" /> : <Server size={14} aria-hidden="true" />}Runs on {threadHost.kind === 'local' ? 'this computer' : threadHost.name}</span> : null}
           {row.thread.nativeSessionStarted === false || capabilities.configureThread
             ? <ThreadOptions key={threadId} thread={row.thread} state={state} command={command} turnNote={false} noticeSlot={settingsNotices}
-              {...(editable && !answering && !permission ? { getDraftText: () => store.draft(threadId).text, onDraftText: (text: string) => { caretAfterInsert.current = text.length; edit({ text }); textarea.current?.focus() } } : {})} />
+              {...(editable && !answering && !permission ? { getDraftText: () => store.draft(threadId).text, onDraftText: (text: string) => { caretAfterInsert.current = text.length; edit({ text }); field.current?.focus() } } : {})} />
             : <span className="thread-prompt__model"><ProviderMark provider={row.providerId} name={row.provider} />{row.model?.name ?? row.provider}<small>{answering ? 'Answer this question' : 'Manual prompt'}</small></span>}
           {status}
         </div>
@@ -326,7 +326,7 @@ function useComposerControls(store: ThreadDraftStore, threadId: string): Compose
 
 /** The small, immediate typing path, including the menus that follow its caret. */
 function ThreadComposerEditor({ row, state, command, store, composerId, editable, answering, placeholder, supported,
-  textarea, caretAfterInsert, leavePickers, onMenuChange, edit, onSend, children }: {
+  field, caretAfterInsert, leavePickers, onMenuChange, edit, onSend, children }: {
   readonly row: ThreadRow
   readonly state: AgentState
   readonly command: Command
@@ -336,7 +336,7 @@ function ThreadComposerEditor({ row, state, command, store, composerId, editable
   readonly answering: boolean
   readonly placeholder: string
   readonly supported: boolean
-  readonly textarea: RefObject<PromptEditorElement | null>
+  readonly field: RefObject<PromptEditorElement | null>
   readonly caretAfterInsert: RefObject<number | null>
   readonly leavePickers: RefObject<() => void>
   readonly onMenuChange: (open: boolean) => void
@@ -364,11 +364,11 @@ function ThreadComposerEditor({ row, state, command, store, composerId, editable
 
   useLayoutEffect(() => {
     const caret = caretAfterInsert.current
-    if (caret === null || textarea.current === null || promptDocText(textarea.current.editor.getJSON()) !== draft.text) return
+    if (caret === null || field.current === null || promptDocText(field.current.editor.getJSON()) !== draft.text) return
     caretAfterInsert.current = null
-    setPromptSelection(textarea.current, caret)
-    picker.track(promptSelection(textarea.current.editor))
-    files.track(promptSelection(textarea.current.editor))
+    setPromptSelection(field.current, caret)
+    picker.track(promptSelection(field.current.editor))
+    files.track(promptSelection(field.current.editor))
   })
 
   useLayoutEffect(() => { onMenuChange(menuOpen) }, [menuOpen, onMenuChange])
@@ -377,10 +377,8 @@ function ThreadComposerEditor({ row, state, command, store, composerId, editable
     return () => { leavePickers.current = () => undefined }
   })
   const editText = (text: string, pills: readonly ComposerDraft['skills'][number][]): void => {
-    // A deleted `$name` or `@path` takes its selection with it before the revision is saved or sent.
-    const restored = [...draft.skills]
-    for (const pill of pills) if (!restored.some(skill => skill.name === pill.name && skill.path === pill.path)) restored.push(pill)
-    const skills = retainSkillReferences(text, restored, sigils)
+    // Pills own the skill references, including undo; plain tokens never retain a removed pill's selection.
+    const skills = [...pills]
     const mentioned = retainFileReferences(text, draft.files)
     edit({ text, ...(sameSkillReferences(skills, draft.skills) ? {} : { skills }), ...(sameFileReferences(mentioned, draft.files) ? {} : { files: mentioned }) })
   }
@@ -390,7 +388,7 @@ function ThreadComposerEditor({ row, state, command, store, composerId, editable
     const next = insertSkill(draft.text, picker.trigger, skill, draft.skills, sigils)
     caretAfterInsert.current = next.caret
     edit({ text: next.text, skills: next.skills })
-    textarea.current?.focus()
+    field.current?.focus()
   }
   /** A folder keeps the picker browsing; a file is mentioned where the `@` token was written. */
   const selectFile = (index: number): void => {
@@ -403,7 +401,7 @@ function ThreadComposerEditor({ row, state, command, store, composerId, editable
       : insertFile(draft.text, files.trigger, entry.path, draft.files)
     caretAfterInsert.current = next.caret
     edit({ text: next.text, files: next.files })
-    textarea.current?.focus()
+    field.current?.focus()
   }
   return <>
     <SkillPicker model={picker} listId={listId} provider={row.provider} selected={draft.skills} onSelect={skill => selectSkill(picker.options.indexOf(skill))} />
@@ -412,7 +410,7 @@ function ThreadComposerEditor({ row, state, command, store, composerId, editable
     {/* Screenshots still being staged when the user moves to another thread join this thread's draft as it is then. */}
     <ScreenshotInput key={threadId} target={threadId} attachments={draft.attachments} disabled={!editable} supported={supported}
       reads={screenshotReads} onChange={attachments => edit({ attachments })}>
-      <PromptEditor fieldRef={textarea} caretAfterInsert={caretAfterInsert} id={composerId} text={draft.text} skills={draft.skills} sigils={sigils} catalog={picker.catalog}
+      <PromptEditor fieldRef={field} caretAfterInsert={caretAfterInsert} id={composerId} text={draft.text} skills={draft.skills} sigils={sigils} catalog={picker.catalog}
         label={answering ? 'Your answer' : 'Prompt'} editable={editable}
         aria-describedby={statusId}
         aria-autocomplete={menus ? 'list' : undefined}
