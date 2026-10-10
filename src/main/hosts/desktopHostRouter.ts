@@ -256,15 +256,16 @@ export class DesktopHostRouter {
   /**
    * The recovery pass a published state asks for. A provider publishes dozens of times a second while it streams, and a pass
    * looks up every held answer's thread, so passes run one at a time and start at least REQUEST_DRAFT_PASS_INTERVAL_MS apart.
-   * Asking while one runs, or in the gap after it, gets one pass when the gap ends. A pass is over once its receipt reads
-   * are issued; each read retires its own acceptance when it finishes, so a known acceptance never waits behind another
-   * pass's socket read.
+   * Asking while one runs, or before that interval since its start is up, gets one pass when both are over: a slow pass is
+   * followed at once. A pass is over once its receipt reads are issued; each read retires its own acceptance when it
+   * finishes, so a known acceptance never waits behind another pass's socket read.
    */
   scheduleRequestDraftReconcile(drafts: RequestDraftRecovery): void {
     const pass = this.draftPass
     if (pass.disposed) return
     if (pass.running || pass.gap) { pass.wanted = drafts; return }
     pass.running = true
+    const started = Date.now()
     void this.issueRequestDraftChecks(drafts).catch(() => undefined).finally(() => {
       pass.running = false
       if (pass.disposed) return
@@ -273,7 +274,7 @@ export class DesktopHostRouter {
         const wanted = pass.wanted
         pass.wanted = undefined
         if (wanted) this.scheduleRequestDraftReconcile(wanted)
-      }, REQUEST_DRAFT_PASS_INTERVAL_MS)
+      }, Math.max(0, REQUEST_DRAFT_PASS_INTERVAL_MS - (Date.now() - started)))
     })
   }
   async reconcileRequestDrafts(drafts: RequestDraftRecovery): Promise<void> {

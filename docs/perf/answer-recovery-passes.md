@@ -32,14 +32,15 @@ bound, so main went on draining them for minutes after a reply ended.
 
 - The lookup reads `agentControl.hostId()`, which copies nothing. It moved to `src/main/agents/requestDraftOwners.ts`
   so a test can reach it.
-- Published states ask the router for a pass with `scheduleRequestDraftReconcile`. Passes run one at a time, at least
-  `REQUEST_DRAFT_PASS_INTERVAL_MS` (500 ms) apart, and asking during a pass or the gap after it gets one more pass when
-  the gap ends. A pass ends once its receipt reads are issued, so it never waits on another pass's socket read.
+- Published states ask the router for a pass with `scheduleRequestDraftReconcile`. Passes run one at a time and start at
+  least `REQUEST_DRAFT_PASS_INTERVAL_MS` (500 ms) apart, and asking during a pass, or before that interval since its start
+  is up, gets one more pass when both are over. A pass ends once its receipt reads are issued, so it never waits on
+  another pass's socket read.
 - A pass builds the router's shell only when a held remote answer still needs its receipt.
 
 A pass on this data now costs about 18 ms (two 5.9 ms lookups and one 6.2 ms shell), at most twice a second: under 4%
 of main while a provider streams, against more than all of it before.
 
-`tests/unit/main/requestDraftOwnerState.test.ts` reconciles a held remote answer against a real coordinator and fails
-if `get()` is called; before the fix one pass and one reconcile called it nine times.
-`tests/unit/main/desktopHostRouterRecovery.test.ts` covers the pass bound.
+`tests/unit/main/desktopHostRouterRecovery.test.ts` reconciles a held remote answer against a real coordinator and fails
+if `get()` is called; before the fix one pass and one reconcile called it nine times. The same file covers the pass
+bound, a pass slower than the interval, and the lookup with this computer's host off.
