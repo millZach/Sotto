@@ -19,6 +19,7 @@ vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.
 const NOW = E2E_THREADS_NOW
 const THREAD = 'grok-previews'
 const BASE: AgentCapabilities = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, skills: true }
+const mountedEditors = new Set<PromptEditorElement['editor']>()
 
 // The shape src/main/agents/claudeSkills.ts builds from the CLI's initialize commands.
 const path = (name: string): string => `claude-command:C%3A%2Fworkshop:${name}`
@@ -41,6 +42,7 @@ function mount(catalog: AgentSkillCatalog) {
   const live = liveAgentState(state, { catalog: () => catalog })
   vi.mocked(useAgents).mockImplementation(live.useLive)
   render(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+  mountedEditors.add((screen.getByRole('textbox', { name: 'Prompt' }) as PromptEditorElement).editor)
   return { live, prompt: () => screen.getByRole('textbox', { name: 'Prompt' }) as HTMLElement }
 }
 
@@ -54,7 +56,12 @@ function type(prompt: HTMLElement, value: string): void {
 }
 
 beforeEach(() => { vi.mocked(useAgents).mockReset() })
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  // Tiptap defers destruction by a tick; finish it before Vitest removes document.
+  for (const editor of mountedEditors) editor.destroy()
+  mountedEditors.clear()
+})
 
 describe('native skill tokens', () => {
   it('writes the catalog invocation where the provider reads it, and $name for Codex', () => {
