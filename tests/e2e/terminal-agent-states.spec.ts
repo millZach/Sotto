@@ -4,9 +4,10 @@ import { join, resolve } from 'node:path'
 import { _electron as electron, expect, test, type Page } from '@playwright/test'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, firstSottoWindow, launchSotto, openThreads, resizeWindow } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 // Usage: npm run build && npx playwright test tests/e2e/terminal-agent-states.spec.ts
-const SHOTS = resolve('artifacts/terminal-agent-states')
+const SHOTS = evidenceDirectory('artifacts/terminal-agent-states')
 const fixture = resolve('tests/fixtures/fakeTerminalAgent.mjs')
 
 async function state(page: Page, id: string): Promise<string | undefined> {
