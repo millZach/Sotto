@@ -31,6 +31,40 @@ import {
 import { createIpcHarness } from '../fixtures/ipcHarness'
 
 describe('IPC validation and lifecycle', () => {
+  it.each(['win32', 'darwin', 'linux'] as const)('%s rejects the runtime palette before any write or notification', async (platform) => {
+    const harness = createIpcHarness()
+    harness.cleanup()
+    const snapshot = { ...DEFAULT_SETTINGS, ...(platform === 'linux' ? { omarchyTheme: null } : {}) }
+    const repository = {
+      get: vi.fn(async () => snapshot),
+      update: vi.fn(async () => snapshot),
+      save: vi.fn(async () => snapshot),
+      reset: vi.fn(async () => snapshot),
+    }
+    const changed = vi.fn()
+    const coordinator = new NativeSettingsCoordinator({
+      repository, hotkeys: harness.hotkeys, startup: harness.startup,
+      onAutoPasteChanged: vi.fn(), onSettingsChanged: changed,
+    })
+    const dispose = registerIpc(harness.ipc, {
+      settings: {
+        get: () => coordinator.getSettings(),
+        update: patch => coordinator.updateSettings(patch),
+        reset: () => coordinator.resetSettings(),
+      },
+      history: harness.history, startup: harness.startup, hotkeys: harness.hotkeys, app: harness.app,
+      trustedSenders: () => [{ role: 'main', webContents: harness.trustedContents, url: harness.trustedUrl }],
+    })
+    try {
+      await expect(harness.ipc.invoke(SETTINGS_UPDATE, { omarchyTheme: null })).rejects.toThrow('Invalid IPC payload')
+      expect(repository.update).not.toHaveBeenCalled()
+      expect(repository.save).not.toHaveBeenCalled()
+      expect(repository.reset).not.toHaveBeenCalled()
+      expect(changed).not.toHaveBeenCalled()
+      expect(await coordinator.getSettings()).toEqual(snapshot)
+    } finally { dispose() }
+  })
+
   it('registers current settings, history, shortcut, startup, and app handlers', () => {
       const { ipc } = createIpcHarness()
 
