@@ -1,4 +1,6 @@
 import type { CommandCenterLaunchProfile } from './host'
+import { z } from 'zod'
+import { assertCommandCenterAdmission, type CommandCenterAdmission } from './commandCenterAdmission'
 import { CommandCenterProfileRefusal, validateCommandCenterProfile } from './commandCenterProfile'
 
 export const COMMAND_CENTER_CODEX_VERSION = '0.162.0'
@@ -37,17 +39,48 @@ export function commandCenterCodexArguments(profile: CommandCenterLaunchProfile)
   return ['app-server', '--stdio', '--strict-config', ...Object.entries(commandCenterCodexConfig(profile)).flatMap(([key, value]) => ['-c', `${key}=${toml(value)}`])]
 }
 
-/** Refuse before startup: config/read + MCP status are not a complete native tool/customization inventory. */
+/** Admission supplies the native-tool proof that app-server cannot report. */
 export function assertCodexCommandCenterPreflight(profile: CommandCenterLaunchProfile, version: string, modelId: string,
-  platform: NodeJS.Platform = process.platform): never {
+  platform: NodeJS.Platform = process.platform, admissions?: readonly CommandCenterAdmission[]): void {
   validateCommandCenterProfile(profile)
-  if (!version.includes(`/${COMMAND_CENTER_CODEX_VERSION}`) && version !== COMMAND_CENTER_CODEX_VERSION) {
-    throw new CommandCenterProfileRefusal('This Codex version has no verified command-center profile. Nothing was sent. Use an ordinary thread until its read-only profile is verified.')
+  assertCommandCenterAdmission('codex', version, platform, admissions)
+  if (!modelId) throw new CommandCenterProfileRefusal('The command center has no available Codex model. Nothing was sent. Choose a model, or use an ordinary thread.')
+}
+
+export const CODEX_COMMAND_CENTER_REPORT_FAILURE = 'Codex did not report the command center’s required settings and tools. Its session and tools were stopped. Nothing was sent. Use an ordinary thread, or check for a Sotto update.'
+
+const configReport = z.object({ config: z.record(z.string(), z.unknown()) })
+const serverReport = z.object({ name: z.string(), tools: z.record(z.string(), z.object({ name: z.string() })) })
+const record = (value: unknown): Record<string, unknown> | undefined => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined
+const valueAt = (config: Record<string, unknown>, key: string): unknown => key.split('.').reduce<unknown>((value, part) => record(value)?.[part], config)
+const sameNames = (actual: readonly string[], expected: readonly string[]): boolean => actual.length === expected.length
+  && new Set(actual).size === actual.length && expected.every(name => actual.includes(name))
+
+/** config/read's effective nested config and every page of mcpServerStatus/list. Never persisted or logged. */
+export function assertCodexCommandCenterStartupReport(profile: CommandCenterLaunchProfile, configResponse: unknown, statuses: unknown): void {
+  validateCommandCenterProfile(profile)
+  const config = configReport.safeParse(configResponse)
+  const servers = z.array(serverReport).safeParse(statuses)
+  const fail = (): never => { throw new CommandCenterProfileRefusal(CODEX_COMMAND_CENTER_REPORT_FAILURE) }
+  if (!config.success || !servers.success) fail()
+  const effective = config.data!.config
+  // Only verify fields the client reports. Its native tool catalog is absent; the live check supplies that proof.
+  for (const [key, expected] of Object.entries(commandCenterCodexConfig(profile))) {
+    if (key === 'mcp_servers') continue
+    if (JSON.stringify(valueAt(effective, key)) !== JSON.stringify(expected)) fail()
   }
-  if (!modelId || !['win32', 'darwin', 'linux'].includes(platform)) {
-    throw new CommandCenterProfileRefusal('This Codex model or platform has no verified command-center profile. Nothing was sent.')
-  }
-  // 0.162.0 removed tools.view_image; features.view_image is supported. Skills include_instructions only hides
-  // instructions, and orchestrator.skills.enabled is explicitly a no-op. Do not advertise either as isolation.
-  throw new CommandCenterProfileRefusal('Sotto cannot yet prove Codex’s complete toolset and startup customization are restricted for the command center. Nothing was sent. Use an ordinary thread until this combination is verified.')
+  const configured = record(effective.mcp_servers)
+  if (!configured || !sameNames(Object.keys(configured), ['sotto_threads'])) fail()
+  const supplied = record(configured!.sotto_threads)
+  if (!supplied || supplied.url !== profile.server.url || supplied.default_tools_approval_mode !== 'prompt'
+    || !Array.isArray(supplied.enabled_tools) || !sameNames(supplied.enabled_tools as string[], profile.toolNames)) fail()
+  const headers = record(supplied!.http_headers)
+  if (!headers || !sameNames(Object.keys(headers), profile.server.headers.map(header => header.name))
+    || profile.server.headers.some(header => headers[header.name] !== header.value)) fail()
+  const tools = record(supplied!.tools)
+  if (!tools || !sameNames(Object.keys(tools), profile.toolNames)
+    || profile.toolNames.some(name => record(tools[name])?.approval_mode !== 'approve' || record(tools[name])?.enabled === false)) fail()
+  if (supplied!.enabled === false || servers.data!.length !== 1 || servers.data![0]!.name !== 'sotto_threads') fail()
+  const names = Object.values(servers.data![0]!.tools).map(tool => tool.name.replace(/^mcp__sotto_threads__/u, ''))
+  if (!sameNames(names, profile.toolNames)) fail()
 }

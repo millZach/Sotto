@@ -123,7 +123,7 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       expect(await f.host.execute({ type: 'answer', threadId: sessionId, commandId: randomUUID(), requestId: request.id,
         answer: 'Allow once', approved: true })).toMatchObject({ accepted: true })
       expect((await thread()).runtimeMode).toBe(before.runtimeMode)
-      expect((await f.driver.requests()).some(record => permissionDecision(record) === true)).toBe(true)
+      await expect.poll(async () => (await f.driver.requests()).some(record => permissionDecision(record) === true)).toBe(true)
     })
     it('observes provider takeover and rejects a reply based on stale user input', async () => {
       await send()

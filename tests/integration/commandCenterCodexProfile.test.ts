@@ -1,5 +1,7 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
+import { writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { codexFixture } from '../fixtures/codexFixture'
 import { devinFixture } from '../fixtures/devinFixture'
@@ -8,11 +10,139 @@ import { assertCodexCommandCenterPreflight, commandCenterCodexArguments, command
 import { COMMAND_CENTER_PERMISSION_FAILURE } from '../../src/main/agents/commandCenterProfile'
 import type { CodexProcess, RpcFrame } from '../../src/main/agents/codexProcess'
 import type { DevinRpc } from '../../src/main/agents/devinRpc'
+import type { CommandCenterAdmission } from '../../src/main/agents/commandCenterAdmission'
+import { CODEX_COMMAND_CENTER_REPORT_FAILURE } from '../../src/main/agents/commandCenterCodexProfile'
 
 const profile = (): CommandCenterLaunchProfile => ({ kind: 'command-center', server: { name: 'sotto_threads', type: 'http',
   url: 'http://127.0.0.1:12345/mcp', headers: [{ name: 'Authorization', value: 'Bearer fixture-only' }] }, toolNames: ['list_threads', 'read_thread'], revoke: vi.fn() })
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup() })
+
+const admitted: readonly CommandCenterAdmission[] = [{ provider: 'codex', platform: process.platform as 'win32' | 'darwin',
+  version: '0.162.0', verificationNote: 'fixture-only evidence' }]
+function startup(offered: CommandCenterLaunchProfile, version = 'codex/0.162.0') {
+  const effectiveConfig: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(commandCenterCodexConfig(offered))) {
+    const parts = key.split('.'); let parent = effectiveConfig
+    for (const part of parts.slice(0, -1)) { parent[part] ??= {}; parent = parent[part] as Record<string, unknown> }
+    parent[parts.at(-1)!] = value
+  }
+  return { version, effectiveConfig, mcpServers: [{ name: 'sotto_threads', tools: Object.fromEntries(offered.toolNames.map(name => [name, { name }])) }] }
+}
+
+describe('Codex admitted combinations and process reports', () => {
+  it('refuses an ordinary launch already pending when an admitted profile appears', async () => {
+    const offered = profile()
+    const f = await codexFixture(undefined, false, 5000, { commandCenterAdmissions: admitted }); cleanups.push(f.cleanup)
+    await f.script(startup(offered)); await f.host.connect()
+    await f.script({ ...startup(offered), holdReply: 'initialize' })
+    const before = (await f.driver.requests()).length
+    const draft = { modelId: f.modelId, workingDirectory: f.root }
+    const ordinaryStart = f.host.startThreadSession!('master', draft)
+    await vi.waitFor(async () => expect((await f.driver.requests()).slice(before).some(request => request.method === 'initialize')).toBe(true))
+    f.host.useLaunchProfiles!({ profileFor: async () => offered })
+    const profiledStart = f.host.startThreadSession!('master', draft)
+    const refused = expect(profiledStart).rejects.toMatchObject({ code: 'READ_ONLY_PROFILE_UNAVAILABLE', message: expect.stringContaining('Nothing was sent') })
+    await new Promise<void>(resolve => setImmediate(resolve))
+    await writeFile(join(f.root, 'control.json'), JSON.stringify({ id: randomUUID(), type: 'release-reply', method: 'initialize' }))
+    await ordinaryStart; await refused
+    expect(offered.revoke).toHaveBeenCalled()
+    expect(f.adapter.resumedThreads()).toEqual([])
+    expect((await f.driver.requests()).some(request => ['thread/start', 'turn/start'].includes(request.method!))).toBe(false)
+    expect((await f.host.snapshot()).threads.flatMap(thread => thread.requests)).toEqual([])
+  })
+
+  it.each(['create', 'resume'] as const)('refuses a widened %s policy even when the process configuration report matches', async path => {
+    const offered = profile()
+    const f = await codexFixture(undefined, false, 5000, { commandCenterAdmissions: admitted }); cleanups.push(f.cleanup)
+    await f.script(startup(offered)); await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Fixture', path: f.root })
+    f.host.useLaunchProfiles!({ profileFor: async () => offered })
+    const create = () => f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: 'master', projectId: f.projectId, title: 'Fixture', modelId: f.modelId })
+    if (path === 'resume') { await create(); f.host.disconnect(); await f.adapter.closed(); await f.host.connect() }
+    await f.script({ ...startup(offered), [path === 'create' ? 'threadStartSettings' : 'threadResumeSettings']: { approvalPolicy: 'on-request', sandbox: { type: 'workspaceWrite' } } })
+    await expect(path === 'create' ? create() : f.host.startThreadSession!('master')).rejects.toMatchObject({ code: 'READ_ONLY_PROFILE_UNAVAILABLE' })
+    expect(offered.revoke).toHaveBeenCalledWith(CODEX_COMMAND_CENTER_REPORT_FAILURE)
+    expect((await f.driver.requests()).some(request => request.method === 'turn/start')).toBe(false)
+    expect(f.adapter.resumedThreads()).toEqual([])
+    expect((await f.host.snapshot()).threads.flatMap(thread => thread.requests)).toEqual([])
+  })
+
+  it.each(['0.162.0', '0.163.0'] as const)('admits %s only after the real fake process reports its settings and tools', async version => {
+    const offered = profile()
+    const f = await codexFixture(undefined, false, 5000, { commandCenterAdmissions: admitted }); cleanups.push(f.cleanup)
+    await f.script(startup(offered, `codex/${version}`)); await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Fixture', path: f.root })
+    f.host.useLaunchProfiles!({ profileFor: async () => offered })
+    await f.host.startThreadSession!('master', { modelId: f.modelId, workingDirectory: f.root })
+    await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: 'master', projectId: f.projectId, title: 'Fixture', modelId: f.modelId })
+    await f.host.execute({ type: 'send', commandId: randomUUID(), threadId: 'master', messageId: randomUUID(), text: 'fixture prompt' })
+    const methods = (await f.driver.requests()).map(request => request.method)
+    expect(methods.indexOf('config/read')).toBeLessThan(methods.indexOf('turn/start'))
+    expect(methods.indexOf('mcpServerStatus/list')).toBeLessThan(methods.indexOf('turn/start'))
+    expect((await f.host.snapshot()).threads.find(thread => thread.id === 'master')!.requests).toEqual([])
+    expect(offered.revoke).not.toHaveBeenCalled()
+    await f.driver.completeTurn('master', 'fixture reply')
+    await vi.waitFor(async () => expect((await f.host.snapshot()).threads.find(thread => thread.id === 'master')!.status).toBe('idle'))
+    await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: 'master', reasoningEffort: 'high' })
+    f.host.disconnect(); await f.adapter.closed(); await f.host.connect(); await f.host.startThreadSession!('master')
+    expect((await f.driver.requests()).filter(request => request.method === 'config/read').length).toBeGreaterThanOrEqual(3)
+    expect(offered.revoke).not.toHaveBeenCalled()
+  })
+
+  it('refuses an older version and the actual process version when the catalog is stale', async () => {
+    const offered = profile()
+    const f = await codexFixture(undefined, false, 5000, { commandCenterAdmissions: admitted }); cleanups.push(f.cleanup)
+    await f.script(startup(offered)); await f.host.connect()
+    f.host.useLaunchProfiles!({ profileFor: async () => offered })
+    await f.script(startup(offered, 'codex/0.161.0'))
+    await expect(f.host.startThreadSession!('master', { modelId: f.modelId, workingDirectory: f.root })).rejects.toMatchObject({ code: 'READ_ONLY_PROFILE_UNAVAILABLE' })
+    expect(offered.revoke).toHaveBeenCalled()
+    expect((await f.driver.requests()).some(request => request.method === 'turn/start')).toBe(false)
+    expect(f.adapter.resumedThreads()).toEqual([])
+  })
+
+  it.each(['shell', 'sandbox', 'approval', 'extra-server', 'missing-tool', 'renamed-tool', 'missing-report', 'unreadable-report', 'repeated-page', 'endless-pages'] as const)(
+    'stops and revokes a %s report before turn work or a request card', async wrong => {
+      const offered = profile()
+      const f = await codexFixture(undefined, false, 5000, { commandCenterAdmissions: admitted }); cleanups.push(f.cleanup)
+      const script: Record<string, unknown> = startup(offered)
+      const config = script.effectiveConfig as Record<string, unknown>
+      if (wrong === 'shell') (config.features as Record<string, unknown>).shell_tool = true
+      if (wrong === 'sandbox') config.sandbox_mode = 'workspace-write'
+      if (wrong === 'approval') config.approval_policy = 'on-request'
+      if (wrong === 'extra-server') (script.mcpServers as unknown[]).push({ name: 'extra', tools: {} })
+      if (wrong === 'missing-tool') script.mcpServers = [{ name: 'sotto_threads', tools: { list_threads: { name: 'list_threads' } } }]
+      if (wrong === 'renamed-tool') script.mcpServers = [{ name: 'sotto_threads', tools: { list_threads: { name: 'list_threads' }, changed: { name: 'changed' } } }]
+      if (wrong === 'missing-report') script.reject = 'config/read'
+      if (wrong === 'unreadable-report') script.configReadMalformed = true
+      if (wrong === 'repeated-page') script.mcpPages = { first: { data: [], nextCursor: 'again' }, again: { data: [], nextCursor: 'again' } }
+      if (wrong === 'endless-pages') script.mcpPages = Object.fromEntries(Array.from({ length: 102 }, (_, index) => [index === 0 ? 'first' : `page-${index}`, { data: [], nextCursor: `page-${index + 1}` }]))
+      await f.script(script); await f.host.connect()
+      f.host.useLaunchProfiles!({ profileFor: async () => offered })
+      await expect(f.host.startThreadSession!('master', { modelId: f.modelId, workingDirectory: f.root })).rejects.toMatchObject({ code: 'READ_ONLY_PROFILE_UNAVAILABLE', message: CODEX_COMMAND_CENTER_REPORT_FAILURE })
+      expect(offered.revoke).toHaveBeenCalledWith(CODEX_COMMAND_CENTER_REPORT_FAILURE)
+      expect((await f.driver.requests()).some(request => ['thread/start', 'turn/start'].includes(request.method!))).toBe(false)
+      expect((await f.host.snapshot()).threads.flatMap(thread => thread.requests)).toEqual([])
+      expect(f.adapter.resumedThreads()).toEqual([])
+    })
+
+  it.each([true, false])('checks reports before another prompt when config reload support is %s', async reloadSupported => {
+    const offered = profile()
+    const f = await codexFixture(undefined, false, 5000, { commandCenterAdmissions: admitted }); cleanups.push(f.cleanup)
+    await f.script(startup(offered)); await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Fixture', path: f.root })
+    f.host.useLaunchProfiles!({ profileFor: async () => offered })
+    await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: 'master', projectId: f.projectId, title: 'Fixture', modelId: f.modelId })
+    const internal = f.adapter as unknown as { runtimes: Map<string, { reloadSupported: boolean }> }
+    internal.runtimes.get('master')!.reloadSupported = reloadSupported
+    await f.script({ ...startup(offered), mcpServers: [{ name: 'extra', tools: {} }] })
+    await expect(f.host.execute({ type: 'send', commandId: randomUUID(), threadId: 'master', messageId: randomUUID(), text: 'fixture prompt' })).rejects.toMatchObject({ code: 'READ_ONLY_PROFILE_UNAVAILABLE' })
+    expect(offered.revoke).toHaveBeenCalled()
+    expect((await f.driver.requests()).some(request => request.method === 'turn/start')).toBe(false)
+    expect((await f.host.snapshot()).threads.find(thread => thread.id === 'master')!.requests).toEqual([])
+  })
+})
 
 describe('Codex command-center profile', () => {
   it('does not publish a stale observation error into an ordinary replacement thread', async () => {

@@ -84,6 +84,7 @@ if (!metadata) {
 const leave = () => { try { if (!metadata && readFileSync(alive, 'utf8') === String(process.pid)) unlinkSync(alive) } catch { /* already gone */ } }
 let lastAction = ''
 let initialized = false
+let deferredInit
 const released = name => new Promise(resolve => { const timer = setInterval(() => { if (existsSync(join(root, name))) { clearInterval(timer); resolve() } }, 10) })
 /**
  * A finished reply. With `thinking` it opens on a thinking block, streamed the way Claude Code 2.1.289 streams one
@@ -198,21 +199,36 @@ lines.on('line', line => {
       const scriptPath = join(root, 'initialize-script.json')
       const script = !metadata && existsSync(scriptPath) ? JSON.parse(readFileSync(scriptPath, 'utf8')) : {}
       const respond = () => {
+        if (script.silent) return
+        if (script.exit) { process.exit(0); return }
         initialized = !script.fail
         // Recorded so a test can count the CLIs started and not yet answered at any point.
         if (initialized && !metadata) record('initialize-answered', { session })
         output({ type: 'control_response', response: script.fail
           ? { subtype: 'error', request_id: frame.request_id, error: 'Synthetic initialization rejected' }
-          : { subtype: 'success', request_id: frame.request_id, response: { models, commands: existsSync(join(root, 'skills.json')) ? JSON.parse(readFileSync(join(root, 'skills.json'), 'utf8')) : [], session_state: 'idle' } } })
+          : { subtype: 'success', request_id: frame.request_id, response: { models, commands: existsSync(join(root, 'skills.json')) ? JSON.parse(readFileSync(join(root, 'skills.json'), 'utf8')) : [], agents: [], session_state: 'idle', current_permission_mode: commandCenter ? 'default' : settings.mode, ...(installed !== undefined ? { claude_code_version: installed } : {}), ...script.initializeReport } } })
         // A started session announces its tools, and AskUserQuestion is in that list only where someone
         // can answer it. `approvalSurface: false` is the CLI that took the flag and offered no surface.
-        if (!script.fail && !metadata) output({ type: 'system', subtype: 'init', session_id: session, ...(installed !== undefined ? { claude_code_version: installed } : {}),
-          tools: commandCenter ? ['AskUserQuestion', ...commandCenterTools] : ['Task', 'Bash', 'Edit', 'Glob', 'Grep', 'Read', 'Write', ...(script.approvalSurface === false ? [] : ['AskUserQuestion'])] })
+        if (!script.fail && !metadata && !script.omitInit) {
+          const init = { type: 'system', subtype: 'init', session_id: session, ...(installed !== undefined ? { claude_code_version: installed } : {}),
+            tools: commandCenter ? ['AskUserQuestion', ...commandCenterTools] : ['Task', 'Bash', 'Edit', 'Glob', 'Grep', 'Read', 'Write', ...(script.approvalSurface === false ? [] : ['AskUserQuestion'])],
+            mcp_servers: commandCenter ? [{ name: 'sotto_threads', status: 'connected' }] : [],
+            permissionMode: commandCenter ? 'default' : settings.mode, model: settings.model, slash_commands: [], agents: [], skills: [], plugins: [], ...script.initReport }
+          if (script.initAtTurn) deferredInit = init
+          else output(init)
+        }
+        for (const startupFrame of script.startupFrames ?? []) output(startupFrame)
       }
       if (script.gate) {
         writeFileSync(join(root, 'initialize-waiting'), session)
         const gate = setInterval(() => { if (existsSync(join(root, 'initialize-release'))) { clearInterval(gate); respond() } }, 5)
       } else respond()
+    }
+    else if (frame.request.subtype === 'get_settings') {
+      const scriptPath = join(root, 'initialize-script.json')
+      const script = existsSync(scriptPath) ? JSON.parse(readFileSync(scriptPath, 'utf8')) : {}
+      output({ type: 'control_response', response: { subtype: 'success', request_id: frame.request_id,
+        response: { effective: {}, sources: [], applied: { model: settings.model, effort: settings.effort }, ...script.settingsReport } } })
     }
     else if (['set_model', 'apply_flag_settings', 'set_permission_mode'].includes(frame.request.subtype)) {
       // settings-script.json: `refuse` answers every settings request with an error, or those of the subtypes it
@@ -252,6 +268,7 @@ lines.on('line', line => {
       output(error ? { type: 'result', subtype: 'error_during_execution', session_id: session, is_error: true, result: '' } : { type: 'result', subtype: 'success', session_id: session, is_error: false, result: '' })
     } else violation('Unknown control request')
   } else if (frame.type === 'user') {
+    if (deferredInit) { output(deferredInit); deferredInit = undefined }
     if (!initialized) violation('User prompt arrived before successful initialization')
     if (!frame.uuid || frame.session_id !== session || frame.message?.role !== 'user' || frame.parent_tool_use_id !== null) violation('Malformed native user frame')
     const scriptPath = join(root, 'script.json')

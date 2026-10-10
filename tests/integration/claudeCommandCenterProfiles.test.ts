@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { CommandCenterAdmission } from '../../src/main/agents/commandCenterAdmission'
 import type { AgentHostCommand, CommandCenterLaunchProfile } from '../../src/main/agents/host'
 import { COMMAND_CENTER_PERMISSION_FAILURE, CommandCenterProfileRefusal } from '../../src/main/agents/commandCenterProfile'
 import { CLAUDE_COMMAND_CENTER_CLIENT_VERSION, claudeCommandCenterArguments, claudeCommandCenterManagedPolicy,
@@ -21,8 +22,11 @@ const starts = async (f: Fixture) => (await f.driver.requests()).filter(record =
   const args = (record.params?.frame as { args?: string[] } | undefined)?.args
   return ['launch', 'resume'].includes(record.method ?? '') && (args?.includes('--session-id') || args?.includes('--resume'))
 })
-async function fixture(): Promise<Fixture> {
-  const f = await claudeFixture()
+const admissions: readonly CommandCenterAdmission[] = [{ provider: 'claude', platform: process.platform as 'win32' | 'darwin',
+  version: CLAUDE_COMMAND_CENTER_CLIENT_VERSION, verificationNote: 'tests/fake-claude-proof.md' }]
+async function fixture(version?: string): Promise<Fixture> {
+  const f = await claudeFixture(undefined, 2000, undefined, version ? { commandCenterAdmissions: admissions } : {})
+  if (version) await writeFile(join(f.root, 'version.txt'), version)
   cleanup.push(() => f.cleanup())
   await f.host.connect()
   await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Profile fixture', path: f.root })
@@ -38,8 +42,7 @@ function admit(f: Fixture, id: string, value = profile()) {
   f.adapter.useLaunchProfiles({ profileFor: resolver })
   return { value, resolver }
 }
-// No production launch can pass preflight yet. These request-guard tests model an already
-// profiled runtime at the private callback seam, without relaxing the production preflight.
+// These stale-callback tests capture a runtime that existed before admission checks were available.
 function guardedRuntime(f: Fixture, id: string): void {
   const native = f.adapter as unknown as { runtimes: Map<string, { commandCenter: boolean }> }
   native.runtimes.get(id)!.commandCenter = true
@@ -198,9 +201,9 @@ describe('Claude command-center profile', () => {
     // This is observable fake wiring, deliberately not a claim that the installed client enforces the policy.
   })
 
-  it.each(['win32', 'darwin', 'linux'] as const)('refuses %s even for the inspected version instead of equating flags with effective proof', platform => {
+  it.each(['win32', 'darwin', 'linux'] as const)('refuses unlisted %s even for the inspected version', platform => {
     expect(() => preflightClaudeCommandCenter(profile(), CLAUDE_COMMAND_CENTER_CLIENT_VERSION, platform, 'fixture-model'))
-      .toThrow('startup policy and complete tool list')
+      .toThrow('Nothing was sent')
     try { preflightClaudeCommandCenter(profile(), 'unknown-client', platform, 'unknown-model') }
     catch (error) { expect(error).toMatchObject({ code: 'READ_ONLY_PROFILE_UNAVAILABLE', retryable: false }) }
   })
@@ -249,7 +252,7 @@ describe('Claude command-center profile', () => {
     const { value } = admit(f, id), before = await starts(f)
     f.adapter.observeThreads([id])
     const snapshot = await f.adapter.connect()
-    expect(snapshot.error).toContain('startup policy and complete tool list')
+    expect(snapshot.error).toContain('Nothing was sent')
     await expect(f.adapter.startThreadSession(id)).rejects.toMatchObject({ code: 'READ_ONLY_PROFILE_UNAVAILABLE' })
     await expect(f.adapter.refreshThread(id)).rejects.toMatchObject({ code: 'READ_ONLY_PROFILE_UNAVAILABLE' })
     expect(await starts(f)).toEqual(before)
@@ -320,4 +323,197 @@ describe('Claude command-center profile', () => {
     expect((await f.host.snapshot()).threads.find(thread => thread.id === id)?.requests).toEqual([])
     expect(await f.sessions!.stopped(id)).toBe(false)
   })
+
+  it.each([CLAUDE_COMMAND_CENTER_CLIENT_VERSION, '2.1.297'])('admits listed or newer Claude %s with its own matching startup reports', async version => {
+    const f = await fixture(version), id = randomUUID(), { value } = admit(f, id)
+    expect((await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Master', modelId: f.modelId })).accepted).toBe(true)
+    expect((await f.driver.requests()).some(record => record.method === 'get_settings')).toBe(true)
+    expect((await starts(f))[0]?.params?.frame).toMatchObject({ args: expect.arrayContaining(claudeCommandCenterArguments(value)) })
+    expect((await f.host.execute({ type: 'send', commandId: randomUUID(), threadId: id, messageId: randomUUID(), text: 'Synthetic admitted turn' })).accepted).toBe(true)
+    expect(value.revoke).not.toHaveBeenCalled()
+    expect((await f.host.snapshot()).threads.find(thread => thread.id === id)?.requests).toEqual([])
+  })
+
+  it('refuses an older listed client before starting a session', async () => {
+    const f = await fixture('2.1.295'), id = randomUUID(), { value } = admit(f, id)
+    await expect(f.adapter.startThreadSession(id, { workingDirectory: f.root, modelId: f.modelId }))
+      .rejects.toMatchObject({ code: 'READ_ONLY_PROFILE_UNAVAILABLE', message: expect.stringContaining('Sotto has checked 2.1.296') })
+    expect(await starts(f)).toEqual([])
+    expect(value.revoke).toHaveBeenCalledWith(expect.stringContaining('Nothing was sent'))
+  })
+
+  it.each([
+    ['extra native tool', { tools: ['AskUserQuestion', 'mcp__sotto_threads__list_threads', 'mcp__sotto_threads__read_thread', 'Bash'] }],
+    ['extra MCP server', { mcp_servers: [{ name: 'sotto_threads', status: 'connected' }, { name: 'other', status: 'connected' }] }],
+    ['missing Sotto tool', { tools: ['AskUserQuestion', 'mcp__sotto_threads__list_threads'] }],
+    ['renamed Sotto tool', { tools: ['AskUserQuestion', 'mcp__sotto_threads__list_threads', 'mcp__sotto_threads__renamed'] }],
+    ['wrong approval', { permissionMode: 'bypassPermissions' }],
+    ['wrong model', { model: 'wrong-model' }],
+    ['plugin', { plugins: [{ name: 'extra', path: 'fixture-plugin' }] }],
+    ['agent', { agents: ['extra'] }],
+    ['skill', { skills: ['extra'] }],
+    ['slash command', { slash_commands: ['extra'] }],
+    ['unreadable report', { tools: null }],
+  ])('stops and revokes a process with %s before any turn work or request card', async (_name, initReport) => {
+    const f = await fixture(CLAUDE_COMMAND_CENTER_CLIENT_VERSION), id = randomUUID(), { value } = admit(f, id)
+    await writeFile(join(f.root, 'initialize-script.json'), JSON.stringify({ initReport }))
+    await expect(f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Master', modelId: f.modelId }))
+      .rejects.toMatchObject({ code: 'READ_ONLY_PROFILE_UNAVAILABLE' })
+    await expect.poll(() => f.sessions!.stopped(id)).toBe(true)
+    expect(value.revoke).toHaveBeenCalledWith(expect.stringContaining('stopped the command center'))
+    expect(value.revoke).toHaveBeenCalledWith(expect.stringContaining('Nothing was sent.'))
+    expect((await f.driver.requests()).filter(record => record.method === 'user')).toEqual([])
+    expect((await f.host.snapshot()).threads.find(thread => thread.id === id)?.requests).toEqual([])
+  })
+
+  it.each([
+    ['missing initialize inventory', { initializeReport: { agents: null } }],
+    ['initialize commands', { initializeReport: { commands: [{ name: 'extra' }] } }],
+    ['initialize permission mode', { initializeReport: { current_permission_mode: 'bypassPermissions' } }],
+    ['initialize older version', { initializeReport: { claude_code_version: '2.1.295' } }],
+    ['project settings hooks', { settingsReport: { sources: [{ source: 'projectSettings', settings: { hooks: {} } }] } }],
+    ['user settings', { settingsReport: { sources: [{ source: 'userSettings', settings: {} }] } }],
+    ['flag hooks', { settingsReport: { sources: [{ source: 'flagSettings', settings: { hooks: {} } }] } }],
+    ['missing settings report', { settingsReport: { sources: null } }],
+  ])('refuses %s from native startup control responses before writing a prompt', async (_name, script) => {
+    const f = await fixture(CLAUDE_COMMAND_CENTER_CLIENT_VERSION), id = randomUUID(), { value } = admit(f, id)
+    await writeFile(join(f.root, 'initialize-script.json'), JSON.stringify(script))
+    await expect(f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Master', modelId: f.modelId }))
+      .rejects.toMatchObject({ code: 'READ_ONLY_PROFILE_UNAVAILABLE' })
+    expect(value.revoke).toHaveBeenCalled()
+    expect((await f.driver.requests()).filter(record => record.method === 'user')).toEqual([])
+    expect((await f.host.snapshot()).threads.find(thread => thread.id === id)?.requests).toEqual([])
+  })
+
+  it.each(['assistant', 'native-request'] as const)('blocks %s work after an early init while settings are still unchecked', async kind => {
+    const f = await fixture(CLAUDE_COMMAND_CENTER_CLIENT_VERSION), id = randomUUID(), { value } = admit(f, id)
+    const frame = kind === 'assistant' ? { type: 'assistant', uuid: randomUUID(), message: { id: randomUUID(), role: 'assistant', content: [{ type: 'text', text: 'Unchecked work' }] } }
+      : { type: 'control_request', request_id: randomUUID(), request: { subtype: 'can_use_tool', tool_name: 'mcp__sotto_threads__list_threads', input: {} } }
+    await writeFile(join(f.root, 'initialize-script.json'), JSON.stringify({ startupFrames: [frame], settingsReport: { sources: [{ source: 'projectSettings', settings: {} }] } }))
+    await expect(f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Master', modelId: f.modelId }))
+      .rejects.toMatchObject({ code: 'READ_ONLY_PROFILE_UNAVAILABLE' })
+    expect(value.revoke).toHaveBeenCalledWith(expect.stringContaining('Nothing was sent.'))
+    expect((await f.driver.requests()).filter(record => ['user', 'control_response'].includes(record.method ?? ''))).toEqual([])
+    const thread = (await f.host.snapshot()).threads.find(thread => thread.id === id)!
+    expect(thread.requests).toEqual([])
+    expect(thread.messages.filter(message => message.role === 'assistant')).toEqual([])
+    await expect.poll(() => f.sessions!.stopped(id)).toBe(true)
+  })
+
+  it('revokes a command center whose initialize control response never arrives', async () => {
+    const f = await fixture(CLAUDE_COMMAND_CENTER_CLIENT_VERSION), id = randomUUID(), { value } = admit(f, id)
+    await writeFile(join(f.root, 'initialize-script.json'), JSON.stringify({ silent: true }))
+    await expect(f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Master', modelId: f.modelId }))
+      .rejects.toMatchObject({ code: 'READ_ONLY_PROFILE_UNAVAILABLE', message: expect.stringContaining('readable initialize report') })
+    await expect.poll(() => f.sessions!.stopped(id)).toBe(true)
+    expect(value.revoke).toHaveBeenCalledWith(expect.stringContaining('readable initialize report'))
+    expect((await f.driver.requests()).filter(record => record.method === 'user')).toEqual([])
+    expect((await f.host.snapshot()).threads.find(thread => thread.id === id)?.requests).toEqual([])
+  })
+
+  it('revokes a current early-start process that exits before providing its initialize report', async () => {
+    const f = await fixture(CLAUDE_COMMAND_CENTER_CLIENT_VERSION), id = randomUUID(), { value } = admit(f, id)
+    await writeFile(join(f.root, 'initialize-script.json'), JSON.stringify({ exit: true }))
+    await expect(f.adapter.startThreadSession(id, { workingDirectory: f.root, modelId: f.modelId }))
+      .rejects.toMatchObject({ code: 'READ_ONLY_PROFILE_UNAVAILABLE' })
+    await expect.poll(() => vi.mocked(value.revoke).mock.calls.length).toBeGreaterThan(0)
+    expect((await f.driver.requests()).filter(record => record.method === 'user')).toEqual([])
+    expect((await f.host.snapshot()).threads.flatMap(thread => thread.requests)).toEqual([])
+  })
+
+  it('trusts the machine administrator settings while excluding the other settings sources', async () => {
+    const f = await fixture(CLAUDE_COMMAND_CENTER_CLIENT_VERSION), id = randomUUID(), { value } = admit(f, id)
+    await writeFile(join(f.root, 'initialize-script.json'), JSON.stringify({ settingsReport: { sources: [{ source: 'policySettings', settings: { hooks: { SessionStart: [] } } }] } }))
+    expect((await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Master', modelId: f.modelId })).accepted).toBe(true)
+    expect(value.revoke).not.toHaveBeenCalled()
+  })
+
+  it.each([false, true])('gates the first turn when its inventory arrives only with the turn (missing: %s)', async missing => {
+    const f = await fixture(CLAUDE_COMMAND_CENTER_CLIENT_VERSION), id = randomUUID(), { value } = admit(f, id)
+    await writeFile(join(f.root, 'initialize-script.json'), JSON.stringify(missing ? { omitInit: true } : { initAtTurn: true, initReport: { tools: ['AskUserQuestion', 'Bash'] } }))
+    expect((await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Master', modelId: f.modelId })).accepted).toBe(true)
+    await writeFile(join(f.root, 'script.json'), JSON.stringify({ reply: 'This turn work must not appear' }))
+    expect((await f.host.execute({ type: 'send', commandId: randomUUID(), threadId: id, messageId: randomUUID(), text: 'Synthetic first turn' })).accepted).toBe(false)
+    await expect.poll(() => f.sessions!.stopped(id)).toBe(true)
+    expect(value.revoke).toHaveBeenCalled()
+    expect(value.revoke).toHaveBeenCalledWith(expect.stringContaining('The first message reached Claude Code. Nothing else was sent.'))
+    const thread = (await f.host.snapshot()).threads.find(thread => thread.id === id)!
+    expect(thread.requests).toEqual([])
+    expect(thread.messages.filter(message => message.role === 'assistant')).toEqual([])
+  })
+
+  it('accepts the first-turn inventory and rechecks early start, settings, cold resume and replacement processes', async () => {
+    const f = await fixture(CLAUDE_COMMAND_CENTER_CLIENT_VERSION), id = randomUUID(), { value } = admit(f, id)
+    await writeFile(join(f.root, 'initialize-script.json'), JSON.stringify({ initAtTurn: true }))
+    await f.adapter.startThreadSession(id, { workingDirectory: f.root, modelId: f.modelId })
+    expect((await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Master', modelId: f.modelId })).accepted).toBe(true)
+    const send = () => f.host.execute({ type: 'send', commandId: randomUUID(), threadId: id, messageId: randomUUID(), text: 'Synthetic matching turn' })
+    const finish = async () => { await f.driver.completeTurn(id, 'Done'); await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === id)?.status).toBe('idle') }
+    expect((await send()).accepted).toBe(true); await finish()
+    expect((await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, reasoningEffort: 'high' })).accepted).toBe(true)
+    expect((await send()).accepted).toBe(true); await finish()
+    f.adapter.disconnect(); await f.adapter.closed(); f.adapter.observeThreads([id]); await f.adapter.connect()
+    expect((await send()).accepted).toBe(true); await finish()
+    await f.action(id, { type: 'exit' }); await expect.poll(() => f.sessions!.stopped(id)).toBe(true)
+    // The child's liveness marker can disappear before its exit callback reaches the adapter.
+    await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === id)?.providerSessionOpen).toBeUndefined()
+    await f.adapter.startThreadSession(id)
+    expect((await send()).accepted).toBe(true); await finish()
+    expect((await f.driver.requests()).filter(record => record.method === 'get_settings')).toHaveLength(4)
+    expect(value.revoke).not.toHaveBeenCalled()
+    expect((await f.host.snapshot()).threads.find(thread => thread.id === id)?.requests).toEqual([])
+  })
+
+  it('replaces an ordinary process before using an admitted profile and blocks separate native entry paths', async () => {
+    const f = await fixture(CLAUDE_COMMAND_CENTER_CLIENT_VERSION), id = await ordinary(f), before = await f.liveSettings.effective(id)
+    const { value } = admit(f, id)
+    await f.adapter.startThreadSession(id)
+    expect((await f.liveSettings.effective(id)).process).not.toBe(before.process)
+    expect((await starts(f)).at(-1)?.params?.frame).toMatchObject({ args: expect.arrayContaining(claudeCommandCenterArguments(value)) })
+    const count = (await starts(f)).length
+    expect(await f.adapter.writeShortText(id, { instruction: 'Synthetic instruction', material: 'Synthetic material' })).toBeNull()
+    await expect(f.adapter.listThreadSkills(id)).rejects.toThrow('does not load native skills')
+    await expect(f.adapter.rollbackThread(id, 1, [])).rejects.toThrow('cannot rewind')
+    expect(await readFile(join(f.root, 'oneshot.jsonl'), 'utf8').catch(() => '')).toBe('')
+    expect(await starts(f)).toHaveLength(count)
+  })
+
+  it('does not let a cancelled ordinary-process replacement launch after reconnect', async () => {
+    const f = await fixture(CLAUDE_COMMAND_CENTER_CLIENT_VERSION), id = await ordinary(f)
+    const { value } = admit(f, id)
+    const internal = f.adapter as unknown as { stopRuntime(id: string, runtime: unknown): Promise<unknown> }
+    const stop = internal.stopRuntime.bind(f.adapter)
+    let release!: () => void, stopped!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const observed = new Promise<void>(resolve => { stopped = resolve })
+    internal.stopRuntime = async (threadId, runtime) => { const result = await stop(threadId, runtime); stopped(); await gate; return result }
+    const starting = f.adapter.startThreadSession(id)
+    const cancelled = expect(starting).rejects.toThrow('cancelled')
+    await observed
+    f.adapter.disconnect(); await f.adapter.closed(); await f.adapter.connect()
+    const before = (await starts(f)).length
+    release(); await cancelled
+    internal.stopRuntime = stop
+    expect(await starts(f)).toHaveLength(before)
+    expect(value.revoke).not.toHaveBeenCalled()
+  })
+
+  it('keeps a discarded spare startup report away from its replacement in the same connection', async () => {
+    const f = await fixture(CLAUDE_COMMAND_CENTER_CLIENT_VERSION), id = randomUUID(), { value } = admit(f, id)
+    await writeFile(join(f.root, 'initialize-script.json'), JSON.stringify({ gate: true, initReport: { tools: ['Bash'] } }))
+    const starting = f.adapter.startThreadSession(id, { workingDirectory: f.root, modelId: f.modelId })
+    await expect.poll(() => readFile(join(f.root, 'initialize-waiting'), 'utf8').catch(() => '')).not.toBe('')
+    const internals = f.adapter as unknown as { discardSpare(id: string): Promise<void> }
+    const discarding = internals.discardSpare(id)
+    await writeFile(join(f.root, 'initialize-script.json'), '{}')
+    await f.adapter.startThreadSession(id, { workingDirectory: f.root, modelId: f.modelId })
+    await writeFile(join(f.root, 'initialize-release'), '')
+    await starting; await discarding
+    expect(value.revoke).not.toHaveBeenCalled()
+    expect((await f.host.snapshot()).error).toBeUndefined()
+    expect((await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Master', modelId: f.modelId })).accepted).toBe(true)
+    expect((await f.host.execute({ type: 'send', commandId: randomUUID(), threadId: id, messageId: randomUUID(), text: 'Synthetic replacement turn' })).accepted).toBe(true)
+    expect(value.revoke).not.toHaveBeenCalled()
+  })
+
 })

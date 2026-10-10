@@ -205,7 +205,7 @@ export class DevinAcpHost implements AgentHost {
     }
     if (!current()) throw new DevinUncertain('Devin connection changed.')
     if (!profile) return
-    const reason = 'Devin cannot host the command center. Choose a verified Codex, Claude Code or Grok Build profile. Devin can still work in ordinary threads.'
+    const reason = 'Devin cannot host the command center. Nothing was sent. Use an ordinary thread, or choose an admitted Codex, Claude Code or Grok Build version.'
     try { profile.revoke(reason) } catch { /* Refusal still closes the provider process. */ }
     await this.stopProfileSession(id, reason, origin, observer)
     throw new CommandCenterProfileRefusal(reason)

@@ -212,7 +212,7 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
     return
   }
   // Native MCP status proves only MCP inventory. It deliberately says nothing about the builtin toolset.
-  if (method === 'mcpServerStatus/list') { reply({ data: script.mcpServers ?? [], nextCursor: null }); return }
+  if (method === 'mcpServerStatus/list') { reply(script.mcpPages?.[params.cursor ?? 'first'] ?? { data: script.mcpServers ?? [], nextCursor: null }); return }
   if (method === 'config/mcpServer/reload') { mcpConfigStamp = configStamp(); reply({}); return }
   // Its account, only when a test scripts one (ADR-0037); otherwise the method is unknown, as from an older Codex.
   if (method === 'account/read' && 'account' in script) { reply({ account: script.account, requiresOpenaiAuth: true }); return }
@@ -231,7 +231,7 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
     served(method, thread.id)
     notify('thread/started', { thread })
     reply({ thread, model: params.model, cwd: params.cwd, approvalPolicy: thread.approvalPolicy, approvalsReviewer: thread.approvalsReviewer,
-      reasoningEffort: thread.reasoningEffort, sandbox: { type: thread.sandbox === 'read-only' ? 'readOnly' : thread.sandbox === 'danger-full-access' ? 'dangerFullAccess' : 'workspaceWrite' } })
+      reasoningEffort: thread.reasoningEffort, sandbox: { type: thread.sandbox === 'read-only' ? 'readOnly' : thread.sandbox === 'danger-full-access' ? 'dangerFullAccess' : 'workspaceWrite' }, ...script.threadStartSettings })
   } else if (method === 'thread/resume' || method === 'thread/read') {
     const thread = state.threads[params.threadId]
     if (thread) {
@@ -258,7 +258,7 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
       }
       const history = { ...JSON.parse(JSON.stringify(thread)), turns: method === 'thread/resume' && params.excludeTurns ? [] : historyTurns(thread, script) }
       reply({ thread: history, model: thread.model, approvalPolicy: thread.approvalPolicy, approvalsReviewer: thread.approvalsReviewer,
-        reasoningEffort: thread.reasoningEffort, sandbox: { type: thread.sandbox === 'read-only' ? 'readOnly' : thread.sandbox === 'danger-full-access' ? 'dangerFullAccess' : 'workspaceWrite' } })
+        reasoningEffort: thread.reasoningEffort, sandbox: { type: thread.sandbox === 'read-only' ? 'readOnly' : thread.sandbox === 'danger-full-access' ? 'dangerFullAccess' : 'workspaceWrite' }, ...(method === 'thread/resume' ? script.threadResumeSettings : {}) })
     }
     else emit({ id, error: { code: -32000, message: 'Unknown thread' } })
   } else if (method === 'thread/turns/list') {

@@ -1,5 +1,7 @@
 import type { CommandCenterLaunchProfile } from './host'
 import { CommandCenterProfileRefusal, validateCommandCenterProfile } from './commandCenterProfile'
+import { assertCommandCenterAdmission, type CommandCenterAdmission } from './commandCenterAdmission'
+import { object, type ClaudeFrame } from './claudeProtocol'
 
 /** Flags inspected locally; control shapes are pinned by claude-agent-sdk 0.3.270. */
 export const CLAUDE_COMMAND_CENTER_CLIENT_VERSION = '2.1.296'
@@ -41,17 +43,84 @@ export function claudeCommandCenterMcpConfig(profile: CommandCenterLaunchProfile
     headers: Object.fromEntries(server.headers.map(header => [header.name, header.value])) } } }
 }
 
-/**
- * No platform/model compatibility proof has been admitted yet. In particular, SDK resolveSettings
- * explicitly does not execute policyHelper and reads cached remote policy; the CLI may resolve a
- * different administrator tier before initialize. Reading a tool list afterward cannot undo an
- * executable startup hook. Do not replace this refusal with a version check or synthetic wire field.
- */
+/** The reviewed live check admits a platform and version floor; reports still gate each process. */
 export function preflightClaudeCommandCenter(profile: CommandCenterLaunchProfile, version: string,
-  platform: NodeJS.Platform, model: string): never {
+  platform: NodeJS.Platform, model: string, admissions?: readonly CommandCenterAdmission[]): void {
   validateCommandCenterProfile(profile)
-  if (!version.includes(CLAUDE_COMMAND_CENTER_CLIENT_VERSION) || !model || !['win32', 'darwin', 'linux'].includes(platform)) {
-    throw new CommandCenterProfileRefusal('Sotto cannot verify Claude Code’s startup policy and complete tool list for this client, model and platform. Nothing was sent. Choose a verified command-center provider or check for a Sotto update.')
+  assertCommandCenterAdmission('claude', version, platform, admissions)
+  if (!model) throw claudeCommandCenterReportRefusal('did not report a model')
+}
+
+export function claudeCommandCenterReportRefusal(detail: string, promptSent = false): CommandCenterProfileRefusal {
+  return new CommandCenterProfileRefusal(`Claude Code ${detail}, so Sotto stopped the command center and its tools. ${promptSent ? 'The first message reached Claude Code. Nothing else was sent.' : 'Nothing was sent.'} Use an ordinary thread, or check for a Sotto update.`)
+}
+
+const empty = (value: unknown): boolean => Array.isArray(value) && value.length === 0
+const exactNames = (value: unknown, expected: readonly string[]): boolean => Array.isArray(value)
+  && value.length === expected.length && new Set(value).size === value.length
+  && value.every(name => typeof name === 'string' && expected.includes(name))
+
+/** initialize reports customization catalogs, but neither the complete native tools nor MCP tools. */
+export function assertClaudeCommandCenterInitializeReport(report: ClaudeFrame, platform: NodeJS.Platform,
+  admissions?: readonly CommandCenterAdmission[]): void {
+  if (!empty(report.commands) || !empty(report.agents)) {
+    throw claudeCommandCenterReportRefusal('reported commands or agents outside its read-only profile, or an unreadable startup report')
   }
-  throw new CommandCenterProfileRefusal('Sotto cannot verify Claude Code’s startup policy and complete tool list before this client and model run. Nothing was sent. Choose a verified command-center provider or check for a Sotto update.')
+  // Installed 2.1.296 reports these; the older pinned SDK type does not yet name them.
+  if ('current_permission_mode' in report && report.current_permission_mode !== 'default') {
+    throw claudeCommandCenterReportRefusal('reported a permission mode outside its read-only profile')
+  }
+  if ('claude_code_version' in report) {
+    if (typeof report.claude_code_version !== 'string') throw claudeCommandCenterReportRefusal('did not provide a readable startup client version')
+    assertCommandCenterAdmission('claude', report.claude_code_version, platform, admissions)
+  }
+}
+
+/** Native get_settings reads the actual cascade; policySettings are the trusted administrator tier. */
+export function assertClaudeCommandCenterSettingsReport(report: ClaudeFrame): string {
+  const applied = object(report.applied)
+  if (!object(report.effective) || !Array.isArray(report.sources) || typeof applied?.model !== 'string' || !applied.model
+    || report.errors !== undefined && !empty(report.errors)) {
+    throw claudeCommandCenterReportRefusal('did not provide a readable startup settings report')
+  }
+  for (const source of report.sources) {
+    const entry = object(source), settings = object(entry?.settings)
+    if (!settings || !['policySettings', 'flagSettings'].includes(String(entry?.source))
+      || entry?.source !== 'policySettings' && settings.hooks !== undefined) {
+      throw claudeCommandCenterReportRefusal('reported a settings source outside its read-only profile')
+    }
+  }
+  return applied.model
+}
+
+/** This is the client's real first-turn system/init inventory, checked before any other turn frame. */
+export function assertClaudeCommandCenterStartupReport(profile: CommandCenterLaunchProfile, frame: ClaudeFrame,
+  model: string | undefined, platform: NodeJS.Platform, admissions?: readonly CommandCenterAdmission[], promptSent = false): void {
+  const refusal = (detail: string): CommandCenterProfileRefusal => claudeCommandCenterReportRefusal(detail, promptSent)
+  if (frame.type !== 'system' || frame.subtype !== 'init' || typeof frame.claude_code_version !== 'string') {
+    throw refusal('did not provide a readable startup tool report')
+  }
+  try { assertCommandCenterAdmission('claude', frame.claude_code_version, platform, admissions) }
+  catch (error) {
+    if (promptSent && error instanceof CommandCenterProfileRefusal) {
+      throw new CommandCenterProfileRefusal(error.message.replace('Nothing was sent.', 'The first message reached Claude Code. Nothing else was sent.'))
+    }
+    throw error
+  }
+  const expected = [CLAUDE_COMMAND_CENTER_QUESTION_TOOL, ...profile.toolNames.map(name => `mcp__${profile.server.name}__${name}`)]
+  if (!exactNames(frame.tools, expected)) throw refusal('reported tools outside its read-only profile, or omitted a supplied tool')
+  if (!Array.isArray(frame.mcp_servers) || frame.mcp_servers.length !== 1
+    || object(frame.mcp_servers[0])?.name !== profile.server.name || object(frame.mcp_servers[0])?.status !== 'connected') {
+    throw refusal('reported an unavailable or extra tool server')
+  }
+  if (frame.permissionMode !== 'default' || typeof frame.model !== 'string' || !frame.model || model && frame.model !== model) {
+    throw refusal('reported a permission mode or model outside its read-only profile')
+  }
+  if (!empty(frame.slash_commands) || !empty(frame.skills) || !empty(frame.plugins)
+    || frame.agents !== undefined && !empty(frame.agents)
+    || frame.terminal_slash_commands !== undefined && !empty(frame.terminal_slash_commands)
+    || frame.plugin_errors !== undefined && !empty(frame.plugin_errors)
+    || frame.mcp_server_errors !== undefined && !empty(frame.mcp_server_errors)) {
+    throw refusal('reported customization outside its read-only profile, or an unreadable startup inventory')
+  }
 }

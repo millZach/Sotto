@@ -4,6 +4,7 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   {
     ignores: [
+      'artifacts/command-center-live/**',
       'artifacts/voice-control-removal/merged-setup/**',
       'artifacts/linux-hyprland-paste/**',
       'artifacts/linux-no-window-controls/**',

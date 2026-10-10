@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { GrokAcpHost } from '../../src/main/agents/grok'
+import { GrokAcpHost, type GrokAcpOptions } from '../../src/main/agents/grok'
 import type { RecordedRpc } from './codexFixture'
 import type { AdapterSessionOptions } from '../integration/adapterContract'
 /** A log may not exist before its first event; any other read failure is evidence, not an empty trace. */
@@ -19,9 +19,9 @@ async function sideCalls(root: string): Promise<{ cwd: string; model: string | u
   material: ((frames.filter(frame => frame.method === 'session/prompt')[index]?.params?.prompt as { text: string }[] | undefined) ?? []).map(part => part.text).join('') }))
 }
 // The deadline also covers the fake agent's process start; see the note on claudeFixture.
-export async function grokFixture(root?: string, requestTimeoutMs = 2000, pollIntervalMs = 20, session: AdapterSessionOptions = {}) {
+export async function grokFixture(root?: string, requestTimeoutMs = 2000, pollIntervalMs = 20, session: AdapterSessionOptions = {}, options: GrokAcpOptions = {}) {
  root ??= await mkdtemp(join(tmpdir(),'sotto-grok-thread-'))
- const adapter = new GrokAcpHost(root,{executable:process.execPath,args:[resolve('tests/fixtures/fakeGrokThreadAgent.mjs'),root],requestTimeoutMs,pollIntervalMs,...session})
+ const adapter = new GrokAcpHost(root,{executable:process.execPath,args:[resolve('tests/fixtures/fakeGrokThreadAgent.mjs'),root],requestTimeoutMs,pollIntervalMs,...session,...options})
  const checkViolations = async () => { const text = await readLog(join(root,'violations.jsonl')); if (text) throw new Error(`Invalid Grok reply: ${text}`) }
  const requests = async (): Promise<RecordedRpc[]> => {
   await checkViolations()
@@ -51,7 +51,7 @@ export async function grokFixture(root?: string, requestTimeoutMs = 2000, pollIn
    stopped:async(id:string)=>{const native=await realId(id);return (await requests()).findLast(record=>record.method==='fixture/session-resident'&&record.params?.sessionId===native)?.params?.resident===false},
   },
   driver:{typeInProvider:(id:string,text:string)=>action(id,{type:'takeover',text}),completeTurn:(id:string,text:string)=>action(id,{type:'complete',text}),raiseQuestion:(id:string,text:string)=>action(id,{type:'question',text}),raisePermission:(id:string,text:string)=>action(id,{type:'permission',text}),delayNextAck:async()=>script({delayPrompt:requestTimeoutMs+1000,suppressNotifications:true}),requests,
-   restart:async()=>{adapter.disconnect();await adapter.closed();return grokFixture(root,requestTimeoutMs,pollIntervalMs,session)}},
+   restart:async()=>{adapter.disconnect();await adapter.closed();return grokFixture(root,requestTimeoutMs,pollIntervalMs,session,options)}},
   cleanup:async()=>{adapter.disconnect();await adapter.closed();if(dirname(resolve(root))!==resolve(tmpdir())||!root.includes('sotto-grok-thread-'))throw new Error('Unexpected temporary directory');try{await checkViolations()}finally{await rm(root,{recursive:true,force:true})}}
  }
 }

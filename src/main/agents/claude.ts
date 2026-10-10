@@ -18,7 +18,8 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { ClaudeOriginJournal } from './claudeOriginJournal'
 import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, CommandCenterLaunchProfile, ThreadLaunchProfiles, RestoredThreadHistory, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose, ThreadSessionDraft } from './host'
 import { COMMAND_CENTER_PERMISSION_FAILURE, CommandCenterProfileRefusal } from './commandCenterProfile'
-import { CLAUDE_COMMAND_CENTER_QUESTION_TOOL, claudeCommandCenterArguments, claudeCommandCenterMcpConfig, preflightClaudeCommandCenter } from './commandCenterClaudeProfile'
+import type { CommandCenterAdmission } from './commandCenterAdmission'
+import { assertClaudeCommandCenterInitializeReport, assertClaudeCommandCenterSettingsReport, assertClaudeCommandCenterStartupReport, claudeCommandCenterReportRefusal, CLAUDE_COMMAND_CENTER_QUESTION_TOOL, claudeCommandCenterArguments, claudeCommandCenterMcpConfig, preflightClaudeCommandCenter } from './commandCenterClaudeProfile'
 import { SIDE_WRITING_TIMEOUT_MS, sideWritingEffort } from './sideWriting'
 import { ThreadMessageLog } from './threadMessageLog'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
@@ -99,7 +100,7 @@ type ClaudeSettingsStep = { field: keyof ClaudeSettings; request: ClaudeFrame }
  * by starting the CLI again, refused by the CLI (a restart or a refusal follows), or left unconfirmed. Event
  * names only; a model, a level or a mode never reaches the log.
  */
-export type ClaudeAdapterEvent = 'claude-mcp-config-cleanup-failed' | 'claude-origin-journal-clear-failed' | 'claude-origin-journal-fold-failed' | 'claude-settings-applied-live' | 'claude-settings-applied-restart' | 'claude-settings-live-rejected' | 'claude-settings-unconfirmed'
+export type ClaudeAdapterEvent = 'claude-command-center-startup-checked' | 'claude-mcp-config-cleanup-failed' | 'claude-origin-journal-clear-failed' | 'claude-origin-journal-fold-failed' | 'claude-settings-applied-live' | 'claude-settings-applied-restart' | 'claude-settings-live-rejected' | 'claude-settings-unconfirmed'
 /** What an alias, or the thread that shows it, says the settings are; one saved without a mode runs approval-required. */
 const settingsOf = (value: Pick<Alias, 'modelId' | 'reasoningEffort' | 'runtimeMode'>): ClaudeSettings =>
   ({ modelId: value.modelId, reasoningEffort: value.reasoningEffort, runtimeMode: value.runtimeMode ?? 'approval-required' })
@@ -150,6 +151,8 @@ function toolAllowance(servers: readonly { server: Pick<ThreadMcpServer, 'name'>
   return names.length ? ['--allowedTools', ...names] : []
 }
 export interface ClaudeStreamJsonHostOptions {
+  /** Test-only admission override. Production wiring never supplies it. */
+  commandCenterAdmissions?: readonly CommandCenterAdmission[]
   userDataPath: string; executable?: string; args?: string[]; claudeHome?: string; environment?: NodeJS.ProcessEnv; requestTimeoutMs?: number; pollIntervalMs?: number
   /** Desktop supplies its packaged SDK resource; Node resolves the installed development SDK. */
   historyModulePath?: string
@@ -181,7 +184,7 @@ type Spare = { sessionId: string; cwd: string; settings: ClaudeSettings; frames:
 /** Which of Sotto's scoped servers answered for a session, in order: a spare is adopted only by a start that gets the same. */
 const scopedNames = (servers: readonly { tools: ScopedThreadTools }[]): string => servers.map(({ tools }) => tools.name).join('\n')
 /** `client` is the client generation the CLI was launched from: see `clientUpdated`. */
-type Runtime = { protocol: ClaudeProtocol; requests: Map<string, ClaudePending>; answered: Set<string>; answerWrites: Map<string, 'pending' | 'failed'>; clientRevision: number; commandCenter: boolean }
+type Runtime = { protocol: ClaudeProtocol; requests: Map<string, ClaudePending>; answered: Set<string>; answerWrites: Map<string, 'pending' | 'failed'>; clientRevision: number; commandCenter: boolean; commandCenterStartupPassed?: boolean; commandCenterPromptSent?: boolean; commandCenterControlsPassed?: boolean; commandCenterStartupRefusal?: CommandCenterProfileRefusal; commandCenterModel?: string; commandCenterInitFrame?: ClaudeFrame; commandCenterStartupTimer?: ReturnType<typeof setTimeout> }
 
 /** A read of a thread's transcript from its first byte into a seeded log (`ClaudeStreamJsonHost.replays`). */
 interface Replay {
@@ -223,7 +226,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const profile = await this.resolveCommandCenterProfile(id, generation, runtime)
     this.checkProfileContinuation(id, generation, runtime)
     if (!profile) return undefined
-    try { preflightClaudeCommandCenter(profile, this.state.version, process.platform, modelId) }
+    try { preflightClaudeCommandCenter(profile, this.state.version, process.platform, modelId, this.options.commandCenterAdmissions); return profile }
     catch (error) {
       const reason = error instanceof CommandCenterProfileRefusal ? error.message : 'The command center’s Claude Code profile could not be verified. Nothing was sent. Reopen the command center to recover.'
       await this.stopCommandCenter(id, profile, reason, generation, runtime)
@@ -422,6 +425,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       if (thread && wasOpen) delete thread.providerSessionOpen
       if (this.thinkingEnded(id) || wasOpen) this.emit()
     }
+    clearTimeout(runtime.commandCenterStartupTimer)
     runtime.protocol.stop()
     const closed = runtime.protocol.closed
     this.closing.set(id, closed)
@@ -564,8 +568,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
   async snapshot(): Promise<AgentHostSnapshot> { await this.pollSessionLogs(); return this.view() }
   async listThreadSkills(threadId: string, _forceReload = false, scope?: AgentSkillScope): Promise<AgentSkillCatalog> {
     const generation = this.generation
-    await this.commandCenterProfile(threadId)
+    const profile = await this.commandCenterProfile(threadId)
     this.checkProfileContinuation(threadId, generation)
+    if (profile) throw new CommandCenterProfileRefusal('The command center does not load native skills. Nothing was sent. Use an ordinary thread for project skills.')
     if (this.aliases[threadId]?.kind === 'personal') throw new Error('That thread is unavailable.')
     void _forceReload // Native discovery is always fresh; no account/directory cache can leak across threads.
     const cwd = this.aliases[threadId]?.cwd ?? (scope?.providerId === 'claude' ? scope.workingDirectory : undefined)
@@ -583,9 +588,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
    */
   async writeShortText(id: string, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
     const generation = this.generation
-    await this.commandCenterProfile(id)
+    const profile = await this.commandCenterProfile(id)
     this.checkProfileContinuation(id, generation)
-    if (this.aliases[id]?.kind === 'personal') return null
+    if (profile || this.aliases[id]?.kind === 'personal') return null
     const alias = this.aliases[id]
     if (!this.state.connected || !alias || !this.executable) return null
     const effort = sideWritingEffort(this.state.models, alias.modelId)
@@ -654,8 +659,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
   }
   async rollbackThread(id: string, removeTurns: number, expectedUserMessageIds: readonly string[]): Promise<AgentHostResult> {
     const generation = this.generation
-    await this.commandCenterProfile(id)
+    const profile = await this.commandCenterProfile(id)
     this.checkProfileContinuation(id, generation)
+    if (profile) throw new CommandCenterProfileRefusal('The command center cannot rewind through a separate native process. Nothing was sent. Use an ordinary thread, or start a new command center.')
     const alias = this.aliases[id], thread = this.threads.get(id)
     if (!alias || !thread || !this.state.connected) throw new Error('Connect this Claude thread before rewinding.')
     if (alias.rollbackPending) throw new Error('Claude rollback is unconfirmed; it will not be replayed.')
@@ -763,7 +769,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
       try { await this.persist() } catch (error) { delete this.aliases[command.threadId]; throw error }
       this.ensureThread(command.threadId, alias); this.emit()
       // Creating a durable local identity does not require a paid model turn.
-      try { await this.start(command.threadId) } catch { this.threads.get(command.threadId)!.status = 'error'; this.emit(); return { accepted: false, uncertain: true } }
+      try { await this.start(command.threadId) } catch (error) {
+        this.threads.get(command.threadId)!.status = 'error'; this.emit()
+        if (error instanceof CommandCenterProfileRefusal) throw error
+        return { accepted: false, uncertain: true }
+      }
       return { accepted: true }
     }
     const id = command.threadId; const alias = this.aliases[id]; const thread = this.threads.get(id)
@@ -865,6 +875,16 @@ export class ClaudeStreamJsonHost implements AgentHost {
         thread.status = 'running'; thread.lastTurn = { id: origin.uuid, status: 'running' }
         try {
           markSendStage(command.commandId, 'written')
+          if (runtime.commandCenter && !runtime.commandCenterStartupPassed) {
+            runtime.commandCenterStartupTimer = setTimeout(() => {
+              if (!runtime.commandCenterStartupPassed && this.runtimes.get(id) === runtime) {
+                const refusal = claudeCommandCenterReportRefusal('did not provide its startup tool report before the turn', true)
+                runtime.commandCenterStartupRefusal = refusal
+                void this.stopCommandCenter(id, this.resolvedCommandCenterProfiles.get(id), refusal.message, this.generation, runtime).catch(() => undefined)
+              }
+            }, this.options.requestTimeoutMs ?? 15000)
+          }
+          if (runtime.commandCenter) runtime.commandCenterPromptSent = true
           const delivery = runtime.protocol.write({ type: 'user', uuid: origin.uuid, session_id: alias.sessionId, parent_tool_use_id: null, message: { role: 'user', content } })
           this.emit(); await delivery
         }
@@ -954,7 +974,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     try {
       // A CLI still starting is the one the change should reach, once it has.
       const runtime = this.starting.has(id) ? await this.starting.get(id)!.catch(() => undefined) : this.runtimes.get(id)
-      const steps = runtime && this.runtimes.get(id) === runtime ? settingsSteps(before, after) : undefined
+      const steps = runtime && !runtime.commandCenter && this.runtimes.get(id) === runtime ? settingsSteps(before, after) : undefined
       if (runtime && steps) {
         const live = await this.applySteps(runtime, before, after, steps)
         if (live.outcome === 'applied') return await this.settleSettings(id, command, after)
@@ -1061,6 +1081,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
    * and not when a later connect has put a note of its own in place of the one this read began with.
    */
   private async readLog(id: string, log = this.log(id)): Promise<void> {
+    // A rejected process cannot smuggle turn frames back through its native transcript.
+    if (this.resolvedCommandCenterProfiles.has(id) && !this.runtimes.get(id)?.commandCenterStartupPassed) return
     const replay = this.replays.get(id)
     await log.poll()
     if (!replay?.reading || this.replays.get(id) !== replay || log.cursor() === undefined) return
@@ -1108,12 +1130,25 @@ export class ClaudeStreamJsonHost implements AgentHost {
   async closed(): Promise<void> { while (this.closures.size) await Promise.all(this.closures); await this.usage.flushed() }
   private async start(id: string): Promise<Runtime> {
     const generation = this.generation
-    await this.commandCenterProfile(id)
+    const profile = await this.commandCenterProfile(id)
     if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
     if (this.aliases[id]?.kind === 'personal') throw new Error('That thread is unavailable.')
     this.reaper.touch(id)
-    const pending = this.starting.get(id); if (pending) return pending
-    const runtime = this.runtimes.get(id); if (runtime) return runtime
+    const pending = this.starting.get(id)
+    if (pending) {
+      const started = await pending
+      this.checkProfileContinuation(id, generation)
+      if (!profile || started.commandCenter) return started
+      await this.stopRuntime(id, started)
+      this.checkProfileContinuation(id, generation)
+    }
+    const runtime = this.runtimes.get(id)
+    if (runtime) {
+      if (!profile || runtime.commandCenter) return runtime
+      await this.stopRuntime(id, runtime)
+      this.checkProfileContinuation(id, generation)
+    }
+    this.checkProfileContinuation(id, generation)
     const work = this.launch(id); this.starting.set(id, work)
     try {
       const started = await work; this.messageLog.pin(id)
@@ -1184,11 +1219,19 @@ export class ClaudeStreamJsonHost implements AgentHost {
     let runtime: Runtime
     try { runtime = { requests: new Map(), answered: new Set(), answerWrites: new Map(), clientRevision: this.clientRevision, commandCenter: !!profile, protocol: new ClaudeProtocol(this.executable, args, alias.cwd, { ...this.client.environment(), ...(toolTimeoutMs ? { MCP_TOOL_TIMEOUT: String(toolTimeoutMs) } : {}) }, this.options.requestTimeoutMs ?? 15000,
       frame => {
+        if (profile && !this.commandCenterStartupFrame(id, runtime, profile, frame, generation, spare)) return
         if (this.runtimes.get(id) === runtime) this.frame(id, frame)
         // A spare keeps a bounded handful of frames for the send that adopts it; one that says more is let go.
         else if (spare?.runtime === runtime && this.spares.get(id) === spare && spare.frames.push(frame) > SPARE_FRAMES) this.discardSpare(id)
       }, () => {
-        if (spare?.runtime === runtime) { spare.exited = true; if (this.spares.get(id) === spare) this.spares.delete(id) }
+        const ownedSpare = spare?.runtime === runtime && this.spares.get(id) === spare
+        if (spare?.runtime === runtime) { spare.exited = true; if (ownedSpare) this.spares.delete(id) }
+        if (profile && !runtime.commandCenterStartupPassed && (ownedSpare || this.runtimes.get(id) === runtime)) {
+          const refusal = claudeCommandCenterReportRefusal('stopped before providing its startup tool report', runtime.commandCenterPromptSent)
+          runtime.commandCenterStartupRefusal = refusal
+          void this.stopCommandCenter(id, profile, refusal.message, generation, ownedSpare ? undefined : runtime).catch(() => undefined)
+          return
+        }
         if (this.runtimes.get(id) !== runtime) return
         // Each thread has its own CLI, so one ending is this thread's failure, not the provider's: the others
         // keep running, and this one starts again from its native session on its next action.
@@ -1213,11 +1256,42 @@ export class ClaudeStreamJsonHost implements AgentHost {
         this.emit()
       }) } } catch (error) { if (mcpConfig) await this.removeConfig(mcpConfig); throw error }
     if (spare) spare.runtime = runtime; else this.runtimes.set(id, runtime)
-    this.trackClosure(runtime.protocol.closed.then(async () => { if (mcpConfig) await this.removeConfig(mcpConfig) }))
+    this.trackClosure(runtime.protocol.closed.then(async () => { clearTimeout(runtime.commandCenterStartupTimer); if (mcpConfig) await this.removeConfig(mcpConfig) }))
+    const ownsStartup = (): boolean => generation === this.generation && (spare
+      ? this.spares.get(id) === spare && spare.runtime === runtime : this.runtimes.get(id) === runtime)
     let initialized: ClaudeFrame
     try { initialized = await runtime.protocol.control({ subtype: 'initialize', hooks: {}, sdkMcpServers: [], promptSuggestions: false, supportedDialogKinds: ['resume_return'] }) }
     // A spare is not the thread's CLI, so it is stopped as one: only a thread on its session ID waits for its exit.
-    catch (error) { void (spare ? this.stopSpare(id, spare, runtime) : this.stopRuntime(id, runtime)); throw error }
+    catch (error) {
+      if (profile && ownsStartup()) {
+        const refusal = runtime.commandCenterStartupRefusal ?? claudeCommandCenterReportRefusal('did not provide a readable initialize report')
+        await this.stopCommandCenter(id, profile, refusal.message, generation, spare ? undefined : runtime)
+        throw refusal
+      }
+      void (spare ? this.stopSpare(id, spare, runtime) : this.stopRuntime(id, runtime))
+      throw runtime.commandCenterStartupRefusal ?? error
+    }
+    if (profile) {
+      try {
+        if (runtime.commandCenterStartupRefusal) throw runtime.commandCenterStartupRefusal
+        if (!ownsStartup()) throw new Error('Claude connection was cancelled.')
+        assertClaudeCommandCenterInitializeReport(initialized, process.platform, this.options.commandCenterAdmissions)
+        runtime.commandCenterModel = assertClaudeCommandCenterSettingsReport(await runtime.protocol.control({ subtype: 'get_settings' }))
+        if (runtime.commandCenterInitFrame) assertClaudeCommandCenterStartupReport(profile, runtime.commandCenterInitFrame, runtime.commandCenterModel, process.platform, this.options.commandCenterAdmissions)
+        if (runtime.commandCenterStartupRefusal) throw runtime.commandCenterStartupRefusal
+        runtime.commandCenterControlsPassed = true
+        if (runtime.commandCenterStartupPassed) this.options.logEvent?.('claude-command-center-startup-checked')
+      } catch (error) {
+        const refusal = error instanceof CommandCenterProfileRefusal ? error : claudeCommandCenterReportRefusal('did not provide a readable startup report')
+        if (!runtime.commandCenterStartupRefusal && !ownsStartup()) {
+          await (spare ? this.stopSpare(id, spare, runtime) : this.stopRuntime(id, runtime))
+          throw new Error('Claude connection was cancelled.', { cause: error })
+        }
+        if (!runtime.commandCenterStartupRefusal) await this.stopCommandCenter(id, profile, refusal.message, generation, spare ? undefined : runtime)
+        else await runtime.protocol.closed
+        throw refusal
+      }
+    }
     if (generation !== this.generation) { await (spare ? this.stopSpare(id, spare, runtime) : this.stopRuntime(id, runtime)); throw new Error('Claude connection was cancelled.') }
     return { runtime, initialized }
   }
@@ -1257,7 +1331,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.spares.set(id, spare)
     this.reaper.touch(id)
     spare.ready = this.spawn(id, { sessionId: spare.sessionId, cwd, ...settings }, false, spare)
-    try { await spare.ready } catch { if (this.spares.get(id) === spare) this.spares.delete(id) }
+    try { await spare.ready } catch (error) {
+      if (this.spares.get(id) === spare) this.spares.delete(id)
+      if (error instanceof CommandCenterProfileRefusal) throw error
+    }
   }
   /** The spare a thread's first send may run on, when it was started for exactly what that send creates. */
   private spareFor(id: string, cwd: string, settings: ClaudeSettings): Spare | undefined {
@@ -1272,7 +1349,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
    */
   private async adoptSpare(id: string, alias: Alias): Promise<Runtime | undefined> {
     const generation = this.generation
-    await this.commandCenterProfile(id, alias.modelId)
+    const profile = await this.commandCenterProfile(id, alias.modelId)
     this.checkProfileContinuation(id, generation)
     const spare = this.spares.get(id)
     if (!spare) return undefined
@@ -1283,12 +1360,12 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (!started) return undefined
     let scoped: string
     // A tool server closed meanwhile, as Sotto quitting closes them, throws; the spare, in neither map now, is stopped first.
-    try { scoped = scopedNames(await scopedThreadServers(this.threadTools, id)) }
+    try { scoped = profile ? '' : scopedNames(await scopedThreadServers(this.threadTools, id)) }
     catch (error) { await this.stopSpare(id, spare, started.runtime); throw error }
     // It is in neither map now, so a disconnect meanwhile did not stop it; this does, and the start then reports the cancel.
     if (generation !== this.generation) { await this.stopSpare(id, spare, started.runtime); return undefined }
     // Checked again: a client update, or one of Sotto's scoped servers coming or going for the thread, can make a spare unfit after creation chose it.
-    if (spare.sessionId !== alias.sessionId || !spareFits(spare, alias.cwd, settingsOf(alias)) || scoped !== spare.scopedTools
+    if (started.runtime.commandCenter !== !!profile || spare.sessionId !== alias.sessionId || !spareFits(spare, alias.cwd, settingsOf(alias)) || scoped !== spare.scopedTools
       || started.runtime.clientRevision !== this.clientRevision || this.runtimes.has(id)) {
       await this.stopSpare(id, spare, started.runtime)
       return undefined
@@ -1321,6 +1398,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
    * starts its CLI without waiting the half second an exit can take.
    */
   private async stopSpare(id: string, spare: Spare, runtime: Runtime): Promise<void> {
+    clearTimeout(runtime.commandCenterStartupTimer)
     runtime.protocol.stop()
     const closed = runtime.protocol.closed
     if (this.aliases[id]?.sessionId !== spare.sessionId) { this.trackClosure(closed); return }
@@ -1346,6 +1424,30 @@ export class ClaudeStreamJsonHost implements AgentHost {
       return
     }
     await Promise.all(names.filter(name => /^claude-mcp-.*\.json$/.test(name)).map(name => this.removeConfig(join(this.options.userDataPath, name))))
+  }
+  /** initialize has no native inventory. Accept only system/init before this process handles turn work. */
+  private commandCenterStartupFrame(id: string, runtime: Runtime, profile: CommandCenterLaunchProfile,
+    frame: ClaudeFrame, generation: number, spare?: Spare): boolean {
+    if (runtime.commandCenterStartupRefusal || generation !== this.generation
+      || this.runtimes.get(id) !== runtime && !(spare?.runtime === runtime && this.spares.get(id) === spare)) return false
+    if (frame.type === 'control_response') return true
+    try {
+      if (runtime.commandCenterStartupPassed && !(frame.type === 'system' && frame.subtype === 'init')) {
+        if (!runtime.commandCenterControlsPassed) throw claudeCommandCenterReportRefusal('sent turn work before completing its startup settings report', runtime.commandCenterPromptSent)
+        return true
+      }
+      assertClaudeCommandCenterStartupReport(profile, frame, runtime.commandCenterModel, process.platform, this.options.commandCenterAdmissions, runtime.commandCenterPromptSent)
+      runtime.commandCenterInitFrame = frame
+      runtime.commandCenterStartupPassed = true; clearTimeout(runtime.commandCenterStartupTimer)
+      if (runtime.commandCenterControlsPassed) this.options.logEvent?.('claude-command-center-startup-checked')
+      return true
+    } catch (error) {
+      const refusal = error instanceof CommandCenterProfileRefusal ? error : claudeCommandCenterReportRefusal('did not provide a readable startup tool report', runtime.commandCenterPromptSent)
+      runtime.commandCenterStartupRefusal = refusal
+      // stopCommandCenter revokes and removes this process synchronously before its first await.
+      void this.stopCommandCenter(id, profile, refusal.message, generation, spare ? undefined : runtime).catch(() => undefined)
+      return false
+    }
   }
   private frame(id: string, frame: ClaudeFrame): void {
     const currentRuntime = this.runtimes.get(id)

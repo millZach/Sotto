@@ -2,9 +2,11 @@ import { createHash } from 'node:crypto'
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import type { CommandCenterLaunchProfile } from './host'
+import { assertCommandCenterAdmission, COMMAND_CENTER_ADMISSIONS, type CommandCenterAdmission } from './commandCenterAdmission'
 import { CommandCenterProfileRefusal, validateCommandCenterProfile } from './commandCenterProfile'
 import { grokEnvironment } from './grokRpc'
 import { grokToolAdmission, type GrokPending } from './grokRequests'
+import { clientVersionOf } from './clientVersions'
 
 /** Read from this machine's version/help output, without starting an account session. */
 export const GROK_COMMAND_CENTER_INSPECTED_VERSION = '1.0.50'
@@ -50,15 +52,24 @@ export function grokCommandCenterArguments(): string[] {
 }
 
 /** Every new/cold-load/turn/settings path must pass this check before starting or using a process. */
-export function preflightGrokCommandCenter(profile: CommandCenterLaunchProfile, version: string, _modelId: string | undefined, platform: NodeJS.Platform = process.platform): never {
+export function preflightGrokCommandCenter(profile: CommandCenterLaunchProfile, version: string, _modelId: string | undefined, platform: NodeJS.Platform = process.platform,
+  admissions?: readonly CommandCenterAdmission[], build?: string): void {
   validateCommandCenterProfile(profile)
-  // ACP 1's pinned initialize/new/load schemas expose neither the resolved profile nor the effective
-  // native toolset, executable startup customization, additional MCP discovery or strict model harness.
-  // The public profile source is not a compatibility witness for the installed c58f321264ba binary.
-  // No model/platform is admitted until that evidence exists. Do not fabricate a protocol extension
-  // or let a fake-only attestation switch open a real command center.
-  const name = platform === 'win32' ? 'Windows' : platform === 'darwin' ? 'macOS' : platform === 'linux' ? 'Linux' : 'this platform'
-  throw new CommandCenterProfileRefusal(`Grok Build ${version || 'on this computer'} cannot prove its read-only command-center profile on ${name}. Its ACP connection does not report the effective native tools or model harness. Nothing was sent. Choose a provider with a verified command-center profile.`)
+  // ACP does not report its tools or harness. Only a live-checked exact version and build can admit it.
+  assertCommandCenterAdmission('grok', version, platform, admissions, build)
+}
+
+/** Preliminary workspace admission only. The adapter checks the actual build before a session exists. */
+export function preflightGrokCommandCenterConfiguration(profile: CommandCenterLaunchProfile, version: string, modelId: string | undefined,
+  platform: NodeJS.Platform = process.platform, admissions: readonly CommandCenterAdmission[] = COMMAND_CENTER_ADMISSIONS): void {
+  const entry = admissions.find(admission => admission.provider === 'grok' && admission.platform === platform && admission.version === clientVersionOf(version))
+  preflightGrokCommandCenter(profile, version, modelId, platform, admissions, entry?.build)
+}
+
+/** The installed CLI's version output carries the build that ACP's agentVersion omits. */
+export function grokCommandCenterVersion(output: string): { version: string; build: string } | undefined {
+  const match = /^(?:grok(?:-build)?\s+)?(\d+\.\d+\.\d+)\s+\(([a-f0-9]{10,40})\)\s*$/iu.exec(output.trim())
+  return match ? { version: match[1]!, build: match[2]!.toLowerCase() } : undefined
 }
 
 /** Admission is exact to the supplied endpoint's server and names, never the global tool definitions. */

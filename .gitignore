@@ -1,4 +1,5 @@
 node_modules/
+artifacts/command-center-live/
 artifacts/linux-no-window-controls/*
 !artifacts/linux-no-window-controls/checks.json
 !artifacts/linux-no-window-controls/threads-1600x1000-dark.png

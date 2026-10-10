@@ -43,6 +43,7 @@ import { migrateWorkspaceThreadKinds } from './commandCenterRecords'
 import { CommandCenterLaunchProfiles } from './commandCenterLaunchProfiles'
 import { CommandCenterProfileRefusal } from './commandCenterProfile'
 import { preflightCommandCenterConfiguration } from './commandCenterPreflight'
+import type { CommandCenterAdmission } from './commandCenterAdmission'
 import type { CommandCenterProfileTools } from './host'
 
 /** Keep a Unicode character whole at an event boundary so SQLite preserves its text. */
@@ -1168,7 +1169,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
 
   constructor(private readonly inner: AgentHost, private readonly directory: string, private readonly historyEnabled: () => boolean = () => true,
-    private readonly worktreeRefreshDelayMs: number = WORKTREE_REFRESH_DELAY_MS) {
+    private readonly worktreeRefreshDelayMs: number = WORKTREE_REFRESH_DELAY_MS,
+    private readonly commandCenterAdmissions?: readonly CommandCenterAdmission[]) {
     this.concurrentProviders = inner.concurrentProviders === true
     this.launchProfiles = new CommandCenterLaunchProfiles(directory, () => this.hostId,
       id => this.state.snapshot.threads.find(thread => thread.id === id))
@@ -2519,7 +2521,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         const model = resolveModel(this.state.snapshot.models, command.modelId ?? thread.modelId)
         if (model?.providerId !== thread.providerId) throw new CommandCenterProfileRefusal('Changing the command center’s provider needs a new command-center conversation. This conversation was kept.')
         const version = this.state.snapshot.providers?.find(provider => provider.id === thread.providerId)?.version ?? this.state.snapshot.version
-        preflightCommandCenterConfiguration(commandProfile, thread.providerId, version, model!.id)
+        preflightCommandCenterConfiguration(commandProfile, thread.providerId, version, model!.id, this.commandCenterAdmissions)
       }
     }
     let preparedSkills: AgentSkillReference[] | undefined
@@ -2557,7 +2559,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (commandProfile) {
         await this.launchProfiles.assertCreationBinding(command.threadId, command.projectId, model.providerId)
         const version = this.state.snapshot.providers?.find(provider => provider.id === model.providerId)?.version ?? this.state.snapshot.version
-        preflightCommandCenterConfiguration(commandProfile, model.providerId, version, model.id)
+        preflightCommandCenterConfiguration(commandProfile, model.providerId, version, model.id, this.commandCenterAdmissions)
       }
       this.requireCreation(model.providerId)
       const thread: AgentThread = { hostId: this.hostId, id: command.threadId, projectId: command.projectId, title: command.title, modelId: command.modelId,

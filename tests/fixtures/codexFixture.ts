@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { CodexAppServerHost } from '../../src/main/agents/codex'
+import { CodexAppServerHost, type CodexAppServerHostOptions } from '../../src/main/agents/codex'
 import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
 import type { AgentHost } from '../../src/main/agents/host'
 import type { AdapterSessionOptions } from '../integration/adapterContract'
@@ -32,7 +32,7 @@ export function aroundTurnStart(requests: readonly RecordedRpc[]): { before: Rec
   return { before: requests.slice(0, start), after: requests.slice(start) }
 }
 // The deadline also covers the fake app server's process start; see the note on claudeFixture.
-export async function codexFixture(root?: string, wrapped = false, requestTimeoutMs = 2000, session: AdapterSessionOptions & { pollIntervalMs?: number } = {}) {
+export async function codexFixture(root?: string, wrapped = false, requestTimeoutMs = 2000, session: AdapterSessionOptions & Pick<CodexAppServerHostOptions, 'pollIntervalMs' | 'commandCenterAdmissions'> = {}) {
   root ??= await mkdtemp(join(tmpdir(), 'sotto-codex-'))
   const adapter = new CodexAppServerHost({ userDataPath: root, executable: process.execPath,
     args: [resolve('tests/fixtures/fakeCodexAppServer.mjs'), root], codexHome: join(root, 'home'), requestTimeoutMs, pollIntervalMs: 15, ...session })

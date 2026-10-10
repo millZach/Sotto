@@ -5,7 +5,8 @@ import { afterEach, expect, it, vi } from 'vitest'
 import type { AgentHostSnapshot } from '../../src/shared/agents'
 import type { AgentHostCommand, CommandCenterLaunchProfile } from '../../src/main/agents/host'
 import { COMMAND_CENTER_PERMISSION_FAILURE, CommandCenterProfileRefusal } from '../../src/main/agents/commandCenterProfile'
-import { GROK_COMMAND_CENTER_INSPECTED_VERSION, grokCommandCenterAdmission, grokCommandCenterArguments, grokCommandCenterEnvironment, grokCommandCenterMeta, preflightGrokCommandCenter } from '../../src/main/agents/commandCenterGrokProfile'
+import type { CommandCenterAdmission } from '../../src/main/agents/commandCenterAdmission'
+import { GROK_COMMAND_CENTER_INSPECTED_BUILD, GROK_COMMAND_CENTER_INSPECTED_VERSION, grokCommandCenterAdmission, grokCommandCenterArguments, grokCommandCenterEnvironment, grokCommandCenterMeta, grokCommandCenterVersion, preflightGrokCommandCenter, preflightGrokCommandCenterConfiguration } from '../../src/main/agents/commandCenterGrokProfile'
 import { grokPending } from '../../src/main/agents/grokRequests'
 import { GrokRpc, type GrokFrame } from '../../src/main/agents/grokRpc'
 import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
@@ -24,6 +25,21 @@ async function setup(create = false, pollIntervalMs = 60000) {
   if (create) await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: f.modelId, title: 'Ordinary thread' })
   const restricted = profile()
   f.host.useLaunchProfiles({ profileFor: async threadId => threadId === id ? restricted : undefined })
+  return { id, restricted }
+}
+const admissions: readonly CommandCenterAdmission[] = [{ provider: 'grok', platform: process.platform === 'darwin' ? 'darwin' : 'win32',
+  version: GROK_COMMAND_CENTER_INSPECTED_VERSION, build: GROK_COMMAND_CENTER_INSPECTED_BUILD, verificationNote: 'tests/fake-provider-verification' }]
+const admittedScript = { cliVersion: GROK_COMMAND_CENTER_INSPECTED_VERSION, cliBuild: GROK_COMMAND_CENTER_INSPECTED_BUILD,
+  catalog: { currentModelId: 'fixture-model', availableModels: [{ modelId: 'fixture-model', name: 'Fixture Grok', _meta: {
+    supportsReasoningEffort: true, reasoningEffort: 'high', reasoningEfforts: [{ id: 'high' }, { id: 'low' }],
+  } }] } }
+async function admittedSetup(create = true, script: Record<string, unknown> = {}) {
+  f = await grokFixture(undefined, 2000, 60000, {}, { commandCenterAdmissions: admissions })
+  await f.script({ ...admittedScript, ...script }); await f.host.connect()
+  await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+  const id = randomUUID(), restricted = profile()
+  f.host.useLaunchProfiles({ profileFor: async threadId => threadId === id ? restricted : undefined })
+  if (create) await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: f.modelId, title: 'Command center' })
   return { id, restricted }
 }
 // Preflight admits no production launches. Model a profiled process at the defensive
@@ -88,11 +104,26 @@ it('makes requested launch configuration and fake offered tools observable on ne
   } finally { rpc.close(); await rpc.closed }
 })
 
-it.each(['win32', 'darwin', 'linux'] as const)('refuses every model on %s because ACP does not expose effective tools or harness evidence', platform => {
+it.each(['win32', 'darwin', 'linux'] as const)('refuses every unlisted model on %s with the plain recovery reason', platform => {
   for (const model of ['grok-code', 'strict-harness-model']) {
     expect(() => preflightGrokCommandCenter(profile(), GROK_COMMAND_CENTER_INSPECTED_VERSION, model, platform)).toThrow(CommandCenterProfileRefusal)
-    expect(() => preflightGrokCommandCenter(profile(), '1.0.51', model, platform)).toThrow('effective native tools or model harness')
+    expect(() => preflightGrokCommandCenter(profile(), '1.0.51', model, platform)).toThrow('Nothing was sent. Use an ordinary thread, or check for a Sotto update.')
   }
+})
+
+it.each(['win32', 'darwin'] as const)('admits only a live-checked exact version and build on %s', platform => {
+  const checked: CommandCenterAdmission[] = [{ ...admissions[0]!, platform }]
+  expect(() => preflightGrokCommandCenter(profile(), GROK_COMMAND_CENTER_INSPECTED_VERSION, 'grok-code', platform, checked, GROK_COMMAND_CENTER_INSPECTED_BUILD)).not.toThrow()
+  expect(() => preflightGrokCommandCenterConfiguration(profile(), GROK_COMMAND_CENTER_INSPECTED_VERSION, 'grok-code', platform, checked)).not.toThrow()
+  for (const version of ['1.0.49', '1.0.51', '1.0.50-beta']) expect(() => preflightGrokCommandCenter(profile(), version, 'grok-code', platform, checked, GROK_COMMAND_CENTER_INSPECTED_BUILD)).toThrow(CommandCenterProfileRefusal)
+  for (const build of [undefined, 'different-build']) expect(() => preflightGrokCommandCenter(profile(), GROK_COMMAND_CENTER_INSPECTED_VERSION, 'grok-code', platform, checked, build)).toThrow(CommandCenterProfileRefusal)
+  expect(() => preflightGrokCommandCenter(profile(), GROK_COMMAND_CENTER_INSPECTED_VERSION, 'grok-code', platform === 'win32' ? 'darwin' : 'win32', checked, GROK_COMMAND_CENTER_INSPECTED_BUILD)).toThrow(CommandCenterProfileRefusal)
+})
+
+it('reads only an exact CLI version and build from the native version output', () => {
+  expect(grokCommandCenterVersion('1.0.50 (c58f321264ba)\n')).toEqual({ version: '1.0.50', build: 'c58f321264ba' })
+  expect(grokCommandCenterVersion('grok 1.0.50 (c58f321264ba)')).toEqual({ version: '1.0.50', build: 'c58f321264ba' })
+  for (const output of ['1.0.50', '1.0.50 (unknown)', '1.0.50-beta (c58f321264ba)', '1.0.50 (c58f321264ba)\nextra']) expect(grokCommandCenterVersion(output)).toBeUndefined()
 })
 
 it('admits only exact tools on the caller server with a one-time native choice', () => {
@@ -107,7 +138,7 @@ it('admits only exact tools on the caller server with a one-time native choice',
 it('refuses creation and draft early start before starting a process or native session', async () => {
   const { id, restricted } = await setup(); const before = (await processes()).length
   await expect(f!.host.startThreadSession(id, { modelId: f!.modelId })).rejects.toMatchObject({ code: 'READ_ONLY_PROFILE_UNAVAILABLE', retryable: false })
-  await expect(f!.host.execute({ type: 'create-thread', commandId: 'create', threadId: id, projectId: f!.projectId, modelId: f!.modelId, title: 'Command center', runtimeMode: 'full-access' })).rejects.toThrow('cannot prove')
+  await expect(f!.host.execute({ type: 'create-thread', commandId: 'create', threadId: id, projectId: f!.projectId, modelId: f!.modelId, title: 'Command center', runtimeMode: 'full-access' })).rejects.toThrow('Nothing was sent. Use an ordinary thread')
   expect(await workRequests()).toEqual([]); expect(await processes()).toHaveLength(before)
   expect(restricted.revoke).toHaveBeenCalled()
 })
@@ -133,29 +164,112 @@ it('refuses observed cold load and preserves the typed recovery reason', async (
   f = await f!.driver.restart()
   f.host.useLaunchProfiles({ profileFor: async threadId => threadId === id ? restricted : undefined })
   f.host.observeThreads([id])
-  await expect(f.host.connect()).rejects.toMatchObject({ code: 'READ_ONLY_PROFILE_UNAVAILABLE', message: expect.stringContaining('effective native tools or model harness') })
+  await expect(f.host.connect()).rejects.toMatchObject({ code: 'READ_ONLY_PROFILE_UNAVAILABLE', message: expect.stringContaining('Nothing was sent. Use an ordinary thread') })
   expect(await workRequests()).toEqual(before)
 })
 
 it('cancels a permission outside the profile and stops and revokes instead of presenting an approval card', async () => {
-  f = await grokFixture(undefined, 2000, 60000); await f.host.connect()
-  await f.host.execute({ type: 'create-project', commandId: 'project', projectId: f.projectId, title: 'Project', path: f.root })
-  const id = randomUUID()
-  await f.host.execute({ type: 'create-thread', commandId: 'thread', threadId: id, projectId: f.projectId, modelId: f.modelId, title: 'Thread' })
-  guardedProcess(id)
-  const restricted = profile(); f.host.useLaunchProfiles({ profileFor: async threadId => threadId === id ? restricted : undefined })
+  const { id, restricted } = await admittedSetup()
   let latest: AgentHostSnapshot | undefined
-  const unsubscribe = f.host.subscribe(snapshot => { latest = snapshot })
+  const unsubscribe = f!.host.subscribe(snapshot => { latest = snapshot })
   try {
-    await f.action(id, { type: 'permission', text: 'Synthetic shell request', rawInput: { command: 'synthetic' } })
+    await f!.action(id, { type: 'permission', text: 'Synthetic shell request', rawInput: { command: 'synthetic' } })
     await expect.poll(() => restricted.revoke).toHaveBeenCalledWith(COMMAND_CENTER_PERMISSION_FAILURE)
     await expect.poll(() => latest?.threads.find(thread => thread.id === id)?.requestNotice).toBe(COMMAND_CENTER_PERMISSION_FAILURE)
     expect(latest?.threads.find(thread => thread.id === id)?.requests).toEqual([])
     await expect.poll(nativeProcessStopped).toBe(true)
-    const responses = (await f.driver.requests()).filter(record => record.result && Object.hasOwn(record.result, 'outcome'))
+    const responses = (await f!.driver.requests()).filter(record => record.result && Object.hasOwn(record.result, 'outcome'))
     expect(responses.at(-1)?.result).toEqual({ outcome: { outcome: 'cancelled' } })
     expect(responses.some(record => f!.protocol.permissionDecision(record) === true)).toBe(false)
   } finally { unsubscribe() }
+})
+
+it('launches and cold-resumes the exact admitted client through the restricted profile', async () => {
+  const { id, restricted } = await admittedSetup(false)
+  await f!.host.startThreadSession(id, { modelId: f!.modelId })
+  expect(await workRequests()).toEqual([])
+  await f!.host.execute({ type: 'create-thread', commandId: 'create-admitted', threadId: id, projectId: f!.projectId, modelId: f!.modelId, title: 'Command center' })
+  await f!.host.execute({ type: 'configure-thread', commandId: 'settings-admitted', threadId: id, runtimeMode: 'full-access' })
+  f = await f!.driver.restart()
+  f.host.useLaunchProfiles({ profileFor: async threadId => threadId === id ? restricted : undefined })
+  f.host.observeThreads([id]); await f.host.connect(); await f.host.startThreadSession(id)
+  const records = await workRequests()
+  expect(records.some(record => record.method === 'session/new')).toBe(true)
+  expect(records.some(record => record.method === 'session/load')).toBe(true)
+  for (const record of records.filter(record => record.method === 'session/new' || record.method === 'session/load')) {
+    expect(record.params?._meta).toEqual(grokCommandCenterMeta(restricted))
+    expect(record.params?.mcpServers).toEqual([restricted.server])
+  }
+  expect(restricted.revoke).not.toHaveBeenCalled()
+  const thread = (await f.host.snapshot()).threads.find(thread => thread.id === id)!
+  expect(thread.requests).toEqual([]); expect(thread.status).toBe('idle')
+})
+
+it('admits an exact supplied Sotto tool without showing a native request card', async () => {
+  const { id, restricted } = await admittedSetup()
+  let showedRequest = false
+  const unsubscribe = f!.host.subscribe(snapshot => { if (snapshot.threads.find(thread => thread.id === id)?.requests.length) showedRequest = true })
+  try {
+    await f!.action(id, { type: 'permission', text: 'Synthetic thread tool', rawInput: { tool_name: 'sotto_threads__list_threads' } })
+    await expect.poll(async () => (await f!.driver.requests()).some(record => f!.protocol.permissionDecision(record) === true)).toBe(true)
+    expect(showedRequest).toBe(false); expect(restricted.revoke).not.toHaveBeenCalled()
+  } finally { unsubscribe() }
+})
+
+it.each([
+  { name: 'newer version', script: { cliVersion: '1.0.51' } },
+  { name: 'older version', script: { cliVersion: '1.0.49' } },
+  { name: 'different build', script: { cliBuild: 'abcdef123456' } },
+  { name: 'missing build', script: { versionOutput: '1.0.50\n' } },
+  { name: 'unreadable version', script: { versionOutput: 'unreadable\n' } },
+] as const)('refuses an injected combination with $name before a session or turn exists', async ({ script }) => {
+  const { id, restricted } = await admittedSetup(false, script)
+  await expect(f!.host.startThreadSession(id, { modelId: f!.modelId })).rejects.toMatchObject({ code: 'READ_ONLY_PROFILE_UNAVAILABLE', message: expect.stringContaining('Nothing was sent.') })
+  expect(await workRequests()).toEqual([])
+  expect(restricted.revoke).toHaveBeenCalled()
+  expect((await f!.host.snapshot()).threads.flatMap(thread => thread.requests)).toEqual([])
+})
+
+it('checks the new process’s own ACP version before authentication, session creation or turn work', async () => {
+  const { id, restricted } = await admittedSetup(false)
+  await f!.script({ ...admittedScript, acpVersion: '1.0.51' })
+  await expect(f!.host.startThreadSession(id, { modelId: f!.modelId })).rejects.toMatchObject({ code: 'READ_ONLY_PROFILE_UNAVAILABLE', message: expect.stringContaining('Grok Build 1.0.51') })
+  const threadProcess = (await processes()).at(-1)!.params!.pid
+  const sent = (await f!.driver.requests()).filter(record => (record as unknown as { process: unknown }).process === threadProcess)
+  expect(sent.some(record => record.method === 'authenticate')).toBe(false)
+  expect(await workRequests()).toEqual([]); expect(restricted.revoke).toHaveBeenCalled()
+  await expect.poll(nativeProcessStopped).toBe(true)
+})
+
+it('changes a command-center effort with native confirmation and retains its restricted tools', async () => {
+  const { id, restricted } = await admittedSetup()
+  await f!.host.execute({ type: 'configure-thread', commandId: 'change-effort', threadId: id, reasoningEffort: 'low' })
+  const thread = (await f!.host.snapshot()).threads.find(thread => thread.id === id)!
+  expect(thread.reasoningEffort).toBe('low'); expect(thread.status).toBe('idle')
+  const load = (await workRequests()).findLast(record => record.method === 'session/load')!
+  expect(load.params?._meta).toEqual(grokCommandCenterMeta(restricted))
+  expect(load.params?.mcpServers).toEqual([restricted.server])
+  expect(restricted.revoke).not.toHaveBeenCalled()
+  await expect(f!.host.listThreadSkills(id)).rejects.toThrow('Native skills are unavailable')
+  await expect(f!.host.writeShortText(id, { instruction: 'Synthetic instruction', material: 'Synthetic material' })).resolves.toBeNull()
+})
+
+it('stops and revokes an unconfirmed command-center effort change with no approval card', async () => {
+  const { id, restricted } = await admittedSetup()
+  await f!.script({ ...admittedScript, unconfirmedModel: true })
+  await expect(f!.host.execute({ type: 'configure-thread', commandId: 'unconfirmed-effort', threadId: id, reasoningEffort: 'low' })).rejects.toMatchObject({ code: 'READ_ONLY_PROFILE_UNAVAILABLE', message: expect.stringContaining('Nothing was sent.') })
+  expect(restricted.revoke).toHaveBeenCalled(); await expect.poll(nativeProcessStopped).toBe(true)
+  expect((await f!.host.snapshot()).threads.find(thread => thread.id === id)?.requests).toEqual([])
+})
+
+it('rechecks actual build admission when a cold resume replaces the process', async () => {
+  const { id, restricted } = await admittedSetup()
+  const before = await workRequests()
+  await f!.script({ ...admittedScript, cliBuild: 'abcdef123456' })
+  f = await f!.driver.restart(); f.host.useLaunchProfiles({ profileFor: async threadId => threadId === id ? restricted : undefined })
+  f.host.observeThreads([id])
+  await expect(f.host.connect()).rejects.toMatchObject({ code: 'READ_ONLY_PROFILE_UNAVAILABLE', message: expect.stringContaining('Nothing was sent.') })
+  expect(await workRequests()).toEqual(before); expect(restricted.revoke).toHaveBeenCalled()
 })
 
 it('keeps ordinary launches and permissions unchanged when main supplies no profile', async () => {

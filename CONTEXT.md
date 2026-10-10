@@ -6,6 +6,8 @@ Sotto is a desktop dictation app with manual coding threads across native provid
 
 **Command center.** The one current native agent thread on a computer given Sotto's bounded thread tools and brokered project reads, with its own room (ADR-0066). Earlier conversations become command-center history when its provider changes. Avoid: the old "Coordinator", "assignment", "Agents room".
 
+**Admitted combination.** A provider, platform and client version whose command-center live check passed, named in the reviewed source list with its verification note (ADR-0066). Claude Code and Codex admit that version and newer versions only while each process's own startup report matches the profile; Grok Build admits the exact version and build. A saved setting, command or live-test result alone admits nothing.
+
 **Overview.** The command center room's sidebar list of all other threads, grouped by what the user must do, with source and read times. It is a projection, not a work queue or attention store; its groups are Needs you, Ready for review, Working, Landing, Quiet and Idle.
 
 **Command-center request.** A particular user instruction to the command center, with main's identity, root user-message reference and budgets. Qualify it to distinguish it from an agent's pending question or permission request; retries and wake-ups keep its identity and budgets.
