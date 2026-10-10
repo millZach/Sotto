@@ -120,6 +120,8 @@ All three operations require advertised and accepted `terminals`:
 | `observe-terminals` | `terminalIds` (at most 64 UUIDs) | `null`. Replaces this connection's visible foreground details. Empty on background; withdrawn on disconnect. Main merges actual desktop and phone visibility. |
 | `answer-terminal` | `answer: { terminalId, runId, requestId, approvalId, previewId, decision: "allow" \| "deny" }` | `{ answerDelivered: true }` only after the matching hook acknowledgement. Current pairing/session/connection and Can answer are rechecked at dispatch, as is the live reviewed preview received by this connection. No input or persistent grants. |
 
+Overlapping blocking approvals have no phone preview: the screen carries no request identity. Each request from that overlap remains unavailable on the phone even after another hook closes or the screen redraws. A later request with no overlap can be reviewed normally. Review the overlapping requests in the native computer terminal.
+
 `answer-terminal` uses the existing client-scoped command ID and `receipt` read. A receipt is pending until hook acknowledgement or failure. Completion alone proves nothing; only `answerDelivered: true` confirms delivery to the hook, not execution or native policy acceptance. Lost acknowledgements are reconciled without automatic replay. A stale target receives `stale_request`; an expired/unconfirmed hook receives `unavailable`. No preview text is kept in receipts. A different payload under the same client command ID is refused.
 
 ### Pushes

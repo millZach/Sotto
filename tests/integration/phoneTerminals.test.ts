@@ -180,6 +180,24 @@ it('rejects a changed reviewed screen and checks authority again inside the PTY 
   const fresh = await preview(); expect(fresh.previewId).not.toBe(answer.previewId)
 })
 
+it('never assigns an overlapping hook the screen left by an expired approval', async () => {
+  await hello(); request('first-request', 'first-approval')
+  const first = await preview()
+  hooks.onEvent({ terminalId, runId, eventId: randomUUID(), requestId: 'second-request', approvalId: 'second-approval', kind: 'permission', state: 'needs-you' })
+  expect(terminals.phoneApproval(terminalId)).toBeNull()
+  hooks.onRequestClosed!('first-request')
+  expect(terminals.phoneApproval(terminalId)).toBeNull()
+  expect(await call({ op: 'terminal-approval', terminalId })).toMatchObject({ ok: true, result: null })
+  expect(await call({ op: 'answer-terminal', answer: first })).toMatchObject({ ok: false, error: { code: 'stale_request' } })
+  // A redraw still carries no request identity. The overlapping survivor belongs in the native CLI.
+  data(permission.replace('npm test', 'npm run other'))
+  expect(terminals.phoneApproval(terminalId)).toBeNull()
+  expect(hookWrite).not.toHaveBeenCalled()
+  hooks.onRequestClosed!('second-request')
+  request('fresh-request', 'fresh-approval')
+  expect((await preview()).requestId).toBe('fresh-request')
+})
+
 it('pushes changed or withdrawn preview fingerprints without sending screen text', async () => {
   await hello(); request(); const answer = await preview()
   await expect.poll(() => phone.messages.filter(message => message.event === 'shell').length).toBeGreaterThan(0)

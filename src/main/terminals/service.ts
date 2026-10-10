@@ -51,6 +51,8 @@ interface LiveTerminal {
   plainActive?: boolean
   phonePreviewId?: string | undefined
   approvals?: Map<string, TerminalAgentHookEvent>
+  /** Overlapping hooks cannot identify which request owns the native permission screen. */
+  ambiguousApprovals?: Set<string>
   answers?: Map<string, { answer: TerminalHookAnswer; settle(delivered: boolean): void }>
 }
 
@@ -129,7 +131,7 @@ export class TerminalWorkspaceService extends ToolOperations implements PhoneTer
   private phoneBinding(record: LiveTerminal): TerminalAgentHookEvent | undefined {
     if (!record.pty || record.terminal.launch.provider !== 'claude' || !record.hooks || !record.agent) return undefined
     const requests = [...record.approvals?.values() ?? []].filter(event => event.requestId && record.agent!.hasRequest(event.requestId))
-    return requests.length === 1 && !record.answers?.has(requests[0]!.requestId!) ? requests[0] : undefined
+    return requests.length === 1 && !record.ambiguousApprovals?.has(requests[0]!.requestId!) && !record.answers?.has(requests[0]!.requestId!) ? requests[0] : undefined
   }
   phoneRows(): PhoneTerminal[] {
     if (this.disposed) return []
@@ -345,12 +347,18 @@ export class TerminalWorkspaceService extends ToolOperations implements PhoneTer
               record.agent.setVisible(this.isVisible(record.terminal.id)); record.agent.hook(event)
               if (event.kind === 'permission' && event.requestId && event.approvalId && record.agent.hasRequest(event.requestId)) {
                 record.approvals ??= new Map(); record.approvals.set(event.requestId, event)
+                const live = [...record.approvals.keys()].filter(id => record.agent!.hasRequest(id))
+                if (live.length > 1) {
+                  record.ambiguousApprovals ??= new Set()
+                  for (const id of live) record.ambiguousApprovals.add(id)
+                }
                 this.publish(record)
               }
               this.syncAgent(record)
             },
             onRequestClosed: requestId => { if (!this.disposed && generation === record.generation) {
               record.approvals?.delete(requestId); record.answers?.get(requestId)?.settle(false); record.answers?.delete(requestId)
+              record.ambiguousApprovals?.delete(requestId)
               record.agent?.requestClosed(requestId); this.syncAgent(record); this.publish(record)
             } },
             onAnswerDelivered: answer => {
@@ -546,7 +554,7 @@ export class TerminalWorkspaceService extends ToolOperations implements PhoneTer
   }
   private clearApprovals(record: LiveTerminal): void {
     for (const pending of record.answers?.values() ?? []) pending.settle(false)
-    record.answers?.clear(); record.approvals?.clear()
+    record.answers?.clear(); record.approvals?.clear(); record.ambiguousApprovals?.clear()
   }
   dispose(): void {
     this.disposed = true
