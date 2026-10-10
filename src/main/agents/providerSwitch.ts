@@ -293,7 +293,6 @@ export class ConfiguredProviderHost implements AgentHost {
     return providerEntityId(this.options.provider(), kind, id)
   }
   async execute(command: AgentHostCommand): Promise<AgentHostResult> {
-    if (command.type === 'send' && command.skills?.length && this.owner(command.threadId) !== 'codex') throw new Error('Selected Codex skills cannot be sent to another provider. Review this draft.')
     if (command.type === 'create-project') {
       const id = command.provider ?? this.options.provider(); this.requireConnected(id)
       if (!this.slots.get(id)!.status.capabilities.projects) throw new Error('This provider does not support creating projects.')
@@ -354,6 +353,7 @@ export class ConfiguredProviderHost implements AgentHost {
     const capabilities = this.slots.get(id)!.status.capabilities
     const needed = command.type === 'send' ? 'submit' : command.type === 'interrupt' ? 'interrupt' : command.type === 'compact-thread' ? 'compact' : command.type === 'configure-thread' ? 'configureThread' : undefined
     if (needed && !capabilities[needed]) throw new Error('This provider does not support that thread action.')
+    if ((command.type === 'send' || command.type === 'steer') && command.skills?.length && !capabilities.skills) throw new Error(`${PROVIDER_LABELS[id]} does not take skills. Remove the skill from this draft and send it again.`)
     if (command.type !== 'configure-thread') return this.options.hosts[id].execute(command)
     const slot = this.slots.get(id)!; const epoch = slot.epoch
     // As for a thread refresh: no messages only when this connection's subscription asked for none either (#368).
