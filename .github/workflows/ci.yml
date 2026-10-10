@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, feat/terminal-agent-states]
 
 # A newer push to the same branch or pull request cancels the run it supersedes.
 concurrency:

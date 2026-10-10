@@ -1,6 +1,6 @@
 # Continuous integration
 
-`.github/workflows/ci.yml` runs the same gates a developer runs by hand, on a `windows-latest` runner, for every push to `main` and every pull request against `main`. It never builds desktop installers, never publishes, and uses no secrets. A second Windows job builds and verifies the unpacked Windows app, a separate Linux job builds and verifies the plain Node host archive, and a macOS job tests and compiles the native iOS client.
+`.github/workflows/ci.yml` runs the same gates a developer runs by hand, on a `windows-latest` runner, for every push to `main` and every pull request against `main` or `feat/terminal-agent-states`. The latter lets the stacked phone-terminal work run its native verification before the desktop branch merges. It never builds desktop installers, never publishes, and uses no secrets. A second Windows job builds and verifies the unpacked Windows app, a separate Linux job builds and verifies the plain Node host archive, and a macOS job tests and compiles the native iOS client.
 
 ## When each job runs
 
