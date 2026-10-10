@@ -111,7 +111,6 @@ export function PhoneStep({ heading, phoneAccess, onUpdateSettings, onOpenLink, 
             {on && code && left ? (
               <div ref={codeBox} className="onboarding-phone__code" role="group" aria-label="Pairing code" tabIndex={-1}
                 onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); void run({ type: 'cancel-code' }) } }}>
-                <span>Pairing code</span>
                 <b aria-hidden="true">{code.code.slice(0, 4)} {code.code.slice(4)}</b>
                 <span className="tt-visually-hidden">Pairing code {[...code.code].join(' ')}</span>
                 <span>In the app, tap Add computer, enter {machine ?? 'this computer’s name on your tailnet'}, then this code. It works once and expires in {left.text}.</span>

@@ -1,5 +1,7 @@
 # Desktop agent QA
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 Requested: test the actual desktop application with Computer Use, fix reproducible problems, and leave a usable development build open for Zach.
 
 Baseline: `1173fa8` on `main`. Preserve existing dictation settings and unrelated T3 projects/threads. Test actions use a dedicated Sotto QA project and bounded prompts.

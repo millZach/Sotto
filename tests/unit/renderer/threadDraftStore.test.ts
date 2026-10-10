@@ -1,3 +1,6 @@
+// @vitest-environment node
+import { deferred } from '../../fixtures/deferred'
+import { threadsStateFixture } from '../../fixtures/agentState'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { agentCommandSchema, type AgentCommand, type AgentState } from '../../../src/shared/agents'
 import { ThreadDraftStore, UNCONFIRMED_SUBMISSION, queueAdmissionOpen, submissionStatus } from '../../../src/renderer/src/agents/threadDraftStore'
@@ -5,11 +8,9 @@ import { ThreadDraftStore, UNCONFIRMED_SUBMISSION, queueAdmissionOpen, submissio
 type SaveCommand = Extract<AgentCommand, { type: 'save-thread-draft' }>
 
 function baseState(patch: Partial<AgentState> = {}): AgentState {
-  return {
-    host: { connected: true, name: 'Test', version: '', capabilities: {} as AgentState['host']['capabilities'], models: [], projects: [], threads: [{ id: 'thread', projectId: 'project', title: 'Thread', modelId: 'model', status: 'idle', messages: [], requests: [] }] },
-    draft: '', draftThreadId: null, draftRequestId: null, threadDrafts: [], deliveries: [], deliveredDrafts: [], error: null,
-    ...patch,
-  } as AgentState
+  return threadsStateFixture({ cloneOverrides: false,
+    host: { connected: true, name: 'Test', version: '', capabilities: {}, models: [], projects: [], threads: [{ id: 'thread', projectId: 'project', title: 'Thread', modelId: 'model', status: 'idle', messages: [], requests: [] }] },
+    topLevel: { activeThreadId: null, activeProjectId: null, ...patch } , ...patch})
 }
 
 function uuids(): () => string {
@@ -20,7 +21,7 @@ function uuids(): () => string {
 /** A command whose save responses the test releases one at a time. */
 function heldCommand() {
   const calls: { readonly command: AgentCommand; readonly resolve: (state: AgentState | null) => void; readonly reject: (error: unknown) => void }[] = []
-  const command = vi.fn((request: AgentCommand) => new Promise<AgentState | null>((resolve, reject) => { calls.push({ command: request, resolve, reject }) }))
+  const command = vi.fn((request: AgentCommand) => { const pending = deferred<AgentState | null>(); calls.push({ command: request, resolve: pending.resolve, reject: pending.reject }); return pending.promise })
   return { command, calls, saves: () => calls.filter(call => call.command.type === 'save-thread-draft').map(call => call.command as SaveCommand) }
 }
 
@@ -678,6 +679,29 @@ describe('screenshots read for a draft', () => {
 })
 
 describe('ThreadDraftStore.place', () => {
+  it.each(['before', 'after'] as const)('keeps the placed draft when the creation snapshot commits %s the save reply', async order => {
+    const { command, calls, saves } = heldCommand()
+    const store = new ThreadDraftStore(command, 250, uuids())
+    const text = 'The leftover prompt.'
+    // Creation published this shell before the save, but React can still be rendering it
+    // when the save promise settles. Only the later shell shows the placed revision.
+    const creation = baseState({ activeThreadId: 'thread' })
+    const placed = store.place('thread', { text, attachments: [] })
+    const revision = store.draft('thread').draftId
+    const saved = published(saves().at(-1)!, { activeThreadId: 'thread' })
+    if (order === 'before') store.receive(creation)
+    calls.at(-1)!.resolve(saved)
+    await expect(placed).resolves.toBe('saved')
+    expect(store.snapshot('thread').save).toBe('saved')
+    if (order === 'after') store.receive(creation)
+    expect(store.draft('thread')).toMatchObject({ draftId: revision, text })
+    store.receive(saved)
+    expect(store.draft('thread')).toMatchObject({ draftId: revision, text })
+    // Once the snapshot stream has shown this revision, a later external clear wins.
+    store.receive(baseState({ activeThreadId: 'thread' }))
+    expect(store.draft('thread').text).toBe('')
+  })
+
   const leftover = (text: string, attachments: AgentState['draftAttachments'] = []) => ({ text, attachments: attachments ?? [] })
 
   it('puts a leftover draft after what the composer holds and resolves saved only once main saved it', async () => {

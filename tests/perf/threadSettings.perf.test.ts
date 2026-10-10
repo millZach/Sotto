@@ -26,7 +26,7 @@ const modes: AgentRuntimeMode[] = ['full-access', 'auto-accept-edits']
  */
 const inPlace: AgentRuntimeMode[] = ['auto-accept-edits', 'approval-required']
 
-describe.skipIf(!PERF_BENCH)('thread settings chip press', () => {
+describe.skipIf(!PERF_BENCH)("thread settings chip press (timing benchmark; requires SOTTO_PERF_BENCH=1)", () => {
   it.each(['claude', 'codex'] as const)('%s: reports reads, writes, starts and time per press', async provider => {
     const native = provider === 'claude' ? await claudeFixture(undefined, undefined, undefined, impatient) : await codexFixture(undefined, false, undefined, impatient)
     const stack = await threadSettingsStack(provider, native)

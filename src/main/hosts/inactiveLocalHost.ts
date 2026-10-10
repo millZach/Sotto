@@ -9,10 +9,9 @@ export function emptyDesktopState(hostId?: string): AgentState {
   return {
     ...(hostId ? { hostId } : {}), configuration: defaultAgentConfiguration(), connection: 'disconnected',
     host: { ...structuredClone(EMPTY_AGENT_HOST), ...(hostId ? { hostId } : {}) },
-    assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
-    draftRequestId: null, pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
-    speech: { id: 0, text: '' }, voice: { status: 'off', error: null, action: 'none', revision: 0 },
-    credentials: { reasoning: false, grokSpeech: false, secure: false }, reasoningAccounts: [],
+    activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
+    draftRequestId: null, globalLaneBusy: false, notice: '', error: null,
+    credentials: { reasoning: false, secure: false }, reasoningAccounts: [],
   }
 }
 
@@ -27,7 +26,7 @@ export async function inactiveLocalHost(directory: string): Promise<Awaited<Retu
   const unsubscribe = () => idle
   const shell = () => structuredClone(state)
   const control = {
-    get: shell, shell, configuration: () => state.configuration, command: async () => unavailable(),
+    get: shell, shell, hostId: () => state.hostId, configuration: () => state.configuration, command: async () => unavailable(),
     threadDetail: () => null, attachmentPreview: unavailable, stageAttachment: async () => unavailable(), attachmentContent: async () => null, gitRefs: async () => unavailable(), gitChangedFiles: async () => unavailable(), gitPullRequest: async () => unavailable(),
     subscribe: unsubscribe, subscribeThreadDetail: unsubscribe, dispose: idle, closed: async () => undefined,
     privacyChanged: async () => undefined, hasPendingThreadWork: () => false, useSottoRequests: idle,

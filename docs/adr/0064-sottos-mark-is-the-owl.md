@@ -4,6 +4,8 @@
 
 Accepted October 8, 2026, by the owner's choice. The owner supplied a brand sheet, "04 / Scout", generated with OpenAI's Codex, and asked for its owl to replace the mark everywhere. Asked where, they chose everywhere, with the mark inside the app still painted by the theme. Asked about the wordmark beside it, they kept "Sotto" as it is. Amends [ADR-0024](0024-sotto-ships-its-own-palettes-in-light-and-dark-columns.md) only in what the icon draws; its colours and the theme rule are unchanged.
 
+Renumbered from ADR-0062 on October 9, 2026, after the accepted Linux desktop ADR used the same number. The decision is unchanged.
+
 ## Context
 
 The mark was a bar and a wave on a teal tile: a caret and a sound, from the months when Sotto was a dictation tool. Sotto now spends most of its time running coding agents' threads, and the owner wanted a mark with a character rather than a symbol. The sheet shows the owl as an app icon (a black owl on a teal tile, its eyes and beak cut through to the tile), a lockup with a lowercase wordmark, and a small inverted variant on a black tile. It is a raster image, so it cannot be the master for a 16-pixel menu-bar icon or a mark that a theme repaints.

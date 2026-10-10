@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { parseProviderRecords } from '../fixtures/providerRecords'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
@@ -43,7 +44,7 @@ it('gives live and saved fake Claude messages identical timestamps, preserving e
       message: { role: 'user', content: 'Synthetic user echo' } }) + '\n')
     await expect.poll(() => frames.some(frame => frame.uuid === 'user')).toBe(true)
     const folder = join(root, 'home', 'projects', root.replace(/[^a-zA-Z0-9]/gu, '-'))
-    const saved = (await readFile(join(folder, `${session}.jsonl`), 'utf8')).trim().split('\n').map(line => JSON.parse(line) as Frame)
+    const saved = parseProviderRecords<Frame>(await readFile(join(folder, `${session}.jsonl`), 'utf8'), { keepEmptyLines: true })
     const live = frames.filter(frame => frame.type === 'assistant' || frame.type === 'user')
     expect(live).toHaveLength(5)
     expect(saved).toHaveLength(5)

@@ -3,7 +3,7 @@ import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import type { z } from 'zod'
 import { SocketFrames } from '../../host/socketFrames'
-import { agentAttachmentHandleSchema, agentThreadDetailResultSchema, agentAttachmentPreviewResultSchema, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
+import { PROVIDER_CONNECTION_NOTICES, providerConnectionNotice, agentAttachmentHandleSchema, agentThreadDetailResultSchema, agentAttachmentPreviewResultSchema, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import { applyAgentThreadDetailDelta } from '../../shared/agentThreadDetail'
 import type { StoredThreadEvent } from '../../shared/threadEvents'
 import { gitRefsPageSchema, type GitRefsPage, type GitRefsRequest } from '../../shared/gitRefs'
@@ -16,7 +16,7 @@ import { subagentAssignmentsPageSchema, subagentPageSchema, type SubagentAssignm
 import { toolsResultSchema, type ToolListRequest, type ToolsResult } from '../../shared/tools'
 import { hostSignInSchema, type HostSignIn } from '../../shared/hostProviders'
 import type { ProviderId } from '../../shared/agents'
-import { protocolAgentStateSchema, HOST_BUSY, hostAttachmentContentSchema, hostIsNewer, hostVersionMismatch, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema } from '../../shared/hostProtocol'
+import { protocolAgentStateSchema, managementCommandRefusal, LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, HOST_BUSY, hostAttachmentContentSchema, hostIsNewer, hostVersionMismatch, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema } from '../../shared/hostProtocol'
 import type { HostFeature, HostAnswerTarget, HostHello, HostOperation, HostPairing, HostSession, HostResponse, HostPush, HostEventPage, HostReceipt, HostErrorCode } from '../../shared/hostProtocol'
 import type { HostService, ClientIdentity, RequestAnswerRecovery } from './hostService'
 import { requestDraftProvider, requestDraftQuestions } from '../../shared/requestDrafts'
@@ -82,6 +82,9 @@ export class SocketHostService implements HostService {
   private frames: SocketFrames | undefined
   private session?: HostSession
   private cached?: AgentState
+  /** Desktop-only feedback: old v1 hosts must receive their original strict connect packet. */
+  private readonly quietConnectionNotices = new Map<string, string>()
+  private explicitConnectionGeneration = 0
   private readonly details = new Map<string, AgentThreadDetail | null>()
   private readonly storedEvents = new Map<number, StoredThreadEvent>()
   private readonly answerTargets = new Map<string, HostAnswerTarget>()
@@ -344,8 +347,12 @@ export class SocketHostService implements HostService {
     const hostId = this.session?.hostId
     if (hostId && (state.hostId !== hostId || state.host.hostId !== hostId || state.host.threads.some(thread => thread.hostId && thread.hostId !== hostId) || state.host.projects.some(project => project.hostId && project.hostId !== hostId))) throw new HostConnectionError('The host returned another host identity. Reconnect before continuing.', 'unauthenticated')
   }
+  private preserveConnectionFeedback(previous: string): void {
+    for (const text of this.quietConnectionNotices.keys()) this.quietConnectionNotices.set(text, previous)
+  }
   private publish(state: AgentState, authoritative = false): void {
     this.validateState(state)
+    if (!this.quietConnectionNotices.has(state.notice)) this.preserveConnectionFeedback(state.notice)
     delete state.clientScoped; delete state.connections
     if (authoritative) this.snapshotEpoch++
     for (let edit of this.retainedDrafts.list(this.retainedHostId())) {
@@ -402,6 +409,7 @@ export class SocketHostService implements HostService {
   shell(): AgentState {
     if (!this.cached) throw new Error('Connect to the host before reading its state.')
     const state = structuredClone(this.cached)
+    state.notice = this.quietConnectionNotices.get(state.notice) ?? state.notice
     for (const edit of this.retainedDrafts.list(this.retainedHostId())) {
       const draft = edit.saved && edit.hostDraftId ? { ...edit.draft, draftId: edit.hostDraftId } : edit.draft
       state.threadDrafts = [...(state.threadDrafts ?? []).filter(draft => draft.threadId !== edit.draft.threadId), draft]
@@ -456,6 +464,11 @@ export class SocketHostService implements HostService {
   /** The host lists `pull-request-babysit`: it babysits and takes the user's Babysit pull request (ADR-0061 decision 11). */
   get supportsBabysitting(): boolean { return this.features.includes('pull-request-babysit') }
   async command(command: AgentCommand, _client?: ClientIdentity, commandId?: string): Promise<AgentState> {
+    const refusal = managementCommandRefusal(command)
+    if (refusal) throw new HostConnectionError(refusal, 'forbidden')
+    if (this.shell().legacyManagement && !LEGACY_MANAGEMENT_ALLOWED_COMMANDS.has(command.type)) {
+      throw new HostConnectionError(LEGACY_MANAGEMENT_UPDATE, 'forbidden')
+    }
     this.recoveryError = undefined
     const admitted = structuredClone(command)
     // A host from before babysitting would refuse the command with no word of why; this says which side to update.
@@ -469,7 +482,7 @@ export class SocketHostService implements HostService {
     // Saves admitted before a command go onto the wire first. Send never waits for their replies.
     this.flushCompose()
     const owner = admitted.type === 'send' ? admitted.draft?.threadId ?? this.shell().draftThreadId ?? this.shell().activeThreadId
-      : admitted.type === 'cancel-draft' || admitted.type === 'pause-draft' ? this.shell().draftThreadId ?? this.shell().activeThreadId : undefined
+      : admitted.type === 'cancel-draft' ? this.shell().draftThreadId ?? this.shell().activeThreadId : undefined
     let edit = owner ? this.retainedDrafts.get(this.retainedHostId(), owner) : undefined
     const priorAdmission = this.wireAdmission
     const generation = this.generation
@@ -496,7 +509,7 @@ export class SocketHostService implements HostService {
       this.wireAdmission = admission
       void admission.then(() => { if (this.wireAdmission === admission) this.wireAdmission = undefined })
     }
-    const barrierOwner = owner && (admitted.type === 'send' || admitted.type === 'cancel-draft' || admitted.type === 'pause-draft') ? owner : undefined
+    const barrierOwner = owner && (admitted.type === 'send' || admitted.type === 'cancel-draft') ? owner : undefined
     if (barrierOwner) this.delivering.set(barrierOwner, (this.delivering.get(barrierOwner) ?? 0) + 1)
     try {
       if (releaseAdmission) { if (priorAdmission) await priorAdmission; if (this.retainedDrafts.requiresDurableWrites) await this.retainedDrafts.flush(); this.sameGeneration(generation) }
@@ -524,11 +537,6 @@ export class SocketHostService implements HostService {
             this.retainedDrafts.put(kept)
           }
         }
-      }
-      if (result.error === null && (admitted.type === 'pause-draft' || admitted.type === 'resume-draft')) {
-        const threadId = admitted.type === 'resume-draft' ? admitted.threadId : owner
-        const retained = threadId ? this.retainedDrafts.get(this.retainedHostId(), threadId) : undefined
-        if (retained) this.retainedDrafts.put({ ...retained, editing: admitted.type === 'resume-draft' })
       }
       return { ...this.state(), error: result.error }
     } catch (error) {
@@ -723,8 +731,32 @@ export class SocketHostService implements HostService {
       providerId: requestDraftProvider(before.host, thread, before.configuration.provider), requestId: request.id,
       questionsDigest: requestQuestionsDigest(questions) } : undefined
     const generation = this.generation, epoch = this.snapshotEpoch
-    const operation = { op: 'command' as const, command }
+    let wireCommand = command
+    let quietConnectGeneration: number | undefined
+    if (command.type === 'connect') {
+      const { notice, ...connect } = command
+      wireCommand = connect
+      if (notice === false) {
+        quietConnectGeneration = this.explicitConnectionGeneration
+        this.preserveConnectionFeedback(before.notice)
+        const texts = command.provider ? [providerConnectionNotice(before, command.provider)] : PROVIDER_CONNECTION_NOTICES
+        for (const text of texts) this.quietConnectionNotices.set(text, before.notice)
+      } else this.explicitConnectionGeneration++
+    }
+    const operation = { op: 'command' as const, command: wireCommand.type === 'create-thread' ? { ...wireCommand, managed: false } : wireCommand }
     const state = this.read(protocolAgentStateSchema, await (onPlacement ? this.call(operation, commandId, onPlacement) : this.call(operation, commandId))); this.sameGeneration(generation)
+    if (command.type === 'connect' && !state.error) {
+      const text = providerConnectionNotice(state, command.provider)
+      if (quietConnectGeneration === this.explicitConnectionGeneration) {
+        const previous = this.shell().notice
+        this.preserveConnectionFeedback(previous)
+        this.quietConnectionNotices.set(text, previous)
+      } else if (command.notice !== false && state.notice === text) {
+        // A Threads success stays visible even if an earlier quiet connection acknowledges later.
+        this.preserveConnectionFeedback(text)
+        this.quietConnectionNotices.delete(text)
+      }
+    }
     if (command.type === 'preview-reclaim-thread-worktree') { this.validateState(state); return state }
     if (retainedId && 'threadId' in command && command.threadId
       && this.retainedDrafts.get(this.retainedHostId(), command.threadId)?.draft.draftId !== retainedId) {

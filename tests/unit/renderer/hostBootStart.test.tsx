@@ -1,3 +1,4 @@
+import { hostsBridgeFixture, hostsState, hostStatus } from '../../fixtures/renderer/hostBridges'
 import React from 'react'
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -15,19 +16,16 @@ const off: BootStatus = { supported: true, installed: false, enabled: false, act
 const on: BootStatus = { supported: true, installed: true, enabled: true, active: true, linger: true, nodeDrift: false }
 const lingerOff: BootStatus = { ...off, linger: false, fix: 'sudo loginctl enable-linger zach' }
 function forge(patch: Partial<HostStatus> = {}): HostStatus {
-  return { id: FORGE, hostId: FORGE, name: 'forge', target: 'zach@forge', identityFile: '', installPath: '~/.local/share/sotto-host', dataDirectory: '~/.sotto', phase: 'connected', enabled: true, owned: true, bootStart: off, ...patch }
+  return hostStatus({ id: FORGE, hostId: FORGE, name: 'forge', target: 'zach@forge', identityFile: '', installPath: '~/.local/share/sotto-host', dataDirectory: '~/.sotto', phase: 'connected', enabled: true, owned: true, bootStart: off, ...patch })
 }
 const change = (patch: Partial<HostBootState> = {}): HostBootState => ({ id: FORGE, name: 'forge', change: 'install', phase: 'changing', working: 0, restarts: true, ...patch })
 /** A bridge holding what main publishes; `answer` decides what each press changes. */
 function fixture(hosts: HostStatus[], answer?: (command: HostsCommand, state: HostsState) => Partial<HostsState>) {
-  let state: HostsState = { localHostEnabled: true, localHostRunning: true, localHostId: LOCAL, activeHostId: LOCAL, hosts }
-  const listeners = new Set<(value: HostsState) => void>()
-  const push = (next: Partial<HostsState>): void => { state = { ...state, ...next }; act(() => { for (const listener of listeners) listener(state) }) }
-  const command = vi.fn<HostsBridge['command']>(async input => { if (answer) state = { ...state, ...answer(input, state) }; return state })
-  const bridge = { get: async () => state, command, onChanged: (listener: (value: HostsState) => void) => { listeners.add(listener); return () => listeners.delete(listener) },
-    devices: vi.fn(async () => ({ tailscale: null, devices: [] })), tailscale: vi.fn(async () => ({ state: 'stopped' })), connectTailscale: vi.fn(), openTailscaleDownload: vi.fn(),
-    providerAction: vi.fn(async () => ({})), updateClients: vi.fn(async () => ({})), signIn: vi.fn(async () => null) } as unknown as HostsBridge
-  return { bridge, command, push }
+  const made = hostsBridgeFixture({ initial: hostsState({ localHostId: LOCAL, activeHostId: LOCAL, hosts }),
+    answer: (input, state) => answer ? { ...state, ...answer(input, state) } : state,
+    commands: { devices: vi.fn(async () => ({ tailscale: null, devices: [] })) as unknown as HostsBridge['devices'], tailscale: vi.fn(async () => ({ state: 'stopped' })) as HostsBridge['tailscale'] } })
+  const push = (next: Partial<HostsState>): void => { act(() => made.publish(next)) }
+  return { bridge: made.bridge, command: made.command, push }
 }
 const boots = (command: ReturnType<typeof fixture>['command']) => command.mock.calls.map(([value]) => value).filter(value => value.type === 'host-boot')
 const settings = (bridge: HostsBridge) => render(<HostsSettings localHostEnabled onLocalHostChange={async () => true} bridge={bridge} />)

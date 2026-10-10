@@ -33,7 +33,7 @@ function row(thread: AgentThread): string {
   return work.length ? (work.some(task => task.type !== 'command') ? 'Working' : 'Waiting') : 'Done'
 }
 
-describe.skipIf(!LIVE)('Claude reporting back on background work (live)', () => {
+describe.skipIf(!LIVE)("Claude reporting back on background work (live) (requires SOTTO_CLAUDE_LIVE=1)", () => {
   it.each(cases)('reads Working through the report on $name, then Done', async ({ name, mode, prompt }) => {
     const root = await mkdtemp(join(tmpdir(), 'sotto-claude-report-live-')); const cwd = join(root, 'project'); await mkdir(cwd)
     const host = new ClaudeStreamJsonHost({ userDataPath: root, requestTimeoutMs: 20_000, pollIntervalMs: 100 })

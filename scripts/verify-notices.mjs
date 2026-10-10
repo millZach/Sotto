@@ -9,6 +9,21 @@ const root = resolve(import.meta.dirname, '..')
 const packageComponent = (name, version, license, attribution, packagePath = `node_modules/${name}`) =>
   Object.freeze({ name, version, license, attribution, packagePath })
 
+// The thread composer bundles these development dependencies into the renderer.
+export const COMPOSER_NOTICE_COMPONENTS = Object.freeze([
+  ...['core', 'react', 'pm', 'extensions', 'extension-document', 'extension-paragraph', 'extension-text', 'extension-hard-break', 'extension-history']
+    .map(name => packageComponent(`@tiptap/${name}`, '3.31.4', 'MIT', 'Tiptap GmbH')),
+  ...[
+    ['prosemirror-changeset', '2.4.4'], ['prosemirror-transform', '1.12.2'], ['prosemirror-model', '1.25.12'],
+    ['prosemirror-commands', '1.7.2'], ['prosemirror-state', '1.4.4'], ['prosemirror-view', '1.42.6'],
+    ['prosemirror-dropcursor', '1.8.4'], ['prosemirror-gapcursor', '1.4.1'], ['prosemirror-keymap', '1.2.3'],
+    ['prosemirror-history', '1.5.1'], ['prosemirror-inputrules', '1.5.1'], ['prosemirror-schema-list', '1.5.1'],
+    ['prosemirror-tables', '1.8.5'], ['orderedmap', '2.1.1'], ['w3c-keyname', '2.2.8'], ['rope-sequence', '1.3.4'],
+  ].map(([name, version]) => packageComponent(name, version, 'MIT', 'Marijn Haverbeke and contributors')),
+  packageComponent('fast-equals', '5.4.4', 'MIT', 'Tony Quetano'),
+  packageComponent('use-sync-external-store', '1.7.0', 'MIT', 'Meta Platforms, Inc. and affiliates'),
+])
+
 export const NOTICE_COMPONENTS = Object.freeze([
   packageComponent('Electron', '43.1.0', 'MIT', 'Electron contributors', 'node_modules/electron'),
   Object.freeze({ name: 'Chromium and bundled third-party code', version: 'Electron 43.1.0 distribution', license: 'Multiple', attribution: 'Chromium authors and third-party contributors' }),
@@ -16,6 +31,7 @@ export const NOTICE_COMPONENTS = Object.freeze([
   packageComponent('react-dom', '19.2.7', 'MIT', 'Meta Platforms, Inc. and affiliates'),
   packageComponent('scheduler', '0.27.0', 'MIT', 'Meta Platforms, Inc. and affiliates'),
   packageComponent('lucide-react', '1.24.0', 'ISC and MIT', 'Lucide Icons and Contributors; Cole Bemis'),
+  ...COMPOSER_NOTICE_COMPONENTS,
   packageComponent('zod', '4.4.3', 'MIT', 'Colin McDonnell'),
   packageComponent('@anthropic-ai/claude-agent-sdk', '0.3.270', 'SEE LICENSE IN README.md', 'Anthropic PBC'),
   packageComponent('@xterm/xterm', '6.0.0', 'MIT', 'The xterm.js authors; SourceLair Private Company; Christopher Jeffrey'),
@@ -41,25 +57,6 @@ export const NOTICE_COMPONENTS = Object.freeze([
   packageComponent('ms', '2.1.3', 'MIT', 'Vercel, Inc.'),
   packageComponent('supports-color', '7.2.0', 'MIT', 'Sindre Sorhus'),
   packageComponent('has-flag', '4.0.0', 'MIT', 'Sindre Sorhus'),
-  packageComponent('@huggingface/transformers', '4.2.0', 'Apache-2.0', 'Hugging Face'),
-  Object.freeze({ name: '@huggingface/jinja', version: '0.5.6', license: 'MIT', attribution: 'Hugging Face' }),
-  packageComponent('@huggingface/tokenizers', '0.1.3', 'Apache-2.0', 'Hugging Face'),
-  packageComponent('onnxruntime-web', '1.26.0-dev.20260416-b7804b056c', 'MIT', 'Microsoft Corporation'),
-  packageComponent('onnxruntime-common', '1.24.0-dev.20251116-b39e144322', 'MIT', 'Microsoft Corporation', 'node_modules/onnxruntime-web/node_modules/onnxruntime-common'),
-  packageComponent('flatbuffers', '25.9.23', 'Apache-2.0', 'Google LLC and contributors'),
-  packageComponent('guid-typescript', '1.0.9', 'ISC', 'NicolasDeveloper contributors'),
-  packageComponent('long', '5.3.2', 'Apache-2.0', 'Daniel Wirtz and contributors'),
-  packageComponent('platform', '1.3.6', 'MIT', 'Benjamin Tan; John-David Dalton'),
-  packageComponent('protobufjs', '7.6.5', 'BSD-3-Clause', 'Daniel Wirtz'),
-  packageComponent('@protobufjs/aspromise', '1.1.2', 'BSD-3-Clause', 'Daniel Wirtz'),
-  packageComponent('@protobufjs/base64', '1.1.2', 'BSD-3-Clause', 'Daniel Wirtz'),
-  packageComponent('@protobufjs/codegen', '2.0.5', 'BSD-3-Clause', 'Daniel Wirtz'),
-  packageComponent('@protobufjs/eventemitter', '1.1.1', 'BSD-3-Clause', 'Daniel Wirtz'),
-  packageComponent('@protobufjs/fetch', '1.1.1', 'BSD-3-Clause', 'Daniel Wirtz'),
-  packageComponent('@protobufjs/float', '1.0.2', 'BSD-3-Clause', 'Daniel Wirtz'),
-  packageComponent('@protobufjs/path', '1.1.2', 'BSD-3-Clause', 'Daniel Wirtz'),
-  packageComponent('@protobufjs/pool', '1.1.0', 'BSD-3-Clause', 'Daniel Wirtz'),
-  packageComponent('@protobufjs/utf8', '1.1.2', 'BSD-3-Clause', 'Daniel Wirtz'),
   // Markdown answers and highlighted code on the Threads page, bundled into the renderer.
   packageComponent('@ungap/structured-clone', '1.4.0', 'ISC', 'Andrea Giammarchi'),
   packageComponent('bail', '2.0.2', 'MIT', 'Titus Wormer'),
@@ -191,27 +188,6 @@ export const NOTICE_COMPONENTS = Object.freeze([
   Object.freeze({ name: 'T3 Code', nameSuffix: ' (theme palettes, file format, editor, inspector and Open VSX client adapted in src/shared/themes, src/main/themes and settings/themes)', version: 'd1d15c67 (packages/shared/src/themePalettes.ts, apps/web/src/themePalette.ts, apps/web/src/components/settings/Theme*.tsx, themeInspector.ts, apps/web/src/openVsxThemes.ts, apps/web/src/vscodeThemeImport.ts)', license: 'MIT', attribution: 'T3 Tools Inc.' }),
 ])
 
-export const EMBEDDED_BROWSER_DEPENDENCIES = Object.freeze([
-  '@huggingface/jinja',
-  '@huggingface/tokenizers',
-  'onnxruntime-web',
-  'onnxruntime-common',
-  'flatbuffers',
-  'guid-typescript',
-  'long',
-  'platform',
-  'protobufjs',
-  '@protobufjs/aspromise',
-  '@protobufjs/base64',
-  '@protobufjs/codegen',
-  '@protobufjs/eventemitter',
-  '@protobufjs/fetch',
-  '@protobufjs/float',
-  '@protobufjs/path',
-  '@protobufjs/pool',
-  '@protobufjs/utf8',
-])
-
 function fail(message) {
   throw new Error(`Third-party notice verification failed: ${message}`)
 }
@@ -242,45 +218,14 @@ export async function verifyThirdPartyNotices(options = {}) {
     if (normalizeLicense(lockEntry.license) !== expectedLicense) fail(`lockfile license drift for ${component.name}`)
   }
 
-  for (const embedded of EMBEDDED_BROWSER_DEPENDENCIES) {
-    if (!names.has(embedded)) fail(`embedded dependency is not inventoried: ${embedded}`)
-  }
-
-  const transformersBundle = await readFile(
-    join(root, 'node_modules', '@huggingface', 'transformers', 'dist', 'transformers.web.js'),
-    'utf8',
-  )
-  for (const marker of [
-    '@huggingface+tokenizers@0.1.3',
-    '@huggingface+jinja@0.5.6',
-    'from "onnxruntime-web/webgpu"',
-    'from "onnxruntime-common"',
-  ]) if (!transformersBundle.includes(marker)) fail(`Transformers bundle evidence is missing ${marker}`)
-
-  const declaredEmbedded = new Set([
-    ...Object.keys(JSON.parse(await readFile(join(root, 'node_modules', 'onnxruntime-web', 'package.json'), 'utf8')).dependencies ?? {}),
-    ...Object.keys(JSON.parse(await readFile(join(root, 'node_modules', 'protobufjs', 'package.json'), 'utf8')).dependencies ?? {}),
-  ])
-  for (const dependency of declaredEmbedded) {
-    if (dependency === '@types/node') continue
-    if (!names.has(dependency)) fail(`declared browser dependency is not inventoried: ${dependency}`)
-  }
-
-  // The renderer and its workers are built in separate rollup passes, and both
-  // land in app.asar, so the evidence is the union of the two inventories.
+  // The renderer inventory covers the code redistributed in app.asar.
   const bundleInventoryPath = join(root, 'out', 'renderer', 'bundled-dependencies.json')
-  const workerInventoryPath = join(root, 'out', 'renderer', 'bundled-dependencies.worker.json')
   if (existsSync(bundleInventoryPath)) {
-    const readPackages = async (path) =>
-      existsSync(path) ? JSON.parse(await readFile(path, 'utf8')).packages ?? [] : []
-    const bundled = new Set([
-      ...(await readPackages(bundleInventoryPath)),
-      ...(await readPackages(workerInventoryPath)),
-    ])
+    const bundled = new Set(JSON.parse(await readFile(bundleInventoryPath, 'utf8')).packages ?? [])
     for (const packageName of bundled) {
       if (!names.has(packageName)) fail(`rendered bundle dependency is not inventoried: ${packageName}`)
     }
-    for (const required of ['@huggingface/transformers', 'lucide-react', 'react', 'react-dom', 'react-markdown', 'remark-gfm', 'lowlight', 'mermaid', 'dompurify', 'scheduler', 'zod']) {
+    for (const required of ['lucide-react', 'react', 'react-dom', 'react-markdown', 'remark-gfm', 'lowlight', 'mermaid', 'dompurify', 'scheduler', 'zod']) {
       if (!bundled.has(required)) fail(`bundle evidence is missing ${required}`)
     }
   }
@@ -317,10 +262,6 @@ export async function verifyThirdPartyNotices(options = {}) {
     '## Lucide ISC and Feather MIT licenses',
     '## Apache License 2.0',
     'TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION',
-    '## Protocol Buffers BSD 3-Clause license',
-    'Neither the name of its author, nor the names of its contributors',
-    '## ONNX Runtime MIT license',
-    'Copyright (c) Microsoft Corporation. All rights reserved.',
     '## Windows updater dependency MIT licenses',
     'Copyright (c) 2015 Loopline Systems',
     '## Windows updater dependency ISC licenses',

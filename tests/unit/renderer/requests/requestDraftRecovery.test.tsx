@@ -1,3 +1,5 @@
+import type { SubmitOutcome } from '../../../../src/renderer/src/agents/requests/requestAnswers'
+import { deferred } from '../../../fixtures/deferred'
 import React from 'react'
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -147,7 +149,7 @@ describe('saved answers without a live request', () => {
   it('ignores a list that answers for an owner the view has left', async () => {
     const bridge = fakeBridge([draft()])
     let late: (drafts: RequestDraft[]) => void = () => undefined
-    bridge.list.mockImplementationOnce(() => new Promise(resolve => { late = resolve }))
+    bridge.list.mockImplementationOnce(() => { const pending = deferred<Parameters<typeof late>[0]>(); late = pending.resolve; return pending.promise })
     const { update } = view(bridge)
     update({ owner: { ...owner, ownerId: 'other' } })
     await waitFor(() => expect(bridge.list).toHaveBeenCalledTimes(2))
@@ -169,7 +171,7 @@ describe('saved answers without a live request', () => {
     let finish: () => void = () => undefined
     const answers = new RequestAnswerStore(() => bridge as unknown as RequestDraftBridge)
     bridge.get.mockResolvedValue(null)
-    bridge.save.mockImplementation((next: RequestDraft) => new Promise(resolve => { finish = () => { bridge.replace([next]); resolve(next) } }))
+    bridge.save.mockImplementation((next: RequestDraft) => { const pending = deferred<unknown>(); finish = () => { bridge.replace([next]); pending.resolve(next) }; return pending.promise })
     const request = live()
     const element = (requests: AgentRequest[]) => <RequestDraftRecovery owner={owner} live={requests} observation="ready" observed="same"
       provider="Codex" bridge={bridge as unknown as RequestDraftBridge} answers={answers} />
@@ -196,7 +198,7 @@ describe('saved answers without a live request', () => {
     bridge.save.mockImplementation(async (next: RequestDraft) => { bridge.replace([next]); return next })
     bridge.save.mockImplementationOnce((next: RequestDraft) => {
       bridge.replace([next])
-      return new Promise(resolve => { acknowledge = () => resolve(next) })
+      const pending = deferred<unknown>(); acknowledge = () => pending.resolve(next); return pending.promise
     })
     const request = live()
     const key = requestAnswerOwnerKey(owner.ownerId, request, owner)
@@ -234,7 +236,7 @@ describe('saved answers without a live request', () => {
     act(() => answers.select(key, request.id, 'notes', { optionIds: [], other: false, text: 'Answered as it closed' }))
     let acknowledge: () => void = () => undefined
     let submitted: Promise<void> = Promise.resolve()
-    act(() => { submitted = answers.submit(key, request.id, null, () => new Promise(resolve => { acknowledge = () => { bridge.replace([]); resolve({ error: null }) } })) })
+    act(() => { submitted = answers.submit(key, request.id, null, () => { const pending = deferred<SubmitOutcome>(); acknowledge = () => { bridge.replace([]); pending.resolve({ error: null }) }; return pending.promise }) })
     await waitFor(() => expect(bridge.save).toHaveBeenCalledWith(expect.objectContaining({ held: true })))
     // The native question closes before the answer command is acknowledged: main still holds the attempt.
     rendered.rerender(element([]))
@@ -308,7 +310,6 @@ it('formats a text-only and multi-select answer for the clipboard', () => {
   expect(savedAnswerClipboard(draft({ selections: { checks: { optionIds: ['types'], other: false, text: '' } } })))
     .toBe('Where should we go?\nNo answer\n\nWhich checks?\nType checks\n\nTravel notes\nNo answer\n\nBudget\nNo answer')
 })
-
 
 it('keeps a legacy draft in its live card and shows recovery when the same request ID changes', async () => {
   const request: AgentRequest = { id: 'legacy', kind: 'question', text: 'Choose the route', options: [{ id: 'coast', label: 'Coast' }] }

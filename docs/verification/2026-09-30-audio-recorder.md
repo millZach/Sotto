@@ -1,10 +1,12 @@
 # Audio recorder limit and delivery
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 Issues #519 (S-046) and #598 (S-126), verified on Windows.
 
 ## Recorder regressions
 
-`npx vitest run tests/unit/renderer/audioRecorder.test.ts tests/unit/renderer/dictationController.test.ts tests/unit/renderer/agentVoiceCapture.test.ts --maxWorkers=2`: 131 passed.
+`npx vitest run tests/unit/renderer/audio/audioCaptureWorklet.test.ts tests/unit/renderer/audio/audioRecorder.test.ts tests/unit/renderer/audio/audioRecorderSegmentation.test.ts tests/unit/renderer/features/dictation/dictationLifecycle.test.ts tests/unit/renderer/features/dictation/dictationOutput.test.ts tests/unit/renderer/features/dictation/dictationPrewarm.test.ts tests/unit/renderer/features/dictation/dictationRecovery.test.ts tests/unit/renderer/agentVoiceCapture.test.ts --maxWorkers=2`: 131 passed.
 
 - A synthetic recording supplies five minutes of audio, then another worklet frame before the duration timer runs. Both manual stop at 16 kHz and automatic stop at 48 kHz deliver exactly the maximum transcription sample count. The first five minutes remain, and the encoded WAV passes the real IPC request schema. Both delivery paths failed schema validation before the fix.
 - Manual stop and automatic stop deliver usable audio and leave neither an audio result nor an active session on the recorder. Both paths retained an audio result before the cache was removed. Ownership is inspected directly; this does not depend on garbage collection timing.

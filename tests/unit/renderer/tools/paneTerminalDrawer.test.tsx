@@ -1,67 +1,52 @@
+import { terminalBridgeFixture, terminalSession, fakeTerminalViews } from '../../../fixtures/renderer/terminalBridge'
 import React from 'react'
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { TerminalBridge, TerminalEvent, TerminalSession, TerminalSnapshot } from '../../../../src/shared/terminal'
+import type { TerminalSession } from '../../../../src/shared/terminal'
 import type { ToolsResult } from '../../../../src/shared/tools'
 import { PaneTerminalDrawer } from '../../../../src/renderer/src/tools/PaneTerminalDrawer'
 import { PaneTerminalToggle } from '../../../../src/renderer/src/tools/PaneTerminalToggle'
 import { PaneTerminalChromeStore } from '../../../../src/renderer/src/tools/paneTerminalStore'
 import { setDrawerShortcut } from '../../../../src/renderer/src/tools/paneTerminalShortcut'
-import { TerminalStore, type TerminalViewFactory, type TerminalViewHandlers } from '../../../../src/renderer/src/tools/terminalStore'
+import { TerminalStore } from '../../../../src/renderer/src/tools/terminalStore'
 
 const workspace = { threadId: 'thread-a', projectId: 'workshop', workingDirectory: 'D:\\work\\workshop', workspaceId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }
 const ID_1 = '11111111-1111-4111-8111-111111111111'
 const ID_2 = '22222222-2222-4222-8222-222222222222'
 const session = (id: string, patch: Partial<TerminalSession> = {}): TerminalSession =>
-  ({ id, workspace, title: 'PowerShell', shell: 'pwsh.exe', status: 'running', cols: 80, rows: 24, exitCode: null, createdAt: 1, place: 'drawer', ...patch })
+  terminalSession(id, workspace, { place: 'drawer', ...patch })
 const ok = <T,>(value: T): ToolsResult<T> => ({ ok: true, value })
 
 function fakeTerminal(initial: TerminalSession[] = []) {
-  let sessions = initial
-  const listeners = new Set<(event: TerminalEvent) => void>()
-  const bridge: TerminalBridge = {
-    list: vi.fn(async ({ threadId }) => ok({ workspace, sessions: sessions.filter(item => item.workspace.threadId === threadId) })),
+  const published: ReturnType<typeof terminalBridgeFixture> = terminalBridgeFixture({ workspace, sessions: initial, commands: {
+    list: vi.fn(async ({ threadId }) => ok({ workspace, sessions: published.sessions().filter(item => item.workspace.threadId === threadId) })),
     create: vi.fn(async ({ threadId }) => {
       const created = session(threadId === workspace.threadId ? ID_1 : ID_2, { workspace: { ...workspace, threadId } })
-      sessions = [...sessions, created]
-      return ok({ session: created, output: 'PS D:\\work\\workshop> ', sequence: 1 } as TerminalSnapshot)
+      published.setSessions([...published.sessions(), created])
+      return ok({ session: created, output: 'PS D:\\work\\workshop> ', sequence: 1 })
     }),
-    read: vi.fn(async ({ sessionId }) => ok({ session: sessions.find(item => item.id === sessionId)!, output: '', sequence: 0 })),
-    write: vi.fn(async () => ok(undefined)),
-    resize: vi.fn(async () => ok(undefined)),
-    interrupt: vi.fn(async () => ok(undefined)),
-    close: vi.fn(async ({ sessionId }) => { sessions = sessions.filter(item => item.id !== sessionId); return ok(undefined) }),
-    reopen: vi.fn(async ({ sessionId }) => ok({ session: sessions.find(item => item.id === sessionId)!, output: '', sequence: 0 })),
-    onEvent: vi.fn(listener => { listeners.add(listener); return () => { listeners.delete(listener) } }),
-  }
-  return { bridge, emit: (event: TerminalEvent) => { for (const listener of [...listeners]) listener(event) } }
+    reopen: vi.fn(async ({ sessionId }) => ok({ session: published.sessions().find(item => item.id === sessionId)!, output: '', sequence: 0 })),
+  } })
+  return { ...published, emit: published.publish }
 }
 
 function fakeViews() {
-  const views: { handlers: TerminalViewHandlers; focused: number }[] = []
-  const factory: TerminalViewFactory = handlers => {
-    const record = { handlers, focused: 0 }
-    views.push(record)
-    return {
-      mount: container => { container.replaceChildren(document.createElement('pre')) },
-      unmount: () => {}, write: (_data, done) => done?.(), reset: () => {}, setInputEnabled: () => {},
-      fit: () => ({ cols: 80, rows: 24 }), focus: () => { record.focused += 1 }, dispose: () => {},
-    }
-  }
-  return { views, factory }
+  return fakeTerminalViews({ fit: { cols: 80, rows: 24 }, className: '' })
 }
 
-const thread = { id: 'thread-a', nativeSessionStarted: true as const, workingDirectory: 'D:\\work\\workshop', worktree: { status: 'ready' as const, mode: 'independent' as const, branch: 'feature/drawer', path: 'D:\\work\\workshop', repositoryRoot: 'D:\\work', dirty: false } }
+const thread = { id: 'thread-a', nativeSessionStarted: true as const, workingDirectory: 'D:\\work\\workshop', worktree: { status: 'ready' as const, mode: 'shared' as const, branch: 'feature/drawer', path: 'D:\\work\\workshop', repositoryRoot: 'D:\\work', dirty: false } }
 
-function setup(terminal: ReturnType<typeof fakeTerminal>) {
+type DrawerThread = Omit<typeof thread, 'worktree'> & { worktree: Omit<typeof thread.worktree, 'mode'> & { mode: 'shared' | 'independent' } }
+
+function setup(terminal: ReturnType<typeof fakeTerminal>, drawerThread: DrawerThread = thread, projectPath = 'D:\\work\\workshop') {
   const chromeStore = new PaneTerminalChromeStore(null)
   const store = new TerminalStore('drawer')
   const { views, factory } = fakeViews()
   render(<div className="thread-pane" id="thread-pane-thread-a" data-thread-id="thread-a">
     <PaneTerminalToggle threadId="thread-a" store={chromeStore} />
     <div className="thread-workspace__compose"><textarea aria-label="Prompt" /></div>
-    <PaneTerminalDrawer threadId="thread-a" thread={thread} project={undefined} bridge={terminal.bridge} viewFactory={factory} store={store} chromeStore={chromeStore} />
+    <PaneTerminalDrawer threadId="thread-a" thread={drawerThread} project={{ path: projectPath }} bridge={terminal.bridge} viewFactory={factory} store={store} chromeStore={chromeStore} />
   </div>)
   return { chromeStore, store, views }
 }
@@ -98,7 +83,7 @@ describe('the pane terminal drawer', () => {
     }
   })
 
-  it('shows the thread’s branch and keeps the shell running when Hide is pressed', async () => {
+  it('shows a shared-folder thread’s branch and keeps the shell running when Hide is pressed', async () => {
     const terminal = fakeTerminal([session(ID_1)])
     setup(terminal)
     await userEvent.click(screen.getByRole('button', { name: 'Terminal drawer' }))
@@ -110,6 +95,22 @@ describe('the pane terminal drawer', () => {
     expect(screen.getByRole('button', { name: 'Terminal drawer' })).toHaveAttribute('aria-pressed', 'false')
     // The pressed button left the page with the drawer; focus goes back to the composer.
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveFocus())
+  })
+
+  it('leaves out a worktree thread’s branch, because its shells start in the project folder', async () => {
+    const terminal = fakeTerminal([session(ID_1)])
+    setup(terminal, { ...thread, worktree: { ...thread.worktree, mode: 'independent' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Terminal drawer' }))
+    await screen.findByRole('tab', { name: 'PowerShell', selected: true })
+    expect(screen.queryByText('feature/drawer')).toBeNull()
+  })
+
+  it('leaves out the branch of a shared thread in another checkout than the project folder', async () => {
+    const terminal = fakeTerminal([session(ID_1)])
+    setup(terminal, { ...thread, workingDirectory: 'D:\\elsewhere\\workshop', worktree: { ...thread.worktree, path: 'D:\\elsewhere\\workshop', repositoryRoot: 'D:\\elsewhere' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Terminal drawer' }))
+    await screen.findByRole('tab', { name: 'PowerShell', selected: true })
+    expect(screen.queryByText('feature/drawer')).toBeNull()
   })
 
   it('gives a drawer’s terminal the chord to pass to the page, and makes it follow the frosted room', async () => {

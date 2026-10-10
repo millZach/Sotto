@@ -1,0 +1,334 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Three directions for the iPhone thread: steering a running turn, compacting a
+  thread, and a question sheet without the flattened summary and with its link tappable. Switchable via
+  ?variant=A|B|C and the bar at the bottom (or the arrow keys); ?theme=light shows the light palette.
+  Verdict (October 9, 2026): B, "Queue, then steer", and Enter keeps queueing on the desktop. ADR-0065 records the
+  pick. The built menu holds Compact context alone, held back while a turn runs as on the desktop.
+  Decided already: the flattened list of every question leaves the sheet; links in a question open in the
+  browser; Claude gets Steer now on the desktop. The question these answer: what pressing Send does while a
+  turn runs, where Compact lives, and how a question's link reads.
+  No host calls, no persistence. Colours are Sotto's default palette, the same frame as
+  iphone-photo-attach-prototype.html.
+  Run: node docs/prototypes/composer-selectors-serve.mjs, then open
+  http://127.0.0.1:4173/docs/prototypes/iphone-steer-compact-prototype.html
+-->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Steer, compact and question links on the iPhone — prototype</title>
+<style>
+@font-face{font-family:Figtree;src:url('../../apps/ios/Sotto/Resources/Figtree.ttf') format('truetype'),url('Figtree.ttf') format('truetype');font-weight:300 900}
+
+:root,[data-theme=dark]{
+  --canvas:oklch(0.115 0.008 265);--surface:oklch(0.145 0.008 265);--raised:oklch(0.185 0.008 265);--overlay:oklch(0.215 0.008 265);
+  --text:oklch(0.985 0.005 280);--muted:oklch(0.72 0.014 265);--placeholder:oklch(0.675 0.012 270);
+  --border:oklch(0.305 0.02 265);--hair:oklch(0.22 0.012 265);
+  --accent:oklch(0.714 0.104 183.1);--accent-fg:oklch(0.16 0.012 190);--accent-surface:oklch(0.32 0.05 185);
+  --warning:oklch(0.772 0.173 65.4);--warning-fg:oklch(0.829 0.171 81);
+  --scrim:oklch(0 0 0 / .55);--sheet:oklch(0.2 0.008 265);
+  --page:#161618;--page-text:#e8e8ea;--page-muted:#a0a0a8;--bezel:#050506;--card:#1f1f23;
+}
+[data-theme=light]{
+  --canvas:oklch(0.978 0.004 85);--surface:oklch(0.99 0.003 85);--raised:oklch(0.955 0.006 85);--overlay:oklch(0.945 0.007 85);
+  --text:oklch(0.235 0.014 75);--muted:oklch(0.5 0.014 75);--placeholder:oklch(0.535 0.015 78);
+  --border:oklch(0.86 0.012 80);--hair:oklch(0.915 0.008 80);
+  --accent:oklch(0.53 0.095 186);--accent-fg:oklch(0.99 0.003 85);--accent-surface:oklch(0.92 0.03 186);
+  --warning:oklch(0.772 0.173 65.4);--warning-fg:oklch(0.547 0.156 45.4);
+  --scrim:oklch(0.2 0 0 / .35);--sheet:oklch(0.995 0.002 85);
+  --page:#e7e7ea;--page-text:#1c1c1f;--page-muted:#5a5a62;--bezel:#111113;--card:#f6f6f8;
+}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--page-text);font:15px/1.5 Figtree,system-ui,sans-serif;padding:32px 32px 130px}
+.page-head{max-width:1180px;margin:0 0 26px}
+.page-head .kicker{font-size:13px;color:var(--page-muted);letter-spacing:.02em;margin:0 0 6px}
+.page-head h1{font-size:28px;margin:0 0 8px;letter-spacing:-.02em;font-weight:650}
+.page-head p{margin:0 0 6px;max-width:860px;color:var(--page-muted)}
+.page-head .pick{color:var(--page-text);font-weight:600}
+.row{display:flex;flex-wrap:wrap;gap:34px 26px;align-items:flex-start}
+.cell{width:calc(414px * var(--z,.72))}
+.frame{zoom:var(--z,.72);width:414px;height:868px;border-radius:62px;background:var(--bezel);padding:12px;box-shadow:0 30px 60px -30px #0008}
+.cap{margin-top:12px;font-size:14px}
+.cap b{display:block;font-weight:600}
+.cap span{color:var(--page-muted);font-size:13px;display:block;line-height:1.45}
+h2{font-size:17px;font-weight:650;margin:44px 0 6px;letter-spacing:-.01em}
+.sub{color:var(--page-muted);margin:0 0 18px;max-width:860px}
+@media (max-width:700px){body{padding:20px 14px 130px}.cell{width:calc(414px * var(--z))}:root{--z:.84}}
+
+/* ---------- inside the phone ---------- */
+.phone{position:relative;width:390px;height:844px;border-radius:50px;overflow:hidden;background:var(--canvas);color:var(--text);font:17px/1.45 Figtree,system-ui,sans-serif;display:flex;flex-direction:column;-webkit-font-smoothing:antialiased}
+.sb{flex:none;height:54px;display:flex;align-items:center;justify-content:space-between;padding:6px 30px 0 44px;font-size:17px;font-weight:600;position:relative;z-index:5}
+.sb .island{position:absolute;left:50%;top:11px;transform:translateX(-50%);width:124px;height:36px;border-radius:20px;background:#000}
+.home{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);width:136px;height:5px;border-radius:3px;background:var(--text);opacity:.85;z-index:30}
+.ic{flex:none;display:block}
+.nav{flex:none;height:46px;display:flex;align-items:center;gap:8px;padding:0 12px;position:relative}
+.nav .back{display:flex;align-items:center;color:var(--accent)}
+.nav .t{flex:1;font-weight:600;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center}
+.pill{flex:none;display:flex;align-items:center;gap:6px;font-size:14px;font-weight:600;padding:6px 11px;border-radius:999px;background:var(--raised);border:1px solid var(--hair)}
+.pill i{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px color-mix(in oklch,var(--accent) 30%,transparent)}
+.pill small{color:var(--muted);font-weight:500;font-size:13px}
+.pill.press,.more.press{outline:2px solid var(--accent);outline-offset:2px}
+.more{flex:none;width:34px;height:34px;border-radius:50%;background:var(--raised);border:1px solid var(--hair);display:flex;align-items:center;justify-content:center;color:var(--text)}
+.ctx{flex:none;margin:2px 14px 0;padding:9px 12px;border-radius:14px;background:var(--surface);border:1px solid var(--hair);display:flex;align-items:center;gap:10px;font-size:14px}
+.ctx .bar{flex:1;height:5px;border-radius:3px;background:var(--raised);overflow:hidden}
+.ctx .bar b{display:block;height:100%;width:74%;background:var(--warning)}
+.ctx .lbl{color:var(--muted);white-space:nowrap}
+.ctx .go{color:var(--accent);font-weight:600}
+.fill{flex:1;min-height:0;overflow:hidden;position:relative;display:flex;flex-direction:column;justify-content:flex-end;gap:12px;padding:12px 16px 14px}
+.mine{align-self:flex-end;max-width:290px;background:var(--accent-surface);padding:9px 14px;border-radius:20px 20px 6px 20px;font-size:16px}
+.mine-note{align-self:flex-end;font-size:12px;color:var(--muted);margin-top:-8px;display:flex;align-items:center;gap:5px}
+.theirs{align-self:flex-start;max-width:330px;font-size:16px}
+.step{align-self:flex-start;display:flex;align-items:center;gap:8px;font-size:14px;color:var(--muted)}
+.step .dot{width:6px;height:6px;border-radius:50%;background:var(--accent)}
+.working{align-self:flex-start;display:flex;align-items:center;gap:8px;font-size:14px;color:var(--muted)}
+.spin{width:14px;height:14px;border-radius:50%;border:2px solid var(--hair);border-top-color:var(--accent)}
+
+/* reply box */
+.dock{flex:none;padding:6px 12px 34px;position:relative;z-index:6;display:flex;flex-direction:column;gap:8px}
+.reply{display:flex;align-items:flex-end;gap:6px;padding:6px;border-radius:26px;background:var(--surface);border:1px solid var(--hair);box-shadow:0 8px 22px -8px #0007}
+.reply.focus{border-color:color-mix(in oklch,var(--accent) 60%,transparent);box-shadow:0 0 22px -4px color-mix(in oklch,var(--accent) 45%,transparent)}
+.field{flex:1;min-height:44px;padding:11px 6px;color:var(--placeholder);font-size:17px}
+.field.typed{color:var(--text)}
+.rb{flex:none;width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--raised);color:var(--text);border:1px solid var(--hair)}
+.rb.go{background:var(--accent);color:var(--accent-fg);border-color:transparent}
+.rb.flat{background:none;border-color:transparent;color:var(--muted)}
+.rb.press{outline:2px solid var(--accent);outline-offset:2px}
+.stopsq{width:13px;height:13px;border-radius:3.5px;background:var(--text)}
+.queued{border-radius:20px;background:var(--surface);border:1px solid var(--hair);padding:10px 12px 10px 14px;display:flex;flex-direction:column;gap:8px}
+.queued .k{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.queued .m{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.queued .acts{display:flex;gap:8px}
+.btn{font:600 15px/1 Figtree,system-ui,sans-serif;padding:10px 14px;border-radius:999px;background:var(--raised);color:var(--text);border:1px solid var(--hair);display:inline-flex;align-items:center;gap:6px}
+.btn.accent{background:var(--accent);color:var(--accent-fg);border-color:transparent}
+.btn.ghost{background:none;color:var(--muted);border-color:transparent}
+.btn.wide{flex:1;justify-content:center;padding:15px 14px;font-size:17px}
+
+/* menus and popovers */
+.scrim{position:absolute;inset:0;background:var(--scrim);z-index:20}
+.menu{position:absolute;z-index:21;width:282px;background:var(--sheet);border-radius:14px;box-shadow:0 20px 50px #0007;overflow:hidden;font-size:17px}
+.menu .it{padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:12px;border-top:1px solid var(--hair)}
+.menu .it:first-child{border-top:0}
+.menu .it .w{display:flex;flex-direction:column}
+.menu .it small{font-size:13px;color:var(--muted);line-height:1.35}
+.menu .it.dis{color:var(--muted)}
+.menu .gap{height:7px;background:var(--hair)}
+
+/* question sheet */
+.under{position:absolute;inset:0;filter:brightness(.55)}
+.qsheet{position:absolute;left:0;right:0;bottom:0;top:96px;z-index:22;background:var(--sheet);border-radius:28px 28px 0 0;display:flex;flex-direction:column;box-shadow:0 -10px 40px #0006}
+.grab{width:40px;height:5px;border-radius:3px;background:var(--border);margin:8px auto 4px}
+.qbody{flex:1;min-height:0;overflow:hidden;padding:8px 20px 0;display:flex;flex-direction:column;gap:14px}
+.who{display:flex;gap:10px;align-items:flex-start;font-size:14px;color:var(--muted);line-height:1.35}
+.who i{flex:none;width:9px;height:9px;border-radius:50%;background:var(--warning);margin-top:5px;box-shadow:0 0 10px var(--warning)}
+.qt{font-size:19px;font-weight:650;line-height:1.3;letter-spacing:-.01em}
+.qnum{font-size:13px;color:var(--muted);font-weight:600;letter-spacing:.02em;margin-bottom:-8px}
+.lnk{color:var(--accent);text-decoration:underline;text-underline-offset:3px;text-decoration-thickness:1px;font-weight:600;word-break:break-all}
+.openrow{display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:14px;background:var(--surface);border:1px solid var(--hair)}
+.openrow .w{flex:1;min-width:0}
+.openrow b{display:block;font-size:16px}
+.openrow small{display:block;font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.opencard{border-radius:18px;overflow:hidden;border:1px solid var(--hair);background:var(--surface)}
+.opencard .shot{height:96px;background:linear-gradient(135deg,color-mix(in oklch,var(--accent) 40%,var(--raised)),var(--raised));position:relative}
+.opencard .shot::before{content:"";position:absolute;left:14px;top:14px;width:90px;height:68px;border-radius:8px;background:var(--canvas);opacity:.75}
+.opencard .shot::after{content:"";position:absolute;left:116px;top:14px;right:14px;height:10px;border-radius:5px;background:var(--canvas);opacity:.55;box-shadow:0 18px 0 var(--canvas),0 36px 0 var(--canvas)}
+.opencard .w{display:flex;align-items:center;gap:10px;padding:10px 14px}
+.opencard .w div{flex:1;min-width:0}
+.opencard b{display:block;font-size:16px}
+.opencard small{display:block;font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.opt{border:1px solid var(--border);border-radius:16px;padding:12px 14px;display:flex;gap:12px;align-items:flex-start}
+.opt.on{border-color:var(--accent);background:color-mix(in oklch,var(--accent) 10%,transparent)}
+.opt .r{flex:none;width:24px;height:24px;border-radius:50%;border:2px solid var(--border);margin-top:1px}
+.opt.on .r{border:7px solid var(--accent)}
+.opt b{display:block;font-size:16px;font-weight:600}
+.opt small{display:block;font-size:14px;color:var(--muted);line-height:1.35}
+.qfoot{flex:none;display:flex;gap:10px;padding:12px 20px 34px;border-top:1px solid var(--hair)}
+.before{position:relative}
+.before::after{content:"Today";position:absolute;top:-12px;left:14px;font:600 12px Figtree,system-ui;color:#fff;background:#b54;padding:2px 8px;border-radius:999px}
+.flat-dump{font-size:21px;font-weight:600;line-height:1.3;font-family:system-ui,-apple-system,sans-serif}
+
+/* desktop strip */
+.desk{background:var(--canvas);color:var(--text);border-radius:14px;border:1px solid var(--hair);width:min(760px,100%);overflow:hidden;box-shadow:0 30px 60px -30px #0008;font-size:14px}
+.desk .strip{height:34px;border-bottom:1px solid var(--hair);display:flex;align-items:center;padding:0 14px;color:var(--muted);font-size:12.5px;gap:10px}
+.desk .strip i{width:7px;height:7px;border-radius:50%;background:var(--accent)}
+.desk .conv{padding:16px 22px;display:flex;flex-direction:column;gap:10px;min-height:120px;justify-content:flex-end}
+.desk .queue{margin:0 22px;border:1px solid var(--hair);border-radius:12px;padding:8px 10px 8px 12px;display:flex;align-items:center;gap:10px;background:var(--surface)}
+.desk .queue span{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.desk .queue small{color:var(--muted)}
+.desk .comp{margin:10px 22px 18px;border:1px solid var(--border);border-radius:16px;background:var(--surface);padding:10px 10px 10px 14px}
+.desk .comp .txt{min-height:40px}
+.desk .comp .bar{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12.5px}
+.desk .comp .bar .sp{flex:1}
+.dbtn{font:600 13px/1 Figtree,system-ui,sans-serif;padding:8px 12px;border-radius:8px;background:var(--raised);color:var(--text);border:1px solid var(--border)}
+.dbtn.new{outline:2px solid var(--warning);outline-offset:2px}
+.disc{width:30px;height:30px;border-radius:50%;background:var(--accent);color:var(--accent-fg);display:flex;align-items:center;justify-content:center}
+.dq{margin:0 22px 14px;border:1px solid var(--border);border-radius:14px;padding:14px 16px;background:var(--surface);display:flex;flex-direction:column;gap:10px}
+.dq .h{font-size:12.5px;color:var(--muted)}
+.dq .q{font-weight:600;font-size:15px}
+.dq .o{display:flex;gap:10px;align-items:flex-start;font-size:13.5px}
+.dq .o i{flex:none;width:15px;height:15px;border-radius:50%;border:1.5px solid var(--border);margin-top:2px}
+.dq .o small{display:block;color:var(--muted)}
+.tag{font:600 11px/1 Figtree,system-ui;color:var(--warning-fg);border:1px solid currentColor;border-radius:999px;padding:3px 7px;margin-left:6px;vertical-align:2px}
+
+/* switcher */
+.switch{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:100;display:flex;align-items:center;gap:4px;background:#000;color:#fff;border-radius:999px;padding:6px;box-shadow:0 12px 34px #0009;font:600 14px/1 system-ui,sans-serif;border:1px solid #333}
+.switch button{all:unset;cursor:pointer;width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px}
+.switch button:hover,.switch button:focus-visible{background:#ffffff22}
+.switch .label{padding:0 10px;min-width:220px;text-align:center;white-space:nowrap}
+.switch .theme{font-size:13px;width:auto;padding:0 12px;border-radius:999px;height:38px}
+</style>
+</head>
+<body>
+<header class="page-head">
+  <p class="kicker">Prototype · iPhone thread and desktop composer · nothing here is wired to a host</p>
+  <h1>Steer, compact, and a cleaner question sheet</h1>
+  <p>Three directions for the iPhone. Each row shows the same three moments: the question sheet with a prototype link, a running thread with something typed, and where Compact lives. The desktop strip at the bottom is the same in every direction.</p>
+  <p class="pick" id="pick"></p>
+</header>
+
+<main id="stage"></main>
+
+<nav class="switch" aria-label="Prototype variants">
+  <button type="button" id="prev" aria-label="Previous direction">‹</button>
+  <span class="label" id="label" aria-live="polite"></span>
+  <button type="button" id="next" aria-label="Next direction">›</button>
+  <button type="button" class="theme" id="theme" aria-label="Switch light and dark">Light</button>
+</nav>
+
+<script>
+const icon = {
+  back: '<svg class="ic" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>',
+  up: '<svg class="ic" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg>',
+  queue: '<svg class="ic" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><path d="M4 6h11M4 12h11M4 18h7M18 15v6M15 18h6"/></svg>',
+  steer: '<svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19c0-7 4-11 11-11"/><path d="M12 4l4 4-4 4"/></svg>',
+  dots: '<svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
+  plus: '<svg class="ic" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  ext: '<svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>',
+  link: '<svg class="ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>',
+  compress: '<svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></svg>',
+  stop: '<svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="3"/></svg>',
+}
+const URL_ = 'https://laptop-russh2j5.tail5728ca.ts.net/terminal-states/'
+const THREAD = 'Compare Herdr’s terminal UX to Sotto and rank improvements'
+
+const sb = () => `<div class="sb"><span>11:16</span><span class="island"></span><span style="font-size:15px">●●● 76</span></div>`
+const nav = (right, title = 'Compare Herdr’s terminal UX…') => `<div class="nav"><span class="back">${icon.back}</span><span class="t">${title}</span>${right}</div>`
+const pill = (cls = '') => `<span class="pill ${cls}"><i></i>Working <small>4m</small></span>`
+const convo = (extra = '') => `<div class="fill">
+  <div class="mine">Compare Herdr’s terminal UX to ours and rank what we should take.</div>
+  <div class="theirs">I’ll read Herdr’s docs and our terminal pane, then build a small prototype of the states.</div>
+  <div class="step"><span class="dot"></span>Read 14 files · ran 3 commands</div>
+  ${extra}
+  <div class="working"><span class="spin"></span>Building the prototype…</div>
+</div>`
+const reply = (text, right, focus = true) => `<div class="reply ${focus ? 'focus' : ''}"><span class="rb flat">${icon.plus}</span><span class="field ${text ? 'typed' : ''}">${text || 'Reply while it works'}</span>${right}</div>`
+const stopBtn = (cls = '') => `<span class="rb ${cls}" title="Stop this turn"><span class="stopsq"></span></span>`
+const phone = (inner, b, s) => `<div class="cell"><div class="frame"><div class="phone">${inner}<div class="home"></div></div></div><div class="cap"><b>${b}</b><span>${s}</span></div></div>`
+
+const options = `
+  <div class="opt on"><span class="r"></span><div><b>B: Needs you on top (Recommended)</b><small>The sidebar is sorted like the iPhone: Needs you, then Working, then the rest by project.</small></div></div>
+  <div class="opt"><span class="r"></span><div><b>A: Quiet row status</b><small>Today’s sidebar order, with a state and a shape on each row.</small></div></div>`
+const sheet = (linkPart, questionText) => `<div class="under">${sb()}${nav(pill())}${convo()}</div><div class="scrim" style="background:transparent"></div>
+  <div class="qsheet"><div class="grab"></div><div class="qbody">
+    <div class="who"><i></i><span>2 questions from Claude Code in ${THREAD}</span></div>
+    <div class="qnum">1 OF 2</div>
+    <div class="qt">${questionText}</div>
+    ${linkPart}
+    ${options}
+  </div><div class="qfoot"><span class="btn wide">Not now</span><span class="btn wide accent" style="opacity:.55">Send answer</span></div></div>`
+
+const today = phone(`<div class="under">${sb()}${nav(pill())}${convo()}</div>
+  <div class="qsheet"><div class="grab"></div><div class="qbody">
+    <div class="who"><i></i><span>Question from Claude Code in ${THREAD}</span></div>
+    <div class="flat-dump before">1. Which variant should terminal states follow?<br>B: Needs you on top (Recommended) / A: Quiet row status / C: Approval bar in the pane<br>2. What should a finished terminal say until you look at it?<br>Just finished (Recommended) / Done</div>
+    <div class="qt">Which variant should terminal states follow?</div>
+  </div></div>`, 'Today, for comparison', 'The flattened list of every question sits above the real questions. It goes in every direction below. The link, when an agent sends one, is plain text.')
+
+const V = {
+  A: {
+    name: 'A — Send steers',
+    pitch: 'The reply box behaves like the desktop Steer now, minus a step. While a turn runs and you have typed something, the round button sends it straight into that turn. With nothing typed, it is Stop, as today. Compact is in a menu behind the Working pill. The link in a question is underlined and opens in Safari.',
+    phones: [
+      phone(sheet('', `Which variant should terminal states follow? The three are side by side at <span class="lnk">${URL_}</span>`),
+        'Question sheet', 'No summary block. The header counts the questions. The agent’s link is underlined in the question and opens Safari when tapped.'),
+      phone(`${sb()}${nav(pill())}${convo(`<div class="mine">Use the Herdr screenshots in /docs too.</div><div class="mine-note">${icon.steer}Steered · Claude reads it after its current step</div>`)}
+        <div class="dock">${reply('Also check the 820×560 window', `<span class="rb go press" title="Steer into this turn">${icon.up}</span>`)}</div>`,
+        'Typing while it works', 'The arrow steers: the message joins the running turn, and the thread notes it under the bubble. Empty box: the button is Stop. If the provider can’t steer (Grok), the arrow queues the message for after the turn instead, and says so.'),
+      phone(`${sb()}${nav(pill('press'))}${convo()}<div class="dock">${reply('', stopBtn(), false)}</div>
+        <div class="scrim"></div>
+        <div class="menu" style="top:104px;right:12px"><div class="it"><span class="w">Compact context<small>Summarise earlier messages to free room. Waits until this turn ends.</small></span>${icon.compress}</div><div class="it"><span>Stop this turn</span>${icon.stop}</div></div>`,
+        'Compact', 'Tapping the Working pill opens the thread’s actions. Compact is offered when the provider can compact; while a turn runs it is queued behind it.'),
+    ],
+  },
+  B: {
+    name: 'B — Queue, then steer',
+    pitch: 'The iPhone matches the desktop exactly. Send while a turn runs puts the message in a queue that goes after the turn; the queued card has Steer now to push it into the running turn instead. Stop keeps its own button. Compact sits behind a ••• button in the bar. A question’s link is lifted out into its own Open row.',
+    phones: [
+      phone(sheet(`<div class="openrow">${icon.link}<span class="w"><b>Open the link</b><small>${URL_.replace('https://', '')}</small></span>${icon.ext}</div>`, 'Which variant should terminal states follow?'),
+        'Question sheet', 'No summary block. Any link the agent put in the question or its choices is lifted into an Open row above the choices, so a tap never picks an option by accident.'),
+      phone(`${sb()}${nav(pill() + `<span class="more">${icon.dots}</span>`)}${convo()}
+        <div class="dock"><div class="queued"><span class="k">${icon.queue} Queued for after this turn</span><span class="m">Use the Herdr screenshots in /docs too.</span><span class="acts"><span class="btn accent">${icon.steer} Steer now</span><span class="btn ghost">Remove</span></span></div>
+        ${reply('Also check the 820×560 window', `${stopBtn()}<span class="rb go press" title="Queue for after this turn">${icon.queue}</span>`)}</div>`,
+        'Typing while it works', 'Send queues (list icon, as on the desktop). The queued card offers Steer now and Remove. Stop stays visible beside Send.'),
+      phone(`${sb()}${nav(pill() + `<span class="more press">${icon.dots}</span>`)}${convo()}<div class="dock">${reply('', stopBtn(), false)}</div>
+        <div class="scrim"></div>
+        <div class="menu" style="top:104px;right:12px"><div class="it"><span class="w">Compact context<small>Summarise earlier messages to free room. Waits until this turn ends.</small></span>${icon.compress}</div><div class="gap"></div><div class="it dis"><span class="w">Steer the queued message<small>Steer it from its card</small></span>${icon.steer}</div></div>`,
+        'Compact', 'A ••• button beside the pill opens the thread menu. Room for more thread actions later (rename, archive).'),
+    ],
+  },
+  C: {
+    name: 'C — Choose on send',
+    pitch: 'Nothing changes until you send. While a turn runs, the send arrow asks once: Steer now, or Send after this turn. Compact is always on screen as a context meter under the bar, so you see when it is worth doing. A question’s link becomes a preview card at the top of the sheet.',
+    phones: [
+      phone(sheet(`<div class="opencard"><div class="shot"></div><div class="w"><div><b>Open the prototype</b><small>${URL_.replace('https://', '')}</small></div>${icon.ext}</div></div>`, 'Which variant should terminal states follow?'),
+        'Question sheet', 'No summary block. The link is a large card before the choices: the first thing on the sheet after the question.'),
+      phone(`${sb()}${nav(pill())}<div class="ctx"><span class="lbl">Context</span><span class="bar"><b></b></span><span class="lbl">74%</span><span class="go">Compact</span></div>${convo()}
+        <div class="dock">${reply('Also check the 820×560 window', `<span class="rb go press">${icon.up}</span>`)}</div>
+        <div class="scrim"></div>
+        <div class="menu" style="bottom:100px;right:12px"><div class="it"><span class="w">Steer now<small>Claude reads it after its current step</small></span>${icon.steer}</div><div class="it"><span class="w">Send after this turn<small>Waits in the queue</small></span>${icon.queue}</div></div>`,
+        'Typing while it works', 'Tapping send while it works asks which. Stop is in the menu too when the box is empty (not shown).'),
+      phone(`${sb()}${nav(pill())}<div class="ctx"><span class="lbl">Context</span><span class="bar"><b></b></span><span class="lbl">74%</span><span class="go">Compact</span></div>${convo()}<div class="dock">${reply('', stopBtn(), false)}</div>`,
+        'Compact', 'A slim meter under the bar shows how full the context is, with Compact beside it. Needs the host to report context use for every provider, which Grok does not today.'),
+    ],
+  },
+}
+
+const desktop = `<h2>Desktop, every direction: Claude gets Steer now</h2>
+<p class="sub">Codex already has this. The same button appears for Claude Code: it sends the draft into the running turn, and Claude reads it after its current step (tested against Claude Code 2.1.295). Enter still queues. Queued messages get their own Steer now. A link in a question card becomes clickable.</p>
+<div class="desk"><div class="strip"><i></i>Compare Herdr’s terminal UX to Sotto · Claude Code · Working 4m</div>
+  <div class="conv"><div class="theirs">I’ll read Herdr’s docs and our terminal pane, then build a small prototype of the states.</div><div class="step"><span class="dot"></span>Read 14 files · ran 3 commands</div></div>
+  <div class="queue"><span>Use the Herdr screenshots in /docs too.</span><small>Queued</small><span class="dbtn new">Steer now</span><span class="dbtn">Remove</span></div>
+  <div class="comp"><div class="txt">Also check the 820×560 window</div><div class="bar"><span>Opus 5.5 · High</span><span class="sp"></span><span class="dbtn new">Steer now</span><span class="disc" title="Queue prompt">${icon.queue}</span></div></div>
+  <div class="dq"><div class="h">2 questions · AskUserQuestion</div><div class="q">Which variant should terminal states follow? The three are side by side at <span class="lnk">${URL_}</span></div>
+    <div class="o"><i></i><div>B: Needs you on top <span class="tag">recommended</span><small>The sidebar is sorted like the iPhone.</small></div></div></div>
+</div>`
+
+const keys = Object.keys(V)
+const params = new URLSearchParams(location.search)
+let cur = keys.includes(params.get('variant')) ? params.get('variant') : 'A'
+let theme = params.get('theme') === 'light' ? 'light' : 'dark'
+
+function render() {
+  const v = V[cur]
+  document.documentElement.dataset.theme = theme
+  document.getElementById('pick').textContent = v.pitch
+  document.getElementById('label').textContent = v.name
+  document.getElementById('theme').textContent = theme === 'dark' ? 'Light' : 'Dark'
+  document.getElementById('stage').innerHTML = `<div class="row">${v.phones.join('')}${today}</div>${desktop}`
+  const p = new URLSearchParams(location.search); p.set('variant', cur); if (theme === 'light') p.set('theme', 'light'); else p.delete('theme')
+  history.replaceState(null, '', `?${p}`)
+}
+const step = d => { cur = keys[(keys.indexOf(cur) + d + keys.length) % keys.length]; render() }
+document.getElementById('prev').onclick = () => step(-1)
+document.getElementById('next').onclick = () => step(1)
+document.getElementById('theme').onclick = () => { theme = theme === 'dark' ? 'light' : 'dark'; render() }
+addEventListener('keydown', e => {
+  if (e.target.closest('input,textarea,[contenteditable]')) return
+  if (e.key === 'ArrowLeft') step(-1)
+  if (e.key === 'ArrowRight') step(1)
+})
+render()
+</script>
+</body>
+</html>

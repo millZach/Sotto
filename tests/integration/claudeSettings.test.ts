@@ -1,13 +1,14 @@
 // @vitest-environment node
 // Claude thread settings over the control channel (#317): what the shared contract cannot say about a model
 // and its effort travelling together, a change the CLI takes only in part, and the coordinator's saved intent.
+import { createAgentControl } from '../fixtures/agentControlFixture'
+import { testCredentials } from '../fixtures/testCredentials'
 import { randomUUID } from 'node:crypto'
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
-import { AgentControl } from '../../src/main/agents/control'
-import { AgentCredentials } from '../../src/main/agents/credentials'
+
 import type { ClaudeAdapterEvent } from '../../src/main/agents/claude'
 import { claudeFixture } from '../fixtures/claudeFixture'
 import { immediatePublishScheduler } from '../fixtures/publishScheduler'
@@ -158,10 +159,9 @@ it('starts a CLI that is not running once, with the new settings, and sends no s
 
 it('leaves the coordinator\'s saved intent in place when the CLI never answers, and reconciles it once the CLI that runs it starts', async () => {
   const { f, id, events } = await fixture()
-  const credentials = new AgentCredentials(join(f.root, 'vault'), { isEncryptionAvailable: () => true, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
-  await credentials.load()
-  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
-    reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
+  const credentials = await testCredentials(join(f.root, 'vault'), { mode: 'plain' })
+  const control = createAgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
+    reasoner: {},
   })
   const outbox = async (): Promise<unknown[]> => (JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')) as { outbox: unknown[] }).outbox
   try {

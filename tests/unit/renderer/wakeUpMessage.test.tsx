@@ -9,7 +9,7 @@ import { ThreadFollowups } from '../../../src/renderer/src/agents/ThreadFollowup
 import { placeActivities } from '../../../src/renderer/src/agents/threadActivityView'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
 import { describeThreads } from '../../../src/renderer/src/agents/threadFacts'
-import { threadsStateFixture } from './liveAgentState'
+import { threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 /** A wake-up in the thread and in its follow-up queue (ADR-0061, variant C), told by the host's mark alone. */
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
@@ -80,7 +80,7 @@ describe('a wake-up waiting in the follow-up queue', () => {
   function queue(items: AgentFollowup[]) {
     const state: AgentState = { ...threadsStateFixture(), followups: items }
     const row = describeThreads(state, Date.parse(at)).find(item => item.thread.id === 'footer-links')!
-    const command = vi.fn(async (request: { type: string; itemId?: string }) => ({ ...state, followups: items.filter(item => item.id !== request.itemId) }) as AgentState)
+    const command = vi.fn(async (request: { type: string; itemId?: string }) => ({ ...state, followups: items.filter(item => item.id !== request.itemId) }))
     render(<ThreadFollowups row={row} state={state} command={command as never} store={new ThreadDraftStore(vi.fn(async () => null), 0)} onRetryAdmission={vi.fn()} />)
     return command
   }

@@ -1,9 +1,10 @@
+import { hostsBridgeFixture, hostsState } from '../../fixtures/renderer/hostBridges'
 import React from 'react'
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { HostUpdateControl, hostUpdatePillText } from '../../../src/renderer/src/agents/HostUpdates'
-import type { HostsBridge, HostsCommand, HostsState } from '../../../src/shared/hosts'
+import type { HostsCommand } from '../../../src/shared/hosts'
 import type { HostUpdateState } from '../../../src/shared/hostUpdates'
 
 afterEach(cleanup)
@@ -13,13 +14,10 @@ const forge = (patch: Partial<HostUpdateState> = {}): HostUpdateState =>
   ({ id: FORGE, name: 'forge', from: '0.1.22', to: '0.1.24', phase: 'needs', owned: true, working: 0, commands: '# On forge:\ncd ~/.local/share/sotto-host', ...patch })
 /** The hosts bridge, holding what main publishes: `answer` decides what each press changes. */
 function hosts(initial: HostUpdateState[], answer: (command: HostsCommand, current: HostUpdateState[]) => HostUpdateState[] = (_command, current) => current) {
-  let updates = initial
-  const listeners = new Set<(state: HostsState) => void>()
-  const state = (): HostsState => ({ hosts: [], localHostEnabled: true, localHostRunning: true, updates })
-  const command = vi.fn(async (value: HostsCommand) => { updates = answer(value, updates); return state() })
-  const bridge = { get: async () => state(), command, onChanged: (listener: (value: HostsState) => void) => { listeners.add(listener); return () => listeners.delete(listener) } } as unknown as HostsBridge
-  const publish = (next: HostUpdateState[]): void => { updates = next; act(() => { for (const listener of listeners) listener(state()) }) }
-  return { bridge, command, publish }
+  const made = hostsBridgeFixture({ initial: hostsState({ updates: initial }),
+    answer: (request, current) => ({ ...current, updates: answer(request, current.updates ?? []) }) })
+  const publish = (updates: HostUpdateState[]): void => { act(() => made.publish({ updates })) }
+  return { bridge: made.bridge, command: made.command, publish }
 }
 const sent = (command: ReturnType<typeof hosts>['command']) => command.mock.calls.map(([value]) => value)
 

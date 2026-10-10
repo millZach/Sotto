@@ -11,7 +11,11 @@ public struct QuestionAnswer: Codable, Equatable, Sendable {
 public enum RemoteCommands {
     public static let allowed: [String: Set<String>] = [
         "manual-send": ["threadId", "text", "attachments", "skills", "files", "draftId"],
+        "queue-followup": ["threadId", "draftId", "text", "attachments", "skills", "files"],
+        "steer-followup": ["threadId", "itemId"],
+        "remove-followup": ["threadId", "itemId"],
         "interrupt": ["threadId"],
+        "compact-thread": ["threadId"],
         "load-earlier-messages": ["threadId"],
         "answer": ["threadId", "requestId", "answer", "approved", "questionAnswers", "permissionChoice"],
         "create-project": ["provider", "title", "path", "useExisting"],
@@ -29,11 +33,35 @@ public enum RemoteCommands {
 public enum Commands {
     /// A reply: its words, its staged photos, or both. Photos go by handle, within the host's limits.
     public static func prompt(threadID: String, text: String, draftID: String, images: [StagedImage] = []) throws -> JSONValue {
+        try reply("manual-send", threadID: threadID, text: text, draftID: draftID, images: images)
+    }
+    /// A reply put in the thread's follow-up queue, to go when the running turn ends. The same words and photos as a
+    /// reply, within the same limits.
+    public static func queue(threadID: String, text: String, draftID: String, images: [StagedImage] = []) throws -> JSONValue {
+        try reply("queue-followup", threadID: threadID, text: text, draftID: draftID, images: images)
+    }
+    /// A queued message sent into the running turn now, rather than after it.
+    public static func steerFollowup(threadID: String, itemID: String) throws -> JSONValue {
+        try followupItem("steer-followup", threadID: threadID, itemID: itemID)
+    }
+    /// A queued message taken out of the queue unsent.
+    public static func removeFollowup(threadID: String, itemID: String) throws -> JSONValue {
+        try followupItem("remove-followup", threadID: threadID, itemID: itemID)
+    }
+    /// Asks the thread's provider to compact its context.
+    public static func compact(threadID: String) throws -> JSONValue {
+        try RemoteCommands.checked(.object(["type": .string("compact-thread"), "threadId": .string(threadID)]))
+    }
+    private static func followupItem(_ type: String, threadID: String, itemID: String) throws -> JSONValue {
+        guard UUID(uuidString: itemID) != nil else { throw ClientError.invalidRequest }
+        return try RemoteCommands.checked(.object(["type": .string(type), "threadId": .string(threadID), "itemId": .string(itemID)]))
+    }
+    private static func reply(_ type: String, threadID: String, text: String, draftID: String, images: [StagedImage]) throws -> JSONValue {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !images.isEmpty, text.utf16.count <= 100_000,
               UUID(uuidString: draftID) != nil, images.count <= PhotoLimits.count, images.allSatisfy(\.valid),
               Set(images.map(\.id)).count == images.count,
               images.reduce(0, { $0 + $1.sizeBytes }) <= PhotoLimits.bytesTogether else { throw ClientError.invalidRequest }
-        var fields: [String: JSONValue] = ["type": .string("manual-send"), "threadId": .string(threadID), "text": .string(text), "draftId": .string(draftID)]
+        var fields: [String: JSONValue] = ["type": .string(type), "threadId": .string(threadID), "text": .string(text), "draftId": .string(draftID)]
         if !images.isEmpty { fields["attachments"] = .array(images.map(\.wire)) }
         return try RemoteCommands.checked(.object(fields))
     }

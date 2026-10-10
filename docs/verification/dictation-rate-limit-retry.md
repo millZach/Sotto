@@ -1,5 +1,7 @@
 # Dictation rate-limit retry verification
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 October 5, 2026, on `fix/transcription-rate-limit-retry` from `main` at 7453a2e5. The decision is ADR-0055; the glossary term is **Kept recording**. The owner picked variant C, the pill is the button, from `docs/prototypes/dictation-retry-prototype.html`.
 
 ## What was failing
@@ -23,7 +25,7 @@ A throwaway Electron script read the key the way Sotto does, kept it in memory, 
 
 `tests/e2e/dictation-retry.spec.ts` runs the built app with the `transcription-turned-away-twice` scenario, whose first two transcriptions are turned away as rate limited and whose third is accepted.
 
-- After Stop, Dictate says what happened and that the recording is kept, with **Try again** and **Discard recording** (`artifacts/dictation-retry/dictate-kept.png`). The widget reads **Click to try again** with a **×** (`artifacts/dictation-retry/widget-kept.png`). Neither clears on a timer; `tests/unit/renderer/dictationController.test.ts` checks that a failure sets none.
+- After Stop, Dictate says what happened and that the recording is kept, with **Try again** and **Discard recording** (`artifacts/dictation-retry/dictate-kept.png`). The widget reads **Click to try again** with a **×** (`artifacts/dictation-retry/widget-kept.png`). Neither clears on a timer; `tests/unit/renderer/features/dictation/dictationRecovery.test.ts` checks that a failure sets none.
 - Pressing the widget's pill sends the kept recording, which is turned away again: the pill reads **Still busy · retry**, whole (`artifacts/dictation-retry/widget-kept-again.png`), and Dictate starts "Try again did not get through." Pressing it once more transcribes the recording, pastes it and saves it to history (`artifacts/dictation-retry/dictate-recovered.png`).
 - At the 820×560 minimum, in the light appearance, Try again and Discard recording sit on one row without overflow (`artifacts/dictation-retry/dictate-kept-minimum-light.png`). **Discard recording** returns Dictate and the widget to idle with nothing saved, and so does `Escape` pressed in Sotto's window.
 
@@ -32,5 +34,5 @@ The widget's own light and dark captures are the `kept` and `error` baselines in
 ## Not verified here
 
 - A real Azure burst against the new retry. None came during the ten-minute watch, so the one-, two- and four-second backoff is covered by `tests/unit/main/openRouterTranscriptionService.test.ts` rather than seen live. The diagnostics file now records each request that went through after a rate limit, marked `recovered`, so the owner's next bad window will show whether the waits are long enough.
-- Cancelling a Try again while it runs, including during cleanup, and a main-window reload clearing the widget are covered by `tests/unit/renderer/dictationController.test.ts` and `tests/unit/renderer/app.test.tsx`, not by the built app.
+- Cancelling a Try again while it runs, including during cleanup, and a main-window reload clearing the widget are covered by `tests/unit/renderer/features/dictation/dictationRecovery.test.ts` and `tests/unit/renderer/appPrewarm.test.tsx`, not by the built app.
 - macOS. The change is renderer and main-process code with no platform branch.

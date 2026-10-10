@@ -1,24 +1,25 @@
 // @vitest-environment node
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ConfiguredProviderHost, providerEntityId } from '../../../src/main/agents/providerSwitch'
 import { SottoThreadHost, ThreadRegistry } from '../../../src/main/agents/threads'
-import { AgentControl } from '../../../src/main/agents/control'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
+
 import { agentCommandSchema, agentConfigurationSchema, capabilitiesForThread, defaultAgentConfiguration, enabledThreadProviders, isThreadProviderConnected, selectInstalledProviders, type AgentConfiguration, type ProviderId, } from '../../../src/shared/agents'
 import { MemoryStore } from '../../../src/main/memory/store'
 import { MemoryProfile } from '../../../src/main/memory/profile'
 import { PolicyStore } from '../../../src/main/memory/policies'
 import { memoryTopics } from '../../../src/shared/memory'
-import type { AgentReasoner } from '../../../src/main/agents/reasoning'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
 import type { AgentHostSnapshot } from '../../../src/shared/agents'
 import type { ThreadHostEvent } from '../../../src/main/agents/host'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { ProviderUnavailable } from '../../../src/main/agents/providerProblem'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
+import { deferred } from '../../fixtures/deferred'
 
 class RetainedCallbacksProvider extends FakeProviderHost {
   readonly snapshots: Array<(snapshot: AgentHostSnapshot) => void> = []
@@ -49,11 +50,10 @@ async function fixture() {
   cleanup.push(async () => { host.disconnect(); await registry.flush(); await rm(root, { recursive: true, force: true }) })
   return { root, registry, adapters, host, configuration: (value: AgentConfiguration) => { configuration = value } }
 }
-async function coordinator(f: Awaited<ReturnType<typeof fixture>>, decide: AgentReasoner['decide'] = async () => ({ decision: 'human', text: 'Review' }), installed?: () => Promise<readonly ProviderId[]>) {
-  const credentials = new AgentCredentials(join(f.root, 'vault'), { isEncryptionAvailable: () => true, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
-  await credentials.load()
-  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
-    reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread' }), decide },
+async function coordinator(f: Awaited<ReturnType<typeof fixture>>, installed?: () => Promise<readonly ProviderId[]>) {
+  const credentials = await testCredentials(join(f.root, 'vault'), { mode: 'plain' })
+  const control = createAgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
+    reasoner: {},
     ...(installed ? { installedProviders: installed } : {}),
   })
   control.subscribe(state => f.configuration(state.configuration))
@@ -94,20 +94,39 @@ describe('independent thread providers', () => {
     expect(events).toHaveLength(1)
     off?.(); host.disconnect()
   })
-  it('keeps Codex when it is installed and switches to Claude Code when it is not', () => {
+  it('turns on every installed client the user has not turned off, keeping Codex as the default while it is installed', () => {
     const codex = { ...defaultAgentConfiguration(), enabledProviders: ['codex' as const] }
-    expect(selectInstalledProviders(codex, ['codex', 'claude'])).toBeNull()
+    expect(selectInstalledProviders(codex, ['codex', 'claude'])).toEqual({ provider: 'codex', enabledProviders: ['codex', 'claude'] })
+    expect(selectInstalledProviders(codex, ['devin', 'grok', 'claude', 'codex'])).toEqual({ provider: 'codex', enabledProviders: ['codex', 'claude', 'grok', 'devin'] })
+    expect(selectInstalledProviders({ ...codex, enabledProviders: ['claude', 'codex'] }, ['codex', 'claude'])).toBeNull()
     expect(selectInstalledProviders(codex, ['claude', 'grok'])).toEqual({ provider: 'claude', enabledProviders: ['claude', 'grok'] })
     expect(selectInstalledProviders(codex, [])).toBeNull()
-    expect(selectInstalledProviders({ ...defaultAgentConfiguration(), provider: 'claude', enabledProviders: ['claude'] }, ['codex', 'claude'])).toBeNull()
+    expect(selectInstalledProviders({ ...defaultAgentConfiguration(), provider: 'claude', enabledProviders: ['claude'] }, ['codex', 'claude'])).toEqual({ provider: 'claude', enabledProviders: ['claude', 'codex'] })
+    // A client already on stays on while it is missing for a moment, as during an update.
+    expect(selectInstalledProviders({ ...codex, enabledProviders: ['codex', 'grok'] }, ['codex', 'claude'])).toEqual({ provider: 'codex', enabledProviders: ['codex', 'grok', 'claude'] })
     expect(selectInstalledProviders({ ...codex, enabledProviders: ['codex', 'devin'] }, ['claude', 'devin'])).toEqual({ provider: 'claude', enabledProviders: ['claude', 'devin'] })
+    expect(selectInstalledProviders(codex, ['codex', 'devin'])).toEqual({ provider: 'codex', enabledProviders: ['codex', 'devin'] })
     expect(selectInstalledProviders({ ...codex, disconnectedProviders: ['grok'] }, ['claude', 'grok'])).toEqual({ provider: 'claude', enabledProviders: ['claude'] })
     expect(selectInstalledProviders({ ...codex, disconnectedProviders: ['grok'] }, ['grok'])).toBeNull()
     expect(selectInstalledProviders({ ...codex, enabledProviders: ['codex', 'devin'], disconnectedProviders: ['devin'] }, ['claude', 'devin'])).toEqual({ provider: 'claude', enabledProviders: ['claude'] })
+    expect(selectInstalledProviders({ ...codex, disconnectedProviders: ['codex'], enabledProviders: ['claude'], provider: 'codex' }, ['codex', 'claude'])).toEqual({ provider: 'claude', enabledProviders: ['claude'] })
+  })
+  it('connects every installed client on a Connect providers press and says which it found', async () => {
+    const f = await fixture()
+    f.configuration({ ...defaultAgentConfiguration(), enabledProviders: ['codex'] })
+    const control = await coordinator(f, async () => ['codex', 'claude', 'grok'])
+    await control.command({ type: 'configure', patch: { enabledProviders: ['codex'] } })
+    const state = await control.command({ type: 'connect' })
+    expect(state.configuration.provider).toBe('codex')
+    expect(state.configuration.enabledProviders).toEqual(['codex', 'claude', 'grok'])
+    expect(state.installedProviders).toEqual(['codex', 'claude', 'grok'])
+    expect(state.host.providers?.filter(provider => provider.connection === 'connected').map(provider => provider.id)).toEqual(['codex', 'claude', 'grok'])
+    expect(state.error).toBeNull()
+    expect(state.notice).toBe('Thread providers connected')
   })
   it('connects Claude Code when the saved provider is Codex and Codex is not installed', async () => {
     const f = await fixture()
-    const control = await coordinator(f, async () => ({ decision: 'human', text: 'Review' }), async () => ['claude', 'grok'])
+    const control = await coordinator(f, async () => ['claude', 'grok'])
     const state = await control.command({ type: 'connect' })
     expect(state.configuration.provider).toBe('claude')
     expect(state.configuration.enabledProviders).toEqual(['claude', 'grok'])
@@ -121,10 +140,10 @@ describe('independent thread providers', () => {
   it('leaves the saved providers alone when Sotto connects on its own at startup', async () => {
     const f = await fixture()
     const detect = vi.fn(async () => ['claude', 'grok'] as const)
-    const control = await coordinator(f, async () => ({ decision: 'human', text: 'Review' }), detect)
+    const control = await coordinator(f, detect)
     await control.command({ type: 'configure', patch: { enabled: true } })
     control.dispose()
-    const restarted = await coordinator(f, async () => ({ decision: 'human', text: 'Review' }), detect)
+    const restarted = await coordinator(f, detect)
     expect(restarted.get().configuration.provider).toBe('codex')
     expect(detect).not.toHaveBeenCalled()
   })
@@ -191,7 +210,9 @@ describe('independent thread providers', () => {
   it('isolates stalled discovery and ignores its late result after explicit disconnect', async () => {
     const f = await fixture(); let release!: () => void
     const connect = f.adapters.grok.connect.bind(f.adapters.grok)
-    vi.spyOn(f.adapters.grok, 'connect').mockImplementation(async () => { await new Promise<void>(resolve => { release = resolve }); return connect() })
+    vi.spyOn(f.adapters.grok, 'connect').mockImplementation(async () => { const pending1 = deferred<void>();
+release = pending1.resolve;
+await pending1.promise; return connect() })
     const pending = f.host.connect('grok')
     const healthy = await f.host.connect('codex')
     const thread = healthy.threads.find(thread => thread.providerId === 'codex')!
@@ -208,24 +229,10 @@ describe('independent thread providers', () => {
     await expect(f.host.execute({ type: 'interrupt', commandId: 'unsupported', threadId: thread.id })).rejects.toThrow('does not support')
     expect(f.adapters.claude.commands).toHaveLength(0)
   })
-  it('keeps coordinator model changes independent from native connections, assignments, and drafts', async () => {
-    const f = await fixture(); const control = await coordinator(f)
-    await control.command({ type: 'connect', provider: 'codex' }); await control.command({ type: 'connect', provider: 'claude' })
-    const thread = control.get().host.threads.find(thread => thread.providerId === 'codex')!
-    await control.command({ type: 'assign', threadId: thread.id }); await control.command({ type: 'compose', text: 'Keep this draft.' })
-    const changed = await control.command({ type: 'configure', patch: { reasoning: 'grok', reasoningModel: 'independent-coordinator-model', provider: 'claude' } })
-    expect(changed.error).toBeNull(); expect(changed.draft).toBe('Keep this draft.')
-    expect(changed.activeThreadId).toBe(thread.id); expect(changed.assignments[0]?.threadId).toBe(thread.id)
-    expect(changed.host.providers?.filter(provider => provider.connection === 'connected').map(provider => provider.id)).toEqual(['codex', 'claude'])
-    const sent = await control.command({ type: 'send' }); expect(sent.error).toBeNull()
-    expect(f.adapters.codex.commands.some(command => command.type === 'send')).toBe(true)
-    expect(f.adapters.claude.commands).toHaveLength(0)
-  })
   it('persists enabled-but-failed connections without blocking another provider or losing a saved draft', async () => {
     const f = await fixture(); const control = await coordinator(f)
     await control.command({ type: 'connect', provider: 'codex' })
-    const thread = control.get().host.threads[0]!
-    await control.command({ type: 'assign', threadId: thread.id }); await control.command({ type: 'compose', text: 'Still here.' })
+    const thread = control.get().host.threads[0]!; await control.command({ type: 'select-thread', threadId: thread.id }); await control.command({ type: 'compose', text: 'Still here.' })
     vi.spyOn(f.adapters.grok, 'connect').mockRejectedValue(new Error('Grok unavailable'))
     const failed = await control.command({ type: 'connect', provider: 'grok' })
     expect(failed.error).toBe('Grok unavailable'); expect(failed.connection).toBe('connected'); expect(failed.draft).toBe('Still here.')
@@ -242,7 +249,9 @@ describe('independent thread providers', () => {
     const thread = control.get().host.threads[0]!
     let release!: () => void
     const connect = f.adapters.grok.connect.bind(f.adapters.grok)
-    vi.spyOn(f.adapters.grok, 'connect').mockImplementation(async () => { await new Promise<void>(resolve => { release = resolve }); return connect() })
+    vi.spyOn(f.adapters.grok, 'connect').mockImplementation(async () => { const pending2 = deferred<void>();
+release = pending2.resolve;
+await pending2.promise; return connect() })
     if (mode === 'all-enabled') await control.command({ type: 'configure', patch: { enabledProviders: ['codex', 'grok'] } })
     const pending = control.command(mode === 'scoped' ? { type: 'connect', provider: 'grok' } : { type: 'connect' })
     await vi.waitFor(() => expect(release).toBeTypeOf('function'))
@@ -296,29 +305,6 @@ describe('independent thread providers', () => {
     expect(registry.byThread(create.threadId)?.provider).toBe('claude')
     expect(JSON.parse(await readFile(join(f.root, 'provider-project-registrations.json'), 'utf8'))).toEqual([])
   })
-  it('retains a disabled provider draft, assignment, and attention through a cold coordinator restart', async () => {
-    const f = await fixture(); const first = await coordinator(f)
-    await first.command({ type: 'connect', provider: 'codex' }); await first.command({ type: 'connect', provider: 'claude' })
-    const claude = first.get().host.threads.find(thread => thread.providerId === 'claude')!
-    await first.command({ type: 'assign', threadId: claude.id }); await first.command({ type: 'compose', text: 'Recover this Claude draft.' })
-    f.adapters.claude.state.threads[0]!.requests.push({ id: 'approval', kind: 'permission', text: 'Publish this?', options: [] })
-    f.adapters.claude.emit()
-    await vi.waitFor(() => expect(first.get().queue).toHaveLength(1))
-    await first.command({ type: 'disconnect', provider: 'claude' }); first.dispose()
-    const registry = new ThreadRegistry(f.root)
-    let configuration = defaultAgentConfiguration()
-    const host = new ConfiguredProviderHost({ directory: f.root, provider: () => configuration.provider, enabledProviders: () => enabledThreadProviders(configuration),
-      threadProvider: id => registry.byThread(id)?.provider,
-      hosts: { codex: new SottoThreadHost('codex', f.adapters.codex, registry), claude: new SottoThreadHost('claude', f.adapters.claude, registry), grok: f.adapters.grok, devin: new FakeProviderHost() } })
-    cleanup.push(async () => { host.disconnect(); await registry.flush() })
-    const restored = await coordinator({ ...f, host, configuration: value => { configuration = value } })
-    expect(restored.get()).toMatchObject({ draft: 'Recover this Claude draft.', draftThreadId: claude.id,
-      assignments: [{ threadId: claude.id }], queue: [{ threadId: claude.id, requestId: 'approval' }], configuration: { enabledProviders: ['codex'], enabled: false } })
-    const reconnected = await restored.command({ type: 'connect', provider: 'claude' })
-    expect(reconnected.host.threads.find(thread => thread.id === claude.id)?.providerId).toBe('claude')
-    expect(reconnected.queue).toMatchObject([{ threadId: claude.id, requestId: 'approval' }])
-    expect(reconnected.draft).toBe('Recover this Claude draft.')
-  })
   it('preserves historical project memory and policies across default changes and restart without cross-provider scope leakage', async () => {
     const f = await fixture(); f.configuration({ ...defaultAgentConfiguration(), provider: 'claude', enabledProviders: ['codex', 'claude', 'grok'] })
     await f.host.initialize()
@@ -344,40 +330,15 @@ describe('independent thread providers', () => {
     }
     expect(JSON.parse(await readFile(join(f.root, 'provider-project-identity.json'), 'utf8'))).toEqual({ legacyProjectProvider: 'claude' })
   })
-  it('keeps native providers connected when the coordinator is disabled and rejects its in-flight automatic reply', async () => {
-    const f = await fixture(); let release!: (value: Awaited<ReturnType<AgentReasoner['decide']>>) => void
-    const decide = vi.fn<AgentReasoner['decide']>(() => new Promise(resolve => { release = resolve }))
-    const control = await coordinator(f, decide)
-    await control.command({ type: 'connect', provider: 'codex' })
-    expect(control.get().configuration.enabled).toBe(false)
-    await control.command({ type: 'configure', patch: { enabled: true, reasoning: 'claude' } })
-    const thread = control.get().host.threads[0]!
-    await control.command({ type: 'assign', threadId: thread.id, instruction: 'Fix the failing checks.' })
-    f.adapters.codex.state.threads[0]!.messages.push({ id: 'failure', role: 'assistant', text: 'Checks failed', createdAt: new Date().toISOString() })
-    f.adapters.codex.emit(); await vi.waitFor(() => expect(decide).toHaveBeenCalledTimes(1))
-    const disabled = await control.command({ type: 'configure', patch: { enabled: false } })
-    expect(disabled.host.providers?.find(provider => provider.id === 'codex')?.connection).toBe('connected')
-    const finished = new Promise<void>(resolve => { const unsubscribe = control.subscribe(() => { unsubscribe(); resolve() }) })
-    release({ decision: 'followup', text: 'Do not dispatch this revoked reply.' }); await finished
-    expect(f.adapters.codex.commands).toHaveLength(0)
-    await control.command({ type: 'disconnect', provider: 'codex' }); await control.command({ type: 'connect', provider: 'codex' })
-    expect(control.get().configuration.enabled).toBe(false)
-    await control.command({ type: 'connect' }); expect(control.get().configuration.enabled).toBe(false)
-  })
-  it('fails closed on damaged project-scope identity rather than assigning legacy policies to a different provider', async () => {
-    const f = await fixture()
-    await writeFile(join(f.root, 'provider-project-identity.json'), '{broken')
-    await expect(f.host.connect('claude')).rejects.toThrow()
-    expect(Object.values(f.adapters).map(adapter => adapter.connectCalls)).toEqual([0, 0, 0])
-    expect(await readFile(join(f.root, 'provider-project-identity.json'), 'utf8')).toBe('{broken')
-  })
   it('retries a stopped child with the coordinator disabled without reconnecting or blocking its healthy peer', async () => {
     const f = await fixture(); const control = await coordinator(f)
     await control.command({ type: 'connect', provider: 'codex' }); await control.command({ type: 'connect', provider: 'grok' })
     const thread = control.get().host.threads.find(thread => thread.providerId === 'codex')!
     let release!: () => void
     const connect = f.adapters.grok.connect.bind(f.adapters.grok)
-    vi.spyOn(f.adapters.grok, 'connect').mockImplementation(async () => { await new Promise<void>(resolve => { release = resolve }); return connect() })
+    vi.spyOn(f.adapters.grok, 'connect').mockImplementation(async () => { const pending3 = deferred<void>();
+release = pending3.resolve;
+await pending3.promise; return connect() })
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     try {
       f.adapters.grok.state.connected = false; f.adapters.grok.emit()

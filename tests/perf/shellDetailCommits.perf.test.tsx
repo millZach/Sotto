@@ -1,6 +1,6 @@
+import { threadsStateFixture } from '../fixtures/agentState'
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-
 import { useAgentConnection } from '../../src/renderer/src/agents/AgentContext'
 import { agentShell, defaultAgentConfiguration, EMPTY_AGENT_HOST,
   type AgentBridge, type AgentMessage, type AgentState, type AgentThread, type AgentThreadDetailUpdate } from '../../src/shared/agents'
@@ -26,16 +26,18 @@ function thread(id: string, messages: AgentMessage[]): AgentThread {
 }
 
 function fullState(threads: AgentThread[], activeThreadId: string): AgentState {
-  return {
-    configuration: { ...defaultAgentConfiguration(), enabled: true }, connection: 'connected',
+  return threadsStateFixture({
+    cloneOverrides: false,
+    configuration: { ...defaultAgentConfiguration(), enabled: true },
     host: { ...EMPTY_AGENT_HOST, connected: true, threads },
-    assignments: [], queue: [], activeThreadId, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
-    draftRequestId: null, draftAttachments: [], deliveredDrafts: [], threadDrafts: [], deliveries: [], pendingRequest: '',
-    globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' },
-    voice: { status: 'off', error: null, action: 'none', revision: 0 },
-    credentials: { reasoning: false, grokSpeech: false, secure: false }, reasoningAccounts: [],
-     historyEnabled: true,
-  }
+    topLevel: {
+      connection: 'connected', activeThreadId, activeProjectId: null, draft: '',
+      draftThreadId: null, composing: false, draftRequestId: null, draftAttachments: [], deliveredDrafts: [],
+      threadDrafts: [], deliveries: [], globalLaneBusy: false, notice: '', error: null,
+      credentials: { reasoning: false, secure: false },
+      reasoningAccounts: [], historyEnabled: true,
+    },
+  })
 }
 
 function wire(initial: AgentState) {

@@ -19,7 +19,7 @@ type Row = { writes: number; bytesWritten: number; archiveBytes: number; streame
  * Writes of the usage ledger while one reply streams: 150 output counts 20 ms apart, then the turn's end, against
  * a ledger about the 6.2 MB the development machine's Claude ledger had grown to (#555 bounds its growth).
  */
-describe.skipIf(!PERF_BENCH)('usage ledger writes while a reply streams', () => {
+describe.skipIf(!PERF_BENCH)("usage ledger writes while a reply streams (timing benchmark; requires SOTTO_PERF_BENCH=1)", () => {
   let root: string
   let seed: string
   const bundles: Record<string, string> = {}

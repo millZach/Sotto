@@ -1,0 +1,434 @@
+[
+  {
+    "step": "Welcome",
+    "width": 1080,
+    "height": 720,
+    "overflow": 0
+  },
+  {
+    "step": "Welcome",
+    "width": 1080,
+    "height": 720,
+    "overflow": 0
+  },
+  {
+    "step": "Welcome",
+    "width": 820,
+    "height": 560,
+    "overflow": 0
+  },
+  {
+    "step": "Welcome",
+    "width": 820,
+    "height": 560,
+    "overflow": 0
+  },
+  {
+    "step": "Welcome",
+    "width": 1280,
+    "height": 800,
+    "overflow": 0
+  },
+  {
+    "step": "Welcome",
+    "width": 1280,
+    "height": 800,
+    "overflow": 0
+  },
+  {
+    "step": "Welcome",
+    "width": 1600,
+    "height": 1000,
+    "overflow": 0
+  },
+  {
+    "step": "Welcome",
+    "width": 1600,
+    "height": 1000,
+    "overflow": 0
+  },
+  {
+    "step": "Look",
+    "width": 1080,
+    "height": 720,
+    "overflow": 0
+  },
+  {
+    "step": "Look",
+    "width": 1080,
+    "height": 720,
+    "overflow": 0
+  },
+  {
+    "step": "Look",
+    "width": 820,
+    "height": 560,
+    "overflow": 0
+  },
+  {
+    "step": "Look",
+    "width": 820,
+    "height": 560,
+    "overflow": 0
+  },
+  {
+    "step": "Look",
+    "width": 1280,
+    "height": 800,
+    "overflow": 0
+  },
+  {
+    "step": "Look",
+    "width": 1280,
+    "height": 800,
+    "overflow": 0
+  },
+  {
+    "step": "Look",
+    "width": 1600,
+    "height": 1000,
+    "overflow": 0
+  },
+  {
+    "step": "Look",
+    "width": 1600,
+    "height": 1000,
+    "overflow": 0
+  },
+  {
+    "step": "Microphone",
+    "width": 1080,
+    "height": 720,
+    "overflow": 0
+  },
+  {
+    "step": "Microphone",
+    "width": 1080,
+    "height": 720,
+    "overflow": 0
+  },
+  {
+    "step": "Microphone",
+    "width": 820,
+    "height": 560,
+    "overflow": 0
+  },
+  {
+    "step": "Microphone",
+    "width": 820,
+    "height": 560,
+    "overflow": 0
+  },
+  {
+    "step": "Microphone",
+    "width": 1280,
+    "height": 800,
+    "overflow": 0
+  },
+  {
+    "step": "Microphone",
+    "width": 1280,
+    "height": 800,
+    "overflow": 0
+  },
+  {
+    "step": "Microphone",
+    "width": 1600,
+    "height": 1000,
+    "overflow": 0
+  },
+  {
+    "step": "Microphone",
+    "width": 1600,
+    "height": 1000,
+    "overflow": 0
+  },
+  {
+    "step": "OpenRouter key",
+    "width": 1080,
+    "height": 720,
+    "overflow": 0
+  },
+  {
+    "step": "OpenRouter key",
+    "width": 1080,
+    "height": 720,
+    "overflow": 0
+  },
+  {
+    "step": "OpenRouter key",
+    "width": 820,
+    "height": 560,
+    "overflow": 0
+  },
+  {
+    "step": "OpenRouter key",
+    "width": 820,
+    "height": 560,
+    "overflow": 0
+  },
+  {
+    "step": "OpenRouter key",
+    "width": 1280,
+    "height": 800,
+    "overflow": 0
+  },
+  {
+    "step": "OpenRouter key",
+    "width": 1280,
+    "height": 800,
+    "overflow": 0
+  },
+  {
+    "step": "OpenRouter key",
+    "width": 1600,
+    "height": 1000,
+    "overflow": 0
+  },
+  {
+    "step": "OpenRouter key",
+    "width": 1600,
+    "height": 1000,
+    "overflow": 0
+  },
+  {
+    "step": "Shortcut",
+    "width": 1080,
+    "height": 720,
+    "overflow": 0
+  },
+  {
+    "step": "Shortcut",
+    "width": 1080,
+    "height": 720,
+    "overflow": 0
+  },
+  {
+    "step": "Shortcut",
+    "width": 820,
+    "height": 560,
+    "overflow": 0
+  },
+  {
+    "step": "Shortcut",
+    "width": 820,
+    "height": 560,
+    "overflow": 0
+  },
+  {
+    "step": "Shortcut",
+    "width": 1280,
+    "height": 800,
+    "overflow": 0
+  },
+  {
+    "step": "Shortcut",
+    "width": 1280,
+    "height": 800,
+    "overflow": 0
+  },
+  {
+    "step": "Shortcut",
+    "width": 1600,
+    "height": 1000,
+    "overflow": 0
+  },
+  {
+    "step": "Shortcut",
+    "width": 1600,
+    "height": 1000,
+    "overflow": 0
+  },
+  {
+    "step": "Coding agents",
+    "width": 1080,
+    "height": 720,
+    "overflow": 0
+  },
+  {
+    "step": "Coding agents",
+    "width": 1080,
+    "height": 720,
+    "overflow": 0
+  },
+  {
+    "step": "Coding agents",
+    "width": 820,
+    "height": 560,
+    "overflow": 0
+  },
+  {
+    "step": "Coding agents",
+    "width": 820,
+    "height": 560,
+    "overflow": 0
+  },
+  {
+    "step": "Coding agents",
+    "width": 1280,
+    "height": 800,
+    "overflow": 0
+  },
+  {
+    "step": "Coding agents",
+    "width": 1280,
+    "height": 800,
+    "overflow": 0
+  },
+  {
+    "step": "Coding agents",
+    "width": 1600,
+    "height": 1000,
+    "overflow": 0
+  },
+  {
+    "step": "Coding agents",
+    "width": 1600,
+    "height": 1000,
+    "overflow": 0
+  },
+  {
+    "step": "First project",
+    "width": 1080,
+    "height": 720,
+    "overflow": 0
+  },
+  {
+    "step": "First project",
+    "width": 1080,
+    "height": 720,
+    "overflow": 0
+  },
+  {
+    "step": "First project",
+    "width": 820,
+    "height": 560,
+    "overflow": 0
+  },
+  {
+    "step": "First project",
+    "width": 820,
+    "height": 560,
+    "overflow": 0
+  },
+  {
+    "step": "First project",
+    "width": 1280,
+    "height": 800,
+    "overflow": 0
+  },
+  {
+    "step": "First project",
+    "width": 1280,
+    "height": 800,
+    "overflow": 0
+  },
+  {
+    "step": "First project",
+    "width": 1600,
+    "height": 1000,
+    "overflow": 0
+  },
+  {
+    "step": "First project",
+    "width": 1600,
+    "height": 1000,
+    "overflow": 0
+  },
+  {
+    "step": "Other computers",
+    "width": 1080,
+    "height": 720,
+    "overflow": 0
+  },
+  {
+    "step": "Other computers",
+    "width": 1080,
+    "height": 720,
+    "overflow": 0
+  },
+  {
+    "step": "Other computers",
+    "width": 820,
+    "height": 560,
+    "overflow": 0
+  },
+  {
+    "step": "Other computers",
+    "width": 820,
+    "height": 560,
+    "overflow": 0
+  },
+  {
+    "step": "Other computers",
+    "width": 1280,
+    "height": 800,
+    "overflow": 0
+  },
+  {
+    "step": "Other computers",
+    "width": 1280,
+    "height": 800,
+    "overflow": 0
+  },
+  {
+    "step": "Other computers",
+    "width": 1600,
+    "height": 1000,
+    "overflow": 0
+  },
+  {
+    "step": "Other computers",
+    "width": 1600,
+    "height": 1000,
+    "overflow": 0
+  },
+  {
+    "step": "iPhone",
+    "width": 1080,
+    "height": 720,
+    "overflow": 0
+  },
+  {
+    "step": "iPhone",
+    "width": 1080,
+    "height": 720,
+    "overflow": 0
+  },
+  {
+    "step": "iPhone",
+    "width": 820,
+    "height": 560,
+    "overflow": 0
+  },
+  {
+    "step": "iPhone",
+    "width": 820,
+    "height": 560,
+    "overflow": 0
+  },
+  {
+    "step": "iPhone",
+    "width": 1280,
+    "height": 800,
+    "overflow": 0
+  },
+  {
+    "step": "iPhone",
+    "width": 1280,
+    "height": 800,
+    "overflow": 0
+  },
+  {
+    "step": "iPhone",
+    "width": 1600,
+    "height": 1000,
+    "overflow": 0
+  },
+  {
+    "step": "iPhone",
+    "width": 1600,
+    "height": 1000,
+    "overflow": 0
+  }
+]

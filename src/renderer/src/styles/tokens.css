@@ -235,7 +235,7 @@
   --tt-field-border-focus: color-mix(in srgb, var(--tt-accent) 55%, var(--tt-field-border));
   --tt-selected: var(--theme-sidebar-row-selected);
   --tt-selected-border: color-mix(in srgb, var(--tt-accent) 30%, var(--tt-field-border));
-  /* Outline for colour swatches whose fill is not a theme colour (orb presets). */
+  /* Outline for colour swatches whose fill is not a theme colour. */
   --tt-swatch-edge: color-mix(in srgb, var(--theme-text) 22%, transparent);
   --tt-table-stripe: color-mix(in srgb, var(--tt-text) 3%, transparent);
 
@@ -306,8 +306,6 @@
   --tt-shadow-lg: 0 24px 60px rgb(0 0 0 / 55%);
   --tt-shadow-overlay: 0 24px 72px -20px rgb(0 0 0 / 90%);
   --tt-shadow-color: rgb(0 0 0 / 73%);
-  /* The orb draws additive light, which only reads on a dark field. */
-  --tt-orb-filter: none;
 
   --tt-radius-sm: 6px;
   --tt-radius-md: 10px;
@@ -337,9 +335,6 @@
   --tt-shadow-lg: 0 24px 60px rgb(20 24 22 / 18%);
   --tt-shadow-overlay: 0 24px 64px -24px rgb(0 0 0 / 45%);
   --tt-shadow-color: rgb(20 24 22 / 18%);
-  /* Inverting luminance and turning the hue back keeps the orb's colour
-     while its additive glow becomes ink on paper. */
-  --tt-orb-filter: invert(1) hue-rotate(180deg);
   /* Light: the effort fill tints toward white so it stays a light surface, the thumb is paper with an edge,
      and the tinted word mixes toward the ink so it reads at 4.5:1. */
   --tt-effort-fill-cool: color-mix(in srgb, var(--tt-text-muted) 40%, var(--tt-surface-elevated));

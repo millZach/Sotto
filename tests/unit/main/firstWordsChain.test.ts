@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
 import { AgentControl, coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from '../../../src/main/agents/control'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
+
 import { adapterItemCount, ProviderSnapshotPublisher } from '../../../src/main/agents/providerSnapshotPublisher'
 import { ThreadMessageLog } from '../../../src/main/agents/threadMessageLog'
 import { WorkspaceHost } from '../../../src/main/agents/workspace'
@@ -18,6 +18,7 @@ import { e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import type { ThreadHostEvent } from '../../../src/main/agents/host'
 import type { AgentThreadDetailUpdate } from '../../../src/shared/agents'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
+import { testCredentials } from '../../fixtures/testCredentials'
 
 /** A provider that records through the adapters' own message log and publishes through their own publisher. */
 class StreamingProvider extends FakeProviderHost {
@@ -42,8 +43,8 @@ it('sends a reply’s first words to the window’s bridge in their own task, wi
   })
   const provider = new StreamingProvider()
   const workspace = new WorkspaceHost(provider, root)
-  const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: bytes => bytes.toString() })
-  await credentials.load()
+  const credentials = await testCredentials(root, { mode: 'unavailable' })
+
   const control = new AgentControl({ directory: root, host: workspace, credentials, reasoner: e2eAgentReasoner })
   cleanup.push(() => { control.dispose(); workspace.dispose() })
   await control.start(); await control.command({ type: 'connect' })

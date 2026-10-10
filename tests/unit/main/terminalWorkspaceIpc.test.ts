@@ -3,15 +3,19 @@ import { describe, expect, it, vi } from 'vitest'
 import { registerTerminalWorkspaceIpc, TERMINAL_WORKSPACE_METHODS } from '../../../src/main/terminals/ipc'
 import type { TerminalWorkspaceService } from '../../../src/main/terminals/service'
 import { createTerminalWorkspaceBridge } from '../../../src/preload/terminals'
-import type { IpcInvocationEvent } from '../../../src/main/ipc/registerIpc'
+
+import { ipcRegistry } from '../../fixtures/ipcHarness'
 
 describe('terminal workspace IPC and preload boundary', () => {
   it('serves every method to the trusted main window only, with exactly one argument', () => {
     const operation = vi.fn().mockResolvedValue({ ok: true, value: undefined })
     const service = Object.fromEntries([...TERMINAL_WORKSPACE_METHODS.map(method => [method, operation]), ['dispose', vi.fn()]]) as unknown as TerminalWorkspaceService
-    const handlers = new Map<string, (event: IpcInvocationEvent, ...args: unknown[]) => unknown>()
-    const url = 'file:///main.html', mainFrame = { parent: null, url }, sender = { mainFrame, getURL: () => url, isDestroyed: () => false }
-    const cleanup = registerTerminalWorkspaceIpc({ handle: (channel, fn) => { handlers.set(channel, fn) }, removeHandler: channel => { handlers.delete(channel) } }, service, () => [{ role: 'main', url, webContents: sender }])
+    const registry = ipcRegistry()
+    const { ipc, handlers } = registry
+    const { main } = registry
+    const { url, webContents: sender } = main
+    const { mainFrame } = sender
+    const cleanup = registerTerminalWorkspaceIpc(ipc, service, () => [{ role: 'main', url, webContents: sender }])
     expect(handlers.size).toBe(10)
     for (const handler of handlers.values()) {
       expect(() => handler({ sender, senderFrame: { parent: {}, url } }, {})).toThrow('TERMINALS_MAIN_WINDOW_REQUIRED')

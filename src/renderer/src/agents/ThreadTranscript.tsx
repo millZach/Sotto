@@ -270,8 +270,10 @@ function PendingMessage({ draftId, submission, status, row, state, command, stor
     : status === 'failed' ? `${submission?.error ?? 'The provider did not take this prompt.'}${submission === undefined ? '' : restored ? ' It is back in the composer.' : hasDraftContent(draft) ? ' Restoring it replaces the draft in the composer.' : ''}`
       : unresolved ? `Sotto will not send ${submission === undefined && !inHistory ? 'your last prompt' : 'it'} twice.${row.connected ? '' : ' Reconnect to check it.'}`
         : null
+  // Before the send receipt supplies its refusal, the pane announces the shell's error.
+  const announcesFailure = status === 'failed' && (state.error === null || submission?.error != null)
   const delivery = detail === null ? null : <div className="thread-message__delivery">
-    <span>{detail}</span>
+    <span role={announcesFailure ? 'alert' : undefined}>{detail}</span>
     <div className="thread-message__delivery-actions">
       {status === 'failed' && submission !== undefined ? <Button variant="secondary" disabled={!row.connected || isThreadBusy(state, row.thread.id)}
         onClick={() => void sendThreadRevision(store, row, command, performance.now(), submission.mode, draftId)}>Retry</Button> : null}

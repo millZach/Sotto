@@ -36,7 +36,7 @@ export function mapHostReferences<T>(value: T, map: (id: string) => string): T {
     if (Array.isArray(input)) return input.map(visit)
     if (input === null || typeof input !== 'object' || Object.prototype.toString.call(input) !== '[object Object]') return input
     return Object.fromEntries(Object.entries(input).map(([name, child]) => [name,
-      (references.has(name) || name === 'itemId' && 'type' in input && input.type === 'select-attention' || name === 'ownerId' && 'kind' in input && input.kind === 'thread') && typeof child === 'string' ? map(child)
+      (references.has(name) || name === 'ownerId' && 'kind' in input && input.kind === 'thread') && typeof child === 'string' ? map(child)
         : referenceLists.has(name) && Array.isArray(child) ? child.map(id => typeof id === 'string' ? map(id) : id)
           : opaque.has(name) ? child : visit(child)]))
   }
@@ -52,6 +52,5 @@ export function clientAgentState(state: AgentState): AgentState {
   return { ...mapped, hostId,
     host: { ...mapped.host,
       projects: mapped.host.projects.map(project => ({ ...project, id: hostEntityKey(project.hostId ?? hostId, project.id) })),
-      threads: state.host.threads.map(thread => ({ ...thread, id: hostEntityKey(thread.hostId ?? hostId, thread.id), projectId: hostEntityKey(thread.hostId ?? hostId, thread.projectId) })) },
-    queue: mapped.queue.map(item => ({ ...item, id: key(item.id) })) }
+      threads: state.host.threads.map(thread => ({ ...thread, id: hostEntityKey(thread.hostId ?? hostId, thread.id), projectId: hostEntityKey(thread.hostId ?? hostId, thread.projectId) })) } }
 }

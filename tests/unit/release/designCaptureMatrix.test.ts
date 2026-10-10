@@ -43,7 +43,7 @@ describe('design capture matrix', () => {
   it('repeats each surface family, focus target, reduced motion and the Appearance section in the light room', () => {
     const keys = new Set(DESIGN_CAPTURE_REQUIREMENTS.map(designCaptureTupleKey))
     for (const [category, state] of [
-      ['onboarding', 'openrouter-key'], ['dictate', 'ready'], ['dictate', 'listening'], ['dictate', 'error'], ['agents', 'overview'],
+      ['onboarding', 'openrouter-key'], ['dictate', 'ready'], ['dictate', 'listening'], ['dictate', 'error'],
       ['history', 'populated-feedback'], ['settings', 'providers'], ['settings', 'capture'], ['settings', 'validation-error'],
       ['settings', 'appearance'], ['help', 'overview'],
       ['threads', 'populated'], ['threads', 'open-running'], ['threads', 'stopped-open'], ['threads', 'search'], ['threads', 'empty'],
@@ -63,7 +63,7 @@ describe('design capture matrix', () => {
       // Sotto (t3-code) is the default every other application tuple already shows.
       for (const builtIn of DESIGN_CAPTURE_BUILT_IN_THEMES.filter(candidate => candidate !== DESIGN_CAPTURE_DEFAULT_THEME)) expect(keys).toContain(`appearance|theme-${builtIn}|${theme}|100|normal|none`)
       expect(keys).toContain(`appearance|system-settings|${theme}|100|normal|none`)
-      for (const state of ['dictate-ready', 'agents-overview', 'settings-full']) expect(keys).toContain(`width|${state}-${DESIGN_CAPTURE_MINIMUM_WIDTH}|${theme}|100|normal|none`)
+      for (const state of ['dictate-ready', 'settings-full']) expect(keys).toContain(`width|${state}-${DESIGN_CAPTURE_MINIMUM_WIDTH}|${theme}|100|normal|none`)
     }
   })
 
@@ -84,7 +84,7 @@ describe('design capture matrix', () => {
     for (const requirement of DESIGN_CAPTURE_REQUIREMENTS) {
       expect(requirement).toMatchObject({
         id: expect.any(String),
-        category: expect.stringMatching(/^(onboarding|dictate|agents|history|settings|help|threads|scale|widget|appearance|width)$/u),
+        category: expect.stringMatching(/^(onboarding|dictate|history|settings|help|threads|scale|widget|appearance|width)$/u),
         state: expect.any(String),
         theme: expect.stringMatching(/^(light|dark)$/u),
         scalePercent: expect.any(Number),

@@ -1,41 +1,36 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-
 import { expect, test, type Page } from '@playwright/test'
-
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
-import { designThreadsFixture, type E2EScenario } from '../../src/shared/e2e'
+import { type E2EScenario } from '../../src/shared/e2e'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../src/shared/settings'
-import { closeSotto, enableVoiceCoordinator, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 /**
  * Rendered evidence for ticket #73 that the pixel gate does not hold: the
  * native select popup, the widget staying on its own scheme, overlays and the
  * Threads page in the light room, and how quickly a choice repaints. Run with
- * SOTTO_APPEARANCE_EVIDENCE=1 after `npm run build`; images land in
+ * SOTTO_APPEARANCE_EVIDENCE=1 after `npm run build`; images use disposable run evidence by default; publication uses
  * artifacts/verification/phase-1-appearance.
  */
 const enabled = process.env.SOTTO_APPEARANCE_EVIDENCE === '1'
 /** Screen captures include whatever covers Sotto's window, so they need their own opt-in. */
 const screenCaptureEnabled = process.env.SOTTO_APPEARANCE_SCREEN_CAPTURE === '1'
-const evidenceRoot = resolve(process.cwd(), 'artifacts/verification/phase-1-appearance')
+const evidenceRoot = evidenceDirectory('artifacts/verification/phase-1-appearance')
 
 async function withProfile(
   settings: Partial<AppSettings>,
   run: (launched: LaunchedSotto) => Promise<void>,
-  options: { readonly scenario?: E2EScenario; readonly threads?: boolean; readonly voice?: boolean } = {},
+  options: { readonly scenario?: E2EScenario; readonly threads?: boolean } = {},
 ): Promise<void> {
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-appearance-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-appearance-' })).directory
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, ...settings }), 'utf8')
-  // The Agents room is hidden for the beta, so the evidence that records it asks for the coordinator by name.
-  if (options.voice === true) await enableVoiceCoordinator(profile)
+  // Threads captures start with the fixture host connected.
   if (options.threads === true) {
-    const fixture = designThreadsFixture()
     await writeFile(join(profile, 'agents.json'), JSON.stringify({
-      configuration: { provider: 'codex', enabled: true, projectsDirectory: '', defaultModelId: 'claude:sonnet', followupLimit: 5, speak: false, speechProvider: 'system', speechVoice: 'F1', grokSpeechVoice: 'ara', wakeModelDirectory: '', wakeRuntimeDirectory: '', reasoning: 'none', reasoningModel: '', reasoningEffort: '', },
-      assignments: fixture.assignments.map(assignment => ({ ...assignment, contextUpdatedAt: Date.now() })),
-      queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', contextSavedAt: Date.now(), outbox: [],
+      configuration: { provider: 'codex', enabled: true, projectsDirectory: '', defaultModelId: 'claude:sonnet', reasoning: 'none', reasoningModel: '', reasoningEffort: '', },
+      activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false, contextSavedAt: Date.now(), outbox: [],
     }), 'utf8')
   }
   let launched: LaunchedSotto | undefined
@@ -45,7 +40,7 @@ async function withProfile(
     await run(launched)
   } finally {
     if (launched !== undefined) await closeSotto(launched)
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 }
 
@@ -167,24 +162,20 @@ test.describe('appearance rendered evidence', () => {
     })
   })
 
-  test('overlays, the Workshop sheet and the Threads page in the light room', async () => {
+  test('requests, the Workshop pane and the Threads page in the light room', async () => {
     await withProfile({ appearance: 'light' }, async ({ page }) => {
-      await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } }); await window.sotto!.agents!.command({ type: 'connect' }) })
-      await page.getByRole('tab', { name: 'Agents', exact: true }).click()
-      await page.getByRole('button', { name: 'Not now', exact: true }).click()
+      await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } }); await window.sotto!.agents!.command({ type: 'connect' }) })
+      await openThreads(page)
       await page.evaluate(async () => {
         const state = await window.sotto!.agents!.get()
         const id = state.host.threads[0]!.id
-        await window.sotto!.agents!.command({ type: 'assign', threadId: id })
         await window.sotto!.agents!.command({ type: 'select-thread', threadId: id })
         await window.sottoE2E!.agentEvent!({ type: 'permission', threadId: id, text: 'Allow the agent to update the project files?', requestId: 'appearance-permission' })
       })
+      await page.getByRole('button', { name: 'Workshop', exact: true }).click()
       await expect(page.getByRole('button', { name: 'Allow', exact: true })).toBeVisible()
-      await shot(page, 'agents-attention-light')
-      await page.getByRole('button', { name: 'Open Workshop', exact: true }).click()
-      await expect(page.getByRole('dialog', { name: 'Workshop' })).toBeVisible()
-      await shot(page, 'agents-session-light')
-    }, { voice: true })
+      await shot(page, 'threads-permission-light')
+    })
 
     await withProfile({ appearance: 'light' }, async ({ page }) => {
       await openThreads(page)

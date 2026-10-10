@@ -1,11 +1,12 @@
+import { hostsBridgeFixture, hostsState, hostStatus, phonesState } from '../../fixtures/renderer/hostBridges'
 import React from 'react'
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it } from 'vitest'
 import { HostsSettings } from '../../../src/renderer/src/features/settings/HostsSettings'
 import { hostPhonesFailure, hostPhonesLabel } from '../../../src/renderer/src/features/settings/HostPhonesDialog'
 import { TAILSCALE_OPERATOR_COMMAND } from '../../../src/renderer/src/features/settings/hostTailnetWords'
-import type { HostPhonesView, HostsBridge, HostsCommand, HostsState, HostStatus } from '../../../src/shared/hosts'
+import type { HostPhonesView, HostsCommand, HostStatus } from '../../../src/shared/hosts'
 import type { PhonesState } from '../../../src/shared/phones'
 
 afterEach(cleanup)
@@ -13,21 +14,17 @@ afterEach(cleanup)
 const REMOTE = '22222222-2222-4222-8222-222222222222'
 const PHONE = { clientId: 'phone-1', name: 'Zach’s iPhone', pairedAt: '2026-10-03T09:00:00.000Z', connected: true, canAnswer: false }
 function phones(patch: Partial<PhonesState> = {}): PhonesState {
-  return { enabled: true, localHostRunning: true, phase: 'on', tailscale: { status: 'ok', hostName: 'forge', dnsName: 'forge.tail5728ca.ts.net' }, serve: { status: 'ok' },
-    address: 'https://forge.tail5728ca.ts.net:8443', computerName: 'forge', defaultName: 'forge', code: null, phones: [PHONE], answersAvailable: true, ...patch }
+  return phonesState({ enabled: true, localHostRunning: true, phase: 'on', servePort: undefined, tailscale: { status: 'ok', hostName: 'forge', dnsName: 'forge.tail5728ca.ts.net' }, serve: { status: 'ok' },
+    address: 'https://forge.tail5728ca.ts.net:8443', computerName: 'forge', defaultName: 'forge', code: null, phones: [PHONE], answersAvailable: true, ...patch })
 }
 function host(patch: Partial<HostStatus> = {}): HostStatus {
-  return { id: REMOTE, hostId: REMOTE, name: 'forge', target: 'zach@forge', identityFile: '', installPath: '/opt/sotto', dataDirectory: '/data', phase: 'connected', enabled: true, ...patch }
+  return hostStatus({ name: 'forge', target: 'zach@forge', ...patch })
 }
 /** A bridge whose state the test moves on, the way main's broadcasts do. */
 function fixture(view: Omit<HostPhonesView, 'id'> | undefined, status: HostStatus = host()) {
-  let state: HostsState = { localHostEnabled: true, localHostRunning: true, hosts: [status], ...(view ? { phones: [{ id: REMOTE, ...view }] } : {}) }
-  const listeners = new Set<(value: HostsState) => void>()
-  const command = vi.fn<HostsBridge['command']>(async () => state)
-  const bridge = { get: async () => state, command, onChanged: (listener: (value: HostsState) => void) => { listeners.add(listener); return () => listeners.delete(listener) },
-    devices: vi.fn(async () => ({ tailscale: { state: 'missing' as const }, devices: [] })), tailscale: vi.fn(async () => ({ state: 'missing' as const })),
-    connectTailscale: vi.fn(), openTailscaleDownload: vi.fn(), providerAction: vi.fn(async () => ({})), updateClients: vi.fn(async () => ({})), signIn: vi.fn(async () => null) } as unknown as HostsBridge
-  const push = (next: Omit<HostPhonesView, 'id'>): void => { state = { ...state, phones: [{ id: REMOTE, ...next }] }; act(() => { for (const listener of listeners) listener(state) }) }
+  const published = hostsBridgeFixture({ initial: hostsState({ hosts: [status], ...(view ? { phones: [{ id: REMOTE, ...view }] } : {}) }) })
+  const { bridge, command } = published
+  const push = (next: Omit<HostPhonesView, 'id'>): void => { act(() => published.publish({ phones: [{ id: REMOTE, ...next }] })) }
   const sent = (): HostsCommand[] => command.mock.calls.map(call => call[0])
   render(<HostsSettings localHostEnabled onLocalHostChange={async () => true} bridge={bridge} />)
   return { command, push, sent }

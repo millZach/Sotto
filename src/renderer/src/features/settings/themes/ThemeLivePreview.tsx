@@ -1,9 +1,9 @@
-import React, { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
+import React, { useEffect, useState, type ReactNode } from 'react'
 import { AudioLines, Eye } from 'lucide-react'
 
 import { themeBrand, widgetPaletteFor } from '../../../../../shared/themeBranding'
 import { SottoMark } from '../../../components/SottoMark'
-import { useThemeBrand } from '../../../components/useThemeBrand'
+import { VoiceWave } from '../../../components/VoiceWave'
 import type { AppearanceChoice } from '../../../state/appearance'
 import { EffortColorSample } from './EffortColor'
 
@@ -28,7 +28,6 @@ export function ThemeLivePreview({ shown, systemDark, system, still = false }: {
   /** The app's Reduced motion setting; the sample also follows the system's. */
   readonly still?: boolean
 }): ReactNode {
-  const brand = useThemeBrand()
   const systemStill = useSystemStill()
   const widgetMode = systemDark ? 'dark' : 'light'
   const widgetPalette = widgetPaletteFor(shown)
@@ -40,7 +39,7 @@ export function ThemeLivePreview({ shown, systemDark, system, still = false }: {
       <div className="theme-live-preview__window">
         <div className="theme-live-preview__titlebar"><SottoMark /><strong>Sotto</strong><span>Dictate</span></div>
         <div className="theme-live-preview__body">
-          <div className="theme-live-preview__orb" style={{ '--preview-orb-light': brand.orb[0], '--preview-orb-dark': brand.orb[1] } as CSSProperties} aria-hidden="true" />
+          <VoiceWave stage="idle" value={0} label="" size="preview" />
           <strong>Ready when you are</strong>
           <div className="theme-live-preview__composer" aria-hidden="true"><AudioLines size={18} /><span /><span /></div>
         </div>

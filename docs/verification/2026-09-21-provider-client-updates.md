@@ -1,5 +1,7 @@
 # Client updates, and the pins that blocked them
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 Evidence for `docs/adr/0042-provider-client-updates.md` and `docs/plans/2026-09-21-provider-client-updates.md`. Windows 11, 2026-09-21. The built app was run on a throwaway user-data folder, since deleted, so nothing here touched the real profile; the clients and their sign-ins are the machine's own, which is why connecting worked at all.
 
 ## What the machine and the registry said, before
@@ -87,7 +89,7 @@ Both axes of `/code-review` ran against `origin/main...HEAD` before merge. Fixed
 
 ## What the tests prove
 
-`tests/unit/main/providerClientUpdates.test.ts` (20): 1.0.5 reads as older than 1.0.40, which a string compare gets backwards; the client's own version is found in a protocol note and in a user agent; the registry is asked as plain JSON, once an hour, cached in between; an unreachable registry and an unreadable version claim nothing; Devin is never asked about; npm is recognised from a vendored binary, from a package beside the launcher, and from the global root when the binary lives elsewhere; bun and Homebrew are named rather than driven; an update refuses while a thread works and proceeds when forced; the order is disconnect, install, reconnect; a failed install keeps the version, reports the installer's last line and restores the connection; an install that changes nothing reports `unchanged`; a client that will not reconnect still reports the install; the check holds nothing while it is off; and an install runs on the provider lane, leaving `globalLaneBusy` false.
+`tests/unit/main/providerClientUpdates.test.ts`, `tests/integration/providerClientUpdateLocks.test.ts`, `tests/integration/providerClientVersions.test.ts` (20): 1.0.5 reads as older than 1.0.40, which a string compare gets backwards; the client's own version is found in a protocol note and in a user agent; the registry is asked as plain JSON, once an hour, cached in between; an unreachable registry and an unreadable version claim nothing; Devin is never asked about; npm is recognised from a vendored binary, from a package beside the launcher, and from the global root when the binary lives elsewhere; bun and Homebrew are named rather than driven; an update refuses while a thread works and proceeds when forced; the order is disconnect, install, reconnect; a failed install keeps the version, reports the installer's last line and restores the connection; an install that changes nothing reports `unchanged`; a client that will not reconnect still reports the install; the check holds nothing while it is off; and an install runs on the provider lane, leaving `globalLaneBusy` false.
 
 `tests/unit/renderer/clientUpdateCard.test.tsx` (7) and three cases in `tests/unit/renderer/providersSettings.test.tsx` cover the card's states, the working-thread wording and its `force`, the command-instead-of-a-button row, Escape, and the settings line with its switch.
 

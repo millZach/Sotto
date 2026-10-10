@@ -1,13 +1,12 @@
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
 import { randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 
 test('Codex shows a refused child approval without approving or routing it', async () => {
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-codex-refusal-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-codex-refusal-' })).directory
   const root = join(profile, 'native-fixture')
   for (const folder of ['claude', 'codex', 'project']) await mkdir(join(root, folder), { recursive: true })
   await writeFile(join(root, 'codex', 'script.json'), JSON.stringify({ reply: 'Ready for the next request.' }))
@@ -21,12 +20,12 @@ test('Codex shows a refused child approval without approving or routing it', asy
     await page.evaluate(async project => {
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
       const agents = window.sotto!.agents!
-      await agents.command({ type: 'configure', patch: { provider: 'codex', enabled: true, enabledProviders: ['codex'], speak: false, checkClientUpdates: false } })
+      await agents.command({ type: 'configure', patch: { provider: 'codex', enabled: true, enabledProviders: ['codex'], checkClientUpdates: false } })
       await agents.command({ type: 'connect', provider: 'codex' })
       const created = await agents.command({ type: 'create-project', provider: 'codex', title: 'Approval notice', path: project, useExisting: true })
       const projectId = created.host.projects.find(p => p.title === 'Approval notice')!.id
       const modelId = (await agents.get()).host.models.find(m => m.providerId === 'codex' && m.ready)!.id
-      const thread = await agents.command({ type: 'create-thread', projectId, title: 'Child approval', titleSource: 'user', modelId, workingCopy: 'shared', managed: false })
+      const thread = await agents.command({ type: 'create-thread', projectId, title: 'Child approval', titleSource: 'user', modelId, workingCopy: 'shared' })
       if (thread.error || !thread.activeThreadId) throw new Error(thread.error ?? 'Missing thread')
       await agents.command({ type: 'manual-send', threadId: thread.activeThreadId, text: 'Start the session.' })
     }, join(root, 'project'))
@@ -75,6 +74,6 @@ test('Codex shows a refused child approval without approving or routing it', asy
     else process.env.SOTTO_E2E_NATIVE_FIXTURE_ROOT = previous.root
     if (previous.executable === undefined) delete process.env.SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE
     else process.env.SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE = previous.executable
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 })

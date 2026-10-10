@@ -41,7 +41,7 @@ async function measure(launched: LaunchedSotto, label: string, screenshot: Omit<
 // under `SOTTO_PERF_BENCH=1` (`tests/fixtures/perfBench.ts`), after `npm run build`:
 //   SOTTO_PERF_BENCH=1 npx vitest run tests/perf/screenshotResize.perf.test.ts --maxWorkers=1 --disable-console-intercept
 // `SOTTO_E2E_MAIN_ENTRY` points it at another build's `out/main/index.js`, for the before column.
-describe.skipIf(!PERF_BENCH)('scaling pasted screenshots down to the bound', () => {
+describe.skipIf(!PERF_BENCH)("scaling pasted screenshots down to the bound (timing benchmark; requires SOTTO_PERF_BENCH=1)", () => {
   it('pastes each capture into the composer and reports what its draft carries', async () => {
     const launched = await launchSotto()
     try {

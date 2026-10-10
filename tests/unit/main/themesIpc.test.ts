@@ -1,27 +1,25 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
 
-import type { IpcInvocationEvent } from '../../../src/main/ipc/registerIpc'
 import { registerThemesIpc, type ThemesIpcServices } from '../../../src/main/themes/ipc'
 import { OpenVsxFailure } from '../../../src/main/themes/openVsx'
 import { createThemesBridge } from '../../../src/preload/themes'
 import { THEMES_EXPORT, THEMES_INSTALL, THEMES_SEARCH } from '../../../src/shared/themes/bridge'
 import { parseThemeFile, serializeThemeFile } from '../../../src/shared/themes/library'
-
-type Handler = (event: IpcInvocationEvent, ...args: unknown[]) => unknown
+import { ipcRegistry } from '../../fixtures/ipcHarness'
 
 function setup(overrides: Partial<ThemesIpcServices> = {}) {
-  const url = 'file:///main.html'
-  const mainFrame = { parent: null, url }
-  const sender = { mainFrame, getURL: () => url, isDestroyed: () => false }
-  const handlers = new Map<string, Handler>()
+  const registry = ipcRegistry()
+  const { ipc, handlers, main } = registry
+  const { url, webContents: sender } = main
+  const { mainFrame } = sender
   const services: ThemesIpcServices = {
     openVsx: { search: vi.fn(async () => []), install: vi.fn(async () => { throw new OpenVsxFailure('rejected', 'Not a theme.') }) },
     chooseExportPath: vi.fn(async (name: string) => `C:/exports/${name}`),
     writeFile: vi.fn(async () => undefined),
     ...overrides,
   }
-  const cleanup = registerThemesIpc({ handle: (channel, fn) => { handlers.set(channel, fn) }, removeHandler: channel => { handlers.delete(channel) } }, services, () => [{ role: 'main', url, webContents: sender }])
+  const cleanup = registerThemesIpc(ipc, services, () => [{ role: 'main', url, webContents: sender }])
   const call = (channel: string, ...args: unknown[]) => handlers.get(channel)!({ sender, senderFrame: mainFrame }, ...args)
   return { handlers, services, cleanup, call, sender, mainFrame }
 }

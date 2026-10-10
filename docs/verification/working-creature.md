@@ -61,7 +61,7 @@ error, a closed thread and a disconnect. It is the same polite `role="status"` r
 - Unit, `tests/unit/main/claudeBackgroundWork.test.ts`: each accepted and inert type, ownership, foreground and
   backgrounding, the turn's end, each bookend, pause and resume, separate bounds of 64. The monitoring tests
   are unchanged and pass.
-- Unit, `tests/unit/renderer/threadsView.test.tsx`: the readout's wording and title, one to six small agents,
+- Unit, `tests/unit/renderer/agents/threadsView.test.tsx`: the readout's wording and title, one to six small agents,
   the order monitoring, working, held, and every hiding condition. Workspace and shell-cache exclusion in
   `monitoringWorkspace.test.ts` and `agentShellAssembly.test.tsx`.
 - Integration: the adapter contract's new case passes for Claude stream-json and skips for Codex, Grok, Devin

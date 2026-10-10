@@ -104,7 +104,7 @@ async function wholeReads(f: Fixture, from: number): Promise<{ before: number; a
 const lastUser = (f: Fixture, id: string): string | null =>
   (f.adapter as unknown as { log: { lastUserMessageId(id: string): string | undefined } }).log.lastUserMessageId(id) ?? null
 
-describe.skipIf(!PERF_BENCH)('Codex send-time read on a long thread', () => {
+describe.skipIf(!PERF_BENCH)("Codex send-time read on a long thread (timing benchmark; requires SOTTO_PERF_BENCH=1)", () => {
   beforeAll(instrument)
   afterAll(restore)
 

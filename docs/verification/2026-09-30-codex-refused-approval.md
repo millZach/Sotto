@@ -31,7 +31,7 @@ The notice now renders independently of command-error suppression. The Electron
 journey leaves a refused model change's error in place before the child approval
 arrives and verifies that the refusal notice still reaches the user.
 
-The five existing `phase-three-requests.spec.ts` journeys passed as well, covering
+The five existing `native-request-forms.spec.ts` journeys passed as well, covering
 explicit native choices, refused/held answers, independent prompt drafts and
 short stacked panes. No design baselines were regenerated. No live provider turn
 or macOS execution is claimed.

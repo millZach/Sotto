@@ -111,10 +111,10 @@ describe('a command receipt', () => {
   it('still gives a settings card the effective settings', async () => {
     const f = await fixture()
     f.broadcast()
-    const reply = await f.page.command({ type: 'configure', patch: { speak: false, followupLimit: 3 } })
+    const reply = await f.page.command({ type: 'configure', patch: { projectsDirectory: 'C:/Projects' } })
     expect(reply.error).toBeNull()
     expect(reply.configuration).toEqual(f.control.get().configuration)
-    expect(reply.configuration).toMatchObject({ speak: false, followupLimit: 3 })
+    expect(reply.configuration).toMatchObject({ projectsDirectory: 'C:/Projects' })
     expect((f.replies()[0] as AgentCommandReceipt).configuration).toEqual(reply.configuration)
     expect(f.gets()).toBe(0)
   })

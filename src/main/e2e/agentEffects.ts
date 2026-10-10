@@ -163,7 +163,6 @@ export class E2EAgentHost implements AgentHost {
       return
     }
     if (event.type === 'settings-unconfirmed') { this.settingsGate.unconfirmed = event.text; return }
-    if (event.type === 'reasoner-release') { pendingReasoning.get(event.threadId)?.(); pendingReasoning.delete(event.threadId); return }
     if (event.type === 'disconnect') { this.state.connected = false; this.emit(); return }
     const thread = this.state.threads.find(t => t.id === event.threadId)
     if (!thread) throw new Error('E2E_THREAD_UNAVAILABLE')
@@ -195,7 +194,6 @@ export class E2EAgentHost implements AgentHost {
   }
 }
 
-const pendingReasoning = new Map<string, () => void>()
 export const e2eAgentReasoner: AgentReasoner = {
   async account(provider) {
     return { provider, label: provider === 'claude' ? 'Claude subscription' : provider === 'codex' ? 'ChatGPT subscription' : 'Grok subscription',
@@ -204,19 +202,5 @@ export const e2eAgentReasoner: AgentReasoner = {
         { id: 'fixture-model', name: 'Fixture reasoning model', reasoningEfforts: ['low', 'medium', 'high'], defaultReasoningEffort: 'medium' },
         { id: 'fixture-alternate', name: 'Another subscription model', reasoningEfforts: ['low', 'high', 'max'] },
       ] }
-  },
-  async intent(utterance) {
-    if (utterance.toLowerCase().includes('create a project called clarified project')) {
-      const folder = /(?:[A-Za-z]:[\\/]|\/)[^\r\n]+$/u.exec(utterance)?.[0]
-      return folder
-        ? { type: 'create-project', title: 'Clarified Project', path: folder }
-        : { type: 'clarify', text: 'Which folder should contain Clarified Project?' }
-    }
-    return { type: 'clarify', text: 'Choose a project and thread using the controls.' }
-  },
-  async decide(_instruction, thread) {
-    const text = thread.messages.at(-1)?.text ?? thread.requests[0]?.text ?? ''
-    if (text.includes('await external decision')) await new Promise<void>(resolve => pendingReasoning.set(thread.id, resolve))
-    return text.includes('fixable') ? { decision: 'followup', text: `Fix the failing test in the assigned scope: ${text}` } : { decision: 'human', text }
   },
 }

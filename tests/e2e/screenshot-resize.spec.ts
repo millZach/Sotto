@@ -2,8 +2,9 @@ import { mkdir } from 'node:fs/promises'
 import { expect, test } from '@playwright/test'
 import { decodedSize, openWorkshopComposer, pasteDrawnScreenshot, savedAttachment } from '../fixtures/drawnScreenshot'
 import { closeSotto, launchSotto } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
-const RUN = 'artifacts/screenshot-resize-run'
+const RUN = evidenceDirectory('artifacts/screenshot-resize-run')
 
 test('a screenshot past the bound is scaled down in its own format, and its chip says so', async () => {
   test.setTimeout(90_000)

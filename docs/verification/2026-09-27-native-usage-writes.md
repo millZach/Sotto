@@ -1,5 +1,7 @@
 # Native usage persistence and replay (#389)
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 The synthetic native Claude journey passed against the built production app with the final test content committed as `f3a80bb12fa1f29e89c15cdb5e65eeeda47815c2`. It verifies accounting through the real adapter and ledger, graceful shutdown with a pending write, restart replay deduplication, restored messages and an editable composer. The original saved screenshots show the complete transcript in default dark appearance at 1280 × 800. No UI changed and no design baselines were regenerated.
 
 ## Journey and observed results
@@ -63,7 +65,7 @@ The earlier gates, reviews and native screenshots remain historical evidence for
 Focused post-integration checks passed: nine Vitest files, 124 tests, with one worker, including #400's query/report/held-prompt cases, native transcript catch-up, usage persistence and #398's inherited permissions. Focused ESLint passed for the resolved configuration, shared Claude fixture and native usage Electron seam.
 
 ```powershell
-npx vitest run tests/unit/main/nativeUsage.test.ts tests/unit/main/nativeUsagePersistence.test.ts tests/unit/main/nativeUsageBenchTotals.test.ts tests/unit/main/nativeUsageBoundary.test.ts tests/integration/claudeAdapterSafety.test.ts tests/integration/claudeMonitoring.test.ts tests/integration/claudeTranscriptCatchUp.test.ts tests/integration/nativeCompaction.test.ts tests/integration/remoteThreadPermissions.test.ts --maxWorkers=1
+npx vitest run tests/unit/main/nativeUsage.test.ts tests/unit/main/nativeUsagePersistence.test.ts tests/unit/main/nativeUsageBenchTotals.test.ts tests/unit/fixtures/nativeUsageBenchTotals.test.ts tests/unit/fixtures/nativeUsageBoundary.test.ts tests/integration/claudeAdapterSafety.test.ts tests/integration/claudeMonitoring.test.ts tests/integration/claudeTranscriptCatchUp.test.ts tests/integration/nativeCompaction.test.ts tests/integration/remoteThreadPermissions.test.ts --maxWorkers=1
 npx eslint eslint.config.mjs tests/fixtures/fakeClaudeThread.mjs tests/fixtures/claudeFixture.ts tests/e2e/native-usage-persistence.spec.ts tests/fixtures/nativeUsageElectronMain.cjs
 ```
 

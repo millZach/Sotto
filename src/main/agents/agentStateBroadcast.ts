@@ -2,8 +2,6 @@ import { isDeepStrictEqual } from 'node:util'
 import { clientCatalogKey, hostCatalogKey } from '../../shared/agents'
 import type { AgentClientHost, AgentCommandReceipt, AgentModel, AgentModelCatalogBroadcast, AgentModelCatalogRevision, AgentState, AgentStateBroadcast } from '../../shared/agents'
 
-export type AgentStateBroadcastDestination = 'main' | 'widget'
-
 type EncodedClientHost<Catalog> = Omit<AgentClientHost, 'models'> & { models: Catalog }
 type EncodedState<Catalog> = Omit<AgentState, 'host'> & {
   host: Omit<AgentState['host'], 'models' | 'clientHosts'> & { models: Catalog; clientHosts?: EncodedClientHost<Catalog>[] }
@@ -19,7 +17,7 @@ interface CatalogSnapshot {
  * actually changes. Content is compared with `isDeepStrictEqual`, because a shell rebuilds `models` into new
  * arrays and objects on every publish even when nothing in it changed, so identity cannot tell a repeat from
  * a change. The counter starts at 1 and only advances, so a revision names one content for as long as this
- * object lives. `AgentStateBroadcaster` uses one for the desktop's windows (ADR-0028); the socket listener
+ * object lives. `AgentStateBroadcaster` uses one for the desktop's main window (ADR-0028); the socket listener
  * uses one of its own for its peers that accept `model-catalog-revision` (ADR-0028, October 3 amendment).
  */
 export class ModelCatalogRevisions {
@@ -38,8 +36,8 @@ export class ModelCatalogRevisions {
   /**
    * One content comparison serves every key that holds the same array and is handed the same array:
    * `host.models` and the selected host's `clientHosts[]` entry are one array in a shell, and one shell is
-   * encoded for both windows. Without this, a publish compared the 608-model catalog four times and a
-   * receipt twice. The last pair compared is remembered by identity and by the length each had then. A
+   * encoded for the window. Without this, a publish compared the 608-model catalog twice, as did a
+   * receipt. The last pair compared is remembered by identity and by the length each had then. A
    * shell is rebuilt, never edited, so identity is enough today; the lengths make a model added to or
    * removed from either array in place compare afresh rather than reuse a stale answer for good.
    */
@@ -54,13 +52,13 @@ export class ModelCatalogRevisions {
 }
 
 /**
- * Turns a shell into what actually crosses `sotto:agents:state` for one destination window, omitting a
+ * Turns a shell into what actually crosses `sotto:agents:state` for the main window, omitting a
  * model catalog that window was already sent and nothing has changed since (issue #286): `models` is
  * rebuilt into new arrays and objects on every publish even when its content is unchanged (`clientAgentState`
  * deep-clones for its ID projection), so identity cannot tell a repeat from a change — content, compared
  * with `isDeepStrictEqual`, can. A catalog's revision is a counter bumped only when its content actually
- * changes, shared by every destination; what each destination has already been sent is tracked apart, and
- * only once delivery of it is confirmed, so a window that never actually received a revision is not skipped
+ * changes. What the window has already been sent is tracked only once delivery of it is confirmed,
+ * so a window that never actually received a revision is not skipped
  * on the next attempt.
  *
  * `host.models` and the selected host's own `clientHosts[]` entry are today always the same array
@@ -75,22 +73,21 @@ export class ModelCatalogRevisions {
  */
 export class AgentStateBroadcaster {
   private readonly revisions = new ModelCatalogRevisions()
-  private readonly sent: Record<AgentStateBroadcastDestination, Map<string, number>> = { main: new Map(), widget: new Map() }
+  private readonly sent = new Map<string, number>()
 
-  /** Encodes `state` for `destination` and hands it to `deliver`; only a delivery `deliver` reports as
+  /** Encodes `state` for the main window and hands it to `deliver`; only a delivery `deliver` reports as
    * successful (its return value) is remembered, so a window that was not actually listening is sent the
    * catalog in full again next time rather than being assumed caught up. */
-  send(state: AgentState, destination: AgentStateBroadcastDestination, deliver: (payload: AgentStateBroadcast) => boolean): boolean {
-    const sentRevisions = this.sent[destination]
+  send(state: AgentState, deliver: (payload: AgentStateBroadcast) => boolean): boolean {
     const confirmed: Array<[string, number]> = []
     const payload: AgentStateBroadcast = this.encode(state, (key, models): AgentModelCatalogBroadcast => {
       const revision = this.revisionFor(key, models)
-      if (sentRevisions.get(key) === revision) return { revision, omitted: true }
+      if (this.sent.get(key) === revision) return { revision, omitted: true }
       confirmed.push([key, revision])
       return { revision, models: models as AgentModel[] }
     })
     const delivered = deliver(payload)
-    if (delivered) for (const [key, revision] of confirmed) sentRevisions.set(key, revision)
+    if (delivered) for (const [key, revision] of confirmed) this.sent.set(key, revision)
     return delivered
   }
 
@@ -101,10 +98,10 @@ export class AgentStateBroadcaster {
    * recovers through `AGENT_GET` when it holds another. A receipt records nothing as sent to any window.
    *
    * It is not a pure encoder. Naming a catalog's revision goes through `revisionFor`, which advances the
-   * counter both windows share and stores `state`'s catalog as the current content when that content
+   * counter the window uses and stores `state`'s catalog as the current content when that content
    * differs from what the counter last held. A reply shell built before a catalog change and encoded after
    * its broadcast therefore takes a revision of its own for the old content, and the next broadcast takes
-   * another for the new content and sends it in full to both windows, the widget included (ADR-0028's
+   * another for the new content and sends it in full to the window (ADR-0028's
    * September 26 amendment).
    *
    * An arrow property rather than a method, so `registerAgentIpc` can be handed it on its own.

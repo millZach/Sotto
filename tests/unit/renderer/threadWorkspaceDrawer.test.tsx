@@ -21,7 +21,7 @@ afterEach(cleanup)
 
 describe('the thread workspace’s terminal drawers', () => {
   it('offers a drawer on a local thread only: a thread on a paired host keeps its terminal on that machine', () => {
-    render(<ThreadWorkspace onOpenAgents={() => undefined} />)
+    render(<ThreadWorkspace />)
     expect(screen.getByRole('region', { name: 'local' }).querySelector('[data-pane-terminal-toggle]')).not.toBeNull()
     expect(screen.getByRole('region', { name: 'local' }).querySelector('[data-drawer="local"]')).not.toBeNull()
     expect(screen.getByRole('region', { name: 'remote' }).querySelector('[data-pane-terminal-toggle]')).toBeNull()

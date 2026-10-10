@@ -6,7 +6,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
+
 import { ShortTextWriter } from '../../../src/main/llm/shortTextWriter'
 import { firstMessageTitle, firstMessageTitleWriter, threadTitleWriter, type ThreadTitleExchange } from '../../../src/main/llm/threadTitle'
 import { e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
@@ -14,6 +14,9 @@ import type { AgentThread } from '../../../src/shared/agents'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 import { workspaceFixture } from '../../fixtures/workspaceFixture'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
+import { deferred } from '../../fixtures/deferred'
 
 const opened: { control: AgentControl; stop: () => Promise<void> }[] = []
 const removals: (() => Promise<void>)[] = []
@@ -30,12 +33,12 @@ async function coordinator(options: {
 } = {}) {
   const workspace = await workspaceFixture(options.root)
   if (options.root === undefined) removals.push(workspace.remove)
-  const credentials = new AgentCredentials(workspace.root, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: bytes => bytes.toString() })
-  await credentials.load()
+  const credentials = await testCredentials(workspace.root, { mode: 'unavailable' })
+
   const settings = options.providerWriting
   const writer = settings ? threadTitleWriter(new ShortTextWriter({ write: (threadId, prompt) => workspace.host.writeShortText(threadId, prompt) }), () => settings) : undefined
   const titles = vi.fn<(threadId: string, exchange: ThreadTitleExchange) => Promise<string | null>>(options.writeThreadTitle ?? writer ?? (async () => 'Dark theme contrast'))
-  const control = new AgentControl({
+  const control = createAgentControl({
     schedule: immediatePublishScheduler, directory: workspace.root, host: workspace.host, credentials, reasoner: e2eAgentReasoner,
     writeThreadTitle: titles,
     ...(options.firstMessageTitles ? { writeFirstMessageTitle: firstMessageTitleWriter(() => options.firstMessageTitles!) } : {}),
@@ -84,7 +87,7 @@ describe('naming a thread from its first exchange', () => {
 
   it('drains an automatic title request without applying its result after disposal', async () => {
     let finish!: (title: string) => void
-    const f = await coordinator({ writeThreadTitle: () => new Promise(resolve => { finish = resolve }) })
+    const f = await coordinator({ writeThreadTitle: () => { const pending = deferred<string>(); finish = pending.resolve; return pending.promise } })
     const threadId = workshop(f.control).id
     reply(f.adapters.codex)
     await vi.waitFor(() => expect(f.titles).toHaveBeenCalledOnce())
@@ -285,7 +288,7 @@ describe('naming a thread from its first message while the first turn runs', () 
 
   it('names a thread from its first message as soon as it is sent, then takes the generated name when it lands', async () => {
     let finish!: (title: string) => void
-    const f = await coordinator({ firstMessageTitles: DEFAULT_SETTINGS, writeThreadTitle: () => new Promise(resolve => { finish = resolve }) })
+    const f = await coordinator({ firstMessageTitles: DEFAULT_SETTINGS, writeThreadTitle: () => { const pending = deferred<string>(); finish = pending.resolve; return pending.promise } })
     const threadId = workshop(f.control).id
     send(f.adapters.codex, 'The palette is unreadable in dark mode.')
     await vi.waitFor(() => expect(titled(f.control, threadId)).toMatchObject({ title: 'The palette is unreadable in dark mode.', titleSource: 'default', titledFromFirstMessage: true }))

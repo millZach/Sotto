@@ -14,7 +14,7 @@ const THUMBNAIL_CACHE_CHARACTERS = 8 * 1024 * 1024
 const thumbnails = new Map<string, { readonly source: Promise<string | null>; size: number }>()
 
 /** Only the staging calls are used, which cross the bridge as they are. */
-function agents(): AgentWireBridge | undefined { return window.sotto?.agents ?? window.sottoWidget?.agents }
+function agents(): AgentWireBridge | undefined { return window.sotto?.agents }
 
 /** Drops the least recently used thumbnails until the cache is within both bounds. The newest is always kept. */
 function evict(): void {

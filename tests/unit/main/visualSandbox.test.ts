@@ -8,9 +8,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { installVisualSandbox, type VisualContentsLike, type VisualSandboxAdapters } from '../../../src/main/agents/visualSandbox'
 import type { VisualSessionLike } from '../../../src/main/agents/visualSeal'
-import type { IpcInvocationEvent, TrustedIpcSender } from '../../../src/main/ipc/registerIpc'
+import type { TrustedIpcSender } from '../../../src/main/ipc/registerIpc'
 import { VISUAL_PAGE_OPEN, type VisualPageResult } from '../../../src/shared/visualPages'
 import type { AgentVisual } from '../../../src/shared/visuals'
+import { ipcRegistry, trustedIpcSender } from '../../fixtures/ipcHarness'
+import { deferred } from '../../fixtures/deferred'
 
 const HERE = '11111111-2222-4333-8444-555555555555'
 const THERE = '99999999-2222-4333-8444-555555555555'
@@ -19,8 +21,7 @@ const theme = { mode: 'dark', reducedMotion: false, tokens: Object.fromEntries([
 const page: AgentVisual = { id: 'v1', title: 'A queue', kind: 'interactive', source: '<h1>Queue</h1>' }
 
 function renderer(url = 'file:///C:/Sotto/out/renderer/index.html') {
-  const mainFrame = { parent: null, url }
-  return { mainFrame, getURL: () => url, isDestroyed: () => false }
+  return trustedIpcSender('main', url).webContents
 }
 
 function fakeSession(): VisualSessionLike {
@@ -48,7 +49,8 @@ function contents(type: string, session: unknown) {
 }
 
 function sandbox(overrides: { read?: (threadId: string, visualId: string) => AgentVisual | undefined; startProxy?: VisualSandboxAdapters['startProxy'] } = {}) {
-  const handlers = new Map<string, (event: IpcInvocationEvent, ...args: unknown[]) => unknown>()
+  const registry = ipcRegistry()
+  const { handlers } = registry
   const created = new Set<(event: unknown, contents: VisualContentsLike) => void>()
   const lostHandlers: (() => void)[] = []
   const visualSession = fakeSession()
@@ -58,7 +60,7 @@ function sandbox(overrides: { read?: (threadId: string, visualId: string) => Age
   const senders: TrustedIpcSender[] = [{ role: 'main', webContents: main, url: main.getURL() }, { role: 'widget', webContents: widget, url: widget.getURL() }]
   const read = vi.fn(overrides.read ?? ((threadId: string, visualId: string) => threadId === 'thread-1' && visualId === 'v1' ? page : undefined))
   const adapters: VisualSandboxAdapters = {
-    ipc: { handle: (channel, listener) => { handlers.set(channel, listener) }, removeHandler: channel => { handlers.delete(channel) } },
+    ipc: registry.ipc,
     contentsCreated: listener => { created.add(listener); return () => { created.delete(listener) } },
     session: vi.fn(() => visualSession),
     startProxy: vi.fn(overrides.startProxy ?? (async (onLost: () => void) => { lostHandlers.push(onLost); return proxy })),
@@ -154,7 +156,9 @@ describe('a guest', () => {
     box.setMain(mainWindow.fake)
     const before = await waitingAddress(box)
     let release: (() => void) | undefined
-    vi.mocked(box.adapters.startProxy).mockImplementationOnce(async onLost => { box.lostHandlers.push(onLost); await new Promise<void>(done => { release = done }); return { port: 41_999, close: vi.fn() } })
+    vi.mocked(box.adapters.startProxy).mockImplementationOnce(async onLost => { box.lostHandlers.push(onLost); const pending1 = deferred<void>();
+release = pending1.resolve;
+await pending1.promise; return { port: 41_999, close: vi.fn() } })
     box.lostHandlers[0]!()
     // The old port is free for another program: no guest attaches, and no guest is sealed, until the new proxy holds.
     expect(mainWindow.attach(before)).toBe(false)
@@ -169,7 +173,7 @@ describe('a guest', () => {
   it('fails a seal whose proxy is lost while it is set up, offers Try again, and seals on the next request', async () => {
     const box = sandbox()
     let release: (() => void) | undefined
-    vi.mocked(box.visualSession.setProxy).mockImplementationOnce(() => new Promise<void>(done => { release = done }))
+    vi.mocked(box.visualSession.setProxy).mockImplementationOnce(() => { const pending = deferred<void>(); release = pending.resolve; return pending.promise })
     const first = box.ask(box.main)
     await vi.waitFor(() => expect(release).toBeDefined())
     box.lostHandlers[0]!()

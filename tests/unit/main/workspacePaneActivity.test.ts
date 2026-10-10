@@ -15,6 +15,7 @@ import { immutableActivities, isImmutableActivities } from '../../../src/main/ag
 import { WorkspaceHost } from '../../../src/main/agents/workspace'
 import { ThreadStore } from '../../../src/main/agents/threadStore'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
+import { deferred } from '../../fixtures/deferred'
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => {
@@ -90,10 +91,9 @@ describe('the activity a pane is given beside a history window', () => {
     cleanup.push(async () => { host.dispose() })
     await host.connect()
     const native = adapter.state.threads[0]!
-    let entered!: () => void
-    let release!: () => void
-    const started = new Promise<void>(resolve => { entered = resolve })
-    const held = new Promise<void>(resolve => { release = resolve })
+
+    const { promise: started, resolve: entered } = deferred<void>()
+    const { promise: held, resolve: release } = deferred<void>()
     vi.spyOn(adapter, 'execute').mockImplementation(async () => { entered(); await held; return { accepted: true } })
     const pending = host.execute({ type: 'interrupt', commandId: 'stop', threadId: native.id })
     await started
@@ -366,7 +366,6 @@ describe('the activity beside a window a provider writes as events', () => {
     expect(wholeReads).not.toHaveBeenCalled()
   })
 })
-
 
 it('detaches provider delivery on disposal and rejects callbacks already queued by the provider', async () => {
   const directory = await root()

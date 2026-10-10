@@ -34,7 +34,7 @@ function storage(): ShellCacheStorage | null {
  * a thread already carries until the real state lands (`ThreadOptions.canCreateWith` already refuses every
  * model but a thread's own while disconnected). The account's full catalog, hundreds of models on some
  * accounts, repaints from main once connected. The host's own catalog keeps every thread's model, whichever
- * host the thread is on: the Agents room and the browser read the active thread's model from it directly.
+ * host the thread is on: Threads and the browser read the active thread's model from it directly.
  */
 function trimCatalogsToReferencedModels(host: AgentHostSnapshot): AgentHostSnapshot {
   const referenced = new Map<readonly AgentModel[], Set<string>>([[host.models, new Set(host.threads.map(thread => thread.modelId))]])
@@ -71,9 +71,7 @@ export function cacheableShell(state: AgentState): AgentState {
     host: trimCatalogsToReferencedModels({ ...shell.host, threads: shell.host.threads.map(thread => ({ ...thread, activities: [], ...NO_LIVE_THREAD_STATE })) }),
     draft: '', draftAttachments: [], threadDrafts: [], threadDraftPersistence: [],
     deliveries: [], deliveredDrafts: [], followups: [], followupReceipts: [],
-    // Attention is live: what needed the user last time is not what needs them now, and a restored
-    // queue would let the review narrate and navigate before main has said anything.
-    queue: [], pendingRequest: '', notice: '', speech: { id: 0, text: '' },
+    notice: '',
     stale: true,
   }
 }
@@ -85,6 +83,7 @@ export function readShellCache(store: ShellCacheStorage | null = storage()): Age
   try {
     const state = JSON.parse(raw) as AgentState
     if (typeof state !== 'object' || state === null || !('host' in state)) return null
+    if ('speech' in state || 'voice' in state) return null
     return {
       // No lane survives a restart: a cached busy mark would dim a pane nothing is working on.
       ...state, stale: true, globalLaneBusy: false, busyThreadIds: undefined, error: null, connection: 'disconnected',

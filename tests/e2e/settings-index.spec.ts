@@ -1,20 +1,16 @@
+import { resizeContentWindow } from './support/sottoWindow'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
-import { closeSotto, launchSottoWithVoice, type LaunchedSotto } from './support/sottoLaunch'
-import { evidenceDirectory } from './support/evidence'
+import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 const evidence = evidenceDirectory('artifacts/settings-index')
 const categories = ['Dictation', 'Transcription', 'Cleanup', 'Providers', 'Hosts', 'Agents', 'Output', 'Appearance', 'Application', 'Git'] as const
 const sizes = [[1280, 800], [1600, 1000], [820, 560]] as const
 
 async function resize(launched: LaunchedSotto, width: number, height: number): Promise<void> {
-  await launched.app.evaluate(({ BrowserWindow }, [width, height]) => {
-    const host = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!
-    host.setMinimumSize(800, 540)
-    host.setContentSize(width, height)
-  }, [width, height] as const)
-  await expect.poll(() => launched.page.evaluate(() => [innerWidth, innerHeight])).toEqual([width, height])
+  await resizeContentWindow(launched, width, height, [800, 540])
 }
 
 async function category(page: Page, name: typeof categories[number]): Promise<void> {
@@ -32,8 +28,7 @@ test('Index settings: focused categories, real saves, failure feedback, themes a
   test.skip(process.platform !== 'win32', 'Windows desktop acceptance')
   test.setTimeout(240_000)
   await mkdir(evidence, { recursive: true })
-  // With voice on: the Agents category shows its voice settings only for the beta's hidden coordinator.
-  const launched = await launchSottoWithVoice('hotkey-conflict')
+  const launched = await launchSotto('hotkey-conflict')
   const { page } = launched
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
@@ -167,18 +162,20 @@ test('Index settings: focused categories, real saves, failure feedback, themes a
     await expect(importer).toBeHidden()
 
     await category(page, 'Agents')
-    const spoken = page.getByRole('switch', { name: 'Spoken replies', exact: true })
-    const spokeBefore = await spoken.getAttribute('aria-checked')
-    await spoken.click()
+    const projects = page.getByRole('textbox', { name: 'Default projects directory', exact: true })
+    const projectsDirectory = join(launched.userData, 'projects')
+    await projects.fill(projectsDirectory)
+    await projects.press('Tab')
+    await expect.poll(() => page.evaluate(async () => (await window.sotto!.agents!.get()).configuration.projectsDirectory)).toBe(projectsDirectory)
     await category(page, 'Output')
     await category(page, 'Agents')
-    await expect(spoken).toHaveAttribute('aria-checked', spokeBefore === 'true' ? 'false' : 'true')
-    await page.getByText('Advanced wake settings', { exact: true }).click()
-    await expect(page.getByRole('textbox', { name: 'Wake model directory', exact: true })).toBeVisible()
+    await expect(projects).toHaveValue(projectsDirectory)
+    await expect(page.getByRole('switch', { name: 'Spoken replies', exact: true })).toHaveCount(0)
+    await expect(page.getByText('Advanced wake settings', { exact: true })).toHaveCount(0)
     await resize(launched, 820, 560)
-    await page.getByRole('textbox', { name: 'Wake runtime directory', exact: true }).scrollIntoViewIfNeeded()
-    await expect(page.getByRole('textbox', { name: 'Wake runtime directory', exact: true })).toBeInViewport()
-    await shot(page, 'agents-advanced-820')
+    await projects.scrollIntoViewIfNeeded()
+    await expect(projects).toBeInViewport()
+    await shot(page, 'agents-project-default-820')
 
     await category(page, 'Application')
     await page.getByRole('switch', { name: 'Keep local history', exact: true }).click()

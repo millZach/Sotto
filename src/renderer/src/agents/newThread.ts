@@ -84,7 +84,7 @@ function newThreadOptions(state: AgentState, project: AgentProject) {
  * mints the thread's ID here so the caller can show it before main answers; a refusal resolves `created`
  * with the reason. The draft uses the same option helpers as main, so its chips show the defaults immediately.
  */
-export async function beginNewThread(state: AgentState, command: AgentConnection['command'], project: AgentProject, managed = false): Promise<ThreadCreationStart | { readonly error: string }> {
+export async function beginNewThread(state: AgentState, command: AgentConnection['command'], project: AgentProject): Promise<ThreadCreationStart | { readonly error: string }> {
   const { modelId, selectedModel, reasoningEffort, permission } = newThreadOptions(state, project)
   if (!modelId) return { error: 'No model is ready to start this thread. Connect a provider or choose one in Settings → Agents.' }
   let workingCopy: 'independent' | 'shared'
@@ -96,7 +96,7 @@ export async function beginNewThread(state: AgentState, command: AgentConnection
   const thread = draftThread({ id: threadId, projectId: project.id, title, modelId, workingCopy, ...worktreeChoices,
     ...(selectedModel?.providerId ? { providerId: selectedModel.providerId } : {}),
     reasoningEffort, runtimeMode: permission.runtimeMode, providerMode: permission.providerMode, host: draftHost(state, project) })
-  const created = command({ type: 'create-thread', threadId, projectId: project.id, title, modelId, titleSource: 'default', managed, workingCopy, ...worktreeChoices })
+  const created = command({ type: 'create-thread', threadId, projectId: project.id, title, modelId, titleSource: 'default', workingCopy, ...worktreeChoices })
     .then(result => result === null ? UNCONFIRMED_CREATION : result.error, () => UNCONFIRMED_CREATION)
   return { thread, created }
 }

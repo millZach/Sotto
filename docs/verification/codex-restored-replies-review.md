@@ -1,5 +1,7 @@
 # Codex restored replies: two-axis review
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 Pinned base: `65e944a7` (Sotto 0.1.26). The first three reports reviewed the initial repair plus the main merge; the fourth reviewed the working tree with the first round of fixes. Reports below are retained separately by axis and reviewer slot. Line numbers refer to each review's snapshot.
 
 GPT-6-astra could not read the Windows checkout because its sandbox failed while applying deny-read ACLs. Grok 4.7 returned progress text without a usable review (the spec run was stopped after it stalled). Each slot therefore used the skill's Opus 5.5 fallback, with read-only plan permissions through the native Claude reviewer CLI. No reviewer modified files.
@@ -114,7 +116,7 @@ The core fix is right, and I found no defect in the repair logic. What I did fin
 
 1. **Verification evidence is stale** (partly confirmed). Spec: *"See … docs/verification/codex-restored-replies.md."*
    - Confirmed: line 3 says "against Sotto 0.1.24's source", but the base is `Release 0.1.26`.
-   - Judgement call: lines 16, 18 and 20 report "35 focused tests … six files" and a full suite of 6,250 passed. The uncommitted fixes came after those runs: `reconcileMessages` was rewritten, and the diff adds `ThreadStore.message`, the `message-aliases` negotiation and a new `socketHost.test.ts` case. The gates need re-running on this tree and the counts updating.
+   - Judgement call: lines 16, 18 and 20 report "35 focused tests … six files" and a full suite of 6,250 passed. The uncommitted fixes came after those runs: `reconcileMessages` was rewritten, and the diff adds `ThreadStore.message`, the `message-aliases` negotiation and a new `tests/integration/socketClientIsolation.test.ts` case. The gates need re-running on this tree and the counts updating.
 
 **(b) Scope creep**
 

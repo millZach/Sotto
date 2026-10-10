@@ -1,4 +1,4 @@
-import { Check, FolderOpen, KeyRound, Keyboard, Mic2, Palette, Server, Smartphone, SquareTerminal } from 'lucide-react'
+import { Check, Mic2, MicOff } from 'lucide-react'
 import React, {
   useEffect,
   useRef,
@@ -28,7 +28,7 @@ import { AgentsStep } from './AgentsStep'
 import { ComputersStep } from './ComputersStep'
 import { liveAgentState, localProjects, localProviders } from './localAgents'
 import { LookStep } from './LookStep'
-import type { MicrophoneTestState } from './microphoneTest'
+import { MICROPHONE_HEARD_LEVEL, type MicrophoneTestState } from './microphoneTest'
 import { PhoneStep } from './PhoneStep'
 import { ProjectStep } from './ProjectStep'
 import './onboarding.css'
@@ -61,37 +61,44 @@ interface SetupStep {
   readonly id: StepId
   readonly group: string
   readonly title: string
-  readonly icon?: typeof Check
 }
 
 /** First-run setup, in order: what Sotto is, how it looks, dictation, the coding agents, and other places to use it. */
 const STEPS: readonly SetupStep[] = [
   { id: 'welcome', group: 'Start', title: 'Welcome' },
-  { id: 'look', group: 'Start', title: 'Look', icon: Palette },
-  { id: 'microphone', group: 'Dictation', title: 'Microphone', icon: Mic2 },
-  { id: 'key', group: 'Dictation', title: 'OpenRouter key', icon: KeyRound },
-  { id: 'shortcut', group: 'Dictation', title: 'Shortcut', icon: Keyboard },
-  { id: 'agents', group: 'Agents', title: 'Coding agents', icon: SquareTerminal },
-  { id: 'project', group: 'Agents', title: 'First project', icon: FolderOpen },
-  { id: 'computers', group: 'Elsewhere', title: 'Other computers', icon: Server },
-  { id: 'phone', group: 'Elsewhere', title: 'iPhone', icon: Smartphone },
+  { id: 'look', group: 'Start', title: 'Look' },
+  { id: 'microphone', group: 'Dictation', title: 'Microphone' },
+  { id: 'key', group: 'Dictation', title: 'OpenRouter key' },
+  { id: 'shortcut', group: 'Dictation', title: 'Shortcut' },
+  { id: 'agents', group: 'Agents', title: 'Coding agents' },
+  { id: 'project', group: 'Agents', title: 'First project' },
+  { id: 'computers', group: 'Elsewhere', title: 'Other computers' },
+  { id: 'phone', group: 'Elsewhere', title: 'iPhone' },
 ]
 const GROUPS = [...new Set(STEPS.map(step => step.group))]
+
+/**
+ * The microphone test passes once Sotto hears a voice, the level Settings' test counts as one, for this long in all,
+ * a quiet stretch taking a third of its own length back.
+ */
+const HEARD_MS = 300
+const LEVEL_READ_MS = 50
+/** How long the test listens before it says it has heard nothing yet. */
+const NOTHING_HEARD_MS = 6000
 
 const openInBrowser = async (url: string): Promise<boolean> => {
   const result = await window.sotto?.openExternalLink?.(url).catch(() => null)
   return result?.ok === true
 }
 
-function StepHeading({ eyebrow, title, lead, headingRef }: {
-  readonly eyebrow: string
+/** A step's heading and one-line lead. The bar above the card already names the step, so only the welcome has an eyebrow. */
+function StepHeading({ title, lead, headingRef }: {
   readonly title: string
   readonly lead: ReactNode
   readonly headingRef: RefObject<HTMLHeadingElement | null>
 }): ReactNode {
   return (
     <>
-      <p className="onboarding-eyebrow">{eyebrow}</p>
       <h1 id="onboarding-heading" ref={headingRef} tabIndex={-1}>{title}</h1>
       <p className="onboarding-lead">{lead}</p>
     </>
@@ -132,6 +139,14 @@ export function Onboarding({
   const [finishing, setFinishing] = useState(false)
   const [completionError, setCompletionError] = useState(false)
   const [hostCount, setHostCount] = useState(0)
+  // The test the user started on this visit to the step, whether it has heard a voice, and the test that has heard
+  // nothing for NOTHING_HEARD_MS. Leaving the step closes the microphone; a new test or another microphone starts over.
+  const [microphoneOpen, setMicrophoneOpen] = useState(false)
+  const [microphoneHeard, setMicrophoneHeard] = useState(false)
+  const [testRun, setTestRun] = useState(0)
+  const [quietRun, setQuietRun] = useState<number | null>(null)
+  const levelRef = useRef(microphoneLevel)
+  levelRef.current = microphoneLevel
   const headingRef = useRef<HTMLHeadingElement>(null)
   const copy = platformCopy(platform)
   const { devices: microphones, state: deviceState } = useAudioInputDevices(mediaDevices, microphoneState)
@@ -152,14 +167,65 @@ export function Onboarding({
     }
   }, [onMicrophoneStep])
 
+  // The test listens until it hears a voice, then closes the microphone: hearing one is what passes it.
+  // The level is read on a timer rather than as it changes, so a voice held at one level still counts.
+  const listening = onMicrophoneStep && microphoneOpen && microphoneState === 'ready' && !microphoneHeard
+  useEffect(() => {
+    if (!listening) return
+    let loudMs = 0
+    let last = Date.now()
+    const timer = setInterval(() => {
+      const now = Date.now()
+      const elapsed = now - last
+      last = now
+      loudMs = Math.max(0, loudMs + (levelRef.current > MICROPHONE_HEARD_LEVEL ? elapsed : -elapsed / 3))
+      if (loudMs < HEARD_MS) return
+      clearInterval(timer)
+      setMicrophoneHeard(true)
+      setMicrophoneOpen(false)
+      void Promise.resolve(stopMicrophoneRef.current?.()).catch(() => undefined)
+    }, LEVEL_READ_MS)
+    return () => clearInterval(timer)
+  }, [listening])
+  useEffect(() => {
+    if (!listening) return
+    const run = testRun
+    const timer = setTimeout(() => setQuietRun(run), NOTHING_HEARD_MS)
+    return () => clearTimeout(timer)
+  }, [listening, testRun])
+  const nothingHeard = listening && quietRun === testRun
+
+  const stopTest = (): void => {
+    setMicrophoneOpen(false)
+    void Promise.resolve(onStopMicrophone?.()).catch(() => undefined)
+  }
+  // What the test box says: what happened, and what to do next.
+  const testStatus: { readonly title: string; readonly next: string } = microphoneHeard ? { title: 'Sotto heard you. Your microphone works.', next: 'Test again after changing the microphone.' }
+    : nothingHeard ? { title: 'Nothing heard yet.', next: 'Check that the microphone above is the one you speak into, then say something.' }
+    : listening ? { title: 'Listening. Say something.', next: 'The test passes once Sotto hears your voice.' }
+    : microphoneState === 'requesting' ? { title: 'Opening the microphone…', next: '' }
+    : microphoneState === 'denied' ? { title: 'Microphone access is blocked.', next: '' }
+    : microphoneState === 'missing' ? { title: 'No microphone was found.', next: '' }
+    : microphoneState === 'error' ? { title: 'The microphone test could not start.', next: 'Try again, or choose another microphone.' }
+    : { title: 'Not tested yet.', next: 'Press Test microphone, then say a few words.' }
+
+  const testMicrophone = (): void => {
+    setMicrophoneHeard(false)
+    setMicrophoneOpen(true)
+    setTestRun(run => run + 1)
+    void onRequestMicrophone(microphoneId)
+  }
+
   // A test that later reports ready retires the skip, so finishing after a
   // second attempt leaves the dictation surfaces in their working state.
+  // Dictation needs access to the microphone, which a test that has not yet
+  // heard a voice has already confirmed.
   const microphoneSkipped = skipRequested && microphoneState !== 'ready'
 
   // Whether a step's own task is done, which decides whether moving on is Continue or Skip for now.
   const stepDone = (id: StepId): boolean => {
     switch (id) {
-      case 'microphone': return microphoneState === 'ready'
+      case 'microphone': return microphoneHeard
       case 'key': return settings.llmApiKey.length > 0
       case 'agents': return agentState !== null && localProviders(agentState).some(provider => provider.connection === 'connected')
       case 'project': return agentState !== null && localProjects(agentState).length > 0
@@ -168,9 +234,13 @@ export function Onboarding({
     }
   }
 
-  const goBack = (): void => setIndex(current => Math.max(0, current - 1))
+  const goBack = (): void => {
+    setMicrophoneOpen(false)
+    setIndex(current => Math.max(0, current - 1))
+  }
   const advance = (): void => {
     if (step.id === 'microphone' && microphoneState !== 'ready') setSkipRequested(true)
+    setMicrophoneOpen(false)
     setIndex(current => Math.min(STEPS.length - 1, current + 1))
   }
 
@@ -182,6 +252,8 @@ export function Onboarding({
   const chooseMicrophone = async (next: string | null): Promise<void> => {
     const sequence = ++microphoneSaveRef.current
     setMicrophoneId(next)
+    setMicrophoneHeard(false)
+    setMicrophoneOpen(false)
     void Promise.resolve(onResetMicrophone?.()).catch(() => undefined)
     setMicrophoneSaveFailed(false)
     const saved = await onUpdateSettings({ microphoneId: next }).catch(() => false)
@@ -204,12 +276,11 @@ export function Onboarding({
     }
   }
 
-  const heading = (eyebrow: string, title: string, lead: ReactNode): ReactNode =>
-    <StepHeading eyebrow={eyebrow} title={title} lead={lead} headingRef={headingRef} />
+  const heading = (title: string, lead: ReactNode): ReactNode =>
+    <StepHeading title={title} lead={lead} headingRef={headingRef} />
 
   const last = index === STEPS.length - 1
   const done = stepDone(step.id)
-  const StepIcon = step.icon
 
   return (
     <main className="onboarding-shell" aria-labelledby="onboarding-heading">
@@ -235,12 +306,11 @@ export function Onboarding({
       <Card className="onboarding-card">
         {/* The step scrolls inside the card, so Back and the way forward always stay in view. */}
         <div className="onboarding-card__body">
-          {StepIcon ? <div className="onboarding-step-icon"><StepIcon aria-hidden="true" size={22} strokeWidth={1.8} /></div> : null}
-
           {step.id === 'welcome' ? (
             <section aria-labelledby="onboarding-heading">
               <SottoMark className="onboarding-welcome__mark" />
-              {heading('Welcome to Sotto', 'Talk to your computer and your coding agents', platform === 'linux'
+              <p className="onboarding-eyebrow">Welcome to Sotto</p>
+              {heading('Talk to your computer and your coding agents', platform === 'linux'
                 ? 'Hold F9 to talk after installing Sotto’s compositor bindings in Hyprland, and Sotto copies your words, then pastes them into the focused app or terminal. Sotto also runs Codex, Claude Code, Grok Build and Devin threads in one window, on this computer or another.'
                 : 'Press a shortcut and speak, and your words arrive as text wherever you were typing. Sotto also runs Codex, Claude Code, Grok Build and Devin threads in one window, on this computer or another.')}
               <div className="onboarding-assurances">
@@ -255,12 +325,12 @@ export function Onboarding({
 
           {step.id === 'look' ? (
             <LookStep settings={settings} platform={platform} onUpdateSettings={onUpdateSettings}
-              heading={heading('Look', 'Choose how Sotto looks', 'Pick light or dark and a theme. The window and the owl follow your choice.')} />
+              heading={heading('Choose how Sotto looks', 'Pick light or dark and a theme. The window and the owl follow your choice.')} />
           ) : null}
 
           {step.id === 'microphone' ? (
             <section aria-labelledby="onboarding-heading">
-              {heading('Microphone', 'Check your microphone', 'Sotto needs microphone access only while you record or run this test. Choose the input you will speak into if more than one is available. Test your microphone or choose Skip for now to continue.')}
+              {heading('Check your microphone', 'Sotto opens the microphone only while you dictate or run this test.')}
               <Field
                 className="onboarding-microphone-picker"
                 label="Microphone"
@@ -278,26 +348,22 @@ export function Onboarding({
                   ))}
                 </Select>
               </Field>
-              <div className="onboarding-microphone-test" data-state={microphoneState}>
-                {/* The wave the widget and the Dictate room show; it listens for as long as the test's stream runs. */}
-                <VoiceWave stage={microphoneState === 'requesting' || microphoneState === 'ready' ? 'listening' : 'idle'} value={microphoneLevel} label="Microphone level" size="deck" holdSpeaking={microphoneState === 'ready'} />
-                <p role="status">
-                  {microphoneState === 'ready' ? 'Microphone ready. Access is confirmed; retest any time to check current input activity.' : null}
-                  {microphoneState === 'requesting' ? 'Checking the microphone...' : null}
-                  {microphoneState === 'idle' ? 'Run a quick input-level test.' : null}
-                  {microphoneState === 'denied' ? 'Microphone access is blocked.' : null}
-                  {microphoneState === 'missing' ? 'No microphone was found.' : null}
-                  {microphoneState === 'error' ? 'The microphone test could not start.' : null}
-                </p>
+              <div className="onboarding-microphone-test" data-state={microphoneHeard ? 'heard' : listening ? 'listening' : microphoneState}>
+                {microphoneHeard
+                  ? <span className="onboarding-microphone-test__heard"><Check aria-hidden="true" size={18} /></span>
+                  // The wave the widget and the Dictate room show; it listens for as long as the test's stream runs.
+                  : <VoiceWave stage={microphoneState === 'requesting' || listening ? 'listening' : 'idle'} value={microphoneLevel} label="Microphone level" size="deck" holdSpeaking={listening} />}
+                <p role="status"><strong>{testStatus.title}</strong>{testStatus.next ? <span>{testStatus.next}</span> : null}</p>
+                {/* One button that changes with the test, so focus stays on it from Test to Stop to Test again. */}
                 <Button
-                  variant={microphoneState === 'ready' ? 'secondary' : 'primary'}
-                  disabled={microphoneState === 'requesting'}
-                  onClick={() => void onRequestMicrophone(microphoneId)}
+                  variant={listening || microphoneHeard ? 'secondary' : 'primary'}
+                  aria-disabled={microphoneState === 'requesting'}
+                  onClick={microphoneState === 'requesting' ? undefined : listening ? stopTest : testMicrophone}
                 >
-                  <Mic2 aria-hidden="true" size={18} />
-                  {microphoneState === 'denied' || microphoneState === 'missing' || microphoneState === 'error'
-                    ? 'Try microphone again'
-                    : microphoneState === 'ready' ? 'Retest microphone' : 'Test microphone'}
+                  {listening ? <MicOff aria-hidden="true" size={18} /> : <Mic2 aria-hidden="true" size={18} />}
+                  {listening ? 'Stop test'
+                    : microphoneState === 'denied' || microphoneState === 'missing' || microphoneState === 'error' ? 'Try microphone again'
+                    : microphoneHeard ? 'Test again' : 'Test microphone'}
                 </Button>
               </div>
               {microphoneSkipped ? (
@@ -317,7 +383,7 @@ export function Onboarding({
 
           {step.id === 'key' ? (
             <section aria-labelledby="onboarding-heading">
-              {heading('Transcription', 'Connect your OpenRouter key', 'Sotto transcribes with Microsoft MAI-Transcribe-2 through OpenRouter, on your own key. Paste a key from openrouter.ai/keys, then verify it.')}
+              {heading('Connect your OpenRouter key', 'Sotto transcribes with Microsoft MAI-Transcribe-2 through OpenRouter, on your own key. Paste one from openrouter.ai/keys, then verify it.')}
               <OpenRouterKeyField apiKey={settings.llmApiKey} onUpdateSettings={onUpdateSettings} onCheckTranscriptionKey={onCheckTranscriptionKey} />
               <p className="onboarding-aside">You can skip this step and add a key in Settings later.</p>
             </section>
@@ -326,8 +392,8 @@ export function Onboarding({
           {step.id === 'shortcut' ? (
             <section aria-labelledby="onboarding-heading">
               {platform === 'linux'
-                ? heading('Shortcut & paste', 'Speak, then paste into any window', 'Install Sotto’s compositor bindings in Hyprland. Hold F9 to talk, or press Super+Ctrl+X to start and stop. Sotto copies your text, then pastes into the focused app or terminal. If paste does not get through, use Super+V, Omarchy’s universal paste.')
-                : heading('Shortcut & paste', 'One shortcut from speech to text', 'Press this shortcut to start. Press it again to finish. Your text is always copied before Sotto attempts to paste.')}
+                ? heading('Speak, then paste into any window', 'Install Sotto’s compositor bindings in Hyprland. Hold F9 to talk, or press Super+Ctrl+X to start and stop. Sotto copies your text, then pastes into the focused app or terminal. If paste does not get through, use Super+V, Omarchy’s universal paste.')
+                : heading('One shortcut from speech to text', 'Press it to start and again to finish. Your text is always copied before Sotto pastes it.')}
               <div className="onboarding-shortcut">{platform === 'linux'
                 ? <><span>Omarchy defaults</span><span>F9 · Super+Ctrl+X</span></>
                 : <><span>Active shortcut</span><ShortcutKey accelerator={shortcut} platform={platform} /></>}</div>
@@ -345,24 +411,24 @@ export function Onboarding({
 
           {step.id === 'agents' ? (
             <AgentsStep onOpenLink={onOpenLink}
-              heading={heading('Coding agents', 'Check your coding agents', 'Sotto drives the agents installed on this computer, each signed in with your own account.')} />
+              heading={heading('Your coding agents', 'Sotto connects every agent installed on this computer, each signed in with your own account.')} />
           ) : null}
 
           {step.id === 'project' ? (
             <ProjectStep
-              heading={heading('First project', 'Choose a project folder', 'A project is a folder your agents work in, usually a Git repository. Threads start in it, and the sidebar lists them under its name.')} />
+              heading={heading('Choose a project folder', 'A project is a folder your agents work in, usually a Git repository. Threads start in it.')} />
           ) : null}
 
           {step.id === 'computers' ? (
             <ComputersStep bridge={hostsBridge ?? window.sotto?.hosts} onHostsChange={setHostCount}
-              heading={heading('Other computers', 'Run agents on another computer', "If you have another PC, a Mac or a Linux box, Sotto can run threads there and show them here beside this computer's. It reaches them over Tailscale or SSH.")} />
+              heading={heading('Run agents on another computer', 'Sotto can run threads on another PC, a Mac or a Linux box over Tailscale or SSH, and show them here.')} />
           ) : null}
 
           {step.id === 'phone' ? (
             <>
               <PhoneStep phoneAccess={settings.phoneAccess} onUpdateSettings={onUpdateSettings} onOpenLink={onOpenLink}
                 bridge={phonesBridge ?? window.sotto?.phones}
-                heading={heading('iPhone', 'Answer your threads from your iPhone', 'The iPhone app is in beta. It reads and answers threads on your computers, including questions and permissions waiting for you. It needs Tailscale on the iPhone and on this computer.')} />
+                heading={heading('Answer your threads from your iPhone', 'The beta reads and answers threads on your computers, questions included. It needs Tailscale on the iPhone and on this computer.')} />
               {completionError ? <p className="onboarding-completion-error" role="alert">Setup could not be saved. Your choices are intact; please try again.</p> : null}
             </>
           ) : null}

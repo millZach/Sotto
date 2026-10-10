@@ -1,17 +1,19 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { execFileSync } from 'node:child_process'
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises'
+
 import { join } from 'node:path'
 import { featureBranchName, GitActions, type GitActionEvent } from '../../../src/main/agents/gitActions'
 import { GitStatusReader, runGitStatusCommand, type RunGitCommand } from '../../../src/main/agents/gitStatus'
 import { gitActionStages } from '../../../src/shared/gitActions'
 import type { CommitMaterial } from '../../../src/main/llm/commitMessage'
 import type { PullRequestMaterial } from '../../../src/main/llm/pullRequestText'
+import { deferred } from '../../fixtures/deferred'
+import { ownedGitRepository, initializeBareGitRepository } from '../../fixtures/gitRepository'
 
-const roots: string[] = []
-afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }) })
+const repositories: Array<Awaited<ReturnType<typeof ownedGitRepository>>> = []
+afterEach(async () => { for (const repository of repositories.splice(0)) await repository.dispose() })
 const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, windowsHide: true, encoding: 'utf8' }).trim()
 const commit = (cwd: string, message: string) => { execFileSync('git', ['add', '.'], { cwd, windowsHide: true }); git(cwd, 'commit', '-qm', message) }
 const configure = (cwd: string) => { git(cwd, 'config', 'user.name', 'Fixture'); git(cwd, 'config', 'user.email', 'fixture@example.invalid'); git(cwd, 'config', 'commit.gpgSign', 'false'); git(cwd, 'config', 'core.autocrlf', 'false'); git(cwd, 'config', 'core.hooksPath', '.githooks') }
@@ -19,16 +21,13 @@ const configure = (cwd: string) => { git(cwd, 'config', 'user.name', 'Fixture');
 interface GhFixture { (args: readonly string[]): Promise<string> }
 /** A repository on `main`, pushed to an owned bare remote, and a second clone that can move the remote under it. */
 async function fixture(options: { remote?: boolean; gh?: GhFixture; commitMessage?: string | null; pullRequestText?: { title: string; body: string } | null; followTemplates?: boolean } = {}) {
-  const root = await mkdtemp(join(tmpdir(), 'sotto-git-actions-')); roots.push(root)
-  const repo = join(root, 'repo'), remote = join(root, 'remote.git'), other = join(root, 'other')
-  await mkdir(repo)
-  git(repo, 'init', '-q', '-b', 'main'); configure(repo)
-  await writeFile(join(repo, 'work.txt'), 'first\n'); commit(repo, 'First')
-  if (options.remote !== false) {
-    git(root, 'init', '--bare', '-q', '-b', 'main', remote); git(repo, 'remote', 'add', 'origin', remote)
-    git(repo, 'push', '-q', '-u', 'origin', 'main'); git(repo, 'remote', 'set-head', 'origin', 'main')
-    git(root, 'clone', '-q', '-b', 'main', remote, other); configure(other)
-  }
+  const repository = await ownedGitRepository({ files: { 'work.txt': 'first\n' }, message: 'First',
+    remote: options.remote !== false, secondClone: options.remote !== false })
+  repositories.push(repository)
+  const { root, repo, remote, other } = repository
+  // These cases install deliberate hooks in .githooks after repository setup.
+  git(repo, 'config', 'core.hooksPath', '.githooks')
+  if (options.remote !== false) git(other, 'config', 'core.hooksPath', '.githooks')
   const calls: string[][] = []
   const run: RunGitCommand = async (cwd, command, args, runOptions) => {
     calls.push([command, ...args])
@@ -300,9 +299,9 @@ describe('the stacked Git action, the way T3 runs it', () => {
       return output
     }
     const reader = new GitStatusReader({ run, fetchIntervalMs: () => 0 })
-    let go!: () => void, reached!: () => void
-    const reachedRead = new Promise<void>(done => { reached = done })
-    hold = { reached, go: new Promise<void>(done => { go = done }) }
+    const { promise: heldGo, resolve: go } = deferred<void>()
+    const { promise: reachedRead, resolve: reached } = deferred<void>()
+    hold = { reached, go: heldGo }
     const status = { read: (cwd: string, options: { remote: boolean; fresh?: boolean }) => {
       if (committed && !options.remote) go()
       return reader.read(cwd, options)
@@ -445,7 +444,7 @@ describe('the stacked Git action, the way T3 runs it', () => {
   }, 40000)
   it('pushes to a configured push remote in a triangular workflow, the way git push does', async () => {
     const f = await fixture()
-    const fork = join(f.root, 'fork.git'); git(f.root, 'init', '--bare', '-q', '-b', 'main', fork)
+    const fork = join(f.root, 'fork.git'); await initializeBareGitRepository(fork)
     git(f.repo, 'remote', 'add', 'fork', fork); git(f.repo, 'config', 'remote.pushDefault', 'fork')
     await writeFile(join(f.repo, 'work.txt'), 'second\n'); commit(f.repo, 'Second')
     const result = await f.actions.runStackedAction({ threadId: 't', cwd: f.repo, action: 'push', allowDefaultBranch: true })
@@ -458,7 +457,7 @@ describe('the stacked Git action, the way T3 runs it', () => {
     ['branch.main.pushRemote', false], ['branch.main.pushRemote', true],
   ] as const)('pushes a branch level with origin to the fork chosen by %s (fork behind: %s)', async (setting, behind) => {
     const f = await fixture()
-    const fork = join(f.root, 'fork.git'); git(f.root, 'init', '--bare', '-q', '-b', 'main', fork)
+    const fork = join(f.root, 'fork.git'); await initializeBareGitRepository(fork)
     git(f.repo, 'remote', 'add', 'fork', fork); git(f.repo, 'config', setting, 'fork')
     if (behind) {
       git(f.repo, 'push', '-q', 'fork', 'main')
@@ -506,7 +505,7 @@ describe('pull, switch, init and publish', () => {
   it('settles a lost publish reply only when the current commit reached origin', async () => {
     const f = await fixture({ remote: false, gh: async args => {
       if (args[0] === 'repo' && args[1] === 'create') {
-        git(f.root, 'init', '--bare', '-q', '-b', 'main', f.remote); git(f.repo, 'remote', 'add', 'origin', f.remote)
+        await initializeBareGitRepository(f.remote); git(f.repo, 'remote', 'add', 'origin', f.remote)
         git(f.repo, 'push', '-q', '-u', 'origin', 'main'); throw new Error('reply lost')
       }
       return ''

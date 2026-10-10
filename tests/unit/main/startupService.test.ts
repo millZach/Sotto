@@ -15,9 +15,9 @@ function loginItems(initial: { openAtLogin: boolean; status?: string }, onSet?: 
 describe('StartupService', () => {
   it('on Linux reads as off and turns nothing on, so a remembered or requested on never reaches Electron', () => {
     const startup = new StartupService(LINUX_LOGIN_ITEMS)
-    expect(startup.get()).toEqual({ enabled: false })
-    expect(startup.set(true)).toEqual({ enabled: false })
-    expect(startup.set(false)).toEqual({ enabled: false })
+    expect(startup.get()).toEqual({ enabled: false, supported: false })
+    expect(startup.set(true)).toEqual({ enabled: false, supported: false })
+    expect(startup.set(false)).toEqual({ enabled: false, supported: false })
   })
 
   it('reads and writes the login item where the system reports no status', () => {

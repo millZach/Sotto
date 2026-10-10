@@ -1,5 +1,7 @@
 # Model catalog omitted from a repeat broadcast
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 Issue #286, continuing `docs/verification/composer-typing-lag.md`. That change made the selected host's
 catalog cross once instead of twice; this one stops sending it at all once a window already has it.
 
@@ -63,7 +65,7 @@ a working thread. The byte and timing figures above stand in for that until it i
 ## Build and test gates
 
 `npm run typecheck`, `npm run lint`, and the unit suites under `tests/unit/main`, `tests/unit/preload`,
-`tests/unit/renderer` and `tests/integration/ipc.test.ts` pass (3,794 passed, 1 skipped, across 285 files).
+`tests/unit/renderer` and `tests/integration/preloadBridge.test.ts`, `tests/integration/ipcAuthorization.test.ts`, `tests/integration/transcriptionIpc.test.ts`, `tests/integration/updateIpc.test.ts`, `tests/integration/settingsHistoryIpc.test.ts`, `tests/integration/outputIpc.test.ts`, `tests/integration/ipcLifecycle.test.ts`, `tests/integration/widgetPresentationIpc.test.ts`, `tests/unit/main/app/permissionPolicy.test.ts`, `tests/unit/main/startupServiceIdempotence.test.ts`, `tests/unit/main/tray/trayController.test.ts`, `tests/unit/main/app/bootstrap.test.ts`, `tests/unit/main/app/nativeRuntime.test.ts` pass (3,794 passed, 1 skipped, across 285 files).
 `npm run build` succeeds.
 
 The combined branch was run against `main` (3ef46ad3, release 0.1.16) on the same specs, one at a time;

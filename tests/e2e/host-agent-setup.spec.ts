@@ -1,9 +1,8 @@
-import { isBuiltin } from 'node:module'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { buildSshHost } from './support/sshHost'
+import { ownedE2EProfile } from './support/e2eProfile'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
-import { build } from 'vite'
 import type { SottoE2EBridge } from '../../src/shared/e2e'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
@@ -87,14 +86,12 @@ const reply = (value: ToolReply): Record<string, unknown> => {
 }
 
 async function prepare(): Promise<{ profile: string; root: string; modeFile: string; restore: () => void }> {
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-host-agent-setup-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-host-agent-setup-' })).directory
   const root = join(profile, 'ssh-root')
   await mkdir(root, { recursive: true })
   // The fake host installation at the dialog's default folder: the real headless host, built for Node.
   const install = join(root, '~', '.local', 'share', 'sotto-host', 'host')
-  await build({ configFile: false, logLevel: 'silent', define: { 'require.main': 'undefined' }, ssr: { noExternal: true },
-    build: { ssr: resolve('tests/fixtures/e2eSshHost.ts'), target: 'node24', outDir: install, emptyOutDir: false,
-      rollupOptions: { external: id => isBuiltin(id), output: { format: 'cjs', entryFileNames: 'index.js' } } } })
+  await buildSshHost(install)
   // The local host runs: the setup thread is a thread on this computer.
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, localHostEnabled: true, reducedMotion: 'on' }))
   const modeFile = join(root, 'mode')
@@ -114,7 +111,7 @@ async function finish(launched: LaunchedSotto | undefined, root: string, profile
 }
 async function connectAgents(page: Page): Promise<void> {
   await page.evaluate(async () => {
-    await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+    await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
     await window.sotto!.agents!.command({ type: 'connect' })
   })
   await page.reload()
@@ -241,7 +238,7 @@ test('Add host follows a setup thread as it checks forge, waits in the thread, a
       const project = projects.host.projects.find(item => item.path === folder)!
       const model = (await window.sotto!.agents!.get()).host.models.find(item => item.providerId === 'codex')!
       const created = await window.sotto!.agents!.command({ type: 'create-thread', projectId: project.id, modelId: model.id,
-        title: 'Change permissions on forge', managed: false, runtimeMode: 'full-access' })
+        title: 'Change permissions on forge', runtimeMode: 'full-access' })
       if (created.error) throw new Error(created.error)
       return created.host.threads.find(item => item.title === 'Change permissions on forge')!.id
     }, root)
