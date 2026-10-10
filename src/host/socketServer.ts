@@ -557,7 +557,8 @@ export async function startSocketServer(options: SocketServerOptions) {
       }
       case 'observe-terminals': {
         const terminals = requireTerminals(peer)
-        await terminals.visibility({ ids: request.terminalIds }, peer, () => !closing && !peer.frames.isClosed && authenticated(peer) && admits(peer.client.clientId))
+        const result = await terminals.visibility({ ids: request.terminalIds }, peer, () => !closing && !peer.frames.isClosed && authenticated(peer) && admits(peer.client.clientId))
+        if (!result.ok) throw new Refusal(result.error.code === 'busy' ? 'busy' : 'unavailable', result.error.message)
         return null
       }
       case 'answer-terminal': return terminalAnswer(peer, request)

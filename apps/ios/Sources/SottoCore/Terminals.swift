@@ -9,6 +9,7 @@ public struct TerminalRef: Hashable, Sendable {
 
 public enum TerminalState: String, Decodable, Sendable {
     case starting, working, idle, needsYou = "needs-you", justFinished = "just-finished", exited
+    public var workInProgress: Bool { self == .starting || self == .working }
     public var words: String {
         switch self {
         case .starting: return "Starting"
@@ -23,7 +24,12 @@ public enum TerminalState: String, Decodable, Sendable {
 
 public struct TerminalApproval: Decodable, Equatable, Sendable {
     public let runId: String; public let requestId: String; public let approvalId: String
-    public var valid: Bool { [runId, requestId, approvalId].allSatisfy(Terminals.validOpaqueID) }
+    /// Screen fingerprint only, never screen text. Older hosts do not advertise one.
+    public let previewId: String?
+    public var valid: Bool {
+        [runId, requestId, approvalId].allSatisfy(Terminals.validOpaqueID)
+            && (previewId == nil || previewId.map(Terminals.validPreviewID) == true)
+    }
     /// The full request identity, so a reused request ID from another run cannot inherit feedback.
     public var id: String { runId + "/" + requestId + "/" + approvalId }
 }
@@ -65,7 +71,8 @@ public struct TerminalApprovalPreview: Decodable, Equatable, Sendable {
     public func matches(_ terminal: TerminalSummary) -> Bool {
         terminal.hasAnswerChannel && terminal.id == terminalId && terminal.approval?.runId == runId
             && terminal.approval?.requestId == requestId && terminal.approval?.approvalId == approvalId
-            && previewId.count == 64 && previewId.allSatisfy { "0123456789abcdef".contains($0) }
+            && Terminals.validPreviewID(previewId)
+            && (terminal.approval?.previewId == nil || terminal.approval?.previewId == previewId)
             && !lines.isEmpty && lines.count <= 8 && lines.allSatisfy { $0.utf16.count <= 512 }
             && lines.joined(separator: "\n").utf16.count <= 4096
     }
@@ -86,6 +93,9 @@ public struct HostedTerminal: Identifiable, Sendable {
 }
 
 public enum Terminals {
+    public static func validPreviewID(_ value: String) -> Bool {
+        value.count == 64 && value.allSatisfy { "0123456789abcdef".contains($0) }
+    }
     public static func validOpaqueID(_ value: String) -> Bool {
         !value.isEmpty && value.utf8.count <= 128
             && value.utf8.allSatisfy { (65...90).contains($0) || (97...122).contains($0) || (48...57).contains($0) || [95, 46, 58, 45].contains($0) }

@@ -5,10 +5,15 @@ final class TerminalTests: XCTestCase {
     private let terminalID = "33333333-3333-4333-8333-333333333333"
     private let hostID = "11111111-1111-4111-8111-111111111111"
     private func decode<T: Decodable>(_ type: T.Type, _ value: JSONValue) throws -> T { try value.decode(type) }
-    private func terminal(state: String = "needs-you", provider: String = "claude", detection: String = "available", approval: Bool = true) throws -> TerminalSummary {
+    private func terminal(state: String = "needs-you", provider: String = "claude", detection: String = "available", approval: Bool = true,
+                          fingerprint: String? = nil) throws -> TerminalSummary {
         var row: [String: JSONValue] = ["id": .string(terminalID), "projectId": .string("p"), "title": .string("Fix tooltips"),
             "providerId": .string(provider), "state": .string(state), "stateDetection": .string(detection), "openedAt": .number(1_800_000_000_000)]
-        if approval { row["approval"] = .object(["runId": .string("run:1"), "requestId": .string("request-1"), "approvalId": .string("approval_1")]) }
+        if approval {
+            var binding: [String: JSONValue] = ["runId": .string("run:1"), "requestId": .string("request-1"), "approvalId": .string("approval_1")]
+            if let fingerprint { binding["previewId"] = .string(fingerprint) }
+            row["approval"] = .object(binding)
+        }
         return try decode(TerminalSummary.self, .object(row))
     }
     private func preview(_ fields: [String: JSONValue] = [:]) throws -> TerminalApprovalPreview {
@@ -41,6 +46,23 @@ final class TerminalTests: XCTestCase {
         XCTAssertFalse(try terminal(detection: "unavailable").hasAnswerChannel)
         XCTAssertFalse(try terminal(approval: false).hasAnswerChannel)
         for state in ["starting", "working", "idle", "just-finished", "exited"] { XCTAssertFalse(try terminal(state: state).hasAnswerChannel) }
+    }
+    func testStartingAndWorkingBelongToWorkingSection() throws {
+        XCTAssertTrue(TerminalState.starting.workInProgress)
+        XCTAssertTrue(TerminalState.working.workInProgress)
+        for state in [TerminalState.idle, .needsYou, .justFinished, .exited] { XCTAssertFalse(state.workInProgress) }
+    }
+    func testPublishedScreenFingerprintMustMatchPreviewWithoutChangingRequestIdentity() throws {
+        let first = String(repeating: "a", count: 64), next = String(repeating: "b", count: 64)
+        let oldRow = try terminal(fingerprint: first), changed = try terminal(fingerprint: next), legacy = try terminal()
+        XCTAssertEqual(oldRow.approval?.previewId, first)
+        XCTAssertEqual(oldRow.approval?.id, changed.approval?.id, "A screen redraw does not create another permission request")
+        XCTAssertTrue(try preview().matches(oldRow))
+        XCTAssertFalse(try preview().matches(changed))
+        XCTAssertTrue(try preview(["previewId": .string(next)]).matches(changed))
+        XCTAssertNil(legacy.approval?.previewId)
+        XCTAssertTrue(try preview().matches(legacy), "Older rows remain readable")
+        XCTAssertFalse(try terminal(fingerprint: "invalid").hasAnswerChannel)
     }
     func testApprovalPreviewAndAnswerBindEveryIdentity() throws {
         let row = try terminal(), current = try preview()

@@ -23,22 +23,26 @@ final class TerminalModelTests: XCTestCase {
         return model
     }
     private func shell(provider: String = "claude", state: String = "needs-you", request: String = "request-1", mayAnswer: Bool? = nil,
-                       includeTerminals: Bool = true, includeApproval: Bool = true) -> JSONValue {
+                       includeTerminals: Bool = true, includeApproval: Bool = true, fingerprint: String? = String(repeating: "a", count: 64)) -> JSONValue {
         var value: [String: JSONValue] = ["hostId": .string(hostID), "host": .object(["hostId": .string(hostID), "name": .string("Laptop"),
             "threads": .array([]), "projects": .array([.object(["id": .string("p"), "title": .string("Sotto")])]),
             "capabilities": .object(["submit": .bool(true), "interrupt": .bool(true), "questions": .bool(true), "permissions": .bool(true)])])]
         if includeTerminals {
             var terminal: [String: JSONValue] = ["id": .string(terminalID), "projectId": .string("p"), "title": .string("Fix tooltips"),
                 "providerId": .string(provider), "state": .string(state), "stateDetection": .string("available"), "openedAt": .number(1_800_000_000_000)]
-            if state == "needs-you" && provider == "claude" && includeApproval { terminal["approval"] = .object(["runId": .string("run-1"), "requestId": .string(request), "approvalId": .string("approval-1")]) }
+            if state == "needs-you" && provider == "claude" && includeApproval {
+                var approval: [String: JSONValue] = ["runId": .string("run-1"), "requestId": .string(request), "approvalId": .string("approval-1")]
+                if let fingerprint { approval["previewId"] = .string(fingerprint) }
+                terminal["approval"] = .object(approval)
+            }
             value["terminals"] = .array([.object(terminal)])
         }
         if let mayAnswer { value["clientCapabilities"] = .object(["mayAnswer": .bool(mayAnswer)]) }
         return .object(value)
     }
-    private func preview(request: String = "request-1") -> JSONValue {
+    private func preview(request: String = "request-1", fingerprint: String = String(repeating: "a", count: 64)) -> JSONValue {
         .object(["terminalId": .string(terminalID), "runId": .string("run-1"), "requestId": .string(request), "approvalId": .string("approval-1"),
-            "previewId": .string(String(repeating: "a", count: 64)), "lines": .array([.string("Bash command"), .string("  npm run typecheck"), .string("Do you want to proceed?")])])
+            "previewId": .string(fingerprint), "lines": .array([.string("Bash command"), .string("  npm run typecheck"), .string("Do you want to proceed?")])])
     }
     @MainActor func testOldHostIsThreadsOnlyEvenIfItSendsUnadvertisedRows() async throws {
         let model = try await fixture(feature: false)
@@ -218,5 +222,58 @@ final class TerminalModelTests: XCTestCase {
         XCTAssertTrue(model.pending.isEmpty)
         XCTAssertTrue(model.terminalAnswerConfirmed(approval, in: ref))
         XCTAssertEqual(sends, 1, "Receipt reconciliation must never resend the answer")
+    }
+    @MainActor func testChangedScreenFingerprintImmediatelyDisablesOldPreviewThenAcceptsFreshPreview() async throws {
+        let model = try await fixture()
+        defer { model.phase(.background); HostConnection.terminalHandler = nil }
+        await model.readTerminalApproval(ref)
+        let oldApproval = try XCTUnwrap(model.terminal(ref)?.approval), connection = try XCTUnwrap(HostConnection.instances.last)
+        XCTAssertTrue(model.canAnswerTerminal(ref, approval: oldApproval))
+        let next = String(repeating: "b", count: 64)
+        connection.push(.shell(try shell(fingerprint: next).decode(Shell.self)))
+        let current = try XCTUnwrap(model.terminal(ref)?.approval)
+        XCTAssertEqual(current.id, oldApproval.id)
+        XCTAssertNil(model.terminalPreviews[ref.id])
+        XCTAssertFalse(model.canAnswerTerminal(ref, approval: current))
+        await model.readTerminalApproval(ref)
+        XCTAssertNil(model.terminalPreviews[ref.id], "A late old-fingerprint preview is rejected")
+        HostConnection.terminalHandler = { op, _, _ in op == "terminal-approval" ? self.preview(fingerprint: next) : .null }
+        await model.readTerminalApproval(ref, force: true)
+        XCTAssertEqual(model.terminalPreviews[ref.id]?.previewId, next)
+        XCTAssertTrue(model.canAnswerTerminal(ref, approval: current))
+        XCTAssertFalse(model.canAnswerTerminal(ref, approval: oldApproval))
+    }
+    @MainActor func testWithdrawnFingerprintClearsCachedScreenAndDisablesAnswers() async throws {
+        let model = try await fixture()
+        defer { model.phase(.background); HostConnection.terminalHandler = nil }
+        await model.readTerminalApproval(ref)
+        let connection = try XCTUnwrap(HostConnection.instances.last)
+        connection.push(.shell(try shell(fingerprint: nil).decode(Shell.self)))
+        XCTAssertNil(model.terminalPreviews[ref.id], "Withdrawing a known fingerprint clears its cached screen even on a legacy-shaped row")
+        XCTAssertFalse(model.canAnswerTerminal(ref, approval: model.terminal(ref)?.approval))
+        connection.push(.shell(try shell(includeApproval: false).decode(Shell.self)))
+        XCTAssertNil(model.terminalPreviews[ref.id])
+        await model.readTerminalApproval(ref)
+        XCTAssertFalse(model.canAnswerTerminal(ref, approval: model.terminal(ref)?.approval))
+    }
+    @MainActor func testScreenFingerprintChangeDoesNotSettleAnUnconfirmedAnswerAsAnotherRequest() async throws {
+        let model = try await fixture()
+        defer { model.phase(.background); HostConnection.terminalHandler = nil }
+        await model.readTerminalApproval(ref)
+        let approval = try XCTUnwrap(model.terminal(ref)?.approval), connection = try XCTUnwrap(HostConnection.instances.last)
+        HostConnection.terminalHandler = { op, _, _ in if op == "answer-terminal" { throw ClientError.uncertain }; return .null }
+        await model.answerTerminal(ref, approval: approval, decision: .allow)
+        let marker = try XCTUnwrap(model.pending.first)
+        HostConnection.shell = shell(fingerprint: String(repeating: "b", count: 64))
+        connection.push(.shell(try HostConnection.shell.decode(Shell.self)))
+        await model.checkDelivery(hostID)
+        XCTAssertEqual(model.pending, [marker])
+        XCTAssertFalse(model.terminalAnswerConfirmed(approval, in: ref))
+        HostConnection.receipts[marker.id] = .object(["status": .string("completed"), "answerDelivered": .bool(true)])
+        await model.checkDelivery(hostID)
+        XCTAssertTrue(model.pending.isEmpty)
+        XCTAssertTrue(model.terminalAnswerConfirmed(approval, in: ref))
+        XCTAssertTrue(model.terminalAnswerConfirmed(try XCTUnwrap(model.terminal(ref)?.approval), in: ref))
+        XCTAssertEqual(connection.terminalCalls.filter { $0["op"] == .string("answer-terminal") }.count, 1)
     }
 }

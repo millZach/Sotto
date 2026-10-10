@@ -96,7 +96,7 @@ it('sends no output in lists or pushes, and reads only a bounded current approva
   expect(answer.runId).toBe(runId)
   const shell = (await call({ op: 'shell' })).result
   expect(JSON.stringify(shell)).not.toMatch(/PRIVATE_SCROLLBACK|npm test|Do you want|workingDirectory|command|secret/u)
-  expect((shell as { terminals: unknown[] }).terminals).toEqual([expect.objectContaining({ state: 'needs-you', approval: { runId, requestId: 'request-1', approvalId: 'approval-1' } })])
+  expect((shell as { terminals: unknown[] }).terminals).toEqual([expect.objectContaining({ state: 'needs-you', approval: { runId, requestId: 'request-1', approvalId: 'approval-1', previewId: answer.previewId } })])
   data('\x1b[2J\x1b[H')
   expect(await call({ op: 'terminal-approval', terminalId })).toMatchObject({ ok: true, result: null })
   expect(await call({ op: 'answer-terminal', answer })).toMatchObject({ ok: false, error: { code: 'stale_request' } })
@@ -176,6 +176,42 @@ it('rejects a changed reviewed screen and checks authority again inside the PTY 
   expect(await call({ op: 'answer-terminal', answer })).toMatchObject({ ok: false, error: { code: 'stale_request' } })
   expect(hookWrite).not.toHaveBeenCalled()
   const fresh = await preview(); expect(fresh.previewId).not.toBe(answer.previewId)
+})
+
+it('pushes changed or withdrawn preview fingerprints without sending screen text', async () => {
+  await hello(); request(); const answer = await preview()
+  await expect.poll(() => phone.messages.filter(message => message.event === 'shell').length).toBeGreaterThan(0)
+  phone.messages.splice(0)
+  data(permission.replace('npm test', 'npm run changed'))
+  const changed = terminals.phoneApproval(terminalId)!
+  expect(changed.previewId).not.toBe(answer.previewId)
+  await expect.poll(() => phone.messages.filter(message => message.event === 'shell').at(-1)?.state).toMatchObject({
+    terminals: [expect.objectContaining({ approval: expect.objectContaining({ previewId: changed.previewId }) })],
+  })
+  for (const push of phone.messages.filter(message => message.event === 'shell')) expect(JSON.stringify(push)).not.toContain('npm run changed')
+  phone.messages.splice(0)
+  await terminals.write({ id: terminalId, data: 'x' })
+  await expect.poll(() => phone.messages.filter(message => message.event === 'shell').at(-1)?.state).toMatchObject({
+    terminals: [expect.not.objectContaining({ approval: expect.anything() })],
+  })
+  expect(terminals.phoneApproval(terminalId)).toBeNull()
+})
+
+it('never uses a screen-only question to review an outstanding permission hook', async () => {
+  await hello(); request(); const answer = await preview()
+  data(screen('Which option?\r\n❯ 1. First\r\n  2. Second\r\n  3. Type something.\r\nenter to select · ↑/↓ to navigate · esc to cancel'))
+  expect(terminals.phoneRows()[0]).toMatchObject({ state: 'needs-you' })
+  expect(terminals.phoneRows()[0]).not.toHaveProperty('approval')
+  expect(await call({ op: 'terminal-approval', terminalId })).toMatchObject({ ok: true, result: null })
+  expect(await call({ op: 'answer-terminal', answer })).toMatchObject({ ok: false, error: { code: 'stale_request' } })
+  expect(hookWrite).not.toHaveBeenCalled()
+})
+
+it('does not acknowledge a refused detail observation as visible', async () => {
+  await hello(); data(working); data(idle)
+  vi.spyOn(terminals, 'visibility').mockResolvedValueOnce({ ok: false, error: { code: 'busy', message: 'This tool is busy. Try again shortly.' } })
+  expect(await call({ op: 'observe-terminals', terminalIds: [terminalId] })).toMatchObject({ ok: false, error: { code: 'busy' } })
+  expect(terminals.phoneRows()[0]!.state).toBe('just-finished')
 })
 
 it('keeps the preview to eight active rows and refuses a removed phone before delivery', async () => {

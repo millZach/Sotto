@@ -1,6 +1,6 @@
 import type { TerminalProvider } from '../../shared/terminalWorkspace'
 
-/** A bounded active screen, with no scrollback. Neither this screen nor its contents leave main. */
+/** A bounded active screen, with no scrollback. Only a current permission's bounded preview may leave main. */
 export class TerminalAgentScreen {
   private primary: string[][]
   private alternate: string[][] | undefined
@@ -176,6 +176,7 @@ export interface TerminalScreenEvidence {
   /** Meaningful unversioned screen content admits output activity without permanently resolving startup. */
   unresolvedVersion?: boolean
   state?: 'working' | 'idle' | 'needs-you'
+  requestKind?: 'permission' | 'question'
   failed?: boolean
 }
 
@@ -230,11 +231,11 @@ export class TerminalScreenRules {
         && /^❯\s*[1-9]\.\s+\S.+/mu.test(text)
       const prompt = /^(?:Do you want to proceed\?|Allow .+\?|Do you want to .+\?)$/mu.test(text)
       const controls = /(?:Enter to confirm|Esc to cancel|esc to cancel)/u.test(footer)
-      if (choices && prompt && controls) return { detection: 'available', state: 'needs-you' }
+      if (choices && prompt && controls) return { detection: 'available', state: 'needs-you', requestKind: 'permission' }
       // The bundled 2.1.295 AskUserQuestion component uses numbered choices, its built-in Other row and select/navigation/cancel chrome.
       const questionChoices = /^❯\s*\d+\.\s+\S.+/mu.test(text) && /^\d+\.\s+(?:Type something\.?|Chat about this)$/mu.test(text)
       const questionControls = /enter to select/iu.test(footer) && /(?:↑\/↓ to navigate|Tab\/Arrow keys to navigate)/iu.test(footer) && /(?:esc|escape) to cancel/iu.test(footer)
-      if (questionChoices && questionControls) return { detection: 'available', state: 'needs-you' }
+      if (questionChoices && questionControls) return { detection: 'available', state: 'needs-you', requestKind: 'question' }
     } else if (this.provider === 'codex') {
       // The native status row owns an elapsed clock and interrupt hint. Reduced motion omits its leading activity bullet.
       const work = /^(?:•\s+)?[\p{L}\p{N}][^()>\r\n]*\((?:\d+h \d{2}m \d{2}s|\d+m \d{2}s|\d+s) • esc to interrupt\)(?: • \S.*)?$/mu.test(text)
@@ -244,12 +245,12 @@ export class TerminalScreenRules {
       const choices = /^(?:›\s*)?1\.\s+Yes, proceed(?:\s|$)/mu.test(text) && /^(?:›\s*)?[2-9]\.\s+No, and tell Codex .+/mu.test(text)
         && /^›\s*[1-9]\.\s+\S.+/mu.test(text)
       const controls = /^Press enter to confirm or esc to cancel$/iu.test(footer)
-      if (prompt && choices && controls) return { detection: 'available', state: 'needs-you' }
+      if (prompt && choices && controls) return { detection: 'available', state: 'needs-you', requestKind: 'permission' }
       // Codex rust-v0.162.0 request_user_input has a progress header, selected choice/freeform input, and its own submission footer.
       const questionHeader = /^Question \d+\/\d+(?: \(\d+ unanswered\))?(?: · auto-resolves in .+)?$/mu.test(text)
       const questionInput = /^›\s*(?:\d+\.\s+\S.+|Type your answer \(optional\))$/mu.test(text)
       const questionControls = /(?:enter|⌃\w(?: enter)?) to submit (?:answer|all)/iu.test(footer) && /(?:esc|⌃c) to interrupt/iu.test(footer)
-      if (questionHeader && questionInput && questionControls) return { detection: 'available', state: 'needs-you' }
+      if (questionHeader && questionInput && questionControls) return { detection: 'available', state: 'needs-you', requestKind: 'question' }
     } else {
       // Grok 1.0.50's prompt is a bordered input, with its model/mode footer. Escape never cancels work.
       // The current turn_status widget has a braille spinner, phase timer and [stop] button; historical Thinking blocks lack this chrome.
@@ -265,12 +266,12 @@ export class TerminalScreenRules {
       const permissionTitle = /^[│┃]\s+Allow \S.+\?$/mu.test(text)
       const choices = /^[│┃]\s+[1-9]\s+\([○●•]\)\s+(?:Yes(?:, (?:proceed|allow once|send once))?|allow once)$/imu.test(text)
         && /^[│┃]\s+[1-9]\s+\([○●•]\)\s+No, reject \(type to add feedback\)$/mu.test(text)
-      if (permissionTitle && choices && permissionHint) return { detection: 'available', state: 'needs-you' }
+      if (permissionTitle && choices && permissionHint) return { detection: 'available', state: 'needs-you', requestKind: 'permission' }
       // Native question cards share that rail, with shortcut/radio/checkbox answer rows and the installed Other input label.
       const questionChoices = /^[│┃]\s+[1-9a-z]\s+(?:\([○●•]\)|\[[ x]\])\s+\S.+/mu.test(text)
       const questionInput = /^[│┃]\s+(?:(?:[1-9a-z]\s+)?(?:\([○●•]\)|\[[ x]\])\s+)?Other \(type your own answer\)$/mu.test(text)
       const questionHint = nativeHints && hints.some(hint => /^(?:Tab\/Space:\s*question|Tab:\s*next answer)$/u.test(hint))
-      if (questionChoices && questionInput && questionHint) return { detection: 'available', state: 'needs-you' }
+      if (questionChoices && questionInput && questionHint) return { detection: 'available', state: 'needs-you', requestKind: 'question' }
     }
     return { detection: 'unavailable', failed }
   }

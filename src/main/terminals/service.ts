@@ -48,6 +48,7 @@ interface LiveTerminal {
   hooks?: PreparedTerminalAgentHooks | undefined
   activityTimer?: ReturnType<typeof setTimeout> | undefined
   plainActive?: boolean
+  phonePreviewId?: string | undefined
   approvals?: Map<string, TerminalAgentHookEvent>
   answers?: Map<string, { answer: TerminalHookAnswer; settle(delivered: boolean): void }>
 }
@@ -88,6 +89,7 @@ export class TerminalWorkspaceService extends ToolOperations implements PhoneTer
   }
   private now(): number { return this.dependencies.now?.() ?? Date.now() }
   private publish(record: LiveTerminal): void {
+    record.phonePreviewId = this.phoneApproval(record.terminal.id)?.previewId
     this.dependencies.emit({ type: 'terminal', terminal: { ...record.terminal } })
     this.publishPhoneRows()
   }
@@ -96,7 +98,11 @@ export class TerminalWorkspaceService extends ToolOperations implements PhoneTer
   private syncAgent(record: LiveTerminal): void {
     if (!record.agent || this.disposed) return
     const agentState = record.agent.state, stateDetection = record.agent.compatibility
-    if (record.terminal.agentState === agentState && record.terminal.stateDetection === stateDetection) return
+    if (record.terminal.agentState === agentState && record.terminal.stateDetection === stateDetection) {
+      const previewId = this.phoneApproval(record.terminal.id)?.previewId
+      if (record.phonePreviewId !== previewId) { record.phonePreviewId = previewId; this.publishPhoneRows() }
+      return
+    }
     record.terminal = { ...record.terminal, agentState, stateDetection }
     this.publish(record)
   }
@@ -120,11 +126,11 @@ export class TerminalWorkspaceService extends ToolOperations implements PhoneTer
   phoneRows(): PhoneTerminal[] {
     if (this.disposed) return []
     return [...this.terminals.values()].filter(record => record.terminal.closedAt === null).map(record => {
-      const terminal = record.terminal, request = this.phoneBinding(record)
+      const terminal = record.terminal, preview = this.phoneApproval(terminal.id)
       return { id: terminal.id, projectId: terminal.projectId, title: terminal.title, providerId: terminal.launch.provider,
         state: terminal.agentState ?? (terminal.status === 'starting' ? 'starting' : terminal.status === 'running' ? record.plainActive ? 'working' : 'idle' : 'exited'),
         stateDetection: terminal.stateDetection ?? 'unavailable', openedAt: terminal.openedAt,
-        ...(request ? { approval: { runId: request.runId, requestId: request.requestId!, approvalId: request.approvalId! } } : {}) }
+        ...(preview ? { approval: { runId: preview.runId, requestId: preview.requestId, approvalId: preview.approvalId, previewId: preview.previewId } } : {}) }
     })
   }
   phoneApproval(terminalId: string): PhoneTerminalApproval | null {

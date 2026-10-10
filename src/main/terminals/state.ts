@@ -52,7 +52,7 @@ export class TerminalAgentStateMachine {
   hasRequest(requestId: string): boolean { return this.state === 'needs-you' && this.requests.has(requestId) }
   /** A request's reviewable live bottom, never scrollback. Input and incomplete redraws withdraw it. */
   approvalLines(): string[] | null {
-    if (this.state !== 'needs-you' || !this.fresh || !this.screen.reliable || this.evidence.state !== 'needs-you') return null
+    if (this.state !== 'needs-you' || !this.fresh || !this.screen.reliable || this.evidence.requestKind !== 'permission') return null
     const lines = this.screen.lines(), last = lines.findLastIndex(line => line.trim() !== '')
     if (last < 0) return null
     const bottom = lines.slice(Math.max(0, last - 7), last + 1)

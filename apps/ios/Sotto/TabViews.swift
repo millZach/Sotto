@@ -23,14 +23,17 @@ private struct TerminalRequestCard: View, Equatable {
         if inFlight { return .sending }
         if let marker = model.terminalPending(row.ref) { return model.isSending(marker) ? .sending : .unconfirmed }
         if let approval = row.terminal.approval, model.terminalAnswerConfirmed(approval, in: row.ref) { return .answered }
-        if retained && model.terminal(row.ref)?.approval != row.terminal.approval { return .gone }
+        if retained && model.terminal(row.ref)?.approval?.id != row.terminal.approval?.id { return .gone }
         return .idle
     }
     private var preview: TerminalApprovalPreview? {
         guard let value = model.terminalPreviews[row.id], value.matches(row.terminal) else { return nil }
         return value
     }
-    private var previewTaskID: String { row.id + "/" + (row.terminal.approval?.id ?? "screen-only") + "/" + String(model.online(row.ref.hostID)) }
+    private var previewTaskID: String {
+        row.id + "/" + (row.terminal.approval?.id ?? "screen-only") + "/" + (row.terminal.approval?.previewId ?? "no-fingerprint")
+            + "/" + String(model.online(row.ref.hostID))
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if detail { summary }
@@ -220,8 +223,8 @@ struct TerminalView: View {
             if let row {
                 PageHeading(row.terminal.title, subtitle: "\(Words.terminalProvider(row.terminal.providerId)) on \(row.computer)") { Image(systemName: "terminal").foregroundStyle(Palette.muted) }
                 HStack(spacing: Space.s2) {
-                    Light(tone: row.reachable && row.terminal.state == .needsYou ? .warning : row.reachable && row.terminal.state == .working ? .accent : .off,
-                          breathing: row.reachable && row.terminal.state == .working)
+                    Light(tone: row.reachable && row.terminal.state == .needsYou ? .warning : row.reachable && row.terminal.state.workInProgress ? .accent : .off,
+                          breathing: row.reachable && row.terminal.state.workInProgress)
                     Text(row.reachable ? (row.terminal.state == .justFinished ? "Idle" : row.terminal.stateWords) : row.status.words)
                         .font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
                 }
@@ -256,7 +259,7 @@ struct TerminalView: View {
     }
     private func resolveAnswer() {
         guard !sending, !leaving, let answeredRow, model.terminalPending(ref) == nil, let approval = answeredRow.terminal.approval else { return }
-        if !model.terminalAnswerConfirmed(approval, in: ref), model.terminal(ref)?.approval == approval { self.answeredRow = nil; return }
+        if !model.terminalAnswerConfirmed(approval, in: ref), model.terminal(ref)?.approval?.id == approval.id { self.answeredRow = nil; return }
         leaving = true
         Task {
             try? await Task.sleep(nanoseconds: 900_000_000)
@@ -354,12 +357,12 @@ struct ThreadsView: View {
             HStack(spacing: Space.s3) {
                 ComputerMenu()
                 Spacer(minLength: Space.s2)
-                ThreadCounts(working: all.working.count + terminalRows().filter { $0.reachable && $0.terminal.state == .working }.count,
+                ThreadCounts(working: all.working.count + terminalRows().filter { $0.reachable && $0.terminal.state.workInProgress }.count,
                              needs: all.questions.count + terminalRows().filter { $0.reachable && $0.terminal.state == .needsYou }.count)
             }
             VStack(alignment: .leading, spacing: Space.s2) {
                 ComputerMenu()
-                ThreadCounts(working: all.working.count + terminalRows().filter { $0.reachable && $0.terminal.state == .working }.count,
+                ThreadCounts(working: all.working.count + terminalRows().filter { $0.reachable && $0.terminal.state.workInProgress }.count,
                              needs: all.questions.count + terminalRows().filter { $0.reachable && $0.terminal.state == .needsYou }.count)
             }
         }
@@ -462,8 +465,8 @@ struct ThreadsView: View {
     @ViewBuilder private func sections(_ groups: FocusThreads) -> some View {
         let terminals = terminalRows(query: query)
         let terminalNeeds = terminalNeedsItems(terminals)
-        let terminalWorking = terminals.filter { $0.reachable && $0.terminal.state == .working && sentTerminals[$0.id] == nil }
-        let terminalRecent = terminals.filter { (!$0.reachable || ($0.terminal.state != .needsYou && $0.terminal.state != .working)) && sentTerminals[$0.id] == nil }
+        let terminalWorking = terminals.filter { $0.reachable && $0.terminal.state.workInProgress && sentTerminals[$0.id] == nil }
+        let terminalRecent = terminals.filter { (!$0.reachable || ($0.terminal.state != .needsYou && !$0.terminal.state.workInProgress)) && sentTerminals[$0.id] == nil }
         let needs = needsItems(groups)
         let departing = Set(needs.map { $0.row.id }).subtracting(groups.questions.map { $0.id })
         let working = groups.working.filter { !departing.contains($0.id) }
@@ -585,7 +588,7 @@ struct ThreadsView: View {
         for (id, row) in sentTerminals {
             guard !sendingTerminals.contains(id), !leavingTerminals.contains(id), model.terminalPending(row.ref) == nil,
                   let approval = row.terminal.approval else { continue }
-            if !model.terminalAnswerConfirmed(approval, in: row.ref), model.terminal(row.ref)?.approval == approval {
+            if !model.terminalAnswerConfirmed(approval, in: row.ref), model.terminal(row.ref)?.approval?.id == approval.id {
                 sentTerminals[id] = nil
                 continue
             }

@@ -507,13 +507,15 @@ struct HeldDetail {
     private static let fixtureTerminals: [[String: Any]] = [
         ["id": "33333333-3333-4333-8333-333333333333", "projectId": "sotto", "title": "Fix tooltips", "providerId": "claude",
          "state": "needs-you", "stateDetection": "available", "openedAt": 1_800_000_000_000,
-         "approval": ["runId": "fixture-run", "requestId": "fixture-request", "approvalId": "fixture-approval"]],
+         "approval": ["runId": "fixture-run", "requestId": "fixture-request", "approvalId": "fixture-approval", "previewId": String(repeating: "a", count: 64)]],
         ["id": "66666666-6666-4666-8666-666666666666", "projectId": "sotto", "title": "Review the drawer", "providerId": "codex",
          "state": "needs-you", "stateDetection": "available", "openedAt": 1_800_000_000_001],
         ["id": "44444444-4444-4444-8444-444444444444", "projectId": "panel", "title": "Build the panel list", "providerId": "grok",
          "state": "working", "stateDetection": "available", "openedAt": 1_800_000_000_002],
         ["id": "55555555-5555-4555-8555-555555555555", "projectId": "sotto", "title": "Finish terminal states", "providerId": "claude",
-         "state": "just-finished", "stateDetection": "available", "openedAt": 1_800_000_000_003]
+         "state": "just-finished", "stateDetection": "available", "openedAt": 1_800_000_000_003],
+        ["id": "77777777-7777-4777-8777-777777777777", "projectId": "sotto", "title": "Start release checks", "providerId": "claude",
+         "state": "starting", "stateDetection": "available", "openedAt": 1_800_000_000_004]
     ]
     private func changeFixtureTerminal(_ ref: TerminalRef, state: String, onlyIfFinished: Bool = false) throws {
         guard var object = fixtureShells[ref.hostID], var rows = object["terminals"] as? [[String: Any]],
@@ -1814,13 +1816,16 @@ struct HeldDetail {
         try next.validate(hostID: hostID)
         guard sequence > (shellSequences[hostID] ?? 0) else { return }
         shellSequences[hostID] = sequence
+        let previousTerminals = live[hostID]?.shell?.terminals ?? []
         update(hostID) {
             $0.shell = next
             if let allowed = next.clientCapabilities?.mayAnswer { $0.mayAnswer = allowed }
         }
         noticeChanges(next, from: hostID)
         for (key, preview) in terminalPreviews where key.hasPrefix(hostID + "/terminal/") {
-            if next.terminals?.first(where: { $0.id == preview.terminalId }).map({ preview.matches($0) }) != true {
+            let current = next.terminals?.first { $0.id == preview.terminalId }
+            let oldFingerprint = previousTerminals.first { $0.id == preview.terminalId }?.approval?.previewId
+            if current.map({ preview.matches($0) }) != true || oldFingerprint != current?.approval?.previewId {
                 terminalPreviews[key] = nil
             }
         }
