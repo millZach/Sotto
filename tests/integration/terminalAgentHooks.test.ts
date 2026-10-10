@@ -67,25 +67,6 @@ const boundFrame = (run: PreparedTerminalAgentHooks) => ({ terminalId: 'terminal
   kind: 'working', state: 'working', providerSessionId: run.providerSessionId, secret: run.env.SOTTO_TERMINAL_HOOK_SECRET })
 
 describe('run-scoped terminal agent hooks', () => {
-  it.each(['claude', 'codex', 'grok'] as const)('reports actual %s exit through the packaged helper without reading stdin or provider content', async provider => {
-    const { run, events } = await prepared(provider)
-    const cli = fixture(run, provider)
-    await expect.poll(cli.output).toContain(provider === 'grok' ? 'Use Shift+Tab' : '? for shortcuts')
-    const exited = new Promise<number | null>(resolveExit => cli.child.once('exit', resolveExit))
-    cli.child.stdin.write('q\n')
-    expect(await exited).toBe(0)
-    const [file, ...args] = run.exitArgs!
-    const child = spawn(file!, args, { env: { ...process.env, ...run.env }, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
-    children.push(child)
-    let output = ''
-    child.stdout.on('data', data => { output += String(data) }); child.stderr.on('data', data => { output += String(data) })
-    const helperExited = new Promise<number | null>(resolveExit => child.once('exit', resolveExit))
-    // Stdin deliberately stays open: the launcher's exit helper must never wait for native hook input.
-    expect(await helperExited).toBe(0)
-    expect(events.at(-1)).toMatchObject({ terminalId: 'terminal-1', runId: run.runId, kind: 'process-exited', state: 'exited' })
-    expect(JSON.stringify(events)).not.toMatch(/PRIVATE_|secret|tool_input|transcript|cwd/u)
-    expect(output).toBe('')
-  })
   it('launches the fake Claude CLI with real packaged-runner hooks across its lifecycle', async () => {
     const { run, events, closed } = await prepared()
     const { child, output, errors } = fixture(run)

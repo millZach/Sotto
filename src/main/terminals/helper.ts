@@ -1,5 +1,4 @@
 import { createConnection } from 'node:net'
-import { randomUUID } from 'node:crypto'
 import { normalizeTerminalHook } from './hooksNormalizer'
 import { TERMINAL_HOOK_FRAME_BYTES, terminalHookAnswerSchema } from './hooksProtocol'
 
@@ -12,9 +11,7 @@ async function main(): Promise<void> {
   if (!Number.isInteger(port) || port < 1 || port > 65535 || !secret || !terminalId || !runId) return
   const provider = process.argv[2]
   let input = ''
-  if (provider === 'process-exit') {
-    // This invocation belongs to Sotto's launcher, after the native CLI has returned. It reads no provider payload.
-  } else if (provider === 'codex') {
+  if (provider === 'codex') {
     const argument = process.argv[3] ?? ''
     input = argument.startsWith('base64:') ? Buffer.from(argument.slice(7), 'base64').toString('utf8') : argument
   }
@@ -27,11 +24,8 @@ async function main(): Promise<void> {
     }
   }
   let raw: unknown
-  if (provider !== 'process-exit') { try { raw = JSON.parse(input) } catch { return } }
-  const normalized = provider === 'process-exit'
-    ? { event: { terminalId, runId, eventId: randomUUID(), kind: 'process-exited' as const, state: 'exited' as const,
-      ...(process.argv[3] ? { providerSessionId: process.argv[3] } : {}) }, blocking: false }
-    : normalizeTerminalHook(provider ?? '', process.argv[3], raw, { terminalId, runId })
+  try { raw = JSON.parse(input) } catch { return }
+  const normalized = normalizeTerminalHook(provider ?? '', process.argv[3], raw, { terminalId, runId })
   if (!normalized) return
   const frame = `${JSON.stringify({ ...normalized.event, secret })}\n`
   if (Buffer.byteLength(frame) > TERMINAL_HOOK_FRAME_BYTES) return

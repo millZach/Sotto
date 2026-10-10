@@ -15,7 +15,7 @@ const launch = { provider: 'claude', modelId: null, reasoning: null, permission:
 const screen = (body: string) => `\x1b[2J\x1b[HClaude Code v2.1.295\r\n${body}`
 const idle = screen('❯ \r\n? for shortcuts'), working = screen('✻ Working… (esc to interrupt)')
 
-function fixture() {
+function fixture(missingHooks = false) {
   const runs: { options: PrepareTerminalAgentHooksOptions; runId: string; dispose: ReturnType<typeof vi.fn> }[] = []
   const processes: { data(data: string): void; exit(): void; pty: IPty }[] = []
   const spawn = vi.fn<(file: string, args: string[], options: IPtyForkOptions) => IPty>(() => {
@@ -26,13 +26,19 @@ function fixture() {
   const emit = vi.fn()
   const service = new TerminalWorkspaceService({ projects: () => [{ id: 'p', title: 'Project', path: '/project' }],
     worktrees: { allocate: vi.fn(), ensure: vi.fn(), workingDirectory: vi.fn(), reclaim: vi.fn() }, spawn, emit, platform: 'darwin', env: { SHELL: '/bin/zsh' },
-    prepareHooks: async options => { const run = { options, runId: randomUUID(), dispose: vi.fn() }; runs.push(run); return { ...run, args: ['--settings', '/private/run-settings.json'], env: { SOTTO_PRIVATE_HOOK_SECRET: 'private' }, answer: () => false } },
+    prepareHooks: async options => { if (missingHooks) throw new Error('Hooks unavailable'); const run = { options, runId: randomUUID(), dispose: vi.fn() }; runs.push(run); return { ...run, args: ['--settings', '/private/run-settings.json'], env: { SOTTO_PRIVATE_HOOK_SECRET: 'private' }, answer: () => false } },
   })
   disposals.push(() => service.dispose())
   const open = async () => { const { terminal } = unwrap(await service.open({ projectId: 'p', title: 'Agent', workingCopy: 'shared', launch })); unwrap(await service.read({ id: terminal.id })); processes.at(-1)!.data(idle); return terminal.id }
   const state = async (id: string) => unwrap(await service.read({ id })).terminal.agentState
   const send = (index: number, kind: TerminalAgentHookEvent['kind']) => { const run = runs[index]!; run.options.onEvent({ terminalId: 'terminal', runId: run.runId, eventId: randomUUID(), kind, state: kind === 'working' ? 'working' : 'idle' }) }
-  return { service, processes, runs, spawn, emit, open, state, send }
+  const exitAgent = (index: number): string => {
+    const body = spawn.mock.calls[index]![1].at(-1)!.match(/\]777;sotto-agent-exited;[a-f0-9-]+/u)![0]
+    const marker = `\x1b${body}\x07`
+    processes[index]!.data(marker.slice(0, 9)); processes[index]!.data(marker.slice(9))
+    return marker
+  }
+  return { service, processes, runs, spawn, emit, open, state, send, exitAgent }
 }
 
 describe('main-owned terminal visibility and lifecycle', () => {
@@ -47,7 +53,7 @@ describe('main-owned terminal visibility and lifecycle', () => {
       f.processes[0]!.data(working); f.processes[0]!.data(idle); f.send(0, 'completed')
       expect(await f.state(id)).toBe('just-finished')
     }
-    f.send(0, 'process-exited')
+    const marker = f.exitAgent(0)
     expect(unwrap(await f.service.read({ id })).terminal).toMatchObject({ status: 'running', agentState: 'exited', closedAt: null })
     expect(f.runs[0]!.dispose).toHaveBeenCalledOnce()
     expect(f.processes[0]!.pty.kill).not.toHaveBeenCalled()
@@ -55,11 +61,25 @@ describe('main-owned terminal visibility and lifecycle', () => {
     f.processes[0]!.data('shell output\r\n'); f.send(0, 'working'); f.send(0, 'completed')
     expect(await f.state(id)).toBe('exited')
     expect(unwrap(await f.service.read({ id })).output).toContain('shell output')
+    expect(unwrap(await f.service.read({ id })).output).not.toContain(marker)
     expect(f.processes[0]!.pty.write).toHaveBeenLastCalledWith('echo shell\r')
-    unwrap(await f.service.restart({ id })); f.processes[1]!.data(idle); f.send(0, 'process-exited')
+    unwrap(await f.service.restart({ id })); f.processes[1]!.data(idle); f.processes[1]!.data(marker)
     expect(await f.state(id)).toBe('idle')
     unwrap(await f.service.stop({ id }))
     expect(unwrap(await f.service.read({ id })).terminal.status).toBe('exited')
+  })
+  it('observes provider exit even when hook preparation failed and a shell keeps printing agent-like output', async () => {
+    const f = fixture(true), id = await f.open()
+    f.processes[0]!.data(working)
+    expect(await f.state(id)).toBe('working')
+    const marker = f.exitAgent(0)
+    unwrap(await f.service.write({ id, data: 'echo retained\r' }))
+    f.processes[0]!.data(working); f.processes[0]!.data(idle)
+    const snapshot = unwrap(await f.service.read({ id }))
+    expect(snapshot.terminal).toMatchObject({ status: 'running', agentState: 'exited' })
+    expect(snapshot.output).not.toContain(marker)
+    expect(f.processes[0]!.pty.write).toHaveBeenCalledWith('echo retained\r')
+    expect(f.processes[0]!.pty.kill).not.toHaveBeenCalled()
   })
   it('merges visible pane sets and clears unread globally, including unfocused panes', async () => {
     const f = fixture(), first = await f.open(), second = await f.open(), desktop = {}, phone = {}

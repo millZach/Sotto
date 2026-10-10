@@ -14,8 +14,6 @@ export interface PreparedTerminalAgentHooks {
   readonly runId: string
   readonly providerSessionId?: string
   readonly args: string[]
-  /** The owning shell reports actual CLI exit before becoming an interactive shell. */
-  readonly exitArgs?: string[]
   readonly env: Record<string, string>
   /** Only an explicit user answer can call this; a race accepts at most one delivery. */
   answer(answer: TerminalHookAnswer): boolean
@@ -48,6 +46,7 @@ const tomlLiteral = (value: string): string => {
 /** One loopback listener and private launch overrides per PTY lifecycle. Never logs provider input. */
 export async function prepareTerminalAgentHooks(options: PrepareTerminalAgentHooksOptions): Promise<PreparedTerminalAgentHooks> {
   const runId = randomUUID()
+  if (options.provider === 'grok') return { runId, args: [], env: {}, answer: () => false, dispose() {} }
   const secret = randomBytes(32).toString('hex')
   const providerSessionId = options.provider === 'claude' ? randomUUID() : undefined
   const connections = new Set<Socket>()
@@ -159,13 +158,12 @@ export async function prepareTerminalAgentHooks(options: PrepareTerminalAgentHoo
       const settings = join(folder, 'claude-settings.json')
       await writeFile(settings, JSON.stringify({ hooks }), { mode: 0o600 })
       args = ['--session-id', providerSessionId!, '--settings', settings]
-    } else if (options.provider === 'codex') {
+    } else {
       // Basic-string double quotes are lost before Codex receives them on legacy PowerShell.
       args = ['-c', `notify=[${[...invoke, 'codex'].map(tomlLiteral).join(',')}]`]
-    } else args = [] // Grok still uses screen rules; only the owning shell reports its exit.
+    }
     return {
       runId, ...(providerSessionId ? { providerSessionId } : {}), args,
-      exitArgs: [...invoke, 'process-exit', ...(providerSessionId ? [providerSessionId] : [])],
       env: {
         SOTTO_TERMINAL_HOOK_PORT: String(address.port), SOTTO_TERMINAL_HOOK_SECRET: secret,
         SOTTO_TERMINAL_HOOK_TERMINAL_ID: options.terminalId, SOTTO_TERMINAL_HOOK_RUN_ID: runId,

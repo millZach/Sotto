@@ -149,7 +149,6 @@ export class TerminalAgentStateMachine {
           this.activeTurn ??= event.turnId
         }
         break
-      case 'process-exited': this.exit(); return
       case 'cancelled': case 'ended':
         if (event.turnId && (this.inactiveTurns.has(event.turnId) || this.activeTurn && this.activeTurn !== event.turnId)) break
         this.deferredCompletions.clear()

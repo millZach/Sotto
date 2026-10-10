@@ -13,6 +13,7 @@ import { checkoutIdentity, type RunGit, type ThreadWorktrees } from '../agents/t
 import { ToolOperations, fail, parse } from '../tools/common'
 import { saveTerminalImage, terminalImageInput } from './clipboard'
 import { TerminalShell } from './shell'
+import { TerminalAgentExitSignal } from './exitSignal'
 import { prepareTerminalAgentHooks, type PreparedTerminalAgentHooks } from './hooks'
 import { TerminalAgentStateMachine } from './state'
 
@@ -50,10 +51,11 @@ interface LiveTerminal {
   subscriptions: { dispose(): void }[]
   agent?: TerminalAgentStateMachine | undefined
   hooks?: PreparedTerminalAgentHooks | undefined
+  exitSignal?: TerminalAgentExitSignal | undefined
   activityTimer?: ReturnType<typeof setTimeout> | undefined
 }
 
-interface Launcher { readonly file: string; readonly args: string[]; readonly command: string }
+interface Launcher { readonly file: string; readonly args: string[]; readonly command: string; readonly exitSignal?: TerminalAgentExitSignal }
 type SpawnProcess = (file: string, args: string[], options: IPtyForkOptions) => IPty
 
 
@@ -225,23 +227,23 @@ export class TerminalWorkspaceService extends ToolOperations {
   }
 
   /** What to spawn: the shell alone, or the shell running the provider's CLI so the user's PATH and profile apply. */
-  private async launcher(launch: TerminalLaunch, hookArgs: string[] = [], exitArgs: string[] = []): Promise<Launcher> {
+  private async launcher(launch: TerminalLaunch, hookArgs: string[] = []): Promise<Launcher> {
     const platform = this.dependencies.platform ?? process.platform
     const shell = await this.shell.resolve()
     const argv = providerCommand({ provider: launch.provider, model: launch.modelId === null ? null : nativeModelName(launch.modelId), reasoning: launch.reasoning, permission: launch.permission })
     if (argv.length === 0) return { file: shell, args: platform === 'win32' ? ['-NoLogo'] : ['-l'], command: shellName(shell, platform) }
     const command = commandLine(argv)
     argv.push(...hookArgs)
-    const reportExit = exitArgs.length ? `${platform === 'win32' ? '& ' : ''}${exitArgs.map(platform === 'win32' ? powerShellQuote : posixQuote).join(' ')}; ` : ''
+    const exitSignal = new TerminalAgentExitSignal()
     const exitMessage = `${launch.provider} exited with code`
     if (platform === 'win32') return { file: shell, args: ['-NoLogo', '-NoExit', '-Command',
-      `$global:LASTEXITCODE = 0; & ${argv.map(powerShellQuote).join(' ')}; if ($?) { $sottoExitCode = 0 } else { $sottoExitCode = $LASTEXITCODE; if (!$sottoExitCode) { $sottoExitCode = 1 } }; Write-Host ("\`n${exitMessage} {0}." -f $sottoExitCode); ${reportExit}`,
-    ], command }
+      `$global:LASTEXITCODE = 0; & ${argv.map(powerShellQuote).join(' ')}; if ($?) { $sottoExitCode = 0 } else { $sottoExitCode = $LASTEXITCODE; if (!$sottoExitCode) { $sottoExitCode = 1 } }; Write-Host ("\`n${exitMessage} {0}." -f $sottoExitCode); [Console]::Write([char]27 + '${exitSignal.body}' + [char]7)`,
+    ], command, exitSignal }
     const run = argv.map(posixQuote).join(' ')
     const report = shellName(shell, platform) === 'fish'
       ? `set sotto_exit $status; printf '\\n${exitMessage} %s.\\n' $sotto_exit`
       : `sotto_exit=$?; printf '\\n${exitMessage} %s.\\n' "$sotto_exit"`
-    return { file: shell, args: ['-l', '-i', '-c', `${run}; ${report}; ${reportExit}exec ${posixQuote(shell)} -l`], command }
+    return { file: shell, args: ['-l', '-i', '-c', `${run}; ${report}; printf '\\033${exitSignal.body}\\007'; exec ${posixQuote(shell)} -l`], command, exitSignal }
   }
 
   private async start(record: LiveTerminal, launcher: Launcher, generation: number): Promise<void> {
@@ -264,7 +266,6 @@ export class TerminalWorkspaceService extends ToolOperations {
             terminalId: record.terminal.id, provider,
             onEvent: event => {
               if (this.disposed || generation !== record.generation || !record.agent || record.agent.state === 'exited' || event.runId !== record.agent.runId) return
-              if (event.kind === 'process-exited') { this.releaseAgentRun(record); this.syncAgent(record); return }
               record.agent.setVisible(this.isVisible(record.terminal.id)); record.agent.hook(event); this.syncAgent(record)
             },
             onRequestClosed: requestId => { if (!this.disposed && generation === record.generation) { record.agent?.requestClosed(requestId); this.syncAgent(record) } },
@@ -273,7 +274,7 @@ export class TerminalWorkspaceService extends ToolOperations {
           if (this.disposed || generation !== record.generation) { hooks.dispose(); return }
           record.hooks = hooks
           Object.assign(env, hooks.env)
-          launcher = await this.launcher(record.terminal.launch, hooks.args, hooks.exitArgs)
+          launcher = await this.launcher(record.terminal.launch, hooks.args)
         } catch { /* A missing helper never prevents the native CLI; use the conservative screen fallback. */ }
         if (this.disposed || generation !== record.generation) { record.hooks?.dispose(); record.hooks = undefined; return }
         record.agent = new TerminalAgentStateMachine(record.hooks?.runId ?? randomUUID(), provider, record.terminal.cols, record.terminal.rows, record.hooks?.providerSessionId)
@@ -282,6 +283,7 @@ export class TerminalWorkspaceService extends ToolOperations {
       if (record.terminal.closedAt !== null) this.requireCapacity()
       record.output = ''
       record.sequence = 0
+      record.exitSignal = launcher.exitSignal
       // The size is read here, not before the await: a pane that measured itself while the terminal started already said so.
       const { cols, rows } = record.terminal
       record.terminal = { ...record.terminal, status: 'running', exitCode: null, closedAt: null }
@@ -291,10 +293,13 @@ export class TerminalWorkspaceService extends ToolOperations {
       this.append(record, `\x1b[2mOpened by Sotto at ${record.terminal.workingDirectory} · ${launcher.command}\x1b[0m\r\n`)
       record.subscriptions.push(pty.onData(data => {
         if (record.pty !== pty || this.disposed) return
+        const signal = record.exitSignal?.write(data)
+        if (signal?.exited) this.releaseAgentRun(record)
+        data = signal?.output ?? data
         record.agent?.setVisible(this.isVisible(record.terminal.id))
         record.agent?.output(data)
         this.syncAgent(record)
-        if (record.agent) {
+        if (record.agent && record.agent.state !== 'exited') {
           clearTimeout(record.activityTimer)
           record.activityTimer = setTimeout(() => { if (record.pty !== pty || this.disposed) return; record.agent?.quiet(); this.syncAgent(record) }, 4000)
           record.activityTimer.unref()
@@ -307,6 +312,8 @@ export class TerminalWorkspaceService extends ToolOperations {
         }
       }), pty.onExit(({ exitCode }) => {
         if (record.pty !== pty) return
+        const pending = record.exitSignal?.flush()
+        if (pending) this.append(record, pending)
         record.pty = undefined
         this.releaseAgentRun(record)
         record.terminal = { ...record.terminal, status: 'exited', exitCode }
@@ -479,6 +486,9 @@ export class TerminalWorkspaceService extends ToolOperations {
   }
   private kill(record: LiveTerminal): void {
     const pty = record.pty; record.pty = undefined
+    const pending = record.exitSignal?.flush()
+    if (pending) this.append(record, pending)
+    record.exitSignal = undefined
     this.releaseAgentRun(record)
     for (const subscription of record.subscriptions.splice(0)) subscription.dispose()
     try { pty?.kill() } catch { /* Already exited. */ }
