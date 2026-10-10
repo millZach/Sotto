@@ -83,6 +83,7 @@ export class TerminalStore {
   private subscribed: TerminalBridge | null = null
   private unsubscribe: (() => void) | null = null
   private listTokens = new Map<string, number>()
+  private capacity = { count: 0, version: -1 }
   /** Which place this store shows: the shared Tools surface, or a pane's own drawer. The two never show each other's shells. */
   constructor(private readonly place: TerminalPlace = 'tools') {}
 
@@ -92,6 +93,12 @@ export class TerminalStore {
   }
 
   thread(threadId: string): ThreadTerminals | undefined { return this.threads.get(threadId) }
+  sessionCount = (): number => this.capacity.count
+  private updateCapacity(capacity: { count: number; version: number }): void {
+    if (capacity.version < this.capacity.version) return
+    this.capacity = capacity
+    this.emit()
+  }
   loadError(sessionId: string): string | null { return this.records.get(sessionId)?.loadError ?? null }
   replaying(sessionId: string): boolean { return this.records.get(sessionId)?.replaying ?? false }
 
@@ -108,6 +115,7 @@ export class TerminalStore {
     const latest = this.threads.get(threadId)!
     if (!result.ok) { this.patch(threadId, { status: 'error', error: result.error }); return }
     const { workspace, sessions } = result.value
+    this.updateCapacity(result.value.capacity)
     if (latest.workspace && latest.workspace.workspaceId !== workspace.workspaceId) {
       // A replaced working folder has its own sessions; views for the old one are released.
       for (const session of latest.sessions) this.release(session.id)
@@ -314,6 +322,7 @@ export class TerminalStore {
   }
 
   private receive(bridge: TerminalBridge, event: TerminalEvent): void {
+    if (event.type === 'capacity') { this.updateCapacity(event.capacity); return }
     if (event.type === 'output') {
       // Each store follows only its own place, so another place's output never queues up here.
       if (event.place !== this.place) return
@@ -350,8 +359,10 @@ export class TerminalStore {
   private upsertSession(threadId: string, session: TerminalSession, replacing?: string): void {
     const thread = this.threads.get(threadId)
     if (!thread) return
-    const index = thread.sessions.findIndex(item => item.id === (replacing ?? session.id))
-    const sessions = index < 0 ? [...thread.sessions, session] : thread.sessions.map((item, position) => position === index ? session : item)
+    // Reopen's session event can precede its reply; replace the old hint without adding that new ID twice.
+    const current = replacing !== undefined && replacing !== session.id ? thread.sessions.filter(item => item.id !== session.id) : thread.sessions
+    const index = current.findIndex(item => item.id === (replacing ?? session.id))
+    const sessions = index < 0 ? [...current, session] : current.map((item, position) => position === index ? session : item)
     this.setThread({ ...thread, sessions })
   }
 
@@ -391,7 +402,7 @@ export class TerminalStore {
   }
 
   private fail(bridge: TerminalBridge, threadId: string, error: ToolsError, words: string): void {
-    this.patch(threadId, { busy: false, notice: error.code === 'busy' ? 'Terminal is busy. Try again in a moment.' : `${words} ${error.message}`.trim() })
+    this.patch(threadId, { busy: false, notice: `${words} ${error.message}`.trim() })
     if (error.code === 'workspace-changed' || error.code === 'session-unavailable') void this.activate(bridge, threadId)
   }
 

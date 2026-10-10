@@ -5,6 +5,10 @@ import { toolListRequestSchema, toolTargetSchema, type ToolsResult } from './too
 export const TERMINAL_CHANNEL = 'sotto:terminal:'
 export const TERMINAL_EVENT = `${TERMINAL_CHANNEL}event`
 export const TERMINAL_MAX_OUTPUT = 512 * 1024
+export const TERMINAL_SESSIONS_MAX = 32
+export const TERMINAL_LIMIT_MESSAGE = 'Tools and drawer shells across all threads share 32 terminals, including ended shells. Close a terminal to open another.'
+/** Main's total includes ended shells, across every thread and both places. Version orders list replies and events. */
+const terminalCapacitySchema = z.object({ count: z.number().int().nonnegative(), version: z.number().int().nonnegative() }).strict()
 /** Where a shell lives: the shared Tools surface, or a pane's own drawer. The two never show each other's shells. */
 export const terminalPlaceSchema = z.enum(['tools', 'drawer'])
 export type TerminalPlace = z.infer<typeof terminalPlaceSchema>
@@ -22,9 +26,10 @@ export const terminalSessionSchema = z.object({
   place: terminalPlaceSchema.default('tools'),
 }).strict()
 export const terminalSnapshotSchema = z.object({ session: terminalSessionSchema, output: z.string().max(TERMINAL_MAX_OUTPUT), sequence: z.number().int().nonnegative() }).strict()
-export const terminalListingSchema = z.object({ workspace: fileWorkspaceSchema, sessions: z.array(terminalSessionSchema).max(32) }).strict()
+export const terminalListingSchema = z.object({ workspace: fileWorkspaceSchema, sessions: z.array(terminalSessionSchema).max(TERMINAL_SESSIONS_MAX), capacity: terminalCapacitySchema }).strict()
 const identity = { threadId: z.string(), workspaceId: z.string(), sessionId: z.string().uuid() }
 export const terminalEventSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('capacity'), capacity: terminalCapacitySchema }).strict(),
   z.object({ type: z.literal('output'), ...identity, data: z.string().max(65536), sequence: z.number().int().nonnegative(), place: terminalPlaceSchema }).strict(),
   z.object({ type: z.literal('session'), session: terminalSessionSchema }).strict(),
   z.object({ type: z.literal('closed'), ...identity }).strict(),

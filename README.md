@@ -67,6 +67,8 @@ Escape dismisses a saved host's SSH question. While SSH is still waiting, **Answ
 
 Terminal mode keeps closed terminals on its Closed shelf until you quit. Reopen starts the same command with fresh output; Stop keeps the output readable.
 
+A provider exiting in Terminal mode prints its exit code and leaves an interactive shell in the same folder. Close tries to reclaim a terminal's own worktree with its branch kept; folders with uncommitted work stay. All terminal surfaces prefer PowerShell 7 on Windows when it is on PATH, and use the login shell on macOS and Linux. Tools and drawer shells share 32 slots across all threads, ended shells included. After quitting, those shells return with no saved output.
+
 ## Install
 
 You need Windows 10 or 11 (x64), an Apple silicon Mac with macOS 12 or newer, or Omarchy on x64 Linux (Arch and Hyprland).
