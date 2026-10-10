@@ -52,7 +52,7 @@ async function thread(stop: boolean): Promise<void> {
   } finally { host.disconnect(); await host.closed(); await rm(root, { recursive: true, force: true }) }
 }
 
-describe.skipIf(!LIVE)('Claude steering (live)', () => {
+describe.skipIf(!LIVE)('Claude steering (live) (requires SOTTO_CLAUDE_LIVE=1)', () => {
   it('reads a steer into the running turn', () => thread(false), 300_000)
   it('runs a steer written before a stop as the next turn', () => thread(true), 300_000)
 })
