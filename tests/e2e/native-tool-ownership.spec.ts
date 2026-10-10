@@ -13,7 +13,7 @@ async function addThreads(page: Page, paths: string[]): Promise<string[]> {
   return page.evaluate(async paths => {
     await window.sotto!.updateSettings({ onboardingComplete: true })
     const agents = window.sotto!.agents!
-    await agents.command({ type: 'configure', patch: { enabled: true, speak: false } })
+    await agents.command({ type: 'configure', patch: { enabled: true, } })
     await agents.command({ type: 'connect' })
     const ids: string[] = []
     for (const [index, path] of paths.entries()) {
@@ -21,7 +21,7 @@ async function addThreads(page: Page, paths: string[]): Promise<string[]> {
       const created = await agents.command({ type: 'create-project', title, path, useExisting: true })
       if (created.error) throw new Error(created.error)
       const projectId = created.host.projects.find(project => project.title === title)!.id
-      const state = await agents.command({ type: 'create-thread', projectId, title, modelId: 'claude:test', managed: false, workingCopy: 'shared' })
+      const state = await agents.command({ type: 'create-thread', projectId, title, modelId: 'claude:test', workingCopy: 'shared' })
       if (state.error || !state.activeThreadId) throw new Error(state.error ?? 'Thread was not created')
       ids.push(state.activeThreadId)
     }

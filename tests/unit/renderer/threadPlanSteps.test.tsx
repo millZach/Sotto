@@ -21,7 +21,7 @@ const lifecycle = (patch: Partial<AgentActivity> = {}): AgentActivity => activit
 
 function stateWith(patch: Partial<AgentThread>): AgentState {
   const state = threadsStateFixture()
-  state.assignments = []
+
   state.activeThreadId = THREAD
   state.host.connected = true
   Object.assign(state.host.threads.find(item => item.id === THREAD)!, { modelId: 'codex:gpt' }, patch)
@@ -30,7 +30,7 @@ function stateWith(patch: Partial<AgentThread>): AgentState {
 
 function mount(state: AgentState) {
   vi.mocked(useAgents).mockImplementation(liveAgentState(state).useLive)
-  render(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+  render(<ThreadsView now={NOW} />)
   return { transcript: screen.getByRole('log', { name: 'Thread transcript' }) }
 }
 

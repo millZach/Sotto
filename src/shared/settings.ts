@@ -27,7 +27,6 @@ export type EffortColor = 'ember' | 'cyberpunk' | 'rainbow' | 'aurora' | 'plasma
 export const EFFORT_COLORS = ['ember', 'cyberpunk', 'rainbow', 'aurora', 'plasma', 'accent'] as const satisfies readonly EffortColor[]
 export const EFFORT_COLOR_LABELS: Record<EffortColor, string> = { ember: 'Ember', cyberpunk: 'Cyberpunk', rainbow: 'Rainbow', aurora: 'Aurora', plasma: 'Plasma', accent: 'Theme accent' }
 export type HistoryRetention = 25 | 100 | 500 | 'unlimited'
-export type LlmQuality = 'low' | 'medium' | 'value' | 'high'
 
 /**
  * The rules under which Sotto reclaims a thread's worktree on its own (ADR-0041), the same four
@@ -200,11 +199,14 @@ export interface AppSettings {
    * clears it. Older settings files have no such field and load as `false`.
    */
   microphoneSkipped: boolean
+  /**
+   * AI cleanup on or off. One model does every cleanup (ADR-0069); the `llmQuality` tier
+   * picker is gone, and a settings file that still carries the key parses and drops it.
+   */
   llmFormatting: boolean
   /** OpenRouter key shared by transcription and AI cleanup; stored in the formatting credential slot. */
   llmApiKey: string
   llmDictionary: string
-  llmQuality: LlmQuality
   llmTimeoutMs: number
   llmMinWords: number
   /**
@@ -239,12 +241,6 @@ export interface AppSettings {
    * a desktop does, so it is not on the settings allow-list.
    */
   tailnetConnections: boolean
-  /**
-   * The voice coordinator (the wake phrase, the Agents room, spoken hints, the
-   * widget's voice controls and assignment) is hidden for the beta. Off keeps
-   * every one of those surfaces out of the window; dictation is unaffected.
-   */
-  voiceCoordinatorEnabled: boolean
   /**
    * Whether memory (the Memory page, the questionnaire that greets the Agents
    * room and the preferences retrieved for a turn) is shown at all. Off for
@@ -315,7 +311,6 @@ const fieldSchemas = {
   llmFormatting: z.boolean(),
   llmApiKey: z.string().max(256),
   llmDictionary: z.string().max(4_000),
-  llmQuality: z.enum(['low', 'medium', 'value', 'high']),
   llmTimeoutMs: z.number().int().min(500).max(10_000),
   llmMinWords: z.number().int().min(0).max(50),
   threadTitles: z.boolean(),
@@ -342,7 +337,6 @@ const fieldSchemas = {
   phoneAccess: z.boolean(),
   phoneAccessName: z.string().trim().max(63),
   tailnetConnections: z.boolean(),
-  voiceCoordinatorEnabled: z.boolean(),
   memoryEnabled: z.boolean(),
   cloudIphoneMonthlyMinutes: z.number().int().min(10).max(100_000),
   cloudIphoneIdleMinutes: z.number().int().min(1).max(60),
@@ -395,7 +389,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   llmFormatting: false,
   llmApiKey: '',
   llmDictionary: '',
-  llmQuality: 'low',
   llmTimeoutMs: 2_500,
   llmMinWords: 5,
   // On by default: the thread's own provider names it, on the account the thread
@@ -440,9 +433,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   phoneAccessName: '',
   // Off until a desktop turns it on over SSH, at Add host or in Edit connection (ADR-0053).
   tailnetConnections: false,
-  // Off for the beta: the voice coordinator is not ready to ship, so nothing
-  // voice-shaped is shown until it is turned on here.
-  voiceCoordinatorEnabled: false,
   // Off for the beta: memory does not ship in the first one.
   memoryEnabled: false,
   // About run.cloud's free $15 a month at its $0.02-a-minute price (ADR-0047).
@@ -522,7 +512,6 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     llmFormatting: parseField(persisted, 'llmFormatting', defaults),
     llmApiKey: parseField(persisted, 'llmApiKey', defaults),
     llmDictionary: parseField(persisted, 'llmDictionary', defaults),
-    llmQuality: parseField(persisted, 'llmQuality', defaults),
     llmTimeoutMs: parseField(persisted, 'llmTimeoutMs', defaults),
     llmMinWords: parseField(persisted, 'llmMinWords', defaults),
     threadTitles: parseField(persisted, 'threadTitles', defaults),
@@ -549,7 +538,6 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     phoneAccess: parseField(persisted, 'phoneAccess', defaults),
     phoneAccessName: parseField(persisted, 'phoneAccessName', defaults),
     tailnetConnections: parseField(persisted, 'tailnetConnections', defaults),
-    voiceCoordinatorEnabled: parseField(persisted, 'voiceCoordinatorEnabled', defaults),
     memoryEnabled: parseField(persisted, 'memoryEnabled', defaults),
     cloudIphoneMonthlyMinutes: parseField(persisted, 'cloudIphoneMonthlyMinutes', defaults),
     cloudIphoneIdleMinutes: parseField(persisted, 'cloudIphoneIdleMinutes', defaults),

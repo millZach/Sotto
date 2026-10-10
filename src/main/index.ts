@@ -51,7 +51,6 @@ import {
   ipcMain,
   Menu,
   nativeImage,
-  net,
   powerMonitor,
   protocol,
   screen,
@@ -160,11 +159,6 @@ import linuxTrayIconPath from '../../build/icon.png?asset'
 import { defaultSettings, type AppSettings } from '../shared/settings'
 import { blockSpellcheckDictionaryDownloads, disableDnsPrefetching, enableWasmThreadSupport } from './security'
 import {
-  beginRuntimeVerification,
-  registerLocalAssetProtocols,
-  registerModelSchemesAsPrivileged,
-} from './models/modelProtocol'
-import {
   createE2EClipboard,
   createE2EGlobalShortcuts,
   createE2ENativeState,
@@ -214,10 +208,7 @@ import { ClaudeStreamJsonHost, type ClaudeAdapterEvent } from './agents/claude'
 import { CodexAppServerHost } from './agents/codex'
 import { BROWSER_EVENT } from '../shared/browser'
 import { GIT_CHANGES_EVENT } from '../shared/gitChanges'
-import { NaturalSpeechModels } from './agents/speechModels'
-import { GrokSpeechService } from './agents/grokSpeech'
-import { KokoroSpeechService } from './agents/kokoroSpeech'
-import { e2eGrokSpeechFetch, e2eKokoroSpeechFetch } from './e2e/agentSpeech'
+import { removeRetiredVoiceCache } from './agents/retiredVoiceCache'
 import { E2EAgentHost, e2eAgentReasoner } from './e2e/agentEffects'
 import { installRemoteHostE2E } from './e2e/remoteHost'
 import { installBabysitPassE2E } from './e2e/babysitPass'
@@ -548,11 +539,6 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
 async function createRuntime(): Promise<NativeRuntimeController> {
   blockSpellcheckDictionaryDownloads(session.defaultSession)
   const resourceRoot = app.isPackaged ? process.resourcesPath : join(__dirname, '../../resources')
-  // The runtime's hash starts first so it overlaps PATH repair and the stores below.
-  // It is still waited on where it always was, before any window, and a tampered runtime still fails startup.
-  const runtimeVerification = e2eConfiguration === null
-    ? beginRuntimeVerification(join(resourceRoot, 'runtime'))
-    : null
   // Dock and Finder launch with the system PATH. Provider CLIs live in the user's login PATH.
   await installGuiPath()
   const userDataPath = app.getPath('userData')
@@ -560,8 +546,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const memoryProfile = memoryStore === undefined ? undefined : new MemoryProfile(memoryStore)
   const authority = memoryStore === undefined ? undefined : new PolicyStore(memoryStore)
   app.on('will-quit', () => memoryStore?.close())
-  const naturalSpeechModels = new NaturalSpeechModels(join(userDataPath, 'models'))
-  await naturalSpeechModels.initialize()
+  await removeRetiredVoiceCache(userDataPath)
   // Packaged builds get the brand icon stamped onto the executable by
   // electron-builder; an unpackaged run has to name the repository icon itself.
   const unpackagedIconPath = app.isPackaged
@@ -580,19 +565,14 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   await credentials.load()
   const cloudIphoneLedger = new CloudUsageLedger(userDataPath)
   await cloudIphoneLedger.load()
-  const grokSpeech = new GrokSpeechService({ credentials, ...(e2eConfiguration === null ? {} : { fetchFn: e2eGrokSpeechFetch }) })
-  const kokoroSpeech = new KokoroSpeechService({ credentials, ...(e2eConfiguration === null ? {} : { fetchFn: e2eKokoroSpeechFetch }) })
   const settings = new SecureSettings(plainSettings, credentials, () => recoveryNotices.publish({ code: 'OPENROUTER_KEY_UNREADABLE' }))
   await migrateDesktopKey(settings, recoveryNotices, logOperational)
+  await plainSettings.save(await plainSettings.get()).catch(() => console.warn('retired-voice-settings-save-failed'))
   await plainSettings.migrateProjectWorkingCopyDefaults(await loadHostIdentity(userDataPath))
   const startupSettings = await settings.get()
   let agentHistoryEnabled = startupSettings.historyEnabled
   const retiredChatHistory = new RetiredChatHistory(userDataPath, () => agentHistoryEnabled)
   let workingCopySettings = startupSettings
-  // Two beta gates the renderer hides surfaces behind; main keeps their promise. With the voice coordinator
-  // off no thread stays managed across a start, and with memory off no turn retrieves preferences.
-  let agentVoiceCoordinatorEnabled = startupSettings.voiceCoordinatorEnabled
-  const agentMemoryEnabled = startupSettings.memoryEnabled
   let e2eOpenAtLogin = false
   const startup = new StartupService(platform === 'linux' ? linuxAutostart({
     isPackaged: app.isPackaged, executable: process.execPath, configHome: process.env.XDG_CONFIG_HOME, log: logOperational,
@@ -676,7 +656,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     directory: userDataPath, credentials,
     ...(app.isPackaged ? { claudeHistoryModulePath: join(process.resourcesPath, 'claude-sdk', 'sdk.mjs') } : {}),
     settings: () => workingCopySettings, writingSettings: () => settings.get(),
-    historyEnabled: () => agentHistoryEnabled, coordinatorEnabled: () => agentVoiceCoordinatorEnabled,
+    historyEnabled: () => agentHistoryEnabled,
     gitStatus: { fetchIntervalMs: () => workingCopySettings.gitFetchIntervalSeconds * 1000, foreground: windowInFront, ...(ghStandIn ? { ghStandIn } : {}), log: event => { logOperational(event) } },
     babysitting: { agentTool: () => workingCopySettings.babysitPullRequests },
     openExternal: url => shell.openExternal(url),
@@ -685,7 +665,6 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const error = await shell.openPath(path); if (error) throw new Error(error)
     },
     ...(authority === undefined ? {} : { authority }),
-    ...(memoryProfile === undefined || !agentMemoryEnabled ? {} : { preferences: memoryProfile }),
     logFailure: (code, detail) => { console.error(`[Sotto] ${code} ${detail}`) },
     bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
     ...(e2eConfiguration === null ? { installedProviders: detectInstalledProviders } : {}),
@@ -711,8 +690,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const { agentHost, agentControl, threadRegistry, turns, hostService } = localRuntime
   // A Playwright journey runs a babysitting pass when it asks, rather than waiting on the two-minute timer; development only.
   if (e2eConfiguration !== null && !app.isPackaged && localRuntime.babysitter) installBabysitPassE2E(localRuntime.babysitter)
-  // The window's panes show their threads only while it has the focus (ADR-0046). The widget taking the focus is the
-  // window losing it, as is another app, minimising or hiding to the tray.
+  // The window's panes show their threads only while it has the focus (ADR-0046).
   const windowFocusChanged = (): void => {
     const focused = BrowserWindow.getFocusedWindow()
     hostService.setWindowFocused(focused !== null && focused.webContents === windows.getMainWebContents())
@@ -830,6 +808,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // end-to-end run serves its own releases.
   const releasesStandIn = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_HOST_RELEASES_URL'] : undefined
   const hostUpdates = new HostUpdates({ version: appVersion, ...(releasesStandIn ? { releasesUrl: releasesStandIn } : {}),
+    requiresManagementUpdate: hostId => hostRouter.requiresManagementUpdate(hostId),
     hosts: { candidates: () => desktopHosts.updateCandidates(), run: (id, operation, options) => desktopHosts.runUpdate(id, operation, options),
       restart: (id, version, options) => desktopHosts.restartForUpdate(id, version, options), subscribe: listener => desktopHosts.subscribe(() => listener()) },
     threads: busyThreads })
@@ -903,15 +882,12 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   await hostRouter.reconcileRequestDrafts(requestDrafts).catch(() => undefined)
   const reconcileRequestDrafts = (): void => { void hostRouter.reconcileRequestDrafts(requestDrafts).catch(() => undefined) }
 
-  // The shell reaches both windows; the widget draws a thread's state, never its history, so it needs
-  // nothing more. Only the threads the main window has declared viewed receive their messages.
+  // Only the threads the main window has declared viewed receive their messages.
   const agentStateBroadcaster = new AgentStateBroadcaster()
   const agentStatePublisher = coalesceAgentStatePublishes(state => {
     reconcileRequestDrafts()
     // A window's model catalog rarely changes; omitting a repeat is most of what this saves (issue #286).
-    agentStateBroadcaster.send(state, 'main', payload => windows.sendToMain(AGENT_STATE, payload))
-    agentStateBroadcaster.send(state, 'widget', payload => windows.sendToWidget(AGENT_STATE, payload))
-    if (state.configuration.enabled) void windows.showWidget().catch(() => undefined)
+    agentStateBroadcaster.send(state, payload => windows.sendToMain(AGENT_STATE, payload))
   })
   // A detail that opens a message goes out at once; the shell waiting in its window goes just ahead of it, so the
   // window paints the two in one commit (issue #771).
@@ -955,7 +931,6 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     // reload/devtools accelerators the app ships with today.
     Menu.setApplicationMenu(Menu.buildFromTemplate(applicationMenuTemplate))
   }
-  const runtimeSource = runtimeVerification === null ? null : await runtimeVerification
   const e2eState = e2eConfiguration === null ? null : createE2ENativeState()
   const linuxClipboard = e2eState === null && platform === 'linux'
     ? createWaylandClipboard(clipboard, () => recoveryNotices.publish({ code: 'DESKTOP_CLIPBOARD_UNAVAILABLE' }))
@@ -1157,7 +1132,6 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       if (grantDefaultChanged) browserService?.settingChanged()
       if (babysittingChanged) void pullRequestTools.settingChanged().catch(() => undefined)
       agentHistoryEnabled = settings.historyEnabled
-      agentVoiceCoordinatorEnabled = settings.voiceCoordinatorEnabled
       await cleanSettingsHistory(agentControl, async () => {
         showWidgetWhenIdle = settings.showWidgetWhenIdle
         widgetPresentation = widgetPresentationFor(settings)
@@ -1279,14 +1253,6 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         microphoneAccess === null ? undefined : () => microphoneAccess.ensure(),
         microphoneAccess === null ? undefined : () => microphoneAccess.isGranted(),
       ),
-    installProtocols: runtimeSource === null
-      ? () => () => undefined
-      : () => registerLocalAssetProtocols({
-          protocol,
-          net,
-          modelSources: () => naturalSpeechModels.protocolSources(),
-          runtimeSource,
-        }),
     registerIpc: () => {
       const cleanupRequestDrafts = registerRequestDraftIpc(ipcMain, requestDrafts, () => windows.getTrustedRenderers())
       const files = new FilesService({
@@ -1374,10 +1340,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       })
       const cleanupHosts = registerHostsIpc(ipcMain, desktopHosts, () => windows.getTrustedRenderers(), state => windows.sendToMain(HOSTS_CHANGED, state), hostTailscale)
       const cleanupPhones = registerPhonesIpc(ipcMain, phoneAccess, () => windows.getTrustedRenderers(), state => windows.sendToMain(PHONES_CHANGED, state))
-      const cleanupAgents = registerAgentIpc(ipcMain, hostRouter, hostRouter, () => windows.getTrustedRenderers(), platform, e2eConfiguration === null ? naturalSpeechModels : {
-        status: async () => ({ ready: true, completedBytes: 1, totalBytes: 1 }),
-        download: async () => ({ ready: true, completedBytes: 1, totalBytes: 1 }),
-      }, grokSpeech, kokoroSpeech, { voiceCoordinatorEnabled: startupSettings.voiceCoordinatorEnabled, wakeControl: agentControl, encodeReceipt: agentStateBroadcaster.encodeReceipt, workingCopyOptions: projectId => { const key = parseHostEntityKey(projectId); if (key && key.hostId !== agentControl.get().hostId) throw new Error('Working-copy choices are on the host machine. Use the existing project folder or create its worktree there.'); return agentHost.workingCopyOptions(key?.id ?? projectId) } })
+      const cleanupAgents = registerAgentIpc(ipcMain, hostRouter, hostRouter, () => windows.getTrustedRenderers(), { encodeReceipt: agentStateBroadcaster.encodeReceipt, workingCopyOptions: projectId => { const key = parseHostEntityKey(projectId); if (key && key.hostId !== agentControl.get().hostId) throw new Error('Working-copy choices are on the host machine. Use the existing project folder or create its worktree there.'); return agentHost.workingCopyOptions(key?.id ?? projectId) } })
       // An E2E run never leaves the app for System Settings.
       const systemSettingsOpener = e2eConfiguration === null ? createSystemSettingsOpener(platform, url => shell.openExternal(url)) : null
       const cleanup = registerIpc(ipcMain, {
@@ -1539,8 +1502,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   }
 }
 
-// Electron takes one list of privileged schemes: the model schemes and an interactive visual's page (ADR-0060).
-registerModelSchemesAsPrivileged(protocol, [VISUAL_SCHEME_PRIVILEGES])
+protocol.registerSchemesAsPrivileged([VISUAL_SCHEME_PRIVILEGES])
 enableWasmThreadSupport(app.commandLine)
 disableDnsPrefetching(app.commandLine)
 configurePasswordStore(platform, app.commandLine, process.env.XDG_CURRENT_DESKTOP)

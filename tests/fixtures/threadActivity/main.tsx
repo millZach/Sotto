@@ -98,8 +98,7 @@ function state(scenario: Scenario): AgentState {
       models: [...fixture.models], projects: [...fixture.projects], threads: [thread, ...fixture.threads.filter(item => item.projectId !== 'workshop')].map(agentThread),
     },
     topLevel: { connection: 'connected',
-      assignments: [],
-      queue: [],
+
       activeThreadId: THREAD,
       activeProjectId: 'workshop',
       draft: '',
@@ -109,13 +108,12 @@ function state(scenario: Scenario): AgentState {
       threadDrafts: [],
       deliveries: [],
       deliveredDrafts: [],
-      pendingRequest: '',
+
       globalLaneBusy: false,
       notice: '',
       error: null,
-      speech: { id: 0, text: '' },
-      voice: { status: 'off', error: null, action: 'none', revision: 0 },
-      credentials: { reasoning: false, grokSpeech: false, secure: true },
+
+      credentials: { reasoning: false, secure: true },
       reasoningAccounts: [] },
   })
 }
@@ -124,4 +122,4 @@ const params = new URLSearchParams(location.search)
 publishFixtureState(state((params.get('scenario') as Scenario | null) ?? 'settled'))
 window.activityFixture = { show: scenario => publishFixtureState(state(scenario)) }
 
-createRoot(document.getElementById('root')!).render(<div style={{ display: 'flex', height: '100vh' }}><ThreadsView onOpenAgents={() => undefined} now={E2E_THREADS_NOW} /></div>)
+createRoot(document.getElementById('root')!).render(<div style={{ display: 'flex', height: '100vh' }}><ThreadsView now={E2E_THREADS_NOW} /></div>)

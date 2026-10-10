@@ -7,9 +7,8 @@ import { ThreadOptions } from '../../../src/renderer/src/agents/ThreadOptions'
 import { pendingSettingsStore } from '../../../src/renderer/src/agents/pendingSettings'
 import { defaultAgentConfiguration, PROVIDER_LABELS, providerIdSchema, type AgentCommand, type AgentState, type AgentThread } from '../../../src/shared/agents'
 
-
-export const caps = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true }
-export function fixture(thread: Partial<AgentThread> = {}): AgentState {
+const caps = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true }
+function fixture(thread: Partial<AgentThread> = {}): AgentState {
   return threadsStateFixture({ cloneOverrides: false,
     configuration: { ...defaultAgentConfiguration(), enabledProviders: ['codex', 'claude', 'grok'] },
     host: { connected: true, name: 'Providers', version: '', capabilities: caps, projects: [],
@@ -18,9 +17,9 @@ export function fixture(thread: Partial<AgentThread> = {}): AgentState {
         reasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultReasoningEffort: 'medium', runtimeModes: ['approval-required', 'auto-accept-edits', 'auto', 'full-access'] })),
       threads: [{ id: 'thread', providerId: 'claude', projectId: 'project', title: 'Claude work', modelId: 'claude:model', status: 'idle', messages: [], requests: [], nativeSessionStarted: false, reasoningEffort: 'high', runtimeMode: 'auto', ...thread }],
     },
-    topLevel: { assignments: [], queue: [], activeThreadId: 'thread', activeProjectId: null } })
+    topLevel: { activeThreadId: 'thread', activeProjectId: null } })
 }
-export function mount(state = fixture()) {
+function mount(state = fixture()) {
   const command = vi.fn(async () => state)
   render(<ThreadOptions thread={state.host.threads[0]!} state={state} command={command} />)
   return { command }
@@ -32,7 +31,7 @@ export function mount(state = fixture()) {
  * care what the control shows before and after a confirmation need that, because a static fixture confirms a
  * change and then reports the level it always had.
  */
-export function Live({ answer }: { answer: (effort: string) => Promise<AgentState | null> }): React.ReactElement {
+function Live({ answer }: { answer: (effort: string) => Promise<AgentState | null> }): React.ReactElement {
   const [state, setState] = React.useState(fixture)
   const command: AgentConnection['command'] = async request => {
     const next = await answer('reasoningEffort' in request ? request.reasoningEffort ?? '' : '')
@@ -47,7 +46,7 @@ export function Live({ answer }: { answer: (effort: string) => Promise<AgentStat
  * promise resolves, as `AgentContext` does, unless `draw` is false, which is a reply that landed before the broadcast
  * carrying it (#306). `redraw` then commits a state the way that later broadcast would.
  */
-export function LiveThread({ answer, draw = true, start = fixture(), redraw }: {
+function LiveThread({ answer, draw = true, start = fixture(), redraw }: {
   answer: (request: AgentCommand, current: AgentState) => Promise<AgentState | null>; draw?: boolean; start?: AgentState
   redraw?: (commit: (next: AgentState) => void) => void
 }): React.ReactElement {
@@ -62,8 +61,10 @@ export function LiveThread({ answer, draw = true, start = fixture(), redraw }: {
   }
   return <ThreadOptions thread={state.host.threads[0]!} state={state} command={command} />
 }
-export const withThread = (state: AgentState, patch: Partial<AgentThread>): AgentState =>
+const withThread = (state: AgentState, patch: Partial<AgentThread>): AgentState =>
   ({ ...state, error: null, host: { ...state.host, threads: [{ ...state.host.threads[0]!, ...patch }] } })
 export function setupThreadOptionsTests(): void {
   afterEach(() => { cleanup(); pendingSettingsStore.clear() })
 }
+
+export { caps, fixture, Live, LiveThread, mount, withThread }

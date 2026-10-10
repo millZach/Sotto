@@ -59,7 +59,7 @@ test(`thread structured text and selections survive a full app restart with hist
     try {
       let page = launched.page
       const id = await page.evaluate(async () => {
-        await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false, reasoning: 'codex', reasoningModel: 'codex:test', reasoningEffort: 'low' } })
+        await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, reasoning: 'codex', reasoningModel: 'codex:test', reasoningEffort: 'low' } })
 
         await window.sotto!.agents!.command({ type: 'connect' })
         await window.sotto!.agents!.command({ type: 'save-thread-draft', threadId: 'workshop', draftId: crypto.randomUUID(), text: 'Independent threaded composer' })
@@ -122,7 +122,7 @@ test(`thread full-process restart restores an interrupted answer as held and nev
     try {
       let page = launched.page
       const id = await page.evaluate(async () => {
-        await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false, reasoning: 'codex', reasoningModel: 'codex:test', reasoningEffort: 'low' } })
+        await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, reasoning: 'codex', reasoningModel: 'codex:test', reasoningEffort: 'low' } })
         await window.sotto!.agents!.command({ type: 'connect' }); return 'workshop'
       })
       await emit(page, id); await open(page)
@@ -160,7 +160,7 @@ test('a real atomic save failure retains the visible answer, blocks sending and 
     try {
       const { page } = launched
       await page.evaluate(async () => {
-        await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+        await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true } })
         await window.sotto!.agents!.command({ type: 'connect' })
       })
       await emit(page, 'workshop'); await open(page); await record(launched)
@@ -197,7 +197,7 @@ test('invalid request draft storage remains unchanged and is honestly shown as u
     try {
       const { page } = launched
       await page.evaluate(async () => {
-        await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+        await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true } })
         await window.sotto!.agents!.command({ type: 'connect' })
       })
       await emit(page, 'workshop'); await open(page); await record(launched)
@@ -235,7 +235,7 @@ test('legacy option choices survive a full restart, stay bound to the original q
     try {
       let page = launched.page
       await page.evaluate(async () => {
-        await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+        await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true } })
         await window.sotto!.agents!.command({ type: 'connect' })
         await window.sotto!.agents!.command({ type: 'save-thread-draft', threadId: 'workshop', draftId: crypto.randomUUID(), text: 'Independent legacy follow-up draft' })
       })

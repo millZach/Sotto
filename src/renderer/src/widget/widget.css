@@ -411,69 +411,6 @@ button {
   background: color-mix(in srgb, var(--tt-text) 18%, transparent);
 }
 
-.widget-agent-actions {
-  display: inline-flex;
-  flex: none;
-  gap: 4px;
-  pointer-events: auto;
-}
-
-.widget-sliver:not([data-expanded]) .widget-agent-actions {
-  visibility: hidden;
-  pointer-events: none;
-}
-
-.widget-shell[data-agent-controls] .widget-sliver__prompt { gap: 12px; }
-.widget-shell[data-agent-controls] .widget-capsule { width: 284px; }
-.widget-shell[data-agent-controls][data-orientation='vertical'] .widget-capsule { width: 40px; height: 284px; }
-.widget-shell[data-orientation='vertical'] .widget-capsule .widget-agent-actions { flex-direction: column; }
-
-.widget-shell[data-threads-expanded] {
-  padding: 18px;
-  gap: 14px;
-}
-.widget-shell[data-threads-expanded] > .widget-sliver,
-.widget-shell[data-threads-expanded] > .widget-capsule { flex-shrink: 0; }
-
-.widget-threads {
-  width: 100%;
-  min-height: 0;
-  flex: 1;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--widget-edge) transparent;
-  border: 1px solid var(--widget-edge);
-  border-radius: 20px;
-  padding: 18px;
-  background: linear-gradient(180deg, var(--widget-surface-top), var(--widget-surface-bottom));
-  box-shadow: 0 0 0 1px var(--widget-rim), var(--widget-shadow-soft);
-  font-size: 12px;
-}
-.widget-threads > h2 { display: flex; justify-content: space-between; align-items: center; }
-.widget-threads h2 { font-size: 13px; margin: 0 0 12px; }
-.widget-threads h2 > span { color: var(--tt-text-muted); font-size: 11px; font-weight: 400; }
-.widget-threads__list { display: grid; gap: 4px; }
-.widget-threads__thread {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  width: 100%;
-  padding: 9px 10px;
-  border: 0;
-  border-radius: 9px;
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-}
-.widget-threads__thread > span,
-.widget-threads__thread > small { width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.widget-threads__thread > small { color: var(--tt-text-muted); font-size: 10px; }
-.widget-threads__thread:hover { background: color-mix(in srgb, var(--tt-text) 5%, transparent); }
-.widget-threads__thread[aria-pressed='true'] { background: color-mix(in srgb, var(--widget-activity) 15%, transparent); }
-.widget-threads summary { padding: 12px 10px; color: var(--tt-text-muted); cursor: pointer; }
-.widget-threads__detail { display: grid; gap: 14px; margin-top: 14px; padding-top: 18px; border-top: 1px solid var(--widget-edge); }
-.widget-threads__detail > h2 { margin: 0; }
-
 .widget-action[data-tone='stop'] {
   color: var(--tt-error);
 }

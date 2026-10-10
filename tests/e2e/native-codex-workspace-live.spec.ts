@@ -21,7 +21,7 @@ const run = promisify(execFile)
 test('installed Codex: structured skill, worktree, queue, steer and restart without replay', async () => {
   test.skip(process.env.SOTTO_NATIVE_PHASE2_LIVE !== '1', 'Requires explicit bounded native subscription opt-in.')
   test.skip(!!process.env.SOTTO_NATIVE_PHASE2_RECOVERY_ROOT, 'Recovery mode must not create another native project or turn.')
-  await run(process.execPath, [resolve('scripts/verify-runtime.mjs')], { windowsHide: true, timeout: 15_000 })
+  await run(process.execPath, [resolve('scripts/verify-assets.mjs')], { windowsHide: true, timeout: 15_000 })
   const root = requireOwnedE2EProfile(await realpath((await ownedE2EProfile({ prefix: 'sotto-e2e-native-' })).directory))
   const profile = join(root, 'profile'); const project = join(root, 'project')
   const skillName = `sotto-native-${randomUUID().slice(0, 8)}`
@@ -89,7 +89,7 @@ test('installed Codex: structured skill, worktree, queue, steer and restart with
   try {
     await launch()
     await command({ type: 'configure', patch: { provider: 'codex', enabled: true, enabledProviders: ['codex'],
-      speak: false, reasoning: 'none', followupLimit: 0 } })
+      reasoning: 'none', } })
     const connected = await command({ type: 'connect', provider: 'codex' })
     // A command answers with a receipt that names the model catalog by revision; the whole list is read here.
     const model = (await state()).host.models.find(value => value.providerId === 'codex' && value.ready && /luna|mini/i.test(value.name))
@@ -101,7 +101,7 @@ test('installed Codex: structured skill, worktree, queue, steer and restart with
     const registered = await command({ type: 'create-project', provider: 'codex', path: project, title: 'Synthetic Phase 2', useExisting: true })
     const projectId = registered.host.projects.find(value => resolve(value.path) === resolve(project))!.id
     const created = await command({ type: 'create-thread', projectId, title: 'Synthetic native Phase 2', modelId: model.id,
-      workingCopy: 'independent', runtimeMode: 'full-access', reasoningEffort: effort, managed: false })
+      workingCopy: 'independent', runtimeMode: 'full-access', reasoningEffort: effort })
     threadId = created.activeThreadId!
     expect(created.host.threads).toHaveLength(1)
     const working = await thread()
@@ -167,7 +167,7 @@ test('installed Codex: structured skill, worktree, queue, steer and restart with
     expect(await readFile(join(project, proofName), 'utf8').then(() => true, () => false)).toBe(false)
     expect(completed.messages.some(value => value.role === 'assistant' && value.text.trim() === 'STEER_APPLIED')).toBe(true)
     expect((await state()).followups).toHaveLength(0)
-    expect((await state()).assignments).toHaveLength(0)
+
     expect(completed.requests).toHaveLength(0)
     const commands = completed.activities!.filter(value => value.kind === 'command')
     expect(commands.some(value => value.status === 'completed' && value.exitCode === 0 && value.command?.includes(scriptName) &&

@@ -8,7 +8,7 @@ First-time validation of the macOS build, run on an Apple Silicon Mac. Backgroun
 - Xcode command-line tools: `xcode-select --install`
 - Node 24 (same as CI in `.github/workflows/ci.yml`). Node 22 can install and typecheck; the unit suite needs Node 24's `node:sqlite` builtin listing.
 - `gh` authenticated (for the release upload at the end).
-- Network on first build (~400 MB: Electron darwin-arm64, electron-builder icns/dmg toolsets, the bundled model) and ~5 GB free disk.
+- Network on first build (~400 MB: Electron darwin-arm64, electron-builder icns/dmg toolsets) and ~5 GB free disk.
 - A real `git clone` (not a source zip) — build provenance runs `git rev-parse HEAD`.
 
 ## 1. Build and unit-verify
@@ -17,7 +17,7 @@ First-time validation of the macOS build, run on an Apple Silicon Mac. Backgroun
 git clone https://github.com/millZach/Sotto.git && cd Sotto
 git checkout <branch-or-tag>
 npm ci
-npm run runtime:prepare && npm run runtime:verify
+npm run assets:verify
 npm run lint && npm run typecheck && npm test
 npm run package:dir:mac
 ```

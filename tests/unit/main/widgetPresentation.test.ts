@@ -1,9 +1,10 @@
 // @vitest-environment node
+// @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { WIDGET_VISIBILITY } from '../../../src/shared/channels'
-import { type Rectangle } from '../../../src/main/windows/windowManager'
 import { platformProfile } from '../../../src/main/platformProfile'
-import { createDeferred, createHarness, setWidgetPresentation, createMutableTwoDisplayAdapter } from '../../fixtures/windowManager'
+import { type Rectangle } from '../../../src/main/windows/windowManager'
+import { WIDGET_VISIBILITY } from '../../../src/shared/channels'
+import { createDeferred, createHarness, createMutableTwoDisplayAdapter, setWidgetPresentation } from '../../fixtures/windowManager'
 
 describe('WindowManager lifecycle', () => {
   it('constructs the widget at the bottom idle-resting footprint', async () => {
@@ -32,69 +33,6 @@ describe('WindowManager lifecycle', () => {
     ])
     expect(widget.setPosition).not.toHaveBeenCalled()
     expect(widget.setSize).not.toHaveBeenCalled()
-  })
-
-  it.each(['win32', 'darwin'] as const)(
-    'expands threads and restores the vertical pill footprint and focus policy on %s',
-    async (platform) => {
-      const chrome = platformProfile(platform)
-      const { manager, onWidgetMoved, windows } = createHarness({
-        platform,
-        chrome,
-        getWidgetPlacement: () => ({ kind: 'edge', edge: 'left' }),
-      })
-      await manager.showWidget()
-      const widget = windows[0]!
-
-      setWidgetPresentation(manager, 'pill-controls')
-      expect(widget.bounds).toEqual({ x: 1_016, y: 390, width: 88, height: 320 })
-      expect(widget.setFocusable).not.toHaveBeenCalled()
-
-      setWidgetPresentation(manager, 'threads-expanded')
-      expect(widget.bounds).toEqual({ x: 1_016, y: 270, width: 420, height: 560 })
-      expect(widget.setFocusable).toHaveBeenLastCalledWith(true)
-
-      setWidgetPresentation(manager, 'pill-controls')
-      expect(widget.bounds).toEqual({ x: 1_016, y: 390, width: 88, height: 320 })
-      expect(widget.setFocusable).toHaveBeenLastCalledWith(chrome.widgetFocusable)
-      expect(widget.focus).not.toHaveBeenCalled()
-      expect(onWidgetMoved).not.toHaveBeenCalled()
-      manager.dispose()
-    },
-  )
-
-  it('does not deactivate another app by resetting an unchanged pill focus policy', async () => {
-    const { manager, windows } = createHarness()
-    await manager.showWidget()
-    const widget = windows[0]!
-    for (const presentation of ['idle-hovered', 'pill-controls', 'pill-controls', 'active', 'idle-resting'] as const) {
-      setWidgetPresentation(manager, presentation)
-    }
-    // Electron's setFocusable(false) deactivates the native window, even if
-    // it is already nonfocusable. Geometry/status changes must not call it.
-    expect(widget.setFocusable).not.toHaveBeenCalled()
-    setWidgetPresentation(manager, 'threads-expanded')
-    setWidgetPresentation(manager, 'threads-expanded')
-    expect(widget.setFocusable.mock.calls).toEqual([[true]])
-    setWidgetPresentation(manager, 'idle-resting')
-    setWidgetPresentation(manager, 'pill-controls')
-    expect(widget.setFocusable.mock.calls).toEqual([[true], [false]])
-    manager.dispose()
-  })
-
-  it('restores a hidden thread panel to a nonfocusable pill before revealing it', async () => {
-    const { manager, windows } = createHarness()
-    await manager.showWidget()
-    const widget = windows[0]!
-    setWidgetPresentation(manager, 'threads-expanded')
-    manager.hideWidget()
-    setWidgetPresentation(manager, 'idle-resting')
-    await manager.showWidget()
-    expect(widget.setFocusable.mock.calls).toEqual([[true], [false]])
-    expect(widget.setFocusable.mock.invocationCallOrder[1]).toBeLessThan(widget.showInactive.mock.invocationCallOrder[1]!)
-    setWidgetPresentation(manager, 'pill-controls')
-    expect(widget.setFocusable).toHaveBeenCalledTimes(2)
-    manager.dispose()
   })
 
   it('preserves the selected edge and center while presentation changes', async () => {
@@ -394,3 +332,30 @@ describe('WindowManager lifecycle', () => {
     )
   })
 })
+
+it.each(['win32', 'darwin'] as const)(
+    'keeps dictation unfocused across presentation changes and hiding on %s',
+    async (platform) => {
+      const { manager, onWidgetMoved, windows } = createHarness({
+        platform,
+        chrome: platformProfile(platform),
+        getWidgetPlacement: () => ({ kind: 'edge', edge: 'left' }),
+      })
+      await manager.showWidget()
+      const widget = windows[0]!
+
+      for (const presentation of ['idle-hovered', 'active', 'active', 'idle-resting'] as const) {
+        setWidgetPresentation(manager, presentation)
+      }
+      setWidgetPresentation(manager, 'active')
+      expect(widget.bounds).toEqual({ x: 1_016, y: 426, width: 88, height: 248 })
+      manager.hideWidget()
+      setWidgetPresentation(manager, 'idle-resting')
+      await manager.showWidget()
+      expect(widget.bounds).toEqual({ x: 1_016, y: 488, width: 54, height: 124 })
+      expect(widget.setFocusable).not.toHaveBeenCalled()
+      expect(widget.focus).not.toHaveBeenCalled()
+      expect(onWidgetMoved).not.toHaveBeenCalled()
+      manager.dispose()
+    },
+  )

@@ -10,7 +10,6 @@ it.each(['local', 'socket'] as const)('uses the exact submitted Compose and Send
   const savedId = '00000000-0000-4000-8000-000000000101', sentId = '00000000-0000-4000-8000-000000000102'
   const client = route === 'socket' ? { clientId: 'paired', user: 'User', transport: 'socket' as const, selectedThreadId: target.threadId } : desktopWindowClient()
   try {
-    await f.command({ type: 'assign', threadId: target.threadId, instruction: 'Work' })
     await f.control.commandShell({ type: 'compose', threadId: target.threadId, draftId: savedId, text: 'Exact prompt' }, client)
     expect((await f.disk()).threadDrafts).toContainEqual(expect.objectContaining({ draftId: savedId, text: 'Exact prompt' }))
     const packet = { type: 'send' as const, draft: { threadId: target.threadId, draftId: sentId, text: 'Exact prompt', binding: { requestId: null, questionsDigest: null } } }
@@ -31,7 +30,6 @@ it.each([false, true])('keeps exact stable answer delivery proof across restart 
   const packet = { type: 'send' as const, draft: { threadId: target.threadId, draftId, text: 'Blue', binding: { requestId: request.id, questionsDigest: target.questionsDigest } } }
   let release: () => void = () => undefined, sending: Promise<unknown> | undefined
   try {
-    await f.command({ type: 'assign', threadId: target.threadId, instruction: 'Work' })
     f.host.event({ type: 'question', threadId: target.threadId, text: '', request: { ...request, delivery: undefined } })
     const execute = f.host.execute.bind(f.host)
     const { promise: started, resolve: entered } = deferred<void>()
@@ -58,7 +56,6 @@ it('joins only an identical stable Send while its native call is held', async ()
   const packet = { type: 'send' as const, draft: { threadId: target.threadId, draftId, text: 'Once', binding: { requestId: null, questionsDigest: null } } }
   let release: () => void = () => undefined, first: Promise<unknown> | undefined, duplicate: Promise<unknown> | undefined
   try {
-    await f.command({ type: 'assign', threadId: target.threadId, instruction: 'Work' })
     const execute = f.host.execute.bind(f.host)
     const { promise: started, resolve: entered } = deferred<void>()
 
@@ -82,7 +79,6 @@ it.each(['prompt', 'answer'] as const)('does not replay an unresolved stable %s 
   const packet = { type: 'send' as const, draft: { threadId: target.threadId, draftId, text: 'Blue', binding: kind === 'answer'
     ? { requestId: request.id, questionsDigest: target.questionsDigest } : { requestId: null, questionsDigest: null } } }
   try {
-    await f.command({ type: 'assign', threadId: target.threadId, instruction: 'Work' })
     if (kind === 'answer') f.host.event({ type: 'question', threadId: target.threadId, text: '', request: { ...request, delivery: undefined } })
     const native = vi.spyOn(f.host, 'execute').mockResolvedValueOnce({ accepted: false, uncertain: true })
     expect((await f.control.commandShell(packet, client)).error).toBeTruthy()
@@ -101,7 +97,6 @@ it('publishes only positive late acceptance for a stable answer and preserves it
   const client = { clientId: 'paired', user: 'User', transport: 'socket' as const, selectedThreadId: target.threadId }
   const packet = { type: 'send' as const, draft: { threadId: target.threadId, draftId, text: 'Blue', binding: { requestId: request.id, questionsDigest: target.questionsDigest } } }
   try {
-    await f.command({ type: 'assign', threadId: target.threadId, instruction: 'Work' })
     f.host.event({ type: 'question', threadId: target.threadId, text: '', request: { ...request, delivery: undefined } })
     const native = vi.spyOn(f.host, 'execute').mockResolvedValueOnce({ accepted: false, uncertain: true, answerCompletion: completion })
     await f.control.commandShell(packet, client)
@@ -119,7 +114,6 @@ it.each(['text', 'binding', 'owner'] as const)('refuses stable Compose UUID reus
   const f = await draftHandoffFixture(undefined, { authorizes: () => ({ allowed: false, reason: 'no-policy' }), mayGrant: () => ({ allowed: true, reason: 'paired-client' }) })
   const draftId = '00000000-0000-4000-8000-000000000115'
   try {
-    await f.command({ type: 'assign', threadId: target.threadId, instruction: 'Work' })
     await f.control.commandShell({ type: 'compose', threadId: target.threadId, draftId, text: 'Original' })
     const before = f.control.get()
     if (change === 'binding') f.host.event({ type: 'question', threadId: target.threadId, text: '', request: { ...request, delivery: undefined } })
@@ -139,7 +133,6 @@ it('records a definite pre-dispatch stable Send refusal separately from uncertai
   const f = await draftHandoffFixture()
   const draftId = '00000000-0000-4000-8000-000000000116'
   try {
-    await f.command({ type: 'assign', threadId: target.threadId, instruction: 'Work' })
     f.host.event({ type: 'question', threadId: target.threadId, text: '', request: { ...request, delivery: undefined } })
     const result = await f.control.commandShell({ type: 'send', draft: { threadId: target.threadId, draftId, text: 'Prompt', binding: { requestId: null, questionsDigest: null } } },
       { clientId: 'paired', user: 'User', transport: 'socket', selectedThreadId: target.threadId })
@@ -155,7 +148,6 @@ it.each(['body', 'owner'] as const)('keeps failed stable Send UUID ownership acr
   const draftId = '00000000-0000-4000-8000-000000000117'
   const packet = { type: 'send' as const, draft: { threadId: target.threadId, draftId, text: '', binding: { requestId: null, questionsDigest: null } } }
   try {
-    await f.command({ type: 'assign', threadId: target.threadId, instruction: 'Work' })
     expect((await f.control.commandShell(packet)).error).toContain('no prompt')
     expect((await f.disk()).deliveries).toContainEqual(expect.objectContaining({ draftId, status: 'failed', packetDigest: expect.stringMatching(/^[a-f0-9]{64}$/u) }))
     await f.restart()
@@ -170,7 +162,6 @@ it('keeps accepted packet identity when unrelated direct answer receipts evict i
   const draftId = '00000000-0000-4000-8000-000000000118'
   const packet = { type: 'send' as const, draft: { threadId: target.threadId, draftId, text: 'Once', binding: { requestId: null, questionsDigest: null } } }
   try {
-    await f.command({ type: 'assign', threadId: target.threadId, instruction: 'Work' })
     expect((await f.control.commandShell(packet)).error).toBeNull()
     for (let index = 0; index < 129; index++) {
       const requestId = `other-question-${index}`, otherId = `00000000-0000-4000-8000-${(200 + index).toString().padStart(12, '0')}`

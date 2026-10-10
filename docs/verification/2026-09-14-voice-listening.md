@@ -1,5 +1,7 @@
 # Voice listening diagnosis
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 Test citations use the current split files. Recorded counts and outcomes are from the original runs.
 
 User report: intermittent “Hey Sotto” activation and no reply while the home screen says “Sotto is listening.” Baseline `046d793`; Windows desktop target from the supplied screenshot. Preserve existing user screenshots and all live drafts.

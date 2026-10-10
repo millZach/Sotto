@@ -1,5 +1,7 @@
 # Sotto owns browser tasks and their page access
 
+October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-management.md) records the removal. Supervision described below has been removed and cannot answer browser requests. The browser grant and user-answer rules, as amended by ADR-0029, remain.
+
 Accepted for implementation September 21, 2026, following Zach's approval of the shared browser workflow and corner-preview variant A. Browser pages remain in the Tools pane; a task's corner preview shows the same page and opens it there without changing the user's conversation. Sotto owns page and browser-task identity across providers, using Sotto thread IDs and the thread's current working copy.
 
 Agents receive a bounded browser tool interface. Supported providers receive a Sotto-owned authenticated loopback MCP endpoint bound to one thread. Native discovery is verified for Codex, Claude Code and Grok. The pinned Devin client ignores the supplied ACP MCP server, including during a bounded native turn, so Devin receives no browser tools or credentials. Codex uses per-thread MCP configuration because the installed native resume protocol cannot add dynamic tools to existing threads. The endpoint is local to this computer, rejects browser-origin requests, and exposes no renderer bridge, filesystem API, general debugger command, or permission-answer method. Provider adapters translate their own identifiers before calling it. No global provider configuration is changed and no new production dependency is added.

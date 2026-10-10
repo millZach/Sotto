@@ -1,3 +1,4 @@
+import { promptField } from './support/prompt'
 /**
  * Early start (#769, ADR-0057) in the built app. The real Claude adapter runs over the fake CLI in `tests/fixtures/`
  * (`SOTTO_E2E_NATIVE_FIXTURE_ROOT` in `src/main/index.ts`). Typing in a new thread's composer starts the CLI its first
@@ -31,7 +32,7 @@ test('typing in a new Claude thread starts its CLI before Send, and Send starts 
     const { page } = launched
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
-      const configured = await window.sotto!.agents!.command({ type: 'configure', patch: { provider: 'claude', enabled: true, enabledProviders: ['claude'], speak: false } })
+      const configured = await window.sotto!.agents!.command({ type: 'configure', patch: { provider: 'claude', enabled: true, enabledProviders: ['claude'], } })
       if (configured.error) throw new Error(configured.error)
       const connected = await window.sotto!.agents!.command({ type: 'connect', provider: 'claude' })
       if (connected.error) throw new Error(connected.error)
@@ -45,7 +46,7 @@ test('typing in a new Claude thread starts its CLI before Send, and Send starts 
       const projectId = created.host.projects.find(item => item.title === 'Early start')!.id
       const model = (await agents.get()).host.models.find(item => item.providerId === 'claude' && item.ready)
       if (!model) throw new Error('No ready Claude model.')
-      const thread = await agents.command({ type: 'create-thread', projectId, title: 'Typed into first', titleSource: 'user', modelId: model.id, workingCopy: 'shared', managed: false })
+      const thread = await agents.command({ type: 'create-thread', projectId, title: 'Typed into first', titleSource: 'user', modelId: model.id, workingCopy: 'shared' })
       if (thread.error || !thread.activeThreadId) throw new Error(thread.error ?? 'No thread was created.')
       return thread.activeThreadId
     }, project)
@@ -57,7 +58,7 @@ test('typing in a new Claude thread starts its CLI before Send, and Send starts 
     // Nothing has started for a thread whose first send has not happened.
     expect(await launches(claude)).toEqual([])
 
-    const prompt = pane.getByRole('textbox', { name: 'Prompt' })
+    const prompt = promptField(pane)
     await prompt.click()
     await page.keyboard.type('Synthetic early start prompt')
     // The first keystrokes started the CLI the first send will use, and Claude Code has no session for it yet.

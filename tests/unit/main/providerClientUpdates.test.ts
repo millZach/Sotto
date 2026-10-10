@@ -167,13 +167,15 @@ describe("what an earlier update left behind", () => {
     expect((await readdir(scope)).sort()).toEqual(['.codex-short', '.grok-6TeUjdn8', 'codex', 'codex-6TeUjdn8'])
   })
 
-  it.runIf(process.platform === 'win32')('clears the leftover before npm runs, so npm finds its folder free', async () => {
-    const { scope, executable } = await codexInstall()
-    await codexPackage(scope, '.codex-6TeUjdn8')
-    let seen: string[] = []
-    const clients = new ProviderClients({ npmPath: async () => 'npm-cli.js', run: async () => { seen = await readdir(scope); return { ok: true } } })
-    expect(await clients.install('codex', executable, {})).toMatchObject({ ok: true })
-    expect(seen).toEqual(['codex'])
+  describe("Windows npm package-folder cleanup", () => {
+    it.runIf(process.platform === 'win32')('clears the leftover before npm runs, so npm finds its folder free', async () => {
+      const { scope, executable } = await codexInstall()
+      await codexPackage(scope, '.codex-6TeUjdn8')
+      let seen: string[] = []
+      const clients = new ProviderClients({ npmPath: async () => 'npm-cli.js', run: async () => { seen = await readdir(scope); return { ok: true } } })
+      expect(await clients.install('codex', executable, {})).toMatchObject({ ok: true })
+      expect(seen).toEqual(['codex'])
+    })
   })
 })
 
@@ -227,7 +229,7 @@ async function coordinator(host: VersionedHost, run: RunLike, published: string 
       ...typeof published === 'string' ? { fetchImpl: async () => answer(published) }
         : { fetchImpl: async () => answer(published.version), now: () => published.now } }),
     locateClient: async (provider: ProviderId) => join(prefix, `${provider}.exe`),
-    reasoner: { intent: async () => ({ type: 'clarify', text: '' }), decide: async () => ({ decision: 'human', text: '' }) },
+    reasoner: {},
 
     ...extra,
   })

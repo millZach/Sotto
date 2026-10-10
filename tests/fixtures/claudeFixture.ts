@@ -4,7 +4,9 @@ import { appendFile, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { ClaudeStreamJsonHost, type ClaudeStreamJsonHostOptions } from '../../src/main/agents/claude'
-import type { AdapterFixture, AdapterSessionOptions, RecordedRpc } from './adapterFixture'
+import type { AdapterContractSkips, AdapterFixture, AdapterSessionOptions, RecordedRpc } from './adapterFixture'
+
+export const claudeFixtureSkips: AdapterContractSkips = {}
 
 export { storedClaudeOrigins } from './claudeOrigins'
 
@@ -40,7 +42,7 @@ export async function claudeFixture(root?: string, requestTimeoutMs = 2000, envi
       return { process: current.pid, modelId: current.model, ...(current.effort ? { reasoningEffort: current.effort } : {}), runtimeMode: modes[current.mode] ?? current.mode }
     },
   }
-  return { root, adapter, host: adapter, projectId: 'project', modelId: 'fixture-model', realId, action,
+  return { root, adapter, host: adapter, projectId: 'project', modelId: 'fixture-model', realId, action, skips: claudeFixtureSkips,
     protocol: { promptMethod: 'user', resumeMethod: 'resume', permissionDecision: (record: RecordedRpc) => {
       const frame = record.params?.frame as { response?: { response?: { behavior?: string } } } | undefined
       const behavior = frame?.response?.response?.behavior

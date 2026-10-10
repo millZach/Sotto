@@ -1,3 +1,4 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { agentState as state } from './support/agentAccess'
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -63,7 +64,7 @@ async function prepare(launched: LaunchedSotto): Promise<void> {
   const { page } = launched
   await page.evaluate(async () => {
     await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', accent: 'blue' })
-    await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+    await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
     await window.sotto!.agents!.command({ type: 'connect' })
   })
   await page.reload()
@@ -121,7 +122,7 @@ async function expectRoomy(page: Page, minimumLog: number): Promise<void> {
     const compose = document.querySelector('.thread-workspace__compose')!.getBoundingClientRect()
     const request = document.querySelector('.agent-request')!
     const questions = document.querySelector('.thread-questions')
-    const prompt = document.querySelector('.thread-prompt textarea')?.getBoundingClientRect()
+    const prompt = document.querySelector('.thread-prompt .prompt-editor')?.getBoundingClientRect()
     return { logHeight: log.clientHeight, composeBottom: compose.bottom, composeTop: compose.top, height: window.innerHeight,
       pageOverflow: document.documentElement.scrollWidth - window.innerWidth, cardOverflow: request.scrollWidth - request.clientWidth,
       logBottom: log.getBoundingClientRect().bottom,
@@ -243,7 +244,7 @@ test('answers every native question in the thread that asked, keeping simultaneo
     } }])
     const after = await state(page)
     expect(after.error).toBeNull()
-    expect(after.assignments).toEqual([])
+    expect(after).not.toHaveProperty('assignments')
     expect(await pending(page, 'workshop')).toEqual([])
     expect(await pending(page, 'docs')).toEqual(['audience-form'])
     expect(await outbox(launched.userData)).toEqual([])
@@ -325,7 +326,7 @@ test('offers only native approval choices, keeps a refused answer, and sends a h
     ])
     expect(await pending(page, 'workshop')).toEqual([])
     expect(await pending(page, 'docs')).toEqual(['network-profile'])
-    expect((await state(page)).assignments).toEqual([])
+    expect((await state(page))).not.toHaveProperty('assignments')
     expect(await outbox(launched.userData)).toEqual([])
   } finally { await closeSotto(launched) }
 })
@@ -348,14 +349,14 @@ test('keeps model choices above the message bar until an explicit answer, preser
   try {
     await prepare(launched)
     await selectThread(page, 'Workshop')
-    const prompt = page.getByRole('textbox', { name: 'Prompt', exact: true })
-    await prompt.fill('Keep keyboard navigation consistent with the rest of the app.')
-    await expect(prompt).toHaveValue('Keep keyboard navigation consistent with the rest of the app.')
+    const prompt = promptField(page)
+    await fillPrompt(prompt, 'Keep keyboard navigation consistent with the rest of the app.')
+    await expectPromptText(prompt, 'Keep keyboard navigation consistent with the rest of the app.')
     await emit(page, 'workshop', request)
     const panel = page.locator('.thread-workspace__compose .thread-questions')
     const form = panel.locator('.agent-request')
     await expect(form).toBeVisible()
-    await expect(prompt).toHaveValue('Keep keyboard navigation consistent with the rest of the app.')
+    await expectPromptText(prompt, 'Keep keyboard navigation consistent with the rest of the app.')
     await expect(transcript(page).locator('.agent-request')).toHaveCount(0)
     await expect(form.getByText('(recommended)', { exact: true })).toBeVisible()
     const recommended = form.getByRole('radio', { name: /Sections in a sidebar/u })
@@ -387,7 +388,7 @@ test('keeps model choices above the message bar until an explicit answer, preser
     const reopen = form.getByRole('button', { name: 'Show question', exact: true })
     await expect(reopen).toBeFocused()
     await expect(custom).toBeHidden()
-    await expect(prompt).toHaveValue('Keep keyboard navigation consistent with the rest of the app.')
+    await expectPromptText(prompt, 'Keep keyboard navigation consistent with the rest of the app.')
     await reopen.press('Enter')
     await expect(custom).toBeVisible()
     await expect(customChoice).toBeChecked()
@@ -430,7 +431,7 @@ test('keeps model choices above the message bar until an explicit answer, preser
     await expect(panel).toHaveCount(0)
     expect(await answers(app)).toEqual([{ type: 'answer', threadId: key('workshop'), requestId: request.id, answer: '',
       questionAnswers: { layout: { optionIds: ['sidebar (Recommended)'] } } }])
-    await expect(prompt).toHaveValue('Keep keyboard navigation consistent with the rest of the app.')
+    await expectPromptText(prompt, 'Keep keyboard navigation consistent with the rest of the app.')
     expect(await pending(page, 'workshop')).toEqual([])
   } finally { await closeSotto(launched) }
 })
@@ -451,8 +452,8 @@ test('keeps a question and its message bar reachable in a short stacked pane', a
     const panes = page.getByRole('group', { name: 'Thread panes' })
     await expect(panes.locator('section.thread-pane[role="region"]:not([data-hidden])')).toHaveCount(3)
     const pane = panes.locator(`section.thread-pane[data-thread-id="${key('footer-links')}"]`)
-    const prompt = pane.getByRole('textbox', { name: 'Prompt', exact: true })
-    await prompt.fill('Keep this independent follow-up draft.')
+    const prompt = promptField(pane)
+    await fillPrompt(prompt, 'Keep this independent follow-up draft.')
     await emit(page, 'footer-links', { id: 'short-question', kind: 'question', text: 'Choose the next step.', options: [], questions: [{
       id: 'next', question: 'Choose the next step.', multiSelect: false, allowFreeText: true,
       options: [{ id: 'review', label: 'Review the links (Recommended)', description: 'Check every footer destination before editing.' },
@@ -497,7 +498,7 @@ test('keeps a question and its message bar reachable in a short stacked pane', a
     expect(await answers(app)).toEqual([])
     await send.press('Enter')
     await expect(form).toHaveCount(0)
-    await expect(prompt).toHaveValue('Keep this independent follow-up draft.')
+    await expectPromptText(prompt, 'Keep this independent follow-up draft.')
     expect(await answers(app)).toHaveLength(1)
   } finally { await closeSotto(launched) }
 })
@@ -516,8 +517,8 @@ test('keeps simultaneous question and permission controls reachable in a short s
       await sidebar.getByRole('button', { name: `Open ${title} beside`, exact: true }).click()
     }
     const pane = page.locator(`section.thread-pane[data-thread-id="${key('footer-links')}"]`)
-    const prompt = pane.getByRole('textbox', { name: 'Prompt', exact: true })
-    await prompt.fill('Keep this follow-up separate from both decisions.')
+    const prompt = promptField(pane)
+    await fillPrompt(prompt, 'Keep this follow-up separate from both decisions.')
     await emit(page, 'footer-links', { id: 'mixed-question', kind: 'question', text: 'Which links should be checked?', options: [], questions: [{
       id: 'links', question: 'Which links should be checked?', multiSelect: false, allowFreeText: true,
       options: [{ id: 'all', label: 'Every footer link (Recommended)' }, { id: 'changed', label: 'Changed links only' }],
@@ -561,7 +562,7 @@ test('keeps simultaneous question and permission controls reachable in a short s
     await send.click()
     await expect(question).toHaveCount(0)
     await expect(transcript).toBeVisible()
-    await expect(prompt).toHaveValue('Keep this follow-up separate from both decisions.')
+    await expectPromptText(prompt, 'Keep this follow-up separate from both decisions.')
     expect(await answers(app)).toEqual([
       { type: 'answer', threadId: key('footer-links'), requestId: testPermission.id, answer: 'Deny', approved: false, permissionChoice: 'reject' },
       { type: 'answer', threadId: key('footer-links'), requestId: 'mixed-question', answer: '', questionAnswers: { links: { optionIds: ['all'] } } },

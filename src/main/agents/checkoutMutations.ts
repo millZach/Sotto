@@ -1,7 +1,7 @@
 import { checkoutIdentity } from './threadWorktrees'
 import { GitActionRefusal } from './gitActions'
 
-export type CheckoutPendingWork = 'pending-work' | 'failed-followups' | 'paused-followups' | 'paused-assignment' | 'managed-assignment' | 'uncertain-send'
+export type CheckoutPendingWork = 'pending-work' | 'failed-followups' | 'paused-followups' | 'uncertain-send'
 export type CheckoutHolder = { kind: 'git-action' | 'automatic-pull' | 'checkpoint' | 'checkpoint-revert' | 'settle' | 'remove-folder' }
   | { kind: 'send' | 'turn' | 'waiting-answer' | 'history-error' | 'history-loading' | 'preparation' | CheckoutPendingWork; threadId: string; title: string }
 
@@ -21,8 +21,6 @@ function holdingMessage(holder: CheckoutHolder): string {
     case 'preparation': return `Sotto is setting up the working copy for thread "${holder.title}".`
     case 'failed-followups': return `Thread "${holder.title}" has queued follow-ups that did not send.`
     case 'paused-followups': return `Thread "${holder.title}" has paused follow-ups.`
-    case 'paused-assignment': return `Thread "${holder.title}" has paused management and queued work.`
-    case 'managed-assignment': return `Thread "${holder.title}" is managed by Sotto.`
     case 'uncertain-send': return `Thread "${holder.title}" has a message whose delivery is unconfirmed.`
     case 'git-action': return 'A Git action is running in this folder.'
   }
@@ -34,8 +32,6 @@ export function checkoutMutationRefusal(holder: CheckoutHolder): GitActionRefusa
     case 'history-error': recovery = 'Open it to retry, or archive it, then try again.'; break
     case 'failed-followups':
     case 'paused-followups': recovery = 'Resume or remove them, then try again.'; break
-    case 'paused-assignment': recovery = 'Stop managing it and review its queue, or archive it, then try again.'; break
-    case 'managed-assignment': recovery = 'Stop managing it, or archive it, then try again.'; break
     case 'uncertain-send': recovery = 'Open it and refresh to check whether it was sent, then try again.'; break
     case 'pending-work': recovery = 'Open it to review that work, or archive it, then try again.'; break
     case 'history-loading':

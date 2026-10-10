@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=Sotto
-Comment=Dictation and voice development coordinator
+Comment=Dictation and manual coding threads
 Exec=sotto %U
 Icon=sotto
 Terminal=false

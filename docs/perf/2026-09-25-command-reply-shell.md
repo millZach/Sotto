@@ -1,5 +1,7 @@
 # Command replies without history copies - September 25, 2026
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 Issue #313. A command from the window used to be answered with `AgentControl.get()`: a structured clone of the whole state, every loaded thread's messages included, and then a walk over every message to place attachment preview markers. The desktop host router read only the answer's error, and the IPC handler stripped the histories with `agentShell` before sending. So the copy and the walk were made and thrown away on every command.
 
 Now the window's commands run through `AgentControl.commandShell`, which answers with `shell()`. The shell puts an empty constant in place of each thread's messages before it clones, so no history is copied and nothing is decorated. `LocalHostService.command` calls it, the router answers with its own shell as before, and the IPC handler no longer strips an answer that has no history in it. `AgentControl.command` still answers with the whole state, for a caller that reads histories from the answer. The tests and the integration suites use it that way. No window does. `AGENT_GET` already answered with the shell and is unchanged. The draft save was already answered with the shell inside the coordinator; only the IPC strip came off it.

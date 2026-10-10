@@ -4,7 +4,7 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { afterEach, expect, it, vi } from 'vitest'
+import { describe, afterEach, expect, it, vi } from 'vitest'
 import { HOST_STOP_DRAIN_MS, LAUNCH_SCRIPT_SOURCE, NODE_CHECK_SOURCE, NODE_PROBE_SOURCE, type LaunchOperation } from '../../src/main/hosts/launchScript'
 import { readBootId } from '../../src/host/lock'
 import { MemoryStore } from '../../src/main/memory/store'
@@ -307,25 +307,27 @@ function probe(configuration: Configuration, env: NodeJS.ProcessEnv): Promise<Ou
   child.stdin.end(LAUNCH_SCRIPT_SOURCE)
   return collect(child)
 }
-it.skipIf(!posix)('finds a Node that only a version manager puts on the path, then runs the launch script on it', async () => {
-  const configuration = await fixture()
-  const home = join(configuration.directory, 'home'), bin = join(home, '.nvm', 'versions', 'node', `v${process.versions.node}`, 'bin')
-  await mkdir(bin, { recursive: true })
-  const mark = join(configuration.directory, 'nvm-node-ran')
-  await writeFile(join(bin, 'node'), `#!/bin/sh\n: > '${mark}'\nexec '${process.execPath}' "$@"\n`)
-  await chmod(join(bin, 'node'), 0o755)
-  const outcome = await probe(configuration, { HOME: home, PATH: '/nonexistent', SHELL: '/nonexistent' })
-  expect(outcome.messages.at(-1)).toMatchObject({ type: 'ready', owned: true })
-  hosts.push(outcome.messages.at(-1)!.pid as number)
-  await expect(readFile(mark, 'utf8')).resolves.toBe('')
-})
-it.skipIf(!posix)('reports a Node too old for the archive as node-too-old with its version, and starts nothing', async () => {
-  const configuration = await fixture()
-  await writeFile(join(configuration.installPath, 'runtime-manifest.json'), JSON.stringify({ node: '>=99 <100' }))
-  const home = join(configuration.directory, 'home'); await mkdir(home)
-  await symlink(process.execPath, join(configuration.directory, 'node'))
-  const outcome = await probe(configuration, { HOME: home, PATH: configuration.directory, SHELL: '/nonexistent' })
-  // The probe's first line says SSH signed in; the reason follows.
-  expect(outcome.messages).toEqual([{ type: 'signed-in' }, { type: 'error', reason: 'node-too-old', version: process.versions.node }])
-  await expect(readFile(join(configuration.dataDirectory, 'host-listener.json'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+describe("POSIX shell and version-manager probe", () => {
+  it.skipIf(!posix)('finds a Node that only a version manager puts on the path, then runs the launch script on it', async () => {
+    const configuration = await fixture()
+    const home = join(configuration.directory, 'home'), bin = join(home, '.nvm', 'versions', 'node', `v${process.versions.node}`, 'bin')
+    await mkdir(bin, { recursive: true })
+    const mark = join(configuration.directory, 'nvm-node-ran')
+    await writeFile(join(bin, 'node'), `#!/bin/sh\n: > '${mark}'\nexec '${process.execPath}' "$@"\n`)
+    await chmod(join(bin, 'node'), 0o755)
+    const outcome = await probe(configuration, { HOME: home, PATH: '/nonexistent', SHELL: '/nonexistent' })
+    expect(outcome.messages.at(-1)).toMatchObject({ type: 'ready', owned: true })
+    hosts.push(outcome.messages.at(-1)!.pid as number)
+    await expect(readFile(mark, 'utf8')).resolves.toBe('')
+  })
+  it.skipIf(!posix)('reports a Node too old for the archive as node-too-old with its version, and starts nothing', async () => {
+    const configuration = await fixture()
+    await writeFile(join(configuration.installPath, 'runtime-manifest.json'), JSON.stringify({ node: '>=99 <100' }))
+    const home = join(configuration.directory, 'home'); await mkdir(home)
+    await symlink(process.execPath, join(configuration.directory, 'node'))
+    const outcome = await probe(configuration, { HOME: home, PATH: configuration.directory, SHELL: '/nonexistent' })
+    // The probe's first line says SSH signed in; the reason follows.
+    expect(outcome.messages).toEqual([{ type: 'signed-in' }, { type: 'error', reason: 'node-too-old', version: process.versions.node }])
+    await expect(readFile(join(configuration.dataDirectory, 'host-listener.json'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+  })
 })

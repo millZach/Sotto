@@ -4,7 +4,13 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { GrokAcpHost } from '../../src/main/agents/grok'
-import type { AdapterSessionOptions, RecordedRpc } from './adapterFixture'
+import type { AdapterContractSkips, AdapterSessionOptions, RecordedRpc } from './adapterFixture'
+
+export const grokFixtureSkips: AdapterContractSkips = {
+ backgroundWork: 'The fixture has no background-work driver.',
+ liveSettings: 'The fixture must apply settings to a live provider session.',
+ settingsConfirmation: 'The fixture cannot lose a settings-change confirmation.',
+}
 /** A log may not exist before its first event; any other read failure is evidence, not an empty trace. */
 async function readLog(path: string): Promise<string> {
  try { return await readFile(path, 'utf8') }
@@ -35,7 +41,7 @@ export async function grokFixture(root?: string, requestTimeoutMs = 2000, pollIn
  const action = async (id: string, value: Record<string,unknown>) => { const actionId = randomUUID(); await writeProviderAction(join(root, 'control.json'), value, { sessionId: await realId(id) }, actionId) }
  // Each thread session is its own Grok process, not a proxy to a shared leader, so a turn ends when Sotto
  // closes its process; the adapter says it was interrupted rather than leave it running forever.
- return {host:adapter,adapter,root,projectId:'project',modelId:'fixture-model',realId,script,action,restartStatus:'idle' as const,
+ return {host:adapter,adapter,root,projectId:'project',modelId:'fixture-model',realId,script,action,restartStatus:'idle' as const,skips:grokFixtureSkips,
   // A permission change comes back with the snapshot Grok's reload confirmed (#318).
   settings:{snapshot:true},
   // Every Grok process started from now on reports the newer client.

@@ -205,8 +205,7 @@ function mount(initial: WorkspaceTerminal[] = [], options: { readonly mode?: 'th
     state.host.models.unshift({ id: 'native:devin:model:swe-1-6-fast', provider: 'Devin', providerId: 'devin', name: 'SWE fast', ready: true })
     state.configuration.defaultModelId = 'native:devin:model:swe-1-6-fast'
   }
-  state.assignments = []
-  state.queue = []
+
   const live = liveAgentState(state)
   const command = vi.fn(async (request: AgentCommand): Promise<AgentState | null> => live.command(request))
   vi.mocked(useAgents).mockImplementation(() => ({ ...live.useLive(), command }))
@@ -214,7 +213,7 @@ function mount(initial: WorkspaceTerminal[] = [], options: { readonly mode?: 'th
   const { views, factory } = fakeViews()
   const store = new TerminalWorkspaceStore()
   const terminals = { store, bridge: options.bridge === false ? undefined : fake.bridge, ...(options.lazy ? {} : { viewFactory: factory }), layoutStore: new SplitLayoutStore(), platform: 'win32' }
-  render(<ThreadsView onOpenAgents={vi.fn()} now={NOW} layoutStore={new SplitLayoutStore()} paneAreaWidth={WIDE} terminals={terminals} />)
+  render(<ThreadsView now={NOW} layoutStore={new SplitLayoutStore()} paneAreaWidth={WIDE} terminals={terminals} />)
   return { ...fake, views, store, command }
 }
 

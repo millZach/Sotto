@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { deferred } from '../../fixtures/deferred'
 import { threadsStateFixture } from '../../fixtures/agentState'
 import { describe, expect, it, vi } from 'vitest'
@@ -17,8 +18,8 @@ function fullState(models: AgentModel[], clientHosts?: { hostId: string; models:
     configuration: defaultAgentConfiguration(),
     host: { ...EMPTY_AGENT_HOST, hostId: HOST, models,
       ...(clientHosts ? { clientHosts: clientHosts.map(client => ({ hostId: client.hostId, connected: true, models: client.models, capabilities: EMPTY_AGENT_HOST.capabilities })) } : {}) },
-    topLevel: { assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draftAttachments: [],
-      credentials: { reasoning: false, grokSpeech: false, secure: false }, clientScoped: true },
+    topLevel: { activeThreadId: null, activeProjectId: null, draftAttachments: [],
+      credentials: { reasoning: false, secure: false }, clientScoped: true },
   })
 }
 
@@ -188,7 +189,7 @@ describe('wrapAgentBridge', () => {
       ;(fake.bridge.command as ReturnType<typeof vi.fn>).mockImplementation(async () => answers.shift())
       return fake
     }
-    const voice = { type: 'voice', action: 'mute' } as const
+    const refresh = { type: 'refresh' } as const
 
     it('puts back the catalog the broadcast sent, without asking main', async () => {
       const models = [model('gpt-5')]
@@ -196,16 +197,16 @@ describe('wrapAgentBridge', () => {
       const wrapped = wrapAgentBridge(bridge)
       wrapped.onState(() => undefined)
       emit(broadcast({ revision: 1, models }))
-      const reply = await wrapped.command(voice)
+      const reply = await wrapped.command(refresh)
       expect(reply.host.models).toBe(models)
       expect(get).not.toHaveBeenCalled()
     })
 
     it('answers with the receipt\'s own fields, never the recovery\'s', async () => {
-      const recovered = { ...fullState([model('gpt-5')]), error: 'from get', configuration: { ...defaultAgentConfiguration(), speak: false } }
+      const recovered = { ...fullState([model('gpt-5')]), error: 'from get', configuration: { ...defaultAgentConfiguration(), projectsDirectory: 'C:/projects' } }
       const receipt = { ...(broadcast({ revision: 4, omitted: true }) as AgentState), threadDraftPersistence: [{ threadId: 't', draftId: '11111111-1111-4111-8111-111111111111', status: 'saved' as const }] }
       const { bridge } = receiptBridge(() => Promise.resolve(recovered), receipt)
-      const reply = await wrapAgentBridge(bridge).command(voice)
+      const reply = await wrapAgentBridge(bridge).command(refresh)
       expect(reply.host.models).toEqual([model('gpt-5')])
       expect(reply.threadDraftPersistence).toEqual(receipt.threadDraftPersistence)
       expect(reply.error).toBeNull()
@@ -217,7 +218,7 @@ describe('wrapAgentBridge', () => {
       const wrapped = wrapAgentBridge(bridge)
       const delivered: AgentState[] = []
       wrapped.onState(state => delivered.push(state))
-      await wrapped.command(voice)
+      await wrapped.command(refresh)
       emit(broadcast({ revision: 2, omitted: true }))
       expect(delivered[0]!.host.models).toEqual([model('gpt-5')])
       expect(get).toHaveBeenCalledTimes(1)
@@ -229,7 +230,7 @@ describe('wrapAgentBridge', () => {
       const wrapped = wrapAgentBridge(bridge)
       wrapped.onState(() => undefined)
       emit(broadcast({ revision: 1, models: held }))
-      expect((await wrapped.command(voice)).host.models).toBe(held)
+      expect((await wrapped.command(refresh)).host.models).toBe(held)
       expect(get).toHaveBeenCalledTimes(2)
     })
 
@@ -241,7 +242,7 @@ describe('wrapAgentBridge', () => {
       const wrapped = wrapAgentBridge(bridge)
       await wrapped.get()
       online = false
-      const reply = await wrapped.command(voice)
+      const reply = await wrapped.command(refresh)
       expect(reply.host.models).toBe(read)
       expect(reply.notice).toBe('Saved.')
     })
@@ -252,7 +253,7 @@ describe('wrapAgentBridge', () => {
       const wrapped = wrapAgentBridge(bridge)
       const delivered: AgentState[] = []
       wrapped.onState(state => delivered.push(state))
-      const reply = await wrapped.command(voice)
+      const reply = await wrapped.command(refresh)
       expect(reply.notice).toBe('Saved.')
       expect(reply.host.models).toEqual([])
       expect(get).toHaveBeenCalledTimes(2)
@@ -267,7 +268,7 @@ describe('wrapAgentBridge', () => {
     it('recovers a catalog sent as a bare list rather than trusting it', async () => {
       const read = [model('gpt-5')]
       const { bridge, get } = receiptBridge(() => Promise.resolve(fullState(read)), fullState([model('stale')]))
-      const reply = await wrapAgentBridge(bridge).command(voice)
+      const reply = await wrapAgentBridge(bridge).command(refresh)
       expect(reply.host.models).toBe(read)
       expect(get).toHaveBeenCalledTimes(1)
     })
@@ -279,7 +280,7 @@ describe('wrapAgentBridge', () => {
       wrapped.onState(() => undefined)
       emit(broadcast({ revision: 2, models: newer }))
       // Main built this receipt before the broadcast of revision 2 the window already has.
-      expect((await wrapped.command(voice)).host.models).toBe(newer)
+      expect((await wrapped.command(refresh)).host.models).toBe(newer)
       expect(get).not.toHaveBeenCalled()
     })
 
@@ -290,7 +291,7 @@ describe('wrapAgentBridge', () => {
       const wrapped = wrapAgentBridge(bridge)
       const delivered: AgentState[] = []
       wrapped.onState(state => delivered.push(state))
-      const reply = wrapped.command(voice)
+      const reply = wrapped.command(refresh)
       await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(1))
       // Revision 4 lands in full while the recovery for revision 3 is in flight, and the recovery answers older.
       emit(broadcast({ revision: 4, models: newer }))
@@ -312,8 +313,8 @@ describe('wrapAgentBridge', () => {
       const { bridge, get } = receiptBridge(() => { const pending = deferred<AgentState>(); answers.push(pending.resolve); return pending.promise },
         broadcast({ revision: 1, omitted: true }), { ...forB, host: { ...forB.host, hostId: hostB } })
       const wrapped = wrapAgentBridge(bridge)
-      const first = wrapped.command(voice)
-      const second = wrapped.command(voice)
+      const first = wrapped.command(refresh)
+      const second = wrapped.command(refresh)
       await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(2))
       for (const answer of answers) answer(full)
       expect((await first).host.models).toEqual(modelsA)
@@ -324,7 +325,7 @@ describe('wrapAgentBridge', () => {
       let calls = 0
       const { bridge, get } = receiptBridge(() => ++calls === 1 ? Promise.reject(new Error('offline')) : Promise.resolve(fullState([model('gpt-5')])),
         broadcast({ revision: 2, omitted: true }))
-      expect((await wrapAgentBridge(bridge).command(voice)).host.models).toEqual([model('gpt-5')])
+      expect((await wrapAgentBridge(bridge).command(refresh)).host.models).toEqual([model('gpt-5')])
       expect(get).toHaveBeenCalledTimes(2)
     })
   })

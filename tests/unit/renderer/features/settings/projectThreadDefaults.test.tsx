@@ -20,7 +20,7 @@ function withProjects(hostId?: string): AgentState {
       capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true },
       projects: [{ id: 'one', title: 'One', path: 'C:/One' }, { id: 'two', title: 'Two', path: 'C:/Two' }],
     },
-    topLevel: { connection: 'disconnected', assignments: [], queue: [], activeThreadId: null, activeProjectId: null } })
+    topLevel: { connection: 'disconnected', activeThreadId: null, activeProjectId: null } })
   const clientState = hostId ? clientAgentState({ ...state, hostId }) : state
   vi.mocked(useOptionalAgents).mockReturnValue(agentContextFixture(clientState, vi.fn(async () => clientState)))
   return clientState

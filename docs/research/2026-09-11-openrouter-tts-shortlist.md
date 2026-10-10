@@ -1,5 +1,7 @@
 # Fast TTS and voice choices for Sotto
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 Checked September 11, 2026 (Pacific). This is research for ticket 19, not a
 measured sound-quality ranking. MAI transcription is settled. System speech is
 excluded from the benchmark per Zach's latest direction. No inference, paid

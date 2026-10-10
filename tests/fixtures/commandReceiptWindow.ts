@@ -1,7 +1,6 @@
 import { createAgentControl } from './agentControlFixture'
 import { testCredentials } from './testCredentials'
 import { deserialize, serialize } from 'node:v8'
-import { vi } from 'vitest'
 import { AgentControl, type PublishScheduler } from '../../src/main/agents/control'
 
 import { LocalHostService } from '../../src/main/agents/hostService'
@@ -74,8 +73,7 @@ export async function commandReceiptWindow(root: string, schedule: PublishSchedu
   const registry = ipcRegistry({ mainUrl: 'file:///main.html' })
   const { ipc, main } = registry
   const broadcaster = new AgentStateBroadcaster()
-  const unregister = registerAgentIpc(ipc, router, router, () => [main], 'win32', { status: vi.fn(), download: vi.fn() },
-    { synthesize: vi.fn(), voices: vi.fn(), cancel: vi.fn() }, { synthesize: vi.fn(), cancel: vi.fn() }, { voiceCoordinatorEnabled: true, wakeControl: control, encodeReceipt: broadcaster.encodeReceipt })
+  const unregister = registerAgentIpc(ipc, router, router, () => [main], { encodeReceipt: broadcaster.encodeReceipt })
   const handle = (channel: string, ...args: unknown[]): Promise<unknown> => registry.invoke(channel, args)
 
   const wire: Array<{ channel: string; payload: unknown }> = []
@@ -99,7 +97,7 @@ export async function commandReceiptWindow(root: string, schedule: PublishSchedu
     control, host, router, broadcaster, handle, preload, page, wire, seen,
     get held() { return held },
     set held(value) { held = value },
-    broadcast: () => { broadcaster.send(router.shell(), 'main', payload => { listener!({}, clone(payload)); return true }) },
+    broadcast: () => { broadcaster.send(router.shell(), payload => { listener!({}, clone(payload)); return true }) },
     dispose: () => { unregister(); router.dispose(); control.dispose() },
   }
 }

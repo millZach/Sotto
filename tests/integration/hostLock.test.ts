@@ -212,9 +212,11 @@ describe('process liveness', () => {
     expect(processAlive(4242)).toBe(true)
   })
 
-  it.runIf(['win32', 'linux', 'darwin'].includes(process.platform))('reads the same boot identity twice within one boot', async () => {
-    const first = await readBootId()
-    expect(first).toMatch(new RegExp(`^${process.platform}:.+`))
-    expect(await readBootId()).toBe(first)
+  describe("boot identity on Windows, Linux or macOS", () => {
+    it.runIf(['win32', 'linux', 'darwin'].includes(process.platform))('reads the same boot identity twice within one boot', async () => {
+      const first = await readBootId()
+      expect(first).toMatch(new RegExp(`^${process.platform}:.+`))
+      expect(await readBootId()).toBe(first)
+    })
   })
 })

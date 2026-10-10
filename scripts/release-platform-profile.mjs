@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, dirname, join, resolve } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import process from 'node:process'
 import { promisify } from 'node:util'
 
@@ -133,10 +133,10 @@ function linuxProfile() {
     openDistributable: async (distributablePath, open) => {
       const extractionRoot = await mkdtemp(join(tmpdir(), 'sotto-tarball-'))
       try {
-        const archive = resolve(distributablePath)
-        // A relative archive name works with BSD tar and avoids GNU tar reading a Windows drive as a host.
-        await execFileAsync('tar', ['-xzpf', `./${basename(archive)}`, '-C', extractionRoot], {
-          cwd: dirname(archive), maxBuffer: 4 * 1024 * 1024,
+        // GNU tar treats a Windows drive prefix in the archive name as a remote host.
+        // A local filename from its own folder works with both GNU tar and bsdtar.
+        await execFileAsync('tar', ['-xzpf', basename(distributablePath), '-C', extractionRoot], {
+          cwd: dirname(distributablePath), windowsHide: true, maxBuffer: 4 * 1024 * 1024,
         })
         // electron-builder prefixes tar archives with the artifact name, without .tar.gz.
         const root = join(extractionRoot, distributablePath.split(/[\\/]/u).at(-1).replace(/\.tar\.gz$/u, ''))

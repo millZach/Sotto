@@ -3,11 +3,11 @@
 @import './glass.css';
 @import './frost.css';
 
-/* Sotto management window — "Crossing".
+/* Sotto main window — "Crossing".
 
    One room between a thin top strip and a footer line, dark or light as the
    user chose. A switch in the strip flips the room between Dictate and
-   Agents; Threads, History, Settings and Help are plain links in the footer.
+   Threads; History, Settings and Help are page links in the sidebar foot.
    Type is Figtree, the only colour is the accent, and the one
    action on a page is a neutral pill. Colours come from tokens.css only.
    The floating widget is deliberately excluded — it carries its own frozen
@@ -566,7 +566,8 @@ textarea.tt-input {
 
 /* ---- onboarding ---- */
 
-/* The progress and the card fill the room; a step taller than the card scrolls inside it. */
+/* The progress and the card fill the room. Every step fits the card from the 820x560 minimum up, so the card's
+   own scroll is only for an error or a pairing code on a window at its smallest. */
 .onboarding-shell {
   display: flex;
   height: 100%;
@@ -575,7 +576,7 @@ textarea.tt-input {
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  padding: 34px 24px;
+  padding: 20px 24px 22px;
   background:
     radial-gradient(circle at 50% 118%, color-mix(in srgb, var(--tt-activity) 12%, transparent), transparent 46%),
     var(--tt-canvas);
@@ -584,12 +585,12 @@ textarea.tt-input {
 .onboarding-progress {
   flex: none;
   width: min(680px, 100%);
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
 .onboarding-progress__text {
   display: block;
-  margin-bottom: 9px;
+  margin-bottom: 8px;
   color: var(--tt-text-muted);
   font-size: 11.5px;
   font-weight: 600;
@@ -653,7 +654,7 @@ textarea.tt-input {
   display: flex;
   width: min(680px, 100%);
   min-height: 0;
-  flex: 0 1 720px;
+  flex: 0 1 600px;
   flex-direction: column;
   overflow: hidden;
   padding: 0;
@@ -664,7 +665,19 @@ textarea.tt-input {
   min-height: 0;
   flex: 1 1 auto;
   overflow-y: auto;
-  padding: 38px 42px 24px;
+  padding: 26px 36px 18px;
+}
+
+/* A step is a column of blocks, packed at the top; a button in it keeps its own width. */
+.onboarding-card__body > section {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.onboarding-card__body > section > :is(button, .tt-button) {
+  justify-self: start;
 }
 
 .onboarding-card .tt-button {
@@ -677,20 +690,8 @@ textarea.tt-input {
   font-size: 13.5px;
 }
 
-.onboarding-step-icon {
-  display: grid;
-  width: 40px;
-  height: 40px;
-  margin-bottom: 22px;
-  place-items: center;
-  border: 1px solid color-mix(in srgb, var(--tt-primary) 40%, transparent);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--tt-primary) 10%, transparent);
-  color: var(--tt-primary);
-}
-
 .onboarding-eyebrow {
-  margin: 0 0 10px;
+  margin: 0 0 -4px;
   color: var(--tt-text-muted);
   font-size: 12px;
   font-weight: 500;
@@ -701,7 +702,7 @@ textarea.tt-input {
 .onboarding-card h1 {
   max-width: 560px;
   margin: 0;
-  font-size: clamp(26px, 3.6vw, 34px);
+  font-size: 28px;
   font-variation-settings: 'opsz' 96;
   font-weight: 500;
   letter-spacing: -0.7px;
@@ -710,28 +711,30 @@ textarea.tt-input {
 
 .onboarding-lead {
   max-width: 590px;
-  margin: 14px 0 24px;
+  margin: -4px 0 0;
   color: var(--tt-text-muted);
-  font-size: 14.5px;
+  font-size: 14px;
 }
 
 .onboarding-assurances {
   display: grid;
-  gap: 12px;
-  margin-top: 30px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 18px;
 }
 
 .onboarding-assurances p {
   display: flex;
-  align-items: center;
-  gap: 11px;
+  align-items: flex-start;
+  gap: 9px;
   margin: 0;
   color: var(--tt-text-muted);
-  font-size: 13.5px;
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .onboarding-assurances svg {
   flex: 0 0 auto;
+  margin-top: 1px;
   color: var(--tt-activity);
 }
 
@@ -747,7 +750,7 @@ textarea.tt-input {
 
 /* The way out of the step, present but quieter than the task itself. */
 .onboarding-aside {
-  margin: 20px 0 0;
+  margin: 0;
   color: var(--tt-text-muted);
   font-size: 13px;
 }
@@ -758,7 +761,7 @@ textarea.tt-input {
 }
 
 .onboarding-microphone-picker {
-  margin: 0 0 16px;
+  margin: 0;
 }
 
 /* One row: the wave, the sentence, the button at the end; the button takes the next row when the card is narrow. */
@@ -788,6 +791,37 @@ textarea.tt-input {
   color: var(--tt-text-muted);
   font-size: 13px;
   line-height: 1.45;
+}
+
+/* What happened, above what to do next. */
+.onboarding-microphone-test p strong {
+  display: block;
+  color: var(--tt-text);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+/* Heard: the box takes the success colour and a check stands where the wave was. */
+.onboarding-microphone-test[data-state='heard'] {
+  border-color: color-mix(in srgb, var(--tt-success) 55%, var(--tt-hairline));
+  background: color-mix(in srgb, var(--tt-success) 8%, var(--tt-surface-sunken));
+}
+
+/* While the microphone opens the button waits rather than disabling, so keyboard focus stays on it. */
+.onboarding-microphone-test .tt-button[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.onboarding-microphone-test__heard {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  place-items: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--tt-success) 18%, transparent);
+  color: var(--tt-success);
 }
 
 .onboarding-microphone-test .tt-button,
@@ -821,6 +855,7 @@ textarea.tt-input {
 
 .onboarding-recovery,
 .onboarding-completion-error {
+  margin: 0;
   border-left: 2px solid var(--tt-warning);
   background: color-mix(in srgb, var(--tt-warning) 9%, transparent);
   padding: 12px 14px;
@@ -828,6 +863,7 @@ textarea.tt-input {
 }
 
 .onboarding-completion-error {
+  margin-top: 14px;
   border-left-color: var(--tt-error);
   background: color-mix(in srgb, var(--tt-error) 9%, transparent);
 }
@@ -836,7 +872,7 @@ textarea.tt-input {
   display: flex;
   align-items: center;
   gap: 11px;
-  margin: 16px 0;
+  margin: 0;
   border-left: 2px solid var(--tt-success);
   background: color-mix(in srgb, var(--tt-success) 9%, transparent);
   padding: 14px;
@@ -916,7 +952,7 @@ textarea.tt-input {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin: 22px 0;
+  margin: 0;
   border: 1px solid var(--tt-hairline);
   border-radius: var(--tt-radius-md);
   background: var(--tt-surface-sunken);
@@ -926,8 +962,8 @@ textarea.tt-input {
 }
 
 .onboarding-paste-field {
-  min-height: 82px;
-  resize: vertical;
+  min-height: 72px;
+  resize: none;
 }
 
 .onboarding-actions {
@@ -936,7 +972,38 @@ textarea.tt-input {
   justify-content: space-between;
   gap: 12px;
   border-top: 1px solid var(--tt-hairline);
-  padding: 18px 42px 24px;
+  padding: 12px 36px 14px;
+}
+
+/* A short window, down to the 820x560 minimum: less room around everything, a smaller heading. */
+@media (max-height: 640px) {
+  .onboarding-shell {
+    padding: 12px 16px 14px;
+  }
+
+  .onboarding-progress {
+    margin-bottom: 8px;
+  }
+
+  .onboarding-card__body {
+    padding: 18px 26px 14px;
+  }
+
+  .onboarding-card__body > section {
+    gap: 10px;
+  }
+
+  .onboarding-card h1 {
+    font-size: 23px;
+  }
+
+  .onboarding-lead {
+    font-size: 13.5px;
+  }
+
+  .onboarding-actions {
+    padding: 10px 26px 12px;
+  }
 }
 
 .app-loading,
@@ -1158,23 +1225,6 @@ textarea.tt-input {
   background: currentColor;
 }
 
-/* The Agents glyph: the orb reduced to a ring with a dashed inner ring. */
-.app-switch__orb {
-  position: relative;
-  width: 16px;
-  height: 16px;
-  border: 1.7px solid currentColor;
-  border-radius: 50%;
-}
-
-.app-switch__orb::after {
-  content: '';
-  position: absolute;
-  inset: 3px;
-  border: 1.2px dashed currentColor;
-  border-radius: 50%;
-  opacity: 0.7;
-}
 
 .app-controls {
   -webkit-app-region: no-drag;

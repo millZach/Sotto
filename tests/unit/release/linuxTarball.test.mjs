@@ -15,18 +15,18 @@ async function fixture() {
   roots.push(root)
   const name = 'Sotto-0.1.34-linux-x64'
   const packaged = join(root, name)
-  await mkdir(join(packaged, 'resources/runtime'), { recursive: true })
+  await mkdir(join(packaged, 'resources/app.asar.unpacked/node_modules/node-pty/build/Release'), { recursive: true })
   await writeFile(join(packaged, 'sotto'), 'executable')
   await chmod(join(packaged, 'sotto'), 0o755)
   await writeFile(join(packaged, 'resources/app.asar'), 'asar')
-  await writeFile(join(packaged, 'resources/runtime/ort-wasm-simd-threaded.wasm'), 'wasm')
+  await writeFile(join(packaged, 'resources/app.asar.unpacked/node_modules/node-pty/build/Release/pty.node'), 'native-pty')
   const archive = join(root, `${name}.tar.gz`)
-  const pack = () => execFileSync('tar', ['-czf', `./${name}.tar.gz`, name], { cwd: root })
+  const pack = () => execFileSync('tar', ['-czf', `${name}.tar.gz`, name], { cwd: root, windowsHide: true })
   return { root, packaged, archive, pack }
 }
 
 describe('Linux tarball verification', () => {
-  it('extracts the builder layout and verifies every file, including external runtime resources', async () => {
+  it('extracts the builder layout and verifies every file, including external native resources', async () => {
     const { packaged, archive, pack } = await fixture()
     pack()
     await expect(releasePlatformProfile('linux').openDistributable(archive, async (asar, extracted) => {
@@ -37,11 +37,11 @@ describe('Linux tarball verification', () => {
 
   it('rejects a tarball missing a required resource even when its ASAR is unchanged', async () => {
     const { packaged, archive, pack } = await fixture()
-    await rm(join(packaged, 'resources/runtime/ort-wasm-simd-threaded.wasm'))
+    await rm(join(packaged, 'resources/app.asar.unpacked/node_modules/node-pty/build/Release/pty.node'))
     pack()
-    await writeFile(join(packaged, 'resources/runtime/ort-wasm-simd-threaded.wasm'), 'wasm')
+    await writeFile(join(packaged, 'resources/app.asar.unpacked/node_modules/node-pty/build/Release/pty.node'), 'native-pty')
     await expect(releasePlatformProfile('linux').openDistributable(archive, (_asar, extracted) =>
-      verifyLinuxArchiveContents(packaged, extracted))).rejects.toThrow('tarball is missing resources/runtime/ort-wasm-simd-threaded.wasm')
+      verifyLinuxArchiveContents(packaged, extracted))).rejects.toThrow('tarball is missing resources/app.asar.unpacked/node_modules/node-pty/build/Release/pty.node')
   })
 
   it('rejects changed executable contents', async () => {
@@ -52,20 +52,22 @@ describe('Linux tarball verification', () => {
       verifyLinuxArchiveContents(packaged, extracted))).rejects.toThrow('tarball differs at sotto')
   })
 
-  it.skipIf(process.platform === 'win32').each([
-    ['file execute', 'sotto', 0o755, 0o750],
-    ['file read', 'resources/app.asar', 0o644, 0o640],
-    ['file write', 'resources/app.asar', 0o644, 0o664],
-    ['directory read', 'resources/runtime', 0o755, 0o751],
-    ['directory write', 'resources/runtime', 0o755, 0o775],
-    ['directory traverse', 'resources/runtime', 0o755, 0o754],
-    ['root directory traverse', '.', 0o755, 0o754],
-  ])('rejects changed %s permissions even when contents match', async (_kind, path, expectedMode, archivedMode) => {
-    const { packaged, archive, pack } = await fixture()
-    const entry = join(packaged, path)
-    await chmod(entry, archivedMode)
-    try { pack() } finally { await chmod(entry, expectedMode) }
-    await expect(releasePlatformProfile('linux').openDistributable(archive, (_asar, extracted) =>
-      verifyLinuxArchiveContents(packaged, extracted))).rejects.toThrow(`tarball differs at ${path}`)
+  describe("POSIX permissions; Windows cannot preserve Unix mode bits", () => {
+    it.skipIf(process.platform === 'win32').each([
+      ['file execute', 'sotto', 0o755, 0o750],
+      ['file read', 'resources/app.asar', 0o644, 0o640],
+      ['file write', 'resources/app.asar', 0o644, 0o664],
+      ['directory read', 'resources/app.asar.unpacked', 0o755, 0o751],
+      ['directory write', 'resources/app.asar.unpacked', 0o755, 0o775],
+      ['directory traverse', 'resources/app.asar.unpacked', 0o755, 0o754],
+      ['root directory traverse', '.', 0o755, 0o754],
+    ])('rejects changed %s permissions even when contents match', async (_kind, path, expectedMode, archivedMode) => {
+      const { packaged, archive, pack } = await fixture()
+      const entry = join(packaged, path)
+      await chmod(entry, archivedMode)
+      try { pack() } finally { await chmod(entry, expectedMode) }
+      await expect(releasePlatformProfile('linux').openDistributable(archive, (_asar, extracted) =>
+        verifyLinuxArchiveContents(packaged, extracted))).rejects.toThrow(`tarball differs at ${path}`)
+    })
   })
 })

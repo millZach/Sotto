@@ -1,6 +1,6 @@
 import { deferred } from '../../fixtures/deferred'
 import React from 'react'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -30,8 +30,6 @@ async function advanceToFinish(user: ReturnType<typeof userEvent.setup>): Promis
   }
 }
 
-
-
 describe('first-run onboarding', () => {
   it.each(['idle', 'requesting', 'denied', 'missing', 'error'] as const)('keeps %s at the microphone step until the user explicitly skips', async microphoneState => {
     const complete = vi.fn()
@@ -41,7 +39,7 @@ describe('first-run onboarding', () => {
     expect(screen.getByRole('heading', { name: 'Check your microphone' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Skip for now' })).toBeEnabled()
     expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull()
-    expect(screen.getByText(/Test your microphone or choose Skip for now to continue/)).toBeVisible()
+    expect(screen.getByText('Sotto opens the microphone only while you dictate or run this test.')).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Back' }))
     expect(screen.getByRole('heading', { name: 'Choose how Sotto looks' })).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Continue' }))
@@ -254,7 +252,7 @@ describe('first-run onboarding', () => {
     await goToStep(user, 3)
 
     await user.selectOptions(await screen.findByRole('combobox', { name: 'Microphone' }), 'mic-c922')
-    await user.click(screen.getByRole('button', { name: /retest microphone/i }))
+    await user.click(screen.getByRole('button', { name: 'Test microphone' }))
 
     expect(request).toHaveBeenCalledExactlyOnceWith('mic-c922')
     pending.resolve(true)
@@ -274,9 +272,105 @@ describe('first-run onboarding', () => {
       />,
     )
     await goToStep(user, 3)
+    await user.click(screen.getByRole('button', { name: 'Test microphone' }))
 
-    expect(screen.getByRole('button', { name: /retest microphone/i })).toBeVisible()
+    expect(screen.getByText('Listening. Say something.')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Stop test' })).toBeVisible()
     expect(screen.getByTestId('listening-bars')).toHaveAttribute('data-speaking', 'true')
+  })
+
+  it('passes the test only once it hears a voice, then closes the microphone and offers Continue', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+      const stop = vi.fn()
+      const props = { ...keyProps, shortcut: 'Ctrl+Shift+Space', platform: 'win32' as const, onRequestMicrophone: vi.fn(), onStopMicrophone: stop, onComplete: vi.fn() }
+      const { rerender } = render(<Onboarding {...props} microphoneState="idle" />)
+      await goToStep(user, 3)
+      // Every step but this one closes the microphone as it shows; count only what the test itself does.
+      stop.mockClear()
+      expect(screen.getByText('Not tested yet.')).toBeVisible()
+      await user.click(screen.getByRole('button', { name: 'Test microphone' }))
+      expect(props.onRequestMicrophone).toHaveBeenCalledOnce()
+
+      // Access confirmed but silence: still listening, and moving on is still a skip.
+      rerender(<Onboarding {...props} microphoneState="ready" microphoneLevel={0} />)
+      await act(async () => { vi.advanceTimersByTime(1_000) })
+      expect(screen.getByText('Listening. Say something.')).toBeVisible()
+      expect(screen.getByRole('button', { name: 'Skip for now' })).toBeVisible()
+      expect(stop).not.toHaveBeenCalled()
+
+      rerender(<Onboarding {...props} microphoneState="ready" microphoneLevel={0.3} />)
+      await act(async () => { vi.advanceTimersByTime(400) })
+      expect(screen.getByText('Sotto heard you. Your microphone works.')).toBeVisible()
+      expect(screen.getByRole('button', { name: 'Continue' })).toBeVisible()
+      expect(screen.getByRole('button', { name: 'Test again' })).toBeVisible()
+      expect(screen.queryByRole('meter', { name: 'Microphone level' })).toBeNull()
+      expect(stop).toHaveBeenCalled()
+    } finally { vi.useRealTimers() }
+  })
+
+  it('keeps focus on the test button while the microphone opens', async () => {
+    const user = userEvent.setup()
+    const props = { ...keyProps, shortcut: 'Ctrl+Shift+Space', platform: 'win32' as const, onRequestMicrophone: vi.fn(), onComplete: vi.fn() }
+    const { rerender } = render(<Onboarding {...props} microphoneState="idle" />)
+    await goToStep(user, 3)
+    screen.getByRole('button', { name: 'Test microphone' }).focus()
+    await user.keyboard('{Enter}')
+    rerender(<Onboarding {...props} microphoneState="requesting" />)
+    const button = screen.getByRole('button', { name: 'Test microphone' })
+    expect(button).toHaveAttribute('aria-disabled', 'true')
+    expect(button).toHaveFocus()
+    await user.keyboard('{Enter}')
+    expect(props.onRequestMicrophone).toHaveBeenCalledOnce()
+    rerender(<Onboarding {...props} microphoneState="ready" />)
+    expect(screen.getByRole('button', { name: 'Stop test' })).toHaveFocus()
+  })
+
+  it('stops the test on Stop test, and starts over when another microphone is chosen after it heard a voice', async () => {
+    const user = userEvent.setup()
+    const stop = vi.fn()
+    const reset = vi.fn()
+    const mediaDevices = {
+      enumerateDevices: vi.fn(async () => [
+        { deviceId: 'mic-builtin', groupId: 'a', kind: 'audioinput' as const, label: 'Built-in Microphone', toJSON: () => ({}) },
+        { deviceId: 'mic-usb', groupId: 'b', kind: 'audioinput' as const, label: 'USB Microphone', toJSON: () => ({}) },
+      ]),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }
+    const props = { ...keyProps, shortcut: 'Ctrl+Shift+Space', platform: 'win32' as const, mediaDevices, onRequestMicrophone: vi.fn(), onStopMicrophone: stop, onResetMicrophone: reset, onComplete: vi.fn() }
+    const { rerender } = render(<Onboarding {...props} microphoneState="ready" microphoneLevel={0} />)
+    await goToStep(user, 3)
+    stop.mockClear()
+    await user.click(screen.getByRole('button', { name: 'Test microphone' }))
+    const button = screen.getByRole('button', { name: 'Stop test' })
+    await user.click(button)
+    expect(stop).toHaveBeenCalledOnce()
+    // The one button changes with the test, so focus stays on it.
+    expect(screen.getByRole('button', { name: 'Test microphone' })).toHaveFocus()
+
+    await user.click(screen.getByRole('button', { name: 'Test microphone' }))
+    rerender(<Onboarding {...props} microphoneState="ready" microphoneLevel={0.5} />)
+    expect(await screen.findByText('Sotto heard you. Your microphone works.')).toBeVisible()
+    await user.selectOptions(await screen.findByRole('combobox', { name: 'Microphone' }), 'mic-usb')
+    expect(reset).toHaveBeenCalled()
+    expect(screen.getByText('Not tested yet.')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Skip for now' })).toBeVisible()
+  })
+
+  it('says when it has heard nothing for a while', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+      render(<Onboarding {...keyProps} microphoneState="ready" microphoneLevel={0} shortcut="Ctrl+Shift+Space" platform="win32" onRequestMicrophone={vi.fn()} onComplete={vi.fn()} />)
+      await goToStep(user, 3)
+      await user.click(screen.getByRole('button', { name: 'Test microphone' }))
+      expect(screen.getByText('Listening. Say something.')).toBeVisible()
+      await act(async () => { vi.advanceTimersByTime(6_100) })
+      expect(screen.getByText('Nothing heard yet.')).toBeVisible()
+      expect(screen.getByText('Check that the microphone above is the one you speak into, then say something.')).toBeVisible()
+    } finally { vi.useRealTimers() }
   })
 
   it('keeps the wave still while access is still being asked for', async () => {

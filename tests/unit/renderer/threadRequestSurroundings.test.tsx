@@ -19,7 +19,7 @@ const CHOICES = [
 /** Visual Gate, unmanaged, with its pending permission offering `choices`. */
 function permissionState(choices: typeof CHOICES | [] | undefined): AgentState {
   const state = threadsStateFixture()
-  state.assignments = []
+
   state.activeThreadId = 'visual-gate'
   const thread = state.host.threads.find(item => item.id === 'visual-gate')!
   thread.requests = thread.requests.map(request => request.id === 'visual-gate-permission' ? { ...request, ...(choices ? { permissionChoices: choices } : {}) } : request)
@@ -29,7 +29,7 @@ function permissionState(choices: typeof CHOICES | [] | undefined): AgentState {
 function mount(state: AgentState) {
   const live = liveAgentState(state)
   vi.mocked(useAgents).mockImplementation(live.useLive)
-  return { live, view: render(<ThreadsView onOpenAgents={vi.fn()} now={E2E_THREADS_NOW} />) }
+  return { live, view: render(<ThreadsView now={E2E_THREADS_NOW} />) }
 }
 
 beforeEach(() => { vi.mocked(useAgents).mockReset() })
@@ -43,7 +43,8 @@ describe('the composer beside a pending permission', () => {
   it('sends the reader to the provider’s app when Sotto has no choice to send, without repeating itself', () => {
     mount(permissionState([]))
     const prompt = screen.getByRole('textbox', { name: 'Prompt' })
-    expect(prompt).toHaveAttribute('placeholder', 'Waiting on the request above.')
+    expect(prompt).toHaveAttribute('data-placeholder', 'Waiting on the request above.')
+    expect(prompt).toHaveAttribute('contenteditable', 'false')
     expect(prompt).toHaveAccessibleDescription(/Sending returns once the request above is answered in .+’s app\./u)
     expect(screen.queryByText(/Allow or deny/u)).not.toBeInTheDocument()
   })
@@ -51,7 +52,8 @@ describe('the composer beside a pending permission', () => {
   it.each([['native choices', CHOICES], ['legacy approval', undefined]] as const)('still asks to allow or deny with %s, once', (_name, choices) => {
     const { view } = mount(permissionState(choices))
     const prompt = screen.getByRole('textbox', { name: 'Prompt' })
-    expect(prompt).toHaveAttribute('placeholder', 'Allow or deny the request above to continue.')
+    expect(prompt).toHaveAttribute('data-placeholder', 'Allow or deny the request above to continue.')
+    expect(prompt).toHaveAttribute('aria-disabled', 'true')
     // The empty prompt already says it; the line under the model picker does not say it again.
     const form = prompt.closest('form')!
     expect(within(form).queryByText(/Allow or deny/u)).not.toBeInTheDocument()

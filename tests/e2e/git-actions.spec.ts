@@ -1,3 +1,4 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { initializeGitRepository, initializeBareGitRepository } from '../fixtures/gitRepository'
 import { e2eGit as git } from './support/git'
 import { ownedE2EProfile } from './support/e2eProfile'
@@ -80,7 +81,7 @@ async function launch(folders: readonly (readonly [string, string])[]): Promise<
   await launched.page.evaluate(async folders => {
     await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
     const agents = window.sotto!.agents!
-    await agents.command({ type: 'configure', patch: { enabled: true, speak: false } })
+    await agents.command({ type: 'configure', patch: { enabled: true, } })
     await agents.command({ type: 'connect' })
     for (const [title, path] of folders) await agents.command({ type: 'create-project', title, path, useExisting: true })
   }, folders)
@@ -283,12 +284,12 @@ node "${hold.replaceAll('\\', '/')}" "${directory.replaceAll('\\', '/')}"
       if (action?.status === 'failed') throw new Error(action.error ?? 'The fixture commit failed')
       return existsSync(join(directory, 'started'))
     }, { timeout: 30_000 }).toBe(true)
-    const prompt = pane(page).getByRole('textbox', { name: 'Prompt', exact: true })
-    await prompt.fill('Keep this refused message')
+    const prompt = promptField(pane(page))
+    await fillPrompt(prompt, 'Keep this refused message')
     await pane(page).getByRole('button', { name: 'Send prompt', exact: true }).click()
     const copy = 'A Git action is running in this folder. Your message was not sent. Your text is kept. Send it again when the action finishes.'
     await expect(pane(page)).toContainText(copy)
-    await expect(prompt).toHaveValue('Keep this refused message')
+    await expectPromptText(prompt, 'Keep this refused message')
     expect(await userMessageTexts(page, sibling)).not.toContain('Keep this refused message')
     for (const [width, height, appearance] of [[1600, 1000, 'dark'], [1600, 1000, 'light'], [1280, 800, 'dark'], [1280, 800, 'light'], [820, 560, 'dark'], [820, 560, 'light']] as const) {
       await page.evaluate(async appearance => { await window.sotto!.updateSettings({ appearance }) }, appearance)
@@ -300,7 +301,7 @@ node "${hold.replaceAll('\\', '/')}" "${directory.replaceAll('\\', '/')}"
       await page.screenshot({ animations: 'disabled', path: join(WORKSPACE_GIT_SHOTS, `refused-send-${width}-${appearance}.png`) })
     }
     await page.emulateMedia({ reducedMotion: 'reduce' })
-    await expect(prompt).toHaveValue('Keep this refused message')
+    await expectPromptText(prompt, 'Keep this refused message')
     // A retained queue needs the user's recovery, so the next Git refusal must not tell them to wait.
     await page.evaluate(async threadId => {
       await window.sotto!.agents!.command({ type: 'queue-followup', threadId, draftId: crypto.randomUUID(), text: 'Keep this failed follow-up' })
@@ -327,10 +328,10 @@ node "${hold.replaceAll('\\', '/')}" "${directory.replaceAll('\\', '/')}"
       const item = state.followups!.find(item => item.threadId === threadId)!
       await window.sotto!.agents!.command({ type: 'remove-followup', threadId, itemId: item.id })
     }, sibling)
-    await expect(prompt).toHaveValue('Keep this refused message')
+    await expectPromptText(prompt, 'Keep this refused message')
     await prompt.press('Control+Enter')
     await expect.poll(() => userMessageTexts(page, sibling)).toEqual(['Keep this refused message'])
-    await expect(prompt).toHaveValue('')
+    await expectPromptText(prompt, '')
   } finally {
     await writeFile(release, 'finish').catch(() => undefined)
     await committing?.catch(() => undefined)

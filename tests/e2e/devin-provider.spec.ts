@@ -1,3 +1,4 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
@@ -101,10 +102,10 @@ test('uses Devin through the native adapter and preserves explicit thread decisi
     await expect(dialog.getByRole('combobox', { name: 'Thread model' })).toContainText('Fixture Devin')
     await dialog.getByRole('button', { name: 'Create thread' }).click()
     await expect(dialog).toHaveCount(0)
-    const prompt = page.getByRole('textbox', { name: 'Prompt', exact: true })
-    await prompt.fill('Synthetic Devin UI prompt')
+    const prompt = promptField(page)
+    await fillPrompt(prompt, 'Synthetic Devin UI prompt')
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
-    await expect(prompt).toHaveValue('')
+    await expectPromptText(prompt, '')
     const threadId = await page.evaluate(async () => (await window.sotto!.agents!.get()).host.threads.find(thread => thread.title === 'Devin UI check')!.id)
     const state = async () => page.evaluate(async id => (await window.sotto!.agents!.get()).host.threads.find(thread => thread.id === id)!, threadId)
     await expect.poll(async () => (await state()).status).toBe('running')
@@ -140,9 +141,9 @@ test('uses Devin through the native adapter and preserves explicit thread decisi
     await resizeWindow(launched, 1280, 800)
     await page.evaluate(() => window.sotto!.updateSettings({ appearance: 'dark' }))
     await page.screenshot({ animations: 'disabled', path: join(evidence, 'thread-complete.png') })
-    await prompt.fill('Synthetic cancellation prompt')
+    await fillPrompt(prompt, 'Synthetic cancellation prompt')
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
-    await expect(prompt).toHaveValue('')
+    await expectPromptText(prompt, '')
     await page.getByRole('button', { name: 'Stop agent', exact: true }).click()
     await expect.poll(async () => (await state()).status).toBe('idle')
     // The permission chip changes the mode through the whole path the app uses: preload, IPC, coordinator and
@@ -162,7 +163,7 @@ test('uses Devin through the native adapter and preserves explicit thread decisi
     expect((await state()).providerMode).toBe('bypass')
     const restored = JSON.parse(await readFile(join(profile, 'devin-threads.json'), 'utf8')) as Record<string, { devinSessionId: string }>
     expect(Object.values(restored).some(alias => alias.devinSessionId === nativeId)).toBe(true)
-    expect(await page.evaluate(async () => (await window.sotto!.getSettings()).voiceCoordinatorEnabled)).toBe(false)
+    expect(await page.evaluate(async () => window.sotto!.getSettings())).not.toHaveProperty('voiceCoordinatorEnabled')
     expect(await readFile(join(root, 'violations.jsonl'), 'utf8').catch(() => '')).toBe('')
     await writeFile(join(evidence, 'contrast.json'), JSON.stringify(contrasts, null, 2))
   } finally {

@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 
 import { DESIGN_CAPTURE_BUILT_IN_THEMES, DESIGN_CAPTURE_DEFAULT_THEME, DESIGN_CAPTURE_MINIMUM_WIDTH } from '../../scripts/design-capture-matrix.mjs'
 import { populatedHistory, withSotto } from '../fixtures/designCaptureProfile'
-import { appThemes, assertFocusPresentation, startSettingsAtHeading, setAppearance, assertRenderedRoom, setMainWindowWidth, assertDictateState, capturePage, captureSection, captureFullSurface } from './support/designCapture'
+import { appThemes, assertDictateState, assertFocusPresentation, assertRenderedRoom, captureFullSurface, capturePage, captureSection, setAppearance, setMainWindowWidth, startSettingsAtHeading } from './support/designCapture'
 import { openPage } from './support/sottoLaunch'
 
 const captureEnabled = process.env.SOTTO_DESIGN_CAPTURE === '1'
@@ -19,18 +19,18 @@ test.describe('authoritative design-review captures', () => {
       await page.getByRole('button', { name: 'Get started' }).click()
       await forward.click()
       await page.getByRole('button', { name: /test microphone/i }).click()
-      await expect(page.getByText(/microphone ready/i)).toBeVisible()
+      await expect(page.getByText('Sotto heard you. Your microphone works.')).toBeVisible()
       await forward.click()
       await expect(page.getByText(/connect your openrouter key/i)).toBeVisible()
       await captureSection(page, onboarding, 'onboarding-step-4-openrouter-light.png', { theme: 'light' })
     })
 
-    await withSotto({ voice: true, onboardingComplete: true, history: populatedHistory, appearance: 'light' }, async ({ page }) => {
+    await withSotto({ memory: true, onboardingComplete: true, history: populatedHistory, appearance: 'light' }, async ({ page }) => {
       await openPage(page, 'Dictate')
       await assertDictateState(page, 'idle', /ready when you are/i)
       await assertRenderedRoom(page, 'light')
       await capturePage(page, 'dictate-ready-light.png', { theme: 'light' })
-      await assertFocusPresentation(page.getByRole('tab', { name: 'Agents' }))
+      await assertFocusPresentation(page.getByRole('tab', { name: 'Threads' }))
       await capturePage(page, 'focus-switch-tab-light.png', { focusTarget: 'tab', focus: true, theme: 'light' })
       await assertFocusPresentation(page.getByRole('link', { name: 'History' }))
       await capturePage(page, 'focus-navigation-light.png', { focusTarget: 'navigation', focus: true, theme: 'light' })
@@ -55,13 +55,6 @@ test.describe('authoritative design-review captures', () => {
       await page.getByRole('button', { name: 'Start dictation' }).click()
       await assertDictateState(page, 'listening', /^listening\./i)
       await capturePage(page, 'dictate-reduced-motion-light.png', { reducedMotion: true, theme: 'light' })
-    })
-
-    await withSotto({ voice: true, onboardingComplete: true, appearance: 'light' }, async ({ page }) => {
-      await page.getByRole('tab', { name: 'Agents' }).click()
-      await page.getByRole('button', { name: 'Not now', exact: true }).click()
-      await expect(page.locator('.agent-orb')).toBeVisible()
-      await capturePage(page, 'agents-room-light.png', { theme: 'light' })
     })
 
     await withSotto({ onboardingComplete: true, history: populatedHistory, appearance: 'light' }, async ({ page }) => {
@@ -137,7 +130,7 @@ test.describe('authoritative design-review captures', () => {
       }
     })
 
-    await withSotto({ voice: true, onboardingComplete: true, history: populatedHistory }, async (launched) => {
+    await withSotto({ memory: true, onboardingComplete: true, history: populatedHistory }, async (launched) => {
       const { page } = launched
       await openPage(page, 'Dictate')
       await setMainWindowWidth(launched, DESIGN_CAPTURE_MINIMUM_WIDTH)
@@ -146,11 +139,6 @@ test.describe('authoritative design-review captures', () => {
         await page.getByRole('tab', { name: 'Dictate', exact: true }).click()
         await assertDictateState(page, 'idle', /ready when you are/i)
         await capturePage(page, `width-${DESIGN_CAPTURE_MINIMUM_WIDTH}-dictate-${theme}.png`, { theme })
-        await page.getByRole('tab', { name: 'Agents', exact: true }).click()
-        const notNow = page.getByRole('button', { name: 'Not now', exact: true })
-        if (await notNow.isVisible()) await notNow.click()
-        await expect(page.locator('.agent-orb')).toBeVisible()
-        await capturePage(page, `width-${DESIGN_CAPTURE_MINIMUM_WIDTH}-agents-${theme}.png`, { theme })
         await page.getByRole('link', { name: 'Settings' }).click()
         await captureFullSurface(page, page.locator('.settings-view'), `width-${DESIGN_CAPTURE_MINIMUM_WIDTH}-settings-${theme}.png`, /^Application$/i, { theme })
       }

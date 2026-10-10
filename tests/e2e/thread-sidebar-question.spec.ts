@@ -4,7 +4,7 @@ import { evidenceDirectory } from '../fixtures/evidence'
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import type { AgentRequest, AgentState } from '../../src/shared/agents'
 import { hostEntityKey } from '../../src/shared/clientIdentity'
-import { closeSotto, launchSotto, launchSottoWithVoice, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto,  openThreads, type LaunchedSotto } from './support/sottoLaunch'
 
 const agentQuestionsEvidence = evidenceDirectory('artifacts/codex-questions-thread-agents')
 
@@ -12,7 +12,7 @@ const evidence = evidenceDirectory('artifacts/sidebar-question')
 
 // A provider's question or permission on a thread with no assignment never enters the coordinator's attention
 // queue, which holds requests only for threads with one. The sidebar row still has to say the thread is waiting on you,
-// with the voice coordinator on or off, and stop saying so once you answer. The app is real end to end; only
+// and stop saying so once you answer. The app is real end to end; only
 // the provider's effects come from the unpackaged E2E host.
 
 const question: AgentRequest = {
@@ -30,7 +30,7 @@ const permission: AgentRequest = {
 async function prepare(page: Page, appearance: 'dark' | 'light'): Promise<void> {
   await page.evaluate(async appearance => {
     await window.sotto!.updateSettings({ onboardingComplete: true, appearance })
-    await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+    await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
     await window.sotto!.agents!.command({ type: 'connect' })
   }, appearance)
   await page.reload()
@@ -92,7 +92,7 @@ async function expectClear(page: Page, title: string): Promise<void> {
 let launched: LaunchedSotto | undefined
 test.afterEach(async () => { if (launched) await closeSotto(launched); launched = undefined })
 
-test('shows a question on a thread you run in its sidebar row until you answer it, with the voice coordinator off', async () => {
+test('shows a question on a thread you run in its sidebar row until you answer it', async () => {
   test.setTimeout(120_000)
   launched = await launchSotto()
   const { page, app } = launched
@@ -103,7 +103,6 @@ test('shows a question on a thread you run in its sidebar row until you answer i
   await expect.poll(() => pending(page, 'workshop')).toEqual([question.id])
   // The cause of the report: nothing about this thread is in the attention queue.
   const snapshot = await state(page)
-  expect(snapshot.queue.filter(item => item.threadId === scopedThread(snapshot, 'workshop'))).toEqual([])
   await expectWaiting(page, 'Workshop', 'question', 'Needs your answer', 'question-1280x800-dark')
 
   await open(page, 'Workshop')
@@ -130,9 +129,9 @@ test('shows a question on a thread you run in its sidebar row until you answer i
   await page.screenshot({ path: join(evidence, 'question-answered-1280x800-dark.png'), animations: 'disabled' })
 })
 
-test('shows a permission the same way with the voice coordinator on, at the minimum window in light', async () => {
+test('shows a permission the same way at the minimum window in light', async () => {
   test.setTimeout(120_000)
-  launched = await launchSottoWithVoice()
+  launched = await launchSotto()
   const { page, app } = launched
   await prepare(page, 'light')
   await resize(app, page, 820, 560)

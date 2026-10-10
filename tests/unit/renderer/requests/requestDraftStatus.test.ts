@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { deferred as gate } from '../../../fixtures/deferred'
 import { describe, expect, it, vi } from 'vitest'
 import { RequestAnswerStore } from '../../../../src/renderer/src/agents/requests/requestAnswers'
@@ -10,7 +11,6 @@ const selection = (text: string) => ({ text, optionIds: [], other: false })
 const draft = (revision = 3, held = true, owner = target): RequestDraft => ({ target: owner, revision, held,
   selections: { notes: selection('Original answer') } })
 const accepted = (revision = 3): RequestDraftStatus & { status: 'accepted' } => ({ status: 'accepted', revision, decisionId: `attempt-${revision}` })
-
 
 function fixture(initial: RequestDraftStatus = { status: 'draft', draft: draft() }) {
   const values = new Map<string, RequestDraftStatus>([[requestDraftKey(target), initial]])

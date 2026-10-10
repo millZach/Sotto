@@ -1,8 +1,9 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { mkdir } from 'node:fs/promises'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import sharp from 'sharp'
 import { hostKeys } from './support/hostKeys'
-import { closeSotto, launchSottoWithVoice, openThreads, resizeWindow } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, resizeWindow } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 
 const ARTIFACTS = evidenceDirectory('artifacts/effort-slider')
@@ -46,7 +47,7 @@ async function endlessAnimations(page: Page): Promise<number> {
 test('the effort card previews a drag, saves on release, plays the arrival at the top and dresses the composer, across window sizes', async () => {
   test.setTimeout(120_000)
   await mkdir(ARTIFACTS, { recursive: true })
-  const launched = await launchSottoWithVoice()
+  const launched = await launchSotto()
   const { page } = launched
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
@@ -54,7 +55,7 @@ test('the effort card previews a drag, saves on release, plays the arrival at th
     await page.emulateMedia({ reducedMotion: 'no-preference' })
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', reducedMotion: 'system', effortColor: 'ember' })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
       await window.sotto!.agents!.command({ type: 'select-thread', threadId: 'workshop' })
       await window.sotto!.agents!.command({ type: 'configure-thread', threadId: 'workshop', reasoningEffort: 'low' })
@@ -160,11 +161,11 @@ test('the effort card previews a drag, saves on release, plays the arrival at th
     await expect(card).toHaveCount(0)
 
     // Ultrathink stays a visible instruction in the Claude draft, added once.
-    const prompt = page.getByRole('textbox', { name: 'Prompt', exact: true })
-    await prompt.fill('Review the parser.')
+    const prompt = promptField(page)
+    await fillPrompt(prompt, 'Review the parser.')
     await chip.click()
     await card.getByRole('button', { name: 'Add Ultrathink to prompt', exact: true }).click()
-    await expect(prompt).toHaveValue('Review the parser.\n\nultrathink')
+    await expectPromptText(prompt, 'Review the parser.\n\nultrathink')
     await expect(prompt).toBeFocused()
     expect(await savedEffort(page)).toBe('low')
     expect((await page.evaluate(async () => window.sotto!.agents!.threadDetail!('workshop')))?.messages).toHaveLength(0)
@@ -227,7 +228,7 @@ test('the effort card previews a drag, saves on release, plays the arrival at th
 test('the card holds its height through the levels and keeps a gradient colourway’s word painted while the arrival plays', async () => {
   test.setTimeout(120_000)
   await mkdir(ARTIFACTS, { recursive: true })
-  const launched = await launchSottoWithVoice()
+  const launched = await launchSotto()
   const { page } = launched
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
@@ -235,7 +236,7 @@ test('the card holds its height through the levels and keeps a gradient colourwa
     await page.emulateMedia({ reducedMotion: 'no-preference' })
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', reducedMotion: 'system', effortColor: 'rainbow' })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
       await window.sotto!.agents!.command({ type: 'select-thread', threadId: 'workshop' })
       await window.sotto!.agents!.command({ type: 'configure-thread', threadId: 'workshop', reasoningEffort: 'low' })
@@ -310,7 +311,7 @@ test('the card holds its height through the levels and keeps a gradient colourwa
 test('Settings → Appearance offers the effort colourways, paints the pick at once and carries it to the composer', async () => {
   test.setTimeout(90_000)
   await mkdir(ARTIFACTS, { recursive: true })
-  const launched = await launchSottoWithVoice()
+  const launched = await launchSotto()
   const { page } = launched
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
@@ -318,7 +319,7 @@ test('Settings → Appearance offers the effort colourways, paints the pick at o
     await page.emulateMedia({ reducedMotion: 'no-preference' })
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', reducedMotion: 'system', effortColor: 'ember' })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
       await window.sotto!.agents!.command({ type: 'configure-thread', threadId: 'workshop', reasoningEffort: 'max' })
     })

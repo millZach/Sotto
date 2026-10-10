@@ -105,7 +105,7 @@ test('an agent installs a host’s provider from its tile, with Show thread and 
     const { page } = launched
     page.on('pageerror', error => errors.push(error.message))
     await page.evaluate(async () => {
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload()

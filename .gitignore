@@ -1,5 +1,25 @@
 node_modules/
 artifacts/terminal-search-links-zoom/
+artifacts/skill-pill-composer/*
+!artifacts/skill-pill-composer/proof.json
+!artifacts/skill-pill-composer/dark-1600x1000.png
+!artifacts/skill-pill-composer/dark-1280x800.png
+!artifacts/skill-pill-composer/dark-820x560.png
+!artifacts/skill-pill-composer/light-1600x1000.png
+!artifacts/skill-pill-composer/light-1280x800.png
+!artifacts/skill-pill-composer/light-820x560.png
+!artifacts/skill-pill-composer/reduced-motion.png
+!artifacts/skill-pill-composer/queued-editor.png
+!artifacts/skill-pill-composer/compact-grid.png
+!artifacts/skill-pill-composer/compact-question.png
+!artifacts/skill-pill-composer/permission-recovery-dark-820.png
+!artifacts/skill-pill-composer/permission-recovery-light-820.png
+!artifacts/skill-pill-composer/review-proof.json
+!artifacts/skill-pill-composer/review-claude-boundary.png
+!artifacts/skill-pill-composer/review-codex-boundary.png
+!artifacts/skill-pill-composer/review-grok-boundary.png
+!artifacts/skill-pill-composer/review-dark-820x560.png
+!artifacts/skill-pill-composer/review-light-820x560.png
 artifacts/linux-no-window-controls/*
 !artifacts/linux-no-window-controls/checks.json
 !artifacts/linux-no-window-controls/threads-1600x1000-dark.png
@@ -11,6 +31,14 @@ artifacts/remove-personal-chats/*
 !artifacts/remove-personal-chats/settings-820x560-light-reduced-motion.png
 !artifacts/remove-personal-chats/question-820x560-light-reduced-motion.png
 !artifacts/remove-personal-chats/privacy-cleanup-notice-820x560.png
+artifacts/first-run-setup-fit/*
+!artifacts/first-run-setup-fit/checks.json
+!artifacts/first-run-setup-fit/agents-real-clients-1080x720.png
+!artifacts/first-run-setup-fit/step-1-820x560-dark.png
+!artifacts/first-run-setup-fit/step-2-820x560-light.png
+!artifacts/first-run-setup-fit/step-3-1080x720-dark.png
+!artifacts/first-run-setup-fit/step-6-1080x720-dark.png
+!artifacts/first-run-setup-fit/step-9-1080x720-light.png
 out/
 dist/
 dist-electron/
@@ -36,10 +64,6 @@ artifacts/visuals-live/
 artifacts/provider-recovery/
 artifacts/native-providers/
 artifacts/voice-journey/
-
-# Generated local inference payloads (locks remain versioned).
-resources/runtime/*.wasm
-!resources/runtime/manifest.lock.json
 
 # LLM formatting benchmark — never commit the key or raw results
 scripts/llm-bench/.openrouter-key
@@ -188,9 +212,45 @@ artifacts/linux-hyprland-paste/*
 !artifacts/linux-hyprland-paste/clipboard-recovery-820x560-light.png
 !artifacts/linux-hyprland-paste/clipboard-recovery-820x560-dark.png
 
+# Captures from the removal merge?s first-run verification tool.
+artifacts/voice-control-removal/merged-setup/
+artifacts/omarchy-shell-plugin/*
+!artifacts/omarchy-shell-plugin/bar-on-the-left.png
+!artifacts/omarchy-shell-plugin/desktop-catppuccin-latte.png
+!artifacts/omarchy-shell-plugin/desktop-tokyo-night.png
+!artifacts/omarchy-shell-plugin/drag-and-snap.png
+!artifacts/omarchy-shell-plugin/drag-ghost-left.png
+!artifacts/omarchy-shell-plugin/failed-stop-keeps-pill.png
+!artifacts/omarchy-shell-plugin/late-stop-after-quit.png
+!artifacts/omarchy-shell-plugin/late-stop-before-fix.png
+!artifacts/omarchy-shell-plugin/nested-proof.txt
+!artifacts/omarchy-shell-plugin/notices.png
+!artifacts/omarchy-shell-plugin/read-failure-keeps-pill.png
+!artifacts/omarchy-shell-plugin/rule-a-after-copied.png
+!artifacts/omarchy-shell-plugin/rule-a-coalesced.png
+!artifacts/omarchy-shell-plugin/rule-a-two-displays.png
+!artifacts/omarchy-shell-plugin/sotto-quit.png
+!artifacts/omarchy-shell-plugin/states-catppuccin-latte.png
+!artifacts/omarchy-shell-plugin/states-tokyo-night.png
+!artifacts/omarchy-shell-plugin/upright-left.png
+!artifacts/omarchy-shell-plugin/upright-small-displays.png
+!artifacts/omarchy-shell-plugin/verbs-received.png
+!artifacts/omarchy-shell-plugin/without-motion.png
 # Linux shell plumbing proof; retain only the evidence cited in its verification note.
 artifacts/linux-shell-plumbing/*
 !artifacts/linux-shell-plumbing/real-check.txt
 !artifacts/linux-shell-plumbing/plugin-present.png
 !artifacts/linux-shell-plumbing/plugin-socket-held.png
 !artifacts/linux-shell-plumbing/widget-returned.png
+
+# Real Sotto and Omarchy shell proof; retain the note's curated evidence only.
+artifacts/omarchy-shell-integration/*
+!artifacts/omarchy-shell-integration/proof.txt
+!artifacts/omarchy-shell-integration/a-idle.png
+!artifacts/omarchy-shell-integration/b-listening.png
+!artifacts/omarchy-shell-integration/c-copied-expired.png
+!artifacts/omarchy-shell-integration/d-retry-discard.png
+!artifacts/omarchy-shell-integration/e-drag-restart.png
+!artifacts/omarchy-shell-integration/f-sotto-quit.png
+!artifacts/omarchy-shell-integration/g-two-outputs.png
+!artifacts/omarchy-shell-integration/h-widget-returned.png

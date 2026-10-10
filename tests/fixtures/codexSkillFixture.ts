@@ -19,4 +19,3 @@ export async function fixture() {
 }
 export const skill = (path: string, enabled = true) => ({ name: 'native-review', description: 'Native description verbatim.', path, scope: 'repo' as const, enabled,
   interface: { displayName: 'Pretty title' }, dependencies: null, shortDescription: null })
-

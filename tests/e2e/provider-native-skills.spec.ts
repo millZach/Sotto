@@ -1,3 +1,4 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { agentState } from './support/agentAccess'
 import { ownedE2EProfile } from './support/e2eProfile'
 import { expect, test } from '@playwright/test'
@@ -18,7 +19,7 @@ test('the full workspace inserts provider-native skills and retains selections w
     try {
       await page.evaluate(async () => {
         await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', accent: 'teal' })
-        await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+        await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true } })
         await window.sotto!.agents!.command({ type: 'connect' })
         await window.sotto!.agents!.command({ type: 'select-thread', threadId: 'grok-previews' })
       })
@@ -29,29 +30,34 @@ test('the full workspace inserts provider-native skills and retains selections w
       for (const [threadId, token] of [['grok-previews', '/review'], ['release-notes', '$review'], ['benchmark', '/review']] as const) {
         await page.evaluate(async threadId => window.sotto!.agents!.command({ type: 'select-thread', threadId }), threadId)
         const pane = page.locator(`section.thread-pane[data-thread-id="${key(threadId)}"]`)
-        const prompt = pane.getByRole('textbox', { name: 'Prompt', exact: true })
-        await prompt.fill('$rev')
+        const prompt = promptField(pane)
+        await fillPrompt(prompt, '$rev')
         const skills = pane.getByRole('listbox', { name: 'Skills' })
         await expect(skills).toBeVisible()
         await expect(skills.getByRole('option')).toHaveCount(1)
-        await expect(skills.getByRole('option')).toContainText(token)
+        await expect(skills.getByRole('option').locator('.composer-picker__name')).toHaveText('review')
         await prompt.press('Tab')
-        await expect(prompt).toHaveValue(`${token} `)
+        await expectPromptText(prompt, `${token} `)
+        await expect(prompt.locator('[data-skill-token]')).toHaveAttribute('data-skill-token', token)
         await expect.poll(() => page.evaluate(async threadId => {
           const state = await window.sotto!.agents!.get()
           return state.threadDrafts?.find(draft => draft.threadId === threadId)?.skills?.map(skill => skill.name)
         }, key(threadId))).toEqual(['review'])
       }
       await page.evaluate(async () => window.sotto!.agents!.command({ type: 'select-thread', threadId: 'grok-previews' }))
-      const prompt = page.locator(`section.thread-pane[data-thread-id="${key('grok-previews')}"]`).getByRole('textbox', { name: 'Prompt', exact: true })
-      await expect(prompt).toHaveValue('/review ')
-      await prompt.fill('/review $plan')
+      const prompt = promptField(page.locator(`section.thread-pane[data-thread-id="${key('grok-previews')}"]`))
+      await expectPromptText(prompt, '/review ')
+      await expect(prompt.locator('[data-skill-token="/review"]')).toHaveCount(1)
+      // Append to the chosen atom; replacing the entire field would deliberately remove its selection.
+      await prompt.press('End')
+      await prompt.pressSequentially('$plan')
+      await expectPromptText(prompt, '/review $plan')
       const plan = page.getByRole('listbox', { name: 'Skills' }).getByRole('option')
       await expect(plan).toHaveAttribute('aria-disabled', 'true')
       await expect(page.getByText(/takes one skill per message/)).toBeVisible()
       const state = await agentState(page)
       expect(state.host.threads.map(thread => [thread.id, thread.messages.length])).toEqual(before)
-      expect(state.assignments).toEqual([])
+      expect(state).not.toHaveProperty('assignments')
     } finally { await closeSotto(launched) }
   } finally { await profileOwner.dispose() }
 })

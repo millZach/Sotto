@@ -1,3 +1,4 @@
+import { expectPromptText, promptField } from './support/prompt'
 import { agentState } from './support/agentAccess'
 import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
 import { readFile, writeFile } from 'node:fs/promises'
@@ -15,7 +16,7 @@ test('desktop migration keeps raw host IDs and restores scoped panes and drafts 
   const snapshot = { ...EMPTY_AGENT_HOST, projects: [{ id: 'project', title: 'Identity project', path: profile }],
     threads: ['first', 'second'].map(id => ({ id, projectId: 'project', title: `${id} identity task`, modelId: '', status: 'idle', messages: [], requests: [], nativeSessionStarted: false })) }
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true }))
-  await writeFile(join(profile, 'agents.json'), JSON.stringify({ configuration: { ...defaultAgentConfiguration(), enabled: true, speak: false }, activeProjectId: 'project', activeThreadId: 'first' }))
+  await writeFile(join(profile, 'agents.json'), JSON.stringify({ configuration: { ...defaultAgentConfiguration(), enabled: true, }, activeProjectId: 'project', activeThreadId: 'first' }))
   await writeFile(join(profile, 'workspace.json'), JSON.stringify({ snapshot, creations: [], projectAliases: [] }))
   let originalHost: string | undefined
   try {
@@ -49,7 +50,7 @@ test('desktop migration keeps raw host IDs and restores scoped panes and drafts 
         const draft = await page.evaluate(async () => (await window.sotto!.agents!.get()).threadDrafts)
         expect(draft).toContainEqual(expect.objectContaining({ threadId: first, text: 'Draft retained across host migration' }))
         await page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: 'first identity task', exact: true }).click()
-        await expect(page.locator(`section.thread-pane[data-thread-id="${first}"]`).getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('Draft retained across host migration')
+        await expectPromptText(promptField(page.locator(`section.thread-pane[data-thread-id="${first}"]`)), 'Draft retained across host migration')
         await page.screenshot({ path: testInfo.outputPath(`${phase}.png`), animations: 'disabled' })
       } finally { await closeSotto(launched) }
     }

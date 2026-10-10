@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -18,10 +19,13 @@ import {
   type Rgba,
 } from '../../fixtures/renderer/themeTokenResolver'
 
+const tokensCss = readFileSync(join(process.cwd(), 'src/renderer/src/styles/tokens.css'), 'utf8')
+const tokenBlocks = parseTokenBlocks(tokensCss)
+
 const combinations = MODES.flatMap(mode => THEME_IDS.map(id => [mode, id] as const))
 
 function palette(mode: Mode, themeId: string, options: PaintOptions = {}): (name: string) => Rgba {
-  const declarations = rootDeclarations(mode, themeId, options)
+  const declarations = rootDeclarations(mode, themeId, options, tokenBlocks)
   const canvas = resolveColor('--tt-canvas', declarations)
   // Every token is judged as painted on the room: translucent fills sit on the canvas.
   return (name: string) => over(resolveColor(`--tt-${name}`, declarations), canvas)
@@ -109,39 +113,39 @@ describe('main-window theme tokens', () => {
 
   it('paints glass as the overlay surface at the chosen opacity', () => {
     for (const glass of [40, 80, 100]) {
-      const declarations = rootDeclarations('dark', 'nocturne', { glass })
+      const declarations = rootDeclarations('dark', 'nocturne', { glass }, tokenBlocks)
       expect(resolveColor('--tt-glass', declarations).a).toBeCloseTo(glass / 100, 5)
     }
     // Text stays readable on the most transparent glass, painted over the room.
     for (const mode of MODES) {
-      const declarations = rootDeclarations(mode, 'nocturne', { glass: 40 })
+      const declarations = rootDeclarations(mode, 'nocturne', { glass: 40 }, tokenBlocks)
       const canvas = resolveColor('--tt-canvas', declarations)
       const text = over(resolveColor('--tt-text', declarations), canvas)
       for (const surface of ['--tt-glass', '--tt-glass-field']) {
         expect(contrast(text, over(resolveColor(surface, declarations), canvas)), `${mode} text on ${surface}`).toBeGreaterThanOrEqual(4.5)
       }
     }
-    const dark = rootDeclarations('dark', 'nocturne')
-    const light = rootDeclarations('light', 'nocturne')
+    const dark = rootDeclarations('dark', 'nocturne', {}, tokenBlocks)
+    const light = rootDeclarations('light', 'nocturne', {}, tokenBlocks)
     expect(dark.get('--tt-glass-filter')).toBe('blur(var(--tt-glass-blur)) saturate(var(--tt-glass-saturation))')
     expect([dark.get('--tt-glass-blur'), dark.get('--tt-glass-saturation')]).toEqual(['16px', '1.08'])
     expect([light.get('--tt-glass-blur'), light.get('--tt-glass-saturation')]).toEqual(['12px', '1.14'])
   })
 
   it('declares the default theme (Sotto) as the first-frame palette for both modes, with every role present', () => {
-    const blocks = parseTokenBlocks()
+    const blocks = tokenBlocks
     const base = blocks.find(block => block.selectors.length === 1 && block.selectors[0] === ':root' && block.declarations.has('--theme-canvas'))!
     const light = blocks.find(block => block.selectors.includes(":root[data-theme='light']") && block.declarations.has('--theme-canvas'))!
     for (const role of THEME_COLOR_ROLES) {
-      expect(base.declarations.get(themeColorVariable(role)), `dark ${role}`).toBe(rootDeclarations('dark', DEFAULT_THEME_ID).get(themeColorVariable(role)))
-      expect(light.declarations.get(themeColorVariable(role)), `light ${role}`).toBe(rootDeclarations('light', DEFAULT_THEME_ID).get(themeColorVariable(role)))
+      expect(base.declarations.get(themeColorVariable(role)), `dark ${role}`).toBe(rootDeclarations('dark', DEFAULT_THEME_ID, {}, tokenBlocks).get(themeColorVariable(role)))
+      expect(light.declarations.get(themeColorVariable(role)), `light ${role}`).toBe(rootDeclarations('light', DEFAULT_THEME_ID, {}, tokenBlocks).get(themeColorVariable(role)))
     }
   })
 
   it('derives every colour token from theme roles, never from an accent attribute', () => {
-    const css = readFileSync(join(process.cwd(), 'src/renderer/src/styles/tokens.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '')
+    const css = tokensCss.replace(/\/\*[\s\S]*?\*\//gu, '')
     expect(css).not.toMatch(/data-accent/u)
-    const derived = parseTokenBlocks().find(block => block.selectors.length === 1 && block.selectors[0] === ':root' && block.declarations.has('--tt-canvas'))!
+    const derived = tokenBlocks.find(block => block.selectors.length === 1 && block.selectors[0] === ':root' && block.declarations.has('--tt-canvas'))!
     const constants = new Set(['--tt-success', '--tt-provider-codex', '--tt-provider-claude', '--tt-provider-grok', '--tt-provider-devin', '--tt-provider-ink', '--tt-backdrop', '--tt-shadow-sm', '--tt-shadow-lg', '--tt-shadow-overlay', '--tt-shadow-color'])
     for (const [name, value] of derived.declarations) {
       if (constants.has(name) || !/^(#|rgb\(|oklch\()/u.test(value)) continue
@@ -177,6 +181,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/agents/agents.css',
       'src/renderer/src/agents/modelPicker.css',
       'src/renderer/src/agents/effortPicker.css',
+      'src/renderer/src/agents/skillPill.css',
       'src/renderer/src/agents/threadMonitor.css',
       'src/renderer/src/agents/threadChips.css',
       'src/renderer/src/agents/workingCopy.css',
@@ -188,7 +193,6 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/agents/providers.css',
       'src/renderer/src/agents/clientUpdates.css',
       'src/renderer/src/agents/hostUpdates.css',
-      'src/renderer/src/agents/room.css',
       'src/renderer/src/agents/screenshots.css',
       'src/renderer/src/agents/reviewComments.css',
       'src/renderer/src/agents/visualCard.css',

@@ -1,10 +1,11 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { startMonitoredThread, monitorGeometry } from './support/monitoredThread'
 import { resizeContentWindow } from './support/sottoWindow'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import type { SottoE2EBridge } from '../../src/shared/e2e'
-import { closeSotto, launchSotto, launchSottoWithVoice, paneMenuAction, userMessageTexts, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, userMessageTexts, type LaunchedSotto } from './support/sottoLaunch'
 import { hostKeysPerTest } from './support/hostKeys'
 import { evidenceDirectory } from '../fixtures/evidence'
 
@@ -107,20 +108,20 @@ test('confirmed monitoring appears without a buffer and never follows ordinary c
   const { page } = launched
   try {
     await start(launched)
-    const prompt = pane(page).locator('form.thread-prompt textarea')
+    const prompt = promptField(pane(page))
     await event(page, { type: 'ready', threadId: 'workshop', text: 'Running a command.', status: 'running' })
     await expect(indicator(page)).toHaveCount(0)
     await event(page, { type: 'ready', threadId: 'workshop', text: 'The development server is running in the background.', status: 'idle' })
     await expect(indicator(page)).toHaveCount(0)
     await monitoring(page, [])
     await expect(indicator(page)).toHaveCount(0)
-    await prompt.fill('Keep this draft while watching.')
+    await fillPrompt(prompt, 'Keep this draft while watching.')
     await monitoring(page)
     // Shorter than the rejected ten-second buffer; this is a UI response deadline, not a timed sleep.
     await expect(indicator(page)).toBeVisible({ timeout: 3_000 })
     await expect(indicator(page)).toHaveAttribute('role', 'status')
     await expect(indicator(page).locator('.thread-monitor__task')).toContainText(monitorTask.label)
-    await expect(prompt).toHaveValue('Keep this draft while watching.')
+    await expectPromptText(prompt, 'Keep this draft while watching.')
     await expect(prompt).toBeFocused()
     const creature = await indicator(page).locator('.thread-monitor__creature').elementHandle()
     await monitoring(page, [{ ...monitorTask, label: 'Watching the next build check' }])
@@ -204,29 +205,26 @@ test('process perch fits every supported size in light and dark and honors both 
   } finally { await closeSotto(launched) }
 })
 
-test('managed completion notice keeps the live process perch, draft, and send action usable', async () => {
+test('completion notice keeps the live process perch, draft, and send action usable', async () => {
   test.setTimeout(120_000)
-  const launched = await launchSottoWithVoice()
+  const launched = await launchSotto()
   const { page } = launched
   try {
     await start(launched)
     await contentSize(launched, 820, 560)
-    await paneMenuAction(pane(page), 'Manage')
-    const prompt = pane(page).locator('#agent-prompt')
-    await prompt.fill('Continue after the build checks.')
+    const prompt = promptField(pane(page))
+    await fillPrompt(prompt, 'Continue after the build checks.')
     await monitoring(page)
     await expect(indicator(page)).toBeVisible()
-    await expect(prompt).toHaveValue('Continue after the build checks.')
+    await expectPromptText(prompt, 'Continue after the build checks.')
     const creature = await indicator(page).locator('.thread-monitor__creature').elementHandle()
     await event(page, { type: 'ready', threadId: 'workshop', text: 'The implementation is ready; I am still watching the build checks.', status: 'idle' })
-    await expect.poll(() => page.evaluate(async workshop => (await window.sotto!.agents!.get()).queue
-      .filter(item => item.threadId === workshop).map(item => item.kind), key('workshop'))).toContain('ready')
     await expect(indicator(page)).toBeVisible()
     expect(await creature!.evaluate(element => element === document.querySelector('.thread-monitor__creature'))).toBe(true)
-    await expect(prompt).toHaveValue('Continue after the build checks.')
+    await expectPromptText(prompt, 'Continue after the build checks.')
     await expectWhole(page)
-    await capture(page, 'managed-minimum')
-    await pane(page).getByRole('button', { name: 'Send it', exact: true }).click()
+    await capture(page, 'completion-minimum')
+    await pane(page).getByRole('button', { name: 'Send prompt', exact: true }).click()
     await expect.poll(() => userMessageTexts(page, 'workshop')).toContain('Continue after the build checks.')
     await monitoring(page, [])
     await expect(indicator(page)).toHaveCount(0)
@@ -274,14 +272,14 @@ test('background work sends agents out from the readout, yields to a watch, and 
   try {
     await start(launched)
     await page.emulateMedia({ reducedMotion: 'no-preference' })
-    const prompt = pane(page).locator('form.thread-prompt textarea')
-    await prompt.fill('Keep this draft while the agents work.')
+    const prompt = promptField(pane(page))
+    await fillPrompt(prompt, 'Keep this draft while the agents work.')
     await working(page, agents.slice(0, 1))
     await expect(indicator(page)).toHaveAttribute('data-ornament', 'working')
     await expect(indicator(page)).toHaveAttribute('role', 'status')
     await expect(indicator(page).locator('.thread-monitor__label')).toHaveText(agents[0]!.label)
     await expect(indicator(page).locator('.thread-monitor__status')).toHaveText('Working')
-    await expect(prompt).toHaveValue('Keep this draft while the agents work.')
+    await expectPromptText(prompt, 'Keep this draft while the agents work.')
     await working(page, agents.slice(0, 3))
     await expect(indicator(page).locator('.thread-monitor__status')).toHaveText('Working · 3 agents')
     await expect(indicator(page).locator('.thread-monitor__task')).toHaveAttribute('title', agents.slice(0, 3).map(agent => agent.label).join('\n'))

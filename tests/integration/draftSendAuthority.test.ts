@@ -11,7 +11,6 @@ it.each(['local', 'socket'] as const)('validates a guarded atomic %s Send agains
   const f = await draftHandoffFixture(undefined, { authorizes: () => ({ allowed: false, reason: 'no-policy' }),
     mayGrant: client => ({ allowed: true, reason: client.transport === 'socket' ? 'paired-client' : 'local-window' }) })
   try {
-    await f.command({ type: 'assign', threadId: target.threadId, instruction: 'Work' })
     f.host.event({ type: 'question', threadId: target.threadId, text: '', request: { ...request, delivery: undefined } })
     const binding = { requestId: request.id, questionsDigest: requestQuestionsDigest(questions) }
     const client = route === 'socket' ? { clientId: 'paired', user: 'User', transport: 'socket' as const, selectedThreadId: target.threadId } : desktopWindowClient()
@@ -43,7 +42,6 @@ it.each([['local', 'changed'], ['socket', 'changed'], ['local', 'absent'], ['soc
   const f = await draftHandoffFixture(undefined, { authorizes: () => ({ allowed: false, reason: 'no-policy' }),
     mayGrant: client => ({ allowed: true, reason: client.transport === 'socket' ? 'paired-client' : 'local-window' }) })
   try {
-    await f.command({ type: 'assign', threadId: target.threadId, instruction: 'Work' })
     f.host.event({ type: 'question', threadId: target.threadId, text: '', request: { ...request, delivery: undefined } })
     if (scenario === 'changed' || scenario === 'absent') {
       if (scenario === 'absent') await f.command({ type: 'save-thread-draft', threadId: target.threadId,
@@ -72,7 +70,6 @@ it.each([['local', 'changed'], ['socket', 'changed'], ['local', 'absent'], ['soc
 it.each(['local', 'socket'] as const)('accepts a guarded %s prompt without a pending question', async route => {
   const f = await draftHandoffFixture()
   try {
-    await f.command({ type: 'assign', threadId: target.threadId, instruction: 'Work' })
     const client = route === 'socket' ? { clientId: 'paired', user: 'User', transport: 'socket' as const, selectedThreadId: target.threadId } : desktopWindowClient()
     expect(await f.control.commandShell({ type: 'send', draft: { threadId: target.threadId, text: 'New prompt', attachments: [],
       binding: { requestId: null, questionsDigest: null } } }, client)).toMatchObject({ error: null })
@@ -91,7 +88,7 @@ it('checks current socket authority before a direct bound draft save mutates the
       draftId: '00000000-0000-4000-8000-000000000099', requestId: request.id, text: 'Unprivileged recovery' },
       { clientId: 'paired', user: 'User', transport: 'socket', selectedThreadId: target.threadId })
     expect(result.error).toContain('not allowed from this device')
-    expect(f.control.get()).toMatchObject({ error: before.error, notice: before.notice, speech: before.speech, threadDrafts: before.threadDrafts })
+    expect(f.control.get()).toMatchObject({ error: before.error, notice: before.notice, threadDrafts: before.threadDrafts })
     expect((await f.disk()).threadDrafts).toEqual(before.threadDrafts)
   } finally { await f.close() }
 })
@@ -102,8 +99,7 @@ it.each([false, true])('keeps a socket targeted Compose policy refusal private (
     mayGrant: () => ({ allowed, reason: allowed ? 'paired-client' : 'no-policy' }) })
   let release: () => void = () => undefined, predecessor: Promise<unknown> | undefined, editing: Promise<unknown> | undefined
   try {
-    await f.command({ type: 'assign', threadId: target.threadId, instruction: 'Work' })
-    await f.command({ type: 'configure', patch: { speak: true } })
+    await f.command({ type: 'configure', patch: { } })
     f.host.event({ type: 'question', threadId: target.threadId, text: '', request: { ...request, delivery: undefined } })
     if (revoked) {
       const { promise: started, resolve: entered } = deferred<void>()
@@ -112,13 +108,13 @@ it.each([false, true])('keeps a socket targeted Compose policy refusal private (
       release = gateResolve
       const control = f.control as unknown as { persist(): Promise<void> }, persist = control.persist.bind(control)
       vi.spyOn(control, 'persist').mockImplementationOnce(async () => { entered(); await gate; await persist() })
-      predecessor = f.command({ type: 'configure', patch: { followupLimit: 4 } }); await started
+      predecessor = f.command({ type: 'configure', patch: { reasoningEffort: 'high' } }); await started
     } else {
       expect((await f.command({ type: 'compact-thread', threadId: 'missing' })).error).toBeTruthy()
     }
     const feedback = () => {
       const state = f.control.get()
-      return { error: state.error, notice: state.notice, speech: state.speech }
+      return { error: state.error, notice: state.notice }
     }
     const before = feedback()
     editing = f.control.commandShell({ type: 'compose', threadId: target.threadId, text: 'Refused edit' },

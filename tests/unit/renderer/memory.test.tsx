@@ -34,8 +34,8 @@ function bridge(snapshot = empty()) {
   Object.defineProperty(window, 'sotto', { configurable: true, value: { memory } })
   return { ...memory, memory, stop, emit(value: MemorySnapshot) { act(() => { listener?.(value) }) } }
 }
-function surface(navigation: 'home' | 'agents' | 'memory') {
-  return <MemorySurface navigation={navigation}><p>{navigation === 'home' ? 'Dictate room' : 'Agents room'}</p></MemorySurface>
+function surface(navigation: 'home' | 'threads' | 'memory') {
+  return <MemorySurface navigation={navigation}><p>{navigation === 'home' ? 'Dictate room' : 'Threads room'}</p></MemorySurface>
 }
 async function answerQuestions(user: ReturnType<typeof userEvent.setup>) {
   const answers = questions.map(question => ({ topic: question.topic, content: `My ${question.topic} preference.` }))
@@ -47,14 +47,18 @@ async function answerQuestions(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe('working preferences and memory inspector', () => {
-  it('leaves Dictate available, asks on first Agents entry, and resumes a dismissed draft through Memory', async () => {
+  it('leaves Dictate and Threads available and resumes a dismissed draft through Memory', async () => {
     const f = bridge()
     const user = userEvent.setup()
     const view = render(surface('home'))
     expect(screen.getByText('Dictate room')).toBeVisible()
     await waitFor(() => expect(f.get).toHaveBeenCalledOnce())
-    view.rerender(surface('agents'))
-    expect(await screen.findByRole('region', { name: 'Working preferences' })).toBeVisible()
+    view.rerender(surface('threads'))
+    expect(screen.getByText('Threads room')).toBeVisible()
+    expect(screen.queryByRole('region', { name: 'Working preferences' })).toBeNull()
+    view.rerender(surface('memory'))
+    await user.click(await screen.findByRole('button', { name: 'Set working preferences' }))
+    expect(screen.getByRole('region', { name: 'Working preferences' })).toBeVisible()
     expect(screen.getByText('Question 1 of 9')).toHaveClass('tt-visually-hidden')
     expect(screen.getByText('1 / 9')).toHaveAttribute('aria-hidden', 'true')
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
@@ -64,11 +68,10 @@ describe('working preferences and memory inspector', () => {
     expect(screen.getByText('Question 2 of 9')).toHaveClass('tt-visually-hidden')
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Not now' }))
-    expect(screen.getByText('Agents room')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Set working preferences' })).toBeVisible()
     expect(f.command).not.toHaveBeenCalled()
     view.rerender(surface('home'))
-    view.rerender(surface('agents'))
-    expect(screen.getByText('Agents room')).toBeVisible()
+    view.rerender(surface('threads'))
     view.rerender(surface('memory'))
     await user.click(screen.getByRole('button', { name: 'Set working preferences' }))
     expect(screen.getByRole('textbox')).toHaveAccessibleName(questions[1]!.question)
@@ -81,7 +84,8 @@ describe('working preferences and memory inspector', () => {
     const saved = deferred<MemorySnapshot>()
     f.command.mockReturnValueOnce(saved.promise)
     const user = userEvent.setup()
-    render(surface('agents'))
+    render(surface('memory'))
+    await user.click(await screen.findByRole('button', { name: 'Set working preferences' }))
     await screen.findByRole('textbox')
     const answers = await answerQuestions(user)
     expect(f.command).not.toHaveBeenCalled()
@@ -92,26 +96,27 @@ describe('working preferences and memory inspector', () => {
     expect(screen.getByText(/they grant no new permissions/i)).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Save preferences' }))
     expect(f.command).toHaveBeenCalledExactlyOnceWith({ type: 'complete-questionnaire', answers, boundaries: ['publish', 'spend'] })
-    expect(screen.queryByText('Agents room')).not.toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Working preferences' })).toBeVisible()
     expect(screen.getByRole('button', { name: /saving/i })).toBeDisabled()
     await act(async () => { saved.resolve({ ...empty(), questionnaireCompletedAt: at }); await saved.promise })
-    expect(screen.getByText('Agents room')).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'What Sotto remembers' })).toBeVisible()
   })
 
   it('keeps a failed questionnaire on review with the answers intact and permits a retry', async () => {
     const f = bridge()
     f.command.mockRejectedValueOnce(new Error('The disk could not save your preferences.'))
     const user = userEvent.setup()
-    render(surface('agents'))
+    render(surface('memory'))
+    await user.click(await screen.findByRole('button', { name: 'Set working preferences' }))
     await screen.findByRole('textbox')
     const answers = await answerQuestions(user)
     await user.click(screen.getByRole('button', { name: 'Continue' }))
     await user.click(screen.getByRole('button', { name: 'Save preferences' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('The disk could not save your preferences.')
-    expect(screen.queryByText('Agents room')).not.toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Working preferences' })).toBeVisible()
     for (const answer of answers) expect(screen.getByText(answer.content)).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Save preferences' }))
-    expect(await screen.findByText('Agents room')).toBeVisible()
+    expect(await screen.findByRole('heading', { name: 'What Sotto remembers' })).toBeVisible()
     expect(f.command).toHaveBeenCalledTimes(2)
   })
 
@@ -119,10 +124,9 @@ describe('working preferences and memory inspector', () => {
     const f = bridge()
     const initial = deferred<MemorySnapshot>()
     f.get.mockReturnValueOnce(initial.promise)
-    const view = render(surface('agents'))
-    expect(screen.getByRole('status')).toHaveTextContent('Reading your preferences')
+    const view = render(surface('memory'))
+    expect(screen.getByRole('status')).toHaveTextContent('Reading memory')
     await act(async () => { initial.resolve({ ...empty(), available: false }); await initial.promise })
-    expect(screen.getByText('Agents room')).toBeVisible()
     view.rerender(surface('memory'))
     expect(screen.getByRole('status')).toHaveTextContent('Memory is unavailable')
     expect(screen.queryByRole('button', { name: 'Set working preferences' })).not.toBeInTheDocument()

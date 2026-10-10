@@ -25,11 +25,9 @@ test.describe('authoritative design-review captures', () => {
         await toggle.scrollIntoViewIfNeeded()
       }
       await open('Visual gate flake')
-      // The coordinator queues the fixture's permission request once it has connected; the beta answers it in the
-      // thread's own pane rather than in a queue of its own on the page.
+      // The fixture's permission request is answered in the thread's own pane.
       await expect(page.getByRole('button', { name: 'Allow' })).toBeVisible()
-      // The fixture still hands these threads to the coordinator, but the beta hides every managing control, so the
-      // captures must show a thread that reads the same whether or not Sotto is managing it.
+      // Threads retain no per-thread management controls.
       await expect(page.getByRole('button', { name: 'Pause managing' })).toHaveCount(0)
       await capturePage(page, `threads-populated${suffix}.png`, { theme: appearance, category: 'threads', state: 'populated' })
 

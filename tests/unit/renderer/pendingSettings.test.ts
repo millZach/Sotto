@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { deferred } from '../../fixtures/deferred'
 import { threadsStateFixture } from '../../fixtures/agentState'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -11,7 +12,7 @@ function state(thread: Partial<AgentThread> = {}, error: string | null = null, u
     host: { connected: true, name: 'Providers', version: '', capabilities: caps, projects: [],
       models: [{ id: 'model', name: 'Model', provider: 'Codex', providerId: 'codex', ready: true, reasoningEfforts: ['low', 'high'], defaultReasoningEffort: 'low', runtimeModes: ['approval-required', 'full-access'] }],
       threads: [{ id: 'thread', providerId: 'codex', projectId: 'project', title: 'Work', modelId: 'model', status: 'idle', messages: [], requests: [], runtimeMode: 'approval-required', ...thread }] },
-    topLevel: { assignments: [], queue: [], activeThreadId: 'thread', activeProjectId: null, error, ...(unconfirmed ? { unconfirmedSettings: unconfirmed } : {}) } })
+    topLevel: { activeThreadId: 'thread', activeProjectId: null, error, ...(unconfirmed ? { unconfirmedSettings: unconfirmed } : {}) } })
 }
 const drawn = (permissions: string, effort = 'low'): SettingValues => ({ model: 'model', effort, permissions })
 const settle = async (): Promise<void> => { for (let index = 0; index < 5; index += 1) await Promise.resolve() }

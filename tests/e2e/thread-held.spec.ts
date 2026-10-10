@@ -1,3 +1,4 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { startMonitoredThread, monitorGeometry } from './support/monitoredThread'
 import { resizeContentWindow } from './support/sottoWindow'
 import { mkdir } from 'node:fs/promises'
@@ -124,7 +125,7 @@ test('the hourglass waits out the threshold, names the command, and yields to a 
   const { page } = launched
   try {
     await start(launched)
-    const prompt = pane(page).locator('form.thread-prompt textarea')
+    const prompt = promptField(pane(page))
 
     // A command that has only just started says nothing; so does one that finished quickly.
     await acting(page, 0)
@@ -139,7 +140,7 @@ test('the hourglass waits out the threshold, names the command, and yields to a 
     await expect(waiting(page)).toHaveCount(0)
 
     // A draft survives the ornament arriving, exactly as it does for the walk.
-    await prompt.fill('Keep this draft while waiting.')
+    await fillPrompt(prompt, 'Keep this draft while waiting.')
     await acting(page, HELD_AFTER_MS - 2_000)
     await expect(waiting(page)).toHaveCount(0)
     // The threshold passes on its own timer; the deadline is a UI response budget, not a timed sleep.
@@ -147,7 +148,7 @@ test('the hourglass waits out the threshold, names the command, and yields to a 
     await expect(waiting(page)).toHaveAttribute('role', 'status')
     await expect(waiting(page).locator('.thread-monitor__label')).toHaveText(command)
     await expect(waiting(page).locator('.thread-monitor__status')).toContainText('Waiting')
-    await expect(prompt).toHaveValue('Keep this draft while waiting.')
+    await expectPromptText(prompt, 'Keep this draft while waiting.')
 
     // The clock counts up without replacing the creature, so the sand keeps running across the update.
     const creature = await waiting(page).locator('.thread-monitor__creature').elementHandle()

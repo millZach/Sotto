@@ -31,7 +31,7 @@ export function Questionnaire({ draft, onChange, onSave, onLater, busy, error }:
           value={answer} onChange={event => changeAnswer(event.target.value)} disabled={busy} />
         <Button variant="ghost" onClick={() => changeAnswer('No preference.')} disabled={busy}>No preference</Button>
       </> : review ? <>
-        <p className="memory-description">Saved on this computer. Relevant preferences go to your selected reasoning provider when Sotto interprets a request.</p>
+        <p className="memory-description">Saved on this computer. Sotto does not send them to any provider.</p>
         <div className="memory-review">{questions.map((item, index) => <div key={item.topic}>
           <div><p>{draft.answers[item.topic]}</p><p className="memory-meta">{item.question}</p></div>
           <Button variant="ghost" onClick={() => onChange({ ...draft, step: index })} disabled={busy} aria-label={`Change ${item.topic} answer`}>Change</Button>
