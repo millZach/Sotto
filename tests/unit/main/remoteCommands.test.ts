@@ -36,6 +36,9 @@ describe('remote command allow-list', () => {
       'stage-attachment', 'attachment-content', 'host-folders', ...REMOTE_SIGN_IN_OPERATIONS,
       // Explicit native recovery requires answer-check and current remote-answer authority; it sends no answer.
       'check-answer',
+      // Only an advertised and accepted desktop terminal feature admits these operations (ADR-0066).
+      // Reading a preview and observing a detail grant nothing; hook dispatch rechecks current Can answer.
+      'terminal-approval', 'observe-terminals', 'answer-terminal',
       // A thread's Files, Changes and Agents: reads only, never commands (ADR-0025, October 5 amendment).
       'thread-files', 'thread-file-preview', 'thread-changes', 'thread-changes-review', 'subagent-page', 'subagent-assignments']
     const ops = (hostRequestSchema.options as unknown as { shape: { op: { value: string } } }[]).map(option => option.shape.op.value)
