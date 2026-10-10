@@ -49,6 +49,22 @@ To cancel from outside Sotto, choose an unused chord and bind it to `sotto dicta
 
 Check the saved snippet with `luac -p ~/.config/hypr/sotto-bindings.lua`, then check Hyprland's configuration after it reloads. No installer changes these files automatically. Sotto copies your text, then pastes into the focused window on Hyprland, terminals included. If paste does not get through, use Super+V, Omarchy’s universal paste for apps and terminals.
 
+## Follow the Omarchy theme
+
+From the source checkout, install the theme separately, without sudo:
+
+```sh
+apps/omarchy/install-theme.sh
+```
+
+This copies `sotto.json.tpl` to `~/.config/omarchy/themed/` and renders it once with Omarchy’s own `omarchy-theme-set-templates`. It shares Omarchy’s theme-switch lock, stages the current `colors.toml`, and publishes only `sotto.json` to `~/.local/state/omarchy/current/theme/`. It does not switch the desktop theme. Run it again after updating the template. The helper refuses an existing staging folder so it cannot remove a switch in progress.
+
+On first start with a valid file, Sotto chooses **Omarchy** in both Appearance columns and **Match Linux**. An existing install keeps its choices: select Omarchy in **Settings → Appearance**, in each half you want to follow. The matching half names the current Omarchy theme; the other says it waits for that mode and paints Sotto until a matching theme arrives. Omarchy re-renders the template on every theme switch; Sotto and its floating widget repaint live. The shell pill keeps taking the shell’s own theme as before.
+
+The mapping is M3 from the approved prototype (ADR-0068). A readability check repairs text to 4.5:1, and keeps red and amber meaningful. A missing or malformed file paints Sotto until a valid one returns. It never changes your saved choice or custom themes. Windows and macOS have no Omarchy entry.
+
+To stop following it, choose another theme in the picker. To remove the template, delete `~/.config/omarchy/themed/sotto.json.tpl` and `~/.local/state/omarchy/current/theme/sotto.json`; your Sotto themes remain available.
+
 ## Shell plugin
 
 `shell-plugin/sotto.dictation/` is Sotto's dictation in the Omarchy shell (#850): Sotto's glyph in the bar and, while you dictate, a pill in the shell's own style with Stop and Cancel. When a transcription fails and the recording is kept, the pill offers Try again and Discard. It takes its colours and font from the Omarchy theme and repaints when the theme changes. While the plugin is installed and Sotto's dictation socket has started with a live state file, Sotto does not show its own floating widget on Linux. If either is unavailable, its own widget stays available.

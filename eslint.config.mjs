@@ -4,6 +4,8 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   {
     ignores: [
+      '.t/**',
+      'artifacts/omarchy-theme/**',
       'artifacts/skill-pill-composer/**',
       'artifacts/omarchy-shell-plugin/**',
       'artifacts/linux-shell-plumbing/**',

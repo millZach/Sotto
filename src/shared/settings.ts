@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { OMARCHY_THEME_ID, omarchyThemeSchema, type OmarchyTheme } from './themes/omarchy'
 
 import { DEFAULT_HOTKEY } from './constants'
 import {
@@ -118,6 +119,8 @@ export interface AppSettings {
   effortColor: EffortColor
   /** Themes the user created, duplicated or imported, already canonical. */
   customThemes: ThemeDefinition[]
+  /** Linux-only, read-only palette supplied by main. Never saved or patched. */
+  omarchyTheme?: OmarchyTheme | null | undefined
   webLinkDestination: 'external' | 'embedded'
   /** `live` draws assistant text as it streams; `complete` shows each reply once it is finished. Activity is always live. */
   responseStreaming: 'live' | 'complete'
@@ -256,7 +259,7 @@ export interface AppSettings {
 }
 
 export type SettingsPatch = Partial<
-  Omit<AppSettings, 'hotkey' | 'launchAtStartup' | 'worktreeCleanup'>
+  Omit<AppSettings, 'hotkey' | 'launchAtStartup' | 'worktreeCleanup' | 'omarchyTheme'>
 > & {
   /** Merge only the supplied cleanup rules with the latest saved settings. */
   worktreeCleanup?: Partial<WorktreeCleanupRules>
@@ -279,6 +282,7 @@ const fieldSchemas = {
   frostedWindow: z.boolean(),
   frostSeeThrough: z.number().int().min(FROST_SEE_THROUGH.min).max(FROST_SEE_THROUGH.max).refine(value => value % FROST_SEE_THROUGH.step === 0),
   effortColor: z.enum(EFFORT_COLORS),
+  omarchyTheme: omarchyThemeSchema.nullable().optional(),
   customThemes: customThemesSchema as z.ZodType<ThemeDefinition[]>,
   webLinkDestination: z.enum(['external', 'embedded']),
   responseStreaming: z.enum(['live', 'complete']),
@@ -467,7 +471,7 @@ function parseField<Key extends keyof AppSettings>(
   return result.success ? (result.data as AppSettings[Key]) : defaults[key]
 }
 
-export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SETTINGS): AppSettings {
+export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SETTINGS, allowOmarchy = false): AppSettings {
   const persisted = isRecord(input) ? input : {}
   // The library is read leniently, one theme at a time, so a single damaged
   // entry never costs the user the rest of their themes. A half naming a theme
@@ -475,8 +479,10 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
   const customThemes = Array.isArray(persisted.customThemes)
     ? parseCustomThemes(persisted.customThemes)
     : [...defaults.customThemes]
-  const half = (key: 'lightTheme' | 'darkTheme'): string =>
-    resolveThemeHalfId(parseField(persisted, key, defaults), key === 'lightTheme' ? 'light' : 'dark', customThemes)
+  const half = (key: 'lightTheme' | 'darkTheme'): string => {
+    const id = parseField(persisted, key, defaults)
+    return allowOmarchy && id === OMARCHY_THEME_ID ? id : resolveThemeHalfId(id, key === 'lightTheme' ? 'light' : 'dark', customThemes)
+  }
 
   return {
     version: parseField(persisted, 'version', defaults),

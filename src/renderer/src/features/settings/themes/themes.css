@@ -143,6 +143,11 @@
 .theme-option:hover { background: var(--tt-hover); }
 .theme-option[aria-checked='true'] { border-color: var(--tt-selected-border); background: var(--tt-selected); font-weight: 600; }
 .theme-option__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.theme-option--omarchy { margin-bottom: 6px; }
+.theme-option__name small { display: block; overflow: hidden; text-overflow: ellipsis; font-size: 11px; font-weight: 400; color: var(--tt-text-muted); }
+.theme-option--omarchy .theme-option__name { white-space: normal; }
+.theme-option--omarchy .theme-option__name small { overflow: visible; text-overflow: clip; line-height: 1.35; }
+.theme-chord--waiting { border: 1px dashed var(--tt-border); box-shadow: none; }
 .theme-option__check { color: var(--tt-accent-text); }
 
 /* A half as one strip of its colours: room, sidebar, raised surface, bubble, accent. */

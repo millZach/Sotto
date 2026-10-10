@@ -6,6 +6,7 @@
  */
 
 import { z } from 'zod'
+import { OMARCHY_THEME_ID } from './themes/omarchy'
 
 import {
   contrastRatio,
@@ -173,7 +174,9 @@ export function widgetPresentationFor(settings: WidgetPresentationSettings): {
   readonly voiceCoordinator: boolean
 } {
   return {
-    theme: settings.theme,
+    theme: settings.theme === 'system' && settings.omarchyTheme &&
+      (settings.omarchyTheme.appearance === 'dark' ? settings.darkTheme : settings.lightTheme) === OMARCHY_THEME_ID
+      ? settings.omarchyTheme.appearance : settings.theme,
     palette: widgetPaletteFor(settings),
     reducedMotion: settings.reducedMotion,
     voiceCoordinator: settings.voiceCoordinatorEnabled,

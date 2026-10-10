@@ -10,11 +10,13 @@ import { Check, Copy, Download, Moon, Paintbrush, PenLine, Plus, Sun, Trash2 } f
 
 import {
   BUILT_IN_THEMES,
+  T3_CODE_THEME,
   getThemeModes,
   serializeThemeFile,
   type ThemeAppearance,
   type ThemeDefinition,
 } from '../../../../../shared/themes/library'
+import { OMARCHY_THEME_ID } from '../../../../../shared/themes/omarchy'
 import { Button } from '../../../components/Button'
 import { ConfirmationDialog } from '../../../components/ConfirmationDialog'
 import type { AppearanceChoice } from '../../../state/appearance'
@@ -39,7 +41,8 @@ export function ThemeGallery({ shown, resolved, system, onChooseMode, onSelect, 
   const [removal, setRemoval] = useState<{ theme: ThemeDefinition; collection: ThemeDefinition[] } | null>(null)
   const [removeIds, setRemoveIds] = useState<string[]>([])
   const headingId = useId()
-  const all = [...BUILT_IN_THEMES, ...shown.customThemes]
+  const omarchy = system === 'Linux' ? shown.omarchyTheme ?? { ...T3_CODE_THEME, id: OMARCHY_THEME_ID, label: 'Omarchy' } : null
+  const all = [...(omarchy ? [omarchy] : []), ...BUILT_IN_THEMES, ...shown.customThemes]
 
   const openEditor = (input: { editingThemeId?: string; seedThemeId: string | null; seedName?: string }): void => openThemeEditor({
     editingThemeId: input.editingThemeId ?? null,
@@ -77,7 +80,10 @@ export function ThemeGallery({ shown, resolved, system, onChooseMode, onSelect, 
           <ThemeColumn
             key={half}
             half={half}
-            themes={all.filter(theme => getThemeModes(theme).includes(half))}
+            themes={all.filter(theme => theme === omarchy || getThemeModes(theme).includes(half))}
+            omarchyTheme={omarchy}
+            omarchyName={shown.omarchyTheme?.sourceName}
+            omarchyMode={shown.omarchyTheme?.appearance}
             chosen={half === 'light' ? shown.lightTheme : shown.darkTheme}
             note={half === resolved
               ? 'Painting the window now.'
@@ -191,9 +197,12 @@ function SchemeTrack({ appearance, system, onChoose }: {
   )
 }
 
-function ThemeColumn({ half, themes, chosen, note, live, onPick }: {
+function ThemeColumn({ half, themes, chosen, note, live, onPick, omarchyTheme, omarchyName, omarchyMode }: {
   readonly half: ThemeAppearance
   readonly themes: readonly ThemeDefinition[]
+  readonly omarchyTheme: ThemeDefinition | null
+  readonly omarchyName?: string | undefined
+  readonly omarchyMode?: ThemeAppearance | undefined
   readonly chosen: string
   readonly note: string
   readonly live: boolean
@@ -215,18 +224,21 @@ function ThemeColumn({ half, themes, chosen, note, live, onPick }: {
       <div className="theme-half__options" role="radiogroup" aria-label={`${HALF_TITLES[half]} theme`} aria-describedby={noteId}>
         {themes.map((theme, index) => {
           const picked = theme.id === chosen
+          const isOmarchy = theme === omarchyTheme
+          const waiting = isOmarchy && omarchyMode !== half
           return (
             <button
               key={theme.id}
               ref={element => { buttons.current[index] = element }}
               type="button"
               role="radio"
-              className="theme-option tt-focusable"
+              className={`theme-option tt-focusable${isOmarchy ? " theme-option--omarchy" : ""}`}
               data-theme-option={theme.id}
               aria-checked={picked}
               tabIndex={theme.id === focusable ? 0 : -1}
               // A long imported name is cut to one line; the tooltip reads it whole.
               title={theme.label}
+              aria-label={isOmarchy ? `Omarchy ${waiting ? `Waits for a ${half} Omarchy theme` : omarchyName}` : undefined}
               onClick={() => onPick(theme.id)}
               onKeyDown={event => {
                 const next = radioStep(event, index, themes.length)
@@ -236,8 +248,8 @@ function ThemeColumn({ half, themes, chosen, note, live, onPick }: {
                 onPick(themes[next]!.id)
               }}
             >
-              <ThemeChord theme={theme} half={half} />
-              <span className="theme-option__name">{theme.label}</span>
+              {waiting ? <span className="theme-chord theme-chord--waiting" aria-hidden="true" /> : <ThemeChord theme={theme} half={half} />}
+              <span className="theme-option__name">{theme.label}{isOmarchy ? <small>{' '}{waiting ? `Waits for a ${half} Omarchy theme` : omarchyName}</small> : null}</span>
               {picked ? <Check className="theme-option__check" size={15} aria-hidden="true" /> : null}
             </button>
           )
