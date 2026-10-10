@@ -1,0 +1,248 @@
+[
+  {
+    "runId": "38015934326",
+    "attempt": 1,
+    "jobId": 114106106377,
+    "status": "completed",
+    "conclusion": "success",
+    "url": "https://github.com/millZach/Sotto/actions/runs/38015934326/job/114106106377",
+    "startedAt": "2026-10-10T02:10:00Z",
+    "completedAt": "2026-10-10T02:13:55Z",
+    "durationSeconds": 235,
+    "steps": [
+      {
+        "name": "Set up job",
+        "result": "success",
+        "durationSeconds": 1
+      },
+      {
+        "name": "Check out the repository",
+        "result": "success",
+        "durationSeconds": 17
+      },
+      {
+        "name": "Use a long temp path",
+        "result": "success",
+        "durationSeconds": 0
+      },
+      {
+        "name": "Set up Node.js",
+        "result": "success",
+        "durationSeconds": 22
+      },
+      {
+        "name": "Install dependencies",
+        "result": "success",
+        "durationSeconds": 31
+      },
+      {
+        "name": "Prepare runtime assets",
+        "result": "success",
+        "durationSeconds": 1
+      },
+      {
+        "name": "Exercise the Windows desktop",
+        "result": "success",
+        "durationSeconds": 155
+      },
+      {
+        "name": "Retain desktop journeys and screenshots",
+        "result": "success",
+        "durationSeconds": 3
+      },
+      {
+        "name": "Post Set up Node.js",
+        "result": "success",
+        "durationSeconds": 0
+      },
+      {
+        "name": "Post Check out the repository",
+        "result": "success",
+        "durationSeconds": 2
+      },
+      {
+        "name": "Complete job",
+        "result": "success",
+        "durationSeconds": 0
+      }
+    ],
+    "journeys": {
+      "dictation recovery": "passed",
+      "command receipts": "passed",
+      "queued steering": "passed",
+      "daily workspace": "passed",
+      "workspace restart": "passed",
+      "Settings": "passed",
+      "widget dictation": "passed"
+    },
+    "focusedRecoveryCases": {
+      "passed": 278,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  {
+    "runId": "38016310051",
+    "attempt": 1,
+    "jobId": 114107599200,
+    "status": "completed",
+    "conclusion": "success",
+    "url": "https://github.com/millZach/Sotto/actions/runs/38016310051/job/114107599200",
+    "startedAt": "2026-10-10T02:17:37Z",
+    "completedAt": "2026-10-10T02:20:40Z",
+    "durationSeconds": 183,
+    "steps": [
+      {
+        "name": "Set up job",
+        "result": "success",
+        "durationSeconds": 1
+      },
+      {
+        "name": "Check out the repository",
+        "result": "success",
+        "durationSeconds": 13
+      },
+      {
+        "name": "Use a long temp path",
+        "result": "success",
+        "durationSeconds": 1
+      },
+      {
+        "name": "Set up Node.js",
+        "result": "success",
+        "durationSeconds": 27
+      },
+      {
+        "name": "Install dependencies",
+        "result": "success",
+        "durationSeconds": 19
+      },
+      {
+        "name": "Prepare runtime assets",
+        "result": "success",
+        "durationSeconds": 0
+      },
+      {
+        "name": "Exercise the Windows desktop",
+        "result": "success",
+        "durationSeconds": 117
+      },
+      {
+        "name": "Retain desktop journeys and screenshots",
+        "result": "success",
+        "durationSeconds": 2
+      },
+      {
+        "name": "Post Set up Node.js",
+        "result": "success",
+        "durationSeconds": 0
+      },
+      {
+        "name": "Post Check out the repository",
+        "result": "success",
+        "durationSeconds": 1
+      },
+      {
+        "name": "Complete job",
+        "result": "success",
+        "durationSeconds": 1
+      }
+    ],
+    "journeys": {
+      "dictation recovery": "passed",
+      "command receipts": "passed",
+      "queued steering": "passed",
+      "daily workspace": "passed",
+      "workspace restart": "passed",
+      "Settings": "passed",
+      "widget dictation": "passed"
+    },
+    "focusedRecoveryCases": {
+      "passed": 278,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  {
+    "runId": "38015934326",
+    "attempt": 2,
+    "jobId": 114108665470,
+    "status": "completed",
+    "conclusion": "success",
+    "url": "https://github.com/millZach/Sotto/actions/runs/38015934326/job/114108665470",
+    "startedAt": "2026-10-10T02:23:14Z",
+    "completedAt": "2026-10-10T02:27:04Z",
+    "durationSeconds": 230,
+    "steps": [
+      {
+        "name": "Set up job",
+        "result": "success",
+        "durationSeconds": 1
+      },
+      {
+        "name": "Check out the repository",
+        "result": "success",
+        "durationSeconds": 17
+      },
+      {
+        "name": "Use a long temp path",
+        "result": "success",
+        "durationSeconds": 1
+      },
+      {
+        "name": "Set up Node.js",
+        "result": "success",
+        "durationSeconds": 17
+      },
+      {
+        "name": "Install dependencies",
+        "result": "success",
+        "durationSeconds": 32
+      },
+      {
+        "name": "Prepare runtime assets",
+        "result": "success",
+        "durationSeconds": 1
+      },
+      {
+        "name": "Exercise the Windows desktop",
+        "result": "success",
+        "durationSeconds": 156
+      },
+      {
+        "name": "Retain desktop journeys and screenshots",
+        "result": "success",
+        "durationSeconds": 1
+      },
+      {
+        "name": "Post Set up Node.js",
+        "result": "success",
+        "durationSeconds": 1
+      },
+      {
+        "name": "Post Check out the repository",
+        "result": "success",
+        "durationSeconds": 2
+      },
+      {
+        "name": "Complete job",
+        "result": "success",
+        "durationSeconds": 0
+      }
+    ],
+    "journeys": {
+      "dictation recovery": "passed",
+      "command receipts": "passed",
+      "queued steering": "passed",
+      "daily workspace": "passed",
+      "workspace restart": "passed",
+      "Settings": "passed",
+      "widget dictation": "passed"
+    },
+    "focusedRecoveryCases": {
+      "passed": 278,
+      "failed": 0,
+      "skipped": 0
+    }
+  }
+]

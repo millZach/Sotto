@@ -1,0 +1,12 @@
+{
+  "lane": "provider fixtures; real Electron services; scripted gh",
+  "original": "02c85a9c27f419b009597d502ed6e362f4a00b7a",
+  "committed": "13a8b6bfc72873312766e3e0b44428b04da3ccbb",
+  "pushed": "13a8b6bfc72873312766e3e0b44428b04da3ccbb",
+  "first": "host:40f9138f-3de1-4edd-bd95-e3925887205c:55c72a9a-9505-471d-94bb-d4c974adfa83",
+  "second": "host:40f9138f-3de1-4edd-bd95-e3925887205c:bcba2154-0c3c-4e4c-aea8-09546c120115",
+  "working": "D:\\a\\_temp\\sotto-e2e-daily-workspace-ny7lJw\\thread-worktrees\\ad1c7180-b461-4595-80bd-0c49e22706e3",
+  "other": "D:\\a\\_temp\\sotto-e2e-daily-workspace-ny7lJw\\thread-worktrees\\5d027ffe-a510-40c0-869e-126e82c5d41f",
+  "realGitHubWrites": 0,
+  "errors": []
+}
