@@ -116,12 +116,26 @@ function SkillCard({ anchor, name, token, description, scope }: SkillPillProps &
     if (!element) return
     if (typeof element.showPopover === 'function' && !element.matches(':popover-open')) element.showPopover()
     const pillBox = anchor.getBoundingClientRect()
-    const { width, height } = element.getBoundingClientRect()
     const room = { width: document.documentElement.clientWidth, height: document.documentElement.clientHeight }
-    const above = pillBox.top - GAP - height
-    const below = pillBox.bottom + GAP
-    const placeBelow = above < EDGE && below + height <= room.height - EDGE
-    const top = placeBelow ? below : Math.max(EDGE, above)
+    const roomAbove = pillBox.top - GAP - EDGE
+    const roomBelow = room.height - EDGE - pillBox.bottom - GAP
+    let { height } = element.getBoundingClientRect()
+    // Above when it fits, below when only that fits, and otherwise on the roomier side with the description cut
+    // to the lines that fit there. The name and the "sent as" line always show; the pill's accessible
+    // description keeps the whole text.
+    const placeBelow = height > roomAbove && (height <= roomBelow || roomBelow > roomAbove)
+    const available = Math.max(0, placeBelow ? roomBelow : roomAbove)
+    element.style.maxHeight = `${Math.floor(available)}px`
+    const summary = element.querySelector<HTMLElement>('.skill-card__description')
+    if (summary && height > available) {
+      const lineHeight = parseFloat(getComputedStyle(summary).lineHeight) || 19
+      const lines = Math.floor((available - (height - summary.getBoundingClientRect().height)) / lineHeight)
+      if (lines >= 1) summary.style.setProperty('-webkit-line-clamp', String(lines))
+      else summary.hidden = true
+      height = element.getBoundingClientRect().height
+    }
+    const { width } = element.getBoundingClientRect()
+    const top = placeBelow ? pillBox.bottom + GAP : Math.max(EDGE, pillBox.top - GAP - height)
     const left = Math.min(Math.max(EDGE, pillBox.left), Math.max(EDGE, room.width - EDGE - width))
     element.style.top = `${Math.round(top)}px`
     element.style.left = `${Math.round(left)}px`

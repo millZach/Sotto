@@ -12,10 +12,11 @@
 
 /* What the skill does, above the pill it belongs to. Solid overlay rather than glass: it is read, not looked
    through, and its quiet line keeps 4.5:1 even over the queued message editor's backdrop at the lowest glass. */
-.skill-card { position: fixed; inset: auto; top: 0; left: 0; z-index: 60; box-sizing: border-box; width: max-content; max-width: min(320px, calc(100vw - 16px)); margin: 0; padding: 9px 12px 10px; overflow: visible; border: 1px solid var(--tt-panel-border); border-radius: var(--tt-radius-md); background: var(--tt-surface-overlay); box-shadow: 0 14px 36px -12px var(--tt-shadow-color); color: var(--tt-text-2); font-family: var(--tt-font-ui); font-size: 13px; font-weight: 400; line-height: 1.45; overflow-wrap: anywhere; pointer-events: none; user-select: none; }
+.skill-card { position: fixed; inset: auto; top: 0; left: 0; z-index: 60; box-sizing: border-box; width: max-content; max-width: min(320px, calc(100vw - 16px)); margin: 0; padding: 9px 12px 10px; overflow: hidden; border: 1px solid var(--tt-panel-border); border-radius: var(--tt-radius-md); background: var(--tt-surface-overlay); box-shadow: 0 14px 36px -12px var(--tt-shadow-color); color: var(--tt-text-2); font-family: var(--tt-font-ui); font-size: 13px; font-weight: 400; line-height: 1.45; overflow-wrap: anywhere; pointer-events: none; user-select: none; }
 .skill-card p { margin: 0; }
 .skill-card__name { color: var(--tt-text); font-weight: 500; }
-.skill-card__description { margin-top: 2px; }
+/* A long description stops at six lines; where the window has less room the card cuts it shorter still. */
+.skill-card__description { display: -webkit-box; margin-top: 2px; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 6; }
 .skill-card__meta { margin-top: 6px; color: var(--tt-text-muted); font-size: 12px; }
 .skill-card__meta code { color: var(--tt-text-2); font-family: var(--tt-font-mono); font-size: 11.5px; }
 
