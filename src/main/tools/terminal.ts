@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { basename, join, win32 as win32Path } from 'node:path'
+import { stat } from 'node:fs/promises'
+import { basename, isAbsolute, join, win32 as win32Path } from 'node:path'
 import { z } from 'zod'
 import type { IPty, IPtyForkOptions } from 'node-pty'
 import type { FileWorkspace } from '../../shared/files'
@@ -12,6 +13,8 @@ import { ToolOperations, fail, parse, workspace } from './common'
 export interface TerminalDependencies {
   files: FilesService
   directory: string
+  /** The folder of a thread's project, where a pane drawer's shells start even when the thread has its own worktree. */
+  projectFolder?: (projectId: string) => string | undefined
   emit(event: TerminalEvent): void
   spawn?: (file: string, args: string[], options: IPtyForkOptions) => IPty
   platform?: NodeJS.Platform
@@ -41,7 +44,7 @@ export class TerminalService extends ToolOperations {
     await this.persistence
   }
   private publish(record: LiveTerminal): void { this.dependencies.emit({ type: 'session', session: { ...record.session } }) }
-  /** Whether a shell of this thread's is still running in its working copy, so the folder is not reclaimed under it. Counts a Tools shell and a pane drawer's shell alike: either keeps the folder in use. */
+  /** Whether a shell of this thread's is still running in its working copy, so the folder is not reclaimed under it. Counts a Tools shell and a pane drawer's shell alike: a drawer's shell starts in the project folder, but it can be changed into the working copy. */
   hasRunningTerminal(threadId: string): boolean {
     return [...this.sessions.values()].some(record => record.session.workspace.threadId === threadId && record.pty !== undefined)
   }
@@ -92,8 +95,9 @@ export class TerminalService extends ToolOperations {
     try {
       const spawn = this.dependencies.spawn ?? (await import('node-pty')).spawn
       await workspace(this.dependencies.files, owner.threadId, owner.workspaceId)
+      const cwd = place === 'drawer' ? await this.projectFolder(owner) : owner.workingDirectory
       if (this.disposed) return fail('unavailable', 'Terminal is shutting down.')
-      const pty = spawn(shell, platform === 'win32' ? ['-NoLogo'] : ['-l'], { cwd: owner.workingDirectory, cols, rows, env, name: 'xterm-256color' })
+      const pty = spawn(shell, platform === 'win32' ? ['-NoLogo'] : ['-l'], { cwd, cols, rows, env, name: 'xterm-256color' })
       record.pty = pty
       record.subscriptions.push(pty.onData(data => {
         if (record.pty !== pty || this.disposed) return
@@ -124,6 +128,13 @@ export class TerminalService extends ToolOperations {
       this.sessions.delete(record.session.id)
       return fail('unavailable', 'The terminal could not start or save its session. Check that the shell is available and app storage is writable.')
     }
+  }
+  /** The project folder, or the thread's working copy when the project folder is gone or cannot be opened. */
+  private async projectFolder(owner: FileWorkspace): Promise<string> {
+    const folder = this.dependencies.projectFolder?.(owner.projectId)
+    if (!folder || !isAbsolute(folder)) return owner.workingDirectory
+    try { if ((await stat(folder)).isDirectory()) return folder } catch { /* Moved or unreadable: the working copy still opens. */ }
+    return owner.workingDirectory
   }
   read(payload: unknown) { return this.run(async () => this.snapshot(await this.owned(parse(terminalRequestSchema, payload), false))) }
   write(payload: unknown): Promise<ToolsResult<void>> {
