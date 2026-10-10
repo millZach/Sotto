@@ -52,6 +52,7 @@ import XCTest
         capture("terminals-permission-cannot-answer-dark")
         let codex = terminal("66666666-6666-4666-8666-666666666666")
         reveal(codex)
+        capture("terminals-recent-mixed-dark")
         codex.tap()
         XCTAssertTrue(text("Answer this one in the terminal on Laptop.").waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["terminal-answer-yes"].exists)
