@@ -106,7 +106,6 @@ const settingKeys = [
   'llmFormatting',
   'llmApiKey',
   'llmDictionary',
-  'llmQuality',
   'llmTimeoutMs',
   'llmMinWords',
   'threadTitles',

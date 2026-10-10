@@ -121,7 +121,7 @@ The generic `compose`/`send` path can bind a draft to a pending question, and `g
 
 Add a forward positional read to `ThreadStore` rather than misusing its existing backwards pane-window pagination. Keep message position, history epoch and global event sequence separate. For providers without event support, use the host's existing bounded projection/refresh boundary and report unavailable history explicitly. Roster pagination is over a pinned snapshot revision; a stale cursor restarts cleanly without mixing pages from different host states.
 
-The user's request authorizes bounded start/send work under ADR-0069; this is a new explicit policy decision, not revived supervision. Main can enforce target identity, scope of tools, permission ceilings, budgets and takeovers. It cannot prove that every generated brief faithfully interprets natural language. Preserve the original request reference, show every action and allow Stop/takeover; do not invent a second semantic reasoner or claim one is an authority check.
+The user's request authorizes bounded start/send work under ADR-0070; this is a new explicit policy decision, not revived supervision. Main can enforce target identity, scope of tools, permission ceilings, budgets and takeovers. It cannot prove that every generated brief faithfully interprets natural language. Preserve the original request reference, show every action and allow Stop/takeover; do not invent a second semantic reasoner or claim one is an authority check.
 
 ### Native project reads
 
@@ -269,7 +269,7 @@ Provider, model and effort belong to the current master record/ordinary thread o
 
 ## 9. Decisions and documentation
 
-The command-center contract is [ADR-0069](../adr/0069-command-center-is-a-read-only-thread.md), following ADR-0068. Record the single current master, native-plan billing, pinned asking mode and native reads, main-owned bounded start/send authority, human-only answers, takeover, event wake-ups, scoped Stop all, privacy storage and host feature enforcement. Explicitly amend the authority described by ADR-0004/0005 for command-center start/send without resurrecting automatic supervision; preserve their human-only answers. Relate ADR-0002 identity, ADR-0016 history, ADR-0035 special threads, ADR-0061 wake-ups and any provider-change exception/policy. If no supported launch can enforce a provider profile, record refusal rather than changing the decision to permissive mode.
+The command-center contract is [ADR-0070](../adr/0070-command-center-is-a-read-only-thread.md), following ADR-0068. Record the single current master, native-plan billing, pinned asking mode and native reads, main-owned bounded start/send authority, human-only answers, takeover, event wake-ups, scoped Stop all, privacy storage and host feature enforcement. Explicitly amend the authority described by ADR-0004/0005 for command-center start/send without resurrecting automatic supervision; preserve their human-only answers. Relate ADR-0002 identity, ADR-0016 history, ADR-0035 special threads, ADR-0061 wake-ups and any provider-change exception/policy. If no supported launch can enforce a provider profile, record refusal rather than changing the decision to permissive mode.
 
 Update `CONTEXT.md` using `docs/agents/domain.md` and the domain-modeling vocabulary:
 
@@ -334,7 +334,7 @@ Each ticket is one coherent PR-sized slice with its own tests and relevant docs.
 
 ### Ticket 1 — Record the command center and its closed contract
 
-- Goal: establish ADR-0069, shared request/tool/receipt types, one-current-master identity, text-free control records, settings limit and migrations.
+- Goal: establish ADR-0070, shared request/tool/receipt types, one-current-master identity, text-free control records, settings limit and migrations.
 - Builder: Sol. Owns new `src/shared/commandCenter.ts`, `commandCenterOverview.ts`, command-center record/store module, plus schema-only edits to `agents.ts`, `settings.ts`, `workspace.ts`, `control.ts`, `registerIpc.ts`; ADR and initial CONTEXT/host-protocol contract wording.
 - Depends on: 0; record Zach's choices that affect continuity/phone projection before those consumers land.
 - Done-check: unit schema/grouping/store/migration/privacy tests, `tests/integration/ipc.test.ts` setting save, documented gates. Publish fixtures/interfaces for UI; do not advertise provider support yet.
@@ -399,7 +399,7 @@ The useful parallel lane is tickets 4/5 (Sol main/host) beside ticket 6, then ti
 
 ## 12. Risks and choices only Zach can settle
 
-Decided by Zach on 2026-10-08: both recommendations below. The command center itself is hidden on phones in v1, while its workers stay visible; and changing its provider starts a replacement native conversation, keeps the previous one as command-center history, and offers a visible bounded handover. ADR-0069 records both. The original framing is kept for the reasoning:
+Decided by Zach on 2026-10-08: both recommendations below. The command center itself is hidden on phones in v1, while its workers stay visible; and changing its provider starts a replacement native conversation, keeps the previous one as command-center history, and offers a visible bounded handover. ADR-0070 records both. The original framing is kept for the reasoning:
 
 1. **Phone access to the master.** Recommendation: hide current/retired masters on the phone for v1, while ordinary workers remain fully usable on their host. Alternatively, show the current master as a typed ordinary thread, clearly saying it can direct threads on other paired computers even though the phone does not show that combined roster. This choice determines socket projection and phone list work; it does not grant authority to answer workers.
 2. **Changing the master's provider.** Recommendation: start a replacement native conversation, preserve the previous one as command-center history, and offer a visible bounded handover. This fits the current immutable thread binding. Alternatively, require the same visible transcript/Sotto identity across providers; that needs a deliberately versioned binding/history design and an ADR-0002 amendment, rather than weakening `ThreadRegistry.reserve()`. Choose before provider-change UI and migration land.

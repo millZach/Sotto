@@ -1,6 +1,6 @@
 # Codex command-center tools benchmark — October 9, 2026
 
-October 9, 2026: Zach replaced the isolated profile with provider-native tools and pinned asking permissions ([ADR-0069](../adr/0069-command-center-is-a-read-only-thread.md)). The benchmark harness and fixtures depended on the removed profile/file tools and have been removed. This note and its evidence remain the historical record.
+October 9, 2026: Zach replaced the isolated profile with provider-native tools and pinned asking permissions ([ADR-0070](../adr/0070-command-center-is-a-read-only-thread.md)). The benchmark harness and fixtures depended on the removed profile/file tools and have been removed. This note and its evidence remain the historical record.
 
 With **read-only sandbox and on-request approvals**, all ten B turns completed and **no run raised a request**. Reads and searches proceeded without user approval, including native commands and the inherited `node_repl` surface. A's ten original turns stand unchanged. A passed all keys in **10/10** runs; B passed **9/10** after checking the original answers. The one B Locate miss was not retried.
 

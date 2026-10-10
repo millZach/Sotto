@@ -128,9 +128,9 @@ export class RunCloudClient implements CloudDeviceProvider {
   async checkKey(): Promise<void> { await this.call('/run-cloud/account') }
   private async putAsset(url: string, headers: Record<string, string>, filePath: string): Promise<void> {
     let response: Response
-    // A Node Readable is an async iterable of Buffer, a valid streaming body; the DOM-oriented BodyInit and
-    // RequestInit typings used elsewhere in this compilation do not say so, hence the two casts.
-    const init: RequestInit & { duplex: 'half' } = { method: 'PUT', headers, body: createReadStream(filePath) as unknown as BodyInit, duplex: 'half' }
+    // A Node Readable is an async iterable of Buffer, a valid streaming body; fetch's request typings do not
+    // say so, hence the two casts.
+    const init: RequestInit & { duplex: 'half' } = { method: 'PUT', headers, body: createReadStream(filePath) as unknown as NonNullable<RequestInit['body']>, duplex: 'half' }
     try { response = await fetch(url, init) }
     catch { throw new Error('Could not upload the build to run.cloud. Check your connection and try again.') }
     if (!response.ok) throw new Error('run.cloud rejected the build upload. Nothing was charged for simulator time.')

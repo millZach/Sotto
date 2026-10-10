@@ -49,8 +49,11 @@ function runUnit(mark = 'boot') {
 }
 async function stopUnit(state) {
   if (state.mainPid && alive(state.mainPid)) {
-    try { process.kill(state.mainPid, 'SIGTERM') } catch { /* already gone */ }
-    for (let tries = 0; tries < 200 && alive(state.mainPid); tries++) await delay(50)
+    const pid = state.mainPid
+    try { process.kill(pid, 'SIGTERM') } catch { /* already gone */ }
+    for (let tries = 0; tries < 200 && alive(pid); tries++) await delay(50)
+    // What a test reads instead of probing the PID afterwards, which Windows may already have handed to another process.
+    record({ stopped: pid, exited: !alive(pid) })
   }
   Object.assign(state, { mainPid: 0, unit: { ActiveState: 'inactive', SubState: 'dead', Result: 'success', NRestarts: '0', ExecMainStatus: '0' } })
 }

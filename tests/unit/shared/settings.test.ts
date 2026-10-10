@@ -60,7 +60,6 @@ const customSettings = {
   llmFormatting: true,
   llmApiKey: '',
   llmDictionary: 'Sotto\nMoonshine',
-  llmQuality: 'high',
   llmTimeoutMs: 3_000,
   llmMinWords: 4,
   threadTitles: false,
@@ -187,6 +186,16 @@ describe('settings', () => {
       expect(parseSettings(legacy)).not.toHaveProperty('writingModel')
     }
     expect(DEFAULT_SETTINGS).not.toHaveProperty('writingModel')
+  })
+
+  it('drops the retired cleanup quality tier and keeps every other choice, whichever tier was saved', () => {
+    // One model does every cleanup (ADR-0069); an older settings file still names a tier.
+    for (const llmQuality of ['low', 'medium', 'value', 'high', 'ultra']) {
+      const legacy = { ...customSettings, llmQuality }
+      expect(parseSettings(legacy)).toEqual(customSettings)
+      expect(parseSettings(legacy)).not.toHaveProperty('llmQuality')
+    }
+    expect(DEFAULT_SETTINGS).not.toHaveProperty('llmQuality')
   })
 
   it('tolerates persisted theme values and defaults an unknown value', () => {
@@ -317,7 +326,6 @@ describe('settings', () => {
       llmFormatting: false,
       llmApiKey: '',
       llmDictionary: '',
-      llmQuality: 'low',
       llmTimeoutMs: 2_500,
       llmMinWords: 5,
       threadTitles: true,
@@ -401,9 +409,6 @@ describe('settings', () => {
     expect(parseSettings({}).llmFormatting).toBe(false)
     expect(parseSettings({ llmFormatting: 'yes' }).llmFormatting).toBe(false)
     expect(parseSettings({ llmTimeoutMs: 100 }).llmTimeoutMs).toBe(2_500)
-    expect(parseSettings({ llmQuality: 'high' }).llmQuality).toBe('high')
-    expect(parseSettings({ llmQuality: 'value' }).llmQuality).toBe('value')
-    expect(parseSettings({ llmQuality: 'ultra' }).llmQuality).toBe('low')
     expect(parseSettings({ streamingAsr: false }).streamingAsr).toBe(false)
   })
 
