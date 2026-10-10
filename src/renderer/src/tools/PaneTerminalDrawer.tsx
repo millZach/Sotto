@@ -159,7 +159,8 @@ export function PaneTerminalDrawer({ threadId, thread, project, bridge, viewFact
   }
 
   const facts = describeWorkingCopy(thread, project)
-  const branch = facts.branch
+  // The drawer's shells start in the project folder, so a thread worktree's branch would name the wrong checkout.
+  const branch = facts.mode === 'shared' ? facts.branch : undefined
 
   return <div className="pane-terminal" ref={root} style={{ '--pane-terminal-height': `${Math.round(height)}px` } as React.CSSProperties}>
     <div role="separator" aria-orientation="horizontal" aria-label="Resize terminal" tabIndex={0}
