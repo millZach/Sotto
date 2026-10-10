@@ -12,10 +12,10 @@ import { z } from 'zod'
 import { agentProjectSchema, type AgentHostSnapshot, type AgentThread, type AgentMessage, type AgentRuntimeMode } from '../../shared/agents'
 import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, CommandCenterLaunchProfile, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft } from './host'
-import { CommandCenterProfileRefusal, validateCommandCenterProfile } from './commandCenterProfile'
-import { COMMAND_CENTER_SYSTEM_PROMPT } from './commandCenterPrompt'
-import { assertCommandCenterPermission, assertCommandCenterPermissionChoice, commandCenterThreadTools } from './commandCenterProviderTools'
+import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, WatcherLaunchProfile, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft } from './host'
+import { WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
+import { WATCHER_SYSTEM_PROMPT } from './watcherPrompt'
+import { assertWatcherPermission, assertWatcherPermissionChoice, watcherThreadTools } from './watcherProviderTools'
 import { SIDE_WRITING_TIMEOUT_MS } from './sideWriting'
 import { GrokSubscriptionClient, sweepLeftoverSessions } from './subscriptionGrok'
 import { ThreadMessageLog } from './threadMessageLog'
@@ -72,7 +72,7 @@ export function grokArguments(): string[] {
  * One thread session's own Grok process. `clientRevision` is the client it was started from, which
  * `clientUpdated` moves on; `closing` marks a close Sotto asked for, and `lost` an exit nobody asked for.
  */
-interface ThreadProcess { rpc: GrokRpc; ready: Promise<ThreadProcess>; clientRevision: number; closing: boolean; lost: boolean; commandCenter: boolean }
+interface ThreadProcess { rpc: GrokRpc; ready: Promise<ThreadProcess>; clientRevision: number; closing: boolean; lost: boolean; watcher: boolean }
 /** A Grok request as this adapter keeps it: answered on the process that asked, never another. */
 type Pending = GrokPending & { rpc: GrokRpc; reasked?: boolean }
 const THREAD_PROCESS_LOST = 'Grok Build stopped before this reply finished, so it may be cut short. Send a message to carry on.'
@@ -158,7 +158,7 @@ export interface GrokAcpOptions {
 export class GrokAcpHost implements AgentHost {
   private launchProfiles: ThreadLaunchProfiles | undefined
   /** Last supplied endpoint, used only to revoke when main can no longer resolve the profile. */
-  private readonly knownLaunchProfiles = new Map<string, CommandCenterLaunchProfile>()
+  private readonly knownLaunchProfiles = new Map<string, WatcherLaunchProfile>()
   useLaunchProfiles(profiles: ThreadLaunchProfiles): void { this.launchProfiles = profiles }
   profileRefusalHandler(id: string) {
     const generation = this.generation, entry = this.processes.get(id)
@@ -170,41 +170,41 @@ export class GrokAcpHost implements AgentHost {
   private assertGeneration(generation: number): void {
     if (generation !== this.generation) throw new GrokUncertain('Grok connection changed before the operation could continue.')
   }
-  private async launchProfile(id: string, rpc?: GrokRpc): Promise<CommandCenterLaunchProfile | undefined> {
+  private async launchProfile(id: string, rpc?: GrokRpc): Promise<WatcherLaunchProfile | undefined> {
     const generation = this.generation; const resolver = this.launchProfiles; const entry = this.processes.get(id)
     const current = () => generation === this.generation && resolver === this.launchProfiles && (!rpc || this.processes.get(id)?.rpc === rpc)
     try {
       const profile = await resolver?.profileFor(id)
       if (!current()) throw new GrokUncertain('Grok connection changed while checking the thread profile.')
-      if (profile) { validateCommandCenterProfile(profile); this.knownLaunchProfiles.set(id, profile) }
-      else if (this.knownLaunchProfiles.has(id)) throw new CommandCenterProfileRefusal('The command center’s tools are no longer admitted. Its session was stopped. Reopen the command center to recover.')
+      if (profile) { validateWatcherProfile(profile); this.knownLaunchProfiles.set(id, profile) }
+      else if (this.knownLaunchProfiles.has(id)) throw new WatcherProfileRefusal('Watcher’s tools are no longer admitted. Its session was stopped. Reopen Watcher to recover.')
       return profile
     } catch (error) {
       if (!current()) throw new GrokUncertain('Grok connection changed while checking the thread profile.')
-      const refusal = error instanceof CommandCenterProfileRefusal ? error : new CommandCenterProfileRefusal('The command center’s saved profile could not be verified. Its session was stopped. Reopen the command center to recover.')
+      const refusal = error instanceof WatcherProfileRefusal ? error : new WatcherProfileRefusal('Watcher’s saved profile could not be verified. Its session was stopped. Reopen Watcher to recover.')
       if (this.processes.get(id) === entry) {
         try { this.revokeProfile(id, this.knownLaunchProfiles.get(id), refusal.message) } catch { /* A broken server cleanup never keeps the process alive. */ }
       }
       throw refusal
     }
   }
-  private async checkLaunchProfile(id: string): Promise<CommandCenterLaunchProfile | undefined> {
+  private async checkLaunchProfile(id: string): Promise<WatcherLaunchProfile | undefined> {
     const generation = this.generation; const entry = this.processes.get(id)
     const profile = await this.launchProfile(id)
     this.assertGeneration(generation)
-    if (profile && entry && !entry.commandCenter) {
-      const reason = 'This Grok Build process started without the command-center settings. Nothing was sent. Reopen the command center.'
+    if (profile && entry && !entry.watcher) {
+      const reason = 'This Grok Build process started without Watcher’s settings. Nothing was sent. Reopen Watcher.'
       this.revokeProfile(id, profile, reason)
-      throw new CommandCenterProfileRefusal(reason)
+      throw new WatcherProfileRefusal(reason)
     }
     return profile
   }
   private async sessionMeta(id: string, mode: GrokRuntimeMode | undefined) {
     const profile = await this.checkLaunchProfile(id)
-    return profile ? { ...sessionPolicy('approval-required'), systemPromptOverride: COMMAND_CENTER_SYSTEM_PROMPT } : sessionPolicy(mode)
+    return profile ? { ...sessionPolicy('approval-required'), systemPromptOverride: WATCHER_SYSTEM_PROMPT } : sessionPolicy(mode)
   }
   /** A profile failure ends the process even if native close/cancel would refuse or time out. */
-  private revokeProfile(id: string, profile: CommandCenterLaunchProfile | undefined, reason: string): void {
+  private revokeProfile(id: string, profile: WatcherLaunchProfile | undefined, reason: string): void {
     this.endTurn(id, 'failed')
     const entry = this.processes.get(id)
     this.processes.delete(id); this.loaded.delete(id); this.outdated.delete(id); this.histories.delete(id); this.reaper.forget(id)
@@ -230,8 +230,8 @@ export class GrokAcpHost implements AgentHost {
     const profile = await this.launchProfile(id)
     this.assertGeneration(generation)
     if (profile) {
-      if (!this.httpToolServers) throw new CommandCenterProfileRefusal('This Grok Build client cannot attach the command center?s Sotto tools. Update Grok Build, then reconnect it.')
-      return [profile.server, ...(await scopedThreadServers(commandCenterThreadTools(this.threadTools), id)).map(({ server }) => server)]
+      if (!this.httpToolServers) throw new WatcherProfileRefusal('This Grok Build client cannot attach Watcher’s Sotto tools. Update Grok Build, then reconnect it.')
+      return [profile.server, ...(await scopedThreadServers(watcherThreadTools(this.threadTools), id)).map(({ server }) => server)]
     }
     if (this.aliases[id]?.kind === 'personal' || !this.httpToolServers) return []
     const browser = this.browserTools ? [await this.browserTools.mcpServer(id)] : []
@@ -249,7 +249,7 @@ export class GrokAcpHost implements AgentHost {
     if (!profile) return undefined
     const own = grokToolAdmission(pending, profile.server.name, profile.toolNames)
     if (own !== undefined) return own
-    for (const tools of commandCenterThreadTools(this.threadTools)) {
+    for (const tools of watcherThreadTools(this.threadTools)) {
       const admission = grokToolAdmission(pending, tools.name, tools.definitions.map(tool => tool.name))
       if (admission !== undefined) return admission
     }
@@ -473,7 +473,7 @@ export class GrokAcpHost implements AgentHost {
     const executable = this.executable
     if (!this.state.connected || !executable) return Promise.reject(new Error('Connect Grok before managing threads.'))
     const replacement = this.processes.get(id); if (replacement) return replacement.ready
-    const entry = { clientRevision: this.clientRevision, closing: false, lost: false, commandCenter: !!profile } as ThreadProcess
+    const entry = { clientRevision: this.clientRevision, closing: false, lost: false, watcher: !!profile } as ThreadProcess
     entry.rpc = this.spawn(executable, () => this.processLost(id, entry))
     entry.ready = (async () => {
       try {
@@ -635,7 +635,7 @@ export class GrokAcpHost implements AgentHost {
       this.emit(); return this.current()
     } catch (error) {
       if (generation === this.generation) this.disconnect()
-      if (error instanceof CommandCenterProfileRefusal) throw error
+      if (error instanceof WatcherProfileRefusal) throw error
       // What the user reads is what happened. A client Sotto will not drive names the requirement it
       // missed, and pressing again will not change it. Anything else, an answer Sotto could not read or
       // a connection lost partway through, says so and is worth another press. The version and the
@@ -721,7 +721,7 @@ export class GrokAcpHost implements AgentHost {
     const generation = this.generation
     const profile = await this.checkLaunchProfile(threadId)
     this.assertGeneration(generation)
-    if (profile) throw new Error('The command center uses Sotto’s thread tools. Native skills are unavailable. Nothing was sent. Use an ordinary thread for a native skill.')
+    if (profile) throw new Error('Watcher uses Sotto’s thread tools. Native skills are unavailable. Nothing was sent. Use an ordinary thread for a native skill.')
     if (this.aliases[threadId]?.kind === 'personal') throw new Error('That thread is unavailable.')
     void _forceReload // inspect is a fresh native read for this directory on every request.
     const cwd = this.aliases[threadId]?.cwd ?? (scope?.providerId === 'grok' ? scope.workingDirectory : undefined)
@@ -970,10 +970,10 @@ export class GrokAcpHost implements AgentHost {
   async execute(command: AgentHostCommand): Promise<AgentHostResult> { return this.executeNative(command) }
   private async executeNative(command: AgentHostCommand): Promise<AgentHostResult> {
     const generation = this.generation
-    const commandCenterProfile = 'threadId' in command ? await this.checkLaunchProfile(command.threadId) : undefined
+    const watcherProfile = 'threadId' in command ? await this.checkLaunchProfile(command.threadId) : undefined
     this.assertGeneration(generation)
-    if (commandCenterProfile) {
-      assertCommandCenterPermission(command)
+    if (watcherProfile) {
+      assertWatcherPermission(command)
       if (command.type === 'create-thread') command = { ...command, runtimeMode: 'approval-required' }
     }
     if ('threadId' in command && this.aliases[command.threadId]?.kind === 'personal') throw new Error('That thread is unavailable.')
@@ -1049,13 +1049,13 @@ export class GrokAcpHost implements AgentHost {
         this.assertGeneration(generation)
         if (command.type === 'configure-thread') {
           if ((command.modelId !== undefined && command.modelId !== alias.modelId) || (command.reasoningEffort !== undefined && command.reasoningEffort !== alias.reasoningEffort)) {
-            if (!commandCenterProfile) throw new Error('Grok cannot change the model or reasoning level of an existing thread in Sotto yet. Only the permission mode can be changed.')
+            if (!watcherProfile) throw new Error('Grok cannot change the model or reasoning level of an existing thread in Sotto yet. Only the permission mode can be changed.')
             const modelId = command.modelId ?? alias.modelId, reasoningEffort = effortAfterChange(this.state, command, alias.reasoningEffort)
             validateThreadOptions(this.state, { modelId, ...(reasoningEffort ? { reasoningEffort } : {}) }, alias.modelId)
             await this.sync(command.threadId)
             this.assertGeneration(generation)
             const thread = this.thread(command.threadId)
-            if (this.activePrompts.has(command.threadId) || thread.status === 'running' || thread.requests.length) throw new Error('Wait for the command center to finish and answer its pending questions before changing its model or reasoning level.')
+            if (this.activePrompts.has(command.threadId) || thread.status === 'running' || thread.requests.length) throw new Error('Wait for Watcher to finish and answer its pending questions before changing its model or reasoning level.')
             const entry = await this.threadProcess(command.threadId), rpc = entry.rpc
             this.assertGeneration(generation)
             alias.settingsConfirmed = false
@@ -1068,7 +1068,7 @@ export class GrokAcpHost implements AgentHost {
               if (this.processes.get(command.threadId) !== entry) throw new GrokUncertain('Grok thread process changed before its model could be checked.')
               await rpc.request('session/load', { sessionId: alias.grokSessionId, cwd: alias.cwd, mcpServers, _meta: meta }, value => {
                 const response = z.object({ models: catalogSchema, _meta: z.object({ sessionId: z.literal(alias.grokSessionId!) }) }).parse(value)
-                if (response.models.currentModelId !== modelId || reasoningEffort && response.models.availableModels.find(model => model.modelId === modelId)?._meta?.reasoningEffort !== reasoningEffort) throw new Error('Grok did not confirm the requested command-center model and reasoning level.')
+                if (response.models.currentModelId !== modelId || reasoningEffort && response.models.availableModels.find(model => model.modelId === modelId)?._meta?.reasoningEffort !== reasoningEffort) throw new Error('Grok did not confirm the requested Watcher model and reasoning level.')
               })
               this.assertGeneration(generation)
               await this.checkLaunchProfile(command.threadId)
@@ -1077,9 +1077,9 @@ export class GrokAcpHost implements AgentHost {
               await this.persist()
             } catch (error) {
               this.assertGeneration(generation)
-              const reason = 'Grok Build could not confirm the command-center model change. Its session and tools were stopped. Nothing was sent. Reopen the command center, or use an ordinary thread.'
-              if (this.processes.get(command.threadId) === entry || !this.processes.has(command.threadId)) this.revokeProfile(command.threadId, commandCenterProfile, reason)
-              throw error instanceof CommandCenterProfileRefusal ? error : new CommandCenterProfileRefusal(reason)
+              const reason = 'Grok Build could not confirm Watcher’s model change. Its session and tools were stopped. Nothing was sent. Reopen Watcher, or use an ordinary thread.'
+              if (this.processes.get(command.threadId) === entry || !this.processes.has(command.threadId)) this.revokeProfile(command.threadId, watcherProfile, reason)
+              throw error instanceof WatcherProfileRefusal ? error : new WatcherProfileRefusal(reason)
             }
           }
           if (command.runtimeMode !== undefined) {
@@ -1171,7 +1171,7 @@ export class GrokAcpHost implements AgentHost {
           const pending = this.pending.get(command.requestId)
           if (!pending || pending.threadId !== command.threadId) throw new Error('That Grok request is no longer pending.')
           if (pending.answering || this.answeredRequests.get(pending.rpc)?.has(pending.request.id)) return { accepted: false, uncertain: true }
-          if (commandCenterProfile) assertCommandCenterPermissionChoice(pending.request, command.permissionChoice)
+          if (watcherProfile) assertWatcherPermissionChoice(pending.request, command.permissionChoice)
           const result = grokAnswer(pending, command.answer, command.approved, command.questionAnswers, command.permissionChoice)
           pending.answering = true; this.rememberAnswered(pending)
           const remembered = alias.answeredRequestIds.includes(pending.request.id)
@@ -1219,10 +1219,10 @@ export class GrokAcpHost implements AgentHost {
         pending.request.id = `grok-request-${digest(JSON.stringify([threadId, pending.toolCallId, pending.request.kind]))}`
         this.reaper.touch(pending.threadId)
         if (this.answeredRequests.get(rpc)?.has(pending.request.id) || this.pending.has(pending.request.id)) return
-        const commandCenter = this.processes.get(owner!)?.commandCenter
-        if (commandCenter) await this.launchProfile(pending.threadId, rpc)
+        const watcher = this.processes.get(owner!)?.watcher
+        if (watcher) await this.launchProfile(pending.threadId, rpc)
         if (!current()) return
-        const admission = commandCenter ? await this.toolAdmission(pending) : this.ordinaryToolAdmission(pending)
+        const admission = watcher ? await this.toolAdmission(pending) : this.ordinaryToolAdmission(pending)
         if (!current()) return
         // Only exact names on the scoped Sotto servers are preallowed. All other tools ask normally.
         if (admission !== undefined) { rpc.reply(pending.wireId, admission).catch(() => {

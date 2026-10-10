@@ -31,7 +31,7 @@ export const AGENT_THREAD_DETAIL_GET = 'sotto:agents:thread-detail-get'
 export const providerIdSchema = z.enum(['codex', 'claude', 'grok', 'devin'])
 export type ProviderId = z.infer<typeof providerIdSchema>
 /** Absent on older live snapshots; ordinary threads have the project kind. */
-export const agentThreadKindSchema = z.enum(['project', 'command-center', 'command-center-history'])
+export const agentThreadKindSchema = z.enum(['project', 'watcher', 'watcher-history'])
 export type AgentThreadKind = z.infer<typeof agentThreadKindSchema>
 /**
  * Why a provider is not connected, as a stable code the Hosts page's tiles decide on (ADR-0037): its client is not

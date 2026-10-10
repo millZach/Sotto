@@ -4,10 +4,12 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   {
     ignores: [
-      'artifacts/command-center-benchmark/**',
-      'artifacts/command-center-live/**',
-      'artifacts/command-center-own-tools-live/**',
-      'artifacts/command-center-own-tools-windows/**',
+      'artifacts/watcher-benchmark/**',
+      'artifacts/watcher-rename/**',
+      'artifacts/*-center-*/**',
+      'artifacts/watcher-live/**',
+      'artifacts/watcher-own-tools-live/**',
+      'artifacts/watcher-own-tools-windows/**',
       'artifacts/voice-control-removal/merged-setup/**',
       'artifacts/skill-pill-composer/**',
       'artifacts/omarchy-shell-plugin/**',

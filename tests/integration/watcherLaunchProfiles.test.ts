@@ -5,12 +5,12 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
-import { CommandCenterLaunchProfiles } from '../../src/main/agents/commandCenterLaunchProfiles'
+import { WatcherLaunchProfiles } from '../../src/main/agents/watcherLaunchProfiles'
 import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
 import { FakeProviderHost } from '../fixtures/fakeProviderHost'
-import { emptyCommandCenterRecord } from '../../src/shared/commandCenter'
+import { emptyWatcherRecord } from '../../src/shared/watcher'
 import type { AgentThread } from '../../src/shared/agents'
-import type { CommandCenterProfileTools, ThreadLaunchProfiles } from '../../src/main/agents/host'
+import type { WatcherProfileTools, ThreadLaunchProfiles } from '../../src/main/agents/host'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { AtomicJsonStore } from '../../src/main/storage/atomicJsonStore'
 
@@ -21,13 +21,13 @@ afterEach(async () => { vi.restoreAllMocks(); for (const root of roots.splice(0)
 async function setup() {
   const root = await mkdtemp(join(tmpdir(), 'sotto-profile-')); roots.push(root)
   const hostId = randomUUID(), threadId = randomUUID()
-  const thread: AgentThread = { id: threadId, hostId, kind: 'command-center', providerId: 'codex', projectId: 'special', title: 'Any title', modelId: 'model', status: 'idle', messages: [], requests: [] }
-  const record = emptyCommandCenterRecord()
+  const thread: AgentThread = { id: threadId, hostId, kind: 'watcher', providerId: 'codex', projectId: 'special', title: 'Any title', modelId: 'model', status: 'idle', messages: [], requests: [] }
+  const record = emptyWatcherRecord()
   record.current = { target: { hostId, threadId }, projectId: 'special', provider: 'codex', creationOperationId: randomUUID(), createdAt: new Date().toISOString() }
-  const save = () => writeFile(join(root, 'agents.json'), JSON.stringify({ commandCenter: record }))
+  const save = () => writeFile(join(root, 'agents.json'), JSON.stringify({ watcher: record }))
   await save()
-  const source = new CommandCenterLaunchProfiles(root, () => hostId, id => id === threadId ? thread : undefined)
-  const tools: CommandCenterProfileTools = { name: 'sotto_threads', definitions: [{ name: 'list_threads', description: 'Stand in', inputSchema: {} }],
+  const source = new WatcherLaunchProfiles(root, () => hostId, id => id === threadId ? thread : undefined)
+  const tools: WatcherProfileTools = { name: 'sotto_threads', definitions: [{ name: 'list_threads', description: 'Stand in', inputSchema: {} }],
     mcpServer: vi.fn(async () => ({ name: 'sotto_threads', type: 'http' as const, url: 'http://127.0.0.1:12345/mcp', headers: [{ name: 'Authorization', value: 'Bearer fixture' }] })), revoke: vi.fn() }
   source.useTools(tools)
   return { root, hostId, threadId, thread, record, save, source, tools }
@@ -44,15 +44,15 @@ it('shares a single read for concurrent checks and unchanged creation/admission 
 it('sees an atomic same-size identity replacement on the next check even with its mtime restored', async () => {
   const f = await setup(), path = join(f.root, 'agents.json')
   const store = AtomicJsonStore.compact(path, value => value, () => ({}))
-  await store.write({ commandCenter: f.record })
+  await store.write({ watcher: f.record })
   await f.source.profileFor(f.threadId)
   const before = await fs.stat(path), replacement = randomUUID()
   f.record.current!.target.threadId = replacement
-  await store.write({ commandCenter: f.record })
+  await store.write({ watcher: f.record })
   await fs.utimes(path, before.atime, before.mtime)
   expect((await fs.stat(path)).size).toBe(before.size)
   await expect(f.source.profileFor(f.threadId)).rejects.toThrow('saved identity')
-  expect(await f.source.profileFor(replacement)).toMatchObject({ kind: 'command-center' })
+  expect(await f.source.profileFor(replacement)).toMatchObject({ kind: 'watcher' })
 })
 
 it.each(['current', 'creation', 'history'] as const)('retains last known %s identity only for refusal when the file becomes corrupt', async location => {
@@ -74,9 +74,9 @@ it.each(['current', 'creation', 'history'] as const)('retains last known %s iden
 
 it('isolates unknown ordinary kinds but refuses both special kinds when identity is invalid', async () => {
   const f = await setup()
-  await writeFile(join(f.root, 'agents.json'), '{"commandCenter":{"version":999}}')
+  await writeFile(join(f.root, 'agents.json'), '{"watcher":{"version":999}}')
   await expect(f.source.profileFor(f.threadId)).rejects.toThrow('saved identity')
-  f.thread.kind = 'command-center-history'
+  f.thread.kind = 'watcher-history'
   await expect(f.source.profileFor(f.threadId)).rejects.toThrow('saved identity')
   delete f.thread.kind
   expect(await f.source.profileFor(f.threadId)).toBeUndefined()
@@ -99,13 +99,13 @@ it('does not cache or admit an identity replaced during the read', async () => {
 it('uses only the durable current identity, corroborated by host, kind, project and provider', async () => {
   const f = await setup()
   expect(await f.source.profileFor('ordinary')).toBeUndefined()
-  expect(await f.source.profileFor(f.threadId)).toMatchObject({ kind: 'command-center', toolNames: ['list_threads'] })
+  expect(await f.source.profileFor(f.threadId)).toMatchObject({ kind: 'watcher', toolNames: ['list_threads'] })
   await f.source.assertCreationBinding(f.threadId, 'special', 'codex')
   await expect(f.source.assertCreationBinding(f.threadId, 'special', 'claude')).rejects.toThrow('saved identity')
   await expect(f.source.assertCreationBinding(f.threadId, 'other-project', 'codex')).rejects.toThrow('saved identity')
   f.thread.kind = 'project'
   await expect(f.source.profileFor(f.threadId)).rejects.toMatchObject({ code: 'READ_ONLY_PROFILE_UNAVAILABLE' })
-  f.thread.kind = 'command-center'; f.thread.providerId = 'claude'
+  f.thread.kind = 'watcher'; f.thread.providerId = 'claude'
   await expect(f.source.profileFor(f.threadId)).rejects.toThrow('saved identity')
   f.thread.providerId = 'codex'; f.record.current!.target.hostId = randomUUID(); await f.save()
   await expect(f.source.profileFor(f.threadId)).rejects.toThrow('saved identity')
@@ -117,11 +117,11 @@ it('refuses forged kinds, history, absent servers and revoked admission with a r
   expect(f.tools.revoke).toHaveBeenCalledWith(f.threadId)
   await expect(f.source.profileFor(f.threadId)).rejects.toThrow('Reopen to recover')
   f.record.history = [f.record.current!]; f.record.current = null; await f.save()
-  await expect(f.source.profileFor(f.threadId)).rejects.toThrow('earlier command center')
+  await expect(f.source.profileFor(f.threadId)).rejects.toThrow('earlier Watcher')
   f.record.history = []; await f.save()
   await expect(f.source.profileFor(f.threadId)).rejects.toThrow('saved identity')
   const noServer = await setup()
-  const unadmitted = new CommandCenterLaunchProfiles(noServer.root, () => noServer.hostId, () => noServer.thread)
+  const unadmitted = new WatcherLaunchProfiles(noServer.root, () => noServer.hostId, () => noServer.thread)
   await expect(unadmitted.profileFor(noServer.threadId)).rejects.toThrow('tool server is unavailable')
 })
 it('maps profile lookups through Sotto bindings and unbound early-start identities', async () => {
@@ -143,7 +143,7 @@ it('maps profile lookups through Sotto bindings and unbound early-start identiti
   expect(source.profileFor).toHaveBeenLastCalledWith('unbound-master')
   await inner.profiles!.profileFor('unknown-native')
   expect(source.profileFor).toHaveBeenCalledTimes(2)
-  source.profileFor.mockImplementation(async () => ({ kind: 'command-center', server: { name: 'sotto_threads', type: 'http',
+  source.profileFor.mockImplementation(async () => ({ kind: 'watcher', server: { name: 'sotto_threads', type: 'http',
     url: 'http://127.0.0.1:12345/mcp', headers: [] }, toolNames: ['list_threads'], revoke: vi.fn() }))
   await wrapper.listThreadSkills('unbound-master', true, { providerId: 'codex', workingDirectory: root }).catch(() => undefined)
   expect(source.profileFor).toHaveBeenLastCalledWith('unbound-master')
@@ -173,16 +173,16 @@ it('preflights unstarted master settings and refuses provider or working-copy ch
     const thread = f.host.workspaceSnapshot().threads.find(thread => thread.id === id)!
     await f.stop()
     const disk = JSON.parse(await readFile(join(f.root, 'workspace.json'), 'utf8'))
-    disk.snapshot.threads.find((thread: AgentThread) => thread.id === id).kind = 'command-center'
+    disk.snapshot.threads.find((thread: AgentThread) => thread.id === id).kind = 'watcher'
     await writeFile(join(f.root, 'workspace.json'), JSON.stringify(disk))
-    const record = emptyCommandCenterRecord()
+    const record = emptyWatcherRecord()
     record.current = { target: { hostId: thread.hostId!, threadId: id }, projectId: project.id, provider: 'codex', creationOperationId: randomUUID(), createdAt: new Date().toISOString() }
-    await writeFile(join(f.root, 'agents.json'), JSON.stringify({ commandCenter: record }))
+    await writeFile(join(f.root, 'agents.json'), JSON.stringify({ watcher: record }))
     f = await workspaceFixture(f.root)
-    const fixture = await setup(); f.host.useCommandCenterTools(fixture.tools)
+    const fixture = await setup(); f.host.useWatcherTools(fixture.tools)
     await f.host.connect('codex'); await f.host.connect('claude')
     let before = f.host.workspaceSnapshot().threads.find(thread => thread.id === id)!
-    await expect(f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, modelId: other.id })).rejects.toThrow('new command-center conversation')
+    await expect(f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, modelId: other.id })).rejects.toThrow('new watcher conversation')
     expect((await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, reasoningEffort: 'high' })).accepted).toBe(true)
     before = f.host.workspaceSnapshot().threads.find(thread => thread.id === id)!
     await expect(f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, runtimeMode: 'full-access' })).rejects.toThrow('cannot be widened')

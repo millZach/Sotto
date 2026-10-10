@@ -1,9 +1,9 @@
 import { expect, it } from 'vitest'
 import type { AgentActivity } from '../../src/shared/agentActivity'
-import { commandCenterNativeReadProof } from '../fixtures/commandCenterNativeReadProof'
+import { watcherNativeReadProof } from '../fixtures/watcherNativeReadProof'
 
 const activity = (patch: Partial<AgentActivity>): AgentActivity => ({ id: 'new', turnId: 'turn', sequence: 1, kind: 'tool', status: 'completed', title: 'Read', text: '{"file_path":"source.txt"}', output: 'native_read_marker', ...patch })
-const proof = (rows: AgentActivity[], previous = new Set<string>()) => commandCenterNativeReadProof(rows, previous, 'source.txt', 'native_read_marker')
+const proof = (rows: AgentActivity[], previous = new Set<string>()) => watcherNativeReadProof(rows, previous, 'source.txt', 'native_read_marker')
 
 it('requires a native read and a separate text search with successful matching output', () => {
   expect(proof([activity({})])).toEqual({ read: true, search: false })

@@ -1,8 +1,8 @@
-import { commandCenterRecordSchema, emptyCommandCenterRecord, type CommandCenterRecord } from '../../shared/commandCenter'
+import { watcherRecordSchema, emptyWatcherRecord, type WatcherRecord } from '../../shared/watcher'
 
-/** Older stores carry no center. Migration never adopts a thread by its title or legacy assignment. */
-export function migrateCommandCenterRecord(input: unknown): CommandCenterRecord {
-  return input === undefined ? emptyCommandCenterRecord() : commandCenterRecordSchema.parse(input)
+/** Older stores carry no Watcher record. Migration never adopts a thread by its title or legacy assignment. */
+export function migrateWatcherRecord(input: unknown): WatcherRecord {
+  return input === undefined ? emptyWatcherRecord() : watcherRecordSchema.parse(input)
 }
 
 /** Older workspace records are ordinary projects; explicit special kinds must survive validation. */

@@ -43,7 +43,7 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       unsubscribeEvents = f.host.subscribeEvents?.(event => events.push(event))
     })
     afterEach(async () => { unsubscribeEvents?.(); unsubscribeEvents = undefined; const previous = f; f = undefined!; await previous?.cleanup() })
-    it('keeps ordinary permissions when main supplies no command-center profile', async context => {
+    it('keeps ordinary permissions when main supplies no Watcher profile', async context => {
       if (!f.host.useLaunchProfiles) { context.skip(); return }
       f.host.useLaunchProfiles({ profileFor: async () => undefined })
       const before = await thread()

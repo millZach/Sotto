@@ -8,8 +8,8 @@ import { AgentControl } from '../../../src/main/agents/control'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
-import { commandCenterRecordFixture } from '../../fixtures/commandCenter'
-import { emptyCommandCenterRecord } from '../../../src/shared/commandCenter'
+import { watcherRecordFixture } from '../../fixtures/watcher'
+import { emptyWatcherRecord } from '../../../src/shared/watcher'
 import { testCredentials } from '../../fixtures/testCredentials'
 import { createAgentControl } from '../../fixtures/agentControlFixture'
 import { deferred } from '../../fixtures/deferred'
@@ -38,47 +38,47 @@ afterEach(async () => {
 })
 
 describe('coordinator persistence', () => {
-  it('migrates an older agents store without adopting a thread named Command center or old management', async () => {
+  it('migrates an older agents store without adopting a thread named Watcher or old management', async () => {
     const f = await fixture()
     f.control.dispose(); await f.control.closed()
     const path = join(f.root, 'agents.json')
     const saved = JSON.parse(await readFile(path, 'utf8'))
-    delete saved.commandCenter
+    delete saved.watcher
     saved.assignments = [{ threadId: 'workshop', instruction: 'Retired words', mode: 'managed' }]
     await writeFile(path, JSON.stringify(saved), 'utf8')
     const reopened = createAgentControl({ directory: f.root, host: f.host, credentials: f.credentials, reasoner: e2eAgentReasoner })
     controls.push(reopened); await reopened.start(); reopened.dispose(); await reopened.closed()
     const migrated = JSON.parse(await readFile(path, 'utf8'))
-    expect(migrated.commandCenter).toEqual(emptyCommandCenterRecord())
+    expect(migrated.watcher).toEqual(emptyWatcherRecord())
     expect(migrated).not.toHaveProperty('assignments')
     expect(migrated.configuration).toEqual(saved.configuration)
     expect((await readdir(f.root)).some(name => name.includes('.corrupt-'))).toBe(false)
   })
 
-  it('retains text-free command-center uncertainty, budgets and ownership across history-off restarts', async () => {
+  it('retains text-free watcher uncertainty, budgets and ownership across history-off restarts', async () => {
     const f = await fixture(false)
     f.control.dispose(); await f.control.closed()
     const path = join(f.root, 'agents.json')
     const saved = JSON.parse(await readFile(path, 'utf8'))
-    const record = commandCenterRecordFixture()
-    saved.commandCenter = record
+    const record = watcherRecordFixture()
+    saved.watcher = record
     await writeFile(path, JSON.stringify(saved), 'utf8')
     const warnings = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     for (let restart = 0; restart < 2; restart++) {
       const host = new E2EAgentHost()
       const reopened = createAgentControl({ directory: f.root, host, credentials: f.credentials, reasoner: e2eAgentReasoner, historyEnabled: () => false })
       controls.push(reopened); await reopened.start()
-      host.event({ type: 'manual', threadId: 'workshop', text: 'DISTINCT_PRIVATE_COMMAND_CENTER_REQUEST' })
+      host.event({ type: 'manual', threadId: 'workshop', text: 'DISTINCT_PRIVATE_WATCHER_REQUEST' })
       host.event({ type: 'stream', threadId: 'workshop', messageId: 'private-reply', text: 'DISTINCT_PRIVATE_FILE_CONTENT', status: 'idle' })
       reopened.dispose(); await reopened.closed()
-      expect(JSON.parse(await readFile(path, 'utf8')).commandCenter).toEqual(record)
+      expect(JSON.parse(await readFile(path, 'utf8')).watcher).toEqual(record)
       // No recovery writer may mistake a retained uncertain operation for new work.
       expect((await host.snapshot()).threads.flatMap(thread => thread.messages).filter(message => message.commandId)).toEqual([])
     }
     for (const name of await readdir(f.root)) {
       if (!name.endsWith('.json') && !name.includes('.tmp-') && !name.includes('.corrupt-')) continue
       const text = await readFile(join(f.root, name), 'utf8')
-      expect(text).not.toContain('DISTINCT_PRIVATE_COMMAND_CENTER_REQUEST')
+      expect(text).not.toContain('DISTINCT_PRIVATE_WATCHER_REQUEST')
       expect(text).not.toContain('DISTINCT_PRIVATE_FILE_CONTENT')
     }
     expect(warnings.mock.calls.flat().join(' ')).not.toContain('DISTINCT_PRIVATE')

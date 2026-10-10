@@ -33,7 +33,7 @@ if (args.includes('--no-session-persistence') && value('--output-format') === 'j
 }
 const metadata = args.includes('--no-session-persistence')
 const session = metadata ? 'metadata' : value(args.includes('--resume') ? '--resume' : '--session-id')
-const commandCenter = args.includes('--append-system-prompt')
+const watcher = args.includes('--append-system-prompt')
 const mcpConfig = args.includes('--mcp-config') ? JSON.parse(readFileSync(value('--mcp-config'), 'utf8')) : { mcpServers: {} }
 const position = args.indexOf('--allowedTools')
 const following = position < 0 ? [] : args.slice(position + 1)
@@ -46,7 +46,7 @@ if (!metadata && value('--permission-prompt-tool') !== 'stdio') throw new Error(
 // The native CLI refuses bypassPermissions unless bypassing was explicitly allowed at launch; never allow it for other modes.
 if (!metadata && (value('--permission-mode') === 'bypassPermissions') !== args.includes('--allow-dangerously-skip-permissions')) throw new Error('bypassPermissions requires --allow-dangerously-skip-permissions, and only that mode may carry it')
 record(args.includes('--resume') ? 'resume' : 'launch', { source: 'child-process-argv', args, executable: process.execPath, cwd: process.cwd(), compactionEnvironment: Object.fromEntries(['DISABLE_AUTO_COMPACT', 'DISABLE_COMPACT', 'CLAUDE_AUTOCOMPACT_PCT_OVERRIDE', 'CLAUDE_CODE_AUTO_COMPACT_WINDOW'].filter(key => process.env[key] !== undefined).map(key => [key, process.env[key]])) })
-if (commandCenter) record('command-center-launch', { serverNames: Object.keys(mcpConfig.mcpServers), allowedTools: allowance, nativeTools: ['Read', 'Grep', 'Glob', 'Edit', 'Bash'] })
+if (watcher) record('watcher-launch', { serverNames: Object.keys(mcpConfig.mcpServers), allowedTools: allowance, nativeTools: ['Read', 'Grep', 'Glob', 'Edit', 'Bash'] })
 // The isolated Electron journey uses the adapter's normal ~/.claude discovery path.
 const folder = join(process.env.SOTTO_FAKE_CLAUDE_HOME ?? join(root, 'home'), 'projects', process.cwd().replace(/[^a-zA-Z0-9]/gu, '-'))
 const log = join(folder, session + '.jsonl')

@@ -22,7 +22,7 @@ import { settledThinking, thinkingSettledAs } from './thinkingActivity'
 import { devinPending, devinAnswer, devinDecline, type DevinPending } from './devinRequests'
 import { markSendStage } from './sendStages'
 import type { ThreadLaunchProfiles } from './host'
-import { CommandCenterProfileRefusal } from './commandCenterProfile'
+import { WatcherProfileRefusal } from './watcherProfile'
 import { prepareDevinPolicy, verifyDevinPolicy, assertDevinNoIntegrations, settleInOrder, type DevinAllowance, type DevinProfile } from './devinPolicy'
 import { compareClientVersions } from './clientVersions'
 import { DevinRpc, DevinRejected, DevinUncertain, DEVIN_CLI_VERSION, DEVIN_ACP_VERSION, devinEnvironment, findDevinExecutable, readDevinVersion, type DevinFrame } from './devinRpc'
@@ -191,7 +191,7 @@ export class DevinAcpHost implements AgentHost {
       return this.stopProfileSession(id, reason)
     }
   }
-  private async refuseCommandCenter(id: string, origin?: Connection, observer = false): Promise<void> {
+  private async refuseWatcher(id: string, origin?: Connection, observer = false): Promise<void> {
     const generation = this.generation
     const current = (): boolean => generation === this.generation && (!origin || !origin.intentionalClose
       && (observer ? this.allProcesses.has(origin.rpc) : this.connections.get(id) === origin))
@@ -199,16 +199,16 @@ export class DevinAcpHost implements AgentHost {
     try { profile = await this.launchProfiles?.profileFor(id) }
     catch (error) {
       if (!current()) throw new DevinUncertain('Devin connection changed.')
-      const refusal = error instanceof CommandCenterProfileRefusal ? error : new CommandCenterProfileRefusal('The command center’s saved profile could not be verified. Nothing was sent.')
+      const refusal = error instanceof WatcherProfileRefusal ? error : new WatcherProfileRefusal('Watcher’s saved profile could not be verified. Nothing was sent.')
       await this.stopProfileSession(id, refusal.message, origin, observer)
       throw refusal
     }
     if (!current()) throw new DevinUncertain('Devin connection changed.')
     if (!profile) return
-    const reason = 'Devin cannot host the command center. Nothing was sent. Use an ordinary thread, or choose an admitted Codex, Claude Code or Grok Build version.'
+    const reason = 'Devin cannot host Watcher. Nothing was sent. Use an ordinary thread, or choose an admitted Codex, Claude Code or Grok Build version.'
     try { profile.revoke(reason) } catch { /* Refusal still closes the provider process. */ }
     await this.stopProfileSession(id, reason, origin, observer)
-    throw new CommandCenterProfileRefusal(reason)
+    throw new WatcherProfileRefusal(reason)
   }
   /** A receive callback cannot await the close barrier that drains that same callback. */
   private stopProfileSession(id: string, reason: string, origin?: Connection, observer = false): Promise<void> {
@@ -324,7 +324,7 @@ export class DevinAcpHost implements AgentHost {
 
   private async start(cwd: string, allows: DevinAllowance, id?: string, observer = false): Promise<Connection> {
     const generation = this.generation
-    if (id) await this.refuseCommandCenter(id)
+    if (id) await this.refuseWatcher(id)
     if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
     const check = ++this.checksStarted
     const profile = await prepareDevinPolicy(this.userDataDirectory, allows, cwd, this.options.nativeConfigDirectory)
@@ -507,7 +507,7 @@ export class DevinAcpHost implements AgentHost {
    */
   async startThreadSession(id: string): Promise<void> {
     const generation = this.generation
-    await this.refuseCommandCenter(id)
+    await this.refuseWatcher(id)
     if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
     if (!this.state.connected || !this.aliases[id]?.devinSessionId) return
     await this.open(id)
@@ -515,7 +515,7 @@ export class DevinAcpHost implements AgentHost {
   }
   private async open(id: string): Promise<Connection> {
     const generation = this.generation
-    await this.refuseCommandCenter(id)
+    await this.refuseWatcher(id)
     if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
     const stopping = this.stopping.get(id)
     if (stopping) return stopping.then(() => this.open(id))
@@ -781,7 +781,7 @@ export class DevinAcpHost implements AgentHost {
     }
     if (frame.method && frame.id !== undefined) {
       const generation = this.generation
-      // Every Devin connection launched without a command-center profile: start refuses it.
+      // Every Devin connection launched without a Watcher profile: start refuses it.
       // Ordinary requests stay on the synchronous path; lifecycle checks still refuse promotion.
       if (generation !== this.generation || connection.intentionalClose
         || !observer && this.connections.get(id) !== connection) return
@@ -815,7 +815,7 @@ export class DevinAcpHost implements AgentHost {
   }
   async execute(command: AgentHostCommand): Promise<AgentHostResult> {
     const generation = this.generation
-    if ('threadId' in command && command.type !== 'interrupt') await this.refuseCommandCenter(command.threadId)
+    if ('threadId' in command && command.type !== 'interrupt') await this.refuseWatcher(command.threadId)
     if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
     if (command.type !== 'send' && command.type !== 'create-thread') return this.executeNative(command)
     if (this.dispatching.has(command.threadId)) throw new Error('Devin is already receiving work for this thread. Wait for its delivery result.')

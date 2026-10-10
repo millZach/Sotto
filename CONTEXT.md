@@ -4,13 +4,17 @@ Sotto is a desktop dictation app with manual coding threads across native provid
 
 ## Threads
 
-**Command center.** The one current native agent thread on a computer, using its provider's own tools and settings, with Sotto's bounded thread tools and a pinned asking permission mode (ADR-0070). It reads and searches natively; its own changes ask on normal request cards. Its system prompt guides coordination but grants no authority. Earlier conversations become command-center history when its provider changes. Avoid: the old "Coordinator", "assignment", "Agents room".
+**Watcher.** The one current native agent thread on a computer, using its provider's own tools and settings, with Sotto's bounded thread tools and a pinned asking permission mode (ADR-0070). It reads and searches natively; its own changes ask on normal request cards. Its system prompt guides coordination but grants no authority. Earlier conversations become Watcher history when its provider changes. Avoid: "command center", the old "Coordinator", "assignment", "Agents room".
 
-**Overview.** The command center room's sidebar list of all other threads, grouped by what the user must do, with source and read times. It is a projection, not a work queue or attention store; its groups are Needs you, Ready for review, Working, Landing, Quiet and Idle.
+**Watcher history.** An earlier Watcher conversation retained for reading when its provider changes. It cannot be resumed as Watcher.
 
-**Command-center request.** A particular user instruction to the command center, with main's identity, root user-message reference and budgets. Qualify it to distinguish it from an agent's pending question or permission request; retries and wake-ups keep its identity and budgets.
+**Watched thread.** A thread participating in a Watcher request. It is labelled "Watched by Watcher"; sending a direct instruction to it ends Watcher’s participation, while opening it or answering its request card does not. Distinct from the host’s **watched set**, which keeps provider sessions for panes and queued user follow-ups.
 
-**Thread card.** A main-backed reference or receipt in the command center's transcript opening a real thread pane. It is distinct from a request card, where the user answers the owning thread, and from a visual; it answers and approves nothing.
+**Overview.** The sidebar list of all other threads in Watcher’s room, grouped by what the user must do, with source and read times. It is a projection, not a work queue or attention store; its groups are Needs you, Ready for review, Working, Landing, Quiet and Idle.
+
+**Watcher request.** A particular user instruction to Watcher, with main's identity, root user-message reference and budgets. Qualify it to distinguish it from an agent's pending question or permission request; retries and wake-ups keep its identity and budgets.
+
+**Thread card.** A main-backed reference or receipt in Watcher's transcript opening a real thread pane. It is distinct from a request card, where the user answers the owning thread, and from a visual; it answers and approves nothing.
 
 **Thread.** A conversation with one coding agent about one project, owned by Sotto. A thread has a Sotto thread ID, a title, a project, a model, a status (idle, running, error), messages and pending requests. In a project, a thread opens at once on its new-thread defaults; a model chosen afterward for that thread overrides its starting choice without changing the setting. Threads are a core Sotto function: memory, drafts, follow-up queues and delivery evidence refer to threads by Sotto thread ID and never by a provider's own identifier. Avoid: "T3 thread", "conversation", "chat" when referring to a project-bound thread.
 

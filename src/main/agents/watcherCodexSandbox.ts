@@ -2,9 +2,9 @@ import { mkdtemp, readFile, rm, rmdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import type { CodexProcess } from './codexProcess'
-import { CommandCenterProfileRefusal } from './commandCenterProfile'
+import { WatcherProfileRefusal } from './watcherProfile'
 
-export const COMMAND_CENTER_SANDBOX_UNAVAILABLE = "Codex's read-only sandbox isn't working on this computer, so Watcher didn't start. Nothing was sent."
+export const WATCHER_SANDBOX_UNAVAILABLE = "Codex's read-only sandbox isn't working on this computer, so Watcher didn't start. Nothing was sent."
 const marker = 'SOTTO_READ_ONLY_PROBE'
 export const CODEX_SANDBOX_WRITE_DENIED = 'SOTTO_PROBE_WRITE_DENIED'
 // Catch the native denial: app-server otherwise turns a denied command into an RPC error with no result.
@@ -12,7 +12,7 @@ export const codexSandboxWriteProbe = (file: './write.txt' | 'sentinel.txt'): st
 const resultSchema = z.object({ exitCode: z.number(), stdout: z.string(), stderr: z.string() })
 
 /** Exercise this app-server's sandbox before it can receive a model turn. Never retain native output. */
-export async function probeCommandCenterCodexSandbox(server: Pick<CodexProcess, 'rpc'>, project: string): Promise<void> {
+export async function probeWatcherCodexSandbox(server: Pick<CodexProcess, 'rpc'>, project: string): Promise<void> {
   let folder: string | undefined
   let refused = false
   try {
@@ -43,5 +43,5 @@ export async function probeCommandCenterCodexSandbox(server: Pick<CodexProcess, 
       catch { refused = true }
     }
   }
-  if (refused) throw new CommandCenterProfileRefusal(COMMAND_CENTER_SANDBOX_UNAVAILABLE)
+  if (refused) throw new WatcherProfileRefusal(WATCHER_SANDBOX_UNAVAILABLE)
 }

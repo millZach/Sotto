@@ -1,28 +1,28 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { EMPTY_AGENT_HOST, type AgentThread } from '../../../src/shared/agents'
-import { commandCenterOverview, commandCenterObservationKey, COMMAND_CENTER_GROUPS, COMMAND_CENTER_QUIET_MS,
-  type CommandCenterObservation } from '../../../src/shared/commandCenterOverview'
-import { centerHostId, centerTime } from '../../fixtures/commandCenter'
+import { watcherOverview, watcherObservationKey, WATCHER_GROUPS, WATCHER_QUIET_MS,
+  type WatcherObservation } from '../../../src/shared/watcherOverview'
+import { centerHostId, centerTime } from '../../fixtures/watcher'
 
 const now = Date.parse(centerTime)
 function thread(patch: Partial<AgentThread> = {}): AgentThread {
   return { id: 'worker', hostId: centerHostId, projectId: 'project', title: 'Worker', modelId: 'model', status: 'idle', messages: [], requests: [], ...patch }
 }
 const openPr = { number: 1, url: 'https://github.com/owner/repo/pull/1', title: 'PR', state: 'open' as const, draft: false, source: 'linked' as const, linkedAt: centerTime }
-function project(patch: Partial<AgentThread>, observation?: Partial<CommandCenterObservation>) {
+function project(patch: Partial<AgentThread>, observation?: Partial<WatcherObservation>) {
   const item = thread(patch)
   const state = { host: { ...EMPTY_AGENT_HOST, connected: true, threads: [item] } }
-  const observations = observation ? new Map([[commandCenterObservationKey(item), { observedAt: centerTime, fresh: true, ...observation }]]) : new Map()
+  const observations = observation ? new Map([[watcherObservationKey(item), { observedAt: centerTime, fresh: true, ...observation }]]) : new Map()
   const before = structuredClone(state)
-  const row = commandCenterOverview(state, now, observations)[0]!
+  const row = watcherOverview(state, now, observations)[0]!
   expect(state).toEqual(before)
   return row
 }
 
 describe('Overview projection', () => {
   it('keeps display order separate from grouping precedence', () => {
-    expect(COMMAND_CENTER_GROUPS).toEqual(['Needs you', 'Ready for review', 'Working', 'Landing', 'Quiet', 'Idle'])
+    expect(WATCHER_GROUPS).toEqual(['Needs you', 'Ready for review', 'Working', 'Landing', 'Quiet', 'Idle'])
     const landing = { source: 'github' as const, observedAt: centerTime, fresh: true }
     expect(project({ status: 'running', pullRequests: [openPr], requests: [{ id: 'q', kind: 'question', text: 'Question', options: [] }] }, { landing }).group).toBe('Needs you')
     expect(project({ status: 'error', pullRequests: [openPr] }, { landing }).group).toBe('Needs you')
@@ -42,16 +42,16 @@ describe('Overview projection', () => {
     expect(project({ messages: [{ id: 'm', role: 'assistant', text: 'Approved, merging and working forever', createdAt: centerTime }] }).group).toBe('Idle')
   })
   it('requires fresh progress and connection clocks for Quiet, including the exact threshold', () => {
-    const old = new Date(now - COMMAND_CENTER_QUIET_MS).toISOString()
+    const old = new Date(now - WATCHER_QUIET_MS).toISOString()
     expect(project({ status: 'running' }, { connectedAt: old, lastProgressAt: old }).group).toBe('Quiet')
-    expect(project({ status: 'running' }, { connectedAt: old, lastProgressAt: new Date(now - COMMAND_CENTER_QUIET_MS + 1).toISOString() }).group).toBe('Working')
+    expect(project({ status: 'running' }, { connectedAt: old, lastProgressAt: new Date(now - WATCHER_QUIET_MS + 1).toISOString() }).group).toBe('Working')
     expect(project({ status: 'running', updatedAt: old }, { connectedAt: centerTime, lastProgressAt: old }).group).toBe('Working')
     expect(project({ status: 'running', updatedAt: old }).group).toBe('Working')
     expect(project({ status: 'running' }, { lastProgressAt: old }).group).toBe('Working')
     expect(project({ status: 'running' }, { connectedAt: old, lastProgressAt: old, fresh: false }).group).toBe('Working')
   })
   it('marks a disconnected host stale without inventing failure or quietness', () => {
-    const old = new Date(now - COMMAND_CENTER_QUIET_MS).toISOString()
+    const old = new Date(now - WATCHER_QUIET_MS).toISOString()
     const row = project({ status: 'running', clientConnected: false }, { connectedAt: old, lastProgressAt: old })
     expect(row).toMatchObject({ group: 'Working', available: false, freshness: 'stale', observedAt: centerTime })
     expect(project({ clientConnected: false, pullRequests: [openPr] }).group).toBe('Ready for review')
@@ -71,11 +71,11 @@ describe('Overview projection', () => {
     expect(project({ workspaceSettledAt: centerTime }).group).toBe('Idle')
     // Workspace organization alone does not suppress requests that still need the user.
     expect(project({ workspaceSettledAt: centerTime, status: 'error' }).group).toBe('Needs you')
-    const threads = [thread(), thread({ id: 'current', kind: 'command-center' }), thread({ id: 'old', kind: 'command-center-history' })]
-    expect(commandCenterOverview({ host: { ...EMPTY_AGENT_HOST, connected: true, threads } }, now).map(row => row.thread.id)).toEqual(['worker'])
+    const threads = [thread(), thread({ id: 'current', kind: 'watcher' }), thread({ id: 'old', kind: 'watcher-history' })]
+    expect(watcherOverview({ host: { ...EMPTY_AGENT_HOST, connected: true, threads } }, now).map(row => row.thread.id)).toEqual(['worker'])
   })
   it('qualifies identical IDs on different hosts and reads no user marks', () => {
-    expect(commandCenterObservationKey(thread())).not.toBe(commandCenterObservationKey(thread({ hostId: '22222222-2222-4222-8222-222222222222' })))
+    expect(watcherObservationKey(thread())).not.toBe(watcherObservationKey(thread({ hostId: '22222222-2222-4222-8222-222222222222' })))
     expect(project({ finishedUnread: true }).thread.finishedUnread).toBe(true)
     expect(project({}).freshness).toBe('unknown')
   })

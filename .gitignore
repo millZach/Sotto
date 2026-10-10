@@ -1,5 +1,5 @@
 node_modules/
-artifacts/command-center-live/
+artifacts/watcher-live/
 artifacts/skill-pill-composer/*
 !artifacts/skill-pill-composer/proof.json
 !artifacts/skill-pill-composer/dark-1600x1000.png
@@ -215,7 +215,7 @@ artifacts/linux-hyprland-paste/*
 # Captures from the removal merge?s first-run verification tool.
 artifacts/voice-control-removal/merged-setup/
 # Raw benchmark measures; no replies or protocol bodies.
-artifacts/command-center-benchmark/
+artifacts/watcher-benchmark/
 artifacts/omarchy-shell-plugin/*
 !artifacts/omarchy-shell-plugin/bar-on-the-left.png
 !artifacts/omarchy-shell-plugin/desktop-catppuccin-latte.png
@@ -257,5 +257,12 @@ artifacts/omarchy-shell-integration/*
 !artifacts/omarchy-shell-integration/g-two-outputs.png
 !artifacts/omarchy-shell-integration/h-widget-returned.png
 
-artifacts/command-center-own-tools-live/
-artifacts/command-center-own-tools-windows/
+artifacts/watcher-own-tools-live/
+artifacts/watcher-own-tools-windows/
+
+# Preserve ignored dated evidence from before the Watcher name.
+artifacts/*-center-*/
+
+# Watcher rename proof; keep only the cited built-app capture.
+artifacts/watcher-rename/*
+!artifacts/watcher-rename/agents-settings-1280x800.png

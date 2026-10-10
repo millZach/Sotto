@@ -45,8 +45,8 @@ import type { FilesBinding } from '../files/service'
 import { isSottoRequest, withSottoRequests, type SottoThreadRequests } from './sottoRequests'
 import { FinishedUnread } from './finishedUnread'
 import { withoutLegacyManagement, type HostAnswerTarget } from '../../shared/hostProtocol'
-import { commandCenterRecordSchema, emptyCommandCenterRecord, type CommandCenterRecord } from '../../shared/commandCenter'
-import { migrateCommandCenterRecord } from './commandCenterRecords'
+import { watcherRecordSchema, emptyWatcherRecord, type WatcherRecord } from '../../shared/watcher'
+import { migrateWatcherRecord } from './watcherRecords'
 
 /** One shared empty array stands in for every shell thread's history; the clone that follows copies nothing. */
 const EMPTY_MESSAGES: AgentMessage[] = []
@@ -95,7 +95,7 @@ function promptOf(command: DispatchCommand): PromptWithHandles | null {
 /** A draft saved without an image its window still showed: the text is kept, the image is not. */
 export const DRAFT_IMAGE_NOT_SAVED = 'An image in this draft is no longer kept, so the draft was saved without it. Your text was saved. Remove the image and attach it again.'
 const savedSchema = z.object({
-  commandCenter: z.preprocess(migrateCommandCenterRecord, commandCenterRecordSchema),
+  watcher: z.preprocess(migrateWatcherRecord, watcherRecordSchema),
   providerUpgrade: providerUpgradeSchema.nullable().default(null),
   configuration: z.preprocess(value => typeof value === 'object' && value !== null
     ? { ...defaultAgentConfiguration(), ...stripRetiredEndpoint(value) } : value, agentConfigurationSchema),
@@ -241,7 +241,7 @@ export class AgentControl {
   private readonly pumping = new Set<string>()
   private state: AgentState
   private outbox: Saved['outbox'] = []
-  private commandCenter: CommandCenterRecord = emptyCommandCenterRecord()
+  private watcher: WatcherRecord = emptyWatcherRecord()
   private readonly store: AtomicJsonStore<Saved>
   private persistedDrafts = new Map<string, string>()
   /** Clients may retire their recovery copy only after this exact obsolete-ID snapshot reaches disk. */
@@ -429,8 +429,8 @@ export class AgentControl {
     this.persistedDrafts = this.draftSignatures(images.threadDrafts)
     this.persistedObsoleteDrafts = saved.obsoleteDrafts
     await this.attachmentPreviews.load(this.stageInline)
-    const { outbox, manualDraftId, deliveredPromptDigests, answeredRequests, finishedUnread, commandCenter, ...restored } = saved
-    this.commandCenter = commandCenter
+    const { outbox, manualDraftId, deliveredPromptDigests, answeredRequests, finishedUnread, watcher, ...restored } = saved
+    this.watcher = watcher
     this.finishedUnread.restore(finishedUnread)
     this.deliveredPromptDigests = deliveredPromptDigests
     this.answeredRequests = answeredRequests
@@ -806,7 +806,7 @@ export class AgentControl {
   private savedOverLiveState(): Saved {
     this.syncLegacyDraft()
     const { configuration, activeThreadId, activeProjectId, draft, draftThreadId, draftRequestId, composing } = this.state
-    return { configuration, commandCenter: this.commandCenter, providerUpgrade: this.state.providerUpgrade ?? null,
+    return { configuration, watcher: this.watcher, providerUpgrade: this.state.providerUpgrade ?? null,
       activeThreadId, activeProjectId, draft, draftThreadId, draftRequestId, draftAttachments: this.state.draftAttachments ?? [], composing,
       outbox: this.outbox, manualDraftId: this.manualDraftId, deliveredDrafts: this.state.deliveredDrafts ?? [],
       obsoleteDrafts: this.state.obsoleteDrafts ?? [],

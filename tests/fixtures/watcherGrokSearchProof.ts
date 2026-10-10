@@ -1,5 +1,5 @@
 /** ACP explicitly identifies a search even when its display title or output omits matching lines. */
-export function commandCenterGrokSearchProof(updates: Record<string, unknown>[], filename: string, pattern: string): boolean {
+export function watcherGrokSearchProof(updates: Record<string, unknown>[], filename: string, pattern: string): boolean {
   const lastPrompt = updates.findLastIndex(update => update.sessionUpdate === 'user_message_chunk')
   if (lastPrompt < 0) return false
   const rows = new Map<string, Record<string, unknown>>()

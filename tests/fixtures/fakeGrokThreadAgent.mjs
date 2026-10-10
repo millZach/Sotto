@@ -106,7 +106,7 @@ record({ method: 'fixture/process', params: { pid: process.pid, version: startup
 const defaultCatalog = { currentModelId: 'fixture-model', availableModels: [{ modelId: 'fixture-model', name: 'Fixture Grok', _meta: { supportsReasoningEffort: true, reasoningEffort: 'high', reasoningEfforts: [{ id: 'high' }] } }] }
 // script.json may carry a whole catalog, so a case can reproduce Grok's own highest-first level list.
 const catalogOf = script => script.catalog ?? defaultCatalog
-// Command-center model changes report the session's confirmed selection on load; ordinary fixture behavior stays intact.
+// Watcher model changes report the session's confirmed selection on load; ordinary fixture behavior stays intact.
 function sessionCatalog(script, session) {
  const catalog = catalogOf(script)
  if (!session?.systemPromptOverride || !session.modelId || script.unconfirmedModel) return catalog

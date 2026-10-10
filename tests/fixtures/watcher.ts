@@ -1,5 +1,5 @@
-import { COMMAND_CENTER_GROUPS } from '../../src/shared/commandCenterOverview'
-import { emptyCommandCenterRecord, type CommandCenterRecord, type CommandCenterToolName } from '../../src/shared/commandCenter'
+import { WATCHER_GROUPS } from '../../src/shared/watcherOverview'
+import { emptyWatcherRecord, type WatcherRecord, type WatcherToolName } from '../../src/shared/watcher'
 
 export const centerHostId = '11111111-1111-4111-8111-111111111111'
 export const centerRequestId = '22222222-2222-4222-8222-222222222222'
@@ -18,12 +18,12 @@ const permission = { kind: 'runtime', mode: 'approval-required' }
 const workingCopy = { kind: 'shared' }
 
 /** Concrete, non-authoritative examples for consumers developing before the runtime tickets. */
-export const commandCenterToolFixtures: Record<CommandCenterToolName, { input: unknown; output: unknown }> = {
+export const watcherToolFixtures: Record<WatcherToolName, { input: unknown; output: unknown }> = {
   list_threads: { input: {}, output: { status: 'ok', rows: [{ target: centerTarget, title: 'Worker', projectId: 'project', provider: 'codex', modelId: 'model',
     status: 'idle', group: 'Idle', waitsOn: [{ id: 'question', kind: 'question', label: 'Choose a scope', openTarget: centerTarget }],
     branch: null, workingCopy, pullRequests: [], evidence: [], lastActivityAt: centerTime, observedAt: centerTime, connected: true, freshness: 'fresh',
-    userReadAt: null, commandCenterReadAt: null, participation: [], protected: false }],
-    snapshotRevision: 'snapshot-1', counts: Object.fromEntries(COMMAND_CENTER_GROUPS.map(group => [group, group === 'Idle' ? 1 : 0])), ...page } },
+    userReadAt: null, watcherReadAt: null, participation: [], protected: false }],
+    snapshotRevision: 'snapshot-1', counts: Object.fromEntries(WATCHER_GROUPS.map(group => [group, group === 'Idle' ? 1 : 0])), ...page } },
   read_thread: { input: { target: centerTarget }, output: { status: 'ok', target: centerTarget,
     messages: [{ id: 'message', position: 1, role: 'assistant', text: 'Done', createdAt: centerTime }], waitsOn: [], activities: [], evidence: [],
     historyEpoch: 'epoch-0', firstPosition: 1, lastPosition: 1, nextPosition: 1, truncated: false, earlierAvailable: false, observedAt: centerTime } },
@@ -41,12 +41,12 @@ export const commandCenterToolFixtures: Record<CommandCenterToolName, { input: u
   read_operation: { input: { operationId: centerOperationId }, output: { status: 'ok', receipt, limits, action: 'send', state } },
 }
 
-export function commandCenterRecordFixture(): CommandCenterRecord {
-  const record = emptyCommandCenterRecord()
+export function watcherRecordFixture(): WatcherRecord {
+  const record = emptyWatcherRecord()
   record.current = { target: { hostId: centerHostId, threadId: 'center' }, projectId: 'center-project', provider: 'codex',
     creationOperationId: centerOperationId, createdAt: centerTime }
-  record.requests = [{ id: centerRequestId, commandCenter: record.current.target, rootUserMessageId: 'root-message', state: 'active', createdAt: centerTime,
-    closedAt: null, participants: [{ target: centerTarget, requestId: centerRequestId, startedBy: 'command-center', generation: 0, state: 'participating', promptCount: 1 }] }]
+  record.requests = [{ id: centerRequestId, watcher: record.current.target, rootUserMessageId: 'root-message', state: 'active', createdAt: centerTime,
+    closedAt: null, participants: [{ target: centerTarget, requestId: centerRequestId, startedBy: 'watcher', generation: 0, state: 'participating', promptCount: 1 }] }]
   record.operations = [{ id: centerOperationId, requestId: centerRequestId, retryKey: centerRetryKey, digest: 'a'.repeat(64), action: 'send', target: centerTarget,
     generation: 0, delivery: 'now', deliveryState: 'uncertain', createdAt: centerTime, updatedAt: centerTime, receiptId: 'receipt', cardId: 'card', messageId: 'message' }]
   record.reservations = [{ target: centerTarget, requestId: centerRequestId, operationId: centerOperationId, generation: 0, reason: 'uncertain' }]

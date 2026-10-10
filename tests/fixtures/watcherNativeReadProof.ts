@@ -1,7 +1,7 @@
 import type { AgentActivity } from '../../src/shared/agentActivity'
 
 /** Inspect native activity in memory; evidence contains only the returned booleans. */
-export function commandCenterNativeReadProof(activities: AgentActivity[], previousIds: Set<string>, filename: string, marker: string): { read: boolean; search: boolean } {
+export function watcherNativeReadProof(activities: AgentActivity[], previousIds: Set<string>, filename: string, marker: string): { read: boolean; search: boolean } {
   let read = false, search = false
   for (const activity of activities) {
     if (previousIds.has(activity.id) || !['command', 'tool'].includes(activity.kind) || activity.status !== 'completed' || activity.exitCode !== undefined && activity.exitCode !== 0 || activity.error) continue

@@ -18,18 +18,18 @@ import type { ThreadEvent } from '../../shared/threadEvents'
 export interface PromptImage extends AgentAttachmentHandle { read(): Promise<Uint8Array> }
 
 /** Internal capability supplied by main's durable identity, never part of a command or runtime mode. */
-export interface CommandCenterLaunchProfile {
-  readonly kind: 'command-center'
+export interface WatcherLaunchProfile {
+  readonly kind: 'watcher'
   readonly server: Readonly<Omit<ThreadMcpServer, 'headers'>> & { readonly headers: readonly Readonly<{ name: string; value: string }>[] }
   readonly toolNames: readonly string[]
   /** Revokes this session's server admission; recovery requires a fresh admission. */
   revoke(reason: string): void
 }
 export interface ThreadLaunchProfiles {
-  profileFor(threadId: string): Promise<CommandCenterLaunchProfile | undefined>
+  profileFor(threadId: string): Promise<WatcherLaunchProfile | undefined>
 }
 /** Ticket 3 supplies the server; ticket 2 consumes only this thread-bound capability. */
-export interface CommandCenterProfileTools extends ScopedThreadTools { revoke(threadId: string): void }
+export interface WatcherProfileTools extends ScopedThreadTools { revoke(threadId: string): void }
 
 export type AgentHostCommand =
   | { readonly type: 'create-project'; readonly provider?: ProviderId; readonly commandId: string; readonly projectId: string; readonly title: string; readonly path: string }
@@ -165,7 +165,7 @@ export interface ActivitySubscriptionOptions {
 export interface AgentHost {
   /** Main-only launch capabilities. Wrappers translate identity before handing them to an adapter. */
   useLaunchProfiles?(profiles: ThreadLaunchProfiles): void
-  useCommandCenterTools?(tools: CommandCenterProfileTools): void
+  useWatcherTools?(tools: WatcherProfileTools): void
   /** Capture the owned runtime before main checks identity. A refusal cannot close its replacement. */
   profileRefusalHandler?(threadId: string): ((reason: string) => void | Promise<void>) | undefined
   /** Inject shared browser tools before connecting the native providers. */

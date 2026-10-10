@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { AgentHost, AgentHostResult } from '../../src/main/agents/host'
 
 /** Count only replies to this thread's held card. Keep wire IDs in memory, never record frames. */
-export function observeCommandCenterLivePermissionAnswers(host: AgentHost, provider: 'codex' | 'claude' | 'grok', id: string, answered: () => void): void {
+export function observeWatcherLivePermissionAnswers(host: AgentHost, provider: 'codex' | 'claude' | 'grok', id: string, answered: () => void): void {
   type Wire = { write(frame: unknown): unknown; answer?(id: string | number, result: unknown): Promise<void>; reply?(id: string | number, result: unknown): Promise<void> }
   const wrap = (wire: Wire, ids: Set<string | number>) => {
     const write = wire.write.bind(wire)
@@ -43,7 +43,7 @@ export function observeCommandCenterLivePermissionAnswers(host: AgentHost, provi
  * without a permission reply, including during subsequent disconnect cleanup.
  * This changes no production permission or interruption behavior.
  */
-export async function interruptCommandCenterLiveTurn(host: AgentHost, provider: 'codex' | 'claude' | 'grok', id: string): Promise<AgentHostResult> {
+export async function interruptWatcherLiveTurn(host: AgentHost, provider: 'codex' | 'claude' | 'grok', id: string): Promise<AgentHostResult> {
   if (provider === 'codex') {
     const native = host as unknown as { requests: Map<string, { sessionId: string }>; removeRequest(id: string): void }
     for (const [requestId, pending] of native.requests) if (pending.sessionId === id) native.removeRequest(requestId)

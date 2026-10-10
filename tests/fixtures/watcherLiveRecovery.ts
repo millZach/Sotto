@@ -5,7 +5,7 @@ import { z } from 'zod'
 import type { CodexAppServerHost } from '../../src/main/agents/codex'
 
 /** Recover only the same synthetic native session after the old harness removed fixture metadata. */
-export async function recoverCommandCenterLiveCodex(host: CodexAppServerHost, options: {
+export async function recoverWatcherLiveCodex(host: CodexAppServerHost, options: {
   date: string; data: string; id: string; projectId: string; modelId: string; prefix: string; sentinel: string; marker: string
 }): Promise<string> {
   const native = host as unknown as { rpc(method: string, params: unknown, apply: (value: unknown) => void): Promise<void> }

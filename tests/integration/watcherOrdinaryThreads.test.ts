@@ -5,11 +5,11 @@ import * as fs from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentHostSnapshot, AgentThread } from '../../src/shared/agents'
-import { CommandCenterLaunchProfiles } from '../../src/main/agents/commandCenterLaunchProfiles'
+import { WatcherLaunchProfiles } from '../../src/main/agents/watcherLaunchProfiles'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
 import { ConfiguredProviderHost } from '../../src/main/agents/providerSwitch'
 import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
-import { emptyCommandCenterRecord } from '../../src/shared/commandCenter'
+import { emptyWatcherRecord } from '../../src/shared/watcher'
 import { FakeProviderHost } from '../fixtures/fakeProviderHost'
 import { claudeFixture } from '../fixtures/claudeFixture'
 import { codexFixture } from '../fixtures/codexFixture'
@@ -55,7 +55,7 @@ for (const provider of ['claude', 'codex', 'grok', 'devin'] as const) describe(`
   it.each(['corrupt', 'invalid record', 'unreadable'] as const)('keeps ordinary launch and permission cards with %s identity', async failure => {
     const f = await factories[provider](); cleanups.push(f.cleanup)
     const path = join(f.root, 'agents.json')
-    await fs.writeFile(path, failure === 'corrupt' ? '{' : failure === 'invalid record' ? '{"commandCenter":{"version":999}}' : '{}')
+    await fs.writeFile(path, failure === 'corrupt' ? '{' : failure === 'invalid record' ? '{"watcher":{"version":999}}' : '{}')
     if (failure === 'unreadable') {
       const read = fs.readFile
       vi.spyOn(fs, 'readFile').mockImplementation((...args: Parameters<typeof fs.readFile>) => {
@@ -64,8 +64,8 @@ for (const provider of ['claude', 'codex', 'grok', 'devin'] as const) describe(`
       })
     }
     const hostId = randomUUID(), threadId = randomUUID(), master = randomUUID()
-    const source = new CommandCenterLaunchProfiles(f.root, () => hostId, id => ({ id, hostId,
-      kind: id === master ? 'command-center' : 'project', providerId: provider, projectId: f.projectId,
+    const source = new WatcherLaunchProfiles(f.root, () => hostId, id => ({ id, hostId,
+      kind: id === master ? 'watcher' : 'project', providerId: provider, projectId: f.projectId,
       title: 'Fixture', modelId: f.modelId, status: 'idle', messages: [], requests: [] } as AgentThread))
     f.host.useLaunchProfiles!(source)
     await f.host.connect()
@@ -76,8 +76,8 @@ for (const provider of ['claude', 'codex', 'grok', 'devin'] as const) describe(`
     await f.driver.raisePermission(threadId, 'Synthetic permission')
     await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === threadId)?.requests[0]?.kind).toBe('permission')
     const snapshot = await f.host.snapshot(), thread = snapshot.threads.find(thread => thread.id === threadId)!
-    expect(snapshot.error ?? '').not.toMatch(/command.center/iu)
-    expect(thread.requestNotice ?? '').not.toMatch(/command.center/iu)
+    expect(snapshot.error ?? '').not.toMatch(/Watcher/iu)
+    expect(thread.requestNotice ?? '').not.toMatch(/Watcher/iu)
     await expect(f.host.startThreadSession!(master, { modelId: f.modelId, workingDirectory: f.root })).rejects.toMatchObject({ code: 'READ_ONLY_PROFILE_UNAVAILABLE' })
   })
 
@@ -118,12 +118,12 @@ for (const provider of ['claude', 'codex', 'grok', 'devin'] as const) describe(`
     const adapterId = registry.byThread(threadId)!.sessionId, pid = await nativePid(provider, f, adapterId)
     expect(pid).toBeGreaterThan(0)
     expect(() => process.kill(pid, 0)).not.toThrow()
-    const record = emptyCommandCenterRecord()
+    const record = emptyWatcherRecord()
     record.current = { target: { hostId: host.workspaceSnapshot().threads.find(thread => thread.id === threadId)!.hostId!, threadId },
       projectId, provider: provider === 'devin' ? 'codex' : provider, creationOperationId: randomUUID(), createdAt: new Date().toISOString() }
-    await fs.writeFile(join(directory, 'agents.json'), JSON.stringify({ commandCenter: record }))
+    await fs.writeFile(join(directory, 'agents.json'), JSON.stringify({ watcher: record }))
     if (action === 'stale refusal') {
-      const profiles = (host as unknown as { launchProfiles: CommandCenterLaunchProfiles }).launchProfiles
+      const profiles = (host as unknown as { launchProfiles: WatcherLaunchProfiles }).launchProfiles
       const resolve = profiles.profileFor.bind(profiles)
       let first = true
       const { promise: waiting, resolve: entered } = deferred<void>()
@@ -189,10 +189,10 @@ it.each(['send', 'refresh', 'skills', 'short text', 'rollback'] as const)('stops
   expect(registry.byThread(threadId)?.provider).toBe('codex')
   const boundPid = await nativePid('codex', codex, registry.byThread(threadId)!.sessionId)
   expect(() => process.kill(earlyPid, 0)).not.toThrow()
-  const record = emptyCommandCenterRecord()
+  const record = emptyWatcherRecord()
   record.current = { target: { hostId: host.workspaceSnapshot().threads.find(thread => thread.id === threadId)!.hostId!, threadId },
     projectId, provider: 'codex', creationOperationId: randomUUID(), createdAt: new Date().toISOString() }
-  await fs.writeFile(join(directory, 'agents.json'), JSON.stringify({ commandCenter: record }))
+  await fs.writeFile(join(directory, 'agents.json'), JSON.stringify({ watcher: record }))
   const refused = action === 'send' ? host.execute({ type: 'send', commandId: randomUUID(), threadId, messageId: randomUUID(), text: 'Synthetic refused turn' })
     : action === 'refresh' ? host.refreshThread(threadId)
     : action === 'skills' ? host.listThreadSkills(threadId)
@@ -216,7 +216,7 @@ it('cancels a Claude early launch refused while its tool server is still startin
   await f.host.connect()
   const threadId = randomUUID(), hostId = randomUUID(), path = join(f.root, 'agents.json')
   await fs.writeFile(path, '{}')
-  f.host.useLaunchProfiles!(new CommandCenterLaunchProfiles(f.root, () => hostId, id => ({ id, hostId,
+  f.host.useLaunchProfiles!(new WatcherLaunchProfiles(f.root, () => hostId, id => ({ id, hostId,
     kind: 'project', providerId: 'claude', projectId: f.projectId, title: 'Fixture', modelId: f.modelId,
     status: 'idle', messages: [], requests: [] } as AgentThread)))
   const launches = (await f.driver.requests()).filter(request => ['launch', 'resume'].includes(request.method ?? ''))
@@ -225,10 +225,10 @@ it('cancels a Claude early launch refused while its tool server is still startin
   const starting = f.host.startThreadSession!(threadId, { modelId: f.modelId, workingDirectory: f.root })
   try {
     await waiting
-    const record = emptyCommandCenterRecord()
+    const record = emptyWatcherRecord()
     record.current = { target: { hostId, threadId }, projectId: f.projectId, provider: 'claude',
       creationOperationId: randomUUID(), createdAt: new Date().toISOString() }
-    await fs.writeFile(path, JSON.stringify({ commandCenter: record }))
+    await fs.writeFile(path, JSON.stringify({ watcher: record }))
     await expect(f.host.listThreadSkills!(threadId)).rejects.toMatchObject({ code: 'READ_ONLY_PROFILE_UNAVAILABLE' })
     release(); await starting
     expect((await f.driver.requests()).filter(request => ['launch', 'resume'].includes(request.method ?? ''))).toEqual(launches)

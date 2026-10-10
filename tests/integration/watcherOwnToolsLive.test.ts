@@ -1,5 +1,5 @@
 // @vitest-environment node
-// SOTTO_COMMAND_CENTER_LIVE=1 SOTTO_COMMAND_CENTER_PROVIDER=codex|claude|grok npx vitest run tests/integration/commandCenterOwnToolsLive.test.ts
+// SOTTO_WATCHER_LIVE=1 SOTTO_WATCHER_PROVIDER=codex|claude|grok npx vitest run tests/integration/watcherOwnToolsLive.test.ts
 import { randomUUID } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -11,21 +11,21 @@ import { z } from 'zod'
 import { CodexAppServerHost } from '../../src/main/agents/codex'
 import { ClaudeStreamJsonHost } from '../../src/main/agents/claude'
 import { GrokAcpHost } from '../../src/main/agents/grok'
-import { CommandCenterLaunchProfiles } from '../../src/main/agents/commandCenterLaunchProfiles'
+import { WatcherLaunchProfiles } from '../../src/main/agents/watcherLaunchProfiles'
 import { ThreadToolServer } from '../../src/main/agents/threadToolServer'
 import type { AgentHost } from '../../src/main/agents/host'
 import type { AgentHostSnapshot, AgentThread } from '../../src/shared/agents'
-import { commandCenterToolSchemas, emptyCommandCenterRecord } from '../../src/shared/commandCenter'
-import { interruptCommandCenterLiveTurn, observeCommandCenterLivePermissionAnswers } from '../fixtures/commandCenterLiveInterrupt'
+import { watcherToolSchemas, emptyWatcherRecord } from '../../src/shared/watcher'
+import { interruptWatcherLiveTurn, observeWatcherLivePermissionAnswers } from '../fixtures/watcherLiveInterrupt'
 import { CodexProcess } from '../../src/main/agents/codexProcess'
-import { commandCenterNativeReadProof } from '../fixtures/commandCenterNativeReadProof'
-import { commandCenterGrokSearchProof } from '../fixtures/commandCenterGrokSearchProof'
-import { recoverCommandCenterLiveCodex } from '../fixtures/commandCenterLiveRecovery'
-import { CODEX_SANDBOX_WRITE_DENIED, codexSandboxWriteProbe } from '../../src/main/agents/commandCenterCodexSandbox'
+import { watcherNativeReadProof } from '../fixtures/watcherNativeReadProof'
+import { watcherGrokSearchProof } from '../fixtures/watcherGrokSearchProof'
+import { recoverWatcherLiveCodex } from '../fixtures/watcherLiveRecovery'
+import { CODEX_SANDBOX_WRITE_DENIED, codexSandboxWriteProbe } from '../../src/main/agents/watcherCodexSandbox'
 
-const provider = process.env.SOTTO_COMMAND_CENTER_PROVIDER
-const enabled = process.env.SOTTO_COMMAND_CENTER_LIVE === '1' && !process.env.CI && ['codex', 'claude', 'grok'].includes(provider ?? '')
-const PREFIX = 'sotto-command-center-own-tools-'
+const provider = process.env.SOTTO_WATCHER_PROVIDER
+const enabled = process.env.SOTTO_WATCHER_LIVE === '1' && !process.env.CI && ['codex', 'claude', 'grok'].includes(provider ?? '')
+const PREFIX = 'sotto-watcher-own-tools-'
 const SENTINEL = 'SENTINEL_UNCHANGED\r\n'
 const READ_MARKER = 'native_read_6fd47c92'
 const exec = promisify(execFile)
@@ -47,18 +47,18 @@ const wait = async (check: () => boolean, deadlineMs = 120_000): Promise<void> =
   }
 }
 
-it.skipIf(!enabled)('checks four command-center turns with native tools and user-only permission cards', async () => {
+it.skipIf(!enabled)('checks four watcher turns with native tools and user-only permission cards', async () => {
   let freeMemoryKB: number | null = null
   if (process.platform === 'win32') {
     const memory = await exec('powershell.exe', ['-NoProfile', '-Command', '(Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory'], { windowsHide: true })
     freeMemoryKB = Number(memory.stdout.trim())
     expect(freeMemoryKB).toBeGreaterThanOrEqual(3 * 1024 * 1024)
   }
-  const output = resolve('artifacts/command-center-own-tools-live')
+  const output = resolve('artifacts/watcher-own-tools-live')
   const prior = await readFile(join(output, `${provider}.json`), 'utf8').then(text => JSON.parse(text) as { date: string; turnsSubmitted: number; turnsCompleted?: number; checks?: { name: string; passed: boolean }[]; cardsSeen?: number; answersSent?: number; sandboxProbes?: { launch: number; readSucceeded?: boolean; writeRefused?: boolean; readExitCode?: number; writeExitCode?: number }[] }, error => { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined; throw error })
   const checkpointSchema = z.object({ root: z.string(), project: z.string(), id: z.uuid(), projectId: z.uuid(), hostId: z.uuid(), metadataReconstructed: z.boolean() })
   const checkpoint = await readFile(join(output, `${provider}-fixture.json`), 'utf8').then(text => checkpointSchema.parse(JSON.parse(text)), error => { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined; throw error })
-  const recovering = process.env.SOTTO_COMMAND_CENTER_RESUME === '1' && (prior?.turnsSubmitted === 3 || prior?.turnsSubmitted === 2 && provider === 'grok') && (!!checkpoint || provider === 'codex')
+  const recovering = process.env.SOTTO_WATCHER_RESUME === '1' && (prior?.turnsSubmitted === 3 || prior?.turnsSubmitted === 2 && provider === 'grok') && (!!checkpoint || provider === 'codex')
   const recoverNative = recovering && !checkpoint
   if (prior?.turnsSubmitted && !recovering) throw new Error('live-budget-already-used: keep the evidence and resume only remaining turns; do not restart this four-turn check')
   const root = checkpoint?.root ?? await mkdtemp(join(tmpdir(), PREFIX)), data = join(root, 'sotto')
@@ -104,7 +104,7 @@ it.skipIf(!enabled)('checks four command-center turns with native tools and user
   let calls = 0, unsubscribe: (() => void) | undefined, card: AgentThread['requests'][number] | undefined
   const tools = new ThreadToolServer({ name: 'sotto_threads', serverName: 'sotto_threads', instructions: 'Call list_threads to read the synthetic thread roster.',
     unavailable: 'Synthetic tools unavailable.', failed: 'Synthetic tool failed.' },
-  [{ name: 'list_threads', description: 'Read a fixed empty thread roster.', inputSchema: z.toJSONSchema(commandCenterToolSchemas.list_threads.input) }],
+  [{ name: 'list_threads', description: 'Read a fixed empty thread roster.', inputSchema: z.toJSONSchema(watcherToolSchemas.list_threads.input) }],
   async threadId => {
     if (threadId !== id) return { isError: true, content: [] }
     calls++
@@ -117,8 +117,8 @@ it.skipIf(!enabled)('checks four command-center turns with native tools and user
   const current = () => snapshot?.threads.find(thread => thread.id === id)
   const mark = (name: string, passed: boolean) => { checks.push({ name, passed }); if (!passed) throw new Error(name) }
   const attach = () => {
-    const profiles = new CommandCenterLaunchProfiles(data, () => hostId, threadId => threadId === id ? {
-      id, hostId, projectId, providerId: provider, kind: 'command-center', modelId: current()?.modelId ?? '', title: 'Synthetic center', status: 'idle', messages: [], requests: [],
+    const profiles = new WatcherLaunchProfiles(data, () => hostId, threadId => threadId === id ? {
+      id, hostId, projectId, providerId: provider, kind: 'watcher', modelId: current()?.modelId ?? '', title: 'Synthetic center', status: 'idle', messages: [], requests: [],
     } as AgentThread : undefined)
     profiles.useTools({ name: 'sotto_threads', definitions: tools.definitions, mcpServer: threadId => tools.mcpServer(threadId), revoke: threadId => tools.revoke(threadId) })
     host.useLaunchProfiles!(profiles)
@@ -143,9 +143,9 @@ it.skipIf(!enabled)('checks four command-center turns with native tools and user
     await wait(() => !!card || sent && current()?.lastTurn?.id !== previousTurn && current()?.lastTurn?.status !== 'running' && current()?.status !== 'running')
     if (expectsCard) {
       mark('edit-permission-card', (card as AgentThread['requests'][number] | undefined)?.kind === 'permission')
-      observeCommandCenterLivePermissionAnswers(host, provider as 'codex' | 'claude' | 'grok', id, () => { evidence.answersSent++ })
+      observeWatcherLivePermissionAnswers(host, provider as 'codex' | 'claude' | 'grok', id, () => { evidence.answersSent++ })
       // Interrupt, never answer or decline the request. No answer command exists in this harness.
-      await interruptCommandCenterLiveTurn(host, provider as 'codex' | 'claude' | 'grok', id)
+      await interruptWatcherLiveTurn(host, provider as 'codex' | 'claude' | 'grok', id)
       await wait(() => current()?.status !== 'running', 30_000)
       const result = await sending
       mark(`${phase}-accepted`, result.accepted || !!card)
@@ -173,7 +173,7 @@ it.skipIf(!enabled)('checks four command-center turns with native tools and user
         updates.push(...page.updates.map(entry => entry.params.update))
         more = page.hasMore
       })
-      evidence.nativeSearchProofFromProtocol = commandCenterGrokSearchProof(updates, 'source.txt', 'native_read_')
+      evidence.nativeSearchProofFromProtocol = watcherGrokSearchProof(updates, 'source.txt', 'native_read_')
       const rows = new Map<string, Record<string, unknown>>()
       for (const update of updates.slice(updates.findLastIndex(update => update.sessionUpdate === 'user_message_chunk') + 1)) {
         if (typeof update.toolCallId !== 'string') continue
@@ -184,7 +184,7 @@ it.skipIf(!enabled)('checks four command-center turns with native tools and user
         return { nativeSearchKind: row.kind === 'search', nativeReadKind: row.kind === 'read', sourceInput: input?.includes('source.txt') === true, patternInput: input?.includes('native_read_') === true, completed: row.status === 'completed', knownSearchTitle: /^(?:grep(?:_search|\b)|search(?:_files|_file_contents|\b)|text_search\b|ripgrep\b)/iu.test(title), globTitle: /^glob\b/iu.test(title), genericTitle: title === 'Tool' || !title }
       })
     }
-    evidence.nativeReadProof = commandCenterNativeReadProof(current()?.activities ?? [], previousIds, 'source.txt', READ_MARKER)
+    evidence.nativeReadProof = watcherNativeReadProof(current()?.activities ?? [], previousIds, 'source.txt', READ_MARKER)
     evidence.nativeReadProof.search ||= evidence.nativeSearchProofFromProtocol
     return evidence.nativeReadProof
   }
@@ -195,14 +195,14 @@ it.skipIf(!enabled)('checks four command-center turns with native tools and user
     evidence.version = connected.version.match(/\d+\.\d+\.\d+/u)?.[0] ?? 'unreported'
     const model = connected.models.find(model => model.ready)
     mark('native-model-available', !!model)
-    const record = emptyCommandCenterRecord()
+    const record = emptyWatcherRecord()
     record.current = { target: { hostId, threadId: id }, provider: provider as 'codex' | 'claude' | 'grok', projectId, creationOperationId: randomUUID(), createdAt: new Date().toISOString() }
-    await writeFile(join(data, 'agents.json'), JSON.stringify({ commandCenter: record }))
+    await writeFile(join(data, 'agents.json'), JSON.stringify({ watcher: record }))
     if (recovering) {
       const required = ['scoped-tool-called', 'native-read-search-no-card', 'native-read-content', 'native-read-tool-observed', 'no-native-permission-answers']
       if (prior!.turnsSubmitted === 3) required.push('native-search-tool-observed', 'edit-permission-card', 'sentinel-unchanged-after-interrupt')
       for (const name of required) mark(`recovery-${name}`, prior!.checks!.some(check => check.name === name && check.passed))
-      if (recoverNative) project = await recoverCommandCenterLiveCodex(host as CodexAppServerHost, { date: prior!.date, data, id, projectId, modelId: model!.id, prefix: PREFIX, sentinel: SENTINEL, marker: READ_MARKER })
+      if (recoverNative) project = await recoverWatcherLiveCodex(host as CodexAppServerHost, { date: prior!.date, data, id, projectId, modelId: model!.id, prefix: PREFIX, sentinel: SENTINEL, marker: READ_MARKER })
       evidence.sameNativeSession = true
     } else {
       await host.execute({ type: 'create-project', commandId: randomUUID(), projectId, title: 'Synthetic live project', path: project })
@@ -268,8 +268,8 @@ it.skipIf(!enabled)('checks four command-center turns with native tools and user
     if (!checks.some(check => !check.passed)) checks.push({ name: `${phase}-finished`, passed: false })
   } finally {
     if (host! && current()?.requests.length) {
-      observeCommandCenterLivePermissionAnswers(host, provider as 'codex' | 'claude' | 'grok', id, () => { evidence.answersSent++ })
-      await interruptCommandCenterLiveTurn(host, provider as 'codex' | 'claude' | 'grok', id).catch(() => undefined)
+      observeWatcherLivePermissionAnswers(host, provider as 'codex' | 'claude' | 'grok', id, () => { evidence.answersSent++ })
+      await interruptWatcherLiveTurn(host, provider as 'codex' | 'claude' | 'grok', id).catch(() => undefined)
     }
     let unchanged = false, fixtureReadable = true
     try { unchanged = await sentinelUnchanged() } catch { fixtureReadable = false }

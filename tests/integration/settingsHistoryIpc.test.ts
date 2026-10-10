@@ -177,20 +177,20 @@ describe('IPC validation and lifecycle', () => {
       expect(settings.update).toHaveBeenCalledExactlyOnceWith({ babysitPullRequests: false })
     })
 
-  it('saves command-center capacity through the allow-list and reads back the saved value', async () => {
+  it('saves watcher capacity through the allow-list and reads back the saved value', async () => {
     const { ipc, settings } = createIpcHarness()
-    const root = await mkdtemp(join(tmpdir(), 'sotto-command-center-setting-'))
+    const root = await mkdtemp(join(tmpdir(), 'sotto-watcher-setting-'))
     try {
       const path = join(root, 'settings.json')
       const repository = new SettingsRepository(path)
       settings.update.mockImplementation(patch => repository.update(patch))
       settings.get.mockImplementation(() => repository.get())
-      await expect(ipc.invoke(SETTINGS_UPDATE, { commandCenterInFlightLimit: 7 })).resolves.toMatchObject({ commandCenterInFlightLimit: 7 })
-      expect(settings.update).toHaveBeenCalledExactlyOnceWith({ commandCenterInFlightLimit: 7 })
-      await expect(ipc.invokeArgs(SETTINGS_GET, [])).resolves.toMatchObject({ commandCenterInFlightLimit: 7 })
-      await expect(new SettingsRepository(path).get()).resolves.toMatchObject({ commandCenterInFlightLimit: 7 })
-      for (const commandCenterInFlightLimit of [0, 9, 2.5, '4']) {
-        await expect(ipc.invoke(SETTINGS_UPDATE, { commandCenterInFlightLimit })).rejects.toThrow('Invalid IPC payload')
+      await expect(ipc.invoke(SETTINGS_UPDATE, { watcherInFlightLimit: 7 })).resolves.toMatchObject({ watcherInFlightLimit: 7 })
+      expect(settings.update).toHaveBeenCalledExactlyOnceWith({ watcherInFlightLimit: 7 })
+      await expect(ipc.invokeArgs(SETTINGS_GET, [])).resolves.toMatchObject({ watcherInFlightLimit: 7 })
+      await expect(new SettingsRepository(path).get()).resolves.toMatchObject({ watcherInFlightLimit: 7 })
+      for (const watcherInFlightLimit of [0, 9, 2.5, '4']) {
+        await expect(ipc.invoke(SETTINGS_UPDATE, { watcherInFlightLimit })).rejects.toThrow('Invalid IPC payload')
       }
       expect(settings.update).toHaveBeenCalledTimes(1)
     } finally {

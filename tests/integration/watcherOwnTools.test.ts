@@ -3,17 +3,17 @@ import { randomUUID } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { CommandCenterLaunchProfiles } from '../../src/main/agents/commandCenterLaunchProfiles'
-import { COMMAND_CENTER_SYSTEM_PROMPT } from '../../src/main/agents/commandCenterPrompt'
-import type { AgentHost, CommandCenterProfileTools } from '../../src/main/agents/host'
+import { WatcherLaunchProfiles } from '../../src/main/agents/watcherLaunchProfiles'
+import { WATCHER_SYSTEM_PROMPT } from '../../src/main/agents/watcherPrompt'
+import type { AgentHost, WatcherProfileTools } from '../../src/main/agents/host'
 import type { ScopedThreadTools } from '../../src/main/agents/threadToolServer'
 import type { AgentThread } from '../../src/shared/agents'
-import { emptyCommandCenterRecord } from '../../src/shared/commandCenter'
+import { emptyWatcherRecord } from '../../src/shared/watcher'
 import { claudeFixture } from '../fixtures/claudeFixture'
 import { codexFixture } from '../fixtures/codexFixture'
 import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
 import { devinFixture } from '../fixtures/devinFixture'
-import { interruptCommandCenterLiveTurn, observeCommandCenterLivePermissionAnswers } from '../fixtures/commandCenterLiveInterrupt'
+import { interruptWatcherLiveTurn, observeWatcherLivePermissionAnswers } from '../fixtures/watcherLiveInterrupt'
 import type { RecordedRpc } from '../fixtures/adapterFixture'
 
 const cleanups: (() => Promise<void>)[] = []
@@ -35,13 +35,13 @@ async function seedModels(root: string, provider: keyof typeof factories, update
   } : { ...(updated ? { cliVersion: '1.0.41' } : {}), catalog: { currentModelId: ids[0], availableModels: ids.map(modelId => ({ modelId, name: modelId, _meta: { reasoningEffort: 'high', supportsReasoningEffort: true, reasoningEfforts: [{ id: 'high' }] } })) } }))
 }
 async function attach(host: AgentHost, root: string, threadId: string, projectId: string, provider: 'codex' | 'claude' | 'grok') {
-  const record = emptyCommandCenterRecord(), hostId = randomUUID()
+  const record = emptyWatcherRecord(), hostId = randomUUID()
   record.current = { target: { hostId, threadId }, projectId, provider, creationOperationId: randomUUID(), createdAt: new Date().toISOString() }
-  await writeFile(join(root, 'agents.json'), JSON.stringify({ commandCenter: record }))
-  const source = new CommandCenterLaunchProfiles(root, () => hostId, id => id === threadId ? {
-    id, hostId, projectId, providerId: provider, kind: 'command-center', title: 'Center', modelId: 'fixture-model', status: 'idle', messages: [], requests: [],
+  await writeFile(join(root, 'agents.json'), JSON.stringify({ watcher: record }))
+  const source = new WatcherLaunchProfiles(root, () => hostId, id => id === threadId ? {
+    id, hostId, projectId, providerId: provider, kind: 'watcher', title: 'Center', modelId: 'fixture-model', status: 'idle', messages: [], requests: [],
   } as AgentThread : undefined)
-  const tools: CommandCenterProfileTools = { ...scoped('sotto_threads'), definitions: [{ name: 'list_threads', description: 'Synthetic', inputSchema: {} }], revoke: vi.fn() }
+  const tools: WatcherProfileTools = { ...scoped('sotto_threads'), definitions: [{ name: 'list_threads', description: 'Synthetic', inputSchema: {} }], revoke: vi.fn() }
   source.useTools(tools); host.useLaunchProfiles!(source)
   host.useThreadTools!(['sotto_visual', 'sotto_pull_requests', 'sotto_host_setup', 'sotto_browser'].map(scoped))
   host.useBrowserTools!({ call: async () => ({ content: [] }), definitions: [], mcpServer: vi.fn(async () => { throw new Error('The center must not attach browser tools') }) })
@@ -53,7 +53,7 @@ function assertConfiguration(provider: keyof typeof factories, records: Recorded
     expect(launches.length).toBeGreaterThan(0)
     for (const { params } of launches) {
       expect(params).toMatchObject({ approvalPolicy: 'on-request', approvalsReviewer: 'user', sandbox: 'read-only',
-        developerInstructions: expect.stringContaining(COMMAND_CENTER_SYSTEM_PROMPT) })
+        developerInstructions: expect.stringContaining(WATCHER_SYSTEM_PROMPT) })
       expect(params!.developerInstructions).toContain('Synthetic project developer instructions')
       const config = params!.config as { mcp_servers: Record<string, unknown> }
       if (process.platform === 'win32') expect(config).toHaveProperty('windows.sandbox', 'unelevated')
@@ -69,7 +69,7 @@ function assertConfiguration(provider: keyof typeof factories, records: Recorded
     for (const record of launches) {
       const args = (record.params!.frame as { args: string[] }).args
       if (args.includes('--no-session-persistence')) continue
-      expect(flag(args, '--append-system-prompt')).toBe(COMMAND_CENTER_SYSTEM_PROMPT)
+      expect(flag(args, '--append-system-prompt')).toBe(WATCHER_SYSTEM_PROMPT)
       expect(flag(args, '--permission-mode')).toBe('manual')
       expect(flag(args, '--permission-prompts')).toBe('host')
       expect(args).toContain('mcp__sotto_threads__list_threads')
@@ -77,14 +77,14 @@ function assertConfiguration(provider: keyof typeof factories, records: Recorded
       expect(args).toContain('mcp__sotto_pull_requests__fixture_tool')
       for (const denied of ['--tools', '--safe-mode', '--restricted', '--strict-mcp-config', '--setting-sources']) expect(args).not.toContain(denied)
     }
-    for (const record of records.filter(record => record.method === 'command-center-launch')) {
+    for (const record of records.filter(record => record.method === 'watcher-launch')) {
       expect((record.params!.frame as { serverNames: string[] }).serverNames.sort()).toEqual([...names].sort())
     }
   } else {
     const launches = records.filter(record => ['session/new', 'session/load'].includes(record.method ?? ''))
     expect(launches.length).toBeGreaterThan(0)
     for (const { params } of launches) {
-      expect(params!._meta).toEqual({ yoloMode: false, autoMode: false, systemPromptOverride: COMMAND_CENTER_SYSTEM_PROMPT })
+      expect(params!._meta).toEqual({ yoloMode: false, autoMode: false, systemPromptOverride: WATCHER_SYSTEM_PROMPT })
       expect((params!.mcpServers as { name: string }[]).map(server => server.name).sort()).toEqual([...names].sort())
     }
     for (const record of records.filter(record => record.method === 'fixture/process')) {
@@ -95,7 +95,7 @@ function assertConfiguration(provider: keyof typeof factories, records: Recorded
   }
 }
 
-for (const provider of Object.keys(factories) as (keyof typeof factories)[]) describe(`${provider} command-center own tools`, () => {
+for (const provider of Object.keys(factories) as (keyof typeof factories)[]) describe(`${provider} watcher own tools`, () => {
   it('keeps tools, asking mode and instructions through early start, send, settings, replacement and cold resume', async () => {
     const f = await factories[provider](); cleanups.push(f.cleanup)
     const id = randomUUID(), tools = await attach(f.host, f.root, id, f.projectId, provider)
@@ -121,9 +121,9 @@ for (const provider of Object.keys(factories) as (keyof typeof factories)[]) des
     await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === id)?.requests[0]?.kind).toBe('permission')
     expect(tools.revoke).not.toHaveBeenCalled()
     let permissionAnswers = 0
-    observeCommandCenterLivePermissionAnswers(f.adapter, provider, id, () => { permissionAnswers++ })
+    observeWatcherLivePermissionAnswers(f.adapter, provider, id, () => { permissionAnswers++ })
     const beforeInterrupt = (await f.driver.requests()).length
-    await interruptCommandCenterLiveTurn(f.adapter, provider, id)
+    await interruptWatcherLiveTurn(f.adapter, provider, id)
     f.host.disconnect(); await f.adapter.closed()
     expect(permissionAnswers).toBe(0)
     const interruptionTraffic = (await f.driver.requests()).slice(beforeInterrupt)
@@ -152,7 +152,7 @@ for (const provider of Object.keys(factories) as (keyof typeof factories)[]) des
 
 it('keeps Devin unavailable because its adapter cannot attach a scoped Sotto server', async () => {
   const f = await devinFixture(); cleanups.push(f.cleanup)
-  f.host.useLaunchProfiles!({ profileFor: async () => ({ kind: 'command-center', server: { name: 'sotto_threads', type: 'http', url: 'http://127.0.0.1:12345/mcp', headers: [] }, toolNames: ['list_threads'], revoke: vi.fn() }) })
+  f.host.useLaunchProfiles!({ profileFor: async () => ({ kind: 'watcher', server: { name: 'sotto_threads', type: 'http', url: 'http://127.0.0.1:12345/mcp', headers: [] }, toolNames: ['list_threads'], revoke: vi.fn() }) })
   await f.host.connect()
   await expect(f.host.startThreadSession!(randomUUID())).rejects.toThrow('Devin')
 })
@@ -212,7 +212,7 @@ for (const outcome of ['read-failed', 'write-allowed', 'setup-failed', 'unrelate
   const f = await codexFixture(undefined, false, 10_000); cleanups.push(f.cleanup)
   const id = randomUUID()
   await attach(f.host, f.root, id, f.projectId, 'codex')
-  await f.script({ commandCenterSandbox: outcome })
+  await f.script({ watcherSandbox: outcome })
   await f.host.connect()
   await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Synthetic', path: f.root })
   await expect(f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Center', modelId: f.modelId }))

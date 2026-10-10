@@ -207,16 +207,16 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
   }
   if (method === 'command/exec') {
     served(method)
-    if (!process.argv.includes('windows.sandbox="unelevated"') || params.sandboxPolicy?.type !== 'readOnly' || script.commandCenterSandbox === 'setup-failed') {
+    if (!process.argv.includes('windows.sandbox="unelevated"') || params.sandboxPolicy?.type !== 'readOnly' || script.watcherSandbox === 'setup-failed') {
       emit({ id, error: { code: -32603, message: 'Synthetic sandbox setup failure' } }); return
     }
     if (params.command.at(-1).startsWith('Get-Content')) {
-      reply(script.commandCenterSandbox === 'read-failed' ? { exitCode: 1, stdout: '', stderr: 'Synthetic read failure' }
+      reply(script.watcherSandbox === 'read-failed' ? { exitCode: 1, stdout: '', stderr: 'Synthetic read failure' }
         : { exitCode: 0, stdout: readFileSync(join(params.cwd, 'read.txt'), 'utf8'), stderr: '' })
-    } else if (script.commandCenterSandbox === 'write-allowed') {
+    } else if (script.watcherSandbox === 'write-allowed') {
       writeFileSync(join(params.cwd, 'write.txt'), 'SOTTO_UNASKED_WRITE')
       reply({ exitCode: 0, stdout: 'SOTTO_PROBE_WRITE_DENIED', stderr: '' })
-    } else reply({ exitCode: 0, stdout: script.commandCenterSandbox === 'unrelated-write-failure' ? 'SOTTO_PROBE_WRITE_INCONCLUSIVE' : 'SOTTO_PROBE_WRITE_DENIED', stderr: '' })
+    } else reply({ exitCode: 0, stdout: script.watcherSandbox === 'unrelated-write-failure' ? 'SOTTO_PROBE_WRITE_INCONCLUSIVE' : 'SOTTO_PROBE_WRITE_DENIED', stderr: '' })
     return
   }
   if (method === 'skills/list') { reply({ data: params.cwds.map(cwd => ({ cwd, skills: script.skills ?? [], errors: script.skillErrors ?? [] })) }); return }

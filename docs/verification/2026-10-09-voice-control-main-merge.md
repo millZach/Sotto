@@ -1,3 +1,5 @@
+The feature is now called Watcher (October 9, 2026); the dated evidence below keeps its original wording.
+
 # Bring voice-control removal up to date with main
 
 Test citations use the current split files. Recorded counts and outcomes are from the original runs.
