@@ -171,3 +171,5 @@ artifacts/linux-hyprland-paste/*
 
 # Captures from the removal merge?s first-run verification tool.
 artifacts/voice-control-removal/merged-setup/
+# Raw benchmark measures; no replies or protocol bodies.
+artifacts/command-center-benchmark/
