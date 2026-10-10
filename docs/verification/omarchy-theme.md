@@ -43,7 +43,9 @@ Every one of these 28 captures was opened and reviewed. `proof.json` records 1,1
 
 Widgets: [Tokyo Night](../../artifacts/omarchy-theme/widget-tokyo-night.png), [Catppuccin Latte](../../artifacts/omarchy-theme/widget-catppuccin-latte.png), [Rose Pine](../../artifacts/omarchy-theme/widget-rose-pine.png), [Hackerman](../../artifacts/omarchy-theme/widget-hackerman.png).
 
-## Gates
+## Earlier gates at `97173df0`
+
+These results apply to `97173df0`, before `ae101acc` restored the duplicate composer ADR from the base. They do not establish a pass on the review head.
 
 Commands used Node 24.21.0 through mise. Only one test suite ran at a time, with at most two Vitest workers or one Playwright worker.
 
@@ -60,7 +62,7 @@ Commands used Node 24.21.0 through mise. Only one test suite ran at a time, with
 | Committed design manifest verification | 152 exact deterministic tuples verified |
 | `npm run design:verify`, owned nested session | FAIL on Linux: 5 failed, 5 did not run; committed baselines unchanged |
 
-The gate exposed an existing duplicate ADR 0065 at the base commit. After checking main and all open PR diffs, the existing Tiptap decision and its citation were moved to free number 0069, in a separate gate repair. Omarchy uses 0068. Another gate repair makes the native-skill test destroy its mounted Tiptap editors before jsdom closes; deferred destruction otherwise raised an unhandled `document` error after all assertions passed. Both repairs passed their focused checks (2 files, 10 tests). The Omarchy unit tests account for 44 of the 81 focused tests; the other 37 cover the host-service contract, including cancellation.
+The base contains duplicate ADR 0065 files. [#901](https://github.com/millZach/Sotto/pull/901) owns the composer ADR's final number; `ae101acc` reversed this branch's temporary renumbering so its repair can arrive through main after #901 merges. Omarchy uses 0068. Another gate repair makes the native-skill test destroy its mounted Tiptap editors before jsdom closes; deferred destruction otherwise raised an unhandled `document` error after all assertions passed. Both repairs passed their focused checks (2 files, 10 tests). The Omarchy unit tests account for 44 of the 81 focused tests; the other 37 cover the host-service contract, including cancellation.
 
 Both owned nested compositors were stopped after capture review. The quit-drain `before-quit.png` artifact was restored. No live desktop input or configuration change was made.
 
@@ -84,9 +86,12 @@ Paths are relative to the repository root.
 | `src/main/settings/nativeSettingsCoordinator.ts` | Publish an appearance refresh without saving or native effects. |
 | `src/main/storage/repositories.ts` | Supply the Linux palette provider. |
 | `src/main/storage/settingsRepository.ts` | Preserve waiting IDs and project the palette without saving it. |
-| `src/shared/themes/omarchy.ts` | Strict schemas, whole-percent readability and status safeguards. |
+| `src/shared/themes/omarchy.ts` | Strict schemas, whole-percent readability, derived success text and status safeguards. |
 | `src/shared/themes/library.ts` | Resolve the matching Omarchy half, or Sotto while waiting. |
 | `src/shared/settings.ts` | Read-only runtime field and Linux ID parsing. |
+| `src/main/ipc/registerIpc.ts` | Reject the runtime field in update requests. |
+| `tests/integration/settingsHistoryIpc.test.ts` | Rejection before writes or notifications on all three platforms. |
+| `tests/fixtures/renderer/omarchyTextSurfaces.ts` | Audited text-on-surface pairs and graphical token exceptions. |
 | `src/shared/themeBranding.ts` | Keep the floating widget's mode and palette together. |
 | `src/renderer/src/state/appearance.ts` | Live projection, pending choices, Linux mode and startup cache. |
 | `src/renderer/src/features/onboarding/LookStep.tsx` | Resolve the mode from the runtime palette. |
@@ -94,8 +99,8 @@ Paths are relative to the repository root.
 | `src/renderer/src/features/settings/themes/ThemeGallery.tsx` | Linux choices, current name, waiting copy and keyboard navigation. |
 | `src/renderer/src/features/settings/themes/themes.css` | Two-line Omarchy names and a dashed waiting chord. |
 | `src/renderer/src/features/settings/themes/ThemeLivePreview.tsx` | Show the widget's actual Omarchy mode. |
-| `src/renderer/src/features/settings/themes/ThemeEditor.tsx` | Allow Create theme to copy the runtime palette. |
-| `src/renderer/src/features/settings/themes/themeLibrary.ts` | Reserve the runtime ID only on Linux. |
+| `src/renderer/src/features/settings/themes/ThemeEditor.tsx` | Copy the palette painting the window, including its waiting fallback. |
+| `src/renderer/src/features/settings/themes/themeLibrary.ts` | Keep the runtime ID outside the custom-theme grammar. |
 | `scripts/render-omarchy-theme-fixtures.mjs` | Render stock themes in an isolated HOME with Omarchy itself. |
 | `tests/fixtures/omarchy-themes.json` | Exact outputs and hashes for 22 stock themes. |
 | `tests/unit/shared/omarchyThemes.test.ts` | All stock contrast pairs, guard boundaries and platform invariants. |
@@ -104,8 +109,6 @@ Paths are relative to the repository root.
 | `tests/e2e/omarchy-theme.spec.ts` | Isolated real rendering, live main/widget repaint and PNG measurements. |
 | `tests/unit/renderer/nativeSkills.test.tsx` | Destroy test editors before the DOM closes. |
 | `docs/adr/0068-sotto-follows-the-omarchy-theme.md` | Mapping, readability, Linux default and ADR-number audit. |
-| `docs/adr/0069-the-thread-composer-is-a-tiptap-field.md` | Rename the existing duplicate 0065 composer decision; contents unchanged. |
-| `docs/verification/tiptap-skill-composer.md` | Point its citation to 0069. |
 | `docs/adr/0024-sotto-ships-its-own-palettes-in-light-and-dark-columns.md` | Record the Linux gallery addition. |
 | `CONTEXT.md` | Omarchy theme and readability-check terms, default and widget behaviour. |
 | `README.md` | Linux theme overview. |
