@@ -38,9 +38,9 @@ test('two threads split the workspace and stay independent through resize, narro
   const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-split-' })).directory
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'dark', accent: 'teal' }))
   await writeFile(join(profile, 'agents.json'), JSON.stringify({
-    configuration: { ...defaultAgentConfiguration(), enabled: true, speak: false },
-    assignments: [], queue: [], activeThreadId: 'grok-previews', activeProjectId: 'workshop',
-    draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', outbox: [],
+    configuration: { ...defaultAgentConfiguration(), enabled: true, },
+    activeThreadId: 'grok-previews', activeProjectId: 'workshop',
+    draft: '', draftThreadId: null, draftRequestId: null, composing: false, outbox: [],
   }))
   const launched = await launchSotto('design-threads', profile)
   const { page } = launched
@@ -93,10 +93,9 @@ test('two threads split the workspace and stay independent through resize, narro
     await expect(previews.getByLabel('Thread transcript')).not.toContainText('Check the footer link targets.')
     await expectPromptText(previewsPrompt, 'Keep this draft with the previews thread.')
     await expectPromptText(footerPrompt, '')
-    const afterSend = await agentState(page)
     await expect.poll(async () => (await userMessageTexts(page, 'footer-links')).filter(text => text === 'Check the footer link targets.')).toHaveLength(1)
     expect((await userMessageTexts(page, 'grok-previews')).some(text => text.includes('footer link targets'))).toBe(false)
-    expect(afterSend.assignments).toHaveLength(0)
+
     await expect.poll(() => threadStatus(page, key('footer-links'))).toBe('running')
     await fillPrompt(footerPrompt, 'Next: compare the mobile footer.')
     await capture(page, 'two-panes')

@@ -5,7 +5,6 @@ import type { SottoPlatform } from '../../../shared/platform'
 import { Button } from '../components/Button'
 import { PageWindowControls } from '../components/WindowControls'
 import { useOptionalApp } from '../state/AppContext'
-import { useVoiceCoordinatorEnabled } from '../state/voiceCoordinator'
 import { useAgents, type AgentConnection } from './AgentContext'
 import { draftThreads, gateOnCreation, overlayDraftThreads, useDraftThreads } from './draftThreads'
 import { describeThreads, organizeWorkspace, type ThreadRow } from './threadFacts'
@@ -55,7 +54,6 @@ export interface ThreadPaneSlotProps {
 export type ThreadPaneSlot = (props: ThreadPaneSlotProps) => ReactNode
 
 export interface ThreadsViewProps {
-  readonly onOpenAgents: () => void
   readonly now?: number | undefined
   /** The update control, seated at the end of the sidebar's foot where the app footer used to carry it. */
   readonly updateControl?: ReactNode
@@ -83,11 +81,9 @@ export interface ThreadsViewProps {
   readonly paneAreaWidth?: number | undefined
   readonly paneAreaHeight?: number | undefined
 }
-export function ThreadsView({ onOpenAgents, now: fixedNow, updateControl, tools, focusedPaneActions, paneActions, paneWorkingCopy, paneNotice, paneDrawer, onPaneThreadsChange, layoutStore = splitLayoutStore, terminals, paneAreaWidth, paneAreaHeight }: ThreadsViewProps): ReactNode {
+export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneActions, paneActions, paneWorkingCopy, paneNotice, paneDrawer, onPaneThreadsChange, layoutStore = splitLayoutStore, terminals, paneAreaWidth, paneAreaHeight }: ThreadsViewProps): ReactNode {
   const agents = useAgents()
   const app = useOptionalApp()
-  // Voice is hidden for the beta, and the Agents room is a voice surface: without it the page offers only a new thread.
-  const voice = useVoiceCoordinatorEnabled()
   const now = useClock(fixedNow)
   const [mode, setMode] = useSidebarMode()
   const [query, setQuery] = useState('')
@@ -124,7 +120,7 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, updateControl, tools,
   const pendingFocus = pending?.threadId ?? null
   const focusedId = pendingFocus !== null && rowsById.has(pendingFocus) ? pendingFocus : activeId
   // Panes whose thread is missing are left out without forgetting them, so a provider still connecting after a restart keeps
-  // its panes. A selection made elsewhere (voice, attention, a new thread) moves only the focused pane; after a restart that is
+  // its panes. A selection made elsewhere (a new thread or another window) moves only the focused pane; after a restart that is
   // the pane focused when the arrangement was saved.
   const visible = state === null || rows.length === 0 ? stored : prune(stored, id => rowsById.has(id))
   const layout = retarget(visible, lastFocused.current ?? visible.focused, focusedId)
@@ -289,8 +285,7 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, updateControl, tools,
     const everyPaneActions = paneActions?.(slot)
     const actions = focusedActions || everyPaneActions ? <>{focusedActions}{everyPaneActions}</> : undefined
     return <ThreadPane row={row} state={state} command={command} store={store} focused={focused}
-      promptId={split ? threadPromptId(threadId) : THREAD_PROMPT_ID} error={focused ? error : null} onOpenThread={openThread}
-      onFocusPane={() => focusPane(threadId)} onOpenBeside={() => openBeside(threadId)} now={fixedNow}
+      promptId={split ? threadPromptId(threadId) : THREAD_PROMPT_ID} error={focused ? error : null} onOpenBeside={() => openBeside(threadId)} now={fixedNow}
       workingCopy={paneWorkingCopy?.(slot)} notice={paneNotice?.(slot)} actions={actions} drawer={paneDrawer?.(slot)} />
   }
 
@@ -311,9 +306,9 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, updateControl, tools,
           ? <ThreadPanes layout={layout} paneIds={paneIds} rows={labels} focusedId={focusedId} dragging={dragging} renderPane={renderPane}
             onFocusPane={focusPane} onLayoutChange={next => layoutStore.set(next)} onDrop={(threadId, target) => { setDragging(null); grid.onDrop(threadId, target) }} onClosePane={grid.close} measuredWidth={paneAreaWidth} measuredHeight={paneAreaHeight} />
           : null}
-        {!paneIds.length ? <EmptyWorkspace state={state} command={command} voice={voice} error={error}
+        {!paneIds.length ? <EmptyWorkspace state={state} command={command} error={error}
           onNewThread={() => openNewThread(state.activeProjectId ?? undefined)} onNewThreadWithDraft={draft => startNewThread(state.activeProjectId ?? undefined, draft)}
-          onOpenThread={threadId => { focusPane(threadId); focusNewComposer() }} onOpenAgents={onOpenAgents} /> : null}
+          onOpenThread={threadId => { focusPane(threadId); focusNewComposer() }} /> : null}
         {tools ? <div className="thread-workspace__tools">{tools({ focusedThreadId: focusedId, state, command })}</div> : null}
       </div>
     </section>

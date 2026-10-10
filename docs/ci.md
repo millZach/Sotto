@@ -4,14 +4,14 @@
 
 ## When each job runs
 
-Gates (Windows) runs for every push to `main` and every pull request, and is the check a merge waits for. A push to `main` also runs the other three jobs every time. On a pull request, a short Linux job, Changed areas, reads the files the pull request changes and decides whether the three slower jobs are needed:
+Gates (Windows) runs for every push to `main` and every pull request. Main's ruleset requires it and Package result, and requires a pull request to be up to date with `main` before it merges. Nobody bypasses the ruleset, admins included, so every change reaches `main` through a pull request, release commits too ([the release procedure](release/releasing.md)). The gate's job has a 30-minute limit and the suite takes about 25 to 27 minutes on the runner (#895). A gate cancelled at the limit is rerun, never bypassed. A push to `main` also runs the other three jobs every time. On a pull request, a short Linux job, Changed areas, reads the files the pull request changes and decides whether the three slower jobs are needed:
 
 - **Host archive and socket contract (Linux)** runs unless every changed file is in the renderer (`src/renderer/`, `src/preload/`), the iOS client, `docs/`, `artifacts/`, `design/`, `handoff/`, the e2e, renderer-unit or perf tests, or a Markdown file at the root other than `THIRD_PARTY_NOTICES.md`. A path that list does not name runs the job, so a new area is covered until someone decides otherwise.
-- **Package (Windows)** runs unless every changed file is a document (`docs/`, `artifacts/`, `design/`, `handoff/`, a Markdown file at the root), a test under `tests/`, or the native iPhone or Android client. It runs `npm ci`, `npm run runtime:prepare` and `npm run package:dir`: the build, the build provenance, `electron-builder --dir --win --x64` and `scripts/verify-packaged-resources.mjs` on `release/win-unpacked`. That is the release's packaging step without the installer. It exists so a change to `electron-builder.yml`, the packaging scripts, the packaged resources or anything the build bundles fails on the pull request rather than on the Windows PC at release time. Linux work on the desktop app (#833) made it necessary (#844).
+- **Package (Windows)** runs unless every changed file is a document (`docs/`, `artifacts/`, `design/`, `handoff/`, a Markdown file at the root), a test under `tests/`, or the native iPhone or Android client. It runs `npm ci`, `npm run assets:verify` and `npm run package:dir`: the build, the build provenance, `electron-builder --dir --win --x64` and `scripts/verify-packaged-resources.mjs` on `release/win-unpacked`. That is the release's packaging step without the installer. It exists so a change to `electron-builder.yml`, the packaging scripts, the packaged resources or anything the build bundles fails on the pull request rather than on the Windows PC at release time. Linux work on the desktop app (#833) made it necessary (#844).
 
-  Changed areas also runs it when a document the package carries changes: the root `README.md`, `LICENSE.md` and `THIRD_PARTY_NOTICES.md`, and `docs/notices/`, whose Supertonic licence the renderer bundles. The file list is read with rename detection off, so a file moved into a skipped area still counts its old path.
+  Changed areas also runs it when a document the package carries changes: the root `README.md`, `LICENSE.md` and `THIRD_PARTY_NOTICES.md`. The file list is read with rename detection off, so a file moved into a skipped area still counts its old path.
 
-  Before packaging, the job checks that `npm run runtime:prepare` reproduced the committed `resources/runtime/manifest.lock.json`. Prepare rewrites the lock from what `npm ci` installed and packaging verifies the runtime against that rewrite, so without this step a lockfile change that moved the ONNX runtime would pass unnoticed.
+  Before packaging, the job verifies the installed Claude SDK history helper and terminal assets. Voice workers and ONNX runtime assets are retired (ADR-0068); the packaged-resource check refuses them.
 
   **Package result** is a short Linux job that always runs after it. It fails if Changed areas did not finish, or if Package (Windows) was needed and did not pass. A skipped job counts as passing for a required check, so a ruleset that requires packaging names Package result, not Package (Windows).
 - **Native iOS client (macOS)** runs only when `apps/ios/`, `src/shared/hostProtocol.ts` (which the client's wire types mirror) or this workflow changed. Its Swift tests and simulator build read nothing outside `apps/ios/`.
@@ -22,8 +22,8 @@ A job that is not needed reports as skipped, not failed. A change that should ha
 
 | Step | Command | Why it exists |
 | --- | --- | --- |
-| Install dependencies | `npm ci` | Exact `package-lock.json` install, including the native modules (node-pty, sharp, sherpa-onnx). The npm cache is keyed on the lockfile by `actions/setup-node`. |
-| Prepare runtime assets | `npm run runtime:prepare` | Copies the hash-locked ONNX WASM files out of `node_modules/onnxruntime-web` into `resources/runtime`, which the checkout does not carry. No network access, about a second. |
+| Install dependencies | `npm ci` | Exact `package-lock.json` install, including the native modules (node-pty and sharp). The npm cache is keyed on the lockfile by `actions/setup-node`. |
+| Verify release assets | `npm run assets:verify` | Checks the installed Claude SDK history helper and terminal files used by desktop packaging. No network access. |
 | Typecheck | `npm run typecheck` | `tsc --noEmit` over the node, web and renderer-test projects. |
 | Lint | `npm run lint` | `eslint .`. |
 | Unit and integration tests | `npm test -- --maxWorkers=2` | `vitest run` — test files under `tests/` only, excluding `tests/e2e/`. Ignored cache and backup suites outside `tests/` are never collected. The worker cap keeps the jsdom and child-process heavy files inside a small runner's memory; unpinned parallelism has produced "Worker exited unexpectedly" crashes on a loaded machine. Main-process and integration files run under node rather than jsdom, declared by a `@vitest-environment node` header on each file; a file in those folders that needs a DOM says `jsdom` instead. |
@@ -328,7 +328,7 @@ is still releasing a just-exited child's handles.
    - *Lint* — eslint prints file, line and rule name.
    - *Unit and integration tests* — vitest prints the failing test file and name, then the diff. The summary line at the end counts passed/failed/skipped; skipped perf and live tests are expected.
    - *Third-party notices* — the verifier names the component that drifted; regenerate or update `THIRD_PARTY_NOTICES.md` to match the lockfile.
-3. Reproduce locally with the exact command from the table. The gates are the same ones in the guide's test matrix (`docs/guide.md`, under Development), so a clean local run means a clean CI run, with two exceptions worth checking first when CI fails and your machine passes: stale `node_modules` (run `npm ci`, not `npm install`) and a missing `resources/runtime` (run `npm run runtime:prepare`).
+3. Reproduce locally with the exact command from the table. The gates are the same ones in the guide's test matrix (`docs/guide.md`, under Development), so a clean local run means a clean CI run, with one common difference worth checking first when CI fails and your machine passes: stale `node_modules` (run `npm ci`, not `npm install`).
 4. Push a fix to the same branch. The previous run is cancelled automatically and a new one starts.
 
 ## Expected duration

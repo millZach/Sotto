@@ -195,7 +195,7 @@ describe('a card whose page cannot run', () => {
   const routedState = (): AgentState => (threadsStateFixture({ cloneOverrides: false,
     configuration: defaultAgentConfiguration(),
     host: { ...EMPTY_AGENT_HOST, hostId: HERE },
-    topLevel: { assignments: [], queue: [], activeThreadId: null, activeProjectId: null, credentials: { reasoning: false, grokSpeech: false, secure: false }, hostId: HERE, clientScoped: true, connections: [{ hostId: HERE, name: 'This computer', kind: 'local', connected: true }, { hostId: THERE, name: 'Forge', kind: 'remote', connected: true }] } }))
+    topLevel: { activeThreadId: null, activeProjectId: null, credentials: { reasoning: false, secure: false }, hostId: HERE, clientScoped: true, connections: [{ hostId: HERE, name: 'This computer', kind: 'local', connected: true }, { hostId: THERE, name: 'Forge', kind: 'remote', connected: true }] } }))
 
   it('keeps the transcript, and says a paired host\'s page is on another computer, through the window\'s real bridge', async () => {
     const state = routedState()

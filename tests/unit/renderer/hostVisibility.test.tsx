@@ -32,7 +32,7 @@ function twoHosts(): AgentState {
 function mount(state: AgentState) {
   const live = liveAgentState(state)
   vi.mocked(useAgents).mockImplementation(live.useLive)
-  render(<ThreadsView onOpenAgents={vi.fn()} now={E2E_THREADS_NOW} />)
+  render(<ThreadsView now={E2E_THREADS_NOW} />)
   return live
 }
 beforeEach(() => { vi.mocked(useAgents).mockReset() })

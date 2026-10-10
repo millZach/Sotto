@@ -1,11 +1,11 @@
 import { cleanup, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, vi } from 'vitest'
+
 import { useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { type SettingsViewProps } from '../../../src/renderer/src/features/settings/SettingsView'
-import { appearancePreview } from '../../../src/renderer/src/state/appearance'
-import { useVoiceCoordinatorEnabled } from '../../../src/renderer/src/state/voiceCoordinator'
 import { platformCopy } from '../../../src/renderer/src/platformCopy'
+import { appearancePreview } from '../../../src/renderer/src/state/appearance'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', async importOriginal => ({
@@ -13,18 +13,11 @@ vi.mock('../../../src/renderer/src/agents/AgentContext', async importOriginal =>
   useOptionalAgents: vi.fn(),
 }))
 
-// Settings is rendered without the app provider the real hook reads, so the
-// beta's voice gate is stated here rather than inferred from a context.
-vi.mock('../../../src/renderer/src/state/voiceCoordinator', () => ({
-  useVoiceCoordinatorEnabled: vi.fn(() => false),
-}))
-
 afterEach(() => {
   cleanup()
   delete document.documentElement.dataset.reducedMotion
   appearancePreview.reset()
   vi.mocked(useOptionalAgents).mockReset()
-  vi.mocked(useVoiceCoordinatorEnabled).mockReturnValue(false)
 })
 
 function createMediaDevices(devices: MediaDeviceInfo[] = []): Pick<MediaDevices, 'enumerateDevices' | 'addEventListener' | 'removeEventListener'> {
@@ -38,8 +31,6 @@ function createMediaDevices(devices: MediaDeviceInfo[] = []): Pick<MediaDevices,
 function device(deviceId: string, label: string): MediaDeviceInfo {
   return { deviceId, groupId: 'group', kind: 'audioinput', label, toJSON: () => ({}) }
 }
-
-
 
 function baseProps(overrides: Partial<SettingsViewProps> = {}): SettingsViewProps {
   return {

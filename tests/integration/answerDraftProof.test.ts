@@ -9,7 +9,6 @@ it.each([false, true])('records only the captured draft accepted by a direct ans
   const draftId = '00000000-0000-4000-8000-000000000091', newerId = '00000000-0000-4000-8000-000000000092'
   let release: () => void = () => undefined, answering: Promise<unknown> | undefined
   try {
-    await f.command({ type: 'assign', threadId: target.threadId, instruction: 'Work' })
     f.host.event({ type: 'question', threadId: target.threadId, text: '', request: { ...request, delivery: undefined } })
     await f.command({ type: 'save-thread-draft', threadId: target.threadId, draftId, requestId: request.id, text: 'Blue' })
     const { promise: started, resolve: entered } = deferred<void>()
@@ -51,37 +50,20 @@ it.each(['replacement', 'empty', 'cancel'] as const)('records exact %s draft obs
   } finally { await f.close() }
 })
 
-it('does not retire a still-current revision on an idempotent save or pause', async () => {
-  const f = await draftHandoffFixture()
-  const draft = { type: 'save-thread-draft' as const, threadId: target.threadId,
-    draftId: '00000000-0000-4000-8000-000000000095', requestId: null, text: 'Paused text' }
-  try {
-    await f.command({ type: 'assign', threadId: target.threadId, instruction: 'Work' })
-    await f.command(draft)
-    await f.command(draft)
-    await f.command({ type: 'resume-draft', threadId: target.threadId })
-    await f.command({ type: 'pause-draft' })
-    expect(f.control.get()).toMatchObject({ obsoleteDrafts: [], threadDrafts: [expect.objectContaining({ draftId: draft.draftId, text: draft.text })] })
-    await f.command({ type: 'resume-draft', threadId: target.threadId })
-    await f.command({ type: 'cancel-draft' })
-    expect(f.control.get()).toMatchObject({ obsoleteDrafts: [{ threadId: target.threadId, draftId: draft.draftId }], deliveredDrafts: [], threadDrafts: [] })
-  } finally { await f.close() }
-})
-
 it.each([['', false], ['Blue', false], ['', true], ['Blue', true]] as const)(
   'does not confirm a saved text revision for a different structured answer (legacy answer %s, active composer %s)', async (answer, active) => {
   const f = await draftHandoffFixture()
   const draftId = '00000000-0000-4000-8000-000000000096'
   try {
     f.host.event({ type: 'question', threadId: target.threadId, text: '', request: { ...request, delivery: undefined } })
+    if (active) await f.command({ type: 'compose', text: 'Blue' })
     await f.command({ type: 'save-thread-draft', threadId: target.threadId, draftId, requestId: request.id, text: 'Blue' })
-    if (active) await f.command({ type: 'resume-draft', threadId: target.threadId })
     await f.command({ type: 'answer', threadId: target.threadId, requestId: request.id, answer,
       questionAnswers: { q: { optionIds: [], text: 'Green' } } })
     expect(f.control.get().deliveredDrafts).toEqual([])
     expect((await f.disk()).deliveredDrafts).toEqual([])
     expect(f.control.get()).toMatchObject(active
-      ? { obsoleteDrafts: [{ threadId: target.threadId, draftId }], threadDrafts: [] }
+      ? { obsoleteDrafts: expect.arrayContaining([{ threadId: target.threadId, draftId }]), threadDrafts: [] }
       : { obsoleteDrafts: [], threadDrafts: [expect.objectContaining({ draftId, text: 'Blue', requestId: request.id })] })
   } finally { await f.close() }
 })
@@ -92,10 +74,9 @@ it('keeps a newer active draft when a different structured answer finishes', asy
   let release: () => void = () => undefined, answering: Promise<unknown> | undefined
   try {
     f.host.event({ type: 'question', threadId: target.threadId, text: '', request: { ...request, delivery: undefined } })
+    await f.command({ type: 'compose', text: 'Blue' })
     await f.command({ type: 'save-thread-draft', threadId: target.threadId, draftId, requestId: request.id, text: 'Blue' })
-    await f.command({ type: 'resume-draft', threadId: target.threadId })
     const { promise: started, resolve: entered } = deferred<void>()
-
     const { promise: gate, resolve: gateResolve } = deferred<void>()
     release = gateResolve
     const execute = f.host.execute.bind(f.host)
@@ -105,7 +86,7 @@ it('keeps a newer active draft when a different structured answer finishes', asy
     await started
     await f.command({ type: 'save-thread-draft', threadId: target.threadId, draftId: newerId, requestId: request.id, text: 'Newer edit' })
     release(); await answering
-    expect(f.control.get()).toMatchObject({ deliveredDrafts: [], obsoleteDrafts: [{ threadId: target.threadId, draftId }],
+    expect(f.control.get()).toMatchObject({ deliveredDrafts: [], obsoleteDrafts: expect.arrayContaining([{ threadId: target.threadId, draftId }]),
       threadDrafts: [expect.objectContaining({ draftId: newerId, requestId: request.id, text: 'Newer edit' })], draft: 'Newer edit' })
   } finally { release(); await Promise.allSettled([answering]); vi.restoreAllMocks(); await f.close() }
 })
@@ -142,7 +123,7 @@ it.each([false, true])('publishes obsolete revisions only after a durable write 
       expect(f.control.get().obsoleteDrafts).toEqual([])
       expect((await f.disk()).obsoleteDrafts).toEqual([])
       vi.restoreAllMocks()
-      await f.command({ type: 'configure', patch: { speak: false } })
+      await f.command({ type: 'configure', patch: { } })
     }
     expect(f.control.get().obsoleteDrafts).toEqual([{ threadId: target.threadId, draftId }])
     expect(published).toContainEqual([{ threadId: target.threadId, draftId }])

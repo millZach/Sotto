@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 import { populatedHistory, withSotto } from '../fixtures/designCaptureProfile'
-import { assertFocusPresentation, startSettingsAtHeading, assertDictateState, capturePage, captureSection, captureFullSurface } from './support/designCapture'
+import { assertDictateState, assertFocusPresentation, captureFullSurface, capturePage, captureSection, startSettingsAtHeading } from './support/designCapture'
 import { openPage } from './support/sottoLaunch'
 
 const captureEnabled = process.env.SOTTO_DESIGN_CAPTURE === '1'
@@ -64,7 +64,7 @@ test.describe('authoritative design-review captures', () => {
       await expect(tour).toHaveCount(0)
     })
 
-    await withSotto({ voice: true, onboardingComplete: true, history: populatedHistory }, async ({ page }) => {
+    await withSotto({ memory: true, onboardingComplete: true, history: populatedHistory }, async ({ page }) => {
       await openPage(page, 'Dictate')
       await assertDictateState(page, 'idle', /ready when you are/i)
       // Dictate seats the Threads sidebar beside the room; the switch lives in the sidebar foot, not a strip.
@@ -73,8 +73,8 @@ test.describe('authoritative design-review captures', () => {
       await expect(page.getByRole('tab', { name: 'Dictate' })).toHaveAttribute('aria-selected', 'true')
       await capturePage(page, 'dictate-ready.png', { category: 'dictate', state: 'ready' })
 
-      const agentsTab = page.getByRole('tab', { name: 'Agents' })
-      await assertFocusPresentation(agentsTab)
+      const threadsTab = page.getByRole('tab', { name: 'Threads' })
+      await assertFocusPresentation(threadsTab)
       await capturePage(page, 'focus-switch-tab.png', { focusTarget: 'tab', focus: true })
 
       const historyNavigation = page.getByRole('link', { name: 'History' })
@@ -111,14 +111,6 @@ test.describe('authoritative design-review captures', () => {
       await expect(page.locator('html')).toHaveAttribute('data-reduced-motion', 'on')
       await assertDictateState(page, 'listening', /^listening\./i)
       await capturePage(page, 'dictate-reduced-motion.png', { category: 'dictate', state: 'listening-reduced-motion', reducedMotion: true })
-    })
-
-    await withSotto({ voice: true, onboardingComplete: true }, async ({ page }) => {
-      await page.getByRole('tab', { name: 'Agents' }).click()
-      await page.getByRole('button', { name: 'Not now', exact: true }).click()
-      await expect(page.locator('.agent-orb')).toBeVisible()
-      await expect(page.getByRole('tab', { name: 'Agents' })).toHaveAttribute('aria-selected', 'true')
-      await capturePage(page, 'agents-room.png', { category: 'agents', state: 'overview' })
     })
 
     await withSotto({ onboardingComplete: true, history: populatedHistory }, async ({ page }) => {
@@ -177,7 +169,7 @@ test.describe('authoritative design-review captures', () => {
         await expect(section).toHaveCount(1)
         if (state === 'agents') {
           await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Agents', exact: true }).click()
-          await expect(section.getByLabel('Reasoning account', { exact: true })).toBeVisible()
+          await expect(section.getByLabel('Default projects directory', { exact: true })).toBeVisible()
           await expect(page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Agents', exact: true })).toHaveAttribute('aria-selected', 'true')
           await capturePage(page, 'settings-agents.png', { category: 'settings', state })
           continue

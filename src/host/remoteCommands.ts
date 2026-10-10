@@ -1,4 +1,5 @@
 import type { AgentCommand, AgentConfiguration } from '../shared/agents'
+import { managementCommandRefusal } from '../shared/hostProtocol'
 
 type CommandType = AgentCommand['type']
 type Fields<T extends CommandType> = readonly Exclude<keyof Extract<AgentCommand, { type: T }>, 'type'>[]
@@ -15,8 +16,9 @@ type Fields<T extends CommandType> = readonly Exclude<keyof Extract<AgentCommand
  */
 export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
   configure: ['patch'],
-  compose: ['text', 'attachments', 'threadId', 'draftId'], send: ['draft'], 'cancel-draft': [], 'pause-draft': [], 'cancel-request': [],
-  connect: ['provider'], disconnect: ['provider'], refresh: ['provider'],
+  compose: ['text', 'attachments', 'threadId', 'draftId'], send: ['draft'], 'cancel-draft': [],
+  // A paired client can only leave connection feedback unset, never supply notice text or authority.
+  connect: ['provider', 'notice'], disconnect: ['provider'], refresh: ['provider'],
   'refresh-thread-skills': ['threadId', 'forceReload'],
   'check-client-updates': [], 'dismiss-client-updates': [],
   // The two update-line commands, only on a listener that offers `client-updates`: see remoteCommandRefusal.
@@ -29,13 +31,12 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
   'steer-followup': ['threadId', 'itemId'], 'remove-followup': ['threadId', 'itemId'],
   'reorder-followups': ['threadId', 'itemIds'], 'resume-followups': ['threadId'],
   steer: ['threadId', 'draftId', 'text', 'attachments', 'skills', 'files'],
-  'resume-draft': ['threadId'],
   'create-project': ['provider', 'title', 'path', 'useExisting'],
   'select-project': ['projectId'], 'settle-project': ['projectId'], 'restore-project': ['projectId'],
   'settle-thread': ['threadId'], 'restore-thread': ['threadId'],
   'rename-thread': ['threadId', 'title'], 'regenerate-thread-title': ['threadId'],
   'create-thread': ['projectId', 'title', 'modelId', 'titleSource', 'threadId', 'workingCopy', 'baseBranch', 'startFromOrigin',
-    'existingWorktreePath', 'reasoningEffort', 'runtimeMode', 'providerMode', 'managed'],
+    'existingWorktreePath', 'reasoningEffort', 'runtimeMode', 'providerMode'],
   'retry-thread-worktree': ['threadId'], 'refresh-thread-worktree': ['threadId', 'background'],
   'restore-thread-branch': ['threadId', 'withUncommittedChanges'],
   'preview-reclaim-thread-worktree': ['threadId'],
@@ -58,10 +59,7 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
   'select-thread': ['threadId'], 'observe-threads': ['threadIds'], 'load-earlier-messages': ['threadId'],
   // Early start: typing in a thread's composer starts its provider session. It grants and sends nothing.
   'start-thread-session': ['threadId'],
-  'select-attention': ['itemId'],
-  assign: ['threadId', 'instruction', 'expectedDraftId'], unassign: ['threadId'],
-  resume: ['threadId', 'expectedDraftId'], pause: ['threadId'], interrupt: ['threadId'], 'compact-thread': ['threadId'],
-  next: [], later: [],
+  interrupt: ['threadId'], 'compact-thread': ['threadId'],
   answer: ['threadId', 'requestId', 'answer', 'approved', 'questionAnswers', 'permissionChoice'],
 }
 /**
@@ -73,13 +71,10 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
  */
 export const REMOTE_SIGN_IN_OPERATIONS = ['sign-in-start', 'sign-in-read', 'sign-in-code', 'sign-in-cancel'] as const
 /**
- * The coordinator settings a paired client may change. Keys, endpoints and the voice engine (speech
- * provider, voices, wake word) stay on the host. Turning spoken replies on or off and the orb colour are
- * preferences, and the follow-up limit only bounds work the user already assigned, which a paired device
- * may send itself; none of them answers a request.
+ * The account and thread defaults a paired client may change. Keys and machine paths stay on the host.
  */
 export const REMOTE_CONFIGURATION_FIELDS: readonly (keyof AgentConfiguration)[] = ['provider', 'enabledProviders', 'enabled', 'defaultModelId',
-  'reasoning', 'reasoningModel', 'reasoningEffort', 'followupLimit', 'orbColor', 'speak']
+  'reasoning', 'reasoningModel', 'reasoningEffort']
 
 /**
  * Whether a remote command changes what a thread may do without asking, or discards work the user has
@@ -110,6 +105,8 @@ export function remoteCommandRefusal(command: AgentCommand, context: { readonly 
   readonly selectedThreadId?: string | null | undefined
   /** Whether this listener offers `client-updates`: the headless host does, the desktop's phone listener does not. */
   readonly clientUpdates?: boolean | undefined }): 'forbidden' | null {
+  if (managementCommandRefusal(command)) return 'forbidden'
+  if (command.type === 'connect' && command.notice !== undefined && command.notice !== false) return 'forbidden'
   const fields = REMOTE_COMMANDS[command.type] as readonly string[] | undefined
   if (!fields) return 'forbidden'
   if ((command.type === 'queue-client-updates' || command.type === 'cancel-client-updates') && context.clientUpdates !== true) return 'forbidden'

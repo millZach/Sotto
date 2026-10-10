@@ -9,12 +9,12 @@ import { parseThemeRgb, rgbToOklch } from '../../src/shared/themes/color'
 import { createVividThemeColors } from '../../src/shared/themes/engine'
 import { parseThemeFile } from '../../src/shared/themes/library'
 import type { ThemeAppearance } from '../../src/shared/themes/palettes'
-import { closeSotto, enableVoiceCoordinator, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 
 /**
- * Rendered evidence that the selected theme colours the app mark, the Agents
- * voice sphere and the floating widget's mark, voice bars and surfaces, live
+ * Rendered evidence that the selected theme colours the app mark and the
+ * floating widget's mark, dictation bars and surfaces, live
  * and across restart. Run with SOTTO_THEME_BRANDING_EVIDENCE=1 after
  * `npm run build`; images and sampled colours use disposable run evidence; publication uses
  * artifacts/phase-three-theme-branding.
@@ -88,25 +88,15 @@ async function widgetOf(launched: LaunchedSotto): Promise<Page> {
   return widget
 }
 
-async function openAgents(page: Page): Promise<void> {
-  await page.getByRole('tab', { name: 'Agents', exact: true }).click()
-  const notNow = page.getByRole('button', { name: 'Not now', exact: true })
-  if (await notNow.isVisible().catch(() => false)) await notNow.click()
-  await expect(page.locator('canvas.agent-orb')).toBeVisible()
-}
-
 async function expectRoom(page: Page, settings: Settings, mode: ThemeAppearance, name: string): Promise<void> {
-  const { brand, roles } = brandFor(settings, mode)
+  const { brand } = brandFor(settings, mode)
   await expect(page.locator('html')).toHaveAttribute('data-theme', mode)
-  const mark = page.locator('svg.app-mark__glyph')
+  const mark = page.getByRole('complementary', { name: 'Thread sidebar' }).locator('svg.thread-nav__glyph')
   await expect(mark).toHaveAttribute('data-tile', brand.tile)
   await expect(mark).toHaveAttribute('data-glyph', brand.glyph)
-  const orb = page.locator('canvas.agent-orb')
-  await expect(orb).toHaveAttribute('data-orb-colors', brand.orb.join(' '))
   await settle(page)
   await sampleTile(mark, `${name}-app-mark`, brand.tile)
-  await sampleHue(orb, `${name}-agents-orb`, roles.accent)
-  await page.screenshot({ path: resolve(evidenceRoot, `${name}-agents-room.png`), animations: 'disabled' })
+  await page.screenshot({ path: resolve(evidenceRoot, `${name}-threads-room.png`), animations: 'disabled' })
 }
 
 async function expectWidget(widget: Page, settings: Settings, scheme: ThemeAppearance, name: string, listening: Page | null): Promise<void> {
@@ -131,7 +121,7 @@ async function expectWidget(widget: Page, settings: Settings, scheme: ThemeAppea
   await sampleHue(widget.getByTestId('listening-bars'), `${name}-widget-voice-bars`, roles.accent)
 }
 
-/** Starts from the widget's own click-to-dictate sliver, so the Agents room stays in view. */
+/** Starts from the widget's own click-to-dictate sliver, so Threads stays in view. */
 async function startDictation(widget: Page): Promise<void> {
   await widget.getByTestId('widget-sliver').hover()
   await widget.getByTestId('widget-sliver').click({ position: { x: 40, y: 14 }, timeout: 5000 })
@@ -140,7 +130,7 @@ async function startDictation(widget: Page): Promise<void> {
 
 async function cancelDictation(widget: Page): Promise<void> {
   await widget.getByRole('button', { name: 'Cancel dictation' }).click()
-  await expect(widget.locator('.widget-shell[data-status="idle"]')).toBeVisible({ timeout: 15_000 })
+  await expect(widget.getByTestId('widget-sliver')).toBeVisible({ timeout: 15_000 })
 }
 
 async function update(page: Page, patch: Settings): Promise<void> {
@@ -151,18 +141,17 @@ test.describe('theme branding evidence', () => {
   test.skip(!enabled, 'Run with SOTTO_THEME_BRANDING_EVIDENCE=1 after npm run build')
   test.setTimeout(240_000)
 
-  test('mark, sphere and widget wear Nocturne and contrasting themes, live, in both modes and after restart', async () => {
+  test('mark and widget wear Nocturne and contrasting themes, live, in both modes and after restart', async () => {
     await mkdir(evidenceRoot, { recursive: true })
     const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-theme-branding-' })).directory
     let settings: Settings = { onboardingComplete: true, theme: 'system', appearance: 'dark', lightTheme: 'nocturne', darkTheme: 'nocturne', customThemes: [saffron] }
     await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, ...settings }), 'utf8')
-    await enableVoiceCoordinator(profile)
     let launched: LaunchedSotto | undefined
     try {
       launched = await launchSotto('success', profile)
       let { page } = launched
       await page.emulateMedia({ reducedMotion: 'reduce' })
-      await openAgents(page)
+      await openThreads(page)
       let widget = await widgetOf(launched)
 
       // Nocturne, dark room and dark widget.
@@ -202,7 +191,7 @@ test.describe('theme branding evidence', () => {
       launched = await launchSotto('success', profile)
       page = launched.page
       await page.emulateMedia({ reducedMotion: 'reduce' })
-      await openAgents(page)
+      await openThreads(page)
       widget = await widgetOf(launched)
       await expectRoom(page, settings, 'light', 'restart-custom-light')
       await expectWidget(widget, settings, 'dark', 'restart-citrine-dark-idle', null)

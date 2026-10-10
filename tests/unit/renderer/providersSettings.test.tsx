@@ -20,7 +20,7 @@ function fixture(): AgentState {
       models: providerIdSchema.options.map(id => ({ id: `${id}:same-native-model`, name: `${id} model`, provider: PROVIDER_LABELS[id], providerId: id, ready: true })),
       threads: [{ id: 'thread', providerId: 'codex', projectId: 'project', title: 'Codex work', modelId: 'codex:same-native-model', status: 'idle', messages: [], requests: [] }],
     },
-    topLevel: { assignments: [], queue: [], activeThreadId: 'thread', activeProjectId: null } })
+    topLevel: { activeThreadId: 'thread', activeProjectId: null } })
 }
 function provide(state = fixture()) {
   const command = vi.fn(async () => state)
@@ -63,7 +63,7 @@ describe('independent provider settings', () => {
     expect(screen.getByText(/Install Devin CLI and run devin auth login/)).toBeVisible()
     expect(screen.getByText(/Devin keeps its own history and usage analytics/)).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: 'Connect Devin' }))
-    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect', provider: 'devin' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect', provider: 'devin', notice: false }))
     expect(state.configuration.reasoning).toBe('claude')
   })
   it("marks each provider and the selected detail with that provider's mark", () => {
@@ -86,10 +86,10 @@ describe('independent provider settings', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Claude Code' }))
     expect(screen.getByRole('alert')).toHaveTextContent('Sign in to Claude Code.')
     fireEvent.click(screen.getByRole('button', { name: 'Retry Claude Code' }))
-    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect', provider: 'claude' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect', provider: 'claude', notice: false }))
     expect(state.host.providers![0]!.connection).toBe('connected')
   })
-  it('shows only the selected provider catalog and keeps coordinator choices in Agents settings', () => {
+  it('shows only the selected provider catalog and keeps new-thread defaults in Agents settings', () => {
     provide()
     const view = render(<ProvidersSettings />)
     fireEvent.click(screen.getByRole('button', { name: 'Claude Code' }))
@@ -100,7 +100,8 @@ describe('independent provider settings', () => {
     expect(screen.queryByLabelText('Reasoning account')).toBeNull()
     view.unmount()
     render(<AgentSetupFields />)
-    expect(screen.getByLabelText('Reasoning account')).toHaveValue('claude')
+    expect(screen.queryByLabelText('Reasoning account')).toBeNull()
+    expect(screen.getByRole('combobox', { name: 'Thread model' })).toHaveTextContent('coordinator-model')
     expect(screen.queryByLabelText('Thread provider')).toBeNull()
   })
   it('keeps existing thread model choices in its provider and disables them when that provider is offline', () => {

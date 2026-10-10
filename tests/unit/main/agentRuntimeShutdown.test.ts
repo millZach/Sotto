@@ -28,7 +28,7 @@ async function runtime(options: Partial<AgentRuntimeOptions> = {}) {
 
   return createAgentRuntime({
     directory: root, credentials, settings: () => DEFAULT_SETTINGS, writingSettings: async () => DEFAULT_SETTINGS,
-    historyEnabled: () => true, coordinatorEnabled: () => false, openExternal: async () => undefined,
+    historyEnabled: () => true, openExternal: async () => undefined,
     ...(options.providers ? {} : { host: new E2EAgentHost() }), reasoner: e2eAgentReasoner, ...options,
   })
 }

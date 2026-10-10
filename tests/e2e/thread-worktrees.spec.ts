@@ -114,7 +114,7 @@ async function launch(folders: readonly (readonly [string, string])[]): Promise<
   await launched.page.evaluate(async folders => {
     await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
     const agents = window.sotto!.agents!
-    await agents.command({ type: 'configure', patch: { enabled: true, speak: false } })
+    await agents.command({ type: 'configure', patch: { enabled: true, } })
     await agents.command({ type: 'connect' })
     for (const [title, path] of folders) await agents.command({ type: 'create-project', title, path, useExisting: true })
   }, folders)

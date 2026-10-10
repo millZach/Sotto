@@ -206,7 +206,7 @@ async function createThreads(page: Page, provider: Provider, project: string, co
     if (!model) throw new Error(`No ready ${provider} model.`)
     const ids: string[] = []
     for (let index = 0; index < count; index++) {
-      const thread = await agents.command({ type: 'create-thread', projectId, title: `Held ${index + 1}`, titleSource: 'user', modelId: model.id, workingCopy: 'shared', managed: false })
+      const thread = await agents.command({ type: 'create-thread', projectId, title: `Held ${index + 1}`, titleSource: 'user', modelId: model.id, workingCopy: 'shared' })
       if (thread.error || !thread.activeThreadId) throw new Error(thread.error ?? 'No thread was created.')
       const sent = await agents.command({ type: 'manual-send', threadId: thread.activeThreadId, text: 'Synthetic benchmark prompt.' })
       if (sent.error) throw new Error(sent.error)
@@ -245,7 +245,7 @@ for (const provider of ['claude', 'codex'] as const) {
         const { page } = launched
         await page.evaluate(async provider => {
           await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
-          const configured = await window.sotto!.agents!.command({ type: 'configure', patch: { provider, enabled: true, enabledProviders: [provider], speak: false } })
+          const configured = await window.sotto!.agents!.command({ type: 'configure', patch: { provider, enabled: true, enabledProviders: [provider], } })
           if (configured.error) throw new Error(configured.error)
           const connected = await window.sotto!.agents!.command({ type: 'connect', provider })
           if (connected.error) throw new Error(connected.error)

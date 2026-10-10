@@ -18,7 +18,7 @@ const PAUSE = 'The last turn did not confirm completion. Review the thread and r
 
 function manualState({ running = false, capabilities = {} }: { readonly running?: boolean; readonly capabilities?: Partial<AgentCapabilities> } = {}): AgentState {
   const state = threadsStateFixture()
-  state.assignments = []
+
   state.activeThreadId = THREAD
   state.host.capabilities = { ...BASE, ...capabilities }
   if (running) state.host.threads.find(item => item.id === THREAD)!.status = 'running'
@@ -28,7 +28,7 @@ function manualState({ running = false, capabilities = {} }: { readonly running?
 function mount(state: AgentState, options: Parameters<typeof liveAgentState>[1] = {}) {
   const live = liveAgentState(state, options)
   vi.mocked(useAgents).mockImplementation(live.useLive)
-  const view = render(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+  const view = render(<ThreadsView now={NOW} />)
   return { live, view, prompt: () => screen.getByRole('textbox', { name: 'Prompt' }) as HTMLElement }
 }
 
@@ -180,12 +180,12 @@ describe('queue presentation', () => {
     expect(within(queue).getByRole('button', { name: 'Check again' })).toBeInTheDocument()
   })
 
-  it('tells a managed thread’s queue that it waits while Sotto manages the thread', () => {
+  it('keeps the user queue available despite retired assignment data', () => {
     const state = manualState({ running: true })
-    state.assignments = [{ threadId: THREAD, mode: 'managed', instruction: 'Finish previews', followups: 0, paused: false, seenMessageIds: [], ownMessageIds: [], handledRequestIds: [], lastFailure: '', contextUpdatedAt: NOW, startedAt: '' } as unknown as AgentState['assignments'][number]]
+
     state.followups = [followup({ id: ids(1), text: 'Queued before managing' })]
     mount(state)
-    expect(screen.getByRole('region', { name: 'Queued messages' })).toHaveTextContent('Waits while Sotto manages this thread.')
+    expect(screen.getByRole('region', { name: 'Queued messages' })).not.toHaveTextContent('Waits while Sotto manages this thread.')
   })
 })
 

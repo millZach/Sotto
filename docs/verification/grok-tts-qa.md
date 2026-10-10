@@ -1,5 +1,7 @@
 # Grok TTS API integration
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 September 9, 2026. User requested a selectable Grok TTS API voice provider after reviewing xAI pricing. MAI-Transcribe research was cancelled; no transcription provider change is included.
 
 Acceptance checks:

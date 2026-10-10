@@ -23,8 +23,7 @@ function fixture() {
   const stageAttachment = vi.fn(async () => handle)
   const attachmentContent = vi.fn(async () => ({ mimeType: 'image/png' as const, bytes: new Uint8Array([1]) }))
   const control = { get: () => ({} as AgentState), shell: () => ({} as AgentState), threadDetail: () => null, command: vi.fn<AgentControl['command']>(), attachmentPreview, stageAttachment, attachmentContent }
-  disposables.push(registerAgentIpc(ipc, control, { command: command => control.command(command) }, () => [main, widget], 'win32', { status: vi.fn(), download: vi.fn() },
-    { synthesize: vi.fn(), voices: vi.fn(), cancel: vi.fn() }, { synthesize: vi.fn(), cancel: vi.fn() }, { voiceCoordinatorEnabled: true, wakeControl: { configuration: vi.fn() }, encodeReceipt: new AgentStateBroadcaster().encodeReceipt }))
+  disposables.push(registerAgentIpc(ipc, control, { command: command => control.command(command) }, () => [main, widget], { encodeReceipt: new AgentStateBroadcaster().encodeReceipt }))
   const invoke = async (payload: unknown, source = main) =>
     registry.invoke(AGENT_ATTACHMENT_PREVIEW, [payload], registry.event(source))
   const call = async (channel: string, payload: unknown, source = main) =>
@@ -33,10 +32,10 @@ function fixture() {
 }
 
 describe('attachment preview IPC', () => {
-  it('answers the trusted windows with the bytes main holds for that exact attachment', async () => {
+  it('answers the trusted main window with the bytes main holds for that exact attachment', async () => {
     const f = fixture()
     await expect(f.invoke(request)).resolves.toEqual({ dataUrl: PNG })
-    await expect(f.invoke(request, f.widget)).resolves.toEqual({ dataUrl: PNG })
+    await expect(f.invoke(request, f.widget)).rejects.toThrow('AGENT_SENDER_REJECTED')
     expect(f.attachmentPreview).toHaveBeenCalledWith(request)
   })
 
@@ -55,12 +54,13 @@ describe('attachment preview IPC', () => {
     expect(f.attachmentPreview).not.toHaveBeenCalled()
   })
 
-  it('stages an image for either window and reads one back, and refuses a stranger or a malformed image (ADR-0031)', async () => {
+  it('stages an image for the main window and reads one back, and refuses a stranger or a malformed image (ADR-0031)', async () => {
     const f = fixture()
     const bytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])
     const stage = { threadId: 'workshop', name: 'Shot.png', mimeType: 'image/png', bytes }
     await expect(f.call(AGENT_ATTACHMENT_STAGE, stage)).resolves.toEqual(f.handle)
-    await expect(f.call(AGENT_ATTACHMENT_STAGE, { ...stage, threadId: null }, f.widget)).resolves.toEqual(f.handle)
+    await expect(f.call(AGENT_ATTACHMENT_STAGE, { ...stage, threadId: null }, f.widget)).rejects.toThrow('AGENT_SENDER_REJECTED')
+    await expect(f.call(AGENT_ATTACHMENT_CONTENT, { threadId: null, digest: f.handle.digest }, f.widget)).rejects.toThrow('AGENT_SENDER_REJECTED')
     expect(f.stageAttachment).toHaveBeenCalledWith(stage)
     await expect(f.call(AGENT_ATTACHMENT_CONTENT, { threadId: 'workshop', digest: f.handle.digest })).resolves.toEqual({ mimeType: 'image/png', bytes: new Uint8Array([1]) })
     await expect(f.call(AGENT_ATTACHMENT_STAGE, stage, f.stranger)).rejects.toThrow('AGENT_SENDER_REJECTED')
@@ -70,7 +70,7 @@ describe('attachment preview IPC', () => {
       await expect(f.call(AGENT_ATTACHMENT_STAGE, payload)).rejects.toThrow()
     }
     await expect(f.call(AGENT_ATTACHMENT_CONTENT, { threadId: null, digest: '../secret' })).rejects.toThrow()
-    expect(f.stageAttachment).toHaveBeenCalledTimes(2)
+    expect(f.stageAttachment).toHaveBeenCalledTimes(1)
   })
 
   it('removes its handler when the agent surface is torn down', () => {

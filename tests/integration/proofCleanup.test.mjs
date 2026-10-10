@@ -4,7 +4,7 @@ import { Buffer } from 'node:buffer'
 import { execFileSync, spawn } from 'node:child_process'
 import { createServer } from 'node:http'
 import { once } from 'node:events'
-import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import process from 'node:process'
 import { describe, expect, it } from 'vitest'
@@ -106,6 +106,14 @@ describe('proof runtime folders', () => {
     try { check(directory, snapshotProofInstances(directory)) }
     finally { rmSync(directory, { recursive: true, force: true }) }
   }
+  it('preserves the full filesystem identity rather than rounded Windows file IDs', () => {
+    withInstances((directory, before) => {
+      for (const name of ['live', 'other-existing']) {
+        const { dev, ino } = statSync(join(directory, name), { bigint: true })
+        expect(before.get(name)).toEqual({ dev, ino })
+      }
+    })
+  })
   it('allows unrelated instances and requires the owned folder to be gone', () => {
     withInstances((directory, before) => {
       mkdirSync(join(directory, 'other-new'))

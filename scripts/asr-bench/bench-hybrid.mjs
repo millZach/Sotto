@@ -1,10 +1,7 @@
-// Does Sotto's *existing* LLM polish pass already fix Moonshine's errors?
-//
-// Moonshine's mistakes are overwhelmingly proper nouns and technical terms
-// ("Zache" -> "Zach", "Kubernetes" -> "Kubernet's"). Sotto already sends every
-// transcript through a polish LLM with a user dictionary, so those may be
-// recoverable for free — the pass runs either way. If so, the accuracy problem
-// is a prompt/dictionary problem, not a reason to replace the ASR model.
+// Historical experiment: cleanup of cached Moonshine transcripts.
+// Current Sotto dictation uses hosted transcription. This reads a prior local
+// benchmark result; generating one requires the standalone inference setup in
+// scripts/perf-bench/bench-inference.mjs. Cleanup calls still use OpenRouter.
 //
 // Scores the same clips and metric as bench-asr.mjs:
 //   raw Moonshine WER  ->  polished WER,  plus the latency the pass adds.
@@ -25,7 +22,8 @@ const RESULTS_DIR = join(HERE, 'results')
 const FIXTURE_DIR = join(HERE, 'fixtures')
 const OPENROUTER = 'https://openrouter.ai/api/v1/chat/completions'
 
-// Mirrors QUALITY_TIERS in src/main/llm/transcriptPolishService.ts.
+// The July 2026 cleanup quality tiers, kept so this run can be reproduced. ADR-0069
+// retired the tiers for one model; scripts/llm-bench/compare-cleanup.mjs measures it.
 const TIERS = {
   low: { id: 'inception/mercury-2', reasoning: false },
   medium: { id: 'amazon/nova-2-lite-v1', reasoning: false },

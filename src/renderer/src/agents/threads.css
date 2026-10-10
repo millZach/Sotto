@@ -173,32 +173,32 @@
 .thread-prompt--saved .thread-prompt__images { margin: 6px 0 0; color: var(--tt-text-muted); font-size: 12px; overflow-wrap: anywhere; }
 
 /* At a model's highest level the composer wears a thin outline in the effort colourway, with a brighter run
-   travelling round it, and takes the colourway's tide when the level is reached (ADR-0019). Both composers read
+   travelling round it, and takes the colourway's tide when the level is reached (ADR-0019). The composer reads
    the effort chip's own mark, so no prop has to travel; the card's arrival state drives the tide. The ring angle
    property and the effort-ring keyframes are declared once in global.css. */
-.thread-prompt, .thread-workspace__compose .agent-composer { position: relative; --effort-tint: 0%; }
-.thread-prompt:has(.thread-chip[data-effort-top='true']), .thread-workspace__compose .agent-composer:has(.thread-chip[data-effort-top='true']) { --effort-tint: 30%; border-color: color-mix(in srgb, var(--tt-effort-border) var(--effort-tint), var(--threads-field-border)); transition: border-color 2400ms cubic-bezier(.2, .8, .2, 1); }
+.thread-prompt { position: relative; --effort-tint: 0%; }
+.thread-prompt:has(.thread-chip[data-effort-top='true']) { --effort-tint: 30%; border-color: color-mix(in srgb, var(--tt-effort-border) var(--effort-tint), var(--threads-field-border)); transition: border-color 2400ms cubic-bezier(.2, .8, .2, 1); }
 /* The arrival mark sits on the chip's wrapper, which outlives the card: closing the card mid-tide does not cut it. */
-.thread-prompt:has(.effort-picker-anchor[data-effort-arriving='true']), .thread-workspace__compose .agent-composer:has(.effort-picker-anchor[data-effort-arriving='true']) { --effort-tint: 70%; transition-duration: 220ms; }
+.thread-prompt:has(.effort-picker-anchor[data-effort-arriving='true']) { --effort-tint: 70%; transition-duration: 220ms; }
 /* The tint sits over the focus and running colours rather than replacing them: the border is the textarea's focus cue. */
 .thread-prompt[data-running]:has(.thread-chip[data-effort-top='true']) { border-color: color-mix(in srgb, var(--tt-effort-border) var(--effort-tint), color-mix(in srgb, var(--tt-activity) 45%, var(--threads-field-border))); }
-.thread-prompt:has(.thread-chip[data-effort-top='true']):focus-within, .thread-workspace__compose .agent-composer:has(.thread-chip[data-effort-top='true']):focus-within { border-color: color-mix(in srgb, var(--tt-effort-border) var(--effort-tint), var(--threads-field-focus)); }
-.thread-prompt::after, .thread-workspace__compose .agent-composer::after { content: ''; position: absolute; inset: -1px; border-radius: 16px; padding: 1.5px; pointer-events: none; opacity: 0; transition: opacity 700ms;
+.thread-prompt:has(.thread-chip[data-effort-top='true']):focus-within { border-color: color-mix(in srgb, var(--tt-effort-border) var(--effort-tint), var(--threads-field-focus)); }
+.thread-prompt::after { content: ''; position: absolute; inset: -1px; border-radius: 16px; padding: 1.5px; pointer-events: none; opacity: 0; transition: opacity 700ms;
   background: conic-gradient(from var(--effort-ring-angle), transparent 0turn, transparent .52turn, color-mix(in srgb, var(--tt-effort-a) 70%, transparent) .66turn, var(--tt-effort-b) .76turn, var(--tt-effort-c) .84turn, transparent .94turn, transparent 1turn);
   -webkit-mask: linear-gradient(black 0 0) content-box, linear-gradient(black 0 0); -webkit-mask-composite: xor; mask: linear-gradient(black 0 0) content-box, linear-gradient(black 0 0); mask-composite: exclude; }
-.thread-prompt:has(.thread-chip[data-effort-top='true'])::after, .thread-workspace__compose .agent-composer:has(.thread-chip[data-effort-top='true'])::after { opacity: 1; }
-.thread-prompt::before, .thread-workspace__compose .agent-composer::before { content: ''; position: absolute; inset: 0; border-radius: inherit; overflow: hidden; pointer-events: none; z-index: 1;
+.thread-prompt:has(.thread-chip[data-effort-top='true'])::after { opacity: 1; }
+.thread-prompt::before { content: ''; position: absolute; inset: 0; border-radius: inherit; overflow: hidden; pointer-events: none; z-index: 1;
   background: var(--tt-effort-wash-image); background-size: 100% 220%; background-position: 0 -320%; background-repeat: no-repeat; opacity: 0;
   -webkit-mask-image: linear-gradient(to top, transparent 0%, black 36%, black 58%, transparent 100%); mask-image: linear-gradient(to top, transparent 0%, black 36%, black 58%, transparent 100%); }
 @media (prefers-reduced-motion: no-preference) {
-  :root:not([data-reduced-motion='on']) :is(.thread-prompt, .thread-workspace__compose .agent-composer):has(.thread-chip[data-effort-top='true'])::after { animation: effort-ring 4200ms linear infinite; }
-  :root:not([data-reduced-motion='on']) :is(.thread-prompt, .thread-workspace__compose .agent-composer):has(.effort-picker-anchor[data-effort-arriving='true'])::before { animation: effort-tide 1700ms 120ms cubic-bezier(.3, .6, .2, 1) both; }
+  :root:not([data-reduced-motion='on']) .thread-prompt:has(.thread-chip[data-effort-top='true'])::after { animation: effort-ring 4200ms linear infinite; }
+  :root:not([data-reduced-motion='on']) .thread-prompt:has(.effort-picker-anchor[data-effort-arriving='true'])::before { animation: effort-tide 1700ms 120ms cubic-bezier(.3, .6, .2, 1) both; }
 }
 @keyframes effort-tide { from { opacity: .5; background-position: 0 100%; } to { opacity: .5; background-position: 0 -320%; } }
 /* Reduced motion keeps the outline as a still ring at half strength. */
-:root[data-reduced-motion='on'] :is(.thread-prompt, .thread-workspace__compose .agent-composer)::after { background: conic-gradient(color-mix(in srgb, var(--tt-effort-a) 55%, transparent), color-mix(in srgb, var(--tt-effort-b) 55%, transparent), color-mix(in srgb, var(--tt-effort-c) 55%, transparent), color-mix(in srgb, var(--tt-effort-a) 55%, transparent)); }
+:root[data-reduced-motion='on'] .thread-prompt::after { background: conic-gradient(color-mix(in srgb, var(--tt-effort-a) 55%, transparent), color-mix(in srgb, var(--tt-effort-b) 55%, transparent), color-mix(in srgb, var(--tt-effort-c) 55%, transparent), color-mix(in srgb, var(--tt-effort-a) 55%, transparent)); }
 @media (prefers-reduced-motion: reduce) {
-  :is(.thread-prompt, .thread-workspace__compose .agent-composer)::after { background: conic-gradient(color-mix(in srgb, var(--tt-effort-a) 55%, transparent), color-mix(in srgb, var(--tt-effort-b) 55%, transparent), color-mix(in srgb, var(--tt-effort-c) 55%, transparent), color-mix(in srgb, var(--tt-effort-a) 55%, transparent)); }
+  .thread-prompt::after { background: conic-gradient(color-mix(in srgb, var(--tt-effort-a) 55%, transparent), color-mix(in srgb, var(--tt-effort-b) 55%, transparent), color-mix(in srgb, var(--tt-effort-c) 55%, transparent), color-mix(in srgb, var(--tt-effort-a) 55%, transparent)); }
 }
 
 /* The thread's model, reasoning and permissions are three chips in the composer footer, each opening its own list. */
@@ -207,20 +207,6 @@
 .threads-view .screenshot-previews figcaption, .threads-view .screenshot-previews__resized, .threads-view .screenshot-input__tools small { font-size: 12px; }
 .threads-view .screenshot-input__tools .tt-button { width: 30px; min-height: 30px; border-radius: 8px; }
 
-/* The managed composer has the manual prompt's shape: text that grows with what is written, attach beside the controls. */
-.thread-workspace__compose .agent-composer { display: grid; grid-template-columns: auto minmax(0, 1fr); margin: 0; padding: 14px 16px 10px; border: 1px solid var(--threads-field-border); border-radius: 16px; background: var(--threads-field); }
-.thread-workspace__compose .agent-composer:focus-within { border-color: var(--threads-field-focus); }
-.thread-workspace__compose .agent-composer > *, .thread-workspace__compose .agent-composer .screenshot-input > * { grid-column: 1 / -1; }
-.thread-workspace__compose .agent-composer .screenshot-input, .thread-workspace__compose .agent-composer .screenshot-input__tools { display: contents; }
-.thread-workspace__compose .agent-composer .screenshot-input__tools > .tt-button { grid-column: 1; align-self: end; margin: 0 2px 1px -8px; }
-.thread-workspace__compose .agent-composer .screenshot-input__tools > small { order: 1; grid-column: 1 / -1; margin-top: 6px; }
-.thread-workspace__compose .agent-composer > .agent-composer__footer { grid-column: 2; }
-.thread-workspace__compose .agent-composer textarea { display: block; width: 100%; field-sizing: content; min-height: 74px; max-height: 220px; resize: vertical; padding: 0; border: 0; outline: 0; box-shadow: none; background: transparent; color: var(--tt-text); font: inherit; font-size: 15px; line-height: 1.5; }
-.thread-workspace__compose .agent-composer textarea::placeholder { color: var(--tt-text-muted); }
-/* The managed composer's label stays for assistive technology; the placeholder and field already say what it is. */
-.thread-workspace__compose .agent-section-title { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
-.thread-workspace__compose .agent-composer__footer { margin-top: 10px; }
-.thread-workspace__compose .agent-composer__footer .tt-button { min-height: 30px; font-size: 13px; }
 
 .thread-workspace__empty { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 10px; min-height: 200px; height: 100%; padding: 30px; text-align: center; color: var(--tt-text-muted); }
 .thread-workspace__empty h2, .thread-workspace__empty h3 { margin: 2px 0; color: var(--tt-text); font-size: 19px; font-weight: 500; letter-spacing: -.3px; }
@@ -261,17 +247,8 @@
   .thread-pane > .thread-transcript { min-height: min(120px, 24%); }
   .thread-prompt { padding: 10px 14px 8px; }
   .thread-prompt .prompt-editor { min-height: 50px; max-height: 150px; }
-  .thread-workspace__compose .agent-composer { padding: 10px 14px 6px; }
-  .thread-workspace__compose .agent-composer textarea { min-height: 50px; max-height: 150px; }
-  /* Beside Clear and Send it the managed options wrap; their rows sit closer so the card fits the minimum window. */
-  .thread-workspace__compose .agent-composer__footer { margin-top: 4px; }
   .thread-workspace__compose .thread-options-bar .thread-options { row-gap: 0; }
   .thread-workspace__compose .thread-options-bar > small { margin-top: 0; }
-  /* Sotto's card gives its options a row of their own, and their note sits beside Clear and Send it. */
-  .thread-workspace__compose .agent-composer__footer { flex-wrap: wrap; row-gap: 2px; }
-  .thread-workspace__compose .agent-composer__footer > .thread-options-bar { display: contents; }
-  .thread-workspace__compose .agent-composer__footer .thread-options { flex: 1 0 100%; }
-  .thread-workspace__compose .agent-composer__footer > .thread-options-bar > small { flex: 1 1 0; align-self: center; min-width: 0; }
   /* An attached image rests as one row, thumbnail, name and remove, so the card keeps its prompt and actions above the footer. */
   .threads-view .thread-workspace__compose .screenshot-previews { gap: 6px; margin-top: 6px; }
   .threads-view .thread-workspace__compose .screenshot-previews figure { display: grid; grid-template-columns: 40px minmax(0, 1fr) 24px; align-items: center; gap: 8px; width: auto; max-width: 240px; padding: 3px; }

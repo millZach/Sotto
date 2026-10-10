@@ -1,7 +1,6 @@
 
 import { vi } from 'vitest'
 
-
 import {
   AudioRecorder,
   type AudioContextAdapter,
@@ -10,7 +9,6 @@ import {
   type AudioWorkletNodeAdapter,
   type MediaStreamAdapter
 } from '../../../src/renderer/src/audio/audioRecorder'
-
 
 export class FakeNode implements AudioNodeAdapter {
   readonly connect = vi.fn<(node: AudioNodeAdapter) => AudioNodeAdapter>((node) => node)

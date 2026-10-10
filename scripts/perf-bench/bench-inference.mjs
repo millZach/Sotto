@@ -1,20 +1,21 @@
-// Inference timing harness for Sotto dictation latency.
-// Replicates the app's transcription worker stack (transformers.js web build,
-// ORT WASM runtime, bundled q8 whisper models, 4 threads) inside Playwright
-// Chromium with COOP/COEP headers so SharedArrayBuffer threading matches the app.
+// Historical local-ASR inference experiment. Current Sotto dictation is hosted.
+// Install the retired inference dependencies into a separate scratch directory:
+//   npm install --prefix <scratch> @huggingface/transformers@4.2.0
+// Pass --dependencies-dir <scratch>/node_modules and --models-dir <weights>.
+// This harness uses its own ONNX runtime; no application assets are required.
 //
 // Usage:
 //   node scripts/perf-bench/bench-inference.mjs [options]
 //
 // Options:
 //   --device wasm|webgpu   inference device (default wasm)
-//   --runtime app|full     app = resources/runtime (what the package ships),
-//                          full = onnxruntime-web/dist incl. jsep/webgpu builds
+//   --dependencies-dir <path>  standalone inference node_modules directory
 //   --clip tiny|short|long|both   which fixture(s) to transcribe (default both);
 //                          comma-separated names also work, e.g. --clip tiny,technical
 //   --fixtures-dir <path>  directory holding speech-<clip>.wav (default ./fixtures)
+//   --models-dir <path>    directory holding historical model weights
 //   --runs N               transcribe repetitions per clip (default 3)
-//   --threads N            override the app's min(4, cores-1) thread count
+//   --threads N            override the historical min(4, cores-1) thread count
 //   --model <repo>         model repository (default Xenova/whisper-base)
 //   --remote               allow fetching the model from huggingface.co
 //   --headed               run a visible browser (required for WebGPU)
@@ -29,7 +30,6 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
 const BENCH_DIR = path.dirname(fileURLToPath(import.meta.url))
-const ROOT = path.resolve(BENCH_DIR, '..', '..')
 
 const args = process.argv.slice(2)
 function argValue(name, fallback) {
@@ -37,7 +37,9 @@ function argValue(name, fallback) {
   return i >= 0 && args[i + 1] !== undefined ? args[i + 1] : fallback
 }
 const device = argValue('device', 'wasm')
-const runtimeMode = argValue('runtime', device === 'webgpu' ? 'full' : 'app')
+const dependencyDir = argValue('dependencies-dir', process.env.SOTTO_INFERENCE_DEPENDENCIES)
+if (!dependencyDir) throw new Error('Pass --dependencies-dir pointing to standalone inference node_modules')
+const dependencies = path.resolve(dependencyDir)
 const clipArg = argValue('clip', 'both')
 const runs = Number(argValue('runs', '3'))
 const threadsOverride = argValue('threads', null)
@@ -45,10 +47,11 @@ const headed = args.includes('--headed')
 const model = argValue('model', null)
 const remote = args.includes('--remote')
 
-const RUNTIME_DIR =
-  runtimeMode === 'app'
-    ? path.join(ROOT, 'resources', 'runtime')
-    : path.join(ROOT, 'node_modules', 'onnxruntime-web', 'dist')
+const ortRoot = path.join(dependencies, 'onnxruntime-web')
+const commonRoot = existsSync(path.join(ortRoot, 'node_modules', 'onnxruntime-common'))
+  ? path.join(ortRoot, 'node_modules', 'onnxruntime-common')
+  : path.join(dependencies, 'onnxruntime-common')
+const RUNTIME_DIR = path.join(ortRoot, 'dist')
 
 const MIME = {
   '.js': 'text/javascript',
@@ -62,11 +65,11 @@ const MIME = {
 }
 
 const routes = [
-  { prefix: '/dist/', dir: path.join(ROOT, 'node_modules', '@huggingface', 'transformers', 'dist') },
+  { prefix: '/dist/', dir: path.join(dependencies, '@huggingface', 'transformers', 'dist') },
   { prefix: '/runtime/', dir: RUNTIME_DIR },
-  { prefix: '/ort/', dir: path.join(ROOT, 'node_modules', 'onnxruntime-web', 'dist') },
-  { prefix: '/ortcommon/', dir: path.join(ROOT, 'node_modules', 'onnxruntime-common', 'dist', 'esm') },
-  { prefix: '/models/', dir: path.resolve(argValue('models-dir', path.join(ROOT, 'resources', 'models'))) },
+  { prefix: '/ort/', dir: RUNTIME_DIR },
+  { prefix: '/ortcommon/', dir: path.join(commonRoot, 'dist', 'esm') },
+  { prefix: '/models/', dir: path.resolve(argValue('models-dir', process.env.SOTTO_ASR_MODELS || path.join(BENCH_DIR, 'models'))) },
   { prefix: '/bench/', dir: path.resolve(argValue('fixtures-dir', path.join(BENCH_DIR, 'fixtures'))) },
 ]
 

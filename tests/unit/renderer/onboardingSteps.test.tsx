@@ -32,7 +32,7 @@ function agentState(providers: readonly AgentProviderStatus[], projects: readonl
   return threadsStateFixture({ cloneOverrides: false,
     configuration: { ...defaultAgentConfiguration(), ...(options.off ? { disconnectedProviders: [...options.off] } : {}) },
     host: { connected: true, name: 'Test', version: '1.0', capabilities: CAPS, projects: [...projects], providers: [...providers], models: [], threads: [] },
-    topLevel: { assignments: [], queue: [], activeThreadId: null, activeProjectId: null, ...(options.stale ? { stale: true } : {}), ...(options.installed ? { installedProviders: [...options.installed] } : {}) } })
+    topLevel: { activeThreadId: null, activeProjectId: null, ...(options.stale ? { stale: true } : {}), ...(options.installed ? { installedProviders: [...options.installed] } : {}) } })
 }
 
 function provide(state: AgentState | null, command = vi.fn(async () => state)): void {
@@ -102,21 +102,28 @@ describe('AgentsStep', () => {
 
     provide(agentState([{ id: 'codex', connection: 'disconnected', name: 'Codex', version: '', capabilities: CAPS }]), command)
     rerender(<AgentsStep heading={<div />} onOpenLink={vi.fn(async () => true)} />)
-    await waitFor(() => expect(command).toHaveBeenCalledExactlyOnceWith({ type: 'connect' }))
+    await waitFor(() => expect(command).toHaveBeenCalledExactlyOnceWith({ type: 'connect', notice: false }))
 
     rerender(<AgentsStep heading={<div />} onOpenLink={vi.fn(async () => true)} />)
     expect(command).toHaveBeenCalledTimes(1)
   })
 
-  it('runs Connect providers on arrival even when a client is already connected, so every installed one connects', async () => {
+  it('quietly connects every installed client on arrival, including several beside an already connected one', async () => {
     const providers: AgentProviderStatus[] = [
       { id: 'codex', connection: 'connected', name: 'Codex', version: '1.2.3', capabilities: CAPS },
       { id: 'claude', connection: 'disconnected', name: 'Claude Code', version: '', capabilities: CAPS },
+      { id: 'grok', connection: 'disconnected', name: 'Grok Build', version: '', capabilities: CAPS },
     ]
-    const command = vi.fn(async () => agentState(providers))
+    const connected = agentState(providers.map(provider => ({ ...provider, connection: 'connected' })), [], { installed: ['codex', 'claude', 'grok'] })
+    const command = vi.fn(async () => connected)
     provide(agentState(providers), command)
-    render(<AgentsStep heading={<div />} onOpenLink={vi.fn(async () => true)} />)
-    await waitFor(() => expect(command).toHaveBeenCalledExactlyOnceWith({ type: 'connect' }))
+    const view = render(<AgentsStep heading={<div />} onOpenLink={vi.fn(async () => true)} />)
+    await waitFor(() => expect(command).toHaveBeenCalledExactlyOnceWith({ type: 'connect', notice: false }))
+    provide(connected, command)
+    view.rerender(<AgentsStep heading={<div />} onOpenLink={vi.fn(async () => true)} />)
+    for (const provider of providers) expect(screen.getByText(provider.name).closest('li')).toHaveTextContent('Ready')
+    expect(connected.notice).toBe('')
+    expect(command).toHaveBeenCalledTimes(1)
   })
 
   it('retries the clients with a problem on Check again, and runs Connect providers again to find any installed since', async () => {
@@ -128,11 +135,11 @@ describe('AgentsStep', () => {
     provide(agentState(providers), command)
     const user = userEvent.setup()
     render(<AgentsStep heading={<div />} onOpenLink={vi.fn(async () => true)} />)
-    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect', notice: false }))
     await waitFor(() => expect(screen.getByRole('button', { name: 'Check again' })).toBeEnabled())
     command.mockClear()
     await user.click(screen.getByRole('button', { name: 'Check again' }))
-    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect', notice: false }))
     expect(command).toHaveBeenCalledWith({ type: 'refresh', provider: 'grok' })
     expect(command).not.toHaveBeenCalledWith({ type: 'refresh', provider: 'codex' })
   })
@@ -165,7 +172,7 @@ describe('AgentsStep', () => {
     const grokRow = screen.getByText('Grok Build').closest('li')!
     await waitFor(() => expect(grokRow).toHaveTextContent('Turned off'))
     await user.click(screen.getByRole('button', { name: 'Connect Grok Build' }))
-    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect', provider: 'grok' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect', provider: 'grok', notice: false }))
   })
 
   it('says Not connected, never Not installed, for a client Sotto has not looked for, and connects it on Connect', async () => {
@@ -182,7 +189,7 @@ describe('AgentsStep', () => {
     expect(claudeRow).not.toHaveTextContent('Not installed')
     expect(screen.queryByRole('button', { name: 'Open the Claude Code install guide' })).toBeNull()
     await user.click(screen.getByRole('button', { name: 'Connect Claude Code' }))
-    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect', provider: 'claude' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect', provider: 'claude', notice: false }))
   })
 
   it('maps each provider problem to its row label and detail', () => {
@@ -285,7 +292,7 @@ describe('AgentsStep on a desktop with another computer', () => {
     const command = vi.fn(async () => agentState([]))
     provide(withHosts(REMOTE, [local, remote]), command)
     const { unmount } = render(<AgentsStep heading={<div />} onOpenLink={vi.fn(async () => true)} />)
-    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect', notice: false }))
     expect(hosts.command).toHaveBeenCalledWith({ type: 'select', hostId: LOCAL })
     unmount()
     expect(hosts.command).toHaveBeenLastCalledWith({ type: 'select', hostId: REMOTE })

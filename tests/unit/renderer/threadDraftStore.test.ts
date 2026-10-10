@@ -10,7 +10,7 @@ type SaveCommand = Extract<AgentCommand, { type: 'save-thread-draft' }>
 function baseState(patch: Partial<AgentState> = {}): AgentState {
   return threadsStateFixture({ cloneOverrides: false,
     host: { connected: true, name: 'Test', version: '', capabilities: {}, models: [], projects: [], threads: [{ id: 'thread', projectId: 'project', title: 'Thread', modelId: 'model', status: 'idle', messages: [], requests: [] }] },
-    topLevel: { assignments: [], queue: [], activeThreadId: null, activeProjectId: null, ...patch } , ...patch})
+    topLevel: { activeThreadId: null, activeProjectId: null, ...patch } , ...patch})
 }
 
 function uuids(): () => string {

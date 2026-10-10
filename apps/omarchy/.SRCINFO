@@ -1,5 +1,5 @@
 pkgbase = sotto-bin
-	pkgdesc = Dictation and voice development coordinator
+	pkgdesc = Dictation and manual coding threads
 	pkgver = 0.1.34
 	pkgrel = 3
 	url = https://github.com/millZach/Sotto-releases
@@ -47,7 +47,7 @@ pkgbase = sotto-bin
 	source = sotto-256.png
 	sha256sums = 2a0c29b3a79f7fea239d20ecb33dcc20a3be5d3b01cc90397be3f05e3166a326
 	sha256sums = b6c787d65d76cb6d3b249e237361b5991d70a96e762f8893c96cd6d567e70e86
-	sha256sums = 989830b03a273391c321e57d3cc599b7f7f4ab2c382a88cf917c23ea3a8ee891
+	sha256sums = 7f22e8248af65fb40220c4845e5dbd6a5d8feaf901b5dafb6cef6e7ac3e22b43
 	sha256sums = 206490341a40be0fa88ca4b1cc29082e2d3f4d618c7ad7443d16bb283fdb512b
 	sha256sums = 8b01049ac54c6d02301a181b939ff994c009583c36e29d745f9c5ae6cf9f94ed
 	sha256sums = 2c3f081fbb8de1d668efc065d8e1dd43b37a290062b985db237a6b4a6d56daad

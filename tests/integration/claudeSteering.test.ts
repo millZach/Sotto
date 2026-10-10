@@ -5,7 +5,6 @@ import { randomUUID } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
-import { e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { createAgentControl } from '../fixtures/agentControlFixture'
 import { claudeFixture } from '../fixtures/claudeFixture'
 import { immediatePublishScheduler } from '../fixtures/publishScheduler'
@@ -98,7 +97,7 @@ it('refuses to steer a thread with no running turn', async () => {
 it('steers a queued follow-up into the running turn', async () => {
   const f = await running()
   const credentials = await testCredentials(f.root, { mode: 'unavailable' })
-  const control = createAgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials, reasoner: e2eAgentReasoner })
+  const control = createAgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials })
   try {
     await control.start()
     await control.command({ type: 'refresh' })

@@ -18,7 +18,14 @@ export class AgentCredentials {
     this.store = new AtomicJsonStore(join(directory, 'credentials.json'), z.record(z.string(), z.string()).parse, () => ({}),
       undefined, undefined, () => onRecovery?.({ code: 'CREDENTIALS_RECOVERED' }))
   }
-  async load(): Promise<void> { await this.mutation; this.values = await this.store.read() }
+  async load(): Promise<void> {
+    await this.mutation
+    this.values = await this.store.read()
+    if (this.has('grokSpeech')) {
+      try { await this.set('grokSpeech', '') }
+      catch { console.warn('retired-voice-credential-clear-failed') }
+    }
+  }
   available(): boolean { return this.encryption.isEncryptionAvailable() }
   has(slot: string): boolean { return Boolean(this.values[slot]) }
   get(slot: string): string {

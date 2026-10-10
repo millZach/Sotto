@@ -1,5 +1,7 @@
 # Phase 2 implementation and verification
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 All seven implementations and independent reviews are complete through `e6cdcda` on `work/threads-phase-2`, based on Phase 1 `17c47b5`. The complete Electron regression and final capture comparison pass. This record does not claim an installer or public release.
 
 Tickets ran in isolated parallel worktrees. GPT-6-Astra handled backend/native reasoning; Claude Opus 5 handled UI using the user's authorized Fable fallback. Shared contracts were integrated before combined testing. The inspected T3 reference is pinned at `d1d15c67f4a5fb82fd8d5e01e5e3b288296789c3`.

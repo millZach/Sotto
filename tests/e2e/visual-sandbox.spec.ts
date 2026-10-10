@@ -125,7 +125,7 @@ async function openWorkshop(launched: LaunchedSotto): Promise<Locator> {
   const { page: view } = launched
   await view.evaluate(async () => {
     await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
-    await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+    await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
     await window.sotto!.agents!.command({ type: 'connect' })
   })
   await view.reload()

@@ -16,8 +16,8 @@ test('Computer Use connection guidance wraps in the built app and opens from the
     threads: [{ id: 'workshop', projectId: 'project', title: 'Computer Use connection', modelId: 'codex:test', runtimeMode: 'full-access', status: 'idle', requests: [],
       messages: [{ id: 'prompt', role: 'user', text: 'Use Computer Use to inspect the open apps.', createdAt: '2026-10-05T10:00:00.000Z' }],
       activities: [{ id: 'computer-use', turnId: 'turn', sequence: 0, afterMessageId: 'prompt', kind: 'tool', status: 'failed', title: 'Computer Use', error: `${guidance}\n${providerError}` }] }] }
-  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, voiceCoordinator: true }))
-  await writeFile(join(profile, 'agents.json'), JSON.stringify({ configuration: { ...defaultAgentConfiguration(), enabled: true, speak: false }, activeProjectId: 'project', activeThreadId: 'workshop' }))
+  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, }))
+  await writeFile(join(profile, 'agents.json'), JSON.stringify({ configuration: { ...defaultAgentConfiguration(), enabled: true, }, activeProjectId: 'project', activeThreadId: 'workshop' }))
   await writeFile(join(profile, 'workspace.json'), JSON.stringify({ snapshot, creations: [], projectAliases: [] }))
   const shots = test.info().outputPath('captures')
   await mkdir(shots, { recursive: true })

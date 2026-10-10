@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { version as packageVersion } from '../../package.json'
 import { startSocketServer } from '../../src/host/socketServer'
-import { type HostService } from '../../src/main/agents/hostService'
+import { desktopWindowClient, type HostService } from '../../src/main/agents/hostService'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { SCREENSHOT_NOT_ITS_TYPE, type AgentCommand, type AgentModel, type AgentThreadDetail, type AgentThreadDetailUpdate } from '../../src/shared/agents'
 import { hostVersionMismatch } from '../../src/shared/hostProtocol'
@@ -279,3 +279,18 @@ describe('model catalog revisions (#699)', () => {
     } finally { await client.close(); await server.close() }
   })
 })
+
+it('targets the peer selection for cancel-draft and preserves the host thread draft', async () => {
+    const { client } = await pair()
+    await client.command({ type: 'connect', provider: 'codex' })
+    const threads = client.shell().host.threads
+    await fixture.host.service.command({ type: 'select-thread', threadId: threads[0]!.id }, desktopWindowClient())
+    await fixture.host.service.command({ type: 'compose', text: 'Host draft' }, desktopWindowClient())
+    await client.command({ type: 'select-thread', threadId: threads[1]!.id })
+    await client.command({ type: 'compose', text: 'Remote draft' })
+    const before = fixture.host.service.shell()
+    expect((await client.command({ type: 'cancel-draft' })).error).toBeNull()
+    expect(fixture.host.service.shell().activeThreadId).toBe(before.activeThreadId)
+    expect(fixture.host.service.shell().draft).toBe(before.draft)
+    expect(fixture.host.service.shell().threadDrafts?.find(draft => draft.threadId === threads[1]!.id)?.text).toBeUndefined()
+  })

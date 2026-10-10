@@ -6,10 +6,10 @@ import { _electron as electron, expect } from '@playwright/test'
 
 import type { DesignCaptureMotion as CaptureMotion, DesignCaptureRequirement } from '../../scripts/design-capture-matrix.mjs'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
-import { designThreadsFixture, type E2EScenario } from '../../src/shared/e2e'
+import { type E2EScenario } from '../../src/shared/e2e'
 import type { HistoryEntry } from '../../src/shared/history'
 import { DEFAULT_SETTINGS, type Appearance } from '../../src/shared/settings'
-import { closeSotto, firstSottoWindow, launchSotto, type LaunchedSotto, type LaunchDependencies } from '../e2e/support/sottoLaunch'
+import { closeSotto, firstSottoWindow, launchSotto, type LaunchDependencies, type LaunchedSotto } from '../e2e/support/sottoLaunch'
 
 type CaptureScale = DesignCaptureRequirement['scalePercent']
 /** Pinned for every launch in this suite; scripts/capture-design.mjs sets the same zone for the Node side. */
@@ -47,20 +47,15 @@ type DesignAgentsProfile = 'design-threads' | 'design-threads-empty'
 
 /**
  * Saved coordinator state for the Threads page captures: agent control is
- * already on so Sotto connects to the fixture host at launch, and every
- * fixture thread but one is assigned. The coordinator's own seven-day
- * windows read the real clock, so context stamps are taken now; the page
- * itself reads the fixed E2E_THREADS_NOW.
+ * already on so Sotto connects to the fixture host at launch. The page
+ * reads the fixed E2E_THREADS_NOW.
  */
-function designAgentsState(profile: DesignAgentsProfile): Record<string, unknown> {
-  const fixture = designThreadsFixture()
+function designAgentsState(): Record<string, unknown> {
   return {
     configuration: { provider: 'codex', enabled: true, projectsDirectory: '', defaultModelId: 'claude:sonnet',
-      followupLimit: 5, speak: false, speechProvider: 'system', speechVoice: 'F1', grokSpeechVoice: 'ara', wakeModelDirectory: '', wakeRuntimeDirectory: '',
       reasoning: 'none', reasoningModel: '', reasoningEffort: '', },
-    assignments: profile === 'design-threads' ? fixture.assignments.map((assignment) => ({ ...assignment, contextUpdatedAt: Date.now() })) : [],
-    queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false,
-    pendingRequest: '', contextSavedAt: Date.now(), outbox: [],
+    activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false,
+    contextSavedAt: Date.now(), outbox: [],
   }
 }
 
@@ -73,7 +68,7 @@ async function createProfile(
     readonly appearance?: Appearance
     readonly lightTheme?: string
     readonly darkTheme?: string
-    readonly voice?: boolean
+    readonly memory?: boolean
   },
 ): Promise<string> {
   const owner = await ownedE2EProfile({ prefix: 'sotto-e2e-design-' })
@@ -86,16 +81,11 @@ async function createProfile(
     appearance: options.appearance ?? DEFAULT_SETTINGS.appearance,
     lightTheme: options.lightTheme ?? DEFAULT_SETTINGS.lightTheme,
     darkTheme: options.darkTheme ?? DEFAULT_SETTINGS.darkTheme,
-    // The Agents room, the wake phrase and the orb are hidden for the beta, so the captures that record them ask for
-    // the coordinator by name. Everything else is captured the way an install ships.
-    voiceCoordinatorEnabled: options.voice === true,
-    // Memory comes on with the coordinator, as `enableVoiceCoordinator` does: the Agents room's questionnaire is
-    // the memory feature's, and the captures that greet it with Not now need it there (ADR-0013).
-    memoryEnabled: options.voice === true,
+    memoryEnabled: options.memory === true,
   }
   await writeFile(join(profile, 'settings.json'), `${JSON.stringify(settings, null, 2)}\n`, 'utf8')
   await writeFile(join(profile, 'history.json'), `${JSON.stringify(options.history ?? [], null, 2)}\n`, 'utf8')
-  if (options.agents !== undefined) await writeFile(join(profile, 'agents.json'), `${JSON.stringify(designAgentsState(options.agents), null, 2)}\n`, 'utf8')
+  if (options.agents !== undefined) await writeFile(join(profile, 'agents.json'), `${JSON.stringify(designAgentsState(), null, 2)}\n`, 'utf8')
   return profile
 }
 
@@ -110,7 +100,7 @@ export async function withSotto(
     readonly appearance?: Appearance
     readonly lightTheme?: string
     readonly darkTheme?: string
-    readonly voice?: boolean
+    readonly memory?: boolean
   },
   run: (launched: LaunchedSotto) => Promise<void>,
 ): Promise<void> {
@@ -152,4 +142,3 @@ export async function withSotto(
     await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
   }
 }
-

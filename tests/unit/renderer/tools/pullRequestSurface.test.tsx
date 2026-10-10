@@ -48,7 +48,7 @@ function mount(options: { detail?: GitPullRequestRead | ((request: { reference?:
   vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
   const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => threadsStateFixture({ cloneOverrides: false,
     host: { projects: [], threads: [], models: [] },
-    topLevel: { assignments: [], queue: [], activeThreadId: null, activeProjectId: null, notice: 'Pull request merged.', ...options.result } , ...options.result}))
+    topLevel: { activeThreadId: null, activeProjectId: null, notice: 'Pull request merged.', ...options.result } , ...options.result}))
   const onStatus = vi.fn()
   const view = render(<PullRequestSurface thread={options.thread ?? thread()} command={command} onStatus={onStatus} babysit={options.babysit} />)
   return { ...view, command, gitPullRequest, openExternalLink, writeText, onStatus }
@@ -444,7 +444,7 @@ describe('the Pull request surface', () => {
     const { command } = mount({ detail: () => detail({ draft: !ready }) })
     command.mockImplementation(async () => { ready = true; return threadsStateFixture({ cloneOverrides: false,
     host: { projects: [], threads: [], models: [] },
-    topLevel: { assignments: [], queue: [], activeThreadId: null, activeProjectId: null, notice: 'Marked ready for review.' } }) })
+    topLevel: { activeThreadId: null, activeProjectId: null, notice: 'Marked ready for review.' } }) })
     await opened()
     const press = within(lines()[4]!).getByRole('button', { name: 'Ready for review' })
     press.focus()
@@ -575,7 +575,7 @@ describe('babysitting the pull request shown (ADR-0061, variant C)', () => {
     expect(command).toHaveBeenCalledTimes(1)
     await act(async () => { answer(threadsStateFixture({ cloneOverrides: false,
     host: { projects: [], threads: [], models: [] },
-    topLevel: { assignments: [], queue: [], activeThreadId: null, activeProjectId: null, notice: 'Stopped.' } })) })
+    topLevel: { activeThreadId: null, activeProjectId: null, notice: 'Stopped.' } })) })
   })
 
   it('leaves focus where the user moved it while a slow Stop was under way', async () => {
@@ -595,7 +595,7 @@ describe('babysitting the pull request shown (ADR-0061, variant C)', () => {
       composer.focus()
       await act(async () => { answer(threadsStateFixture({ cloneOverrides: false,
     host: { projects: [], threads: [], models: [] },
-    topLevel: { assignments: [], queue: [], activeThreadId: null, activeProjectId: null, notice: 'Stopped babysitting PR #74.' } })) })
+    topLevel: { activeThreadId: null, activeProjectId: null, notice: 'Stopped babysitting PR #74.' } })) })
       await waitFor(() => expect(onStatus).toHaveBeenCalledWith('Stopped babysitting #74'))
       await act(async () => { await new Promise(resolve => requestAnimationFrame(() => resolve(undefined))) })
       expect(composer).toHaveFocus()

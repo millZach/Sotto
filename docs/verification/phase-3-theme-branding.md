@@ -1,5 +1,7 @@
 # Phase 3 theme branding: mark, voice sphere and widget
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 Test citations use the current split files. Recorded counts and outcomes are from the original runs.
 
 Owner: `work/phase3-theme-branding` (exact Claude Opus 5), from main `b8995d8`. User request: the selected theme must also colour the Sotto icon and the voice sphere, and the widget must follow too. This supersedes the frozen widget palette.

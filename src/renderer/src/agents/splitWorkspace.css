@@ -107,15 +107,14 @@
   .threads-view .thread-pane > .thread-transcript { min-height: min(96px, 24%); }
   /* The header is already one row at its smallest, so a short pane gives its height to the transcript and composer. */
   .threads-view .thread-pane > header .thread-pane__controls, .threads-view .thread-pane .thread-pane__controls { top: 7px; }
-  .threads-view .thread-pane .thread-workspace__compose :is(.thread-prompt, .agent-composer) { padding: 10px 14px 8px; }
-  .threads-view .thread-pane .thread-workspace__compose :is(.thread-prompt, .agent-composer) :is(textarea, .prompt-editor) { min-height: 50px; max-height: 120px; }
-  .threads-view .thread-pane .thread-workspace__compose :is(.thread-prompt__footer, .agent-composer__footer) { margin-top: 4px; }
-  .threads-view .thread-pane .thread-workspace__compose .agent-composer__footer { flex-wrap: wrap; row-gap: 2px; }
+  .threads-view .thread-pane .thread-workspace__compose .thread-prompt { padding: 10px 14px 8px; }
+  .threads-view .thread-pane .thread-workspace__compose .thread-prompt :is(textarea, .prompt-editor) { min-height: 50px; max-height: 120px; }
+  .threads-view .thread-pane .thread-workspace__compose .thread-prompt__footer { margin-top: 4px; }
   .threads-view .thread-pane .thread-workspace__compose .thread-options-bar .thread-options { row-gap: 0; }
   .threads-view .thread-pane .thread-workspace__compose .thread-options-bar > small { margin-top: 0; }
   /* In rows of panes, the panes not being written in rest their composers at one line and keep only warnings beneath;
      focusing a pane restores its composer. */
-  .threads-view .thread-panes[data-rows] .thread-pane:not([data-focused]) .thread-workspace__compose :is(.thread-prompt, .agent-composer) :is(textarea, .prompt-editor) { min-height: 25px; max-height: 50px; }
+  .threads-view .thread-panes[data-rows] .thread-pane:not([data-focused]) .thread-workspace__compose .thread-prompt :is(textarea, .prompt-editor) { min-height: 25px; max-height: 50px; }
   .threads-view .thread-panes[data-rows] .thread-pane:not([data-focused]) .thread-workspace__compose .thread-prompt__status:not([data-tone='warning']) { display: none; }
 }
 

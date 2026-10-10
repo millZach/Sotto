@@ -10,9 +10,9 @@ The first desktop release whose Add host turns on a host's tailnet connections (
 
 First-run setup's **Get the iPhone beta** opens `IPHONE_BETA_URL` in `src/shared/phones.ts`, which is a placeholder until the iPhone app's external TestFlight testing has a public link (ADR-0063). Set it to that link before a release.
 
-1. Bump the version: `npm version X.Y.Z --no-git-tag-version` updates `package.json` and `package-lock.json` together, then update the three `package:*` distributable paths in `package.json` that carry the version. Commit on `main` as `Release X.Y.Z` with a body that says what the release is. The source repository carries no tag.
+1. Bump the version on a branch `release/X.Y.Z` from `main`: `npm version X.Y.Z --no-git-tag-version` updates `package.json` and `package-lock.json` together, then update the three `package:*` distributable paths in `package.json` that carry the version. Commit as `Release X.Y.Z` with a body that says what the release is, open a pull request, and merge it once Gates (Windows) and Package result are green and the branch is up to date with `main`. Main's ruleset has no bypass, so a direct push to `main` is refused, the owner's included. Build from `main` after the merge. The source repository carries no tag.
 2. On each machine, move that machine's previous installers, disk images and blockmaps from `release/` into `release/archive/`, so `release/` holds only the current version.
-3. Build: `npm run package:win` on the Windows PC, `npm run package:mac` on the Mac, and `npm run package:linux` on forge. Each run verifies the runtime, writes build provenance and checks the packaged resources. The ONNX runtime ships only under `resources/runtime`; the check rejects a copy inside `app.asar`.
+3. Build: `npm run package:win` on the Windows PC, `npm run package:mac` on the Mac, and `npm run package:linux` on forge. Each run verifies the Claude SDK and terminal assets, writes build provenance and checks the packaged resources. The check refuses retired voice workers and ONNX runtime assets.
 4. Create release `vX.Y.Z` titled `Sotto X.Y.Z (beta)` on `millZach/Sotto-releases` and attach every installer, disk image and Linux desktop archive and pacman package.
 5. Assemble `SHA256SUMS.txt` and upload it last, after every artifact is attached.
 6. Mark the superseded release as a pre-release so the newest release is the only "Latest".
@@ -49,11 +49,10 @@ Cut by hand on forge (Omarchy, x64), using Node 24.21.0 and a clean `npm ci`. Ne
 ```sh
 mise exec node@24.21.0 -- npm ci
 mise exec node@24.21.0 -- node node_modules/electron/install.js
-mise exec node@24.21.0 -- npm run runtime:prepare
 mise exec node@24.21.0 -- npm run package:linux
 ```
 
-The command produces `release/linux-unpacked` and `release/Sotto-X.Y.Z-linux-x64.tar.gz`. It verifies provenance, runtime, notices, normal startup, SQLite and the native PTY. The tarball is extracted and every file compared with the verified unpacked build, including external runtime and native resources. Smoke profiles use `--password-store=basic` and an isolated HOME/XDG configuration so the release machine's keyring is untouched.
+The command produces `release/linux-unpacked` and `release/Sotto-X.Y.Z-linux-x64.tar.gz`. It verifies provenance, release assets, notices, normal startup, SQLite and the native PTY. The tarball is extracted and every file compared with the verified unpacked build, including external dependencies and native resources. Smoke profiles use `--password-store=basic` and an isolated HOME/XDG configuration so the release machine's keyring is untouched.
 
 Run the four normal gates in [CI](../ci.md) and the external import allowlist check. For the real packaged launch, run `scripts/verify-linux-package.mjs` in the nested Hyprland wrapper described in its usage comment: verify `ready`, `gnome_libsecret`, tray registration and Settings writing/removing XDG autostart. Never send keys to forge's locked live desktop.
 

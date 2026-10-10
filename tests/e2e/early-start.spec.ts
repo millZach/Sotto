@@ -32,7 +32,7 @@ test('typing in a new Claude thread starts its CLI before Send, and Send starts 
     const { page } = launched
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
-      const configured = await window.sotto!.agents!.command({ type: 'configure', patch: { provider: 'claude', enabled: true, enabledProviders: ['claude'], speak: false } })
+      const configured = await window.sotto!.agents!.command({ type: 'configure', patch: { provider: 'claude', enabled: true, enabledProviders: ['claude'], } })
       if (configured.error) throw new Error(configured.error)
       const connected = await window.sotto!.agents!.command({ type: 'connect', provider: 'claude' })
       if (connected.error) throw new Error(connected.error)
@@ -46,7 +46,7 @@ test('typing in a new Claude thread starts its CLI before Send, and Send starts 
       const projectId = created.host.projects.find(item => item.title === 'Early start')!.id
       const model = (await agents.get()).host.models.find(item => item.providerId === 'claude' && item.ready)
       if (!model) throw new Error('No ready Claude model.')
-      const thread = await agents.command({ type: 'create-thread', projectId, title: 'Typed into first', titleSource: 'user', modelId: model.id, workingCopy: 'shared', managed: false })
+      const thread = await agents.command({ type: 'create-thread', projectId, title: 'Typed into first', titleSource: 'user', modelId: model.id, workingCopy: 'shared' })
       if (thread.error || !thread.activeThreadId) throw new Error(thread.error ?? 'No thread was created.')
       return thread.activeThreadId
     }, project)

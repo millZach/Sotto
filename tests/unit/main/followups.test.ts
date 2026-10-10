@@ -117,11 +117,11 @@ it('allows another thread send and draft saves while a first provider send is sl
   } finally { release(); await first }
 })
 
-it('waits through permission requests, settlement and disconnection, and revokes management on explicit enqueue', async () => {
-  const f = await fixture(); await f.control.command({ type: 'assign', threadId: 'workshop' })
+it('waits through permission requests, settlement and disconnection, and queues only explicit follow-ups', async () => {
+  const f = await fixture();
   f.host.update('workshop', { status: 'running', requests: [{ id: 'permit', kind: 'permission', text: 'Allow?', options: [] }] })
   await f.control.command(queued('user follow-up'))
-  expect(f.control.get().assignments[0]?.mode).toBe('manual')
+
   complete(f.host); expect(f.host.attempts).toHaveLength(0)
   f.host.update('workshop', { requests: [], workspaceSettledAt: new Date().toISOString() }); expect(f.host.attempts).toHaveLength(0)
   f.host.state.connected = false; f.host.update('workshop', { workspaceSettledAt: null }); expect(f.host.attempts).toHaveLength(0)
@@ -564,19 +564,6 @@ it('keeps a checkout-refused follow-up failed in the queue until the user resume
   expect(f.host.state.threads.find(t => t.id === 'workshop')?.messages.filter(m => m.text === 'Keep these words')).toHaveLength(1)
 })
 
-it('distinguishes managed work from a paused assignment with a queue and leaves an empty paused assignment unblocked', async () => {
-  const f = await fixture()
-  f.host.update('workshop', { status: 'running' })
-  await f.control.command({ type: 'assign', threadId: 'workshop', instruction: 'Keep working' })
-  expect(f.control.pendingThreadWorkReason('workshop')).toBe('managed-assignment')
-  await f.control.command({ type: 'pause', threadId: 'workshop' })
-  expect(f.control.hasPendingThreadWork('workshop')).toBe(false)
-  await f.control.command(queued('Review this work'))
-  await f.control.command({ type: 'resume', threadId: 'workshop' })
-  await f.control.command({ type: 'pause', threadId: 'workshop' })
-  expect(f.control.pendingThreadWorkReason('workshop')).toBe('paused-assignment')
-  expect(f.control.hasPendingThreadWork('workshop')).toBe(true)
-})
 
 it('says a checkout-refused manual prompt is kept and retains its durable draft', async () => {
   const f = await fixture()

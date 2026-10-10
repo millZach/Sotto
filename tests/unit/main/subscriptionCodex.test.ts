@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { spawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
-import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { PassThrough, Writable } from 'node:stream'
@@ -101,28 +101,8 @@ async function fixture() {
     return Object.assign(child, { stdin: writable, stdout, stderr, kill: record.kill })
   }) as unknown as typeof spawn)
   const client = new CodexSubscriptionClient(cwd)
-  return { client, state, children, requests, responses, cwd, complete: () => client.complete('Return a decision JSON object.', { request: 'fixture only' }, '') }
+  return { client, state, children, requests, responses, cwd }
 }
-
-describe('Codex reasoning shutdown', () => {
-  it('cancels blocked discovery, waits for child close and cleans the temporary decision folder', async () => {
-    const f = await fixture()
-    f.state.hang = true
-    const shutdown = new AbortController()
-    const result = f.client.complete('Return JSON.', { request: 'fixture only' }, '', undefined, shutdown.signal)
-    const rejected = expect(result).rejects.toThrow('Sotto reasoning stopped.')
-    try {
-      await expect.poll(() => f.requests.some(request => request.method === 'initialize')).toBe(true)
-      shutdown.abort()
-      await rejected
-      expect(f.children).toHaveLength(1)
-      expect(f.children.every(child => child.closed)).toBe(true)
-      expect(await readdir(f.cwd)).toEqual([])
-      await expect(f.client.complete('Return JSON.', {}, '', undefined, shutdown.signal)).rejects.toThrow()
-      expect(f.children).toHaveLength(1)
-    } finally { shutdown.abort(); await result.catch(() => undefined) }
-  })
-})
 
 beforeEach(() => { vi.mocked(spawn).mockReset() })
 afterEach(async () => {
@@ -146,48 +126,6 @@ describe('native Codex subscription client', () => {
     expect(f.requests.filter((request) => request.method === 'model/list').map((request) => request.params?.cursor)).toEqual([undefined, 'second'])
   })
 
-  it('dispatches the user-selected alternate model and reasoning effort', async () => {
-    const f = await fixture()
-    f.state.models.push({ model: 'gpt-5.5', displayName: 'GPT-5.5', hidden: false, defaultReasoningEffort: 'low', supportedReasoningEfforts: [{ reasoningEffort: 'low', description: 'Fast' }, { reasoningEffort: 'medium', description: 'Balanced' }] })
-    await f.client.complete('Return a decision JSON object.', { request: 'fixture only' }, 'gpt-5.5', 'medium')
-    expect(f.requests.find((request) => request.method === 'turn/start')?.params).toMatchObject({ model: 'gpt-5.5', effort: 'medium' })
-  })
-
-  it('uses the native default model and its default effort without silently downgrading an unsupported effort', async () => {
-    const f = await fixture()
-    f.state.modelsPage2 = [{ model: 'gpt-5.5', displayName: 'GPT-5.5', hidden: false, isDefault: true, defaultReasoningEffort: 'medium', supportedReasoningEfforts: [{ reasoningEffort: 'medium', description: 'Balanced' }] }]
-    await f.complete()
-    expect(f.requests.find((request) => request.method === 'turn/start')?.params).toMatchObject({ model: 'gpt-5.5', effort: 'medium' })
-    f.requests.length = 0
-    await expect(f.client.complete('Contract', {}, 'gpt-5.5', 'ultra')).rejects.toThrow('reasoning effort is not supported')
-    expect(f.requests.some((request) => request.method === 'thread/start')).toBe(false)
-  })
-
-  it('uses a catalog-listed effective default and requires selection when Codex advertises no default', async () => {
-    const f = await fixture()
-    f.state.models.forEach((entry) => { entry.isDefault = false })
-    f.state.config.model = model
-    expect(await f.client.status()).toMatchObject({ defaultModelId: model })
-    f.state.config.model = 'not-advertised'
-    expect((await f.client.status()).defaultModelId).toBeUndefined()
-    await expect(f.complete()).rejects.toThrow('Choose an available model')
-    expect(f.requests.some((request) => request.method === 'thread/start')).toBe(false)
-  })
-
-  it.each([
-    ['item/commandExecution/requestApproval', { decision: 'decline' }],
-    ['item/fileChange/requestApproval', { decision: 'decline' }],
-    ['item/permissions/requestApproval', { permissions: {}, scope: 'turn' }],
-    ['mcpServer/elicitation/request', { action: 'decline', content: null }],
-    ['item/tool/requestUserInput', { answers: {} }],
-  ])('denies the native callback %s and stops the turn', async (method, result) => {
-    const f = await fixture()
-    f.state.approval = String(method)
-    await expect(f.complete()).rejects.toThrow('declined')
-    expect(f.responses).toEqual([{ id: 'fixture-approval', result }])
-    expect(f.children.every((child) => child.closed)).toBe(true)
-  })
-
   it('discovers available models without exposing account identifiers or native credentials', async () => {
     const f = await fixture()
     f.state.models.push({ model: 'gpt-5.5', displayName: 'Older model', hidden: false })
@@ -196,72 +134,6 @@ describe('native Codex subscription client', () => {
     expect(f.requests.map((request) => request.method)).not.toContain('thread/start')
     expect(f.children.every((child) => child.closed)).toBe(true)
     expect(f.children.flatMap((child) => child.args).some((arg) => arg.startsWith('forced_login_method='))).toBe(false)
-  })
-
-  it.each([null, { type: 'apiKey' }, { type: 'chatgptAuthTokens' }])('rejects a non-managed ChatGPT account without changing its login: %j', async (account) => {
-    const f = await fixture()
-    f.state.account = account
-    expect((await f.client.status()).ready).toBe(false)
-    await expect(f.complete()).rejects.toThrow('Sign in to Codex with ChatGPT')
-    expect(f.requests.some((request) => request.method === 'thread/start')).toBe(false)
-    expect(f.requests.some((request) => /login|logout|model\/list/.test(request.method))).toBe(false)
-  })
-
-  it('rejects unlisted models and custom credential endpoints before inference', async () => {
-    const f = await fixture()
-    f.state.config.chatgpt_base_url = 'https://untrusted.invalid/backend-api/'
-    expect((await f.client.status()).ready).toBe(false)
-    expect(f.requests.some((request) => request.method === 'account/read' || request.method === 'model/list')).toBe(false)
-    delete f.state.config.chatgpt_base_url
-    await expect(f.client.complete('Contract', {}, 'gpt-5.5')).rejects.toThrow('model is no longer available')
-    f.state.models = []
-    expect((await f.client.status()).ready).toBe(false)
-    expect(f.requests.some((request) => request.method === 'thread/start')).toBe(false)
-  })
-
-  it('uses an ephemeral thread without environments, disables every configured MCP, and validates the JSON envelope', async () => {
-    const f = await fixture()
-    f.state.config.mcp_servers = { fixture: { command: 'never-run' }, 'another.server': { command: 'never-run' } }
-    expect(await f.complete()).toEqual({ decision: 'human', text: 'Needs your preference.' })
-    const execution = f.children.find((child) => child.started)!
-    expect(execution.args).toEqual(expect.arrayContaining(['features.code_mode_host=false', 'features.hooks=false', 'orchestrator.mcp.enabled=false', 'orchestrator.skills.enabled=false', 'skills.include_instructions=false', 'notify=[]', 'otel.log_user_prompt=false']))
-    expect(f.requests.find((request) => request.method === 'thread/start')?.params).toMatchObject({ model, ephemeral: true, environments: [], dynamicTools: [], allowProviderModelFallback: false, config: { mcp_servers: { fixture: { enabled: false }, 'another.server': { enabled: false } } } })
-    expect(f.requests.find((request) => request.method === 'turn/start')?.params).toMatchObject({ environments: [], sandboxPolicy: { type: 'readOnly', networkAccess: false }, outputSchema: { required: ['json'] } })
-    expect(execution.args).not.toContain('fixture only')
-    expect(execution.closed).toBe(true)
-    expect(await readdir(f.cwd)).toEqual([])
-  })
-
-  it.each(['tool', 'error', 'malformed', 'isolation'] as const)('fails closed and discards results on %s failures', async (mode) => {
-    const f = await fixture()
-    if (mode === 'isolation') f.state.isolation = false
-    else f.state[mode] = true
-    await expect(f.complete()).rejects.toThrow(mode === 'tool' ? 'attempted to use a tool' : 'Codex subscription request failed')
-    expect(f.children.every((child) => child.closed)).toBe(true)
-    expect(await readdir(f.cwd)).toEqual([])
-  })
-
-  it('rejects malformed decision JSON even when the native turn reports success', async () => {
-    const f = await fixture()
-    f.state.result = JSON.stringify({ json: 'not JSON' })
-    await expect(f.complete()).rejects.toThrow('Codex subscription request failed')
-  })
-
-  it('waits for child exit before removing its directory or allowing a second inference, escalating ignored termination', async () => {
-    const f = await fixture()
-    f.state.holdExit = true
-    let finished = false
-    const completion = f.complete().then((result) => { finished = true; return result })
-    await vi.waitFor(() => expect(f.children.find((child) => child.started)?.kill).toHaveBeenCalled(), { timeout: 5_000 })
-    const execution = f.children.find((child) => child.started)!
-    expect(await readdir(execution.cwd)).toEqual([])
-    expect(await readdir(f.cwd)).toHaveLength(1)
-    expect(finished).toBe(false)
-    await expect(f.complete()).rejects.toThrow('already running')
-    await completion
-    expect(execution.kill).toHaveBeenCalledWith('SIGKILL')
-    expect(execution.closed).toBe(true)
-    expect(await readdir(f.cwd)).toEqual([])
   })
 
   it('bounds excessive child output and returns a secret-free unavailable status', async () => {

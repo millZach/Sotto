@@ -3,15 +3,25 @@ import { agentState } from './support/agentAccess'
 import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { defaultAgentConfiguration } from '../../src/shared/agents'
 import { designThreadsFixture } from '../../src/shared/e2e'
 import { hostKeys } from './support/hostKeys'
-import { closeSotto, enableVoiceCoordinator, launchSotto, openThreads, userMessageTexts } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, userMessageTexts } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 
 const evidence = evidenceDirectory('artifacts/crossing')
+const docsTitle = 'Workspace Docs'
+const workshopTitle = 'Workspace Workshop'
+
+async function nameWorkspaceThreads(page: Page): Promise<void> {
+  // These journeys switch by name; user titles stay stable when the first send generates a title.
+  await page.evaluate(async ({ docs, workshop }) => {
+    await window.sotto!.agents!.command({ type: 'rename-thread', threadId: 'docs', title: docs })
+    await window.sotto!.agents!.command({ type: 'rename-thread', threadId: 'workshop', title: workshop })
+  }, { docs: docsTitle, workshop: workshopTitle })
+}
 
 test('a saved draft elsewhere does not close the manual composer, including while the thread runs', async () => {
   const launched = await launchSotto()
@@ -19,16 +29,17 @@ test('a saved draft elsewhere does not close the manual composer, including whil
   try {
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
       await window.sotto!.agents!.command({ type: 'select-thread', threadId: 'workshop' })
       await window.sotto!.agents!.command({ type: 'compose', text: 'Keep this saved draft in Workshop.' })
     })
+    await nameWorkspaceThreads(page)
     await page.reload()
     await openThreads(page)
     const key = await hostKeys(page)
-    await page.getByRole('button', { name: 'Docs', exact: true }).click()
-    await expect(page.getByRole('heading', { name: 'Docs', exact: true })).toBeVisible()
+    await page.getByRole('button', { name: docsTitle, exact: true }).click()
+    await expect(page.getByRole('heading', { name: docsTitle, exact: true })).toBeVisible()
     const prompt = promptField(page)
     await fillPrompt(prompt, 'A separate manual message.')
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
@@ -46,13 +57,13 @@ test('a saved draft elsewhere does not close the manual composer, including whil
     await expectPromptText(prompt, '')
     await page.screenshot({ animations: 'disabled', path: join(evidence, 'thread-workspace-foreign-draft.png') })
     const state = await agentState(page)
-    expect(state).toMatchObject({ draft: 'Keep this saved draft in Workshop.', draftThreadId: key('workshop'), assignments: [] })
+    expect(state).toMatchObject({ draft: 'Keep this saved draft in Workshop.', draftThreadId: key('workshop') })
     expect(await userMessageTexts(page, 'docs')).toHaveLength(1)
     expect(state.followups).toEqual([expect.objectContaining({ threadId: key('docs'), text: 'Prepare the next message while Docs runs.', status: 'queued' })])
-    await page.getByRole('button', { name: 'Workshop', exact: true }).click()
+    await page.getByRole('button', { name: workshopTitle, exact: true }).click()
     await expectPromptText(prompt, 'Keep this saved draft in Workshop.')
     await expect(queue).toHaveCount(0)
-    await page.getByRole('button', { name: 'Docs', exact: true }).click()
+    await page.getByRole('button', { name: docsTitle, exact: true }).click()
     await expectPromptText(prompt, '')
     await expect(queue).toContainText('Prepare the next message while Docs runs.')
     // The fixture turn ends without native completion evidence, so the queue waits for an explicit resume.
@@ -73,14 +84,15 @@ test('a queued follow-up keeps its skill reference and order through a reload, s
   try {
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
       await window.sotto!.agents!.command({ type: 'select-thread', threadId: 'docs' })
     })
+    await nameWorkspaceThreads(page)
     await page.reload()
     await openThreads(page)
     const key = await hostKeys(page)
-    await page.getByRole('button', { name: 'Docs', exact: true }).click()
+    await page.getByRole('button', { name: docsTitle, exact: true }).click()
     const prompt = promptField(page)
     await fillPrompt(prompt, 'Start the long job.')
     await prompt.press('Enter')
@@ -102,7 +114,7 @@ test('a queued follow-up keeps its skill reference and order through a reload, s
     }, skill)
     await page.reload()
     await openThreads(page)
-    await page.getByRole('button', { name: 'Docs', exact: true }).click()
+    await page.getByRole('button', { name: docsTitle, exact: true }).click()
     await expectPromptText(prompt, 'Then run $deploy for staging.')
     await expect(prompt.locator('[data-skill-token="$deploy"]')).toHaveCount(1)
     await prompt.press('Enter')
@@ -121,7 +133,7 @@ test('a queued follow-up keeps its skill reference and order through a reload, s
 
     await page.reload()
     await openThreads(page)
-    await page.getByRole('button', { name: 'Docs', exact: true }).click()
+    await page.getByRole('button', { name: docsTitle, exact: true }).click()
     await expect(queue.getByRole('listitem').first()).toContainText('Then post the preview link.')
     const reloaded = await agentState(page)
     expect(reloaded.followups!.map(item => [item.text, item.skills ?? []])).toEqual([['Then post the preview link.', []], ['Then run $deploy for staging.', [skill]]])
@@ -149,67 +161,51 @@ test('workspace sends a manual prompt to the selected thread without granting ma
   try {
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
+    await nameWorkspaceThreads(page)
     await page.reload()
     await openThreads(page)
     const workshop = (await hostKeys(page))('workshop')
-    await page.getByRole('button', { name: 'Workshop', exact: true }).click()
+    await page.getByRole('button', { name: workshopTitle, exact: true }).click()
     await fillPrompt(promptField(page), 'Explain the next small change.')
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
     await expect(page.getByLabel('Thread transcript')).toContainText('Explain the next small change.')
     // Visible pending text precedes native confirmation; wait for the matching receipt to clear the draft.
     await expectPromptText(promptField(page), '')
-    const state = await agentState(page)
-    expect(state.assignments).toHaveLength(0)
     await expect.poll(() => userMessageTexts(page, 'workshop')).toHaveLength(1)
     await page.getByRole('button', { name: 'Stop agent', exact: true }).click()
     await expect.poll(() => page.evaluate(async id => (await window.sotto!.agents!.get()).host.threads.find(thread => thread.id === id)!.status, workshop)).toBe('idle')
-    expect(await page.evaluate(async () => (await window.sotto!.agents!.get()).assignments)).toHaveLength(0)
+
     await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'ready', threadId: 'workshop', text: 'Here is the next small change.' }))
     await expect(page.getByLabel('Thread transcript')).toContainText('Here is the next small change.')
     await fillPrompt(promptField(page), 'Keep this draft in Workshop.')
-    await page.getByRole('button', { name: 'Docs', exact: true }).click()
+    await page.getByRole('button', { name: docsTitle, exact: true }).click()
     await expectPromptText(promptField(page), '')
-    await page.getByRole('button', { name: 'Workshop', exact: true }).click()
+    await page.getByRole('button', { name: workshopTitle, exact: true }).click()
     await expectPromptText(promptField(page), 'Keep this draft in Workshop.')
     await page.screenshot({ animations: 'disabled', path: join(evidence, 'thread-workspace-manual.png') })
     await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'permission', threadId: 'workshop', requestId: 'manual-permission', text: 'Allow the manual test step?' }))
     await page.getByRole('button', { name: 'Allow', exact: true }).click()
     await expect.poll(() => page.evaluate(async id => (await window.sotto!.agents!.get()).host.threads.find(thread => thread.id === id)!.requests.length, workshop)).toBe(0)
-    expect(await page.evaluate(async () => (await window.sotto!.agents!.get()).assignments)).toHaveLength(0)
+
 
   } finally { await closeSotto(launched) }
 })
 
-test('settled work stays off attention and session pills, with real timestamps and an expandable shelf', async () => {
+test('settled work stays off the active shelf, with real timestamps and an expandable shelf', async () => {
   const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-workspace-' })).directory
   const fixture = designThreadsFixture()
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true }))
   await writeFile(join(profile, 'agents.json'), JSON.stringify({
-    configuration: { ...defaultAgentConfiguration(), enabled: true, speak: false },
-    assignments: fixture.assignments.map(assignment => ({ ...assignment, contextUpdatedAt: Date.now() })),
+    configuration: { ...defaultAgentConfiguration(), enabled: true, },
     queue: [{ id: 'stale-settled', threadId: 'release-notes', kind: 'ready', text: 'Old closed thread update.', createdAt: new Date().toISOString(), deferred: true }],
-    activeThreadId: 'release-notes', activeProjectId: 'workshop', draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', outbox: [],
+    activeThreadId: 'release-notes', activeProjectId: 'workshop', draft: '', draftThreadId: null, draftRequestId: null, composing: false, outbox: [],
   }))
-  await enableVoiceCoordinator(profile)
   const launched = await launchSotto('design-threads', profile)
   const { page } = launched
   try {
-    await page.getByRole('tab', { name: 'Agents', exact: true }).click()
-    await page.getByRole('button', { name: 'Not now', exact: true }).click()
-    await expect(page.getByRole('button', { name: 'Open Footer links', exact: true })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Open Release notes 1.4', exact: true })).toHaveCount(0)
-    await expect(page.getByText('Old closed thread update.', { exact: true })).toHaveCount(0)
-    await page.getByRole('button', { name: 'Later', exact: true }).click()
-    const mute = page.getByRole('button', { name: 'Enable spoken replies', exact: true })
-    await expect(mute).toHaveAttribute('title', 'Enable spoken replies')
-    await expect(mute.locator('svg')).toHaveClass(/lucide-volume-x/)
-    await mute.click()
-    const speak = page.getByRole('button', { name: 'Mute spoken replies', exact: true })
-    await expect(speak.locator('svg')).toHaveClass(/lucide-volume-2/)
-    await speak.click()
     await openThreads(page)
     const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
     await expect(sidebar.getByRole('region', { name: 'Projects', exact: true }).locator('.thread-nav__row')).toHaveCount(5)
@@ -218,26 +214,15 @@ test('settled work stays off attention and session pills, with real timestamps a
     const release = sidebar.getByRole('button', { name: 'Release notes 1.4', exact: true })
     await expect(release.locator('time')).toHaveAttribute('datetime', fixture.threads.find(thread => thread.id === 'release-notes')!.updatedAt!)
     await release.click()
-    const releaseNotes = (await hostKeys(page))('release-notes')
+
     await expect(page.getByRole('heading', { name: 'Release notes 1.4', exact: true })).toBeVisible()
     await expect(page.getByLabel('Thread transcript')).toContainText('Release notes are in the draft release.')
     await page.screenshot({ animations: 'disabled', path: join(evidence, 'thread-workspace-settled.png') })
     await fillPrompt(promptField(page), 'Start a new manual task in this thread.')
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
     await expect(page.getByLabel('Thread transcript')).toContainText('Start a new manual task in this thread.')
-    await expect.poll(() => page.evaluate(async id => (await window.sotto!.agents!.get()).assignments.some(assignment => assignment.threadId === id), releaseNotes)).toBe(false)
     await page.getByRole('button', { name: 'Stop agent', exact: true }).click()
 
-    await page.getByRole('tab', { name: 'Agents', exact: true }).click()
-    await expect(page.getByRole('heading', { name: /Needs your attention/ })).toHaveCount(0)
-    await page.getByRole('button', { name: 'Configure agents', exact: true }).click()
-    const scrollbar = await page.locator('.side-sheet__body').evaluate(node => {
-      const style = getComputedStyle(node)
-      return { actual: style.scrollbarColor, thumb: style.getPropertyValue('--tt-scrollbar').trim() }
-    })
-    expect(scrollbar.thumb).not.toBe('')
-    expect(scrollbar.actual).toBe(`${scrollbar.thumb} rgba(0, 0, 0, 0)`)
-    await page.screenshot({ animations: 'disabled', path: join(evidence, 'agent-configuration-scrollbar.png') })
   } finally {
     await closeSotto(launched)
     await removeOwnedE2EProfile(profile)

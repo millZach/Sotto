@@ -15,7 +15,7 @@ test('Closed keeps a native terminal row and reopens it with fresh output', asyn
     await mkdir(evidence, { recursive: true })
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true, reducedMotion: 'on' })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload(); await openThreads(page)

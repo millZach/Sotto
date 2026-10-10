@@ -1,5 +1,7 @@
 # Phase 1 workspace UI verification (#44 drafts and delivery, #45 projects and settlement)
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 Test citations use the current split files. Recorded counts and outcomes are from the original runs.
 
 Status: complete on `work/phase1-workspace-ui` (base 0598d48). Implemented by Opus 5 as the authorized fallback while Fable was unavailable.
