@@ -1,5 +1,6 @@
 import { expect, it, vi } from 'vitest'
 import { Terminal } from '@xterm/xterm'
+import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { terminalSearch } from '../../../../src/renderer/src/tools/terminalSearch'
 
 it.each(['needle', 'NEEDLE'])('keeps the selected %s match when a grid resize clears xterm selection before the next key', async match => {
@@ -40,6 +41,28 @@ it('keeps navigation on the same logical match after a narrower grid reflows its
     field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     expect(element.querySelector('output')!.textContent).toBe('2 of 3')
     terminal.clearSelection(); terminal.resize(20, 8)
+    field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await vi.waitFor(() => expect(element.querySelector('output')!.textContent).toBe('3 of 3'))
+  } finally { search.dispose(); terminal.dispose(); element.remove(); vi.unstubAllGlobals() }
+})
+
+it.each(['a界b', 'a😀b'])('keeps the whole %s match when a narrow grid wraps its wide glyph past an empty cell', async match => {
+  vi.stubGlobal('matchMedia', () => ({ matches: false, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} }))
+  const terminal = new Terminal({ allowProposedApi: true, cols: 40, rows: 8 })
+  terminal.loadAddon(new Unicode11Addon())
+  terminal.unicode.activeVersion = '11'
+  const element = document.body.appendChild(document.createElement('div'))
+  const search = terminalSearch(terminal, element, () => '#123456')
+  try {
+    terminal.open(element)
+    await new Promise<void>(resolve => terminal.write(`${match} one\r\n${'x'.repeat(18)}${match} two\r\n${match} three`, resolve))
+    search.mount(); search.open()
+    const field = element.querySelector('input')!
+    field.value = match; field.dispatchEvent(new Event('input'))
+    field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    expect(element.querySelector('output')!.textContent).toBe('2 of 3')
+    terminal.clearSelection(); terminal.resize(20, 8)
+    expect(terminal.getSelection()).toBe(match)
     field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     await vi.waitFor(() => expect(element.querySelector('output')!.textContent).toBe('3 of 3'))
   } finally { search.dispose(); terminal.dispose(); element.remove(); vi.unstubAllGlobals() }

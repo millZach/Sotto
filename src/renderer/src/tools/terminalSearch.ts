@@ -37,14 +37,15 @@ export function terminalSearch(terminal: Terminal, element: HTMLElement, resolve
     links.addEventListener('click', onOpenLinks)
     bar.insertBefore(links, close)
   }
-  let selected: { marker: IMarker; offset: number; length: number; term: string; line: string } | undefined
+  let selected: { marker: IMarker; offset: number; endOffset: number; term: string; line: string } | undefined
   const rememberSelection = (): void => {
     const range = terminal.getSelectionPosition()
     if (!range || terminal.getSelection().toLowerCase() !== input.value.toLowerCase()) return
     selected?.marker.dispose()
     const buffer = terminal.buffer.active, row = terminalLineStart(buffer, range.start.y)
-    selected = { marker: terminal.registerMarker(row - buffer.baseY - buffer.cursorY), offset: terminalLineText(buffer, row, { row: range.start.y, column: range.start.x }).length,
-      length: (range.end.y - range.start.y) * terminal.cols + range.end.x - range.start.x, term: input.value,
+    const offset = terminalLineText(buffer, row, { row: range.start.y, column: range.start.x }).length
+    selected = { marker: terminal.registerMarker(row - buffer.baseY - buffer.cursorY), offset,
+      endOffset: offset + terminal.getSelection().length, term: input.value,
       line: terminalLineText(buffer, row) }
   }
   const restoreSelection = (): void => {
@@ -63,9 +64,14 @@ export function terminalSearch(terminal: Terminal, element: HTMLElement, resolve
       selected.marker.dispose()
       selected.marker = terminal.registerMarker(nearest - buffer.baseY - buffer.cursorY)
     }
-    const position = terminalTextPosition(buffer, terminalLineStart(buffer, selected.marker.line), selected.offset)
-    if (!position) return
-    terminal.select(position.column, position.row, selected.length)
+    const firstRow = terminalLineStart(buffer, selected.marker.line)
+    const position = terminalTextPosition(buffer, firstRow, selected.offset)
+    const last = terminalTextPosition(buffer, firstRow, selected.endOffset - 1)
+    const width = last && buffer.getLine(last.row)?.getCell(last.column)?.getWidth()
+    if (!position || !last || !width) return
+    // Reflow can add an empty cell before a wrapped wide glyph; both endpoints belong to the current grid.
+    const length = (last.row - position.row) * terminal.cols + last.column + width - position.column
+    terminal.select(position.column, position.row, length)
     // A width change or repaint can replace the cells; never preserve an unrelated selection.
     if (terminal.getSelection().toLowerCase() !== selected.term.toLowerCase()) terminal.clearSelection()
   }
