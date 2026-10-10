@@ -1277,6 +1277,13 @@ export class ClaudeStreamJsonHost implements AgentHost {
         if (!ownsStartup()) throw new Error('Claude connection was cancelled.')
         assertClaudeCommandCenterInitializeReport(initialized, process.platform, this.options.commandCenterAdmissions)
         runtime.commandCenterModel = assertClaudeCommandCenterSettingsReport(await runtime.protocol.control({ subtype: 'get_settings' }))
+        // Safe mode ignores --mcp-config. Attach only the scoped server through the explicit SDK control.
+        const servers = object(claudeCommandCenterMcpConfig(profile).mcpServers)!
+        const attached = await runtime.protocol.control({ subtype: 'mcp_set_servers', servers })
+        if (!Array.isArray(attached.added) || attached.added.length !== 1 || attached.added[0] !== profile.server.name
+          || !Array.isArray(attached.removed) || attached.removed.length || !object(attached.errors) || Object.keys(object(attached.errors)!).length) {
+          throw claudeCommandCenterReportRefusal('did not attach only the supplied tool server')
+        }
         if (runtime.commandCenterInitFrame) assertClaudeCommandCenterStartupReport(profile, runtime.commandCenterInitFrame, runtime.commandCenterModel, process.platform, this.options.commandCenterAdmissions)
         if (runtime.commandCenterStartupRefusal) throw runtime.commandCenterStartupRefusal
         runtime.commandCenterControlsPassed = true
@@ -1431,6 +1438,12 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (runtime.commandCenterStartupRefusal || generation !== this.generation
       || this.runtimes.get(id) !== runtime && !(spare?.runtime === runtime && this.spares.get(id) === spare)) return false
     if (frame.type === 'control_response') return true
+    // 2.1.296 acknowledges the submitted prompt before init. This is delivery metadata, not turn work.
+    if (!runtime.commandCenterStartupPassed && runtime.commandCenterControlsPassed && runtime.commandCenterPromptSent
+      && frame.type === 'command_lifecycle' && ['queued', 'started'].includes(String(frame.state))
+      && typeof frame.command_uuid === 'string' && typeof frame.uuid === 'string'
+      && frame.session_id === this.aliases[id]?.sessionId
+      && this.aliases[id]?.origins.some(origin => origin.uuid === frame.command_uuid)) return true
     try {
       if (runtime.commandCenterStartupPassed && !(frame.type === 'system' && frame.subtype === 'init')) {
         if (!runtime.commandCenterControlsPassed) throw claudeCommandCenterReportRefusal('sent turn work before completing its startup settings report', runtime.commandCenterPromptSent)

@@ -63,6 +63,20 @@ function delayedProfile() {
   return { promise, resolve, reject }
 }
 
+it('disconnects safely when its synchronous subscriber also disconnects', async () => {
+  await admittedSetup()
+  let observing = false, calls = 0
+  const unsubscribe = f!.host.subscribe(() => {
+    if (observing && calls++ < 10) f!.host.disconnect()
+  })
+  try {
+    observing = true
+    f!.host.disconnect()
+    expect(calls).toBe(1)
+    await f!.host.closed()
+  } finally { unsubscribe() }
+})
+
 it('builds an explicit discovery/invocation-only configuration instead of the native allow-list fallback', () => {
   const p = profile(); const meta = grokCommandCenterMeta(p)
   expect(meta).toMatchObject({ yoloMode: false, autoMode: false, agentProfile: { injectDefaultTools: false, discoverSkills: false, inheritSkills: false, skills: [], agentsMd: false, permissionMode: 'dontAsk', hooks: {}, memory: null, mcpInheritance: 'none', mcpServers: [] } })

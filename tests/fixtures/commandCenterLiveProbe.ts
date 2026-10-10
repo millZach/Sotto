@@ -8,6 +8,16 @@ import { z } from 'zod'
 import { commandCenterToolSchemas } from '../../src/shared/commandCenter'
 import { ThreadToolServer, type ThreadMcpServer } from '../../src/main/agents/threadToolServer'
 
+/** The first failure owns abort and evidence, including synchronous disconnect notifications. */
+export function commandCenterLiveFailure(abort: () => void): { readonly reason: string | undefined; fail(name: string): void } {
+  let reason: string | undefined
+  return { get reason() { return reason }, fail(name) {
+    if (reason !== undefined) return
+    reason = name
+    try { abort() } catch { /* Evidence and the first failure survive cleanup errors. */ }
+  } }
+}
+
 const PREFIX = 'sotto-command-center-live-'
 const OBSERVED_AT = '2026-10-09T00:00:00.000Z'
 export const LIVE_TOOL_NAMES = ['list_threads', 'list_projects'] as const

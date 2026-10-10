@@ -40,7 +40,7 @@ import { codexTurnIdentitySchema, compatibleClient, identityTurn, messageIdentit
 import { markSendStage } from './sendStages'
 import type { CommandCenterLaunchProfile, ThreadLaunchProfiles } from './host'
 import { COMMAND_CENTER_PERMISSION_FAILURE, CommandCenterProfileRefusal } from './commandCenterProfile'
-import { assertCodexCommandCenterPreflight, assertCodexCommandCenterStartupReport, CODEX_COMMAND_CENTER_REPORT_FAILURE, commandCenterCodexArguments, commandCenterCodexConfig, commandCenterCodexPolicy } from './commandCenterCodexProfile'
+import { assertCodexCommandCenterPreflight, assertCodexCommandCenterConfigReport, assertCodexCommandCenterStartupReport, CODEX_COMMAND_CENTER_REPORT_FAILURE, commandCenterCodexArguments, commandCenterCodexInheritedConfig, commandCenterCodexConfig, commandCenterCodexPolicy } from './commandCenterCodexProfile'
 import type { CommandCenterAdmission } from './commandCenterAdmission'
 
 /** What a thread shows when its own app-server stopped under a running turn. */
@@ -227,6 +227,7 @@ export class CodexAppServerHost implements AgentHost {
       let config: unknown
       await this.rpc('config/read', { includeLayers: false, ...(this.aliases[id]?.cwd ? { cwd: this.aliases[id]!.cwd } : {}) }, value => { config = value }, undefined, server)
       if (!current()) throw new Error('Codex connection changed.')
+      assertCodexCommandCenterConfigReport(profile, config)
       const statuses: unknown[] = []
       const cursors = new Set<string>()
       let cursor: string | undefined
@@ -383,6 +384,8 @@ export class CodexAppServerHost implements AgentHost {
     if (!runtime) throw new Error('Codex stopped before sending the prompt. Nothing was sent. Try again.')
     const current = (): boolean => generation === this.generation && this.runtimes.get(id) === runtime && runtime.server.alive
     try {
+      // A command-center process keeps its immutable launch config. Never reload an added command server.
+      if (profile) { await this.checkStartupReport(id, profile, runtime.server); return }
       runtime.refreshing ??= (async () => {
         if (!runtime.reloadSupported) return
         const stamp = await this.configStamp()
@@ -399,16 +402,15 @@ export class CodexAppServerHost implements AgentHost {
       })().finally(() => { delete runtime.refreshing })
       await runtime.refreshing
       if (!current()) throw new Error('Codex connection changed.')
-      if (profile) await this.checkStartupReport(id, profile, runtime.server)
     } catch (error) {
       if (error instanceof CommandCenterProfileRefusal) throw error
       throw new Error('Codex could not refresh its tools. Nothing was sent. Try again, or reconnect Codex if it keeps happening.', { cause: error })
     }
   }
   /** Start an app-server from `executable`. What it says reaches `frame` only while this connection lasts. */
-  private spawnServer(executable: string, profile?: CommandCenterLaunchProfile): CodexProcess {
+  private spawnServer(executable: string, profile?: CommandCenterLaunchProfile, inherited?: Record<string, unknown>): CodexProcess {
     const generation = this.generation
-    const server = new CodexProcess({ executable, args: profile ? [...(this.options.args ?? []).slice(0, this.options.args ? 2 : 0), ...commandCenterCodexArguments(profile)] : this.options.args ?? ['app-server', '--stdio', ...configArguments], cwd: this.options.userDataPath,
+    const server = new CodexProcess({ executable, args: profile ? [...(this.options.args ?? []).slice(0, this.options.args ? 2 : 0), ...commandCenterCodexArguments(profile, inherited)] : this.options.args ?? ['app-server', '--stdio', ...configArguments], cwd: this.options.userDataPath,
       env: withCliPath({ ...nativeEnvironment(), CODEX_HOME: this.codexHome() }, executable), requestTimeoutMs: this.options.requestTimeoutMs ?? 15000,
       enqueue: task => this.enqueue(task),
       onFrame: (from, frame) => generation === this.generation ? this.frame(from, frame) : Promise.resolve(),
@@ -518,7 +520,28 @@ export class CodexAppServerHost implements AgentHost {
       const clientRevision = this.clientRevision
       const configStamp = await this.configStamp()
       if (generation !== this.generation || !this.state.connected) throw new Error('Codex connection changed while starting this thread.')
-      const server = this.spawnServer(this.executable, profile)
+      let inherited: Record<string, unknown> | undefined
+      if (profile) {
+        const discovery = this.spawnServer(this.executable, profile)
+        try {
+          await this.rpc('initialize', clientInfo, value => {
+            const result = z.object({ userAgent: z.string().optional(), version: z.string().optional() }).parse(value)
+            assertCodexCommandCenterPreflight(profile, result.version ?? result.userAgent ?? '', this.aliases[id]?.modelId ?? this.commandCenterModels.get(id) ?? '', process.platform, this.options.commandCenterAdmissions)
+          }, undefined, discovery)
+          discovery.write({ method: 'initialized' })
+          await this.rpc('config/read', { includeLayers: false, ...(this.aliases[id]?.cwd ? { cwd: this.aliases[id]!.cwd } : {}) }, value => {
+            inherited = commandCenterCodexInheritedConfig(value)
+          }, undefined, discovery)
+        } catch (error) {
+          if (generation !== this.generation) throw new Error('Codex connection changed while discovering its configuration.', { cause: error })
+          const reason = error instanceof CommandCenterProfileRefusal ? error.message : CODEX_COMMAND_CENTER_REPORT_FAILURE
+          try { profile.revoke(reason) } catch { /* Stop even if revocation fails. */ }
+          this.stopUnverifiedProfile(id, reason)
+          throw new CommandCenterProfileRefusal(reason)
+        } finally { this.endServer(discovery); await discovery.closed }
+        if (generation !== this.generation || !this.state.connected) throw new Error('Codex connection changed while starting this thread.')
+      }
+      const server = this.spawnServer(this.executable, profile, inherited)
       let processVersion: string | undefined
       try {
         // Admission follows this process's version, even if the provider catalog was read before an update.

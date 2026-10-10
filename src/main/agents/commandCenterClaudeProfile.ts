@@ -28,9 +28,10 @@ export const claudeCommandCenterManagedPolicy = Object.freeze({
 /** Launch restrictions, independent of ordinary permission preferences and scoped tool servers. */
 export function claudeCommandCenterArguments(profile: CommandCenterLaunchProfile): string[] {
   validateCommandCenterProfile(profile)
-  return ['--tools', CLAUDE_COMMAND_CENTER_QUESTION_TOOL, '--strict-mcp-config', '--safe-mode', '--restricted',
-    '--setting-sources', '', '--disable-slash-commands', '--no-chrome',
+  return ['--tools', CLAUDE_COMMAND_CENTER_QUESTION_TOOL, '--strict-mcp-config', '--restricted',
+    '--setting-sources', '', '--disable-slash-commands', '--safe-mode', '--no-chrome',
     '--managed-settings', JSON.stringify(claudeCommandCenterManagedPolicy),
+    '--settings', JSON.stringify({ enabledPlugins: Object.fromEntries(['sec-default', 'agents-md', 'telemetry', 'plugin-authoring'].map(name => [`${name}@builtin`, false])) }),
     '--permission-mode', 'manual', '--permission-prompts', 'host', '--permission-prompt-tool', 'stdio',
     '--allowedTools', ...profile.toolNames.map(name => `mcp__${profile.server.name}__${name}`)]
 }
@@ -60,11 +61,22 @@ const exactNames = (value: unknown, expected: readonly string[]): boolean => Arr
   && value.length === expected.length && new Set(value).size === value.length
   && value.every(name => typeof name === 'string' && expected.includes(name))
 
+const builtInAgents = ['claude', 'Explore', 'general-purpose', 'Plan'] as const
+const onlyBuiltInAgents = (value: unknown): boolean => Array.isArray(value)
+  && value.every(agent => { const name = typeof agent === 'string' ? agent : object(agent)?.name
+    return typeof name === 'string' && builtInAgents.includes(name as typeof builtInAgents[number]) })
+
 /** initialize reports customization catalogs, but neither the complete native tools nor MCP tools. */
 export function assertClaudeCommandCenterInitializeReport(report: ClaudeFrame, platform: NodeJS.Platform,
   admissions?: readonly CommandCenterAdmission[]): void {
-  if (!empty(report.commands) || !empty(report.agents)) {
+  if (!empty(report.commands) || !onlyBuiltInAgents(report.agents)) {
     throw claudeCommandCenterReportRefusal('reported commands or agents outside its read-only profile, or an unreadable startup report')
+  }
+  // 2.1.296's boolean hooks_applied acknowledges initialization; it is not a hook inventory.
+  // If a later report supplies an inventory, no user/project hook may be present.
+  if ('hooks_applied' in report && typeof report.hooks_applied !== 'boolean'
+    && !empty(report.hooks_applied) && !(object(report.hooks_applied) && Object.keys(object(report.hooks_applied)!).length === 0)) {
+    throw claudeCommandCenterReportRefusal('reported hooks outside its read-only profile, or an unreadable hook report')
   }
   // Installed 2.1.296 reports these; the older pinned SDK type does not yet name them.
   if ('current_permission_mode' in report && report.current_permission_mode !== 'default') {
@@ -117,7 +129,7 @@ export function assertClaudeCommandCenterStartupReport(profile: CommandCenterLau
     throw refusal('reported a permission mode or model outside its read-only profile')
   }
   if (!empty(frame.slash_commands) || !empty(frame.skills) || !empty(frame.plugins)
-    || frame.agents !== undefined && !empty(frame.agents)
+    || frame.agents !== undefined && !onlyBuiltInAgents(frame.agents)
     || frame.terminal_slash_commands !== undefined && !empty(frame.terminal_slash_commands)
     || frame.plugin_errors !== undefined && !empty(frame.plugin_errors)
     || frame.mcp_server_errors !== undefined && !empty(frame.mcp_server_errors)) {

@@ -44,7 +44,7 @@ const commandCenterTools = commandCenter ? Object.entries(commandCenterConfig.mc
 }) : []
 if (commandCenter) {
   if (args.includes('--bare') || value('--tools') !== 'AskUserQuestion' || value('--permission-mode') !== 'manual'
-    || value('--setting-sources') !== '' || !['--safe-mode', '--strict-mcp-config', '--disable-slash-commands', '--no-chrome'].every(flag => args.includes(flag))
+    || value('--setting-sources') !== '' || !['--strict-mcp-config', '--disable-slash-commands', '--safe-mode', '--no-chrome'].every(flag => args.includes(flag))
     || Object.keys(commandCenterConfig.mcpServers).join() !== 'sotto_threads'
     || !commandCenterPolicy.disableAllHooks || !commandCenterPolicy.disableCommandPluginSources || !commandCenterPolicy.disableSkillShellExecution
     || !commandCenterTools.length) throw new Error('The command-center launch did not retain its restrictive profile')
@@ -206,7 +206,7 @@ lines.on('line', line => {
         if (initialized && !metadata) record('initialize-answered', { session })
         output({ type: 'control_response', response: script.fail
           ? { subtype: 'error', request_id: frame.request_id, error: 'Synthetic initialization rejected' }
-          : { subtype: 'success', request_id: frame.request_id, response: { models, commands: existsSync(join(root, 'skills.json')) ? JSON.parse(readFileSync(join(root, 'skills.json'), 'utf8')) : [], agents: [], session_state: 'idle', current_permission_mode: commandCenter ? 'default' : settings.mode, ...(installed !== undefined ? { claude_code_version: installed } : {}), ...script.initializeReport } } })
+          : { subtype: 'success', request_id: frame.request_id, response: { models, commands: existsSync(join(root, 'skills.json')) ? JSON.parse(readFileSync(join(root, 'skills.json'), 'utf8')) : [], agents: commandCenter ? [{ name: 'claude', description: 'Fixture built-in' }, { name: 'Explore', description: 'Fixture built-in' }, { name: 'general-purpose', description: 'Fixture built-in' }, { name: 'Plan', description: 'Fixture built-in' }] : [], hooks_applied: true, session_state: 'idle', current_permission_mode: commandCenter ? 'default' : settings.mode, ...(installed !== undefined ? { claude_code_version: installed } : {}), ...script.initializeReport } } })
         // A started session announces its tools, and AskUserQuestion is in that list only where someone
         // can answer it. `approvalSurface: false` is the CLI that took the flag and offered no surface.
         if (!script.fail && !metadata && !script.omitInit) {
@@ -223,6 +223,13 @@ lines.on('line', line => {
         writeFileSync(join(root, 'initialize-waiting'), session)
         const gate = setInterval(() => { if (existsSync(join(root, 'initialize-release'))) { clearInterval(gate); respond() } }, 5)
       } else respond()
+    }
+    else if (frame.request.subtype === 'mcp_set_servers') {
+      const scriptPath = join(root, 'initialize-script.json')
+      const script = existsSync(scriptPath) ? JSON.parse(readFileSync(scriptPath, 'utf8')) : {}
+      if (!commandCenter || JSON.stringify(frame.request.servers) !== JSON.stringify(commandCenterConfig.mcpServers)) violation('Only the command center may attach its supplied MCP server')
+      output({ type: 'control_response', response: { subtype: 'success', request_id: frame.request_id,
+        response: { added: ['sotto_threads'], removed: [], errors: {}, ...script.dynamicMcpReport } } })
     }
     else if (frame.request.subtype === 'get_settings') {
       const scriptPath = join(root, 'initialize-script.json')
@@ -268,6 +275,11 @@ lines.on('line', line => {
       output(error ? { type: 'result', subtype: 'error_during_execution', session_id: session, is_error: true, result: '' } : { type: 'result', subtype: 'success', session_id: session, is_error: false, result: '' })
     } else violation('Unknown control request')
   } else if (frame.type === 'user') {
+    const initScriptPath = join(root, 'initialize-script.json')
+    const initScript = existsSync(initScriptPath) ? JSON.parse(readFileSync(initScriptPath, 'utf8')) : {}
+    if (initScript.lifecycleBeforeInit) {
+      for (const state of ['queued', 'started']) output({ type: 'command_lifecycle', command_uuid: initScript.foreignLifecycle ? randomUUID() : frame.uuid, state, uuid: randomUUID(), session_id: session })
+    }
     if (deferredInit) { output(deferredInit); deferredInit = undefined }
     if (!initialized) violation('User prompt arrived before successful initialization')
     if (!frame.uuid || frame.session_id !== session || frame.message?.role !== 'user' || frame.parent_tool_use_id !== null) violation('Malformed native user frame')

@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { writeFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { codexFixture } from '../fixtures/codexFixture'
@@ -31,6 +31,58 @@ function startup(offered: CommandCenterLaunchProfile, version = 'codex/0.162.0')
 }
 
 describe('Codex admitted combinations and process reports', () => {
+  it.each(['disabled', 'late-server', 'still-enabled', 'still-running', 'cached-tools', 'supplied-helper'] as const)('checks inherited servers when they are %s', async scenario => {
+    const offered = profile()
+    const f = await codexFixture(undefined, false, 5000, { commandCenterAdmissions: admitted }); cleanups.push(f.cleanup)
+    const script = startup(offered)
+    const names = ['context7', 'node_repl', 'quote"and.dot']
+    const config = script.effectiveConfig
+    for (const name of names) (config.mcp_servers as Record<string, unknown>)[name] = { command: 'fixture', enabled: true }
+    if (scenario === 'supplied-helper') ((config.mcp_servers as Record<string, unknown>).sotto_threads as Record<string, unknown>).http_headers_helper = 'fixture-command'
+    config.plugins = { 'fixture@plugin': { enabled: true } }
+    config.apps = { _default: { enabled: false }, 'fixture.app': { enabled: true } }
+    ;(config.skills as Record<string, unknown>).config = [{ name: 'fixture', enabled: true }]
+    const inheritedStatuses = names.map(name => ({ name, tools: scenario === 'cached-tools' ? { fixture: { name: 'fixture' } } : {}, runtimeStatus: scenario === 'cached-tools' ? null : 'connected' }))
+    await f.script({ ...script, mcpServers: [...script.mcpServers, ...inheritedStatuses], honorInheritedDisables: scenario !== 'still-enabled',
+      addServerAfterDiscovery: scenario === 'late-server', keepInheritedRunning: scenario === 'still-running' || scenario === 'cached-tools' })
+    await f.host.connect(); f.host.useLaunchProfiles!({ profileFor: async () => offered })
+    const start = f.host.startThreadSession!('master', { modelId: f.modelId, workingDirectory: f.root })
+    if (scenario === 'disabled') {
+      await start
+      expect(offered.revoke).not.toHaveBeenCalled()
+      const records = (await f.servers()).filter(record => record.method === 'initialize') as { args?: string[] }[]
+      const finalArgs = records.at(-1)!.args!
+      const servers = finalArgs.find(arg => arg.startsWith('mcp_servers='))!
+      for (const name of names) expect(servers).toContain(`${JSON.stringify(name)} = { "enabled" = false }`)
+      expect((await f.driver.requests()).filter(request => request.method === 'config/read')).toHaveLength(2)
+    } else {
+      await expect(start).rejects.toMatchObject({ code: 'READ_ONLY_PROFILE_UNAVAILABLE' })
+      expect(offered.revoke).toHaveBeenCalled()
+      const requests = await f.driver.requests()
+      if (scenario === 'supplied-helper' || scenario === 'late-server' || scenario === 'still-enabled') expect(requests.some(request => request.method === 'mcpServerStatus/list')).toBe(false)
+      expect(requests.some(request => ['thread/start', 'turn/start'].includes(request.method!))).toBe(false)
+    }
+  })
+
+  it('rechecks the immutable command-center process without runtime MCP reload after a config change', async () => {
+    const offered = profile()
+    const f = await codexFixture(undefined, false, 5000, { commandCenterAdmissions: admitted }); cleanups.push(f.cleanup)
+    await f.script(startup(offered)); await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Fixture', path: f.root })
+    f.host.useLaunchProfiles!({ profileFor: async () => offered })
+    await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: 'master', projectId: f.projectId, title: 'Fixture', modelId: f.modelId })
+    await mkdir(join(f.root, 'home'), { recursive: true })
+    await writeFile(join(f.root, 'home', 'config.toml'), '# changed fixture configuration\n')
+    const before = (await f.driver.requests()).length
+    const sent = await f.host.execute({ type: 'send', commandId: randomUUID(), threadId: 'master', messageId: randomUUID(), text: 'fixture prompt' })
+    expect(sent.accepted).toBe(true)
+    const methods = (await f.driver.requests()).slice(before).map(request => request.method)
+    expect(methods).not.toContain('config/mcpServer/reload')
+    expect(methods.indexOf('config/read')).toBeGreaterThanOrEqual(0)
+    expect(methods.indexOf('config/read')).toBeLessThan(methods.indexOf('turn/start'))
+    expect(offered.revoke).not.toHaveBeenCalled()
+  })
+
   it('refuses an ordinary launch already pending when an admitted profile appears', async () => {
     const offered = profile()
     const f = await codexFixture(undefined, false, 5000, { commandCenterAdmissions: admitted }); cleanups.push(f.cleanup)
@@ -221,7 +273,7 @@ describe('Codex command-center profile', () => {
       'features.view_image': false, web_search: 'disabled' })
     expect(config).not.toHaveProperty('tools.view_image')
     expect(config).not.toHaveProperty('orchestrator.skills.enabled')
-    expect(config.mcp_servers).toEqual({ sotto_threads: { url: 'http://127.0.0.1:12345/mcp',
+    expect(config.mcp_servers).toEqual({ sotto_threads: { url: 'http://127.0.0.1:12345/mcp', enabled: true, omit_tools_from: ['deferred', 'code_mode'],
       http_headers: { Authorization: 'Bearer fixture-only' }, enabled_tools: ['list_threads', 'read_thread'],
       default_tools_approval_mode: 'prompt', tools: { list_threads: { approval_mode: 'approve' }, read_thread: { approval_mode: 'approve' } } } })
     const args = commandCenterCodexArguments(profile())
@@ -231,11 +283,11 @@ describe('Codex command-center profile', () => {
   it('refuses known and unknown versions/models/platforms without a complete compatibility proof', () => {
     for (const [version, model, platform] of [['0.162.0', 'gpt-6.1-sol', 'win32'], ['0.162.0', 'gpt-6.1-sol', 'darwin'],
       ['0.162.0', 'gpt-6.1-sol', 'linux'], ['0.163.0', 'gpt-6.1-sol', 'win32'], ['0.162.0', '', 'win32']] as const) {
-      expect(() => assertCodexCommandCenterPreflight(profile(), version, model, platform)).toThrow(expect.objectContaining({ code: 'READ_ONLY_PROFILE_UNAVAILABLE' }))
+      expect(() => assertCodexCommandCenterPreflight(profile(), version, model, platform, [])).toThrow(expect.objectContaining({ code: 'READ_ONLY_PROFILE_UNAVAILABLE' }))
     }
   })
   it.each(['create', 'early-start'] as const)('refuses %s before any thread process or provider session starts', async path => {
-    const f = await codexFixture(); cleanups.push(f.cleanup)
+    const f = await codexFixture(undefined, false, 2000, { commandCenterAdmissions: [] }); cleanups.push(f.cleanup)
     await f.script({ version: 'codex/0.162.0' }); await f.host.connect()
     await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Fixture', path: f.root })
     f.host.useLaunchProfiles!({ profileFor: async () => profile() })

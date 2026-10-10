@@ -65,6 +65,14 @@ function pendingProfileLookup(f: Fixture) {
 }
 
 describe('Claude command-center profile', () => {
+  it.each([[['claude', 'Explore', 'general-purpose', 'Plan']], [['Explore']], [[{ name: 'claude', description: 'Fixture' }, { name: 'Explore', model: 'fixture-model' }]], [[]]])('accepts the built-in agent subset %j without exposing the agent tool', async agents => {
+    const f = await fixture(CLAUDE_COMMAND_CENTER_CLIENT_VERSION), id = randomUUID(), { value } = admit(f, id)
+    await writeFile(join(f.root, 'initialize-script.json'), JSON.stringify({ initializeReport: { agents } }))
+    await f.adapter.startThreadSession(id, { workingDirectory: f.root, modelId: f.modelId })
+    expect(value.revoke).not.toHaveBeenCalled()
+    expect((await f.driver.requests()).filter(record => record.method === 'user')).toEqual([])
+  })
+
   it('does not start an ordinary session after disconnection while its profile lookup waits', async () => {
     const f = await fixture(), id = await ordinary(f), before = await starts(f)
     let resolveLookup!: (value: undefined) => void
@@ -174,7 +182,7 @@ describe('Claude command-center profile', () => {
     expect(flag(args, '--permission-mode')).toBe('manual')
     expect(flag(args, '--permission-prompts')).toBe('host')
     expect(flag(args, '--permission-prompt-tool')).toBe('stdio')
-    expect(['--strict-mcp-config', '--safe-mode', '--restricted', '--disable-slash-commands', '--no-chrome'].every(name => args.includes(name))).toBe(true)
+    expect(['--strict-mcp-config', '--restricted', '--disable-slash-commands', '--safe-mode', '--no-chrome'].every(name => args.includes(name))).toBe(true)
     expect(args.slice(args.indexOf('--allowedTools') + 1)).toEqual(['mcp__sotto_threads__list_threads', 'mcp__sotto_threads__read_thread'])
     expect(args).not.toContain('--bare')
     expect(args).not.toContain('--allow-dangerously-skip-permissions')
@@ -367,7 +375,12 @@ describe('Claude command-center profile', () => {
   })
 
   it.each([
+    ['extra dynamic server', { dynamicMcpReport: { added: ['sotto_threads', 'extra'] } }],
+    ['dynamic server error', { dynamicMcpReport: { errors: { sotto_threads: 'fixture' } } }],
     ['missing initialize inventory', { initializeReport: { agents: null } }],
+    ['custom agent', { initializeReport: { agents: [{ name: 'claude' }, { name: 'project-sentinel' }] } }],
+    ['applied hook list', { initializeReport: { hooks_applied: ['SessionStart'] } }],
+    ['applied hook map', { initializeReport: { hooks_applied: { SessionStart: [] } } }],
     ['initialize commands', { initializeReport: { commands: [{ name: 'extra' }] } }],
     ['initialize permission mode', { initializeReport: { current_permission_mode: 'bypassPermissions' } }],
     ['initialize older version', { initializeReport: { claude_code_version: '2.1.295' } }],
@@ -440,6 +453,17 @@ describe('Claude command-center profile', () => {
     const thread = (await f.host.snapshot()).threads.find(thread => thread.id === id)!
     expect(thread.requests).toEqual([])
     expect(thread.messages.filter(message => message.role === 'assistant')).toEqual([])
+  })
+
+  it.each([false, true])('requires init after a pre-init delivery acknowledgment (foreign: %s)', async foreignLifecycle => {
+    const f = await fixture(CLAUDE_COMMAND_CENTER_CLIENT_VERSION), id = randomUUID(), { value } = admit(f, id)
+    await writeFile(join(f.root, 'initialize-script.json'), JSON.stringify({ initAtTurn: true, lifecycleBeforeInit: true, foreignLifecycle }))
+    await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Master', modelId: f.modelId })
+    const result = await f.host.execute({ type: 'send', commandId: randomUUID(), threadId: id, messageId: randomUUID(), text: 'Synthetic delivery metadata' })
+    expect(result.accepted).toBe(!foreignLifecycle)
+    if (foreignLifecycle) expect(value.revoke).toHaveBeenCalled()
+    else expect(value.revoke).not.toHaveBeenCalled()
+    expect((await f.host.snapshot()).threads.find(thread => thread.id === id)!.requests).toEqual([])
   })
 
   it('accepts the first-turn inventory and rechecks early start, settings, cold resume and replacement processes', async () => {
