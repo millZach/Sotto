@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { expect, test } from '@playwright/test'
 import { bareEntityId, closeSotto, launchSotto, openThreads, resizeWindow } from './support/sottoLaunch'
+import { terminalOutput } from './support/terminal'
 import { TERMINAL_CHANNEL, TERMINAL_LIMIT_MESSAGE, terminalSessionSchema } from '../../src/shared/terminal'
 
 const terminalTruthsEvidence = evidenceDirectory('artifacts/terminal-truths')
@@ -185,6 +186,32 @@ test('a running Tools shell restores truthfully and the global ended-shell limit
     await panel.getByRole('button', { name: 'Reopen', exact: true }).click()
     await expect(panel.getByText('Nothing it showed was kept.')).toHaveCount(0)
     await expect(panel.getByRole('button', { name: 'New terminal', exact: true })).toBeDisabled()
+    const reopenedInput = panel.locator('.xterm-helper-textarea')
+    await reopenedInput.pressSequentially("Write-Output ('RESTORED_' + 'SEARCH_MARKER')")
+    await reopenedInput.press('Enter')
+    await expect.poll(() => terminalOutput(launched.page, threadId)).toContain('RESTORED_SEARCH_MARKER')
+    const grid = () => launched.page.evaluate(async threadId => {
+      const listing = await window.sotto!.terminal!.list({ threadId })
+      if (!listing.ok) throw new Error(listing.error.message)
+      return { cols: listing.value.sessions[0]!.cols, count: listing.value.capacity.count }
+    }, threadId)
+    const beforeZoom = await grid()
+    await reopenedInput.press('Control+f')
+    const search = panel.getByRole('search', { name: 'Search terminal output' })
+    const find = search.getByRole('textbox', { name: 'Find in terminal' })
+    await expect(find).toBeFocused()
+    await find.fill('RESTORED_SEARCH_MARKER')
+    await expect(search.locator('output')).toHaveText('1 of 1')
+    await find.press('Control+=')
+    await expect.poll(() => launched.page.evaluate(async () => (await window.sotto!.getSettings()).terminalFontSize)).toBe(14)
+    await expect.poll(async () => (await grid()).cols).toBeLessThan(beforeZoom.cols)
+    await expect(search.locator('output')).toHaveText('1 of 1')
+    expect((await grid()).count).toBe(32)
+    await launched.page.screenshot({ path: join(terminalTruthsEvidence, 'restored-search-zoom-820-light.png'), animations: 'disabled' })
+    await find.press('Control+0')
+    await expect.poll(() => launched.page.evaluate(async () => (await window.sotto!.getSettings()).terminalFontSize)).toBe(13)
+    await find.press('Escape')
+    await expect(reopenedInput).toBeFocused()
     await panel.locator('.terminal-tabs__close').click()
     await panel.getByRole('button', { name: 'End terminal', exact: true }).press('Enter')
     await expect(panel.getByRole('button', { name: 'Start terminal', exact: true })).toBeEnabled()

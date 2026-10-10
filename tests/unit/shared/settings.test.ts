@@ -40,6 +40,7 @@ const customSettings = {
   babysitPullRequests: false,
   reducedMotion: 'on',
   microphoneId: 'microphone-1',
+  terminalFontSize: 17,
   hotkey: 'Alt+D',
   maxRecordingSeconds: 300,
   soundCues: false,
@@ -274,6 +275,7 @@ describe('settings', () => {
   it('defines the complete versioned defaults', () => {
     expect(SETTINGS_VERSION).toBe(1)
     expect(DEFAULT_SETTINGS).toEqual({
+      terminalFontSize: 13,
       memoryEnabled: false,
       webLinkDestination: 'external',
       responseStreaming: 'live',

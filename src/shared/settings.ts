@@ -177,6 +177,8 @@ export interface AppSettings {
   reducedMotion: ReducedMotion
   microphoneId: string | null
   hotkey: string
+  /** Text size in every terminal, in pixels; changed from the focused terminal's zoom chords. */
+  terminalFontSize: number
   maxRecordingSeconds: MaxRecordingSeconds
   soundCues: boolean
   language: string
@@ -285,6 +287,7 @@ const fieldSchemas = {
   reducedMotion: z.enum(['system', 'on']),
   microphoneId: z.string().min(1).nullable(),
   hotkey: z.string().min(1),
+  terminalFontSize: z.number().int().min(8).max(32),
   maxRecordingSeconds: z.union([z.literal(30), z.literal(60), z.literal(120), z.literal(300)]),
   soundCues: z.boolean(),
   language: z.string().min(1),
@@ -367,6 +370,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   reducedMotion: 'system',
   microphoneId: null,
   hotkey: DEFAULT_HOTKEY,
+  terminalFontSize: 13,
   maxRecordingSeconds: 60,
   soundCues: true,
   language: 'auto',
@@ -489,6 +493,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),
     microphoneId: parseField(persisted, 'microphoneId', defaults),
     hotkey: parseField(persisted, 'hotkey', defaults),
+    terminalFontSize: parseField(persisted, 'terminalFontSize', defaults),
     maxRecordingSeconds: parseField(persisted, 'maxRecordingSeconds', defaults),
     soundCues: parseField(persisted, 'soundCues', defaults),
     language: parseField(persisted, 'language', defaults),
