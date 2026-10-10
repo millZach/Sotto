@@ -1,6 +1,9 @@
 import React from 'react'
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { ThemeEditorHost } from '../../../src/renderer/src/features/settings/themes/ThemeEditor'
+import { closeThemeEditor } from '../../../src/renderer/src/features/settings/themes/themeEditorSession'
+import { resolveThemeFor } from '../../../src/shared/themes/library'
 import { ThemeGallery } from '../../../src/renderer/src/features/settings/themes/ThemeGallery'
 import { applyAppearance, appearancePreview, resolveAppearance } from '../../../src/renderer/src/state/appearance'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
@@ -8,7 +11,7 @@ import { OMARCHY_THEME_ID, parseOmarchyTheme } from '../../../src/shared/themes/
 import fixtures from '../../fixtures/omarchy-themes.json'
 import { ThemeLivePreview } from '../../../src/renderer/src/features/settings/themes/ThemeLivePreview'
 
-afterEach(() => { cleanup(); appearancePreview.reset() })
+afterEach(() => { cleanup(); act(() => closeThemeEditor()); appearancePreview.reset() })
 function gallery(system: string, light = false) {
  const theme = parseOmarchyTheme(fixtures.themes[light ? 'catppuccin-latte' : 'tokyo-night'].rendered, light ? 'Catppuccin Latte' : 'Tokyo Night')
  const shown = { ...DEFAULT_SETTINGS, appearance: 'system' as const, lightTheme: OMARCHY_THEME_ID, darkTheme: OMARCHY_THEME_ID, omarchyTheme: theme }
@@ -18,6 +21,25 @@ function gallery(system: string, light = false) {
 }
 
 describe('Omarchy Appearance', () => {
+ it.each(['matching', 'waiting', 'missing'] as const)('Create theme copies the painted half when Omarchy is %s', async state => {
+  const runtime = parseOmarchyTheme(fixtures.themes['tokyo-night'].rendered, 'Tokyo Night')
+  const resolved = state === 'matching' ? 'dark' : 'light'
+  const shown = { ...DEFAULT_SETTINGS, appearance: resolved, lightTheme: OMARCHY_THEME_ID, darkTheme: OMARCHY_THEME_ID, omarchyTheme: state === 'missing' ? null : runtime }
+  const painted = resolveThemeFor(shown, resolved).colors
+  const save = vi.fn(async () => true)
+  render(<><ThemeGallery shown={shown} resolved={resolved} system="Linux" onChooseMode={vi.fn()} onSelect={vi.fn()} onRemove={vi.fn()} onExport={vi.fn()} onAddTheme={vi.fn()} /><ThemeEditorHost settings={shown} onSave={save} getSettings={() => shown} /></>)
+  fireEvent.click(screen.getByRole('button', {name:'Create theme'}))
+  const dialog = screen.getByRole('dialog', {name:'Create theme'})
+  expect(appearancePreview.draft).toMatchObject({appearance: resolved, colors: painted})
+  fireEvent.change(within(dialog).getByLabelText('Theme name'), {target:{value:'Copied palette'}})
+  fireEvent.click(within(dialog).getByRole('button', {name:'Create theme'}))
+  await waitFor(() => expect(save).toHaveBeenCalledOnce())
+  expect(save.mock.calls[0]).toEqual([expect.objectContaining({
+   [resolved === 'dark' ? 'darkTheme' : 'lightTheme']: 'copied-palette',
+   customThemes: [expect.objectContaining({appearance: resolved, colors: painted})],
+  })])
+ })
+
  it.each(['Windows', 'macOS'])('%s has exactly the original six choices in each half', system => {
   gallery(system)
   for (const mode of ['Light', 'Dark']) {

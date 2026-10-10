@@ -27,6 +27,7 @@ import {
   T3_CODE_THEME,
   THEME_COLOR_ROLES,
   findTheme,
+  resolveThemeFor,
   getThemeColorsForMode,
   getThemeModes,
   type ThemeAppearance,
@@ -203,7 +204,7 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
   const [seeded] = useState(() => {
     const source = editingTheme ?? (session.seedThemeId === null ? null : (
       session.seedThemeId === OMARCHY_THEME_ID && library.omarchyTheme !== undefined
-        ? library.omarchyTheme
+        ? resolveThemeFor(library, session.initialAppearance).theme
         : findTheme(session.seedThemeId, library.customThemes)
     ))
     const colors: ColorsByAppearance = { light: editorDefaults('light'), dark: editorDefaults('dark') }
