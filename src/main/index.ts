@@ -1296,7 +1296,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       quitHandles.cloudIphone = { close: () => cloudIphoneService?.dispose() ?? Promise.resolve() }
       // Resumes any release or deletion a previous run could not finish, using the key already in the credential store.
       void cloudIphoneService.resumeCleanup()
-      const terminalService = new TerminalService({ files, directory: userDataPath, emit: event => { windows.sendToMain(TERMINAL_EVENT, event) } })
+      // A pane drawer's shell starts in the project folder, even for a thread with its own worktree.
+      const terminalService = new TerminalService({ files, directory: userDataPath,
+        projectFolder: projectId => agentControl.projects().find(project => project.id === projectId)?.path,
+        emit: event => { windows.sendToMain(TERMINAL_EVENT, event) } })
       // A folder with a shell still running in it is not reclaimed under that shell.
       if (worktreeCleanup) {
         agentHost.setWorktreeInUse(threadId => terminalService.hasRunningTerminal(threadId))
