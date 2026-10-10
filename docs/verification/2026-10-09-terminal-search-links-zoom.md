@@ -1,5 +1,7 @@
 # Terminal search, links and text size (#881)
 
+The latest merge verification is recorded at the end of this note. Earlier gate tables and commit references describe their own historical revisions; the 36 cited captures are refreshed from the latest passing merged-app Playwright run.
+
 Verified on Windows in the built Electron app, using real ConPTY sessions in Terminal mode, a thread pane's Terminal drawer and Tools. The supplied `terminal-agent-state-prototype.html` was inspected before implementation; its search bar is identical in all variants and remains outside this branch.
 
 ## Running-app journeys
@@ -150,4 +152,35 @@ The final Playwright run refreshed all 36 cited images; all six paired contact s
 
 The Linux archive helper still needs its Forge check under ADR-0062. SSH reported `Tailscale SSH requires an additional check` and timed out; the prepared Node harness never executed remotely. It will check complete contents, missing resources, changed executable contents, relative paths and seven permission changes against the committed scripts. No file was copied to Forge. Browser authentication was not attempted: the computer-use skill's mandatory guidance forbids automating user authentication dialogs.
 
-The listed Windows gates are green. The latest local revision and prepared PR body are held for this required Linux verification. PR #888 remains open and unmerged; its remote head is still `606b5cfb1` until the final push.
+At that point, the listed Windows gates were green and the local revision and prepared PR body were held for the Linux verification. PR #888 was open and unmerged, with remote head `606b5cfb1`. The merge verification below supersedes that delivery status.
+
+## Windows verification after merging current main
+
+The checked application and test revision is `1f13f1360`, following merge commit `3a34c3cb7` with its default subject, `Merge remote-tracking branch 'origin/main' into feat/terminal-search-links-zoom`. Its main parent is `73020885bf39c484d9454b91c83043ebf7e35160`. The issue and branch-only history were read before merging. `npm ci` then installed 843 packages and audited 844 packages in this worktree, exit 0, without dependency links.
+
+Four files conflicted. `.gitignore` retains this branch's terminal evidence ignore and main's skill-pill evidence rules. `scripts/release-platform-profile.mjs` and `tests/unit/release/linuxTarball.test.mjs` take main's equivalent relative tar invocation with `windowsHide: true`; the fixture also retains main's native PTY asset instead of the removed voice runtime. Both archive files now match main exactly, so this branch no longer carries a Linux archive helper change. `tests/unit/shared/settings.test.ts` retains `terminalFontSize: 13` and drops the retired `voiceCoordinatorEnabled` default. Main's voice-control removal, split test layout, shared fixtures and Omarchy work remain intact; the deleted IPC monolith is not restored.
+
+The first typecheck failed with one TS2353 error because the new terminal journey still sent `speak: false`. Commit `1f13f1360` removes that retired configuration field while preserving the terminal setup. The repeated typecheck passed.
+
+| Gate | Merged revision result |
+| --- | --- |
+| `npm run typecheck` | Pass, exit 0; all three TypeScript projects checked, zero errors |
+| `npm run lint` | Pass, exit 0; zero errors and warnings |
+| `npm test -- --maxWorkers=2` | Fail, exit 1; 720 files passed, 1 failed, 55 skipped (776 total); 8,906 tests passed, 1 failed, 276 skipped (9,183 total); 1,236.71 seconds |
+| `npm run notices:verify` | Pass, exit 0; 185 components verified |
+| `npm run build` | Pass, exit 0 |
+| Playwright with the five specs named above | Pass, exit 0; 8 tests passed, 0 failed, 0 skipped, one worker (1.3 minutes) |
+
+The Playwright selection includes the four requested existing specs and every spec added or changed by `git diff --name-only origin/main...HEAD -- tests/e2e`: `terminal-loading.spec.ts` and `terminal-search-links-zoom.spec.ts`. The changed support file, `support/terminal.ts`, is exercised by these journeys. Fresh captures were written through main's shared evidence helper, all 36 were inspected in six paired contact sheets, and the minimum-window drawer was also inspected at full size. The 36 cited images were refreshed from that passing run; search and link choices fit all three surfaces in light and dark at 1600x1000, 1280x800 and 820x560, with reduced motion. Existing design baselines were not changed.
+
+The full suite ran once after the source fix and the real-terminal checks, with the requested two-worker cap. This evidence covers the locally built Windows app; it does not claim a packaged installer, macOS, Omarchy or GitHub CI result. The earlier Forge authentication attempt remains historical and was not repeated for archive code that now matches main. All 55 changed text files were checked as valid UTF-8 without a BOM; the whitespace diff is clean.
+
+### Unresolved full-suite failure; no push
+
+The sole failure was `tests/integration/threadWorktreesNative.test.ts`, "devin: reuses an existing worktree after a restart without checking its branch out again". It reported `This thread is not known to Sotto. Refresh and select it again.` from `WorkspaceHost.thread` through `executeGuarded`. The file and its provider fixture match main unchanged; this was not an acknowledgement timeout.
+
+The complete worktree file passed in isolation: 16 tests, exit 0, 34.01 seconds. The single Devin case passed alone, then passed in five further sequential runs, all with `--maxWorkers=2`. Temporary diagnostics identified command IDs and rejected cache field paths only; they did not record prompts or provider bodies. With a second integration file, the diagnostic run passed 34 tests across two files. A further two-worker diagnostic run repeated the restart case 20 times beside the submodule checks: 46 tests across two files passed, exit 0, 106.12 seconds. No cache rejection or failing command was captured.
+
+The restart fixture leaves the old workspace subscribed while constructing another workspace on the same files, but a controlled causal link to the reported failure was not established. That remains a hypothesis, not a verified fix. All temporary diagnostics and repeated cases were removed, returning the worktree test to main exactly. No assertion, worker cap, deadline or production code was changed for this failure. The next useful check is a diagnostic full rerun to capture the suite-only ordering; the requested one-full-run limit was retained.
+
+The full-suite gate remains failed. The merge, the retired-setting correction and this evidence update are local commits; the branch was not pushed. PR #888 remains open and unmerged.
