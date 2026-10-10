@@ -32,6 +32,23 @@ describe('terminal agent run state', () => {
       expect(state.state, order).toBe(viewed ? 'idle' : 'just-finished')
     }
   })
+  it.each([false, true])('keeps a current permission preview when submission metadata arrives late (permission hook first %s)', permissionFirst => {
+    const state = agent(); state.hook(event('session-start')); state.output(idle)
+    state.input('work\r'); state.output(work); state.output(request)
+    const approval = event('permission', { turnId: 'turn', requestId: 'permission' })
+    if (permissionFirst) state.hook(approval)
+    state.hook(event('working', { turnId: 'turn', workPhase: 'submitted' }))
+    if (!permissionFirst) state.hook(approval)
+    expect(state.state).toBe('needs-you')
+    expect(state.approvalLines()?.join('\n')).toContain('Do you want to make this edit')
+  })
+  it('does not reuse a permission preview for another submitted turn', () => {
+    const state = agent(); state.hook(event('session-start')); state.output(idle)
+    state.input('work\r'); state.output(work); state.output(request)
+    state.hook(event('permission', { turnId: 'permission-turn', requestId: 'permission' }))
+    state.hook(event('working', { turnId: 'another-turn', workPhase: 'submitted' }))
+    expect(state.approvalLines()).toBeNull()
+  })
   it.each(['submitted', 'tool-start', 'tool-end'] as const)('corroborates buffered completion only with its matching %s hook', phase => {
     const state = agent(); state.hook(event('session-start')); state.output(idle)
     state.input('work\r'); state.output(work)
