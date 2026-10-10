@@ -2963,6 +2963,2969 @@
     ]
   },
   {
+    "capture": "threads-hackerman-1600x1000.png",
+    "dimensions": [
+      1600,
+      1000
+    ],
+    "measurements": [
+      {
+        "text": "Sotto",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "30,33,43",
+        "ratio": 14.394542179043656
+      },
+      {
+        "text": "Threads",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "30,33,43",
+        "ratio": 14.394542179043656
+      },
+      {
+        "text": "workshop",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "30,33,43",
+        "ratio": 14.394542179043656
+      },
+      {
+        "text": "Visual gate flake",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "35,60,49",
+        "ratio": 10.681635397583383
+      },
+      {
+        "text": "12:41 pm",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "35,60,49",
+        "ratio": 5.93288598529992
+      },
+      {
+        "text": "Claude",
+        "foreground": {
+          "r": 255,
+          "g": 185,
+          "b": 0
+        },
+        "background": "35,60,49",
+        "ratio": 6.918551174730046
+      },
+      {
+        "text": "Needs your approval",
+        "foreground": {
+          "r": 255,
+          "g": 185,
+          "b": 0
+        },
+        "background": "35,60,49",
+        "ratio": 6.918551174730046
+      },
+      {
+        "text": "Grok voice previews",
+        "foreground": {
+          "r": 192,
+          "g": 215,
+          "b": 223
+        },
+        "background": "30,33,43",
+        "ratio": 10.727048884076845
+      },
+      {
+        "text": "7:58 am",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Claude",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Done",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Streaming WAV stall",
+        "foreground": {
+          "r": 192,
+          "g": 215,
+          "b": 223
+        },
+        "background": "30,33,43",
+        "ratio": 10.727048884076845
+      },
+      {
+        "text": "10:02 am",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Codex",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Done",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "sotto-site",
+        "foreground": {
+          "r": 192,
+          "g": 215,
+          "b": 223
+        },
+        "background": "30,33,43",
+        "ratio": 10.727048884076845
+      },
+      {
+        "text": "Footer links",
+        "foreground": {
+          "r": 192,
+          "g": 215,
+          "b": 223
+        },
+        "background": "30,33,43",
+        "ratio": 10.727048884076845
+      },
+      {
+        "text": "3m 00s",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Working",
+        "foreground": {
+          "r": 157,
+          "g": 250,
+          "b": 186
+        },
+        "background": "30,33,43",
+        "ratio": 12.860591915356393
+      },
+      {
+        "text": "notes",
+        "foreground": {
+          "r": 192,
+          "g": 215,
+          "b": 223
+        },
+        "background": "30,33,43",
+        "ratio": 10.727048884076845
+      },
+      {
+        "text": "Weekly note",
+        "foreground": {
+          "r": 191,
+          "g": 214,
+          "b": 222
+        },
+        "background": "30,33,43",
+        "ratio": 10.621264969331726
+      },
+      {
+        "text": "10m 00s",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Working",
+        "foreground": {
+          "r": 157,
+          "g": 250,
+          "b": 186
+        },
+        "background": "30,33,43",
+        "ratio": 12.860591915356393
+      },
+      {
+        "text": "Settled",
+        "foreground": {
+          "r": 192,
+          "g": 215,
+          "b": 223
+        },
+        "background": "30,33,43",
+        "ratio": 10.727048884076845
+      },
+      {
+        "text": "Dictate",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "22,24,34",
+        "ratio": 8.80122751136546
+      },
+      {
+        "text": "Threads",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "26,28,38",
+        "ratio": 15.204000228373735
+      },
+      {
+        "text": "Help",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Visual gate flake",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "workshop",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "Project folder",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "Tools",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "You",
+        "foreground": {
+          "r": 192,
+          "g": 215,
+          "b": 223
+        },
+        "background": "30,33,43",
+        "ratio": 10.727048884076845
+      },
+      {
+        "text": "12:32 pm",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Find why the visual gate flakes on the widget listening capt",
+        "foreground": {
+          "r": 192,
+          "g": 215,
+          "b": 223
+        },
+        "background": "30,33,43",
+        "ratio": 10.727048884076845
+      },
+      {
+        "text": "Claude",
+        "foreground": {
+          "r": 192,
+          "g": 215,
+          "b": 223
+        },
+        "background": "11,12,22",
+        "ratio": 13.007198835387639
+      },
+      {
+        "text": "12:41 pm",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "Found the cause. The listening bars animate from a CSS loop,",
+        "foreground": {
+          "r": 192,
+          "g": 215,
+          "b": 223
+        },
+        "background": "11,12,22",
+        "ratio": 13.007198835387639
+      },
+      {
+        "text": "Found the cause. The listening bars animate from a CSS loop,",
+        "foreground": {
+          "r": 192,
+          "g": 215,
+          "b": 223
+        },
+        "background": "11,12,22",
+        "ratio": 13.007198835387639
+      },
+      {
+        "text": "Combing the desert",
+        "foreground": {
+          "r": 191,
+          "g": 214,
+          "b": 222
+        },
+        "background": "11,12,22",
+        "ratio": 12.878929408488881
+      },
+      {
+        "text": "Run a command in workshop",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "22,24,34",
+        "ratio": 15.845830100312222
+      },
+      {
+        "text": "npm test -- --run tests/unit/agents",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "22,24,34",
+        "ratio": 15.845830100312222
+      },
+      {
+        "text": "Deny",
+        "foreground": {
+          "r": 192,
+          "g": 215,
+          "b": 223
+        },
+        "background": "22,24,34",
+        "ratio": 11.808572442289275
+      },
+      {
+        "text": "Allow",
+        "foreground": {
+          "r": 11,
+          "g": 12,
+          "b": 22
+        },
+        "background": "221,247,255",
+        "ratio": 17.454257390876787
+      }
+    ]
+  },
+  {
+    "capture": "appearance-hackerman-1600x1000.png",
+    "dimensions": [
+      1600,
+      1000
+    ],
+    "measurements": [
+      {
+        "text": "Sotto",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "30,33,43",
+        "ratio": 14.394542179043656
+      },
+      {
+        "text": "Settings",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "30,33,43",
+        "ratio": 14.394542179043656
+      },
+      {
+        "text": "Dictation",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Transcription",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Cleanup",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Providers",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Hosts",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Phones",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Cloud iPhone",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Agents",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Output",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Appearance",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "28,45,41",
+        "ratio": 12.92105831988793
+      },
+      {
+        "text": "Application",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Git",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Dictate",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "22,24,34",
+        "ratio": 8.80122751136546
+      },
+      {
+        "text": "Threads",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "22,24,34",
+        "ratio": 8.80122751136546
+      },
+      {
+        "text": "Help",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Appearance",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Themes & interface",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "Color scheme",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Light",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "Match Linux",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Dark",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "Themes",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Create theme",
+        "foreground": {
+          "r": 150,
+          "g": 167,
+          "b": 176
+        },
+        "background": "11,12,22",
+        "ratio": 7.836777973261508
+      },
+      {
+        "text": "Add theme",
+        "foreground": {
+          "r": 150,
+          "g": 167,
+          "b": 176
+        },
+        "background": "11,12,22",
+        "ratio": 7.836777973261508
+      },
+      {
+        "text": "Choose one theme for light mode and one for dark. Sotto wear",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "Choose one theme for light mode and one for dark. Sotto wear",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "Light",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Used when Linux turns light.",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "Omarchy",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "35,60,49",
+        "ratio": 10.681635397583383
+      },
+      {
+        "text": "Waits for a light Omarchy theme",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "35,60,49",
+        "ratio": 5.93288598529992
+      },
+      {
+        "text": "Waits for a light Omarchy theme",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "35,60,49",
+        "ratio": 5.93288598529992
+      },
+      {
+        "text": "Waits for a light Omarchy theme",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "35,60,49",
+        "ratio": 5.93288598529992
+      },
+      {
+        "text": "Sotto",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Hush",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Linen",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Nocturne",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Tropic",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Citrine",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Dark",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "17,19,29",
+        "ratio": 16.587931075564484
+      },
+      {
+        "text": "Painting the window now.",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "17,19,29",
+        "ratio": 9.213411630357918
+      },
+      {
+        "text": "Omarchy",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "35,60,49",
+        "ratio": 10.681635397583383
+      },
+      {
+        "text": "Hackerman",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "35,60,49",
+        "ratio": 5.93288598529992
+      },
+      {
+        "text": "Sotto",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "17,19,29",
+        "ratio": 16.587931075564484
+      },
+      {
+        "text": "Hush",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "17,19,29",
+        "ratio": 16.587931075564484
+      },
+      {
+        "text": "Linen",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "17,19,29",
+        "ratio": 16.587931075564484
+      },
+      {
+        "text": "Nocturne",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "17,19,29",
+        "ratio": 16.587931075564484
+      },
+      {
+        "text": "Tropic",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "17,19,29",
+        "ratio": 16.587931075564484
+      },
+      {
+        "text": "Citrine",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "17,19,29",
+        "ratio": 16.587931075564484
+      },
+      {
+        "text": "Effort color",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "The color a thread’s effort control turns at its highest lev",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "Ember",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Cyberpunk",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Rainbow",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Aurora",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Plasma",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Theme accent",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Live appearance",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "Sotto",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Dictate",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "Ready when you are",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "App icon",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "Ready",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "26,28,38",
+        "ratio": 15.204000228373735
+      },
+      {
+        "text": "Floating widget",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "Effort at its highest level",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "M",
+        "foreground": {
+          "r": 247,
+          "g": 206,
+          "b": 121
+        },
+        "background": "26,28,38",
+        "ratio": 11.356471686926403
+      },
+      {
+        "text": "The widget follows the Omarchy theme’s mode.",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      }
+    ]
+  },
+  {
+    "capture": "threads-hackerman-1280x800.png",
+    "dimensions": [
+      1280,
+      800
+    ],
+    "measurements": [
+      {
+        "text": "Sotto",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "30,33,43",
+        "ratio": 14.394542179043656
+      },
+      {
+        "text": "Threads",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "30,33,43",
+        "ratio": 14.394542179043656
+      },
+      {
+        "text": "workshop",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "30,33,43",
+        "ratio": 14.394542179043656
+      },
+      {
+        "text": "Visual gate flake",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "35,60,49",
+        "ratio": 10.681635397583383
+      },
+      {
+        "text": "12:41 pm",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "35,60,49",
+        "ratio": 5.93288598529992
+      },
+      {
+        "text": "Claude",
+        "foreground": {
+          "r": 255,
+          "g": 185,
+          "b": 0
+        },
+        "background": "35,60,49",
+        "ratio": 6.918551174730046
+      },
+      {
+        "text": "Needs your approval",
+        "foreground": {
+          "r": 255,
+          "g": 185,
+          "b": 0
+        },
+        "background": "35,60,49",
+        "ratio": 6.918551174730046
+      },
+      {
+        "text": "Grok voice previews",
+        "foreground": {
+          "r": 192,
+          "g": 215,
+          "b": 223
+        },
+        "background": "30,33,43",
+        "ratio": 10.727048884076845
+      },
+      {
+        "text": "7:58 am",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Claude",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Done",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Streaming WAV stall",
+        "foreground": {
+          "r": 192,
+          "g": 215,
+          "b": 223
+        },
+        "background": "30,33,43",
+        "ratio": 10.727048884076845
+      },
+      {
+        "text": "10:02 am",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Codex",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Done",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "sotto-site",
+        "foreground": {
+          "r": 192,
+          "g": 215,
+          "b": 223
+        },
+        "background": "30,33,43",
+        "ratio": 10.727048884076845
+      },
+      {
+        "text": "Footer links",
+        "foreground": {
+          "r": 192,
+          "g": 215,
+          "b": 223
+        },
+        "background": "30,33,43",
+        "ratio": 10.727048884076845
+      },
+      {
+        "text": "3m 00s",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Working",
+        "foreground": {
+          "r": 157,
+          "g": 250,
+          "b": 186
+        },
+        "background": "30,33,43",
+        "ratio": 12.860591915356393
+      },
+      {
+        "text": "notes",
+        "foreground": {
+          "r": 192,
+          "g": 215,
+          "b": 223
+        },
+        "background": "30,33,43",
+        "ratio": 10.727048884076845
+      },
+      {
+        "text": "Weekly note",
+        "foreground": {
+          "r": 191,
+          "g": 214,
+          "b": 222
+        },
+        "background": "30,33,43",
+        "ratio": 10.621264969331726
+      },
+      {
+        "text": "10m 00s",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Working",
+        "foreground": {
+          "r": 157,
+          "g": 250,
+          "b": 186
+        },
+        "background": "30,33,43",
+        "ratio": 12.860591915356393
+      },
+      {
+        "text": "Settled",
+        "foreground": {
+          "r": 192,
+          "g": 215,
+          "b": 223
+        },
+        "background": "30,33,43",
+        "ratio": 10.727048884076845
+      },
+      {
+        "text": "Dictate",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "22,24,34",
+        "ratio": 8.80122751136546
+      },
+      {
+        "text": "Threads",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "26,28,38",
+        "ratio": 15.204000228373735
+      },
+      {
+        "text": "Help",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Visual gate flake",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "workshop",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "Project folder",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "Tools",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "You",
+        "foreground": {
+          "r": 192,
+          "g": 215,
+          "b": 223
+        },
+        "background": "30,33,43",
+        "ratio": 10.727048884076845
+      },
+      {
+        "text": "12:32 pm",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Find why the visual gate flakes on the widget listening capt",
+        "foreground": {
+          "r": 192,
+          "g": 215,
+          "b": 223
+        },
+        "background": "30,33,43",
+        "ratio": 10.727048884076845
+      },
+      {
+        "text": "Claude",
+        "foreground": {
+          "r": 192,
+          "g": 215,
+          "b": 223
+        },
+        "background": "11,12,22",
+        "ratio": 13.007198835387639
+      },
+      {
+        "text": "12:41 pm",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "Found the cause. The listening bars animate from a CSS loop,",
+        "foreground": {
+          "r": 192,
+          "g": 215,
+          "b": 223
+        },
+        "background": "11,12,22",
+        "ratio": 13.007198835387639
+      },
+      {
+        "text": "Found the cause. The listening bars animate from a CSS loop,",
+        "foreground": {
+          "r": 192,
+          "g": 215,
+          "b": 223
+        },
+        "background": "11,12,22",
+        "ratio": 13.007198835387639
+      },
+      {
+        "text": "Combing the desert",
+        "foreground": {
+          "r": 191,
+          "g": 214,
+          "b": 222
+        },
+        "background": "11,12,22",
+        "ratio": 12.878929408488881
+      },
+      {
+        "text": "Run a command in workshop",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "22,24,34",
+        "ratio": 15.845830100312222
+      },
+      {
+        "text": "npm test -- --run tests/unit/agents",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "22,24,34",
+        "ratio": 15.845830100312222
+      },
+      {
+        "text": "Deny",
+        "foreground": {
+          "r": 192,
+          "g": 215,
+          "b": 223
+        },
+        "background": "22,24,34",
+        "ratio": 11.808572442289275
+      },
+      {
+        "text": "Allow",
+        "foreground": {
+          "r": 11,
+          "g": 12,
+          "b": 22
+        },
+        "background": "221,247,255",
+        "ratio": 17.454257390876787
+      }
+    ]
+  },
+  {
+    "capture": "appearance-hackerman-1280x800.png",
+    "dimensions": [
+      1280,
+      800
+    ],
+    "measurements": [
+      {
+        "text": "Sotto",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "30,33,43",
+        "ratio": 14.394542179043656
+      },
+      {
+        "text": "Settings",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "30,33,43",
+        "ratio": 14.394542179043656
+      },
+      {
+        "text": "Dictation",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Transcription",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Cleanup",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Providers",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Hosts",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Phones",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Cloud iPhone",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Agents",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Output",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Appearance",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "28,45,41",
+        "ratio": 12.92105831988793
+      },
+      {
+        "text": "Application",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Dictate",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "22,24,34",
+        "ratio": 8.80122751136546
+      },
+      {
+        "text": "Threads",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "22,24,34",
+        "ratio": 8.80122751136546
+      },
+      {
+        "text": "Help",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Appearance",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Themes & interface",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "Color scheme",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Light",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "Match Linux",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Dark",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "Themes",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Create theme",
+        "foreground": {
+          "r": 150,
+          "g": 167,
+          "b": 176
+        },
+        "background": "11,12,22",
+        "ratio": 7.836777973261508
+      },
+      {
+        "text": "Add theme",
+        "foreground": {
+          "r": 150,
+          "g": 167,
+          "b": 176
+        },
+        "background": "11,12,22",
+        "ratio": 7.836777973261508
+      },
+      {
+        "text": "Choose one theme for light mode and one for dark. Sotto wear",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "Choose one theme for light mode and one for dark. Sotto wear",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "Light",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Used when Linux turns light.",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "Omarchy",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "35,60,49",
+        "ratio": 10.681635397583383
+      },
+      {
+        "text": "Waits for a light Omarchy theme",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "35,60,49",
+        "ratio": 5.93288598529992
+      },
+      {
+        "text": "Waits for a light Omarchy theme",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "35,60,49",
+        "ratio": 5.93288598529992
+      },
+      {
+        "text": "Waits for a light Omarchy theme",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "35,60,49",
+        "ratio": 5.93288598529992
+      },
+      {
+        "text": "Sotto",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Hush",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Linen",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Nocturne",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Tropic",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Citrine",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Dark",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "17,19,29",
+        "ratio": 16.587931075564484
+      },
+      {
+        "text": "Painting the window now.",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "17,19,29",
+        "ratio": 9.213411630357918
+      },
+      {
+        "text": "Omarchy",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "35,60,49",
+        "ratio": 10.681635397583383
+      },
+      {
+        "text": "Hackerman",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "35,60,49",
+        "ratio": 5.93288598529992
+      },
+      {
+        "text": "Sotto",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "17,19,29",
+        "ratio": 16.587931075564484
+      },
+      {
+        "text": "Hush",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "17,19,29",
+        "ratio": 16.587931075564484
+      },
+      {
+        "text": "Linen",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "17,19,29",
+        "ratio": 16.587931075564484
+      },
+      {
+        "text": "Nocturne",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "17,19,29",
+        "ratio": 16.587931075564484
+      },
+      {
+        "text": "Tropic",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "17,19,29",
+        "ratio": 16.587931075564484
+      },
+      {
+        "text": "Citrine",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "17,19,29",
+        "ratio": 16.587931075564484
+      },
+      {
+        "text": "Live appearance",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "Sotto",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Dictate",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "Ready when you are",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "App icon",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "Ready",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "26,28,38",
+        "ratio": 15.204000228373735
+      },
+      {
+        "text": "Floating widget",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "Effort at its highest level",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "M",
+        "foreground": {
+          "r": 247,
+          "g": 206,
+          "b": 121
+        },
+        "background": "26,28,38",
+        "ratio": 11.356471686926403
+      }
+    ]
+  },
+  {
+    "capture": "threads-hackerman-820x560.png",
+    "dimensions": [
+      820,
+      560
+    ],
+    "measurements": [
+      {
+        "text": "Sotto",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "30,33,43",
+        "ratio": 14.394542179043656
+      },
+      {
+        "text": "Threads",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "30,33,43",
+        "ratio": 14.394542179043656
+      },
+      {
+        "text": "workshop",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "30,33,43",
+        "ratio": 14.394542179043656
+      },
+      {
+        "text": "Visual gate flake",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "35,60,49",
+        "ratio": 10.681635397583383
+      },
+      {
+        "text": "12:41 pm",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "35,60,49",
+        "ratio": 5.93288598529992
+      },
+      {
+        "text": "Claude",
+        "foreground": {
+          "r": 255,
+          "g": 185,
+          "b": 0
+        },
+        "background": "35,60,49",
+        "ratio": 6.918551174730046
+      },
+      {
+        "text": "Needs your approval",
+        "foreground": {
+          "r": 255,
+          "g": 185,
+          "b": 0
+        },
+        "background": "35,60,49",
+        "ratio": 6.918551174730046
+      },
+      {
+        "text": "Grok voice previews",
+        "foreground": {
+          "r": 192,
+          "g": 215,
+          "b": 223
+        },
+        "background": "30,33,43",
+        "ratio": 10.727048884076845
+      },
+      {
+        "text": "7:58 am",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Claude",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Done",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Streaming WAV stall",
+        "foreground": {
+          "r": 192,
+          "g": 215,
+          "b": 223
+        },
+        "background": "30,33,43",
+        "ratio": 10.727048884076845
+      },
+      {
+        "text": "10:02 am",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Codex",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Done",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "sotto-site",
+        "foreground": {
+          "r": 192,
+          "g": 215,
+          "b": 223
+        },
+        "background": "30,33,43",
+        "ratio": 10.727048884076845
+      },
+      {
+        "text": "Footer links",
+        "foreground": {
+          "r": 192,
+          "g": 215,
+          "b": 223
+        },
+        "background": "30,33,43",
+        "ratio": 10.727048884076845
+      },
+      {
+        "text": "3m 00s",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Working",
+        "foreground": {
+          "r": 157,
+          "g": 250,
+          "b": 186
+        },
+        "background": "30,33,43",
+        "ratio": 12.860591915356393
+      },
+      {
+        "text": "notes",
+        "foreground": {
+          "r": 192,
+          "g": 215,
+          "b": 223
+        },
+        "background": "30,33,43",
+        "ratio": 10.727048884076845
+      },
+      {
+        "text": "Threads",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "26,28,38",
+        "ratio": 15.204000228373735
+      },
+      {
+        "text": "Help",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Visual gate flake",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Project folder",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "Tools",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "Find why the visual gate flakes on the widget listening capt",
+        "foreground": {
+          "r": 191,
+          "g": 214,
+          "b": 222
+        },
+        "background": "30,33,43",
+        "ratio": 10.621264969331726
+      },
+      {
+        "text": "Claude",
+        "foreground": {
+          "r": 192,
+          "g": 215,
+          "b": 223
+        },
+        "background": "11,12,22",
+        "ratio": 13.007198835387639
+      },
+      {
+        "text": "12:41 pm",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "Found the cause. The listening bars animate from a CSS loop,",
+        "foreground": {
+          "r": 192,
+          "g": 215,
+          "b": 223
+        },
+        "background": "11,12,22",
+        "ratio": 13.007198835387639
+      },
+      {
+        "text": "Found the cause. The listening bars animate from a CSS loop,",
+        "foreground": {
+          "r": 192,
+          "g": 215,
+          "b": 223
+        },
+        "background": "11,12,22",
+        "ratio": 13.007198835387639
+      },
+      {
+        "text": "Found the cause. The listening bars animate from a CSS loop,",
+        "foreground": {
+          "r": 192,
+          "g": 215,
+          "b": 223
+        },
+        "background": "11,12,22",
+        "ratio": 13.007198835387639
+      },
+      {
+        "text": "Found the cause. The listening bars animate from a CSS loop,",
+        "foreground": {
+          "r": 192,
+          "g": 215,
+          "b": 223
+        },
+        "background": "11,12,22",
+        "ratio": 13.007198835387639
+      },
+      {
+        "text": "Combing the desert",
+        "foreground": {
+          "r": 191,
+          "g": 214,
+          "b": 222
+        },
+        "background": "11,12,22",
+        "ratio": 12.878929408488881
+      },
+      {
+        "text": "Run a command in workshop",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "22,24,34",
+        "ratio": 15.845830100312222
+      },
+      {
+        "text": "npm test -- --run tests/unit/agents",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "22,24,34",
+        "ratio": 15.845830100312222
+      },
+      {
+        "text": "Deny",
+        "foreground": {
+          "r": 192,
+          "g": 215,
+          "b": 223
+        },
+        "background": "22,24,34",
+        "ratio": 11.808572442289275
+      },
+      {
+        "text": "Allow",
+        "foreground": {
+          "r": 11,
+          "g": 12,
+          "b": 22
+        },
+        "background": "221,247,255",
+        "ratio": 17.454257390876787
+      }
+    ]
+  },
+  {
+    "capture": "appearance-hackerman-820x560.png",
+    "dimensions": [
+      820,
+      560
+    ],
+    "measurements": [
+      {
+        "text": "Sotto",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "30,33,43",
+        "ratio": 14.394542179043656
+      },
+      {
+        "text": "Providers",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Hosts",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Phones",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Cloud iPhone",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Agents",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Output",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Appearance",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "28,45,41",
+        "ratio": 12.92105831988793
+      },
+      {
+        "text": "Application",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Git",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Dictate",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "22,24,34",
+        "ratio": 8.80122751136546
+      },
+      {
+        "text": "Threads",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "22,24,34",
+        "ratio": 8.80122751136546
+      },
+      {
+        "text": "Help",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "30,33,43",
+        "ratio": 7.99514066714708
+      },
+      {
+        "text": "Appearance",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Themes & interface",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "Color scheme",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Light",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "Match Linux",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Dark",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "Themes",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Create theme",
+        "foreground": {
+          "r": 150,
+          "g": 167,
+          "b": 176
+        },
+        "background": "11,12,22",
+        "ratio": 7.836777973261508
+      },
+      {
+        "text": "Add theme",
+        "foreground": {
+          "r": 150,
+          "g": 167,
+          "b": 176
+        },
+        "background": "11,12,22",
+        "ratio": 7.836777973261508
+      },
+      {
+        "text": "Choose one theme for light mode and one for dark. Sotto wear",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "Light",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Used when Linux turns light.",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "11,12,22",
+        "ratio": 9.694594058282362
+      },
+      {
+        "text": "Omarchy",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "35,60,49",
+        "ratio": 10.681635397583383
+      },
+      {
+        "text": "Waits for a light Omarchy theme",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "35,60,49",
+        "ratio": 5.93288598529992
+      },
+      {
+        "text": "Waits for a light Omarchy theme",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "35,60,49",
+        "ratio": 5.93288598529992
+      },
+      {
+        "text": "Sotto",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Hush",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Linen",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "11,12,22",
+        "ratio": 17.454257390876787
+      },
+      {
+        "text": "Dark",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "17,19,29",
+        "ratio": 16.587931075564484
+      },
+      {
+        "text": "Painting the window now.",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "17,19,29",
+        "ratio": 9.213411630357918
+      },
+      {
+        "text": "Omarchy",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "35,60,49",
+        "ratio": 10.681635397583383
+      },
+      {
+        "text": "Hackerman",
+        "foreground": {
+          "r": 167,
+          "g": 186,
+          "b": 195
+        },
+        "background": "35,60,49",
+        "ratio": 5.93288598529992
+      },
+      {
+        "text": "Sotto",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "17,19,29",
+        "ratio": 16.587931075564484
+      },
+      {
+        "text": "Hush",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "17,19,29",
+        "ratio": 16.587931075564484
+      },
+      {
+        "text": "Linen",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "17,19,29",
+        "ratio": 16.587931075564484
+      },
+      {
+        "text": "Nocturne",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "17,19,29",
+        "ratio": 16.587931075564484
+      }
+    ]
+  },
+  {
+    "capture": "widget-hackerman.png",
+    "dimensions": [
+      248,
+      76
+    ],
+    "measurements": [
+      {
+        "text": "Click to dictate",
+        "foreground": {
+          "r": 221,
+          "g": 247,
+          "b": 255
+        },
+        "background": "19,21,31",
+        "ratio": 16.300391219737
+      },
+      {
+        "text": "F9 to talk",
+        "foreground": {
+          "r": 158,
+          "g": 176,
+          "b": 185
+        },
+        "background": "19,21,31",
+        "ratio": 8.109616996928592
+      }
+    ]
+  },
+  {
     "capture": "threads-catppuccin-latte-1600x1000.png",
     "dimensions": [
       1600,
@@ -6055,12 +9018,12 @@
       {
         "text": "12:41 pm",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "217,225,221",
-        "ratio": 4.697229204624131
+        "ratio": 4.984682996277335
       },
       {
         "text": "Claude",
@@ -6085,112 +9048,112 @@
       {
         "text": "Grok voice previews",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "235,229,227",
-        "ratio": 5.410020668363723
+        "ratio": 5.569709696067414
       },
       {
         "text": "7:58 am",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Claude",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Done",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Streaming WAV stall",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "235,229,227",
-        "ratio": 5.410020668363723
+        "ratio": 5.569709696067414
       },
       {
         "text": "10:02 am",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Codex",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Done",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "sotto-site",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "235,229,227",
-        "ratio": 5.410020668363723
+        "ratio": 5.569709696067414
       },
       {
         "text": "Footer links",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "235,229,227",
-        "ratio": 5.410020668363723
+        "ratio": 5.569709696067414
       },
       {
         "text": "3m 00s",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Working",
@@ -6205,32 +9168,32 @@
       {
         "text": "notes",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "235,229,227",
-        "ratio": 5.410020668363723
+        "ratio": 5.569709696067414
       },
       {
         "text": "Weekly note",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "235,229,227",
-        "ratio": 5.410020668363723
+        "ratio": 5.569709696067414
       },
       {
         "text": "10m 00s",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Working",
@@ -6245,22 +9208,22 @@
       {
         "text": "Settled",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "235,229,227",
-        "ratio": 5.410020668363723
+        "ratio": 5.569709696067414
       },
       {
         "text": "Dictate",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "242,236,231",
-        "ratio": 5.341725579810014
+        "ratio": 5.668620267081328
       },
       {
         "text": "Threads",
@@ -6275,12 +9238,12 @@
       {
         "text": "Help",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Visual gate flake",
@@ -6295,112 +9258,112 @@
       {
         "text": "workshop",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "Project folder",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "Tools",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "You",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "235,229,227",
-        "ratio": 5.410020668363723
+        "ratio": 5.569709696067414
       },
       {
         "text": "12:32 pm",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Find why the visual gate flakes on the widget listening capt",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "235,229,227",
-        "ratio": 5.410020668363723
+        "ratio": 5.569709696067414
       },
       {
         "text": "Claude",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "250,244,237",
-        "ratio": 6.173741538133157
+        "ratio": 6.355973519109406
       },
       {
         "text": "12:41 pm",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "Found the cause. The listening bars animate from a CSS loop,",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "250,244,237",
-        "ratio": 6.173741538133157
+        "ratio": 6.355973519109406
       },
       {
         "text": "Found the cause. The listening bars animate from a CSS loop,",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "250,244,237",
-        "ratio": 6.173741538133157
+        "ratio": 6.355973519109406
       },
       {
         "text": "Combing the desert",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "250,244,237",
-        "ratio": 6.173741538133157
+        "ratio": 6.355973519109406
       },
       {
         "text": "Run a command in workshop",
@@ -6425,12 +9388,12 @@
       {
         "text": "Deny",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "242,236,231",
-        "ratio": 5.756199893420407
+        "ratio": 5.926107185942158
       },
       {
         "text": "Allow",
@@ -6474,92 +9437,92 @@
       {
         "text": "Dictation",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Transcription",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Cleanup",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Providers",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Hosts",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Phones",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Cloud iPhone",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Agents",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Output",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Appearance",
@@ -6574,52 +9537,52 @@
       {
         "text": "Application",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Git",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Dictate",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "242,236,231",
-        "ratio": 5.341725579810014
+        "ratio": 5.668620267081328
       },
       {
         "text": "Threads",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "242,236,231",
-        "ratio": 5.341725579810014
+        "ratio": 5.668620267081328
       },
       {
         "text": "Help",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Appearance",
@@ -6634,12 +9597,12 @@
       {
         "text": "Themes & interface",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "Color scheme",
@@ -6654,12 +9617,12 @@
       {
         "text": "Light",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "Match Linux",
@@ -6674,12 +9637,12 @@
       {
         "text": "Dark",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "Themes",
@@ -6694,42 +9657,42 @@
       {
         "text": "Create theme",
         "foreground": {
-          "r": 100,
-          "g": 95,
+          "r": 99,
+          "g": 94,
           "b": 130
         },
         "background": "250,244,237",
-        "ratio": 5.491992013804266
+        "ratio": 5.566943296161578
       },
       {
         "text": "Add theme",
         "foreground": {
-          "r": 100,
-          "g": 95,
+          "r": 99,
+          "g": 94,
           "b": 130
         },
         "background": "250,244,237",
-        "ratio": 5.491992013804266
+        "ratio": 5.566943296161578
       },
       {
         "text": "Choose one theme for light mode and one for dark. Sotto wear",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "Choose one theme for light mode and one for dark. Sotto wear",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "Light",
@@ -6744,12 +9707,12 @@
       {
         "text": "Painting the window now.",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "245,239,234",
-        "ratio": 5.487626994866091
+        "ratio": 5.8234503320155415
       },
       {
         "text": "Omarchy",
@@ -6764,12 +9727,12 @@
       {
         "text": "Rose Pine",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "217,225,221",
-        "ratio": 4.697229204624131
+        "ratio": 4.984682996277335
       },
       {
         "text": "Sotto",
@@ -6844,12 +9807,12 @@
       {
         "text": "Used when Linux turns dark.",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "Omarchy",
@@ -6864,32 +9827,32 @@
       {
         "text": "Waits for a dark Omarchy theme",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "217,225,221",
-        "ratio": 4.697229204624131
+        "ratio": 4.984682996277335
       },
       {
         "text": "Waits for a dark Omarchy theme",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "217,225,221",
-        "ratio": 4.697229204624131
+        "ratio": 4.984682996277335
       },
       {
         "text": "Waits for a dark Omarchy theme",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "217,225,221",
-        "ratio": 4.697229204624131
+        "ratio": 4.984682996277335
       },
       {
         "text": "Sotto",
@@ -6964,12 +9927,12 @@
       {
         "text": "The color a thread’s effort control turns at its highest lev",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "Ember",
@@ -7034,12 +9997,12 @@
       {
         "text": "Live appearance",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "Sotto",
@@ -7054,12 +10017,12 @@
       {
         "text": "Dictate",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "Ready when you are",
@@ -7074,12 +10037,12 @@
       {
         "text": "App icon",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "Ready",
@@ -7094,22 +10057,22 @@
       {
         "text": "Floating widget",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "Effort at its highest level",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "M",
@@ -7124,12 +10087,12 @@
       {
         "text": "Model",
         "foreground": {
-          "r": 96,
-          "g": 91,
-          "b": 128
+          "r": 92,
+          "g": 87,
+          "b": 125
         },
         "background": "245,239,234",
-        "ratio": 5.57168991018486
+        "ratio": 5.913422067650022
       },
       {
         "text": "Max",
@@ -7144,22 +10107,22 @@
       {
         "text": "Auto",
         "foreground": {
-          "r": 96,
-          "g": 91,
-          "b": 127
+          "r": 92,
+          "g": 88,
+          "b": 125
         },
         "background": "240,234,229",
-        "ratio": 5.33462132229254
+        "ratio": 5.594258520303777
       },
       {
         "text": "The widget follows the Omarchy theme’s mode.",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       }
     ]
   },
@@ -7213,12 +10176,12 @@
       {
         "text": "12:41 pm",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "217,225,221",
-        "ratio": 4.697229204624131
+        "ratio": 4.984682996277335
       },
       {
         "text": "Claude",
@@ -7243,112 +10206,112 @@
       {
         "text": "Grok voice previews",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "235,229,227",
-        "ratio": 5.410020668363723
+        "ratio": 5.569709696067414
       },
       {
         "text": "7:58 am",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Claude",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Done",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Streaming WAV stall",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "235,229,227",
-        "ratio": 5.410020668363723
+        "ratio": 5.569709696067414
       },
       {
         "text": "10:02 am",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Codex",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Done",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "sotto-site",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "235,229,227",
-        "ratio": 5.410020668363723
+        "ratio": 5.569709696067414
       },
       {
         "text": "Footer links",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "235,229,227",
-        "ratio": 5.410020668363723
+        "ratio": 5.569709696067414
       },
       {
         "text": "3m 00s",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Working",
@@ -7363,32 +10326,32 @@
       {
         "text": "notes",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "235,229,227",
-        "ratio": 5.410020668363723
+        "ratio": 5.569709696067414
       },
       {
         "text": "Weekly note",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "235,229,227",
-        "ratio": 5.410020668363723
+        "ratio": 5.569709696067414
       },
       {
         "text": "10m 00s",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Working",
@@ -7403,22 +10366,22 @@
       {
         "text": "Settled",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "235,229,227",
-        "ratio": 5.410020668363723
+        "ratio": 5.569709696067414
       },
       {
         "text": "Dictate",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "242,236,231",
-        "ratio": 5.341725579810014
+        "ratio": 5.668620267081328
       },
       {
         "text": "Threads",
@@ -7433,12 +10396,12 @@
       {
         "text": "Help",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Visual gate flake",
@@ -7453,112 +10416,112 @@
       {
         "text": "workshop",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "Project folder",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "Tools",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "You",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "235,229,227",
-        "ratio": 5.410020668363723
+        "ratio": 5.569709696067414
       },
       {
         "text": "12:32 pm",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Find why the visual gate flakes on the widget listening capt",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "235,229,227",
-        "ratio": 5.410020668363723
+        "ratio": 5.569709696067414
       },
       {
         "text": "Claude",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "250,244,237",
-        "ratio": 6.173741538133157
+        "ratio": 6.355973519109406
       },
       {
         "text": "12:41 pm",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "Found the cause. The listening bars animate from a CSS loop,",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "250,244,237",
-        "ratio": 6.173741538133157
+        "ratio": 6.355973519109406
       },
       {
         "text": "Found the cause. The listening bars animate from a CSS loop,",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "250,244,237",
-        "ratio": 6.173741538133157
+        "ratio": 6.355973519109406
       },
       {
         "text": "Combing the desert",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "250,244,237",
-        "ratio": 6.173741538133157
+        "ratio": 6.355973519109406
       },
       {
         "text": "Run a command in workshop",
@@ -7583,12 +10546,12 @@
       {
         "text": "Deny",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "242,236,231",
-        "ratio": 5.756199893420407
+        "ratio": 5.926107185942158
       },
       {
         "text": "Allow",
@@ -7632,92 +10595,92 @@
       {
         "text": "Dictation",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Transcription",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Cleanup",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Providers",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Hosts",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Phones",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Cloud iPhone",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Agents",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Output",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Appearance",
@@ -7732,42 +10695,42 @@
       {
         "text": "Application",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Dictate",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "242,236,231",
-        "ratio": 5.341725579810014
+        "ratio": 5.668620267081328
       },
       {
         "text": "Threads",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "242,236,231",
-        "ratio": 5.341725579810014
+        "ratio": 5.668620267081328
       },
       {
         "text": "Help",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Appearance",
@@ -7782,12 +10745,12 @@
       {
         "text": "Themes & interface",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "Color scheme",
@@ -7802,12 +10765,12 @@
       {
         "text": "Light",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "Match Linux",
@@ -7822,12 +10785,12 @@
       {
         "text": "Dark",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "Themes",
@@ -7842,42 +10805,42 @@
       {
         "text": "Create theme",
         "foreground": {
-          "r": 100,
-          "g": 95,
+          "r": 99,
+          "g": 94,
           "b": 130
         },
         "background": "250,244,237",
-        "ratio": 5.491992013804266
+        "ratio": 5.566943296161578
       },
       {
         "text": "Add theme",
         "foreground": {
-          "r": 100,
-          "g": 95,
+          "r": 99,
+          "g": 94,
           "b": 130
         },
         "background": "250,244,237",
-        "ratio": 5.491992013804266
+        "ratio": 5.566943296161578
       },
       {
         "text": "Choose one theme for light mode and one for dark. Sotto wear",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "Choose one theme for light mode and one for dark. Sotto wear",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "Light",
@@ -7892,12 +10855,12 @@
       {
         "text": "Painting the window now.",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "245,239,234",
-        "ratio": 5.487626994866091
+        "ratio": 5.8234503320155415
       },
       {
         "text": "Omarchy",
@@ -7912,12 +10875,12 @@
       {
         "text": "Rose Pine",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "217,225,221",
-        "ratio": 4.697229204624131
+        "ratio": 4.984682996277335
       },
       {
         "text": "Sotto",
@@ -7992,12 +10955,12 @@
       {
         "text": "Used when Linux turns dark.",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "Omarchy",
@@ -8012,32 +10975,32 @@
       {
         "text": "Waits for a dark Omarchy theme",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "217,225,221",
-        "ratio": 4.697229204624131
+        "ratio": 4.984682996277335
       },
       {
         "text": "Waits for a dark Omarchy theme",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "217,225,221",
-        "ratio": 4.697229204624131
+        "ratio": 4.984682996277335
       },
       {
         "text": "Waits for a dark Omarchy theme",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "217,225,221",
-        "ratio": 4.697229204624131
+        "ratio": 4.984682996277335
       },
       {
         "text": "Sotto",
@@ -8102,12 +11065,12 @@
       {
         "text": "Live appearance",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "Sotto",
@@ -8122,12 +11085,12 @@
       {
         "text": "Dictate",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "Ready when you are",
@@ -8142,12 +11105,12 @@
       {
         "text": "App icon",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "Ready",
@@ -8162,22 +11125,22 @@
       {
         "text": "Floating widget",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "Effort at its highest level",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "M",
@@ -8192,12 +11155,12 @@
       {
         "text": "Model",
         "foreground": {
-          "r": 96,
-          "g": 91,
-          "b": 128
+          "r": 92,
+          "g": 87,
+          "b": 125
         },
         "background": "245,239,234",
-        "ratio": 5.57168991018486
+        "ratio": 5.913422067650022
       },
       {
         "text": "Max",
@@ -8212,12 +11175,12 @@
       {
         "text": "Auto",
         "foreground": {
-          "r": 96,
-          "g": 91,
-          "b": 127
+          "r": 92,
+          "g": 88,
+          "b": 125
         },
         "background": "240,234,229",
-        "ratio": 5.33462132229254
+        "ratio": 5.594258520303777
       }
     ]
   },
@@ -8271,12 +11234,12 @@
       {
         "text": "12:41 pm",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "217,225,221",
-        "ratio": 4.697229204624131
+        "ratio": 4.984682996277335
       },
       {
         "text": "Claude",
@@ -8301,112 +11264,112 @@
       {
         "text": "Grok voice previews",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "235,229,227",
-        "ratio": 5.410020668363723
+        "ratio": 5.569709696067414
       },
       {
         "text": "7:58 am",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Claude",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Done",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Streaming WAV stall",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "235,229,227",
-        "ratio": 5.410020668363723
+        "ratio": 5.569709696067414
       },
       {
         "text": "10:02 am",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Codex",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Done",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "sotto-site",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "235,229,227",
-        "ratio": 5.410020668363723
+        "ratio": 5.569709696067414
       },
       {
         "text": "Footer links",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "235,229,227",
-        "ratio": 5.410020668363723
+        "ratio": 5.569709696067414
       },
       {
         "text": "3m 00s",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Working",
@@ -8421,12 +11384,12 @@
       {
         "text": "notes",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "235,229,227",
-        "ratio": 5.410020668363723
+        "ratio": 5.569709696067414
       },
       {
         "text": "Threads",
@@ -8441,12 +11404,12 @@
       {
         "text": "Help",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Visual gate flake",
@@ -8461,102 +11424,102 @@
       {
         "text": "Project folder",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "Tools",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "Find why the visual gate flakes on the widget listening capt",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "235,229,227",
-        "ratio": 5.410020668363723
+        "ratio": 5.569709696067414
       },
       {
         "text": "Claude",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "250,244,237",
-        "ratio": 6.173741538133157
+        "ratio": 6.355973519109406
       },
       {
         "text": "12:41 pm",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "Found the cause. The listening bars animate from a CSS loop,",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "250,244,237",
-        "ratio": 6.173741538133157
+        "ratio": 6.355973519109406
       },
       {
         "text": "Found the cause. The listening bars animate from a CSS loop,",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "250,244,237",
-        "ratio": 6.173741538133157
+        "ratio": 6.355973519109406
       },
       {
         "text": "Found the cause. The listening bars animate from a CSS loop,",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "250,244,237",
-        "ratio": 6.173741538133157
+        "ratio": 6.355973519109406
       },
       {
         "text": "Found the cause. The listening bars animate from a CSS loop,",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "250,244,237",
-        "ratio": 6.173741538133157
+        "ratio": 6.355973519109406
       },
       {
         "text": "Combing the desert",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "250,244,237",
-        "ratio": 6.173741538133157
+        "ratio": 6.355973519109406
       },
       {
         "text": "Run a command in workshop",
@@ -8581,12 +11544,12 @@
       {
         "text": "Deny",
         "foreground": {
-          "r": 92,
-          "g": 87,
-          "b": 125
+          "r": 90,
+          "g": 85,
+          "b": 124
         },
         "background": "242,236,231",
-        "ratio": 5.756199893420407
+        "ratio": 5.926107185942158
       },
       {
         "text": "Allow",
@@ -8620,62 +11583,62 @@
       {
         "text": "Providers",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Hosts",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Phones",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Cloud iPhone",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Agents",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Output",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Appearance",
@@ -8690,52 +11653,52 @@
       {
         "text": "Application",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Git",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Dictate",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "242,236,231",
-        "ratio": 5.341725579810014
+        "ratio": 5.668620267081328
       },
       {
         "text": "Threads",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "242,236,231",
-        "ratio": 5.341725579810014
+        "ratio": 5.668620267081328
       },
       {
         "text": "Help",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "235,229,227",
-        "ratio": 5.020472938150052
+        "ratio": 5.327708101497592
       },
       {
         "text": "Appearance",
@@ -8750,12 +11713,12 @@
       {
         "text": "Themes & interface",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "Color scheme",
@@ -8770,12 +11733,12 @@
       {
         "text": "Light",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "Match Linux",
@@ -8790,12 +11753,12 @@
       {
         "text": "Dark",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "Themes",
@@ -8810,32 +11773,32 @@
       {
         "text": "Create theme",
         "foreground": {
-          "r": 100,
-          "g": 95,
+          "r": 99,
+          "g": 94,
           "b": 130
         },
         "background": "250,244,237",
-        "ratio": 5.491992013804266
+        "ratio": 5.566943296161578
       },
       {
         "text": "Add theme",
         "foreground": {
-          "r": 100,
-          "g": 95,
+          "r": 99,
+          "g": 94,
           "b": 130
         },
         "background": "250,244,237",
-        "ratio": 5.491992013804266
+        "ratio": 5.566943296161578
       },
       {
         "text": "Choose one theme for light mode and one for dark. Sotto wear",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "Light",
@@ -8850,12 +11813,12 @@
       {
         "text": "Painting the window now.",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "245,239,234",
-        "ratio": 5.487626994866091
+        "ratio": 5.8234503320155415
       },
       {
         "text": "Omarchy",
@@ -8870,12 +11833,12 @@
       {
         "text": "Rose Pine",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "217,225,221",
-        "ratio": 4.697229204624131
+        "ratio": 4.984682996277335
       },
       {
         "text": "Sotto",
@@ -8930,12 +11893,12 @@
       {
         "text": "Used when Linux turns dark.",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "250,244,237",
-        "ratio": 5.729202200757017
+        "ratio": 6.079809084946153
       },
       {
         "text": "Omarchy",
@@ -8950,22 +11913,22 @@
       {
         "text": "Waits for a dark Omarchy theme",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "217,225,221",
-        "ratio": 4.697229204624131
+        "ratio": 4.984682996277335
       },
       {
         "text": "Waits for a dark Omarchy theme",
         "foreground": {
-          "r": 97,
-          "g": 92,
-          "b": 129
+          "r": 93,
+          "g": 88,
+          "b": 126
         },
         "background": "217,225,221",
-        "ratio": 4.697229204624131
+        "ratio": 4.984682996277335
       },
       {
         "text": "Sotto",
@@ -9019,2975 +11982,12 @@
       {
         "text": "F9 to talk",
         "foreground": {
-          "r": 99,
-          "g": 94,
-          "b": 130
+          "r": 94,
+          "g": 89,
+          "b": 127
         },
         "background": "244,238,233",
-        "ratio": 5.284691272004645
-      }
-    ]
-  },
-  {
-    "capture": "threads-hackerman-1600x1000.png",
-    "dimensions": [
-      1600,
-      1000
-    ],
-    "measurements": [
-      {
-        "text": "Sotto",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "30,33,43",
-        "ratio": 14.394542179043656
-      },
-      {
-        "text": "Threads",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "30,33,43",
-        "ratio": 14.394542179043656
-      },
-      {
-        "text": "workshop",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "30,33,43",
-        "ratio": 14.394542179043656
-      },
-      {
-        "text": "Visual gate flake",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "35,60,49",
-        "ratio": 10.681635397583383
-      },
-      {
-        "text": "12:41 pm",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "35,60,49",
-        "ratio": 5.93288598529992
-      },
-      {
-        "text": "Claude",
-        "foreground": {
-          "r": 255,
-          "g": 185,
-          "b": 0
-        },
-        "background": "35,60,49",
-        "ratio": 6.918551174730046
-      },
-      {
-        "text": "Needs your approval",
-        "foreground": {
-          "r": 255,
-          "g": 185,
-          "b": 0
-        },
-        "background": "35,60,49",
-        "ratio": 6.918551174730046
-      },
-      {
-        "text": "Grok voice previews",
-        "foreground": {
-          "r": 192,
-          "g": 215,
-          "b": 223
-        },
-        "background": "30,33,43",
-        "ratio": 10.727048884076845
-      },
-      {
-        "text": "7:58 am",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Claude",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Done",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Streaming WAV stall",
-        "foreground": {
-          "r": 192,
-          "g": 215,
-          "b": 223
-        },
-        "background": "30,33,43",
-        "ratio": 10.727048884076845
-      },
-      {
-        "text": "10:02 am",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Codex",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Done",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "sotto-site",
-        "foreground": {
-          "r": 192,
-          "g": 215,
-          "b": 223
-        },
-        "background": "30,33,43",
-        "ratio": 10.727048884076845
-      },
-      {
-        "text": "Footer links",
-        "foreground": {
-          "r": 192,
-          "g": 215,
-          "b": 223
-        },
-        "background": "30,33,43",
-        "ratio": 10.727048884076845
-      },
-      {
-        "text": "3m 00s",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Working",
-        "foreground": {
-          "r": 157,
-          "g": 250,
-          "b": 186
-        },
-        "background": "30,33,43",
-        "ratio": 12.860591915356393
-      },
-      {
-        "text": "notes",
-        "foreground": {
-          "r": 192,
-          "g": 215,
-          "b": 223
-        },
-        "background": "30,33,43",
-        "ratio": 10.727048884076845
-      },
-      {
-        "text": "Weekly note",
-        "foreground": {
-          "r": 191,
-          "g": 214,
-          "b": 222
-        },
-        "background": "30,33,43",
-        "ratio": 10.621264969331726
-      },
-      {
-        "text": "10m 00s",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Working",
-        "foreground": {
-          "r": 157,
-          "g": 250,
-          "b": 186
-        },
-        "background": "30,33,43",
-        "ratio": 12.860591915356393
-      },
-      {
-        "text": "Settled",
-        "foreground": {
-          "r": 192,
-          "g": 215,
-          "b": 223
-        },
-        "background": "30,33,43",
-        "ratio": 10.727048884076845
-      },
-      {
-        "text": "Dictate",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "22,24,34",
-        "ratio": 8.80122751136546
-      },
-      {
-        "text": "Threads",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "26,28,38",
-        "ratio": 15.204000228373735
-      },
-      {
-        "text": "Help",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Visual gate flake",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "workshop",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "Project folder",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "Tools",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "You",
-        "foreground": {
-          "r": 192,
-          "g": 215,
-          "b": 223
-        },
-        "background": "30,33,43",
-        "ratio": 10.727048884076845
-      },
-      {
-        "text": "12:32 pm",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Find why the visual gate flakes on the widget listening capt",
-        "foreground": {
-          "r": 192,
-          "g": 215,
-          "b": 223
-        },
-        "background": "30,33,43",
-        "ratio": 10.727048884076845
-      },
-      {
-        "text": "Claude",
-        "foreground": {
-          "r": 192,
-          "g": 215,
-          "b": 223
-        },
-        "background": "11,12,22",
-        "ratio": 13.007198835387639
-      },
-      {
-        "text": "12:41 pm",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "Found the cause. The listening bars animate from a CSS loop,",
-        "foreground": {
-          "r": 192,
-          "g": 215,
-          "b": 223
-        },
-        "background": "11,12,22",
-        "ratio": 13.007198835387639
-      },
-      {
-        "text": "Found the cause. The listening bars animate from a CSS loop,",
-        "foreground": {
-          "r": 192,
-          "g": 215,
-          "b": 223
-        },
-        "background": "11,12,22",
-        "ratio": 13.007198835387639
-      },
-      {
-        "text": "Combing the desert",
-        "foreground": {
-          "r": 191,
-          "g": 214,
-          "b": 222
-        },
-        "background": "11,12,22",
-        "ratio": 12.878929408488881
-      },
-      {
-        "text": "Run a command in workshop",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "22,24,34",
-        "ratio": 15.845830100312222
-      },
-      {
-        "text": "npm test -- --run tests/unit/agents",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "22,24,34",
-        "ratio": 15.845830100312222
-      },
-      {
-        "text": "Deny",
-        "foreground": {
-          "r": 192,
-          "g": 215,
-          "b": 223
-        },
-        "background": "22,24,34",
-        "ratio": 11.808572442289275
-      },
-      {
-        "text": "Allow",
-        "foreground": {
-          "r": 11,
-          "g": 12,
-          "b": 22
-        },
-        "background": "221,247,255",
-        "ratio": 17.454257390876787
-      }
-    ]
-  },
-  {
-    "capture": "appearance-hackerman-1600x1000.png",
-    "dimensions": [
-      1600,
-      1000
-    ],
-    "measurements": [
-      {
-        "text": "Sotto",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "30,33,43",
-        "ratio": 14.394542179043656
-      },
-      {
-        "text": "Settings",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "30,33,43",
-        "ratio": 14.394542179043656
-      },
-      {
-        "text": "Dictation",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Transcription",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Cleanup",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Providers",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Hosts",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Phones",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Cloud iPhone",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Agents",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Output",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Appearance",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "28,45,41",
-        "ratio": 12.92105831988793
-      },
-      {
-        "text": "Application",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Git",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Dictate",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "22,24,34",
-        "ratio": 8.80122751136546
-      },
-      {
-        "text": "Threads",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "22,24,34",
-        "ratio": 8.80122751136546
-      },
-      {
-        "text": "Help",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Appearance",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Themes & interface",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "Color scheme",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Light",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "Match Linux",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Dark",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "Themes",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Create theme",
-        "foreground": {
-          "r": 150,
-          "g": 167,
-          "b": 176
-        },
-        "background": "11,12,22",
-        "ratio": 7.836777973261508
-      },
-      {
-        "text": "Add theme",
-        "foreground": {
-          "r": 150,
-          "g": 167,
-          "b": 176
-        },
-        "background": "11,12,22",
-        "ratio": 7.836777973261508
-      },
-      {
-        "text": "Choose one theme for light mode and one for dark. Sotto wear",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "Choose one theme for light mode and one for dark. Sotto wear",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "Light",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Used when Linux turns light.",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "Omarchy",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "35,60,49",
-        "ratio": 10.681635397583383
-      },
-      {
-        "text": "Waits for a light Omarchy theme",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "35,60,49",
-        "ratio": 5.93288598529992
-      },
-      {
-        "text": "Waits for a light Omarchy theme",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "35,60,49",
-        "ratio": 5.93288598529992
-      },
-      {
-        "text": "Waits for a light Omarchy theme",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "35,60,49",
-        "ratio": 5.93288598529992
-      },
-      {
-        "text": "Sotto",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Hush",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Linen",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Nocturne",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Tropic",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Citrine",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Dark",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "17,19,29",
-        "ratio": 16.587931075564484
-      },
-      {
-        "text": "Painting the window now.",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "17,19,29",
-        "ratio": 9.213411630357918
-      },
-      {
-        "text": "Omarchy",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "35,60,49",
-        "ratio": 10.681635397583383
-      },
-      {
-        "text": "Hackerman",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "35,60,49",
-        "ratio": 5.93288598529992
-      },
-      {
-        "text": "Sotto",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "17,19,29",
-        "ratio": 16.587931075564484
-      },
-      {
-        "text": "Hush",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "17,19,29",
-        "ratio": 16.587931075564484
-      },
-      {
-        "text": "Linen",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "17,19,29",
-        "ratio": 16.587931075564484
-      },
-      {
-        "text": "Nocturne",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "17,19,29",
-        "ratio": 16.587931075564484
-      },
-      {
-        "text": "Tropic",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "17,19,29",
-        "ratio": 16.587931075564484
-      },
-      {
-        "text": "Citrine",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "17,19,29",
-        "ratio": 16.587931075564484
-      },
-      {
-        "text": "Effort color",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "The color a thread’s effort control turns at its highest lev",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "Ember",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Cyberpunk",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Rainbow",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Aurora",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Plasma",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Theme accent",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Live appearance",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "Sotto",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Dictate",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "Ready when you are",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "App icon",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "Ready",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "26,28,38",
-        "ratio": 15.204000228373735
-      },
-      {
-        "text": "Floating widget",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "Effort at its highest level",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "M",
-        "foreground": {
-          "r": 247,
-          "g": 206,
-          "b": 121
-        },
-        "background": "26,28,38",
-        "ratio": 11.356471686926403
-      },
-      {
-        "text": "The widget follows the Omarchy theme’s mode.",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      }
-    ]
-  },
-  {
-    "capture": "threads-hackerman-1280x800.png",
-    "dimensions": [
-      1280,
-      800
-    ],
-    "measurements": [
-      {
-        "text": "Sotto",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "30,33,43",
-        "ratio": 14.394542179043656
-      },
-      {
-        "text": "Threads",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "30,33,43",
-        "ratio": 14.394542179043656
-      },
-      {
-        "text": "workshop",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "30,33,43",
-        "ratio": 14.394542179043656
-      },
-      {
-        "text": "Visual gate flake",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "35,60,49",
-        "ratio": 10.681635397583383
-      },
-      {
-        "text": "12:41 pm",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "35,60,49",
-        "ratio": 5.93288598529992
-      },
-      {
-        "text": "Claude",
-        "foreground": {
-          "r": 255,
-          "g": 185,
-          "b": 0
-        },
-        "background": "35,60,49",
-        "ratio": 6.918551174730046
-      },
-      {
-        "text": "Needs your approval",
-        "foreground": {
-          "r": 255,
-          "g": 185,
-          "b": 0
-        },
-        "background": "35,60,49",
-        "ratio": 6.918551174730046
-      },
-      {
-        "text": "Grok voice previews",
-        "foreground": {
-          "r": 192,
-          "g": 215,
-          "b": 223
-        },
-        "background": "30,33,43",
-        "ratio": 10.727048884076845
-      },
-      {
-        "text": "7:58 am",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Claude",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Done",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Streaming WAV stall",
-        "foreground": {
-          "r": 192,
-          "g": 215,
-          "b": 223
-        },
-        "background": "30,33,43",
-        "ratio": 10.727048884076845
-      },
-      {
-        "text": "10:02 am",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Codex",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Done",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "sotto-site",
-        "foreground": {
-          "r": 192,
-          "g": 215,
-          "b": 223
-        },
-        "background": "30,33,43",
-        "ratio": 10.727048884076845
-      },
-      {
-        "text": "Footer links",
-        "foreground": {
-          "r": 192,
-          "g": 215,
-          "b": 223
-        },
-        "background": "30,33,43",
-        "ratio": 10.727048884076845
-      },
-      {
-        "text": "3m 00s",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Working",
-        "foreground": {
-          "r": 157,
-          "g": 250,
-          "b": 186
-        },
-        "background": "30,33,43",
-        "ratio": 12.860591915356393
-      },
-      {
-        "text": "notes",
-        "foreground": {
-          "r": 192,
-          "g": 215,
-          "b": 223
-        },
-        "background": "30,33,43",
-        "ratio": 10.727048884076845
-      },
-      {
-        "text": "Weekly note",
-        "foreground": {
-          "r": 191,
-          "g": 214,
-          "b": 222
-        },
-        "background": "30,33,43",
-        "ratio": 10.621264969331726
-      },
-      {
-        "text": "10m 00s",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Working",
-        "foreground": {
-          "r": 157,
-          "g": 250,
-          "b": 186
-        },
-        "background": "30,33,43",
-        "ratio": 12.860591915356393
-      },
-      {
-        "text": "Settled",
-        "foreground": {
-          "r": 192,
-          "g": 215,
-          "b": 223
-        },
-        "background": "30,33,43",
-        "ratio": 10.727048884076845
-      },
-      {
-        "text": "Dictate",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "22,24,34",
-        "ratio": 8.80122751136546
-      },
-      {
-        "text": "Threads",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "26,28,38",
-        "ratio": 15.204000228373735
-      },
-      {
-        "text": "Help",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Visual gate flake",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "workshop",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "Project folder",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "Tools",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "You",
-        "foreground": {
-          "r": 192,
-          "g": 215,
-          "b": 223
-        },
-        "background": "30,33,43",
-        "ratio": 10.727048884076845
-      },
-      {
-        "text": "12:32 pm",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Find why the visual gate flakes on the widget listening capt",
-        "foreground": {
-          "r": 192,
-          "g": 215,
-          "b": 223
-        },
-        "background": "30,33,43",
-        "ratio": 10.727048884076845
-      },
-      {
-        "text": "Claude",
-        "foreground": {
-          "r": 192,
-          "g": 215,
-          "b": 223
-        },
-        "background": "11,12,22",
-        "ratio": 13.007198835387639
-      },
-      {
-        "text": "12:41 pm",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "Found the cause. The listening bars animate from a CSS loop,",
-        "foreground": {
-          "r": 192,
-          "g": 215,
-          "b": 223
-        },
-        "background": "11,12,22",
-        "ratio": 13.007198835387639
-      },
-      {
-        "text": "Found the cause. The listening bars animate from a CSS loop,",
-        "foreground": {
-          "r": 192,
-          "g": 215,
-          "b": 223
-        },
-        "background": "11,12,22",
-        "ratio": 13.007198835387639
-      },
-      {
-        "text": "Combing the desert",
-        "foreground": {
-          "r": 191,
-          "g": 214,
-          "b": 222
-        },
-        "background": "11,12,22",
-        "ratio": 12.878929408488881
-      },
-      {
-        "text": "Run a command in workshop",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "22,24,34",
-        "ratio": 15.845830100312222
-      },
-      {
-        "text": "npm test -- --run tests/unit/agents",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "22,24,34",
-        "ratio": 15.845830100312222
-      },
-      {
-        "text": "Deny",
-        "foreground": {
-          "r": 192,
-          "g": 215,
-          "b": 223
-        },
-        "background": "22,24,34",
-        "ratio": 11.808572442289275
-      },
-      {
-        "text": "Allow",
-        "foreground": {
-          "r": 11,
-          "g": 12,
-          "b": 22
-        },
-        "background": "221,247,255",
-        "ratio": 17.454257390876787
-      }
-    ]
-  },
-  {
-    "capture": "appearance-hackerman-1280x800.png",
-    "dimensions": [
-      1280,
-      800
-    ],
-    "measurements": [
-      {
-        "text": "Sotto",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "30,33,43",
-        "ratio": 14.394542179043656
-      },
-      {
-        "text": "Settings",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "30,33,43",
-        "ratio": 14.394542179043656
-      },
-      {
-        "text": "Dictation",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Transcription",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Cleanup",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Providers",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Hosts",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Phones",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Cloud iPhone",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Agents",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Output",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Appearance",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "28,45,41",
-        "ratio": 12.92105831988793
-      },
-      {
-        "text": "Application",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Dictate",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "22,24,34",
-        "ratio": 8.80122751136546
-      },
-      {
-        "text": "Threads",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "22,24,34",
-        "ratio": 8.80122751136546
-      },
-      {
-        "text": "Help",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Appearance",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Themes & interface",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "Color scheme",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Light",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "Match Linux",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Dark",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "Themes",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Create theme",
-        "foreground": {
-          "r": 150,
-          "g": 167,
-          "b": 176
-        },
-        "background": "11,12,22",
-        "ratio": 7.836777973261508
-      },
-      {
-        "text": "Add theme",
-        "foreground": {
-          "r": 150,
-          "g": 167,
-          "b": 176
-        },
-        "background": "11,12,22",
-        "ratio": 7.836777973261508
-      },
-      {
-        "text": "Choose one theme for light mode and one for dark. Sotto wear",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "Choose one theme for light mode and one for dark. Sotto wear",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "Light",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Used when Linux turns light.",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "Omarchy",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "35,60,49",
-        "ratio": 10.681635397583383
-      },
-      {
-        "text": "Waits for a light Omarchy theme",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "35,60,49",
-        "ratio": 5.93288598529992
-      },
-      {
-        "text": "Waits for a light Omarchy theme",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "35,60,49",
-        "ratio": 5.93288598529992
-      },
-      {
-        "text": "Waits for a light Omarchy theme",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "35,60,49",
-        "ratio": 5.93288598529992
-      },
-      {
-        "text": "Sotto",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Hush",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Linen",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Nocturne",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Tropic",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Citrine",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Dark",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "17,19,29",
-        "ratio": 16.587931075564484
-      },
-      {
-        "text": "Painting the window now.",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "17,19,29",
-        "ratio": 9.213411630357918
-      },
-      {
-        "text": "Omarchy",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "35,60,49",
-        "ratio": 10.681635397583383
-      },
-      {
-        "text": "Hackerman",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "35,60,49",
-        "ratio": 5.93288598529992
-      },
-      {
-        "text": "Sotto",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "17,19,29",
-        "ratio": 16.587931075564484
-      },
-      {
-        "text": "Hush",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "17,19,29",
-        "ratio": 16.587931075564484
-      },
-      {
-        "text": "Linen",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "17,19,29",
-        "ratio": 16.587931075564484
-      },
-      {
-        "text": "Nocturne",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "17,19,29",
-        "ratio": 16.587931075564484
-      },
-      {
-        "text": "Tropic",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "17,19,29",
-        "ratio": 16.587931075564484
-      },
-      {
-        "text": "Citrine",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "17,19,29",
-        "ratio": 16.587931075564484
-      },
-      {
-        "text": "Live appearance",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "Sotto",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Dictate",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "Ready when you are",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "App icon",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "Ready",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "26,28,38",
-        "ratio": 15.204000228373735
-      },
-      {
-        "text": "Floating widget",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "Effort at its highest level",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "M",
-        "foreground": {
-          "r": 247,
-          "g": 206,
-          "b": 121
-        },
-        "background": "26,28,38",
-        "ratio": 11.356471686926403
-      }
-    ]
-  },
-  {
-    "capture": "threads-hackerman-820x560.png",
-    "dimensions": [
-      820,
-      560
-    ],
-    "measurements": [
-      {
-        "text": "Sotto",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "30,33,43",
-        "ratio": 14.394542179043656
-      },
-      {
-        "text": "Threads",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "30,33,43",
-        "ratio": 14.394542179043656
-      },
-      {
-        "text": "workshop",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "30,33,43",
-        "ratio": 14.394542179043656
-      },
-      {
-        "text": "Visual gate flake",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "35,60,49",
-        "ratio": 10.681635397583383
-      },
-      {
-        "text": "12:41 pm",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "35,60,49",
-        "ratio": 5.93288598529992
-      },
-      {
-        "text": "Claude",
-        "foreground": {
-          "r": 255,
-          "g": 185,
-          "b": 0
-        },
-        "background": "35,60,49",
-        "ratio": 6.918551174730046
-      },
-      {
-        "text": "Needs your approval",
-        "foreground": {
-          "r": 255,
-          "g": 185,
-          "b": 0
-        },
-        "background": "35,60,49",
-        "ratio": 6.918551174730046
-      },
-      {
-        "text": "Grok voice previews",
-        "foreground": {
-          "r": 192,
-          "g": 215,
-          "b": 223
-        },
-        "background": "30,33,43",
-        "ratio": 10.727048884076845
-      },
-      {
-        "text": "7:58 am",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Claude",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Done",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Streaming WAV stall",
-        "foreground": {
-          "r": 192,
-          "g": 215,
-          "b": 223
-        },
-        "background": "30,33,43",
-        "ratio": 10.727048884076845
-      },
-      {
-        "text": "10:02 am",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Codex",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Done",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "sotto-site",
-        "foreground": {
-          "r": 192,
-          "g": 215,
-          "b": 223
-        },
-        "background": "30,33,43",
-        "ratio": 10.727048884076845
-      },
-      {
-        "text": "Footer links",
-        "foreground": {
-          "r": 192,
-          "g": 215,
-          "b": 223
-        },
-        "background": "30,33,43",
-        "ratio": 10.727048884076845
-      },
-      {
-        "text": "3m 00s",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Working",
-        "foreground": {
-          "r": 157,
-          "g": 250,
-          "b": 186
-        },
-        "background": "30,33,43",
-        "ratio": 12.860591915356393
-      },
-      {
-        "text": "notes",
-        "foreground": {
-          "r": 192,
-          "g": 215,
-          "b": 223
-        },
-        "background": "30,33,43",
-        "ratio": 10.727048884076845
-      },
-      {
-        "text": "Threads",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "26,28,38",
-        "ratio": 15.204000228373735
-      },
-      {
-        "text": "Help",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Visual gate flake",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Project folder",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "Tools",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "Find why the visual gate flakes on the widget listening capt",
-        "foreground": {
-          "r": 191,
-          "g": 214,
-          "b": 222
-        },
-        "background": "30,33,43",
-        "ratio": 10.621264969331726
-      },
-      {
-        "text": "Claude",
-        "foreground": {
-          "r": 192,
-          "g": 215,
-          "b": 223
-        },
-        "background": "11,12,22",
-        "ratio": 13.007198835387639
-      },
-      {
-        "text": "12:41 pm",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "Found the cause. The listening bars animate from a CSS loop,",
-        "foreground": {
-          "r": 192,
-          "g": 215,
-          "b": 223
-        },
-        "background": "11,12,22",
-        "ratio": 13.007198835387639
-      },
-      {
-        "text": "Found the cause. The listening bars animate from a CSS loop,",
-        "foreground": {
-          "r": 192,
-          "g": 215,
-          "b": 223
-        },
-        "background": "11,12,22",
-        "ratio": 13.007198835387639
-      },
-      {
-        "text": "Found the cause. The listening bars animate from a CSS loop,",
-        "foreground": {
-          "r": 192,
-          "g": 215,
-          "b": 223
-        },
-        "background": "11,12,22",
-        "ratio": 13.007198835387639
-      },
-      {
-        "text": "Found the cause. The listening bars animate from a CSS loop,",
-        "foreground": {
-          "r": 192,
-          "g": 215,
-          "b": 223
-        },
-        "background": "11,12,22",
-        "ratio": 13.007198835387639
-      },
-      {
-        "text": "Combing the desert",
-        "foreground": {
-          "r": 191,
-          "g": 214,
-          "b": 222
-        },
-        "background": "11,12,22",
-        "ratio": 12.878929408488881
-      },
-      {
-        "text": "Run a command in workshop",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "22,24,34",
-        "ratio": 15.845830100312222
-      },
-      {
-        "text": "npm test -- --run tests/unit/agents",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "22,24,34",
-        "ratio": 15.845830100312222
-      },
-      {
-        "text": "Deny",
-        "foreground": {
-          "r": 192,
-          "g": 215,
-          "b": 223
-        },
-        "background": "22,24,34",
-        "ratio": 11.808572442289275
-      },
-      {
-        "text": "Allow",
-        "foreground": {
-          "r": 11,
-          "g": 12,
-          "b": 22
-        },
-        "background": "221,247,255",
-        "ratio": 17.454257390876787
-      }
-    ]
-  },
-  {
-    "capture": "appearance-hackerman-820x560.png",
-    "dimensions": [
-      820,
-      560
-    ],
-    "measurements": [
-      {
-        "text": "Sotto",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "30,33,43",
-        "ratio": 14.394542179043656
-      },
-      {
-        "text": "Providers",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Hosts",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Phones",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Cloud iPhone",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Agents",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Output",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Appearance",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "28,45,41",
-        "ratio": 12.92105831988793
-      },
-      {
-        "text": "Application",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Git",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Dictate",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "22,24,34",
-        "ratio": 8.80122751136546
-      },
-      {
-        "text": "Threads",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "22,24,34",
-        "ratio": 8.80122751136546
-      },
-      {
-        "text": "Help",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "30,33,43",
-        "ratio": 7.99514066714708
-      },
-      {
-        "text": "Appearance",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Themes & interface",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "Color scheme",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Light",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "Match Linux",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Dark",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "Themes",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Create theme",
-        "foreground": {
-          "r": 150,
-          "g": 167,
-          "b": 176
-        },
-        "background": "11,12,22",
-        "ratio": 7.836777973261508
-      },
-      {
-        "text": "Add theme",
-        "foreground": {
-          "r": 150,
-          "g": 167,
-          "b": 176
-        },
-        "background": "11,12,22",
-        "ratio": 7.836777973261508
-      },
-      {
-        "text": "Choose one theme for light mode and one for dark. Sotto wear",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "Light",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Used when Linux turns light.",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "11,12,22",
-        "ratio": 9.694594058282362
-      },
-      {
-        "text": "Omarchy",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "35,60,49",
-        "ratio": 10.681635397583383
-      },
-      {
-        "text": "Waits for a light Omarchy theme",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "35,60,49",
-        "ratio": 5.93288598529992
-      },
-      {
-        "text": "Waits for a light Omarchy theme",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "35,60,49",
-        "ratio": 5.93288598529992
-      },
-      {
-        "text": "Sotto",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Hush",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Linen",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "11,12,22",
-        "ratio": 17.454257390876787
-      },
-      {
-        "text": "Dark",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "17,19,29",
-        "ratio": 16.587931075564484
-      },
-      {
-        "text": "Painting the window now.",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "17,19,29",
-        "ratio": 9.213411630357918
-      },
-      {
-        "text": "Omarchy",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "35,60,49",
-        "ratio": 10.681635397583383
-      },
-      {
-        "text": "Hackerman",
-        "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
-        },
-        "background": "35,60,49",
-        "ratio": 5.93288598529992
-      },
-      {
-        "text": "Sotto",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "17,19,29",
-        "ratio": 16.587931075564484
-      },
-      {
-        "text": "Hush",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "17,19,29",
-        "ratio": 16.587931075564484
-      },
-      {
-        "text": "Linen",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "17,19,29",
-        "ratio": 16.587931075564484
-      },
-      {
-        "text": "Nocturne",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "17,19,29",
-        "ratio": 16.587931075564484
-      }
-    ]
-  },
-  {
-    "capture": "widget-hackerman.png",
-    "dimensions": [
-      248,
-      76
-    ],
-    "measurements": [
-      {
-        "text": "Click to dictate",
-        "foreground": {
-          "r": 221,
-          "g": 247,
-          "b": 255
-        },
-        "background": "19,21,31",
-        "ratio": 16.300391219737
-      },
-      {
-        "text": "F9 to talk",
-        "foreground": {
-          "r": 158,
-          "g": 176,
-          "b": 185
-        },
-        "background": "19,21,31",
-        "ratio": 8.109616996928592
+        "ratio": 5.68392606743709
       }
     ]
   }

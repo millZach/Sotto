@@ -258,6 +258,7 @@ artifacts/omarchy-shell-integration/*
 # Omarchy theme proof; keep only the captures and measurements cited in its note.
 artifacts/omarchy-theme/*
 !artifacts/omarchy-theme/proof.json
+!artifacts/omarchy-theme/voice-wake-main.png
 !artifacts/omarchy-theme/threads-tokyo-night-1600x1000.png
 !artifacts/omarchy-theme/appearance-tokyo-night-1600x1000.png
 !artifacts/omarchy-theme/threads-tokyo-night-1280x800.png
