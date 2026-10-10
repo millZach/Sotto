@@ -63,7 +63,7 @@ describe('independent provider settings', () => {
     expect(screen.getByText(/Install Devin CLI and run devin auth login/)).toBeVisible()
     expect(screen.getByText(/Devin keeps its own history and usage analytics/)).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: 'Connect Devin' }))
-    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect', provider: 'devin' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect', provider: 'devin', notice: false }))
     expect(state.configuration.reasoning).toBe('claude')
   })
   it("marks each provider and the selected detail with that provider's mark", () => {
@@ -86,7 +86,7 @@ describe('independent provider settings', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Claude Code' }))
     expect(screen.getByRole('alert')).toHaveTextContent('Sign in to Claude Code.')
     fireEvent.click(screen.getByRole('button', { name: 'Retry Claude Code' }))
-    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect', provider: 'claude' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect', provider: 'claude', notice: false }))
     expect(state.host.providers![0]!.connection).toBe('connected')
   })
   it('shows only the selected provider catalog and keeps new-thread defaults in Agents settings', () => {

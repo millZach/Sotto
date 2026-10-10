@@ -12,6 +12,8 @@ Version 1 is frozen from the pull request that added detail deltas and the versi
 - a new **host feature**, named in the `features` list of health, the listener file and the hello reply;
 - a new push form, sent only to a client that asked for it by feature name in hello's `accepts`.
 
+October 9 exception ([ADR-0065](adr/0065-remove-voice-control-and-thread-management.md)): `connect` may carry optional `notice:false`, solely to leave success feedback unset. The schema rejects every other value and every extra command field; pairing and answer policies are unchanged. Published desktop clients strip this presentation metadata from remote connect packets, so strict older hosts receive exactly their existing v1 command. The desktop suppresses only Sotto's known connection-success text locally, retaining unrelated notices and errors. Existing phone packets are unchanged. This exception grants no command, provider action or permission.
+
 Nothing v1 carries is renamed, removed or given a new meaning. A change that needs one is version 2, with its own support window. `v` stays `1` on every message until then.
 
 ## Versions and features

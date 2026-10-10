@@ -17,7 +17,8 @@ type Fields<T extends CommandType> = readonly Exclude<keyof Extract<AgentCommand
 export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
   configure: ['patch'],
   compose: ['text', 'attachments', 'threadId', 'draftId'], send: ['draft'], 'cancel-draft': [],
-  connect: ['provider'], disconnect: ['provider'], refresh: ['provider'],
+  // A paired client can only leave connection feedback unset, never supply notice text or authority.
+  connect: ['provider', 'notice'], disconnect: ['provider'], refresh: ['provider'],
   'refresh-thread-skills': ['threadId', 'forceReload'],
   'check-client-updates': [], 'dismiss-client-updates': [],
   // The two update-line commands, only on a listener that offers `client-updates`: see remoteCommandRefusal.
@@ -105,6 +106,7 @@ export function remoteCommandRefusal(command: AgentCommand, context: { readonly 
   /** Whether this listener offers `client-updates`: the headless host does, the desktop's phone listener does not. */
   readonly clientUpdates?: boolean | undefined }): 'forbidden' | null {
   if (managementCommandRefusal(command)) return 'forbidden'
+  if (command.type === 'connect' && command.notice !== undefined && command.notice !== false) return 'forbidden'
   const fields = REMOTE_COMMANDS[command.type] as readonly string[] | undefined
   if (!fields) return 'forbidden'
   if ((command.type === 'queue-client-updates' || command.type === 'cancel-client-updates') && context.clientUpdates !== true) return 'forbidden'

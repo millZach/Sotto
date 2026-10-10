@@ -11,7 +11,7 @@ import { isAbsolute, join, resolve } from 'node:path'
 import { z } from 'zod'
 import {
   agentConfigurationSchema, agentAttachmentHandlesSchema, agentAttachmentHandleSchema, agentAttachmentSchema, attachmentDigestSchema, AGENT_MAX_ATTACHMENTS, agentThreadOptionsSchema, agentThreadDraftSchema, agentDeliverySchema,
-  providerUpgradeSchema, defaultAgentConfiguration, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, PROJECT_FOLDER_MISSING, THREAD_SETTINGS_UNRECONCILED, EMPTY_AGENT_HOST, PROVIDER_LABELS, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, selectInstalledProviders, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, threadSummaryOf, lastUserMessageIdOf, noProviderRefusal, isVisualMessage,
+  providerUpgradeSchema, defaultAgentConfiguration, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, PROJECT_FOLDER_MISSING, THREAD_SETTINGS_UNRECONCILED, EMPTY_AGENT_HOST, PROVIDER_LABELS, providerConnectionNotice, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, selectInstalledProviders, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, threadSummaryOf, lastUserMessageIdOf, noProviderRefusal, isVisualMessage,
   type AgentMessage, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentModel, type AgentRuntimeMode, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentAttachmentContent, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentFollowup, type AgentThreadDraft, type AgentHostSnapshot, type AgentProject, type AgentState, type AgentThread, type ProviderClientUpdate, type SubscriptionProvider,
 } from '../../shared/agents'
 import type { BabysitNews } from './babysitNews'
@@ -2503,8 +2503,8 @@ export class AgentControl {
           const refusal = connectionRefusal(snapshot, command.provider, `${PROVIDER_LABELS[this.state.configuration.provider]} did not confirm the connection.`)
           if (refusal) throw new Error(refusal)
           if (!this.dependencies.host.concurrentProviders) this.state.configuration.enabled = true
-          // A connection Sotto makes on its own at start says nothing; one the user asked for says it worked.
-          if (!this.automaticConnects.has(command)) this.say(command.provider ? `${PROVIDER_LABELS[command.provider]} connected` : snapshot.providers ? 'Thread providers connected' : `${PROVIDER_LABELS[this.state.configuration.provider]} connected`)
+          // Setup and Settings show their own status. Startup is quiet; a Threads press says it worked there.
+          if (command.notice !== false && !this.automaticConnects.has(command)) this.say(providerConnectionNotice(this.state, command.provider))
           // Asking the registry must not hold up the connection the user is waiting on, and a check
           // during an install would race the reading the install is about to take.
           if (!this.updatingClient) void this.checkClientUpdates().then(() => this.publish()).catch(() => undefined)

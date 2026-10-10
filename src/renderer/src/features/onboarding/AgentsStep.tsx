@@ -107,14 +107,14 @@ export function AgentsStep({ heading, onOpenLink }: AgentsStepProps): ReactNode 
     const current = providersRef.current
     const troubled = current.filter(provider => provider.connection === 'error').map(provider => provider.id)
     await Promise.all(troubled.map(provider => run(() => command({ type: 'refresh', provider }))))
-    if (!current.some(provider => provider.connection === 'connected')) await run(() => command({ type: 'connect' }))
+    if (!current.some(provider => provider.connection === 'connected')) await run(() => command({ type: 'connect', notice: false }))
     setChecking(false)
   }, [command, run, selectThisComputer])
 
   const connect = async (provider: ProviderId): Promise<void> => {
     if (!command) return
     setConnecting(current => new Set(current).add(provider))
-    if (await selectThisComputer()) await run(() => command({ type: 'connect', provider }))
+    if (await selectThisComputer()) await run(() => command({ type: 'connect', provider, notice: false }))
     setConnecting(current => { const next = new Set(current); next.delete(provider); return next })
   }
 

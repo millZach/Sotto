@@ -773,7 +773,7 @@
       "relativePath": "artifacts/design/app-review/baseline/scale-125-onboarding.png",
       "width": 1340,
       "height": 828,
-      "sha256": "5e845d21ce42bf5b74ccf7d7fee306150f72c74282da95ddfe9ed869f326ea29"
+      "sha256": "d4db56102802ee855eeb28d086e96a4493271cc339071b52f723f4e7c5d370eb"
     },
     {
       "theme": "dark",
@@ -899,7 +899,7 @@
       "relativePath": "artifacts/design/app-review/baseline/scale-150-onboarding.png",
       "width": 1605,
       "height": 942,
-      "sha256": "d0ba0bd6e7245c366c7d90f5cf83a4285c42af41714657cc067d68553c2f0105"
+      "sha256": "660bd95471be30fd4f580259c7a66329cc231946c053d1b6bff3d62cde251320"
     },
     {
       "theme": "dark",

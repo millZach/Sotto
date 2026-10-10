@@ -14,6 +14,30 @@ const schemaFields = new Map((agentCommandSchema.options as unknown as Option[])
 const refuse = (command: AgentCommand, mayAnswer = false, askingProviderModes?: string[]) => remoteCommandRefusal(command, { mayAnswer, askingProviderModes })
 
 describe('remote command allow-list', () => {
+  it('accepts v1 connects with optional false-only feedback without granting any other field or command', () => {
+    for (const provider of [undefined, 'codex'] as const) {
+      for (const feedback of [{}, { notice: false }] as const) {
+        const command = { type: 'connect', ...(provider ? { provider } : {}), ...feedback } as const
+        const wire = { v: 1, id: 'connect', session: 'session', op: 'command', command }
+        expect(hostRequestSchema.safeParse(wire).success).toBe(true)
+        expect(commandFromProtocolV1(protocolAgentCommandSchema.parse(command))).toEqual(command)
+        for (const mayAnswer of [false, true]) expect(refuse(command, mayAnswer)).toBeNull()
+      }
+    }
+    for (const notice of [true, 'Approved', {}, null]) {
+      const command = { type: 'connect', notice }
+      expect(protocolAgentCommandSchema.safeParse(command).success).toBe(false)
+      expect(refuse(command as unknown as AgentCommand, true)).toBe('forbidden')
+    }
+    for (const command of [
+      { type: 'connect', notice: false, approved: true },
+      { type: 'interrupt', threadId: 'thread', notice: false },
+      { type: 'voice', action: 'mute', notice: false },
+    ]) {
+      expect(protocolAgentCommandSchema.safeParse(command).success).toBe(false)
+      expect(refuse(command as unknown as AgentCommand, true)).toBe('forbidden')
+    }
+  })
   it('lets a paired client change only the coordinator settings decided on purpose, none of them a key, endpoint or voice engine', () => {
     expect([...REMOTE_CONFIGURATION_FIELDS].sort()).toEqual(['defaultModelId', 'enabled', 'enabledProviders', 'provider',
       'reasoning', 'reasoningEffort', 'reasoningModel'])

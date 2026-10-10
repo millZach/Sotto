@@ -1,6 +1,62 @@
 # Linux package and split-test merge into voice removal
 
-October 9, 2026. Merged main at `2342e7d28833fbec03b83b491067c6a757a55f39` into `feat/remove-voice-control` for PR #880. This includes #875, #878 and their main follow-ups. The result keeps Omarchy packaging, sign-in startup, the five design surface specs, adapter/host-service contract split and test fixtures, while retaining ADR-0065's removal and manual journeys. The merge is local and is not pushed while strict design verification remains red.
+October 9, 2026. Merged main at `2342e7d28833fbec03b83b491067c6a757a55f39` into `feat/remove-voice-control` for PR #880, in `9c046ab78` ("Merge Linux packaging and split tests into voice removal"). This includes #875, #878 and their main follow-ups. The result keeps Omarchy packaging, sign-in startup, the five design surface specs, adapter/host-service contract split and test fixtures, while retaining ADR-0065's removal and manual journeys. The follow-up below records Zach's design decision and resolves the remaining strict comparison failures.
+
+## October 9 decision and follow-up
+
+Zach approved refreshing only `scale-125-onboarding.png` and `scale-150-onboarding.png`: removing "and Kokoro voice" was intentional. Both replacements use the previously inspected actual captures, with identical dimensions (1340x828 and 1605x942). The manifest uses the runner's own SHA-256 `digest` function and its two-space JSON serialization. The hashes are `d4db56102802ee855eeb28d086e96a4493271cc339071b52f723f4e7c5d370eb` and `660bd95471be30fd4f580259c7a66329cc231946c053d1b6bff3d62cde251320`. No other baseline or manifest entry changes. In particular, `threads-tour-projects.png` remains byte-identical to the merge commit.
+
+Zach chose to fix the tour's connection notice rather than refresh its image: setup and Settings, Providers already show each provider's status, so their connects leave success feedback unset. Their initial check, retry and per-provider Connect paths send `notice: false`. Main skips only its success-notice assignment when that flag is present. Provider selection, persistence, adapter connect, connection refusal, client checks and errors use the same paths. Threads-room Connect providers and Reconnect omit the flag and still report success. Startup's existing quiet-connect rule stays intact. An existing notice is not cleared by this flag.
+
+The shared command schema accepts only the literal false, not true or text. The closed remote allow-list admits that field only on connect and independently rejects other values. Protocol v1 remains version 1; existing connect packets with or without provider still parse, and the new optional spelling carries no answer policy, permission, prompt or credential. The remote regression checks the legacy and false-only spellings with and without answer authority, rejects true/text/object/null values, and preserves refusal of extra approved fields, the field on interrupt, and retired voice commands.
+
+Both review axes caught an older-host compatibility gap in the first implementation: Settings' flag would reach a strict old host unmodified and be refused. Fixed it before the final ordered gates. `SocketHostService` strips `notice` from every remote connect packet, preserving the exact old v1 wire shape without adding a feature negotiation. For quiet commands it suppresses only Sotto's bounded five-message connection-success vocabulary in the desktop shell, keeping visible prior feedback. The raw host cache, unrelated feedback and errors stay intact; subsequent shell reads cannot resurrect suppressed text. Suppression survives successive and overlapping quiet provider connections. A successful Threads connect makes its feedback visible; a generation guard prevents an earlier quiet reply from hiding it afterward. Main and the remote client share the success-text function, including a host choosing a different installed default provider during the connection. Paired clients that send the optional flag to a current host can only suppress success feedback there, and old phone clients send the same packets as before. The protocol guide records the narrow false-only exception authorized in ADR-0065.
+
+The controller regression sits next to the startup connect-notice test introduced by `6daa2de1c`, now in `tests/unit/main/agentProviderConfigurationRecovery.test.ts`. Before the fix, both setup and Settings cases failed: expected `notice: ''`, received `notice: 'Codex connected'` (2 failed, 18 skipped; 1.40 seconds). After the fix, the four focused controller/remote/setup/Providers suites passed all 76 tests in 5.44 seconds. The new controller cases also reconnect from Threads and require its success notice. Existing renderer assertions now require the suppression flag at both owning surfaces.
+
+The older-host regression uses the pre-change strict connect schema in `tests/unit/main/socketHostFeatures.test.ts`. Both generic and named-provider quiet connects failed red with `Unrecognized key: "notice"` (2 failed, 7 skipped; 811 milliseconds). After stripping the metadata and projecting quiet feedback locally, five focused suites passed all 85 tests in 4.24 seconds. A host changing its installed default provider was then added and passed. The next review found that a second quiet provider could reveal the first one's suppressed notice. Sequential and overlapping push scenarios both reproduced it red (2 failed, 10 skipped; 890 milliseconds), and the bounded suppression map fixed it: five focused suites then passed all 88 tests in 5.71 seconds. Coverage checks exact old wire packets, repeated shell reads, unrelated notices, errors, a different installed default, and a later Threads connection. An additional delayed-reply case checks that an explicit Threads success stays visible. Full-suite attempts were intentionally stopped after 232.89 and 404.07 seconds to fix these review findings, with no assertion failure reported; neither is counted as a passing gate. One intermediate typecheck rejected an optional class property assigned undefined under exactOptionalPropertyTypes; the final map representation avoids that assignment.
+
+The final Spec correction also has a red/green regression: unrelated feedback arriving while a quiet remote connection was pending could be replaced by the older notice when the host pushed success. The new case failed with an empty notice instead of "Draft cleared" (1 failed, 13 skipped; 922 milliseconds). Incoming unrelated snapshots now preserve the latest visible feedback across the bounded connection-success map. All five focused suites then passed 90 tests in 6.12 seconds. The Standards review found no documented violation; its suggested repeated-loop extraction is addressed by `preserveConnectionFeedback`.
+
+The behavior prototype is a throwaway, self-contained local HTML file under ignored `artifacts/e2e-runs/`; it embeds the unchanged tour image as its reference and demonstrates setup, Settings, Threads and failure feedback. It was driven in Chromium and visually inspected: setup and Settings stay quiet, Threads reports success, and a failed connection retains the prior feedback alongside its error. No prototype branch or tag is published, respecting this task's one-branch boundary. The two approved PNGs, notice fix, tests and decision record are intended to be one coherent follow-up commit.
+
+The final Spec review reports no findings against the follow-up diff. Both review axes ran read-only on Sol at max reasoning; their earlier findings were fixed and covered before the final ordered gates.
+
+### Final follow-up gates
+
+All gates passed in the requested order on the follow-up tree. Elapsed times below include command startup. Free memory was checked through `(Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory` before the full suite and each Playwright run; every reading exceeded 3 GiB, so no recovery wait was needed.
+
+| Gate | Real result | Elapsed | Free memory before run, KiB |
+| --- | --- | --- | --- |
+| `npm run typecheck` | exit 0 | 52.96 s | — |
+| `npm run lint` | exit 0 | 23.33 s | — |
+| `npm test -- --maxWorkers=2` | 705 files passed, 52 skipped; 8,658 tests passed, 231 skipped; exit 0 | 1097.70 s | 8,296,516 |
+| `npm run notices:verify` | Verified 155 third-party notice components; exit 0 | 0.46 s | — |
+| `npm run build` | main, preload and renderer built; exit 0 | 18.02 s | — |
+| Requested Electron specs, below | 31 passed (2.1m); exit 0 | 129.52 s | 9,906,956 |
+| `npm run design:verify` | 9 passed across five surface specs; Verified 144 exact deterministic design-review tuples; exit 0 | 133.82 s | 9,881,008 |
+| `node scripts/verify-design-captures.mjs` | Verified 144 exact deterministic design-review tuples; exit 0 | 0.92 s | — |
+| `npm run package:dir` | Windows unpacked package, reviewed imports/resources and startup checks pass; SQLite 3.53.1, migration 4, FTS5 true, `SOTTO_PTY_PACKAGE_OK`; exit 0 | 31.47 s | — |
+
+The current onboarding/setup names are `app`, `onboarding-microphone-step`, `host-setup` and `host-agent-setup`; the other requested specs keep their names:
+
+```sh
+npx playwright test tests/e2e/app.spec.ts tests/e2e/onboarding-microphone-step.spec.ts tests/e2e/host-setup.spec.ts tests/e2e/host-agent-setup.spec.ts tests/e2e/agentSetup.spec.ts tests/e2e/settings-index.spec.ts tests/e2e/thread-creation.spec.ts tests/e2e/agentControl.spec.ts --reporter=line
+```
+
+The completed suite's own summary is:
+
+```text
+Test Files  705 passed | 52 skipped (757)
+     Tests  8658 passed | 231 skipped (8889)
+  Duration  1096.56s
+```
+
+Strict design verification passes appearance, pages (including the unchanged tour), scaling (including both approved onboarding images), threads in both modes and workspace compositions, and both widget modes. There are no final failures or waivers. The earlier merge's 29 Electron checks and seven theme-evidence checks remain recorded below; the 31-case follow-up run is separate.
+
+A further built-app probe passed in 3.84 seconds and its three screenshots were visually inspected. Setup opened the empty Threads room with no status notice. Settings, Providers disconnected and connected Codex, showed Connected there, and kept the prior "Codex disconnected." feedback instead of adding success text. Threads' own Connect providers then showed "Codex connected". The first two probe attempts failed because their selectors used the button's text rather than its provider-qualified accessible name; correcting them to "Disconnect Codex" and "Connect Codex" fixed the probe without changing product code. Free memory before those three attempts was 8,890,060, 9,292,948 and 9,195,212 KiB. Every temporary profile was closed and removed by the owned-profile helper.
+
+Tracked artifacts after all runs differ only in the two approved onboarding PNGs and their two manifest hashes; no unrelated artifact needed restoring. The tour and lockfile remain unchanged. The follow-up commit includes the baseline refresh with the notice fix, tests and this record.
 
 Test citations use the current split files. Recorded counts and outcomes in the earlier removal notes are from their original runs; historical command transcripts remain verbatim.
 
@@ -91,7 +147,7 @@ The final integration preserves every surviving premerge case. The Linux startup
 - `tests/unit/renderer/widget/widgetAppearance.test.tsx` - removal edits, deleted cases or retained manual equivalents applied here.
 - `tests/unit/renderer/widget/widgetEntry.test.tsx` - removal edits, deleted cases or retained manual equivalents applied here.
 
-The unchanged scaling surface remains the fifth design spec. No capture is renamed or moved; removal baseline images and manifest stay unchanged. `tests/fixtures/adapterFixture.ts` and the provider imports retain #878's split without further removal edits.
+The scaling surface remains the fifth design spec. No capture is renamed or moved; the merge kept the removal images and manifest unchanged. Zach's later decision permits only the two onboarding replacements recorded above. `tests/fixtures/adapterFixture.ts` and the provider imports retain #878's split without further removal edits.
 
 ## Gates
 

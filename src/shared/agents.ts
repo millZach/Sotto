@@ -532,6 +532,15 @@ export function isSubscriptionReasoning(provider: string): provider is Subscript
 export const PROVIDER_LABELS: Readonly<Record<ProviderId, string>> = {
   codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin',
 }
+const THREAD_PROVIDERS_CONNECTED = 'Thread providers connected'
+/** The bounded success vocabulary old hosts use, including a default provider discovered during connect. */
+export const PROVIDER_CONNECTION_NOTICES: readonly string[] = [
+  ...Object.values(PROVIDER_LABELS).map(label => `${label} connected`), THREAD_PROVIDERS_CONNECTED,
+]
+/** Sotto's connect success text; a remote desktop may suppress only this feedback, never an error. */
+export function providerConnectionNotice(state: Pick<AgentState, 'host' | 'configuration'>, provider?: ProviderId): string {
+  return provider ? `${PROVIDER_LABELS[provider]} connected` : state.host.providers ? THREAD_PROVIDERS_CONNECTED : `${PROVIDER_LABELS[state.configuration.provider]} connected`
+}
 /** The provider a model's `provider` label names, by the provider's id or its name in any case; undefined for any other label. */
 export function providerIdOfLabel(label: string): ProviderId | undefined {
   const name = label.trim().toLowerCase()
@@ -840,7 +849,8 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   // Re-extend defaulted fields: Zod 4 applies defaults through partial(), resetting omitted settings.
   z.object({ type: z.literal('configure'), patch: agentConfigurationSchema.partial().extend({ provider: providerIdSchema.optional(), reasoningEffort: z.string().max(64).optional(), checkClientUpdates: z.boolean().optional(), newThreadReasoningEffort: z.string().max(64).optional() }) }).strict(),
   z.object({ type: z.literal('credential'), slot: z.enum(['reasoning']), value: z.string().max(16_384) }).strict(),
-  z.object({ type: z.literal('connect'), provider: providerIdSchema.optional() }).strict(),
+  // Setup and Settings show connection status themselves; this can only suppress the Threads notice.
+  z.object({ type: z.literal('connect'), provider: providerIdSchema.optional(), notice: z.literal(false).optional() }).strict(),
   z.object({ type: z.literal('disconnect'), provider: providerIdSchema.optional() }).strict(),
   z.object({ type: z.literal('refresh'), provider: providerIdSchema.optional() }).strict(),
   z.object({ type: z.literal('refresh-thread-skills'), threadId: id, forceReload: z.boolean().optional() }).strict(),

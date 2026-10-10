@@ -89,6 +89,8 @@ Sotto has no account of its own and collects nothing about you: no analytics, no
 
 **Reset settings** restores defaults and reopens setup. It keeps your saved OpenRouter key, including when the reset fails.
 
+Setup and Settings show connection status where you connect. **Connect providers** or Reconnect in Threads reports success in that room.
+
 If a key saved by an older version of Sotto cannot be moved into the credential store, Sotto removes the plaintext key from settings anyway. Settings says it could not be stored securely and asks you to enter it again.
 
 Your data leaves your computer only when a feature you use needs it, and only to that feature's service:

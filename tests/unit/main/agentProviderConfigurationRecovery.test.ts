@@ -146,6 +146,20 @@ it('says nothing when Sotto reconnects on its own at start, and says it connecte
   expect(f.control.get().notice).toBe('')
 })
 
+it.each([
+  ['setup', undefined],
+  ['Settings, Providers', 'codex'],
+] as const)('leaves no connection notice from %s, while a Threads connection still says it connected', async (_surface, provider) => {
+  const f = await fixture()
+  await f.restart()
+  const connect = vi.spyOn(f.host, 'connect')
+  const connected = await f.control.command({ type: 'connect', ...(provider ? { provider } : {}), notice: false })
+  expect(connected).toMatchObject({ connection: 'connected', notice: '', error: null })
+  expect(connect).toHaveBeenCalledWith(...(provider ? [provider] : []))
+  const requested = await f.control.command({ type: 'connect', ...(provider ? { provider } : {}) })
+  expect(requested.notice).toBe('Codex connected')
+})
+
 it('clears the retired speech key on reload while preserving reasoning credentials', async () => {
     const f = await fixture()
     await f.account()

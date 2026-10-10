@@ -103,7 +103,7 @@ describe('AgentsStep', () => {
 
     provide(agentState([{ id: 'codex', connection: 'disconnected', name: 'Codex', version: '', capabilities: CAPS }]), command)
     rerender(<AgentsStep heading={<div />} onOpenLink={vi.fn(async () => true)} />)
-    await waitFor(() => expect(command).toHaveBeenCalledExactlyOnceWith({ type: 'connect' }))
+    await waitFor(() => expect(command).toHaveBeenCalledExactlyOnceWith({ type: 'connect', notice: false }))
 
     rerender(<AgentsStep heading={<div />} onOpenLink={vi.fn(async () => true)} />)
     expect(command).toHaveBeenCalledTimes(1)
@@ -129,10 +129,10 @@ describe('AgentsStep', () => {
     provide(agentState(providers), command)
     const user = userEvent.setup()
     render(<AgentsStep heading={<div />} onOpenLink={vi.fn(async () => true)} />)
-    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect', notice: false }))
     command.mockClear()
     await user.click(await screen.findByRole('button', { name: 'Check again' }))
-    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect', notice: false }))
     expect(command).toHaveBeenCalledWith({ type: 'refresh', provider: 'claude' })
   })
 
@@ -150,7 +150,7 @@ describe('AgentsStep', () => {
     expect(claudeRow).not.toHaveTextContent('Not installed')
     expect(screen.queryByRole('button', { name: 'Open the Claude Code install guide' })).toBeNull()
     await user.click(screen.getByRole('button', { name: 'Connect Claude Code' }))
-    await waitFor(() => expect(command).toHaveBeenCalledExactlyOnceWith({ type: 'connect', provider: 'claude' }))
+    await waitFor(() => expect(command).toHaveBeenCalledExactlyOnceWith({ type: 'connect', provider: 'claude', notice: false }))
   })
 
   it('maps each provider problem to its row label and detail', () => {
@@ -253,7 +253,7 @@ describe('AgentsStep on a desktop with another computer', () => {
     const command = vi.fn(async () => agentState([]))
     provide(withHosts(REMOTE, [local, remote]), command)
     const { unmount } = render(<AgentsStep heading={<div />} onOpenLink={vi.fn(async () => true)} />)
-    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect', notice: false }))
     expect(hosts.command).toHaveBeenCalledWith({ type: 'select', hostId: LOCAL })
     unmount()
     expect(hosts.command).toHaveBeenLastCalledWith({ type: 'select', hostId: REMOTE })
