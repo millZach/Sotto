@@ -1,8 +1,8 @@
 # Terminal approvals on paired phones
 
-Issue [#884](https://github.com/millZach/Sotto/issues/884), branch `feat/phone-terminals`, based on `origin/feat/terminal-agent-states`. Windows 11 on LAPTOP-RUSSH2J5, October 9, 2026. Source install used this worktree's own `npm ci`; no dependency link was made. No push or pull request is authorized in this run.
+Issue [#884](https://github.com/millZach/Sotto/issues/884), branch `feat/phone-terminals`, based on `origin/feat/terminal-agent-states`. Windows 11 on LAPTOP-RUSSH2J5, October 9, 2026. Source install used this worktree's own `npm ci`; no dependency link was made. The finishing run is authorized to push and open the stacked pull request after the local gates pass, without merging.
 
-**Native iPhone surface: NOT VERIFIED.** Windows cannot compile Swift or run the simulator. Twelve SottoCore terminal cases, sixteen AppModel terminal cases and three terminal simulator journeys are written, but none was run here. The journeys name nine planned attachments, including Starting under Working; no simulator attachment was generated here. The Native iOS client (macOS) CI job is the compile/test check when the lead opens a pull request. Simulator screenshots remain a required follow-up; the HTML reference and desktop capture below are not simulator evidence. Android was left untouched because no JDK was found on PATH, through JAVA_HOME or in the standard Java/Microsoft/Adoptium/Android Studio locations.
+**Native iPhone surface: NOT VERIFIED.** Windows cannot compile Swift or run the simulator. Twelve SottoCore terminal cases, twenty AppModel terminal cases and three terminal simulator journeys are written, but none was run here. The journeys name ten planned attachments, including mixed thread/terminal rows and Starting under Working; no simulator attachment was generated here. The Native iOS client (macOS) CI job now runs for the stacked base. Simulator screenshots remain required; the HTML reference and desktop capture below are not simulator evidence. Android was left untouched because no JDK was found on PATH, through JAVA_HOME or in the standard Java/Microsoft/Adoptium/Android Studio locations.
 
 ## Reference inspected
 
@@ -14,7 +14,7 @@ The existing prototype was opened at `?variant=B` and its iPhone frame inspected
 
 The paired client opts into `terminals`, receives the row without screen text, reads the bounded approval preview, is refused with Can answer off, then sends No after the switch is enabled. Its response confirms the actual packaged helper's hook acknowledgement. A second answer is stale. This proves the built desktop path, not a native iPhone or real provider session. No terminal keystroke is sent by the phone path.
 
-`tests/integration/phoneTerminals.test.ts` uses the real socket listener and terminal workspace with a scripted hook. Fifteen tests cover feature negotiation and older clients, omission of output from rows/pushes, bounded current screen reads, changed/reopened/expired targets, client-bound review, revocation and removal, concurrent answers, receipt reconciliation and payload replay protection, and foreground/background/disconnected visibility. Review regressions also distinguish question chrome from a permission, publish only changed/withdrawn fingerprints and report refused visibility observations. Existing terminal state and phone access journeys check their neighboring surfaces too. Their design captures were not adopted as new baselines because no desktop look change was intended.
+`tests/integration/phoneTerminals.test.ts` uses the real socket listener and terminal workspace with a scripted hook. Nineteen tests cover feature negotiation and older clients, omission of output from rows/pushes, bounded current screen reads, changed/reopened/expired targets, client-bound review, revocation and removal, concurrent answers, receipt reconciliation and payload replay protection, and foreground/background/disconnected visibility. Review regressions also distinguish question chrome from a permission, publish only changed/withdrawn fingerprints and report refused visibility observations. Existing terminal state and phone access journeys check their neighboring surfaces too. Their design captures were not adopted as new baselines because no desktop look change was intended.
 
 ## Gates and review
 
@@ -24,10 +24,10 @@ The paired client opts into `terminals`, receives the row without screen text, r
 | --- | --- |
 | `npm run typecheck` | PASS, exit 0; all three TypeScript configurations |
 | `npm run lint` | PASS, exit 0; no lint findings |
-| `npm test -- --maxWorkers=2` | PASS, exit 0; 630 files passed, 51 skipped (681); 9,416 tests passed, 222 skipped (9,638); 1,069.35 seconds; no unhandled errors |
+| `npm test -- --maxWorkers=2` | PASS, exit 0; 630 files passed, 51 skipped (681); 9,423 tests passed, 222 skipped (9,645); 1,045.64 seconds; no unhandled errors |
 | `npm run notices:verify` | PASS, exit 0; 174 notice components |
 | `npm run build` | PASS, exit 0; four bundles |
-| `npx playwright test tests/e2e/phone-terminals.spec.ts tests/e2e/phones.spec.ts tests/e2e/terminal-agent-states.spec.ts` | PASS, exit 0; 3 tests, one worker, 34.2 seconds |
+| `npx playwright test tests/e2e/phone-terminals.spec.ts tests/e2e/phones.spec.ts tests/e2e/terminal-agent-states.spec.ts` | PASS, exit 0; 3 tests, one worker, 40.7 seconds |
 
 The first completed full run returned exit 1: 627 files passed, one failed and 51 skipped (680 collected); 9,322 tests passed, one failed and 222 skipped (9,634 collected), plus one unhandled worker-exit error. The test failure was the exhaustive host-request catalogue, which omitted the three deliberately admitted terminal operations; commit `47b9a6eb0` updates that catalogue. The focused catalogue and phone protocol check then passed 24 tests in two files. The worker error had no test-file attribution or matching Windows Node crash event. Its cause was not established from the available evidence; it did not recur in the next completed run. An earlier unfinished run was stopped while applying the two-axis review corrections.
 
@@ -35,4 +35,14 @@ The next completed full run returned exit 1: 628 files passed, one failed and 51
 
 The next full run passed (exit 0): 630 files passed, 51 skipped (681); 9,413 tests passed, 222 skipped (9,635), in 1,082.83 seconds. The follow-up two-axis review then found an uncovered Yes/No structured-question overlap, described in the review record. Commit `e2ffe8ea2` fixes it, and the three new assertions failed before the correction and passed afterwards. The final full command then passed on that corrected source with the same two-worker cap and the counts in the table above. No unhandled error was reported.
 
-The final combined `npm run build && npx playwright test tests/e2e/phone-terminals.spec.ts tests/e2e/phones.spec.ts tests/e2e/terminal-agent-states.spec.ts` passed (exit 0), transforming 588 main, 188 host, 144 preload and 4,786 renderer modules and passing all three tests with one worker in 34.2 seconds. The latest desktop approval capture was opened and visually inspected. Captures generated by the neighboring terminal state spec were restored because the desktop look was not changed intentionally.
+The implementation run's final combined `npm run build && npx playwright test tests/e2e/phone-terminals.spec.ts tests/e2e/phones.spec.ts tests/e2e/terminal-agent-states.spec.ts` passed (exit 0), transforming 588 main, 188 host, 144 preload and 4,786 renderer modules and passing all three tests with one worker in 34.2 seconds. The latest desktop approval capture was opened and visually inspected. Captures generated by the neighboring terminal state spec were restored because the desktop look was not changed intentionally.
+
+## Finishing run
+
+The supplied selection, busy-withdrawal and capability-copy findings are fixed in separate commits. Follow-up reviews also corrected the preview burst limit, overlapping hook identity, and delayed submission metadata. The final two independent Sol reviews found no new actionable Standards or Spec issue. Native verification remains pending the stacked PR's macOS job. The review record gives each finding and the deliberate protocol/ADR boundaries.
+
+The final completed full suite on `66492cf2c` passed with `--maxWorkers=2`: 630 files passed, 51 skipped; 9,423 tests passed, 222 skipped; exit 0 in 1,045.64 seconds, with no unhandled error. One earlier finishing run was deliberately interrupted when the follow-up review identified an authority bug; it was not counted as a passing gate. The complete suite ran once after the final corrections.
+
+Typecheck and lint returned exit 0. Notices verified all 174 components. The final build and affected Playwright command returned exit 0: all four bundles and all three journeys passed with one worker in 40.7 seconds. Earlier approval-preview timeouts exposed the delayed-submission ordering race; its two regression assertions failed before the fix, then the original built journey passed after it. The final focused state and phone protocol run passed 139 cases. All temporary probes were removed.
+
+The exact full-page PNG retained by the built approval journey was opened and visually inspected. It contains the painted native permission, Needs you row and attention edge without clipping. The neighboring terminal state captures were restored because there was no intended desktop look change. The capability-aware empty-copy prototype scenarios were inspected separately and remain reference evidence, not simulator evidence.
