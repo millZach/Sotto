@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { IPty } from 'node-pty'
 import { FilesService } from '../../../src/main/files/service'
+import { CheckoutMutations } from '../../../src/main/agents/checkoutMutations'
 import { TerminalService, type TerminalDependencies } from '../../../src/main/tools/terminal'
 import { TERMINAL_MAX_OUTPUT, type TerminalEvent } from '../../../src/shared/terminal'
 import type { ToolsResult } from '../../../src/shared/tools'
@@ -13,7 +14,7 @@ import { deferred } from '../../fixtures/deferred'
 const unwrap = <T>(result: ToolsResult<T>): T => { if (!result.ok) throw new Error(JSON.stringify(result)); return result.value }
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { for (const dispose of cleanup.splice(0).reverse()) await dispose() })
-async function fixture(options: Pick<TerminalDependencies, 'env' | 'platform'> = {}) {
+async function fixture(options: Pick<TerminalDependencies, 'env' | 'platform' | 'executableExists' | 'acquireStart'> = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-terminal-unit-'))
   cleanup.push(() => rm(directory, { recursive: true, force: true }))
   const other = join(directory, 'other'); await mkdir(other)
@@ -38,6 +39,60 @@ async function fixture(options: Pick<TerminalDependencies, 'env' | 'platform'> =
   return { service, createService, target, files, processes, spawn, events, directory, change: () => { cwd = other } }
 }
 describe('persistent terminal service', () => {
+  it.each([
+    ['remove-folder', 'Sotto is removing this folder.'],
+    ['git-action', 'A Git action is running in this folder.'],
+    ['automatic-pull', 'Sotto is pulling this folder.'],
+    ['checkpoint-revert', 'Sotto is reverting a checkpoint in this folder.'],
+  ] as const)('reports terminal-specific recovery when %s holds the checkout', async (kind, operation) => {
+    const checkouts = new CheckoutMutations()
+    const f = await fixture({ acquireStart: owner => checkouts.acquire(owner.workingDirectory, 'send', { kind: 'terminal-start' }) })
+    const release = await checkouts.acquire(f.directory, 'mutation', { kind })
+    try {
+      expect(await f.service.create(f.target)).toEqual({ ok: false, error: { code: 'busy', message: `${operation} The terminal did not start. Try again when it finishes.` } })
+      expect(f.spawn).not.toHaveBeenCalled()
+      expect(unwrap(await f.service.list(f.target)).capacity.count).toBe(0)
+    } finally { release() }
+    expect(unwrap(await f.service.create(f.target)).session.status).toBe('running')
+  })
+  it('does not spawn a new Tools shell while its checkout is reserved for removal', async () => {
+    const f = await fixture({ acquireStart: async () => { throw new Error('Sotto is removing this folder') } })
+    expect(await f.service.create(f.target)).toMatchObject({ ok: false })
+    expect(f.spawn).not.toHaveBeenCalled()
+    expect(unwrap(await f.service.list(f.target)).capacity.count).toBe(0)
+  })
+  it('releases its checkout reservation after starting a shell', async () => {
+    const release = vi.fn(), acquireStart = vi.fn(async () => release)
+    const f = await fixture({ acquireStart })
+    unwrap(await f.service.create(f.target))
+    expect(acquireStart).toHaveBeenCalledWith(expect.objectContaining({ threadId: 'a' }))
+    expect(release).toHaveBeenCalledOnce()
+  })
+  it('protects a running shell in its original checkout after the thread binding changes', async () => {
+    const f = await fixture()
+    const { session } = unwrap(await f.service.create(f.target))
+    f.change()
+    expect(await f.service.hasRunningTerminalInCheckout(session.workspace.workingDirectory)).toBe(true)
+    unwrap(await f.service.close({ ...f.target, sessionId: session.id }))
+    expect(await f.service.hasRunningTerminalInCheckout(session.workspace.workingDirectory)).toBe(false)
+  })
+  it('reports the total across both places and all threads, including ended shells', async () => {
+    const f = await fixture()
+    const other = unwrap(await f.service.list({ threadId: 'b', place: 'drawer' })).workspace
+    const first = unwrap(await f.service.create(f.target))
+    unwrap(await f.service.create({ threadId: other.threadId, workspaceId: other.workspaceId, place: 'drawer' }))
+    f.processes[0]!.exit(0)
+    expect(unwrap(await f.service.list(f.target))).toMatchObject({ sessions: [{ id: first.session.id, status: 'exited' }], capacity: { count: 2 } })
+    unwrap(await f.service.close({ ...f.target, sessionId: first.session.id }))
+    expect(f.events.at(-2)).toMatchObject({ type: 'capacity', capacity: { count: 1 } })
+    expect(unwrap(await f.service.list(f.target)).capacity.count).toBe(1)
+  })
+  it('uses PowerShell 7 on PATH for both Tools and drawer shells', async () => {
+    const f = await fixture({ env: { PATH: 'C:\\one;C:\\bin' }, executableExists: async path => path === 'C:\\bin\\pwsh.exe' })
+    for (const place of ['tools', 'drawer'] as const) unwrap(await f.service.create({ ...f.target, place }))
+    expect(f.spawn).toHaveBeenCalledTimes(2)
+    for (const call of f.spawn.mock.calls) expect(call).toEqual(['C:\\bin\\pwsh.exe', ['-NoLogo'], expect.anything()])
+  })
   it('keeps writes in request order while another session can pass a held workspace validation', async () => {
     const f = await fixture()
     const first = unwrap(await f.service.create(f.target)), other = unwrap(await f.service.create(f.target))

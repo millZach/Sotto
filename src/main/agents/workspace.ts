@@ -407,6 +407,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   async acquireCheckoutRead(threadId: string): Promise<() => void> {
     return this.checkoutMutations.acquire(this.threadCheckoutFolder(threadId), 'send', { kind: 'checkpoint' })
   }
+  async acquireTerminalStart(folder: string): Promise<() => void> {
+    return this.checkoutMutations.acquire(folder, 'send', { kind: 'terminal-start' })
+  }
   async isCheckoutMutating(threadId: string): Promise<boolean> {
     return this.checkoutMutations.isMutating(this.threadCheckoutFolder(threadId))
   }
@@ -911,6 +914,17 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       } finally { releaseStatus?.(); release() }
     })
   }
+  /** Terminal-owned folders obey the same checkout reservation and thread-use checks as thread-owned folders. */
+  async acquireWorktreeReclaim(folder: string): Promise<() => void> {
+    await this.initialize()
+    const release = await this.checkoutMutations.acquire(folder, 'mutation', { kind: 'remove-folder' })
+    const releaseStatus = this.gitStatus?.hold?.(folder)
+    try {
+      await this.gitStatus?.idle?.(folder)
+      if (!await this.checkoutIsUnreferenced(folder)) throw new Error('A thread works in this folder too, so it stays.')
+      return () => { releaseStatus?.(); release() }
+    } catch (error) { releaseStatus?.(); release(); throw error }
+  }
   async workingCopyOptions(projectId: string): Promise<AgentWorkingCopyOptions> {
     await this.initialize()
     const project = this.state.snapshot.projects.find(item => item.id === projectId)
@@ -927,6 +941,13 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     return { mode: 'independent', status: 'pending', baseBranch: selection.baseBranch,
       startFromOrigin: selection.startFromOrigin, existingWorktreePath: existing, ...(known?.branch ? { branch: known.branch } : {}) }
   }
+  /** Keep a destination checkout present from its first inspection through publication of the new reference. */
+  private async reserveWorkingCopySelection(projectId: string, selection: AgentWorkingCopySelection, holder: CheckoutHolder): Promise<(() => void) | undefined> {
+    const project = this.state.snapshot.projects.find(item => item.id === projectId)
+    if (!project) throw new Error('Choose an available project.')
+    const folder = selection.workingCopy === 'shared' ? project.path : selection.existingWorktreePath
+    return folder ? this.checkoutMutations.acquire(folder, 'read', holder) : undefined
+  }
   configureThreadWorkingCopy(threadId: string, selection: AgentWorkingCopySelection): Promise<AgentHostSnapshot> {
     return this.onLane(threadId, async () => {
       await this.initialize()
@@ -936,16 +957,19 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         throw new Error('This thread already has a working folder. Start a new thread to choose another one.')
       }
       const previous = { worktree: thread.worktree, workingDirectory: thread.workingDirectory }
-      const worktree = await this.selectedWorkingCopy(thread.projectId, selection)
-      const current = this.thread(threadId)
-      current.worktree = worktree
-      current.workingDirectory = worktree.mode === 'shared' ? worktree.path : undefined
-      this.dirty = true
-      try { await this.flush() } catch (error) { Object.assign(this.thread(threadId), previous); throw error }
-      // A folder chosen now is read now, locally, so the toolbar knows it is a repository without waiting for the timer.
-      await this.readGitStatus(threadId, false)
-      this.publish()
-      return this.workspaceSnapshot()
+      const release = await this.reserveWorkingCopySelection(thread.projectId, selection, { kind: 'preparation', threadId, title: thread.title })
+      try {
+        const worktree = await this.selectedWorkingCopy(thread.projectId, selection)
+        const current = this.thread(threadId)
+        current.worktree = worktree
+        current.workingDirectory = worktree.mode === 'shared' ? worktree.path : undefined
+        this.dirty = true
+        try { await this.flush() } catch (error) { Object.assign(this.thread(threadId), previous); throw error }
+        // A folder chosen now is read now, locally, so the toolbar knows it is a repository without waiting for the timer.
+        await this.readGitStatus(threadId, false)
+        this.publish()
+        return this.workspaceSnapshot()
+      } finally { release?.() }
     })
   }
   /** Folder ownership includes legacy sessions and project subdirectories, not just stored worktree paths. */
@@ -958,6 +982,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private async ownsCheckoutAlone(threadId: string): Promise<boolean> {
     const metadata = this.thread(threadId).worktree
     if (!metadata || metadata.reused || !metadata.path) return false
+    return this.checkoutIsUnreferenced(metadata.path, threadId)
+  }
+  private async checkoutIsUnreferenced(folder: string, exceptThreadId?: string): Promise<boolean> {
     // Threads often share a project folder. Discover that exact path once for this
     // decision; the next rename/removal must revalidate every path from scratch.
     const identities = new Map<string, Promise<string>>()
@@ -967,8 +994,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       return pending
     }
     try {
-      const identity = await identify(metadata.path)
-      const others = this.state.snapshot.threads.filter(other => other.id !== threadId)
+      const identity = await identify(folder)
+      const others = this.state.snapshot.threads.filter(other => other.id !== exceptThreadId)
       for (const other of others) {
         if (other.worktree?.reclaimedAt) continue
         if (other.nativeSessionStarted === false && other.worktree?.mode === 'independent' && !other.worktree.path && !other.worktree.existingWorktreePath) continue
@@ -2469,8 +2496,14 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     // Creation changes older threads' settlement too. Keep that transaction apart from
     // settlement edits in the same project so failed writes cannot cross their rollbacks.
     return this.onLane(key, () => command.type === 'create-thread'
-      ? this.onLane(command.projectId, () => this.executeOne(command), this.organizationLanes)
+      ? this.onLane(command.projectId, () => this.executeCreationGuarded(command), this.organizationLanes)
       : this.executeGuarded(command))
+  }
+  private async executeCreationGuarded(command: Extract<AgentHostCommand, { type: 'create-thread' }>): Promise<AgentHostResult> {
+    await this.initialize()
+    const selection = { ...command, workingCopy: command.workingCopy ?? this.workingCopyDefault(command.projectId) }
+    const release = await this.reserveWorkingCopySelection(command.projectId, selection, { kind: 'preparation', threadId: command.threadId, title: command.title })
+    try { return await this.executeOne(command) } finally { release?.() }
   }
   private async executeGuarded(command: AgentHostCommand): Promise<AgentHostResult> {
     if (command.type !== 'send' && command.type !== 'steer') return this.executeOne(command)

@@ -2,7 +2,7 @@ import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { closeSotto, launchSotto, openThreads } from './support/sottoLaunch'
+import { bareEntityId, closeSotto, launchSotto, openThreads } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 
 const SHOTS = evidenceDirectory('artifacts/terminal-loading')
@@ -28,10 +28,10 @@ for (const surface of ['tools', 'workspace'] as const) {
           callback({ cancel: /terminalView-[^/]+\.js/u.test(details.url) })
         })
       })
-      const id = await page.evaluate(async surface => {
+      const state = await page.evaluate(() => window.sotto!.agents!.get())
+      const projectId = state.host.threads.find(thread => bareEntityId(thread.id) === 'workshop')!.projectId
+      const id = await page.evaluate(async ({ surface, projectId }) => {
         if (surface === 'workspace') {
-          const state = await window.sotto!.agents!.get()
-          const projectId = state.host.threads.find(thread => thread.id === 'workshop')!.projectId
           const created = await window.sotto!.terminals!.open({ projectId, title: 'Recovery shell', workingCopy: 'shared',
             launch: { provider: null, modelId: null, reasoning: null, permission: null } })
           if (!created.ok) throw new Error(created.error.message)
@@ -42,7 +42,7 @@ for (const surface of ['tools', 'workspace'] as const) {
         const created = await window.sotto!.terminal!.create({ threadId: 'workshop', workspaceId: list.value.workspace.workspaceId })
         if (!created.ok) throw new Error(created.error.message)
         return created.value.session.id
-      }, surface)
+      }, { surface, projectId })
       const read = () => page.evaluate(async ({ surface, id }) => {
         if (surface === 'workspace') {
           const result = await window.sotto!.terminals!.read({ id })

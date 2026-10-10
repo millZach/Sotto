@@ -13,6 +13,8 @@ import { SIDEBAR_MODE_KEY } from '../../../src/renderer/src/agents/SidebarFrame'
 import { SplitLayoutStore } from '../../../src/renderer/src/agents/splitLayout'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { TerminalWorkspaceStore } from '../../../src/renderer/src/terminals/terminalWorkspaceStore'
+import { TerminalPane } from '../../../src/renderer/src/terminals/TerminalPane'
+import { describeTerminals } from '../../../src/renderer/src/terminals/terminalFacts'
 import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 import { paneMenuItem } from '../../fixtures/renderer/paneMenu'
 
@@ -25,6 +27,12 @@ const WIDE = 1400
 const ID_1 = '11111111-1111-4111-8111-111111111111'
 const ID_2 = '22222222-2222-4222-8222-222222222222'
 const ok = <T,>(value: T): ToolsResult<T> => ({ ok: true, value })
+
+it('names Command+C for copying and Ctrl+C for interrupting on macOS', () => {
+  const row = describeTerminals(threadsStateFixture(), [terminal(ID_1)], NOW)[0]!
+  render(<TerminalPane row={row} store={new TerminalWorkspaceStore()} bridge={undefined} viewFactory={null} viewFailed={false} focused={true} focusNext={{ current: null }} busy={false} platform="darwin" />)
+  expect(screen.getByText('⌘+C copies a selection · Ctrl+C interrupts · ⌘+V pastes text or an image')).toBeInTheDocument()
+})
 
 it('clears workspace copy feedback without erasing a newer input failure', async () => {
   const { bridge } = fakeBridge([terminal(ID_1)])
