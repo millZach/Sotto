@@ -484,10 +484,14 @@ import XCTest
         let marks = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "**"))
         XCTAssertEqual(marks.count, 0, "Bold marks never show as asterisks")
 
-        // A table that fits reads as a grid of cells, one too wide reads as a card per row, and no pipe is left over.
-        let cell = labelled("Open the thread")
-        scrollThread(to: cell, towardStart: false)
-        XCTAssertTrue(labelled("0.3 s").exists, "A narrow table's cells read one by one")
+        // A table that fits reads as a grid of cells and one too wide as a card per row. Larger text can make the narrow
+        // one a card too, so its words are looked for inside any label. No pipe is left over.
+        let holding = { (words: String) in
+            self.app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", words)).firstMatch
+        }
+        let narrow = holding("Open the thread")
+        scrollThread(to: narrow, towardStart: false)
+        XCTAssertTrue(holding("0.3 s").exists, "The narrow table's cells read")
         let card = text("Finding")
         scrollThread(to: card, towardStart: false)
         XCTAssertTrue(card.label.contains("Drawer toggle"), "A wide table's row reads as one card under its first column")

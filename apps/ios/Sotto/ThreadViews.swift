@@ -778,25 +778,25 @@ private struct MarkdownTableView: View {
 
     /// The first column takes the room the grid has to spare, so the others sit together at the trailing edge.
     private func cell(_ text: MarkdownInline, column: Int, header: Bool) -> some View {
-        let alignment = table.alignments[column]
+        let layout = table.alignments[column].layout
         return CappedWidth(width: cellWidth) {
             Text(InlineStyle.render(text, theme: theme))
                 .font((header ? Font.sotto(.caption, .semibold) : Font.sotto(.small)).monospacedDigit())
                 .foregroundStyle(header ? Palette.muted : Palette.ink)
-                .multilineTextAlignment(Self.textAlignment(alignment))
+                .multilineTextAlignment(layout.text)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
         }
-        .frame(maxWidth: column == 0 ? .infinity : nil, alignment: Self.frameAlignment(alignment))
+        .frame(maxWidth: column == 0 ? .infinity : nil, alignment: layout.frame)
         .padding(.horizontal, Space.s3)
-        .padding(.vertical, Space.dense(Space.s2 + 2, density))
-        .gridColumnAlignment(Self.columnAlignment(alignment))
+        .padding(.vertical, Space.dense(Space.s2, density))
+        .gridColumnAlignment(layout.column)
     }
 
     @ViewBuilder private var cards: some View {
         if table.rows.isEmpty {
             // A table still being written has only its header so far.
-            Text(table.header.map(\.text).joined(separator: " · "))
+            Text(headerLine)
                 .font(.sotto(.caption, .semibold))
                 .foregroundStyle(Palette.muted)
                 .fixedSize(horizontal: false, vertical: true)
@@ -813,19 +813,33 @@ private struct MarkdownTableView: View {
         }
     }
 
+    /// The header cells on one line, each with its inline Markdown.
+    private var headerLine: AttributedString {
+        var line = AttributedString()
+        for (index, cell) in table.header.enumerated() {
+            if index > 0 { line.append(AttributedString(" · ")) }
+            line.append(InlineStyle.render(cell, theme: theme))
+        }
+        return line
+    }
+
+    /// A card titled by the row's first cell, at the trailing edge when its column is set there.
     private func card(_ row: [MarkdownInline]) -> some View {
-        VStack(alignment: .leading, spacing: Space.s2) {
-            VStack(alignment: .leading, spacing: 2) {
+        let trailing = table.alignments[0] == .trailing
+        return VStack(alignment: .leading, spacing: Space.s2) {
+            VStack(alignment: trailing ? .trailing : .leading, spacing: Space.s1) {
                 if !table.header[0].source.isEmpty {
                     Text(InlineStyle.render(table.header[0], theme: theme))
                         .font(.sotto(.caption, .semibold))
                         .foregroundStyle(Palette.muted)
                 }
                 Text(InlineStyle.render(row[0], theme: theme))
-                    .font(.sotto(.body, .semibold))
+                    .font(.sotto(.body, .semibold).monospacedDigit())
+                    .multilineTextAlignment(trailing ? .trailing : .leading)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
             }
+            .frame(maxWidth: .infinity, alignment: trailing ? .trailing : .leading)
             if row.count > 1 {
                 Grid(alignment: .topLeading, horizontalSpacing: Space.s3, verticalSpacing: Space.s1) {
                     ForEach(1..<row.count, id: \.self) { column in
@@ -857,26 +871,15 @@ private struct MarkdownTableView: View {
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: trailing ? .trailing : .leading)
     }
+}
 
-    private static func textAlignment(_ alignment: MarkdownTable.Alignment) -> TextAlignment {
-        switch alignment {
-        case .leading: return .leading
-        case .center: return .center
-        case .trailing: return .trailing
-        }
-    }
-    private static func frameAlignment(_ alignment: MarkdownTable.Alignment) -> Alignment {
-        switch alignment {
-        case .leading: return .topLeading
-        case .center: return .top
-        case .trailing: return .topTrailing
-        }
-    }
-    private static func columnAlignment(_ alignment: MarkdownTable.Alignment) -> HorizontalAlignment {
-        switch alignment {
-        case .leading: return .leading
-        case .center: return .center
-        case .trailing: return .trailing
+private extension MarkdownTable.Alignment {
+    /// The column's alignment as a grid cell's text, its frame and its grid column each take it.
+    var layout: (text: TextAlignment, frame: Alignment, column: HorizontalAlignment) {
+        switch self {
+        case .leading: return (.leading, .topLeading, .leading)
+        case .center: return (.center, .top, .center)
+        case .trailing: return (.trailing, .topTrailing, .trailing)
         }
     }
 }

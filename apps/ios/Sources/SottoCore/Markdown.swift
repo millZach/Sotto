@@ -256,8 +256,7 @@ public enum Markdown {
                 index += 1
                 continue
             }
-            if MarkdownLine.isRule(line) || MarkdownLine.fence(line) != nil || MarkdownLine.heading(line) != nil || MarkdownLine.quote(line) != nil { break }
-            if MarkdownLine.tableStart(lines, at: index) != nil { break }
+            if MarkdownLine.startsBlock(line) || MarkdownLine.tableStart(lines, at: index) != nil { break }
             if let item = MarkdownLine.listItem(line) {
                 if let first = items.first {
                     // A top-level item of the other kind starts a list of its own.
@@ -298,8 +297,7 @@ public enum Markdown {
         // As on GitHub, a row runs until a blank line or the start of another block.
         while index < lines.count {
             let line = lines[index]
-            if MarkdownLine.isBlank(line) || MarkdownLine.isRule(line) || MarkdownLine.fence(line) != nil
-                || MarkdownLine.heading(line) != nil || MarkdownLine.quote(line) != nil || MarkdownLine.listItem(line) != nil { break }
+            if MarkdownLine.isBlank(line) || MarkdownLine.startsBlock(line) || MarkdownLine.listItem(line) != nil { break }
             rows.append(fit(MarkdownLine.cells(line)))
             index += 1
         }
@@ -345,6 +343,11 @@ enum MarkdownLine {
     }
 
     static func isBlank(_ line: String) -> Bool { line.trimmingCharacters(in: .whitespaces).isEmpty }
+
+    /// A rule, a fence, a heading or a quote, any of which ends a list or a table above it.
+    static func startsBlock(_ line: String) -> Bool {
+        isRule(line) || fence(line) != nil || heading(line) != nil || quote(line) != nil
+    }
 
     static func content(_ line: String) -> Substring { line.drop(while: { $0 == " " || $0 == "\t" }) }
 
