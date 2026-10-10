@@ -10,6 +10,7 @@ import { TerminalService, type TerminalDependencies } from '../../../src/main/to
 import { TERMINAL_MAX_OUTPUT, type TerminalEvent } from '../../../src/shared/terminal'
 import type { ToolsResult } from '../../../src/shared/tools'
 import { deferred } from '../../fixtures/deferred'
+import { initializeGitRepository } from '../../fixtures/gitRepository'
 
 const unwrap = <T>(result: ToolsResult<T>): T => { if (!result.ok) throw new Error(JSON.stringify(result)); return result.value }
 const cleanup: (() => Promise<void>)[] = []
@@ -233,6 +234,8 @@ describe('persistent terminal service', () => {
     cleanup.push(() => rm(project, { recursive: true, force: true }))
     const projectFolder = vi.fn((projectId: string) => projectId === 'project' ? project : undefined)
     const f = await fixture({ projectFolder })
+    await initializeGitRepository(project)
+    await initializeGitRepository(f.directory)
     const tools = unwrap(await f.service.create(f.target))
     const drawer = unwrap(await f.service.create({ ...f.target, place: 'drawer' }))
     expect(f.spawn).toHaveBeenNthCalledWith(1, expect.any(String), expect.any(Array), expect.objectContaining({ cwd: tools.session.workspace.workingDirectory }))
@@ -253,6 +256,9 @@ describe('persistent terminal service', () => {
     const acquireStart = vi.fn(async (owner: Parameters<NonNullable<TerminalDependencies['acquireStart']>>[0]) =>
       checkouts.acquire(owner.workingDirectory, 'send', { kind: 'terminal-start' }))
     const f = await fixture({ projectFolder: () => project, acquireStart })
+    // Temp folders may be inside the machine's home checkout; give each fixture its own identity.
+    await initializeGitRepository(project)
+    await initializeGitRepository(f.directory)
     const release = await checkouts.acquire(folder === 'project' ? project : f.directory, 'mutation', { kind: 'remove-folder' })
     try {
       expect(await f.service.create({ ...f.target, place: 'drawer' })).toEqual({ ok: false, error: { code: 'busy', message: 'Sotto is removing this folder. The terminal did not start. Try again when it finishes.' } })
