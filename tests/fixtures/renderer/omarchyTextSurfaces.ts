@@ -13,6 +13,7 @@ export const OMARCHY_CSS_TEXT_PAIRS: ReadonlyArray<readonly [string, readonly st
   ['link', ['surface', 'sidebar', 'selected']],
   ['primary-hover', ['surface', 'sidebar', 'selected']],
   ['warning', ['canvas', 'surface', 'surface-elevated', 'sidebar']],
+  ['attention', ['sidebar', 'sidebar-control', 'sidebar-row-hover', 'sidebar-row-active', 'sidebar-row-selected']],
   ['warning-text', ['sidebar', 'warning-surface']],
   ['error', ['canvas', 'surface', 'surface-elevated', 'sidebar']],
   ['error-text', [...room, 'error-surface', 'diff-remove']],
@@ -27,4 +28,4 @@ export const OMARCHY_CSS_TEXT_PAIRS: ReadonlyArray<readonly [string, readonly st
   ['provider-ink', ['provider-codex', 'provider-claude', 'provider-grok', 'provider-devin']],
 ]
 /** These color: declarations paint SVG/provider marks only; their children override inherited text. */
-export const OMARCHY_GRAPHIC_COLOR_TOKENS = ['surface', 'primary', 'attention', 'provider-codex', 'provider-claude', 'provider-grok', 'provider-devin'] as const
+export const OMARCHY_GRAPHIC_COLOR_TOKENS = ['surface', 'primary', 'provider-codex', 'provider-claude', 'provider-grok', 'provider-devin'] as const
