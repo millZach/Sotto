@@ -17,7 +17,7 @@ Issue [#884](https://github.com/millZach/Sotto/issues/884), based on `feat/termi
 - [x] Queue preview reads below the host connection limit and keep overlapping approvals in the native CLI.
 - [x] Preserve current permission screens when submission metadata arrives late, without accepting another turn's screen.
 - [x] Run the final local gates with the two-worker cap.
-- [ ] Push and open the pull request against `feat/terminal-agent-states`.
+- [x] Push and open [pull request #903](https://github.com/millZach/Sotto/pull/903) against `feat/terminal-agent-states`; do not merge.
 - [ ] Complete the macOS native gate and inspect and commit simulator screenshots.
 
 The small status view is the working assumption for tapping a terminal without an approval. It provides the foreground detail observation ADR-0066 already defines. The lead was asked and no reply arrived, so this reversible choice was retained; it does not change the approved list or Permission card.
