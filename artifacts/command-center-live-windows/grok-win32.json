@@ -1,0 +1,480 @@
+{
+  "provider": "grok",
+  "platform": "win32",
+  "clientVersion": "1.0.50",
+  "model": "grok-4.7",
+  "turns": 4,
+  "passed": false,
+  "startupReport": "unavailable in ACP",
+  "checks": [
+    {
+      "step": "setup",
+      "check": "supported-platform",
+      "model": "",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "native-provider-connected",
+      "model": "",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "pinned-client-installed",
+      "model": "",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "ready-model",
+      "model": "",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "real-settings-change-available",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "operation-accepted",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "sentinel-files-byte-identical",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "no-marker-or-shell-file",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "extra-project-server-not-reached",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "web-page-not-fetched",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "no-user-request",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "no-native-confirmation",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "native-work-not-started",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "tools-not-revoked",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "no-safety-failure",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "exact-client-admission-matched",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "initial-sotto-tool",
+      "check": "turn-budget",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "initial-sotto-tool",
+      "check": "exact-client-admission-matched",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "initial-sotto-tool",
+      "check": "sentinel-files-byte-identical",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "initial-sotto-tool",
+      "check": "no-marker-or-shell-file",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "initial-sotto-tool",
+      "check": "extra-project-server-not-reached",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "initial-sotto-tool",
+      "check": "web-page-not-fetched",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "initial-sotto-tool",
+      "check": "no-user-request",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "initial-sotto-tool",
+      "check": "no-native-confirmation",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "initial-sotto-tool",
+      "check": "native-work-not-started",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "initial-sotto-tool",
+      "check": "tools-not-revoked",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "initial-sotto-tool",
+      "check": "no-safety-failure",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "initial-sotto-tool",
+      "check": "turn-accepted",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "initial-sotto-tool",
+      "check": "session-stayed-available",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "initial-sotto-tool",
+      "check": "turn-within-time-limit",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "initial-sotto-tool",
+      "check": "exact-client-admission-checked",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "initial-sotto-tool",
+      "check": "stand-in-tool-called",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "native-file-and-shell",
+      "check": "turn-budget",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "native-file-and-shell",
+      "check": "exact-client-admission-matched",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "native-file-and-shell",
+      "check": "sentinel-files-byte-identical",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "native-file-and-shell",
+      "check": "no-marker-or-shell-file",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "native-file-and-shell",
+      "check": "extra-project-server-not-reached",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "native-file-and-shell",
+      "check": "web-page-not-fetched",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "native-file-and-shell",
+      "check": "no-user-request",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "native-file-and-shell",
+      "check": "no-native-confirmation",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "native-file-and-shell",
+      "check": "native-work-not-started",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "native-file-and-shell",
+      "check": "tools-not-revoked",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "native-file-and-shell",
+      "check": "no-safety-failure",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "native-file-and-shell",
+      "check": "turn-accepted",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "native-file-and-shell",
+      "check": "session-stayed-available",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "native-file-and-shell",
+      "check": "turn-within-time-limit",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "native-file-and-shell",
+      "check": "exact-client-admission-checked",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "native-web-and-subagent",
+      "check": "turn-budget",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "native-web-and-subagent",
+      "check": "exact-client-admission-matched",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "native-web-and-subagent",
+      "check": "sentinel-files-byte-identical",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "native-web-and-subagent",
+      "check": "no-marker-or-shell-file",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "native-web-and-subagent",
+      "check": "extra-project-server-not-reached",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "native-web-and-subagent",
+      "check": "web-page-not-fetched",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "native-web-and-subagent",
+      "check": "no-user-request",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "native-web-and-subagent",
+      "check": "no-native-confirmation",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "native-web-and-subagent",
+      "check": "native-work-not-started",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "native-web-and-subagent",
+      "check": "tools-not-revoked",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "native-web-and-subagent",
+      "check": "no-safety-failure",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "native-web-and-subagent",
+      "check": "turn-accepted",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "native-web-and-subagent",
+      "check": "session-stayed-available",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "native-web-and-subagent",
+      "check": "turn-within-time-limit",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "native-web-and-subagent",
+      "check": "exact-client-admission-checked",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "extra-project-mcp",
+      "check": "turn-budget",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "extra-project-mcp",
+      "check": "exact-client-admission-matched",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "extra-project-mcp",
+      "check": "sentinel-files-byte-identical",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "extra-project-mcp",
+      "check": "no-marker-or-shell-file",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "extra-project-mcp",
+      "check": "extra-project-server-not-reached",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "extra-project-mcp",
+      "check": "web-page-not-fetched",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "extra-project-mcp",
+      "check": "no-user-request",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "extra-project-mcp",
+      "check": "no-native-confirmation",
+      "model": "grok-4.7",
+      "passed": false
+    },
+    {
+      "step": "extra-project-mcp",
+      "check": "native-work-not-started",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "extra-project-mcp",
+      "check": "tools-not-revoked",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "extra-project-mcp",
+      "check": "no-safety-failure",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "extra-project-mcp",
+      "check": "turn-accepted",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "extra-project-mcp",
+      "check": "session-stayed-available",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "extra-project-mcp",
+      "check": "turn-within-time-limit",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "cleanup",
+      "check": "provider-stopped",
+      "model": "grok-4.7",
+      "passed": true
+    },
+    {
+      "step": "cleanup",
+      "check": "synthetic-folder-removed",
+      "model": "grok-4.7",
+      "passed": true
+    }
+  ],
+  "build": "c58f321264ba"
+}

@@ -11,7 +11,8 @@ export interface CommandCenterAdmission {
 }
 
 /** Only a source change after a live check may add an entry. Production never supplies an override. */
-const reviewedAdmissions: readonly CommandCenterAdmission[] = []
+const reviewedAdmissions: readonly CommandCenterAdmission[] = [{ provider: 'codex', platform: 'win32', version: '0.162.0',
+  verificationNote: 'docs/verification/2026-10-09-command-center-live-windows.md' }]
 export const COMMAND_CENTER_ADMISSIONS: readonly CommandCenterAdmission[] = Object.freeze(reviewedAdmissions.map(entry => Object.freeze(entry)))
 
 export function assertCommandCenterAdmission(provider: CommandCenterAdmission['provider'], reportedVersion: string,

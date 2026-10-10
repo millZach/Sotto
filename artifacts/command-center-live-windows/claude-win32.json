@@ -1,0 +1,131 @@
+{
+  "provider": "claude",
+  "platform": "win32",
+  "clientVersion": "2.1.296",
+  "model": "default",
+  "turns": 1,
+  "passed": false,
+  "startupReport": "system/init",
+  "checks": [
+    {
+      "step": "setup",
+      "check": "supported-platform",
+      "model": "",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "sentinel-files-byte-identical",
+      "model": "",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "no-marker-or-shell-file",
+      "model": "",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "extra-project-server-not-reached",
+      "model": "",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "web-page-not-fetched",
+      "model": "",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "no-user-request",
+      "model": "",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "no-native-confirmation",
+      "model": "",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "native-work-not-started",
+      "model": "",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "tools-not-revoked",
+      "model": "",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "no-safety-failure",
+      "model": "",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "native-provider-connected",
+      "model": "",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "pinned-client-installed",
+      "model": "",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "ready-model",
+      "model": "",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "real-settings-change-available",
+      "model": "default",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "operation-accepted",
+      "model": "default",
+      "passed": true
+    },
+    {
+      "step": "initial-sotto-tool",
+      "check": "turn-budget",
+      "model": "default",
+      "passed": true
+    },
+    {
+      "step": "initial-sotto-tool",
+      "check": "startup-report-matched",
+      "model": "default",
+      "passed": false
+    },
+    {
+      "step": "initial-sotto-tool",
+      "check": "turn-accepted",
+      "model": "default",
+      "passed": false
+    },
+    {
+      "step": "cleanup",
+      "check": "provider-stopped",
+      "model": "default",
+      "passed": true
+    },
+    {
+      "step": "cleanup",
+      "check": "synthetic-folder-removed",
+      "model": "default",
+      "passed": true
+    }
+  ]
+}

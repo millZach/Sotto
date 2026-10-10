@@ -1,0 +1,132 @@
+{
+  "provider": "codex",
+  "platform": "win32",
+  "clientVersion": "0.162.0",
+  "model": "gpt-6.1-sol",
+  "turns": 0,
+  "passed": false,
+  "startupReport": "config/read and mcpServerStatus/list",
+  "checks": [
+    {
+      "step": "setup",
+      "check": "supported-platform",
+      "model": "",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "sentinel-files-byte-identical",
+      "model": "",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "no-marker-or-shell-file",
+      "model": "",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "extra-project-server-not-reached",
+      "model": "",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "web-page-not-fetched",
+      "model": "",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "no-user-request",
+      "model": "",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "no-native-confirmation",
+      "model": "",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "native-work-not-started",
+      "model": "",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "tools-not-revoked",
+      "model": "",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "no-safety-failure",
+      "model": "",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "native-provider-connected",
+      "model": "",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "pinned-client-installed",
+      "model": "",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "ready-model",
+      "model": "",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "real-settings-change-available",
+      "model": "gpt-6.1-sol",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "operation-accepted",
+      "model": "gpt-6.1-sol",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "pinned-process-client-version",
+      "model": "gpt-6.1-sol",
+      "clientVersion": "0.162.0",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "startup-report-matched",
+      "model": "gpt-6.1-sol",
+      "passed": true
+    },
+    {
+      "step": "setup",
+      "check": "operation-completed",
+      "model": "gpt-6.1-sol",
+      "passed": false
+    },
+    {
+      "step": "cleanup",
+      "check": "provider-stopped",
+      "model": "gpt-6.1-sol",
+      "passed": true
+    },
+    {
+      "step": "cleanup",
+      "check": "synthetic-folder-removed",
+      "model": "gpt-6.1-sol",
+      "passed": true
+    }
+  ]
+}
