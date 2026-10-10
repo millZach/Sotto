@@ -32,6 +32,23 @@ describe('terminal agent run state', () => {
       expect(state.state, order).toBe(viewed ? 'idle' : 'just-finished')
     }
   })
+  it.each([false, true])('keeps a current permission preview when submission metadata arrives late (permission hook first %s)', permissionFirst => {
+    const state = agent(); state.hook(event('session-start')); state.output(idle)
+    state.input('work\r'); state.output(work); state.output(request)
+    const approval = event('permission', { turnId: 'turn', requestId: 'permission' })
+    if (permissionFirst) state.hook(approval)
+    state.hook(event('working', { turnId: 'turn', workPhase: 'submitted' }))
+    if (!permissionFirst) state.hook(approval)
+    expect(state.state).toBe('needs-you')
+    expect(state.approvalLines()?.join('\n')).toContain('Do you want to make this edit')
+  })
+  it('does not reuse a permission preview for another submitted turn', () => {
+    const state = agent(); state.hook(event('session-start')); state.output(idle)
+    state.input('work\r'); state.output(work); state.output(request)
+    state.hook(event('permission', { turnId: 'permission-turn', requestId: 'permission' }))
+    state.hook(event('working', { turnId: 'another-turn', workPhase: 'submitted' }))
+    expect(state.approvalLines()).toBeNull()
+  })
   it.each(['submitted', 'tool-start', 'tool-end'] as const)('corroborates buffered completion only with its matching %s hook', phase => {
     const state = agent(); state.hook(event('session-start')); state.output(idle)
     state.input('work\r'); state.output(work)
@@ -620,6 +637,16 @@ describe('bounded active terminal screen', () => {
       expect(rules.read(screen).state).toBe('needs-you')
     }
     screen.write(redraw(body, title)); screen.write('\r\n' + 'ordinary output\r\n'.repeat(40)); expect(rules.read(screen).state).toBeUndefined()
+  })
+  it('keeps Yes/No question chrome distinct from permissions, including incomplete choices', () => {
+    const screen = new TerminalAgentScreen(120, 30), rules = new TerminalScreenRules('claude')
+    const footer = 'enter to select · ↑/↓ to navigate · esc to cancel'
+    const choices = 'Do you want to proceed?\r\n❯ 1. Yes\r\n2. No'
+    screen.write(redraw(`${choices}\r\n3. Type something.\r\n${footer}`, header))
+    expect(rules.read(screen)).toMatchObject({ state: 'needs-you', requestKind: 'question' })
+    screen.write(redraw(`${choices}\r\n${footer}`, header))
+    expect(rules.read(screen)).toMatchObject({ detection: 'unavailable' })
+    expect(rules.read(screen).requestKind).toBeUndefined()
   })
   it.each([
     '• Working (0s • esc to interrupt)',

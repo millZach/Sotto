@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, feat/terminal-agent-states]
 
 # A newer push to the same branch or pull request cancels the run it supersedes.
 concurrency:
@@ -226,7 +226,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.ios == 'true'
     runs-on: macos-26
-    # Fifteen simulator journeys on two phones, with the package tests and two builds before them.
+    # Simulator journeys on two phones, with the package tests and two builds before them.
     timeout-minutes: 75
     env:
       # The same Xcode as the TestFlight workflow: App Store Connect accepts only iOS 26 SDK builds.

@@ -13,7 +13,7 @@ struct RootView: View {
 struct MainTabs: View {
     @EnvironmentObject var model: AppModel
     @State private var tab = Tab.threads
-    @State private var threadPath: [ThreadRoute] = []
+    @State private var threadPath = NavigationPath()
     enum Tab: Hashable { case threads, computers, settings }
     var body: some View {
         TabView(selection: $tab) {
@@ -39,20 +39,28 @@ struct MainTabs: View {
         guard let ref else { return }
         model.alertOpened = nil
         tab = .threads
-        threadPath = [ThreadRoute(ref: ref)]
+        threadPath = NavigationPath([ThreadRoute(ref: ref)])
     }
-    private var waitingCount: Int { ThreadGroups.waiting(model.lists).count }
+    private var waitingCount: Int { ThreadGroups.waiting(model.lists).count + model.terminalRows.filter { $0.reachable && $0.terminal.state == .needsYou }.count }
     /// Recent threads that finished while nothing showed them and have not been opened on either device (ADR-0046).
-    private var unreadFinishedCount: Int { FocusThreads(model.lists, opened: model.selected).unreadFinishedCount }
+    private var unreadFinishedCount: Int {
+        FocusThreads(model.lists, opened: model.selected).unreadFinishedCount
+            + model.terminalRows.filter { $0.finishedUnread && $0.ref != model.selectedTerminal }.count
+    }
 }
 
 /// A thread, named with its computer: two computers can hold the same thread ID.
 struct ThreadRoute: Hashable { let ref: ThreadRef }
+struct TerminalRoute: Hashable { let ref: TerminalRef }
 extension View {
-    func threadDestination() -> some View { navigationDestination(for: ThreadRoute.self) { ThreadView(ref: $0.ref) } }
+    func threadDestination() -> some View {
+        navigationDestination(for: ThreadRoute.self) { ThreadView(ref: $0.ref) }
+            .navigationDestination(for: TerminalRoute.self) { TerminalView(ref: $0.ref) }
+    }
 }
 
 enum Words {
+    static func terminalProvider(_ id: String?) -> String { id == nil ? "Shell" : provider(id) }
     static func provider(_ id: String?) -> String {
         AgentNames.name(id)
     }

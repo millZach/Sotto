@@ -70,7 +70,9 @@ describe('run-scoped terminal agent hooks', () => {
   it('launches the fake Claude CLI with real packaged-runner hooks across its lifecycle', async () => {
     const { run, events, closed } = await prepared()
     const { child, output, errors } = fixture(run)
-    await expect.poll(() => events.some(event => event.kind === 'session-start')).toBe(true)
+    // Cold PowerShell and the packaged Electron runner start before the first hook connects.
+    // Assert the event and launch errors, with a startup budget rather than a latency claim.
+    await expect.poll(() => { expect(errors()).toBe(''); return events.some(event => event.kind === 'session-start') }, { timeout: 12_000 }).toBe(true)
     await expect.poll(output).toContain('? for shortcuts')
     child.stdin.write('w\n')
     await expect.poll(() => events.some(event => event.kind === 'working')).toBe(true)
@@ -84,7 +86,7 @@ describe('run-scoped terminal agent hooks', () => {
     await expect.poll(() => events.some(event => event.kind === 'completed')).toBe(true)
     expect(JSON.stringify(events)).not.toMatch(/PRIVATE_|secret|tool_input|transcript|cwd/u)
     expect(errors()).toBe('')
-  })
+  }, 30_000)
   it('admits Codex completion and IDs through notify, never its content or approval answers', async () => {
     const { run, events } = await prepared('codex')
     const { child, output, errors } = fixture(run, 'codex')

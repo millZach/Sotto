@@ -3,9 +3,23 @@ import { randomUUID } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import { expect, it } from 'vitest'
 import { FakeProviderHost } from '../fixtures/fakeProviderHost'
 import { codexFixture, type RecordedRpc } from '../fixtures/codexFixture'
-import { describeAdapterContract, type AdapterFixture } from './adapterContract'
+import { createContractThread, describeAdapterContract, type AdapterFixture } from './adapterContract'
+
+it('settles delayed thread creation before the lazy contract sends, without creating twice', async () => {
+  const f = await codexFixture()
+  try {
+    await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+    await f.driver.delayNextAck('thread/start')
+    const threadId = await createContractThread(f, 'Delayed creation')
+    await expect(f.host.execute({ type: 'send', threadId, commandId: randomUUID(), messageId: randomUUID(), text: 'Synthetic prompt' }))
+      .resolves.toMatchObject({ accepted: true })
+    expect((await f.driver.requests()).filter(record => record.method === 'thread/start')).toHaveLength(1)
+  } finally { await f.cleanup() }
+})
 
 describeAdapterContract('Codex App Server', session => codexFixture(undefined, false, undefined, session))
 describeAdapterContract('Fake provider', async (): Promise<AdapterFixture> => {

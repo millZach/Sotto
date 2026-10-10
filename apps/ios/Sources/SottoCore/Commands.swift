@@ -94,13 +94,17 @@ public enum Commands {
 public struct PendingOperation: Codable, Identifiable, Equatable, Sendable {
     public let id: String; public let hostID: String; public let clientID: String; public let threadID: String
     public let requestID: String?; public let draftID: String?; public let kind: String
-    public init(hostID: String, clientID: String, threadID: String, requestID: String? = nil, draftID: String? = nil, kind: String, id: String = UUID().uuidString) {
+    /// Terminal answers keep only opaque bindings, never the preview, screen lines or decision.
+    public let terminalID: String?; public let runID: String?; public let approvalID: String?
+    public init(hostID: String, clientID: String, threadID: String, requestID: String? = nil, draftID: String? = nil, kind: String, id: String = UUID().uuidString,
+                terminalID: String? = nil, runID: String? = nil, approvalID: String? = nil) {
         self.id = id; self.hostID = hostID; self.clientID = clientID; self.threadID = threadID
         self.requestID = requestID; self.draftID = draftID; self.kind = kind
+        self.terminalID = terminalID; self.runID = runID; self.approvalID = approvalID
     }
     public func matches(hostID: String, clientID: String) -> Bool { self.hostID == hostID && self.clientID == clientID }
     public func reconciled(receipt: Receipt, deliveries: [Delivery]) -> Bool {
-        if kind == "answer" { return receipt.confirmsAnswer }
+        if kind == "answer" || kind == "terminal-answer" { return receipt.confirmsAnswer }
         // Completed transport receipt only confirms provider delivery when its draft status agrees.
         if let draftID, let delivery = deliveries.first(where: { $0.draftId == draftID && $0.threadId == threadID }) {
             return delivery.status == "accepted" || delivery.status == "failed"

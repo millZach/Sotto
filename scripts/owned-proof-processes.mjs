@@ -12,7 +12,8 @@ import { setTimeout, clearTimeout } from 'node:timers'
 
 const run = promisify(execFile)
 export const snapshotProofInstances = directory => new Map(readdirSync(directory).sort().map(name => {
-  const { dev, ino } = statSync(join(directory, name))
+  // Windows file IDs can exceed Number's exact range; rounded IDs hide replacements.
+  const { dev, ino } = statSync(join(directory, name), { bigint: true })
   return [name, { dev, ino }]
 }))
 export function assertProofInstancesPreserved(directory, before, ownedInstance) {
