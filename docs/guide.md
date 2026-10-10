@@ -677,7 +677,7 @@ Unit and integration tests cover settings recovery, history privacy, audio math 
 
 The deterministic boundary is rejected in packaged builds and accepts calls only from the trusted main renderer. It never logs transcript text or PCM.
 
-Every push to `main` and every pull request against it runs typecheck, lint, `vitest run` and the third-party notices check on a Windows runner (`.github/workflows/ci.yml`). Desktop end-to-end tests and live provider suites stay local. A separate Linux job checks the host archive and socket contract. See the [continuous integration guide](ci.md) for what each step does and how to read a failed check.
+Every push to `main` and every pull request against it runs typecheck, lint, `vitest run` and the third-party notices check on a Windows runner (`.github/workflows/ci.yml`). The trial Desktop check (Windows) runs selected scripted journeys for dictation recovery, command receipts, queued steering, the daily workspace and its restart, Settings, and widget dictation when app code, Electron journeys or fixtures change, and on every push to `main`. The full desktop end-to-end suite and live provider suites stay local. A separate Linux job checks the host archive and socket contract. See the [continuous integration guide](ci.md) for what each step does and how to read a failed check.
 
 ### Windows packages
 
