@@ -129,7 +129,7 @@ export class TerminalService extends ToolOperations {
       return fail('unavailable', 'The terminal could not start or save its session. Check that the shell is available and app storage is writable.')
     }
   }
-  /** The project folder, or the thread's working copy when the project folder is gone. */
+  /** The project folder, or the thread's working copy when the project folder is gone or cannot be opened. */
   private async projectFolder(owner: FileWorkspace): Promise<string> {
     const folder = this.dependencies.projectFolder?.(owner.projectId)
     if (!folder || !isAbsolute(folder)) return owner.workingDirectory

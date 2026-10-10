@@ -26,6 +26,6 @@ Under a Frosted window the drawer paints `--tt-frost-terminal`, a little more so
 
 ## October 9 amendment: the drawer starts in the project folder
 
-A drawer's shell now starts in the thread's project folder, not its working copy. For a thread with its own worktree, the working copy was a folder under `thread-worktrees`, which is not "the project you are in" that the owner asked for, and they asked for the project folder when they saw it. The shell starts in the working copy only when the project folder is gone. The Tools panel's terminal is unchanged: it still starts in the working copy its footer names.
+A drawer's shell now starts in the thread's project folder, not its working copy. For a thread with its own worktree, the working copy was a folder under `thread-worktrees`, which is not "the project you are in" that the owner asked for, and they asked for the project folder when they saw it. The shell starts in the working copy only when the project folder is gone or cannot be opened. The Tools panel's terminal is unchanged: it still starts in the working copy its footer names.
 
 Because the shell is no longer in the thread's worktree, the drawer's bar names the branch only for a thread that shares the project folder; for a worktree thread it would name a checkout the shell is not in. A running drawer shell still keeps its thread's worktree from being reclaimed, since the user can change into it.

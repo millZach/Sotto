@@ -39,14 +39,14 @@ const thread = { id: 'thread-a', nativeSessionStarted: true as const, workingDir
 
 type DrawerThread = Omit<typeof thread, 'worktree'> & { worktree: Omit<typeof thread.worktree, 'mode'> & { mode: 'shared' | 'independent' } }
 
-function setup(terminal: ReturnType<typeof fakeTerminal>, drawerThread: DrawerThread = thread) {
+function setup(terminal: ReturnType<typeof fakeTerminal>, drawerThread: DrawerThread = thread, projectPath = 'D:\\work\\workshop') {
   const chromeStore = new PaneTerminalChromeStore(null)
   const store = new TerminalStore('drawer')
   const { views, factory } = fakeViews()
   render(<div className="thread-pane" id="thread-pane-thread-a" data-thread-id="thread-a">
     <PaneTerminalToggle threadId="thread-a" store={chromeStore} />
     <div className="thread-workspace__compose"><textarea aria-label="Prompt" /></div>
-    <PaneTerminalDrawer threadId="thread-a" thread={drawerThread} project={undefined} bridge={terminal.bridge} viewFactory={factory} store={store} chromeStore={chromeStore} />
+    <PaneTerminalDrawer threadId="thread-a" thread={drawerThread} project={{ path: projectPath }} bridge={terminal.bridge} viewFactory={factory} store={store} chromeStore={chromeStore} />
   </div>)
   return { chromeStore, store, views }
 }
@@ -100,6 +100,14 @@ describe('the pane terminal drawer', () => {
   it('leaves out a worktree thread’s branch, because its shells start in the project folder', async () => {
     const terminal = fakeTerminal([session(ID_1)])
     setup(terminal, { ...thread, worktree: { ...thread.worktree, mode: 'independent' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Terminal drawer' }))
+    await screen.findByRole('tab', { name: 'PowerShell', selected: true })
+    expect(screen.queryByText('feature/drawer')).toBeNull()
+  })
+
+  it('leaves out the branch of a shared thread in another checkout than the project folder', async () => {
+    const terminal = fakeTerminal([session(ID_1)])
+    setup(terminal, { ...thread, workingDirectory: 'D:\\elsewhere\\workshop', worktree: { ...thread.worktree, path: 'D:\\elsewhere\\workshop', repositoryRoot: 'D:\\elsewhere' } })
     await userEvent.click(screen.getByRole('button', { name: 'Terminal drawer' }))
     await screen.findByRole('tab', { name: 'PowerShell', selected: true })
     expect(screen.queryByText('feature/drawer')).toBeNull()
