@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
 import {
   composeReviewMessage, MAX_REVIEW_COMMENTS, ReviewCommentStore, reviewCommentText, reviewLabel, reviewRange, type ReviewLine,

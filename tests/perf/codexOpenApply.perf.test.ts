@@ -101,7 +101,7 @@ describe('Codex open benchmark', () => {
   })
 })
 
-describe.skipIf(!PERF_BENCH)('Codex open of a long thread', () => {
+describe.skipIf(!PERF_BENCH)("Codex open of a long thread (timing benchmark; requires SOTTO_PERF_BENCH=1)", () => {
   beforeAll(instrument)
   afterAll(restore)
 

@@ -15,7 +15,7 @@ afterEach(async () => {
   directory = undefined
 })
 
-describe.skipIf(process.platform !== 'linux')('Hyprland process transport over a recording stub on PATH', () => {
+describe.skipIf(process.platform !== 'linux')("Hyprland process transport over a recording stub on PATH (Linux Hyprland transport)", () => {
   it.each(['app', 'terminal', 'exit', 'reply'])('delivers the %s case with no shell interpolation', async target => {
     directory = await mkdtemp(join(tmpdir(), 'sotto-hyprctl-'))
     const log = join(directory, 'arguments.jsonl')

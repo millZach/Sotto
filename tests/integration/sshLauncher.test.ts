@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto'
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { afterEach, expect, it, vi } from 'vitest'
+import { describe, afterEach, expect, it, vi } from 'vitest'
 import { SshFailure, SshHostLauncher, type SshApproval, type SshPrompt } from '../../src/main/hosts/sshLauncher'
 import { CONTROL_OPTIONS, type SpawnSsh } from '../../src/main/hosts/sshProcess'
 import { AskpassBroker } from '../../src/main/hosts/sshAskpass'
@@ -524,27 +524,29 @@ it('ends the ssh of an update step when the update is cancelled, and keeps the c
 })
 
 // Start at boot (ADR-0054) over SSH: the real launch script behind the fake ssh, with fake systemctl and loginctl on the path.
-it.skipIf(process.platform === 'darwin')('reads start at boot when it connects, then installs and removes it over SSH, handing the host over to the unit and back', async () => {
-  const outside = await mkdtemp(join(tmpdir(), 'sotto-ssh-boot-')); directories.push(outside)
-  const systemd = await fakeSystemd(outside, { linger: true })
-  const pathKey = Object.keys(systemd.env).find(key => key.toUpperCase() === 'PATH')!
-  const { launcher, path, spawns } = await fixture('run', { env: { [pathKey]: systemd.env[pathKey], XDG_CONFIG_HOME: systemd.env.XDG_CONFIG_HOME,
-    FAKE_SYSTEMD_STATE: systemd.env.FAKE_SYSTEMD_STATE, FAKE_SYSTEMD_RECORD: systemd.env.FAKE_SYSTEMD_RECORD } })
-  await installedFlat(path)
-  const connection = await launcher.connect(configuration)
-  const detached = await runningHost(path)
-  hosts.push(detached)
-  expect(connection.bootStart).toEqual({ supported: true, installed: false, enabled: false, active: false, linger: true, nodeDrift: false })
-  const installed = await connection.boot({ op: 'boot-install' })
-  hosts.push(...await systemd.spawned())
-  expect(installed).toMatchObject({ type: 'boot-installed', installed: true, stopped: true, bootStart: { installed: true, enabled: true, active: true } })
-  expect(() => process.kill(detached, 0)).toThrow()
-  expect(await connection.boot({ op: 'boot-status' })).toEqual({ type: 'boot-status', bootStart: { supported: true, installed: true, enabled: true, active: true, linger: true, nodeDrift: false } })
-  const removed = await connection.boot({ op: 'boot-remove', restart: false })
-  expect(removed).toMatchObject({ type: 'boot-removed', stopped: true, bootStart: { installed: false } })
-  // Each operation was its own ssh, with the launch script on stdin; the install named the host this connection reached.
-  const boots = (await spawns()).filter(item => item.op?.startsWith('boot-'))
-  expect(boots.map(item => item.op)).toEqual(['boot-install', 'boot-status', 'boot-remove'])
-  for (const item of boots) expect(item.stdinSha256).toBe(SCRIPT_SHA)
-  expect(await systemd.calls()).toContain('systemctl disable --now sotto-host')
-}, 150_000)
+describe("Windows or Linux start-at-boot journey; macOS does not support it", () => {
+  it.skipIf(process.platform === 'darwin')('reads start at boot when it connects, then installs and removes it over SSH, handing the host over to the unit and back', async () => {
+    const outside = await mkdtemp(join(tmpdir(), 'sotto-ssh-boot-')); directories.push(outside)
+    const systemd = await fakeSystemd(outside, { linger: true })
+    const pathKey = Object.keys(systemd.env).find(key => key.toUpperCase() === 'PATH')!
+    const { launcher, path, spawns } = await fixture('run', { env: { [pathKey]: systemd.env[pathKey], XDG_CONFIG_HOME: systemd.env.XDG_CONFIG_HOME,
+      FAKE_SYSTEMD_STATE: systemd.env.FAKE_SYSTEMD_STATE, FAKE_SYSTEMD_RECORD: systemd.env.FAKE_SYSTEMD_RECORD } })
+    await installedFlat(path)
+    const connection = await launcher.connect(configuration)
+    const detached = await runningHost(path)
+    hosts.push(detached)
+    expect(connection.bootStart).toEqual({ supported: true, installed: false, enabled: false, active: false, linger: true, nodeDrift: false })
+    const installed = await connection.boot({ op: 'boot-install' })
+    hosts.push(...await systemd.spawned())
+    expect(installed).toMatchObject({ type: 'boot-installed', installed: true, stopped: true, bootStart: { installed: true, enabled: true, active: true } })
+    expect(() => process.kill(detached, 0)).toThrow()
+    expect(await connection.boot({ op: 'boot-status' })).toEqual({ type: 'boot-status', bootStart: { supported: true, installed: true, enabled: true, active: true, linger: true, nodeDrift: false } })
+    const removed = await connection.boot({ op: 'boot-remove', restart: false })
+    expect(removed).toMatchObject({ type: 'boot-removed', stopped: true, bootStart: { installed: false } })
+    // Each operation was its own ssh, with the launch script on stdin; the install named the host this connection reached.
+    const boots = (await spawns()).filter(item => item.op?.startsWith('boot-'))
+    expect(boots.map(item => item.op)).toEqual(['boot-install', 'boot-status', 'boot-remove'])
+    for (const item of boots) expect(item.stdinSha256).toBe(SCRIPT_SHA)
+    expect(await systemd.calls()).toContain('systemctl disable --now sotto-host')
+  }, 150_000)
+})

@@ -71,7 +71,7 @@ describe('an 8 MiB screenshot in a draft', () => {
   }, 120_000)
 })
 
-describe.skipIf(!PERF_BENCH)('an 8 MiB screenshot in a draft, timed', () => {
+describe.skipIf(!PERF_BENCH)("an 8 MiB screenshot in a draft, timed (timing benchmark; requires SOTTO_PERF_BENCH=1)", () => {
   it('reports a draft save, a shell and a persist', async () => {
     const f = await fixture()
     try {

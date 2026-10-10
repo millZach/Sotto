@@ -111,8 +111,10 @@ describe('nvm default Node', () => {
   })
 
   // nvm's `lts/*` alias is a file named `*`, which Windows cannot create; nvm does not run there either.
-  it.skipIf(process.platform === 'win32')('follows default -> lts/* to the newest LTS nvm recorded', async () => {
-    expect(await nvmDefaultBin(await nvm({ default: 'lts/*', 'lts/*': 'lts/jod', 'lts/jod': 'v22.11.0' }, versions))).toBe(bin(roots.at(-1)!, 'v22.11.0'))
+  describe("POSIX nvm aliases; Windows cannot create a literal lts/* name", () => {
+    it.skipIf(process.platform === 'win32')('follows default -> lts/* to the newest LTS nvm recorded', async () => {
+      expect(await nvmDefaultBin(await nvm({ default: 'lts/*', 'lts/*': 'lts/jod', 'lts/jod': 'v22.11.0' }, versions))).toBe(bin(roots.at(-1)!, 'v22.11.0'))
+    })
   })
 
   it('finds nothing for an uninstalled version, a system alias, a loop or no alias at all', async () => {

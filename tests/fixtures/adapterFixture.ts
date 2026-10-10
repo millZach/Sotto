@@ -7,6 +7,11 @@ export interface RecordedRpc { id?: string | number; method?: string; params?: R
 /** Short reaper settings so a test can watch a session be stopped instead of waiting out a real hour. */
 export interface AdapterSessionOptions { reaperSweepMs?: number; sessionIdleMs?: number }
 
+/** Features absent from a fixture, known before its factory acquires any resources. */
+export type AdapterContractSkips = Readonly<Partial<Record<'uncertain' | 'restart' | 'lazy' | 'sendStages'
+  | 'activitySnapshots' | 'refreshThread' | 'threadEvents' | 'backgroundWork' | 'liveSettings'
+  | 'settingsConfirmation' | 'clientUpdate', string>>>
+
 export interface AdapterFixture {
   host: AgentHost; projectId: string; modelId: string; root: string
   driver: {
@@ -41,7 +46,7 @@ export interface AdapterFixture {
     stopped(threadId: string): Promise<boolean>
   }
   /** `sendStages`: the host writes no prompt to a client, so it has none to mark written and acknowledged (#763). */
-  skips?: Partial<Record<'uncertain' | 'restart' | 'lazy' | 'sendStages', string>>
+  skips?: AdapterContractSkips
   /**
    * Sotto's side writing on this provider's own client (ADR-0026): script the next answer, and read back
    * what each side call was given. Absent where the provider writes nothing, whose adapter answers null.
