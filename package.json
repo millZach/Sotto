@@ -24,6 +24,7 @@
     "notices:verify": "node scripts/verify-notices.mjs",
     "package:dir": "npm run assets:verify && npm run build && node scripts/write-build-provenance.mjs && electron-builder --dir --win --x64 --publish never && node scripts/verify-packaged-resources.mjs release/win-unpacked",
     "package:win": "npm run assets:verify && npm run build && node scripts/write-build-provenance.mjs && electron-builder --win nsis --x64 --publish never && node scripts/verify-packaged-resources.mjs release/win-unpacked --installer \"release/Sotto Setup 0.1.34.exe\"",
+    "package:owl": "node scripts/package-owl.mjs",
     "package:dir:mac": "npm run assets:verify && npm run build && node scripts/write-build-provenance.mjs && electron-builder --dir --mac --arm64 --config.npmRebuild=true --publish never && node scripts/verify-packaged-resources.mjs release/mac-arm64",
     "package:mac": "npm run assets:verify && npm run build && node scripts/write-build-provenance.mjs && electron-builder --mac dmg --arm64 --config.npmRebuild=true --publish never && node scripts/verify-packaged-resources.mjs release/mac-arm64 --installer \"release/Sotto-0.1.34-arm64.dmg\"",
     "build:host": "node scripts/build-host.mjs",

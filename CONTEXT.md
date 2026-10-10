@@ -2,6 +2,8 @@
 
 Sotto is a desktop dictation app with manual coding threads across native providers. This file is the glossary for that domain. Use these terms in issues, tests and code; do not drift to the synonyms each entry lists as avoided.
 
+**Sotto Owl.** Sotto's preview release track and its builds, installed in place of Sotto with the same local data. Watcher is the coordinating thread's name, a different thing. Avoid: "Owl app" for a separate installation, "Owl" for the coordinating thread.
+
 ## Threads
 
 **Command center.** The one current native agent thread on a computer given Sotto's bounded thread tools and brokered project reads, with its own room (ADR-0069). Earlier conversations become command-center history when its provider changes. Avoid: the old "Coordinator", "assignment", "Agents room".

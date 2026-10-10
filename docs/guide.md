@@ -765,3 +765,9 @@ If Sotto cannot read its saved keys, it preserves the encrypted file and shows a
   ```
 
 - **Sotto quits immediately after launching:** Check that the Mac has Apple silicon (Apple menu → About This Mac). Intel Macs are not supported and the arm64 build cannot run on them.
+
+## Sotto Owl on Windows
+
+Sotto Owl is Sotto's preview track for Watcher. Close Sotto and install the Owl installer over it to keep your existing data. Owl offers only newer Owl builds; downloads and restarts still ask. Install a stable installer over Owl to return to the stable feed.
+
+Current stable keeps ordinary threads, conversation history, drafts, keys, settings and the dictation shortcut, but drops Watcher's control record and thread roles on save. Its conversations then appear as ordinary threads. Back up the closed profile if you need to return to Watcher. See [the release procedure](release/releasing.md#cutting-a-sotto-owl-build-windows) for the tested data behavior and publishing steps. Owl is Windows only; macOS has no updater and Linux is outside this preview track.

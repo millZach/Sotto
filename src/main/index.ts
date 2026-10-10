@@ -1043,7 +1043,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // 'unsupported' phase without constructing electron-updater at all.
   const updatesSupported = app.isPackaged && e2eConfiguration === null && profile.inAppUpdates
   const updates = new UpdateService({
-    currentVersion: appVersion,
+    // Packaging can override version without editing the source manifest (Owl).
+    currentVersion: app.getVersion(),
     getSettings: () => settings.get(),
     ...(updatesSupported ? { createUpdater: createElectronUpdaterAdapter } : {}),
     onStatusChanged: (status) => {

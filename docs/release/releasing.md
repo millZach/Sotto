@@ -15,7 +15,7 @@ First-run setup's **Get the iPhone beta** opens `IPHONE_BETA_URL` in `src/shared
 3. Build: `npm run package:win` on the Windows PC, `npm run package:mac` on the Mac, and `npm run package:linux` on forge. Each run verifies the Claude SDK and terminal assets, writes build provenance and checks the packaged resources. The check refuses retired voice workers and ONNX runtime assets.
 4. Create release `vX.Y.Z` titled `Sotto X.Y.Z (beta)` on `millZach/Sotto-releases` and attach every installer, disk image and Linux desktop archive and pacman package.
 5. Assemble `SHA256SUMS.txt` and upload it last, after every artifact is attached.
-6. Mark the superseded release as a pre-release so the newest release is the only "Latest".
+6. Mark the superseded **stable** release as a pre-release so the newest stable release is the only "Latest". Its plain `vX.Y.Z` tag still identifies it as stable. Owl tags contain `-owl.` and are always prereleases, never Latest; do not promote one during stable cleanup.
 
 ## Artifacts
 
@@ -41,6 +41,40 @@ macOS builds are ad-hoc signed (`identity: '-'`) and not notarized, so the relea
 ## Where the feeds point
 
 electron-builder's publish config and the Windows auto-update feed point at `millZach/Sotto-releases`. Windows installs are offered the new version by the in-app updater; macOS users download the disk image by hand. Linux users install the next pacman package; once `sotto-bin` is in the AUR, `omarchy update` brings it.
+
+## Cutting a Sotto Owl build (Windows)
+
+Sotto Owl is the preview track, not a second app. Watcher is the coordinating thread being finished on `command-center`. Build from `command-center` with the reviewed Owl packaging change until Watcher is ready, then from `main`. The stable steps and every existing package command above stay unchanged. Run the normal gates and manual Windows desktop check before publishing, as for a stable release. Publish only a reviewed clean-commit build; rebuild after committing local verification changes.
+
+The version is the next patch of the checkout's stable package version, followed by `-owl.<UTC YYYYMMDD>.<n>`. The lead chooses the next positive number for that date, checking existing Owl tags first. `0.1.34` becomes `0.1.35-owl.20261009.1`, then `.2` for the day's next build. Never reuse a published version or replace its assets.
+
+1. Archive previous output as in stable step 2, then run `npm run package:owl -- --date 20261009 --number 1` for the first build. Omit `--date` to use today's UTC date. The script runs asset verification, builds, records provenance, builds x64 NSIS with `--publish never`, checks unpacked and installer resources, and checks the manifest's version, filename, size and SHA512. It does not edit `package.json` or `package-lock.json` and never installs or publishes.
+2. Review `release/win-unpacked`, `release/Sotto Owl Setup 0.1.35-owl.20261009.1.exe`, its blockmap and `release/owl.yml`. The script also makes dashed copies for GitHub: `Sotto-Owl-Setup-0.1.35-owl.20261009.1.exe` and `.exe.blockmap`. Upload those exact names because `owl.yml` refers to the dashed installer. Keep any stable `latest.yml` left by earlier packaging out of the Owl release.
+3. Create a GitHub prerelease on `millZach/Sotto-releases` tagged `v0.1.35-owl.20261009.1`, titled `Sotto Owl 0.1.35-owl.20261009.1`, explicitly **never Latest**. Attach the dashed installer, its blockmap and `owl.yml`. Do not attach `latest.yml` or change which stable release is Latest.
+4. Generate `SHA256SUMS.txt` over those three files, using lower-case hex and two spaces before each filename, and upload it last. For the first build, the lead runs the following after review (these commands publish):
+
+```powershell
+$owlVersion = '0.1.35-owl.20261009.1'
+$owlFiles = @("release/Sotto-Owl-Setup-$owlVersion.exe", "release/Sotto-Owl-Setup-$owlVersion.exe.blockmap", 'release/owl.yml')
+$owlSums = $owlFiles | ForEach-Object {
+  (Get-FileHash -Algorithm SHA256 -LiteralPath $_).Hash.ToLower() + '  ' + (Split-Path -Leaf $_)
+}
+[IO.File]::WriteAllText((Join-Path $PWD 'release/SHA256SUMS.txt'), ($owlSums -join "`n") + "`n", [Text.UTF8Encoding]::new($false))
+gh release create "v$owlVersion" @owlFiles --repo millZach/Sotto-releases --title "Sotto Owl $owlVersion" --prerelease --latest=false --notes 'Windows preview of Watcher. Installs over Sotto and shares its data. Returning to current stable loses Watcher control metadata; see the release procedure before switching back.'
+gh release upload "v$owlVersion" release/SHA256SUMS.txt --repo millZach/Sotto-releases
+gh release view "v$owlVersion" --repo millZach/Sotto-releases --json tagName,isPrerelease,assets
+gh api repos/millZach/Sotto-releases/releases/latest --jq .tag_name
+```
+
+Confirm the Owl prerelease has all four files and the latest-release endpoint still names the stable tag. Download the published assets and verify their SHA256 sums. Neither verification nor packaging authorizes publication.
+
+To switch a Windows machine from Sotto to Owl, close Sotto and run the Owl installer over the existing installation. App ID `com.sotto.desktop`, product name Sotto, installer identity, executable and data directory stay unchanged, keeping threads, settings, keys and the dictation shortcut. Do not uninstall or delete the profile. The running version selects the track: Owl looks for `owl` tags and `owl.yml`, validates tag/manifest agreement, and refuses equal or older versions. Stable keeps `allowPrerelease = false` and `latest.yml`. Both still ask before download and restart.
+
+To return, close Owl and install the stable installer over it. Back up the closed profile first if you need to return to Watcher later. The actual `origin/main` load/save check at `09ea3f423` retained all ten fixture threads and their titles, the four conversation histories, the selected ordinary thread and draft, language, dictation shortcut and synthetic formatting credential. It made no corrupt backup and reset none of those values. On save it dropped the whole `agents.json.commandCenter` record (including current identity, requests, participants, operations, reservations and read positions), every thread's `kind` in `workspace.json`, and `commandCenterInFlightLimit`. Watcher and its history then become ordinary threads. Stable also drops `llmQuality`, intentionally retired on main by its own ADR-0069. Returning to this Owl branch starts Watcher state empty, capacity at 4 and cleanup quality at its default, unless a backup is restored.
+
+A lossless return needs a main change that preserves parked Watcher metadata and its capacity setting through load/save, preserves and safely handles special thread kinds rather than treating those threads as ordinary workers, and tests an Owl-to-stable-to-Owl round trip. This change does not patch main. [The verification note](../verification/2026-10-09-sotto-owl.md) names the executed paths and the synthetic profile's limits.
+
+Owl packaging and updates are Windows only for now. macOS has no updater (ADR-0001); an Owl Mac build would be by hand on Zach's Mac later. Linux is out of scope.
 
 ## Linux desktop package
 

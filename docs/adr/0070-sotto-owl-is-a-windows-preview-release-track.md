@@ -1,0 +1,15 @@
+# 70. Sotto Owl is a Windows preview release track
+
+Accepted by Zach on October 9, 2026. **Number provisional until merge:** 0070 is above every ADR on this branch and `origin/main` at `09ea3f423`; recheck and renumber all references before merging (docs/agents/domain.md).
+
+Zach chose [T3 Code's nightly model](https://github.com/pingdotgg/t3code/blob/main/docs/operations/release.md) to run Watcher before it reaches main. **Sotto Owl** is the preview release track and its builds. **Watcher** is the coordinating thread, a separate thing. Owl replaces Sotto on a machine: app ID, product name, executable, installer identity, shortcuts and data directory stay Sotto's. Only the installer filename and release title say Sotto Owl; renderer branding will use the version-derived track signal in a later change.
+
+An Owl version is `<next stable patch>-owl.<UTC YYYYMMDD>.<positive daily number>`. Package version `0.1.34` produces `0.1.35-owl.20261009.1`. The release lead chooses the day's next number. `package:owl` overrides packaged metadata without changing either source package manifest. Builds come from `command-center` until Watcher is ready, then `main`.
+
+Windows Owl releases are GitHub prereleases on the existing public `millZach/Sotto-releases` repository, never marked latest, with `owl.yml` and NSIS blockmaps. The installed electron-updater GitHub provider selects the `owl` prerelease identifier from Atom tags, ignoring stable tags even when GitHub marks old stable releases as prereleases. A validating provider requires an Owl manifest version matching that tag before an offer can become downloadable, including the upstream provider's `latest.yml` fallback within the selected Owl release. Setting a channel enables downgrades upstream, so Owl explicitly disables them. The normal semantic-version gate admits only a strictly newer build. Stable keeps its existing `allowPrerelease = false`, GitHub latest release and `latest.yml` behavior. Owl is never made GitHub's latest release and receives no stable manifest for publication.
+
+Both tracks keep automatic download and installation on quit disabled. Existing consent, check cadence and privacy settings stay in force. No new host, permission grant, IPC channel or production dependency is added. `UpdateStatus.releaseTrack` and `useReleaseTrack()` expose the track through existing update information, including when updates are unsupported.
+
+This track is Windows only. macOS still has no updater (ADR-0001); a later Owl Mac build would be cut by hand on Zach's Mac. Linux is out of scope. Stable package commands, output names and platform targets are unchanged.
+
+Installing a stable installer switches back to its stable feed, but current stable drops Watcher metadata when it saves the shared profile. Its ordinary data survives; Watcher roles and control state do not. [The verification note](../verification/2026-10-09-sotto-owl.md) records the actual stable load/save paths and the preservation fix main needs. Switching installers is not a lossless Watcher round trip until that fix lands.

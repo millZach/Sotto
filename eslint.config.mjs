@@ -4,6 +4,7 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   {
     ignores: [
+      'artifacts/sotto-owl-release/**',
       'artifacts/command-center-benchmark/**',
       'artifacts/command-center-live/**',
       'artifacts/voice-control-removal/merged-setup/**',

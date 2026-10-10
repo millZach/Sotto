@@ -1,4 +1,8 @@
 node_modules/
+artifacts/sotto-owl-release/*
+!artifacts/sotto-owl-release/runtime.png
+!artifacts/sotto-owl-release/update-status.json
+!artifacts/sotto-owl-release/stable-profile.json
 artifacts/command-center-live/
 artifacts/skill-pill-composer/*
 !artifacts/skill-pill-composer/proof.json
