@@ -179,6 +179,7 @@ private struct TerminalRequestCard: View, Equatable {
                 if row.terminal.hasAnswerChannel {
                     NavigationLink(value: TerminalRoute(ref: row.ref)) { Text("Review permission") }
                         .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
+                        .accessibilityIdentifier("terminal-review-permission")
                 }
             }
         }

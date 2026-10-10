@@ -49,10 +49,17 @@ import XCTest
         XCTAssertTrue(note.exists)
         XCTAssertFalse(app.buttons["terminal-answer-yes"].exists)
         XCTAssertTrue(byID("terminal-approval-preview").exists)
+        reveal(app.buttons["terminal-review-permission"], fullyVisible: true)
         capture("terminals-permission-cannot-answer-dark")
-        let codex = terminal("66666666-6666-4666-8666-666666666666")
-        reveal(codex)
+        let finished = terminal("55555555-5555-4555-8555-555555555555")
+        let thread = row("shortcuts")
+        reveal(finished, fullyVisible: true)
+        reveal(thread, fullyVisible: true)
+        XCTAssertTrue(finished.isHittable)
+        XCTAssertTrue(thread.isHittable)
         capture("terminals-recent-mixed-dark")
+        let codex = terminal("66666666-6666-4666-8666-666666666666")
+        reveal(codex, swipingDown: true)
         codex.tap()
         XCTAssertTrue(text("Answer this one in the terminal on Laptop.").waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["terminal-answer-yes"].exists)
@@ -66,6 +73,7 @@ import XCTest
         reveal(yes)
         XCTAssertTrue(yes.isEnabled)
         XCTAssertTrue(app.buttons["terminal-answer-no"].exists)
+        reveal(app.buttons["More choices"].firstMatch, fullyVisible: true)
         capture("terminals-permission-can-answer-dark")
         app.buttons["More choices"].firstMatch.tap()
         XCTAssertTrue(app.alerts["More choices"].waitForExistence(timeout: 10))
@@ -80,7 +88,7 @@ import XCTest
         XCTAssertTrue(working.waitForExistence(timeout: 10), "The confirmed answer returns this terminal to Working")
         XCTAssertFalse(app.buttons["terminal-answer-yes"].exists)
         XCTAssertFalse(app.buttons["terminal-answer-no"].exists)
-        reveal(working)
+        reveal(working, fullyVisible: true)
         capture("terminals-permission-answered")
     }
 
@@ -138,11 +146,12 @@ import XCTest
         attachment.lifetime = .keepAlways
         add(attachment)
     }
-    private func reveal(_ element: XCUIElement, swipingDown: Bool = false) {
+    private func reveal(_ element: XCUIElement, swipingDown: Bool = false, fullyVisible: Bool = false) {
         var down = swipingDown
         var steps: [String] = []
+        var lastViewport = CGRect.null
         for attempt in 0..<40 {
-            if element.exists && element.isHittable { return }
+            if element.exists && element.isHittable && !fullyVisible { return }
             // A full-window fling can skip a whole card. Keep each drag inside the foreground
             // scroll view, clear of the pinned search/header and the floating system tab bar.
             guard let scroll = app.scrollViews.allElementsBoundByIndex.last(where: { $0.isHittable }) else {
@@ -159,11 +168,18 @@ import XCTest
                 steps.append("No usable scroll viewport: \(visible)")
                 break
             }
+            lastViewport = visible.insetBy(dx: 0, dy: 12)
+            if element.exists && element.isHittable && lastViewport.contains(element.frame) { return }
             if element.exists {
                 let target = element.frame
                 if !target.isEmpty {
-                    if target.maxY <= visible.minY + 12 { down = true }
-                    else if target.minY >= visible.maxY - 12 { down = false }
+                    if fullyVisible {
+                        if target.minY < lastViewport.minY { down = true }
+                        else if target.maxY > lastViewport.maxY { down = false }
+                    } else {
+                        if target.maxY <= visible.minY + 12 { down = true }
+                        else if target.minY >= visible.maxY - 12 { down = false }
+                    }
                 }
                 steps.append("\(attempt): target \(target), viewport \(visible), down \(down)")
             } else {
@@ -178,13 +194,14 @@ import XCTest
             let end = origin.withOffset(CGVector(dx: x, dy: y + direction * distance / 2))
             start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.15)
         }
-        if element.exists && element.isHittable { return }
+        let reached = element.exists && element.isHittable && (!fullyVisible || lastViewport.contains(element.frame))
+        if reached { return }
         capture("unreachable-control")
         let diagnostic = XCTAttachment(string: steps.joined(separator: "\n") + "\n\n" + app.debugDescription)
         diagnostic.name = "Scroll reachability and accessibility hierarchy"
         diagnostic.lifetime = .keepAlways
         add(diagnostic)
-        XCTAssertTrue(element.isHittable, "The control must remain reachable by scrolling")
+        XCTAssertTrue(reached, "The control must remain reachable and meet the requested visibility by scrolling")
     }
     private func waitForRenderedOrientation(landscape: Bool) {
         var consecutiveMatches = 0
