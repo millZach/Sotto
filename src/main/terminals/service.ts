@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { access, mkdir, writeFile } from 'node:fs/promises'
 import { basename, join, win32 as win32Path } from 'node:path'
 import type { IPty, IPtyForkOptions } from 'node-pty'
@@ -13,6 +13,8 @@ import type { RunGit, ThreadWorktrees } from '../agents/threadWorktrees'
 import { ToolOperations, fail, parse } from '../tools/common'
 import { prepareTerminalAgentHooks, type PreparedTerminalAgentHooks } from './hooks'
 import { TerminalAgentStateMachine } from './state'
+import type { PhoneTerminal, PhoneTerminalAnswer, PhoneTerminalApproval, PhoneTerminals } from '../../shared/phoneTerminals'
+import type { TerminalAgentHookEvent, TerminalHookAnswer } from './hooks'
 
 export interface TerminalWorkspaceDependencies {
   projects: () => readonly AgentProject[]
@@ -45,6 +47,9 @@ interface LiveTerminal {
   agent?: TerminalAgentStateMachine | undefined
   hooks?: PreparedTerminalAgentHooks | undefined
   activityTimer?: ReturnType<typeof setTimeout> | undefined
+  plainActive?: boolean
+  approvals?: Map<string, TerminalAgentHookEvent>
+  answers?: Map<string, { answer: TerminalHookAnswer; settle(delivered: boolean): void }>
 }
 
 interface Launcher { readonly file: string; readonly args: string[]; readonly command: string }
@@ -64,13 +69,14 @@ const powerShellQuote = (token: string): string => `'${token.replace(/['\u2018-\
  * plain shell or a provider CLI with the flags the dialog chose. Main owns the PTYs for the session; nothing is kept
  * across a restart of Sotto.
  */
-export class TerminalWorkspaceService extends ToolOperations {
+export class TerminalWorkspaceService extends ToolOperations implements PhoneTerminals {
   private readonly terminals = new Map<string, LiveTerminal>()
   private cachedShell: ResolvedShell | null = null
   private shellLookup: Promise<ResolvedShell> | null = null
   private spawnLoad: Promise<SpawnProcess> | null = null
   private readonly visibleClients = new Map<object, { ids: ReadonlySet<string>; active: () => boolean }>()
   private readonly defaultVisibilityClient = {}
+  private readonly phoneListeners = new Set<() => void>()
   constructor(private readonly dependencies: TerminalWorkspaceDependencies) {
     super()
     this.warm()
@@ -81,7 +87,11 @@ export class TerminalWorkspaceService extends ToolOperations {
     void this.spawner().catch(() => { /* Reported when a terminal actually starts. */ })
   }
   private now(): number { return this.dependencies.now?.() ?? Date.now() }
-  private publish(record: LiveTerminal): void { this.dependencies.emit({ type: 'terminal', terminal: { ...record.terminal } }) }
+  private publish(record: LiveTerminal): void {
+    this.dependencies.emit({ type: 'terminal', terminal: { ...record.terminal } })
+    this.publishPhoneRows()
+  }
+  private publishPhoneRows(): void { for (const listener of this.phoneListeners) listener() }
   private snapshot(record: LiveTerminal): WorkspaceTerminalSnapshot { return { terminal: { ...record.terminal }, output: record.output, sequence: record.sequence } }
   private syncAgent(record: LiveTerminal): void {
     if (!record.agent || this.disposed) return
@@ -101,6 +111,45 @@ export class TerminalWorkspaceService extends ToolOperations {
     for (const record of this.terminals.values()) { record.agent?.setVisible(this.isVisible(record.terminal.id)); this.syncAgent(record) }
   }
   withdrawVisibility(client: object): void { this.visibleClients.delete(client); this.refreshVisibility() }
+  subscribePhoneRows(listener: () => void): () => void { this.phoneListeners.add(listener); return () => this.phoneListeners.delete(listener) }
+  private phoneBinding(record: LiveTerminal): TerminalAgentHookEvent | undefined {
+    if (!record.pty || record.terminal.launch.provider !== 'claude' || !record.hooks || !record.agent) return undefined
+    const requests = [...record.approvals?.values() ?? []].filter(event => event.requestId && record.agent!.hasRequest(event.requestId))
+    return requests.length === 1 && !record.answers?.has(requests[0]!.requestId!) ? requests[0] : undefined
+  }
+  phoneRows(): PhoneTerminal[] {
+    if (this.disposed) return []
+    return [...this.terminals.values()].filter(record => record.terminal.closedAt === null).map(record => {
+      const terminal = record.terminal, request = this.phoneBinding(record)
+      return { id: terminal.id, projectId: terminal.projectId, title: terminal.title, providerId: terminal.launch.provider,
+        state: terminal.agentState ?? (terminal.status === 'starting' ? 'starting' : terminal.status === 'running' ? record.plainActive ? 'working' : 'idle' : 'exited'),
+        stateDetection: terminal.stateDetection ?? 'unavailable', openedAt: terminal.openedAt,
+        ...(request ? { approval: { runId: request.runId, requestId: request.requestId!, approvalId: request.approvalId! } } : {}) }
+    })
+  }
+  phoneApproval(terminalId: string): PhoneTerminalApproval | null {
+    if (this.disposed) return null
+    const record = this.terminals.get(terminalId), request = record && this.phoneBinding(record)
+    const lines = request && record?.agent?.approvalLines()
+    if (!request || !lines?.length) return null
+    const binding = { terminalId, runId: request.runId, requestId: request.requestId!, approvalId: request.approvalId! }
+    return { ...binding, lines, previewId: createHash('sha256').update(JSON.stringify({ ...binding, lines })).digest('hex') }
+  }
+  async answerPhoneApproval(answer: PhoneTerminalAnswer, authorized: () => boolean): Promise<boolean> {
+    const preview = this.phoneApproval(answer.terminalId), record = this.terminals.get(answer.terminalId)
+    if (!preview || !record?.hooks || preview.runId !== answer.runId || preview.requestId !== answer.requestId ||
+      preview.approvalId !== answer.approvalId || preview.previewId !== answer.previewId || !authorized()) return false
+    const hookAnswer: TerminalHookAnswer = { terminalId: answer.terminalId, runId: answer.runId, requestId: answer.requestId,
+      approvalId: answer.approvalId, decision: answer.decision, answerId: randomUUID() }
+    // Reserve the exact request before writing; a competing desktop/phone answer cannot enter while awaiting its ack.
+    let settle!: (delivered: boolean) => void
+    const delivered = new Promise<boolean>(resolve => { settle = resolve })
+    record.answers ??= new Map()
+    record.answers.set(answer.requestId, { answer: hookAnswer, settle })
+    if (!record.hooks.answer(hookAnswer)) { record.answers.delete(answer.requestId); settle(false) }
+    this.publish(record)
+    return delivered
+  }
   private requireCapacity(): void {
     if ([...this.terminals.values()].filter(record => record.terminal.closedAt === null).length >= TERMINALS_MAX) return fail('busy', `Close a terminal before opening another (${TERMINALS_MAX} maximum).`)
   }
@@ -279,10 +328,24 @@ export class TerminalWorkspaceService extends ToolOperations {
             terminalId: record.terminal.id, provider,
             onEvent: event => {
               if (this.disposed || generation !== record.generation || !record.agent || record.agent.state === 'exited') return
-              record.agent.setVisible(this.isVisible(record.terminal.id)); record.agent.hook(event); this.syncAgent(record)
+              record.agent.setVisible(this.isVisible(record.terminal.id)); record.agent.hook(event)
+              if (event.kind === 'permission' && event.requestId && event.approvalId && record.agent.hasRequest(event.requestId)) {
+                record.approvals ??= new Map(); record.approvals.set(event.requestId, event)
+                this.publish(record)
+              }
+              this.syncAgent(record)
             },
-            onRequestClosed: requestId => { if (!this.disposed && generation === record.generation) { record.agent?.requestClosed(requestId); this.syncAgent(record) } },
-            onUnavailable: () => { if (!this.disposed && generation === record.generation) { record.agent?.unavailable(); this.syncAgent(record) } },
+            onRequestClosed: requestId => { if (!this.disposed && generation === record.generation) {
+              record.approvals?.delete(requestId); record.answers?.get(requestId)?.settle(false); record.answers?.delete(requestId)
+              record.agent?.requestClosed(requestId); this.syncAgent(record); this.publish(record)
+            } },
+            onAnswerDelivered: answer => {
+              const pending = record.answers?.get(answer.requestId)
+              if (generation === record.generation && pending?.answer.answerId === answer.answerId) pending.settle(true)
+            },
+            onUnavailable: () => { if (!this.disposed && generation === record.generation) {
+              this.clearApprovals(record); record.agent?.unavailable(); this.syncAgent(record); this.publish(record)
+            } },
           })
           if (this.disposed || generation !== record.generation) { hooks.dispose(); return }
           record.hooks = hooks
@@ -311,6 +374,11 @@ export class TerminalWorkspaceService extends ToolOperations {
         if (record.agent) {
           clearTimeout(record.activityTimer)
           record.activityTimer = setTimeout(() => { if (record.pty !== pty || this.disposed) return; record.agent?.quiet(); this.syncAgent(record) }, 4000)
+          record.activityTimer.unref()
+        } else {
+          if (!record.plainActive) { record.plainActive = true; this.publishPhoneRows() }
+          clearTimeout(record.activityTimer)
+          record.activityTimer = setTimeout(() => { record.plainActive = false; if (record.pty === pty && !this.disposed) this.publishPhoneRows() }, 4000)
           record.activityTimer.unref()
         }
         for (let offset = 0; offset < data.length;) {
@@ -458,10 +526,17 @@ export class TerminalWorkspaceService extends ToolOperations {
     try { pty?.kill() } catch { /* Already exited. */ }
   }
   private releaseAgentRun(record: LiveTerminal): void {
+    this.clearApprovals(record)
     record.agent?.exit(); record.hooks?.dispose(); record.hooks = undefined; clearTimeout(record.activityTimer)
+    record.plainActive = false
+  }
+  private clearApprovals(record: LiveTerminal): void {
+    for (const pending of record.answers?.values() ?? []) pending.settle(false)
+    record.answers?.clear(); record.approvals?.clear()
   }
   dispose(): void {
     this.disposed = true
     for (const record of this.terminals.values()) { ++record.generation; record.starting = false; record.ready = undefined; this.kill(record) }
+    this.phoneListeners.clear(); this.visibleClients.clear()
   }
 }

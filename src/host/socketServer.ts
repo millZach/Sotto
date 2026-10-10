@@ -19,6 +19,7 @@ import { ProviderSignInRefusal, type ProviderSignIns } from './providerSignIn'
 import { SocketFrames } from './socketFrames'
 import { hostPhonesCommandSchema, type HostPhonesCommand, type PhonesState } from '../shared/phones'
 import { CommandReceipts, type CommandReceipt } from './commandReceipts'
+import type { PhoneTerminals } from '../shared/phoneTerminals'
 
 const errors: Record<HostErrorCode, string> = {
   unauthenticated: HOST_SESSION_REJECTED,
@@ -69,12 +70,14 @@ class Refusal extends Error { constructor(readonly code: HostErrorCode, message 
  * `desktop` is whether the launch script recorded this client as a desktop (ADR-0053), read when its socket opened and
  * again at its hello. On a listener that tells desktops apart, only a desktop is offered the desktop-only features.
  */
-interface Peer { desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; activitySummaries: boolean; catalogRevisions: boolean; catalogSent: number | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget> }
+interface Peer { desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; activitySummaries: boolean; catalogRevisions: boolean; catalogSent: number | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>; terminals: boolean; terminalPreviews: Map<string, string> }
 /** A shell ready to write to one peer, and the catalog revision it carries whole, if any, to record once it is written. */
 interface WireShell { state: HostWireShell; carries: number | null }
 export interface SocketServerOptions {
   service: HostService; pairing: PairedClients; port?: number; origins?: readonly string[]
   mayAnswer?: (client: ClientIdentity) => boolean
+  /** Desktop-owned Terminal mode only, on its paired phone listener. No shell input or screen stream. */
+  terminals?: PhoneTerminals
   setAnswers?: (clientId: string, allowed: boolean) => void
   /**
    * The command receipts this listener answers retries from. A headless host's two listeners share one, so a command
@@ -177,6 +180,7 @@ export async function startSocketServer(options: SocketServerOptions) {
   const hostId = service.shell().hostId
   if (!hostId) throw new Error('The host must have an identity before listening.')
   const features = HOST_FEATURES.filter(feature => (feature !== 'provider-sign-in' || options.signIns !== undefined)
+    && (feature !== 'terminals' || options.terminals !== undefined)
     && (feature !== 'answer-check' || service.checkRequestAnswer !== undefined)
     && (feature !== 'atomic-send' || service.supportsAtomicSend === true)
     && (feature !== 'draft-revisions' || service.supportsDraftRevisions === true)
@@ -227,7 +231,8 @@ export async function startSocketServer(options: SocketServerOptions) {
       clientCapabilities: { mayAnswer: options.mayAnswer?.(peer.client) ?? false } })
     // A client from before #480 reads the client updates' channel and state against the values it knows, and one it
     // does not know would make it refuse the whole shell: it is sent them as it knew them.
-    return peer.clientUpdates || !state.clientUpdates ? own : { ...own, clientUpdates: state.clientUpdates.map(clientUpdateForOlderClient) }
+    const rows = peer.terminals && options.terminals ? { ...own, terminals: options.terminals.phoneRows() } : own
+    return peer.clientUpdates || !state.clientUpdates ? rows : { ...rows, clientUpdates: state.clientUpdates.map(clientUpdateForOlderClient) }
   }
   /**
    * The catalog revisions this listener names to peers that accept `model-catalog-revision`. One counter for every
@@ -384,6 +389,46 @@ export async function startSocketServer(options: SocketServerOptions) {
     if (!isAgentThreadDetailDelta(update)) waiting.set(update.threadId, update)
     detailPublisher.publish(update)
   })
+  const unsubscribeTerminals = options.terminals?.subscribePhoneRows(() => shellPublisher.publish(service.shell()))
+  const requireTerminals = (peer: Peer): PhoneTerminals => {
+    if (!peer.terminals || !offers(peer, 'terminals') || !options.terminals) throw new Refusal('invalid_request')
+    return options.terminals
+  }
+  const terminalAnswer = async (peer: Peer, request: Extract<HostRequest, { op: 'answer-terminal' }>): Promise<unknown> => {
+    const terminals = requireTerminals(peer)
+    const digest = createHash('sha256').update(JSON.stringify({ op: request.op, answer: request.answer })).digest('hex')
+    const previous = receipts.get(peer.client.clientId, request.id)
+    if (previous) {
+      if (previous.digest !== digest) throw new Refusal('invalid_request')
+      await previous.task
+      if (previous.receipt.error) throw new Refusal(previous.receipt.error.code, previous.receipt.error.message)
+      return { answerDelivered: previous.receipt.answerDelivered === true }
+    }
+    const authorized = (): boolean => !closing && !peer.frames.isClosed && authenticated(peer) && admits(peer.client.clientId) && (options.mayAnswer?.(peer.client) ?? false)
+    if (!authorized()) throw new Refusal('forbidden')
+    const current = terminals.phoneApproval(request.answer.terminalId)
+    if (!current || peer.terminalPreviews.get(request.answer.terminalId) !== request.answer.previewId ||
+      current.previewId !== request.answer.previewId || current.runId !== request.answer.runId ||
+      current.requestId !== request.answer.requestId || current.approvalId !== request.answer.approvalId) {
+      throw new Refusal('stale_request', 'This terminal approval has changed or ended. Review it again, or answer on the computer.')
+    }
+    if (!receipts.makeRoom()) throw new Refusal('busy')
+    const receipt: HostReceipt = { status: 'pending' }
+    const task = (async () => {
+      try {
+        receipt.answerDelivered = await terminals.answerPhoneApproval(request.answer, authorized)
+        if (!receipt.answerDelivered) throw new Refusal('unavailable', 'Delivery to the terminal hook is unconfirmed. Check the terminal on the computer before answering again.')
+        receipt.status = 'completed'
+        return { answerDelivered: true }
+      } catch (error) {
+        const refusal = error instanceof Refusal ? error : new Refusal('unavailable')
+        receipt.status = 'completed'; receipt.error = { code: refusal.code, message: refusal.message }
+        throw refusal
+      }
+    })()
+    receipts.record(peer.client.clientId, request.id, { digest, receipt, task })
+    return task
+  }
   /** The permission settings of a new or changed thread's model that let the provider do nothing unasked. */
   const askingProviderModes = (input: AgentCommand): string[] => {
     if (input.type !== 'create-thread' && input.type !== 'configure-thread') return []
@@ -494,11 +539,28 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.catalogRevisions = request.accepts?.includes('model-catalog-revision') ?? false
         peer.activitySummaries = request.accepts?.includes('activity-summaries') ?? false
         peer.answerReceipts = (request.accepts?.includes('answer-receipts') ?? false) && offers(peer, 'answer-receipts')
+        peer.terminals = (request.accepts?.includes('terminals') ?? false) && offers(peer, 'terminals')
+        if (!peer.terminals) { peer.terminalPreviews.clear(); options.terminals?.withdrawVisibility(peer) }
         const phoneAccess = peer.desktop ? options.phoneAccess?.() : undefined
         return { hostId, clientId: peer.client.clientId, shell: shell(peer), capabilities: { mayAnswer: options.mayAnswer?.(peer.client) ?? false }, sottoVersion, features: featuresFor(peer),
           ...about(), ...(phoneAccess ? { phoneAccess } : {}), ...events(peer, peer.afterSeq) }
       }
       case 'shell': return shell(peer)
+      case 'terminal-approval': {
+        const approval = requireTerminals(peer).phoneApproval(request.terminalId)
+        if (approval) {
+          peer.terminalPreviews.set(request.terminalId, approval.previewId)
+          while (peer.terminalPreviews.size > 64) peer.terminalPreviews.delete(peer.terminalPreviews.keys().next().value!)
+        }
+        else peer.terminalPreviews.delete(request.terminalId)
+        return approval
+      }
+      case 'observe-terminals': {
+        const terminals = requireTerminals(peer)
+        await terminals.visibility({ ids: request.terminalIds }, peer, () => !closing && !peer.frames.isClosed && authenticated(peer) && admits(peer.client.clientId))
+        return null
+      }
+      case 'answer-terminal': return terminalAnswer(peer, request)
       case 'detail': return forPeer(peer, service.threadDetail(request.threadId))
       case 'check-answer': {
         if (!offers(peer, 'answer-check') || !service.checkRequestAnswer) throw new Refusal('invalid_request')
@@ -780,10 +842,10 @@ export async function startSocketServer(options: SocketServerOptions) {
     const accept = createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64')
     stream.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + accept + '\r\n\r\n')
     const frames = new SocketFrames(stream, false, text => onMessage(peer, text))
-    const peer: Peer = { desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), held: new Map(), opening: new Set(), sentAhead: new WeakSet(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, activitySummaries: false, catalogRevisions: false, catalogSent: null, answerReceipts: false, answerWatches: new Map() }
+    const peer: Peer = { desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), held: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, activitySummaries: false, catalogRevisions: false, catalogSent: null, answerReceipts: false, answerWatches: new Map(), terminals: false, terminalPreviews: new Map() }
     peers.add(peer)
     frames.startHeartbeat()
-    frames.onClose(() => { peer.answerWatches.clear(); peers.delete(peer); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })
+    frames.onClose(() => { peer.answerWatches.clear(); peer.terminalPreviews.clear(); options.terminals?.withdrawVisibility(peer); peers.delete(peer); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })
     frames.feed(head)
     options.onPeersChanged?.()
   }
@@ -810,7 +872,7 @@ export async function startSocketServer(options: SocketServerOptions) {
   expiry.unref()
   const stopServing = (): void => {
     if (closing) return
-    closing = true; clearInterval(expiry); unsubscribe(); unsubscribeDetails?.(); shellPublisher.dispose(); detailPublisher.dispose(); waiting.clear()
+    closing = true; clearInterval(expiry); unsubscribe(); unsubscribeDetails?.(); unsubscribeTerminals?.(); shellPublisher.dispose(); detailPublisher.dispose(); waiting.clear()
     server.removeAllListeners('request')
     server.removeAllListeners('upgrade')
     server.removeAllListeners('connection')
@@ -819,7 +881,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     // A closing peer no longer clears its threads from this listener's observations, so they are cleared here, or the
     // host would keep them loaded and shown with nobody watching (ADR-0046).
     const observing = [...peers].some(peer => peer.observed.size > 0)
-    for (const peer of peers) peer.frames.close()
+    for (const peer of peers) { options.terminals?.withdrawVisibility(peer); peer.frames.close() }
     server.closeAllConnections()
     if (observing) track(service.command({ type: 'observe-threads', threadIds: [] }, { clientId: observationKey, user: '', transport: 'socket' }).catch(() => undefined))
   }

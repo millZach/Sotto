@@ -49,6 +49,16 @@ export class TerminalAgentStateMachine {
     const supported = this.rules.supported
     return supported === false || supported === undefined && this.unversioned ? 'unavailable' : 'available'
   }
+  hasRequest(requestId: string): boolean { return this.state === 'needs-you' && this.requests.has(requestId) }
+  /** A request's reviewable live bottom, never scrollback. Input and incomplete redraws withdraw it. */
+  approvalLines(): string[] | null {
+    if (this.state !== 'needs-you' || !this.fresh || !this.screen.reliable || this.evidence.state !== 'needs-you') return null
+    const lines = this.screen.lines(), last = lines.findLastIndex(line => line.trim() !== '')
+    if (last < 0) return null
+    const bottom = lines.slice(Math.max(0, last - 7), last + 1)
+    // Never truncate a permission's words and then authorize a review of the shortened copy.
+    return bottom.some(line => line.length > 512) || bottom.join('\n').length > 4096 ? null : bottom
+  }
   started(): void { this.live = true; this.reconcile() }
   setVisible(visible: boolean): void { this.visible = visible; if (visible && (this.completion || this.readyForCompletion)) this.completionViewed = true; if (visible && this.state === 'just-finished') this.state = 'idle' }
   resize(cols: number, rows: number): void { this.screen.resize(cols, rows); this.fresh = false; this.evidence = { detection: 'unavailable' }; this.detection = 'unavailable'; this.reconcile() }

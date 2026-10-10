@@ -11,6 +11,7 @@ import { toolListRequestSchema } from './tools'
 import { subagentAssignmentsRequestSchema, subagentPageRequestSchema } from './subagents'
 import { PASTED_CODE_MAX } from './hostProviders'
 import type { AgentActivity } from './agentActivity'
+import { phoneTerminalAnswerSchema, phoneTerminalListSchema, type PhoneTerminal } from './phoneTerminals'
 import { providerIdSchema, type ProviderClientUpdate } from './agents'
 
 /**
@@ -30,6 +31,7 @@ export function shellForProtocolV1<T extends AgentState>(state: T) {
  * and `host.models` stays required, as v1 has it.
  */
 const hostClientShellSchema = agentStateSchema.extend({ clientCapabilities: z.object({ mayAnswer: z.boolean() }).optional(),
+  terminals: phoneTerminalListSchema.optional(),
   host: agentHostSnapshotSchema.extend({ modelsRevision: z.number().int().positive().optional() }) })
 /** Older hosts carry retired fields; strip them before the strict domain schemas read them. */
 export const protocolAgentStateSchema = z.preprocess(value => {
@@ -79,8 +81,11 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * require an exact previous host revision. Socket save outcomes remain private to their caller.
  * `background-refresh`: `refresh-thread-worktree` takes `background`, a refresh the window made on its own, which asks
  * GitHub only as the host's timer would (#820). A client strips the field for a host that does not list it.
+ * `terminals`: only the desktop's phone listener offers Terminal mode rows. Opting in adds `shell.terminals`;
+ * `terminal-approval` reads a bounded live approval preview, `observe-terminals` reports foreground details, and
+ * `answer-terminal` delivers one exact reviewed answer through the local hook (ADR-0066). No screen stream or input.
  */
-export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit'] as const
+export const HOST_FEATURES = ['terminals', 'client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
@@ -204,6 +209,9 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('detail'), threadId: id }).strict(),
   z.object({ ...base, op: z.literal('events'), afterSeq: z.number().int().nonnegative(), threadId: id.optional() }).strict(),
   z.object({ ...base, op: z.literal('observe'), threadIds: z.array(id).max(100) }).strict(),
+  z.object({ ...base, op: z.literal('terminal-approval'), terminalId: z.uuid() }).strict(),
+  z.object({ ...base, op: z.literal('observe-terminals'), terminalIds: z.array(z.uuid()).max(64) }).strict(),
+  z.object({ ...base, op: z.literal('answer-terminal'), answer: phoneTerminalAnswerSchema }).strict(),
   z.object({ ...base, op: z.literal('command'), command: agentCommandSchema }).strict(),
   z.object({ ...base, op: z.literal('preview'), request: agentAttachmentPreviewRequestSchema }).strict(),
   z.object({ ...base, op: z.literal('receipt'), commandId: id, answer: hostAnswerTargetSchema.optional() }).strict(),
@@ -246,7 +254,7 @@ export type HostErrorCode = 'unauthenticated' | 'invalid_request' | 'stale_reque
 export interface HostProtocolError { code: HostErrorCode; message: string }
 export type HostResponse = { v: 1; id: string; ok: true; result: unknown } | { v: 1; id: string; ok: false; error: HostProtocolError }
 /** `error` stands in for a push that would not fit in one frame, instead of the host closing the socket. */
-export type HostClientShell = AgentState & { clientCapabilities?: { mayAnswer: boolean } | undefined }
+export type HostClientShell = AgentState & { clientCapabilities?: { mayAnswer: boolean } | undefined; terminals?: PhoneTerminal[] | undefined }
 /**
  * A shell as it crosses the socket. To a client that accepts `model-catalog-revision` its `host` names the
  * catalog's revision and leaves `models` out when this connection was already sent that revision; to every
