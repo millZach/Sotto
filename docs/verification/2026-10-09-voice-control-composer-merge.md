@@ -102,3 +102,23 @@ The first correction renamed to the existing fixture names, which the coordinato
 The distinct-title correction passes all four workspace cases (13.93 seconds), including the three cases that failed on pinned main. Both independent review axes reported no findings in the composer integration. The full suite and latest-head CI remain to run after the fast push.
 
 The post-push full suite found two removal-added socket-composer journeys still using textarea APIs. Both are adapted in a separate follow-up with red/green proof; see [the socket composer correction](2026-10-09-socket-composer-prompt-helpers.md). Its file is an additional integration target beyond the 30 fast files listed above. Complete gates are rerun after that push.
+
+## Complete local gates after the socket correction
+
+October 9, 2026, 20:11 Pacific. All complete local gates pass on source/test head `ea4de6447`. The build remained the verified incoming Tiptap/removal tree; both design verification and Windows packaging rebuild it again. The package records source commit `ea4de64479be55c6e79ed6145a318427bdf3e831`, 88 build artifacts, SQLite 3.53.1 with FTS5/migration 4, PTY exit 0 with `SOTTO_PTY_PACKAGE_OK`, the worklet URL and successful packaged startup. Reviewed imports and release metadata agree. Only the six previously approved onboarding copy baselines differ from incoming main; no baseline changed in the composer or test corrections.
+
+| Run | Actual output | Seconds | Free memory, KiB |
+| --- | --- | ---: | ---: |
+| `npm test -- --maxWorkers=2` | PASS; Test Files  713 passed / 55 skipped (768); Tests  8860 passed / 276 skipped (9136) | 1000.32 | 9659844 |
+| `npm run notices:verify` | PASS; Verified 182 third-party notice components. | 0.38 | 7856044 |
+| `npx playwright test tests/e2e/widget-dictation.spec.ts tests/e2e/pill-controls.spec.ts tests/e2e/dictation-focus.spec.ts tests/e2e/dictation-retry.spec.ts tests/e2e/settings-index.spec.ts tests/e2e/settings-mode-row.spec.ts tests/e2e/agentControl.spec.ts tests/e2e/agentAnswers.spec.ts tests/e2e/agents.spec.ts tests/e2e/crossing.spec.ts tests/e2e/effort-picker.spec.ts tests/e2e/screenshot-paste.spec.ts tests/e2e/thread-creation.spec.ts tests/e2e/remote-thread-opening.spec.ts tests/e2e/thread-sidebar-question.spec.ts --reporter=line` | PASS; 28 passed (2.1m) | 124.73 | 7804532 |
+| `npx playwright test tests/e2e/theme-palettes-evidence.spec.ts tests/e2e/theme-branding-evidence.spec.ts --reporter=line` | PASS; 7 passed (33.9s) | 35.19 | 8659152 |
+| `npm run design:verify` | PASS; 9 passed (2.2m); Verified 144 exact deterministic design-review tuples. | 154.68 | 8904080 |
+| `node scripts/verify-design-captures.mjs` | PASS; Verified 144 exact deterministic design-review tuples. | 0.94 | 8422896 |
+| `npm run package:dir` | PASS; "output": "SOTTO_PTY_PACKAGE_OK" | 32.01 | 8433352 |
+
+The theme run sets both `SOTTO_THEME_EVIDENCE=1` and `SOTTO_THEME_BRANDING_EVIDENCE=1`. All five design specs ran: `design-capture-appearance`, `design-capture-pages`, `design-capture-scaling`, `design-capture-threads` and the surviving widget cases in `design-capture-voice-widget`. All 144 tuples verify; the unchanged Threads tour passes. Each run started above 3 GiB, with the wrapper checking memory before execution; no heavy local gates overlapped.
+
+Delivery: the Claude-steering merge `e1db54a2f`, Tiptap merge `816587553` and workspace-name correction `09efdc7dd` were pushed together at 19:26:18 Pacific. The socket-helper correction `ea4de6447` was pushed at 19:48:06. Both correction diffs and the composer integration received independent standards and spec reviews with no outstanding findings. Historical channel scanning found no live source/shared-fixture use of the eight channels absent from the current shared list. Surviving AgentReasoner uses support provider side calls; babysitting wake-ups and frozen legacy protocol fixtures remain intentionally separate from removed voice listening.
+
+CI snapshot for `ea4de6447`, run [38018293609](https://github.com/millZach/Sotto/actions/runs/38018293609), at 20:11: Changed areas passed (14 seconds), Linux host/archive/socket passed (3m10s), Package (Windows) passed (1m31s) and Package result passed (3 seconds). Windows unit tests and native iOS journeys were still running; the final live result is reported separately. Earlier source `60b388ad5` completed every CI job, including iOS, before these incoming-main increments. The superseded `09efdc7dd` run was cancelled by the socket fix push, with package/Linux jobs passed; no failed current CI job is hidden by that cancellation. PR #880 remains open, with no PR merge performed.
