@@ -32,6 +32,8 @@ export interface FakeSystemd {
   calls(): Promise<string[]>
   /** Every host process the fake started, for the test to stop. */
   spawned(): Promise<number[]>
+  /** Every unit host a stop ended, and whether it had exited when the stop returned. */
+  stops(): Promise<{ pid: number; exited: boolean }[]>
 }
 
 /**
@@ -59,5 +61,6 @@ export async function fakeSystemd(directory: string, initial: FakeSystemdState =
     calls: async () => (await records()).flatMap(item => typeof item.command === 'string'
       ? [[item.command, ...(item.args as string[]).filter(word => word !== '--user' && word !== '--no-ask-password')].join(' ')] : []),
     spawned: async () => (await records()).flatMap(item => typeof item.spawned === 'number' ? [item.spawned] : typeof item.otherHost === 'number' ? [item.otherHost] : []),
+    stops: async () => (await records()).flatMap(item => typeof item.stopped === 'number' ? [{ pid: item.stopped, exited: item.exited === true }] : []),
   }
 }

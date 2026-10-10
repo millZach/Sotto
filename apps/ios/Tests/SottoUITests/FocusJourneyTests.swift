@@ -484,6 +484,22 @@ import XCTest
         let marks = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "**"))
         XCTAssertEqual(marks.count, 0, "Bold marks never show as asterisks")
 
+        // A table that fits reads as a grid of cells and one too wide as a card per row. Larger text can make the narrow
+        // one a card too, so its words are looked for inside any label. No pipe is left over.
+        let holding = { (words: String) in
+            self.app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", words)).firstMatch
+        }
+        let narrow = holding("Open the thread")
+        scrollThread(to: narrow, towardStart: false)
+        XCTAssertTrue(holding("0.3 s").exists, "The narrow table's cells read")
+        let card = text("Finding")
+        scrollThread(to: card, towardStart: false)
+        XCTAssertTrue(card.label.contains("Drawer toggle"), "A wide table's row reads as one card under its first column")
+        XCTAssertTrue(card.label.contains("Terminal mode"), "A card holds every column of its row")
+        capture("thread-glow-tables")
+        let pipes = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "|"))
+        XCTAssertEqual(pipes.count, 0, "Table pipes never show")
+
         scrollThread(to: title, towardStart: true)
         let chips = text("Branch feat/frosted-window-and-pane-terminal")
         XCTAssertTrue(chips.waitForExistence(timeout: 5), "The branch chip reads from the worktree's Git status")
