@@ -184,6 +184,37 @@ final class TerminalModelTests: XCTestCase {
         XCTAssertNil(model.terminalPreviews[ref.id]); XCTAssertNotNil(model.terminalPreviewProblems[ref.id])
         XCTAssertFalse(model.canAnswerTerminal(ref, approval: model.terminal(ref)?.approval))
     }
+    @MainActor func testManyApprovalCardsQueuePreviewReadsBelowTheHostLimit() async throws {
+        let model = try await fixture()
+        defer { model.phase(.background); HostConnection.terminalHandler = nil }
+        let connection = try XCTUnwrap(HostConnection.instances.last)
+        guard case .object(var state) = shell(), case .array(let rows) = state["terminals"],
+              case .object(let original) = rows.first else { return XCTFail("Missing terminal fixture") }
+        let refs = (0..<40).map { _ in TerminalRef(hostID: hostID, terminalID: UUID().uuidString) }
+        state["terminals"] = .array(refs.map { ref in
+            var row = original; row["id"] = .string(ref.terminalID); return .object(row)
+        })
+        connection.push(.shell(try JSONValue.object(state).decode(Shell.self)))
+        var active = 0, peak = 0
+        var holding = true
+        var replies: [CheckedContinuation<JSONValue, Never>] = []
+        HostConnection.terminalHandler = { op, _, _ in
+            guard op == "terminal-approval" else { return .null }
+            active += 1; peak = max(peak, active)
+            defer { active -= 1 }
+            if holding { return await withCheckedContinuation { replies.append($0) } }
+            return .null
+        }
+        let reads = refs.map { ref in Task { await model.readTerminalApproval(ref) } }
+        let deadline = Date().addingTimeInterval(10)
+        while replies.count < 2 && Date() < deadline { await Task.yield() }
+        XCTAssertEqual(replies.count, 2, "Only two reads may reach this computer before a reply arrives")
+        holding = false
+        replies.forEach { $0.resume(returning: .null) }
+        for read in reads { await read.value }
+        XCTAssertEqual(peak, 2)
+        XCTAssertEqual(connection.terminalCalls.filter { $0["op"] == .string("terminal-approval") }.count, 40)
+    }
     @MainActor func testHookReceiptConfirmsAnswerAndMarkerNeverStoresScreen() async throws {
         let model = try await fixture()
         defer { model.phase(.background); HostConnection.terminalHandler = nil }

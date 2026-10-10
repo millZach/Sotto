@@ -101,14 +101,19 @@ extension AppModel {
     /// cannot safely explain the pending approval. No output is subscribed to or saved.
     func readTerminalApproval(_ ref: TerminalRef, force: Bool = false) async {
         guard online(ref.hostID), supportsTerminals(ref.hostID), let current = terminal(ref), current.hasAnswerChannel,
-              let connection = connections[ref.hostID] else { return }
+              let connection = connections[ref.hostID], let epoch = generations[ref.hostID] else { return }
         if !force, terminalPreviews[ref.id].map({ $0.matches(current) }) == true { return }
-        let epoch = generations[ref.hostID], token = UUID()
+        let token = UUID()
         terminalPreviewReads[ref.id] = token; readingTerminalPreviews.insert(ref.id)
         terminalPreviews[ref.id] = nil; terminalPreviewProblems[ref.id] = nil
         defer {
             if terminalPreviewReads[ref.id] == token { terminalPreviewReads[ref.id] = nil; readingTerminalPreviews.remove(ref.id) }
         }
+        // A list may contain all 64 terminals. Leave the host's 32-operation limit room for navigation and answers.
+        await acquireTerminalPreviewReader(epoch)
+        defer { releaseTerminalPreviewReader(epoch) }
+        guard !Task.isCancelled, generations[ref.hostID] == epoch, terminalPreviewReads[ref.id] == token,
+              terminal(ref)?.approval == current.approval else { return }
         do {
             let preview = try await connection.call(["op": .string("terminal-approval"), "terminalId": .string(ref.terminalID)], as: Optional<TerminalApprovalPreview>.self)
             guard generations[ref.hostID] == epoch, terminalPreviewReads[ref.id] == token, terminal(ref)?.approval == current.approval,
@@ -121,6 +126,23 @@ extension AppModel {
         } catch {
             guard generations[ref.hostID] == epoch, terminalPreviewReads[ref.id] == token else { return }
             terminalPreviewProblems[ref.id] = "This permission could not be loaded. Nothing was answered. Try again or review it on \(name(ref.hostID))."
+        }
+    }
+    private func acquireTerminalPreviewReader(_ epoch: UUID) async {
+        if terminalPreviewReaders[epoch, default: 0] < 2 {
+            terminalPreviewReaders[epoch, default: 0] += 1
+            return
+        }
+        await withCheckedContinuation { terminalPreviewWaiters[epoch, default: []].append($0) }
+    }
+    private func releaseTerminalPreviewReader(_ epoch: UUID) {
+        if var waiting = terminalPreviewWaiters[epoch], !waiting.isEmpty {
+            let next = waiting.removeFirst()
+            terminalPreviewWaiters[epoch] = waiting.isEmpty ? nil : waiting
+            next.resume()
+        } else {
+            let count = terminalPreviewReaders[epoch, default: 0] - 1
+            terminalPreviewReaders[epoch] = count > 0 ? count : nil
         }
     }
     func answerTerminal(_ ref: TerminalRef, approval: TerminalApproval, decision: TerminalDecision) async {
@@ -363,6 +385,8 @@ struct HeldDetail {
     private let receiptSleep: @Sendable (UInt64) async throws -> Void
     private let terminalObservationSleep: @Sendable (UInt64) async throws -> Void
     private var terminalObservationRetries: [String: (epoch: UUID, token: UUID, task: Task<Void, Never>)] = [:]
+    private var terminalPreviewReaders: [UUID: Int] = [:]
+    private var terminalPreviewWaiters: [UUID: [CheckedContinuation<Void, Never>]] = [:]
     /// The computer step 1 of adding found, waiting for its code in step 2.
     @Published private(set) var found: FoundHost?
     /// Whether the Add computer sheet is over the tabs.
