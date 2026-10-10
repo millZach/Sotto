@@ -1,0 +1,246 @@
+{
+  "run": 38024430137,
+  "url": "https://github.com/millZach/Sotto/actions/runs/38024430137",
+  "head": "c2f3d879420e85e0c44ea5021b45e1ce43c87e43",
+  "nativeTree": "4716d6634c242ad21022062d282f6babd0c746ad",
+  "nativeJob": 114132168964,
+  "artifact": 11660454146,
+  "devices": {
+    "small": {
+      "device": {
+        "architecture": "arm64",
+        "deviceId": "84749CD5-605E-4858-97FE-505459A3C974",
+        "deviceName": "Sotto Focus small",
+        "modelName": "iPhone SE (3rd generation)",
+        "osBuildNumber": "23F77",
+        "osVersion": "26.5",
+        "platform": "iOS Simulator"
+      },
+      "passed": 19,
+      "skipped": 11,
+      "failed": 0,
+      "total": 30,
+      "environment": "Sotto \u00b7 Built with macOS 26.6.2"
+    },
+    "large": {
+      "device": {
+        "architecture": "arm64",
+        "deviceId": "36207ACD-C159-4080-AEA7-9F004F01351F",
+        "deviceName": "Sotto Focus large",
+        "modelName": "iPhone 16 Pro Max",
+        "osBuildNumber": "23F77",
+        "osVersion": "26.5",
+        "platform": "iOS Simulator"
+      },
+      "passed": 19,
+      "skipped": 11,
+      "failed": 0,
+      "total": 30,
+      "environment": "Sotto \u00b7 Built with macOS 26.6.2",
+      "contentSize": "accessibility-large",
+      "reduceMotion": "Enabled by verify-ui.sh before simulator reboot"
+    }
+  },
+  "screenshots": [
+    {
+      "file": "native-large-terminals-finished-cleared-light.png",
+      "size": "large",
+      "capture": "terminals-finished-cleared-light",
+      "test": "FocusJourneyTests/testTerminalSearchAndOpeningClearsJustFinishedInLight()",
+      "exported": "run-4upNIx/large-attachments/5F9FB3B9-A5DE-4EFD-B43E-A10D94C1550A.png",
+      "sha256": "6ca4ad6ef8c1b84ae10da125b4c81492bbe99b65ad45d287aae3827f9f005178",
+      "width": 1320,
+      "height": 2868
+    },
+    {
+      "file": "native-small-terminals-finished-cleared-light.png",
+      "size": "small",
+      "capture": "terminals-finished-cleared-light",
+      "test": "FocusJourneyTests/testTerminalSearchAndOpeningClearsJustFinishedInLight()",
+      "exported": "run-4upNIx/small-attachments/AD866055-4169-46C7-85E0-7454E7B20BE7.png",
+      "sha256": "7233a4840370713b48f1233b2bc32e1242c37255aa2c824d5b850c33e0bbd716",
+      "width": 750,
+      "height": 1334
+    },
+    {
+      "file": "native-large-terminals-idle-detail-light.png",
+      "size": "large",
+      "capture": "terminals-idle-detail-light",
+      "test": "FocusJourneyTests/testTerminalSearchAndOpeningClearsJustFinishedInLight()",
+      "exported": "run-4upNIx/large-attachments/422D8AB7-A30B-4C4D-82F2-215BFBA424CA.png",
+      "sha256": "5a9133b8dede82b6d5818dafe3de44a6de14c90f3482c6d8270534ac0974e5d1",
+      "width": 1320,
+      "height": 2868
+    },
+    {
+      "file": "native-small-terminals-idle-detail-light.png",
+      "size": "small",
+      "capture": "terminals-idle-detail-light",
+      "test": "FocusJourneyTests/testTerminalSearchAndOpeningClearsJustFinishedInLight()",
+      "exported": "run-4upNIx/small-attachments/7CCD9C4E-575A-48B4-AC8C-E28410938D95.png",
+      "sha256": "2b2f912ce13380de639e758f97a3dfe221067a1129959d3bc85cb150d3a2addd",
+      "width": 750,
+      "height": 1334
+    },
+    {
+      "file": "native-large-terminals-just-finished-light.png",
+      "size": "large",
+      "capture": "terminals-just-finished-light",
+      "test": "FocusJourneyTests/testTerminalSearchAndOpeningClearsJustFinishedInLight()",
+      "exported": "run-4upNIx/large-attachments/60769CE9-620D-4988-A6DF-8486D6B9F558.png",
+      "sha256": "859cfdaf208d64d60e34551b143d74519db6a9585eceb6cce31c20b7db8b4163",
+      "width": 1320,
+      "height": 2868
+    },
+    {
+      "file": "native-small-terminals-just-finished-light.png",
+      "size": "small",
+      "capture": "terminals-just-finished-light",
+      "test": "FocusJourneyTests/testTerminalSearchAndOpeningClearsJustFinishedInLight()",
+      "exported": "run-4upNIx/small-attachments/496A39F5-1C5A-4EE9-8496-489741E6C527.png",
+      "sha256": "02c9629e4918e05199864b77d7508d3fd62f96924a39977cd3b06064dea1e19e",
+      "width": 750,
+      "height": 1334
+    },
+    {
+      "file": "native-large-terminals-more-choices-on-computer.png",
+      "size": "large",
+      "capture": "terminals-more-choices-on-computer",
+      "test": "FocusJourneyTests/testTerminalPermissionUsesOneTimeNoAndYesAndExplainsMoreChoices()",
+      "exported": "run-4upNIx/large-attachments/0157D022-D252-48C4-B477-81E9BCC69CB6.png",
+      "sha256": "7da33327e508409081e97e2c2c4499eaf86420e0751b43308b99b544fdbc02e1",
+      "width": 1320,
+      "height": 2868
+    },
+    {
+      "file": "native-small-terminals-more-choices-on-computer.png",
+      "size": "small",
+      "capture": "terminals-more-choices-on-computer",
+      "test": "FocusJourneyTests/testTerminalPermissionUsesOneTimeNoAndYesAndExplainsMoreChoices()",
+      "exported": "run-4upNIx/small-attachments/2A0DCB5D-B4D6-4AD0-83F6-2E149F856531.png",
+      "sha256": "d1d064b2c0b17f191a4ca6d174b414db252bb8e05ac18297b7ff2d7f52c6b859",
+      "width": 750,
+      "height": 1334
+    },
+    {
+      "file": "native-large-terminals-permission-answered.png",
+      "size": "large",
+      "capture": "terminals-permission-answered",
+      "test": "FocusJourneyTests/testTerminalPermissionUsesOneTimeNoAndYesAndExplainsMoreChoices()",
+      "exported": "run-4upNIx/large-attachments/B6C99EF6-0DF8-4FCB-8E5F-B76664E61A79.png",
+      "sha256": "e5bfb6f6672349b8653e72fbf339f50e53b92413047b4c183060720840a8a122",
+      "width": 1320,
+      "height": 2868
+    },
+    {
+      "file": "native-small-terminals-permission-answered.png",
+      "size": "small",
+      "capture": "terminals-permission-answered",
+      "test": "FocusJourneyTests/testTerminalPermissionUsesOneTimeNoAndYesAndExplainsMoreChoices()",
+      "exported": "run-4upNIx/small-attachments/2820100E-14C8-4CDF-BE1C-D3A496F96895.png",
+      "sha256": "cd25958ba67d1c3a6564ad45681a7bfd4332427a0f04f3178772751cbdcc077d",
+      "width": 750,
+      "height": 1334
+    },
+    {
+      "file": "native-large-terminals-permission-can-answer-dark.png",
+      "size": "large",
+      "capture": "terminals-permission-can-answer-dark",
+      "test": "FocusJourneyTests/testTerminalPermissionUsesOneTimeNoAndYesAndExplainsMoreChoices()",
+      "exported": "run-4upNIx/large-attachments/8C5F5292-E841-4ED4-901F-3588E52CAF6E.png",
+      "sha256": "7d7a0debc0b503654f585ca61c5bd8404c98b62fe2bd91bceed33d3d537cb875",
+      "width": 1320,
+      "height": 2868
+    },
+    {
+      "file": "native-small-terminals-permission-can-answer-dark.png",
+      "size": "small",
+      "capture": "terminals-permission-can-answer-dark",
+      "test": "FocusJourneyTests/testTerminalPermissionUsesOneTimeNoAndYesAndExplainsMoreChoices()",
+      "exported": "run-4upNIx/small-attachments/B6123F6D-4842-4BAA-9A50-96521D12A6A6.png",
+      "sha256": "dbbde3606c1973ba6e9a8cbd3fb0b1efcfad33c0a356d94f8eb463b5ec55aae5",
+      "width": 750,
+      "height": 1334
+    },
+    {
+      "file": "native-large-terminals-permission-cannot-answer-dark.png",
+      "size": "large",
+      "capture": "terminals-permission-cannot-answer-dark",
+      "test": "FocusJourneyTests/testTerminalPermissionKeepsCanAnswerWordingAndScreenOnlyProviders()",
+      "exported": "run-4upNIx/large-attachments/D17C32C5-D426-45D9-9A4A-A08C6DA5FA59.png",
+      "sha256": "53b5e2b2720c0ff477cfeef46b175e98735d86c64e21d9b602d3ad2664ccdf4d",
+      "width": 1320,
+      "height": 2868
+    },
+    {
+      "file": "native-small-terminals-permission-cannot-answer-dark.png",
+      "size": "small",
+      "capture": "terminals-permission-cannot-answer-dark",
+      "test": "FocusJourneyTests/testTerminalPermissionKeepsCanAnswerWordingAndScreenOnlyProviders()",
+      "exported": "run-4upNIx/small-attachments/5837E6D9-F716-4FD8-BA88-7BF031C145E9.png",
+      "sha256": "9541764b9b1ab120f00c82544d13ad5e3a1ba89ea25fd7cafd4a08d0d2786956",
+      "width": 750,
+      "height": 1334
+    },
+    {
+      "file": "native-large-terminals-recent-mixed-dark.png",
+      "size": "large",
+      "capture": "terminals-recent-mixed-dark",
+      "test": "FocusJourneyTests/testTerminalPermissionKeepsCanAnswerWordingAndScreenOnlyProviders()",
+      "exported": "run-4upNIx/large-attachments/93F57497-9742-4D7E-9485-006F0DE5CC59.png",
+      "sha256": "65165ba76edd794cf2febedd990c1cfa5ba0fb775d9a5ad42dad09bc67c643a0",
+      "width": 1320,
+      "height": 2868
+    },
+    {
+      "file": "native-small-terminals-recent-mixed-dark.png",
+      "size": "small",
+      "capture": "terminals-recent-mixed-dark",
+      "test": "FocusJourneyTests/testTerminalPermissionKeepsCanAnswerWordingAndScreenOnlyProviders()",
+      "exported": "run-4upNIx/small-attachments/79C92032-1152-4E80-8CCB-B1A16BF5025F.png",
+      "sha256": "0d8fe3555006debb588e16448766a4da4fe50765bdb272cabe491e0f5c14d246",
+      "width": 750,
+      "height": 1334
+    },
+    {
+      "file": "native-large-terminals-screen-only-detail.png",
+      "size": "large",
+      "capture": "terminals-screen-only-detail",
+      "test": "FocusJourneyTests/testTerminalPermissionKeepsCanAnswerWordingAndScreenOnlyProviders()",
+      "exported": "run-4upNIx/large-attachments/857DD265-18F0-4905-8D77-46753A5D436F.png",
+      "sha256": "bce3d9e69c96278776d7f7744a44119ab823c0838471a2eb938ab15a471b8c3e",
+      "width": 1320,
+      "height": 2868
+    },
+    {
+      "file": "native-small-terminals-screen-only-detail.png",
+      "size": "small",
+      "capture": "terminals-screen-only-detail",
+      "test": "FocusJourneyTests/testTerminalPermissionKeepsCanAnswerWordingAndScreenOnlyProviders()",
+      "exported": "run-4upNIx/small-attachments/05551144-43C2-4227-AC32-AD15A8330C23.png",
+      "sha256": "b0f86816da09c55c9fc39bf834b0724c4ad1e62f0ec149bc01d0147387c38ecb",
+      "width": 750,
+      "height": 1334
+    },
+    {
+      "file": "native-large-terminals-starting-working-light.png",
+      "size": "large",
+      "capture": "terminals-starting-working-light",
+      "test": "FocusJourneyTests/testTerminalSearchAndOpeningClearsJustFinishedInLight()",
+      "exported": "run-4upNIx/large-attachments/A5D15819-839A-48C3-8155-7EEA47433032.png",
+      "sha256": "3207287322f27cea1bdb3ead92365444c26f1b1f03841a8e6eb4c4f579390fe3",
+      "width": 1320,
+      "height": 2868
+    },
+    {
+      "file": "native-small-terminals-starting-working-light.png",
+      "size": "small",
+      "capture": "terminals-starting-working-light",
+      "test": "FocusJourneyTests/testTerminalSearchAndOpeningClearsJustFinishedInLight()",
+      "exported": "run-4upNIx/small-attachments/C3367181-B901-431C-B596-2160B5BBDA7B.png",
+      "sha256": "e4d79b4beb08efd471b0cc42b9af9b6d2cb6a11919f21b7d1ba91867de9d52ae",
+      "width": 750,
+      "height": 1334
+    }
+  ]
+}
