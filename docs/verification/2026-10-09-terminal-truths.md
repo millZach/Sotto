@@ -1,6 +1,6 @@
 # Terminal truths (#879)
 
-Windows built Electron app: **VERIFIED**. Native macOS and Linux desktop: **NOT VERIFIED**. Checked Sotto 0.1.34 on October 9, 2026, using the merged build at `a92a2edb2`, which merges `origin/main` at `73020885b` into `fix/terminal-truths`. Isolated temporary profiles use real Windows shells and Git worktrees, with scripted Claude Code, Codex and Grok commands that exit with code 7. No paid provider account or model turn is involved.
+Windows built Electron app: **VERIFIED**. Native macOS and Linux desktop: **NOT VERIFIED**. Checked Sotto 0.1.34 on October 9, 2026, using the Windows build at `a92a2edb2`. The final merged revision is `16909d9f1`, including `origin/main` at `09ea3f423`; its Windows/npm source and test trees are identical to the verified build. Isolated temporary profiles use real Windows shells and Git worktrees, with scripted Claude Code, Codex and Grok commands that exit with code 7. No paid provider account or model turn is involved.
 
 ## What was proved
 
@@ -42,18 +42,21 @@ Nine files conflicted. `eslint.config.mjs` keeps both sets of ignores. `checkout
 
 Git carried the branch's workspace mutation regressions into `tests/integration/workspaceMutations.test.ts`; the deleted unit file was not restored. All 26 literal test titles added by this branch are present in the merged layout. Main's removed voice modules were not restored.
 
+While the gates ran, another worktree refreshed the shared `origin/main` ref to `09ea3f423` (#904, iPhone Markdown tables). A second default-subject merge, `16909d9f1`, carries that Swift and documentation change without conflicts. Git object hashes match the verified revision for `src/`, `tests/`, `scripts/`, `resources/`, `build/`, both dependency files, and the build, TypeScript, Vitest, Playwright and ESLint configurations. The full suite remains at one run. After the second merge, a fresh `npm ci` passed again and the two npm suites that read the changed guide and CI documentation passed all 34 tests.
+
 | Command | Exact result |
 | --- | --- |
-| `npm ci` | Exit 0: 840 packages installed, 841 audited; fresh worktree dependencies, no link to another checkout. |
+| `npm ci` | Exit 0 after each merge: 840 packages installed, 841 audited; fresh worktree dependencies, no link to another checkout. The final install took 56.80 seconds. |
 | `npm run typecheck` | Exit 0: all three TypeScript projects, no diagnostics. |
 | `npm run lint` | Exit 0: no errors or warnings. |
 | Focused terminal and checkout Vitest run, `--maxWorkers=2` | Exit 0: 8 files passed; 143 tests passed; zero failures or skips; 34.15 seconds. |
 | `npm test -- --maxWorkers=2` | Exit 0: 714 files passed, 55 skipped; 8,902 tests passed, 276 skipped; zero failures. One full run, 1,199.14 seconds. |
+| Post-merge documentation checks, `--maxWorkers=2` | Exit 0 on `16909d9f1`: 2 files passed; 34 tests passed; zero failures or skips; 2.37 seconds. |
 | `npm run notices:verify` | Exit 0: 182 components verified. |
 | `npm run build` | Exit 0: main, host, preload and renderer built. |
 | `npx playwright test tests/e2e/pane-terminal.spec.ts tests/e2e/terminal-closed-output.spec.ts tests/e2e/terminal-display.spec.ts tests/e2e/terminal-loading.spec.ts` | Exit 0: 9 passed, zero failures or skips, one worker, 1.0 minute as reported by Playwright. Ran immediately after build with `&&`; the combined command took 84.45 seconds. |
 
-Per spec: pane-terminal **1/1**, terminal-closed-output **5/5**, terminal-display **1/1**, terminal-loading **2/2**. All gates and native journeys used merge revision `a92a2edb2`. This subsequent evidence commit changes documentation and the four inspected captures only. Changed text files are UTF-8 without a BOM; `git diff origin/main --check` passes.
+Per spec: pane-terminal **1/1**, terminal-closed-output **5/5**, terminal-display **1/1**, terminal-loading **2/2**. The full Windows gates and native journeys used merge revision `a92a2edb2`; the identical Windows/npm trees in `16909d9f1` retain that evidence. The additional fresh install and documentation checks ran on `16909d9f1`. Follow-up evidence commits change only this note and the four inspected captures. Changed text files are UTF-8 without a BOM; `git diff 09ea3f423 --check` passes.
 
 The first build/Electron invocation was interrupted by the ignored Python log wrapper's Windows console encoding when Vite printed a checkmark. The wrapper was changed to emit UTF-8, and the complete build/Electron command then passed. No product source fix was needed, and the full suite was not repeated.
 
