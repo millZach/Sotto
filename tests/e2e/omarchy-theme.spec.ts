@@ -7,13 +7,16 @@ import sharp from 'sharp'
 import { ownedE2EProfile } from './support/e2eProfile'
 import { completeFirstRunSetup, firstSottoWindow, launchSotto, closeSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 import { designThreadsFixture } from '../../src/shared/e2e'
+import { OMARCHY_THEME_ID, parseOmarchyTheme, type OmarchyTheme } from '../../src/shared/themes/omarchy'
+import { WIDGET_THEME_ROLES } from '../../src/shared/themeBranding'
+import { THEME_COLOR_ROLES, T3_CODE_THEME, getThemeColorsForMode, type ThemeColors } from '../../src/shared/themes/library'
 import { contrastRatio, parseThemeRgb } from '../../src/shared/themes/color'
 
 const enabled = process.platform === 'linux' && existsSync('/usr/share/omarchy/bin/omarchy-theme-set-templates') && process.env.SOTTO_OMARCHY_EVIDENCE === '1'
 const evidence = resolve('artifacts/omarchy-theme')
 const proof: unknown[] = []
 
-async function renderTheme(home: string, slug: string): Promise<void> {
+async function renderTheme(home: string, slug: string): Promise<OmarchyTheme> {
   const current = join(home, '.local/state/omarchy/current'), next = join(current, 'next-theme')
   await mkdir(next, { recursive: true })
   await copyFile(`/usr/share/omarchy/themes/${slug}/colors.toml`, join(next, 'colors.toml'))
@@ -23,11 +26,29 @@ async function renderTheme(home: string, slug: string): Promise<void> {
   await rm(join(current, 'theme'), { recursive: true, force: true })
   await rename(next, join(current, 'theme'))
   await writeFile(join(current, 'theme.name'), slug)
+  return parseOmarchyTheme(JSON.parse(await readFile(join(current, 'theme/sotto.json'), 'utf8')), slug.split('-').map(word => word[0]!.toUpperCase() + word.slice(1)).join(' '))
 }
 async function appearance(page: Page): Promise<void> {
   await openPage(page, 'Settings')
   await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Appearance', exact: true }).click()
   await page.locator('#settings-appearance').evaluate(element => element.scrollIntoView({ block:'start' }))
+}
+
+/** Compare each window to the newly rendered file, independently of IPC and the other window. */
+async function assertPaint(page: Page, widget: Page, mode: 'light' | 'dark', colors: ThemeColors): Promise<void> {
+  for (const [window, roles] of [[page, THEME_COLOR_ROLES], [widget, WIDGET_THEME_ROLES]] as const) {
+    await expect(window.locator('html')).toHaveAttribute('data-theme', mode)
+    const expected = Object.fromEntries(roles.map(role => [role, colors[role]]))
+    await expect.poll(() => window.evaluate(roles => Object.fromEntries(roles.map(role => [
+      role, document.documentElement.style.getPropertyValue(`--theme-${role.replace(/[A-Z]/gu, letter => `-${letter.toLowerCase()}`)}`),
+    ])), [...roles])).toEqual(expected)
+  }
+}
+
+async function assertCurrent(page: Page, widget: Page, theme: OmarchyTheme): Promise<void> {
+  await assertPaint(page, widget, theme.appearance, theme.colors)
+  await appearance(page)
+  await expect(page.getByRole('radiogroup', {name: `${theme.appearance === 'dark' ? 'Dark' : 'Light'} theme`}).getByRole('radio', {name: `Omarchy ${theme.sourceName}`, exact:true})).toBeChecked()
 }
 
 /** Measure actual text interiors and their background pixels inside each saved capture. */
@@ -103,7 +124,7 @@ test('Omarchy switches repaint both windows, keep choices, and read at all revie
   const home = join(profile.directory,'home')
   await mkdir(join(home,'.config/omarchy/themed'),{recursive:true})
   await copyFile('apps/omarchy/sotto.json.tpl',join(home,'.config/omarchy/themed/sotto.json.tpl'))
-  await renderTheme(home,'tokyo-night')
+  const initial = await renderTheme(home,'tokyo-night')
   // Exercise the install path too, including its one-time render.
   await mkdir(join(home, 'runtime'))
   execFileSync(resolve('apps/omarchy/install-theme.sh'),[],{env:{...process.env,HOME:home,XDG_RUNTIME_DIR:join(home,'runtime')},stdio:'pipe'})
@@ -117,6 +138,7 @@ test('Omarchy switches repaint both windows, keep choices, and read at all revie
   try {
     launched=await launch()
     const page=launched.page
+    const systemMode = await page.evaluate(() => matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' as const : 'light' as const)
     await expect(page.locator('html')).toHaveAttribute('data-theme-id',OMARCHY_THEME_ID)
     expect(await page.evaluate(()=>window.sotto!.getSettings())).toMatchObject({appearance:'system',lightTheme:OMARCHY_THEME_ID,darkTheme:OMARCHY_THEME_ID})
     await completeFirstRunSetup(page)
@@ -124,22 +146,23 @@ test('Omarchy switches repaint both windows, keep choices, and read at all revie
     await page.getByRole('complementary', { name: /Thread sidebar/ }).getByText('Visual gate flake', { exact: true }).click()
     await expect(page.locator('.thread-transcript')).toBeVisible()
     await appearance(page)
+    await expect.poll(()=>launched!.app.windows().some(page=>page.url().endsWith('/widget.html'))).toBe(true)
+    let widget=launched.app.windows().find(page=>page.url().endsWith('/widget.html'))!
+    await assertCurrent(page,widget,initial)
     const dark=page.getByRole('radiogroup',{name:'Dark theme'})
     await expect(dark.getByRole('radio',{name:'Omarchy Tokyo Night'})).toBeChecked()
     await dark.getByRole('radio',{name:'Sotto',exact:true}).click()
     await expect(page.locator('html')).toHaveAttribute('data-theme-id','t3-code')
+    await assertPaint(page,widget,systemMode,getThemeColorsForMode(T3_CODE_THEME,systemMode)!)
+    await expect(dark.getByRole('radio',{name:'Sotto',exact:true})).toBeChecked()
     await dark.getByRole('radio',{name:'Omarchy Tokyo Night'}).click()
     await expect(page.locator('html')).toHaveAttribute('data-theme-id',OMARCHY_THEME_ID)
+    await assertCurrent(page,widget,initial)
     await page.emulateMedia({reducedMotion:'reduce'})
-    await expect.poll(()=>launched!.app.windows().some(page=>page.url().endsWith('/widget.html'))).toBe(true)
-    const widget=launched.app.windows().find(page=>page.url().endsWith('/widget.html'))!
-    for(const slug of ['tokyo-night','catppuccin-latte','rose-pine','hackerman']) {
-      await renderTheme(home,slug)
-      const mode=['catppuccin-latte','rose-pine'].includes(slug)?'light':'dark'
-      await expect(page.locator('html')).toHaveAttribute('data-theme',mode)
-      await expect.poll(()=>page.evaluate(()=>window.sotto!.getSettings().then(s=>s.omarchyTheme?.sourceName))).toBe(slug.split('-').map(s=>s[0]!.toUpperCase()+s.slice(1)).join(' '))
-      await expect(widget.locator('html')).toHaveAttribute('data-theme',mode)
-      await expect.poll(()=>widget.evaluate(()=>document.documentElement.style.getPropertyValue('--theme-canvas'))).toBe(await page.evaluate(()=>document.documentElement.style.getPropertyValue('--theme-canvas')))
+    // Tokyo Night → Hackerman pins repaint when the mode stays dark.
+    for(const slug of ['tokyo-night','hackerman','catppuccin-latte','rose-pine']) {
+      const expected = await renderTheme(home,slug)
+      await assertCurrent(page,widget,expected)
       for(const [width,height] of [[1600,1000],[1280,800],[820,560]]) {
         await size(launched,width!,height!)
         await openThreads(page)
@@ -159,12 +182,19 @@ test('Omarchy switches repaint both windows, keep choices, and read at all revie
     const file=join(home,'.local/state/omarchy/current/theme/sotto.json')
     await writeFile(file,'{{ broken }}')
     await expect(page.locator('html')).toHaveAttribute('data-theme-id','t3-code')
+    await assertPaint(page,widget,systemMode,getThemeColorsForMode(T3_CODE_THEME,systemMode)!)
     await rm(file)
+    await assertPaint(page,widget,systemMode,getThemeColorsForMode(T3_CODE_THEME,systemMode)!)
+    await expect(page.getByRole('radiogroup',{name:'Dark theme'}).getByRole('radio',{name:'Omarchy Waits for a dark Omarchy theme'})).toBeChecked()
     expect(await page.evaluate(()=>window.sotto!.getSettings())).toMatchObject({lightTheme:OMARCHY_THEME_ID,darkTheme:OMARCHY_THEME_ID,omarchyTheme:null})
-    await renderTheme(home,'tokyo-night')
+    const restored = await renderTheme(home,'tokyo-night')
+    await assertCurrent(page,widget,restored)
     await expect(page.locator('html')).toHaveAttribute('data-theme-id',OMARCHY_THEME_ID)
     await closeSotto(launched);launched=await launch()
     await expect(launched.page.locator('html')).toHaveAttribute('data-theme-id',OMARCHY_THEME_ID)
+    await expect.poll(()=>launched!.app.windows().some(page=>page.url().endsWith('/widget.html'))).toBe(true)
+    widget=launched.app.windows().find(page=>page.url().endsWith('/widget.html'))!
+    await assertCurrent(launched.page,widget,restored)
     expect(JSON.parse(await readFile(join(profile.directory,'settings.json'),'utf8'))).not.toHaveProperty('omarchyTheme')
     await writeFile(join(evidence,'proof.json'),JSON.stringify(proof,null,2)+'\n')
   } finally { if(launched)await closeSotto(launched);await profile.dispose() }
