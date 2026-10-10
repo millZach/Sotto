@@ -3,11 +3,13 @@ import { Archive, ArchiveRestore, Brain, CircleHelp, Clock, FolderPlus, Messages
 import type { LucideIcon } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
 import type { SottoPlatform } from '../../../shared/platform'
+import { releaseTrackName } from '../../../shared/releaseTrack'
 import { roomFor } from '../components/AppShell'
 import { Button } from '../components/Button'
 import { SottoMark } from '../components/SottoMark'
 import { useOptionalApp, type AppNavigation } from '../state/AppContext'
 import { useMemoryEnabled } from '../state/memoryFeature'
+import { useReleaseTrack } from '../state/useReleaseTrack'
 import type { AgentConnection } from './AgentContext'
 import { useAddProject } from './addProject'
 import { useSidebarSize } from './sidebarSize'
@@ -59,11 +61,15 @@ export function SidebarChromeProvider({ updateControl, children }: { readonly up
 /**
  * The sidebar's top row: the mark with the wordmark beside it, then whatever controls the column adds. It is the
  * frameless window's drag region, so every control in it is marked no-drag. On macOS the traffic lights take the
- * row's left end and the wordmark gives way to them.
+ * row's left end and the wordmark gives way to them. A Sotto Owl build shows the mark alone, as a larger tile in
+ * the wordmark's place, and names itself.
  */
 export function SidebarTop({ children }: { readonly children?: ReactNode }): ReactNode {
+  const owl = useReleaseTrack() === 'owl'
   return <div className="thread-nav__top">
-    <span className="thread-nav__brand" aria-label="Sotto application"><SottoMark className="thread-nav__glyph" /><span className="thread-nav__wordmark">Sotto</span></span>
+    {owl
+      ? <span className="thread-nav__brand" role="img" aria-label={releaseTrackName('owl')}><SottoMark className="thread-nav__tile" /></span>
+      : <span className="thread-nav__brand" aria-label="Sotto application"><SottoMark className="thread-nav__glyph" /><span className="thread-nav__wordmark">Sotto</span></span>}
     {children}
   </div>
 }

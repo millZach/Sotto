@@ -1,11 +1,13 @@
 import { autoUpdater } from 'electron-updater'
 
+import { getReleaseTrack } from '../../shared/releaseTrack'
+import { OwlGitHubProvider } from './owlGitHubProvider'
 import type { UpdaterAdapter, UpdaterEvent } from './updateService'
 
 /**
  * The only module in Sotto that knows electron-updater exists. It is bundled
  * into the main chunk rather than shipped as a runtime dependency, so the
- * packaged `dependencies` manifest stays exactly `zod`.
+ * packaged `dependencies` manifest stays exactly `zod` and `node-pty`.
  *
  * Everything the app decides about updating is set here, once:
  *
@@ -14,18 +16,24 @@ import type { UpdaterAdapter, UpdaterEvent } from './updateService'
  * - `autoInstallOnAppQuit = false` — a downloaded update installs only when
  *   the user chooses to restart into it. Closing Sotto never runs an installer
  *   behind the window.
- * - `allowPrerelease = false` — this repository marks superseded releases as
- *   pre-releases, so the updater must only ever see the newest stable one.
+ * - Stable keeps `allowPrerelease = false` and the packaged GitHub feed.
+ *   Owl selects only the owl tag channel and validates its manifest.
  *
  * The logger is silenced because no update failure is worth a console line the
  * user cannot act on; the service turns each one into a phase instead.
  */
-export function createElectronUpdaterAdapter(): UpdaterAdapter {
-  const updater = autoUpdater
+export function createElectronUpdaterAdapter(updater = autoUpdater): UpdaterAdapter {
   updater.autoDownload = false
   updater.autoInstallOnAppQuit = false
   updater.allowPrerelease = false
   updater.logger = null
+  if (getReleaseTrack(updater.currentVersion.version) === 'owl') {
+    updater.allowPrerelease = true
+    updater.channel = 'owl'
+    // Setting channel silently enables downgrades in electron-updater.
+    updater.allowDowngrade = false
+    updater.setFeedURL({ provider: 'custom', updateProvider: OwlGitHubProvider })
+  }
 
   return {
     subscribe(listener: (event: UpdaterEvent) => void): void {

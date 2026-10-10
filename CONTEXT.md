@@ -2,6 +2,8 @@
 
 Sotto is a desktop dictation app with manual coding threads across native providers. This file is the glossary for that domain. Use these terms in issues, tests and code; do not drift to the synonyms each entry lists as avoided.
 
+**Sotto Owl.** Sotto's preview release track and its builds, installed in place of Sotto with the same local data. An Owl build calls itself Sotto Owl where the running build is named (its window title, the tray's tooltip and the version lines in Help and Settings) and shows the Sotto mark alone, as a larger tile, where stable shows the mark beside the wordmark. Sentences in which Sotto is the app or the speaker keep "Sotto". Watcher is the coordinating thread's name, a different thing. Avoid: "Owl app" for a separate installation, "Owl" for the coordinating thread.
+
 ## Threads
 
 **Watcher.** The one current native agent thread on a computer, using its provider's own tools and settings, with Sotto's bounded thread tools and a pinned asking permission mode (ADR-0070). It reads and searches natively; its own changes ask on normal request cards. Its system prompt guides coordination but grants no authority. Earlier conversations become Watcher history when its provider changes. Avoid: "command center", the old "Coordinator", "assignment", "Agents room".
@@ -465,7 +467,7 @@ On Linux the title areas stay, with no minimise, maximise or close buttons and n
 
 **Sidebar width.** The remembered space the user gives the Threads sidebar, shared with Terminal mode and with the same sidebar beside Dictate, History and Help. Collapsing it leaves a narrow rail for threads and page links; expanding it restores the chosen width, while Settings keeps its own column.
 
-**Sidebar top row.** The first row of the Threads sidebar, and of the Settings column: the Sotto mark with the wordmark "Sotto" beside it, then, in the Threads sidebar only, the Threads | Terminal control, Add project and New thread. The Threads sidebar ends it with Collapse sidebar. It is a drag region. On macOS it is inset and drops the wordmark, to leave the traffic lights their place.
+**Sidebar top row.** The first row of the Threads sidebar, and of the Settings column: the Sotto mark with the wordmark "Sotto" beside it, then, in the Threads sidebar only, the Threads | Terminal control, Add project and New thread. The Threads sidebar ends it with Collapse sidebar. It is a drag region. On macOS it is inset and drops the wordmark, to leave the traffic lights their place. A Sotto Owl build shows the mark alone at 24 pixels in place of both, here and in the strip, named "Sotto Owl" for assistive technology.
 
 **First-run setup.** What a new install opens on until it is finished: nine steps in four groups (Start, Dictation, Agents, Elsewhere) on a card under the strip, from the welcome through the look, the microphone, the OpenRouter key and the shortcut to the coding agents, a first project, other computers and the iPhone beta (ADR-0063). Each step uses the surface that owns it, and every step after the welcome can be skipped: its button reads Continue once the step's task is done and Skip for now until then. Finishing sets `onboardingComplete` and opens Threads with the **Threads tour**; Reset settings opens it again. `src/renderer/src/features/onboarding/`. Avoid: "wizard", and "host setup", which is a different thing.
 

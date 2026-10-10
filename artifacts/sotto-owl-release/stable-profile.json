@@ -1,0 +1,367 @@
+{
+  "stableCommit": "09ea3f4231dd6ee81ac545f0f15363283eeabe47",
+  "owl": {
+    "loaded": {
+      "draft": "Synthetic retained draft",
+      "activeThreadId": "ordinary",
+      "threads": [
+        {
+          "id": "76564238-85e9-4664-a3f1-3bb0399ec024",
+          "kind": "project",
+          "title": "Workshop"
+        },
+        {
+          "id": "8df76554-73d7-41db-8369-90f7deda25b2",
+          "kind": "project",
+          "title": "Docs"
+        },
+        {
+          "id": "4360b067-c740-4c7d-9dd7-94f8fb901680",
+          "kind": "project",
+          "title": "Workshop"
+        },
+        {
+          "id": "c8437484-7bd7-40c8-aa22-4ab18d1de954",
+          "kind": "project",
+          "title": "Docs"
+        },
+        {
+          "id": "af8ac2fb-d92d-48cf-8f25-5d5437218681",
+          "kind": "project",
+          "title": "Workshop"
+        },
+        {
+          "id": "d16f12ec-7efa-4350-8da4-9a7adaefb534",
+          "kind": "project",
+          "title": "Docs"
+        },
+        {
+          "id": "ordinary",
+          "kind": "project",
+          "title": "ordinary"
+        },
+        {
+          "id": "center",
+          "kind": "command-center",
+          "title": "center"
+        },
+        {
+          "id": "retired",
+          "kind": "command-center-history",
+          "title": "retired"
+        },
+        {
+          "id": "worker",
+          "kind": "project",
+          "title": "worker"
+        }
+      ]
+    },
+    "persisted": {
+      "commandCenter": {
+        "version": 1,
+        "current": {
+          "target": {
+            "hostId": "616f69b1-b224-4c3e-b9ac-290ec8fa93e1",
+            "threadId": "center"
+          },
+          "projectId": "project",
+          "provider": "codex",
+          "creationOperationId": "44444444-4444-4444-8444-444444444444",
+          "createdAt": "2026-10-09T10:00:00.000Z"
+        },
+        "creation": null,
+        "history": [],
+        "requests": [
+          {
+            "id": "22222222-2222-4222-8222-222222222222",
+            "commandCenter": {
+              "hostId": "616f69b1-b224-4c3e-b9ac-290ec8fa93e1",
+              "threadId": "center"
+            },
+            "rootUserMessageId": "root-message",
+            "state": "active",
+            "createdAt": "2026-10-09T10:00:00.000Z",
+            "closedAt": null,
+            "participants": [
+              {
+                "requestId": "22222222-2222-4222-8222-222222222222",
+                "startedBy": "command-center",
+                "generation": 0,
+                "state": "participating",
+                "target": {
+                  "hostId": "616f69b1-b224-4c3e-b9ac-290ec8fa93e1",
+                  "threadId": "worker"
+                },
+                "promptCount": 1
+              }
+            ]
+          }
+        ],
+        "operations": [
+          {
+            "id": "44444444-4444-4444-8444-444444444444",
+            "requestId": "22222222-2222-4222-8222-222222222222",
+            "retryKey": "33333333-3333-4333-8333-333333333333",
+            "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "action": "send",
+            "target": {
+              "hostId": "616f69b1-b224-4c3e-b9ac-290ec8fa93e1",
+              "threadId": "worker"
+            },
+            "generation": 0,
+            "delivery": "now",
+            "deliveryState": "uncertain",
+            "createdAt": "2026-10-09T10:00:00.000Z",
+            "updatedAt": "2026-10-09T10:00:00.000Z",
+            "receiptId": "receipt",
+            "cardId": "card",
+            "messageId": "message"
+          }
+        ],
+        "reservations": [
+          {
+            "target": {
+              "hostId": "616f69b1-b224-4c3e-b9ac-290ec8fa93e1",
+              "threadId": "worker"
+            },
+            "requestId": "22222222-2222-4222-8222-222222222222",
+            "operationId": "44444444-4444-4444-8444-444444444444",
+            "generation": 0,
+            "reason": "uncertain"
+          }
+        ],
+        "reads": [
+          {
+            "target": {
+              "hostId": "616f69b1-b224-4c3e-b9ac-290ec8fa93e1",
+              "threadId": "worker"
+            },
+            "position": {
+              "historyEpoch": "epoch-0",
+              "afterPosition": 1
+            },
+            "readAt": "2026-10-09T10:00:00.000Z"
+          }
+        ]
+      },
+      "threads": [
+        {
+          "id": "76564238-85e9-4664-a3f1-3bb0399ec024",
+          "kind": "project",
+          "title": "Workshop"
+        },
+        {
+          "id": "8df76554-73d7-41db-8369-90f7deda25b2",
+          "kind": "project",
+          "title": "Docs"
+        },
+        {
+          "id": "4360b067-c740-4c7d-9dd7-94f8fb901680",
+          "kind": "project",
+          "title": "Workshop"
+        },
+        {
+          "id": "c8437484-7bd7-40c8-aa22-4ab18d1de954",
+          "kind": "project",
+          "title": "Docs"
+        },
+        {
+          "id": "af8ac2fb-d92d-48cf-8f25-5d5437218681",
+          "kind": "project",
+          "title": "Workshop"
+        },
+        {
+          "id": "d16f12ec-7efa-4350-8da4-9a7adaefb534",
+          "kind": "project",
+          "title": "Docs"
+        },
+        {
+          "id": "ordinary",
+          "kind": "project",
+          "title": "ordinary"
+        },
+        {
+          "id": "center",
+          "kind": "command-center",
+          "title": "center"
+        },
+        {
+          "id": "retired",
+          "kind": "command-center-history",
+          "title": "retired"
+        },
+        {
+          "id": "worker",
+          "kind": "project",
+          "title": "worker"
+        }
+      ]
+    },
+    "messages": [
+      {
+        "thread_id": "center",
+        "count": 1
+      },
+      {
+        "thread_id": "ordinary",
+        "count": 1
+      },
+      {
+        "thread_id": "retired",
+        "count": 1
+      },
+      {
+        "thread_id": "worker",
+        "count": 1
+      }
+    ],
+    "settings": {
+      "hotkey": "Control+Alt+O",
+      "language": "fr",
+      "commandCenterInFlightLimit": 6,
+      "llmQuality": "high"
+    },
+    "credentialRetained": true,
+    "corruptBackups": []
+  },
+  "stable": {
+    "loaded": {
+      "draft": "Synthetic retained draft",
+      "activeThreadId": "ordinary",
+      "threads": [
+        {
+          "id": "76564238-85e9-4664-a3f1-3bb0399ec024",
+          "kind": null,
+          "title": "Workshop"
+        },
+        {
+          "id": "8df76554-73d7-41db-8369-90f7deda25b2",
+          "kind": null,
+          "title": "Docs"
+        },
+        {
+          "id": "4360b067-c740-4c7d-9dd7-94f8fb901680",
+          "kind": null,
+          "title": "Workshop"
+        },
+        {
+          "id": "c8437484-7bd7-40c8-aa22-4ab18d1de954",
+          "kind": null,
+          "title": "Docs"
+        },
+        {
+          "id": "af8ac2fb-d92d-48cf-8f25-5d5437218681",
+          "kind": null,
+          "title": "Workshop"
+        },
+        {
+          "id": "d16f12ec-7efa-4350-8da4-9a7adaefb534",
+          "kind": null,
+          "title": "Docs"
+        },
+        {
+          "id": "ordinary",
+          "kind": null,
+          "title": "ordinary"
+        },
+        {
+          "id": "center",
+          "kind": null,
+          "title": "center"
+        },
+        {
+          "id": "retired",
+          "kind": null,
+          "title": "retired"
+        },
+        {
+          "id": "worker",
+          "kind": null,
+          "title": "worker"
+        }
+      ]
+    },
+    "persisted": {
+      "commandCenter": null,
+      "threads": [
+        {
+          "id": "76564238-85e9-4664-a3f1-3bb0399ec024",
+          "kind": null,
+          "title": "Workshop"
+        },
+        {
+          "id": "8df76554-73d7-41db-8369-90f7deda25b2",
+          "kind": null,
+          "title": "Docs"
+        },
+        {
+          "id": "4360b067-c740-4c7d-9dd7-94f8fb901680",
+          "kind": null,
+          "title": "Workshop"
+        },
+        {
+          "id": "c8437484-7bd7-40c8-aa22-4ab18d1de954",
+          "kind": null,
+          "title": "Docs"
+        },
+        {
+          "id": "af8ac2fb-d92d-48cf-8f25-5d5437218681",
+          "kind": null,
+          "title": "Workshop"
+        },
+        {
+          "id": "d16f12ec-7efa-4350-8da4-9a7adaefb534",
+          "kind": null,
+          "title": "Docs"
+        },
+        {
+          "id": "ordinary",
+          "kind": null,
+          "title": "ordinary"
+        },
+        {
+          "id": "center",
+          "kind": null,
+          "title": "center"
+        },
+        {
+          "id": "retired",
+          "kind": null,
+          "title": "retired"
+        },
+        {
+          "id": "worker",
+          "kind": null,
+          "title": "worker"
+        }
+      ]
+    },
+    "messages": [
+      {
+        "thread_id": "center",
+        "count": 1
+      },
+      {
+        "thread_id": "ordinary",
+        "count": 1
+      },
+      {
+        "thread_id": "retired",
+        "count": 1
+      },
+      {
+        "thread_id": "worker",
+        "count": 1
+      }
+    ],
+    "settings": {
+      "hotkey": "Control+Alt+O",
+      "language": "fr",
+      "commandCenterInFlightLimit": null,
+      "llmQuality": null
+    },
+    "credentialRetained": true,
+    "corruptBackups": []
+  }
+}

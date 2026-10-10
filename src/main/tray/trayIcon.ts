@@ -4,13 +4,14 @@ export interface TrayIconLike {
   isEmpty(): boolean
 }
 
-export interface DestroyableTray {
+export interface TrayLike {
+  setToolTip(text: string): void
   destroy(): void
 }
 
 export interface CreateTrayResourceOptions<
   Icon extends TrayIconLike,
-  TrayResource extends DestroyableTray,
+  TrayResource extends TrayLike,
 > {
   readonly source: TrayIconSource
   readonly executablePath: string
@@ -29,7 +30,8 @@ export interface CreateTrayResourceOptions<
   readonly loadImageIcon: (path: string) => Icon
   readonly markTemplate: (icon: Icon) => void
   readonly createTray: (icon: Icon) => TrayResource
-  readonly configure: (tray: TrayResource) => void
+  /** What the tray's tooltip names: the running build, "Sotto", or "Sotto Owl" on that track. */
+  readonly tooltip: string
 }
 
 export class NativeTrayCreationError extends Error {
@@ -43,7 +45,7 @@ export class NativeTrayCreationError extends Error {
 
 async function loadTrayIcon<
   Icon extends TrayIconLike,
-  TrayResource extends DestroyableTray,
+  TrayResource extends TrayLike,
 >(options: CreateTrayResourceOptions<Icon, TrayResource>): Promise<Icon> {
   if (options.source.kind === 'executable') {
     if (options.unpackagedIconPath !== null) {
@@ -62,7 +64,7 @@ async function loadTrayIcon<
 
 export async function createTrayResource<
   Icon extends TrayIconLike,
-  TrayResource extends DestroyableTray,
+  TrayResource extends TrayLike,
 >(
   options: CreateTrayResourceOptions<Icon, TrayResource>,
 ): Promise<TrayResource> {
@@ -76,7 +78,7 @@ export async function createTrayResource<
       options.markTemplate(icon)
     }
     tray = options.createTray(icon)
-    options.configure(tray)
+    tray.setToolTip(options.tooltip)
     return tray
   } catch {
     if (tray !== null) {

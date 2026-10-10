@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { TrayIconSource } from '../../../src/main/platformProfile'
 import { createTrayResource } from '../../../src/main/tray/trayIcon'
+import { getReleaseTrack, releaseTrackName } from '../../../src/shared/releaseTrack'
 
 const EXECUTABLE_SOURCE: TrayIconSource = { kind: 'executable' }
 const TEMPLATE_SOURCE: TrayIconSource = {
@@ -15,6 +16,7 @@ function createHarness(
     readonly empty?: boolean
     readonly failLoad?: boolean
     readonly failCreate?: boolean
+    readonly failToolTip?: boolean
   } = {},
 ) {
   const icon = { isEmpty: vi.fn(() => options.empty === true) }
@@ -22,6 +24,7 @@ function createHarness(
     destroy: vi.fn(() => undefined),
     setToolTip: vi.fn((text: string) => {
       void text
+      if (options.failToolTip === true) throw new Error('secret tooltip detail')
     }),
   }
   return {
@@ -56,8 +59,7 @@ type Harness = ReturnType<typeof createHarness>
 function createOptions(
   harness: Harness,
   source: TrayIconSource,
-  configure: (tray: Harness['tray']) => void = (created) =>
-    created.setToolTip('Sotto'),
+  tooltip = 'Sotto',
   unpackagedIconPath: string | null = null,
 ) {
   return {
@@ -70,7 +72,7 @@ function createOptions(
     loadImageIcon: harness.loadImageIcon,
     markTemplate: harness.markTemplate,
     createTray: harness.createTray,
-    configure,
+    tooltip,
   }
 }
 
@@ -111,7 +113,7 @@ describe('createTrayResource', () => {
         createOptions(
           harness,
           EXECUTABLE_SOURCE,
-          (created) => created.setToolTip('Sotto'),
+          'Sotto',
           'C:/Sotto/build/icon.ico',
         ),
       ),
@@ -131,7 +133,7 @@ describe('createTrayResource', () => {
         createOptions(
           harness,
           EXECUTABLE_SOURCE,
-          (created) => created.setToolTip('Sotto'),
+          'Sotto',
           'C:/Sotto/build/icon.ico',
         ),
       ),
@@ -148,7 +150,7 @@ describe('createTrayResource', () => {
         createOptions(
           harness,
           TEMPLATE_SOURCE,
-          (created) => created.setToolTip('Sotto'),
+          'Sotto',
           'C:/Sotto/build/icon.ico',
         ),
       ),
@@ -194,7 +196,7 @@ describe('createTrayResource', () => {
     },
   )
 
-  const failures = ['empty', 'load', 'create', 'configure'] as const
+  const failures = ['empty', 'load', 'create', 'tooltip'] as const
   const sources = [
     ['executable', EXECUTABLE_SOURCE],
     ['template', TEMPLATE_SOURCE],
@@ -211,18 +213,12 @@ describe('createTrayResource', () => {
         ...(failure === 'empty' ? { empty: true } : {}),
         ...(failure === 'load' ? { failLoad: true } : {}),
         ...(failure === 'create' ? { failCreate: true } : {}),
+        ...(failure === 'tooltip' ? { failToolTip: true } : {}),
       })
 
       let creationError: unknown
       try {
-        await createTrayResource(
-          createOptions(harness, source, (created) => {
-            if (failure === 'configure') {
-              throw new Error('secret tooltip detail')
-            }
-            created.setToolTip('Sotto')
-          }),
-        )
+        await createTrayResource(createOptions(harness, source))
       } catch (error) {
         creationError = error
       }
@@ -233,7 +229,7 @@ describe('createTrayResource', () => {
         failure === 'empty' || failure === 'load' ? 0 : 1,
       )
       expect(harness.tray.destroy).toHaveBeenCalledTimes(
-        failure === 'configure' ? 1 : 0,
+        failure === 'tooltip' ? 1 : 0,
       )
     },
   )
@@ -244,18 +240,26 @@ describe('createTrayResource', () => {
   ] as const)(
     'contains destroy failure while unwinding %s configuration',
     async (_name, source) => {
-      const harness = createHarness()
+      const harness = createHarness({ failToolTip: true })
       harness.tray.destroy.mockImplementation(() => {
         throw new Error('secret destroy detail')
       })
 
       await expect(
-        createTrayResource(
-          createOptions(harness, source, () => {
-            throw new Error('secret configure detail')
-          }),
-        ),
+        createTrayResource(createOptions(harness, source)),
       ).rejects.toMatchObject({ code: 'NATIVE_TRAY_CREATION_FAILED' })
     },
   )
+
+  // Main names the tray from app.getVersion() exactly this way.
+  it.each([
+    ['0.1.34', 'Sotto'],
+    ['0.1.35-owl.20261009.1', 'Sotto Owl'],
+  ])('names the tray for the build it is (%s)', async (version, tooltip) => {
+    const harness = createHarness()
+
+    await createTrayResource(createOptions(harness, EXECUTABLE_SOURCE, releaseTrackName(getReleaseTrack(version))))
+
+    expect(harness.tray.setToolTip).toHaveBeenCalledExactlyOnceWith(tooltip)
+  })
 })

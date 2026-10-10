@@ -1,5 +1,6 @@
 import type { CommandResult, UpdatePhase, UpdateStatus } from '../../shared/contracts'
 import type { AppSettings } from '../../shared/settings'
+import { getReleaseTrack } from '../../shared/releaseTrack'
 
 /**
  * The first check waits until the window has settled and the launch's own
@@ -175,7 +176,7 @@ export class UpdateService {
   }
 
   status(): UpdateStatus {
-    return { currentVersion: this.dependencies.currentVersion, phase: this.phase, checkedAt: this.checkedAt }
+    return { currentVersion: this.dependencies.currentVersion, releaseTrack: getReleaseTrack(this.dependencies.currentVersion), phase: this.phase, checkedAt: this.checkedAt }
   }
 
   /**

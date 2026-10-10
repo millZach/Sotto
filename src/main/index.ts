@@ -142,6 +142,7 @@ import {
   type RendererDiagnostic,
   type WebContentsLike,
   type WindowConstructorOptions,
+  type WindowEventName,
 } from './windows/windowManager'
 import {
   DICTATION_COMMAND,
@@ -151,6 +152,8 @@ import {
   UPDATE_STATUS,
 } from '../shared/channels'
 import { APP_ID, APP_NAME } from '../shared/constants'
+import { getReleaseTrack, releaseTrackName } from '../shared/releaseTrack'
+import { runningVersion } from './runningVersion'
 import type { DictationCommand } from '../shared/contracts'
 import type { WidgetSnapshot } from '../shared/dictation'
 import { widgetPresentationFor } from '../shared/themeBranding'
@@ -326,13 +329,19 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
   }
 
   on(
-    event: 'close' | 'closed' | 'moved' | 'maximize' | 'unmaximize' | 'hide' | 'minimize',
+    event: WindowEventName,
     listener: (event: { preventDefault(): void }) => void,
   ): void {
     if (event === 'close') {
       const wrapped = (nativeEvent: { preventDefault(): void }): void => listener(nativeEvent)
       this.window.on('close', wrapped)
       this.windowListenerCleanups.set(listener, () => this.window.removeListener('close', wrapped))
+      return
+    }
+    if (event === 'page-title-updated') {
+      const wrapped = (nativeEvent: { preventDefault(): void }): void => listener(nativeEvent)
+      this.window.on('page-title-updated', wrapped)
+      this.windowListenerCleanups.set(listener, () => this.window.removeListener('page-title-updated', wrapped))
       return
     }
     if (event === 'hide' || event === 'minimize') {
@@ -367,7 +376,7 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
   }
 
   removeListener(
-    _event: 'close' | 'closed' | 'moved' | 'maximize' | 'unmaximize' | 'hide' | 'minimize',
+    _event: WindowEventName,
     listener: (event: { preventDefault(): void }) => void,
   ): void {
     this.windowListenerCleanups.get(listener)?.()
@@ -594,7 +603,12 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // current theme halves, so a theme change repaints the widget mid-session.
   let widgetPresentation = widgetPresentationFor(await settings.get())
   let handleRendererProcessGone: (kind: 'main' | 'widget') => void = () => undefined
+  // Packaging can override the version without editing the source manifest, so it is read from the app (ADR-0071).
+  const appRunningVersion = runningVersion(app.getVersion(), process.versions.electron, appVersion)
+  // What this build calls itself in words: the main window's title and the tray's tooltip, "Sotto Owl" on that track.
+  const buildName = releaseTrackName(getReleaseTrack(appRunningVersion))
   const windows = new WindowManager({
+    title: buildName,
     createWindow: createBrowserWindow,
     display: screen,
     platform: profile.platform,
@@ -646,7 +660,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   let windowBlurredAt = 0
   app.on('browser-window-focus', () => { windowBlurredAt = 0 })
   app.on('browser-window-blur', () => { windowBlurredAt = Date.now() })
-  const windowInFront = (): boolean => BrowserWindow.getAllWindows().some(window => window.getTitle() === APP_NAME && window.isVisible() && !window.isMinimized()
+  const windowInFront = (): boolean => BrowserWindow.getAllWindows().some(window => window.getTitle() === buildName && window.isVisible() && !window.isMinimized()
     && (window.isFocused() || (windowBlurredAt !== 0 && Date.now() - windowBlurredAt < 45_000)))
   const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
     directory: userDataPath, credentials,
@@ -965,7 +979,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           : createSpawnProcessAdapter((executable, args, options) => spawn(executable, args, options)))
     : createE2EPasteProcess(e2eState!, e2eConfiguration.scenario, (text) => {
         const mainWindow = BrowserWindow.getAllWindows().find(
-          (candidate) => candidate.getTitle() === APP_NAME,
+          (candidate) => candidate.getTitle() === buildName,
         )
         mainWindow?.webContents.insertText(text)
       })
@@ -1043,7 +1057,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // 'unsupported' phase without constructing electron-updater at all.
   const updatesSupported = app.isPackaged && e2eConfiguration === null && profile.inAppUpdates
   const updates = new UpdateService({
-    currentVersion: appVersion,
+    currentVersion: appRunningVersion,
     getSettings: () => settings.get(),
     ...(updatesSupported ? { createUpdater: createElectronUpdaterAdapter } : {}),
     onStatusChanged: (status) => {
@@ -1097,7 +1111,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         },
         markTemplate: (icon) => { if (platform === 'darwin') icon.setTemplateImage(true) },
         createTray: (icon) => new Tray(icon),
-        configure: (tray) => tray.setToolTip(APP_NAME),
+        tooltip: buildName,
       })
     : { setContextMenu: () => undefined, destroy: () => undefined }
   try {
@@ -1461,7 +1475,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         }
         return { ...snapshotE2EState(
           e2eState,
-          BrowserWindow.getAllWindows().some((candidate) => candidate.getTitle() === APP_NAME && candidate.isVisible()),
+          BrowserWindow.getAllWindows().some((candidate) => candidate.getTitle() === buildName && candidate.isVisible()),
         ), openedThreadFolder, openedExternalLink }
       })
       ipcMain.handle(E2E_TRIGGER_SHORTCUT_CHANNEL, (event) => {

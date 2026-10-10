@@ -4,7 +4,7 @@ import type { WidgetPresentation } from '../../src/shared/contracts'
 import { WindowManager, type BrowserWindowLike, type Rectangle, type WindowConstructorOptions } from '../../src/main/windows/windowManager'
 import { platformProfile } from '../../src/main/platformProfile'
 
-type WindowEvent = 'maximize' | 'unmaximize' | 'close' | 'closed' | 'moved' | 'hide' | 'minimize'
+type WindowEvent = 'maximize' | 'unmaximize' | 'close' | 'closed' | 'moved' | 'hide' | 'minimize' | 'page-title-updated'
 
 export class FakeWindow implements BrowserWindowLike {
   readonly webContents = {
