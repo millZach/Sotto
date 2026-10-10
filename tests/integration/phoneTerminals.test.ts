@@ -198,6 +198,32 @@ it('never assigns an overlapping hook the screen left by an expired approval', a
   expect((await preview()).requestId).toBe('fresh-request')
 })
 
+it.each([false, true])('tracks all overlapping hooks across distinct turns (delayed submission %s)', async delayedSubmission => {
+  await hello()
+  data(permission)
+  const event = (requestId: string, turnId: string) => hooks.onEvent({ terminalId, runId, eventId: randomUUID(), requestId,
+    approvalId: requestId + '-approval', turnId, kind: 'permission', state: 'needs-you' })
+  event('first-request', 'first-turn')
+  const first = await preview()
+  expect(first.requestId).toBe('first-request')
+  event('second-request', 'second-turn')
+  expect(terminals.phoneApproval(terminalId)).toBeNull()
+  expect(await call({ op: 'terminal-approval', terminalId })).toMatchObject({ ok: true, result: null })
+  expect(await call({ op: 'answer-terminal', answer: first })).toMatchObject({ ok: false, error: { code: 'stale_request' } })
+  const submission = () => hooks.onEvent({ terminalId, runId, eventId: randomUUID(), turnId: 'second-turn', kind: 'working', state: 'working', workPhase: 'submitted' })
+  if (!delayedSubmission) submission()
+  hooks.onRequestClosed!('first-request')
+  if (delayedSubmission) submission()
+  data(permission.replace('npm test', 'npm run other'))
+  expect(terminals.phoneApproval(terminalId)).toBeNull()
+  expect(hookWrite).not.toHaveBeenCalled()
+  hooks.onRequestClosed!('second-request')
+  hooks.onEvent({ terminalId, runId, eventId: randomUUID(), turnId: 'fresh-turn', kind: 'working', state: 'working', workPhase: 'submitted' })
+  data(permission)
+  event('fresh-request', 'fresh-turn')
+  expect(terminals.phoneApproval(terminalId)?.requestId).toBe('fresh-request')
+})
+
 it('pushes changed or withdrawn preview fingerprints without sending screen text', async () => {
   await hello(); request(); const answer = await preview()
   await expect.poll(() => phone.messages.filter(message => message.event === 'shell').length).toBeGreaterThan(0)

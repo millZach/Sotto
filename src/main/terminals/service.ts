@@ -130,6 +130,7 @@ export class TerminalWorkspaceService extends ToolOperations implements PhoneTer
   subscribePhoneRows(listener: () => void): () => void { this.phoneListeners.add(listener); return () => this.phoneListeners.delete(listener) }
   private phoneBinding(record: LiveTerminal): TerminalAgentHookEvent | undefined {
     if (!record.pty || record.terminal.launch.provider !== 'claude' || !record.hooks || !record.agent) return undefined
+    if (record.approvals?.size !== 1) return undefined
     const requests = [...record.approvals?.values() ?? []].filter(event => event.requestId && record.agent!.hasRequest(event.requestId))
     return requests.length === 1 && !record.ambiguousApprovals?.has(requests[0]!.requestId!) && !record.answers?.has(requests[0]!.requestId!) ? requests[0] : undefined
   }
@@ -345,9 +346,9 @@ export class TerminalWorkspaceService extends ToolOperations implements PhoneTer
             onEvent: event => {
               if (this.disposed || generation !== record.generation || !record.agent || record.agent.state === 'exited') return
               record.agent.setVisible(this.isVisible(record.terminal.id)); record.agent.hook(event)
-              if (event.kind === 'permission' && event.requestId && event.approvalId && record.agent.hasRequest(event.requestId)) {
+              if (event.kind === 'permission' && event.requestId && event.approvalId) {
                 record.approvals ??= new Map(); record.approvals.set(event.requestId, event)
-                const live = [...record.approvals.keys()].filter(id => record.agent!.hasRequest(id))
+                const live = [...record.approvals.keys()]
                 if (live.length > 1) {
                   record.ambiguousApprovals ??= new Set()
                   for (const id of live) record.ambiguousApprovals.add(id)
