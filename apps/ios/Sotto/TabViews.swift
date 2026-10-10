@@ -509,7 +509,10 @@ struct ThreadsView: View {
         let settled = groups.settled.filter { !departing.contains($0.id) }
         let unread = Set((recent + settled).filter { groups.isUnreadFinish($0) }.map { $0.id })
         if needs.isEmpty && working.isEmpty && recent.isEmpty && settled.isEmpty && terminals.isEmpty && terminalNeeds.isEmpty {
-            Text(groups.searching ? "No matching threads or terminals." : model.anyConnecting ? "Reading threads…" : "No threads or terminals here yet. Tap New thread to start one.")
+            let includesTerminals = model.computers.contains { model.show.admits($0.hostID) && model.supportsTerminals($0.hostID) }
+            let noMatches = includesTerminals ? "No matching threads or terminals." : "No matching threads."
+            let empty = includesTerminals ? "No threads or terminals here yet. Tap New thread to start one." : "No threads here yet. Tap New thread to start one."
+            Text(groups.searching ? noMatches : model.anyConnecting ? "Reading threads…" : empty)
                 .font(.sotto(.body)).foregroundStyle(Palette.muted)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.vertical, Space.s7)
