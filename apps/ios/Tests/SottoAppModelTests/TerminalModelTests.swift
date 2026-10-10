@@ -75,6 +75,32 @@ final class TerminalModelTests: XCTestCase {
         while connection.terminalCalls.last?["terminalIds"] != .array([.string(terminalID)]) && Date() < deadline { await Task.yield() }
         XCTAssertEqual(connection.terminalCalls.last?["terminalIds"], .array([.string(terminalID)]))
     }
+    @MainActor func testClosingThreadDuringTerminalWithdrawalDoesNotObserveItAfterLateReply() async throws {
+        let model = try await fixture()
+        defer { model.phase(.background); HostConnection.terminalHandler = nil }
+        let connection = try XCTUnwrap(HostConnection.instances.last)
+        await model.selectTerminal(ref)
+        let withdrawal = expectation(description: "Terminal withdrawal started")
+        var reply: CheckedContinuation<JSONValue, Never>?
+        HostConnection.terminalHandler = { op, _, _ in
+            guard op == "observe-terminals" else { return .null }
+            return await withCheckedContinuation { continuation in
+                reply = continuation; withdrawal.fulfill()
+            }
+        }
+        let thread = ThreadRef(hostID: hostID, threadID: "alert-thread")
+        let opening = Task { await model.select(thread) }
+        await fulfillment(of: [withdrawal], timeout: 10)
+        XCTAssertEqual(model.selected, thread, "Back must see the local selection before network cleanup finishes")
+        opening.cancel()
+        await model.select(nil)
+        let observations = connection.operations.filter { $0 == "observe" }.count
+        reply?.resume(returning: .null)
+        await opening.value
+        XCTAssertNil(model.selected)
+        XCTAssertNil(model.selectedTerminal)
+        XCTAssertEqual(connection.operations.filter { $0 == "observe" }.count, observations, "A late cleanup reply must not observe the closed thread")
+    }
     @MainActor func testCanAnswerRevocationAndChangedBindingDisableAnswer() async throws {
         let model = try await fixture()
         defer { model.phase(.background); HostConnection.terminalHandler = nil }

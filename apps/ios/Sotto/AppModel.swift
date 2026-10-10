@@ -45,9 +45,12 @@ extension AppModel {
     }
     /// A foreground open detail is visible; list cards, previews and notifications are not.
     func selectTerminal(_ ref: TerminalRef?) async {
-        if ref != nil { await select(nil) }
         let previous = selectedTerminal
         selectedTerminal = ref
+        let selection = UUID()
+        terminalSelectionGeneration = selection
+        if ref != nil { await select(nil) }
+        guard terminalSelectionGeneration == selection, !Task.isCancelled else { return }
         #if DEBUG && os(iOS)
         if isUIFixture {
             if let ref { try? changeFixtureTerminal(ref, state: "idle", onlyIfFinished: true) }
@@ -348,6 +351,8 @@ struct HeldDetail {
     private var watches: [String: ThreadWatch] = [:]
     /// Whether the app is on screen now, rather than inactive or in the background.
     private var foreground = false
+    private var threadSelectionGeneration = UUID()
+    private var terminalSelectionGeneration = UUID()
     private let keychain: KeychainStore
     private var computerIndexAccount: String? = ComputerStore.indexAccount
     /// Finds and pairs computers; each paired computer gets its own connection.
@@ -1138,10 +1143,8 @@ struct HeldDetail {
     // MARK: The open thread
 
     func select(_ ref: ThreadRef?) async {
-        if ref != nil, let terminal = selectedTerminal {
-            selectedTerminal = nil
-            try? await observeTerminals(terminal.hostID)
-        }
+        let terminal = ref != nil ? selectedTerminal : nil
+        if terminal != nil { selectedTerminal = nil; terminalSelectionGeneration = UUID() }
         cancelDetailReload()
         let previous = selected
         // The thread let go of stays on screen if it is opened again, until a fresh copy is read; another thread
@@ -1149,6 +1152,10 @@ struct HeldDetail {
         holdDetail()
         if let ref, detailStore.held?.ref != ref { detailStore.held = nil }
         selected = ref; detailProblem = nil; detailVersion += 1
+        let selection = UUID()
+        threadSelectionGeneration = selection
+        if let terminal { try? await observeTerminals(terminal.hostID) }
+        guard threadSelectionGeneration == selection, !Task.isCancelled else { return }
         #if DEBUG && os(iOS)
         if isUIFixture {
             let detail = ref.flatMap { fixtureDetails[$0.id] }
@@ -1171,7 +1178,7 @@ struct HeldDetail {
             _ = try? await before.call(["op": .string("observe"), "threadIds": .array([])])
         }
         // Another thread may have been opened, or its computer reconnected, while the last one was let go.
-        guard let ref, selected == ref, online(ref.hostID) else { return }
+        guard let ref, selected == ref, threadSelectionGeneration == selection, !Task.isCancelled, online(ref.hostID) else { return }
         let current = generations[ref.hostID]
         do { try await observeAndRead(ref.hostID) }
         catch { if generations[ref.hostID] == current, selected == ref { detailProblem = "This thread could not be loaded. Nothing was lost. Try again." } }
