@@ -1,6 +1,6 @@
 # 6. One hosted transcription model: MAI-Transcribe-2 through OpenRouter
 
-October 9, 2026 amendment: [ADR-0067](0067-remove-voice-control-and-thread-management.md) records the removal. Agent-voice utterances, reply voices, wake listening, ONNX assets and their custom protocols described below have been removed. Dictation still uses OpenRouter, the personal dictionary and the shared formatting key; optional cleanup remains.
+October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-management.md) records the removal. Agent-voice utterances, reply voices, wake listening, ONNX assets and their custom protocols described below have been removed. Dictation still uses OpenRouter, the personal dictionary and the shared formatting key; optional cleanup remains.
 
 ## Status
 

@@ -315,7 +315,7 @@ Answering a question or permission request and creating a project are also part 
 
 ## Coordination
 
-**Coordinator.** The host's agent control, which routes manual commands to a thread's provider and keeps drafts, follow-up queues, outbox entries and delivery evidence. It also sends explicit babysitting wake-ups; it no longer interprets natural-language commands or supervises threads (ADR-0067). Avoid: "reasoning agent", "thread provider".
+**Coordinator.** The host's agent control, which routes manual commands to a thread's provider and keeps drafts, follow-up queues, outbox entries and delivery evidence. It also sends explicit babysitting wake-ups; it no longer interprets natural-language commands or supervises threads (ADR-0068). Avoid: "reasoning agent", "thread provider".
 
 **Pending setting.** An option chip's choice the thread's provider has not confirmed yet in the state the window draws. The chip shows it from the press, but the setting in force is still the provider's last confirmed one, and for permissions that is what decides its next tool call. So a pending permission is marked on its chip, a dashed edge in the activity colour and a small dot that holds still under reduced motion, and a caption beside the chips says what is still in force in the provider's name and the mode's own terms: "Claude Code still asks for approval until it confirms." A pending model or effort carries no mark. It ends when the window draws the provider's answer, not when the reply lands (#306), or when the provider refuses, which puts the chip back and says so under the composer's row with Try again. A change the provider never gave a result for stays pending, marked the same way: main keeps it for the thread's next start and takes no other action on the thread until it knows, so the chips are fixed and the line under the row says what happened and what comes next, with nothing to press, until the thread shows the choice or main lets it go. A prompt sent meanwhile runs on the pending setting: main's thread lane runs the change first. Avoid: "saving", "optimistic".
 
@@ -361,7 +361,7 @@ Answering a question or permission request and creating a project are also part 
 
 ## Dictation
 
-**Voice coordinator (retired).** The removed wake listening, reply voices, Agents room, orb and per-thread Manage controls. Dictation remains independent; [ADR-0067](docs/adr/0067-remove-voice-control-and-thread-management.md) records the removal and upgrade boundary.
+**Voice coordinator (retired).** The removed wake listening, reply voices, Agents room, orb and per-thread Manage controls. Dictation remains independent; [ADR-0068](docs/adr/0068-remove-voice-control-and-thread-management.md) records the removal and upgrade boundary.
 
 **Transcription.** Turning dictated audio into text. Since ADR-0006 there is exactly one route: each segment is encoded as a 16 kHz mono PCM16 WAV and sent from the main process to Microsoft MAI-Transcribe-2 through OpenRouter's transcription endpoint with the user's OpenRouter key. Nothing is transcribed on this computer and there is no fallback route; a failed request is reported with its reason. Avoid: "local model", "preset", "transcription server", "remote ASR".
 
@@ -502,7 +502,7 @@ On Linux the title areas stay, with no minimise, maximise or close buttons and n
 - `src/main/phones/` — phone access: `phoneAccess.ts` runs the listener and the Serve setting, `tailscale.ts` reads and drives the Tailscale CLI, `ipc.ts` answers the Phones page (`src/renderer/src/features/settings/PhonesSettings.tsx`); the channels and state are `src/shared/phones.ts`. A headless host's phone access is `src/host/phones.ts`; the desktop's side of it is `src/main/hosts/hostPhones.ts` and the Phones dialog `src/renderer/src/features/settings/HostPhonesDialog.tsx` (ADR-0050).
 - `src/main/agents/authority.ts` — the `Authority` interface and the risky-action classifier the coordinator consults at dispatch.
 - `scripts/memeval/` — SottoMemEval harness, backends, case sets and results.
-- `docs/adr/` — decisions, including ADR-0002 on Sotto-owned thread identity and ADR-0003 on the memory store, ADR-0004 on authority in policy records, ADR-0005 on the Codex App Server adapter, ADR-0006 on hosted transcription through OpenRouter, ADR-0013 on the unchanged memory gate and ADR-0067 on the removed voice control and thread management, and ADR-0016 on Sotto-owned history in an event store with a host and client split.
+- `docs/adr/` — decisions, including ADR-0002 on Sotto-owned thread identity and ADR-0003 on the memory store, ADR-0004 on authority in policy records, ADR-0005 on the Codex App Server adapter, ADR-0006 on hosted transcription through OpenRouter, ADR-0013 on the unchanged memory gate and ADR-0068 on the removed voice control and thread management, and ADR-0016 on Sotto-owned history in an event store with a host and client split.
 
 ## Subagents
 

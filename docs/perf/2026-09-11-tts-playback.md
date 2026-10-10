@@ -1,6 +1,6 @@
 # TTS production playback baseline
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0067](../adr/0067-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 Issue #19's remaining Windows benchmark is complete under Zach's updated scope: MAI transcription was already completed, system speech was excluded, and Grok Altair was chosen as default with Kokoro Heart as the lower-cost option. This report adds the missing Supertonic baseline and real output onset/interruption measurements to the [hosted screen and listening decision](2026-09-11-tts-first-screen.md).
 

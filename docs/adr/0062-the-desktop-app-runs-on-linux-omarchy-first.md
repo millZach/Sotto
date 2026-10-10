@@ -1,6 +1,6 @@
 # The desktop app runs on Linux, Omarchy first
 
-October 9, 2026 amendment: [ADR-0067](0067-remove-voice-control-and-thread-management.md) removes every reply voice and the ONNX runtime assets and manifest described below. Packaging verifies the surviving Claude SDK and terminal assets with `npm run assets:verify`. Linux's dictation, compositor bindings, paste and desktop profile remain unchanged.
+October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-management.md) removes every reply voice and the ONNX runtime assets and manifest described below. Packaging verifies the surviving Claude SDK and terminal assets with `npm run assets:verify`. Linux's dictation, compositor bindings, paste and desktop profile remain unchanged.
 
 ## Status
 

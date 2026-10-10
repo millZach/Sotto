@@ -1,6 +1,6 @@
 # Renderer thread recovery and previews
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0067](../adr/0067-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 Windows verification for package 19, from `origin/main` at `2f1d74f240cbcd2b3ab6a1b0e5a212111ccc5221`.
 

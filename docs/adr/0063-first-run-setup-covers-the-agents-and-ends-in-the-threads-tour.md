@@ -28,4 +28,4 @@ Setup had four steps, all about dictation: welcome, microphone, OpenRouter key, 
 
 ## Consequences
 
-The end-to-end specs walk setup through one helper that also ends the tour, and the design captures cover each new step and the tour's first stop. Setup has no voice-control step; voice control and thread management are removed (ADR-0067). Memory stays behind its gate (ADR-0013). Setting the TestFlight link, or changing an install page, is a one-line change in `src/shared`.
+The end-to-end specs walk setup through one helper that also ends the tour, and the design captures cover each new step and the tour's first stop. Setup has no voice-control step; voice control and thread management are removed (ADR-0068). Memory stays behind its gate (ADR-0013). Setting the TestFlight link, or changing an install page, is a one-line change in `src/shared`.

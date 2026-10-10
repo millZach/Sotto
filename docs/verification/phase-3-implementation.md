@@ -1,6 +1,6 @@
 # Phase 3 implementation and verification
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0067](../adr/0067-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 All ten Phase 3 tickets are implemented locally, together with the requested desktop theme system and theme colors on Sotto's in-app mark, voice sphere and floating widget. Implementation baseline: `bf500b42f91cfc1bd198c2d75d62ee48ef4232a8`. Delivery is local commits on main and a verified Windows application directory. No push, issue updates, publication or release is authorized; #24 remains a separate release gate.
 

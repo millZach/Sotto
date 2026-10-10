@@ -1,6 +1,6 @@
 # A Node host on Forge, with clients that keep the host's identity
 
-October 9, 2026 amendment: [ADR-0067](0067-remove-voice-control-and-thread-management.md) records the removal. The voice coordinator, supervision, attention queue and management configuration described below are retired. Protocol v1 keeps inert compatibility fields and refuses retired commands; create-thread accepts only manual creation, including the legacy managed:false spelling. Hosts with live legacy assignments require Update before ordinary work continues; history, drafts and Stop remain available. Client identity and permission policy are unchanged.
+October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-management.md) records the removal. The voice coordinator, supervision, attention queue and management configuration described below are retired. Protocol v1 keeps inert compatibility fields and refuses retired commands; create-thread accepts only manual creation, including the legacy managed:false spelling. Hosts with live legacy assignments require Update before ordinary work continues; history, drafts and Stop remain available. Client identity and permission policy are unchanged.
 
 ## October 5 amendment: a tailnet connection, and a host that starts at boot
 

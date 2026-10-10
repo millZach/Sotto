@@ -1,6 +1,6 @@
 # Memory is hidden for the beta
 
-October 9, 2026 amendment: [ADR-0067](0067-remove-voice-control-and-thread-management.md) records the removal. The Agents-room greeting, voice coordinator gate and automatic preference retrieval described below are historical after the removal. This does not supersede the memory decision: its gate, store, policies, Memory page and questionnaire remain.
+October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-management.md) records the removal. The Agents-room greeting, voice coordinator gate and automatic preference retrieval described below are historical after the removal. This does not supersede the memory decision: its gate, store, policies, Memory page and questionnaire remain.
 
 Amended October 6, 2026: standalone Chats was retired under ADR-0010. References below to personal chats, their provider connections and their voice or memory paths describe historical behavior; those paths are removed. Thread behavior and the remaining beta gates continue as described.
 

@@ -1,6 +1,6 @@
 # Native threads and Windows voice measurement
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0067](../adr/0067-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 Historical implementation record for issues #24 and #18, built on local commit `6175989`. Both review axes inspected production through `f4ee81c`; a subsequent connection-error presentation fix in `3d2097e` received another Standards review. This work was originally committed on `work/native-24-18` in `.worktrees/native-24-18`; that branch's final commit `cc41f66` is now an ancestor of published `main` (`0e12b1c`). The original host removal is `1b6d338`. The measurements and test counts below describe that September 12 work, not a new run. Current #24 validation is recorded in [native-host closeout](issue-24-closeout.md). Installer/release and #18's unresolved voice-budget limits are separate.
 

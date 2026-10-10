@@ -1,6 +1,6 @@
 # Phase 5 independent review
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0067](../adr/0067-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 Fixed point: `896c4e4bce223b616809adefdcd12fe9bfe42b7e`, the starting commit on `main`. Review covered the complete working-tree diff and new source/tests before the implementation commit. Independent Standards and Spec agents reviewed separately and rechecked fixes; their final rechecks overlapped. The existing two unrelated user screenshots were excluded.
 

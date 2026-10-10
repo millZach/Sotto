@@ -1,6 +1,6 @@
 # Have my agent set this up (#431)
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0067](../adr/0067-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 Verified September 28, 2026, on Windows 11, in the built app under Playwright. The provider is the scripted agent host (`src/main/e2e/agentEffects.ts`), which runs a real thread on the real coordinator but calls no tools, so the spec calls the thread's `sotto_host_setup` tools through the end-to-end bridge (`window.sottoE2E.hostSetupTool`), which reaches the same tool server the providers' launch arguments point at. SSH is the scripted `ssh` in `tests/fixtures/fakeSsh.mjs`, as in the #429 note (`2026-09-27-host-tailscale-approval.md`): first reporting Node 26.1.0, then running the real launch script against a fake host installation, a real headless host with scripted providers, which this computer pairs with over a real forward. No SSH server, no Tailscale, no provider and no browser were touched.
 

@@ -8,7 +8,7 @@ October 9, 2026. Integrate main `04702eebb34651f02a058ca14a635d8145a1de39`: #892
 - `tests/integration/claudeSteering.test.ts`: Keep the shared control fixture and all new steering cases; omit unused reasoning-account setup.
 - `tests/integration/nativeFollowupOutcomes.test.ts`: Keep Claude steering and Grok refusal assertions, using the shared fixture without unused reasoning-account setup.
 
-Main claimed ADR-0065 for steering. The numbering rule in `docs/agents/domain.md` requires the branch merging later to renumber itself. The removal decision and 142 existing Markdown reference files were repointed to the next free number, with the steering decision and its incoming citations preserved. Current removal decision: [ADR-0067](../adr/0067-remove-voice-control-and-thread-management.md). This is a citation correction, with no change to the removal decision. Both independent review axes found no issues; the audit checked the distinction and UTF-8 without BOM.
+Main claimed ADR-0065 for steering. The numbering rule in `docs/agents/domain.md` requires the branch merging later to renumber itself. The removal decision and 142 existing Markdown reference files were repointed to the next free number, with the steering decision and its incoming citations preserved. Current removal decision: [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md). This is a citation correction, with no change to the removal decision. Both independent review axes found no issues; the audit checked the distinction and UTF-8 without BOM.
 
 ## Fast gates
 

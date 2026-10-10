@@ -37,7 +37,7 @@ No design baseline or manifest entry is refreshed in this increment. The six app
 
 Production dependencies remain exactly `node-pty` and `zod`; all eight direct Tiptap development dependencies and all 30 composer lock records match incoming main. The lock conflict retains the 13 ProseMirror records and drops orphan voice-only `protobufjs`. `npm ci` was run afterward and passed (840 packages installed, 56.60 seconds). The notice inventory adds 27 composer licenses, for 182 components; runtime reviewed imports still agree with the bundle.
 
-Main had two ADRs numbered 0065. Following `docs/agents/domain.md`, the earlier Claude steering decision keeps 0065, Tiptap becomes [0066](../adr/0066-the-thread-composer-is-a-tiptap-field.md), and removal becomes [0067](../adr/0067-remove-voice-control-and-thread-management.md). All removal citations and the Tiptap citation move with their decisions. The Tiptap consequence now refers only to the surviving floating-widget textarea. No decision changed.
+Main had two ADRs numbered 0065. Following `docs/agents/domain.md`, the earlier Claude steering decision keeps 0065. This merge first moved Tiptap to 0066 and the removal to 0067; #901 then moved Tiptap to [0067](../adr/0067-the-thread-composer-is-a-tiptap-field.md) on `main`, because open #885 and #896 claim 0066 and #891 claims 0065, so the next merge took `main`'s numbering and moved the removal to [0068](../adr/0068-remove-voice-control-and-thread-management.md), with every removal citation. The Tiptap consequence now refers only to the surviving floating-widget textarea. No decision changed.
 
 ## Fast gates and delivery
 

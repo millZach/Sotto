@@ -1,6 +1,6 @@
 # Remove standalone Chats
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0067](../adr/0067-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 October 6, 2026. Windows verification of the removal integrated with `main`
 at `febe51a6`. Zach selected removal of standalone Chats, personal voice and

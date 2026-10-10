@@ -1,6 +1,6 @@
 # Command receipts in the running app
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0067](../adr/0067-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 Issue #323. The pull request's three hand tests, run in the built app on the `phase3-workspace` fixture by
 `tests/e2e/command-receipt.spec.ts`, with the screenshots in `artifacts/command-receipt/`. The size figures

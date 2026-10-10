@@ -1,6 +1,6 @@
 # A thread can babysit its pull request
 
-October 9, 2026 amendment: [ADR-0067](0067-remove-voice-control-and-thread-management.md) records the removal. The voice coordinator gate, managed assignments and supervision exception referenced below are historical. Explicit babysitting remains and grants no authority; wake-ups no longer wait for a managed assignment, while pending requests, busy work, outbox entries and a paused follow-up queue still hold them.
+October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-management.md) records the removal. The voice coordinator gate, managed assignments and supervision exception referenced below are historical. Explicit babysitting remains and grants no authority; wake-ups no longer wait for a managed assignment, while pending requests, busy work, outbox entries and a paused follow-up queue still hold them.
 
 ## Status
 

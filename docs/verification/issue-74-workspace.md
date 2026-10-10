@@ -1,6 +1,6 @@
 # Issue 74: daily workspace acceptance
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0067](../adr/0067-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 Baseline: `2297f648b092ae2d4e04774a436a5dcfff0f64e5`, September 14, 2026. Native foundation `52f1f42` is an ancestor; all #74 dependencies, including native-host retirement #24, are closed.
 

@@ -1,6 +1,6 @@
 # Settings fixes, pkg-18
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0067](../adr/0067-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 Verified on Windows on September 30, 2026. S-044 was already fixed in the starting revision: Settings passes the selected input and the shared microphone constraints request its exact ID. Existing selected-input tests cover missing inputs and default onboarding. Issue #517 records why this package skipped a duplicate patch.
 

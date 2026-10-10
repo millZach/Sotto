@@ -1,6 +1,6 @@
 # Issue 9 review record
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0067](../adr/0067-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 Historical evidence: #610 removed the membership implementation and its tests. Membership and paid-launch statements below no longer describe Sotto.
 Review date: 2026-09-09. Fixed baseline: `63c3c6e913da561deb314e8d337f7eaf04c0672e` on `main`. The initial review compared the staged implementation against that baseline; follow-up review included newer working-tree fixes. No implementation commit existed during the initial review.

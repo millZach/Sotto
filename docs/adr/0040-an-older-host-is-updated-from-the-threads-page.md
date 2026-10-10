@@ -1,6 +1,6 @@
 # An older host is updated from the Threads page
 
-October 9, 2026 amendment: [ADR-0067](0067-remove-voice-control-and-thread-management.md) records the removal. The voice gate described below has been removed. Update remains an explicit user action, with the same host restart, busy-work and recovery rules.
+October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-management.md) records the removal. The voice gate described below has been removed. Update remains an explicit user action, with the same host restart, busy-work and recovery rules.
 
 ## Status
 

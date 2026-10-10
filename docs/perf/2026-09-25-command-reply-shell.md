@@ -1,6 +1,6 @@
 # Command replies without history copies - September 25, 2026
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0067](../adr/0067-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 Issue #313. A command from the window used to be answered with `AgentControl.get()`: a structured clone of the whole state, every loaded thread's messages included, and then a walk over every message to place attachment preview markers. The desktop host router read only the answer's error, and the IPC handler stripped the histories with `agentShell` before sending. So the copy and the walk were made and thrown away on every command.
 

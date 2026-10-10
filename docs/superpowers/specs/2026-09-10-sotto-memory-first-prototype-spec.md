@@ -1,6 +1,6 @@
 # Sotto: Memory-First Voice Development Coordinator
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0067](../../adr/0067-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 Research and working prototype specification. Version 0.2, September 2026. Version 0.1 was reviewed against primary sources and the current codebase on 2026-09-10 (see `docs/research/2026-09-10-memory-first-spec-review.md`); this version folds in the accepted changes.
 
