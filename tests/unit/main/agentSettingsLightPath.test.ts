@@ -4,12 +4,13 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentHostSnapshot } from '../../../src/shared/agents'
-import { AgentControl } from '../../../src/main/agents/control'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
+
 import type { AgentHostCommand, AgentHostResult } from '../../../src/main/agents/host'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
 
 /**
  * The coordinator's light path for thread settings (#318): no read before the change, the adapter's own snapshot
@@ -61,9 +62,9 @@ class SettingsHost extends E2EAgentHost {
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'sotto-settings-path-')); roots.push(root)
   const host = new SettingsHost()
-  const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
-  await credentials.load()
-  const create = () => new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
+  const credentials = await testCredentials(root, { mode: 'unavailable' })
+
+  const create = () => createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
   })
   let control = create(); disposers.push(async () => { control.dispose(); await control.privacyChanged() })
   await control.start(); await control.command({ type: 'connect' })

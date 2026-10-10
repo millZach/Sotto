@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest'
 
 import { platformCopy, type PlatformCopy } from '../../../src/renderer/src/platformCopy'

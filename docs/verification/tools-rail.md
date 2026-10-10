@@ -67,7 +67,7 @@ In `artifacts/tools-rail/`, one per state the note names:
 - `corner-preview-files-820x560-dark.png`: a waiting browser request's corner preview standing inside the rail while Tools shows Files, with the dot on Browser.
 - `agents-reduced-motion-1280-dark.png`: the panel after reopening with reduced motion on.
 
-The spec writes all 97 captures to `artifacts/tools-rail-run/`, which is ignored.
+The spec writes all 97 captures to ignored `artifacts/e2e-runs/tools-rail-run/` by default, or `artifacts/tools-rail-run/` with `SOTTO_E2E_EVIDENCE=publish`. See [E2e evidence](../ci.md#e2e-evidence) for the root override.
 
 ## Other specs
 

@@ -3,9 +3,9 @@ import { randomUUID } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
+import type { AdapterFixture } from '../fixtures/adapterFixture'
 import { claudeFixture } from '../fixtures/claudeFixture'
 import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
-import type { AdapterFixture } from './adapterContract'
 
 it('Grok confirms requested effort from native load state when its change event has not arrived yet', async () => {
   const f = await grokFixture()

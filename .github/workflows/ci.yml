@@ -52,10 +52,10 @@ jobs:
           if grep -qvE '^(src/renderer/|src/preload/|apps/ios/|docs/|artifacts/|design/|handoff/|tests/e2e/|tests/unit/renderer/|tests/perf/|[^/]+\.md$)' <<< "$files" \
             || grep -qxE 'THIRD_PARTY_NOTICES\.md' <<< "$files"; then host=true; fi
           if grep -qE '^(apps/ios/|src/shared/hostProtocol\.ts$|\.github/workflows/ci\.yml$)' <<< "$files"; then ios=true; fi
-          # Packaging reads everything but the documents, the tests and the native phone clients, except the documents the
-          # package ships (the root README, licence and notices) and the notice the renderer bundles from docs/notices/.
+          # Packaging reads everything but the documents, the tests and the native phone clients, except the root
+          # README, licence and notices that the package ships.
           if grep -qvE '^(docs/|artifacts/|design/|handoff/|tests/|apps/ios/|apps/android/|[^/]+\.md$)' <<< "$files" \
-            || grep -qE '^(README\.md|LICENSE\.md|THIRD_PARTY_NOTICES\.md|docs/notices/)' <<< "$files"; then package=true; fi
+            || grep -qE '^(README\.md|LICENSE\.md|THIRD_PARTY_NOTICES\.md)' <<< "$files"; then package=true; fi
           echo "host=$host" >> "$GITHUB_OUTPUT"; echo "ios=$ios" >> "$GITHUB_OUTPUT"; echo "package=$package" >> "$GITHUB_OUTPUT"
           echo "Host job: $host. iOS job: $ios. Package job: $package."
 
@@ -88,8 +88,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Prepare runtime assets
-        run: npm run runtime:prepare
+      - name: Verify release assets
+        run: npm run assets:verify
 
       - name: Typecheck
         run: npm run typecheck
@@ -135,15 +135,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Prepare runtime assets
-        run: npm run runtime:prepare
-
-      # runtime:prepare rewrites resources/runtime/manifest.lock.json from what npm ci installed, and package:dir
-      # verifies the runtime against that rewrite. A clean install reproduces the committed lock exactly, so a
-      # difference means the lockfile moved the runtime without the committed lock following it.
-      - name: Check the prepared runtime matches the committed lock
-        shell: bash
-        run: git diff --exit-code -- resources/runtime/manifest.lock.json
+      - name: Verify release assets
+        run: npm run assets:verify
 
       - name: Build and verify the unpacked Windows app
         run: npm run package:dir

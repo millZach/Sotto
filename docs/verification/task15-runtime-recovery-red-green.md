@@ -1,5 +1,7 @@
 # Task 15 renderer runtime recovery: RED/GREEN evidence
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 Public seams agreed for this work: `TranscriptionClient`, `AudioRecorder`, and
 `DictationController`. Worker and media-device fakes stand in only for browser system
 boundaries; assertions use the public request/result, recorder, state, and callback APIs.
@@ -25,31 +27,31 @@ boundaries; assertions use the public request/result, recorder, state, and callb
 ## Active microphone loss
 
 1. RED — an active track `ended` event left capture active:
-   - Command: `npm test -- tests/unit/renderer/audioRecorder.test.ts -t "active track ends"`
+   - Command: `npm test -- tests/unit/renderer/audio/audioRecorder.test.ts -t "active track ends"`
    - Result: failed `1`; the device-unavailable callback was called `0` times.
 2. GREEN — track end produces a finite error and releases the graph:
    - Same command.
    - Result: passed `1` (`30` skipped at that slice).
 3. RED — a stream `removetrack` event left capture active:
-   - Command: `npm test -- tests/unit/renderer/audioRecorder.test.ts -t "active track is removed"`
+   - Command: `npm test -- tests/unit/renderer/audio/audioRecorder.test.ts -t "active track is removed"`
    - Result: failed `1`; the device-unavailable callback was called `0` times.
 4. GREEN — stream removal produces the same finite recovery path:
    - Same command.
    - Result: passed `1` (`31` skipped).
 5. RED — the removed track was not stopped once it disappeared from `getTracks()`:
-   - Command: `npm test -- tests/unit/renderer/audioRecorder.test.ts -t "active track is removed"`
+   - Command: `npm test -- tests/unit/renderer/audio/audioRecorder.test.ts -t "active track is removed"`
    - Result: failed `1`; the removed track was stopped `0` times.
 6. GREEN — the acquired track is retained for cleanup and stopped exactly once:
    - Same command.
    - Result: passed `1` (`31` skipped).
 7. RED — UI notification waited for a deferred audio-context close:
-   - Command: `npm test -- tests/unit/renderer/audioRecorder.test.ts -t "without waiting for a slow"`
+   - Command: `npm test -- tests/unit/renderer/audio/audioRecorder.test.ts -t "without waiting for a slow"`
    - Result: failed `1`; the callback was called `0` times while close remained pending.
 8. GREEN — finite device loss is reported immediately while cleanup continues:
    - Same command.
    - Result: passed `1` (`32` skipped).
 9. RED — dictation stayed in `listening` after the recorder reported device loss:
-   - Command: `npm test -- tests/unit/renderer/dictationController.test.ts -t "recorder loses its microphone"`
+   - Command: `npm test -- tests/unit/renderer/features/dictation/dictationLifecycle.test.ts -t "recorder loses its microphone"`
    - Result: failed `1`; state remained `listening` instead of `MIC_DEVICE_NOT_FOUND`.
 10. GREEN — dictation cancels capture and publishes the finite device error:
     - Same command.
@@ -63,7 +65,7 @@ boundaries; assertions use the public request/result, recorder, state, and callb
   - Passed `674`, skipped `1`, across `47` files.
 - `npx tsc --noEmit -p tsconfig.web.json`
   - Passed.
-- `npx eslint src/renderer/src/transcription/client.ts tests/integration/transcriptionClient.test.ts src/renderer/src/audio/audioRecorder.ts tests/unit/renderer/audioRecorder.test.ts src/renderer/src/features/dictation/dictationController.ts tests/unit/renderer/dictationController.test.ts`
+- `npx eslint src/renderer/src/transcription/client.ts tests/integration/transcriptionClient.test.ts src/renderer/src/audio/audioRecorder.ts tests/unit/renderer/audio/audioCaptureWorklet.test.ts tests/unit/renderer/audio/audioRecorder.test.ts tests/unit/renderer/audio/audioRecorderSegmentation.test.ts src/renderer/src/features/dictation/dictationController.ts tests/unit/renderer/features/dictation/dictationLifecycle.test.ts tests/unit/renderer/features/dictation/dictationOutput.test.ts tests/unit/renderer/features/dictation/dictationPrewarm.test.ts tests/unit/renderer/features/dictation/dictationRecovery.test.ts`
   - Passed.
 - `npm run typecheck`
   - Passed both node and web projects after concurrent Task 15 changes settled.

@@ -1,0 +1,63 @@
+{
+  "main": "9d6eff099a46a9d1dbd1a8570e90f385719b50cb",
+  "date": "2026-10-09",
+  "orderedGates": [
+    {
+      "command": "npm run typecheck",
+      "exitCode": 0,
+      "output": "tsc --noEmit: passed"
+    },
+    {
+      "command": "npm run lint",
+      "exitCode": 0,
+      "output": "eslint .: passed"
+    },
+    {
+      "command": "npm test -- --maxWorkers=2",
+      "exitCode": 0,
+      "output": "Test Files  604 passed | 51 skipped (655)\nTests  8620 passed | 222 skipped (8842)\nDuration  905.14s (transform 12.18s, setup 60.39s, import 110.28s, tests 1470.99s, environment 97.35s)"
+    },
+    {
+      "command": "npm run notices:verify",
+      "exitCode": 0,
+      "output": "Verified 155 third-party notice components."
+    },
+    {
+      "command": "npm run build",
+      "exitCode": 0,
+      "output": "✓ built in 10.25s"
+    },
+    {
+      "command": "npx playwright test tests/e2e/widget-dictation.spec.ts tests/e2e/pill-controls.spec.ts tests/e2e/dictation-focus.spec.ts tests/e2e/dictation-retry.spec.ts tests/e2e/settings-index.spec.ts tests/e2e/settings-mode-row.spec.ts tests/e2e/agentSetup.spec.ts tests/e2e/agentControl.spec.ts tests/e2e/remote-thread-opening.spec.ts tests/e2e/thread-sidebar-question.spec.ts --reporter=line",
+      "exitCode": 0,
+      "output": "  19 passed (1.2m)"
+    },
+    {
+      "command": "SOTTO_THEME_BRANDING_EVIDENCE=1 npx playwright test tests/e2e/app.spec.ts tests/e2e/crossing.spec.ts tests/e2e/onboarding-microphone-step.spec.ts tests/e2e/agents.spec.ts tests/e2e/widget-topmost.spec.ts tests/e2e/phase-three-theme-branding.spec.ts tests/e2e/babysitting.spec.ts --reporter=line",
+      "exitCode": 0,
+      "output": "  27 passed (2.1m)"
+    },
+    {
+      "command": "node scripts/verify-design-captures.mjs",
+      "exitCode": 0,
+      "output": "Verified 144 exact deterministic design-review tuples."
+    }
+  ],
+  "designCapture": {
+    "command": "npm run design:capture",
+    "exitCode": 0,
+    "output": "9 passed (2.3m); Verified 144 exact deterministic design-review tuples."
+  },
+  "setupLever": {
+    "command": "node tools/verify-removal-setup.mjs",
+    "exitCode": 0,
+    "variants": 3,
+    "stepsEach": 9,
+    "tourStopsEach": 4
+  },
+  "stylesheetBalance": {
+    "survivingFiles": 17,
+    "result": "passed"
+  },
+  "utf8BomCheck": "passed"
+}

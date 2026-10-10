@@ -1,3 +1,4 @@
+import { deferred } from '../../fixtures/deferred'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
@@ -11,12 +12,6 @@ import {
   WorkletMicrophoneTest,
   type MicrophoneTestDependencies,
 } from '../../../src/renderer/src/features/onboarding/microphoneTest'
-
-function deferred<Value>() {
-  let resolve!: (value: Value) => void
-  const promise = new Promise<Value>((done) => { resolve = done })
-  return { promise, resolve }
-}
 
 function createHarness() {
   const events = new EventTarget()

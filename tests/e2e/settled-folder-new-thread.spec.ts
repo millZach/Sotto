@@ -1,5 +1,9 @@
+import { join } from 'node:path'
+import { evidenceDirectory } from '../fixtures/evidence'
 import { expect, test } from '@playwright/test'
 import { closeSotto, launchSotto, openThreads, resizeWindow } from './support/sottoLaunch'
+
+const evidence = evidenceDirectory('artifacts/settled-folder-new-thread')
 
 test('new work reopens only its folder while older threads remain settled', async () => {
   test.setTimeout(90_000)
@@ -8,7 +12,7 @@ test('new work reopens only its folder while older threads remain settled', asyn
   try {
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload()
@@ -43,12 +47,12 @@ test('new work reopens only its folder while older threads remain settled', asyn
         await resizeWindow(launched, width!, height!)
         await check()
         expect(await sidebar.evaluate(node => node.scrollWidth > node.clientWidth + 1)).toBe(false)
-        await page.screenshot({ animations: 'disabled', path: `artifacts/settled-folder-new-thread/${appearance}-${width}.png` })
+        await page.screenshot({ animations: 'disabled', path: join(evidence, `${appearance}-${width}.png`) })
       }
     }
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await check()
-    await page.screenshot({ animations: 'disabled', path: 'artifacts/settled-folder-new-thread/reduced-motion.png' })
+    await page.screenshot({ animations: 'disabled', path: join(evidence, 'reduced-motion.png') })
     await page.reload()
     await sidebar.getByRole('button', { name: /^Settled / }).click()
     await check()

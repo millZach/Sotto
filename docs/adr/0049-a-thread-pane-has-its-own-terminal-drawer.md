@@ -14,7 +14,7 @@ Every thread pane's header carries a **Terminal drawer** button, after the Tools
 
 The drawer's shells run in the same main-process service as the Tools panel's terminal, which now records a **place** for each session, `tools` or `drawer`. Listing, creating and following a session all happen within one place, so neither surface ever shows the other's shells. They still share the 32-session limit, and a running drawer shell keeps its worktree from being reclaimed like any other. A record saved before places existed reads as `tools`.
 
-Ctrl+J, or Cmd+J on a Mac, toggles the drawer of the pane the key lands in, or of the selected thread's pane when that pane is on screen. It acts on nothing in Terminal mode or on another page. A drawer's own terminal passes Ctrl+J to the page instead of the shell. The Tools panel's terminal and Terminal mode's terminals keep Ctrl+J for their shells. When the dictation hotkey is Ctrl+J, the drawer leaves the chord to it and the button's title stops naming it. Escape and every other key belong to the shell, so a drawer is hidden with its button, its Hide terminal drawer control (a panel-closing icon, unlike the tab's X, which ends a shell), or Ctrl+J. Hiding from inside the drawer puts focus back in the pane.
+Ctrl+J, or Cmd+J on a Mac, toggles the drawer of the pane the key lands in, or of the selected thread's pane when that pane is on screen. It acts on nothing in Terminal mode or on another page. A drawer's own terminal passes Ctrl+J to the page instead of the shell. The Tools panel's terminal and Terminal mode's terminals keep Ctrl+J for their shells. When the dictation hotkey is Ctrl+J, the drawer leaves the chord to it and the button's title stops naming it. With output search closed, Escape belongs to the shell. Output search and terminal text-size shortcuts are shared with Terminal mode and Tools (#881); dictation keeps any conflicting chord. A drawer is hidden with its button, its Hide terminal drawer control (a panel-closing icon, unlike the tab's X, which ends a shell), or Ctrl+J. Hiding from inside the drawer puts focus back in the pane.
 
 Under a Frosted window the drawer paints `--tt-frost-terminal`, a little more solid than the room. Its terminal draws its background at zero alpha, so xterm still measures text contrast against the theme's terminal colour.
 
@@ -23,3 +23,9 @@ Under a Frosted window the drawer paints `--tt-frost-terminal`, a little more so
 - Each shell starts at an estimate of the drawer's width, since a shell's first prompt is hard-wrapped at the size it starts with. Without that, a narrow split pane cut the prompt off.
 - Ctrl+J is a line feed in a shell, and a drawer's shells never receive it; Enter does the same job there. The other terminals still receive it.
 - Hiding a drawer never ends its shells, so closing the last tab is the only way a drawer ends one.
+
+## October 9 amendment: the drawer starts in the project folder
+
+A drawer's shell now starts in the thread's project folder, not its working copy. For a thread with its own worktree, the working copy was a folder under `thread-worktrees`, which is not "the project you are in" that the owner asked for, and they asked for the project folder when they saw it. The shell starts in the working copy only when the project folder is gone or cannot be opened. The Tools panel's terminal is unchanged: it still starts in the working copy its footer names.
+
+Because the shell is no longer in the thread's worktree, the drawer's bar names the branch only for a thread that shares the project folder; for a worktree thread it would name a checkout the shell is not in. A running drawer shell still keeps its thread's worktree from being reclaimed, since the user can change into it.

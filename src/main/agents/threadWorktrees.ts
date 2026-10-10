@@ -790,7 +790,7 @@ export class ThreadWorktrees {
    * points back at and has not locked), and the record follows the branch its HEAD names. `ask-git` whenever the
    * files do not settle all of that, and then the caller asks Git with `inspect`. It reads no uncommitted changes;
    * the inspection after the send does. Each refusal here is one `inspectWithin` makes with Git, and
-   * `threadWorktrees.test.ts` runs both over the same folders.
+   * `tests/integration/threadWorktreeIdentity.test.ts` runs both over the same folders.
    */
   async readyOnDisk(metadata: AgentWorktree): Promise<{ readonly kind: 'ready'; readonly worktree: AgentWorktree } | typeof ASK_GIT> {
     let files: CheckoutFiles

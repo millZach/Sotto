@@ -1,9 +1,11 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { mkdir, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { closeSotto, launchSotto, openThreads } from './support/sottoLaunch'
+import { bareEntityId, closeSotto, launchSotto, openThreads } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
-const SHOTS = resolve('artifacts/terminal-loading')
+const SHOTS = evidenceDirectory('artifacts/terminal-loading')
 
 for (const surface of ['tools', 'workspace'] as const) {
   test(`${surface} terminal recovers a failed view without restarting its shell or losing a draft`, async () => {
@@ -14,7 +16,7 @@ for (const surface of ['tools', 'workspace'] as const) {
     try {
       await page.evaluate(async () => {
         await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', reducedMotion: 'on' })
-        await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+        await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
         await window.sotto!.agents!.command({ type: 'connect' })
       })
       await page.reload()
@@ -26,10 +28,10 @@ for (const surface of ['tools', 'workspace'] as const) {
           callback({ cancel: /terminalView-[^/]+\.js/u.test(details.url) })
         })
       })
-      const id = await page.evaluate(async surface => {
+      const state = await page.evaluate(() => window.sotto!.agents!.get())
+      const projectId = state.host.threads.find(thread => bareEntityId(thread.id) === 'workshop')!.projectId
+      const id = await page.evaluate(async ({ surface, projectId }) => {
         if (surface === 'workspace') {
-          const state = await window.sotto!.agents!.get()
-          const projectId = state.host.threads.find(thread => thread.id === 'workshop' || thread.id.endsWith(':workshop'))!.projectId
           const created = await window.sotto!.terminals!.open({ projectId, title: 'Recovery shell', workingCopy: 'shared',
             launch: { provider: null, modelId: null, reasoning: null, permission: null } })
           if (!created.ok) throw new Error(created.error.message)
@@ -40,7 +42,7 @@ for (const surface of ['tools', 'workspace'] as const) {
         const created = await window.sotto!.terminal!.create({ threadId: 'workshop', workspaceId: list.value.workspace.workspaceId })
         if (!created.ok) throw new Error(created.error.message)
         return created.value.session.id
-      }, surface)
+      }, { surface, projectId })
       const read = () => page.evaluate(async ({ surface, id }) => {
         if (surface === 'workspace') {
           const result = await window.sotto!.terminals!.read({ id })
@@ -120,14 +122,14 @@ for (const surface of ['tools', 'workspace'] as const) {
       // The current document still caches the failed import; the recovery button reloads it.
       if (surface === 'tools') {
         await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!.setContentSize(1600, 1000))
-        await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Keep this draft through terminal recovery.')
+        await fillPrompt(promptField(page), 'Keep this draft through terminal recovery.')
       }
       await page.getByRole('button', { name: 'Reload window', exact: true }).press('Enter', { noWaitAfter: true })
       await page.waitForLoadState('domcontentloaded')
       await openThreads(page)
       if (surface === 'tools') {
         await page.getByRole('button', { name: 'Workshop', exact: true }).first().click()
-        await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('Keep this draft through terminal recovery.')
+        await expectPromptText(promptField(page), 'Keep this draft through terminal recovery.')
       }
       await show()
       await expect(page.locator('.xterm-helper-textarea')).toBeVisible()

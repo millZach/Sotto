@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { detectSkillTrigger, insertSkill, retainSkillReferences, searchSkills, type CatalogSkill } from '../../../src/renderer/src/agents/composerSkills'
 import { composerMenuKeyAction } from '../../../src/renderer/src/agents/composerKeys'

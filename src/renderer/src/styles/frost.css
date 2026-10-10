@@ -16,7 +16,7 @@
   background: var(--tt-frost-room);
 }
 
-:root[data-frost] :is(.app-shell, .agent-room) {
+:root[data-frost] .app-shell {
   background: transparent;
 }
 

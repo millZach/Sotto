@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { expect, it } from 'vitest'
 import { deviceDetails, timeAgo, unavailableReason } from '../../../src/renderer/src/features/settings/DevicePicker'
 import type { HostDevice } from '../../../src/shared/hostDevices'

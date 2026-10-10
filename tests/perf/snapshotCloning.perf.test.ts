@@ -232,7 +232,7 @@ it('still finds the private members the snapshot cloning benchmark times', () =>
   for (const member of PRIVATE_MEMBERS.claudeAdapterFields) expect(adapter[member]).toBeInstanceOf(ProviderSnapshotPublisher)
 })
 
-describe.skipIf(!PERF_BENCH)('snapshot cloning with held threads', () => {
+describe.skipIf(!PERF_BENCH)("snapshot cloning with held threads (timing benchmark; requires SOTTO_PERF_BENCH=1)", () => {
   for (const window of ['pane', 'none'] as const) for (const history of ['short', 'long'] as const) for (const threads of [1, 4, 8]) {
     it(`${threads} held thread(s), ${history} histories, ${window === 'pane' ? 'one pane' : 'no pane'}`, async () => {
       const result = await measure(threads, history, window)

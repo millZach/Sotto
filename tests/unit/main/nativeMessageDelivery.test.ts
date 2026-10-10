@@ -2,12 +2,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { NativeMessageDelivery } from '../../../src/main/app/nativeMessageDelivery'
-
-function deferred() {
-  let resolve!: () => void
-  const promise = new Promise<void>((done) => { resolve = done })
-  return { promise, resolve }
-}
+import { deferred } from '../../fixtures/deferred'
 
 function createHarness() {
   const order: string[] = []

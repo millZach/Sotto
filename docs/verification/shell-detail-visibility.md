@@ -1,5 +1,7 @@
 # Shell and detail batching while hidden
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 PR #159 keeps the shell and the open thread's detail in one React commit when they arrive in that order before a frame. The review fix preserves that optimization for visible windows and processes shells immediately while the main window is hidden. Hiding the window also flushes a shell already waiting for its frame.
 
 The failure was a microphone mute from the floating widget while main was hidden: the widget received its command response, but the main renderer held the published shell for an animation frame Electron could suspend. Its voice controller did not see the mute until another update arrived or the main window was shown.

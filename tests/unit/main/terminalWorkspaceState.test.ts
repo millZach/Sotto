@@ -25,7 +25,7 @@ function fixture() {
   })
   const emit = vi.fn()
   const service = new TerminalWorkspaceService({ projects: () => [{ id: 'p', title: 'Project', path: '/project' }],
-    worktrees: { allocate: vi.fn(), ensure: vi.fn(), workingDirectory: vi.fn() }, spawn, emit, platform: 'darwin', env: { SHELL: '/bin/zsh' },
+    worktrees: { allocate: vi.fn(), ensure: vi.fn(), workingDirectory: vi.fn(), reclaim: vi.fn() }, spawn, emit, platform: 'darwin', env: { SHELL: '/bin/zsh' },
     prepareHooks: async options => { const run = { options, runId: randomUUID(), dispose: vi.fn() }; runs.push(run); return { ...run, args: ['--settings', '/private/run-settings.json'], env: { SOTTO_PRIVATE_HOOK_SECRET: 'private' }, answer: () => false } },
   })
   disposals.push(() => service.dispose())
@@ -36,6 +36,31 @@ function fixture() {
 }
 
 describe('main-owned terminal visibility and lifecycle', () => {
+  it.each(['working', 'permission', 'completed'] as const)('keeps Exited final after %s while the provider leaves an interactive shell', async prior => {
+    const f = fixture(), id = await f.open()
+    f.send(0, 'working')
+    if (prior === 'permission') {
+      const run = f.runs[0]!
+      run.options.onEvent({ terminalId: id, runId: run.runId, eventId: randomUUID(), kind: 'permission', state: 'needs-you', requestId: 'request' })
+      expect(await f.state(id)).toBe('needs-you')
+    } else if (prior === 'completed') {
+      f.processes[0]!.data(working); f.processes[0]!.data(idle); f.send(0, 'completed')
+      expect(await f.state(id)).toBe('just-finished')
+    }
+    f.send(0, 'process-exited')
+    expect(unwrap(await f.service.read({ id })).terminal).toMatchObject({ status: 'running', agentState: 'exited', closedAt: null })
+    expect(f.runs[0]!.dispose).toHaveBeenCalledOnce()
+    expect(f.processes[0]!.pty.kill).not.toHaveBeenCalled()
+    unwrap(await f.service.write({ id, data: 'echo shell\r' }))
+    f.processes[0]!.data('shell output\r\n'); f.send(0, 'working'); f.send(0, 'completed')
+    expect(await f.state(id)).toBe('exited')
+    expect(unwrap(await f.service.read({ id })).output).toContain('shell output')
+    expect(f.processes[0]!.pty.write).toHaveBeenLastCalledWith('echo shell\r')
+    unwrap(await f.service.restart({ id })); f.processes[1]!.data(idle); f.send(0, 'process-exited')
+    expect(await f.state(id)).toBe('idle')
+    unwrap(await f.service.stop({ id }))
+    expect(unwrap(await f.service.read({ id })).terminal.status).toBe('exited')
+  })
   it('merges visible pane sets and clears unread globally, including unfocused panes', async () => {
     const f = fixture(), first = await f.open(), second = await f.open(), desktop = {}, phone = {}
     unwrap(await f.service.visibility({ ids: [first, second] }, desktop))

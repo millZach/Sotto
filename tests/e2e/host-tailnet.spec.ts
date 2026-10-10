@@ -1,14 +1,14 @@
-import { isBuiltin } from 'node:module'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { buildSshHost } from './support/sshHost'
+import { captureHostMatrix as capture, insideWindow as inside } from './support/hostCapture'
+import { ownedE2EProfile } from './support/e2eProfile'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { existsSync, readFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
-import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { expect, test, type Locator } from '@playwright/test'
-import { build } from 'vite'
+import { expect, test } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
-import { closeSotto, launchSotto, openPage, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openPage, type LaunchedSotto } from './support/sottoLaunch'
 import { serveStandIn } from '../fixtures/serveStandIn'
 
 /**
@@ -17,26 +17,8 @@ import { serveStandIn } from '../fixtures/serveStandIn'
  * Serve in front of the host's tailnet listener, at the address SOTTO_E2E_TAILNET_MAP gives forge's MagicDNS name. Every
  * ssh the app spawns is recorded, so a connect that needs none is seen to make none.
  */
-async function capture(launched: LaunchedSotto, name: string, check: () => Promise<void>): Promise<void> {
-  const { page } = launched
-  for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
-    await resizeWindow(launched, width, height)
-    for (const appearance of ['dark', 'light'] as const) {
-      await page.evaluate(async value => window.sotto!.updateSettings({ appearance: value }), appearance)
-      await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
-      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-      await check()
-      await page.screenshot({ path: test.info().outputPath(`${name}-${width}x${height}-${appearance}.png`), animations: 'disabled' })
-    }
-  }
-  await page.evaluate(async () => window.sotto!.updateSettings({ appearance: 'dark' }))
-  await resizeWindow(launched, 1280, 800)
-}
+
 /** Whether an element sits wholly inside the window, so nothing is clipped at the minimum size. */
-const inside = (locator: Locator) => locator.evaluate(element => {
-  const box = element.getBoundingClientRect()
-  return box.left >= 0 && box.top >= 0 && box.right <= innerWidth + 0.5 && box.bottom <= innerHeight + 0.5
-})
 
 /**
  * forge, as these journeys reach it: a host built from `tests/fixtures/e2eSshHost.ts` and started here the way the launch
@@ -45,13 +27,11 @@ const inside = (locator: Locator) => locator.evaluate(element => {
  * listener; and the scripted ssh runs the real launch script. Every ssh the app spawns is recorded.
  */
 async function forgeHost(serve: 'free' | 'denied') {
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-host-tailnet-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-host-tailnet-' })).directory
   const root = join(profile, 'ssh-root')
   await mkdir(join(root, '~', 'code'), { recursive: true })
   const install = join(root, '~', '.local', 'share', 'sotto-host', 'host')
-  await build({ configFile: false, logLevel: 'silent', define: { 'require.main': 'undefined' }, ssr: { noExternal: true },
-    build: { ssr: resolve('tests/fixtures/e2eSshHost.ts'), target: 'node24', outDir: install, emptyOutDir: false,
-      rollupOptions: { external: id => isBuiltin(id), output: { format: 'cjs', entryFileNames: 'index.js' } } } })
+  await buildSshHost(install)
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, localHostEnabled: false, reducedMotion: 'on' }))
   const modeFile = join(root, 'mode')
   await writeFile(modeFile, 'run')

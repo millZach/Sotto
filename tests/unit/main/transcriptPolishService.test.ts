@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
 
-import { QUALITY_TIERS, TranscriptPolishService } from '../../../src/main/llm/transcriptPolishService'
+import { CLEANUP_MODELS, TranscriptPolishService } from '../../../src/main/llm/transcriptPolishService'
 import { buildPolishSystemPrompt } from '../../../src/main/llm/prompt'
 import { parseDictionary } from '../../../src/shared/dictionary'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings'
@@ -12,11 +12,16 @@ const ENABLED: AppSettings = {
   llmApiKey: 'sk-or-v1-test',
 }
 
-function okResponse(content: string): Response {
-  return new Response(JSON.stringify({ choices: [{ message: { content } }] }), {
+function okResponse(content: string, finish: Record<string, string> = {}): Response {
+  return new Response(JSON.stringify({ choices: [{ message: { content }, ...finish }] }), {
     status: 200,
     headers: { 'Content-Type': 'application/json' },
   })
+}
+
+function requestBody(fetchFn: { mock: { calls: unknown[][] } }, call: number): Record<string, unknown> {
+  const [, init] = fetchFn.mock.calls[call] as [string, RequestInit]
+  return JSON.parse(init.body as string) as Record<string, unknown>
 }
 
 function createService(options: {
@@ -62,7 +67,7 @@ describe('TranscriptPolishService', () => {
     expect(fetchFn).not.toHaveBeenCalled()
   })
 
-  it('polishes with the configured primary model', async () => {
+  it('polishes with the cleanup model', async () => {
     const { fetchFn, service } = createService({})
     await expect(service.polish('um hello there my good friend')).resolves.toEqual({
       text: 'Polished text.',
@@ -70,8 +75,7 @@ describe('TranscriptPolishService', () => {
     })
     expect(fetchFn).toHaveBeenCalledTimes(1)
     const [, init] = fetchFn.mock.calls[0] as [string, RequestInit]
-    const body = JSON.parse(init.body as string) as { model: string }
-    expect(body.model).toBe(QUALITY_TIERS.low.primary.id)
+    expect(requestBody(fetchFn, 0).model).toBe(CLEANUP_MODELS.primary.id)
     expect((init.headers as Record<string, string>).Authorization).toBe(
       'Bearer sk-or-v1-test',
     )
@@ -88,38 +92,53 @@ describe('TranscriptPolishService', () => {
       applied: true,
     })
     expect(fetchFn).toHaveBeenCalledTimes(2)
-    const [, init] = fetchFn.mock.calls[1] as [string, RequestInit]
-    expect((JSON.parse(init.body as string) as { model: string }).model).toBe(
-      QUALITY_TIERS.low.fallback.id,
+    expect(requestBody(fetchFn, 1).model).toBe(CLEANUP_MODELS.fallback.id)
+  })
+
+  it('asks Claude Haiku 5.5 at low effort first and Mercury 2 with reasoning off second', async () => {
+    const { fetchFn, service } = createService({
+      fetchFn: async () => new Response('overloaded', { status: 500 }),
+    })
+    await service.polish('um hello there my good friend')
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+    expect(requestBody(fetchFn, 0)).toMatchObject({
+      model: 'anthropic/claude-haiku-5.5',
+      reasoning: { effort: 'low' },
+    })
+    expect(requestBody(fetchFn, 1)).toMatchObject({
+      model: 'inception/mercury-2',
+      reasoning: { enabled: false },
+    })
+  })
+
+  it.each([
+    ['cut off at the token limit', { finish_reason: 'length' }],
+    ['declined by a content filter', { finish_reason: 'content_filter' }],
+    ['refused by the provider', { finish_reason: 'stop', native_finish_reason: 'refusal' }],
+  ])('treats an answer %s as unfinished and lets the fallback clean up', async (_label, finish) => {
+    const diagnostics: unknown[] = []
+    let call = 0
+    const fetchFn = vi.fn(async () =>
+      call++ === 0 ? okResponse('Um hello there', finish) : okResponse('Hello there, my good friend.'),
     )
+    const service = new TranscriptPolishService({
+      getSettings: () => ENABLED,
+      fetchFn,
+      onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+    })
+    await expect(service.polish('um hello there my good friend')).resolves.toEqual({
+      text: 'Hello there, my good friend.',
+      applied: true,
+    })
+    expect(diagnostics[0]).toMatchObject({ attempts: ['unfinished', 'ok'] })
   })
 
-  it('routes each quality tier to its benchmark-selected primary model', async () => {
-    for (const [quality, expected] of [
-      ['low', 'inception/mercury-2'],
-      ['medium', 'amazon/nova-2-lite-v1'],
-      ['value', 'z-ai/glm-5.3-flash'],
-      ['high', 'anthropic/claude-haiku-4.5'],
-    ] as const) {
-      const { fetchFn, service } = createService({
-        settings: { ...ENABLED, llmQuality: quality },
-      })
-      await expect(service.polish('um hello there my good friend')).resolves.toEqual({
-        text: 'Polished text.',
-        applied: true,
-      })
-      const [, init] = fetchFn.mock.calls[0] as [string, RequestInit]
-      expect((JSON.parse(init.body as string) as { model: string }).model).toBe(expected)
-    }
-  })
-
-  it('extends the deadline floor for the slower high tier', async () => {
+  it('keeps a deadline floor above the default timeout for the cleanup model', async () => {
     let clock = 0
     const { fetchFn, service } = createService({
-      settings: { ...ENABLED, llmQuality: 'high' },
       now: () => clock,
       fetchFn: async () => {
-        // Slower than the user deadline, but within the high tier's floor:
+        // Slower than the user deadline, but within the cleanup model's floor:
         // the fallback attempt must still be allowed to run.
         clock += DEFAULT_SETTINGS.llmTimeoutMs + 500
         return new Response('overloaded', { status: 500 })
@@ -195,7 +214,7 @@ describe('TranscriptPolishService', () => {
     const { fetchFn, service } = createService({
       now: () => clock,
       fetchFn: async () => {
-        // Overrun the entire tier deadline (floor plus length budget).
+        // Overrun the entire deadline (floor plus length budget).
         clock += 20_000
         throw new Error('timed out')
       },

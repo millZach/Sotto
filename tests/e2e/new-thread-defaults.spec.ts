@@ -1,6 +1,10 @@
+import { join } from 'node:path'
+import { evidenceDirectory } from '../fixtures/evidence'
 import { mkdir } from 'node:fs/promises'
 import { expect, test } from '@playwright/test'
 import { closeSotto, launchSotto, openPage, openThreads, resizeWindow } from './support/sottoLaunch'
+
+const evidence = evidenceDirectory('artifacts/new-thread-defaults')
 
 test('Settings effort stays a slider and new work uses the saved defaults', async () => {
   test.setTimeout(120_000)
@@ -18,8 +22,8 @@ test('Settings effort stays a slider and new work uses the saved defaults', asyn
     await chip.click()
     const slider = page.getByRole('slider', { name: 'Thread reasoning effort' })
     await expect(slider).toBeVisible()
-    await mkdir('artifacts/new-thread-defaults', { recursive: true })
-    await page.screenshot({ path: 'artifacts/new-thread-defaults/settings-current.png' })
+    await mkdir(evidence, { recursive: true })
+    await page.screenshot({ path: join(evidence, 'settings-current.png') })
     expect(await slider.evaluate(node => {
       const style = getComputedStyle(node)
       return { background: style.backgroundColor, border: style.borderTopWidth, padding: style.paddingTop, height: node.getBoundingClientRect().height }
@@ -46,14 +50,14 @@ test('Settings effort stays a slider and new work uses the saved defaults', asyn
         await resizeWindow(launched, width!, height!)
         await expect(slider).toBeInViewport()
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-        await page.screenshot({ path: `artifacts/new-thread-defaults/settings-${appearance}-${width}.png`, animations: 'disabled' })
+        await page.screenshot({ path: join(evidence, `settings-${appearance}-${width}.png`), animations: 'disabled' })
       }
     }
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await slider.press('End')
     await expect(chip).toHaveText(/Max/)
     expect(await page.evaluate(() => document.getAnimations().filter(animation => animation.playState === 'running' && animation.effect?.getTiming().iterations === Infinity).length)).toBe(0)
-    await page.screenshot({ path: 'artifacts/new-thread-defaults/settings-reduced-motion.png', animations: 'disabled' })
+    await page.screenshot({ path: join(evidence, 'settings-reduced-motion.png'), animations: 'disabled' })
     await slider.press('3')
     await expect(chip).toHaveText(/High/)
     await slider.press('Escape')

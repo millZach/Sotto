@@ -4,7 +4,7 @@ import { clientAgentState, hostEntityKey, mapHostReferences, parseHostEntityKey 
 import { desktopWindowClient, type ClientIdentity, type HostService, type RequestAnswerRecovery } from '../agents/hostService'
 import { requestDraftProvider, requestDraftQuestions, type RequestDraftOwner, type RequestDraftTarget } from '../../shared/requestDrafts'
 import { requestQuestionsDigest, type BindRequestDraftDecision, type RequestDraftOwnerState, type RequestDraftService } from '../agents/requestDrafts'
-import type { HostAnswerTarget } from '../../shared/hostProtocol'
+import { LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, type HostAnswerTarget } from '../../shared/hostProtocol'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 import type { GitPullRequestRead, GitPullRequestRequest } from '../../shared/gitPullRequests'
@@ -41,12 +41,8 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   available?: () => boolean
 }
 
-/**
- * The commands whose point is to move the host's selection: Later and Next go to another queued thread, a new thread or
- * project opens, an attention item or a paused draft is taken up, a spoken request picks a thread. Selecting a thread
- * or a project is the window's own and is handled on its own.
- */
-const SELECTING_COMMANDS: ReadonlySet<AgentCommand['type']> = new Set(['later', 'next', 'create-thread', 'create-project', 'select-attention', 'resume-draft', 'utterance'])
+/** Creation opens its result unless the window selected something else while it ran. */
+const SELECTING_COMMANDS: ReadonlySet<AgentCommand['type']> = new Set(['create-thread', 'create-project'])
 
 /** A state without its client updates, which belong to the machine that runs those clients. */
 function withoutClientUpdates(state: AgentState): AgentState {
@@ -80,6 +76,10 @@ export function hostAbsolutePath(root: string, path: string): string {
 }
 
 type RouterNotice = { message: string; answer?: { hostId: string; decisionId: string; target: HostAnswerTarget }; unsupportedCompose?: DesktopHostConnection }
+type RequestDraftRecovery = Pick<RequestDraftService, 'heldThreadAnswers' | 'reconcile'>
+
+/** The shortest gap between two answer recovery passes that published states ask for. */
+export const REQUEST_DRAFT_PASS_INTERVAL_MS = 500
 
 /** Routing happens in main, before host-local IDs or privileged command schemas are decoded. */
 export class DesktopHostRouter {
@@ -103,8 +103,18 @@ export class DesktopHostRouter {
     window: number
     reads: number
   }>()
+  /** The recovery pass published states ask for: whether one is running, the gap after it, and a request waiting on both. */
+  private readonly draftPass: { running: boolean; gap: ReturnType<typeof setTimeout> | undefined; wanted: RequestDraftRecovery | undefined; disposed: boolean } =
+    { running: false, gap: undefined, wanted: undefined, disposed: false }
 
   constructor(private readonly empty: () => AgentState, private readonly options: { bindRequestDraftDecision?: BindRequestDraftDecision } = {}) {}
+
+  requiresManagementUpdate(hostId: string): boolean {
+    const connection = this.hosts.get(hostId)?.connection
+    if (connection?.kind !== 'remote') return false
+    const state = connection.service.shell()
+    return state.legacyManagement === true
+  }
 
   add(connection: DesktopHostConnection): void {
     if (this.hosts.has(connection.hostId)) throw new Error('This host is already connected.')
@@ -203,7 +213,6 @@ export class DesktopHostRouter {
           ...(connection.offersBabysitting?.() ? { pullRequestBabysit: true as const } : {}),
         })),
       },
-      assignments: entries.flatMap(item => item.state.assignments), queue: entries.flatMap(item => item.state.queue),
       threadDrafts: entries.flatMap(item => item.state.threadDrafts ?? []),
       threadDraftPersistence: entries.flatMap(item => item.state.threadDraftPersistence ?? []),
       obsoleteDrafts: entries.flatMap(item => item.state.obsoleteDrafts ?? []).slice(-MAX_DELIVERED_DRAFTS),
@@ -244,10 +253,39 @@ export class DesktopHostRouter {
       ready: thread.historyStatus !== 'loading' && thread.historyStatus !== 'error', requests: thread.requests, ...recovery }
       : recovery.completed.length ? { connected: false, ready: false, requests: [], ...recovery } : undefined
   }
-  async reconcileRequestDrafts(drafts: Pick<RequestDraftService, 'heldThreadAnswers' | 'reconcile'>): Promise<void> {
+  /**
+   * The recovery pass a published state asks for. A provider publishes dozens of times a second while it streams, and a pass
+   * looks up every held answer's thread, so passes run one at a time and start at least REQUEST_DRAFT_PASS_INTERVAL_MS apart.
+   * Asking while one runs, or before that interval since its start is up, gets one pass when both are over: a slow pass is
+   * followed at once. A pass is over once its receipt reads are issued; each read retires its own acceptance when it
+   * finishes, so a known acceptance never waits behind another pass's socket read.
+   */
+  scheduleRequestDraftReconcile(drafts: RequestDraftRecovery): void {
+    const pass = this.draftPass
+    if (pass.disposed) return
+    if (pass.running || pass.gap) { pass.wanted = drafts; return }
+    pass.running = true
+    const started = Date.now()
+    void this.issueRequestDraftChecks(drafts).catch(() => undefined).finally(() => {
+      pass.running = false
+      if (pass.disposed) return
+      pass.gap = setTimeout(() => {
+        pass.gap = undefined
+        const wanted = pass.wanted
+        pass.wanted = undefined
+        if (wanted) this.scheduleRequestDraftReconcile(wanted)
+      }, Math.max(0, REQUEST_DRAFT_PASS_INTERVAL_MS - (Date.now() - started)))
+    })
+  }
+  async reconcileRequestDrafts(drafts: RequestDraftRecovery): Promise<void> {
+    await Promise.all(await this.issueRequestDraftChecks(drafts))
+    await drafts.reconcile()
+  }
+  /** Retires what is already known, then starts or joins a receipt read for each held remote answer, returned unawaited. */
+  private async issueRequestDraftChecks(drafts: RequestDraftRecovery): Promise<Promise<void>[]> {
     // Already-known local, personal and remote acceptance must not wait for a socket read.
     await drafts.reconcile()
-    const state = this.shell()
+    let state: AgentState | undefined
     const pending: Promise<void>[] = []
     for (const draft of await drafts.heldThreadAnswers()) {
       const owner = draft.target
@@ -266,6 +304,8 @@ export class DesktopHostRouter {
       const completed = connection.service.requestAnswerRecovery?.(identity.id, owner.providerId).completed
       if (completed?.some(item => item.decisionId === decisionId && item.requestId === owner.requestId
         && item.questionsDigest === questionsDigest)) continue
+      // Every host's threads, built once a held answer still needs its receipt and not before.
+      state ??= this.shell()
       const thread = state.host.threads.find(item => item.id === owner.ownerId)
       const request = thread?.requests.find(item => item.id === owner.requestId)
       // A negative receipt is checked again when its provider reconnects or the original request
@@ -315,8 +355,7 @@ export class DesktopHostRouter {
       }
       pending.push(check.promise)
     }
-    await Promise.all(pending)
-    await drafts.reconcile()
+    return pending
   }
 
   async refreshRequestDraft(target: RequestDraftTarget, decisionId?: string): Promise<void> {
@@ -442,6 +481,9 @@ export class DesktopHostRouter {
       return this.shell()
     }
     const { connection, command } = this.route(input)
+    if (this.requiresManagementUpdate(connection.hostId) && !LEGACY_MANAGEMENT_ALLOWED_COMMANDS.has(command.type)) {
+      return { ...this.shell(), error: LEGACY_MANAGEMENT_UPDATE }
+    }
     // Retained local edits publish before the refusal reply. Keep its visible banner stable while typing.
     if (command.type === 'compose' && command.threadId !== undefined && (connection.service.supportsAtomicSend === false || connection.service.supportsDraftRevisions === false)
       && priorNotice === this.publishedNotice && priorNotice?.unsupportedCompose === connection) this.notice = priorNotice
@@ -540,6 +582,7 @@ export class DesktopHostRouter {
   private async startThreadSession(input: unknown, client: ClientIdentity): Promise<AgentState> {
     try {
       const { connection, command } = this.route(input)
+      if (this.requiresManagementUpdate(connection.hostId)) return { ...agentShell(this.shell()), error: LEGACY_MANAGEMENT_UPDATE }
       if (connection.available?.() !== false) await connection.service.command(command, client)
     } catch { /* The send that follows starts the session itself and reports what it finds. */ }
     return agentShell(this.shell())
@@ -560,7 +603,7 @@ export class DesktopHostRouter {
   /**
    * The window goes where one of its selecting commands took the host, so the thread it shows is the one the host
    * composes and sends to. It does not follow a move it did not ask for: another thread's turn ending, another
-   * client's selection, or the host presenting its next queued thread after an answer. A selection the user made
+   * client's selection. A selection the user made
    * while the command ran wins over the command.
    */
   private follow(connection: DesktopHostConnection, before: Pick<AgentState, 'activeThreadId' | 'activeProjectId'>): void {
@@ -582,5 +625,9 @@ export class DesktopHostRouter {
     return state.error ? { ...state, error: this.refusal(connection, state.error) } : state
   }
   private emit(): void { const state = this.shell(); this.publishedNotice = this.notice; for (const listener of this.listeners) listener(state) }
-  dispose(): void { for (const hostId of [...this.hosts.keys()]) this.remove(hostId); this.listeners.clear(); this.detailListeners.clear() }
+  dispose(): void {
+    for (const hostId of [...this.hosts.keys()]) this.remove(hostId)
+    this.listeners.clear(); this.detailListeners.clear()
+    this.draftPass.disposed = true; clearTimeout(this.draftPass.gap); this.draftPass.gap = undefined; this.draftPass.wanted = undefined
+  }
 }

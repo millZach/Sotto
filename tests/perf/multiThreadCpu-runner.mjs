@@ -1,3 +1,4 @@
+import { upperMedian as median } from './support/statistics.mjs'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -19,7 +20,6 @@ const revision = '11e60a67f5529a1eefad5be5bc5990ef069f5205'
 const legacyProvider = process.env.SOTTO_PERF_LEGACY === '1'
 const at = '2026-09-23T12:00:00.000Z'
 const round = n => Math.round(n * 1000) / 1000
-const median = xs => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)]
 const p95 = xs => [...xs].sort((a, b) => a - b)[Math.floor((xs.length - 1) * .95)]
 
 // Representative combinations, including the original usage-only 1/4/8 x 500 comparison.

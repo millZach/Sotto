@@ -3,7 +3,7 @@ import React, { type CSSProperties, type ReactNode } from 'react'
 
 export type VoiceWaveStage = 'idle' | 'listening' | 'processing'
 
-export type VoiceWaveSize = 'widget' | 'deck' | 'hero' | 'switch'
+export type VoiceWaveSize = 'widget' | 'deck' | 'hero' | 'preview' | 'switch'
 
 export interface VoiceWaveProps {
   /** What the dictation surface is doing right now. */
@@ -14,8 +14,8 @@ export interface VoiceWaveProps {
   readonly label: string
   /**
    * `widget` is the floating widget's exact geometry; `deck` the old strip's
-   * larger cut; `hero` the Dictate room's centrepiece; `switch` the glyph
-   * inside the Dictate tab.
+   * larger cut; `hero` the Dictate room's centrepiece; `preview` the same at
+   * half size in Settings, Appearance; `switch` the glyph inside the Dictate tab.
    */
   readonly size?: VoiceWaveSize
   /** Keep the listening wave moving for the whole open stream (microphone test). */
@@ -40,6 +40,7 @@ const GEOMETRY: Readonly<Record<VoiceWaveSize, { width: number; gap: number; res
   widget: { width: 3, gap: 3, rest: 5, peak: 17 },
   deck: { width: 4, gap: 4, rest: 6, peak: 26 },
   hero: { width: 14, gap: 12, rest: 14, peak: 130 },
+  preview: { width: 7, gap: 6, rest: 7, peak: 65 },
   switch: { width: 2, gap: 2, rest: 4, peak: 14 },
 }
 
@@ -75,7 +76,7 @@ export function VoiceWave({ stage, value, label, size = 'widget', holdSpeaking =
   return (
     <div className="voice-wave" data-stage={stage} style={style} {...liveProps}>
       {Array.from({ length: BAR_COUNT }, (_, index) => {
-        const resting = stage === 'idle' && (size === 'hero' || size === 'deck') ? (RESTING_PROFILE[index] ?? 0) : 0
+        const resting = stage === 'idle' && (size === 'hero' || size === 'preview' || size === 'deck') ? (RESTING_PROFILE[index] ?? 0) : 0
         const swing = Math.max(resting, level * (PROFILE[index] ?? 1))
         const height = Math.round((geometry.rest + swing * (geometry.peak - geometry.rest)) * 10) / 10
         return (

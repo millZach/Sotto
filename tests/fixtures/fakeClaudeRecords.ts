@@ -3,6 +3,7 @@
  * `requests.jsonl` for what each process was started with and sent, and `home/projects/<folder>/<session>.jsonl` for
  * the session files Claude Code would have written.
  */
+import { parseProviderRecords } from './providerRecords'
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
@@ -11,8 +12,7 @@ export interface FakeClaudeLaunch { resume: boolean; session: string; args: stri
 
 /** Every line of `requests.jsonl`, in the order the fake processes wrote them. */
 export async function fakeClaudeRecords(root: string): Promise<FakeClaudeRecord[]> {
-  const lines = (await readFile(join(root, 'requests.jsonl'), 'utf8').catch(() => '')).trim().split('\n').filter(Boolean)
-  return lines.map(line => JSON.parse(line) as FakeClaudeRecord)
+  return parseProviderRecords<FakeClaudeRecord>(await readFile(join(root, 'requests.jsonl'), 'utf8').catch(() => ''))
 }
 /** A record's thread launch, with the session ID it was started on; the account check's own run is not one. */
 export function fakeClaudeLaunch(record: FakeClaudeRecord): FakeClaudeLaunch | undefined {

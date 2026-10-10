@@ -6,6 +6,7 @@ import { GitHubRateLimit } from '../../../src/main/agents/github'
 import { DETAIL_QUERY, fingerprintQuery } from '../../../src/main/agents/githubBabysitReads'
 import { pullRequestKey } from '../../../src/shared/gitPullRequests'
 import { scriptedGitHub, type ScriptedPull } from '../../fixtures/babysitGitHub'
+import { deferred } from '../../fixtures/deferred'
 
 /**
  * The babysitting reader (ADR-0061, #823) over a scripted gh, a scripted clock and an in-memory record store: every
@@ -588,8 +589,8 @@ describe('recording what a thread was told', () => {
     const pull: ScriptedPull = { number: 1, checks: [{ name: 'test', state: 'FAILURE' }] }
     const h = harness([pull], { a: { links: [url(1)] } })
     await h.babysitter.start('a', url(1), 'agent')
-    let release!: () => void
-    const held = new Promise<void>(resolve => { release = resolve })
+
+    const { promise: held, resolve: release } = deferred<void>()
     const run = h.github.run
     // gh answers the fingerprint only once the stop has landed.
     const babysitter = new Babysitter({ store: h.memory.store, rateLimit: h.rateLimit, now: h.clock.now, deliver: async (threadId, news) => { h.delivered.push({ threadId, news }) },

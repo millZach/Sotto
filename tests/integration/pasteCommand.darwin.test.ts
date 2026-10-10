@@ -51,7 +51,7 @@ const runAppleScript = (script: string): Promise<string> =>
 const shouldRun =
   process.platform === 'darwin' && process.env.SOTTO_NATIVE_PASTE_SMOKE === '1'
 
-describe.runIf(shouldRun)('macOS native paste integration', () => {
+describe.runIf(shouldRun)("macOS native paste integration (requires SOTTO_NATIVE_PASTE_SMOKE=1)", () => {
   it('pastes the clipboard into the frontmost native text document', async () => {
     const originalClipboard = await runCommand('/usr/bin/pbpaste', []).catch(() => '')
     await runCommand('/usr/bin/pbcopy', [], SMOKE_TEXT)

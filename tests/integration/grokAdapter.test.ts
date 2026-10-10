@@ -2,8 +2,8 @@
 import { randomUUID } from 'node:crypto'
 import { expect, it } from 'vitest'
 import { describeAdapterContract } from './adapterContract'
-import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
-describeAdapterContract('Grok ACP', session => grokFixture(undefined, undefined, undefined, session))
+import { grokFixture, grokFixtureSkips } from '../fixtures/fakeGrokThreadFixture'
+describeAdapterContract('Grok ACP', session => grokFixture(undefined, undefined, undefined, session), grokFixtureSkips)
 
 // Grok lists its levels highest first, and its `_meta.reasoningEffort` is the level the session is on
 // now rather than its default. Both reached the slider as reported before the adapter normalised them.

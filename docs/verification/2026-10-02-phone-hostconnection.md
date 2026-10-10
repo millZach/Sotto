@@ -1,14 +1,16 @@
 # Phone connection checks
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 The phone reconnect and Remove validate ready host health against the saved computer identity. Local removal still completes when the computer cannot confirm remote removal. The listener treats an omitted hello cursor as snapshot-only and advances delivered event pages without changing its cursor for thread-filtered or older history reads, apart from a snapshot-only peer explicitly switching to unfiltered history. A stopped computer returning 502 or 503 keeps its existing saved-reconnect feedback while discovery retains port fallback. Connection waits, read timeouts and rate limits have their own messages; thread-command uncertainty retains its existing wording.
 
 ## Local Windows checks
 
 - `npm run typecheck`, `npm run lint`, `npm run notices:verify`: passed; 174 notice components.
-- `tests/integration/socketHost.test.ts` and `tests/unit/main/socketServer.test.ts`: 64 passed. New cursor regressions failed before their fixes and passed afterward.
+- `tests/integration/socketHost.test.ts`, `tests/integration/socketClientIsolation.test.ts`, `tests/integration/socketThreadDetail.test.ts`, `tests/integration/socketHostFeatures.test.ts`, `tests/integration/socketRequestBudgets.test.ts` and `tests/integration/socketServer.test.ts`: 64 passed. New cursor regressions failed before their fixes and passed afterward.
 - `npm run build` and `npx playwright test tests/e2e/phones.spec.ts --workers=1`: passed, one journey. It covers listener setup, pairing, the named phone row, answer authority and revocation. Its fixture supplies the phone name; this does not establish what iOS exposes.
 - Inspected the paired-phone captures at minimum width in dark and light: [dark](../../artifacts/pkg-17-hostconnection/phones-paired-820-dark.png), [light](../../artifacts/pkg-17-hostconnection/phones-paired-820-light.png). The desktop layout is unchanged. The journey also captures 1280 and 1600 widths. No baselines were regenerated.
-- The first full two-worker suite hit the recursive initialized-submodule test's 15-second deadline. The isolated `threadWorktrees.test.ts` rerun passed all 68 tests. Full-suite totals are recorded in the PR.
+- The first full two-worker suite hit the recursive initialized-submodule test's 15-second deadline. The isolated rerun of the original combined thread-worktree suite passed all 68 tests. The recursive initialized-submodule case now lives in `tests/integration/threadWorktreeSubmodules.test.ts`. Full-suite totals are recorded in the PR.
 
 ## CI follow-up
 

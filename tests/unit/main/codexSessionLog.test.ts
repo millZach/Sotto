@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CodexSessionLogWatcher, promptDigest } from '../../../src/main/agents/codexSessionLog'
 import { rolloutLine } from '../../fixtures/codexFixture'
 import type { AgentMessage } from '../../../src/shared/agents'
+import { deferred } from '../../fixtures/deferred'
 
 vi.mock('node:fs/promises', async importOriginal => {
   const fs = await importOriginal<typeof import('node:fs/promises')>()
@@ -31,9 +32,9 @@ describe('Codex session log', () => {
     const watcher = new CodexSessionLogWatcher({ codexHome: root, onMessage: (_id, message) => messages.push(message) })
     watchers.push(watcher); watcher.observe('thread')
     vi.spyOn(Date, 'now').mockReturnValue(0)
-    let started!: () => void, release!: () => void
-    const locating = new Promise<void>(resolve => { started = resolve })
-    const held = new Promise<void>(resolve => { release = resolve })
+
+    const { promise: locating, resolve: started } = deferred<void>()
+    const { promise: held, resolve: release } = deferred<void>()
     vi.mocked(readdir).mockImplementationOnce(async () => { started(); await held; return [] })
     const polling = watcher.poll()
     await locating

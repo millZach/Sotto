@@ -1,14 +1,15 @@
 import { checkoutIdentity } from './threadWorktrees'
 import { GitActionRefusal } from './gitActions'
 
-export type CheckoutPendingWork = 'pending-work' | 'failed-followups' | 'paused-followups' | 'paused-assignment' | 'managed-assignment' | 'uncertain-send'
-export type CheckoutHolder = { kind: 'git-action' | 'automatic-pull' | 'checkpoint' | 'checkpoint-revert' | 'settle' | 'remove-folder' }
+export type CheckoutPendingWork = 'pending-work' | 'failed-followups' | 'paused-followups' | 'uncertain-send'
+export type CheckoutHolder = { kind: 'git-action' | 'automatic-pull' | 'checkpoint' | 'checkpoint-revert' | 'settle' | 'remove-folder' | 'terminal-start' }
   | { kind: 'send' | 'turn' | 'waiting-answer' | 'history-error' | 'history-loading' | 'preparation' | CheckoutPendingWork; threadId: string; title: string }
 
 function holdingMessage(holder: CheckoutHolder): string {
   switch (holder.kind) {
     case 'automatic-pull': return 'Sotto is pulling this folder.'
     case 'checkpoint': return 'Sotto is saving a checkpoint in this folder.'
+    case 'terminal-start': return 'Sotto is starting a terminal in this folder.'
     case 'checkpoint-revert': return 'Sotto is reverting a checkpoint in this folder.'
     case 'remove-folder': return 'Sotto is removing this folder.'
     case 'settle': return 'Sotto is settling a thread in this folder.'
@@ -21,8 +22,6 @@ function holdingMessage(holder: CheckoutHolder): string {
     case 'preparation': return `Sotto is setting up the working copy for thread "${holder.title}".`
     case 'failed-followups': return `Thread "${holder.title}" has queued follow-ups that did not send.`
     case 'paused-followups': return `Thread "${holder.title}" has paused follow-ups.`
-    case 'paused-assignment': return `Thread "${holder.title}" has paused management and queued work.`
-    case 'managed-assignment': return `Thread "${holder.title}" is managed by Sotto.`
     case 'uncertain-send': return `Thread "${holder.title}" has a message whose delivery is unconfirmed.`
     case 'git-action': return 'A Git action is running in this folder.'
   }
@@ -34,27 +33,27 @@ export function checkoutMutationRefusal(holder: CheckoutHolder): GitActionRefusa
     case 'history-error': recovery = 'Open it to retry, or archive it, then try again.'; break
     case 'failed-followups':
     case 'paused-followups': recovery = 'Resume or remove them, then try again.'; break
-    case 'paused-assignment': recovery = 'Stop managing it and review its queue, or archive it, then try again.'; break
-    case 'managed-assignment': recovery = 'Stop managing it, or archive it, then try again.'; break
     case 'uncertain-send': recovery = 'Open it and refresh to check whether it was sent, then try again.'; break
     case 'pending-work': recovery = 'Open it to review that work, or archive it, then try again.'; break
     case 'history-loading':
     case 'preparation':
     case 'automatic-pull':
     case 'checkpoint':
+    case 'terminal-start':
     case 'settle': recovery = 'Try again in a moment.'; break
     default: recovery = 'Wait for it to finish before changing this folder.'
   }
   return new GitActionRefusal(`${holdingMessage(holder)} ${recovery}`)
 }
 
-/** A definitive refusal before the provider receives a prompt. Queue delivery supplies its own recovery copy. */
+/** A refusal of a checkout's send reservation, before a prompt or terminal starts. Each consumer supplies its own recovery copy. */
 export class CheckoutSendRefusal extends Error {
   constructor(private readonly holder: CheckoutHolder = { kind: 'git-action' }) {
     super(`${holdingMessage(holder)} Your message was not sent. Send it again when the action finishes.`)
   }
   draftMessage(): string { return `${holdingMessage(this.holder)} Your message was not sent. Your text is kept. Send it again when the action finishes.` }
   queuedMessage(): string { return `${holdingMessage(this.holder)} Your follow-up was not sent. It is kept in the queue. Resume the queue when the action finishes.` }
+  terminalMessage(): string { return `${holdingMessage(this.holder)} The terminal did not start. Try again when it finishes.` }
 }
 
 /** Sends may share a checkout, but a mutation excludes sends and other mutations from its first check to completion. */
@@ -64,10 +63,10 @@ export class CheckoutMutations {
     if (![...this.active.values()].some(state => state.mutation)) return false
     return Boolean(this.active.get(await checkoutIdentity(folder))?.mutation)
   }
-  async acquire(folder: string, kind: 'send' | 'mutation', holder?: CheckoutHolder): Promise<() => void> {
+  async acquire(folder: string, kind: 'send' | 'read' | 'mutation', holder?: CheckoutHolder): Promise<() => void> {
     return this.acquireIdentity(await checkoutIdentity(folder), kind, holder)
   }
-  acquireIdentity(key: string, kind: 'send' | 'mutation', holder: CheckoutHolder = { kind: 'git-action' }): () => void {
+  acquireIdentity(key: string, kind: 'send' | 'read' | 'mutation', holder: CheckoutHolder = { kind: 'git-action' }): () => void {
     const state = this.active.get(key) ?? { reads: new Set<CheckoutHolder>(), mutation: null }
     const held = state.mutation ?? (kind === 'mutation' ? state.reads.values().next().value : undefined)
     if (held) throw kind === 'send' ? new CheckoutSendRefusal(held) : checkoutMutationRefusal(held)

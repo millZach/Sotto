@@ -21,8 +21,6 @@ describe('third-party notice inventory', () => {
       'Electron MIT license',
       'Lucide ISC and Feather MIT licenses',
       'Apache License 2.0',
-      'Protocol Buffers BSD 3-Clause license',
-      'ONNX Runtime MIT license',
       'Windows updater dependency MIT licenses',
       'Windows updater dependency ISC licenses',
       'sax Blue Oak Model License 1.0.0',

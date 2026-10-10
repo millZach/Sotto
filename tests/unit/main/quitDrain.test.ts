@@ -3,11 +3,11 @@ import { EventEmitter } from 'node:events'
 import { afterEach, expect, it, vi } from 'vitest'
 import { bootstrapSotto } from '../../../src/main/app/bootstrap'
 import { registerQuitDrain, SYSTEM_ENDING_WINDOW_MS } from '../../../src/main/app/quitDrain'
+import { deferred } from '../../fixtures/deferred'
 afterEach(() => vi.useRealTimers())
 it('prevents repeated quits until the host drain settles, then allows the real quit', async () => {
   const app = Object.assign(new EventEmitter(), { quit: vi.fn(), exit: vi.fn() })
-  let resolve = (): void => undefined
-  const pending = new Promise<void>(done => { resolve = done })
+  const { promise: pending, resolve } = deferred()
   const drain = vi.fn(() => pending), failure = vi.fn(), event = { preventDefault: vi.fn() }
   registerQuitDrain(app, drain, failure)
   app.emit('before-quit', event); app.emit('before-quit', event)
@@ -28,8 +28,8 @@ it('reports a failed drain once and still permits exit', async () => {
 it.each(['resolve', 'reject'] as const)('forces exit after ten seconds even if a drain later %ss', async ending => {
   vi.useFakeTimers()
   const app = Object.assign(new EventEmitter(), { quit: vi.fn(), exit: vi.fn() })
-  let resolve = (): void => undefined, reject = (): void => undefined
-  const pending = new Promise<void>((done, fail) => { resolve = done; reject = () => fail(new Error('synthetic')) })
+  const { promise: pending, resolve, reject: fail } = deferred()
+  const reject = () => fail(new Error('synthetic'))
   const drain = vi.fn(() => pending)
   registerQuitDrain(app, drain, vi.fn())
   app.emit('before-quit', { preventDefault: vi.fn() })
@@ -60,8 +60,7 @@ it('keeps the native windows and tray until the drain settles despite bootstrap 
   }
   const runtime = { start: vi.fn(async () => undefined), showMain: vi.fn(), showFromActivation: vi.fn(), beginQuit: vi.fn(), dispose: vi.fn() }
   await bootstrapSotto({ app, initialize: () => runtime, log: vi.fn() })
-  let resolve = (): void => undefined
-  const pending = new Promise<void>(done => { resolve = done })
+  const { promise: pending, resolve } = deferred()
   registerQuitDrain(app, () => pending, vi.fn())
   app.emit('before-quit', quitEvent())
   await vi.advanceTimersByTimeAsync(0)
@@ -95,7 +94,7 @@ it('stops holding a quit already draining when the system starts to log out', as
   const app = Object.assign(new EventEmitter(), { quit: vi.fn(), exit: vi.fn() })
   const power = new EventEmitter()
   let resolve = (): void => undefined
-  const drain = vi.fn(() => new Promise<void>(done => { resolve = done }))
+  const drain = vi.fn(() => { const pending = deferred<void>(); resolve = pending.resolve; return pending.promise })
   registerQuitDrain(app, drain, vi.fn(), power)
   const first = { preventDefault: vi.fn() }
   app.emit('before-quit', first)

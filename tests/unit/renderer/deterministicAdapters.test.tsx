@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
 import { createE2ESettingsBridge } from '../../../src/renderer/src/e2e/deterministicAdapters'
 import type { SottoBridge } from '../../../src/shared/contracts'

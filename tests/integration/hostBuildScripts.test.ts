@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { execFile } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
@@ -10,9 +11,7 @@ const execute = promisify(execFile)
 const root = resolve(import.meta.dirname, '../..')
 
 it('builds and packages the host from another folder with local tar archive names', async () => {
-  const scratch = join(root, 'test-results')
-  await mkdir(scratch, { recursive: true })
-  const cwd = await mkdtemp(join(scratch, 'host-build-cwd-'))
+  const cwd = await mkdtemp(join(tmpdir(), 'host-build-cwd-'))
   const outDir = join(cwd, 'host'), releaseDir = join(cwd, 'release')
   try {
     const result = await execute(process.execPath, [

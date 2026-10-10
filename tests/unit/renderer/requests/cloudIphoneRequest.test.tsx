@@ -1,15 +1,16 @@
+import { cloudIphoneBridgeFixture, cloudSession } from '../../../fixtures/renderer/cloudIphoneBridge'
 import React from 'react'
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { CloudIphoneBridge, CloudSession } from '../../../../src/shared/cloudIphone'
+import type { CloudSession } from '../../../../src/shared/cloudIphone'
 import type { ToolsResult } from '../../../../src/shared/tools'
 import { CloudIphoneRequest } from '../../../../src/renderer/src/agents/requests/CloudIphoneRequest'
 import { CloudIphoneStore } from '../../../../src/renderer/src/tools/cloudIphoneStore'
 
 const ok = <T,>(value: T): ToolsResult<T> => ({ ok: true, value })
 
-const session = (patch: Partial<CloudSession> = {}): CloudSession => ({
+const session = (patch: Partial<CloudSession> = {}): CloudSession => cloudSession({
   id: '11111111-1111-4111-8111-111111111111', threadId: 'workshop', workspaceId: 'workspace',
   status: 'asking', description: 'To check the Needs you list on a native build.', buildPath: 'apps/ios/build/Sotto.app.zip', buildBytes: 41_000_000,
   device: null, expiresAt: Date.now() + 300_000, startedAt: null, endedAt: null, endReason: null, minutes: 0,
@@ -17,15 +18,12 @@ const session = (patch: Partial<CloudSession> = {}): CloudSession => ({
 })
 
 function fakeBridge(initial: CloudSession[]) {
-  const bridge: CloudIphoneBridge = {
-    status: vi.fn(async () => ok({ keySaved: true, month: '2026-10', monthMinutes: 38, capMinutes: 750, recent: [] })),
+  const { bridge } = cloudIphoneBridgeFixture({ commands: { status: vi.fn(async () => ok({ keySaved: true, month: '2026-10', monthMinutes: 38, capMinutes: 750, recent: [] })),
     setKey: vi.fn(async () => ok({ saved: true, problem: null })),
     sessions: vi.fn(async () => ok(initial)),
     answer: vi.fn(async ({ sessionId, allow }) => ok(session({ id: sessionId, status: allow ? 'starting' : 'denied' }))),
     end: vi.fn(async ({ sessionId }) => ok(session({ id: sessionId, status: 'ended' }))),
-    mount: vi.fn(async () => ok(undefined)),
-    onEvent: vi.fn(() => () => undefined),
-  }
+    mount: vi.fn(async () => ok(undefined)) } })
   return bridge
 }
 

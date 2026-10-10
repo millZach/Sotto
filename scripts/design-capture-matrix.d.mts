@@ -7,7 +7,7 @@ export type DesignCaptureMotion = 'normal' | 'reduced'
 export type DesignCaptureFocusTarget = 'none' | 'tab' | 'navigation' | 'input' | 'switch' | 'destructive'
 export interface DesignCaptureRequirement {
   readonly id: string
-  readonly category: 'onboarding' | 'dictate' | 'agents' | 'history' | 'settings' | 'help' | 'threads' | 'scale' | 'widget' | 'appearance' | 'width'
+  readonly category: 'onboarding' | 'dictate' | 'history' | 'settings' | 'help' | 'threads' | 'scale' | 'widget' | 'appearance' | 'width'
   readonly state: string
   readonly theme: DesignCaptureTheme
   readonly scalePercent: 100 | 125 | 150 | 200

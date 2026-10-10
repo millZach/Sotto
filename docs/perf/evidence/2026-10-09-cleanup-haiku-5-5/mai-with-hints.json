@@ -1,0 +1,1479 @@
+{
+  "args": {
+    "runs": 0,
+    "asrRuns": 3,
+    "judge": false,
+    "configs": null,
+    "asrSource": "stt-2026-09-11T23-06-48-689Z.json#mai+hints"
+  },
+  "judgeModel": "anthropic/claude-opus-5.5",
+  "judgeCost": 0,
+  "asrSource": "stt-2026-09-11T23-06-48-689Z.json#mai+hints",
+  "rows": [
+    {
+      "config": "haiku-5.5-off",
+      "model": "anthropic/claude-haiku-5.5",
+      "reasoning": "off",
+      "tier": null,
+      "requests": 9,
+      "errors": 0,
+      "rejected": 0,
+      "p50": 1247.4326,
+      "p90": 1386.9230000000007,
+      "max": 1386.9230000000007,
+      "longP50": null,
+      "serverP50": 1061,
+      "firstTokenP50": 802,
+      "reasoningTokens": 0,
+      "outputTokens": 35.44444444444444,
+      "costPerThousand": 0.16255555555555554,
+      "score": null,
+      "minScore": null,
+      "perfect": null,
+      "wer": 0,
+      "perClipWer": [
+        0,
+        0,
+        0
+      ],
+      "providers": [
+        "Claude Platform on AWS"
+      ],
+      "issues": []
+    },
+    {
+      "config": "haiku-5.5-low",
+      "model": "anthropic/claude-haiku-5.5",
+      "reasoning": "low",
+      "tier": null,
+      "requests": 9,
+      "errors": 0,
+      "rejected": 0,
+      "p50": 1363.7268999999997,
+      "p90": 1716.1809000000067,
+      "max": 1716.1809000000067,
+      "longP50": null,
+      "serverP50": 1182,
+      "firstTokenP50": 853,
+      "reasoningTokens": 0,
+      "outputTokens": 35.55555555555556,
+      "costPerThousand": 0.16271111111111108,
+      "score": null,
+      "minScore": null,
+      "perfect": null,
+      "wer": 0,
+      "perClipWer": [
+        0,
+        0,
+        0
+      ],
+      "providers": [
+        "Claude Platform on AWS"
+      ],
+      "issues": []
+    },
+    {
+      "config": "haiku-5.5-default",
+      "model": "anthropic/claude-haiku-5.5",
+      "reasoning": "default",
+      "tier": null,
+      "requests": 9,
+      "errors": 0,
+      "rejected": 0,
+      "p50": 1340.0381000000002,
+      "p90": 1767.1881999999896,
+      "max": 1767.1881999999896,
+      "longP50": null,
+      "serverP50": 1096,
+      "firstTokenP50": 874,
+      "reasoningTokens": 0,
+      "outputTokens": 35.55555555555556,
+      "costPerThousand": 0.16271111111111108,
+      "score": null,
+      "minScore": null,
+      "perfect": null,
+      "wer": 0,
+      "perClipWer": [
+        0,
+        0,
+        0
+      ],
+      "providers": [
+        "Claude Platform on AWS"
+      ],
+      "issues": []
+    },
+    {
+      "config": "mercury-2",
+      "model": "inception/mercury-2",
+      "reasoning": "off",
+      "tier": "low",
+      "requests": 9,
+      "errors": 0,
+      "rejected": 0,
+      "p50": 350.44890000000305,
+      "p90": 17267.179600000003,
+      "max": 17267.179600000003,
+      "longP50": null,
+      "serverP50": 202,
+      "firstTokenP50": 200,
+      "reasoningTokens": 4.111111111111111,
+      "outputTokens": 25.333333333333332,
+      "costPerThousand": 0.13506111111111113,
+      "score": null,
+      "minScore": null,
+      "perfect": null,
+      "wer": 0,
+      "perClipWer": [
+        0,
+        0,
+        0
+      ],
+      "providers": [
+        "Inception"
+      ],
+      "issues": []
+    },
+    {
+      "config": "nova-2-lite",
+      "model": "amazon/nova-2-lite-v1",
+      "reasoning": "off",
+      "tier": "medium",
+      "requests": 9,
+      "errors": 0,
+      "rejected": 0,
+      "p50": 899.4468999999954,
+      "p90": 2124.2602000000043,
+      "max": 2124.2602000000043,
+      "longP50": null,
+      "serverP50": 792,
+      "firstTokenP50": 781,
+      "reasoningTokens": 0,
+      "outputTokens": 22,
+      "costPerThousand": 0.33669999999999994,
+      "score": null,
+      "minScore": null,
+      "perfect": null,
+      "wer": 0,
+      "perClipWer": [
+        0,
+        0,
+        0
+      ],
+      "providers": [
+        "Amazon Bedrock"
+      ],
+      "issues": []
+    },
+    {
+      "config": "glm-5.3-flash",
+      "model": "z-ai/glm-5.3-flash",
+      "reasoning": "minimal",
+      "tier": "value",
+      "requests": 9,
+      "errors": 0,
+      "rejected": 0,
+      "p50": 568.8084999999992,
+      "p90": 3119.6723999999995,
+      "max": 3119.6723999999995,
+      "longP50": null,
+      "serverP50": 266,
+      "firstTokenP50": 266,
+      "reasoningTokens": 0.6666666666666666,
+      "outputTokens": 22,
+      "costPerThousand": 0.06204999999999999,
+      "score": null,
+      "minScore": null,
+      "perfect": null,
+      "wer": 0,
+      "perClipWer": [
+        0,
+        0,
+        0
+      ],
+      "providers": [
+        "InferenceNet",
+        "Together",
+        "Novita"
+      ],
+      "issues": []
+    },
+    {
+      "config": "haiku-4.5",
+      "model": "anthropic/claude-haiku-4.5",
+      "reasoning": "off",
+      "tier": "high",
+      "requests": 9,
+      "errors": 0,
+      "rejected": 0,
+      "p50": 1045.7422000000006,
+      "p90": 1555.2716999999975,
+      "max": 1555.2716999999975,
+      "longP50": null,
+      "serverP50": 922,
+      "firstTokenP50": 787,
+      "reasoningTokens": 0,
+      "outputTokens": 26.666666666666668,
+      "costPerThousand": 1.1669999999999998,
+      "score": null,
+      "minScore": null,
+      "perfect": null,
+      "wer": 0,
+      "perClipWer": [
+        0,
+        0,
+        0
+      ],
+      "providers": [
+        "Amazon Bedrock"
+      ],
+      "issues": []
+    }
+  ],
+  "runs": [
+    {
+      "config": "glm-5.3-flash",
+      "kind": "asr",
+      "item": "tiny",
+      "round": 1,
+      "ms": 1156.5662,
+      "output": "Send the email now.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "InferenceNet",
+      "outputTokens": 7,
+      "reasoningTokens": 1,
+      "cost": 0.00004521,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 920,
+        "generationMs": 924,
+        "provider": "InferenceNet"
+      }
+    },
+    {
+      "config": "mercury-2",
+      "kind": "asr",
+      "item": "tiny",
+      "round": 1,
+      "ms": 325.03649999999993,
+      "output": "Send the email now.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Inception",
+      "outputTokens": 11,
+      "reasoningTokens": 3,
+      "cost": 0.00003135,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 177,
+        "generationMs": 202,
+        "provider": "Inception"
+      }
+    },
+    {
+      "config": "haiku-5.5-low",
+      "kind": "asr",
+      "item": "tiny",
+      "round": 1,
+      "ms": 1369.3892,
+      "output": "Send the email now.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Claude Platform on AWS",
+      "outputTokens": 8,
+      "reasoningTokens": 0,
+      "cost": 0.0001462,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 1107,
+        "generationMs": 1253,
+        "provider": "Claude Platform on AWS"
+      }
+    },
+    {
+      "config": "haiku-5.5-default",
+      "kind": "asr",
+      "item": "tiny",
+      "round": 1,
+      "ms": 1340.0381000000002,
+      "output": "Send the email now.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Claude Platform on AWS",
+      "outputTokens": 8,
+      "reasoningTokens": 0,
+      "cost": 0.0001462,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 1074,
+        "generationMs": 1096,
+        "provider": "Claude Platform on AWS"
+      }
+    },
+    {
+      "config": "haiku-4.5",
+      "kind": "asr",
+      "item": "tiny",
+      "round": 1,
+      "ms": 883.6039999999994,
+      "output": "Send the email now.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Amazon Bedrock",
+      "outputTokens": 8,
+      "reasoningTokens": 0,
+      "cost": 0.001055,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 754,
+        "generationMs": 763,
+        "provider": "Amazon Bedrock"
+      }
+    },
+    {
+      "config": "haiku-5.5-off",
+      "kind": "asr",
+      "item": "tiny",
+      "round": 1,
+      "ms": 1135.4014000000006,
+      "output": "Send the email now.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Claude Platform on AWS",
+      "outputTokens": 8,
+      "reasoningTokens": 0,
+      "cost": 0.0001461,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 974,
+        "generationMs": 1007,
+        "provider": "Claude Platform on AWS"
+      }
+    },
+    {
+      "config": "nova-2-lite",
+      "kind": "asr",
+      "item": "tiny",
+      "round": 1,
+      "ms": 1011.9513999999999,
+      "output": "Send the email now.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Amazon Bedrock",
+      "outputTokens": 8,
+      "reasoningTokens": 0,
+      "cost": 0.0002975,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 875,
+        "generationMs": 883,
+        "provider": "Amazon Bedrock"
+      }
+    },
+    {
+      "config": "nova-2-lite",
+      "kind": "asr",
+      "item": "short",
+      "round": 1,
+      "ms": 671.0160999999998,
+      "output": "The quick brown fox jumps over the lazy dog near the river bank.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Amazon Bedrock",
+      "outputTokens": 17,
+      "reasoningTokens": 0,
+      "cost": 0.0003227,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 530,
+        "generationMs": 545,
+        "provider": "Amazon Bedrock"
+      }
+    },
+    {
+      "config": "haiku-5.5-default",
+      "kind": "asr",
+      "item": "short",
+      "round": 1,
+      "ms": 1235.9868999999999,
+      "output": "The quick brown fox jumps over the lazy dog near the riverbank.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Claude Platform on AWS",
+      "outputTokens": 26,
+      "reasoningTokens": 0,
+      "cost": 0.0001569,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 788,
+        "generationMs": 1093,
+        "provider": "Claude Platform on AWS"
+      }
+    },
+    {
+      "config": "haiku-5.5-low",
+      "kind": "asr",
+      "item": "short",
+      "round": 1,
+      "ms": 1363.7268999999997,
+      "output": "The quick brown fox jumps over the lazy dog near the river bank.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Claude Platform on AWS",
+      "outputTokens": 25,
+      "reasoningTokens": 0,
+      "cost": 0.0001564,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 878,
+        "generationMs": 1159,
+        "provider": "Claude Platform on AWS"
+      }
+    },
+    {
+      "config": "haiku-4.5",
+      "kind": "asr",
+      "item": "short",
+      "round": 1,
+      "ms": 1119.674500000001,
+      "output": "The quick brown fox jumps over the lazy dog near the river bank.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Amazon Bedrock",
+      "outputTokens": 18,
+      "reasoningTokens": 0,
+      "cost": 0.001115,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 927,
+        "generationMs": 1007,
+        "provider": "Amazon Bedrock"
+      }
+    },
+    {
+      "config": "mercury-2",
+      "kind": "asr",
+      "item": "short",
+      "round": 1,
+      "ms": 311.29279999999926,
+      "output": "The quick brown fox jumps over the lazy dog near the river bank.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Inception",
+      "outputTokens": 20,
+      "reasoningTokens": 5,
+      "cost": 0.000043925,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 200,
+        "generationMs": 200,
+        "provider": "Inception"
+      }
+    },
+    {
+      "config": "glm-5.3-flash",
+      "kind": "asr",
+      "item": "short",
+      "round": 1,
+      "ms": 400.1105000000007,
+      "output": "The quick brown fox jumps over the lazy dog near the river bank.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Together",
+      "outputTokens": 16,
+      "reasoningTokens": 0,
+      "cost": 0.00004826,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 205,
+        "generationMs": 209,
+        "provider": "Together"
+      }
+    },
+    {
+      "config": "haiku-5.5-off",
+      "kind": "asr",
+      "item": "short",
+      "round": 1,
+      "ms": 1386.9230000000007,
+      "output": "The quick brown fox jumps over the lazy dog near the riverbank.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Claude Platform on AWS",
+      "outputTokens": 26,
+      "reasoningTokens": 0,
+      "cost": 0.0001568,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 802,
+        "generationMs": 1096,
+        "provider": "Claude Platform on AWS"
+      }
+    },
+    {
+      "config": "haiku-5.5-low",
+      "kind": "asr",
+      "item": "propernoun",
+      "round": 1,
+      "ms": 1420.4205000000002,
+      "output": "Zache asked whether Wispr Flow or Superwhisper handles punctuation better than Otter and Descript. Ping Priya and Sowmya on the Anthropic thread before the Kubernetes migration starts.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Claude Platform on AWS",
+      "outputTokens": 73,
+      "reasoningTokens": 0,
+      "cost": 0.0001852,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 837,
+        "generationMs": 1298,
+        "provider": "Claude Platform on AWS"
+      }
+    },
+    {
+      "config": "glm-5.3-flash",
+      "kind": "asr",
+      "item": "propernoun",
+      "round": 1,
+      "ms": 3119.6723999999995,
+      "output": "Zache asked whether Wispr Flow or Superwhisper handles punctuation better than Otter and Descript. Ping Priya and Sowmya on the Anthropic thread before the Kubernetes migration starts.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Novita",
+      "outputTokens": 42,
+      "reasoningTokens": 0,
+      "cost": 0.0000924,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 2717,
+        "generationMs": 3020,
+        "provider": "Novita"
+      }
+    },
+    {
+      "config": "mercury-2",
+      "kind": "asr",
+      "item": "propernoun",
+      "round": 1,
+      "ms": 17267.179600000003,
+      "output": "Zache asked whether Wispr Flow or Superwhisper handles punctuation better than Otter and Descript. Ping Priya and Sowmya on the Anthropic thread before the Kubernetes migration starts.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Inception",
+      "outputTokens": 45,
+      "reasoningTokens": 5,
+      "cost": 0.00026785,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 249,
+        "generationMs": 17144,
+        "provider": "Inception"
+      }
+    },
+    {
+      "config": "nova-2-lite",
+      "kind": "asr",
+      "item": "propernoun",
+      "round": 1,
+      "ms": 800.2880000000005,
+      "output": "Zache asked whether Wispr Flow or Superwhisper handles punctuation better than Otter and Descript. Ping Priya and Sowmya on the Anthropic thread before the Kubernetes migration starts.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Amazon Bedrock",
+      "outputTokens": 41,
+      "reasoningTokens": 0,
+      "cost": 0.0003899,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 511,
+        "generationMs": 670,
+        "provider": "Amazon Bedrock"
+      }
+    },
+    {
+      "config": "haiku-5.5-default",
+      "kind": "asr",
+      "item": "propernoun",
+      "round": 1,
+      "ms": 1395.3057000000044,
+      "output": "Zache asked whether Wispr Flow or Superwhisper handles punctuation better than Otter and Descript. Ping Priya and Sowmya on the Anthropic thread before the Kubernetes migration starts.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Claude Platform on AWS",
+      "outputTokens": 73,
+      "reasoningTokens": 0,
+      "cost": 0.0001852,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 810,
+        "generationMs": 1269,
+        "provider": "Claude Platform on AWS"
+      }
+    },
+    {
+      "config": "haiku-5.5-off",
+      "kind": "asr",
+      "item": "propernoun",
+      "round": 1,
+      "ms": 1276.2724000000017,
+      "output": "Zache asked whether Wispr Flow or Superwhisper handles punctuation better than Otter and Descript. Ping Priya and Sowmya on the Anthropic thread before the Kubernetes migration starts.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Claude Platform on AWS",
+      "outputTokens": 73,
+      "reasoningTokens": 0,
+      "cost": 0.0001851,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 782,
+        "generationMs": 1153,
+        "provider": "Claude Platform on AWS"
+      }
+    },
+    {
+      "config": "haiku-4.5",
+      "kind": "asr",
+      "item": "propernoun",
+      "round": 1,
+      "ms": 1555.2716999999975,
+      "output": "Zache asked whether Wispr Flow or Superwhisper handles punctuation better than Otter and Descript. Ping Priya and Sowmya on the Anthropic thread before the Kubernetes migration starts.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Amazon Bedrock",
+      "outputTokens": 54,
+      "reasoningTokens": 0,
+      "cost": 0.001331,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 982,
+        "generationMs": 1403,
+        "provider": "Amazon Bedrock"
+      }
+    },
+    {
+      "config": "haiku-5.5-low",
+      "kind": "asr",
+      "item": "tiny",
+      "round": 2,
+      "ms": 1716.1809000000067,
+      "output": "Send the email now.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Claude Platform on AWS",
+      "outputTokens": 8,
+      "reasoningTokens": 0,
+      "cost": 0.0001462,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 1296,
+        "generationMs": 1314,
+        "provider": "Claude Platform on AWS"
+      }
+    },
+    {
+      "config": "glm-5.3-flash",
+      "kind": "asr",
+      "item": "tiny",
+      "round": 2,
+      "ms": 384.1342999999979,
+      "output": "Send the email now.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "InferenceNet",
+      "outputTokens": 7,
+      "reasoningTokens": 1,
+      "cost": 0.00004521,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 225,
+        "generationMs": 225,
+        "provider": "InferenceNet"
+      }
+    },
+    {
+      "config": "haiku-5.5-default",
+      "kind": "asr",
+      "item": "tiny",
+      "round": 2,
+      "ms": 1458.6551000000036,
+      "output": "Send the email now.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Claude Platform on AWS",
+      "outputTokens": 8,
+      "reasoningTokens": 0,
+      "cost": 0.0001462,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 989,
+        "generationMs": 1351,
+        "provider": "Claude Platform on AWS"
+      }
+    },
+    {
+      "config": "haiku-4.5",
+      "kind": "asr",
+      "item": "tiny",
+      "round": 2,
+      "ms": 932.2440999999963,
+      "output": "Send the email now.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Amazon Bedrock",
+      "outputTokens": 8,
+      "reasoningTokens": 0,
+      "cost": 0.001055,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 778,
+        "generationMs": 805,
+        "provider": "Amazon Bedrock"
+      }
+    },
+    {
+      "config": "haiku-5.5-off",
+      "kind": "asr",
+      "item": "tiny",
+      "round": 2,
+      "ms": 1134.9074000000037,
+      "output": "Send the email now.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Claude Platform on AWS",
+      "outputTokens": 8,
+      "reasoningTokens": 0,
+      "cost": 0.0001461,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 994,
+        "generationMs": 1012,
+        "provider": "Claude Platform on AWS"
+      }
+    },
+    {
+      "config": "nova-2-lite",
+      "kind": "asr",
+      "item": "tiny",
+      "round": 2,
+      "ms": 519.6137000000017,
+      "output": "Send the email now.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Amazon Bedrock",
+      "outputTokens": 8,
+      "reasoningTokens": 0,
+      "cost": 0.0002975,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 386,
+        "generationMs": 410,
+        "provider": "Amazon Bedrock"
+      }
+    },
+    {
+      "config": "mercury-2",
+      "kind": "asr",
+      "item": "tiny",
+      "round": 2,
+      "ms": 356.4386999999988,
+      "output": "Send the email now.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Inception",
+      "outputTokens": 13,
+      "reasoningTokens": 4,
+      "cost": 0.000032575,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 158,
+        "generationMs": 161,
+        "provider": "Inception"
+      }
+    },
+    {
+      "config": "mercury-2",
+      "kind": "asr",
+      "item": "short",
+      "round": 2,
+      "ms": 355.3527000000031,
+      "output": "The quick brown fox jumps over the lazy dog near the river bank.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Inception",
+      "outputTokens": 18,
+      "reasoningTokens": 3,
+      "cost": 0.00004175,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 231,
+        "generationMs": 231,
+        "provider": "Inception"
+      }
+    },
+    {
+      "config": "glm-5.3-flash",
+      "kind": "asr",
+      "item": "short",
+      "round": 2,
+      "ms": 347.79449999999633,
+      "output": "The quick brown fox jumps over the lazy dog near the river bank.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Together",
+      "outputTokens": 16,
+      "reasoningTokens": 0,
+      "cost": 0.00004826,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 201,
+        "generationMs": 211,
+        "provider": "Together"
+      }
+    },
+    {
+      "config": "haiku-5.5-off",
+      "kind": "asr",
+      "item": "short",
+      "round": 2,
+      "ms": 1183.981399999997,
+      "output": "The quick brown fox jumps over the lazy dog near the river bank.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Claude Platform on AWS",
+      "outputTokens": 25,
+      "reasoningTokens": 0,
+      "cost": 0.0001563,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 762,
+        "generationMs": 1061,
+        "provider": "Claude Platform on AWS"
+      }
+    },
+    {
+      "config": "haiku-5.5-default",
+      "kind": "asr",
+      "item": "short",
+      "round": 2,
+      "ms": 1174.4603999999963,
+      "output": "The quick brown fox jumps over the lazy dog near the river bank.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Claude Platform on AWS",
+      "outputTokens": 25,
+      "reasoningTokens": 0,
+      "cost": 0.0001564,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 773,
+        "generationMs": 1056,
+        "provider": "Claude Platform on AWS"
+      }
+    },
+    {
+      "config": "nova-2-lite",
+      "kind": "asr",
+      "item": "short",
+      "round": 2,
+      "ms": 899.4468999999954,
+      "output": "The quick brown fox jumps over the lazy dog near the river bank.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Amazon Bedrock",
+      "outputTokens": 17,
+      "reasoningTokens": 0,
+      "cost": 0.0003227,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 781,
+        "generationMs": 792,
+        "provider": "Amazon Bedrock"
+      }
+    },
+    {
+      "config": "haiku-4.5",
+      "kind": "asr",
+      "item": "short",
+      "round": 2,
+      "ms": 820.751599999996,
+      "output": "The quick brown fox jumps over the lazy dog near the river bank.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Amazon Bedrock",
+      "outputTokens": 18,
+      "reasoningTokens": 0,
+      "cost": 0.001115,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 664,
+        "generationMs": 714,
+        "provider": "Amazon Bedrock"
+      }
+    },
+    {
+      "config": "haiku-5.5-low",
+      "kind": "asr",
+      "item": "short",
+      "round": 2,
+      "ms": 1307.609900000003,
+      "output": "The quick brown fox jumps over the lazy dog near the riverbank.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Claude Platform on AWS",
+      "outputTokens": 26,
+      "reasoningTokens": 0,
+      "cost": 0.0001569,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 853,
+        "generationMs": 1188,
+        "provider": "Claude Platform on AWS"
+      }
+    },
+    {
+      "config": "haiku-5.5-default",
+      "kind": "asr",
+      "item": "propernoun",
+      "round": 2,
+      "ms": 1328.0588999999964,
+      "output": "Zache asked whether Wispr Flow or Superwhisper handles punctuation better than Otter and Descript. Ping Priya and Sowmya on the Anthropic thread before the Kubernetes migration starts.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Claude Platform on AWS",
+      "outputTokens": 73,
+      "reasoningTokens": 0,
+      "cost": 0.0001852,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 1217,
+        "generationMs": 1217,
+        "provider": "Claude Platform on AWS"
+      }
+    },
+    {
+      "config": "haiku-5.5-off",
+      "kind": "asr",
+      "item": "propernoun",
+      "round": 2,
+      "ms": 1247.4326,
+      "output": "Zache asked whether Wispr Flow or Superwhisper handles punctuation better than Otter and Descript. Ping Priya and Sowmya on the Anthropic thread before the Kubernetes migration starts.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Claude Platform on AWS",
+      "outputTokens": 73,
+      "reasoningTokens": 0,
+      "cost": 0.0001851,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 760,
+        "generationMs": 1136,
+        "provider": "Claude Platform on AWS"
+      }
+    },
+    {
+      "config": "nova-2-lite",
+      "kind": "asr",
+      "item": "propernoun",
+      "round": 2,
+      "ms": 727.8297999999995,
+      "output": "Zache asked whether Wispr Flow or Superwhisper handles punctuation better than Otter and Descript. Ping Priya and Sowmya on the Anthropic thread before the Kubernetes migration starts.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Amazon Bedrock",
+      "outputTokens": 41,
+      "reasoningTokens": 0,
+      "cost": 0.0003899,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 473,
+        "generationMs": 584,
+        "provider": "Amazon Bedrock"
+      }
+    },
+    {
+      "config": "haiku-5.5-low",
+      "kind": "asr",
+      "item": "propernoun",
+      "round": 2,
+      "ms": 1308.8774000000049,
+      "output": "Zache asked whether Wispr Flow or Superwhisper handles punctuation better than Otter and Descript. Ping Priya and Sowmya on the Anthropic thread before the Kubernetes migration starts.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Claude Platform on AWS",
+      "outputTokens": 73,
+      "reasoningTokens": 0,
+      "cost": 0.0001852,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 795,
+        "generationMs": 1182,
+        "provider": "Claude Platform on AWS"
+      }
+    },
+    {
+      "config": "haiku-4.5",
+      "kind": "asr",
+      "item": "propernoun",
+      "round": 2,
+      "ms": 1045.7422000000006,
+      "output": "Zache asked whether Wispr Flow or Superwhisper handles punctuation better than Otter and Descript. Ping Priya and Sowmya on the Anthropic thread before the Kubernetes migration starts.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Amazon Bedrock",
+      "outputTokens": 54,
+      "reasoningTokens": 0,
+      "cost": 0.001331,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 787,
+        "generationMs": 922,
+        "provider": "Amazon Bedrock"
+      }
+    },
+    {
+      "config": "mercury-2",
+      "kind": "asr",
+      "item": "propernoun",
+      "round": 2,
+      "ms": 16745.9758,
+      "output": "Zache asked whether Wispr Flow or Superwhisper handles punctuation better than Otter and Descript. Ping Priya and Sowmya on the Anthropic thread before the Kubernetes migration starts.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Inception",
+      "outputTokens": 43,
+      "reasoningTokens": 4,
+      "cost": 0.000261325,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 265,
+        "generationMs": 16655,
+        "provider": "Inception"
+      }
+    },
+    {
+      "config": "glm-5.3-flash",
+      "kind": "asr",
+      "item": "propernoun",
+      "round": 2,
+      "ms": 1824.0409000000072,
+      "output": "Zache asked whether Wispr Flow or Superwhisper handles punctuation better than Otter and Descript. Ping Priya and Sowmya on the Anthropic thread before the Kubernetes migration starts.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Novita",
+      "outputTokens": 45,
+      "reasoningTokens": 3,
+      "cost": 0.00009324,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 1338,
+        "generationMs": 1683,
+        "provider": "Novita"
+      }
+    },
+    {
+      "config": "glm-5.3-flash",
+      "kind": "asr",
+      "item": "tiny",
+      "round": 3,
+      "ms": 568.8084999999992,
+      "output": "Send the email now.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "InferenceNet",
+      "outputTokens": 7,
+      "reasoningTokens": 1,
+      "cost": 0.00004521,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 266,
+        "generationMs": 266,
+        "provider": "InferenceNet"
+      }
+    },
+    {
+      "config": "haiku-4.5",
+      "kind": "asr",
+      "item": "tiny",
+      "round": 3,
+      "ms": 1078.7666999999929,
+      "output": "Send the email now.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Amazon Bedrock",
+      "outputTokens": 8,
+      "reasoningTokens": 0,
+      "cost": 0.001055,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 923,
+        "generationMs": 950,
+        "provider": "Amazon Bedrock"
+      }
+    },
+    {
+      "config": "haiku-5.5-low",
+      "kind": "asr",
+      "item": "tiny",
+      "round": 3,
+      "ms": 1175.3499999999913,
+      "output": "Send the email now.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Claude Platform on AWS",
+      "outputTokens": 8,
+      "reasoningTokens": 0,
+      "cost": 0.0001462,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 1053,
+        "generationMs": 1053,
+        "provider": "Claude Platform on AWS"
+      }
+    },
+    {
+      "config": "haiku-5.5-default",
+      "kind": "asr",
+      "item": "tiny",
+      "round": 3,
+      "ms": 1156.993100000007,
+      "output": "Send the email now.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Claude Platform on AWS",
+      "outputTokens": 8,
+      "reasoningTokens": 0,
+      "cost": 0.0001462,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 1002,
+        "generationMs": 1043,
+        "provider": "Claude Platform on AWS"
+      }
+    },
+    {
+      "config": "nova-2-lite",
+      "kind": "asr",
+      "item": "tiny",
+      "round": 3,
+      "ms": 2124.2602000000043,
+      "output": "Send the email now.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Amazon Bedrock",
+      "outputTokens": 8,
+      "reasoningTokens": 0,
+      "cost": 0.0002975,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 1990,
+        "generationMs": 2016,
+        "provider": "Amazon Bedrock"
+      }
+    },
+    {
+      "config": "mercury-2",
+      "kind": "asr",
+      "item": "tiny",
+      "round": 3,
+      "ms": 307.10839999999735,
+      "output": "Send the email now.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Inception",
+      "outputTokens": 15,
+      "reasoningTokens": 5,
+      "cost": 0.000034625,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 184,
+        "generationMs": 187,
+        "provider": "Inception"
+      }
+    },
+    {
+      "config": "haiku-5.5-off",
+      "kind": "asr",
+      "item": "tiny",
+      "round": 3,
+      "ms": 1132.916499999992,
+      "output": "Send the email now.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Claude Platform on AWS",
+      "outputTokens": 8,
+      "reasoningTokens": 0,
+      "cost": 0.0001461,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 994,
+        "generationMs": 1018,
+        "provider": "Claude Platform on AWS"
+      }
+    },
+    {
+      "config": "haiku-5.5-low",
+      "kind": "asr",
+      "item": "short",
+      "round": 3,
+      "ms": 1218.8502000000008,
+      "output": "The quick brown fox jumps over the lazy dog near the riverbank.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Claude Platform on AWS",
+      "outputTokens": 26,
+      "reasoningTokens": 0,
+      "cost": 0.0001569,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 781,
+        "generationMs": 1105,
+        "provider": "Claude Platform on AWS"
+      }
+    },
+    {
+      "config": "glm-5.3-flash",
+      "kind": "asr",
+      "item": "short",
+      "round": 3,
+      "ms": 379.98949999999604,
+      "output": "The quick brown fox jumps over the lazy dog near the river bank.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Together",
+      "outputTokens": 16,
+      "reasoningTokens": 0,
+      "cost": 0.00004826,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 211,
+        "generationMs": 238,
+        "provider": "Together"
+      }
+    },
+    {
+      "config": "haiku-5.5-default",
+      "kind": "asr",
+      "item": "short",
+      "round": 3,
+      "ms": 1767.1881999999896,
+      "output": "The quick brown fox jumps over the lazy dog near the riverbank.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Claude Platform on AWS",
+      "outputTokens": 26,
+      "reasoningTokens": 0,
+      "cost": 0.0001569,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 874,
+        "generationMs": 1205,
+        "provider": "Claude Platform on AWS"
+      }
+    },
+    {
+      "config": "mercury-2",
+      "kind": "asr",
+      "item": "short",
+      "round": 3,
+      "ms": 333.98429999999644,
+      "output": "The quick brown fox jumps over the lazy dog near the river bank.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Inception",
+      "outputTokens": 18,
+      "reasoningTokens": 3,
+      "cost": 0.00023505,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 217,
+        "generationMs": 218,
+        "provider": "Inception"
+      }
+    },
+    {
+      "config": "haiku-4.5",
+      "kind": "asr",
+      "item": "short",
+      "round": 3,
+      "ms": 901.425900000002,
+      "output": "The quick brown fox jumps over the lazy dog near the river bank.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Amazon Bedrock",
+      "outputTokens": 18,
+      "reasoningTokens": 0,
+      "cost": 0.001115,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 670,
+        "generationMs": 770,
+        "provider": "Amazon Bedrock"
+      }
+    },
+    {
+      "config": "haiku-5.5-off",
+      "kind": "asr",
+      "item": "short",
+      "round": 3,
+      "ms": 1326.3068000000058,
+      "output": "The quick brown fox jumps over the lazy dog near the river bank.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Claude Platform on AWS",
+      "outputTokens": 25,
+      "reasoningTokens": 0,
+      "cost": 0.0001563,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 1176,
+        "generationMs": 1176,
+        "provider": "Claude Platform on AWS"
+      }
+    },
+    {
+      "config": "nova-2-lite",
+      "kind": "asr",
+      "item": "short",
+      "round": 3,
+      "ms": 1121.9019000000117,
+      "output": "The quick brown fox jumps over the lazy dog near the river bank.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Amazon Bedrock",
+      "outputTokens": 17,
+      "reasoningTokens": 0,
+      "cost": 0.0003227,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 987,
+        "generationMs": 1001,
+        "provider": "Amazon Bedrock"
+      }
+    },
+    {
+      "config": "nova-2-lite",
+      "kind": "asr",
+      "item": "propernoun",
+      "round": 3,
+      "ms": 1103.1895999999979,
+      "output": "Zache asked whether Wispr Flow or Superwhisper handles punctuation better than Otter and Descript. Ping Priya and Sowmya on the Anthropic thread before the Kubernetes migration starts.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Amazon Bedrock",
+      "outputTokens": 41,
+      "reasoningTokens": 0,
+      "cost": 0.0003899,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 824,
+        "generationMs": 959,
+        "provider": "Amazon Bedrock"
+      }
+    },
+    {
+      "config": "haiku-4.5",
+      "kind": "asr",
+      "item": "propernoun",
+      "round": 3,
+      "ms": 1171.2741999999998,
+      "output": "Zache asked whether Wispr Flow or Superwhisper handles punctuation better than Otter and Descript. Ping Priya and Sowmya on the Anthropic thread before the Kubernetes migration starts.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Amazon Bedrock",
+      "outputTokens": 54,
+      "reasoningTokens": 0,
+      "cost": 0.001331,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 1059,
+        "generationMs": 1060,
+        "provider": "Amazon Bedrock"
+      }
+    },
+    {
+      "config": "glm-5.3-flash",
+      "kind": "asr",
+      "item": "propernoun",
+      "round": 3,
+      "ms": 1507.994599999991,
+      "output": "Zache asked whether Wispr Flow or Superwhisper handles punctuation better than Otter and Descript. Ping Priya and Sowmya on the Anthropic thread before the Kubernetes migration starts.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Novita",
+      "outputTokens": 42,
+      "reasoningTokens": 0,
+      "cost": 0.0000924,
+      "wer": 0,
+      "generation": {
+        "firstTokenMs": 1102,
+        "generationMs": 1359,
+        "provider": "Novita"
+      }
+    },
+    {
+      "config": "haiku-5.5-default",
+      "kind": "asr",
+      "item": "propernoun",
+      "round": 3,
+      "ms": 1507.9092999999993,
+      "output": "Zache asked whether Wispr Flow or Superwhisper handles punctuation better than Otter and Descript. Ping Priya and Sowmya on the Anthropic thread before the Kubernetes migration starts.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Claude Platform on AWS",
+      "outputTokens": 73,
+      "reasoningTokens": 0,
+      "cost": 0.0001852,
+      "wer": 0,
+      "generation": null
+    },
+    {
+      "config": "mercury-2",
+      "kind": "asr",
+      "item": "propernoun",
+      "round": 3,
+      "ms": 350.44890000000305,
+      "output": "Zache asked whether Wispr Flow or Superwhisper handles punctuation better than Otter and Descript. Ping Priya and Sowmya on the Anthropic thread before the Kubernetes migration starts.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Inception",
+      "outputTokens": 45,
+      "reasoningTokens": 5,
+      "cost": 0.0002671,
+      "wer": 0,
+      "generation": null
+    },
+    {
+      "config": "haiku-5.5-low",
+      "kind": "asr",
+      "item": "propernoun",
+      "round": 3,
+      "ms": 1445.0221999999922,
+      "output": "Zache asked whether Wispr Flow or Superwhisper handles punctuation better than Otter and Descript. Ping Priya and Sowmya on the Anthropic thread before the Kubernetes migration starts.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Claude Platform on AWS",
+      "outputTokens": 73,
+      "reasoningTokens": 0,
+      "cost": 0.0001852,
+      "wer": 0,
+      "generation": null
+    },
+    {
+      "config": "haiku-5.5-off",
+      "kind": "asr",
+      "item": "propernoun",
+      "round": 3,
+      "ms": 1324.3686999999918,
+      "output": "Zache asked whether Wispr Flow or Superwhisper handles punctuation better than Otter and Descript. Ping Priya and Sowmya on the Anthropic thread before the Kubernetes migration starts.",
+      "verdict": "ok",
+      "finish": "stop",
+      "servedBy": "Claude Platform on AWS",
+      "outputTokens": 73,
+      "reasoningTokens": 0,
+      "cost": 0.0001851,
+      "wer": 0,
+      "generation": null
+    }
+  ]
+}

@@ -8,6 +8,7 @@ import { GitHubRateLimit } from '../../../src/main/agents/github'
 import { githubRepositoryOf, GitPullRequestLimited, GitPullRequestRefusal, GitPullRequests } from '../../../src/main/agents/gitPullRequests'
 import { runGitStatusCommand, type RunGitCommand } from '../../../src/main/agents/gitStatus'
 import { parsePullRequestReference, type GitPullRequestAction } from '../../../src/shared/gitPullRequests'
+import { initializeGitRepository, initializeBareGitRepository } from '../../fixtures/gitRepository'
 
 const URL_74 = 'https://github.com/sotto-fixture/owned/pull/74'
 interface Change {
@@ -293,9 +294,9 @@ const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user
 async function repository() {
   const root = await mkdtemp(join(tmpdir(), 'sotto-pull-requests-')); roots.push(root)
   const remote = join(root, 'remote.git'), author = join(root, 'author'), repo = join(root, 'repo')
-  git(root, 'init', '--bare', '-q', '-b', 'main', remote)
-  git(root, 'init', '-q', '-b', 'main', author); git(author, 'remote', 'add', 'origin', remote)
-  await writeFile(join(author, 'a.txt'), 'a\n'); git(author, 'add', '.'); git(author, 'commit', '-qm', 'First'); git(author, 'push', '-q', 'origin', 'HEAD:main')
+  await initializeBareGitRepository(remote)
+  await initializeGitRepository(author, { files: { 'a.txt': 'a\n' }, message: 'First' })
+  git(author, 'remote', 'add', 'origin', remote); git(author, 'push', '-q', 'origin', 'HEAD:main')
   git(author, 'checkout', '-q', '-b', 'feat/greeting'); await writeFile(join(author, 'a.txt'), 'b\n'); git(author, 'commit', '-qam', 'Greet')
   git(author, 'push', '-q', 'origin', 'feat/greeting', 'HEAD:refs/pull/74/head')
   const head = git(author, 'rev-parse', 'HEAD')

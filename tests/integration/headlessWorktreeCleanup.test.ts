@@ -1,4 +1,6 @@
 // @vitest-environment node
+import { initializeGitRepository } from '../fixtures/gitRepository'
+import { deferred } from '../fixtures/deferred'
 import { randomUUID } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -25,11 +27,7 @@ afterEach(async () => {
     await rm(root, { recursive: true, force: true })
   }
 })
-const deferred = () => {
-  let resolve!: () => void
-  const promise = new Promise<void>(done => { resolve = done })
-  return { promise, resolve }
-}
+
 const exists = (path: string): Promise<boolean> => stat(path).then(() => true, () => false)
 
 /** A headless host whose own settings turn the on-settle rule on, with a committed project to make worktrees from. */
@@ -37,16 +35,14 @@ async function host() {
   const root = await mkdtemp(join(tmpdir(), 'sotto-host-cleanup-')); roots.push(root)
   const data = join(root, 'data'), project = join(root, 'project')
   await mkdir(data); await mkdir(project)
-  await git(project, ['init', '-b', 'main'])
   await writeFile(join(project, 'tracked.txt'), 'baseline')
-  await git(project, ['add', '.'])
-  await git(project, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Baseline'])
+  await initializeGitRepository(project, { files: {}, message: "Baseline", identity: { name: "Fixture", email: "fixture@example.invalid" } })
   // The host reads its rules from its own data folder at start, as the desktop reads them from its settings.
   await new SettingsRepository(join(data, 'settings.json')).update({ worktreeCleanup: { ...DEFAULT_WORKTREE_CLEANUP, onSettle: true } })
   // A host connects every provider not turned off when it starts (ADR-0036). The scripted ones here hold stand-in
   // sessions in a folder that does not exist, which would make sole ownership unprovable, so only Codex is left on.
   await writeFile(join(data, 'agents.json'), JSON.stringify({ configuration: { ...defaultAgentConfiguration(), enabledProviders: ['codex'], disconnectedProviders: ['claude', 'grok', 'devin'] },
-    assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false, outbox: [] }))
+    activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false, outbox: [] }))
   // The fake's stand-in sessions name a folder that does not exist, which would make sole ownership unprovable.
   const codex = new FakeProviderHost()
   codex.state.threads.length = 0
@@ -65,7 +61,7 @@ async function host() {
   /** A thread with its own worktree, made by its first send, whose turn has finished. */
   const worktreeThread = async (): Promise<string> => {
     const threadId = randomUUID()
-    await command({ type: 'create-thread', threadId, projectId, title: 'Worktree thread', modelId, workingCopy: 'independent', managed: false })
+    await command({ type: 'create-thread', threadId, projectId, title: 'Worktree thread', modelId, workingCopy: 'independent' })
     await command({ type: 'manual-send', threadId, text: 'Synthetic prompt' })
     for (const session of codex.state.threads) session.status = 'idle'
     codex.emit()

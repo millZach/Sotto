@@ -12,6 +12,7 @@ import {
 } from '../../../src/main/updates/updateService'
 import type { UpdateStatus } from '../../../src/shared/contracts'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings'
+import { deferred } from '../../fixtures/deferred'
 
 type Emit = (event: UpdaterEvent) => void
 
@@ -498,8 +499,8 @@ describe('UpdateService', () => {
   })
 
   it('does not start a check while a download is in flight', async () => {
-    let finish!: () => void
-    const gate = new Promise<void>((resolve) => { finish = resolve })
+
+    const { promise: gate, resolve: finish } = deferred<void>()
     const updater = createFakeUpdater({
       check: offersUpdate,
       download: async (send) => {
@@ -518,10 +519,8 @@ describe('UpdateService', () => {
   })
 
   it('collapses concurrent checks into one request', async () => {
-    let release!: () => void
-    const gate = new Promise<void>((resolve) => {
-      release = resolve
-    })
+
+    const { promise: gate, resolve: release } = deferred<void>()
     const updater = createFakeUpdater({
       check: async (send) => {
         send({ type: 'checking' })

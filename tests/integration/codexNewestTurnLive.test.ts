@@ -88,7 +88,7 @@ async function legacyThread(executable: string): Promise<{ home: string; cwd: st
 }
 const shape = (turn: Turn | undefined) => turn && JSON.stringify([turn.id, turn.status, turn.items.map(item => [item.type, item.id])])
 
-describe.skipIf(!LIVE)('Codex thread/turns/list against the installed app-server', () => {
+describe.skipIf(!LIVE)("Codex thread/turns/list against the installed app-server (requires SOTTO_CODEX_TURNS_LIVE=1)", () => {
   it('hands back the newest turn thread/read does, and sees a turn another process wrote', async () => {
     const executable = await findExecutable()
     if (!executable) throw new Error('Install Codex to run this check')

@@ -1,0 +1,137 @@
+import { REMOTE, host, fixture } from '../../../../fixtures/renderer/hostsSettingsHarness'
+import React from 'react'
+import { render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { expect, it } from 'vitest'
+import { HostsSettings } from '../../../../../src/renderer/src/features/settings/HostsSettings'
+import { HostQuestionDialog } from '../../../../../src/renderer/src/features/settings/HostQuestionDialog'
+
+it("asks a saved host's SSH question on any page, sends the answer, and Switch it off switches the host off", async () => {
+  const reconnecting = host({ name: 'forge', phase: 'connecting', reconnecting: true })
+  const { bridge, command, push } = fixture([reconnecting]), user = userEvent.setup()
+  // Rendered on its own, the way the app shell renders it over whichever page is open.
+  render(<HostQuestionDialog bridge={bridge} />)
+  await waitFor(() => expect(command).not.toHaveBeenCalled())
+  expect(screen.queryByRole('dialog')).toBeNull()
+  push({ hosts: [{ ...reconnecting, prompt: { id: 'prompt-2', kind: 'passphrase', text: 'Enter passphrase for key' } }] })
+  const dialog = screen.getByRole('dialog', { name: 'Unlock the SSH connection to forge' })
+  expect(dialog.textContent).toContain('Sotto is connecting to forge, and SSH needs your key passphrase to sign in.')
+  await user.type(within(dialog).getByLabelText('Key passphrase'), 'synthetic')
+  await user.click(within(dialog).getByRole('button', { name: 'Continue' }))
+  expect(command).toHaveBeenCalledWith({ type: 'ssh-answer', id: REMOTE, promptId: 'prompt-2', answer: 'synthetic' })
+  push({ hosts: [{ ...reconnecting, prompt: { id: 'prompt-3', kind: 'host-key', text: 'The authenticity of host forge cannot be established.' } }] })
+  const trust = screen.getByRole('dialog', { name: 'Trust the SSH host forge?' })
+  await user.click(within(trust).getByRole('button', { name: 'Switch it off' }))
+  expect(command).toHaveBeenLastCalledWith({ type: 'set-enabled', id: REMOTE, enabled: false })
+  push({ hosts: [{ ...reconnecting, phase: 'disconnected', enabled: false }] })
+  expect(trust.isConnected).toBe(false)
+})
+
+it.each(['passphrase', 'host-key'] as const)('dismisses a saved host %s question on Escape without switching it off', async kind => {
+  const prompt = { id: 'dismissed-prompt', kind, text: 'Synthetic SSH question' }
+  const connecting = host({ phase: 'connecting', prompt })
+  const { bridge, command, push, state } = fixture([connecting]), user = userEvent.setup()
+  render(<HostQuestionDialog bridge={bridge} />)
+  await screen.findByRole('dialog')
+  await user.keyboard('{Escape}')
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(command).not.toHaveBeenCalled()
+  expect(state().hosts[0]?.enabled).toBe(true)
+  push({ hosts: [{ ...connecting }] })
+  expect(screen.queryByRole('dialog')).toBeNull()
+  push({ hosts: [{ ...connecting, prompt: { ...prompt, id: 'next-prompt' } }] })
+  expect(screen.getByRole('dialog')).toBeTruthy()
+})
+
+it('lets each saved host ask without reopening another host question already dismissed', async () => {
+  const first = host({ name: 'forge', phase: 'connecting', prompt: { id: 'forge-prompt', kind: 'passphrase', text: 'First question' } })
+  const second = host({ id: '33333333-3333-4333-8333-333333333333', name: 'spark', phase: 'connecting', prompt: { id: 'spark-prompt', kind: 'host-key', text: 'Second question' } })
+  const { bridge, command, push } = fixture([first, second]), user = userEvent.setup()
+  const fallback = React.createRef<HTMLButtonElement>()
+  render(<><button ref={fallback}>Page control</button><HostQuestionDialog bridge={bridge} /></>)
+  fallback.current!.focus()
+  await screen.findByRole('dialog', { name: 'Unlock the SSH connection to forge' })
+  await user.keyboard('{Escape}')
+  expect(screen.getByRole('dialog', { name: 'Trust the SSH host spark?' })).toBeTruthy()
+  await user.keyboard('{Escape}')
+  expect(screen.queryByRole('dialog')).toBeNull()
+  await waitFor(() => expect(document.activeElement).toBe(fallback.current))
+  push({ hosts: [first, second] })
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(command).not.toHaveBeenCalled()
+})
+
+it.each(['passphrase', 'password', 'host-key'] as const)('opens a saved host %s question with focus on its answer', async kind => {
+  const { bridge } = fixture([host({ phase: 'connecting', prompt: { id: 'focus-prompt', kind, text: 'Synthetic question' } })])
+  render(<HostQuestionDialog bridge={bridge} />)
+  const dialog = await screen.findByRole('dialog')
+  const target = kind === 'host-key' ? within(dialog).getByRole('region', { name: 'SSH host key' }) : within(dialog).getByLabelText(kind === 'password' ? 'SSH password' : 'Key passphrase')
+  await waitFor(() => expect(document.activeElement).toBe(target))
+})
+
+it('requires deliberate keyboard navigation before trusting a saved host key', async () => {
+  const { bridge, command } = fixture([host({ phase: 'connecting', prompt: { id: 'trust-prompt', kind: 'host-key', text: 'Synthetic host key' } })]), user = userEvent.setup()
+  render(<HostQuestionDialog bridge={bridge} />)
+  const dialog = await screen.findByRole('dialog')
+  await waitFor(() => expect(document.activeElement).toBe(within(dialog).getByRole('region', { name: 'SSH host key' })))
+  await user.keyboard('{Enter}')
+  expect(command).not.toHaveBeenCalled()
+  await user.tab()
+  expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: 'Trust host' }))
+  await user.keyboard('{Enter}')
+  expect(command).toHaveBeenCalledExactlyOnceWith({ type: 'ssh-answer', id: REMOTE, promptId: 'trust-prompt', answer: 'yes' })
+})
+
+it.each(['passphrase', 'password'] as const)('submits a saved host %s on Enter and reaches Continue before Switch it off', async kind => {
+  const { bridge, command } = fixture([host({ phase: 'connecting', prompt: { id: 'enter-prompt', kind, text: 'Synthetic question' } })]), user = userEvent.setup()
+  render(<HostQuestionDialog bridge={bridge} />)
+  const dialog = await screen.findByRole('dialog')
+  const field = within(dialog).getByLabelText(kind === 'password' ? 'SSH password' : 'Key passphrase')
+  await waitFor(() => expect(document.activeElement).toBe(field))
+  await user.tab()
+  expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: 'Continue' }))
+  await user.tab()
+  expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: 'Switch it off' }))
+  await user.type(field, 'synthetic{Enter}')
+  await waitFor(() => expect(command).toHaveBeenCalledExactlyOnceWith({ type: 'ssh-answer', id: REMOTE, promptId: 'enter-prompt', answer: 'synthetic' }))
+})
+
+it('returns to a dismissed question from its host row and sends the answer', async () => {
+  const connecting = host({ phase: 'connecting', prompt: { id: 'row-prompt', kind: 'password', text: 'Synthetic question' } })
+  const { bridge, command, push } = fixture([connecting]), user = userEvent.setup()
+  render(<><HostsSettings localHostEnabled onLocalHostChange={async () => true} bridge={bridge} /><HostQuestionDialog bridge={bridge} /></>)
+  await screen.findByRole('dialog')
+  const row = await screen.findByRole('region', { name: 'Build box' })
+  expect(within(row).queryByRole('button', { name: 'Answer Build box' })).toBeNull()
+  expect(within(row).queryByText('Waiting for your answer')).toBeNull()
+  await user.keyboard('{Escape}')
+  const answerButton = within(row).getByRole('button', { name: 'Answer Build box' })
+  expect(within(row).getByText('Waiting for your answer')).toBeTruthy()
+  await waitFor(() => expect(document.activeElement).toBe(answerButton))
+  expect(command).not.toHaveBeenCalled()
+  await user.click(answerButton)
+  const field = within(screen.getByRole('dialog')).getByLabelText('SSH password')
+  expect(document.activeElement).toBe(field)
+  expect(within(row).queryByRole('button', { name: 'Answer Build box' })).toBeNull()
+  await user.type(field, 'synthetic')
+  await user.click(screen.getByRole('button', { name: 'Continue' }))
+  expect(command).toHaveBeenCalledWith({ type: 'ssh-answer', id: REMOTE, promptId: 'row-prompt', answer: 'synthetic' })
+  await user.keyboard('{Escape}')
+  push({ hosts: [host({ phase: 'connected' })] })
+  expect(within(row).queryByRole('button', { name: 'Answer Build box' })).toBeNull()
+  expect(within(row).queryByText('Waiting for your answer')).toBeNull()
+})
+
+it("waits with a saved host's SSH question while a Hosts dialog is open", async () => {
+  const reconnecting = host({ name: 'forge', phase: 'connecting', reconnecting: true })
+  const { bridge, push } = fixture([reconnecting]), user = userEvent.setup()
+  render(<><HostsSettings localHostEnabled onLocalHostChange={async () => true} bridge={bridge} /><HostQuestionDialog bridge={bridge} /></>)
+  await user.click(await screen.findByRole('button', { name: 'More for forge' }))
+  await user.click(screen.getByRole('menuitem', { name: 'Rename' }))
+  push({ hosts: [{ ...reconnecting, prompt: { id: 'prompt-4', kind: 'password', text: 'zach@forge password:' } }] })
+  // Rename keeps the screen; the question does not stack on it.
+  expect(screen.getAllByRole('dialog')).toEqual([screen.getByRole('dialog', { name: 'Rename forge' })])
+  await user.keyboard('{Escape}')
+  const question = await screen.findByRole('dialog', { name: 'Unlock the SSH connection to forge' })
+  expect(within(question).getByLabelText('SSH password')).toBeTruthy()
+})

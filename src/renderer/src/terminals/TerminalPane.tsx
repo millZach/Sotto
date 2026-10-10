@@ -73,7 +73,7 @@ export function TerminalPane({ row, store, bridge, viewFactory, viewFailed, focu
   ]
   const needsYou = terminal.status === 'running' && terminal.agentState === 'needs-you'
   // Sits in the status line, not above the screen: a note that comes and goes there would resize the terminal under the CLI.
-  const unread = terminal.status === 'running' && terminal.launch.provider !== null && terminal.stateDetection === 'unavailable'
+  const unread = terminal.status === 'running' && terminal.agentState !== 'exited' && terminal.launch.provider !== null && terminal.stateDetection === 'unavailable'
   return <div className="terminal-pane" data-focused={focused || undefined} data-needs-you={needsYou || undefined}>
     <header className="thread-workspace__head">
       <div className="thread-workspace__title">
@@ -103,7 +103,7 @@ export function TerminalPane({ row, store, bridge, viewFactory, viewFailed, focu
       <span className="terminal-status__branch" title={terminal.workingDirectory}><GitBranch size={13} aria-hidden="true" />{terminal.branch ?? (starting ? 'Starting…' : 'No branch')}</span>
       {unread ? <span className="terminal-status__note" title={`Sotto has no screen rules for this ${row.provider} version, so it cannot show Needs you or Just finished. Watch the terminal for questions.`}>
         Sotto can't tell when this {row.provider} version needs you</span> : null}
-      <span className="terminal-status__hints">{modifier}+C copies a selection or interrupts · {modifier}+V pastes text or an image</span>
+      <span className="terminal-status__hints">{platform === 'darwin' ? '⌘+C copies a selection · Ctrl+C interrupts' : 'Ctrl+C copies a selection or interrupts'} · {modifier}+V pastes text or an image</span>
     </p>
   </div>
 }

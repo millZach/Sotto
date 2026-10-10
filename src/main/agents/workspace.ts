@@ -26,6 +26,8 @@ import { resolveModel } from '../../shared/modelCatalog'
 import { resolveThreadWorkingDirectory } from '../../shared/threadWorkingDirectory'
 import { isThreadArchived, isThreadSettled, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { checkoutIdentity, existingWorkingDirectory, runWorktreeGit, ThreadWorktrees } from './threadWorktrees'
+import { claudeSkillFolder, claudeSkillPath } from './claudeSkills'
+import { providerTakesNoSkills } from './providerSwitch'
 import { gitStatusFingerprint, type GitStatus } from '../../shared/gitStatus'
 import type { GitStatusSource } from './gitStatus'
 import { GitActionRefusal, type GitActionEvent, type GitActions } from './gitActions'
@@ -62,6 +64,16 @@ const GIT_ACTION_SAVE_ERROR = 'The Git action finished, but its record could not
 /** Work that can leave the worktree on another branch: a finished turn, a shell command it ran, or files it changed. */
 const HEAD_MOVING_KINDS: ReadonlySet<AgentActivity['kind']> = new Set(['turn', 'command', 'file-change', 'tool'])
 /** The finished records that could have moved HEAD, by ID, so only new ones ask for a re-read. */
+/**
+ * A skill picked from the project folder's catalog, named as the same skill in the thread's own working copy. A skill
+ * file inside the project moves with it; a Claude skill is named by the folder it was listed in, so it takes the new one.
+ */
+async function skillInWorkingCopy(selected: AgentSkillReference, projectPath: string, workingDirectory: string): Promise<AgentSkillReference> {
+  const listedIn = claudeSkillFolder(selected.path)
+  if (listedIn !== undefined) return sameFolder(listedIn, projectPath) ? { ...selected, path: claudeSkillPath(await existingWorkingDirectory(workingDirectory), selected.name) } : selected
+  const local = relative(projectPath, selected.path)
+  return { ...selected, path: !isAbsolute(local) && local !== '..' && !local.startsWith(`..${sep}`) ? join(workingDirectory, local) : selected.path }
+}
 function settledHeadMovers(activities: readonly AgentActivity[] | undefined): Set<string> {
   return new Set((activities ?? []).filter(activity => HEAD_MOVING_KINDS.has(activity.kind) && isTerminalActivity(activity.status)).map(activity => activity.id))
 }
@@ -406,6 +418,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   async acquireCheckoutRead(threadId: string): Promise<() => void> {
     return this.checkoutMutations.acquire(this.threadCheckoutFolder(threadId), 'send', { kind: 'checkpoint' })
+  }
+  async acquireTerminalStart(folder: string): Promise<() => void> {
+    return this.checkoutMutations.acquire(folder, 'send', { kind: 'terminal-start' })
   }
   async isCheckoutMutating(threadId: string): Promise<boolean> {
     return this.checkoutMutations.isMutating(this.threadCheckoutFolder(threadId))
@@ -911,6 +926,17 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       } finally { releaseStatus?.(); release() }
     })
   }
+  /** Terminal-owned folders obey the same checkout reservation and thread-use checks as thread-owned folders. */
+  async acquireWorktreeReclaim(folder: string): Promise<() => void> {
+    await this.initialize()
+    const release = await this.checkoutMutations.acquire(folder, 'mutation', { kind: 'remove-folder' })
+    const releaseStatus = this.gitStatus?.hold?.(folder)
+    try {
+      await this.gitStatus?.idle?.(folder)
+      if (!await this.checkoutIsUnreferenced(folder)) throw new Error('A thread works in this folder too, so it stays.')
+      return () => { releaseStatus?.(); release() }
+    } catch (error) { releaseStatus?.(); release(); throw error }
+  }
   async workingCopyOptions(projectId: string): Promise<AgentWorkingCopyOptions> {
     await this.initialize()
     const project = this.state.snapshot.projects.find(item => item.id === projectId)
@@ -927,6 +953,13 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     return { mode: 'independent', status: 'pending', baseBranch: selection.baseBranch,
       startFromOrigin: selection.startFromOrigin, existingWorktreePath: existing, ...(known?.branch ? { branch: known.branch } : {}) }
   }
+  /** Keep a destination checkout present from its first inspection through publication of the new reference. */
+  private async reserveWorkingCopySelection(projectId: string, selection: AgentWorkingCopySelection, holder: CheckoutHolder): Promise<(() => void) | undefined> {
+    const project = this.state.snapshot.projects.find(item => item.id === projectId)
+    if (!project) throw new Error('Choose an available project.')
+    const folder = selection.workingCopy === 'shared' ? project.path : selection.existingWorktreePath
+    return folder ? this.checkoutMutations.acquire(folder, 'read', holder) : undefined
+  }
   configureThreadWorkingCopy(threadId: string, selection: AgentWorkingCopySelection): Promise<AgentHostSnapshot> {
     return this.onLane(threadId, async () => {
       await this.initialize()
@@ -936,16 +969,19 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         throw new Error('This thread already has a working folder. Start a new thread to choose another one.')
       }
       const previous = { worktree: thread.worktree, workingDirectory: thread.workingDirectory }
-      const worktree = await this.selectedWorkingCopy(thread.projectId, selection)
-      const current = this.thread(threadId)
-      current.worktree = worktree
-      current.workingDirectory = worktree.mode === 'shared' ? worktree.path : undefined
-      this.dirty = true
-      try { await this.flush() } catch (error) { Object.assign(this.thread(threadId), previous); throw error }
-      // A folder chosen now is read now, locally, so the toolbar knows it is a repository without waiting for the timer.
-      await this.readGitStatus(threadId, false)
-      this.publish()
-      return this.workspaceSnapshot()
+      const release = await this.reserveWorkingCopySelection(thread.projectId, selection, { kind: 'preparation', threadId, title: thread.title })
+      try {
+        const worktree = await this.selectedWorkingCopy(thread.projectId, selection)
+        const current = this.thread(threadId)
+        current.worktree = worktree
+        current.workingDirectory = worktree.mode === 'shared' ? worktree.path : undefined
+        this.dirty = true
+        try { await this.flush() } catch (error) { Object.assign(this.thread(threadId), previous); throw error }
+        // A folder chosen now is read now, locally, so the toolbar knows it is a repository without waiting for the timer.
+        await this.readGitStatus(threadId, false)
+        this.publish()
+        return this.workspaceSnapshot()
+      } finally { release?.() }
     })
   }
   /** Folder ownership includes legacy sessions and project subdirectories, not just stored worktree paths. */
@@ -958,6 +994,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private async ownsCheckoutAlone(threadId: string): Promise<boolean> {
     const metadata = this.thread(threadId).worktree
     if (!metadata || metadata.reused || !metadata.path) return false
+    return this.checkoutIsUnreferenced(metadata.path, threadId)
+  }
+  private async checkoutIsUnreferenced(folder: string, exceptThreadId?: string): Promise<boolean> {
     // Threads often share a project folder. Discover that exact path once for this
     // decision; the next rename/removal must revalidate every path from scratch.
     const identities = new Map<string, Promise<string>>()
@@ -967,8 +1006,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       return pending
     }
     try {
-      const identity = await identify(metadata.path)
-      const others = this.state.snapshot.threads.filter(other => other.id !== threadId)
+      const identity = await identify(folder)
+      const others = this.state.snapshot.threads.filter(other => other.id !== exceptThreadId)
       for (const other of others) {
         if (other.worktree?.reclaimedAt) continue
         if (other.nativeSessionStarted === false && other.worktree?.mode === 'independent' && !other.worktree.path && !other.worktree.existingWorktreePath) continue
@@ -2469,8 +2508,14 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     // Creation changes older threads' settlement too. Keep that transaction apart from
     // settlement edits in the same project so failed writes cannot cross their rollbacks.
     return this.onLane(key, () => command.type === 'create-thread'
-      ? this.onLane(command.projectId, () => this.executeOne(command), this.organizationLanes)
+      ? this.onLane(command.projectId, () => this.executeCreationGuarded(command), this.organizationLanes)
       : this.executeGuarded(command))
+  }
+  private async executeCreationGuarded(command: Extract<AgentHostCommand, { type: 'create-thread' }>): Promise<AgentHostResult> {
+    await this.initialize()
+    const selection = { ...command, workingCopy: command.workingCopy ?? this.workingCopyDefault(command.projectId) }
+    const release = await this.reserveWorkingCopySelection(command.projectId, selection, { kind: 'preparation', threadId: command.threadId, title: command.title })
+    try { return await this.executeOne(command) } finally { release?.() }
   }
   private async executeGuarded(command: AgentHostCommand): Promise<AgentHostResult> {
     if (command.type !== 'send' && command.type !== 'steer') return this.executeOne(command)
@@ -2488,14 +2533,12 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if ((command.type === 'send' || command.type === 'steer') && command.skills?.length) {
       const thread = this.thread(command.threadId)
       const capabilities = this.state.snapshot.providers?.find(provider => provider.id === thread.providerId)?.capabilities ?? this.state.snapshot.capabilities
+      if (!capabilities.skills && thread.providerId) throw providerTakesNoSkills(thread.providerId)
       if (!capabilities.skills || !this.inner.listThreadSkills) throw new Error('Selected skills are unavailable or belong to another provider. Refresh this draft’s skill catalog.')
       const catalog = await this.listThreadSkills(command.threadId, true)
       if (thread.nativeSessionStarted === false && thread.worktree?.path && thread.workingDirectory) {
         const projectPath = await existingWorkingDirectory(this.state.snapshot.projects.find(item => item.id === thread.projectId)!.path)
-        preparedSkills = command.skills.map(selected => {
-          const local = relative(projectPath, selected.path)
-          return { ...selected, path: !isAbsolute(local) && local !== '..' && !local.startsWith(`..${sep}`) ? join(thread.workingDirectory!, local) : selected.path }
-        })
+        preparedSkills = await Promise.all(command.skills.map(selected => skillInWorkingCopy(selected, projectPath, thread.workingDirectory!)))
       }
       if (catalog.status !== 'ready' || catalog.providerId !== thread.providerId || (preparedSkills ?? command.skills).some(selected => !catalog.skills.some(skill => skill.name === selected.name && skill.path === selected.path && skill.enabled !== false && skill.userInvocable !== false))) {
         throw new Error('Selected skills are unavailable or belong to another provider. Refresh this draft’s skill catalog.')
@@ -2593,11 +2636,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         if (command.skills?.length) {
           const projectPath = await existingWorkingDirectory(this.state.snapshot.projects.find(project => project.id === thread.projectId)!.path)
           const catalog = await this.listThreadSkills(thread.id, true)
-          const skills = (preparedSkills ?? command.skills).map(selected => {
-            const local = relative(projectPath, selected.path)
-            const path = !isAbsolute(local) && local !== '..' && !local.startsWith(`..${sep}`) ? join(workingDirectory, local) : selected.path
-            return { ...selected, path }
-          })
+          const skills = await Promise.all((preparedSkills ?? command.skills).map(selected => skillInWorkingCopy(selected, projectPath, workingDirectory)))
           if (catalog.status !== 'ready' || skills.some(selected => !catalog.skills.some(skill => skill.name === selected.name && skill.path === selected.path && skill.enabled !== false && skill.userInvocable !== false))) {
             throw new Error('A selected skill is unavailable in the chosen working copy. Refresh the skill catalog and select it again. Your prompt has not been sent.')
           }

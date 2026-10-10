@@ -6,15 +6,15 @@ import type { AgentCommand, AgentState } from '../../../src/shared/agents'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
-import { liveAgentState, threadsStateFixture } from './liveAgentState'
-import { openPaneMenu } from './paneMenu'
+import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
+import { openPaneMenu } from '../../fixtures/renderer/paneMenu'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 
 function mount(state: AgentState = threadsStateFixture()) {
   const live = liveAgentState(state)
   vi.mocked(useAgents).mockImplementation(live.useLive)
-  render(<ThreadsView onOpenAgents={vi.fn()} now={E2E_THREADS_NOW} />)
+  render(<ThreadsView now={E2E_THREADS_NOW} />)
   return live
 }
 const renames = (live: ReturnType<typeof liveAgentState>): Extract<AgentCommand, { type: 'rename-thread' }>[] =>

@@ -4,7 +4,7 @@
 - **Files committed:**
   - `src/renderer/src/features/settings/themes/ThemeEditor.tsx`
   - `tests/unit/renderer/themeLibrary.test.tsx`
-  - `tests/e2e/phase-three-final-visual-fixes.spec.ts`
+  - `tests/e2e/theme-editor-and-request-layout.spec.ts`
 - **Left alone:** `themeEditorSession.ts` did not need changing. I did not stage, change or revert root's working-tree docs (`docs/verification/phase-3-final-review.md`, `phase-3-implementation.md`) or any of the existing artifacts. I did not touch main `out/` or `.worktrees/phase3-final`.
 
 ## Defect
@@ -39,7 +39,7 @@ It replaces the old effect and adds no styling or other behaviour.
 
 ## Not run: remaining checks for root
 - **Electron E2E, not run:** I had no worker worktree of my own that suited a build, and main `out/` is off limits. The new E2E steps have never been executed.
-- **What the E2E edit does:** it is in the test "custom names read in full beside their actions, and each preview circle keeps its own ring and badge, at 1600, 1280 and 820" in `tests/e2e/phase-three-final-visual-fixes.spec.ts`. The pointer click on Close is replaced with a keyboard journey:
+- **What the E2E edit does:** it is in the test "custom names read in full beside their actions, and each preview circle keeps its own ring and badge, at 1600, 1280 and 820" in `tests/e2e/theme-editor-and-request-layout.spec.ts`. The pointer click on Close is replaced with a keyboard journey:
   1. Enter on Edit Catppuccin Macchiato. The name field is focused.
   2. Escape. The editor is gone and the Edit button is focused.
   3. Enter again, then focus Close and press Enter. The editor is gone and the Edit button is focused.

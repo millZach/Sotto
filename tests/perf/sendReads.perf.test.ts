@@ -39,7 +39,7 @@ async function longClaudeTranscript(f: Awaited<ReturnType<typeof claudeFixture>>
   await f.adapter.pollSessionLogs()
 }
 
-describe.skipIf(!PERF_BENCH)('reads around a send from the Threads page', () => {
+describe.skipIf(!PERF_BENCH)("reads around a send from the Threads page (timing benchmark; requires SOTTO_PERF_BENCH=1)", () => {
   it.each([['claude', 0], ['claude', 1000], ['codex', 0], ['grok', 0]] as const)('%s after %i earlier exchanges', async (provider, earlier) => {
     const native = await nativeFixture(provider)
     const stack = await sendStack(provider, native, earlier ? sessionId => longClaudeTranscript(native as Awaited<ReturnType<typeof claudeFixture>>, sessionId, earlier) : undefined)

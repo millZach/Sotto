@@ -21,7 +21,7 @@ const SENDS = 9
 /** Shorter than the fake's start of about 80 ms, so the send overlaps a start in progress and waits for its rest. */
 const SEND_AFTER_MS = 20
 
-describe.skipIf(!PERF_BENCH)('a new Claude thread’s first send', () => {
+describe.skipIf(!PERF_BENCH)("a new Claude thread’s first send (timing benchmark; requires SOTTO_PERF_BENCH=1)", () => {
   it('reports the send with and without an early start', async () => {
     const f = await claudeFixture()
     const workspace = new WorkspaceHost(new SottoThreadHost('claude', f.host, new ThreadRegistry(join(f.root, 'identity'))), join(f.root, 'workspace'))

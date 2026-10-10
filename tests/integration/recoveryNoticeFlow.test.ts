@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { testCredentials } from '../fixtures/testCredentials'
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -7,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createStorageRepositories } from '../../src/main/storage/repositories'
 import { RecoveryNoticeCenter } from '../../src/main/storage/recoveryNoticeCenter'
-import { AgentCredentials } from '../../src/main/agents/credentials'
+
 import { SecureSettings } from '../../src/main/agents/secureSettings'
 import { migrateDesktopKey } from '../../src/main/settings/migrateDesktopKey'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
@@ -30,12 +31,11 @@ describe('storage recovery notice flow', () => {
     await writeFile(join(root, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, llmApiKey: 'private-key' }))
     const notices = new RecoveryNoticeCenter()
     const repositories = createStorageRepositories(root, notices)
-    const credentials = new AgentCredentials(root, {
+    const credentials = await testCredentials(root, { encryption: {
       isEncryptionAvailable: () => true,
       encryptString: () => { throw new Error('private-key vault details') },
       decryptString: () => '',
-    })
-    await credentials.load()
+    } })
     const settings = new SecureSettings(repositories.settings, credentials)
     const log = vi.fn()
     await expect(migrateDesktopKey(settings, notices, log)).resolves.toBeUndefined()

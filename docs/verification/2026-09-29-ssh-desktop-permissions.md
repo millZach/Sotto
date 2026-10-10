@@ -1,5 +1,7 @@
 # SSH desktops can change remote permissions after setup
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 ## Acceptance checks
 
 - [x] Setting up a desktop through authenticated SSH establishes its client-specific permission to answer, without another prompt or command.
@@ -28,7 +30,7 @@ This repaired the missing host permission for the installed desktop. At the time
 ## Validation
 
 - `npx vitest run tests/integration/launchScript.test.ts tests/integration/sshLauncher.test.ts tests/integration/hostProviderJob.test.ts tests/integration/hostSetupTools.test.ts --maxWorkers=2`: 64 passed, 2 skipped.
-- `npx vitest run tests/integration/desktopHosts.test.ts --maxWorkers=2`: 50 passed.
+- `npx vitest run tests/integration/desktopHostDrafts.test.ts tests/integration/desktopHosts.test.ts tests/integration/desktopHostConnections.test.ts tests/integration/desktopHostBoot.test.ts tests/integration/desktopHostUpdates.test.ts tests/integration/desktopHostAdmin.test.ts --maxWorkers=2`: 50 passed.
 - `npm run typecheck`: passed after the final Electron test changes.
 - `npm run lint`: passed after the final Electron test changes.
 - `npm run notices:verify`: 174 components verified.

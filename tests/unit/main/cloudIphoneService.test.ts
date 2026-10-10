@@ -6,9 +6,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CloudIphoneService, type CloudIphoneDependencies } from '../../../src/main/tools/cloudIphone/service'
 import { CloudUsageLedger } from '../../../src/main/tools/cloudIphone/usageLedger'
 import type { CloudDeviceProvider, CloudInteraction } from '../../../src/main/tools/cloudIphone/runCloudClient'
-import { AgentCredentials, type CredentialEncryption } from '../../../src/main/agents/credentials'
+
 import { FilesService } from '../../../src/main/files/service'
 import { CLOUD_IPHONE_MAX_BUILD_BYTES, CLOUD_IPHONE_REQUEST_MS, type CloudEvent } from '../../../src/shared/cloudIphone'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { deferred } from '../../fixtures/deferred'
 
 // The service mounts a viewer view only when asked; these tests never call mount.
 vi.mock('electron', () => ({
@@ -51,9 +53,6 @@ class FakeClock {
   }
 }
 
-function fakeEncryption(): CredentialEncryption {
-  return { isEncryptionAvailable: () => true, encryptString: value => Buffer.from(value, 'utf8'), decryptString: value => value.toString('utf8') }
-}
 interface FakeProvider extends CloudDeviceProvider { calls: Record<string, unknown[][]> }
 function fakeProvider(): FakeProvider {
   const calls: Record<string, unknown[][]> = {}
@@ -80,8 +79,8 @@ afterEach(async () => { for (const dispose of cleanup.splice(0).reverse()) await
 async function setup(options: { capMinutes?: number; idleMinutes?: number; onProvider?: (provider: FakeProvider) => void } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'cloud-iphone-service-'))
   cleanup.push(() => rm(root, { recursive: true, force: true }))
-  const credentials = new AgentCredentials(root, fakeEncryption())
-  await credentials.load()
+  const credentials = await testCredentials(root, { mode: 'plain' })
+
   const ledger = new CloudUsageLedger(root)
   await ledger.load()
   const unavailableThreads = new Set<string>()
@@ -331,8 +330,8 @@ describe('CloudIphoneService', () => {
   })
 
   it('an End while the build uploads leaves nothing running or billed', async () => {
-    let finishUpload!: (id: string) => void
-    const uploading = new Promise<string>(resolve => { finishUpload = resolve })
+
+    const { promise: uploading, resolve: finishUpload } = deferred<string>()
     const { service, files, root, credentials, providers } = await setup({ onProvider: provider => { vi.mocked(provider.upload).mockImplementation(() => uploading) } })
     await credentials.set('runcloud', 'rc_live_key')
     const { threadId, workspaceId, session } = await openSession(service, files, root)
@@ -426,10 +425,10 @@ describe('CloudIphoneService', () => {
   })
 
   it('releases a simulator that finished starting after an End raced a still-pending teardown delete', async () => {
-    let resolveStart!: (value: { id: string; viewerUrl: string; device: string }) => void
-    const starting = new Promise<{ id: string; viewerUrl: string; device: string }>(resolve => { resolveStart = resolve })
-    let resolveDelete!: () => void
-    const deleting = new Promise<void>(resolve => { resolveDelete = resolve })
+
+    const { promise: starting, resolve: resolveStart } = deferred<{ id: string; viewerUrl: string; device: string }>()
+
+    const { promise: deleting, resolve: resolveDelete } = deferred<void>()
     const { service, files, root, credentials, providers } = await setup({ onProvider: provider => {
       vi.mocked(provider.start).mockImplementation(() => starting)
       vi.mocked(provider.deleteAsset).mockImplementation(() => deleting)
@@ -452,8 +451,8 @@ describe('CloudIphoneService', () => {
   })
 
   it('dispose awaits an in-flight start and releases what it made rather than leaving it running', async () => {
-    let resolveStart!: (value: { id: string; viewerUrl: string; device: string }) => void
-    const starting = new Promise<{ id: string; viewerUrl: string; device: string }>(resolve => { resolveStart = resolve })
+
+    const { promise: starting, resolve: resolveStart } = deferred<{ id: string; viewerUrl: string; device: string }>()
     const { service, files, root, credentials, providers } = await setup({ onProvider: provider => { vi.mocked(provider.start).mockImplementation(() => starting) } })
     await credentials.set('runcloud', 'rc_live_key')
     const { threadId, workspaceId, session } = await openSession(service, files, root)

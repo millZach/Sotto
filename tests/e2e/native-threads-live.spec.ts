@@ -1,10 +1,15 @@
-import { mkdtemp, mkdir, readFile, writeFile, readdir } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
+import { agentState } from './support/agentAccess'
+import { ownedE2EProfile } from './support/e2eProfile'
+import { mkdir, readFile, writeFile, readdir } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { firstSottoWindow, openThreads } from './support/sottoLaunch'
 import type { ProviderId } from '../../src/shared/agents'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
+import { evidenceDirectory } from '../fixtures/evidence'
+
+const evidenceRoot = evidenceDirectory('artifacts/native-threads-live')
 
 // No automatic retries: every fresh run sends one native subscription turn per provider.
 test.describe.configure({ retries: 0, timeout: 180_000 })
@@ -16,7 +21,7 @@ for (const provider of ['codex', 'claude', 'grok'] as const) {
   test(`${provider}: actual native Threads create, send, reply and restart`, async () => {
     test.skip(!enabled || (!!selected && selected !== provider), 'Explicit native subscription smoke opt-in required.')
     if (restoreRoot && selected !== provider) throw new Error('Restore mode requires one explicitly selected provider.')
-    const root = restoreRoot ? requireOwnedE2EProfile(restoreRoot) : await mkdtemp(join(tmpdir(), 'sotto-e2e-native-'))
+    const root = restoreRoot ? requireOwnedE2EProfile(restoreRoot) : (await ownedE2EProfile({ prefix: 'sotto-e2e-native-' })).directory
     const profile = join(root, 'profile')
     const project = join(root, 'project')
     if (!restoreRoot) {
@@ -24,7 +29,7 @@ for (const provider of ['codex', 'claude', 'grok'] as const) {
       // Prevent legacy-profile migration, and bypass the microphone onboarding only.
       await writeFile(join(profile, 'settings.json'), JSON.stringify({ onboardingComplete: true }))
     }
-    const artifacts = resolve('artifacts/native-threads-live', provider)
+    const artifacts = join(evidenceRoot, provider)
     await mkdir(artifacts, { recursive: true })
     const title = `Native ${provider} acceptance`
     const prompt = 'Reply with exactly the one word READY. Do not use any tools, read any files, modify any files, or perform any other actions.'
@@ -44,7 +49,7 @@ for (const provider of ['codex', 'claude', 'grok'] as const) {
     const configure = async (target: Page, chosen: ProviderId) => target.evaluate(async provider => {
       await window.sotto!.updateSettings({ onboardingComplete: true })
       const result = await window.sotto!.agents!.command({ type: 'configure', patch: {
-        provider, enabled: true, enabledProviders: [provider], speak: false, reasoning: 'none', followupLimit: 0,
+        provider, enabled: true, enabledProviders: [provider], reasoning: 'none',
       } })
       if (result.error) throw new Error(result.error)
       const connected = await window.sotto!.agents!.command({ type: 'connect', provider })
@@ -69,17 +74,17 @@ for (const provider of ['codex', 'claude', 'grok'] as const) {
       const restoreBinding = restoreRoot ? JSON.parse(await readFile(join(profile, 'threads.json'), 'utf8')) : undefined
       page = await launch()
       if (restoreRoot) {
-        await expect.poll(async () => (await page!.evaluate(async () => window.sotto!.agents!.get())).connection, { timeout: 30_000 }).toBe('connected')
+        await expect.poll(async () => (await agentState(page!)).connection, { timeout: 30_000 }).toBe('connected')
         await openThreads(page)
         await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
         await expect(page.getByLabel('Thread transcript').locator('[data-role="assistant"]')).toContainText('READY', { timeout: 30_000 })
         await waitForIdle(page)
-        const state = await page.evaluate(async () => window.sotto!.agents!.get())
+        const state = await agentState(page)
         expect(state.configuration.provider).toBe(provider)
         expect(state.activeThreadId).toBe(restoreBinding.bindings[0].threadId)
         expect(state.host.threads).toHaveLength(1)
         expect(state.host.threads[0]?.messages.filter(message => message.role === 'user')).toHaveLength(1)
-        expect(state.assignments).toHaveLength(0)
+
         expect(JSON.parse(await readFile(join(profile, 'threads.json'), 'utf8'))).toEqual(restoreBinding)
         expect(await readdir(project)).toEqual([])
         await page.screenshot({ path: join(artifacts, 'restored-latest.png') })
@@ -106,9 +111,9 @@ for (const provider of ['codex', 'claude', 'grok'] as const) {
       await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
       const before = await page.evaluate(async () => {
         const state = await window.sotto!.agents!.get()
-        return { id: state.activeThreadId, assignments: state.assignments, count: state.host.threads.length, error: state.error }
+        return { id: state.activeThreadId, count: state.host.threads.length, error: state.error }
       })
-      expect(before.assignments).toHaveLength(0)
+
       expect(before.error).toBeNull()
       expect(before.count).toBe(1)
       evidence.created = before
@@ -121,25 +126,25 @@ for (const provider of ['codex', 'claude', 'grok'] as const) {
           if (pending && observations.at(-1) !== pending) observations.push(pending)
         }).observe(document.body, { childList: true, subtree: true, characterData: true })
       })
-      await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill(prompt)
+      await fillPrompt(promptField(page), prompt)
       await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
       await expect(page.getByLabel('Thread transcript')).toContainText(prompt, { timeout: 15_000 })
       await page.screenshot({ path: join(artifacts, 'sending.png') })
       await expect(page.getByLabel('Thread transcript').locator('[data-role="assistant"]')).toContainText('READY', { timeout: 90_000 })
-      await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('', { timeout: 15_000 })
+      await expectPromptText(promptField(page), '', { timeout: 15_000 })
       await expect(page.getByLabel('Pending message')).toHaveCount(0)
       // A streamed reply can precede the native turn's final result event.
       await waitForIdle(page)
       const completed = await page.evaluate(async () => {
         const state = await window.sotto!.agents!.get()
-        return { thread: state.host.threads.find(thread => thread.id === state.activeThreadId), assignments: state.assignments,
+        return { thread: state.host.threads.find(thread => thread.id === state.activeThreadId),
           observations: (window as unknown as { nativeSmokeObservations: string[] }).nativeSmokeObservations }
       })
       expect(completed.thread?.messages.filter(message => message.role === 'user')).toHaveLength(1)
       expect(completed.thread?.messages.some(message => message.role === 'assistant' && message.text.trim() === 'READY')).toBe(true)
       expect(completed.thread?.messages.find(message => message.role === 'user')?.commandId).toBeTruthy()
       expect(completed.thread?.requests).toHaveLength(0)
-      expect(completed.assignments).toHaveLength(0)
+
       expect(completed.observations.some(value => value.includes('Sending'))).toBe(true)
       evidence.completed = completed
       await page.screenshot({ path: join(artifacts, 'reply.png') })

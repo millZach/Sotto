@@ -1,20 +1,13 @@
 // @vitest-environment node
-import { execFileSync } from 'node:child_process'
+
 import { existsSync } from 'node:fs'
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+
 import { DatabaseSync } from 'node:sqlite'
-
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
-
-import { latestMigrationVersion, migrations } from '../../../src/main/memory/migrations.mjs'
-import { MemoryStore, memorySchema, type Memory } from '../../../src/main/memory/store'
-
-let root: string | undefined
-let path: string
-let store: MemoryStore
+import { migrations } from '../../../src/main/memory/migrations.mjs'
+import { memorySchema, type Memory } from '../../../src/main/memory/store'
+import { path, store } from '../../fixtures/memoryStoreFixture'
 
 function memory(overrides: Partial<Memory> = {}): Memory {
   return {
@@ -29,20 +22,8 @@ function memory(overrides: Partial<Memory> = {}): Memory {
   }
 }
 
-beforeEach(async () => {
-  root = await mkdtemp(join(tmpdir(), 'sotto-memory-store-test-'))
-  path = join(root, 'user-data', 'memory.sqlite')
-  store = new MemoryStore(path)
-})
+describe("MemoryStore", () => {
 
-afterEach(async () => {
-  vi.useRealTimers()
-  store?.close()
-  if (root !== undefined) await rm(root, { recursive: true, force: true })
-  root = undefined
-})
-
-describe('MemoryStore', () => {
   it('creates the file, enables WAL and foreign keys, and records every migration only once', () => {
     store.open()
     expect(existsSync(path)).toBe(true)
@@ -184,15 +165,5 @@ describe('MemoryStore', () => {
     store.close()
     store.close()
     expect(() => store.insert(memory())).toThrow(/open/i)
-  })
-
-  it('runs the real migration and full-text probe with system Node', () => {
-    const output = execFileSync(process.execPath, [resolve('scripts/probe-memory-store.mjs')], {
-      encoding: 'utf8', windowsHide: true, timeout: 60_000,
-    })
-    expect(JSON.parse(output.trim())).toEqual({
-      sqliteVersion: expect.stringMatching(/^\d+\.\d+\.\d+$/),
-      migrationVersion: latestMigrationVersion, matchedId: 'memory-probe', fts5: true,
-    })
   })
 })

@@ -33,7 +33,7 @@ function framer(): { feed: (chunk: string) => void; frames: ClaudeFrame[] } {
   return { feed: listener, frames }
 }
 
-describe.skipIf(!PERF_BENCH)('Claude frame parser cost', () => {
+describe.skipIf(!PERF_BENCH)("Claude frame parser cost (timing benchmark; requires SOTTO_PERF_BENCH=1)", () => {
   for (const mebibytes of [1, 10, 20]) {
     it(`frames a ${mebibytes} MiB image replay split into 64 KiB chunks`, () => {
       const line = replayFrame(mebibytes * 1024 * 1024)

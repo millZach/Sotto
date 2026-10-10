@@ -1,19 +1,18 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { readFile, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test, type Locator } from '@playwright/test'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { startHeadlessHost } from '../../src/host'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
-import { desktopWindowClient } from '../../src/main/agents/hostService'
 import type { AgentHostCommand, AgentHostResult, ThreadReadPurpose } from '../../src/main/agents/host'
-import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
+import { E2EAgentHost } from '../../src/main/e2e/agentEffects'
 import type { RemoteHostE2EConnection } from '../../src/main/e2e/remoteHost'
 import type { AgentRequest, ProviderId } from '../../src/shared/agents'
 import type { RequestDraft } from '../../src/shared/requestDrafts'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
-import { closeSotto, launchSotto, openThreads, paneMenuAction, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 
 // Real paired headless host -> socket -> desktop router -> IPC -> question panel. The main-only,
 // unpackaged harness bypasses SSH launch, never the remote protocol or answer/draft handling.
@@ -75,20 +74,19 @@ const structured: AgentRequest = { id: 'remote-form', kind: 'question', text: 'F
 const drafts = async (profile: string): Promise<RequestDraft[]> => JSON.parse(await readFile(join(profile, 'request-drafts.json'), 'utf8')).drafts
 
 async function fixture(provider: ProviderId, uncertain = false, answerCompletion?: Promise<boolean>, keepQuestion = false,
-  options: { managed?: boolean; historyEnabled?: boolean } = {}) {
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-remote-question-'))
+  options: { historyEnabled?: boolean } = {}) {
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-remote-question-' })).directory
   let host: Awaited<ReturnType<typeof startHeadlessHost>> | undefined
   let setup: SocketHostService | undefined
   let launched: LaunchedSotto | undefined
   try {
     await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true,
-      localHostEnabled: false, reducedMotion: 'on', historyEnabled: options.historyEnabled ?? false,
-      voiceCoordinatorEnabled: options.managed ?? false }))
+      localHostEnabled: false, reducedMotion: 'on', historyEnabled: options.historyEnabled ?? false }))
     const providers = { codex: new AnswerProvider(uncertain, answerCompletion, keepQuestion), claude: new AnswerProvider(uncertain, answerCompletion, keepQuestion), grok: new AnswerProvider(uncertain, answerCompletion, keepQuestion), devin: new AnswerProvider() }
     await Promise.all(Object.entries(providers).map(([id, provider]) => provider.initializeWorkingFolders(join(profile, 'working-folders', id))))
     const native = providers[provider]
     host = await startHeadlessHost({ dataDirectory: join(profile, 'remote-host'), port: 0,
-      providers, reasoner: e2eAgentReasoner })
+      providers })
     const url = `http://127.0.0.1:${host.descriptor!.port}`
     const paired = await SocketHostService.pair(url, host.pairing.issuePairingCode().code, 'Synthetic laptop')
     // The harness bypasses SSH, not the saved identity that admits restart recovery.
@@ -117,10 +115,6 @@ async function fixture(provider: ProviderId, uncertain = false, answerCompletion
     }, connection)
     await openThreads(launched.page)
     await launched.page.getByRole('button', { name: 'Forge question fixture', exact: true }).click()
-    if (options.managed) {
-      await paneMenuAction(launched.page, 'Manage')
-      await expect(launched.page.locator('#agent-prompt')).toBeVisible()
-    }
     const threadId = await launched.page.evaluate(async () => (await window.sotto!.agents!.get()).host.threads.find(thread => thread.title === 'Forge question fixture')!.id)
     const ownedHost = host
     const ownedApp = launched
@@ -128,14 +122,14 @@ async function fixture(provider: ProviderId, uncertain = false, answerCompletion
       async close() {
         await closeSotto(ownedApp)
         await ownedHost.close()
-        await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+        await removeOwnedE2EProfile(profile)
       },
     }
   } catch (error) {
     if (launched) await closeSotto(launched)
     await setup?.close()
     await host?.close()
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
     throw error
   }
 }
@@ -157,156 +151,27 @@ async function capture(launched: LaunchedSotto, name: string, subject?: Locator)
   }
 }
 
-for (const recovery of ['reconnect', 'restart'] as const) test(`managed remote edits survive ${recovery} while save replies are held and never answer a new question`, async () => {
+test('keeps a saved remote manual draft across restart without sending it', async () => {
   test.setTimeout(120_000)
-  const f = await fixture('codex', false, undefined, false, { managed: true, historyEnabled: recovery === 'restart' })
+  const f = await fixture('codex', false, undefined, false, { historyEnabled: true })
   let restarted: LaunchedSotto | undefined
-  let release!: () => void
-  const acknowledgement = new Promise<void>(resolve => { release = resolve })
-  const originalCommand = f.host.service.command.bind(f.host.service)
-  let composeCalls = 0
-  f.host.service.command = async (...args) => {
-    const result = await originalCommand(...args)
-    if (args[0].type === 'compose') { composeCalls++; await acknowledgement }
-    return result
-  }
-  const latest = 'Fix the parser and add tests before making the requested change.'
+  const text = 'Fix the remote parser after I explicitly send this.'
   try {
-    const input = f.launched.page.getByLabel('Prompt', { exact: true })
-    await input.fill('Fix')
-    await expect.poll(() => composeCalls).toBe(1)
-    for (const text of ['Fix the parser', 'Fix the parser and add', 'Fix the parser and add tests', latest]) await input.fill(text)
-    await expect(input).toHaveValue(latest)
-    await expect.poll(async () => (await f.launched.page.evaluate(async () => window.sotto!.agents!.get())).draft).toBe(latest)
-    // The final edit is held off the wire: a host-only copy cannot make this test pass.
-    expect(composeCalls).toBeLessThanOrEqual(2)
-    expect(f.host.service.shell().threadDrafts?.some(draft => draft.text === latest)).toBe(false)
-    if (recovery === 'restart') {
-      await closeSotto(f.launched)
-      const kept = JSON.parse(await readFile(join(f.profile, 'remote-drafts.json'), 'utf8')) as Array<{ draft: { text: string } }>
-      expect(kept.some(edit => edit.draft.text === latest)).toBe(true)
-    } else {
-      await f.launched.app.evaluate((_, id) => globalThis.sottoRemoteHostE2E!.disconnect(id, true), f.connection.hostId)
-    }
-    release()
-    f.host.service.command = originalCommand
-    const newQuestion = { ...legacy, id: 'question-after-lost-save' }
-    f.native.event({ type: 'question', threadId: 'workshop', text: newQuestion.text, request: newQuestion })
-    if (recovery === 'restart') restarted = await launchSotto('success', f.profile)
-    const active = restarted ?? f.launched
-    if (restarted) active.page.on('pageerror', error => f.errors.push(error.message))
-    await active.app.evaluate((_, connection) => globalThis.sottoRemoteHostE2E!.connect(connection), f.connection)
-    await openThreads(active.page)
-    await active.page.getByRole('button', { name: 'Forge question fixture', exact: true }).click()
-    await expect(active.page.getByLabel('Prompt', { exact: true })).toHaveValue(latest)
-    await expect.poll(() => f.host.service.shell().threadDrafts?.find(draft => draft.text === latest)?.requestId).toBeNull()
-    expect(f.native.answers).toHaveLength(0)
-    await active.page.getByRole('button', { name: 'Send it', exact: true }).click()
-    await expect(active.page.getByText('Answer the pending question or permission explicitly before sending a new prompt.', { exact: true })).toBeVisible()
-    await expect(active.page.getByLabel('Prompt', { exact: true })).toHaveValue(latest)
-    expect(f.native.answers).toHaveLength(0)
-    await capture(active, `retained-${recovery}`)
-    expect(f.errors).toEqual([])
-  } finally {
-    release()
-    f.host.service.command = originalCommand
-    if (restarted) await closeSotto(restarted)
-    await f.close()
-  }
-})
-
-test('a lost managed Send reply is confirmed after restart without restoring delivered text', async () => {
-  test.setTimeout(120_000)
-  const f = await fixture('codex', false, undefined, false, { managed: true, historyEnabled: true })
-  let restarted: LaunchedSotto | undefined
-  let release!: () => void
-  const acknowledgement = new Promise<void>(resolve => { release = resolve })
-  const originalCommand = f.host.service.command.bind(f.host.service)
-  const originalShell = f.host.service.shell.bind(f.host.service)
-  let composeCalls = 0
-  let sendResultError: string | null | undefined
-  f.host.service.command = async (...args) => {
-    const result = await originalCommand(...args)
-    if (args[0].type === 'compose') composeCalls++
-    if (args[0].type === 'send') sendResultError = result.error
-    if (args[0].type === 'compose' || args[0].type === 'send') await acknowledgement
-    return result
-  }
-  // Withhold acceptance frames as well as command replies until the old desktop has quit.
-  f.host.service.shell = () => ({ ...originalShell(), deliveredDrafts: [], followupReceipts: [], obsoleteDrafts: [], deliveries: [] })
-  const text = 'Fix the remote confirmation once.'
-  try {
-    await f.launched.page.getByLabel('Prompt', { exact: true }).fill(text)
-    await expect.poll(() => composeCalls).toBe(1)
-    await f.launched.page.getByRole('button', { name: 'Send it', exact: true }).click()
-    await expect.poll(() => sendResultError).toBeNull()
-    await expect.poll(() => f.native.prompts.map(prompt => prompt.text)).toEqual([text])
-    const nativeThreadId = originalShell().host.threads.find(thread => thread.title === 'Forge question fixture')!.id
-    await expect.poll(() => originalShell().deliveredDrafts?.some(item => item.threadId === nativeThreadId)).toBe(true)
+    await fillPrompt(promptField(f.launched.page), text)
+    await expect.poll(() => f.host.service.shell().threadDrafts?.find(draft => draft.text === text)?.requestId).toBeNull()
     await closeSotto(f.launched)
-    const kept = JSON.parse(await readFile(join(f.profile, 'remote-drafts.json'), 'utf8')) as Array<{ sendAttempt?: unknown }>
-    expect(kept.some(edit => edit.sendAttempt)).toBe(true)
-    release()
-    f.host.service.command = originalCommand
-    f.host.service.shell = originalShell
     restarted = await launchSotto('success', f.profile)
     restarted.page.on('pageerror', error => f.errors.push(error.message))
     await restarted.app.evaluate((_, connection) => globalThis.sottoRemoteHostE2E!.connect(connection), f.connection)
     await openThreads(restarted.page)
     await restarted.page.getByRole('button', { name: 'Forge question fixture', exact: true }).click()
-    await expect(restarted.page.getByLabel('Prompt', { exact: true })).toHaveValue('')
-    expect(f.native.prompts.map(prompt => prompt.text)).toEqual([text])
-    expect(originalShell().threadDrafts?.some(draft => draft.text === text)).toBe(false)
-    await capture(restarted, 'lost-send-confirmed')
-    expect(f.errors).toEqual([])
-  } finally {
-    release()
-    f.host.service.command = originalCommand
-    f.host.service.shell = originalShell
-    if (restarted) await closeSotto(restarted)
-    await f.close()
-  }
-})
-
-test('reconnecting an unsaved laptop edit preserves a newer draft on Forge', async () => {
-  test.setTimeout(120_000)
-  const f = await fixture('codex', false, undefined, false, { managed: true })
-  let release!: () => void
-  const acknowledgement = new Promise<void>(resolve => { release = resolve })
-  const originalCommand = f.host.service.command.bind(f.host.service)
-  let composeCalls = 0
-  f.host.service.command = async (...args) => {
-    const result = await originalCommand(...args)
-    if (args[0].type === 'compose') { composeCalls++; await acknowledgement }
-    return result
-  }
-  const laptopText = 'Keep the latest laptop edit for review.'
-  const hostText = 'Review the newer text saved on Forge.'
-  try {
-    const input = f.launched.page.getByLabel('Prompt', { exact: true })
-    await input.fill('Keep')
-    await expect.poll(() => composeCalls).toBe(1)
-    for (const text of ['Keep the', 'Keep the latest', laptopText]) await input.fill(text)
-    await expect.poll(async () => (await f.launched.page.evaluate(async () => window.sotto!.agents!.get())).draft).toBe(laptopText)
-    expect(f.host.service.shell().threadDrafts?.some(draft => draft.text === laptopText)).toBe(false)
-    await f.launched.app.evaluate((_, id) => globalThis.sottoRemoteHostE2E!.disconnect(id, true), f.connection.hostId)
-    release()
-    f.host.service.command = originalCommand
-    const nativeThreadId = f.host.service.shell().host.threads.find(thread => thread.title === 'Forge question fixture')!.id
-    const newerDraftId = randomUUID()
-    await originalCommand({ type: 'save-thread-draft', threadId: nativeThreadId, draftId: newerDraftId, text: hostText,
-      attachments: [], skills: [], files: [], requestId: null }, desktopWindowClient('Synthetic host user'))
-    await f.launched.app.evaluate((_, connection) => globalThis.sottoRemoteHostE2E!.connect(connection), f.connection)
-    await expect(input).toHaveValue(laptopText)
-    await expect(f.launched.page.getByText('This thread draft changed on the host. Your edit is kept on this computer. Review the host draft before saving again.', { exact: true })).toBeVisible()
-    expect(f.host.service.shell().threadDrafts?.find(draft => draft.threadId === nativeThreadId)?.text).toBe(hostText)
+    await expectPromptText(promptField(restarted.page), text)
     expect(f.native.prompts).toHaveLength(0)
     expect(f.native.answers).toHaveLength(0)
-    await capture(f.launched, 'recovered-draft-conflict')
+    await capture(restarted, 'manual-draft-restart')
     expect(f.errors).toEqual([])
   } finally {
-    release()
-    f.host.service.command = originalCommand
+    if (restarted) await closeSotto(restarted)
     await f.close()
   }
 })

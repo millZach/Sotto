@@ -6,6 +6,7 @@ import type { HostSetupThreads } from '../../../src/main/hosts/hostSetup'
 import { agentJobTools, HOST_SETUP_MCP_SERVER, HostSetupToolServer, providerJobToolDefinitions, type HostSetupToolHandlers } from '../../../src/main/hosts/hostSetupTools'
 import type { AgentProviderStatus, ProviderId } from '../../../src/shared/agents'
 import type { HostSetupChoice, HostsCommand } from '../../../src/shared/hosts'
+import { deferred } from '../../fixtures/deferred'
 
 // A provider job (ADR-0035, amended for #461): one provider on one saved host, a brief with no secret in it, a tool only
 // that thread gets and that reaches only that host's provider, and the job ending once the host finds the provider.
@@ -173,7 +174,9 @@ describe('a provider job', () => {
     let release: () => void = () => undefined
     f.threads.start.mockImplementationOnce(async request => {
       request.created('thread-1')
-      await new Promise<void>(resolve => { release = resolve })
+      const pending1 = deferred<void>();
+      release = pending1.resolve;
+      await pending1.promise
       events.push('send')
     })
     f.threads.interrupt.mockImplementation(async () => { events.push('interrupt') })
@@ -193,7 +196,9 @@ describe('a provider job', () => {
     await f.jobs.command(start())
     let answer: () => void = () => undefined
     f.hosts.refresh.mockImplementationOnce(async (id: string, provider: ProviderId) => {
-      await new Promise<void>(resolve => { answer = resolve })
+      const pending2 = deferred<void>();
+      answer = pending2.resolve;
+      await pending2.promise
       return { status: f.providers.get(`${id}:${provider}`) }
     })
     const checking = f.jobs.run('thread-1', 'provider_check')

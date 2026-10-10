@@ -1,3 +1,5 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
+import { agentState } from './support/agentAccess'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
@@ -56,12 +58,12 @@ async function instrumentation(page: Page, streamKey: string): Promise<void> {
     const typing = new WeakMap<HTMLElement, { startedAt: number; target: Measurements }>()
     document.addEventListener('keydown', event => {
       const prompt = event.target as HTMLElement
-      if (!prompt.matches('textarea[aria-label="Prompt"], textarea[id^="thread-"]')) return
+      if (!prompt.matches('.prompt-editor[role="textbox"]')) return
       const target = timing.interacting ? timing.concurrent : timing
       if (event.key.length === 1) typing.set(prompt, { startedAt: performance.now(), target })
       if (event.key !== 'Enter' || event.shiftKey) return
       const pane = prompt.closest('section.thread-pane')!
-      const submittedText = (prompt as HTMLTextAreaElement).value.trim()
+      const submittedText = prompt.dataset.promptText!.trim()
       observe(pane, () => [...pane.querySelectorAll('article.thread-message[data-role="user"]')]
         .some(message => message.textContent?.includes(submittedText)), sample => target.send.push(sample))
       // The prompt empties only once the main process accepts the send, so this crosses the
@@ -69,7 +71,7 @@ async function instrumentation(page: Page, streamKey: string): Promise<void> {
       const startedAt = performance.now()
       const cleared = () => {
         const elapsed = performance.now() - startedAt
-        if ((prompt as HTMLTextAreaElement).value === '') target.acknowledged.push({ dom: elapsed, frame: elapsed, startedAt })
+        if (prompt.dataset.promptText === '') target.acknowledged.push({ dom: elapsed, frame: elapsed, startedAt })
         else if (elapsed < 10_000) requestAnimationFrame(cleared)
       }
       requestAnimationFrame(cleared)
@@ -139,11 +141,11 @@ test('long histories retain local send, streaming and four-pane responsiveness i
   try {
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload()
-    const hostId = (await page.evaluate(() => window.sotto!.agents!.get())).hostId
+    const hostId = (await agentState(page)).hostId
     const key = (id: string): string => hostEntityKey(hostId, id)
     await launched.app.evaluate(({ BrowserWindow }) => {
       const window = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!
@@ -184,11 +186,11 @@ test('long histories retain local send, streaming and four-pane responsiveness i
         const empty = (): Measurements => ({ send: [], focus: [], typing: [], acknowledged: [], stream: [], injections: {}, arrivals: {}, rendered: {}, emitted: [] })
         Object.assign(window.__workspacePerformance, { ...empty(), interacting: false, interactionsDone: false, concurrent: empty() })
       })
-      const prompt = pane(THREADS[0]!).getByRole('textbox', { name: 'Prompt', exact: true })
+      const prompt = promptField(pane(THREADS[0]!))
       for (let round = 0; round < SEND_ROUNDS; round++) {
-        await prompt.fill(`Performance ${historyLength} send ${round}`)
+        await fillPrompt(prompt, `Performance ${historyLength} send ${round}`)
         await prompt.press('Enter')
-        await expect(prompt).toHaveValue('')
+        await expectPromptText(prompt, '')
         await page.evaluate(async ({ threadId, round }) => window.sottoE2E!.agentEvent!({ type: 'ready', threadId, text: `Completed measured send ${round}.` }), { threadId: THREADS[0]!, round })
         await expect(pane(THREADS[0]!).getByLabel('Thread transcript')).toContainText(`Completed measured send ${round}.`)
       }
@@ -210,7 +212,7 @@ test('long histories retain local send, streaming and four-pane responsiveness i
       await expect(pane(THREADS[0]!).getByLabel('Thread transcript')).toContainText(`PERF_STREAM_${STREAM_UPDATES - 1} `)
       for (let round = 0; round < FOCUS_ROUNDS; round++) {
         const id = THREADS[(round + 1) % THREADS.length]!
-        await pane(id).getByRole('textbox', { name: 'Prompt', exact: true }).click()
+        await promptField(pane(id)).click()
         await expect(pane(id)).toHaveAttribute('data-focused')
       }
       await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
@@ -240,15 +242,15 @@ test('long histories retain local send, streaming and four-pane responsiveness i
       concurrentStream.catch(() => undefined)
       for (let round = 0; round < CONCURRENT_FOCUS; round++) {
         const id = THREADS[1 + round % 3]!
-        const input = pane(id).getByRole('textbox', { name: 'Prompt', exact: true })
+        const input = promptField(pane(id))
         await input.click()
         await expect(pane(id)).toHaveAttribute('data-focused')
         if (round >= CONCURRENT_SENDS) continue
         const text = `C${round}`
         await input.pressSequentially(text)
-        await expect(input).toHaveValue(text)
+        await expectPromptText(input, text)
         await input.press('Enter')
-        await expect(input).toHaveValue('')
+        await expectPromptText(input, '')
         await page.evaluate(async ({ threadId, round }) => window.sottoE2E!.agentEvent!({ type: 'ready', threadId, text: `Concurrent send ${round} completed.` }), { threadId: id, round })
         await expect(pane(id).getByLabel('Thread transcript')).toContainText(`Concurrent send ${round} completed.`)
       }
@@ -299,7 +301,7 @@ test('long histories retain local send, streaming and four-pane responsiveness i
           electron: await launched.app.evaluate(() => process.versions), renderer: await page.evaluate(() => ({ userAgent: navigator.userAgent, viewport: [innerWidth, innerHeight], devicePixelRatio })) },
         definitions: { localSend: 'Captured Enter keydown to pending-message DOM and next requestAnimationFrame callback.',
           sendAcknowledged: 'Captured Enter keydown to the first animation frame whose prompt is empty. The prompt clears only after the main process accepts the send, so this includes the renderer/main round trip and any main-process backlog.',
-          typing: 'Captured printable keydown to the textarea input event and next requestAnimationFrame callback; actual typed value is asserted before sending.',
+          typing: 'Captured printable keydown to the prompt input event and next requestAnimationFrame callback; serialized text is asserted before sending.',
           rendererStream: 'Validated renderer bridge thread-detail callback to matching assistant text DOM and next requestAnimationFrame callback. This is a frame opportunity, not a physical display timestamp.',
           visibleUpdateGap: 'Time between frame callbacks containing distinct streamed versions, including first injection to first rendered frame. Includes transport, coalescing and lateness of the in-renderer injector timers; no provider/network latency.',
           injectionToDisplay: 'E2E event injection of one streamed version to the next frame callback showing it: how stale visible text is, independent of when the injector managed to emit.',

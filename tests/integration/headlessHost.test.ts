@@ -7,11 +7,12 @@ import { startHeadlessHost } from '../../src/host'
 import { desktopWindowClient } from '../../src/main/agents/hostService'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { publicProviderEntityId, type ProviderId } from '../../src/shared/agents'
-import { codexFixture } from '../fixtures/codexFixture'
-import { claudeFixture } from '../fixtures/claudeFixture'
-import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
-import { devinFixture } from '../fixtures/devinFixture'
-import { describeHostServiceContract, type AdapterFixture, type AdapterSessionOptions, type HostServiceFixture } from './adapterContract'
+import type { AdapterContractSkips, AdapterFixture, AdapterSessionOptions, HostServiceFixture } from '../fixtures/adapterFixture'
+import { claudeFixture, claudeFixtureSkips } from '../fixtures/claudeFixture'
+import { codexFixture, codexFixtureSkips } from '../fixtures/codexFixture'
+import { devinFixture, devinFixtureSkips } from '../fixtures/devinFixture'
+import { grokFixture, grokFixtureSkips } from '../fixtures/fakeGrokThreadFixture'
+import { describeHostServiceContract } from './hostServiceContract'
 
 /** Provider IDs remain inside the fixture driver; every tested client operation uses HostService. */
 async function hostFixture(provider: ProviderId, native: AdapterFixture): Promise<HostServiceFixture> {
@@ -52,13 +53,13 @@ async function hostFixture(provider: ProviderId, native: AdapterFixture): Promis
   }
 }
 
-const fixtures: { provider: ProviderId; create: (session?: AdapterSessionOptions) => Promise<AdapterFixture> }[] = [
-  { provider: 'codex', create: session => codexFixture(undefined, false, undefined, session) },
-  { provider: 'claude', create: session => claudeFixture(undefined, undefined, undefined, session) },
-  { provider: 'grok', create: session => grokFixture(undefined, undefined, undefined, session) },
-  { provider: 'devin', create: session => devinFixture(undefined, undefined, undefined, session) },
+const fixtures: { provider: ProviderId; create: (session?: AdapterSessionOptions) => Promise<AdapterFixture>; skips: AdapterContractSkips }[] = [
+  { provider: 'codex', create: session => codexFixture(undefined, false, undefined, session), skips: codexFixtureSkips },
+  { provider: 'claude', create: session => claudeFixture(undefined, undefined, undefined, session), skips: claudeFixtureSkips },
+  { provider: 'grok', create: session => grokFixture(undefined, undefined, undefined, session), skips: grokFixtureSkips },
+  { provider: 'devin', create: session => devinFixture(undefined, undefined, undefined, session), skips: devinFixtureSkips },
 ]
-for (const fixture of fixtures) describeHostServiceContract('Headless ' + fixture.provider, async session => hostFixture(fixture.provider, await fixture.create(session)))
+for (const fixture of fixtures) describeHostServiceContract('Headless ' + fixture.provider, async session => hostFixture(fixture.provider, await fixture.create(session)), fixture.skips)
 
 describe('a Claude thread whose host stopped before any read reached its first send', () => {
   it('holds its first message once after the restart (#765)', async () => {
@@ -72,7 +73,7 @@ describe('a Claude thread whose host stopped before any read reached its first s
       const created = await command({ type: 'create-project', provider: 'claude', title: 'Project', path: f.root, useExisting: true })
       const projectId = created.host.projects.find(project => project.path === f.root)!.id
       const threadId = randomUUID()
-      expect((await command({ type: 'create-thread', threadId, projectId, title: 'Thread', modelId: f.modelId, workingCopy: 'shared', managed: false })).error).toBeNull()
+      expect((await command({ type: 'create-thread', threadId, projectId, title: 'Thread', modelId: f.modelId, workingCopy: 'shared' })).error).toBeNull()
       await command({ type: 'observe-threads', threadIds: [threadId] })
       const thread = () => f.service.state().host.threads.find(item => item.id === threadId)!
       expect((await command({ type: 'manual-send', threadId, text: 'First prompt' })).error).toBeNull()

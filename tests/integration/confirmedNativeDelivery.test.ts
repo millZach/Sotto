@@ -1,9 +1,10 @@
 // @vitest-environment node
+import { createAgentControl } from '../fixtures/agentControlFixture'
+import { testCredentials } from '../fixtures/testCredentials'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { expect, it, vi } from 'vitest'
-import { AgentControl } from '../../src/main/agents/control'
-import { AgentCredentials } from '../../src/main/agents/credentials'
+
 import { codexFixture } from '../fixtures/codexFixture'
 import { immediatePublishScheduler } from '../fixtures/publishScheduler'
 
@@ -11,10 +12,9 @@ it.each(['before-read', 'during-read'] as const)('keeps a native-confirmed send 
   const f = await codexFixture()
   const id = randomUUID()
   const draftId = randomUUID()
-  const credentials = new AgentCredentials(join(f.root, 'vault'), { isEncryptionAvailable: () => true, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
-  await credentials.load()
-  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
-    reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
+  const credentials = await testCredentials(join(f.root, 'vault'), { mode: 'plain' })
+  const control = createAgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
+    reasoner: {},
   })
   try {
     await f.host.connect()

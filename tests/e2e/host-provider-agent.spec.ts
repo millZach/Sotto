@@ -1,22 +1,6 @@
-import { isBuiltin } from 'node:module'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
-import { expect, test, type Locator, type Page } from '@playwright/test'
-import { build } from 'vite'
-import { DEFAULT_SETTINGS } from '../../src/shared/settings'
-import type { SottoE2EBridge } from '../../src/shared/e2e'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
-import { closeSotto, launchSotto, openPage, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
-
-/**
- * #461 in the built app: Have my agent install it on Devin's tile, over a scripted ssh that runs the real launch script and
- * a real headless host whose Devin is not installed (as on forge on September 28) until `devin.installed` appears, as an
- * agent's install would put it where the host looks. From the keyboard: the dialog, with Escape; Start install; the
- * working tile with Show thread, which opens the job's thread, and Stop; and a second job that ends when the host finds
- * Devin, which then waits for the user to sign in. The job's tool is called the way a provider calls it, through the
- * end-to-end bridge, since the scripted provider calls no tools.
- */
+import { resizeWindow } from './support/sottoWindow'
+import { buildSshHost } from './support/sshHost'
+import { insideWindow } from './support/hostCapture'
 async function capture(launched: LaunchedSotto, name: string, check: () => Promise<void>): Promise<void> {
   const { page } = launched
   for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
@@ -34,11 +18,26 @@ async function capture(launched: LaunchedSotto, name: string, check: () => Promi
   await page.evaluate(async () => window.sotto!.updateSettings({ appearance: 'dark' }))
   await resizeWindow(launched, 1280, 800)
 }
+import { ownedE2EProfile } from './support/e2eProfile'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
+import { expect, test, type Locator, type Page } from '@playwright/test'
+import { DEFAULT_SETTINGS } from '../../src/shared/settings'
+import type { SottoE2EBridge } from '../../src/shared/e2e'
+import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
+import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+
+/**
+ * #461 in the built app: Have my agent install it on Devin's tile, over a scripted ssh that runs the real launch script and
+ * a real headless host whose Devin is not installed (as on forge on September 28) until `devin.installed` appears, as an
+ * agent's install would put it where the host looks. From the keyboard: the dialog, with Escape; Start install; the
+ * working tile with Show thread, which opens the job's thread, and Stop; and a second job that ends when the host finds
+ * Devin, which then waits for the user to sign in. The job's tool is called the way a provider calls it, through the
+ * end-to-end bridge, since the scripted provider calls no tools.
+ */
+
 /** Whether an element sits wholly inside the window and does not scroll sideways, so nothing is clipped at the minimum size. */
-const inside = (locator: Locator) => locator.evaluate(element => {
-  const box = element.getBoundingClientRect()
-  return box.left >= 0 && box.top >= 0 && box.right <= innerWidth + 0.5 && box.bottom <= innerHeight + 0.5 && element.scrollWidth <= element.clientWidth + 0.5
-})
+const inside = (locator: Locator) => insideWindow(locator, true)
 /** The contrast of each piece of the tiles' and the dialog's text against the surface it sits on, as host-agent-setup.spec measures it. */
 function contrast(page: Page) {
   return page.evaluate(() => {
@@ -81,13 +80,11 @@ const job = (page: Page) => page.evaluate(async () => (await window.sotto!.hosts
 
 test('an agent installs a host’s provider from its tile, with Show thread and Stop, and stops once the host finds it', async () => {
   test.setTimeout(300_000)
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-host-provider-agent-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-host-provider-agent-' })).directory
   const root = join(profile, 'ssh-root')
   await mkdir(join(root, '~', 'code'), { recursive: true })
   const install = join(root, '~', '.local', 'share', 'sotto-host', 'host')
-  await build({ configFile: false, logLevel: 'silent', define: { 'require.main': 'undefined' }, ssr: { noExternal: true },
-    build: { ssr: resolve('tests/fixtures/e2eSshHost.ts'), target: 'node24', outDir: install, emptyOutDir: false,
-      rollupOptions: { external: id => isBuiltin(id), output: { format: 'cjs', entryFileNames: 'index.js' } } } })
+  await buildSshHost(install)
   // The local host runs: the job's thread is a thread on this computer.
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, localHostEnabled: true, reducedMotion: 'on' }))
   const modeFile = join(root, 'mode')
@@ -108,7 +105,7 @@ test('an agent installs a host’s provider from its tile, with Show thread and 
     const { page } = launched
     page.on('pageerror', error => errors.push(error.message))
     await page.evaluate(async () => {
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload()

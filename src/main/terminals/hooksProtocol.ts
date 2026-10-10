@@ -6,8 +6,8 @@ export const TERMINAL_HOOK_MAX_CONNECTIONS = 32
 export const terminalHookId = z.string().regex(/^[A-Za-z0-9_.:-]{1,128}$/u)
 export const terminalAgentHookEventSchema = z.object({
   terminalId: terminalHookId, runId: terminalHookId, eventId: terminalHookId,
-  kind: z.enum(['session-start', 'working', 'permission', 'notification', 'completed', 'cancelled', 'ended']),
-  state: z.enum(['starting', 'working', 'needs-you', 'idle']),
+  kind: z.enum(['session-start', 'working', 'permission', 'notification', 'completed', 'cancelled', 'ended', 'process-exited']),
+  state: z.enum(['starting', 'working', 'needs-you', 'idle', 'exited']),
   providerSessionId: terminalHookId.optional(), turnId: terminalHookId.optional(),
   requestId: terminalHookId.optional(), approvalId: terminalHookId.optional(),
   notificationType: z.enum(['permission_prompt', 'idle_prompt', 'elicitation_dialog', 'question']).optional(),

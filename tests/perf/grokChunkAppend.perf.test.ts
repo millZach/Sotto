@@ -32,7 +32,7 @@ afterAll(async () => {
   }
 })
 
-describe.skipIf(!PERF_BENCH)('a streamed Grok chunk', () => {
+describe.skipIf(!PERF_BENCH)("a streamed Grok chunk (timing benchmark; requires SOTTO_PERF_BENCH=1)", () => {
   it('reports the cost of one chunk against the messages the thread holds', async () => {
     const results: Record<string, unknown> = {}
     for (const held of [10, 500, 2_000]) {

@@ -1,3 +1,5 @@
+import { browserBridgeFixture, browserTask } from '../../../fixtures/renderer/browserBridge'
+import { cloudIphoneBridgeFixture } from '../../../fixtures/renderer/cloudIphoneBridge'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -12,8 +14,8 @@ import { MAX_RENDERED_MARKDOWN_LENGTH, trustedImageSource } from '../../../../sr
 import { ToolsPanelStore, TOOL_SURFACES } from '../../../../src/renderer/src/tools/toolsPanelStore'
 import { CloudIphoneStore } from '../../../../src/renderer/src/tools/cloudIphoneStore'
 import type { CloudIphoneBridge, CloudEvent } from '../../../../src/shared/cloudIphone'
-import { threadsStateFixture } from '../liveAgentState'
-import { TOKEN_A, TOKEN_B, fakeFilesBridge, markdown, text } from './fakeFilesBridge'
+import { threadsStateFixture } from '../../../fixtures/renderer/liveAgentState'
+import { TOKEN_A, TOKEN_B, fakeFilesBridge, markdown, text } from '../../../fixtures/renderer/fakeFilesBridge'
 
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAMAASsJTYQAAAAASUVORK5CYII='
 
@@ -53,34 +55,40 @@ function setup(options: { focused?: string | null; bridge?: FilesBridge | undefi
 const cloudOk = <T,>(value: T): ToolsResult<T> => ({ ok: true, value })
 /** A minimal cloud iPhone bridge for the rail dot tests: only `sessions` and `onEvent` are ever read. */
 function fakeCloudBridgeForDots() {
-  const listeners = new Set<(event: CloudEvent) => void>()
-  const bridge: CloudIphoneBridge = {
-    status: vi.fn(async () => cloudOk({ keySaved: true, month: '2026-10', monthMinutes: 0, capMinutes: 750, recent: [] })),
-    setKey: vi.fn(), sessions: vi.fn(async () => cloudOk([])), answer: vi.fn(), end: vi.fn(), mount: vi.fn(async () => cloudOk(undefined)),
-    onEvent: vi.fn(listener => { listeners.add(listener); return () => { listeners.delete(listener) } }),
-  }
+
+  const { bridge, listeners } = cloudIphoneBridgeFixture({ commands: { status: vi.fn(async () => cloudOk({ keySaved: true, month: '2026-10', monthMinutes: 0, capMinutes: 750, recent: [] })),
+    setKey: vi.fn(),
+    sessions: vi.fn(async () => cloudOk([])),
+    answer: vi.fn(),
+    end: vi.fn(),
+    mount: vi.fn(async () => cloudOk(undefined)) } })
   return { bridge, emit: (event: CloudEvent) => { for (const listener of [...listeners]) listener(event) } }
 }
 
 const browserOk = <T,>(value: T): ToolsResult<T> => ({ ok: true, value })
 /** A minimal browser bridge for the rail dot tests: only `tasks` and `list` are ever read. */
 function fakeBrowserForDots(tasksByThread: Record<string, BrowserTask[]> = {}) {
-  const listeners = new Set<(event: BrowserEvent) => void>()
-  const bridge: BrowserBridge = {
-    tasks: vi.fn(async ({ threadId }) => browserOk(tasksByThread[threadId] ?? [])),
+
+  const { bridge, listeners } = browserBridgeFixture({ workspace: { threadId: 'visual-gate', projectId: 'workshop', workingDirectory: 'D:/work', workspaceId: 'workspace' },
+    commands: { tasks: vi.fn(async ({ threadId }) => browserOk(tasksByThread[threadId] ?? [])),
     list: vi.fn(async ({ threadId }) => browserOk({ workspace: { threadId, projectId: 'workshop', workingDirectory: 'D:\\work', workspaceId: 'workspace' }, pages: [] })),
-    create: vi.fn(async () => browserOk({} as BrowserPage)), navigate: vi.fn(async () => browserOk({} as BrowserPage)),
-    back: vi.fn(async () => browserOk({} as BrowserPage)), forward: vi.fn(async () => browserOk({} as BrowserPage)),
-    reload: vi.fn(async () => browserOk({} as BrowserPage)), close: vi.fn(async () => browserOk(undefined)),
-    mount: vi.fn(async () => browserOk(undefined)), share: vi.fn(async () => browserOk({} as BrowserPage)), viewport: vi.fn(async () => browserOk({} as BrowserPage)),
+    create: vi.fn(async () => browserOk({} as BrowserPage)),
+    navigate: vi.fn(async () => browserOk({} as BrowserPage)),
+    back: vi.fn(async () => browserOk({} as BrowserPage)),
+    forward: vi.fn(async () => browserOk({} as BrowserPage)),
+    reload: vi.fn(async () => browserOk({} as BrowserPage)),
+    close: vi.fn(async () => browserOk(undefined)),
+    mount: vi.fn(async () => browserOk(undefined)),
+    share: vi.fn(async () => browserOk({} as BrowserPage)),
+    viewport: vi.fn(async () => browserOk({} as BrowserPage)),
     capture: vi.fn(async () => browserOk({ image: '', url: '', width: 0, height: 0, element: null })),
-    controlTask: vi.fn(async () => browserOk({} as BrowserTask)), answerAction: vi.fn(async () => browserOk({} as BrowserTask)), stopGrant: vi.fn(async () => browserOk(undefined)),
-    openLink: vi.fn(async () => browserOk({ destination: 'external' as const })),
-    onEvent: vi.fn(listener => { listeners.add(listener); return () => { listeners.delete(listener) } }),
-  }
+    controlTask: vi.fn(async () => browserOk({} as BrowserTask)),
+    answerAction: vi.fn(async () => browserOk({} as BrowserTask)),
+    stopGrant: vi.fn(async () => browserOk(undefined)),
+    openLink: vi.fn(async () => browserOk({ destination: 'external' as const })) } })
   return { bridge, emit: (event: BrowserEvent) => { for (const listener of [...listeners]) listener(event) } }
 }
-const phoneTask = (patch: Partial<BrowserTask> = {}): BrowserTask => ({
+const phoneTask = (patch: Partial<BrowserTask> = {}): BrowserTask => browserTask({
   id: 'phone-task', threadId: 'visual-gate', workspaceId: 'workspace', pageId: '11111111-1111-4111-8111-111111111111',
   status: 'working', description: 'Checking the app', steps: [], thumbnail: null, summary: null, unchecked: [], updatedAt: 1,
   pendingAction: null, output: null, device: 'iphone', ...patch,

@@ -1,3 +1,4 @@
+import { hostsBridgeFixture, hostsState, hostStatus } from '../../fixtures/renderer/hostBridges'
 import React from 'react'
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -11,7 +12,7 @@ import type { HostProviderJobState } from '../../../src/shared/hostProviders'
 // case beside Check again, the dialog with its Model picker and Start, and the working tile with Show thread and Stop.
 afterEach(cleanup)
 const HOST = '22222222-2222-4222-8222-222222222222'
-const forge: HostStatus = { id: HOST, hostId: HOST, name: 'forge', target: 'forge', identityFile: '', installPath: '/opt/sotto', dataDirectory: '/data', phase: 'connected', enabled: true }
+const forge: HostStatus = hostStatus({ id: HOST, hostId: HOST, name: 'forge', target: 'forge', identityFile: '', installPath: '/opt/sotto', dataDirectory: '/data', phase: 'connected', enabled: true })
 const capabilities = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true }
 const status = (id: ProviderId, patch: Partial<AgentProviderStatus>): AgentProviderStatus => ({ id, name: id, version: '', connection: 'error', capabilities, ...patch })
 const CHOICE: HostSetupChoice = { models: [
@@ -26,9 +27,10 @@ const PROVIDERS = [
 ]
 const job = (patch: Partial<HostProviderJobState> = {}): HostProviderJobState => ({ id: '44444444-4444-4444-8444-444444444444', hostId: HOST, host: 'forge', provider: 'devin', case: 'install',
   threadId: 'host:local:thread', threadTitle: 'Install Devin on forge', modelName: 'GPT-6', phase: 'running', ...patch })
-function hosts(command: HostsBridge['command'] = async () => ({ hosts: [], localHostEnabled: true, localHostRunning: true })) {
+function hosts(command: HostsBridge['command'] = async () => hostsState()) {
   const mock = vi.fn(command)
-  return { bridge: { command: mock, providerAction: vi.fn(async () => ({})), signIn: vi.fn(async () => null) } as unknown as HostsBridge, command: mock }
+  const { bridge } = hostsBridgeFixture({ commands: { command: mock } })
+  return { bridge, command: mock }
 }
 const tile = (name: string) => screen.getAllByRole('listitem').find(item => within(item).queryByRole('heading', { name }))!
 
