@@ -20,6 +20,7 @@ vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.
 const NOW = E2E_THREADS_NOW
 const THREAD = 'grok-previews'
 const BASE: AgentCapabilities = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true }
+const mountedEditors = new Set<PromptEditorElement['editor']>()
 
 const CATALOG: AgentSkillCatalog = {
   threadId: THREAD, providerId: 'codex', cwd: 'C:/workshop', status: 'ready', errors: [],
@@ -43,6 +44,8 @@ function mount(state: AgentState, options: Parameters<typeof liveAgentState>[1] 
   const live = liveAgentState(state, options)
   vi.mocked(useAgents).mockImplementation(live.useLive)
   const view = render(<ThreadsView now={NOW} />)
+  const prompt = screen.queryByRole('textbox', { name: 'Prompt' }) as PromptEditorElement | null
+  if (prompt) mountedEditors.add(prompt.editor)
   return { live, view, prompt: () => screen.getByRole('textbox', { name: 'Prompt' }) as HTMLElement }
 }
 
@@ -61,7 +64,15 @@ function followup(patch: Partial<AgentFollowup> & Pick<AgentFollowup, 'id' | 'te
 }
 
 beforeEach(() => { vi.mocked(useAgents).mockReset() })
-afterEach(() => { cleanup() })
+afterEach(() => {
+  for (const field of screen.queryAllByRole('textbox')) {
+    if ('editor' in field) mountedEditors.add((field as PromptEditorElement).editor)
+  }
+  cleanup()
+  // Tiptap defers destruction by a tick; finish it before Vitest removes document.
+  for (const editor of mountedEditors) editor.destroy()
+  mountedEditors.clear()
+})
 
 describe('follow-up queue in the Threads composer', () => {
   it.each(['unsupported', 'idle', 'uncertain', 'question', 'disconnected', 'settled-project', 'settled-thread'] as const)('does not allow queued steering when %s', async condition => {

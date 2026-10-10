@@ -29,8 +29,92 @@ import {
   type AppSettings
 } from '../../src/shared/settings'
 import { createIpcHarness } from '../fixtures/ipcHarness'
+import { OMARCHY_THEME_ID } from '../../src/shared/themes/omarchy'
+
+async function onPlatform(platform: NodeJS.Platform, run: () => Promise<void>): Promise<void> {
+  const descriptor = Object.getOwnPropertyDescriptor(process, 'platform')!
+  Object.defineProperty(process, 'platform', { ...descriptor, value: platform })
+  try { await run() } finally { Object.defineProperty(process, 'platform', descriptor) }
+}
+
+function settingsMutationHarness(snapshot: AppSettings) {
+  const harness = createIpcHarness()
+  harness.cleanup()
+  const repository = {
+    get: vi.fn(async () => snapshot),
+    update: vi.fn(async (patch: Partial<AppSettings>) => ({ ...snapshot, ...patch })),
+    save: vi.fn(async () => snapshot),
+    reset: vi.fn(async () => snapshot),
+  }
+  const changed = vi.fn()
+  const coordinator = new NativeSettingsCoordinator({
+    repository, hotkeys: harness.hotkeys, startup: harness.startup,
+    onAutoPasteChanged: vi.fn(), onSettingsChanged: changed,
+  })
+  const dispose = registerIpc(harness.ipc, {
+    settings: {
+      get: () => coordinator.getSettings(),
+      update: patch => coordinator.updateSettings(patch),
+      reset: () => coordinator.resetSettings(),
+    },
+    history: harness.history, startup: harness.startup, hotkeys: harness.hotkeys, app: harness.app,
+    trustedSenders: () => [{ role: 'main', webContents: harness.trustedContents, url: harness.trustedUrl }],
+  })
+  return { ...harness, repository, changed, coordinator, dispose }
+}
 
 describe('IPC validation and lifecycle', () => {
+  it.each(['win32', 'darwin', 'linux'] as const)('%s rejects the runtime palette before any write or notification', async (platform) => {
+    await onPlatform(platform, async () => {
+      const snapshot = { ...DEFAULT_SETTINGS, ...(platform === 'linux' ? { omarchyTheme: null } : {}) }
+      const { ipc, repository, changed, coordinator, dispose } = settingsMutationHarness(snapshot)
+      try {
+        await expect(ipc.invoke(SETTINGS_UPDATE, { omarchyTheme: null })).rejects.toThrow('Invalid IPC payload')
+        expect(repository.update).not.toHaveBeenCalled()
+        expect(repository.save).not.toHaveBeenCalled()
+        expect(repository.reset).not.toHaveBeenCalled()
+        expect(changed).not.toHaveBeenCalled()
+        expect(await coordinator.getSettings()).toEqual(snapshot)
+      } finally { dispose() }
+    })
+  })
+
+  it.each([
+    ['win32', 'lightTheme'], ['win32', 'darkTheme'],
+    ['darwin', 'lightTheme'], ['darwin', 'darkTheme'],
+  ] as const)('%s rejects a reserved %s just like an unknown ID', async (platform, half) => {
+    await onPlatform(platform, async () => {
+      const snapshot = { ...DEFAULT_SETTINGS, lightTheme: 'nocturne', darkTheme: 'nocturne' }
+      const { ipc, repository, changed, coordinator, dispose } = settingsMutationHarness(snapshot)
+      try {
+        for (const id of [OMARCHY_THEME_ID, '__unknown']) {
+          await expect(ipc.invoke(SETTINGS_UPDATE, { [half]: id, appearance: 'light' })).rejects.toThrow('Invalid IPC payload')
+          expect(repository.get).not.toHaveBeenCalled()
+          expect(repository.update).not.toHaveBeenCalled()
+          expect(repository.save).not.toHaveBeenCalled()
+          expect(repository.reset).not.toHaveBeenCalled()
+          expect(changed).not.toHaveBeenCalled()
+        }
+        expect(await coordinator.getSettings()).toEqual(snapshot)
+      } finally { dispose() }
+    })
+  })
+
+  it.each(['lightTheme', 'darkTheme'] as const)('Linux accepts a waiting %s over IPC', async (half) => {
+    await onPlatform('linux', async () => {
+      const snapshot = { ...DEFAULT_SETTINGS, omarchyTheme: null }
+      const { ipc, repository, changed, dispose } = settingsMutationHarness(snapshot)
+      try {
+        const updated = await ipc.invoke(SETTINGS_UPDATE, { [half]: OMARCHY_THEME_ID })
+        expect(updated).toEqual({ ...snapshot, [half]: OMARCHY_THEME_ID })
+        expect(repository.update).toHaveBeenCalledExactlyOnceWith({ [half]: OMARCHY_THEME_ID })
+        expect(changed).toHaveBeenCalledExactlyOnceWith(updated)
+        expect(repository.save).not.toHaveBeenCalled()
+        expect(repository.reset).not.toHaveBeenCalled()
+      } finally { dispose() }
+    })
+  })
+
   it('registers current settings, history, shortcut, startup, and app handlers', () => {
       const { ipc } = createIpcHarness()
 

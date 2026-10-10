@@ -619,6 +619,12 @@ Linux updates come from the package manager. Before the AUR publication, install
 
 ### Linux development builds
 
+Install the [Omarchy theme template](../apps/omarchy/README.md#follow-the-omarchy-theme) with `apps/omarchy/install-theme.sh` from the source checkout. It needs no sudo. Omarchy renders `~/.config/omarchy/themed/sotto.json.tpl` into its current theme folder at installation and on every switch. Sotto watches that rendered palette, so the main window and floating widget repaint live.
+
+On first start with a valid palette, both theme halves choose **Omarchy** and the colour scheme is **Match Linux**. Existing settings stay as you chose them. In **Settings → Appearance**, choose Omarchy separately for Light and Dark. The current half names the Omarchy theme; the other says “Waits for a light/dark Omarchy theme” and uses Sotto until a matching theme arrives. Match Linux follows Omarchy’s mode when that half uses Omarchy; an explicit Light or Dark mode keeps your choice. Any other palette switches away as usual. **Create theme** copies the current palette into an editable theme.
+
+The readability check raises text to 4.5:1 and the focus ring to 3:1. It keeps Omarchy’s red and yellow only where they still mean error and warning and can read with at most a 35% mix toward text; otherwise Sotto supplies red and amber. A missing, unresolved or malformed file paints Sotto, without changing your selections. A valid file restores Omarchy. There is no Omarchy entry, file read or watcher on Windows or macOS.
+
 The unpackaged desktop app starts on Omarchy (Arch Linux and Hyprland on Wayland). Prepare a source checkout with Node 24:
 
 ```sh

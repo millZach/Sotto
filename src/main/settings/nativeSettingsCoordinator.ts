@@ -97,6 +97,11 @@ export class NativeSettingsCoordinator {
     })
   }
 
+  /** Re-publish read-only appearance state without writing settings or invoking native effects. */
+  refreshAppearance(): Promise<void> {
+    return this.enqueue(async () => this.notifySettingsChanged(await this.dependencies.repository.get()))
+  }
+
   getHotkey(): Promise<string | null> {
     return this.enqueue(() => Promise.resolve(this.dependencies.hotkeys.current()))
   }

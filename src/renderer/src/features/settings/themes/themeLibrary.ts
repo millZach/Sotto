@@ -11,6 +11,7 @@
  * halves; Sotto always stores both halves, so "use for both" writes two ids.
  */
 
+import { OMARCHY_THEME_ID } from '../../../../../shared/themes/omarchy'
 import type { AppSettings, SettingsPatch } from '../../../../../shared/settings'
 import {
   BUILT_IN_THEMES,
@@ -30,7 +31,7 @@ import { appearancePreview, type AppearanceChoice } from '../../../state/appeara
 
 export type ThemeMode = ThemeAppearance | 'system'
 
-export type LibraryState = Pick<AppearanceChoice, 'lightTheme' | 'darkTheme' | 'customThemes'>
+export type LibraryState = Pick<AppearanceChoice, 'lightTheme' | 'darkTheme' | 'customThemes' | 'omarchyTheme'>
 
 export type LibraryPatch = Pick<SettingsPatch, 'lightTheme' | 'darkTheme' | 'customThemes'>
 
@@ -62,7 +63,10 @@ export function useThemePatch(theme: ThemeDefinition): LibraryPatch {
 export class ThemeLibraryError extends Error {}
 
 function libraryIds(state: LibraryState): Set<string> {
-  return new Set(state.customThemes.map(theme => theme.id))
+  return new Set([
+    ...state.customThemes.map(theme => theme.id),
+    ...(state.omarchyTheme !== undefined ? [OMARCHY_THEME_ID] : []),
+  ])
 }
 
 function checkCapacity(count: number): void {
@@ -72,7 +76,7 @@ function checkCapacity(count: number): void {
 export function installThemesPatch(state: LibraryState, themes: readonly ThemeDefinition[]): LibraryPatch {
   const taken = libraryIds(state)
   for (const theme of themes) {
-    if (BUILT_IN_THEMES.some(builtIn => builtIn.id === theme.id)) throw new ThemeLibraryError(`The theme id "${theme.id}" is reserved.`)
+    if (BUILT_IN_THEMES.some(builtIn => builtIn.id === theme.id) || (state.omarchyTheme !== undefined && theme.id === OMARCHY_THEME_ID)) throw new ThemeLibraryError(`The theme id "${theme.id}" is reserved.`)
     if (taken.has(theme.id)) throw new ThemeLibraryError(`A theme with the id "${theme.id}" is already installed.`)
     taken.add(theme.id)
   }
