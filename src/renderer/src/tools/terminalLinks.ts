@@ -3,7 +3,7 @@ import { externalLinkSchema } from '../../../shared/externalLinks'
 import { terminalLineStart as firstRow, terminalLineText as lineText } from './terminalBuffer'
 
 // The pinned web-links addon's URL boundaries, shared with its mouse provider (xterm.js authors, MIT).
-export const TERMINAL_URL_PATTERN = /(https?|HTTPS?):[/]{2}[^\s"'!*(){}|\\^<>`]*[^\s"':,.!?{}|\\^~[\]`()<>]/u
+export const TERMINAL_URL_PATTERN = /(https?):[/]{2}[^\s"'!*(){}|\\^<>`]*[^\s"':,.!?{}|\\^~[\]`()<>]/iu
 export const isTerminalLink = (uri: string): boolean => /^https?:/iu.test(uri) && externalLinkSchema.safeParse(uri).success
 
 interface NamedLink { uri: string; buffer: IBuffer; marker: IMarker; prefix: string; label: string }
@@ -97,7 +97,7 @@ export function terminalLinkCatalog(terminal: Terminal) {
       }
       let text = ''
       const collect = (): void => {
-        for (const match of text.matchAll(new RegExp(TERMINAL_URL_PATTERN.source, 'gu'))) {
+        for (const match of text.matchAll(new RegExp(TERMINAL_URL_PATTERN.source, `${TERMINAL_URL_PATTERN.flags}g`))) {
           const uri = match[0]
           if (isTerminalLink(uri)) links.set(`${uri}\n${uri}`, { uri, label: uri })
         }

@@ -1,9 +1,20 @@
 import { expect, it, vi } from 'vitest'
 import { Terminal } from '@xterm/xterm'
-import { terminalLinkCatalog, terminalLinkPicker } from '../../../../src/renderer/src/tools/terminalLinks'
+import { TERMINAL_URL_PATTERN, terminalLinkCatalog, terminalLinkPicker } from '../../../../src/renderer/src/tools/terminalLinks'
 
 const write = (terminal: Terminal, text: string) => new Promise<void>(resolve => terminal.write(text, resolve))
 const osc = (uri: string, label: string) => `\x1b]8;;${uri}\x1b\\${label}\x1b]8;;\x1b\\`
+
+it.each(['http', 'https', 'HTTP', 'HTTPS', 'Http', 'Https', 'hTtPs'])('recognizes %s URLs in mouse detection and the keyboard catalog', async scheme => {
+  const uri = `${scheme}://example.com/docs`
+  expect(TERMINAL_URL_PATTERN.exec(`Read ${uri}.`)?.[0]).toBe(uri)
+  const terminal = new Terminal({ allowProposedApi: true, cols: 20, rows: 8 })
+  const catalog = terminalLinkCatalog(terminal)
+  try {
+    await write(terminal, `Read ${uri}.`)
+    expect(catalog.list()).toEqual([{ uri, label: uri }])
+  } finally { catalog.dispose(); terminal.dispose() }
+})
 
 it('offers safe plain URLs and named OSC 8 links across writes, wraps and buffers', async () => {
   const terminal = new Terminal({ allowProposedApi: true, cols: 20, rows: 8, scrollback: 10 })
