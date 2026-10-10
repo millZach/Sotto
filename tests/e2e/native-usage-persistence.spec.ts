@@ -1,3 +1,4 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { agentState } from './support/agentAccess'
 import { ownedE2EProfile } from './support/e2eProfile'
 import { randomUUID } from 'node:crypto'
@@ -68,7 +69,7 @@ test('native Claude usage survives replay and a graceful quit with its latest ar
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!.setContentSize(1280, 800))
     await page.evaluate(async () => {
       const configured = await window.sotto!.agents!.command({ type: 'configure', patch: {
-        provider: 'claude', enabledProviders: ['claude'], enabled: true, speak: false, reasoning: 'none', followupLimit: 0,
+        provider: 'claude', enabledProviders: ['claude'], enabled: true, reasoning: 'none',
       } })
       if (configured.error) throw new Error(configured.error)
       const connected = await window.sotto!.agents!.command({ type: 'connect', provider: 'claude' })
@@ -98,7 +99,7 @@ test('native Claude usage survives replay and a graceful quit with its latest ar
       const project = state.host.projects.find(value => value.title === 'Synthetic usage project')!
       const model = state.host.models.find(value => value.providerId === 'claude' && value.ready)!
       const thread = await agents.command({ type: 'create-thread', projectId: project.id, title: 'Native usage verification', titleSource: 'user', modelId: model.id,
-        workingCopy: 'shared', runtimeMode: 'approval-required', managed: false })
+        workingCopy: 'shared', runtimeMode: 'approval-required' })
       if (thread.error) throw new Error(thread.error)
       const id = thread.activeThreadId!
       await agents.command({ type: 'select-thread', threadId: id })
@@ -106,9 +107,9 @@ test('native Claude usage survives replay and a graceful quit with its latest ar
       return id
     }, project)
     await openThreads(page!)
-    const composer = () => page.getByRole('textbox', { name: 'Prompt', exact: true })
+    const composer = () => promptField(page)
     await expect(composer()).toBeEditable()
-    await composer().fill('Exercise the synthetic usage ledger.')
+    await fillPrompt(composer(), 'Exercise the synthetic usage ledger.')
     await page!.getByRole('button', { name: 'Send prompt', exact: true }).click()
     await expect(page!.getByLabel('Thread transcript')).toContainText('Exercise the synthetic usage ledger.')
     // The workspace echoes the prompt before creating the native session. Wait for its durable
@@ -181,9 +182,9 @@ test('native Claude usage survives replay and a graceful quit with its latest ar
     expect(nativeUsageBoundary(afterReplay, PUBLIC_MODEL)).toEqual({ ...beforeSnapshot, elapsedMs: 222 })
     await expect(page!.getByLabel('Thread transcript')).toContainText('Synthetic usage reply 1')
     await expect(composer()).toBeEditable()
-    await composer().fill('An unsent draft stays editable after replay.')
-    await expect(composer()).toHaveValue('An unsent draft stays editable after replay.')
-    await composer().fill('')
+    await fillPrompt(composer(), 'An unsent draft stays editable after replay.')
+    await expectPromptText(composer(), 'An unsent draft stays editable after replay.')
+    await fillPrompt(composer(), '')
     await visibleHistory('initial')
     await capture('native-usage-after-replay.png')
     await writeFile(join(root, 'hold-usage-write'), '')
@@ -225,8 +226,8 @@ test('native Claude usage survives replay and a graceful quit with its latest ar
     await openThreads(page!)
     await expect(page!.getByRole('heading', { name: 'Native usage verification', exact: true })).toBeVisible()
     await expect(composer()).toBeEditable()
-    await composer().fill('Still usable after restart.')
-    await expect(composer()).toHaveValue('Still usable after restart.')
+    await fillPrompt(composer(), 'Still usable after restart.')
+    await expectPromptText(composer(), 'Still usable after restart.')
     await expect(page!.getByRole('button', { name: 'Send prompt', exact: true })).toBeEnabled()
     await visibleHistory('replayed')
     const renderedHistory = await page!.getByLabel('Thread transcript').evaluate(element => ({

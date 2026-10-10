@@ -1,3 +1,4 @@
+import { expectPromptText, promptField } from './support/prompt'
 import { ownedE2EProfile } from './support/e2eProfile'
 import { captureSotto } from './support/sottoCapture'
 import { resizeContentWindow } from './support/sottoWindow'
@@ -248,7 +249,7 @@ test('a minimized editor rests at the window edge, clear of the sidebar foot lin
     const { app, page } = launched
     try {
       await page.evaluate(async () => {
-        await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+        await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true } })
         await window.sotto!.agents!.command({ type: 'connect' })
       })
       // The renderer's state keys threads and projects by the host that owns them.
@@ -364,8 +365,8 @@ const codexForm = (): AgentRequest => pendingRequest('release-notes', 'mcpServer
 
 /** How often the composer states the instruction, counting its placeholder. */
 const composerSays = (pane: Locator) => pane.locator('form.thread-prompt').evaluate((form, instruction) => {
-  const prompt = form.querySelector('textarea')!
-  return (form.textContent!.split(instruction).length - 1) + (prompt.placeholder === instruction ? 1 : 0)
+  const prompt = form.querySelector('.prompt-editor')!
+  return (form.textContent!.split(instruction).length - 1) + (prompt.getAttribute('data-placeholder') === instruction ? 1 : 0)
 }, INSTRUCTION)
 
 /** Deny and Allow come into view uncovered from the keyboard. */
@@ -389,9 +390,9 @@ test('the composer beside a pending permission says to allow or deny once, throu
     const profile = profileOwner.directory
     await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'dark' }))
     await writeFile(join(profile, 'agents.json'), JSON.stringify({
-      configuration: { ...defaultAgentConfiguration(), enabled: true, speak: false },
-      assignments: [], queue: [], activeThreadId: 'grok-previews', activeProjectId: 'workshop',
-      draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', outbox: [],
+      configuration: { ...defaultAgentConfiguration(), enabled: true },
+      activeThreadId: 'grok-previews', activeProjectId: 'workshop',
+      draft: '', draftThreadId: null, draftRequestId: null, composing: false, outbox: [],
     }))
     const launched = await launchSotto('design-threads', profile)
     try {
@@ -414,10 +415,10 @@ test('the composer beside a pending permission says to allow or deny once, throu
       }
       await expect(panes.locator('section.thread-pane[role="region"]:not([data-hidden])')).toHaveCount(4)
       const gate = pane('visual-gate')
-      const prompt = gate.getByRole('textbox', { name: 'Prompt', exact: true })
-      await expect(prompt).toHaveAttribute('placeholder', INSTRUCTION)
+      const prompt = promptField(gate)
+      await expect(prompt).toHaveAttribute('data-placeholder', INSTRUCTION)
       // The Send button still says why it is off, and the held draft stays in the prompt.
-      await expect(prompt).toHaveValue('Check the flaky capture once the request is answered.')
+      await expectPromptText(prompt, 'Check the flaky capture once the request is answered.')
       await expect(gate.getByRole('button', { name: /^(Send|Queue) prompt$/u })).toHaveAttribute('title', INSTRUCTION)
 
       for (const [width, height, name] of [[1600, 1000, '1600'], [1280, 800, '1280x800']] as const) {
@@ -462,7 +463,7 @@ test('the composer beside a pending permission says to allow or deny once, throu
       await expect(form.locator('.agent-request__text')).toHaveText(formMessage)
       expect(await form.evaluate((element, message) => element.textContent!.split(message).length - 1, formMessage)).toBe(1)
       const linkComposer = links.locator('form.thread-prompt')
-      const placeholder = await linkComposer.locator('textarea').getAttribute('placeholder')
+      const placeholder = await promptField(linkComposer).getAttribute('data-placeholder')
       const statusText = await linkComposer.locator('.thread-prompt__status').allTextContents()
       expect(statusText.filter(text => text === placeholder)).toEqual([])
       await form.evaluate(element => element.scrollIntoView({ block: 'start' }))

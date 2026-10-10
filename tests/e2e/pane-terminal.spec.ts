@@ -1,3 +1,4 @@
+import { promptField } from './support/prompt'
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
@@ -39,7 +40,7 @@ test('a pane opens its own terminal below the composer, keeps it running while h
   try {
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', reducedMotion: 'on' })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload()
@@ -72,7 +73,7 @@ test('a pane opens its own terminal below the composer, keeps it running while h
     await input.pressSequentially('Write-Output ("unsent" + "-line")')
     await page.keyboard.press('Control+KeyJ')
     await expect(drawer).toHaveCount(0)
-    await expect(pane.locator('.thread-workspace__compose textarea')).toBeFocused()
+    await expect(promptField(pane)).toBeFocused()
     expect((await drawerSessions(page, threadId, 'drawer')).map(session => session.status)).toEqual(['running'])
 
     // And again from the composer: the drawer comes back with the same shell and takes focus.

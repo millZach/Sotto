@@ -1,3 +1,4 @@
+import { promptField } from './support/prompt'
 import { agentState } from './support/agentAccess'
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -22,7 +23,7 @@ test('repairs a missing staged screenshot when the user attaches the same image 
     const { page } = launched
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload(); await openThreads(page)
@@ -54,7 +55,7 @@ test('repairs a missing staged screenshot when the user attaches the same image 
 })
 
 async function paste(page: Page, image: string, name: string): Promise<void> {
-  await page.getByRole('textbox', { name: 'Prompt', exact: true }).evaluate((element, data) => {
+  await promptField(page).evaluate((element, data) => {
     const transfer = new DataTransfer()
     transfer.items.add(new File([Uint8Array.from(atob(data.image), char => char.charCodeAt(0))], data.name, { type: 'image/png' }))
     element.dispatchEvent(new ClipboardEvent('paste', { clipboardData: transfer, bubbles: true, cancelable: true }))
@@ -80,7 +81,7 @@ test('stages a pasted screenshot once, carries its handle, and restores its chip
     const { page } = launched
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload(); await openThreads(page)

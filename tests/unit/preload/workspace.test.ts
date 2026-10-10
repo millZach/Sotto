@@ -13,9 +13,9 @@ const state: AgentState = threadsStateFixture({
   configuration: defaultAgentConfiguration(), host: EMPTY_AGENT_HOST,
   projects: [{ id: 'project', title: 'Project', path: 'D:/project', workspaceSettledAt: '2026-09-12T12:00:00.000Z' }],
   threads: [{ id: 'thread', projectId: 'project', title: 'Task', modelId: 'model', status: 'idle', messages: [], requests: [], nativeSessionStarted: false, workspaceSettledAt: null }],
-  topLevel: { connection: 'disconnected', assignments: [], queue: [], activeThreadId: null, activeProjectId: null,
+  topLevel: { connection: 'disconnected', activeThreadId: null, activeProjectId: null,
     threadDrafts: undefined, deliveries: undefined, deliveredDrafts: undefined,
-    credentials: { reasoning: false, grokSpeech: false, secure: false } },
+    credentials: { reasoning: false, secure: false } },
 })
 
 describe('workspace preload contract', () => {

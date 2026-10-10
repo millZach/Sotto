@@ -1,3 +1,4 @@
+// @vitest-environment node
 import type { SubmitOutcome } from '../../../../src/renderer/src/agents/requests/requestAnswers'
 import { deferred as gate, deferred } from '../../../fixtures/deferred'
 import { describe, expect, it, vi } from 'vitest'

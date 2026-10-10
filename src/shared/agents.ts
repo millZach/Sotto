@@ -15,24 +15,11 @@ import type { GitChangedFiles, GitChangedFilesRequest } from './gitChangedFiles'
 import { GIT_PULL_REQUEST_LINKS_MAX, gitPullRequestActionSchema, gitPullRequestLinkSchema, gitPullRequestMergeMethodSchema, gitPullRequestUrlSchema, type GitPullRequestRead, type GitPullRequestRequest } from './gitPullRequests'
 import type { HostFoldersClientRequest, HostFoldersResult } from './hostFolders'
 
-/** Clock origin is the last voiced PCM frame received by the renderer, not hardware acoustic capture. */
-export const agentVoiceTimingSchema = z.object({
-  speechEndedAt: z.string().datetime(),
-  phase: z.enum(['cold', 'warm']),
-  basis: z.literal('detector-frame-received'),
-}).strict()
-export type AgentVoiceTiming = z.infer<typeof agentVoiceTimingSchema>
-
 export const AGENT_GET = 'sotto:agents:get'
 export const AGENT_CHOOSE_PROJECT_DIRECTORY = 'sotto:agents:choose-project-directory'
 export const AGENT_COMMAND = 'sotto:agents:command'
 export const AGENT_STATE = 'sotto:agents:state'
 export const AGENT_E2E = 'sotto:e2e:agents'
-export const AGENT_SPEECH = 'sotto:agents:speech'
-export const AGENT_SPEECH_CANCEL = 'sotto:agents:speech-cancel'
-export const AGENT_GROK_VOICES = 'sotto:agents:grok-voices'
-export const AGENT_VOICE_MODEL = 'sotto:agents:voice-model'
-export const AGENT_WAKE = 'sotto:agents:wake'
 export const AGENT_ATTACHMENT_PREVIEW = 'sotto:agents:attachment-preview'
 /** The window stages an image's bytes once and gets its handle back, or reads a staged image back for a chip (ADR-0031). */
 export const AGENT_ATTACHMENT_STAGE = 'sotto:agents:stage-attachment'
@@ -41,16 +28,6 @@ export const AGENT_ATTACHMENT_CONTENT = 'sotto:agents:attachment-content'
 export const AGENT_THREAD_DETAIL = 'sotto:agents:thread-detail'
 /** Asked for by the window when it opens a thread whose detail it has not been sent. */
 export const AGENT_THREAD_DETAIL_GET = 'sotto:agents:thread-detail-get'
-export const agentWakeDetectionSchema = z.object({ detected: z.boolean(), endSeconds: z.number().min(0).max(8.25) })
-export type AgentWakeDetection = z.infer<typeof agentWakeDetectionSchema>
-export const agentSpeechSchema = z.object({ audioBase64: z.string().max(20_000_000), mimeType: z.literal('audio/wav') })
-export const agentVoiceModelStatusSchema = z.object({ ready: z.boolean(), completedBytes: z.number().nonnegative(), totalBytes: z.number().nonnegative() })
-export type AgentVoiceModelStatus = z.infer<typeof agentVoiceModelStatusSchema>
-export const NATURAL_VOICES = ['F1', 'F2', 'F3', 'F4', 'F5', 'M1', 'M2', 'M3', 'M4', 'M5'] as const
-const grokSpeechVoiceSchema = z.string().trim().min(1).max(256).refine(value => !/\p{Cc}/u.test(value), 'Choose a valid Grok voice ID.')
-export const agentSpeechVoicesSchema = z.array(z.object({ id: grokSpeechVoiceSchema, name: z.string().min(1).max(300) })).max(5_000)
-export type AgentSpeechVoice = z.infer<typeof agentSpeechVoicesSchema>[number]
-
 export const providerIdSchema = z.enum(['codex', 'claude', 'grok', 'devin'])
 export type ProviderId = z.infer<typeof providerIdSchema>
 /**
@@ -530,10 +507,6 @@ export function dropLiveThreadState(thread: AgentThread): void {
   delete thread.monitoring; delete thread.backgroundWork; delete thread.providerSessionOpen
 }
 export type AgentCapabilities = z.infer<typeof agentCapabilitiesSchema>
-export function supportsAgentSupervision(capabilities: AgentCapabilities): boolean {
-  return capabilities.observe && capabilities.questions && capabilities.permissions
-    && capabilities.messageOrigin && capabilities.reconcile
-}
 export type AgentHostSnapshot = z.infer<typeof agentHostSnapshotSchema>
 
 export const subscriptionProviderSchema = z.enum(['codex', 'claude', 'grok'])
@@ -559,15 +532,20 @@ export function isSubscriptionReasoning(provider: string): provider is Subscript
 export const PROVIDER_LABELS: Readonly<Record<ProviderId, string>> = {
   codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin',
 }
+const THREAD_PROVIDERS_CONNECTED = 'Thread providers connected'
+/** The bounded success vocabulary old hosts use, including a default provider discovered during connect. */
+export const PROVIDER_CONNECTION_NOTICES: readonly string[] = [
+  ...Object.values(PROVIDER_LABELS).map(label => `${label} connected`), THREAD_PROVIDERS_CONNECTED,
+]
+/** Sotto's connect success text; a remote desktop may suppress only this feedback, never an error. */
+export function providerConnectionNotice(state: Pick<AgentState, 'host' | 'configuration'>, provider?: ProviderId): string {
+  return provider ? `${PROVIDER_LABELS[provider]} connected` : state.host.providers ? THREAD_PROVIDERS_CONNECTED : `${PROVIDER_LABELS[state.configuration.provider]} connected`
+}
 /** The provider a model's `provider` label names, by the provider's id or its name in any case; undefined for any other label. */
 export function providerIdOfLabel(label: string): ProviderId | undefined {
   const name = label.trim().toLowerCase()
   return providerIdSchema.options.find(id => id === name || PROVIDER_LABELS[id].toLowerCase() === name)
 }
-const ORB_COLORS = ['teal', 'violet', 'ice', 'amber', 'mono'] as const
-const orbColorSchema = z.enum(ORB_COLORS)
-export type OrbColor = z.infer<typeof orbColorSchema>
-const speechProviderSchema = z.enum(['grok', 'kokoro', 'natural', 'system'])
 export const agentConfigurationSchema = z.object({
   provider: providerIdSchema.default('codex'),
   enabledProviders: z.array(providerIdSchema).max(4).refine(ids => new Set(ids).size === ids.length, 'Choose each provider once.').optional(),
@@ -578,17 +556,9 @@ export const agentConfigurationSchema = z.object({
    * "never asked" from "turned off" (ADR-0036). Absent until the user turns one off.
    */
   disconnectedProviders: z.array(providerIdSchema).max(4).refine(ids => new Set(ids).size === ids.length, 'Choose each provider once.').optional(),
-  orbColor: orbColorSchema.default('teal'),
   enabled: z.boolean(),
   projectsDirectory: z.string().max(4_096),
   defaultModelId: z.string().max(6_144),
-  followupLimit: z.number().int().min(0).max(100),
-  speak: z.boolean(),
-  speechProvider: speechProviderSchema.default('grok'),
-  speechVoice: z.enum(NATURAL_VOICES).default('F1'),
-  grokSpeechVoice: grokSpeechVoiceSchema.default('altair'),
-  wakeModelDirectory: z.string().max(4_096),
-  wakeRuntimeDirectory: z.string().max(4_096),
   reasoning: z.enum(['none', 'codex', 'claude', 'grok', 'openrouter', 'openai']),
   reasoningModel: z.string().max(512),
   reasoningEffort: z.string().max(64).default(''),
@@ -609,33 +579,11 @@ export const agentConfigurationSchema = z.object({
 export type AgentConfiguration = z.infer<typeof agentConfigurationSchema>
 export const defaultAgentConfiguration = (): AgentConfiguration => ({
   provider: 'codex',
-  orbColor: 'teal',
   enabled: false, projectsDirectory: '', defaultModelId: '',
-  followupLimit: 5, speak: true, speechProvider: 'grok', speechVoice: 'F1', grokSpeechVoice: 'altair', wakeModelDirectory: '', wakeRuntimeDirectory: '', reasoning: 'none', reasoningModel: '', reasoningEffort: '', checkClientUpdates: true,
+  reasoning: 'none', reasoningModel: '', reasoningEffort: '', checkClientUpdates: true,
   newThreadModelId: '', newThreadReasoningEffort: '',
 })
 
-export const agentAssignmentSchema = z.object({
-  threadId: id, mode: z.enum(['managed', 'manual']), instruction: text,
-  followups: z.number().int().nonnegative(), paused: z.boolean(),
-  seenMessageIds: z.array(z.string()), ownMessageIds: z.array(z.string()),
-  handledRequestIds: z.array(z.string()), lastFailure: z.string(),
-  contextUpdatedAt: z.number().default(0),
-  /** ISO time the assignment began (assign or create-thread). Empty for assignments saved before it was recorded. */
-  startedAt: z.string().default(''),
-  /** How the current instruction reached the thread: a spoken "send it", a typed Send, or not yet known. */
-  origin: z.enum(['voice', 'typed', 'unknown']).default('unknown'),
-  /** Why Sotto stopped managing on its own; 'none' while managing or after a user pause. Cleared by resume. */
-  stopReason: z.enum(['none', 'limit', 'repeat', 'error']).default('none'),
-  /** ISO time of that stop; empty when stopReason is 'none'. */
-  stoppedAt: z.string().default(''),
-})
-export type AgentAssignment = z.infer<typeof agentAssignmentSchema>
-export const agentQueueItemSchema = z.object({
-  id, threadId: id, kind: z.enum(['ready', 'question', 'permission', 'blocked']),
-  text, requestId: z.string().optional(), createdAt: z.string(), deferred: z.boolean(),
-})
-export type AgentQueueItem = z.infer<typeof agentQueueItemSchema>
 export const MAX_DELIVERED_DRAFTS = 128
 export const agentThreadDraftSchema = z.object({
   threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentHandlesSchema, skills: agentSkillReferencesSchema.optional(),
@@ -644,7 +592,7 @@ export const agentThreadDraftSchema = z.object({
 })
 export type AgentThreadDraft = z.infer<typeof agentThreadDraftSchema>
 /**
- * The follow-up queue's items: the user's own follow-ups, independent of attention and dispatched outbox intent, and
+ * The follow-up queue's items: the user's own follow-ups, independent of dispatched outbox intent, and
  * at most one of Sotto's own, a `wakeUp` babysitting is holding until the thread is ready (ADR-0061 decision 8), after
  * the user's items, removable and never editable. Its draft ID is its own, so an older reader still reads the queue;
  * no draft or delivery receipt goes with it.
@@ -671,6 +619,7 @@ export type AgentDelivery = z.infer<typeof agentDeliverySchema>
 export const agentDeliveryReceiptsSchema = z.array(z.object({ threadId: id, draftId: z.uuid() })).max(MAX_DELIVERED_DRAFTS)
 export const providerUpgradeSchema = z.object({ recoveryPath: z.string(), migratedAt: z.number() })
 export const agentStateSchema = z.object({
+  legacyManagement: z.boolean().optional(),
   worktreeReclaimPreview: worktreeReclaimPreviewSchema.optional(),
   clientScoped: z.boolean().optional(),
   connections: z.array(z.object({ hostId: z.uuid(), name: z.string(), kind: z.enum(['local', 'remote']), connected: z.boolean() })).optional(),
@@ -689,7 +638,6 @@ export const agentStateSchema = z.object({
   installedProviders: z.array(providerIdSchema).max(4).optional(),
   connection: z.enum(['disconnected', 'connecting', 'connected', 'error']),
   host: agentHostSnapshotSchema,
-  assignments: z.array(agentAssignmentSchema), queue: z.array(agentQueueItemSchema),
   activeThreadId: z.string().nullable(), activeProjectId: z.string().nullable(),
   draft: text, draftThreadId: z.string().nullable(), composing: z.boolean(),
   draftAttachments: agentAttachmentHandlesSchema.optional(),
@@ -706,9 +654,8 @@ export const agentStateSchema = z.object({
   followups: z.array(agentFollowupSchema).optional(),
   followupReceipts: agentDeliveryReceiptsSchema.optional(),
   draftRequestId: z.string().nullable(),
-  pendingRequest: z.string().max(20_000),
   /**
-   * The one global lane is occupied: a command with no thread, or one that moves assignment authority,
+   * The one global lane is occupied: a command with no thread, or one that moves
    * the composer draft or a whole project. It says nothing about any thread's own lane — the provider
    * and configuration surfaces are what read it.
    */
@@ -724,9 +671,7 @@ export const agentStateSchema = z.object({
    * it or the provider says otherwise, and takes no other action on the thread meanwhile. Absent when there are none.
    */
   unconfirmedSettings: z.array(agentThreadOptionsSchema.extend({ threadId: id })).max(1_000).optional(),
-  speech: z.object({ id: z.number(), text: z.string(), preview: z.boolean().optional() }),
-  voice: z.object({ status: z.string(), error: z.string().nullable(), action: z.enum(['none', 'mute', 'unmute', 'stop-speaking', 'sleep']), revision: z.number() }),
-  credentials: z.object({ reasoning: z.boolean(), grokSpeech: z.boolean().default(false), secure: z.boolean() }),
+  credentials: z.object({ reasoning: z.boolean(), secure: z.boolean() }),
   reasoningAccounts: z.array(subscriptionAccountSchema).default([]),
   /** Whether the user keeps local history; the window persists its startup shell only when true. */
   historyEnabled: z.boolean().optional(),
@@ -841,7 +786,7 @@ export type AgentThreadDetailUpdate = z.infer<typeof agentThreadDetailUpdateSche
 /**
  * Whether a message is a visual an agent drew (ADR-0056): Sotto's own `visual:` message, carrying the visual. This is
  * the one test for it. A visual message is never the final reply, never folds, and is left out of summaries, search,
- * titles and supervision. A `visual:` message without a visual it can read (a shape this reader does not know, or a
+ * titles. A `visual:` message without a visual it can read (a shape this reader does not know, or a
  * socket client's copy, which never carries one) is its words alone, and counts as a reply everywhere. The `visual`
  * field is asked first, so a pass over a long history reads no other message's ID.
  */
@@ -907,9 +852,10 @@ export function agentShell(state: AgentState): AgentState {
 }
 export const agentCommandSchema = z.discriminatedUnion('type', [
   // Re-extend defaulted fields: Zod 4 applies defaults through partial(), resetting omitted settings.
-  z.object({ type: z.literal('configure'), patch: agentConfigurationSchema.partial().extend({ provider: providerIdSchema.optional(), orbColor: orbColorSchema.optional(), reasoningEffort: z.string().max(64).optional(), speechProvider: speechProviderSchema.optional(), speechVoice: z.enum(NATURAL_VOICES).optional(), grokSpeechVoice: grokSpeechVoiceSchema.optional(), checkClientUpdates: z.boolean().optional(), newThreadReasoningEffort: z.string().max(64).optional() }) }).strict(),
-  z.object({ type: z.literal('credential'), slot: z.enum(['reasoning', 'grokSpeech']), value: z.string().max(16_384) }).strict(),
-  z.object({ type: z.literal('connect'), provider: providerIdSchema.optional() }).strict(),
+  z.object({ type: z.literal('configure'), patch: agentConfigurationSchema.partial().extend({ provider: providerIdSchema.optional(), reasoningEffort: z.string().max(64).optional(), checkClientUpdates: z.boolean().optional(), newThreadReasoningEffort: z.string().max(64).optional() }) }).strict(),
+  z.object({ type: z.literal('credential'), slot: z.enum(['reasoning']), value: z.string().max(16_384) }).strict(),
+  // Setup and Settings show connection status themselves; this can only suppress the Threads notice.
+  z.object({ type: z.literal('connect'), provider: providerIdSchema.optional(), notice: z.literal(false).optional() }).strict(),
   z.object({ type: z.literal('disconnect'), provider: providerIdSchema.optional() }).strict(),
   z.object({ type: z.literal('refresh'), provider: providerIdSchema.optional() }).strict(),
   z.object({ type: z.literal('refresh-thread-skills'), threadId: id, forceReload: z.boolean().optional() }).strict(),
@@ -921,10 +867,6 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   /** Takes clients that are still waiting out of the update line. One already running is left to finish. */
   z.object({ type: z.literal('cancel-client-updates'), providers: z.array(providerIdSchema).min(1).max(4) }).strict(),
   z.object({ type: z.literal('dismiss-client-updates') }).strict(),
-  z.object({ type: z.literal('preview-voice') }).strict(),
-  z.object({ type: z.literal('utterance'), text, voiceTiming: agentVoiceTimingSchema.optional() }).strict(),
-  z.object({ type: z.literal('voice'), action: z.enum(['mute', 'unmute', 'stop-speaking', 'sleep']) }).strict(),
-  z.object({ type: z.literal('voice-state'), status: z.string().max(32), error: z.string().max(2000).nullable() }).strict(),
   z.object({ type: z.literal('compose'), threadId: id.optional(), draftId: z.uuid().optional(), text, attachments: agentAttachmentHandlesSchema.optional() }).strict(),
   z.object({ type: z.literal('save-thread-draft'), threadId: id, draftId: z.uuid(), expectedDraftId: z.uuid().nullable().optional(), text,
     attachments: agentAttachmentHandlesSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional(), requestId: id.nullable().optional(),
@@ -945,9 +887,6 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('resume-followups'), threadId: id }).strict(),
   z.object({ type: z.literal('steer'), threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentHandlesSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional() }).strict(),
   z.object({ type: z.literal('cancel-draft') }).strict(),
-  z.object({ type: z.literal('pause-draft') }).strict(),
-  z.object({ type: z.literal('resume-draft'), threadId: id }).strict(),
-  z.object({ type: z.literal('cancel-request') }).strict(),
   z.object({ type: z.literal('create-project'), provider: providerIdSchema.optional(), title: id, path: z.string().max(4_096).optional(), useExisting: z.boolean().optional() }).strict(),
   z.object({ type: z.literal('select-project'), projectId: providerEntityId }).strict(),
   z.object({ type: z.literal('settle-project'), projectId: providerEntityId }).strict(),
@@ -961,11 +900,11 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('create-thread'), projectId: providerEntityId, title: id, modelId: providerEntityId,
     /** `user` when the title is the one the user typed, `default` when it is Sotto's stand-in name. */
     titleSource: z.enum(['user', 'default']).optional(),
-    /** The Sotto thread ID the window already minted and is showing. Absent from voice and older callers, which let main mint one. */
+    /** The Sotto thread ID the window already minted and is showing. Absent from older callers, which let main mint one. */
     threadId: z.uuid().optional(),
     workingCopy: z.enum(['independent', 'shared']).optional(),
     baseBranch: z.string().min(1).max(512).optional(), startFromOrigin: z.boolean().optional(), existingWorktreePath: z.string().min(1).max(4096).optional(),
-    reasoningEffort: z.string().min(1).max(64).optional(), runtimeMode: agentRuntimeModeSchema.optional(), providerMode: providerEntityId.optional(), managed: z.boolean().optional() }).strict(),
+    reasoningEffort: z.string().min(1).max(64).optional(), runtimeMode: agentRuntimeModeSchema.optional(), providerMode: providerEntityId.optional() }).strict(),
   z.object({ type: z.enum(['retry-thread-worktree', 'open-thread-folder']), threadId: id }).strict(),
   /** Read the thread's folder again, remote and all. `background` is a read the window made on its own (it regained focus,
    * a draft began), which asks GitHub only as the timer would: never while its rate limit is paused or below the reserve (#820). */
@@ -1016,14 +955,8 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
    * inside the next send. Starts nothing a send would not, creates no provider session, worktree or branch, sends no
    * prompt, and says nothing when it cannot start: the send reports its own error (#769). */
   z.object({ type: z.literal('start-thread-session'), threadId: id }).strict(),
-  z.object({ type: z.literal('select-attention'), itemId: id }).strict(),
-  z.object({ type: z.literal('assign'), threadId: id, instruction: text.optional(), expectedDraftId: z.uuid().nullable().optional() }).strict(),
-  z.object({ type: z.literal('unassign'), threadId: id }).strict(),
-  z.object({ type: z.literal('resume'), threadId: id, expectedDraftId: z.uuid().nullable().optional() }).strict(),
-  z.object({ type: z.literal('pause'), threadId: id }).strict(),
   z.object({ type: z.literal('interrupt'), threadId: id }).strict(),
   z.object({ type: z.literal('compact-thread'), threadId: id }).strict(),
-  z.object({ type: z.enum(['next', 'later']) }).strict(),
   z.object({ type: z.literal('answer'), threadId: id, requestId: id, answer: text, approved: z.boolean().optional(), questionAnswers: agentQuestionAnswersSchema.optional(), permissionChoice: id.optional() }).strict(),
 ])
 export type AgentCommand = z.infer<typeof agentCommandSchema>
@@ -1039,13 +972,6 @@ export interface AgentBridge {
   /** One folder's subfolders on a named host, for the Add project dialog's folder browser. */
   hostFolders?(request: HostFoldersClientRequest): Promise<HostFoldersResult>
   chooseProjectDirectory?(): Promise<string | null>
-  prepareWake?(): Promise<AgentWakeDetection>
-  detectWake?(audio: Float32Array): Promise<AgentWakeDetection>
-  releaseWake?(): Promise<AgentWakeDetection>
-  synthesizeSpeech?(text: string): Promise<{ audioBase64: string; mimeType: 'audio/wav' }>
-  cancelSpeech?(): Promise<void>
-  grokVoices?(): Promise<AgentSpeechVoice[]>
-  voiceModel?(action: 'status' | 'download'): Promise<AgentVoiceModelStatus>
   get(): Promise<AgentState>
   /** The bytes behind one published `preview: { available: true }` marker, or null when nothing is eligible. */
   attachmentPreview?(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult>
@@ -1062,7 +988,7 @@ export interface AgentBridge {
 }
 
 /**
- * The agent bridge as the preload exposes it (`window.sotto.agents`, `window.sottoWidget.agents`): what
+ * The agent bridge as the preload exposes it (`window.sotto.agents`): what
  * crosses from main before the page puts the model catalogs back (ADR-0028). A broadcast may omit a catalog
  * the window was already sent, and a command answers with a receipt that names every catalog by revision.
  * `wrapAgentBridge` in `src/renderer/src/agents/agentStateCatalogs.ts` turns it into the `AgentBridge` every

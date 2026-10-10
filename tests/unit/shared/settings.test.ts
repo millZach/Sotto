@@ -85,7 +85,6 @@ const customSettings = {
   phoneAccess: true,
   phoneAccessName: 'Studio',
   tailnetConnections: true,
-  voiceCoordinatorEnabled: true,
   memoryEnabled: true,
   cloudIphoneMonthlyMinutes: 1_000,
   cloudIphoneIdleMinutes: 10,
@@ -275,7 +274,6 @@ describe('settings', () => {
   it('defines the complete versioned defaults', () => {
     expect(SETTINGS_VERSION).toBe(1)
     expect(DEFAULT_SETTINGS).toEqual({
-      voiceCoordinatorEnabled: false,
       memoryEnabled: false,
       webLinkDestination: 'external',
       responseStreaming: 'live',

@@ -106,7 +106,7 @@ test('starts a host at boot from Add host’s card once linger is on, stops it a
       await agents.command({ type: 'create-project', title: 'render-farm', path, useExisting: true })
       const state = await agents.get()
       const projectId = state.host.projects.find(item => item.title === 'render-farm')!.id
-      await agents.command({ type: 'create-thread', projectId, title: 'Bake the hero shot lighting', modelId: state.host.models[0]!.id, managed: false, workingCopy: 'shared' })
+      await agents.command({ type: 'create-thread', projectId, title: 'Bake the hero shot lighting', modelId: state.host.models[0]!.id, workingCopy: 'shared' })
       const threadId = (await agents.get()).host.threads.find(item => item.title === 'Bake the hero shot lighting')!.id
       await agents.command({ type: 'manual-send', threadId, text: 'Bake the lighting for the hero shot.' })
       return threadId

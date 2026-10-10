@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import {
   babysitClock, babysitEndedOf, babysitLine, babysittingOf, babysittingWord, endedWords, offersBabysitting, pullRequestNumbers,

@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { preloadElectron } from '../../fixtures/preloadElectron'
 import { describe, expect, it, vi } from 'vitest'
 vi.mock('electron', async () => (await import('../../fixtures/preloadElectron')).preloadElectron())

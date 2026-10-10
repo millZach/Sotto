@@ -1,5 +1,7 @@
 # First hosted TTS screen: Kokoro, Flux, Fish and Grok
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 **The network-latency screen is complete.** Fish had the fastest typical first
 audio chunk; Flux had the tightest first-chunk tail; Kokoro completed full replies
 fastest at the median. These are measured speed findings, not listening-quality

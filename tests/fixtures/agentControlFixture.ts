@@ -12,8 +12,7 @@ export type AgentControlOptions = ConstructorParameters<typeof AgentControl>[0]
 export type TestControlOptions = Omit<AgentControlOptions, 'directory' | 'host' | 'credentials' | 'reasoner'>
 
 export function stubAgentReasoner(overrides: Partial<AgentReasoner> = {}): AgentReasoner {
-  return { intent: async () => ({ type: 'clarify', text: 'Choose a thread' }),
-    decide: async () => ({ decision: 'human', text: 'Review' }), ...overrides }
+  return { ...overrides }
 }
 
 /** Unstarted control; also usable for restart tests with already loaded credentials. */

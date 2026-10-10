@@ -17,7 +17,7 @@ function thread(originBase: AgentWorktree['originBase'], id = 'thread-1'): Worki
 const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => (threadsStateFixture({ cloneOverrides: false,
     configuration: defaultAgentConfiguration(),
     host: { projects: [], threads: [], models: [] },
-    topLevel: { assignments: [], queue: [], activeThreadId: null, activeProjectId: null,  } })))
+    topLevel: { activeThreadId: null, activeProjectId: null,  } })))
 afterEach(() => { cleanup(); resetBranchNoticeDismissals() })
 
 describe('the local branch notice', () => {

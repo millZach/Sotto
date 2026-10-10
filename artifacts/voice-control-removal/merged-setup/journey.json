@@ -1,0 +1,29 @@
+[
+  {
+    "width": 1600,
+    "height": 1000,
+    "appearance": "light",
+    "steps": 9,
+    "tourStops": 4,
+    "pageErrors": 0,
+    "result": "passed"
+  },
+  {
+    "width": 1280,
+    "height": 800,
+    "appearance": "dark",
+    "steps": 9,
+    "tourStops": 4,
+    "pageErrors": 0,
+    "result": "passed"
+  },
+  {
+    "width": 820,
+    "height": 560,
+    "appearance": "dark",
+    "steps": 9,
+    "tourStops": 4,
+    "pageErrors": 0,
+    "result": "passed"
+  }
+]

@@ -47,7 +47,7 @@ async function fixture() {
       threadProvider: id => registry.byThread(id)?.provider })
     const host = new WorkspaceHost(native, directory, () => historyEnabled)
     const control = createAgentControl({ schedule: immediatePublishScheduler, directory, host, credentials, historyEnabled: () => historyEnabled,
-      reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
+      reasoner: {},
     })
     await control.start(); await stageInto(control, PIXEL_PNG)
     return { control, host, registry }
@@ -77,7 +77,7 @@ describe('workspace persistence, delivery and settlement', () => {
     const initial = await f.command({ type: 'connect' })
     const project = initial.host.projects.find(project => project.providerId === 'codex')!
     const model = initial.host.models.find(model => model.providerId === 'codex')!
-    const created = await f.command({ type: 'create-thread', projectId: project.id, modelId: model.id, title: 'Recover setup', managed: false, workingCopy: 'independent' })
+    const created = await f.command({ type: 'create-thread', projectId: project.id, modelId: model.id, title: 'Recover setup', workingCopy: 'independent' })
     const threadId = created.activeThreadId!
     // The pane exists as soon as creation returns; its checkout waits for first send.
     expect(created.host.threads.find(thread => thread.id === threadId)?.worktree?.status).toBe('pending')
@@ -126,14 +126,14 @@ describe('workspace persistence, delivery and settlement', () => {
     const f = await fixture()
     const connected = await f.command({ type: 'connect' })
     const thread = connected.host.threads.find(thread => thread.providerId === 'claude')!
-    await f.command({ type: 'assign', threadId: thread.id, instruction: 'PRIVATE ASSIGNMENT CONTEXT' })
+    await f.command({ type: 'select-thread', threadId: thread.id })
     await f.command({ type: 'compose', text: 'PRIVATE SENT TRANSCRIPT', attachments: [image] })
     await f.command({ type: 'send' })
     // The message reaches the workspace on the provider's own publish, whose write is gathered rather than immediate.
     // Messages are in the thread store; `workspace.json` keeps organization alone.
     await vi.waitFor(async () => expect(await onDisk(f.directory, 'threads.sqlite')).toContain('PRIVATE SENT TRANSCRIPT'))
     expect(await readFile(join(f.directory, 'workspace.json'), 'utf8')).not.toContain('PRIVATE SENT TRANSCRIPT')
-    expect(await readFile(join(f.directory, 'agents.json'), 'utf8')).toContain('PRIVATE SENT TRANSCRIPT')
+    expect(await readFile(join(f.directory, 'agents.json'), 'utf8')).not.toContain('PRIVATE SENT TRANSCRIPT')
     f.setHistory(false)
     const write = AtomicJsonStore.prototype.write
     const failure = vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(async function (this: AtomicJsonStore<unknown>, value: unknown) {
@@ -212,7 +212,7 @@ describe('workspace persistence, delivery and settlement', () => {
     const project = initial.host.projects.find(project => project.providerId === 'codex')!
     const codexModel = initial.host.models.find(model => model.providerId === 'codex')!
     const claudeModel = initial.host.models.find(model => model.providerId === 'claude')!
-    const created = await f.command({ type: 'create-thread', projectId: project.id, modelId: codexModel.id, title: 'Independent task', managed: false })
+    const created = await f.command({ type: 'create-thread', projectId: project.id, modelId: codexModel.id, title: 'Independent task' })
     const thread = created.host.threads.find(thread => thread.title === 'Independent task')!
     const draft = { threadId: thread.id, draftId: randomUUID(), text: 'Implement the agreed task', attachments: [image] }
     await f.command({ type: 'save-thread-draft', ...draft })
@@ -224,7 +224,7 @@ describe('workspace persistence, delivery and settlement', () => {
     const sentMessage = sent.host.threads.find(item => item.id === thread.id)!.messages.at(-1)!
     expect(sentMessage.attachments).toContainEqual(expect.objectContaining({ id: image.id, preview: { available: true } }))
     expect(await f.control.attachmentPreview({ threadId: thread.id, messageId: sentMessage.id, attachmentId: image.id })).toEqual({ dataUrl: PIXEL_DATA_URL })
-    expect(sent.assignments).toEqual([])
+    expect(sent).not.toHaveProperty('assignments')
     await f.command({ type: 'settle-project', projectId: project.id })
     await f.restart()
     // The restarted coordinator says which thread is open, and the workspace loads that thread's window

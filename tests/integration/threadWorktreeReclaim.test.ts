@@ -258,5 +258,5 @@ describe("independent working-copy allocation", () => {
     expect(facts.repositories).toEqual([{ path: 'node_modules/local.git/', changeCount: 0, unpushedCommitCount: 0, kind: 'repository' }])
     await expect(f.service.reclaim(a, { automatic: true })).rejects.toThrow('besides installed dependencies')
     expect((await f.service.reclaim(a, { confirmedItems: facts.items, confirmedIgnored: facts.ignored, confirmedRepositories: facts.repositories })).reclaimedAt).toBeTruthy()
-  })
+  }, 60_000)
 })

@@ -1,3 +1,4 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { agentState } from './support/agentAccess'
 import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
 import { writeFile } from 'node:fs/promises'
@@ -37,9 +38,9 @@ test('two threads split the workspace and stay independent through resize, narro
   const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-split-' })).directory
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'dark', accent: 'teal' }))
   await writeFile(join(profile, 'agents.json'), JSON.stringify({
-    configuration: { ...defaultAgentConfiguration(), enabled: true, speak: false },
-    assignments: [], queue: [], activeThreadId: 'grok-previews', activeProjectId: 'workshop',
-    draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', outbox: [],
+    configuration: { ...defaultAgentConfiguration(), enabled: true, },
+    activeThreadId: 'grok-previews', activeProjectId: 'workshop',
+    draft: '', draftThreadId: null, draftRequestId: null, composing: false, outbox: [],
   }))
   const launched = await launchSotto('design-threads', profile)
   const { page } = launched
@@ -81,23 +82,22 @@ test('two threads split the workspace and stay independent through resize, narro
 
     // Each pane writes to its own thread; a send in one leaves the other's draft where it was.
     await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'ready', threadId: 'footer-links', text: 'Footer links are ready for review.' }))
-    const previewsPrompt = previews.getByRole('textbox', { name: 'Prompt', exact: true })
-    const footerPrompt = footer.getByRole('textbox', { name: 'Prompt', exact: true })
-    await previewsPrompt.fill('Keep this draft with the previews thread.')
+    const previewsPrompt = promptField(previews)
+    const footerPrompt = promptField(footer)
+    await fillPrompt(previewsPrompt, 'Keep this draft with the previews thread.')
     await expect(previews).toHaveAttribute('data-focused')
-    await footerPrompt.fill('Check the footer link targets.')
+    await fillPrompt(footerPrompt, 'Check the footer link targets.')
     await expect(footer).toHaveAttribute('data-focused')
     await footerPrompt.press('Enter')
     await expect(footer.getByLabel('Thread transcript')).toContainText('Check the footer link targets.')
     await expect(previews.getByLabel('Thread transcript')).not.toContainText('Check the footer link targets.')
-    await expect(previewsPrompt).toHaveValue('Keep this draft with the previews thread.')
-    await expect(footerPrompt).toHaveValue('')
-    const afterSend = await agentState(page)
+    await expectPromptText(previewsPrompt, 'Keep this draft with the previews thread.')
+    await expectPromptText(footerPrompt, '')
     await expect.poll(async () => (await userMessageTexts(page, 'footer-links')).filter(text => text === 'Check the footer link targets.')).toHaveLength(1)
     expect((await userMessageTexts(page, 'grok-previews')).some(text => text.includes('footer link targets'))).toBe(false)
-    expect(afterSend.assignments).toHaveLength(0)
+
     await expect.poll(() => threadStatus(page, key('footer-links'))).toBe('running')
-    await footerPrompt.fill('Next: compare the mobile footer.')
+    await fillPrompt(footerPrompt, 'Next: compare the mobile footer.')
     await capture(page, 'two-panes')
 
     // Keyboard resize, then F6 between panes.
@@ -122,13 +122,13 @@ test('two threads split the workspace and stay independent through resize, narro
     await capture(page, 'narrow-focus')
     await tabs.getByRole('tab', { name: 'Footer links' }).click()
     await expect(footerPrompt).toBeVisible()
-    await expect(footerPrompt).toHaveValue('Next: compare the mobile footer.')
+    await expectPromptText(footerPrompt, 'Next: compare the mobile footer.')
     await expect(previewsPrompt).toBeHidden()
     await size(launched, 760, 760)
     await page.screenshot({ path: join(evidence, 'split-narrow-760-dark.png'), animations: 'disabled' })
     await size(launched, 1600)
     await expect(divider).toHaveAttribute('aria-valuenow', '60')
-    await expect(previewsPrompt).toHaveValue('Keep this draft with the previews thread.')
+    await expectPromptText(previewsPrompt, 'Keep this draft with the previews thread.')
 
     // Closing a pane closes the view only: the agent keeps running and the thread stays in the sidebar.
     await footer.getByRole('button', { name: 'Close Footer links pane' }).click()
@@ -140,7 +140,7 @@ test('two threads split the workspace and stay independent through resize, narro
     await sidebar.getByRole('button', { name: 'Footer links', exact: true }).hover()
     await sidebar.getByRole('button', { name: 'Open Footer links beside', exact: true }).click()
     await expect(panes.locator('section.thread-pane[role="region"]:not([data-hidden])')).toHaveCount(2)
-    await expect(footerPrompt).toHaveValue('Next: compare the mobile footer.')
+    await expectPromptText(footerPrompt, 'Next: compare the mobile footer.')
 
     // Larger text scaling at a typical laptop width.
     await size(launched, 1280, 900)

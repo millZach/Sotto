@@ -1,3 +1,4 @@
+import { setPromptText, promptText } from './helpers/promptEditor'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -17,13 +18,13 @@ const remove = (oldLine: number, text: string): ReviewLine => ({ kind: 'remove',
 
 function mount(running = false) {
   const state: AgentState = threadsStateFixture()
-  state.assignments = []
+
   state.activeThreadId = THREAD
   if (running) state.host = { ...state.host, threads: state.host.threads.map(thread => thread.id === THREAD ? { ...thread, status: 'running' as const } : thread) }
   const live = liveAgentState(state)
   vi.mocked(useAgents).mockImplementation(live.useLive)
-  render(<ThreadsView onOpenAgents={vi.fn()} now={E2E_THREADS_NOW} />)
-  return { live, prompt: () => screen.getByRole('textbox', { name: 'Prompt' }) as HTMLTextAreaElement }
+  render(<ThreadsView now={E2E_THREADS_NOW} />)
+  return { live, prompt: () => screen.getByRole('textbox', { name: 'Prompt' }) as HTMLElement }
 }
 
 const requests = <T extends AgentCommand['type']>(live: ReturnType<typeof liveAgentState>, type: T): Extract<AgentCommand, { type: T }>[] =>
@@ -61,10 +62,10 @@ describe('review comments on the composer', () => {
   it('sends the comments in the prompt’s own text after the message, then takes the chips off', () => {
     const { live, prompt } = mount()
     act(() => { reviewCommentStore.add(THREAD, { path: 'src/main/voice.ts', lines: [remove(12, 'old'), add(12, 'new')], text: 'Say why.' }) })
-    fireEvent.change(prompt(), { target: { value: 'An earlier draft.' } })
+    setPromptText(prompt(), 'An earlier draft.')
     // A second nonempty edit need not render the surrounding controls. Comments
     // must be appended to the latest text rather than the first captured draft.
-    fireEvent.change(prompt(), { target: { value: 'Tighten this before we merge.' } })
+    setPromptText(prompt(), 'Tighten this before we merge.')
     fireEvent.keyDown(prompt(), { key: 'Enter' })
     const text = 'Tighten this before we merge.\n\nComment on `src/main/voice.ts L12`:\n\nSay why.\n\n```diff\n-old\n+new\n```'
     expect(requests(live, 'manual-send')).toEqual([{ type: 'manual-send', threadId: THREAD, draftId: expect.any(String), text }])
@@ -73,14 +74,14 @@ describe('review comments on the composer', () => {
     expect(requests(live, 'save-thread-draft').find(save => save.draftId === sent.draftId)).toBeUndefined()
     expect(reviewCommentStore.list(THREAD)).toEqual([])
     expect(chips()).toBeNull()
-    expect(prompt()).toHaveValue('')
+    expect(promptText(prompt())).toBe('')
     act(() => undefined)
   })
 
   it('carries the comments in a queued follow-up the same way', () => {
     const { live, prompt } = mount(true)
     act(() => { reviewCommentStore.add(THREAD, { path: 'a.ts', lines: [add(1, 'x')], text: 'Why?' }) })
-    fireEvent.change(prompt(), { target: { value: 'After this turn' } })
+    setPromptText(prompt(), 'After this turn')
     fireEvent.keyDown(prompt(), { key: 'Enter' })
     expect(requests(live, 'queue-followup').map(item => item.text)).toEqual(['After this turn\n\nComment on `a.ts L1`:\n\nWhy?\n\n```diff\n+x\n```'])
     expect(reviewCommentStore.list(THREAD)).toEqual([])
@@ -95,17 +96,17 @@ describe('review comments on the composer', () => {
     expect(send()).toBeEnabled()
     fireEvent.click(send())
     expect(requests(live, 'manual-send').map(item => item.text)).toEqual(['Comment on `a.ts L1`:\n\nWhy?\n\n```diff\n+x\n```'])
-    expect(prompt()).toHaveValue('')
+    expect(promptText(prompt())).toBe('')
     act(() => undefined)
   })
 
   it('brings a refused prompt back with its comments written out, so nothing is lost', async () => {
     const { live, prompt } = mount()
     act(() => { reviewCommentStore.add(THREAD, { path: 'a.ts', lines: [add(1, 'x')], text: 'Why?' }) })
-    fireEvent.change(prompt(), { target: { value: 'Look here' } })
+    setPromptText(prompt(), 'Look here')
     fireEvent.keyDown(prompt(), { key: 'Enter' })
     expect(chips()).toBeNull()
     await act(async () => { live.deliver(THREAD, 'failed') })
-    expect(prompt()).toHaveValue('Look here\n\nComment on `a.ts L1`:\n\nWhy?\n\n```diff\n+x\n```')
+    expect(promptText(prompt())).toBe('Look here\n\nComment on `a.ts L1`:\n\nWhy?\n\n```diff\n+x\n```')
   })
 })

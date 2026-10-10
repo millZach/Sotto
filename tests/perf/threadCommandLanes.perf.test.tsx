@@ -35,7 +35,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks() })
 const RUNS = 8
 const ACKS_MS = [0, 250] as const
 
-describe.skipIf(!PERF_BENCH)('thread command lanes in the window', () => {
+describe.skipIf(!PERF_BENCH)("thread command lanes in the window (timing benchmark; requires SOTTO_PERF_BENCH=1)", () => {
   it('reports how long one thread’s settings wait behind another thread’s pending answer', async () => {
     const report: Record<string, { reachedMainMs: number; replyMs: number; answerMs: number }> = {}
     for (const ackMs of ACKS_MS) {

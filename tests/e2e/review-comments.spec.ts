@@ -1,3 +1,4 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { resizeContentWindow } from './support/sottoWindow'
 import { execFile } from 'node:child_process'
 import { mkdir, writeFile } from 'node:fs/promises'
@@ -45,7 +46,7 @@ test('a review comment goes from Changes to the composer and out with the next p
     const folder = await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
       const agents = window.sotto!.agents!
-      await agents.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await agents.command({ type: 'configure', patch: { enabled: true, } })
       const state = await agents.command({ type: 'connect' })
       const thread = state.host.threads.find(item => item.id === (state.hostId === undefined ? 'workshop' : `host:${state.hostId}:workshop`))!
       return state.host.projects.find(project => project.id === thread.projectId)!.path
@@ -106,7 +107,7 @@ test('a review comment goes from Changes to the composer and out with the next p
     await expect(panel.getByRole('button', { name: 'Delete comment on voice.ts L8 to L9 (before)' })).toBeVisible()
     await expect(lines.locator('[data-position][data-old-line="9"][data-kind="remove"]')).toBeFocused()
 
-    const pane = page.locator('section.thread-pane').filter({ has: page.getByRole('textbox', { name: 'Prompt', exact: true }) }).first()
+    const pane = page.locator('section.thread-pane').filter({ has: promptField(page) }).first()
     const chips = pane.getByRole('list', { name: 'Review comments' })
     await expect(chips.getByRole('listitem')).toHaveText(['voice.ts L8 to L9: Say why it returns early. Without a key the user hears nothing.', 'voice.ts L8 to L9 (before): The old call played the whole clip.'])
     for (const mode of ['dark', 'light'] as const) {
@@ -126,8 +127,8 @@ test('a review comment goes from Changes to the composer and out with the next p
     await chips.getByRole('button', { name: 'Remove comment on voice.ts L8 to L9 (before)' }).click()
     await expect(panel.getByRole('button', { name: 'Delete comment on voice.ts L8 to L9 (before)' })).toHaveCount(0)
 
-    const prompt = pane.getByRole('textbox', { name: 'Prompt', exact: true })
-    await prompt.fill('Tighten this before we merge.')
+    const prompt = promptField(pane)
+    await fillPrompt(prompt, 'Tighten this before we merge.')
     await prompt.press('Enter')
     const sent = [
       'Tighten this before we merge.', '',
@@ -137,7 +138,7 @@ test('a review comment goes from Changes to the composer and out with the next p
     await expect.poll(() => userMessageTexts(page, 'workshop')).toContain(sent)
     await expect(chips).toHaveCount(0)
     await expect(panel.locator('.changes-comment--marker')).toHaveCount(0)
-    await expect(prompt).toHaveValue('')
+    await expectPromptText(prompt, '')
     await page.evaluate(async () => window.sotto!.updateSettings({ reducedMotion: 'system' }))
     for (const mode of ['dark', 'light'] as const) {
       await page.evaluate(async appearance => window.sotto!.updateSettings({ appearance }), mode)

@@ -14,7 +14,7 @@ const thread: WorkingCopyThread = { id: 'thread-1', nativeSessionStarted: true, 
 const ok = (): AgentState => (threadsStateFixture({ cloneOverrides: false,
     configuration: defaultAgentConfiguration(),
     host: {projects: [], models: [],  threads: [agentThread(thread)] },
-    topLevel: { assignments: [], queue: [], activeThreadId: null, activeProjectId: null, worktreeReclaimPreview: { path: worktreePath, branch: own.branch, dirty: false, ignored: [], items: [], repositories: [], untracked: [] } } }))
+    topLevel: { activeThreadId: null, activeProjectId: null, worktreeReclaimPreview: { path: worktreePath, branch: own.branch, dirty: false, ignored: [], items: [], repositories: [], untracked: [] } } }))
 const refused = (error: string): AgentState => ({ ...ok(), error })
 afterEach(() => cleanup())
 

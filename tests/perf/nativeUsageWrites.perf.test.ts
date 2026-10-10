@@ -15,7 +15,7 @@ const exec = promisify(execFile)
 type Measurement = { writes: number; entriesWritten: number; observedMs: number; drainedMs: number; cpuMs: number;
   heapBefore: number; heapAfterObservations: number; heapAfterDrain: number; archiveBytes: number; result: unknown }
 
-describe.skipIf(!PERF_BENCH)('isolated native usage archive writes', () => {
+describe.skipIf(!PERF_BENCH)("isolated native usage archive writes (timing benchmark; requires SOTTO_PERF_BENCH=1)", () => {
   let root: string
   const bundles: Record<string, string> = {}
   beforeAll(async () => {

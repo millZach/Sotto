@@ -13,8 +13,6 @@ import {
   type MicrophoneTestDependencies,
 } from '../../../src/renderer/src/features/onboarding/microphoneTest'
 
-
-
 function createHarness() {
   const events = new EventTarget()
   const track = { stop: vi.fn(), addEventListener: events.addEventListener.bind(events), removeEventListener: vi.fn(events.removeEventListener.bind(events)) }

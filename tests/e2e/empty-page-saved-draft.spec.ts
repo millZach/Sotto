@@ -1,3 +1,4 @@
+import { expectPromptText, promptField } from './support/prompt'
 import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -18,8 +19,8 @@ const ARTIFACTS = evidenceDirectory('artifacts/empty-page-saved-draft')
 async function launchWithDraft(draftThreadId: string, run: (launched: LaunchedSotto) => Promise<void>): Promise<void> {
   const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-leftover-draft-' })).directory
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true }))
-  await writeFile(join(profile, 'agents.json'), JSON.stringify({ configuration: defaultAgentConfiguration(), assignments: [], queue: [], activeThreadId: null, activeProjectId: 'workshop',
-    draft: LEFTOVER, draftThreadId, draftRequestId: null, composing: false, pendingRequest: '', outbox: [] }))
+  await writeFile(join(profile, 'agents.json'), JSON.stringify({ configuration: defaultAgentConfiguration(), activeThreadId: null, activeProjectId: 'workshop',
+    draft: LEFTOVER, draftThreadId, draftRequestId: null, composing: false, outbox: [] }))
   const launched = await launchSotto('design-threads', profile)
   try {
     await mkdir(ARTIFACTS, { recursive: true })
@@ -90,8 +91,8 @@ test('the empty Threads page offers a leftover draft without asking to reconnect
 
     // New thread with this draft opens a thread in the current project with the draft in its composer, and the leftover copy goes.
     await move.click()
-    const prompt = page.getByRole('textbox', { name: 'Prompt' })
-    await expect(prompt).toHaveValue(LEFTOVER)
+    const prompt = promptField(page)
+    await expectPromptText(prompt, LEFTOVER)
     await expect(prompt).toBeFocused()
     await expect.poll(() => page.evaluate(async () => (await window.sotto!.agents!.get()).draft)).toBe('')
     await expect.poll(() => page.evaluate(async () => {
@@ -114,6 +115,6 @@ test('the empty Threads page offers to open the thread a saved draft is still li
     await checkSizes(launched, [heading, open, page.getByRole('button', { name: 'Discard draft' })], (width, appearance) =>
       width === 820 && appearance === 'dark' ? 'listed-820-dark' : null)
     await open.click()
-    await expect(page.getByRole('textbox', { name: 'Prompt' })).toBeFocused()
+    await expect(promptField(page)).toBeFocused()
   })
 })

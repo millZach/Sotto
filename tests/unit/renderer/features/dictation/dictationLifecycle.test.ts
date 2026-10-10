@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
 
 import { AudioRecorderError } from '../../../../../src/renderer/src/audio/audioRecorder'
@@ -470,7 +471,6 @@ describe('DictationController', () => {
       ...(platform === 'linux' ? { captureStarted: false } : {}),
       theme: harness.currentSettings.theme, palette: widgetPaletteFor(harness.currentSettings),
       reducedMotion: harness.currentSettings.reducedMotion, shortcut: harness.currentSettings.hotkey,
-      voiceCoordinator: harness.currentSettings.voiceCoordinatorEnabled,
       cancellable: false,
     })
     expect(harness.controller.getState()).toMatchObject({ message: 'The selected microphone is unavailable.' })
@@ -499,7 +499,6 @@ describe('DictationController', () => {
       ...(platform === 'linux' ? { captureStarted: true } : {}),
       theme: harness.currentSettings.theme, palette: widgetPaletteFor(harness.currentSettings),
       reducedMotion: harness.currentSettings.reducedMotion, shortcut: harness.currentSettings.hotkey,
-      voiceCoordinator: harness.currentSettings.voiceCoordinatorEnabled,
       cancellable: false,
     })
     expect(harness.controller.getState()).toMatchObject({ message: 'The selected microphone is unavailable.' })

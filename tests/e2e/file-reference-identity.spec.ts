@@ -1,3 +1,4 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { isAbsolute, join, relative } from 'node:path'
 import { expect, test } from '@playwright/test'
@@ -63,7 +64,7 @@ test('reconciles the original selected-file revision and refuses a different sel
   try {
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     const threadId = (await hostKeys(page))('workshop')
@@ -84,21 +85,21 @@ test('reconciles the original selected-file revision and refuses a different sel
     await openThreads(page)
     await page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: 'Workshop', exact: true }).click()
     const pane = page.locator(`section.thread-pane[data-thread-id="${threadId}"]`)
-    const prompt = pane.locator('form.thread-prompt textarea')
+    const prompt = promptField(pane)
     const draft = () => page.evaluate(async id => (await window.sotto!.agents!.get()).threadDrafts?.find(item => item.threadId === id), threadId)
 
     // Typed tokens are not selected files. Both valid paths stay in the text when the selection changes below.
     const typed = 'Read @README.md and @src/main.ts '
-    await prompt.fill(typed)
+    await fillPrompt(prompt, typed)
     await expect.poll(async () => ({ text: (await draft())?.text, files: (await draft())?.files ?? [] })).toEqual({ text: typed, files: [] })
-    await prompt.fill('Read @src/main.ts and @READ')
+    await fillPrompt(prompt, 'Read @src/main.ts and @READ')
     const files = pane.getByRole('listbox', { name: 'Files' })
     await expect(files.getByRole('option')).toHaveCount(1)
     await expect(files.getByRole('option')).toContainText('README.md')
     await page.screenshot({ path: `${ARTIFACTS}/file-picker.png`, animations: 'disabled' })
     await prompt.press('Enter')
     const text = 'Read @src/main.ts and @README.md '
-    await expect(prompt).toHaveValue(text)
+    await expectPromptText(prompt, text)
     await expect(files).toHaveCount(0)
     await expect.poll(async () => (await draft())?.files).toEqual([{ path: 'README.md' }])
     const selected = await draft()
@@ -128,7 +129,7 @@ test('reconciles the original selected-file revision and refuses a different sel
     const messages = await page.evaluate(async id => (await window.sotto!.agents!.threadDetail!(id))?.messages.filter(item => item.role === 'user'), threadId)
     expect(messages).toEqual([expect.objectContaining({ id: first!.messageId, commandId: first!.commandId, text: text.trim() })])
     await expect(pane.getByLabel('Thread transcript')).toContainText(text.trim())
-    await expect(prompt).toHaveValue('')
+    await expectPromptText(prompt, '')
     await page.screenshot({ path: `${ARTIFACTS}/reconciled.png`, animations: 'disabled' })
   } finally { await closeSotto(launched) }
 })

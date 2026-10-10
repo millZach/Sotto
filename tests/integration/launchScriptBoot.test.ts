@@ -75,7 +75,7 @@ async function installed(state: FakeSystemdState = {}) {
 /** The calls since `from`, without the state reads, which say nothing about what the script changed. */
 const changes = async (from = 0) => (await systemd!.calls()).slice(from).filter(call => !call.startsWith('systemctl show') && !call.startsWith('systemctl is-system-running') && !call.startsWith('loginctl show-user'))
 
-describe.skipIf(process.platform === 'darwin')('start at boot in the launch script (ADR-0054)', () => {
+describe.skipIf(process.platform === 'darwin')("start at boot in the launch script (ADR-0054) (Windows or Linux start at boot; macOS only checks refusal)", () => {
   it('says start at boot is not supported on a machine that does not run systemd, and changes nothing', async () => {
     const configuration = await fixture({ systemd: false, userManager: false })
     const status = await run(configuration, { op: 'boot-status' })
@@ -500,8 +500,10 @@ await import('./fake.mjs')\n`)
   })
 })
 
-it.runIf(process.platform === 'darwin')('says start at boot is not supported on macOS, and asks systemd nothing', async () => {
-  const configuration = await fixture()
-  expect((await run(configuration, { op: 'boot-status' })).result).toEqual({ type: 'boot-status', supported: false, reason: 'macos', installed: false, enabled: false, active: false, linger: false, nodeDrift: false })
-  expect(await systemd!.calls()).toEqual([])
+describe("macOS start-at-boot refusal", () => {
+  it.runIf(process.platform === 'darwin')('says start at boot is not supported on macOS, and asks systemd nothing', async () => {
+    const configuration = await fixture()
+    expect((await run(configuration, { op: 'boot-status' })).result).toEqual({ type: 'boot-status', supported: false, reason: 'macos', installed: false, enabled: false, active: false, linger: false, nodeDrift: false })
+    expect(await systemd!.calls()).toEqual([])
+  })
 })

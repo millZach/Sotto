@@ -93,30 +93,6 @@ afterEach(async () => {
   }
 })
 
-describe('Claude reasoning shutdown', () => {
-  it('cancels a running native decision and waits for its process to close', async () => {
-    const f = await fixture({ mode: 'timeout' })
-    const shutdown = new AbortController()
-    const result = f.client.complete('Return JSON.', { text: 'Synthetic shutdown prompt' }, 'sonnet', undefined, shutdown.signal)
-    const rejected = expect(result).rejects.toThrow('Sotto reasoning stopped.')
-    try {
-      let pid = 0
-      await expect.poll(async () => {
-        const calls = await f.calls().catch(() => [])
-        const completion = calls.find(call => call.args.includes('--output-format') && call.args.includes('json'))
-        pid = completion?.pid ?? 0
-        return pid > 0
-      }).toBe(true)
-      shutdown.abort()
-      await rejected
-      expect(() => process.kill(pid, 0)).toThrow()
-      const count = (await f.calls()).length
-      await expect(f.client.complete('Return JSON.', {}, 'sonnet', undefined, shutdown.signal)).rejects.toThrow()
-      expect(await f.calls()).toHaveLength(count)
-    } finally { shutdown.abort(); await result.catch(() => undefined) }
-  })
-})
-
 describe('Claude native subscription client', () => {
   it('forwards the OS account name and drops provider keys', () => {
     const client = new ClaudeSubscriptionClient(join(tmpdir(), 'sotto-claude-env'), {
@@ -125,33 +101,6 @@ describe('Claude native subscription client', () => {
     expect(client.environment()).toMatchObject({ USER: 'tomas', LOGNAME: 'tomas', HOME: '/Users/tomas', PATH: '/usr/bin', NO_COLOR: '1' })
     expect(client.environment()).not.toHaveProperty('ANTHROPIC_API_KEY')
     expect(client.environment()).not.toHaveProperty('NODE_OPTIONS')
-  })
-
-  it('reports only public account readiness and keeps prompts in stdin with all native tools disabled', async () => {
-    const f = await fixture()
-    const account = await f.client.status()
-    expect(account).toMatchObject({ provider: 'claude', installed: true, ready: true })
-    expect(JSON.stringify(account)).not.toContain('private-fixture')
-    expect(account.models.map(model => model.id)).toContain('sonnet')
-    const input = { utterance: 'fixture private prompt: $(do-not-run)' }
-    expect(await f.client.complete('Return an intent as JSON.', input, 'sonnet')).toEqual({ type: 'clarify', text: 'Which project?' })
-    const calls = await f.calls()
-    const completion = calls.at(-1)!
-    expect(completion.input).toContain(input.utterance)
-    expect(completion.args.join(' ')).not.toContain(input.utterance)
-    expect(completion.args).toEqual(expect.arrayContaining(['--safe-mode', '--tools', '', '--permission-prompts', 'none', '--no-session-persistence', '--output-format', 'json', '--model', 'sonnet']))
-    expect(completion.args).not.toContain('--bare')
-    expect(calls.every(call => call.overrides.length === 0)).toBe(true)
-    expect(f.environment.ANTHROPIC_API_KEY).toBe('fixture-other-account-key')
-    expect(calls.filter(call => call.args.includes('status'))).toHaveLength(2)
-  })
-
-  it('rechecks the current subscription before every completion and does not fall back when signed out', async () => {
-    const f = await fixture()
-    await f.client.complete('JSON only', {}, 'sonnet')
-    await f.configure({ auth: { loggedIn: false } })
-    await expect(f.client.complete('JSON only', {}, 'sonnet')).rejects.toThrow(/sign in.*subscription/iu)
-    expect((await f.calls()).filter(call => call.args.includes('--print') && !call.args.includes('--input-format'))).toHaveLength(1)
   })
 
   it('discovers the full native catalog and per-model effort without inventing defaults or starting a model turn', async () => {
@@ -167,35 +116,6 @@ describe('Claude native subscription client', () => {
     expect((await f.calls()).some(call => call.args.includes('--print') && !call.args.includes('--input-format'))).toBe(false)
   })
 
-  it('uses the native account default for an empty model without passing API overrides', async () => {
-    const f = await fixture()
-    await expect(f.client.complete('JSON only', { check: 'default model' }, '')).resolves.toEqual({ type: 'clarify', text: 'Which project?' })
-    const completion = (await f.calls()).at(-1)!
-    expect(completion.args[completion.args.indexOf('--model') + 1]).toBe('default')
-    expect(completion.args).not.toContain('--effort')
-    expect(completion.overrides).toEqual([])
-    expect(completion.args.some(arg => /api[ _-]?key/iu.test(arg))).toBe(false)
-  })
-
-  it('dispatches a newly discovered extended-context model with its chosen native effort', async () => {
-    const f = await fixture()
-    await f.client.complete('JSON only', {}, 'claude-future[1m]', 'xhigh')
-    const completion = (await f.calls()).at(-1)!
-    expect(completion.args[completion.args.indexOf('--model') + 1]).toBe('claude-future[1m]')
-    expect(completion.args[completion.args.indexOf('--effort') + 1]).toBe('xhigh')
-    expect(completion.overrides).toEqual([])
-  })
-
-  it('runs a long-context model the catalog lists only by its base, with the base model’s efforts', async () => {
-    // Claude Code 2.1.283 lists `opus` and no `opus[1m]`, though it still runs `--model opus[1m]` (#344).
-    const f = await fixture({ models: [{ value: 'opus', displayName: 'Opus', supportsEffort: true, supportedEffortLevels: ['low', 'high', 'max'] }] })
-    await f.client.complete('JSON only', {}, 'opus[1m]', 'max')
-    const completion = (await f.calls()).at(-1)!
-    expect(completion.args[completion.args.indexOf('--model') + 1]).toBe('opus[1m]')
-    expect(completion.args[completion.args.indexOf('--effort') + 1]).toBe('max')
-    await expect(f.client.complete('JSON only', {}, 'opus[1m]', 'xhigh')).rejects.toThrow(/effort/iu)
-  })
-
   it('names a model with the version its description carries and leaves the account default its own name', async () => {
     const f = await fixture({ models: [
       { value: 'claude-fable-5-1[1m]', displayName: 'Fable', description: 'Fable 5.1 · Most capable for your hardest tasks' },
@@ -207,87 +127,6 @@ describe('Claude native subscription client', () => {
     ] })
     const account = await f.client.status()
     expect(account.models.map(model => model.name)).toEqual(['Fable 5.1', 'Sonnet 5', 'Opus 5 with 1M context', 'Default (recommended)', 'Haiku'])
-  })
-
-  it.each([['haiku', 'high'], ['sonnet', 'max'], ['', 'medium'], ['claude-custom-id', 'high']] as const)('refuses unsupported effort %s/%s before inference instead of silently downshifting', async (model, effort) => {
-    const f = await fixture()
-    await expect(f.client.complete('JSON only', {}, model, effort)).rejects.toThrow(/effort/iu)
-    expect((await f.calls()).some(call => call.args.includes('--print') && !call.args.includes('--input-format'))).toBe(false)
-  })
-
-  it('refreshes effort capabilities before each request and accepts custom native model IDs with default effort', async () => {
-    const f = await fixture()
-    await f.client.status()
-    await f.configure({ models: nativeModels.map(model => model.value === 'sonnet' ? { ...model, supportedEffortLevels: ['low'] } : model) })
-    await expect(f.client.complete('JSON only', {}, 'sonnet', 'high')).rejects.toThrow(/effort/iu)
-    await f.client.complete('JSON only', {}, 'claude-custom-id[1m]')
-    const completion = (await f.calls()).at(-1)!
-    expect(completion.args[completion.args.indexOf('--model') + 1]).toBe('claude-custom-id[1m]')
-    expect(completion.args).not.toContain('--effort')
-  })
-
-  it.each([{ models: [] }, { models: [{ value: '--injected-flag', displayName: 'Invalid' }] }, { discovery: 'error' }, { discovery: 'mismatch' }] as const)('does not substitute a handpicked catalog when native discovery fails', async scenario => {
-    const f = await fixture(scenario)
-    expect(await f.client.status()).toMatchObject({ installed: true, ready: false, models: [] })
-    await expect(f.client.complete('JSON only', {}, 'sonnet')).rejects.toThrow(/Claude Code/iu)
-    expect((await f.calls()).some(call => call.args.includes('--print') && !call.args.includes('--input-format'))).toBe(false)
-  })
-
-  it('refuses a different native authentication method instead of using API billing', async () => {
-    const f = await fixture({ auth: { loggedIn: true, authMethod: 'api_key' } })
-    expect(await f.client.status()).toMatchObject({ installed: true, ready: false })
-    await expect(f.client.complete('JSON only', {}, 'sonnet')).rejects.toThrow(/subscription/iu)
-    expect((await f.calls()).some(call => call.args.includes('--print'))).toBe(false)
-  })
-
-  it('requires the installed containment flags before declaring the account ready', async () => {
-    const f = await fixture({ help: '--print --output-format --tools' })
-    expect(await f.client.status()).toMatchObject({ installed: true, ready: false, detail: expect.stringMatching(/update claude code/iu) })
-    await expect(f.client.complete('JSON only', {}, 'sonnet')).rejects.toThrow(/update claude code/iu)
-    expect((await f.calls()).some(call => call.args.includes('--print'))).toBe(false)
-  })
-
-  it('reports a missing executable without exposing a native path error', async () => {
-    const f = await fixture()
-    const client = new ClaudeSubscriptionClient(join(f.root, 'missing-cwd'), { executable: join(f.root, 'missing.exe') })
-    expect(await client.status()).toMatchObject({ installed: false, ready: false })
-    await expect(client.complete('JSON only', {}, 'sonnet')).rejects.toThrow(/install claude code/iu)
-  })
-
-  it.each(['exit', 'invalid'] as const)('reports a generic error for %s without exposing child output', async mode => {
-    const f = await fixture({ mode })
-    let message = ''
-    try { await f.client.complete('JSON only', {}, 'sonnet') } catch (error) { message = (error as Error).message }
-    expect(message).toMatch(/claude code/iu)
-    expect(message).not.toContain('fixture-secret')
-  })
-
-  it.each([
-    { type: 'result', is_error: true, result: 'fixture-secret-provider-error' },
-    { type: 'result', is_error: false, result: 'not JSON' },
-    { type: 'result', is_error: false, result: 'null' },
-  ])('rejects unsuccessful or malformed decision output', async result => {
-    const f = await fixture({ result })
-    await expect(f.client.complete('JSON only', {}, 'sonnet')).rejects.toThrow(/claude code/iu)
-  })
-
-  it.each(['large-out', 'large-err'] as const)('bounds %s output', async mode => {
-    const f = await fixture({ mode }, { outputLimitBytes: 4096 })
-    await expect(f.client.complete('JSON only', {}, 'sonnet')).rejects.toThrow(/output limit/iu)
-    const pid = (await f.calls()).at(-1)!.pid
-    expect(() => process.kill(pid, 0)).toThrow()
-  })
-
-  it('terminates a stalled completion at its deadline', async () => {
-    const f = await fixture({ mode: 'timeout' }, { completionTimeoutMs: 300 })
-    await expect(f.client.complete('JSON only', {}, 'sonnet')).rejects.toThrow(/in time/iu)
-    const pid = (await f.calls()).at(-1)!.pid
-    expect(() => process.kill(pid, 0)).toThrow()
-  })
-
-  it('rejects a flag-shaped model without starting inference', async () => {
-    const f = await fixture()
-    await expect(f.client.complete('JSON only', {}, '--dangerously-skip-permissions')).rejects.toThrow(/model/iu)
   })
 })
 

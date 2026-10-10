@@ -35,7 +35,7 @@ import { median, PERF_BENCH, round } from '../fixtures/perfBench'
 const SENDS = 5
 const prompts = (text: string): number => text.split('"method":"session/prompt"').length - 1
 
-describe.skipIf(!PERF_BENCH)('Devin send path (#770)', () => {
+describe.skipIf(!PERF_BENCH)("Devin send path (#770) (timing benchmark; requires SOTTO_PERF_BENCH=1)", () => {
   it('times warm sends from Send to session/prompt and counts what they start', async () => {
     const f = await devinFixture(undefined, 15_000, 60_000, {}, undefined, { acceptanceGraceMs: 1_500 })
     try {
@@ -103,35 +103,37 @@ describe.skipIf(!PERF_BENCH)('Devin send path (#770)', () => {
     } finally { await f.cleanup() }
   }, 60_000)
 
-  it.skipIf(process.env.SOTTO_DEVIN_PIECES !== '1')('times the pieces of a send against the installed Devin CLI, sending no prompt', async () => {
-    const executable = await findDevinExecutable()
-    if (!executable) throw new Error('Devin CLI was not found')
-    const root = await mkdtemp(join(tmpdir(), 'sotto-devin-pieces-'))
-    try {
-      const profile = await prepareDevinPolicy(join(root, 'sotto'), 'nothing', root)
-      const environment = devinEnvironment()
-      // Counts the runs that wrote anything to stderr, which two lists run side by side must not do more than one after the other.
-      let wroteStderr = 0
-      const list = (...args: string[]): Promise<void> => new Promise((resolve, reject) => {
-        execFile(executable, ['--config', profile.path, ...args], { cwd: root, env: environment, windowsHide: true, timeout: 30_000 }, (error, _stdout, stderr) => {
-          if (stderr.length) wroteStderr++
-          if (error) reject(new Error('list failed')); else resolve()
+  describe('installed Devin piece measurements; requires SOTTO_DEVIN_PIECES=1', () => {
+    it.skipIf(process.env.SOTTO_DEVIN_PIECES !== '1')('times the pieces of a send against the installed Devin CLI, sending no prompt', async () => {
+      const executable = await findDevinExecutable()
+      if (!executable) throw new Error('Devin CLI was not found')
+      const root = await mkdtemp(join(tmpdir(), 'sotto-devin-pieces-'))
+      try {
+        const profile = await prepareDevinPolicy(join(root, 'sotto'), 'nothing', root)
+        const environment = devinEnvironment()
+        // Counts the runs that wrote anything to stderr, which two lists run side by side must not do more than one after the other.
+        let wroteStderr = 0
+        const list = (...args: string[]): Promise<void> => new Promise((resolve, reject) => {
+          execFile(executable, ['--config', profile.path, ...args], { cwd: root, env: environment, windowsHide: true, timeout: 30_000 }, (error, _stdout, stderr) => {
+            if (stderr.length) wroteStderr++
+            if (error) reject(new Error('list failed')); else resolve()
+          })
         })
-      })
-      const timed = async (work: () => Promise<unknown>): Promise<number> => { const started = performance.now(); await work(); return performance.now() - started }
-      const sequential: number[] = []; const parallel: number[] = []; const acp: number[] = []
-      for (let index = 0; index < SENDS; index++) {
-        sequential.push(await timed(async () => { await list('plugins', 'list'); await list('mcp', 'list') }))
-        parallel.push(await timed(() => Promise.all([list('plugins', 'list'), list('mcp', 'list')])))
-        acp.push(await timed(async () => {
-          const rpc = new DevinRpc(executable, ['--config', profile.path, 'acp'], root, environment, 30_000, () => undefined, () => undefined)
-          try {
-            await rpc.request('initialize', { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false }, clientInfo: { name: 'sotto', version: '0.0.0' } })
-            await rpc.request('_cognition.ai/config/read', {})
-          } finally { rpc.close(); await rpc.closed }
-        }))
-      }
-      console.info('devin-pieces', { listsOneAfterOtherMs: round(median(sequential)), listsSideBySideMs: round(median(parallel)), acpStartReadCloseMs: round(median(acp)), listRunsWithStderr: wroteStderr })
-    } finally { await rm(root, { recursive: true, force: true }) }
-  }, 300_000)
+        const timed = async (work: () => Promise<unknown>): Promise<number> => { const started = performance.now(); await work(); return performance.now() - started }
+        const sequential: number[] = []; const parallel: number[] = []; const acp: number[] = []
+        for (let index = 0; index < SENDS; index++) {
+          sequential.push(await timed(async () => { await list('plugins', 'list'); await list('mcp', 'list') }))
+          parallel.push(await timed(() => Promise.all([list('plugins', 'list'), list('mcp', 'list')])))
+          acp.push(await timed(async () => {
+            const rpc = new DevinRpc(executable, ['--config', profile.path, 'acp'], root, environment, 30_000, () => undefined, () => undefined)
+            try {
+              await rpc.request('initialize', { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false }, clientInfo: { name: 'sotto', version: '0.0.0' } })
+              await rpc.request('_cognition.ai/config/read', {})
+            } finally { rpc.close(); await rpc.closed }
+          }))
+        }
+        console.info('devin-pieces', { listsOneAfterOtherMs: round(median(sequential)), listsSideBySideMs: round(median(parallel)), acpStartReadCloseMs: round(median(acp)), listRunsWithStderr: wroteStderr })
+      } finally { await rm(root, { recursive: true, force: true }) }
+    }, 300_000)
+  })
 })

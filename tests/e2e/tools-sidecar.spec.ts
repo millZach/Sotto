@@ -192,7 +192,7 @@ test('The Tools rail keeps every surface usable at three window sizes and three 
       // The browser player section later proves a waiting request, so ADR-0029's default grant is off before it opens a page.
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', browserWithoutAsking: false })
       const agents = window.sotto!.agents!
-      await agents.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await agents.command({ type: 'configure', patch: { enabled: true, } })
       const state = await agents.command({ type: 'connect' })
       // The renderer names a thread by its host's key (`host:<host>:<id>`); main and the fixture use the bare ID.
       const thread = state.host.threads.find(item => item.id === (state.hostId === undefined ? 'workshop' : `host:${state.hostId}:workshop`))!
@@ -530,11 +530,11 @@ test('Changes reads every scope, turns from checkpoints, at three window sizes, 
     try {
       const threadId = await page.evaluate(async repo => {
         const agents = window.sotto!.agents!
-        await agents.command({ type: 'configure', patch: { enabled: true, speak: false } })
+        await agents.command({ type: 'configure', patch: { enabled: true } })
         await agents.command({ type: 'connect' })
         const created = await agents.command({ type: 'create-project', title: 'Scopes project', path: repo, useExisting: true })
         const projectId = created.host.projects.find(project => project.title === 'Scopes project')!.id
-        const state = await agents.command({ type: 'create-thread', projectId, title: 'Scopes review', modelId: 'codex:gpt', managed: false, workingCopy: 'shared' })
+        const state = await agents.command({ type: 'create-thread', projectId, title: 'Scopes review', modelId: 'codex:gpt', workingCopy: 'shared' })
         if (!state.activeThreadId || state.error) throw new Error(state.error ?? 'No selected thread')
         return state.activeThreadId
       }, repo)

@@ -169,7 +169,9 @@ struct HeldDetail {
     @Published private var receiptFollowers: [String: ReceiptFollower] = [:]
     private struct ReceiptFollower { let token: UUID; let generation: UUID? }
     /// The kinds that read as sending. A thread or project creation keeps its own sheet and its own wait.
-    private static let sendingKinds: Set<String> = ["reply", "answer", "interrupt"]
+    private static let sendingKinds: Set<String> = ["reply", "queue", "answer", "interrupt", "steer", "remove", "compact"]
+    /// The kinds whose refusal the computer says only in its shell's error, said here as feedback.
+    private static let queueActionKinds: Set<String> = ["steer", "remove", "compact"]
     /// A receipt the computer says is still being carried out is read again this often, this many times: about ten minutes.
     private static let receiptInterval: UInt64 = 2_000_000_000
     private static let receiptReads = 300
@@ -508,11 +510,14 @@ struct HeldDetail {
     /// moves under a finger after the first answer can't take a second tap meant for the first.
     func answering(_ hostID: String) -> Bool { scoped(hostID).contains { $0.kind == "answer" } }
     private func canAct(on ref: ThreadRef) -> Bool { online(ref.hostID) && thread(ref) != nil && pending(for: ref).isEmpty }
+    /// Whether the reply box can send now. While the thread works, what it sends waits in the thread's queue.
     func canSend(_ ref: ThreadRef) -> Bool {
-        guard canAct(on: ref), let thread = self.thread(ref), thread.status != "running", thread.requests.isEmpty else { return false }
+        guard canAct(on: ref), let thread = self.thread(ref), thread.requests.isEmpty else { return false }
         let source = provider(for: ref)
         return (capabilities(for: ref)?.submit ?? false) && (source == nil || source?.connection == "connected")
     }
+    /// Whether a reply sent now is queued for after the running turn, rather than sent at once.
+    func queuesReply(_ ref: ThreadRef) -> Bool { thread(ref)?.status == "running" }
     /// Whether the reply box holds something to send and nothing still being made ready: words or photos,
     /// every photo prepared, and none of them on a thread whose model can't take them.
     func canSendReply(_ ref: ThreadRef) -> Bool {
@@ -527,9 +532,41 @@ struct HeldDetail {
     }
     /// A reply, answer or stop still on its way, as opposed to one its computer couldn't confirm.
     func isSending(_ item: PendingOperation) -> Bool { dispatchingOperations.keys.contains(item.id) || receiptFollowers[item.id] != nil }
+    /// Stop waits only for another stop or an answer on its way; a reply, a queued reply, a steer or a removal never holds it.
     func canInterrupt(_ ref: ThreadRef) -> Bool {
-        online(ref.hostID) && pending(for: ref).allSatisfy { $0.kind == "reply" }
+        online(ref.hostID) && pending(for: ref).allSatisfy { ["reply", "queue", "steer", "remove"].contains($0.kind) }
             && thread(ref)?.status == "running" && (capabilities(for: ref)?.interrupt ?? false)
+    }
+    /// The thread's follow-up queue, in order, as the reply box shows it.
+    func followups(_ ref: ThreadRef) -> [Followup] {
+        FollowupQueue.items(live[ref.hostID]?.shell, threadID: ref.threadID, messages: shown(for: ref)?.messages)
+    }
+    /// Whether a queued message's card offers Steer now.
+    func steerOffered(_ item: Followup, in ref: ThreadRef) -> Bool {
+        guard let thread = self.thread(ref) else { return false }
+        return FollowupQueue.steerOffered(item, thread: thread, capabilities: capabilities(for: ref))
+    }
+    /// Whether a press of Steer now would go now.
+    func canSteer(_ item: Followup, in ref: ThreadRef) -> Bool {
+        guard canAct(on: ref), steerOffered(item, in: ref), let thread = self.thread(ref), let shell = live[ref.hostID]?.shell else { return false }
+        return FollowupQueue.steerClear(shell, thread: thread)
+    }
+    func canRemove(_ item: Followup, in ref: ThreadRef) -> Bool { canAct(on: ref) && FollowupQueue.removable(item) }
+    /// Whether the thread offers Compact context at all.
+    func compactionOffered(_ ref: ThreadRef) -> Bool {
+        guard let thread = self.thread(ref) else { return false }
+        return ContextCompaction.offered(capabilities(for: ref), thread: thread)
+    }
+    /// Why Compact context can't go now, in a few words, or nil when it can.
+    func compactionHeld(_ ref: ThreadRef) -> String? {
+        guard let thread = self.thread(ref) else { return "This thread is no longer open" }
+        if !online(ref.hostID) { return "Available when \(name(ref.hostID)) is connected" }
+        if !pending(for: ref).isEmpty || live[ref.hostID]?.shell?.busyThreadIds?.contains(ref.threadID) == true {
+            return "Available once \(name(ref.hostID)) confirms your last action"
+        }
+        let detail = shown(for: ref)
+        return ContextCompaction.held(thread, messages: detail?.messages,
+                                      earlierAvailable: detail?.earlierAvailable == true || thread.earlierAvailable == true)
     }
     func canAnswer(_ request: AgentRequest, in ref: ThreadRef) -> Bool {
         guard canAct(on: ref), mayAnswer(ref.hostID), request.supported else { return false }
@@ -1075,9 +1112,13 @@ struct HeldDetail {
             return
         }
         let draft = UUID().uuidString
+        // Read at the last moment: a turn that ended while the photos were staged takes the reply now, unqueued.
+        let queuing = queuesReply(ref)
         do {
-            let command = try Commands.prompt(threadID: ref.threadID, text: text, draftID: draft, images: images)
-            let operation = PendingOperation(hostID: ref.hostID, clientID: computer.pairing.clientId, threadID: ref.threadID, draftID: draft, kind: "reply")
+            let command = try queuing ? Commands.queue(threadID: ref.threadID, text: text, draftID: draft, images: images)
+                : Commands.prompt(threadID: ref.threadID, text: text, draftID: draft, images: images)
+            let operation = PendingOperation(hostID: ref.hostID, clientID: computer.pairing.clientId, threadID: ref.threadID,
+                                             draftID: draft, kind: queuing ? "queue" : "reply")
             try remember(operation); submitted[operation.id] = text; drafts[ref.id] = ""
             if !images.isEmpty { submittedPhotos[operation.id] = photos(ref); photosSent?(photos(ref), ref); draftPhotos[ref.id] = nil }
             photoNotices[ref.id] = nil
@@ -1252,6 +1293,31 @@ struct HeldDetail {
             await dispatch(command, operation: operation)
         } catch { feedback = error.localizedDescription }
     }
+    /// Sends a queued message into the running turn now. Like a stop, it is marked before it goes and never resent.
+    func steer(_ item: Followup, in ref: ThreadRef) async {
+        guard canSteer(item, in: ref) else { return }
+        await act(on: ref, kind: "steer") { try Commands.steerFollowup(threadID: ref.threadID, itemID: item.id) }
+    }
+    /// Takes a queued message out of the queue unsent.
+    func removeFollowup(_ item: Followup, in ref: ThreadRef) async {
+        guard canRemove(item, in: ref) else { return }
+        await act(on: ref, kind: "remove") { try Commands.removeFollowup(threadID: ref.threadID, itemID: item.id) }
+    }
+    /// Asks the thread's provider to compact its context.
+    func compact(_ ref: ThreadRef) async {
+        guard canAct(on: ref), compactionOffered(ref), compactionHeld(ref) == nil else { return }
+        await act(on: ref, kind: "compact") { try Commands.compact(threadID: ref.threadID) }
+    }
+    /// One of the thread's own commands, marked by its kind and thread alone before it goes.
+    private func act(on ref: ThreadRef, kind: String, _ build: () throws -> JSONValue) async {
+        guard let computer = self.computer(ref.hostID) else { return }
+        do {
+            let command = try build()
+            let operation = PendingOperation(hostID: ref.hostID, clientID: computer.pairing.clientId, threadID: ref.threadID, kind: kind)
+            try remember(operation)
+            await dispatch(command, operation: operation)
+        } catch { feedback = error.localizedDescription }
+    }
     private func remember(_ operation: PendingOperation) throws {
         guard pending.count < 100 else { throw ClientError.rejected("Check the unconfirmed actions before sending more.") }
         let next = pending + [operation]; try keychain.write(next, account: ComputerStore.pendingAccount); pending = next
@@ -1262,6 +1328,7 @@ struct HeldDetail {
     }
     @discardableResult private func dispatch(_ command: JSONValue, operation: PendingOperation) async -> Shell? {
         let hostID = operation.hostID, current = generations[hostID]
+        let earlierError = live[hostID]?.shell?.error
         // From here, which follows its marker without a wait, until this returns, it reads as sending;
         // a marker still kept after that is unconfirmed.
         dispatchingOperations[operation.id] = .some(current)
@@ -1276,6 +1343,8 @@ struct HeldDetail {
             guard generations[hostID] == current else { return nil }
             if let error = next.error {
                 if operation.kind.hasPrefix("create-") { creationFeedback = error }
+                // The shell's error is the computer's last one; only one that is new is this command's.
+                if Self.queueActionKinds.contains(operation.kind), error != earlierError { feedback = error }
                 return nil
             }
             return next
@@ -1366,6 +1435,12 @@ struct HeldDetail {
         let delivered = shell?.deliveredDrafts?.contains { $0.threadId == item.threadID && $0.draftId == item.draftID } == true
         let accepted = delivered || delivery?.status == "accepted"
         let thread = shell?.host.threads.first { $0.id == item.threadID }
+        // A queued reply is confirmed by the queue holding it, whatever became of it after.
+        if item.kind == "queue", let shell, let draft = item.draftID, FollowupQueue.holds(shell, threadID: item.threadID, draftID: draft) {
+            try forgetMarker(item.id)
+            if feedbackOperations.remove(item.id) != nil, feedbackOperations.isEmpty { feedback = nil }
+            return
+        }
         // Only this command's own receipt confirms the phone's answer. A request can also leave
         // after a desktop answer, a stopped turn or provider cancellation.
         let noLongerWaiting = item.kind == "answer" && item.requestID != nil && shell != nil
@@ -1382,14 +1457,15 @@ struct HeldDetail {
             try rejectOperation(item)
             // Named, because the thread open now may be another one, on another computer.
             let title = thread.map { "“\($0.title)”" } ?? "a thread"
-            feedback = "Your reply to \(title) on \(name(item.hostID)) wasn’t sent. Its text is back in that thread."
+            let outcome = item.kind == "queue" ? "wasn’t queued" : "wasn’t sent"
+            feedback = "Your reply to \(title) on \(name(item.hostID)) \(outcome). Its text is back in that thread."
         } else if accepted || receipt.map({ item.reconciled(receipt: $0, deliveries: shell?.deliveries ?? []) }) == true {
             try forgetMarker(item.id)
             if feedbackOperations.remove(item.id) != nil, feedbackOperations.isEmpty { feedback = nil }
         }
     }
     private func rejectOperation(_ operation: PendingOperation) throws {
-        if let text = submitted[operation.id], operation.kind == "reply" {
+        if let text = submitted[operation.id], operation.kind == "reply" || operation.kind == "queue" {
             let ref = ThreadRef(hostID: operation.hostID, threadID: operation.threadID)
             failedReplies[ref.id] = text
             failedPhotos[ref.id] = submittedPhotos[operation.id]

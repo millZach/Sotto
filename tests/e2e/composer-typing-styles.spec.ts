@@ -1,8 +1,9 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { expect, test } from '@playwright/test'
 import { closeSotto, launchSotto, openThreads } from './support/sottoLaunch'
 
 // Chromium's style work, not an elapsed-time budget: editing a controlled
-// textarea must not restyle an unrelated subtree through broad :has() rules.
+// prompt must not restyle an unrelated subtree through broad :has() rules.
 const UNRELATED_ELEMENTS = 1_000
 
 test('typing does not invalidate the whole window while the theme editor is closed', async () => {
@@ -11,14 +12,14 @@ test('typing does not invalidate the whole window while the theme editor is clos
   try {
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload()
     await openThreads(page)
     await page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: 'Grok voice previews', exact: true }).click()
-    const input = page.locator('#thread-workspace-prompt')
-    await input.fill('Start')
+    const input = promptField(page)
+    await fillPrompt(input, 'Start')
     await page.evaluate(count => {
       const background = document.createElement('aside')
       background.style.cssText = 'position:fixed;left:-10000px;top:0;visibility:hidden'
@@ -33,7 +34,7 @@ test('typing does not invalidate the whole window while the theme editor is clos
     }))
     await session.send('Tracing.start', { categories: 'devtools.timeline', transferMode: 'ReturnAsStream' })
     await input.pressSequentially(' typing a few more letters', { delay: 20 })
-    await expect(input).toHaveValue('Start typing a few more letters')
+    await expectPromptText(input, 'Start typing a few more letters')
     await session.send('Tracing.end')
     const stream = await completed
     let json = ''

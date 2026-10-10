@@ -1,3 +1,4 @@
+import { promptField } from './support/prompt'
 import { initializeGitRepository } from '../fixtures/gitRepository'
 import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
 import { resizeContentWindow } from './support/sottoWindow'
@@ -72,13 +73,13 @@ test('Files beside a split: worktree identity, pinned ownership, docking choice 
     const ids = await page.evaluate(async folders => {
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
       const agents = window.sotto!.agents!
-      await agents.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await agents.command({ type: 'configure', patch: { enabled: true, } })
       await agents.command({ type: 'connect' })
       const created: Record<string, string> = {}
       for (const [title, path, thread, workingCopy] of [['repo-app', folders[0], 'Worktree checkout', 'independent'], ['field-notes', folders[1], 'Field notes', 'shared']] as const) {
         await agents.command({ type: 'create-project', title, path, useExisting: true })
         const projectId = (await agents.get()).host.projects.find(item => item.title === title)!.id
-        await agents.command({ type: 'create-thread', projectId, title: thread, modelId: 'claude:test', managed: false, workingCopy })
+        await agents.command({ type: 'create-thread', projectId, title: thread, modelId: 'claude:test', workingCopy })
         created[thread] = (await agents.get()).host.threads.find(item => item.title === thread)!.id
         if (workingCopy === 'independent') {
           await agents.command({ type: 'manual-send', threadId: created[thread]!, text: 'Inspect the working copy.' })
@@ -106,7 +107,7 @@ test('Files beside a split: worktree identity, pinned ownership, docking choice 
     const panes = page.getByRole('group', { name: 'Thread panes' })
     const left = page.locator(`section.thread-pane[data-thread-id="${worktreeThread}"]`)
     const right = page.locator(`section.thread-pane[data-thread-id="${notesThread}"]`)
-    await left.getByRole('textbox', { name: 'Prompt', exact: true }).click()
+    await promptField(left).click()
     await expect(left).toHaveAttribute('data-focused')
 
     // Sidecar keeps a generous dock; the remaining pane area uses focus tabs at 1600.
@@ -126,7 +127,7 @@ test('Files beside a split: worktree identity, pinned ownership, docking choice 
     // Pinned to the worktree thread while the other pane holds focus: the panel says so, and that pane's toggle is not pressed-looking.
     await panel.getByRole('button', { name: 'Pin to Worktree checkout' }).click()
     await page.getByRole('tab', { name: 'Field notes', exact: true }).click()
-    await right.getByRole('textbox', { name: 'Prompt', exact: true }).click()
+    await promptField(right).click()
     await expect(right).toHaveAttribute('data-focused')
     const rightToggle = right.getByRole('button', { name: 'Tools', exact: true })
     await expect(rightToggle).toHaveAttribute('data-pinned-elsewhere', 'true')
@@ -197,7 +198,7 @@ test('Files beside a split: worktree identity, pinned ownership, docking choice 
     await resize(launched, 1280, 800)
     await page.getByRole('button', { name: 'Close Field notes pane' }).click()
     await expect(panes).not.toHaveAttribute('data-split')
-    await left.getByRole('textbox', { name: 'Prompt', exact: true }).click()
+    await promptField(left).click()
     await left.getByRole('button', { name: 'Tools', exact: true }).click()
     await expect(panel).toHaveAttribute('data-mode', 'docked')
     await expect(panel.getByRole('tree').getByRole('treeitem', { name: 'README.md' })).toHaveAttribute('aria-selected', 'true')

@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto'
 import { realpath } from 'node:fs/promises'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, type TestContext } from 'vitest'
 import type { AgentHostResult, ThreadHostEvent } from '../../src/main/agents/host'
 import { lendSendStages, SendStageClock } from '../../src/main/agents/sendStages'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
@@ -10,11 +10,12 @@ import type { AgentActivity } from '../../src/shared/agentActivity'
 import type { AgentHostSnapshot, AgentRuntimeMode, AgentThread } from '../../src/shared/agents'
 import { resolveModel } from '../../src/shared/modelCatalog'
 import type { ThreadEventKind } from '../../src/shared/threadEvents'
-import type { AdapterFixture, AdapterSessionOptions, RecordedRpc } from '../fixtures/adapterFixture'
+import type { AdapterContractSkips, AdapterFixture, AdapterSessionOptions, RecordedRpc } from '../fixtures/adapterFixture'
+import { skipUnsupportedFixture, withFixtureSkip } from '../fixtures/contractSkip'
 import { handleOf, PIXEL_PNG } from '../fixtures/stagedImages'
 
 /** New provider adapters must pass these behavioural checks with observable fake effects. */
-export function describeAdapterContract(name: string, factory: (session?: AdapterSessionOptions) => Promise<AdapterFixture>): void {
+export function describeAdapterContract(name: string, factory: (session?: AdapterSessionOptions) => Promise<AdapterFixture>, skips: AdapterContractSkips): void {
   describe(`${name} thread interface contract`, () => {
     let f: AdapterFixture
     let sessionId: string
@@ -30,7 +31,8 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       if (f.protocol) return f.protocol.permissionDecision(record)
       return record.result?.decision === 'accept' ? true : record.result?.decision === 'decline' ? false : undefined
     }
-    beforeEach(async () => {
+    beforeEach(async context => {
+      skipUnsupportedFixture(context)
       f = await factory(); await f.host.connect()
       await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
       sessionId = randomUUID()
@@ -40,7 +42,7 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       events = []
       unsubscribeEvents = f.host.subscribeEvents?.(event => events.push(event))
     })
-    afterEach(async () => { unsubscribeEvents?.(); unsubscribeEvents = undefined; await f?.cleanup() })
+    afterEach(async () => { unsubscribeEvents?.(); unsubscribeEvents = undefined; const previous = f; f = undefined!; await previous?.cleanup() })
     it('observes provider takeover and rejects a reply based on stale user input', async () => {
       await send()
       await f.driver.typeInProvider(sessionId, 'Typed in the provider')
@@ -51,8 +53,7 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       }
       await expect(f.host.execute({ type: 'send', threadId: sessionId, commandId: randomUUID(), messageId: 'stale-reply', text: 'Stale reply', expectedLastUserMessageId: 'own-message' })).rejects.toThrow('changed')
     })
-    it('marks the prompt written and its acknowledgement on the stopwatch lent for the send (#763)', async context => {
-      if (f.skips?.sendStages) { context.skip(); return }
+    it('marks the prompt written and its acknowledgement on the stopwatch lent for the send (#763)', withFixtureSkip(skips.sendStages), async () => {
       const commandId = randomUUID()
       const stages = new SendStageClock()
       const endLoan = lendSendStages(commandId, stages)
@@ -84,12 +85,11 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       expect(text).toContain('Completed reply')
       expect(kinds()).not.toContain('answer-given')
     })
-    it('leaves a watched thread\'s messages out of the activity publications of a subscriber that keeps history from events (#322)', async context => {
-      if (!f.host.subscribeActivitySnapshots || !f.host.subscribeEvents) { context.skip(); return }
+    it('leaves a watched thread\'s messages out of the activity publications of a subscriber that keeps history from events (#322)', withFixtureSkip(skips.activitySnapshots ?? skips.threadEvents), async () => {
       const fromEvents: AgentHostSnapshot[] = []
       const whole: AgentHostSnapshot[] = []
-      const offEvents = f.host.subscribeActivitySnapshots(snapshot => fromEvents.push(snapshot), { historyFromEvents: true })
-      const offWhole = f.host.subscribeActivitySnapshots(snapshot => whole.push(snapshot))
+      const offEvents = f.host.subscribeActivitySnapshots!(snapshot => fromEvents.push(snapshot), { historyFromEvents: true })
+      const offWhole = f.host.subscribeActivitySnapshots!(snapshot => whole.push(snapshot))
       try {
         await send()
         await f.driver.completeTurn(sessionId, 'Completed reply')
@@ -105,17 +105,16 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
         expect((await thread()).messages.map(message => message.id)).toContain('own-message')
       } finally { offEvents(); offWhole() }
     })
-    it('hands a thread refresh back without messages to a caller that keeps history from events, and with them to any other (#368)', async context => {
-      if (!f.host.refreshThread || !f.host.subscribeEvents) { context.skip(); return }
+    it('hands a thread refresh back without messages to a caller that keeps history from events, and with them to any other (#368)', withFixtureSkip(skips.refreshThread ?? skips.threadEvents), async () => {
       await send()
       await f.driver.completeTurn(sessionId, 'Completed reply')
       await expect.poll(async () => (await thread()).status).toBe('idle')
-      const fromEvents = (await f.host.refreshThread(sessionId, { historyFromEvents: true })).threads.find(t => t.id === sessionId)!
+      const fromEvents = (await f.host.refreshThread!(sessionId, { historyFromEvents: true })).threads.find(t => t.id === sessionId)!
       expect(fromEvents.messages).toEqual([])
       expect(fromEvents.summary?.lastAssistant?.text ?? '').toContain('Completed reply')
       // Every other reader, the read before a send among them, still gets the messages, and nothing was put away.
       for (const purpose of [undefined, { beforeSend: true }]) {
-        expect((await f.host.refreshThread(sessionId, purpose)).threads.find(t => t.id === sessionId)!.messages.map(message => message.id)).toContain('own-message')
+        expect((await f.host.refreshThread!(sessionId, purpose)).threads.find(t => t.id === sessionId)!.messages.map(message => message.id)).toContain('own-message')
       }
       expect((await thread()).messages.map(message => message.id)).toContain('own-message')
     })
@@ -172,9 +171,8 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       expect(await f.host.execute({ type: 'interrupt', commandId: randomUUID(), threadId: sessionId })).toEqual({ accepted: true })
       await expect.poll(async () => (await thread()).status).toBe('idle')
     })
-    it('keeps confirmed background work past the end of its turn until the provider ends it, and never restores it', async context => {
-      const work = f.driver.backgroundWork
-      if (!work) { context.skip(); return }
+    it('keeps confirmed background work past the end of its turn until the provider ends it, and never restores it', withFixtureSkip(skips.backgroundWork), async () => {
+      const work = f.driver.backgroundWork!
       await send()
       await work.completeLeaving(sessionId, 'Started a background agent', 'Review the diff')
       await expect.poll(async () => (await thread()).backgroundWork?.map(task => [task.label, task.type])).toEqual([['Review the diff', 'subagent']])
@@ -182,7 +180,7 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       expect((await thread()).monitoring ?? []).toEqual([])
       await work.end(sessionId)
       await expect.poll(async () => (await thread()).backgroundWork ?? []).toEqual([])
-      if (f.skips?.restart) return
+      if (skips.restart) return
       await send()
       await work.completeLeaving(sessionId, 'Started another', 'Review the tests')
       await expect.poll(async () => (await thread()).backgroundWork?.length).toBe(1)
@@ -215,16 +213,14 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       f.host.disconnect()
       expect((await f.driver.requests()).some(r => permissionDecision(r) === true)).toBe(false)
     })
-    it('reconciles an uncertain prompt acknowledgement without resending', async context => {
-      if (f.skips?.uncertain) { context.skip(); return }
+    it('reconciles an uncertain prompt acknowledgement without resending', withFixtureSkip(skips.uncertain), async () => {
       const method = f.protocol?.promptMethod ?? 'turn/start'
       await f.driver.delayNextAck(method)
       expect(await send()).toEqual({ accepted: false, uncertain: true })
       await expect.poll(async () => (await thread()).messages.filter(m => m.id === 'own-message').length).toBe(1)
       expect((await f.driver.requests()).filter(r => r.method === method)).toHaveLength(1)
     })
-    it('resumes the same thread and messages after restart during a run', async context => {
-      if (f.skips?.restart) { context.skip(); return }
+    it('resumes the same thread and messages after restart during a run', withFixtureSkip(skips.restart), async () => {
       await send(); const before = await thread()
       f = await f.driver.restart(); f.host.observeThreads?.([sessionId]); await f.host.connect()
       // Some protocols restore transcript but cannot prove the previous turn outcome.
@@ -264,13 +260,13 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
     // idle until it lands: the assertion is the stop itself, so the deadline is generous and costs
     // nothing when it is never reached (AGENTS.md, "Waiting is not the assertion").
     const untilStopped = (id: string) => expect.poll(async () => stopped(id), { timeout: 12_000 })
-    /** Build the fixture and one saved thread. False when this fixture has no provider session to watch. */
-    const open = async (session?: AdapterSessionOptions): Promise<boolean> => {
-      f = await factory(session); await f.host.connect()
-      if (f.skips?.lazy || !f.sessions) return false
+    /** Decide known capability skips before constructing a fixture, then open one saved thread. */
+    const open = async (context: TestContext, session?: AdapterSessionOptions): Promise<void> => {
+      if (skips.lazy) context.skip(skips.lazy)
+      f = await factory(session)
+      await f.host.connect()
       await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
       sessionId = await create('Lazy thread')
-      return true
     }
     /** A fresh run over the same saved threads, watching none of them. */
     const reconnect = async (): Promise<void> => { f = await f.driver.restart(); await f.host.connect() }
@@ -283,10 +279,10 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       const stop = f.host.subscribe(snapshot => { seen.push(snapshot.threads.find(item => item.id === id)?.providerSessionOpen) })
       return { open: () => seen.at(-1), wasOpen: () => seen.includes(true), stop }
     }
-    afterEach(async () => { await f?.cleanup() })
+    afterEach(async () => { const previous = f; f = undefined!; await previous?.cleanup() })
 
     it('connects without starting a session, and starts one when the thread enters the watched set', async context => {
-      if (!await open()) { context.skip(); return }
+      await open(context)
       const before = await starts(sessionId)
       await reconnect()
       expect(await starts(sessionId)).toBe(before)
@@ -296,7 +292,7 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
     })
 
     it('starts a session for an action on a thread nobody is watching', async context => {
-      if (!await open()) { context.skip(); return }
+      await open(context)
       const before = await starts(sessionId)
       await reconnect()
       expect(await send(sessionId, 'unwatched-send', 'Synthetic prompt')).toEqual({ accepted: true })
@@ -305,7 +301,7 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
 
     // Early start (#769): the first keystroke in a thread's composer starts its session, so the send does not.
     it('starts a stopped session for an early start, says it is open, and the send that follows starts none', async context => {
-      if (!await open()) { context.skip(); return }
+      await open(context)
       await reconnect()
       const before = await starts(sessionId)
       expect((await thread(sessionId)).providerSessionOpen).toBeUndefined()
@@ -320,7 +316,7 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
     })
 
     it('says a session the reaper stopped after an early start is no longer open', async context => {
-      if (!await open(impatient)) { context.skip(); return }
+      await open(context, impatient)
       await reconnect()
       const shown = published(sessionId)
       await f.host.startThreadSession!(sessionId)
@@ -333,7 +329,7 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
 
     // A draft whose worktree its first send makes names no folder yet (`ThreadSessionDraft`).
     for (const folder of [true, false]) it(`creates no provider session for an early start before a thread’s first send${folder ? '' : ', when its folder does not exist yet'}`, async context => {
-      if (!await open()) { context.skip(); return }
+      await open(context)
       const created = async () => (await f.driver.requests()).filter(record => ['thread/start', 'session/new'].includes(record.method ?? '')).length
       const before = await created()
       const draft = randomUUID()
@@ -346,7 +342,7 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
     })
 
     it('stops a session left idle and starts it again on the next send, with its messages', async context => {
-      if (!await open(impatient)) { context.skip(); return }
+      await open(context, impatient)
       f.host.observeThreads?.([sessionId])
       await send(sessionId, 'kept-message', 'Synthetic prompt')
       await f.driver.completeTurn(sessionId, 'Completed reply')
@@ -366,7 +362,7 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
     })
 
     it('never stops a session with a running turn, while an idle one beside it is stopped', async context => {
-      if (!await open(impatient)) { context.skip(); return }
+      await open(context, impatient)
       f.host.observeThreads?.([sessionId])
       await send(sessionId, 'running-turn', 'Synthetic prompt')
       await expect.poll(async () => (await thread(sessionId)).status).toBe('running')
@@ -377,8 +373,8 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
     })
 
     it('hands the history to the event store, which answers for a thread nobody is watching', async context => {
-      if (!await open(impatient)) { context.skip(); return }
-      if (!f.host.subscribeEvents) { context.skip(); return }
+      if (skips.threadEvents) context.skip(skips.threadEvents)
+      await open(context, impatient)
       const workspace = new WorkspaceHost(f.host, join(f.root, 'sotto-workspace'))
       try {
         await workspace.initialize()
@@ -396,7 +392,7 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
     })
 
     it('never stops a watched session, while an unwatched one beside it is stopped', async context => {
-      if (!await open(impatient)) { context.skip(); return }
+      await open(context, impatient)
       f.host.observeThreads?.([sessionId])
       const quiet = await create('Quiet thread')
       await untilStopped(quiet).toBe(true)
@@ -422,21 +418,21 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       return [...(reasoningEffort ? [{ reasoningEffort }] : []), ...(runtimeMode ? [{ runtimeMode }] : [])]
     }
     const shown = (result: AgentHostResult) => result.snapshot?.threads.find(t => t.id === sessionId)
-    /** A thread whose session is running. False when this fixture does not apply settings in place. */
-    const open = async (): Promise<boolean> => {
-      f = await factory(); await f.host.connect()
-      if (!f.liveSettings || !f.sessions) return false
+    /** Decide fixture features up front, then open a thread whose session is running. */
+    const open = async (context: TestContext): Promise<void> => {
+      if (skips.liveSettings ?? skips.lazy) context.skip(skips.liveSettings ?? skips.lazy)
+      f = await factory()
+      await f.host.connect()
       await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
       sessionId = randomUUID()
       await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: sessionId, projectId: f.projectId, modelId: f.modelId, title: 'Settings thread' })
       f.host.observeThreads?.([sessionId])
       await f.host.refreshThread?.(sessionId)
-      return true
     }
-    afterEach(async () => { await f?.cleanup() })
+    afterEach(async () => { const previous = f; f = undefined!; await previous?.cleanup() })
 
     it('applies each change to the running session without starting another', async context => {
-      if (!await open()) { context.skip(); return }
+      await open(context)
       const starts = await f.sessions!.starts(sessionId)
       const { process } = await f.liveSettings!.effective(sessionId)
       const presses = await changes()
@@ -453,7 +449,7 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
     })
 
     it('starts the session again when the provider refuses a change, and still ends accepted', async context => {
-      if (!await open()) { context.skip(); return }
+      await open(context)
       const starts = await f.sessions!.starts(sessionId)
       const { process } = await f.liveSettings!.effective(sessionId)
       const [press] = await changes()
@@ -468,7 +464,7 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
     })
 
     it('leaves a change whose answer was lost unconfirmed, until the session that runs it starts', async context => {
-      if (!await open()) { context.skip(); return }
+      await open(context)
       const before = await thread()
       const [press] = await changes()
       await f.liveSettings!.silence()
@@ -484,9 +480,10 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
     })
 
     it('applies a change while background work runs, and the work carries on', async context => {
-      if (!await open() || !f.driver.backgroundWork) { context.skip(); return }
+      if (skips.liveSettings ?? skips.lazy ?? skips.backgroundWork) context.skip('The fixture must apply live settings and drive background work.')
+      await open(context)
       await f.host.execute({ type: 'send', threadId: sessionId, commandId: randomUUID(), messageId: 'own-message', text: 'Synthetic prompt' })
-      await f.driver.backgroundWork.completeLeaving(sessionId, 'Started a background agent', 'Review the diff')
+      await f.driver.backgroundWork!.completeLeaving(sessionId, 'Started a background agent', 'Review the diff')
       await expect.poll(async () => (await thread()).backgroundWork?.length).toBe(1)
       await expect.poll(async () => (await thread()).status).toBe('idle')
       const starts = await f.sessions!.starts(sessionId)
@@ -520,8 +517,8 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: sessionId, projectId: f.projectId, modelId: f.modelId, title: 'Settings thread' })
       f.host.observeThreads?.([sessionId])
     }
-    beforeEach(async () => { f = await factory() })
-    afterEach(async () => { await f?.cleanup() })
+    beforeEach(async context => { skipUnsupportedFixture(context); f = await factory() })
+    afterEach(async () => { const previous = f; f = undefined!; await previous?.cleanup() })
     /** A permission setting this thread is not on: the provider's own mode where it names its own, otherwise one of Sotto's. */
     const change = async (): Promise<Partial<Settings> | undefined> => {
       await open()
@@ -539,7 +536,7 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
 
     it('hands back the snapshot of a confirmed change, carrying the settings the adapter reports', async context => {
       const requested = await change()
-      if (!requested) { context.skip(); return }
+      if (!requested) { context.skip('The thread model offers no alternative settings.'); return }
       const result = await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: sessionId, ...requested })
       expect(result.accepted).toBe(true)
       expect(result.uncertain).toBeFalsy()
@@ -551,9 +548,9 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       expect(settingsOf(handed)).toEqual(settingsOf((await f.host.snapshot()).threads.find(thread => thread.id === sessionId)))
     })
 
-    it('leaves the messages out of a confirmed change\'s snapshot for a caller that keeps history from events (#368)', async context => {
+    it('leaves the messages out of a confirmed change\'s snapshot for a caller that keeps history from events (#368)', withFixtureSkip(skips.threadEvents), async context => {
       const requested = await change()
-      if (!requested || !f.host.subscribeEvents) { context.skip(); return }
+      if (!requested) { context.skip('The thread model offers no alternative settings.'); return }
       await f.host.execute({ type: 'send', threadId: sessionId, commandId: randomUUID(), messageId: 'own-message', text: 'Synthetic prompt' })
       await f.driver.completeTurn(sessionId, 'Completed reply')
       await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === sessionId)?.status).toBe('idle')
@@ -569,11 +566,10 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       expect((await f.host.snapshot()).threads.find(thread => thread.id === sessionId)!.messages.map(message => message.id)).toContain('own-message')
     })
 
-    it('carries no snapshot on an uncertain change', async context => {
-      if (!f.settings?.loseConfirmation) { context.skip(); return }
+    it('carries no snapshot on an uncertain change', withFixtureSkip(skips.settingsConfirmation), async context => {
       const requested = await change()
-      if (!requested) { context.skip(); return }
-      await f.settings.loseConfirmation()
+      if (!requested) { context.skip('The thread model offers no alternative settings.'); return }
+      await f.settings!.loseConfirmation!()
       const result = await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: sessionId, ...requested })
       expect(result).toEqual({ accepted: false, uncertain: true })
     })
@@ -587,12 +583,12 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
     let sessionId: string
     const thread = async () => (await f.host.snapshot()).threads.find(t => t.id === sessionId)!
     const send = (messageId: string, text: string) => f.host.execute({ type: 'send', threadId: sessionId, commandId: randomUUID(), messageId, text })
-    afterEach(async () => { await f?.cleanup() })
+    afterEach(async () => { const previous = f; f = undefined!; await previous?.cleanup() })
 
     it('lets a working turn finish across the update, stays connected, and reads the new version from the client', async context => {
+      if (skips.clientUpdate) context.skip(skips.clientUpdate)
       f = await factory(); await f.host.connect()
-      const update = f.clientUpdate
-      if (!update || !f.host.clientUpdated) { context.skip(); return }
+      const update = f.clientUpdate!
       await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
       sessionId = randomUUID()
       await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: sessionId, projectId: f.projectId, modelId: f.modelId, title: 'Update thread' })
@@ -603,7 +599,7 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       const starts = await f.sessions?.starts(sessionId)
 
       const installed = await update.install()
-      await f.host.clientUpdated(update.provider)
+      await f.host.clientUpdated!(update.provider)
       const updated = await f.host.snapshot()
       expect(updated.connected).toBe(true)
       expect(updated.error).toBeUndefined()
@@ -627,10 +623,10 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
     })
 
     it('does nothing while the provider is not connected', async context => {
+      if (skips.clientUpdate) context.skip(skips.clientUpdate)
       f = await factory()
-      const update = f.clientUpdate
-      if (!update || !f.host.clientUpdated) { context.skip(); return }
-      await expect(f.host.clientUpdated(update.provider)).resolves.toBeUndefined()
+      const update = f.clientUpdate!
+      await expect(f.host.clientUpdated!(update.provider)).resolves.toBeUndefined()
       expect((await f.host.snapshot()).connected).toBe(false)
     })
   })

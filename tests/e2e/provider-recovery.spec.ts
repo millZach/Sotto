@@ -1,3 +1,4 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { agentState } from './support/agentAccess'
 import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
 import { createHash } from 'node:crypto'
@@ -22,7 +23,7 @@ async function seed(): Promise<string> {
   const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-recovery-' })).directory
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true }))
   await writeFile(join(profile, 'agents.json'), JSON.stringify({
-    configuration: { ...defaultAgentConfiguration(), provider: 't3', enabled: true, speak: false, endpoint: 'http://synthetic-previous-provider.invalid', defaultModelId: 'old-model' },
+    configuration: { ...defaultAgentConfiguration(), provider: 't3', enabled: true, endpoint: 'http://synthetic-previous-provider.invalid', defaultModelId: 'old-model' },
     assignments: [{ threadId: 'previous-thread', mode: 'managed', instruction: 'Synthetic previous assignment', followups: 1,
       paused: false, seenMessageIds: [], ownMessageIds: [], handledRequestIds: [], lastFailure: '', contextUpdatedAt: Date.now() }],
     queue: [{ id: 'previous-question', threadId: 'previous-thread', kind: 'question', requestId: 'previous-request',
@@ -67,7 +68,7 @@ for (const localDraft of [false, true]) test(`recovered provider draft stays unb
     await expect(notice).toContainText(attachment.name)
     let state = await agentState(page)
     expect(state).toMatchObject({ configuration: { provider: 'codex', enabled: false }, draft, draftAttachments: [staged],
-      draftThreadId: null, draftRequestId: null, assignments: [], queue: [], composing: false })
+      draftThreadId: null, draftRequestId: null, composing: false })
     await capture(page, 'unbound')
     await page.getByRole('button', { name: 'Connect providers', exact: true }).click()
     await page.getByRole('button', { name: 'New thread', exact: true }).first().click()
@@ -80,32 +81,32 @@ for (const localDraft of [false, true]) test(`recovered provider draft stays unb
     // Main learns the selection a beat after the popup closes; wait for it before reading the thread by id.
     await expect.poll(() => page.evaluate(async () => (await window.sotto!.agents!.get()).activeThreadId)).toEqual(expect.any(String))
     state = await agentState(page)
-    expect(state).toMatchObject({ draft, draftAttachments: [staged], draftThreadId: null, assignments: [], composing: false })
+    expect(state).toMatchObject({ draft, draftAttachments: [staged], draftThreadId: null, composing: false })
     const threadId = state.activeThreadId!
     expect(await userMessageTexts(page, threadId)).toHaveLength(0)
-    await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('')
+    await expectPromptText(promptField(page), '')
     await expect(notice.getByRole('button', { name: 'Use saved draft here' })).toBeEnabled()
     if (localDraft) {
-      const composer = page.getByRole('textbox', { name: 'Prompt', exact: true })
-      await composer.fill('Keep this current unsent native prompt too.')
+      const composer = promptField(page)
+      await fillPrompt(composer, 'Keep this current unsent native prompt too.')
       await page.getByLabel('Screenshot files').setInputFiles({ name: 'current-native-image.png', mimeType: 'image/png', buffer: Buffer.from(attachment.dataUrl.split(',')[1]!, 'base64') })
       await expect(page.getByRole('img', { name: 'current-native-image.png' })).toBeVisible()
       await expect(notice.getByRole('button', { name: 'Use saved draft here' })).toBeDisabled()
-      await expect(composer).toHaveValue('Keep this current unsent native prompt too.')
+      await expectPromptText(composer, 'Keep this current unsent native prompt too.')
       await expect(notice.getByRole('textbox', { name: 'Recovered draft' })).toHaveValue(draft)
       expect(await agentState(page)).toMatchObject({ draft, draftAttachments: [staged], draftThreadId: null })
       await capture(page, 'local-draft-kept')
-      await composer.fill('')
+      await fillPrompt(composer, '')
       await expect(notice.getByRole('button', { name: 'Use saved draft here' })).toBeDisabled()
       await page.getByRole('button', { name: 'Remove current-native-image.png' }).click()
       await expect(notice.getByRole('button', { name: 'Use saved draft here' })).toBeEnabled()
     } else await capture(page, 'before-bind')
     await notice.getByRole('button', { name: 'Use saved draft here' }).click()
-    await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue(draft)
+    await expectPromptText(promptField(page), draft)
     await expect(page.getByRole('img', { name: attachment.name })).toBeVisible()
     await expect(notice.getByRole('button', { name: 'Use saved draft here' })).toHaveCount(0)
     state = await agentState(page)
-    expect(state).toMatchObject({ draft, draftAttachments: [staged], draftThreadId: threadId, draftRequestId: null, assignments: [], composing: true })
+    expect(state).toMatchObject({ draft, draftAttachments: [staged], draftThreadId: threadId, draftRequestId: null, composing: true })
     expect(await userMessageTexts(page, threadId)).toHaveLength(0)
     expect(state.host.threads.find(thread => thread.id === threadId)?.requests).toHaveLength(0)
     await capture(page, localDraft ? 'bound-after-local-clear' : 'bound-for-review')
@@ -124,7 +125,7 @@ test('clear saved draft removes recovered text and images and stays cleared afte
     await expect(launched.page.getByRole('textbox', { name: 'Recovered draft' })).toHaveCount(0)
     await expect(launched.page.getByText(attachment.name, { exact: true })).toHaveCount(0)
     const state = await agentState(launched.page)
-    expect(state).toMatchObject({ draft: '', draftAttachments: [], draftThreadId: null, draftRequestId: null, assignments: [], composing: false })
+    expect(state).toMatchObject({ draft: '', draftAttachments: [], draftThreadId: null, draftRequestId: null, composing: false })
     await capture(launched.page, 'cleared')
     await closeSotto(launched)
     launched = await launchSotto('success', profile)

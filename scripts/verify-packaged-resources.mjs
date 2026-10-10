@@ -11,7 +11,6 @@ import { _electron as electron } from '@playwright/test'
 
 import { latestMigrationVersion } from '../src/main/memory/migrations.mjs'
 import { listAsarEntries, readAsarText } from './asar-entries.mjs'
-import { verifyPreparedAssets } from './verify-runtime.mjs'
 import { verifyThirdPartyNotices } from './verify-notices.mjs'
 import { verifyExternalDependencyInventories } from './release-external-dependencies.mjs'
 import { releasePlatformProfile } from './release-platform-profile.mjs'
@@ -191,16 +190,10 @@ async function verifyNormalPackagedLaunch(target) {
       if (globalThis.sotto === undefined) throw new Error('normal preload bridge is unavailable')
       if (globalThis.sottoE2E !== undefined) throw new Error('packaged build admitted the E2E bridge')
 
-      const [settings, runtimeResponse] = await Promise.all([
-        globalThis.sotto.getSettings(),
-        globalThis.fetch('sotto-runtime://runtime/ort-wasm-simd-threaded.wasm'),
-      ])
+      const settings = await globalThis.sotto.getSettings()
       for (const method of ['transcribe', 'cancelTranscription', 'checkTranscriptionKey']) {
         if (typeof globalThis.sotto[method] !== 'function') throw new Error('transcription bridge is unavailable')
       }
-      if (!runtimeResponse.ok) throw new Error(`local runtime protocol failed (${runtimeResponse.status})`)
-      const runtimeHeader = new Uint8Array(await runtimeResponse.arrayBuffer(), 0, 4)
-      if (runtimeHeader.join(',') !== '0,97,115,109') throw new Error('local runtime protocol returned invalid WASM')
 
       const context = new globalThis.AudioContext()
       const workletUrl = new globalThis.URL('audio-capture-worklet.js', globalThis.document.baseURI).href
@@ -233,7 +226,7 @@ export async function verifyPackagedResources(input, options = {}) {
   const resources = profile.resourcesPath(target)
   const asarPath = join(resources, 'app.asar')
   await verifyClaudeSdkAssets(join(resources, 'claude-sdk'))
-  if (existsSync(join(resources, 'runtime', 'kws'))) fail('unreviewed wake runtime must not be bundled; use an explicitly supplied local runtime')
+  if (existsSync(join(resources, 'runtime'))) fail('retired voice runtime must not be bundled')
   for (const required of [
     profile.executablePath(target),
     asarPath,
@@ -247,14 +240,9 @@ export async function verifyPackagedResources(input, options = {}) {
     if (!existsSync(required)) fail(`missing ${relative(target, required)}`)
   }
 
-  await verifyPreparedAssets({
-    runtimeRoot: join(resources, 'runtime'),
-  })
-
   const entries = listAsarEntries(asarPath)
   for (const required of [
     'out/main/index.js',
-    'out/main/wakeWorker.js',
     'out/main/external-dependencies.json',
     'out/preload/index.js',
     'out/preload/visual.js',
@@ -266,8 +254,8 @@ export async function verifyPackagedResources(input, options = {}) {
   ]) {
     if (!entries.includes(required)) fail(`app.asar is missing ${required}`)
   }
-  if (entries.some((entry) => entry.includes('ort-wasm-simd-threaded'))) {
-    fail('ONNX runtime must ship only under resources/runtime, not inside app.asar')
+  if (entries.some((entry) => entry === 'out/main/wakeWorker.js' || /(?:naturalSpeechWorker|ort-wasm|speechModelManifest)/u.test(entry))) {
+    fail('retired voice assets must not be bundled')
   }
   let provenance
   try {
