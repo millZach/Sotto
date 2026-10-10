@@ -26,6 +26,7 @@ jobs:
       host: ${{ steps.areas.outputs.host }}
       ios: ${{ steps.areas.outputs.ios }}
       package: ${{ steps.areas.outputs.package }}
+      desktop: ${{ steps.areas.outputs.desktop }}
     steps:
       - name: Check out the repository
         uses: actions/checkout@v4
@@ -38,13 +39,13 @@ jobs:
           EVENT: ${{ github.event_name }}
         run: |
           if [ "$EVENT" != "pull_request" ]; then
-            echo "host=true" >> "$GITHUB_OUTPUT"; echo "ios=true" >> "$GITHUB_OUTPUT"; echo "package=true" >> "$GITHUB_OUTPUT"; exit 0
+            echo "host=true" >> "$GITHUB_OUTPUT"; echo "ios=true" >> "$GITHUB_OUTPUT"; echo "package=true" >> "$GITHUB_OUTPUT"; echo "desktop=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
           # A pull request checks out its merge commit; its first parent is the base branch.
           # --no-renames lists a moved file at both paths, so moving one into a skipped area still counts its old area.
           files=$(git diff --no-renames --name-only HEAD^1 HEAD)
           if [ -z "$files" ]; then
-            echo "host=true" >> "$GITHUB_OUTPUT"; echo "ios=true" >> "$GITHUB_OUTPUT"; echo "package=true" >> "$GITHUB_OUTPUT"; exit 0
+            echo "host=true" >> "$GITHUB_OUTPUT"; echo "ios=true" >> "$GITHUB_OUTPUT"; echo "package=true" >> "$GITHUB_OUTPUT"; echo "desktop=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
           host=false; ios=false; package=false
           # Each test reads the list from a here-string, not a pipe: the step runs under pipefail, and grep -q stops
@@ -56,8 +57,11 @@ jobs:
           # package ships (the root README, licence and notices) and the notice the renderer bundles from docs/notices/.
           if grep -qvE '^(docs/|artifacts/|design/|handoff/|tests/|apps/ios/|apps/android/|[^/]+\.md$)' <<< "$files" \
             || grep -qE '^(README\.md|LICENSE\.md|THIRD_PARTY_NOTICES\.md|docs/notices/)' <<< "$files"; then package=true; fi
-          echo "host=$host" >> "$GITHUB_OUTPUT"; echo "ios=$ios" >> "$GITHUB_OUTPUT"; echo "package=$package" >> "$GITHUB_OUTPUT"
-          echo "Host job: $host. iOS job: $ios. Package job: $package."
+          # The desktop check follows packaging's app filter and also checks changes to its Electron journeys and fixtures.
+          desktop=$package
+          if grep -qE '^(tests/e2e/|tests/fixtures/)' <<< "$files"; then desktop=true; fi
+          echo "host=$host" >> "$GITHUB_OUTPUT"; echo "ios=$ios" >> "$GITHUB_OUTPUT"; echo "package=$package" >> "$GITHUB_OUTPUT"; echo "desktop=$desktop" >> "$GITHUB_OUTPUT"
+          echo "Host job: $host. iOS job: $ios. Package job: $package. Desktop job: $desktop."
 
   gates:
     name: Gates (Windows)
@@ -147,6 +151,52 @@ jobs:
 
       - name: Build and verify the unpacked Windows app
         run: npm run package:dir
+
+  # Trial only (#899): exercise the built app on the hosted desktop without publishing or becoming a required check.
+  desktop:
+    name: Desktop check (Windows)
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      CI: 'true'
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Use a long temp path
+        shell: pwsh
+        run: |
+          "TMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
+          "TEMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare runtime assets
+        run: npm run runtime:prepare
+
+      - name: Exercise the Windows desktop
+        run: npm run test:desktop-smoke
+
+      # Keep passing captures during the trial too, so its actual hosted desktop can be inspected.
+      - name: Retain desktop journeys and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-desktop-journeys-${{ github.run_attempt }}
+          path: |
+            artifacts/review-393/desktop-run/
+            test-results/
+          if-no-files-found: warn
+          retention-days: 14
 
   # A skipped job counts as passing for a required check, and Package (Windows) is skipped whenever Changed areas
   # does not ask for it, including when Changed areas itself failed. A ruleset requires this job instead: it fails
