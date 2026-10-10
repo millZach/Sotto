@@ -145,7 +145,7 @@ test('a queued follow-up keeps its skill reference and order through a reload, s
     await expect(queue.getByRole('listitem')).toHaveCount(1)
     // Resume reviewed the unconfirmed turn for the whole queue, so the next item goes when this turn ends.
     await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'ready', threadId: 'docs', text: 'Posted.' }))
-    // The fixture thread is not a Codex thread, so the host refuses the selected skill. The item stays, with its reference, for review.
+    // The fixture's catalog has no deploy skill, so the host refuses it. The item stays, with its reference, for review.
     await expect(queue).toContainText('Not sent')
     await expect(queue).toContainText('Selected skills are unavailable or belong to another provider. Refresh this draft’s skill catalog.')
     const done = await agentState(page)

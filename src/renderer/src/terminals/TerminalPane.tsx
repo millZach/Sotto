@@ -98,7 +98,7 @@ export function TerminalPane({ row, store, bridge, viewFactory, viewFailed, focu
     </div>
     <p className="terminal-status">
       <span className="terminal-status__branch" title={terminal.workingDirectory}><GitBranch size={13} aria-hidden="true" />{terminal.branch ?? (starting ? 'Starting…' : 'No branch')}</span>
-      <span className="terminal-status__hints">{modifier}+C copies a selection or interrupts · {modifier}+V pastes text or an image</span>
+      <span className="terminal-status__hints">{platform === 'darwin' ? '⌘+C copies a selection · Ctrl+C interrupts' : 'Ctrl+C copies a selection or interrupts'} · {modifier}+V pastes text or an image</span>
     </p>
   </div>
 }
