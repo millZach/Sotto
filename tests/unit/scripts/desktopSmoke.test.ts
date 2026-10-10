@@ -60,16 +60,28 @@ describe('Windows desktop smoke command', () => {
     expect(mocks.spawnSync.mock.calls[1]![2]).toEqual(options)
   })
 
-  it('stops at a failed stage and preserves its exit status', async () => {
-    mocks.spawnSync.mockReturnValue({ status: 7 })
-    await expect(import('../../../scripts/desktop-smoke.mjs')).rejects.toThrow('exited')
-    expect(mocks.process.exit).toHaveBeenCalledWith(7)
-    expect(mocks.spawnSync).toHaveBeenCalledOnce()
-  })
+  describe.each([1, 2])('failure in stage %i', (stage) => {
+    it.each([
+      { name: 'nonzero exit', result: { status: 7 }, exitStatus: 7 },
+      { name: 'Windows crash', result: { status: 3221225477 }, exitStatus: 3221225477 },
+      { name: 'signal termination', result: { status: null, signal: 'SIGTERM' }, exitStatus: 1 },
+    ])('stops after $name and preserves a failing exit status', async ({ result, exitStatus }) => {
+      for (let previous = 1; previous < stage; previous++) mocks.spawnSync.mockReturnValueOnce({ status: 0 })
+      mocks.spawnSync.mockReturnValueOnce(result)
+      await expect(import('../../../scripts/desktop-smoke.mjs')).rejects.toThrow('exited')
+      expect(mocks.process.exit).toHaveBeenCalledWith(exitStatus)
+      expect(mocks.spawnSync).toHaveBeenCalledTimes(stage)
+    })
 
-  it('surfaces a child launch error without running another stage', async () => {
-    mocks.spawnSync.mockReturnValue({ error: new Error('Cannot start node') })
-    await expect(import('../../../scripts/desktop-smoke.mjs')).rejects.toThrow('Cannot start node')
-    expect(mocks.spawnSync).toHaveBeenCalledOnce()
+    it.each([
+      { name: 'launch error', error: Object.assign(new Error('Cannot start node'), { code: 'ENOENT' }) },
+      { name: 'timeout', error: Object.assign(new Error('Child timed out'), { code: 'ETIMEDOUT' }) },
+    ])('surfaces a $name without running another stage', async ({ error }) => {
+      for (let previous = 1; previous < stage; previous++) mocks.spawnSync.mockReturnValueOnce({ status: 0 })
+      mocks.spawnSync.mockReturnValueOnce({ status: null, error })
+      await expect(import('../../../scripts/desktop-smoke.mjs')).rejects.toBe(error)
+      expect(mocks.process.exit).not.toHaveBeenCalled()
+      expect(mocks.spawnSync).toHaveBeenCalledTimes(stage)
+    })
   })
 })
