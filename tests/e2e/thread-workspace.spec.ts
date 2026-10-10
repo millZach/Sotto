@@ -3,7 +3,7 @@ import { agentState } from './support/agentAccess'
 import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { defaultAgentConfiguration } from '../../src/shared/agents'
 import { designThreadsFixture } from '../../src/shared/e2e'
@@ -12,6 +12,16 @@ import { closeSotto, launchSotto, openThreads, userMessageTexts } from './suppor
 import { evidenceDirectory } from '../fixtures/evidence'
 
 const evidence = evidenceDirectory('artifacts/crossing')
+const docsTitle = 'Workspace Docs'
+const workshopTitle = 'Workspace Workshop'
+
+async function nameWorkspaceThreads(page: Page): Promise<void> {
+  // These journeys switch by name; user titles stay stable when the first send generates a title.
+  await page.evaluate(async ({ docs, workshop }) => {
+    await window.sotto!.agents!.command({ type: 'rename-thread', threadId: 'docs', title: docs })
+    await window.sotto!.agents!.command({ type: 'rename-thread', threadId: 'workshop', title: workshop })
+  }, { docs: docsTitle, workshop: workshopTitle })
+}
 
 test('a saved draft elsewhere does not close the manual composer, including while the thread runs', async () => {
   const launched = await launchSotto()
@@ -24,11 +34,12 @@ test('a saved draft elsewhere does not close the manual composer, including whil
       await window.sotto!.agents!.command({ type: 'select-thread', threadId: 'workshop' })
       await window.sotto!.agents!.command({ type: 'compose', text: 'Keep this saved draft in Workshop.' })
     })
+    await nameWorkspaceThreads(page)
     await page.reload()
     await openThreads(page)
     const key = await hostKeys(page)
-    await page.getByRole('button', { name: 'Docs', exact: true }).click()
-    await expect(page.getByRole('heading', { name: 'Docs', exact: true })).toBeVisible()
+    await page.getByRole('button', { name: docsTitle, exact: true }).click()
+    await expect(page.getByRole('heading', { name: docsTitle, exact: true })).toBeVisible()
     const prompt = promptField(page)
     await fillPrompt(prompt, 'A separate manual message.')
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
@@ -49,10 +60,10 @@ test('a saved draft elsewhere does not close the manual composer, including whil
     expect(state).toMatchObject({ draft: 'Keep this saved draft in Workshop.', draftThreadId: key('workshop') })
     expect(await userMessageTexts(page, 'docs')).toHaveLength(1)
     expect(state.followups).toEqual([expect.objectContaining({ threadId: key('docs'), text: 'Prepare the next message while Docs runs.', status: 'queued' })])
-    await page.getByRole('button', { name: 'Workshop', exact: true }).click()
+    await page.getByRole('button', { name: workshopTitle, exact: true }).click()
     await expectPromptText(prompt, 'Keep this saved draft in Workshop.')
     await expect(queue).toHaveCount(0)
-    await page.getByRole('button', { name: 'Docs', exact: true }).click()
+    await page.getByRole('button', { name: docsTitle, exact: true }).click()
     await expectPromptText(prompt, '')
     await expect(queue).toContainText('Prepare the next message while Docs runs.')
     // The fixture turn ends without native completion evidence, so the queue waits for an explicit resume.
@@ -77,10 +88,11 @@ test('a queued follow-up keeps its skill reference and order through a reload, s
       await window.sotto!.agents!.command({ type: 'connect' })
       await window.sotto!.agents!.command({ type: 'select-thread', threadId: 'docs' })
     })
+    await nameWorkspaceThreads(page)
     await page.reload()
     await openThreads(page)
     const key = await hostKeys(page)
-    await page.getByRole('button', { name: 'Docs', exact: true }).click()
+    await page.getByRole('button', { name: docsTitle, exact: true }).click()
     const prompt = promptField(page)
     await fillPrompt(prompt, 'Start the long job.')
     await prompt.press('Enter')
@@ -102,7 +114,7 @@ test('a queued follow-up keeps its skill reference and order through a reload, s
     }, skill)
     await page.reload()
     await openThreads(page)
-    await page.getByRole('button', { name: 'Docs', exact: true }).click()
+    await page.getByRole('button', { name: docsTitle, exact: true }).click()
     await expectPromptText(prompt, 'Then run $deploy for staging.')
     await expect(prompt.locator('[data-skill-token="$deploy"]')).toHaveCount(1)
     await prompt.press('Enter')
@@ -121,7 +133,7 @@ test('a queued follow-up keeps its skill reference and order through a reload, s
 
     await page.reload()
     await openThreads(page)
-    await page.getByRole('button', { name: 'Docs', exact: true }).click()
+    await page.getByRole('button', { name: docsTitle, exact: true }).click()
     await expect(queue.getByRole('listitem').first()).toContainText('Then post the preview link.')
     const reloaded = await agentState(page)
     expect(reloaded.followups!.map(item => [item.text, item.skills ?? []])).toEqual([['Then post the preview link.', []], ['Then run $deploy for staging.', [skill]]])
@@ -152,10 +164,11 @@ test('workspace sends a manual prompt to the selected thread without granting ma
       await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
+    await nameWorkspaceThreads(page)
     await page.reload()
     await openThreads(page)
     const workshop = (await hostKeys(page))('workshop')
-    await page.getByRole('button', { name: 'Workshop', exact: true }).click()
+    await page.getByRole('button', { name: workshopTitle, exact: true }).click()
     await fillPrompt(promptField(page), 'Explain the next small change.')
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
     await expect(page.getByLabel('Thread transcript')).toContainText('Explain the next small change.')
@@ -168,9 +181,9 @@ test('workspace sends a manual prompt to the selected thread without granting ma
     await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'ready', threadId: 'workshop', text: 'Here is the next small change.' }))
     await expect(page.getByLabel('Thread transcript')).toContainText('Here is the next small change.')
     await fillPrompt(promptField(page), 'Keep this draft in Workshop.')
-    await page.getByRole('button', { name: 'Docs', exact: true }).click()
+    await page.getByRole('button', { name: docsTitle, exact: true }).click()
     await expectPromptText(promptField(page), '')
-    await page.getByRole('button', { name: 'Workshop', exact: true }).click()
+    await page.getByRole('button', { name: workshopTitle, exact: true }).click()
     await expectPromptText(promptField(page), 'Keep this draft in Workshop.')
     await page.screenshot({ animations: 'disabled', path: join(evidence, 'thread-workspace-manual.png') })
     await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'permission', threadId: 'workshop', requestId: 'manual-permission', text: 'Allow the manual test step?' }))
