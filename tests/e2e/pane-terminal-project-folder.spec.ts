@@ -11,6 +11,8 @@ import { closeSotto, launchSotto, openThreads, resizeWindow } from './support/so
  * and its bar leaves out the worktree's branch. Captures go to artifacts/e2e-runs/pane-terminal-project-folder/.
  */
 const SHOTS = resolve('artifacts/e2e-runs/pane-terminal-project-folder')
+/** A terminal's colour and cursor sequences, which can fall inside a printed line. */
+const ESCAPE_SEQUENCE = new RegExp(`${String.fromCharCode(27)}\\[[0-9;?]*[A-Za-z]`, 'g')
 
 async function drawerOutput(page: Page, threadId: string): Promise<string> {
   return page.evaluate(async thread => {
@@ -71,7 +73,7 @@ test('a worktree thread’s terminal drawer starts in the project folder and nam
     await input.pressSequentially('Write-Output ("start" + "-cwd=" + (Get-Location).Path + "=end")')
     await input.press('Enter')
     await expect.poll(async () => {
-      const output = (await drawerOutput(page, threadId)).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/\r?\n/g, '')
+      const output = (await drawerOutput(page, threadId)).replace(ESCAPE_SEQUENCE, '').replace(/\r?\n/g, '')
       return /start-cwd=(.+?)=end/.exec(output)?.[1]?.trim().toLowerCase() ?? ''
     }, { timeout: 30_000 }).toBe(project.toLowerCase())
     // The worktree's branch would name a checkout the shell is not in.
