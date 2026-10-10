@@ -69,7 +69,7 @@ for (const surface of ['tools', 'drawer', 'workspace'] as const) {
     try {
       const folder = await page.evaluate(async () => {
         await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', reducedMotion: 'on' })
-        await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+        await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true } })
         const state = await window.sotto!.agents!.command({ type: 'connect' })
         return state.host.projects.find(project => project.id === state.host.threads.find(thread => thread.id === 'workshop' || thread.id.endsWith(':workshop'))!.projectId)!.path
       })
