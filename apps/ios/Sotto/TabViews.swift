@@ -3,6 +3,19 @@ import SottoCore
 
 // MARK: - Terminal-mode rows and approval cards
 
+/// The terminal glyph and word that set a terminal's card apart from the threads' cards beside it.
+private struct TerminalTag: View {
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "terminal").imageScale(.small).accessibilityHidden(true)
+            Text("Terminal")
+        }
+        .font(.sotto(.caption)).foregroundStyle(Palette.muted)
+        .padding(.horizontal, 7).frame(minHeight: 20)
+        .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
+    }
+}
+
 /// Uses the existing Glow Permission surface. The screen excerpt explains this one hook request;
 /// it is neither a terminal stream nor an input surface.
 private struct TerminalRequestCard: View, Equatable {
@@ -41,12 +54,13 @@ private struct TerminalRequestCard: View, Equatable {
                 NavigationLink(value: TerminalRoute(ref: row.ref)) { summary }
                     .buttonStyle(PressStyle())
                     .accessibilityLabel("\(row.terminal.title), \(row.terminal.hasAnswerChannel ? "Permission" : "Needs you"), terminal on \(row.computer)")
-                    .accessibilityHint("Opens the terminal's state")
+                    .accessibilityHint("Opens the terminal's status")
                     .accessibilityIdentifier("terminal-\(row.id)")
             }
             if let preview, phase == .idle {
+                // Smaller than a thread's command, so the CLI's own lines keep their shape at a phone's width.
                 Text(preview.lines.joined(separator: "\n"))
-                    .font(.mono).foregroundStyle(Palette.codeInk)
+                    .font(.system(.caption, design: .monospaced)).foregroundStyle(Palette.codeInk)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -75,7 +89,7 @@ private struct TerminalRequestCard: View, Equatable {
                 Light(tone: phase == .answered ? .accent : .warning)
                 Text(row.terminal.hasAnswerChannel ? "Permission" : "Needs you")
                     .font(.sotto(.caption, .semibold)).foregroundStyle(phase == .answered ? Palette.accentText : Palette.warningText)
-                Label("Terminal", systemImage: "terminal").font(.sotto(.caption)).foregroundStyle(Palette.muted)
+                TerminalTag()
                 Spacer(minLength: 0)
             }
             Text(row.terminal.title).font(.sotto(.lead, .semibold)).foregroundStyle(Palette.ink)
@@ -97,7 +111,8 @@ private struct TerminalRequestCard: View, Equatable {
                 .font(.sotto(.small, .semibold)).foregroundStyle(Palette.accentText).frame(minHeight: 44)
                 .accessibilityElement(children: .combine)
         case .gone:
-            Text("No longer waiting").font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted).frame(minHeight: 44)
+            HStack(spacing: Space.s2) { Spacer(minLength: 0); Text("No longer waiting") }
+                .font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted).frame(minHeight: 44)
         case .unconfirmed:
             VStack(alignment: .leading, spacing: Space.s2) {
                 review("Not confirmed yet. Check the terminal on \(row.computer) before answering again.")
@@ -145,17 +160,26 @@ private struct TerminalRequestCard: View, Equatable {
             }
         }
     }
-    private func review(_ note: String) -> some View {
-        VStack(alignment: .leading, spacing: Space.s2) {
-            Text(note).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
-            if detail {
-                Text(!model.mayAnswer(row.ref.hostID) && row.terminal.hasAnswerChannel
-                    ? "On \(row.computer), open Settings > Phones and turn on Can answer for this iPhone."
-                    : "Open this terminal on \(row.computer) to review and answer it.")
-                    .font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
-            } else {
-                NavigationLink(value: TerminalRoute(ref: row.ref)) { Text(row.terminal.hasAnswerChannel ? "Review permission" : "Review on computer") }
-                    .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
+    /// A note in place of No and Yes. On a list card it sits beside Review permission, which opens the status view as a
+    /// thread's card opens its thread. A request only the terminal can answer gets no button: the phone has nothing more
+    /// to show for it, and the card itself still opens the status view.
+    @ViewBuilder private func review(_ note: String) -> some View {
+        if detail {
+            VStack(alignment: .leading, spacing: Space.s2) {
+                Text(note).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                if !model.mayAnswer(row.ref.hostID) && row.terminal.hasAnswerChannel {
+                    Text("On \(row.computer), open Settings > Phones and turn on Can answer for this iPhone.")
+                        .font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        } else {
+            HStack(spacing: Space.s3) {
+                Text(note).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                if row.terminal.hasAnswerChannel {
+                    NavigationLink(value: TerminalRoute(ref: row.ref)) { Text("Review permission") }
+                        .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
+                }
             }
         }
     }
@@ -169,8 +193,10 @@ private struct TerminalWorkingCard: View {
                 HStack(spacing: Space.s2) {
                     Light(tone: .accent, breathing: true)
                     Text(row.terminal.stateWords).font(.sotto(.caption, .semibold)).foregroundStyle(Palette.accentText)
-                    Label("Terminal", systemImage: "terminal").font(.sotto(.caption)).foregroundStyle(Palette.muted)
+                    TerminalTag()
+                    Spacer(minLength: 0)
                 }
+                .frame(minHeight: 20)
                 Text(row.terminal.title).font(.sotto(.lead, .semibold)).foregroundStyle(Palette.ink)
                     .fixedSize(horizontal: false, vertical: true)
                 Text("\(Words.terminalProvider(row.terminal.providerId)) on \(row.computer)").font(.sotto(.small)).foregroundStyle(Palette.muted)
@@ -181,31 +207,40 @@ private struct TerminalWorkingCard: View {
         }
         .buttonStyle(PressStyle()).accessibilityIdentifier("terminal-\(row.id)")
         .accessibilityLabel("\(row.terminal.title), \(row.terminal.stateWords), terminal on \(row.computer)")
+        .accessibilityHint("Opens the terminal's status")
     }
 }
 
+/// A terminal in Recent, on a thread row's metrics so the two read as one list, with a muted terminal glyph before
+/// its title. One that finished out of sight has the threads' accent light, bold title and Just finished (ADR-0046).
 private struct TerminalRow: View {
     @EnvironmentObject var model: AppModel
     let row: HostedTerminal
+    @Environment(\.sottoDensity) private var density
     private var unread: Bool { row.finishedUnread && model.selectedTerminal != row.ref }
     private var state: String { unread ? "Just finished" : row.terminal.state == .justFinished ? "Idle" : row.terminal.stateWords }
     var body: some View {
         NavigationLink(value: TerminalRoute(ref: row.ref)) {
             HStack(alignment: .top, spacing: Space.s3) {
                 Light(tone: unread ? .accent : .off).padding(.top, 6)
-                VStack(alignment: .leading, spacing: Space.s1) {
-                    Label(row.terminal.title, systemImage: "terminal").font(.sotto(.body, unread ? .bold : .semibold)).foregroundStyle(Palette.ink)
-                        .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Image(systemName: "terminal").font(.sotto(.small)).foregroundStyle(Palette.muted).accessibilityHidden(true)
+                        Text(row.terminal.title).font(.sotto(.body, unread ? .bold : .semibold)).foregroundStyle(Palette.ink)
+                            .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    }
                     Text("\(row.reachable ? state : row.status.words) · \(Words.terminalProvider(row.terminal.providerId)) on \(row.computer)")
-                        .font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                        .font(.sotto(.small)).foregroundStyle(Palette.muted).lineLimit(1)
                 }
-                Spacer(minLength: 0)
+                Spacer(minLength: Space.s2)
             }
-            .padding(.horizontal, Space.s4).padding(.vertical, Space.s3)
+            .padding(.horizontal, Space.s4)
+            .padding(.vertical, Space.dense(Space.s3, density) + 2)
             .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading).contentShape(Rectangle())
         }
         .buttonStyle(PressStyle()).accessibilityIdentifier("terminal-\(row.id)")
         .accessibilityLabel("\(row.terminal.title), \(row.reachable ? state : row.status.words), terminal on \(row.computer)")
+        .accessibilityHint("Opens the terminal's status")
     }
 }
 
@@ -221,7 +256,7 @@ struct TerminalView: View {
     var body: some View {
         SheetPage(warm: row?.terminal.state == .needsYou) {
             if let row {
-                PageHeading(row.terminal.title, subtitle: "\(Words.terminalProvider(row.terminal.providerId)) on \(row.computer)") { Image(systemName: "terminal").foregroundStyle(Palette.muted) }
+                PageHeading(row.terminal.title, subtitle: "\(Words.terminalProvider(row.terminal.providerId)) on \(row.computer)") { Image(systemName: "terminal").foregroundStyle(Palette.muted).accessibilityHidden(true) }
                 HStack(spacing: Space.s2) {
                     Light(tone: row.reachable && row.terminal.state == .needsYou ? .warning : row.reachable && row.terminal.state.workInProgress ? .accent : .off,
                           breathing: row.reachable && row.terminal.state.workInProgress)
