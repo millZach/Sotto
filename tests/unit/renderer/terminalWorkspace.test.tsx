@@ -110,6 +110,24 @@ it('explains when an image conversion failure discards later workspace input', a
   expect(store.getSnapshot().notice).toContain('Later queued input was discarded.')
 })
 
+it('keeps the busy reason and discarded-input warning when workspace image staging is refused', async () => {
+  const { bridge } = fakeBridge([terminal(ID_1)])
+  const store = new TerminalWorkspaceStore()
+  await store.activate(bridge)
+  const staging = Promise.withResolvers<ToolsResult<{ path: string }>>()
+  vi.mocked(bridge.pasteImage).mockImplementationOnce(() => staging.promise)
+  const paste = store.pasteImage(bridge, ID_1, 'image')
+  await waitFor(() => expect(bridge.pasteImage).toHaveBeenCalledOnce())
+  store.write(bridge, ID_1, '\r')
+  staging.resolve({ ok: false, error: { code: 'busy', message: 'Too many operations are running. Try again shortly.' } })
+  await paste
+  expect(bridge.write).not.toHaveBeenCalled()
+  expect(store.getSnapshot().notice).toContain('Later queued input was discarded.')
+  expect(store.getSnapshot().notice).toContain('Too many operations are running. Try again shortly.')
+  store.write(bridge, ID_1, 'fresh')
+  await waitFor(() => expect(bridge.write).toHaveBeenCalledWith({ id: ID_1, data: 'fresh' }))
+})
+
 it('drops failed workspace input and its remainder, then accepts a fresh attempt', async () => {
   const { bridge } = fakeBridge([terminal(ID_1)])
   const store = new TerminalWorkspaceStore()

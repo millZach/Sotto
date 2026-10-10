@@ -367,7 +367,7 @@ export class TerminalWorkspaceStore {
   }
 
   private words(error: ToolsError, words: string): string {
-    return error.code === 'busy' ? 'Terminal is busy. Try again in a moment.' : `${words} ${error.message}`.trim()
+    return `${words} ${error.message}`.trim()
   }
 
   private fail(bridge: TerminalWorkspaceBridge, error: ToolsError, words: string): void {
