@@ -1,3 +1,4 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { ownedE2EProfile } from './support/e2eProfile'
 import { resizeContentWindow } from './support/sottoWindow'
 import { mkdir, writeFile } from 'node:fs/promises'
@@ -98,7 +99,7 @@ test('a single row that goes compact keeps its arrangement switch, and the grid 
       }
       const placed = panes.locator('section.thread-pane[role="region"]:not([data-hidden])')
       await expect(placed).toHaveCount(4)
-      await pane('footer-links').getByRole('textbox', { name: 'Prompt', exact: true }).fill('Footer draft through compact.')
+      await fillPrompt(promptField(pane('footer-links')), 'Footer draft through compact.')
       // Verify the saved revision before changing arrangement, so a persistence failure is separate from layout.
       await expect.poll(() => page.evaluate(async id => (await window.sotto!.agents!.get()).threadDrafts?.find(draft => draft.threadId === id)?.text, key('footer-links'))).toBe('Footer draft through compact.')
       await pane('visual-gate').click({ position: { x: 200, y: 200 } })
@@ -132,7 +133,7 @@ test('a single row that goes compact keeps its arrangement switch, and the grid 
       await expect(rows).toHaveAttribute('aria-valuenow', '45')
       await expect(toggle).toHaveAttribute('aria-pressed', 'false')
       await expect(toggle).toBeFocused()
-      await expect(pane('footer-links').getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('Footer draft through compact.')
+      await expectPromptText(promptField(pane('footer-links')), 'Footer draft through compact.')
       await shoot(page, 'panes-grid-returned-1280')
 
       // At 820 neither arrangement fits the pane area, so the view is compact either way; the switch stays and says which
@@ -156,7 +157,7 @@ test('a single row that goes compact keeps its arrangement switch, and the grid 
       await expect(tabs).toHaveCount(0)
       await expect(placed).toHaveCount(4)
       await expect(rows).toHaveAttribute('aria-valuenow', '45')
-      await expect(pane('footer-links').getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('Footer draft through compact.')
+      await expectPromptText(promptField(pane('footer-links')), 'Footer draft through compact.')
     } finally { await closeSotto(launched) }
   } finally { await profileOwner.dispose() }
 })

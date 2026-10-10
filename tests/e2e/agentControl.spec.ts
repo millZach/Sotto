@@ -1,3 +1,4 @@
+import { expectPromptText, promptField } from './support/prompt'
 import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
 import { agentCommand as command, agentState as state } from './support/agentAccess'
 import { readFile, stat, writeFile } from 'node:fs/promises'
@@ -101,7 +102,7 @@ test('revokes an automatic reply while reasoning is in flight and retains manual
     await closeSotto(launched)
     launched = await launchSotto('success', directory)
     await openThreads(launched.page)
-    await expect(launched.page.getByLabel('Prompt', { exact: true })).toHaveValue('A draft that must survive a restart.')
+    await expectPromptText(promptField(launched.page), 'A draft that must survive a restart.')
     const snapshot = await state(launched.page)
     expect(snapshot.assignments[0]?.mode).toBe('manual')
     expect(snapshot.draftThreadId).toBe(hostEntityKey(snapshot.hostId, 'workshop'))

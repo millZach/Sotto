@@ -1,3 +1,4 @@
+import { promptText } from './helpers/promptEditor'
 import { threadsStateFixture } from '../../fixtures/agentState'
 import React, { useSyncExternalStore } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -106,7 +107,7 @@ describe('a saved draft on the empty Threads page (issue #736)', () => {
   it('starts a new thread with the leftover draft in its composer, and lets the old copy go once that is saved', async () => {
     const command = renderEmpty(withDraft('gone-thread'), savedComposer)
     fireEvent.click(screen.getByRole('button', { name: 'New thread with this draft' }))
-    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue(LEFTOVER))
+    await waitFor(() => expect(promptText(screen.getByRole('textbox', { name: 'Prompt' }))).toBe(LEFTOVER))
     const [created] = sent(command, 'create-thread')
     expect(created).toMatchObject({ projectId: 'workshop', managed: false })
     await waitFor(() => expect(sent(command, 'cancel-draft')).toHaveLength(1))
@@ -130,7 +131,7 @@ describe('a saved draft on the empty Threads page (issue #736)', () => {
   it('keeps the leftover draft when the new thread’s composer could not be saved', async () => {
     const command = renderEmpty(withDraft('gone-thread'), request => request.type === 'save-thread-draft' ? null : undefined)
     fireEvent.click(screen.getByRole('button', { name: 'New thread with this draft' }))
-    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue(LEFTOVER))
+    await waitFor(() => expect(promptText(screen.getByRole('textbox', { name: 'Prompt' }))).toBe(LEFTOVER))
     await waitFor(() => expect(sent(command, 'save-thread-draft').length).toBeGreaterThan(0))
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
     expect(sent(command, 'cancel-draft')).toHaveLength(0)
@@ -151,7 +152,7 @@ describe('a saved draft on the empty Threads page (issue #736)', () => {
       threadDrafts: [{ threadId: unused.id, draftId: sent(first, 'save-thread-draft').at(-1)!.draftId, text: LEFTOVER, attachments: [], requestId: null, updatedAt: new Date(NOW).toISOString() }] },
     (request, current) => savedComposer(request, current) ?? selected(request, current))
     fireEvent.click(screen.getByRole('button', { name: 'New thread with this draft' }))
-    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue(LEFTOVER))
+    await waitFor(() => expect(promptText(screen.getByRole('textbox', { name: 'Prompt' }))).toBe(LEFTOVER))
     expect(sent(again, 'create-thread')).toHaveLength(0)
     await waitFor(() => expect(sent(again, 'cancel-draft')).toHaveLength(1))
     for (const save of sent(again, 'save-thread-draft')) expect(save.text).toBe(LEFTOVER)
@@ -168,7 +169,7 @@ describe('a saved draft on the empty Threads page (issue #736)', () => {
     expect(sent(command, 'cancel-draft')).toHaveLength(0)
     fireEvent.click(screen.getByRole('button', { name: 'New thread with this draft' }))
     await waitFor(() => expect(sent(command, 'create-thread')).toHaveLength(2))
-    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue(LEFTOVER))
+    await waitFor(() => expect(promptText(screen.getByRole('textbox', { name: 'Prompt' }))).toBe(LEFTOVER))
     await waitFor(() => expect(sent(command, 'cancel-draft')).toHaveLength(1))
     expect(sent(command, 'save-thread-draft').at(-1)).toMatchObject({ threadId: sent(command, 'create-thread')[1]!.threadId, text: LEFTOVER })
   })

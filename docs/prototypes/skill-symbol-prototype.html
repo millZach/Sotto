@@ -1,0 +1,286 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. Follow-up to skill-selected-prototype.html, where variant A (the skill as a pill in the
+  text) won. Question: what symbol leads the pill in place of the slash? Variants are icons, switchable with
+  ?variant=A..D, the bar at the bottom, or the arrow keys when the text is not focused.
+  The pill is one piece here (Backspace removes it whole, hover shows what it does), the way T3 Code and the
+  Codex TUI treat a chosen skill. Sotto still sends the provider's own /name or $name token.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prototype: the symbol on a chosen skill</title>
+<style>
+  :root {
+    --canvas: #050606; --field: #0a0d0b; --field-border: #2a302d; --field-focus: #507366; --hairline: #1f2522;
+    --text: #e8ece9; --text-2: #b9c2bd; --muted: #8a948f; --accent: #7fd8c4; --accent-ink: #062019;
+    --wash: rgba(127, 216, 196, .14); --wash-strong: rgba(127, 216, 196, .22); --shadow: rgba(0, 0, 0, .6); --panel: #121614;
+    --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+  }
+  :root[data-theme='light'] {
+    --canvas: #f2f4f2; --field: #ffffff; --field-border: #d4dad6; --field-focus: #6aa392; --hairline: #e3e7e4;
+    --text: #151917; --text-2: #39413d; --muted: #5d6762; --accent: #1b7563; --accent-ink: #ffffff;
+    --wash: rgba(27, 117, 99, .09); --wash-strong: rgba(27, 117, 99, .15); --shadow: rgba(20, 30, 25, .18); --panel: #ffffff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; background: var(--canvas); color: var(--text); font-family: Figtree, "Segoe UI", system-ui, sans-serif; }
+  .page { max-width: 860px; margin: 0 auto; padding: 32px 24px 140px; }
+  .intro { color: var(--muted); font-size: 14px; line-height: 1.55; margin: 0 0 8px; }
+  .intro b { color: var(--text-2); font-weight: 500; }
+  .variant-title { margin: 24px 0 4px; font-size: 18px; font-weight: 500; display: flex; align-items: center; gap: 10px; }
+  .variant-title svg { width: 20px; height: 20px; color: var(--accent); }
+  .variant-note { margin: 0 0 24px; color: var(--muted); font-size: 14px; line-height: 1.55; max-width: 70ch; }
+  .transcript { min-height: 140px; border-bottom: 1px dashed var(--hairline); margin-bottom: 72px; display: flex; flex-direction: column; justify-content: flex-end; gap: 10px; padding-bottom: 12px; }
+  .transcript .label { color: var(--muted); font-size: 12px; }
+  .sent { align-self: flex-end; max-width: 80%; padding: 10px 14px; border-radius: 14px; background: var(--panel); border: 1px solid var(--hairline); font-size: 15px; line-height: 1.6; }
+
+  .prompt { position: relative; padding: 14px 16px 10px; border: 1px solid var(--field-border); border-radius: 16px; background: var(--field); }
+  .prompt:focus-within { border-color: var(--field-focus); }
+  .editor { min-height: 74px; max-height: 220px; overflow-y: auto; outline: 0; font-size: 15px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: break-word; color: var(--text); }
+  .editor:empty::before { content: attr(data-placeholder); color: var(--muted); }
+
+  /* The pill: one piece in the running text, coloured from the theme's accent like the rest of the room. */
+  .skill { display: inline-flex; align-items: center; gap: .3em; height: 1.45em; padding: 0 .45em 0 .38em; border-radius: .42em; background: var(--wash-strong); color: var(--accent); font-weight: 500; vertical-align: -.22em; line-height: 1; white-space: nowrap; position: relative; cursor: default; user-select: all; }
+  .skill svg { width: 1.05em; height: 1.05em; flex: none; }
+  .skill[data-sel] { outline: 1.5px solid var(--accent); outline-offset: 1px; }
+  .tip { position: fixed; z-index: 30; max-width: 320px; padding: 9px 11px; border: 1px solid var(--field-border); border-radius: 10px; background: var(--panel); box-shadow: 0 10px 30px var(--shadow); color: var(--text-2); font-size: 13px; line-height: 1.45; pointer-events: none; }
+  .tip b { display: block; color: var(--text); font-weight: 500; margin-bottom: 2px; }
+  .tip span { color: var(--muted); font-size: 12px; }
+
+  .footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
+  .meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: 1px solid var(--field-border); border-radius: 999px; color: var(--text-2); font-size: 13px; }
+  .send { width: 30px; height: 30px; border-radius: 50%; border: 0; background: var(--accent); color: var(--accent-ink); font-size: 16px; cursor: pointer; }
+
+  .picker { position: absolute; left: -1px; right: -1px; bottom: calc(100% + 6px); z-index: 4; padding: 6px; border: 1px solid var(--field-border); border-radius: 14px; background: var(--field); box-shadow: 0 16px 48px var(--shadow); }
+  .picker ul { list-style: none; margin: 0; padding: 0; }
+  .picker li { display: grid; grid-template-columns: max-content 1fr auto; gap: 12px; align-items: center; padding: 8px; border-radius: 8px; cursor: pointer; }
+  .picker li[data-active] { background: var(--wash); }
+  .picker .name { display: inline-flex; align-items: center; gap: 7px; font-size: 14px; color: var(--text); }
+  .picker .name svg { width: 15px; height: 15px; color: var(--accent); }
+  .picker .desc { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .picker .scope { padding: 1px 7px; border: 1px solid var(--hairline); border-radius: 999px; color: var(--text-2); font-size: 12px; }
+  .picker .foot { border-top: 1px solid var(--hairline); margin-top: 4px; padding: 6px 8px 0; color: var(--muted); font-size: 12px; }
+
+  .state { margin-top: 28px; padding: 12px 14px; border: 1px dashed var(--hairline); border-radius: 10px; font-family: var(--mono); font-size: 12px; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .state b { color: var(--text-2); font-weight: 500; }
+
+  .switcher { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 50; display: flex; align-items: center; gap: 4px; padding: 6px; border-radius: 999px; background: #fff200; color: #111; font: 600 13px system-ui, sans-serif; box-shadow: 0 6px 24px rgba(0,0,0,.45); }
+  .switcher button { height: 30px; min-width: 30px; padding: 0 10px; border: 0; border-radius: 999px; background: #111; color: #fff200; font: inherit; cursor: pointer; white-space: nowrap; }
+  .switcher span { padding: 0 10px; min-width: 200px; text-align: center; white-space: nowrap; }
+  @media (max-width: 600px) {
+    .editor { font-size: 16px; }
+    .switcher { max-width: calc(100vw - 16px); }
+    .switcher span { min-width: 0; max-width: 170px; overflow: hidden; text-overflow: ellipsis; }
+    .picker .desc { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <p class="intro"><b>Prototype.</b> Which symbol should lead a chosen skill? Type <b>/</b> at the start of a line, or <b>$</b> anywhere, and pick a skill. The skill becomes one pill: Backspace removes it whole, and hovering shows what it does. Press the send button to see it in a sent message. The dashed box shows the text the provider receives.</p>
+  <div id="variant-head"></div>
+  <div class="transcript" id="transcript"><span class="label">…the thread’s transcript sits here…</span></div>
+  <form class="prompt" id="prompt" onsubmit="return false">
+    <div id="picker-slot"></div>
+    <div class="editor" id="editor" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Prompt" data-placeholder="Ask Claude Code to do something" spellcheck="false"></div>
+    <div class="footer">
+      <div class="meta"><span class="chip">📎</span><span class="chip">✳ Opus 5.5 ▾</span><span class="chip">High ▾</span><span class="chip">Full access ▾</span></div>
+      <button type="button" class="send" id="send" aria-label="Send prompt">↑</button>
+    </div>
+  </form>
+  <div class="state" id="state"></div>
+</div>
+<div class="tip" id="tip" hidden></div>
+<div class="switcher" role="toolbar" aria-label="Prototype variants">
+  <button type="button" id="prev" aria-label="Previous variant">←</button>
+  <span id="label"></span>
+  <button type="button" id="next" aria-label="Next variant">→</button>
+  <button type="button" id="theme">Light</button>
+</div>
+<script>
+const svg = paths => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`
+// Lucide icons, the set Sotto already uses.
+const ICONS = {
+  A: { title: 'Cube', icon: svg('<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>'),
+    note: 'T3 Code’s skill glyph (Lucide Box): a skill is a packaged thing you add to the message. Reads as a component rather than an action.' },
+  B: { title: 'Sparkles', icon: svg('<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/>'),
+    note: 'The common “AI does something special here” mark. Friendly and easy to spot, but used everywhere for everything, so it says least about what a skill is.' },
+  C: { title: 'Book', icon: svg('<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>'),
+    note: 'A skill is a written set of instructions the agent reads (a SKILL.md), so an open book says what it actually is. Quieter than sparkles.' },
+  D: { title: 'Wand', icon: svg('<path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"/><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M19 14v4"/><path d="M10 2v2"/><path d="M7 8H3"/><path d="M21 16h-4"/><path d="M11 3H9"/>'),
+    note: 'A skill as a move the agent performs. The longest, most detailed glyph of the four, so it is the busiest at text size.' },
+}
+const CATALOG = [
+  { name: 'zach-mode', desc: 'Work the way Zach likes: ask first, prototype UI, prove it in the app.', scope: 'Personal' },
+  { name: 'code-review', desc: 'Two-axis review of the changes since a fixed point.', scope: 'Personal' },
+  { name: 'prove-it', desc: 'Check work yourself on the real surface before calling it done.', scope: 'Personal' },
+  { name: 'prototype', desc: 'Build a throwaway prototype to answer a design question.', scope: 'Personal' },
+  { name: 'tastify', desc: 'A design pass over a UI change.', scope: 'Project' },
+  { name: 'ship', desc: 'Pull request, CI, review comments, merge and release.', scope: 'Personal' },
+]
+const keys = Object.keys(ICONS)
+let variant = keys.includes(new URLSearchParams(location.search).get('variant')) ? new URLSearchParams(location.search).get('variant') : 'A'
+let picker = null, active = 0
+const editor = document.getElementById('editor')
+const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+function pill(skill) {
+  const el = document.createElement('span')
+  el.className = 'skill'; el.contentEditable = 'false'; el.dataset.skill = skill.name
+  el.setAttribute('role', 'img'); el.setAttribute('aria-label', `Skill ${skill.name}: ${skill.desc}`)
+  el.innerHTML = ICONS[variant].icon + esc(skill.name)
+  return el
+}
+function pillHtml(name) { return `<span class="skill">${ICONS[variant].icon}${esc(name)}</span>` }
+
+// What the provider receives: each pill written back as its native token.
+function serialize(root) {
+  let out = ''
+  root.childNodes.forEach(n => {
+    if (n.nodeType === 3) out += n.textContent
+    else if (n.dataset?.skill) out += `/${n.dataset.skill}`
+    else if (n.nodeName === 'BR') out += '\n'
+    else if (n.nodeName === 'DIV') out += (out && !out.endsWith('\n') ? '\n' : '') + serialize(n)
+    else out += n.textContent
+  })
+  return out
+}
+const skillsIn = root => [...root.querySelectorAll('.skill')].map(el => el.dataset.skill)
+
+function detect() {
+  const sel = getSelection()
+  if (!sel.rangeCount || !sel.isCollapsed || !editor.contains(sel.anchorNode)) return null
+  const node = sel.anchorNode
+  if (node.nodeType !== 3) return null
+  const before = node.textContent.slice(0, sel.anchorOffset)
+  const prev = node.previousSibling
+  const lineStart = !prev || prev.nodeName === 'BR' || prev.nodeName === 'DIV'
+  let m = /^\/(\S*)$/.exec(before)
+  if (m && lineStart) return { node, start: 0, end: sel.anchorOffset, query: m[1] }
+  m = /(^|\s)\$(\S*)$/.exec(before)
+  if (m) return { node, start: sel.anchorOffset - m[2].length - 1, end: sel.anchorOffset, query: m[2] }
+  return null
+}
+const options = () => { const q = (picker?.query ?? '').toLowerCase(); return CATALOG.filter(s => s.name.includes(q) || s.desc.toLowerCase().includes(q)) }
+
+function renderPicker() {
+  const slot = document.getElementById('picker-slot')
+  if (!picker) { slot.innerHTML = ''; return }
+  const opts = options()
+  slot.innerHTML = `<div class="picker"><ul role="listbox" aria-label="Skills">${opts.map((s, i) => `<li role="option" data-i="${i}" ${i === active ? 'data-active aria-selected="true"' : ''}><span class="name">${ICONS[variant].icon}${s.name}</span><span class="desc">${esc(s.desc)}</span><span class="scope">${s.scope}</span></li>`).join('') || '<li>No skills match.</li>'}</ul><div class="foot">Enter or Tab chooses the skill · Esc closes</div></div>`
+  slot.querySelectorAll('li[data-i]').forEach(li => {
+    li.addEventListener('mousedown', e => e.preventDefault())
+    li.addEventListener('click', () => choose(Number(li.dataset.i)))
+  })
+}
+
+function choose(i) {
+  const s = options()[i]; if (!s || !picker) return
+  const { node, start, end } = picker
+  const after = node.splitText(end)
+  node.textContent = node.textContent.slice(0, start)
+  const p = pill(s)
+  after.parentNode.insertBefore(p, after)
+  if (!after.textContent.startsWith(' ')) after.textContent = ' ' + after.textContent
+  const r = document.createRange(); r.setStart(after, 1); r.collapse(true)
+  const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r)
+  picker = null; renderPicker(); showState()
+}
+
+function refresh() {
+  const t = detect()
+  if (!t) picker = null
+  else { if (!picker || picker.start !== t.start || picker.query !== t.query) active = 0; picker = t }
+  renderPicker(); showState()
+}
+
+function showState() {
+  const text = serialize(editor).replace(/ /g, ' ')
+  document.getElementById('state').innerHTML = `<b>variant</b> ${variant} (${ICONS[variant].title})\n<b>skills</b> ${JSON.stringify(skillsIn(editor))}\n<b>sent text</b> ${esc(JSON.stringify(text))}`
+}
+
+editor.addEventListener('input', refresh)
+editor.addEventListener('keyup', e => { if (!['ArrowUp', 'ArrowDown', 'Enter', 'Tab', 'Escape'].includes(e.key)) refresh() })
+editor.addEventListener('click', refresh)
+editor.addEventListener('keydown', e => {
+  if (picker) {
+    const n = options().length
+    if (e.key === 'ArrowDown' && n) { e.preventDefault(); active = (active + 1) % n; renderPicker(); return }
+    if (e.key === 'ArrowUp' && n) { e.preventDefault(); active = (active - 1 + n) % n; renderPicker(); return }
+    if ((e.key === 'Enter' || e.key === 'Tab') && n) { e.preventDefault(); choose(active); return }
+    if (e.key === 'Escape') { e.preventDefault(); picker = null; renderPicker(); return }
+  }
+  if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); document.execCommand('insertLineBreak'); return }
+  if (e.key === 'Enter') { e.preventDefault(); send(); return }
+  // Backspace straight after a pill takes the whole pill, in every browser.
+  if (e.key === 'Backspace') {
+    const sel = getSelection(); if (!sel.isCollapsed) return
+    let { anchorNode: node, anchorOffset: off } = sel
+    let prev = null
+    if (node.nodeType === 3 && off === 0) prev = node.previousSibling
+    else if (node.nodeType === 3 && off === 1 && /^[\s ]/.test(node.textContent) && node.previousSibling?.classList?.contains('skill')) { node.textContent = node.textContent.slice(1); prev = node.previousSibling }
+    else if (node === editor && off > 0) prev = editor.childNodes[off - 1]
+    if (prev?.classList?.contains('skill')) { e.preventDefault(); prev.remove(); refresh() }
+  }
+})
+
+// Hover: what the skill does.
+const tip = document.getElementById('tip')
+document.addEventListener('mouseover', e => {
+  const el = e.target.closest?.('.skill[data-skill]')
+  if (!el) { tip.hidden = true; return }
+  const s = CATALOG.find(x => x.name === el.dataset.skill)
+  tip.innerHTML = `<b>${esc(s.name)}</b>${esc(s.desc)}<br><span>${s.scope} skill · sent as /${esc(s.name)}</span>`
+  tip.hidden = false
+  const r = el.getBoundingClientRect()
+  tip.style.left = `${Math.max(8, Math.min(r.left, innerWidth - tip.offsetWidth - 8))}px`
+  tip.style.top = `${r.top - tip.offsetHeight - 8}px`
+})
+
+function send() {
+  if (!serialize(editor).trim()) return
+  const bubble = document.createElement('div'); bubble.className = 'sent'
+  bubble.append(...[...editor.cloneNode(true).childNodes])
+  bubble.querySelectorAll('.skill').forEach(el => el.removeAttribute('contenteditable'))
+  document.getElementById('transcript').append(bubble)
+  editor.innerHTML = ''; picker = null; renderPicker(); showState(); editor.focus()
+}
+document.getElementById('send').addEventListener('click', send)
+
+function setVariant(next) {
+  variant = next
+  document.querySelectorAll('.skill').forEach(el => { el.innerHTML = ICONS[variant].icon + esc(el.dataset.skill ?? el.textContent) })
+  const url = new URL(location.href); url.searchParams.set('variant', variant); history.replaceState(null, '', url)
+  render()
+}
+function render() {
+  const v = ICONS[variant]
+  document.getElementById('label').textContent = `${variant} — ${v.title}`
+  document.getElementById('variant-head').innerHTML = `<h2 class="variant-title">${v.icon}${variant}. ${v.title}</h2><p class="variant-note">${v.note}</p>`
+  renderPicker(); showState()
+}
+const go = step => setVariant(keys[(keys.indexOf(variant) + step + keys.length) % keys.length])
+document.getElementById('prev').addEventListener('click', () => go(-1))
+document.getElementById('next').addEventListener('click', () => go(1))
+document.getElementById('theme').addEventListener('click', e => {
+  const light = document.documentElement.dataset.theme !== 'light'
+  document.documentElement.dataset.theme = light ? 'light' : 'dark'
+  e.currentTarget.textContent = light ? 'Dark' : 'Light'
+})
+addEventListener('keydown', e => {
+  if (e.target.closest?.('[contenteditable="true"], textarea, input')) return
+  if (e.key === 'ArrowLeft') go(-1)
+  if (e.key === 'ArrowRight') go(1)
+})
+
+// Start with one skill chosen and one sent, so each symbol shows in both places at once.
+const sentBubble = document.createElement('div'); sentBubble.className = 'sent'
+sentBubble.innerHTML = `${'<span class="skill" data-skill="code-review"></span>'} the branch before I open the PR`
+document.getElementById('transcript').append(sentBubble)
+editor.append(pill(CATALOG[0]), document.createTextNode(' tighten the skills picker copy'))
+setVariant(variant)
+</script>
+</body>
+</html>

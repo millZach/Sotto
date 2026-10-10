@@ -1,3 +1,4 @@
+import { promptField } from './support/prompt'
 /**
  * Early start (#769, ADR-0057) in the built app. The real Claude adapter runs over the fake CLI in `tests/fixtures/`
  * (`SOTTO_E2E_NATIVE_FIXTURE_ROOT` in `src/main/index.ts`). Typing in a new thread's composer starts the CLI its first
@@ -57,7 +58,7 @@ test('typing in a new Claude thread starts its CLI before Send, and Send starts 
     // Nothing has started for a thread whose first send has not happened.
     expect(await launches(claude)).toEqual([])
 
-    const prompt = pane.getByRole('textbox', { name: 'Prompt' })
+    const prompt = promptField(pane)
     await prompt.click()
     await page.keyboard.type('Synthetic early start prompt')
     // The first keystrokes started the CLI the first send will use, and Claude Code has no session for it yet.

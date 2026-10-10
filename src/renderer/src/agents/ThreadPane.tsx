@@ -172,7 +172,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     if (performance.now() > pending.until) { handoff.current = null; return }
     // The managed composer follows main's selection; until main confirms this thread, it may belong to another.
     if (pending.managed !== managed || pending.focused && !focused || managed && state.activeThreadId !== thread.id) return
-    const fallback = compose.current?.querySelector<HTMLElement>('textarea:not(:disabled), button:not(:disabled)')
+    const fallback = compose.current?.querySelector<HTMLElement>('.prompt-editor[contenteditable="true"], textarea:not(:disabled), button:not(:disabled)')
     const target = (managed ? focused ? document.getElementById('agent-prompt') : null : document.getElementById(promptId)) ?? fallback
     if (!target || target.matches(':disabled')) return
     handoff.current = null
@@ -204,7 +204,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     handoff.current = pending
     // The activated button disables while this waits. Focus moves to this thread's composer now, so it stays there if the
     // handoff is refused; a user who has moved elsewhere by then keeps their place.
-    if (head.current?.contains(document.activeElement)) compose.current?.querySelector<HTMLElement>('textarea:not(:disabled)')?.focus()
+    if (head.current?.contains(document.activeElement)) compose.current?.querySelector<HTMLElement>('.prompt-editor[contenteditable="true"], textarea:not(:disabled)')?.focus()
     setHandingOff(true)
     void request().then(result => { if ((result === null || result.error !== null) && handoff.current === pending) handoff.current = null },
       () => { if (handoff.current === pending) handoff.current = null }).finally(() => setHandingOff(false))

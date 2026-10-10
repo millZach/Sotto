@@ -1,3 +1,4 @@
+import { fillPrompt, promptField } from './support/prompt'
 import { agentState } from './support/agentAccess'
 import { ownedE2EProfile } from './support/e2eProfile'
 import { randomUUID } from 'node:crypto'
@@ -70,9 +71,9 @@ test('a Claude thread shows its thinking as a row before the first reply text', 
       return thread.activeThreadId!
     }, project)
     await openThreads(page)
-    const composer = page.getByRole('textbox', { name: 'Prompt', exact: true })
+    const composer = promptField(page)
     await expect(composer).toBeEditable()
-    await composer.fill('Why does the parser keep the newline?')
+    await fillPrompt(composer, 'Why does the parser keep the newline?')
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
     const transcript = page.getByLabel('Thread transcript')
     await expect(transcript).toContainText('Why does the parser keep the newline?')

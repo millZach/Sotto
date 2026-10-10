@@ -1,3 +1,4 @@
+import { expectPromptText, promptField } from './support/prompt'
 import { agentState } from './support/agentAccess'
 import { mkdir } from 'node:fs/promises'
 import { expect, test, type Page } from '@playwright/test'
@@ -104,7 +105,7 @@ test('drafts save, settings stay and a model can be picked after a reconnect, wi
     // 1. Type in a thread's composer and see the draft save.
     await page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: 'Grok voice previews', exact: true }).click()
     const start = await settled(page, traffic)
-    const input = page.locator('#thread-workspace-prompt')
+    const input = promptField(page)
     await input.pressSequentially('Draft kept by a command receipt', { delay: 15 })
     // Draft saves are debounced: wait for main to answer the save of the whole text, and for the page to take it.
     const typed = await settled(page, traffic, seen => seen.lastDraft === 'Draft kept by a command receipt')
@@ -119,7 +120,7 @@ test('drafts save, settings stay and a model can be picked after a reconnect, wi
     await page.screenshot({ path: `${ARTIFACTS}/draft-saved.png`, animations: 'disabled' })
     await page.reload()
     await openThreads(page)
-    await expect(page.locator('#thread-workspace-prompt')).toHaveValue('Draft kept by a command receipt')
+    await expectPromptText(promptField(page), 'Draft kept by a command receipt')
     await expect(page.getByRole('alert')).toHaveCount(0)
 
     // 2. Change a setting and see the card keep it once its receipt has come back.

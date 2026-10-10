@@ -1,3 +1,4 @@
+import { promptField } from './support/prompt'
 import { buildSshHost } from './support/sshHost'
 import { ownedE2EProfile } from './support/e2eProfile'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
@@ -64,7 +65,7 @@ test('opening a remote thread keeps a disabled voice coordinator dormant', async
     await expect.poll(() => page.evaluate(async () => (await window.sotto!.agents!.get()).activeThreadId)).toBe(localThread)
     await page.getByRole('button', { name: 'Remote voice regression', exact: true }).click()
     await expect.poll(() => page.evaluate(async () => (await window.sotto!.agents!.get()).activeThreadId)).toBe(remoteThread)
-    await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toBeVisible()
+    await expect(promptField(page)).toBeVisible()
     expect(await page.evaluate(async () => (await window.sotto!.agents!.get()).error)).toBeNull()
     await expect(page.getByText(REMOTE_PERMISSION_DENIED)).toHaveCount(0)
     await expect(page.locator('.thread-workspace__error')).toHaveCount(0)

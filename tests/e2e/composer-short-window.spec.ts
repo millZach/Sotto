@@ -1,3 +1,4 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { agentState } from './support/agentAccess'
 import { resizeContentWindow } from './support/sottoWindow'
 import { expect, test, type Locator, type Page } from '@playwright/test'
@@ -50,7 +51,7 @@ async function expectCardWhole(page: Page, threadId: string, submit: RegExp, wit
     const bottom = (target: Element | null | undefined) => target ? Math.round(target.getBoundingClientRect().bottom) : null
     return {
       limit: Math.round(limit), card: bottom(card), image: bottom(image), action: bottom(action), meta: bottom(element.querySelector('.thread-pane__meta')),
-      promptFont: getComputedStyle(card.querySelector('textarea')!).fontSize,
+      promptFont: getComputedStyle(card.querySelector('.prompt-editor, textarea')!).fontSize,
       controls: [...element.querySelectorAll('.thread-workspace__actions .tt-button')].map(button => ({ height: button.getBoundingClientRect().height, font: getComputedStyle(button).fontSize })),
       paneScroll: element.scrollHeight - element.clientHeight, transcript: element.querySelector('[aria-label="Thread transcript"]')!.clientHeight,
     }
@@ -74,7 +75,7 @@ async function expectCardWhole(page: Page, threadId: string, submit: RegExp, wit
 }
 
 async function attachDraft(thread: Locator, prompt: Locator): Promise<void> {
-  await prompt.fill(DRAFT)
+  await fillPrompt(prompt, DRAFT)
   await thread.getByLabel('Screenshot files').setInputFiles({ name: 'draft-image.png', mimeType: 'image/png', buffer: PNG })
   await expect(thread.getByRole('img', { name: 'draft-image.png' })).toBeVisible()
 }
@@ -89,12 +90,12 @@ test('one attached image keeps the prompt and its action above the window edge a
     await openThreads(page)
     await open(page, 'Docs')
     const docs = pane(page, 'docs')
-    const docsManual = docs.locator('form.thread-prompt textarea')
-    await docsManual.fill('Start the long job.')
+    const docsManual = promptField(docs)
+    await fillPrompt(docsManual, 'Start the long job.')
     await docsManual.press('Enter')
     await expect(docs.getByLabel('Thread transcript')).toContainText('Start the long job.')
     for (const text of ['Queued first.', 'Queued second.']) {
-      await docsManual.fill(text)
+      await fillPrompt(docsManual, text)
       // The transcript shows the optimistic send before main admits the running
       // turn. Build the layout fixture only once the next prompt can be queued.
       await expect(docs.getByRole('button', { name: 'Queue prompt', exact: true })).toBeEnabled()
@@ -106,7 +107,7 @@ test('one attached image keeps the prompt and its action above the window edge a
     // Without a queue: manual, then managed.
     await open(page, 'Workshop')
     const workshop = pane(page, 'workshop')
-    await attachDraft(workshop, workshop.locator('form.thread-prompt textarea'))
+    await attachDraft(workshop, promptField(workshop))
     await expectCardWhole(page, 'workshop', /^Send prompt$/u)
     await paneMenuAction(workshop, 'Manage')
     await expect(workshop.locator('#agent-prompt')).toHaveValue(DRAFT)
@@ -115,7 +116,7 @@ test('one attached image keeps the prompt and its action above the window edge a
     await workshop.getByRole('button', { name: 'Clear', exact: true }).click()
     await expect(workshop.locator('#agent-prompt')).toHaveValue('')
     await paneMenuAction(workshop, 'Stop managing')
-    await expect(workshop.locator('form.thread-prompt textarea')).toBeVisible()
+    await expect(promptField(workshop)).toBeVisible()
 
     // With two queued rows: manual, then managed.
     await open(page, 'Docs')
@@ -171,7 +172,7 @@ test('keyboard focus stays put through Write here and a refused Manage', async (
     await sidebar.getByRole('button', { name: 'Workshop', exact: true }).hover()
     await sidebar.getByRole('button', { name: 'Open Workshop beside', exact: true }).click()
     const workshop = pane(page, 'workshop')
-    const workshopPrompt = workshop.locator('form.thread-prompt textarea')
+    const workshopPrompt = promptField(workshop)
     await workshopPrompt.click()
     await expect(workshop).toHaveAttribute('data-focused')
 
@@ -201,7 +202,7 @@ test('keyboard focus stays put through Write here and a refused Manage', async (
 
     // Keyboard Manage on Workshop while main holds the assign and then refuses it.
     await workshopPrompt.click()
-    await workshopPrompt.fill('Workshop draft kept through a refusal.')
+    await fillPrompt(workshopPrompt, 'Workshop draft kept through a refusal.')
     // The renderer names the thread by its host key; main's router strips it after this handler.
     await launched.app.evaluate(({ ipcMain }, workshopKey) => {
       const handlers = (ipcMain as unknown as { _invokeHandlers: Map<string, (event: unknown, payload: { type?: string; threadId?: string }) => unknown> })._invokeHandlers
@@ -231,7 +232,7 @@ test('keyboard focus stays put through Write here and a refused Manage', async (
     await expect(workshop.locator('.thread-prompt__actions button[type="submit"]')).toBeEnabled({ timeout: 10_000 })
     await page.waitForTimeout(300)
     await expect(workshopPrompt).toBeFocused()
-    await expect(workshopPrompt).toHaveValue('Workshop draft kept through a refusal.')
+    await expectPromptText(workshopPrompt, 'Workshop draft kept through a refusal.')
     expect(await bodyFrames(page)).toBe(0)
     const assigned = (await agents(page)).assignments.map(item => item.threadId)
     expect(assigned).not.toContain(hostEntityKey(hostId, 'workshop'))

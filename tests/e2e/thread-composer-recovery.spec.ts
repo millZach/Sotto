@@ -1,3 +1,4 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { join } from 'node:path'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { expect, test } from '@playwright/test'
@@ -17,24 +18,25 @@ test('permissions keep composer focus and failed answers remain on their own thr
     await page.reload()
     await openThreads(page)
     await page.getByRole('button', { name: 'Workshop', exact: true }).click()
-    const prompt = page.getByRole('textbox', { name: 'Prompt', exact: true })
-    await prompt.fill('Keep this draft')
+    const prompt = promptField(page)
+    await fillPrompt(prompt, 'Keep this draft')
     await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'permission', threadId: 'workshop', requestId: 'focus-permission', text: 'Allow this command?' }))
-    await expect(prompt).toHaveAttribute('readonly', '')
-    await expect(prompt).toBeEnabled()
+    await expect(prompt).toHaveAttribute('contenteditable', 'false')
+    await expect(prompt).toHaveAttribute('aria-disabled', 'true')
     await expect(prompt).toBeFocused()
     await prompt.pressSequentially('blocked')
-    await expect(prompt).toHaveValue('Keep this draft')
+    await expectPromptText(prompt, 'Keep this draft')
     await prompt.press('Enter')
     await expect(page.getByRole('button', { name: 'Send prompt', exact: true })).toBeDisabled()
     await prompt.press('Tab')
     await expect(prompt).not.toBeFocused()
     await page.getByRole('button', { name: 'Allow', exact: true }).click()
-    await expect(prompt).not.toHaveAttribute('readonly')
-    await prompt.fill('Editing resumes')
+    await expect(prompt).toHaveAttribute('contenteditable', 'true')
+    await expect(prompt).not.toHaveAttribute('aria-disabled')
+    await fillPrompt(prompt, 'Editing resumes')
     await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'question', threadId: 'workshop', requestId: 'recovery-question', text: 'Which direction?' }))
-    const answer = page.getByRole('textbox', { name: 'Your answer', exact: true })
-    await answer.fill('Go left')
+    const answer = promptField(page, 'Your answer')
+    await fillPrompt(answer, 'Go left')
     await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'reject', threadId: 'workshop', text: 'The answer was refused.' }))
     await answer.press('Enter')
     const failure = page.getByRole('alert').filter({ hasText: 'The answer was refused. It is back in the composer.' })
@@ -43,7 +45,7 @@ test('permissions keep composer focus and failed answers remain on their own thr
     await expect(failure).toHaveCount(0)
     await page.getByRole('button', { name: 'Workshop', exact: true }).click()
     await expect(failure).toContainText('The answer was refused.')
-    await expect(answer).toHaveValue('Go left')
+    await expectPromptText(answer, 'Go left')
     for (const appearance of ['dark', 'light'] as const) {
       await page.evaluate(async appearance => window.sotto!.updateSettings({ appearance }), appearance)
       for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]]) {
@@ -54,7 +56,7 @@ test('permissions keep composer focus and failed answers remain on their own thr
         await page.screenshot({ animations: 'disabled', path: join(evidence, `pkg-43-${appearance}-${width}.png`) })
       }
     }
-    await answer.fill('Go right')
+    await fillPrompt(answer, 'Go right')
     await expect(failure).toHaveCount(0)
     await answer.press('Enter')
     await expect(answer).toHaveCount(0)

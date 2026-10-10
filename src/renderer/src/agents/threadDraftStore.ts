@@ -530,7 +530,8 @@ export class ThreadDraftStore {
       current.saving = null
       const status = result === null ? 'unsaved' : persistence(result, threadId, draft.draftId)
       current.saved ||= status === 'saved'
-      if (current.saved) current.observed = true
+      // The reply proves persistence, not that the snapshot stream has reached this revision.
+      // An older shell can still commit afterward; only receive() may mark it observed.
       current.error = current.saved || status === 'saving' ? null : SAVE_ERROR
       this.emit(new Set([threadId]))
     }

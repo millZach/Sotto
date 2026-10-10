@@ -100,7 +100,7 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 
 **Computer Use.** Codex's own tool for seeing and operating the apps on the computer, named as Codex names it. In a Codex thread it works only in Full access and while the Codex desktop app is open; its calls show in the thread activity as Computer Use, and a recognised failure shows guidance. A native pipe failure means the connection to the app helper is unavailable, even if the app is open; it does not prove that no earlier action happened. Sotto relays it and changes nothing about how Codex runs it. Avoid: using it for Sotto's own browser, which is the Tools panel's.
 
-**Native skill.** A reusable instruction set exposed by a provider for a thread's working copy. Selecting a skill adds reviewed text and a provider-recognized reference to that draft; it neither submits the draft nor grants authority.
+**Native skill.** A reusable instruction set exposed by a provider for a thread's working copy. A chosen skill shows as a pill in the thread's draft, led by a wand. It is sent as its native token and removed whole. Selecting it adds a provider-recognized reference to that draft; it neither submits the draft nor grants authority.
 
 **File mention.** A file of a thread's working copy named in a draft by typing `@` and picking it, like a native skill's `$`: both are mentions, a sigil and a name written into the draft's own text. The mention is the reference — deleting its token removes the file from the send — and it reaches every provider as the same `@path` relative to the working copy. Files outside the working copy, git-administrative entries and paths containing a space are never offered.
 

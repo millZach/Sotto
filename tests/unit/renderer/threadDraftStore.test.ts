@@ -679,6 +679,29 @@ describe('screenshots read for a draft', () => {
 })
 
 describe('ThreadDraftStore.place', () => {
+  it.each(['before', 'after'] as const)('keeps the placed draft when the creation snapshot commits %s the save reply', async order => {
+    const { command, calls, saves } = heldCommand()
+    const store = new ThreadDraftStore(command, 250, uuids())
+    const text = 'The leftover prompt.'
+    // Creation published this shell before the save, but React can still be rendering it
+    // when the save promise settles. Only the later shell shows the placed revision.
+    const creation = baseState({ activeThreadId: 'thread' })
+    const placed = store.place('thread', { text, attachments: [] })
+    const revision = store.draft('thread').draftId
+    const saved = published(saves().at(-1)!, { activeThreadId: 'thread' })
+    if (order === 'before') store.receive(creation)
+    calls.at(-1)!.resolve(saved)
+    await expect(placed).resolves.toBe('saved')
+    expect(store.snapshot('thread').save).toBe('saved')
+    if (order === 'after') store.receive(creation)
+    expect(store.draft('thread')).toMatchObject({ draftId: revision, text })
+    store.receive(saved)
+    expect(store.draft('thread')).toMatchObject({ draftId: revision, text })
+    // Once the snapshot stream has shown this revision, a later external clear wins.
+    store.receive(baseState({ activeThreadId: 'thread' }))
+    expect(store.draft('thread').text).toBe('')
+  })
+
   const leftover = (text: string, attachments: AgentState['draftAttachments'] = []) => ({ text, attachments: attachments ?? [] })
 
   it('puts a leftover draft after what the composer holds and resolves saved only once main saved it', async () => {

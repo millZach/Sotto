@@ -159,7 +159,7 @@ describe('the phone player', () => {
   it('hides on Escape, handing focus back to the composer', async () => {
     const browser = fake(); const store = new ToolsPanelStore(); const phoneStore = new PhonePlayerStore()
     render(<>
-      <section className="thread-pane" data-focused><form className="thread-prompt"><textarea aria-label="Message" /></form></section>
+      <section className="thread-pane" data-focused><form className="thread-prompt"><div className="prompt-editor" role="textbox" contentEditable aria-label="Message" tabIndex={0} /></form></section>
       <PhonePlayer state={threadsStateFixture()} focusedThreadId="visual-gate" bridge={browser.bridge} store={store} phoneStore={phoneStore} />
     </>)
     act(() => store.browser.watchTasks(browser.bridge, ['visual-gate']))

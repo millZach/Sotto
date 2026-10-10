@@ -181,6 +181,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/agents/agents.css',
       'src/renderer/src/agents/modelPicker.css',
       'src/renderer/src/agents/effortPicker.css',
+      'src/renderer/src/agents/skillPill.css',
       'src/renderer/src/agents/threadMonitor.css',
       'src/renderer/src/agents/threadChips.css',
       'src/renderer/src/agents/workingCopy.css',

@@ -1,3 +1,4 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { agentState as state } from './support/agentAccess'
 import { ownedE2EProfile } from './support/e2eProfile'
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
@@ -168,14 +169,14 @@ test('three native providers coexist independently of Sotto reasoning and surviv
         expect(created.host.threads).toHaveLength(index + 1)
         expect(created.assignments).toHaveLength(0)
         expect(created.host.threads.find(thread => thread.id === created.activeThreadId)).toMatchObject({ providerId: provider, modelId: model!.id })
-        await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill(prompt)
+        await fillPrompt(promptField(page), prompt)
         // Persist intent before the paid action. A failed run is investigated or
         // restored without automatically resubmitting uncertain native turns.
         evidence.submittedProviders = [...providers.slice(0, index + 1)]
         await saveEvidence()
         await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
         await expect(page.getByLabel('Thread transcript').locator('[data-role="assistant"]')).toContainText('READY', { timeout: 90_000 })
-        await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('', { timeout: 15_000 })
+        await expectPromptText(promptField(page), '', { timeout: 15_000 })
         await expect(page.getByLabel('Pending message')).toHaveCount(0)
         await expectCompleted(page, provider)
         await page.screenshot({ animations: 'disabled', path: join(artifacts, `${provider}-reply.png`) })

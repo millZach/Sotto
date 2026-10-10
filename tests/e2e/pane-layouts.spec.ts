@@ -1,3 +1,4 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { agentState } from './support/agentAccess'
 import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
 import { resizeContentWindow } from './support/sottoWindow'
@@ -78,7 +79,7 @@ test('three, four and five panes snap, resize, move, zoom and come back after a 
     await openThreads(page)
     const panes = page.getByRole('group', { name: 'Thread panes' })
     const pane = (id: string) => panes.locator(`section.thread-pane[data-thread-id="${key(id)}"]`)
-    const prompt = (id: string) => pane(id).getByRole('textbox', { name: 'Prompt', exact: true })
+    const prompt = (id: string) => promptField(pane(id))
     await expect(pane('grok-previews').getByRole('heading', { name: 'Grok voice previews' })).toBeVisible()
 
     // Two side by side, then a third from another project spans the row below.
@@ -94,9 +95,9 @@ test('three, four and five panes snap, resize, move, zoom and come back after a 
     expect(Math.abs(placed[2]!.width - (placed[0]!.width + placed[1]!.width + 9))).toBeLessThanOrEqual(2)
     await expect(pane('weekly-note').getByText('notes', { exact: true })).toBeVisible()
     await expect(pane('footer-links').locator('.thread-workspace__crumb')).toContainText('sotto-site')
-    await prompt('grok-previews').fill('Grok draft stays with its pane.')
-    await prompt('footer-links').fill('Footer draft stays with its pane.')
-    await prompt('weekly-note').fill('Weekly draft stays with its pane.')
+    await fillPrompt(prompt('grok-previews'), 'Grok draft stays with its pane.')
+    await fillPrompt(prompt('footer-links'), 'Footer draft stays with its pane.')
+    await fillPrompt(prompt('weekly-note'), 'Weekly draft stays with its pane.')
     await capture(page, 'three-1600')
 
     // A single row from the focused pane's controls, and back to the grid with its sizes.
@@ -162,7 +163,7 @@ test('three, four and five panes snap, resize, move, zoom and come back after a 
     expect(placed[3]!.y).toBe(placed[4]!.y)
     expect(placed[3]!.y).toBeGreaterThan(placed[0]!.y)
     expect(placed[0]!.width).toBeGreaterThanOrEqual(400)
-    await expect(prompt('footer-links')).toHaveValue('Footer draft stays with its pane.')
+    await expectPromptText(prompt('footer-links'), 'Footer draft stays with its pane.')
     await capture(page, 'five-1600')
 
     // Five in one row cannot fit here, so one shows at a time with tabs until there is room.
@@ -202,7 +203,7 @@ test('three, four and five panes snap, resize, move, zoom and come back after a 
     await page.keyboard.press('ArrowDown')
     await expect.poll(async () => (await boxes(page)).map(box => box.id)).toEqual(['footer-links', 'visual-gate', 'weekly-note', 'grok-previews'].map(key))
     await expect(grokGrip).toBeFocused()
-    await expect(prompt('grok-previews')).toHaveValue('Grok draft stays with its pane.')
+    await expectPromptText(prompt('grok-previews'), 'Grok draft stays with its pane.')
     const footerGrip = pane('footer-links').getByRole('button', { name: 'Move Footer links pane' })
     const weeklyBox = (await pane('weekly-note').boundingBox())!
     await footerGrip.hover()
@@ -213,7 +214,7 @@ test('three, four and five panes snap, resize, move, zoom and come back after a 
     await page.screenshot({ path: `${SHOTS}/four-move-preview-dark.png`, animations: 'disabled' })
     await page.mouse.up()
     await expect.poll(async () => (await boxes(page)).map(box => box.id)).toEqual(['weekly-note', 'visual-gate', 'footer-links', 'grok-previews'].map(key))
-    await expect(prompt('footer-links')).toHaveValue('Footer draft stays with its pane.')
+    await expectPromptText(prompt('footer-links'), 'Footer draft stays with its pane.')
 
     // Zoom one pane and return to the same arrangement.
     await prompt('footer-links').focus()
@@ -221,7 +222,7 @@ test('three, four and five panes snap, resize, move, zoom and come back after a 
     await expect(panes).toHaveAttribute('data-zoomed')
     await expect(tabs.getByRole('tab', { name: 'Footer links' })).toHaveAttribute('aria-selected', 'true')
     await expect(prompt('footer-links')).toBeFocused()
-    await expect(prompt('footer-links')).toHaveValue('Footer draft stays with its pane.')
+    await expectPromptText(prompt('footer-links'), 'Footer draft stays with its pane.')
     await capture(page, 'four-zoomed-1600')
     await pane('footer-links').getByRole('button', { name: 'Show all panes' }).click()
     await expect(panes).not.toHaveAttribute('data-zoomed')
@@ -250,7 +251,7 @@ test('three, four and five panes snap, resize, move, zoom and come back after a 
     await tabs.getByRole('tab', { name: 'Footer links' }).focus()
     await page.keyboard.press('End')
     await expect(tabs.getByRole('tab', { name: 'Grok voice previews' })).toHaveAttribute('aria-selected', 'true')
-    await expect(prompt('grok-previews')).toHaveValue('Grok draft stays with its pane.')
+    await expectPromptText(prompt('grok-previews'), 'Grok draft stays with its pane.')
     await page.keyboard.press('Home')
     await expect(tabs.getByRole('tab', { name: 'Weekly note' })).toHaveAttribute('aria-selected', 'true')
 
@@ -278,7 +279,7 @@ test('three, four and five panes snap, resize, move, zoom and come back after a 
     await page.evaluate(async () => window.sotto!.updateSettings({ reducedMotion: 'system' }))
 
     // Restart: the same threads, order, arrangement, sizes, focus and drafts, with no new work.
-    await prompt('weekly-note').fill('Weekly draft survives the restart.')
+    await fillPrompt(prompt('weekly-note'), 'Weekly draft survives the restart.')
     await prompt('grok-previews').click()
     await expect(pane('grok-previews')).toHaveAttribute('data-focused')
     await rowsDivider.focus()
@@ -309,8 +310,8 @@ test('three, four and five panes snap, resize, move, zoom and come back after a 
     expect((await boxes(page)).map(box => box.id)).toEqual(order)
     await expect(restored.locator(`section.thread-pane[data-thread-id="${key('grok-previews')}"]`)).toHaveAttribute('data-focused')
     await expect.poll(() => dividers(page)).toEqual(sizes)
-    await expect(restored.locator(`section.thread-pane[data-thread-id="${key('weekly-note')}"]`).getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('Weekly draft survives the restart.')
-    await expect(restored.locator(`section.thread-pane[data-thread-id="${key('grok-previews')}"]`).getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('Grok draft stays with its pane.')
+    await expectPromptText(promptField(restored.locator(`section.thread-pane[data-thread-id="${key('weekly-note')}"]`)), 'Weekly draft survives the restart.')
+    await expectPromptText(promptField(restored.locator(`section.thread-pane[data-thread-id="${key('grok-previews')}"]`)), 'Grok draft stays with its pane.')
     const after = await agents(page)
     expect(after.assignments).toHaveLength(0)
     expect(userMessages(after)).toEqual(userMessages(before))

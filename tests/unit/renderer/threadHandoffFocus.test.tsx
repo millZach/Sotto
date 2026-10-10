@@ -1,3 +1,4 @@
+import { promptText, setPromptText } from './helpers/promptEditor'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -72,7 +73,7 @@ describe('management handoff focus', () => {
   it('saves the latest typing before Manage, focuses the managed composer showing it, and Stop managing focuses the manual prompt', async () => {
     const view = mount()
     const prompt = within(view.pane()).getByRole('textbox', { name: 'Prompt' })
-    fireEvent.change(prompt, { target: { value: 'My unsent manual draft.' } })
+    setPromptText(prompt, 'My unsent manual draft.')
     const manage = paneMenuItem(view.pane(), 'Manage')
     manage.focus()
     await act(async () => { fireEvent.click(manage) })
@@ -92,7 +93,7 @@ describe('management handoff focus', () => {
     const manual = within(view.pane()).getByRole('textbox', { name: 'Prompt' })
     expect(manual).not.toHaveAttribute('id', 'agent-prompt')
     await waitFor(() => expect(manual).toHaveFocus())
-    expect(manual).toHaveValue('My unsent manual draft.')
+    expect(promptText(manual)).toBe('My unsent manual draft.')
   })
 
   it('while Manage waits for the save, this thread cannot submit or settle, another pane can, and a failed save keeps the manual draft', async () => {
@@ -102,7 +103,7 @@ describe('management handoff focus', () => {
     const prompt = within(view.pane()).getByRole('textbox', { name: 'Prompt' })
     await act(async () => { prompt.focus() })
     await waitFor(() => expect(view.live.state.activeThreadId).toBe(THREAD))
-    fireEvent.change(prompt, { target: { value: 'Held manual draft.' } })
+    setPromptText(prompt, 'Held manual draft.')
     const held = paneMenuItem(view.pane(), 'Manage')
     await act(async () => { fireEvent.click(held) })
     await waitFor(() => expect(view.live.heldSaves.some(item => item.command.text === 'Held manual draft.')).toBe(true))
@@ -121,14 +122,14 @@ describe('management handoff focus', () => {
     expect(prompt).toBeEnabled()
     // The other pane is not held.
     const other = within(screen.getByRole('region', { name: 'Streaming WAV stall' }))
-    fireEvent.change(other.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Other pane prompt.' } })
+    setPromptText(other.getByRole('textbox', { name: 'Prompt' }), 'Other pane prompt.')
     expect(other.getByRole('button', { name: 'Send prompt' })).toBeEnabled()
     expect(within(openPaneMenu(screen.getByRole('region', { name: 'Streaming WAV stall' }))).getByRole('menuitem', { name: 'Settle' })).toBeEnabled()
 
     await act(async () => { for (const save of view.live.heldSaves.splice(0)) save.finish('Could not write the draft.') })
     expect(view.command.mock.calls.map(([request]) => request.type)).not.toContain('assign')
     expect(view.live.state.assignments).toEqual([])
-    expect(within(view.pane()).getByRole('textbox', { name: 'Prompt' })).toHaveValue('Held manual draft.')
+    expect(promptText(within(view.pane()).getByRole('textbox', { name: 'Prompt' }))).toBe('Held manual draft.')
     expect(within(view.pane()).getByRole('textbox', { name: 'Prompt' })).not.toHaveAttribute('id', 'agent-prompt')
     const released = openPaneMenu(view.pane())
     expect(within(released).getByRole('menuitem', { name: 'Manage' })).toBeEnabled()
@@ -143,7 +144,7 @@ describe('management handoff focus', () => {
     const prompt = within(view.pane()).getByRole('textbox', { name: 'Prompt' })
     await act(async () => { prompt.focus() })
     await waitFor(() => expect(view.live.state.activeThreadId).toBe(THREAD))
-    fireEvent.change(prompt, { target: { value: 'Keyboard manual draft.' } })
+    setPromptText(prompt, 'Keyboard manual draft.')
     // Held, then refused: choosing Manage with the keyboard leaves focus in this thread's prompt throughout.
     const manage = paneMenuItem(view.pane(), 'Manage')
     await act(async () => { manage.focus() })
@@ -154,7 +155,7 @@ describe('management handoff focus', () => {
     expect(view.live.manualSends()).toBe(0)
     await act(async () => { for (const save of view.live.heldSaves.splice(0)) save.finish('Could not write the draft.') })
     expect(document.activeElement).toBe(prompt)
-    expect(prompt).toHaveValue('Keyboard manual draft.')
+    expect(promptText(prompt)).toBe('Keyboard manual draft.')
     expect(view.live.state.assignments).toEqual([])
 
     // Held again, but the user moves to the other pane before the failure: focus stays where they went.
@@ -168,8 +169,8 @@ describe('management handoff focus', () => {
     await user.keyboard('Other pane typing')
     await act(async () => { for (const save of view.live.heldSaves.splice(0)) save.finish('Could not write the draft.') })
     expect(document.activeElement).toBe(other)
-    expect(other).toHaveValue('Other pane typing')
-    expect(within(view.pane()).getByRole('textbox', { name: 'Prompt' })).toHaveValue('Keyboard manual draft.')
+    expect(promptText(other)).toBe('Other pane typing')
+    expect(promptText(within(view.pane()).getByRole('textbox', { name: 'Prompt' }))).toBe('Keyboard manual draft.')
     expect(within(openPaneMenu(view.pane())).getByRole('menuitem', { name: 'Manage' })).toBeEnabled()
   })
 
@@ -207,7 +208,7 @@ describe('composer focus after a button send', () => {
   it('returns focus to the prompt after Steer now empties the draft', async () => {
     const view = mount({ running: true, capabilities: { steer: true } })
     const prompt = within(view.pane()).getByRole('textbox', { name: 'Prompt' })
-    fireEvent.change(prompt, { target: { value: 'Use the smaller fixture instead.' } })
+    setPromptText(prompt, 'Use the smaller fixture instead.')
     const steer = within(view.pane()).getByRole('button', { name: 'Steer now' })
     steer.focus()
     await act(async () => { fireEvent.click(steer) })
@@ -225,7 +226,7 @@ describe('queue arrival', () => {
       const queue = within(view.pane()).getByRole('region', { name: 'Queued messages' })
       expect(within(queue).getByRole('button', { name: /Queued 3/ })).toHaveAttribute('aria-expanded', 'false')
       const prompt = within(view.pane()).getByRole('textbox', { name: 'Prompt' })
-      fireEvent.change(prompt, { target: { value: 'Also update the changelog' } })
+      setPromptText(prompt, 'Also update the changelog')
       await act(async () => { fireEvent.keyDown(prompt, { key: 'Enter' }) })
       await waitFor(() => expect(within(queue).getByRole('button', { name: /Queued 4/ })).toHaveTextContent('Added'))
       expect(within(queue).getByRole('button', { name: /Queued 4/ })).toHaveTextContent('Also update the changelog')

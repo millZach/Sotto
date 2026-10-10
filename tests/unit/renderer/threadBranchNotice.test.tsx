@@ -1,3 +1,4 @@
+import { setPromptText } from './helpers/promptEditor'
 import React from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -144,7 +145,7 @@ describe('a thread pane whose worktree moved', () => {
     expect(screen.queryByText(/Branch changed/u)).toBeNull()
     const reads = (): AgentCommand[] => live.command.mock.calls.map(([request]) => request).filter(request => request.type === 'refresh-thread-worktree')
     expect(reads()).toEqual([])
-    fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Carry on with the migration' } })
+    setPromptText(screen.getByRole('textbox', { name: 'Prompt' }), 'Carry on with the migration')
     await waitFor(() => expect(screen.getByText(/Branch changed, was sotto\/thread-7f1c\./u)).toBeInTheDocument())
     // A switch made in a terminal leaves no activity behind, so the draft itself asks for a fresh read.
     expect(reads()).toEqual([{ type: 'refresh-thread-worktree', threadId: THREAD, background: true }])
