@@ -2,9 +2,12 @@ import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
+import { evidenceDirectory } from '../fixtures/evidence'
 import { expect, test } from '@playwright/test'
 import { bareEntityId, closeSotto, launchSotto, openThreads, resizeWindow } from './support/sottoLaunch'
 import { TERMINAL_CHANNEL, TERMINAL_LIMIT_MESSAGE, terminalSessionSchema } from '../../src/shared/terminal'
+
+const terminalTruthsEvidence = evidenceDirectory('artifacts/terminal-truths')
 
 for (const place of ['tools', 'drawer'] as const) {
   test(`${place} startup names a checkout operation and keeps retry available`, async () => {
@@ -13,7 +16,7 @@ for (const place of ['tools', 'drawer'] as const) {
     try {
       await page.evaluate(async () => {
         await window.sotto!.updateSettings({ onboardingComplete: true, reducedMotion: 'on' })
-        await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+        await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true } })
         await window.sotto!.agents!.command({ type: 'connect' })
       })
       // Script the reservation response at IPC; service regressions exercise the actual checkout guard.
@@ -51,8 +54,8 @@ for (const place of ['tools', 'drawer'] as const) {
             expect(contained).toBe(true)
           }
           expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-          await mkdir('artifacts/terminal-truths', { recursive: true })
-          await page.screenshot({ path: `artifacts/terminal-truths/busy-${place}-${width}-${appearance}.png`, animations: 'disabled' })
+          await mkdir(terminalTruthsEvidence, { recursive: true })
+          await page.screenshot({ path: join(terminalTruthsEvidence, `busy-${place}-${width}-${appearance}.png`), animations: 'disabled' })
         }
       }
       await launched.app.evaluate(({ ipcMain }, channel) => {
@@ -75,7 +78,7 @@ test('each provider exits to an interactive shell and Close reclaims a native wo
   try {
     const project = await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true, reducedMotion: 'on' })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true } })
       const state = await window.sotto!.agents!.command({ type: 'connect' })
       return state.host.projects[0]!
     })
@@ -120,10 +123,10 @@ test('each provider exits to an interactive shell and Close reclaims a native wo
       const ready = await read()
       expect(ready.terminal.workingDirectory.startsWith(launched.userData)).toBe(true)
       expect(ready.output).toContain(ready.terminal.workingDirectory)
-      await mkdir('artifacts/terminal-truths', { recursive: true })
+      await mkdir(terminalTruthsEvidence, { recursive: true })
       if (provider === 'codex') {
         await resizeWindow(launched, 820, 560)
-        await page.screenshot({ path: 'artifacts/terminal-truths/provider-exit-820-dark.png', animations: 'disabled' })
+        await page.screenshot({ path: join(terminalTruthsEvidence, 'provider-exit-820-dark.png'), animations: 'disabled' })
       }
       await page.getByRole('button', { name: `Close ${provider} exit check`, exact: true }).click()
       await expect.poll(async () => (await read()).terminal.worktree?.reclaimedAt).toBeTruthy()
@@ -139,7 +142,7 @@ test('a running Tools shell restores truthfully and the global ended-shell limit
   try {
     await launched.page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'light', reducedMotion: 'on' })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await launched.page.reload(); await openThreads(launched.page)
@@ -177,8 +180,8 @@ test('a running Tools shell restores truthfully and the global ended-shell limit
     }, threadId)
     expect(restored).toMatchObject({ ok: true, value: { output: '', session: { status: 'interrupted' } } })
     await resizeWindow(launched, 820, 560)
-    await mkdir('artifacts/terminal-truths', { recursive: true })
-    await launched.page.screenshot({ path: 'artifacts/terminal-truths/interrupted-820-light.png', animations: 'disabled' })
+    await mkdir(terminalTruthsEvidence, { recursive: true })
+    await launched.page.screenshot({ path: join(terminalTruthsEvidence, 'interrupted-820-light.png'), animations: 'disabled' })
     await panel.getByRole('button', { name: 'Reopen', exact: true }).click()
     await expect(panel.getByText('Nothing it showed was kept.')).toHaveCount(0)
     await expect(panel.getByRole('button', { name: 'New terminal', exact: true })).toBeDisabled()
@@ -189,16 +192,18 @@ test('a running Tools shell restores truthfully and the global ended-shell limit
   } finally { await closeSotto(launched) }
 })
 
+const evidence = evidenceDirectory('artifacts/review-384')
+
 test('Closed keeps a native terminal row and reopens it with fresh output', async () => {
   test.skip(process.platform !== 'win32', 'Native Windows ConPTY acceptance')
   test.setTimeout(120_000)
   const launched = await launchSotto()
   const { page } = launched
   try {
-    await mkdir('artifacts/review-384', { recursive: true })
+    await mkdir(evidence, { recursive: true })
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true, reducedMotion: 'on' })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload(); await openThreads(page)
@@ -229,7 +234,7 @@ test('Closed keeps a native terminal row and reopens it with fresh output', asyn
       for (const appearance of ['dark', 'light'] as const) {
         await page.evaluate(async appearance => window.sotto!.updateSettings({ appearance }), appearance)
         await expect(shelf.getByRole('button', { name: 'Reopen Closed shelf check', exact: true })).toBeInViewport()
-        await page.screenshot({ path: `artifacts/review-384/closed-${width}-${appearance}.png`, animations: 'disabled' })
+        await page.screenshot({ path: join(evidence, `closed-${width}-${appearance}.png`), animations: 'disabled' })
       }
     }
     const reopen = shelf.getByRole('button', { name: 'Reopen Closed shelf check', exact: true })
@@ -241,7 +246,7 @@ test('Closed keeps a native terminal row and reopens it with fresh output', asyn
         receivesPointer: element.contains(document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2)),
         opacity: getComputedStyle(element.parentElement!).opacity }
     })
-    await writeFile('artifacts/review-384/reopen-hit.json', JSON.stringify(hit, null, 2) + '\n')
+    await writeFile(join(evidence, 'reopen-hit.json'), JSON.stringify(hit, null, 2) + '\n')
     expect(hit.receivesPointer).toBe(true)
     expect(hit.opacity).toBe('1')
     await reopen.focus()
@@ -257,6 +262,6 @@ test('Closed keeps a native terminal row and reopens it with fresh output', asyn
     await input.press('Enter')
     await expect.poll(async () => (await read()).output).toContain('SOTTO_REOPEN_READY')
     await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
-    await page.screenshot({ path: 'artifacts/review-384/reopened.png', animations: 'disabled' })
+    await page.screenshot({ path: join(evidence, 'reopened.png'), animations: 'disabled' })
   } finally { await closeSotto(launched) }
 })

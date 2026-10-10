@@ -8,7 +8,7 @@ import type { AgentState, AgentThread } from '../../../src/shared/agents'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
-import { liveAgentState, threadsStateFixture } from './liveAgentState'
+import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 
@@ -22,7 +22,7 @@ const lifecycle = (patch: Partial<AgentActivity> = {}): AgentActivity => activit
 
 function stateWith(patch: Partial<AgentThread>, connected = true): AgentState {
   const state = threadsStateFixture()
-  state.assignments = []
+
   state.activeThreadId = THREAD
   state.host.connected = connected
   const thread = state.host.threads.find(item => item.id === THREAD)!
@@ -33,7 +33,7 @@ function stateWith(patch: Partial<AgentThread>, connected = true): AgentState {
 function mount(state: AgentState) {
   const live = liveAgentState(state)
   vi.mocked(useAgents).mockImplementation(live.useLive)
-  render(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+  render(<ThreadsView now={NOW} />)
   return { live, transcript: screen.getByRole('log', { name: 'Thread transcript' }) }
 }
 

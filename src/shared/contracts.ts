@@ -24,8 +24,6 @@ const widgetMetadataSchema = {
   reducedMotion: z.enum(['system', 'on']),
   shortcut: z.string().min(1).max(128),
   cancellable: z.boolean(),
-  // Absent where the publisher predates the beta's voice gate, which reads as off.
-  voiceCoordinator: z.boolean().optional(),
 } as const
 
 export const widgetSnapshotSchema: z.ZodType<WidgetSnapshot> = z.discriminatedUnion('status', [
@@ -81,6 +79,7 @@ export const widgetSnapshotSchema: z.ZodType<WidgetSnapshot> = z.discriminatedUn
       status: z.literal('error'),
       sessionId: boundedSessionId.optional(),
       code: widgetErrorCodeSchema,
+      captureStarted: z.boolean().optional(),
       kept: z.boolean().optional(),
       retried: z.boolean().optional(),
       ...widgetMetadataSchema,
@@ -102,8 +101,6 @@ export type WidgetVisibilityPayload = z.infer<typeof widgetVisibilitySchema>
 
 /** Native widget visual states with distinct presentation footprints. */
 export const widgetPresentationSchema = z.enum([
-  'pill-controls',
-  'threads-expanded',
   'idle-resting',
   'idle-hovered',
   'active',
@@ -300,6 +297,8 @@ export type DictationCommand = Readonly<{
 
 export interface StartupState {
   readonly enabled: boolean
+  /** Linux only: sign-in startup is available in packaged builds. */
+  readonly supported?: boolean | undefined
   /** macOS only: the login item is on but waits for the user to allow it in System Settings > General > Login Items. */
   readonly approvalRequired?: boolean | undefined
 }
@@ -387,7 +386,6 @@ export interface SottoBridge {
 
 /** Least-privilege surface exposed only inside the non-focusing widget renderer. */
 export interface SottoWidgetBridge {
-  readonly agents?: import('./agents').AgentWireBridge
   readonly platform: SottoPlatform
 
   onWidgetState(listener: (state: WidgetSnapshot) => void): Unsubscribe

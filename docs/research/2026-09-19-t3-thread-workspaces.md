@@ -1,5 +1,7 @@
 # T3 Code thread workspaces compared with Sotto
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 Research date: 2026-09-19. Scope: the branch-change notice in Zach's screenshot, thread identity, working copies, and branch lifecycle. This is source research with focused Sotto tests, not an application change or a live desktop reproduction.
 
 Historical comparison, before #146. Zach subsequently chose to adopt T3's shared-checkout default as well as its optional worktree lifecycle; the current decision is recorded in [ADR-0014](../adr/0014-thread-follows-its-worktree-branch.md). The observations and initial recommendation below describe the earlier state.
@@ -75,13 +77,13 @@ All 20 selected Sotto tests passed:
 npx vitest run tests/unit/renderer/threadBranchNotice.test.tsx --maxWorkers=2
 6 passed
 
-npx vitest run tests/unit/main/workspace.test.ts -t 'adopts the branch|re-reads the worktree|restores the branch|puts a deleted folder' --maxWorkers=2
+npx vitest run tests/unit/main/workspaceGitRefresh.test.ts tests/unit/main/workspaceWorktreeRecovery.test.ts -t 'adopts the branch|re-reads the worktree|restores the branch|puts a deleted folder' --maxWorkers=2
 4 passed, 13 skipped
 
 npx vitest run tests/integration/threadWorktreesNative.test.ts --maxWorkers=2
 6 passed
 
-npx vitest run tests/unit/main/threadWorktrees.test.ts -t 'follows the branch|switches back|recreates a deleted|refuses to recreate' --maxWorkers=2
+npx vitest run tests/integration/threadWorktreeAllocation.test.ts tests/integration/threadWorktreeRecovery.test.ts -t 'follows the branch|switches back|recreates a deleted|refuses to recreate' --maxWorkers=2
 4 passed, 9 skipped
 ```
 

@@ -2,8 +2,9 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { closeSotto, launchSotto, openPage, type LaunchedSotto } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
-const shots = 'artifacts/remove-personal-chats'
+const shots = evidenceDirectory('artifacts/remove-personal-chats')
 
 async function resize(launched: LaunchedSotto, width: number, height: number): Promise<void> {
   await launched.app.evaluate(({ BrowserWindow }, size) => {
@@ -25,7 +26,7 @@ test('removes standalone Chats while keeping desktop navigation, thread requests
     await mkdir(legacyDirectory, { recursive: true })
     await writeFile(legacyFile, legacy, 'utf8')
     await page.evaluate(async () => {
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload()
@@ -58,7 +59,9 @@ test('removes standalone Chats while keeping desktop navigation, thread requests
     await page.keyboard.press('Enter')
     await expect(page.getByRole('tablist', { name: 'Settings sections' })).toBeVisible()
     await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Agents', exact: true }).click()
-    await expect(page.getByText('Reasoning', { exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'New threads', exact: true })).toBeVisible()
+    await expect(page.getByRole('group', { name: 'New threads start with', exact: true })).toBeVisible()
+    await expect(page.getByText('Reasoning', { exact: true })).toHaveCount(0)
     await expect(page.getByText('Personal chats and reasoning', { exact: true })).toHaveCount(0)
     await page.screenshot({ path: `${shots}/settings-820x560-light-reduced-motion.png` })
 

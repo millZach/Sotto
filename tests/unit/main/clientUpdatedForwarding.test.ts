@@ -5,8 +5,9 @@ import { dirname, join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
 import { createAgentRuntime } from '../../../src/main/agents/runtime'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
+
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
+import { testCredentials } from '../../fixtures/testCredentials'
 
 const roots: string[] = []
 afterEach(async () => {
@@ -23,14 +24,14 @@ function provider() {
 
 it('hands a client update through the workspace, the provider switch and the thread IDs to that provider alone (ADR-0042)', async () => {
   const root = await mkdtemp(join(tmpdir(), 'sotto-client-updated-')); roots.push(root)
-  const credentials = new AgentCredentials(root, {
+  const credentials = await testCredentials(root, { encryption: {
     isEncryptionAvailable: () => false, encryptString: () => { throw new Error('No test key') }, decryptString: () => '',
-  })
-  await credentials.load()
+  } })
+
   const providers = { codex: provider(), claude: provider(), grok: provider(), devin: provider() }
   const runtime = await createAgentRuntime({
     directory: root, credentials, settings: () => DEFAULT_SETTINGS, writingSettings: async () => DEFAULT_SETTINGS,
-    historyEnabled: () => true, coordinatorEnabled: () => false, openExternal: async () => undefined,
+    historyEnabled: () => true, openExternal: async () => undefined,
     providers, reasoner: e2eAgentReasoner,
   })
   try {

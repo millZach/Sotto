@@ -1,12 +1,13 @@
 // @vitest-environment node
+import { collectLaunchScript as collect, launchScriptChild, type LaunchScriptOutcome as Outcome } from '../fixtures/launchScriptRunner'
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createServer } from 'node:http'
-import { afterEach, expect, it, vi } from 'vitest'
-import { HOST_ARCHIVE_LIMIT_BYTES, HOST_DOWNLOAD_TIMEOUT_MS, HOST_STOP_DRAIN_MS, LAUNCH_SCRIPT_SOURCE, NODE_CHECK_SOURCE, NODE_PROBE_SOURCE, RECEIVE_SCRIPT_SOURCE, type LaunchOperation } from '../../src/main/hosts/launchScript'
+import { describe, afterEach, expect, it, vi } from 'vitest'
+import { HOST_ARCHIVE_LIMIT_BYTES, HOST_DOWNLOAD_TIMEOUT_MS, HOST_STOP_DRAIN_MS, NODE_CHECK_SOURCE, NODE_PROBE_SOURCE, RECEIVE_SCRIPT_SOURCE, type LaunchOperation } from '../../src/main/hosts/launchScript'
 import { hostRelease, localArchiveName, releasesPage, sha256, sidecar, tarGz } from '../fixtures/hostArchive'
 
 /**
@@ -37,18 +38,9 @@ async function fixture() {
     downloadTimeoutMs: HOST_DOWNLOAD_TIMEOUT_MS, archiveLimit: HOST_ARCHIVE_LIMIT_BYTES }
 }
 type Configuration = Awaited<ReturnType<typeof fixture>>
-interface Outcome { readonly messages: Record<string, unknown>[]; readonly code: number | null; readonly errors: string }
-function collect(child: ChildProcess): Promise<Outcome> {
-  let output = '', errors = ''
-  child.stdout!.on('data', chunk => { output += String(chunk) })
-  child.stderr!.on('data', chunk => { errors += String(chunk) })
-  return new Promise(resolve => child.once('close', code => resolve({ code, errors,
-    messages: output.split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line) as Record<string, unknown>) })))
-}
+
 function run(configuration: Configuration, operation: LaunchOperation | Record<string, unknown>): Promise<Outcome> {
-  const child = spawn(process.execPath, ['--input-type=commonjs', '-', JSON.stringify({ ...configuration, ...operation })], { shell: false, windowsHide: true })
-  children.push(child)
-  child.stdin.end(LAUNCH_SCRIPT_SOURCE)
+  const child = launchScriptChild({ ...configuration, ...operation }, undefined, child => children.push(child))
   return collect(child)
 }
 /** The receive script as the probe runs it: `node -e`, with the archive on stdin. */
@@ -143,13 +135,14 @@ it('restarts from one installed version to the next and keeps only the running o
   expect(await pointer(configuration)).toBe(`${NEW}\n`)
 })
 
-it.skipIf(process.platform !== 'win32').each(['EPERM', 'EBUSY'])('the fake host publishes its descriptor after temporary %s rename failures', async code => {
-  const configuration = await fixture()
-  const preload = join(configuration.directory, 'descriptor-rename.mjs')
-  const descriptorPath = join(configuration.dataDirectory, 'host-listener.json')
-  const proof = join(configuration.directory, 'rename-attempts.json')
-  // Inject the reader's temporary Windows lock into the real copied fixture's fs boundary.
-  await writeFile(preload, `import fs from 'node:fs/promises'
+describe("Windows rename errors", () => {
+  it.skipIf(process.platform !== 'win32').each(['EPERM', 'EBUSY'])('the fake host publishes its descriptor after temporary %s rename failures', async code => {
+    const configuration = await fixture()
+    const preload = join(configuration.directory, 'descriptor-rename.mjs')
+    const descriptorPath = join(configuration.dataDirectory, 'host-listener.json')
+    const proof = join(configuration.directory, 'rename-attempts.json')
+    // Inject the reader's temporary Windows lock into the real copied fixture's fs boundary.
+    await writeFile(preload, `import fs from 'node:fs/promises'
 const rename = fs.rename.bind(fs)
 let attempts = 0
 fs.rename = async (from, to) => {
@@ -160,11 +153,12 @@ fs.rename = async (from, to) => {
   return rename(from, to)
 }
 `)
-  const child = spawn(process.execPath, ['--import', pathToFileURL(preload).href, join(configuration.installPath, 'host/index.js'), '--data', configuration.dataDirectory, '--port', '0'], { shell: false, windowsHide: true })
-  children.push(child)
-  await expect.poll(() => descriptor(configuration).catch(() => null)).toMatchObject({ pid: child.pid })
-  expect(JSON.parse(await readFile(proof, 'utf8'))).toBeGreaterThanOrEqual(3)
-  await expect(readFile(`${descriptorPath}.tmp`, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+    const child = spawn(process.execPath, ['--import', pathToFileURL(preload).href, join(configuration.installPath, 'host/index.js'), '--data', configuration.dataDirectory, '--port', '0'], { shell: false, windowsHide: true })
+    children.push(child)
+    await expect.poll(() => descriptor(configuration).catch(() => null)).toMatchObject({ pid: child.pid })
+    expect(JSON.parse(await readFile(proof, 'utf8'))).toBeGreaterThanOrEqual(3)
+    await expect(readFile(`${descriptorPath}.tmp`, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+  })
 })
 
 it('deletes a download whose checksum does not match the release, and installs nothing', async () => {
@@ -289,14 +283,16 @@ it('starts the version current names, falls back to a flat install without one, 
   expect(spawnSync(process.execPath, ['-e', NODE_CHECK_SOURCE, JSON.stringify({ installPath: configuration.installPath })], { encoding: 'utf8', windowsHide: true })).toMatchObject({ status: 3 })
 })
 
-it.skipIf(process.platform === 'win32')('runs the receive script through the Node probe, with the archive on stdin', async () => {
-  const configuration = await fixture()
-  const archive = tarGz(hostRelease(NEW, await fakeHost()))
-  const major = Number(process.versions.node.split('.')[0])
-  const child = spawn('/bin/sh', ['-c', NODE_PROBE_SOURCE, 'sotto-launch', JSON.stringify({ ...configuration, op: 'update-receive', file: FILE, size: archive.byteLength, nodeRange: `>=${major} <${major + 1}` }), NODE_CHECK_SOURCE, RECEIVE_SCRIPT_SOURCE],
-    { env: { ...process.env, PATH: `${resolve(process.execPath, '..')}:${process.env.PATH ?? ''}` } })
-  children.push(child)
-  child.stdin.end(archive)
-  expect((await collect(child)).messages).toEqual([{ type: 'signed-in' }, { type: 'update-received', size: archive.byteLength }])
-  expect(sha256(await readFile(join(configuration.installPath, 'versions', '.incoming', FILE)))).toBe(sha256(archive))
+describe("POSIX receive-script probe", () => {
+  it.skipIf(process.platform === 'win32')('runs the receive script through the Node probe, with the archive on stdin', async () => {
+    const configuration = await fixture()
+    const archive = tarGz(hostRelease(NEW, await fakeHost()))
+    const major = Number(process.versions.node.split('.')[0])
+    const child = spawn('/bin/sh', ['-c', NODE_PROBE_SOURCE, 'sotto-launch', JSON.stringify({ ...configuration, op: 'update-receive', file: FILE, size: archive.byteLength, nodeRange: `>=${major} <${major + 1}` }), NODE_CHECK_SOURCE, RECEIVE_SCRIPT_SOURCE],
+      { env: { ...process.env, PATH: `${resolve(process.execPath, '..')}:${process.env.PATH ?? ''}` } })
+    children.push(child)
+    child.stdin.end(archive)
+    expect((await collect(child)).messages).toEqual([{ type: 'signed-in' }, { type: 'update-received', size: archive.byteLength }])
+    expect(sha256(await readFile(join(configuration.installPath, 'versions', '.incoming', FILE)))).toBe(sha256(archive))
+  })
 })

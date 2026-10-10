@@ -10,13 +10,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AGENT_STATE_PUBLISH_INTERVAL_MS, AgentControl, coalesceAgentThreadDetailPublishes, type PublishScheduler } from '../../../src/main/agents/control'
 import { immutableActivities } from '../../../src/main/agents/activitySnapshots'
 import { AttachmentPreviews } from '../../../src/main/agents/attachmentPreviews'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
+
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 import { applyAgentThreadDetailDelta, isAgentThreadDetailDelta } from '../../../src/shared/agentThreadDetail'
 import * as detailMath from '../../../src/shared/agentThreadDetail'
 import type { AgentActivity } from '../../../src/shared/agentActivity'
 import type { AgentCommand, AgentState, AgentThreadDetail, AgentThreadDetailDelta, AgentThreadDetailUpdate } from '../../../src/shared/agents'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
 
 /** The whole detail an update must be for the assertion that follows to mean anything. */
 function whole(update: AgentThreadDetailUpdate | undefined): AgentThreadDetail {
@@ -43,9 +45,9 @@ afterEach(async () => {
 async function fixture(schedule: PublishScheduler = immediatePublishScheduler) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-shell-detail-')); roots.push(root)
   const host = new E2EAgentHost()
-  const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: bytes => bytes.toString() })
-  await credentials.load()
-  const control = new AgentControl({ schedule, directory: root, host, credentials, reasoner: e2eAgentReasoner,
+  const credentials = await testCredentials(root, { mode: 'unavailable' })
+
+  const control = createAgentControl({ schedule, directory: root, host, credentials, reasoner: e2eAgentReasoner,
   })
   controls.add(control)
   await control.start(); await control.command({ type: 'connect' })
@@ -57,12 +59,12 @@ async function fixture(schedule: PublishScheduler = immediatePublishScheduler) {
 }
 
 describe('the published shell', () => {
-  it.each(['save-thread-draft', 'voice-state'] as const)('%s replies without copying loaded histories', async type => {
+  it.each(['save-thread-draft', 'select-thread'] as const)('%s replies without copying loaded histories', async type => {
     const f = await fixture()
     const draftId = randomUUID()
     const command: AgentCommand = type === 'save-thread-draft'
       ? { type, threadId: 'workshop', draftId, text: 'Keep this draft' }
-      : { type, status: 'off', error: null }
+      : { type, threadId: 'workshop' }
     const clone = vi.spyOn(globalThis, 'structuredClone')
     try {
       const reply = await f.control.commandShell(command)
@@ -78,7 +80,7 @@ describe('the published shell', () => {
       if (type === 'save-thread-draft') {
         expect(reply.threadDrafts).toContainEqual(expect.objectContaining({ threadId: 'workshop', draftId, text: 'Keep this draft' }))
         expect(reply.threadDraftPersistence).toContainEqual({ threadId: 'workshop', draftId, status: 'saved' })
-      } else expect(reply.voice).toMatchObject({ status: 'off', error: null })
+      } else expect(reply.activeThreadId).toBe('workshop')
     } finally { clone.mockRestore() }
     expect(f.control.threadDetail('workshop')?.messages.map(message => message.text)).toEqual(['Pick the palette', 'Indigo it is.'])
   })
@@ -86,8 +88,8 @@ describe('the published shell', () => {
   // Issue #313: every command used to answer with `get()`, a copy of every loaded history with preview
   // markers walked into each message, which the IPC layer then stripped. Each lane's answer to a client is the shell.
   it.each<[string, (draftId: string) => AgentCommand]>([
-    ['voice', () => ({ type: 'voice', action: 'mute' })],
-    ['spoken reply setting', () => ({ type: 'configure', patch: { speak: false } })],
+    ['save-thread-draft', draftId => ({ type: 'save-thread-draft', threadId: 'workshop', draftId, text: 'Keep this draft' })],
+    ['select-project', () => ({ type: 'select-project', projectId: 'project' })],
     ['select-thread', () => ({ type: 'select-thread', threadId: 'workshop' })],
     ['observe-threads', () => ({ type: 'observe-threads', threadIds: ['workshop'] })],
     ['rename-thread', () => ({ type: 'rename-thread', threadId: 'docs', title: 'Guide' })],
@@ -117,7 +119,7 @@ describe('the published shell', () => {
   it('answers a command sent while stopping with the shell and the reason', async () => {
     const f = await fixture()
     f.control.dispose()
-    const reply = await f.control.commandShell({ type: 'voice', action: 'mute' })
+    const reply = await f.control.commandShell({ type: 'refresh' })
     expect(reply.error).toMatch(/Sotto is stopping/)
     expect(reply.host.threads.every(thread => thread.messages.length === 0)).toBe(true)
   })
@@ -126,7 +128,7 @@ describe('the published shell', () => {
     const f = await fixture()
     expect(f.control.get().host.threads.find(thread => thread.id === 'workshop')!.messages.map(message => message.text))
       .toEqual(['Pick the palette', 'Indigo it is.'])
-    const reply = await f.control.command({ type: 'voice', action: 'mute' })
+    const reply = await f.control.command({ type: 'refresh' })
     expect(reply.error).toBeNull()
     expect(reply.host.threads.find(thread => thread.id === 'workshop')!.messages.map(message => message.text))
       .toEqual(['Pick the palette', 'Indigo it is.'])
@@ -144,7 +146,6 @@ describe('the published shell', () => {
     expect(workshop.summary!.lastMessageAt).toBe(f.control.get().host.threads.find(thread => thread.id === 'workshop')!.messages.at(-1)!.createdAt)
     // The rest of the state is untouched.
     expect(shell.configuration).toEqual(f.control.get().configuration)
-    expect(shell.queue).toEqual(f.control.get().queue)
   })
 
   it('is what listeners are broadcast, so no thread history crosses the state channel', async () => {

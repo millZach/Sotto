@@ -5,10 +5,10 @@ import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mayGrantLocally, UNPAIRED_CLIENT_ERROR, type Authority } from '../../../src/main/agents/authority'
 import { AgentControl } from '../../../src/main/agents/control'
-import { AgentCredentials, type CredentialEncryption } from '../../../src/main/agents/credentials'
+
 import type { AgentHostCommand } from '../../../src/main/agents/host'
 import {
-  desktopWindowClient, LocalHostService, supervisionClient, DESKTOP_WINDOW_CLIENT_ID, SUPERVISION_CLIENT_ID,
+  desktopWindowClient, LocalHostService, DESKTOP_WINDOW_CLIENT_ID,
   type ClientIdentity, type HostService,
 } from '../../../src/main/agents/hostService'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
@@ -16,15 +16,12 @@ import { PolicyStore } from '../../../src/main/memory/policies'
 import { MemoryStore } from '../../../src/main/memory/store'
 import type { AnswerGivenEvent, StoredThreadEvent } from '../../../src/shared/threadEvents'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
 
 const roots: string[] = []
 const controls: AgentControl[] = []
 const stores: MemoryStore[] = []
-const encryption: CredentialEncryption = {
-  isEncryptionAvailable: () => true,
-  encryptString: value => Buffer.from(Buffer.from(value).map(byte => byte ^ 0xa5)),
-  decryptString: value => Buffer.from(value.map(byte => byte ^ 0xa5)).toString('utf8'),
-}
 
 /** Records answers the way `WorkspaceHost` does, without a SQLite file behind it. */
 class RecordingHost extends E2EAgentHost {
@@ -41,11 +38,11 @@ async function fixture(authority?: Authority) {
   const logFailure = vi.fn<(code: string, detail: string) => void>()
   const root = await mkdtemp(join(tmpdir(), 'sotto-host-service-'))
   roots.push(root)
-  const credentials = new AgentCredentials(join(root, 'vault'), encryption)
-  await credentials.load()
+  const credentials = await testCredentials(join(root, 'vault'), { mode: 'xor' })
+
   const host = new RecordingHost()
-  const reasoner = { ...e2eAgentReasoner, decide: vi.fn(e2eAgentReasoner.decide) }
-  const control = new AgentControl({
+  const reasoner = { ...e2eAgentReasoner }
+  const control = createAgentControl({
     schedule: immediatePublishScheduler, directory: root, host, credentials,
     reasoner, logFailure,
     ...(authority === undefined ? {} : { authority }),
@@ -54,7 +51,6 @@ async function fixture(authority?: Authority) {
   await control.start()
   const service: HostService = new LocalHostService({ control })
   await service.command({ type: 'connect' }, desktopWindowClient('tester'))
-  await service.command({ type: 'assign', threadId: 'workshop', instruction: 'Fix the tests' }, desktopWindowClient('tester'))
   return {
     control, host, service, reasoner, logFailure,
     permission(text = 'May I edit the tests?') {
@@ -150,16 +146,6 @@ describe('attribution on an answer', () => {
     expect(JSON.stringify(f.host.answers[0]?.event)).not.toContain('the main one please')
   })
 
-  it('attributes the coordinator’s own follow-up answer to Sotto rather than to the user', async () => {
-    expect(supervisionClient('tester')).toEqual({ clientId: SUPERVISION_CLIENT_ID, user: 'tester', transport: 'ipc' })
-    const f = await fixture()
-    await f.service.command({ type: 'configure', patch: { reasoning: 'openrouter', reasoningModel: 'fixture-model' } }, desktopWindowClient('tester'))
-    f.reasoner.decide.mockResolvedValue({ decision: 'followup', text: 'Use the main branch' })
-    f.question()
-    await vi.waitFor(() => expect(f.host.answers).toHaveLength(1))
-    expect(f.host.answers[0]?.event.attribution).toEqual({ clientId: SUPERVISION_CLIENT_ID, user: expect.any(String), transport: 'ipc' })
-    expect(f.host.answers[0]?.event.attribution.clientId).not.toBe(DESKTOP_WINDOW_CLIENT_ID)
-  })
 
   it('leaves the answer standing and says nothing to the user when the record cannot be written', async () => {
     const f = await fixture()
@@ -192,7 +178,7 @@ describe('whether a client may grant', () => {
     const state = await f.answer({ clientId: 'laptop', user: 'tester', transport: 'socket' })
     expect(state.error).toBe(UNPAIRED_CLIENT_ERROR)
     expect(f.host.executed.filter(command => command.type === 'answer')).toEqual([])
-    expect(f.control.get().queue).toContainEqual(expect.objectContaining({ requestId: 'permission' }))
+    expect(f.control.get().host.threads.find(t => t.id === 'workshop')?.requests).toContainEqual(expect.objectContaining({ id: 'permission' }))
   })
 
   it('lets a client a policy record names answer, and refuses it again once revoked', async () => {

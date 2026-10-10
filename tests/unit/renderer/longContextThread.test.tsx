@@ -5,7 +5,7 @@ import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { SplitLayoutStore } from '../../../src/renderer/src/agents/splitLayout'
-import { liveAgentState, threadsStateFixture } from './liveAgentState'
+import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 
@@ -22,10 +22,10 @@ function mount() {
   thread.modelId = 'claude:sonnet[1m]'
   state.activeThreadId = THREAD
   state.host.capabilities = { ...state.host.capabilities, configureThread: true }
-  state.queue = []
+
   const live = liveAgentState(state)
   vi.mocked(useAgents).mockImplementation(() => live.useLive())
-  render(<ThreadsView onOpenAgents={vi.fn()} now={E2E_THREADS_NOW} layoutStore={new SplitLayoutStore()} paneAreaWidth={1200} />)
+  render(<ThreadsView now={E2E_THREADS_NOW} layoutStore={new SplitLayoutStore()} paneAreaWidth={1200} />)
   return screen.getByRole('region', { name: 'Grok voice previews' })
 }
 

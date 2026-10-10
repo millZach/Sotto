@@ -5,13 +5,16 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
+
 import type { AgentHostCommand, ThreadHistorySource } from '../../../src/main/agents/host'
 import { SottoThreadHost, ThreadRegistry } from '../../../src/main/agents/threads'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import type { AgentHostSnapshot } from '../../../src/shared/agents'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
+import { deferred } from '../../fixtures/deferred'
 
 const roots: string[] = []
 const controls: AgentControl[] = []
@@ -31,13 +34,9 @@ function adapter(root: string, inner = new FakeProviderHost()) {
 async function fixture() { return adapter(await directory()) }
 
 async function startControl(root: string, host: SottoThreadHost): Promise<AgentControl> {
-  const credentials = new AgentCredentials(join(root, 'vault'), {
-    isEncryptionAvailable: () => true, encryptString: value => Buffer.from(value), decryptString: value => value.toString(),
-  })
-  await credentials.load()
-  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials,
-    reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread.' }),
-      decide: async () => ({ decision: 'human', text: 'Review this.' }) },
+  const credentials = await testCredentials(join(root, 'vault'), { mode: 'plain' })
+  const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials,
+    reasoner: {},
   })
   controls.push(control)
   await control.start()
@@ -184,23 +183,26 @@ describe('Sotto thread interface', () => {
     expect(restarted.registry.all()).toEqual(f.registry.all())
   })
 
-  it('retains real control assignments and queue entries as Sotto IDs across restart', async () => {
+  it('retains native requests and saved drafts as Sotto IDs across restart', async () => {
     const f = await fixture()
     const control = await startControl(f.root, f.host)
     const threadId = control.get().host.threads[0]!.id
-    expect((await control.command({ type: 'assign', threadId })).error).toBeNull()
+    expect((await control.command({ type: 'select-thread', threadId })).error).toBeNull()
     f.inner.state.threads[0]!.requests.push({ id: 'permission', kind: 'permission', text: 'Allow?', options: [] })
     f.inner.emit()
     const before = await control.command({ type: 'refresh' })
-    expect(before.queue).toEqual([expect.objectContaining({ threadId, requestId: 'permission' })])
+    expect(before.host.threads.find(t => t.id === threadId)?.requests).toEqual([expect.objectContaining({ id: 'permission' })])
+    const draftId = randomUUID()
+    await control.command({ type: 'save-thread-draft', threadId, draftId, text: 'Keep this prompt' })
     control.dispose()
     const restarted = adapter(f.root, new FakeProviderHost(f.inner.state))
     const next = await startControl(f.root, restarted.host)
     const state = await next.command({ type: 'refresh' })
     expect(state.error).toBeNull()
-    expect(state.assignments[0]?.threadId).toBe(threadId)
-    expect(state.host.threads.find(thread => thread.id === state.assignments[0]?.threadId)?.title).toBe('Workshop')
-    expect(state.queue).toEqual(before.queue)
+
+
+    expect(state.host.threads.find(t => t.id === threadId)?.requests).toEqual(before.host.threads.find(t => t.id === threadId)?.requests)
+    expect(state.threadDrafts).toContainEqual(expect.objectContaining({ threadId, draftId, text: 'Keep this prompt' }))
     expect(JSON.stringify(state)).not.toContain('session-workshop')
     expect(await readFile(join(f.root, 'agents.json'), 'utf8')).not.toContain('session-workshop')
     expect(await readFile(join(f.root, 'threads.json'), 'utf8')).toContain('session-workshop')
@@ -282,10 +284,10 @@ describe('ThreadRegistry durability', () => {
   it('flushes discoveries made while a previous disk write is still in progress', async () => {
     const f = await fixture()
     await f.registry.load()
-    let started!: () => void
-    const writing = new Promise<void>(resolve => { started = resolve })
-    let release!: () => void
-    const gate = new Promise<void>(resolve => { release = resolve })
+
+    const { promise: writing, resolve: started } = deferred<void>()
+
+    const { promise: gate, resolve: release } = deferred<void>()
     const original = AtomicJsonStore.prototype.write
     vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementationOnce(async function (this: AtomicJsonStore<unknown>, value) {
       started()

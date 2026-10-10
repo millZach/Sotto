@@ -27,7 +27,7 @@ The crumbs are long in these captures because the throwaway home is under the te
 
 - The computer step, the choice of forge, the Git and Project marks for forge, a folder forge cannot read, a disconnected host, and Add project selecting the chosen host before `create-project`: `tests/unit/renderer/folderBrowserDialog.test.tsx`.
 - Listing, the drives on Windows, dot folders and files left out, links followed, the cap, and refusing a network share or device path: `tests/unit/main/hostFolders.test.ts`.
-- `host-folders` over a real socket, and a host without the feature refused before anything is sent: `tests/integration/socketHost.test.ts`, `tests/unit/main/socketHostService.test.ts`.
+- `host-folders` over a real socket, and a host without the feature refused before anything is sent: `tests/integration/socketHostFeatures.test.ts`, `tests/integration/socketHostCompatibility.test.ts`.
 - The desktop sending a listing to the host it names, not the host for new work: `tests/unit/main/desktopHostRouter.test.ts`.
 
 ## Not yet done

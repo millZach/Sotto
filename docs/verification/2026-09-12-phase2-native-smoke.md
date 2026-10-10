@@ -55,8 +55,8 @@ Proposed fix: reconcile authoritative history against stable local message ident
 - `npm run runtime:verify`: initially failed with `unexpected runtime files`; passed after restoring four existing SHA-256-verified assets. The worktree lacked ignored WASM payloads and the checked-out JS wrappers had CRLF byte differences. No runtime source content change is included.
 - Five existing fixture files: **37 passed** (`codexSkills`, `followups`, `nativeSteering`, `codexActivity`, `threadWorktreesNative`, `--maxWorkers=2`). These are fixture results, not installed-model execution.
 - Temporary queue ordering diagnostic: **1 failed**, expected 1 send / received 0; 12 unrelated tests skipped. This supplies a deterministic explanation for the live queue failure.
-- `native-phase2-live.spec.ts`: actual execution **failed** the automatic queue completion criterion after the first accepted native turn and steer.
-- `native-phase2-recovery.spec.ts`: actual execution completed reviewed queued dispatch and both reconnect checks, but **failed** the message-identity assertions. Soft identity assertions allow the independent no-replay checks to finish and do not mark the result passed.
+- `native-codex-workspace-live.spec.ts`: actual execution **failed** the automatic queue completion criterion after the first accepted native turn and steer.
+- `native-codex-workspace-recovery.spec.ts`: actual execution completed reviewed queued dispatch and both reconnect checks, but **failed** the message-identity assertions. Soft identity assertions allow the independent no-replay checks to finish and do not mark the result passed.
 - Node/web typecheck and changed-file ESLint passed. Both native tests skip without explicit opt-in.
 - The recovered Electron screenshot was visually inspected: both synthetic final replies and the one project/thread are visible. This is backend bridge verification, not full composer/picker/worktree UI acceptance. The retained composer contains the previously submitted steering text in this bridge-driven journey; the parent should assess that through its actual UI journey.
 
@@ -70,10 +70,10 @@ Build and verify existing runtime assets first. A fresh smoke creates one new sy
 npm run runtime:verify
 npm run build
 $env:SOTTO_NATIVE_PHASE2_LIVE='1'
-npx playwright test tests/e2e/native-phase2-live.spec.ts --workers=1 --retries=0
+npx playwright test tests/e2e/native-codex-workspace-live.spec.ts --workers=1 --retries=0
 ```
 
-To inspect only an existing owned root, set `SOTTO_NATIVE_PHASE2_RECOVERY_ROOT` to the printed root and run `native-phase2-recovery.spec.ts`. This does not send a prompt. The fresh smoke skips when recovery mode is selected. Only an explicitly reviewed, known-unsent paused queue can be resumed by also setting `SOTTO_NATIVE_PHASE2_RESUME_QUEUED=1`; a durable exclusive-create marker prevents a second resume attempt even if acknowledgement is lost. Never re-run the fresh smoke to recover accepted work.
+To inspect only an existing owned root, set `SOTTO_NATIVE_PHASE2_RECOVERY_ROOT` to the printed root and run `native-codex-workspace-recovery.spec.ts`. This does not send a prompt. The fresh smoke skips when recovery mode is selected. Only an explicitly reviewed, known-unsent paused queue can be resumed by also setting `SOTTO_NATIVE_PHASE2_RESUME_QUEUED=1`; a durable exclusive-create marker prevents a second resume attempt even if acknowledgement is lost. Never re-run the fresh smoke to recover accepted work.
 
 The observational launcher forwards all installed-provider bytes unchanged. Its persisted wire projection contains only selected method names, statuses, hashed identities, and synthetic relative paths/skill references. Artifacts remain in the owned temp root rather than the repository.
 
@@ -89,11 +89,11 @@ Red-before-green evidence included: five live messages becoming nine after recon
 
 The repair stage initiated **zero turns and zero steers**. Lifetime wire totals remain **two accepted turn/start requests, one steer, one thread/start, zero interrupts**. The reusable recovery test now asserts that all these mutation requests remain unchanged and rejects combining identity-repair mode with queue resume. Historical failed evidence is retained separately from `identity-recovery-evidence.json`; no artifacts or native histories were deleted.
 
-To verify a retained synthetic session with its pre-established hashed golden expectation, build first, set `SOTTO_NATIVE_PHASE2_RECOVERY_ROOT`, `SOTTO_NATIVE_PHASE2_LIVE=1`, `SOTTO_NATIVE_IDENTITY_REPAIR=1`, and `SOTTO_NATIVE_PHASE2_RESUME_QUEUED=0`, then run `native-phase2-recovery.spec.ts` with `--workers=1 --retries=0`. This mode only reconnects. The new steer request field is schema- and fixture-verified; no new installed steer was permitted during repair. Legacy history without sufficient exact or ordered corroboration intentionally remains uncertain instead of gaining invented command authority. No queue controller files, UI, accounts, global settings or user projects were changed; no release or external write was performed.
+To verify a retained synthetic session with its pre-established hashed golden expectation, build first, set `SOTTO_NATIVE_PHASE2_RECOVERY_ROOT`, `SOTTO_NATIVE_PHASE2_LIVE=1`, `SOTTO_NATIVE_IDENTITY_REPAIR=1`, and `SOTTO_NATIVE_PHASE2_RESUME_QUEUED=0`, then run `native-codex-workspace-recovery.spec.ts` with `--workers=1 --retries=0`. This mode only reconnects. The new steer request field is schema- and fixture-verified; no new installed steer was permitted during repair. Legacy history without sufficient exact or ordered corroboration intentionally remains uncertain instead of gaining invented command authority. No queue controller files, UI, accounts, global settings or user projects were changed; no release or external write was performed.
 
 ## Final integrated installed-client acceptance
 
-The parent repeated the original scenario once against integrated `2b3ecb9`, with stronger assertions from `9efd96a` covering every ordered message ID, all user command origins and every activity anchor. The fresh owned synthetic project/profile was separate from the retained initial failed run. `SOTTO_NATIVE_PHASE2_LIVE=1 npx playwright test tests/e2e/native-phase2-live.spec.ts --workers=1 --output=test-results/native-phase2-final` passed in 30.8 seconds (test body 30.3 seconds).
+The parent repeated the original scenario once against integrated `2b3ecb9`, with stronger assertions from `9efd96a` covering every ordered message ID, all user command origins and every activity anchor. The fresh owned synthetic project/profile was separate from the retained initial failed run. `SOTTO_NATIVE_PHASE2_LIVE=1 npx playwright test tests/e2e/native-codex-workspace-live.spec.ts --workers=1 --output=test-results/native-phase2-final` passed in 30.8 seconds (test body 30.3 seconds).
 
 Verified through production main/preload/bridge with installed Codex 0.154 and the catalog's GPT-5.6-Luna at low reasoning:
 
@@ -109,4 +109,4 @@ Final independent backend review and UI acceptance continue separately; this res
 
 A subsequent read-only installed recovery on `bd8ccf5` (including `97b24ff` bootstrap-authority and lagging-history corrections) passed in 4.9 seconds. It reconnected the original retained synthetic session twice and checked the same full message/origin/activity snapshots, with zero additional native turns or steers. Process-backed regressions additionally verify preserved management for corroborated own legacy input, transfer to manual control for actual foreign input, and retention of live assistant messages when persisted history omits or lags them.
 
-After the partial-history repair `20c42cb`, the same owned-profile read-only recovery passed again (one test, 5.2 seconds). No new turn or steer was submitted. Command: `SOTTO_NATIVE_PHASE2_LIVE=1 SOTTO_NATIVE_PHASE2_RECOVERY_ROOT=<owned retained root> npx playwright test tests/e2e/native-phase2-recovery.spec.ts --workers=1`. The first attempt selected the live spec and correctly skipped under recovery mode; only the subsequent recovery-spec pass is counted.
+After the partial-history repair `20c42cb`, the same owned-profile read-only recovery passed again (one test, 5.2 seconds). No new turn or steer was submitted. Command: `SOTTO_NATIVE_PHASE2_LIVE=1 SOTTO_NATIVE_PHASE2_RECOVERY_ROOT=<owned retained root> npx playwright test tests/e2e/native-codex-workspace-recovery.spec.ts --workers=1`. The first attempt selected the live spec and correctly skipped under recovery mode; only the subsequent recovery-spec pass is counted.

@@ -1,3 +1,6 @@
+import { deferred } from '../../fixtures/deferred'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
+import { testCredentials } from '../../fixtures/testCredentials'
 import React from 'react'
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react'
 import { randomUUID } from 'node:crypto'
@@ -5,8 +8,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { AgentControl } from '../../../src/main/agents/control'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
+
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import type { AgentHostCommand } from '../../../src/main/agents/host'
 import { useAgentConnection, type AgentConnection } from '../../../src/renderer/src/agents/AgentContext'
@@ -27,12 +29,11 @@ const label = (request: AgentCommand): string => `${request.type}:${'threadId' i
 async function laneFixture(holdReply: (request: AgentCommand) => boolean = () => false) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-window-lanes-'))
   const host = new E2EAgentHost()
-  const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
-  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
+  const credentials = await testCredentials(root, { mode: 'unavailable' })
+  const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
   })
-  await credentials.load(); await control.start(); await control.command({ type: 'connect' })
-  let release!: () => void
-  const gate = new Promise<void>(done => { release = done })
+  await control.start(); await control.command({ type: 'connect' }); await control.command({ type: 'select-thread', threadId: 'workshop' })
+  const { promise: gate, resolve: release } = deferred<void>()
   const arrived: string[] = [], answered: string[] = []
   const inner = agentBridgeFor(control)
   const bridge: AgentBridge = { ...inner, command: async request => {
@@ -55,7 +56,6 @@ describe('thread commands in the window', () => {
     const f = await laneFixture(request => request.type === 'compose' && request.text === 'First edit')
     let held: Promise<AgentState | null> | undefined, autosave: Promise<AgentState | null> | undefined, sending: Promise<AgentState | null> | undefined
     try {
-      await f.control.command({ type: 'assign', threadId: 'workshop', instruction: 'Work' })
       const { result } = renderHook(() => useAgentConnection(f.bridge))
       await waitFor(() => expect(result.current.state).not.toBeNull())
       act(() => { held = result.current.command({ type: 'compose', text: 'First edit' }) })
@@ -104,8 +104,7 @@ describe('thread commands in the window', () => {
   it('keeps one thread’s settings ahead of a send made straight after them, in the window and in main', async () => {
     const f = await laneFixture()
     const executed: string[] = []
-    let proceed!: () => void
-    const provider = new Promise<void>(done => { proceed = done })
+    const { promise: provider, resolve: proceed } = deferred<void>()
     const execute = f.host.execute.bind(f.host)
     vi.spyOn(f.host, 'execute').mockImplementation(async (command: AgentHostCommand) => {
       executed.push(command.type)
@@ -136,8 +135,7 @@ describe('thread commands in the window', () => {
   it('runs a prompt sent while a permission press is pending on the settings the press asked for, with no wait in the window', async () => {
     const f = await laneFixture()
     const executed: string[] = []
-    let proceed!: () => void
-    const provider = new Promise<void>(done => { proceed = done })
+    const { promise: provider, resolve: proceed } = deferred<void>()
     const execute = f.host.execute.bind(f.host)
     vi.spyOn(f.host, 'execute').mockImplementation(async (command: AgentHostCommand) => {
       // What the provider holds for the thread when each command reaches it: a send is labelled with its mode.
@@ -195,23 +193,22 @@ describe('thread commands in the window', () => {
   })
 
   it('still holds global commands behind one another', async () => {
-    let release!: () => void
-    const gate = new Promise<void>(done => { release = done })
+    const { promise: gate, resolve: release } = deferred<void>()
     const arrived: string[] = []
-    const bridge: AgentBridge = { get: () => new Promise<AgentState>(() => undefined), onState: () => () => undefined, command: async request => {
+    const bridge: AgentBridge = { get: () => deferred<AgentState>().promise, onState: () => () => undefined, command: async request => {
       arrived.push(label(request))
-      if (request.type === 'assign') await gate
+      if (request.type === 'configure') await gate
       throw new Error('Not answered in this test')
     } }
     const { result } = renderHook(() => useAgentConnection(bridge))
-    const held = result.current.command({ type: 'assign', threadId: 'docs' })
-    await waitFor(() => expect(arrived).toEqual(['assign:docs']))
+    const held = result.current.command({ type: 'configure', patch: { reasoningEffort: 'high' } })
+    await waitFor(() => expect(arrived).toEqual(['configure:']))
     const behind = result.current.command({ type: 'settle-project', projectId: 'project' })
     const beside = result.current.command({ type: 'compact-thread', threadId: 'workshop' })
     await act(async () => { await beside })
     // A command main keeps global still waits for the reply to the one before it; a thread's own does not.
-    expect(arrived).toEqual(['assign:docs', 'compact-thread:workshop'])
+    expect(arrived).toEqual(['configure:', 'compact-thread:workshop'])
     await act(async () => { release(); await held; await behind })
-    expect(arrived).toEqual(['assign:docs', 'compact-thread:workshop', 'settle-project:'])
+    expect(arrived).toEqual(['configure:', 'compact-thread:workshop', 'settle-project:'])
   })
 })

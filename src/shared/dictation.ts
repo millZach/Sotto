@@ -109,12 +109,6 @@ interface WidgetSnapshotMetadata {
   readonly reducedMotion: ReducedMotion
   readonly shortcut: string
   readonly cancellable: boolean
-  /**
-   * Whether the voice coordinator is shown at all. The widget runs in its own
-   * renderer and never reads settings, so the snapshot has to carry the answer;
-   * an absent field means off, which is the beta's default.
-   */
-  readonly voiceCoordinator?: boolean | undefined
 }
 
 /**
@@ -148,6 +142,8 @@ export type WidgetSnapshot = WidgetSnapshotMetadata &
         readonly status: 'error'
         readonly sessionId?: string | undefined
         readonly code: WidgetErrorCode
+        /** Linux shell copy distinguishes a missing microphone from one lost after capture began. */
+        readonly captureStarted?: boolean | undefined
         /** Whether the recording is kept, so the widget offers Try again. */
         readonly kept?: boolean | undefined
         /** Whether Try again was pressed and failed too, so the pill says so. */

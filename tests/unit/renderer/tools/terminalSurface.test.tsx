@@ -1,14 +1,15 @@
+import { terminalBridgeFixture, terminalSession, fakeTerminalViews } from '../../../fixtures/renderer/terminalBridge'
 import React from 'react'
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { TerminalBridge, TerminalEvent, TerminalSession, TerminalSnapshot } from '../../../../src/shared/terminal'
+import type { TerminalEvent, TerminalSession, TerminalSnapshot } from '../../../../src/shared/terminal'
 import type { ToolsResult } from '../../../../src/shared/tools'
 import { ToolsPanel } from '../../../../src/renderer/src/tools/ToolsPanel'
-import { TerminalStore, type TerminalViewFactory, type TerminalViewHandlers } from '../../../../src/renderer/src/tools/terminalStore'
+import { TerminalStore } from '../../../../src/renderer/src/tools/terminalStore'
 import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
-import { threadsStateFixture } from '../liveAgentState'
-import { TOKEN_A, fakeFilesBridge, text } from './fakeFilesBridge'
+import { threadsStateFixture } from '../../../fixtures/renderer/liveAgentState'
+import { TOKEN_A, fakeFilesBridge, text } from '../../../fixtures/renderer/fakeFilesBridge'
 
 vi.mock('../../../../src/renderer/src/tools/terminalView', () => { throw new Error('Chunk unavailable') })
 
@@ -18,58 +19,29 @@ const workspace = { threadId: 'visual-gate', projectId: 'workshop', workingDirec
 const ID_1 = '11111111-1111-4111-8111-111111111111'
 const ID_2 = '22222222-2222-4222-8222-222222222222'
 const session = (id: string, patch: Partial<TerminalSession> = {}): TerminalSession =>
-  ({ id, workspace, title: 'PowerShell', shell: 'pwsh.exe', status: 'running', cols: 80, rows: 24, exitCode: null, createdAt: 1, place: 'tools', ...patch })
+  terminalSession(id, workspace, { place: 'tools', ...patch })
 const ok = <T,>(value: T): ToolsResult<T> => ({ ok: true, value })
 
 /** Main's terminal service as the renderer sees it: sessions, snapshots, and one event stream. */
 function fakeTerminal(initial: TerminalSession[], snapshots: Record<string, TerminalSnapshot> = {}) {
-  let sessions = initial
-  const listeners = new Set<(event: TerminalEvent) => void>()
-  const pendingRead: { release: (() => void) | null } = { release: null }
-  const hold = { read: false }
-  const bridge: TerminalBridge = {
-    list: vi.fn(async () => ok({ workspace, sessions, capacity: { count: sessions.length, version: 0 } })),
+  const published: ReturnType<typeof terminalBridgeFixture> = terminalBridgeFixture({ workspace, sessions: initial, snapshots, commands: {
     create: vi.fn(async () => {
       const created = session(ID_2)
-      sessions = [...sessions, created]
+      published.setSessions([...published.sessions(), created])
       return ok({ session: created, output: 'PS D:\\work\\workshop> ', sequence: 1 })
     }),
-    read: vi.fn(async ({ sessionId }) => {
-      if (hold.read) await new Promise<void>(resolve => { pendingRead.release = resolve })
-      return ok(snapshots[sessionId] ?? { session: sessions.find(item => item.id === sessionId)!, output: '', sequence: 0 })
-    }),
-    write: vi.fn(async () => ok(undefined)),
-    resize: vi.fn(async () => ok(undefined)),
-    interrupt: vi.fn(async () => ok(undefined)),
-    close: vi.fn(async ({ sessionId }) => { sessions = sessions.filter(item => item.id !== sessionId); return ok(undefined) }),
     reopen: vi.fn(async ({ sessionId }) => {
       const reopened = session(sessionId)
-      sessions = sessions.map(item => item.id === sessionId ? reopened : item)
+      published.setSessions(published.sessions().map(item => item.id === sessionId ? reopened : item))
       return ok({ session: reopened, output: 'PS D:\\work\\workshop> ', sequence: 0 })
     }),
-    onEvent: vi.fn(listener => { listeners.add(listener); return () => { listeners.delete(listener) } }),
-  }
-  return { bridge, hold, pendingRead, emit: (event: TerminalEvent) => { for (const listener of [...listeners]) listener(event) } }
+  } })
+  return { ...published, emit: published.publish }
 }
 
 /** A stand-in for xterm that records what it was asked to draw. */
 function fakeViews() {
-  const views: { handlers: TerminalViewHandlers; written: string[]; input: boolean[]; mounts: number; unmounts: number; focused: number; disposed: boolean }[] = []
-  const factory: TerminalViewFactory = handlers => {
-    const record = { handlers, written: [] as string[], input: [] as boolean[], mounts: 0, unmounts: 0, focused: 0, disposed: false }
-    views.push(record)
-    return {
-      mount: container => { record.mounts += 1; container.replaceChildren(Object.assign(document.createElement('pre'), { className: 'fake-xterm' })) },
-      unmount: () => { record.unmounts += 1 },
-      write: (data, done) => { record.written.push(data); done?.() },
-      reset: () => { record.written.push('<reset>') },
-      setInputEnabled: enabled => { record.input.push(enabled) },
-      fit: () => ({ cols: 100, rows: 30 }),
-      focus: () => { record.focused += 1 },
-      dispose: () => { record.disposed = true },
-    }
-  }
-  return { views, factory }
+  return fakeTerminalViews()
 }
 
 function setup(terminal: ReturnType<typeof fakeTerminal>) {

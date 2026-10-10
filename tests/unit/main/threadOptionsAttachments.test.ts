@@ -5,8 +5,7 @@ import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { agentAttachmentHandlesSchema, agentCommandSchema, type AgentHostSnapshot } from '../../../src/shared/agents'
 import { AttachmentStore } from '../../../src/main/agents/attachmentStore'
-import { AgentControl } from '../../../src/main/agents/control'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
+
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { validatePromptAttachments } from '../../../src/main/agents/threadOptions'
 import type { AgentHostCommand, AgentHostResult } from '../../../src/main/agents/host'
@@ -14,6 +13,9 @@ import { SottoThreadHost, ThreadRegistry } from '../../../src/main/agents/thread
 import { ConfiguredProviderHost } from '../../../src/main/agents/providerSwitch'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 import { handleOf, PIXEL_PNG, promptImageOf, stageInto } from '../../fixtures/stagedImages'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
+import { deferred } from '../../fixtures/deferred'
 
 const image = handleOf(PIXEL_PNG, 'shot-1', 'Screenshot.png')
 const roots: string[] = []
@@ -53,8 +55,8 @@ class FixtureHost extends E2EAgentHost {
 async function controlFixture() {
   const root = await mkdtemp(join(tmpdir(), 'sotto-options-')); roots.push(root)
   const host = new FixtureHost()
-  const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() }); await credentials.load()
-  const create = () => new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
+  const credentials = await testCredentials(root, { mode: 'unavailable' });
+  const create = () => createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
   })
   let control = create(); disposers.push(async () => { control.dispose(); await control.privacyChanged() })
   await control.start(); await stageInto(control, PIXEL_PNG); await control.command({ type: 'connect' })
@@ -107,17 +109,10 @@ describe('coordinator images, authority and durable settings', () => {
     expect((await f.control.command({ type: 'configure-thread', threadId: 'workshop', reasoningEffort: 'high' })).error).toMatch(/unknown result/)
     expect(f.host.attempts).toHaveLength(1)
   })
-  it('creates an unmanaged thread with selected options; legacy creation stays managed', async () => {
-    const f = await controlFixture()
-    const created = await f.control.command({ type: 'create-thread', projectId: 'project', title: 'Manual', modelId: 'claude:test', reasoningEffort: 'high', runtimeMode: 'full-access', managed: false })
-    expect(created.error).toBeNull(); expect(created.assignments).toEqual([])
-    expect(created.host.threads.find(t => t.id === created.activeThreadId)).toMatchObject({ reasoningEffort: 'high', runtimeMode: 'full-access' })
-    expect((await f.control.command({ type: 'create-thread', projectId: 'project', title: 'Managed', modelId: 'claude:test' })).assignments).toHaveLength(1)
-  })
   it('creates, configures and sends a screenshot on a long-context model the catalog lists only by its base', async () => {
     // Claude Code 2.1.283 lists `opus` and no `opus[1m]`; the thread keeps the variant's ID throughout (#344).
     const f = await controlFixture()
-    const created = await f.control.command({ type: 'create-thread', projectId: 'project', title: 'Long context', modelId: 'claude:test[1m]', reasoningEffort: 'max', managed: false })
+    const created = await f.control.command({ type: 'create-thread', projectId: 'project', title: 'Long context', modelId: 'claude:test[1m]', reasoningEffort: 'max' })
     expect(created.error).toBeNull()
     const threadId = created.activeThreadId!
     expect(f.host.attempts.at(-1)).toMatchObject({ type: 'create-thread', modelId: 'claude:test[1m]', reasoningEffort: 'max' })
@@ -126,22 +121,8 @@ describe('coordinator images, authority and durable settings', () => {
     const sent = await f.control.command({ type: 'manual-send', threadId, text: '', attachments: [image] })
     expect(sent.error).toBeNull()
     expect(sent.host.threads.find(thread => thread.id === threadId)).toMatchObject({ modelId: 'claude:test[1m]', messages: [{ attachments: [{ id: image.id }] }] })
-    expect((await f.control.command({ type: 'create-thread', projectId: 'project', title: 'Unknown', modelId: 'claude:other[1m]', managed: false })).error)
+    expect((await f.control.command({ type: 'create-thread', projectId: 'project', title: 'Unknown', modelId: 'claude:other[1m]' })).error)
       .toMatch(/unavailable/u)
-  })
-  it('persists image-only manual drafts and never creates an assignment or duplicates an uncertain send', async () => {
-    const f = await controlFixture(); f.host.unknown = true
-    const command = { type: 'manual-send' as const, threadId: 'workshop', text: '', attachments: [image] }
-    expect((await f.control.command(command)).error).toMatch(/confirm/)
-    await f.restart()
-    expect(f.control.get().draftAttachments).toEqual([image])
-    expect((await f.control.command(command)).error).toMatch(/unknown result/)
-    expect(f.host.attempts).toHaveLength(1)
-    await f.host.reveal()
-    const state = f.control.get()
-    expect(state.draftAttachments).toEqual([]); expect(state.assignments).toEqual([])
-    expect(state.host.threads[0]?.messages[0]?.attachments).toHaveLength(1)
-    expect(f.host.attempts).toHaveLength(1)
   })
   it('does not clear an edited image draft when the previous uncertain message appears', async () => {
     const f = await controlFixture(); f.host.unknown = true
@@ -151,24 +132,9 @@ describe('coordinator images, authority and durable settings', () => {
     await f.host.reveal()
     expect(f.control.get().draftAttachments).toEqual([replacement])
   })
-  it('keeps managed attachments across text edits, sends once, and never puts images into assignment authority', async () => {
-    const f = await controlFixture()
-    await f.control.command({ type: 'assign', threadId: 'workshop' })
-    await f.control.command({ type: 'compose', text: 'Look', attachments: [image] })
-    await f.control.command({ type: 'compose', text: '' })
-    expect(f.control.get().draftAttachments).toEqual([image])
-    f.host.unknown = true
-    expect((await f.control.command({ type: 'send' })).error).toMatch(/confirm/)
-    await f.restart()
-    expect((await f.control.command({ type: 'send' })).error).toMatch(/unknown result/)
-    await f.host.reveal()
-    expect(f.host.attempts).toHaveLength(1)
-    expect(f.control.get().assignments[0]?.instruction).toBe('')
-    expect(f.control.get().draftAttachments).toEqual([])
-  })
   it('rejects permission bypass and preserves the existing image draft when changing threads', async () => {
     const f = await controlFixture()
-    await f.control.command({ type: 'assign', threadId: 'workshop' })
+    await f.control.command({ type: 'select-thread', threadId: 'workshop' })
     await f.control.command({ type: 'compose', text: '', attachments: [image] })
     const moved = await f.control.command({ type: 'manual-send', threadId: 'docs', text: '', attachments: [image] })
     expect(moved.error).toBeNull()
@@ -211,8 +177,8 @@ describe('coordinator images, authority and durable settings', () => {
   })
   it('recovers a restart in the middle of a thread-scoped command from its durable intent alone', async () => {
     const f = await controlFixture()
-    let release!: () => void
-    f.host.gate = new Promise<void>(done => { release = done })
+    const { promise: heldRelease, resolve: release } = deferred<void>()
+    f.host.gate = heldRelease
     const pending = f.control.command({ type: 'configure-thread', threadId: 'workshop', runtimeMode: 'full-access' })
     await vi.waitFor(() => expect(f.host.attempts).toHaveLength(1))
     // The thread is marked busy in its own lane; the global lane still stands for global work alone.

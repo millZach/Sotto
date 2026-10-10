@@ -1,12 +1,16 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
+import { agentState } from './support/agentAccess'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
 import { createHash } from 'node:crypto'
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { defaultAgentConfiguration } from '../../src/shared/agents'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, launchSotto, openThreads, userMessageTexts } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
+
+const evidence = evidenceDirectory('artifacts/provider-recovery')
 
 const draft = 'Review this synthetic recovered drawing before deciding what to send.'
 const attachment = { id: 'synthetic-image', name: 'recovered-drawing.png', mimeType: 'image/png',
@@ -16,10 +20,10 @@ const staged = { id: attachment.id, name: attachment.name, mimeType: attachment.
   digest: createHash('sha256').update(Buffer.from(attachment.dataUrl.split(',')[1]!, 'base64')).digest('hex') }
 
 async function seed(): Promise<string> {
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-recovery-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-recovery-' })).directory
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true }))
   await writeFile(join(profile, 'agents.json'), JSON.stringify({
-    configuration: { ...defaultAgentConfiguration(), provider: 't3', enabled: true, speak: false, endpoint: 'http://synthetic-previous-provider.invalid', defaultModelId: 'old-model' },
+    configuration: { ...defaultAgentConfiguration(), provider: 't3', enabled: true, endpoint: 'http://synthetic-previous-provider.invalid', defaultModelId: 'old-model' },
     assignments: [{ threadId: 'previous-thread', mode: 'managed', instruction: 'Synthetic previous assignment', followups: 1,
       paused: false, seenMessageIds: [], ownMessageIds: [], handledRequestIds: [], lastFailure: '', contextUpdatedAt: Date.now() }],
     queue: [{ id: 'previous-question', threadId: 'previous-thread', kind: 'question', requestId: 'previous-request',
@@ -32,10 +36,10 @@ async function seed(): Promise<string> {
 }
 
 async function capture(page: Page, name: string): Promise<void> {
-  await mkdir('artifacts/provider-recovery', { recursive: true })
-  await page.screenshot({ path: `artifacts/provider-recovery/${name}-desktop.png`, animations: 'disabled' })
+  await mkdir(evidence, { recursive: true })
+  await page.screenshot({ path: join(evidence, `${name}-desktop.png`), animations: 'disabled' })
   await page.setViewportSize({ width: 760, height: 850 })
-  await page.screenshot({ path: `artifacts/provider-recovery/${name}-760.png`, animations: 'disabled' })
+  await page.screenshot({ path: join(evidence, `${name}-760.png`), animations: 'disabled' })
   const notice = page.getByRole('region', { name: 'Recovered work', exact: true })
   const bounds = await (await notice.count() ? notice : page.getByRole('region', { name: 'Thread workspace' })).boundingBox()
   expect(bounds).not.toBeNull()
@@ -62,9 +66,9 @@ for (const localDraft of [false, true]) test(`recovered provider draft stays unb
     const notice = page.getByRole('region', { name: 'Recovered work', exact: true })
     await expect(notice.getByRole('textbox', { name: 'Recovered draft' })).toHaveValue(draft)
     await expect(notice).toContainText(attachment.name)
-    let state = await page.evaluate(async () => window.sotto!.agents!.get())
+    let state = await agentState(page)
     expect(state).toMatchObject({ configuration: { provider: 'codex', enabled: false }, draft, draftAttachments: [staged],
-      draftThreadId: null, draftRequestId: null, assignments: [], queue: [], composing: false })
+      draftThreadId: null, draftRequestId: null, composing: false })
     await capture(page, 'unbound')
     await page.getByRole('button', { name: 'Connect providers', exact: true }).click()
     await page.getByRole('button', { name: 'New thread', exact: true }).first().click()
@@ -76,40 +80,40 @@ for (const localDraft of [false, true]) test(`recovered provider draft stays unb
     await expect(page.getByRole('heading', { name: 'Recovered work review', exact: true })).toBeVisible()
     // Main learns the selection a beat after the popup closes; wait for it before reading the thread by id.
     await expect.poll(() => page.evaluate(async () => (await window.sotto!.agents!.get()).activeThreadId)).toEqual(expect.any(String))
-    state = await page.evaluate(async () => window.sotto!.agents!.get())
-    expect(state).toMatchObject({ draft, draftAttachments: [staged], draftThreadId: null, assignments: [], composing: false })
+    state = await agentState(page)
+    expect(state).toMatchObject({ draft, draftAttachments: [staged], draftThreadId: null, composing: false })
     const threadId = state.activeThreadId!
     expect(await userMessageTexts(page, threadId)).toHaveLength(0)
-    await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('')
+    await expectPromptText(promptField(page), '')
     await expect(notice.getByRole('button', { name: 'Use saved draft here' })).toBeEnabled()
     if (localDraft) {
-      const composer = page.getByRole('textbox', { name: 'Prompt', exact: true })
-      await composer.fill('Keep this current unsent native prompt too.')
+      const composer = promptField(page)
+      await fillPrompt(composer, 'Keep this current unsent native prompt too.')
       await page.getByLabel('Screenshot files').setInputFiles({ name: 'current-native-image.png', mimeType: 'image/png', buffer: Buffer.from(attachment.dataUrl.split(',')[1]!, 'base64') })
       await expect(page.getByRole('img', { name: 'current-native-image.png' })).toBeVisible()
       await expect(notice.getByRole('button', { name: 'Use saved draft here' })).toBeDisabled()
-      await expect(composer).toHaveValue('Keep this current unsent native prompt too.')
+      await expectPromptText(composer, 'Keep this current unsent native prompt too.')
       await expect(notice.getByRole('textbox', { name: 'Recovered draft' })).toHaveValue(draft)
-      expect(await page.evaluate(async () => window.sotto!.agents!.get())).toMatchObject({ draft, draftAttachments: [staged], draftThreadId: null })
+      expect(await agentState(page)).toMatchObject({ draft, draftAttachments: [staged], draftThreadId: null })
       await capture(page, 'local-draft-kept')
-      await composer.fill('')
+      await fillPrompt(composer, '')
       await expect(notice.getByRole('button', { name: 'Use saved draft here' })).toBeDisabled()
       await page.getByRole('button', { name: 'Remove current-native-image.png' }).click()
       await expect(notice.getByRole('button', { name: 'Use saved draft here' })).toBeEnabled()
     } else await capture(page, 'before-bind')
     await notice.getByRole('button', { name: 'Use saved draft here' }).click()
-    await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue(draft)
+    await expectPromptText(promptField(page), draft)
     await expect(page.getByRole('img', { name: attachment.name })).toBeVisible()
     await expect(notice.getByRole('button', { name: 'Use saved draft here' })).toHaveCount(0)
-    state = await page.evaluate(async () => window.sotto!.agents!.get())
-    expect(state).toMatchObject({ draft, draftAttachments: [staged], draftThreadId: threadId, draftRequestId: null, assignments: [], composing: true })
+    state = await agentState(page)
+    expect(state).toMatchObject({ draft, draftAttachments: [staged], draftThreadId: threadId, draftRequestId: null, composing: true })
     expect(await userMessageTexts(page, threadId)).toHaveLength(0)
     expect(state.host.threads.find(thread => thread.id === threadId)?.requests).toHaveLength(0)
     await capture(page, localDraft ? 'bound-after-local-clear' : 'bound-for-review')
     const recovery = JSON.parse(await readFile(join(profile, 'provider-retirement-v1.json'), 'utf8'))
     expect(recovery.state).toMatchObject({ draft, draftAttachments: [attachment], draftThreadId: 'previous-thread', outbox: [{ id: 'previous-command' }] })
     expect(rendererErrors).toEqual([])
-  } finally { await closeSotto(launched); await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true }) }
+  } finally { await closeSotto(launched); await removeOwnedE2EProfile(profile) }
 })
 
 test('clear saved draft removes recovered text and images and stays cleared after restart', async () => {
@@ -120,13 +124,13 @@ test('clear saved draft removes recovered text and images and stays cleared afte
     await launched.page.getByRole('button', { name: 'Clear saved draft', exact: true }).click()
     await expect(launched.page.getByRole('textbox', { name: 'Recovered draft' })).toHaveCount(0)
     await expect(launched.page.getByText(attachment.name, { exact: true })).toHaveCount(0)
-    const state = await launched.page.evaluate(async () => window.sotto!.agents!.get())
-    expect(state).toMatchObject({ draft: '', draftAttachments: [], draftThreadId: null, draftRequestId: null, assignments: [], composing: false })
+    const state = await agentState(launched.page)
+    expect(state).toMatchObject({ draft: '', draftAttachments: [], draftThreadId: null, draftRequestId: null, composing: false })
     await capture(launched.page, 'cleared')
     await closeSotto(launched)
     launched = await launchSotto('success', profile)
     await openThreads(launched.page)
     await expect(launched.page.getByRole('textbox', { name: 'Recovered draft' })).toHaveCount(0)
-    expect(await launched.page.evaluate(async () => window.sotto!.agents!.get())).toMatchObject({ draft: '', draftAttachments: [], draftThreadId: null })
-  } finally { await closeSotto(launched); await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true }) }
+    expect(await agentState(launched.page)).toMatchObject({ draft: '', draftAttachments: [], draftThreadId: null })
+  } finally { await closeSotto(launched); await removeOwnedE2EProfile(profile) }
 })

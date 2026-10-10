@@ -1,5 +1,6 @@
+import { terminalBridgeFixture, terminalSession } from '../../../fixtures/renderer/terminalBridge'
 import { describe, expect, it, vi } from 'vitest'
-import type { TerminalBridge, TerminalEvent, TerminalSession, TerminalSnapshot } from '../../../../src/shared/terminal'
+import type { TerminalBridge, TerminalSession, TerminalSnapshot } from '../../../../src/shared/terminal'
 import type { ToolsResult } from '../../../../src/shared/tools'
 import { TerminalStore } from '../../../../src/renderer/src/tools/terminalStore'
 
@@ -7,7 +8,7 @@ const workspace = { threadId: 'thread-a', projectId: 'workshop', workingDirector
 const ID_TOOLS = '11111111-1111-4111-8111-111111111111'
 const ID_DRAWER = '22222222-2222-4222-8222-222222222222'
 const session = (id: string, place: 'tools' | 'drawer', patch: Partial<TerminalSession> = {}): TerminalSession =>
-  ({ id, workspace, title: 'PowerShell', shell: 'pwsh.exe', status: 'running', cols: 80, rows: 24, exitCode: null, createdAt: 1, place, ...patch })
+  terminalSession(id, workspace, { place, ...patch })
 const ok = <T,>(value: T): ToolsResult<T> => ({ ok: true, value })
 
 it('uses the newest shared capacity even when an older thread list arrives afterwards', async () => {
@@ -26,19 +27,11 @@ it('uses the newest shared capacity even when an older thread list arrives after
 
 /** A bridge whose `list` answers whatever place it was asked for, like the main service does. */
 function fakeBridge(sessions: TerminalSession[]) {
-  const listeners = new Set<(event: TerminalEvent) => void>()
-  const bridge: TerminalBridge = {
-    list: vi.fn(async ({ place }) => ok({ workspace, sessions: sessions.filter(session => session.place === (place ?? 'tools')), capacity: { count: sessions.length, version: 0 } })),
+  const { bridge, publish } = terminalBridgeFixture({ workspace, sessions,
+    commands: { list: vi.fn(async ({ place }) => ok({ workspace, sessions: sessions.filter(session => session.place === (place ?? 'tools')), capacity: { count: sessions.length, version: 0 } })),
     create: vi.fn(async () => ok({ session: session(ID_TOOLS, 'tools'), output: '', sequence: 0 } as TerminalSnapshot)),
-    read: vi.fn(async ({ sessionId }) => ok({ session: sessions.find(item => item.id === sessionId)!, output: '', sequence: 0 })),
-    write: vi.fn(async () => ok(undefined)),
-    resize: vi.fn(async () => ok(undefined)),
-    interrupt: vi.fn(async () => ok(undefined)),
-    close: vi.fn(async () => ok(undefined)),
-    reopen: vi.fn(async ({ sessionId }) => ok({ session: sessions.find(item => item.id === sessionId)!, output: '', sequence: 0 })),
-    onEvent: vi.fn(listener => { listeners.add(listener); return () => { listeners.delete(listener) } }),
-  }
-  return { bridge, emit: (event: TerminalEvent) => { for (const listener of [...listeners]) listener(event) } }
+    reopen: vi.fn(async ({ sessionId }) => ok({ session: sessions.find(item => item.id === sessionId)!, output: '', sequence: 0 })) } })
+  return { bridge, emit: publish }
 }
 
 describe('a terminal store filters by place', () => {

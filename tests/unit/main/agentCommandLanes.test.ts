@@ -6,11 +6,14 @@ import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
+
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import type { AgentHostCommand, AgentHostResult } from '../../../src/main/agents/host'
 import type { AgentCommand, AgentHostSnapshot, AgentState } from '../../../src/shared/agents'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
+import { deferred } from '../../fixtures/deferred'
 
 const roots: string[] = []
 const controls: AgentControl[] = []
@@ -22,11 +25,7 @@ afterEach(async () => {
     await rm(root, { recursive: true, force: true })
   }
 })
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>(done => { resolve = done })
-  return { promise, resolve }
-}
+
 /**
  * Holds every thread action open — prompts, thread settings, workspace organization and working-copy
  * work — so several can be observed in flight at once. Each held action is labelled `what:threadId`.
@@ -41,7 +40,7 @@ class LaneHost extends E2EAgentHost {
   hold = false
   private async pause(label: string): Promise<void> {
     this.started.push(label)
-    if (this.hold) await new Promise<void>(done => this.held.push(done))
+    if (this.hold) { const pending = deferred(); this.held.push(pending.resolve); await pending.promise }
   }
   private organized(snapshot: AgentHostSnapshot): AgentHostSnapshot {
     return { ...snapshot, threads: snapshot.threads.map(thread => this.settledThreads.has(thread.id)
@@ -72,9 +71,9 @@ async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'sotto-lanes-')); roots.push(root)
   const host = new LaneHost()
   const openedFolders: string[] = []
-  const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
-  await credentials.load()
-  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
+  const credentials = await testCredentials(root, { mode: 'unavailable' })
+
+  const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
     openThreadFolder: async path => { openedFolders.push(path) },
   })
   controls.push(control)
@@ -203,7 +202,7 @@ describe('thread-scoped command lanes', () => {
     const held = f.control.command(options('workshop', 'full-access'))
     await vi.waitFor(() => expect(f.host.holding).toBe(1))
     // And a global command runs while a thread lane is blocked.
-    expect((await f.control.command({ type: 'configure', patch: { orbColor: 'ice' } })).configuration.orbColor).toBe('ice')
+    expect((await f.control.command({ type: 'configure', patch: { projectsDirectory: 'ice' } })).configuration.projectsDirectory).toBe('ice')
     f.host.release()
     expect((await held).error).toBeNull()
   })

@@ -1,11 +1,12 @@
 // @vitest-environment node
+import { createAgentControl } from '../fixtures/agentControlFixture'
+import { testCredentials } from '../fixtures/testCredentials'
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
 import { codexFixture } from '../fixtures/codexFixture'
-import { AgentControl } from '../../src/main/agents/control'
-import { AgentCredentials } from '../../src/main/agents/credentials'
+
 import { immediatePublishScheduler } from '../fixtures/publishScheduler'
 
 const cleanup: (() => Promise<void>)[] = []
@@ -17,22 +18,20 @@ async function fixture() {
   const threadId = randomUUID()
   await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Synthetic', path: f.root })
   await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId, projectId: f.projectId, modelId: f.modelId, title: 'Synthetic' })
-  const credentials = new AgentCredentials(join(f.root, 'vault'), { isEncryptionAvailable: () => false, encryptString: t => Buffer.from(t), decryptString: t => t.toString() })
-  await credentials.load()
-  const c = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
-    reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
+  const credentials = await testCredentials(join(f.root, 'vault'), { mode: 'unavailable' })
+  const c = createAgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
+    reasoner: {},
   })
   cleanup.push(async () => { c.dispose(); await c.privacyChanged() })
-  await c.start(); await c.command({ type: 'connect' })
+  await c.start(); await c.command({ type: 'connect' }); await c.command({ type: 'select-thread', threadId })
   const current = () => c.get().host.threads.find(t => t.id === threadId)!
   return { f, c, threadId, current }
 }
-it.each([false, true])('corroborated legacy input preserves management unless external input is present=%s', async external => {
+it.each([false, true])('corroborated legacy input keeps its own identity when external input is present=%s', async external => {
   const { f, c, threadId, current } = await fixture()
   await c.command({ type: 'manual-send', threadId, draftId: randomUUID(), text: 'Legacy own input' })
   await f.driver.completeTurn(threadId, 'Synthetic result')
   await expect.poll(() => current().status).toBe('idle')
-  await c.command({ type: 'assign', threadId })
   const before = current().messages
   const state = JSON.parse(await readFile(join(f.root, 'state.json'), 'utf8'))
   const thread = state.threads[await f.realId(threadId)]
@@ -60,7 +59,7 @@ it.each([false, true])('corroborated legacy input preserves management unless ex
   await f.script({ historyItemIds: true })
   await c.command({ type: 'connect' })
   expect(current().messages.map(m => [m.id, m.commandId])).toEqual(external ? expect.arrayContaining(before.map(m => [m.id, m.commandId])) : before.map(m => [m.id, m.commandId]))
-  expect(c.get().assignments.find(a => a.threadId === threadId)?.mode).toBe(external ? 'manual' : 'managed')
+
   if (external) expect(current().messages).toContainEqual(expect.objectContaining({ text: 'External follow-up', role: 'user' }))
 })
 it.each([false, true])('lagging full history preserves an already completed assistant message, partial row=%s', async partial => {

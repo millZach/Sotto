@@ -1,11 +1,13 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import type { RequestDraft } from '../../src/shared/requestDrafts'
 import { closeSotto, launchSotto, openPage, type LaunchedSotto } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
+
+const evidence = evidenceDirectory('artifacts/remove-personal-chats')
 
 const notice = 'Saved chat history could not be fully cleared. Some local chat data was left in place. Repair local storage, then save Settings or restart Sotto to try again.'
 const answerNotice = 'Saved answer cleanup could not finish. The original file was preserved. Repair local storage, then restart Sotto to try again.'
@@ -51,7 +53,7 @@ interface Fixture {
 }
 
 async function withProfile(historyEnabled: boolean, chats: string | null, run: (fixture: Fixture) => Promise<void>, forms: string = sourceForms): Promise<void> {
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-retired-privacy-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-retired-privacy-' })).directory
   let launched: LaunchedSotto | undefined
   try {
     const personalDirectory = join(profile, 'personal-chat')
@@ -72,7 +74,7 @@ async function withProfile(historyEnabled: boolean, chats: string | null, run: (
     await run({ launched, chatsFile, formsFile, personalDirectory })
   } finally {
     if (launched) await closeSotto(launched)
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 }
 
@@ -144,8 +146,8 @@ test.describe('retired Chats follow Keep local history', () => {
         Math.max(0, document.documentElement.scrollHeight - innerHeight),
       ])).toEqual([0, 0])
       await expect(launched.page.getByRole('status').filter({ hasText: answerNotice })).toBeVisible()
-      await mkdir('artifacts/remove-personal-chats', { recursive: true })
-      await launched.page.screenshot({ path: 'artifacts/remove-personal-chats/answer-cleanup-notice-820x560.png',
+      await mkdir(evidence, { recursive: true })
+      await launched.page.screenshot({ path: join(evidence, 'answer-cleanup-notice-820x560.png'),
         clip: { x: 0, y: 0, width: 820, height: 560 }, scale: 'css' })
 
       await writeFile(formsFile, sourceForms, 'utf8')
@@ -188,8 +190,8 @@ test.describe('retired Chats follow Keep local history', () => {
         Math.max(0, document.documentElement.scrollWidth - innerWidth),
         Math.max(0, document.documentElement.scrollHeight - innerHeight),
       ])).toEqual([0, 0])
-      await mkdir('artifacts/remove-personal-chats', { recursive: true })
-      await page.screenshot({ path: 'artifacts/remove-personal-chats/privacy-cleanup-notice-820x560.png',
+      await mkdir(evidence, { recursive: true })
+      await page.screenshot({ path: join(evidence, 'privacy-cleanup-notice-820x560.png'),
         clip: { x: 0, y: 0, width: 820, height: 560 }, scale: 'css' })
     })
   })

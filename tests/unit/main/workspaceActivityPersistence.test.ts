@@ -8,6 +8,7 @@ import { WorkspaceHost } from '../../../src/main/agents/workspace'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
 import type { AgentActivity } from '../../../src/shared/agentActivity'
+import { deferred } from '../../fixtures/deferred'
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { vi.restoreAllMocks(); for (const close of cleanup.splice(0).reverse()) await close() })
@@ -149,7 +150,6 @@ it('erases old activity on privacy changes and never revives it when history is 
   expect(reopened.workspaceSnapshot().threads[0]!.activities?.map(item => item.output)).toEqual(['Fresh saved output'])
 })
 
-
 it('keeps legacy activity recoverable when migration fails, then imports it on the next start', async () => {
   const f = await fixture(() => true, true)
   const sync = vi.spyOn(ThreadStore.prototype, 'syncActivities').mockImplementation(() => { throw new Error('disk unavailable') })
@@ -181,10 +181,9 @@ it('commits a newer return to the old name after an overlapping save finishes', 
   const host = await f.open()
   await host.connect()
   const actual = AtomicJsonStore.prototype.write
-  let release!: () => void
-  let writing!: () => void
-  const started = new Promise<void>(resolve => { writing = resolve })
-  const held = new Promise<void>(resolve => { release = resolve })
+
+  const { promise: started, resolve: writing } = deferred<void>()
+  const { promise: held, resolve: release } = deferred<void>()
   vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementationOnce(async function (this: AtomicJsonStore<unknown>, value: unknown) {
     writing(); await held; return actual.call(this, value)
   })
@@ -196,7 +195,6 @@ it('commits a newer return to the old name after an overlapping save finishes', 
   const saved = JSON.parse(await readFile(join(f.directory, 'workspace.json'), 'utf8'))
   expect(saved.snapshot.threads[0].title).toBe('Workshop')
 })
-
 
 it('still erases durable history when activity synchronization would fail during a privacy change', async () => {
   let history = true
@@ -212,7 +210,6 @@ it('still erases durable history when activity synchronization would fail during
   expect(disk.includes('DURABLE_MESSAGE_MARKER')).toBe(false)
   expect(disk.includes('Retained tool output')).toBe(false)
 })
-
 
 it('updates one record across four large activity archives without encoding or saving the others', async () => {
   const f = await fixture()
@@ -237,7 +234,6 @@ it('updates one record across four large activity archives without encoding or s
   expect(threads[3]!.activities).toHaveLength(96)
   expect(threads[3]!.activities![95]!.output?.length).toBe(65_500)
 })
-
 
 it('suppresses legacy activity when first opened with history off, including restart before enabling', async () => {
   let history = false
@@ -363,7 +359,6 @@ it('never falls back to JSON containing private activity when enabling history f
   expect(saved.includes('Retained tool output')).toBe(false)
 })
 
-
 it.each([false, true])('preserves legacy activity evidence across restarts when known-empty is %s', async known => {
   const f = await fixture()
   const thread = f.provider.state.threads[0]!
@@ -377,7 +372,6 @@ it.each([false, true])('preserves legacy activity evidence across restarts when 
     await f.close(host)
   }
 })
-
 
 it.each([
   { legacy: true, epoch: 'new-epoch', empty: false },

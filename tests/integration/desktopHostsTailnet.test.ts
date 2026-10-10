@@ -1,10 +1,13 @@
 // @vitest-environment node
+import { deferred } from '../fixtures/deferred'
+import { testCredentials } from '../fixtures/testCredentials'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { startHeadlessHost, type HostStartedBy } from '../../src/host'
+import type { HostStartedBy } from '../../src/host'
+import { startFixtureHeadlessHost as startHeadlessHost } from '../fixtures/desktopHostStack'
 import { HostCredentialEncryption } from '../../src/host/credentials'
 import { AgentCredentials } from '../../src/main/agents/credentials'
 import { desktopWindowClient } from '../../src/main/agents/hostService'
@@ -15,7 +18,7 @@ import { SshHostLauncher, type SshBootResult, type SshConnectOptions, type SshHo
 import { TAILNET_STORE_FILE } from '../../src/main/hosts/tailnetStore'
 import { hostTailnetSetting } from '../../src/main/hosts/hostTailnetSetting'
 import { BOOT_TAILNET_ONLY_MS } from '../../src/main/hosts/hostConnectionPlan'
-import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
+
 import { hostEntityKey } from '../../src/shared/clientIdentity'
 import type { RemoteHost } from '../../src/shared/hosts'
 import { ensureFixtureDesktopAnswers } from '../fixtures/sshDesktopAnswers'
@@ -86,8 +89,7 @@ class FixtureSsh extends SshHostLauncher {
 
 function startHost(startedBy: HostStartedBy) {
   const standIn = hostTailscale.tailscale
-  return startHeadlessHost({ dataDirectory: data, port: 0, providers: { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost() },
-    reasoner: e2eAgentReasoner, tailscale: { ...standIn, status: async () => tailscaleInstalled ? standIn.status() : { state: 'missing' },
+  return startHeadlessHost({ dataDirectory: data, port: 0, tailscale: { ...standIn, status: async () => tailscaleInstalled ? standIn.status() : { state: 'missing' },
       serve: async (port, loopback) => serveDenied ? { ok: false, reason: 'denied' } : standIn.serve(port, loopback) }, startedBy })
 }
 beforeEach(async () => {
@@ -97,7 +99,7 @@ beforeEach(async () => {
   tailscaleInstalled = true; serveDenied = false; clock = Date.now(); adminTokenOverride = undefined; tokenGate = undefined; tokenUnanswered = false; bootChange = undefined
   host = await startHost('launch-script')
   stand = await serveStandIn(() => hostTailscale.proxied())
-  credentials = new AgentCredentials(join(root, 'desktop'), new HostCredentialEncryption('synthetic-desktop-credential-key')); await credentials.load()
+  credentials = await testCredentials(join(root, 'desktop'), { encryption: new HostCredentialEncryption('synthetic-desktop-credential-key') });
   router = new DesktopHostRouter(emptyDesktopState)
   launchers.length = 0; operations.length = 0; returnMs = 60_000; retryMs = 0
   manager = newManager()
@@ -131,7 +133,7 @@ async function remoteThread(): Promise<string> {
   const state = await router.command({ type: 'create-project', provider: 'codex', title: 'Remote', path: root, useExisting: true }, client)
   const project = state.host.projects.find(item => item.path === root)!
   const threadId = randomUUID()
-  await router.command({ type: 'create-thread', projectId: project.id, threadId, title: 'Remote task', modelId: state.host.models[0]!.id, managed: false, workingCopy: 'shared' }, client)
+  await router.command({ type: 'create-thread', projectId: project.id, threadId, title: 'Remote task', modelId: state.host.models[0]!.id, workingCopy: 'shared' }, client)
   const qualified = hostEntityKey(host.descriptor!.hostId, threadId)
   await router.command({ type: 'select-thread', threadId: qualified }, client)
   return qualified
@@ -374,7 +376,7 @@ describe('a tailnet connection (ADR-0053)', () => {
     const remote = await add()
     expect(first()).toMatchObject({ phase: 'connected', via: 'ssh', tailnetNote: 'unreachable' })
     let release!: () => void
-    tokenGate = new Promise(resolve => { release = resolve })
+    tokenGate = (() => { const pending = deferred<void>(); release = pending.resolve; return pending.promise })()
     const link = manager.phonesLinks().find(item => item.id === remote.id)!
     const pressing = link.press(connection => hostTailnetSetting(connection, link.hostId))
     stand.answer('proxy')
@@ -395,7 +397,7 @@ describe('a tailnet connection (ADR-0053)', () => {
     const thread = await remoteThread()
     // The 5-minute check (shortened here) finds the tailnet answering, and its health waits: the move is under way.
     let answerHealth!: () => void
-    stand.hold(new Promise(resolve => { answerHealth = resolve }))
+    stand.hold((() => { const pending = deferred<void>(); answerHealth = pending.resolve; return pending.promise })())
     const asked = stand.requests.length
     stand.answer('proxy')
     await vi.waitFor(() => expect(stand.requests.slice(asked)).toContain('GET /v1/health'), { timeout: 20_000 })
@@ -427,7 +429,7 @@ describe('a tailnet connection (ADR-0053)', () => {
     expect(first()).toMatchObject({ phase: 'connected', via: 'ssh', tailnetNote: 'unreachable' })
     // The 5-minute check (shortened here) finds the tailnet answering, and its health waits: the move is under way.
     let answerHealth!: () => void
-    stand.hold(new Promise(resolve => { answerHealth = resolve }))
+    stand.hold((() => { const pending = deferred<void>(); answerHealth = pending.resolve; return pending.promise })())
     const asked = stand.requests.length
     stand.answer('proxy')
     await vi.waitFor(() => expect(stand.requests.slice(asked)).toContain('GET /v1/health'), { timeout: 20_000 })
@@ -450,7 +452,7 @@ describe('a tailnet connection (ADR-0053)', () => {
     let updating: string | undefined, asks = 0
     manager.useUpdates({ state: () => [], command: async () => undefined, subscribe: () => () => undefined, busy: () => { asks += 1; return updating } })
     let answerHealth!: () => void
-    stand.hold(new Promise(resolve => { answerHealth = resolve }))
+    stand.hold((() => { const pending = deferred<void>(); answerHealth = pending.resolve; return pending.promise })())
     const asked = stand.requests.length
     stand.answer('proxy')
     await vi.waitFor(() => expect(stand.requests.slice(asked)).toContain('GET /v1/health'), { timeout: 20_000 })

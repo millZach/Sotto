@@ -8,9 +8,7 @@ import type { AgentCommand } from './agents'
  *
  * Everything else keeps the one global lane, including commands that carry a `threadId` but reach
  * past the thread they name:
- * - `assign`, `unassign`, `resume`, `pause` move assignment authority and hand the single composer
- *   draft to or from management, which supervision reads across every thread.
- * - `recover-draft` and `resume-draft` rebind that same single composer draft.
+ * - `recover-draft` rebinds that same single composer draft.
  * - `create-thread` has no existing thread to key a lane on, and it also takes the selection.
  * - `settle-project` and `restore-project` move every thread of a project at once.
  * The thread-scoped commands that never enter a lane at all are `LANELESS_THREAD_COMMAND_TYPES`, below.

@@ -46,6 +46,13 @@ function putGitFirstOnPath(): void {
 // that on a loaded runner, so they get the same five seconds; something genuinely missing still fails.
 configure({ asyncUtilTimeout: 5_000 })
 
+// ProseMirror measures selections to scroll the caret; jsdom has no layout or hit testing.
+if (typeof Range !== 'undefined') {
+  Range.prototype.getBoundingClientRect ??= () => new DOMRect()
+  Range.prototype.getClientRects ??= () => Object.assign([], { item: () => null })
+  document.elementFromPoint ??= () => null
+}
+
 afterEach(() => {
   if (typeof localStorage !== 'undefined') localStorage.clear()
   if (typeof sessionStorage !== 'undefined') sessionStorage.clear()

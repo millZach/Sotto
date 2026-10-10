@@ -1,6 +1,10 @@
+import { join } from 'node:path'
+import { evidenceDirectory } from '../fixtures/evidence'
 import { mkdir } from 'node:fs/promises'
 import { expect, test } from '@playwright/test'
 import { bareEntityId, closeSotto, launchSotto, openPage, openThreads } from './support/sottoLaunch'
+
+const evidence = evidenceDirectory('artifacts/new-thread-setup')
 
 test('project defaults remain editable in Application and terminal creation keeps its layout', async () => {
   test.setTimeout(120_000)
@@ -32,7 +36,7 @@ test('project defaults remain editable in Application and terminal creation keep
     await page.getByRole('tab', { name: 'Application', exact: true }).click()
     await page.getByRole('button', { name: 'Project defaults', exact: true }).click()
     await expect(choice).toHaveValue('independent')
-    await mkdir('artifacts/new-thread-setup', { recursive: true })
+    await mkdir(evidence, { recursive: true })
     for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]]) {
       await app.evaluate(({ BrowserWindow }, size) => {
         const window = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().endsWith('/index.html'))!
@@ -45,7 +49,7 @@ test('project defaults remain editable in Application and terminal creation keep
         await choice.scrollIntoViewIfNeeded()
         await expect(choice).toBeInViewport()
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-        await page.screenshot({ path: `artifacts/new-thread-setup/project-defaults-${width}-${appearance}.png`, animations: 'disabled' })
+        await page.screenshot({ path: join(evidence, `project-defaults-${width}-${appearance}.png`), animations: 'disabled' })
       }
     }
     await choice.selectOption('inherit')
@@ -62,7 +66,7 @@ test('project defaults remain editable in Application and terminal creation keep
     await page.keyboard.press('Enter')
     await expect(dialog.getByRole('textbox', { name: 'Terminal name' })).toBeVisible()
     expect(await dialog.locator('form').evaluate(node => ({ display: getComputedStyle(node).display, overflow: getComputedStyle(node).overflowY }))).toEqual({ display: 'grid', overflow: 'auto' })
-    await page.screenshot({ path: 'artifacts/new-thread-setup/terminal-820-light.png', animations: 'disabled' })
+    await page.screenshot({ path: join(evidence, 'terminal-820-light.png'), animations: 'disabled' })
     await page.keyboard.press('Escape')
     await expect(dialog).toHaveCount(0)
   } finally { await closeSotto(launched) }

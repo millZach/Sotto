@@ -1,5 +1,5 @@
-import { mkdir, mkdtemp, rm, unlink, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { mkdir, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { deflateSync } from 'node:zlib'
 import { expect, test, type Page } from '@playwright/test'
@@ -65,7 +65,7 @@ async function capture(page: Page, name: string): Promise<void> {
 
 test('browses real working folders in the shared tools panel, following focus or pinned', async () => {
   test.setTimeout(120_000)
-  const root = await mkdtemp(join(tmpdir(), 'sotto-e2e-files-'))
+  const root = (await ownedE2EProfile({ prefix: 'sotto-e2e-files-' })).directory
   const workshop = await project(root, 'workshop', {
     'README.md': '# Workshop\n\nA **small** fixture with a [safe link](https://example.com) and a remote image:\n\n![remote](https://example.com/tracker.png)\n\n- Browse folders\n- Preview files\n\n```ts\nexport const answer = 42\n```\n',
     'src/app.ts': "import { answer } from './answer'\n\nexport function main(): number {\n  return answer\n}\n",
@@ -84,13 +84,13 @@ test('browses real working folders in the shared tools panel, following focus or
     const ids = await page.evaluate(async folders => {
       await window.sotto!.updateSettings({ onboardingComplete: true })
       const agents = window.sotto!.agents!
-      await agents.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await agents.command({ type: 'configure', patch: { enabled: true, } })
       await agents.command({ type: 'connect' })
       const created: string[] = []
       for (const [title, path, thread] of [['workshop', folders[0], 'Workshop files'], ['docs-site', folders[1], 'Docs site']] as const) {
         await agents.command({ type: 'create-project', title, path, useExisting: true })
         const projectId = (await agents.get()).host.projects.find(item => item.title === title)!.id
-        await agents.command({ type: 'create-thread', projectId, title: thread, modelId: 'claude:test', managed: false })
+        await agents.command({ type: 'create-thread', projectId, title: thread, modelId: 'claude:test' })
         created.push((await agents.get()).activeThreadId!)
       }
       return created
@@ -216,6 +216,6 @@ test('browses real working folders in the shared tools panel, following focus or
     await page.screenshot({ path: `${SHOTS}/reduced-motion-1280-at-${Math.round(scale * 100)}-dark.png`, animations: 'disabled' })
   } finally {
     await closeSotto(launched)
-    await rm(root, { recursive: true, force: true })
+    await removeOwnedE2EProfile(root)
   }
 })

@@ -7,6 +7,7 @@ import { AgentCredentials, type CredentialEncryption } from '../../../src/main/a
 import { SecureSettings } from '../../../src/main/agents/secureSettings'
 import { SettingsRepository } from '../../../src/main/storage/settingsRepository'
 import { NativeSettingsCoordinator } from '../../../src/main/settings/nativeSettingsCoordinator'
+import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 
 const roots: string[] = []
 class FixtureEncryption implements CredentialEncryption {
@@ -44,6 +45,33 @@ afterEach(async () => {
   }
 })
 describe('credential storage and formatting migration', () => {
+  it('deletes only the retired voice ciphertext while the vault is locked and unreadable', async () => {
+    const f = await fixture()
+    for (const slot of ['grokSpeech', 'formatting', 'reasoning', 'cloudIphone', 'independent']) await f.credentials.set(slot, `fixture-${slot}`)
+    const kept = Object.fromEntries(['formatting', 'reasoning', 'cloudIphone', 'independent'].map(slot => [slot, f.credentials.sealed(slot)]))
+    f.encryption.unlocked = false; f.encryption.failReads = true
+    const decrypt = vi.spyOn(f.encryption, 'decryptString')
+    const reloaded = new AgentCredentials(f.root, f.encryption)
+    await reloaded.load(); await reloaded.load()
+    expect(reloaded.has('grokSpeech')).toBe(false)
+    expect(JSON.parse(await readFile(join(f.root, 'credentials.json'), 'utf8'))).toEqual(kept)
+    expect(decrypt).not.toHaveBeenCalled()
+    decrypt.mockRestore()
+  })
+  it('reports a failed retired-key write, keeps its ciphertext and retries on load', async () => {
+    const f = await fixture(); await f.credentials.set('grokSpeech', 'fixture-retired-key')
+    const stored = await readFile(join(f.root, 'credentials.json'), 'utf8')
+    const write = vi.spyOn(AtomicJsonStore.prototype, 'write').mockRejectedValueOnce(new Error('Storage unavailable'))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    try {
+      await f.credentials.load()
+      expect(f.credentials.has('grokSpeech')).toBe(true)
+      expect(await readFile(join(f.root, 'credentials.json'), 'utf8')).toBe(stored)
+      expect(warn).toHaveBeenCalledWith('retired-voice-credential-clear-failed')
+      await f.credentials.load()
+      expect(f.credentials.has('grokSpeech')).toBe(false)
+    } finally { write.mockRestore(); warn.mockRestore() }
+  })
   it.each(['success', 'repository failure', 'verification failure', 'locked vault'])('keeps the saved key through reset with %s', async outcome => {
     const f = await fixture()
     const settingsPath = join(f.root, 'settings.json')
@@ -132,7 +160,8 @@ describe('credential storage and formatting migration', () => {
     ])
     const reloaded = new AgentCredentials(f.root, f.encryption)
     await reloaded.load()
-    expect(reloaded.get('grokSpeech')).toBe('fixture-speech-secret')
+    expect(reloaded.has('grokSpeech')).toBe(false)
+    expect(reloaded.get('grokSpeech')).toBe('')
     expect(reloaded.get('reasoning')).toBe('fixture-reasoning-secret')
     expect(reloaded.get('independent')).toBe('fixture-independent-secret')
     const stored = await readFile(join(f.root, 'credentials.json'), 'utf8')

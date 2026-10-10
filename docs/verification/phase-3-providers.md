@@ -61,7 +61,7 @@ Local synthetic evidence roots (not committed; contain only this verification's 
 - Grok raw expansion: `%TEMP%/sotto-phase3-grok-wJxAPa`.
 - Grok adapter first: `%TEMP%/sotto-phase3-grok-adapter-zK9ImO`; final: `%TEMP%/sotto-phase3-grok-adapter-ZaybC1`.
 
-Reproduction entry points: `tests/fixtures/phase3NativeProbe.ts` (explicit `SOTTO_PHASE3_NATIVE` modes), `nativeProviderCatalogsLive.test.ts` (`SOTTO_PHASE3_CATALOG_LIVE=1`), and `nativeProviderGrokLive.test.ts` (`SOTTO_PHASE3_GROK_LIVE=1`). Paid probes are opt-in and excluded from normal runs.
+Reproduction entry points: `tests/fixtures/nativeProviderCapabilitiesProbe.ts` (explicit `SOTTO_PHASE3_NATIVE` modes), `nativeProviderCatalogsLive.test.ts` (`SOTTO_PHASE3_CATALOG_LIVE=1`), and `nativeProviderGrokLive.test.ts` (`SOTTO_PHASE3_GROK_LIVE=1`). Paid probes are opt-in and excluded from normal runs.
 
 ## Focused tests
 

@@ -5,6 +5,7 @@ import { HostUpdates, type HostUpdateCandidate, type HostUpdateHosts, type HostU
 import type { SshHostUpdateOperation, SshHostUpdateOptions, SshHostUpdateResult } from '../../../src/main/hosts/sshLauncher'
 import { SshFailure } from '../../../src/main/hosts/sshFailure'
 import type { HostUpdateState } from '../../../src/shared/hostUpdates'
+import { deferred } from '../../fixtures/deferred'
 
 const DESKTOP = '0.1.24'
 const FILE = 'Sotto-host-0.1.24-linux-x64.tar.gz'
@@ -66,6 +67,21 @@ function setup(options: { download?: (url: string, limit: number, signal: AbortS
 }
 
 describe('which hosts need an update', () => {
+  it('offers and runs the existing update action while a same-version host reports legacy management', async () => {
+    const hosts = new Hosts(), threads = new Threads()
+    hosts.list = [forge({ version: DESKTOP })]
+    let legacyManagement = true
+    const updates = new HostUpdates({ hosts, threads, version: DESKTOP, requiresManagementUpdate: () => legacyManagement })
+    expect(updates.state()).toMatchObject([{ phase: 'needs', error: expect.stringContaining('thread management running') }])
+    hosts.steps['update-restart'] = async () => { legacyManagement = false; return ready }
+    await updates.command(ID, 'update')
+    await vi.waitFor(() => expect(updates.state()).toMatchObject([{ phase: 'done' }]))
+    expect(hosts.operations.map(operation => operation.op)).toEqual(['update-fetch', 'update-install', 'update-restart'])
+    await updates.command(ID, 'dismiss'); expect(updates.state()).toEqual([])
+    hosts.list = [forge({ version: '1.0.0' })]; legacyManagement = true; hosts.emit()
+    expect(updates.state()).toEqual([])
+    updates.dispose()
+  })
   it('offers one for a host that runs an older Sotto than this computer, and for no other', () => {
     const { hosts, updates } = setup()
     expect(updates.state()).toMatchObject([{ id: ID, name: 'forge', from: '0.1.22', to: DESKTOP, phase: 'needs', owned: true, working: 0 }])
@@ -138,7 +154,7 @@ describe('an update', () => {
   it('shows the install step before the host is asked to unpack, so Cancel update is never offered for it', async () => {
     const { hosts, updates, one } = setup()
     let unpack!: () => void
-    hosts.steps['update-install'] = () => new Promise(resolve => { unpack = () => resolve({ type: 'update-installed', version: DESKTOP }) })
+    hosts.steps['update-install'] = () => { const pending = deferred<SshHostUpdateResult>(); unpack = () => pending.resolve({ type: 'update-installed', version: DESKTOP }); return pending.promise }
     await updates.command(ID, 'update')
     await vi.waitFor(() => expect(hosts.operations.map(operation => operation.op)).toContain('update-install'))
     expect(one()).toMatchObject({ phase: 'updating', step: 'install' })
@@ -170,7 +186,7 @@ describe('an update', () => {
     expect(one().failure).toBeUndefined()
     let installing!: () => void
     hosts.steps['update-fetch'] = async (_operation, options) => { options.onStep?.('check'); return { type: 'update-fetched', file: FILE, sha256: SUM } }
-    hosts.steps['update-install'] = (_operation, options) => new Promise(resolve => { options.onStep?.('install'); installing = () => resolve({ type: 'update-installed', version: DESKTOP }) })
+    hosts.steps['update-install'] = (_operation, options) => { const pending = deferred<SshHostUpdateResult>(); options.onStep?.('install'); installing = () => pending.resolve({ type: 'update-installed', version: DESKTOP }); return pending.promise }
     await updates.command(ID, 'update')
     await vi.waitFor(() => expect(one()).toMatchObject({ step: 'install' }))
     await expect(updates.command(ID, 'cancel')).rejects.toThrow(`forge is already installing ${DESKTOP}, which cannot be stopped partway. Nothing was changed.`)

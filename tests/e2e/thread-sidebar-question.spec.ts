@@ -1,11 +1,18 @@
+import { agentState } from './support/agentAccess'
+import { join } from 'node:path'
+import { evidenceDirectory } from '../fixtures/evidence'
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import type { AgentRequest, AgentState } from '../../src/shared/agents'
 import { hostEntityKey } from '../../src/shared/clientIdentity'
-import { closeSotto, launchSotto, launchSottoWithVoice, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto,  openThreads, type LaunchedSotto } from './support/sottoLaunch'
+
+const agentQuestionsEvidence = evidenceDirectory('artifacts/codex-questions-thread-agents')
+
+const evidence = evidenceDirectory('artifacts/sidebar-question')
 
 // A provider's question or permission on a thread with no assignment never enters the coordinator's attention
 // queue, which holds requests only for threads with one. The sidebar row still has to say the thread is waiting on you,
-// with the voice coordinator on or off, and stop saying so once you answer. The app is real end to end; only
+// and stop saying so once you answer. The app is real end to end; only
 // the provider's effects come from the unpackaged E2E host.
 
 const question: AgentRequest = {
@@ -23,7 +30,7 @@ const permission: AgentRequest = {
 async function prepare(page: Page, appearance: 'dark' | 'light'): Promise<void> {
   await page.evaluate(async appearance => {
     await window.sotto!.updateSettings({ onboardingComplete: true, appearance })
-    await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+    await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
     await window.sotto!.agents!.command({ type: 'connect' })
   }, appearance)
   await page.reload()
@@ -38,7 +45,7 @@ async function resize(app: ElectronApplication, page: Page, width: number, heigh
   await expect.poll(() => page.evaluate(([width, height]) => window.innerWidth === width && Math.abs(window.innerHeight - height) <= 2, [width, height] as const)).toBe(true)
 }
 
-const state = (page: Page): Promise<AgentState> => page.evaluate(() => window.sotto!.agents!.get())
+const state = (page: Page): Promise<AgentState> => agentState(page)
 const row = (page: Page, title: string): Locator => page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: title, exact: true })
 const scopedThread = (snapshot: AgentState, threadId: string): string => snapshot.hostId ? hostEntityKey(snapshot.hostId, threadId) : threadId
 const pending = async (page: Page, threadId: string): Promise<string[] | undefined> => {
@@ -64,13 +71,13 @@ async function expectWaiting(page: Page, title: string, waiting: 'question' | 'a
   await expect(status).toHaveAttribute('data-state', 'needs')
   await expect(status).toHaveAttribute('data-waiting', waiting)
   await expect(row(page, title).locator('.thread-nav__ring')).toHaveAttribute('data-waiting', waiting)
-  await page.screenshot({ path: `artifacts/sidebar-question/${capture}.png`, animations: 'disabled' })
+  await page.screenshot({ path: join(evidence, `${capture}.png`), animations: 'disabled' })
   await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
   const rail = page.locator(`.thread-nav__rail-thread[aria-label="${title}"]`)
   await expect(rail).toHaveAttribute('title', `${title} · ${label}`)
   await expect(rail.locator('.thread-nav__ring')).toHaveAttribute('data-state', 'needs')
   await expect(rail.locator('.thread-nav__ring')).toHaveAttribute('data-waiting', waiting)
-  await page.screenshot({ path: `artifacts/sidebar-question/${capture}-rail.png`, animations: 'disabled' })
+  await page.screenshot({ path: join(evidence, `${capture}-rail.png`), animations: 'disabled' })
   await page.getByRole('button', { name: 'Expand sidebar', exact: true }).click()
   await expect(row(page, title)).toBeVisible()
 }
@@ -85,7 +92,7 @@ async function expectClear(page: Page, title: string): Promise<void> {
 let launched: LaunchedSotto | undefined
 test.afterEach(async () => { if (launched) await closeSotto(launched); launched = undefined })
 
-test('shows a question on a thread you run in its sidebar row until you answer it, with the voice coordinator off', async () => {
+test('shows a question on a thread you run in its sidebar row until you answer it', async () => {
   test.setTimeout(120_000)
   launched = await launchSotto()
   const { page, app } = launched
@@ -96,7 +103,6 @@ test('shows a question on a thread you run in its sidebar row until you answer i
   await expect.poll(() => pending(page, 'workshop')).toEqual([question.id])
   // The cause of the report: nothing about this thread is in the attention queue.
   const snapshot = await state(page)
-  expect(snapshot.queue.filter(item => item.threadId === scopedThread(snapshot, 'workshop'))).toEqual([])
   await expectWaiting(page, 'Workshop', 'question', 'Needs your answer', 'question-1280x800-dark')
 
   await open(page, 'Workshop')
@@ -110,7 +116,7 @@ test('shows a question on a thread you run in its sidebar row until you answer i
       await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
       await expect(form.getByRole('radio', { name: /The weekly report/u })).toBeVisible()
       expect(await form.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
-      await page.screenshot({ path: `artifacts/codex-questions-thread-agents/question-${width}-${appearance}.png`, animations: 'disabled' })
+      await page.screenshot({ path: join(agentQuestionsEvidence, `question-${width}-${appearance}.png`), animations: 'disabled' })
     }
   }
   await resize(app, page, 1280, 800)
@@ -120,12 +126,12 @@ test('shows a question on a thread you run in its sidebar row until you answer i
   await expect(form).toHaveCount(0)
   await expect.poll(() => pending(page, 'workshop')).toEqual([])
   await expectClear(page, 'Workshop')
-  await page.screenshot({ path: 'artifacts/sidebar-question/question-answered-1280x800-dark.png', animations: 'disabled' })
+  await page.screenshot({ path: join(evidence, 'question-answered-1280x800-dark.png'), animations: 'disabled' })
 })
 
-test('shows a permission the same way with the voice coordinator on, at the minimum window in light', async () => {
+test('shows a permission the same way at the minimum window in light', async () => {
   test.setTimeout(120_000)
-  launched = await launchSottoWithVoice()
+  launched = await launchSotto()
   const { page, app } = launched
   await prepare(page, 'light')
   await resize(app, page, 820, 560)

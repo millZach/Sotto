@@ -1,5 +1,9 @@
 # Sotto palettes verification
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 September 22, 2026, on `feat/sotto-palettes-day-night` from `main` at 0c700d75. Zach picked the Light and Dark
 columns and six palettes from three rounds of throwaway prototypes on `prototype/theme-picker`, which stays off
 `main`. The decision is ADR-0024; the glossary terms are **Ink** and **App icon brand**.
@@ -38,13 +42,13 @@ built app on throwaway profiles. The images are in `artifacts/verification/sotto
   (`tests/unit/renderer/themeLibrary.test.tsx`).
 - The keyboard path: each radio group is one Tab stop, the arrows, Home and End move and choose as they go and wrap,
   and Tab runs the scheme, Create theme, Add theme, the Light column and then the Dark column
-  (`themeLibrary.test.tsx`, `settingsView.test.tsx`).
+  (`themeLibrary.test.tsx`, `tests/unit/renderer/features/settings/settingsAppearance.test.tsx`).
 - A half saved on a retired T3 id (`t3-chat`, `grove`, `ocean`, `ember`, `iris`) reads back as Sotto, and those
   ids are free for an imported theme while T3's aliases stay reserved (`tests/unit/shared/settings.test.ts`,
   `themes.test.ts`).
 - `data-brand` is set only while the default theme paints, never for an editor draft
   (`tests/unit/renderer/appearance.test.ts`). The widget sets and releases it from the palette's `appIcon` flag
-  (`widgetApp.test.tsx`), and the mark and orb follow it (`themeBrand.test.tsx`).
+  (`tests/unit/renderer/widget/widgetAppearance.test.tsx`, `tests/unit/renderer/widget/widgetEntry.test.tsx`), and the mark and orb follow it (`themeBrand.test.tsx`).
 - The first-frame palette in `tokens.css` is Sotto's new one in both modes, so a launch does not flash the old
   look before settings arrive (`themeTokens.test.ts`).
 

@@ -1,66 +1,15 @@
 // @vitest-environment node
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { createServer, connect } from 'node:net'
-import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import type { HostService } from '../../../src/main/agents/hostService'
-import { PhoneAccess, type PhoneAccessOptions, type PhoneAccessTailscale } from '../../../src/main/phones/phoneAccess'
+import { readFile, writeFile } from 'node:fs/promises'
+
+import { join } from 'node:path'
+import { expect, it, vi } from 'vitest'
+
+import { PhoneAccess } from '../../../src/main/phones/phoneAccess'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
-import { serveTarget, type ServeConfig, type ServeResult, type TailscaleStatus } from '../../../src/main/phones/tailscale'
+import { serveTarget } from '../../../src/main/phones/tailscale'
 import { HOST_START_RETRY_WINDOW_MS } from '../../../src/host/phones'
-
-let root: string
-beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'sotto-phone-access-')) })
-afterEach(async () => { if (dirname(root) === tmpdir() && root.includes('sotto-phone-access-')) await rm(root, { recursive: true, force: true }) })
-
-const DNS = 'laptop-russh2j5.tail5728ca.ts.net'
-/** A stand-in Tailscale: its Serve settings, one proxy per port (8443 or 10000), Sotto's or someone else's. */
-function fakeTailscale(options: { status?: TailscaleStatus; other?: string; others?: Record<number, string>; serve?: ServeResult } = {}) {
-  let status: TailscaleStatus = options.status ?? { state: 'running', dnsName: DNS, hostName: 'laptop-russh2j5' }
-  const proxies = new Map<number, string>(Object.entries(options.others ?? {}).map(([port, target]) => [Number(port), target]))
-  if (options.other) proxies.set(8443, options.other)
-  const calls: string[] = []
-  // 8443 keeps the call names the tests have always read; another port names itself.
-  const on = (port: number) => port === 8443 ? '' : ` on ${port}`
-  const tailscale: PhoneAccessTailscale = {
-    status: vi.fn(async () => { calls.push('status'); return status }),
-    serveStatus: vi.fn(async (): Promise<ServeConfig> => {
-      calls.push('serve-status')
-      if (proxies.size === 0) return {}
-      const entries = [...proxies]
-      return {
-        TCP: Object.fromEntries(entries.map(([port]) => [String(port), { HTTPS: true }])),
-        Web: Object.fromEntries(entries.map(([port, target]) => [`${DNS}:${port}`, { Handlers: { '/': { Proxy: target } } }])),
-      }
-    }),
-    serve: vi.fn(async (port: number, loopback: number): Promise<ServeResult> => { calls.push(`serve ${loopback}${on(port)}`); const result = options.serve ?? { ok: true }; if (result.ok) proxies.set(port, serveTarget(loopback)); return result }),
-    unserve: vi.fn(async (port: number) => { calls.push(`unserve${on(port)}`); proxies.delete(port); return true }),
-  }
-  return {
-    tailscale, calls, proxy: (port = 8443) => proxies.get(port),
-    setStatus: (next: TailscaleStatus) => { status = next }, setOther: (target: string, port = 8443) => { proxies.set(port, target) },
-  }
-}
-/** A stand-in listener: its port, the clients connected to it, and whether it was closed. */
-function fakeServer(options: { refusePort?: number } = {}) {
-  const started: { port: number; closed: boolean; name: () => string | undefined; admin: unknown; onPaired?: (id: string) => void }[] = []
-  let next = 41000
-  const startServer = vi.fn(async (input: { port?: number; name?: () => string | undefined; admin?: boolean; onPaired?: (id: string) => void }) => {
-    if (input.port !== undefined && input.port !== 0 && input.port === options.refusePort) throw Object.assign(new Error('listen EADDRINUSE'), { code: 'EADDRINUSE' })
-    const port = input.port || next++
-    const entry = { port, closed: false, name: input.name!, admin: input.admin, ...(input.onPaired ? { onPaired: input.onPaired } : {}) }
-    started.push(entry)
-    return { descriptor: { port }, connectedClients: () => [], dropRevoked: vi.fn(), refreshCapabilities: vi.fn(), stopServing: () => { entry.closed = true }, close: async () => { entry.closed = true } }
-  })
-  return { startServer: startServer as unknown as NonNullable<PhoneAccessOptions['startServer']>, started }
-}
-function create(options: Partial<PhoneAccessOptions> & { tailscale: PhoneAccessTailscale }, settings = { phoneAccess: true, phoneAccessName: '' }) {
-  const current = { ...settings }
-  const access = new PhoneAccess({ directory: root, service: {} as HostService, settings: () => current, openExternal: vi.fn(async () => undefined), hostname: () => 'LAPTOP', retryMs: 60_000, ...options })
-  return { access, settings: current }
-}
-const record = async () => JSON.parse(await readFile(join(root, 'phone-access.json'), 'utf8')) as { port: number | null; mapped: boolean; servePort?: number }
+import { root, DNS, fakeTailscale, fakeServer, create, record } from '../../fixtures/phoneAccessFixture'
+import { deferred } from '../../fixtures/deferred'
 
 it('turns on: checks Tailscale, opens a loopback listener with no admin routes, then asks Serve for 8443', async () => {
   const fake = fakeTailscale(), server = fakeServer()
@@ -416,7 +365,6 @@ it('ends phone access when quit cleanup is unfinished', async () => {
   expect(await record()).toMatchObject({ mapped: true })
 })
 
-
 it('requires a saved phone access record before setup and recovers on retry', async () => {
   const fake = fakeTailscale(), server = fakeServer()
   const { access } = create({ tailscale: fake.tailscale, startServer: server.startServer })
@@ -441,48 +389,6 @@ it('requires a saved phone access record before setup and recovers on retry', as
   } finally { write.mockRestore(); await access.close() }
 })
 
-
-async function freePort(): Promise<number> {
-  const server = createServer()
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
-  const port = (server.address() as { port: number }).port
-  await new Promise<void>(resolve => server.close(() => resolve()))
-  return port
-}
-async function expectReserved(port: number): Promise<void> {
-  const server = createServer()
-  await expect(new Promise<void>((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(port, '127.0.0.1', resolve)
-  })).rejects.toMatchObject({ code: 'EADDRINUSE' })
-  await new Promise<void>((resolve, reject) => {
-    const socket = connect(port, '127.0.0.1')
-    socket.on('error', reject)
-    socket.on('close', () => resolve())
-  })
-}
-
-it.each([false, true])('reserves pending cleanup at restart with phone access set to %s', async enabled => {
-  const port = await freePort()
-  await writeFile(join(root, 'phone-access.json'), JSON.stringify({ port, mapped: true }))
-  const fake = fakeTailscale({ other: serveTarget(port) }), server = fakeServer()
-  vi.mocked(fake.tailscale.unserve).mockResolvedValue(false)
-  const { access, settings } = create({ tailscale: fake.tailscale, startServer: server.startServer }, { phoneAccess: enabled, phoneAccessName: '' })
-  try {
-    await access.start()
-    expect(access.get().phase).toBe('cleanup-failed')
-    expect(server.started).toEqual([])
-    await expectReserved(port)
-    settings.phoneAccess = false
-    vi.mocked(fake.tailscale.unserve).mockResolvedValue(true)
-    await access.command({ type: 'retry' })
-    expect(access.get().phase).toBe('off')
-    const rebound = createServer()
-    await new Promise<void>(resolve => rebound.listen(port, '127.0.0.1', resolve))
-    await new Promise<void>(resolve => rebound.close(() => resolve()))
-  } finally { await access.close() }
-})
-
 it('keeps cleanup pending after a setup failure while the setting remains on', async () => {
   const fake = fakeTailscale(), server = fakeServer()
   const { access } = create({ tailscale: fake.tailscale, startServer: server.startServer })
@@ -499,29 +405,6 @@ it('keeps cleanup pending after a setup failure while the setting remains on', a
     await access.command({ type: 'retry' })
     expect(access.get().phase).toBe('on')
   } finally { await access.close() }
-})
-
-it('preserves a valid cleanup record until read access returns', async () => {
-  const port = await freePort()
-  await writeFile(join(root, 'phone-access.json'), JSON.stringify({ port, mapped: true }))
-  const fake = fakeTailscale({ other: serveTarget(port) })
-  const { access } = create({ tailscale: fake.tailscale }, { phoneAccess: false, phoneAccessName: '' })
-  const peek = vi.spyOn(AtomicJsonStore.prototype, 'peek').mockRejectedValue(Object.assign(new Error('unavailable'), { code: 'EACCES' }))
-  // Writes remain available while reads are refused.
-  const write = vi.spyOn(AtomicJsonStore.prototype, 'write')
-  try {
-    await access.start()
-    await access.command({ type: 'retry' })
-    expect(access.get()).toMatchObject({ phase: 'cleanup-failed', serve: { reason: 'cleanup-record' } })
-    expect(await record()).toEqual({ port, mapped: true })
-    expect(write.mock.calls.some(([value]) => typeof value === 'object' && value !== null && 'mapped' in value)).toBe(false)
-    expect(fake.tailscale.unserve).not.toHaveBeenCalled()
-    peek.mockRestore()
-    await access.command({ type: 'retry' })
-    expect(fake.tailscale.unserve).toHaveBeenCalledOnce()
-    expect(access.get().phase).toBe('off')
-    expect(await record()).toEqual({ port, mapped: false })
-  } finally { peek.mockRestore(); write.mockRestore(); await access.close() }
 })
 
 it('preserves pending cleanup across restart when a recovery write is refused', async () => {
@@ -585,13 +468,12 @@ it.each(['corrupt', 'unreadable'])('checks cleanup rather than declaring an occu
   } finally { read?.mockRestore(); await access.close() }
 })
 
-
 it.each([false, true])('stops phone access during pending setup and follows a later turn-on choice of %s', async turnBackOn => {
   const fake = fakeTailscale(), server = fakeServer()
   const { access, settings } = create({ tailscale: fake.tailscale, startServer: server.startServer })
-  let finish!: () => void, reached!: () => void
-  const pending = new Promise<void>(resolve => { finish = resolve })
-  const requested = new Promise<void>(resolve => { reached = resolve })
+
+  const { promise: pending, resolve: finish } = deferred<void>()
+  const { promise: requested, resolve: reached } = deferred<void>()
   vi.mocked(fake.tailscale.serve).mockImplementationOnce(async (_servePort, loopback) => {
     fake.setOther(serveTarget(loopback))
     reached()
@@ -613,7 +495,6 @@ it.each([false, true])('stops phone access during pending setup and follows a la
     if (turnBackOn) expect(server.started[1]!.closed).toBe(false)
   } finally { finish(); await starting; await access.close() }
 })
-
 
 it('finishes cleanup of a recognized setting when a new record cannot be saved', async () => {
   await writeFile(join(root, 'phone-access.json'), JSON.stringify({ port: 41000, mapped: false }))

@@ -1,13 +1,20 @@
+import { promptField } from './support/prompt'
+import { agentState } from './support/agentAccess'
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, openThreads, resizeWindow } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
-/** Every capture this spec takes; the verification note cites a few, copied to artifacts/staged-images/. */
-const RUN = 'artifacts/staged-images-run'
+const run = evidenceDirectory('artifacts/review-385')
+
+/**
+ * Every capture this spec takes; the verification note cites a few, copied to artifacts/staged-images/.
+ * See "E2e evidence" in docs/ci.md for default, publish and root override paths.
+ */
+const RUN = evidenceDirectory('artifacts/staged-images-run')
 
 test('repairs a missing staged screenshot when the user attaches the same image again', async () => {
-  const run = 'artifacts/review-385'
   await mkdir(run, { recursive: true })
   const icon = await readFile('build/icon.png')
   const image = icon.toString('base64')
@@ -16,15 +23,15 @@ test('repairs a missing staged screenshot when the user attaches the same image 
     const { page } = launched
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload(); await openThreads(page)
     await page.getByRole('button', { name: 'Workshop', exact: true }).click()
     await paste(page, image, 'Repair.png')
     await thumbnail(page, 'Repair.png')
-    await expect.poll(async () => (await page.evaluate(async () => window.sotto!.agents!.get())).threadDrafts?.[0]?.attachments[0]?.name).toBe('Repair.png')
-    const draft = (await page.evaluate(async () => window.sotto!.agents!.get())).threadDrafts![0]!
+    await expect.poll(async () => (await agentState(page)).threadDrafts?.[0]?.attachments[0]?.name).toBe('Repair.png')
+    const draft = (await agentState(page)).threadDrafts![0]!
     const handle = draft.attachments[0]!
     const file = join(launched.userData, 'attachments', `${handle.digest}.png`)
     await rm(file)
@@ -48,7 +55,7 @@ test('repairs a missing staged screenshot when the user attaches the same image 
 })
 
 async function paste(page: Page, image: string, name: string): Promise<void> {
-  await page.getByRole('textbox', { name: 'Prompt', exact: true }).evaluate((element, data) => {
+  await promptField(page).evaluate((element, data) => {
     const transfer = new DataTransfer()
     transfer.items.add(new File([Uint8Array.from(atob(data.image), char => char.charCodeAt(0))], data.name, { type: 'image/png' }))
     element.dispatchEvent(new ClipboardEvent('paste', { clipboardData: transfer, bubbles: true, cancelable: true }))
@@ -74,7 +81,7 @@ test('stages a pasted screenshot once, carries its handle, and restores its chip
     const { page } = launched
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload(); await openThreads(page)
@@ -85,8 +92,8 @@ test('stages a pasted screenshot once, carries its handle, and restores its chip
     expect(Math.max(drawn.width, drawn.height)).toBeLessThanOrEqual(256)
     expect(drawn.src).not.toContain(image.slice(0, 200))
     // What main holds and publishes names the image; its bytes are in the store, once.
-    await expect.poll(async () => (await page.evaluate(async () => window.sotto!.agents!.get())).threadDrafts?.[0]?.attachments[0]).toMatchObject({ name: 'Staged.png', sizeBytes: icon.length })
-    const state = await page.evaluate(async () => window.sotto!.agents!.get())
+    await expect.poll(async () => (await agentState(page)).threadDrafts?.[0]?.attachments[0]).toMatchObject({ name: 'Staged.png', sizeBytes: icon.length })
+    const state = await agentState(page)
     expect(JSON.stringify(state)).not.toContain(image.slice(0, 200))
     const digest = state.threadDrafts![0]!.attachments[0]!.digest
     expect(await readdir(join(profile, 'attachments'))).toEqual(expect.arrayContaining([`${digest}.png`, 'index.json']))

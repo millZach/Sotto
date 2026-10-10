@@ -30,7 +30,7 @@ async function sessionFileExists(sessionId: string): Promise<boolean> {
   return false
 }
 
-describe.skipIf(!LIVE)('Claude early start (live)', () => {
+describe.skipIf(!LIVE)("Claude early start (live) (requires SOTTO_CLAUDE_LIVE=1)", () => {
   it('starts the first send’s CLI early, writes no session file without a prompt, and takes the start off creation', async () => {
     const root = await mkdtemp(join(tmpdir(), 'sotto-claude-early-live-')); const cwd = join(root, 'project'); await mkdir(cwd)
     const host = new ClaudeStreamJsonHost({ userDataPath: root, requestTimeoutMs: 20_000, pollIntervalMs: 250 })

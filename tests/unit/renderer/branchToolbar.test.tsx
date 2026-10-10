@@ -1,3 +1,5 @@
+import { deferred } from '../../fixtures/deferred'
+import { threadsStateFixture } from '../../fixtures/agentState'
 import React from 'react'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -20,8 +22,10 @@ function thread(overrides: Partial<AgentThread> = {}): AgentThread {
 const ref = (name: string, extra: Partial<GitRef> = {}): GitRef => ({ name, current: false, isDefault: false, worktreePath: null, ...extra })
 const page = (refs: GitRef[], extra: Partial<GitRefsPage> = {}): GitRefsPage => ({ refs, isRepository: true, hasRemote: true, nextCursor: null, total: refs.length, ...extra })
 function state(threads: AgentThread[]): AgentState {
-  return { configuration: defaultAgentConfiguration(), connection: 'connected', error: null, activeThreadId: threads[0]?.id ?? null,
-    host: { connected: true, name: 'Codex', version: 'test', capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true }, projects: [project], threads, models: [] } } as unknown as AgentState
+  return threadsStateFixture({ cloneOverrides: false,
+    configuration: defaultAgentConfiguration(),
+    host: { connected: true, name: 'Codex', version: 'test', capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true }, projects: [project], threads, models: [] },
+    topLevel: { activeProjectId: null, activeThreadId: threads[0]?.id ?? null } })
 }
 function row(current: AgentThread): ThreadRow { return { thread: current, project, provider: 'Codex', providerId: 'codex', connected: true } as unknown as ThreadRow }
 function mount(current: AgentThread, options: { refs?: (request: { query?: string; cursor?: number }) => GitRefsPage | Promise<GitRefsPage>; others?: AgentThread[]; command?: (request: AgentCommand) => Promise<AgentState | null>; focused?: boolean; openExternalLink?: ReturnType<typeof vi.fn> } = {}) {
@@ -185,7 +189,7 @@ describe('BranchToolbar', () => {
   })
   it('ignores a search response that arrives after the query changes', async () => {
     let finish: ((value: GitRefsPage) => void) | undefined
-    const { gitRefs, command } = mount(thread(), { refs: request => request.query === 'fe' ? new Promise(resolve => { finish = resolve }) : page([ref('release')]) })
+    const { gitRefs, command } = mount(thread(), { refs: request => request.query === 'fe' ? (() => { const pending = deferred<GitRefsPage>(); finish = pending.resolve; return pending.promise })() : page([ref('release')]) })
     await openPicker()
     const input = screen.getByLabelText('Search refs')
     fireEvent.change(input, { target: { value: 'fe' } })
@@ -199,7 +203,7 @@ describe('BranchToolbar', () => {
   })
   it('keeps a pending Enter within its thread and still answers a fresh Enter', async () => {
     let finish: ((value: GitRefsPage) => void) | undefined
-    const { command, gitRefs, rerender } = mount(thread(), { refs: request => request.query === 'fe' ? new Promise(resolve => { finish = resolve }) : page([ref('release')]) })
+    const { command, gitRefs, rerender } = mount(thread(), { refs: request => request.query === 'fe' ? (() => { const pending = deferred<GitRefsPage>(); finish = pending.resolve; return pending.promise })() : page([ref('release')]) })
     await openPicker()
     const input = screen.getByLabelText('Search refs')
     fireEvent.change(input, { target: { value: 'fe' } })

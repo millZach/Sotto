@@ -6,7 +6,7 @@ import { E2E_THREADS_NOW } from '../../../../src/shared/e2e'
 import type { RequestDraft, RequestDraftOwner } from '../../../../src/shared/requestDrafts'
 import { useAgents } from '../../../../src/renderer/src/agents/AgentContext'
 import { ThreadsView } from '../../../../src/renderer/src/agents/ThreadsView'
-import { liveAgentState, threadsStateFixture } from '../liveAgentState'
+import { liveAgentState, threadsStateFixture } from '../../../fixtures/renderer/liveAgentState'
 
 vi.mock('../../../../src/renderer/src/agents/AgentContext', async importOriginal => ({
   ...await importOriginal<typeof import('../../../../src/renderer/src/agents/AgentContext')>(),
@@ -39,11 +39,11 @@ describe('saved answer recovery in its owner view', () => {
   it('appears in the thread pane for the closed request only, with the live form still an ordinary card', async () => {
     const bridge = requestDrafts()
     const state = threadsStateFixture()
-    state.assignments = []
+
     const thread = state.host.threads.find(item => item.id === 'visual-gate')!
     thread.requests = [current]
     vi.mocked(useAgents).mockImplementation(liveAgentState(state).useLive)
-    render(<ThreadsView onOpenAgents={vi.fn()} now={E2E_THREADS_NOW} />)
+    render(<ThreadsView now={E2E_THREADS_NOW} />)
     const recovered = await screen.findByRole('region', { name: 'Saved answer' })
     expect(within(recovered).getByText('Other: Recovered after restart')).toBeVisible()
     expect(within(recovered).queryByRole('button', { name: /send/iu })).toBeNull()

@@ -1,5 +1,7 @@
 # Shared browser provider compatibility
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 Verified on Windows, September 21, 2026. This note covers native tool discovery and thread admission, not rendered browser behavior or paid end-to-end page testing.
 
 ## Verified
@@ -13,7 +15,7 @@ Verified on Windows, September 21, 2026. This note covers native tool discovery 
 Run the deterministic checks with:
 
 ```sh
-npx vitest run tests/unit/main/browserAgentServer.test.ts tests/integration/browserProviders.test.ts tests/unit/main/devinPolicy.test.ts --maxWorkers=2
+npx vitest run tests/unit/main/browserAgentServer.test.ts tests/integration/browserProviders.test.ts tests/unit/main/devinPolicy.test.ts tests/integration/devinIntegrationLists.test.ts --maxWorkers=2
 ```
 
 All 24 tests passed. Native discovery is opt-in through `SOTTO_BROWSER_LIVE=1` and `tests/integration/browserProvidersLive.test.ts`. The three supported native clients passed discovery with zero model turns. The probe records only protocol method names and never prints a credential, prompt, page, or native protocol body.

@@ -1,3 +1,5 @@
+import { deferred } from '../../fixtures/deferred'
+import { threadsStateFixture } from '../../fixtures/agentState'
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -22,16 +24,10 @@ function thread(id: string, messages: AgentMessage[]): AgentThread {
 const model = (id: string): AgentModel => ({ id, provider: 'Claude Code', providerId: 'claude', name: id, ready: true })
 
 function fullState(threads: AgentThread[], activeThreadId: string | null = null): AgentState {
-  return {
-    configuration: { ...defaultAgentConfiguration(), enabled: true }, connection: 'connected',
+  return threadsStateFixture({ cloneOverrides: false,
+    configuration: { ...defaultAgentConfiguration(), enabled: true },
     host: { ...EMPTY_AGENT_HOST, connected: true, threads },
-    assignments: [], queue: [], activeThreadId, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
-    draftRequestId: null, draftAttachments: [], deliveredDrafts: [], threadDrafts: [], deliveries: [], pendingRequest: '',
-    globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' },
-    voice: { status: 'off', error: null, action: 'none', revision: 0 },
-    credentials: { reasoning: false, grokSpeech: false, secure: false }, reasoningAccounts: [],
-     historyEnabled: true,
-  }
+    topLevel: { activeThreadId, activeProjectId: null, draftAttachments: [], credentials: { reasoning: false, secure: false }, historyEnabled: true } })
 }
 
 /** A bridge that carries only the shell, with the detail of each thread on request or on push. */
@@ -374,7 +370,7 @@ describe('the startup shell cache', () => {
     expect(restored.host.clientHosts!.find(entry => entry.hostId === 'remote-host')!.models).toEqual([remoteModel])
   })
 
-  it('keeps a remote thread\'s model in the host\'s own catalog, where the Agents room looks it up', () => {
+  it('keeps a remote thread\'s model in the host\'s own catalog, where the Threads room looks it up', () => {
     // Model IDs are not host-keyed, so the same model can sit in both catalogs.
     const shared = model('native:claude:model:sonnet')
     const live = fullState([
@@ -392,6 +388,34 @@ describe('the startup shell cache', () => {
 })
 
 describe('a shell held for its frame', () => {
+  it('keeps a prompt when its save reply arrives before an older held question shell paints', async () => {
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
+    let paint!: FrameRequestCallback
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => { paint = callback; return 1 })
+    const initial = fullState([thread('workshop', [])], 'workshop')
+    const wire = shellBridge(initial)
+    let resolveSave!: (state: AgentState) => void
+    vi.mocked(wire.bridge.command).mockImplementation(() => new Promise(resolve => { resolveSave = resolve }))
+    const { result } = renderHook(() => useAgentConnection(wire.bridge))
+    await waitFor(() => expect(result.current.state).not.toBeNull())
+    const store = result.current.threadDrafts
+    act(() => { store.edit('workshop', { text: 'Keep the separate prompt' }); store.flush('workshop') })
+    const draft = store.draft('workshop')
+    const waiting = { ...initial, host: { ...initial.host, threads: [{ ...initial.host.threads[0]!, requests: [
+      { id: 'question', kind: 'question' as const, text: 'Which layout?', options: [] },
+    ] }] } }
+    act(() => wire.publish(waiting))
+    await act(async () => { resolveSave({ ...waiting,
+      threadDrafts: [{ ...draft, attachments: [...draft.attachments], skills: [...draft.skills], files: [...draft.files],
+        threadId: 'workshop', updatedAt: '2026-10-09T00:00:00.000Z' }],
+      threadDraftPersistence: [{ threadId: 'workshop', draftId: draft.draftId, status: 'saved' }],
+    }) })
+    expect(store.snapshot('workshop').save).toBe('saved')
+    act(() => paint(1))
+    expect(result.current.state!.host.threads[0]!.requests[0]!.id).toBe('question')
+    expect(store.draft('workshop').text).toBe('Keep the separate prompt')
+  })
+
   it('commits before a command response, so the older shell never lands after it', async () => {
     const wire = shellBridge(fullState([thread('workshop', [])], 'workshop'))
     const { result } = renderHook(() => useAgentConnection(wire.bridge))
@@ -400,7 +424,7 @@ describe('a shell held for its frame', () => {
     act(() => { wire.publish({ ...fullState([thread('workshop', [])], 'workshop'), notice: 'from the shell' }) })
     expect(result.current.state?.notice).not.toBe('from the shell')
     vi.mocked(wire.bridge.command).mockResolvedValueOnce({ ...fullState([thread('workshop', [])], 'workshop'), notice: 'from the command' })
-    await act(async () => { await result.current.command({ type: 'configure', patch: { orbColor: 'amber' } }) })
+    await act(async () => { await result.current.command({ type: 'configure', patch: { projectsDirectory: 'C:/projects' } }) })
     expect(result.current.state?.notice).toBe('from the command')
     await new Promise(resolve => requestAnimationFrame(resolve))
     await act(async () => undefined)
@@ -409,15 +433,15 @@ describe('a shell held for its frame', () => {
 })
 
 describe('shell updates while the main window is hidden', () => {
-  it('delivers a widget mute without waiting for a suspended animation frame', async () => {
+  it('delivers a saved-draft notice without waiting for a suspended animation frame', async () => {
     vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
     const frame = vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(1)
     const initial = fullState([])
     const wire = shellBridge(initial)
     const { result } = renderHook(() => useAgentConnection(wire.bridge))
     await waitFor(() => expect(result.current.state).not.toBeNull())
-    act(() => wire.publish({ ...initial, voice: { ...initial.voice, action: 'mute', revision: 1 } }))
-    expect(result.current.state?.voice.action).toBe('mute')
+    act(() => wire.publish({ ...initial, notice: 'Draft saved' }))
+    expect(result.current.state?.notice).toBe('Draft saved')
     expect(frame).not.toHaveBeenCalled()
   })
 
@@ -479,7 +503,7 @@ describe('a sync command reply racing a low-priority broadcast', () => {
     const { result } = renderHook(() => useAgentConnection(wire.bridge))
     await waitFor(() => expect(result.current.state).not.toBeNull())
     let resolveCommand!: (state: AgentState) => void
-    vi.mocked(wire.bridge.command).mockImplementationOnce(() => new Promise(resolve => { resolveCommand = resolve }))
+    vi.mocked(wire.bridge.command).mockImplementationOnce(() => { const pending = deferred<AgentState>(); resolveCommand = pending.resolve; return pending.promise })
     wire.publish({ ...initial, notice: 'from the broadcast' })
     // `refresh` is a provider operation and runs at once rather than waiting behind the command lane,
     // so `bridge.command` (and `resolveCommand`) is called synchronously here.
@@ -534,4 +558,12 @@ it('keeps an open provider session on the live shell but never caches or restore
   localStorage.setItem(SHELL_CACHE_KEY, JSON.stringify(agentShell(live)))
   expect(readShellCache()!.host.threads[0]!.providerSessionOpen).toBeUndefined()
   expect(open.providerSessionOpen).toBe(true)
+})
+
+it('refetches an older shell instead of restoring its retired voice state', () => {
+  const current = cacheableShell(fullState([thread('workshop', [])], 'workshop'))
+  localStorage.setItem(SHELL_CACHE_KEY, JSON.stringify({ ...current, speech: { id: 1, text: 'Old reply' },
+    voice: { status: 'listening', action: 'none', revision: 1, error: null } }))
+  expect(readShellCache()).toBeNull()
+  expect(current.host.threads[0]?.id).toBe('workshop')
 })

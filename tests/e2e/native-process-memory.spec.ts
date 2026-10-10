@@ -13,16 +13,16 @@
  * same history, not what Claude Code or Codex would hold. `docs/perf/2026-09-27-native-process-memory.md` has
  * the numbers and what they mean.
  */
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
 import { execFile } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { cpus, tmpdir } from 'node:os'
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
+import { cpus } from 'node:os'
 import { join, resolve } from 'node:path'
 import { setTimeout } from 'node:timers/promises'
 import { promisify } from 'node:util'
 import { expect, test, type Page } from '@playwright/test'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { median, PERF_BENCH, round } from '../fixtures/perfBench'
 import { closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
 
@@ -206,7 +206,7 @@ async function createThreads(page: Page, provider: Provider, project: string, co
     if (!model) throw new Error(`No ready ${provider} model.`)
     const ids: string[] = []
     for (let index = 0; index < count; index++) {
-      const thread = await agents.command({ type: 'create-thread', projectId, title: `Held ${index + 1}`, titleSource: 'user', modelId: model.id, workingCopy: 'shared', managed: false })
+      const thread = await agents.command({ type: 'create-thread', projectId, title: `Held ${index + 1}`, titleSource: 'user', modelId: model.id, workingCopy: 'shared' })
       if (thread.error || !thread.activeThreadId) throw new Error(thread.error ?? 'No thread was created.')
       const sent = await agents.command({ type: 'manual-send', threadId: thread.activeThreadId, text: 'Synthetic benchmark prompt.' })
       if (sent.error) throw new Error(sent.error)
@@ -229,7 +229,7 @@ for (const provider of ['claude', 'codex'] as const) {
     test(`${provider}: process memory with ${count} held thread(s) of ${MESSAGES} messages`, async () => {
       test.skip(!PERF_BENCH, 'A memory benchmark: run with SOTTO_PERF_BENCH=1 after npm run build.')
       test.setTimeout(300_000)
-      const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-memory-'))
+      const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-memory-' })).directory
       const root = join(profile, 'native-fixture')
       const project = join(root, 'project')
       for (const folder of ['claude', 'codex', 'project']) await mkdir(join(root, folder), { recursive: true })
@@ -245,7 +245,7 @@ for (const provider of ['claude', 'codex'] as const) {
         const { page } = launched
         await page.evaluate(async provider => {
           await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
-          const configured = await window.sotto!.agents!.command({ type: 'configure', patch: { provider, enabled: true, enabledProviders: [provider], speak: false } })
+          const configured = await window.sotto!.agents!.command({ type: 'configure', patch: { provider, enabled: true, enabledProviders: [provider], } })
           if (configured.error) throw new Error(configured.error)
           const connected = await window.sotto!.agents!.command({ type: 'connect', provider })
           if (connected.error) throw new Error(connected.error)
@@ -293,7 +293,7 @@ for (const provider of ['claude', 'codex'] as const) {
         for (const [key, value] of [['SOTTO_E2E_NATIVE_FIXTURE_ROOT', previous.root], ['SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE', previous.executable]] as const) {
           if (value === undefined) delete process.env[key]; else process.env[key] = value
         }
-        await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+        await removeOwnedE2EProfile(profile)
       }
     })
   }

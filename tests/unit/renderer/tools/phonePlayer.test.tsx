@@ -1,17 +1,18 @@
+import { browserBridgeFixture, browserTask } from '../../../fixtures/renderer/browserBridge'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { BrowserBridge, BrowserEvent, BrowserPage, BrowserTask } from '../../../../src/shared/browser'
+import type { BrowserEvent, BrowserPage, BrowserTask } from '../../../../src/shared/browser'
 import type { ToolsResult } from '../../../../src/shared/tools'
 import { BrowserPlayer } from '../../../../src/renderer/src/tools/BrowserPlayer'
 import { PhonePlayer } from '../../../../src/renderer/src/tools/PhonePlayer'
 import { PhonePlayerStore } from '../../../../src/renderer/src/tools/phonePlayerStore'
 import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
-import { threadsStateFixture } from '../liveAgentState'
+import { threadsStateFixture } from '../../../fixtures/renderer/liveAgentState'
 
 const workspace = { threadId: 'visual-gate', projectId: 'workshop', workingDirectory: 'D:/work', workspaceId: 'workspace' }
 const page: BrowserPage = { id: '11111111-1111-4111-8111-111111111111', workspace, url: 'http://localhost:8081/', title: 'Expo', status: 'ready', error: null, canGoBack: false, canGoForward: false, device: 'iphone' }
-const task = (patch: Partial<BrowserTask> = {}): BrowserTask => ({
+const task = (patch: Partial<BrowserTask> = {}): BrowserTask => browserTask({
   id: '22222222-2222-4222-8222-222222222222', threadId: workspace.threadId, workspaceId: workspace.workspaceId, pageId: page.id,
   status: 'working', description: 'Checking the form', steps: [], thumbnail: null, summary: null, unchecked: [], updatedAt: 1,
   pendingAction: null, output: null, device: 'iphone', ...patch,
@@ -19,15 +20,24 @@ const task = (patch: Partial<BrowserTask> = {}): BrowserTask => ({
 const ok = <T,>(value: T): ToolsResult<T> => ({ ok: true, value })
 
 function fake(initial: BrowserTask[] = [task()]) {
-  const listeners = new Set<(event: BrowserEvent) => void>()
-  const bridge: BrowserBridge = {
-    tasks: vi.fn(async () => ok(initial)), list: vi.fn(async () => ok({ workspace, pages: [page] })),
-    create: vi.fn(async () => ok(page)), navigate: vi.fn(async () => ok(page)), back: vi.fn(async () => ok(page)), forward: vi.fn(async () => ok(page)), reload: vi.fn(async () => ok(page)), close: vi.fn(async () => ok(undefined)), mount: vi.fn(async () => ok(undefined)),
-    share: vi.fn(async () => ok(page)), viewport: vi.fn(async () => ok(page)), capture: vi.fn(async () => ok({ image: '', url: page.url, width: 393, height: 852, element: null })),
+
+  const { bridge, listeners } = browserBridgeFixture({ workspace,
+    commands: { tasks: vi.fn(async () => ok(initial)),
+    list: vi.fn(async () => ok({ workspace, pages: [page] })),
+    create: vi.fn(async () => ok(page)),
+    navigate: vi.fn(async () => ok(page)),
+    back: vi.fn(async () => ok(page)),
+    forward: vi.fn(async () => ok(page)),
+    reload: vi.fn(async () => ok(page)),
+    close: vi.fn(async () => ok(undefined)),
+    mount: vi.fn(async () => ok(undefined)),
+    share: vi.fn(async () => ok(page)),
+    viewport: vi.fn(async () => ok(page)),
+    capture: vi.fn(async () => ok({ image: '', url: page.url, width: 393, height: 852, element: null })),
     controlTask: vi.fn(async request => ok(task({ status: request.control === 'pause' ? 'paused' : 'working', updatedAt: Date.now() }))),
-    answerAction: vi.fn(async () => ok(task())), stopGrant: vi.fn(async () => ok(undefined)), openLink: vi.fn(async () => ok({ destination: 'external' as const })),
-    onEvent: vi.fn(listener => { listeners.add(listener); return () => { listeners.delete(listener) } }),
-  }
+    answerAction: vi.fn(async () => ok(task())),
+    stopGrant: vi.fn(async () => ok(undefined)),
+    openLink: vi.fn(async () => ok({ destination: 'external' as const })) } })
   return { bridge, emit: (event: BrowserEvent) => listeners.forEach(listener => listener(event)) }
 }
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
@@ -149,7 +159,7 @@ describe('the phone player', () => {
   it('hides on Escape, handing focus back to the composer', async () => {
     const browser = fake(); const store = new ToolsPanelStore(); const phoneStore = new PhonePlayerStore()
     render(<>
-      <section className="thread-pane" data-focused><form className="thread-prompt"><textarea aria-label="Message" /></form></section>
+      <section className="thread-pane" data-focused><form className="thread-prompt"><div className="prompt-editor" role="textbox" contentEditable aria-label="Message" tabIndex={0} /></form></section>
       <PhonePlayer state={threadsStateFixture()} focusedThreadId="visual-gate" bridge={browser.bridge} store={store} phoneStore={phoneStore} />
     </>)
     act(() => store.browser.watchTasks(browser.bridge, ['visual-gate']))

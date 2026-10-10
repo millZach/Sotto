@@ -1,3 +1,4 @@
+import { setPromptText, setPromptSelection, promptText } from './helpers/promptEditor'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -6,11 +7,12 @@ import type { AgentSkillCatalog } from '../../../src/shared/agentSkills'
 import type { AgentCapabilities, AgentCommand, AgentState } from '../../../src/shared/agents'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
+import type { PromptEditorElement } from '../../../src/renderer/src/agents/promptSelection'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import {
   detectSkillTrigger, hasSkillMention, insertSkill, pickableSkills, retainSkillReferences, skillLimitReached, skillSigils, skillToken,
 } from '../../../src/renderer/src/agents/composerSkills'
-import { liveAgentState, threadsStateFixture } from './liveAgentState'
+import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 
@@ -33,21 +35,21 @@ const CLAUDE: AgentSkillCatalog = {
 
 function mount(catalog: AgentSkillCatalog) {
   const state: AgentState = threadsStateFixture()
-  state.assignments = []
+
   state.activeThreadId = THREAD
   state.host.capabilities = BASE
   const live = liveAgentState(state, { catalog: () => catalog })
   vi.mocked(useAgents).mockImplementation(live.useLive)
-  render(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
-  return { live, prompt: () => screen.getByRole('textbox', { name: 'Prompt' }) as HTMLTextAreaElement }
+  render(<ThreadsView now={NOW} />)
+  return { live, prompt: () => screen.getByRole('textbox', { name: 'Prompt' }) as HTMLElement }
 }
 
 const requests = <T extends AgentCommand['type']>(live: ReturnType<typeof liveAgentState>, type: T): Extract<AgentCommand, { type: T }>[] =>
   live.command.mock.calls.map(([request]) => request).filter((request): request is Extract<AgentCommand, { type: T }> => request.type === type)
 
-function type(prompt: HTMLTextAreaElement, value: string): void {
-  fireEvent.change(prompt, { target: { value, selectionStart: value.length, selectionEnd: value.length } })
-  prompt.setSelectionRange(value.length, value.length)
+function type(prompt: HTMLElement, value: string): void {
+  setPromptText(prompt, value)
+  setPromptSelection(prompt, value.length, value.length)
   fireEvent.select(prompt)
 }
 
@@ -78,15 +80,87 @@ describe('native skill tokens', () => {
 })
 
 describe('provider skill picker', () => {
+  it('keeps a second hand-typed $review plain and drops the reference when its chosen pill is deleted', async () => {
+    const { live, prompt } = mount({ ...CLAUDE, providerId: 'codex' })
+    type(prompt(), '$rev')
+    await screen.findByRole('listbox', { name: 'Skills' })
+    fireEvent.keyDown(prompt(), { key: 'Tab' })
+    const field = prompt() as PromptEditorElement
+    act(() => { field.editor.commands.insertContent('$review') })
+    expect(promptText(field)).toBe('$review $review')
+    expect(field.querySelectorAll('[data-skill-token]')).toHaveLength(1)
+    expect(live.threadDrafts.draft(THREAD).skills).toEqual([{ name: 'review', path: path('review') }])
+    setPromptSelection(field, '$review'.length)
+    fireEvent.keyDown(field, { key: 'Backspace' })
+    expect(promptText(field)).toBe(' $review')
+    expect(field.querySelector('[data-skill-token]')).toBeNull()
+    expect(live.threadDrafts.draft(THREAD).skills).toEqual([])
+  })
+  it('keeps the chosen pill, its reference and a boundary when typing ing immediately after it', async () => {
+    const { live, prompt } = mount({ ...CLAUDE, providerId: 'codex' })
+    type(prompt(), '$rev')
+    await screen.findByRole('listbox', { name: 'Skills' })
+    fireEvent.keyDown(prompt(), { key: 'Tab' })
+    const field = prompt() as PromptEditorElement
+    setPromptSelection(field, '$review'.length)
+    act(() => { field.editor.commands.insertContent('ing') })
+    expect(promptText(field)).toBe('$review ing ')
+    expect(field.querySelectorAll('[data-skill-token]')).toHaveLength(1)
+    expect(live.threadDrafts.draft(THREAD).skills).toEqual([{ name: 'review', path: path('review') }])
+    expect(field.editor.state.selection.$from.nodeBefore?.text).toBe(' ing')
+    act(() => { field.editor.commands.undo() })
+    expect(promptText(field)).toBe('$review ')
+    expect(live.threadDrafts.draft(THREAD).skills).toEqual([{ name: 'review', path: path('review') }])
+  })
+  it('undo restores a pill and repeated plain token with one skill reference', () => {
+    const { live, prompt } = mount(CLAUDE)
+    const reference = { name: 'review', path: path('review') }
+    act(() => { live.threadDrafts.edit(THREAD, { text: '/review /review ', skills: [reference] }) })
+    const field = prompt() as PromptEditorElement
+    act(() => { field.editor.commands.selectAll(); field.editor.commands.deleteSelection() })
+    expect(live.threadDrafts.draft(THREAD).skills).toEqual([])
+    fireEvent.keyDown(field, { key: 'z', ctrlKey: true })
+    expect(promptText(field)).toBe('/review /review ')
+    expect(live.threadDrafts.draft(THREAD).skills).toEqual([reference])
+  })
+  it('undoes and redoes a picker insertion as one edit', async () => {
+    const { live, prompt } = mount(CLAUDE)
+    type(prompt(), '/rev')
+    await screen.findByRole('listbox', { name: 'Skills' })
+    fireEvent.keyDown(prompt(), { key: 'Tab' })
+    expect(promptText(prompt())).toBe('/review ')
+    fireEvent.keyDown(prompt(), { key: 'z', ctrlKey: true })
+    expect(promptText(prompt())).toBe('/rev')
+    expect(live.threadDrafts.draft(THREAD).skills).toEqual([])
+    fireEvent.keyDown(prompt(), { key: 'y', ctrlKey: true })
+    expect(promptText(prompt())).toBe('/review ')
+    expect(live.threadDrafts.draft(THREAD).skills).toEqual([{ name: 'review', path: path('review') }])
+  })
+  it('Backspace removes a chosen pill and its reference, and undo restores both', async () => {
+    const { live, prompt } = mount(CLAUDE)
+    type(prompt(), '/')
+    await screen.findByRole('listbox', { name: 'Skills' })
+    fireEvent.keyDown(prompt(), { key: 'ArrowDown' })
+    fireEvent.keyDown(prompt(), { key: 'Enter' })
+    setPromptSelection(prompt(), '/review'.length)
+    fireEvent.keyDown(prompt(), { key: 'Backspace' })
+    expect(promptText(prompt())).toBe(' ')
+    expect(live.threadDrafts.draft(THREAD).skills).toEqual([])
+    expect(prompt().querySelector('[data-skill-token]')).toBeNull()
+    fireEvent.keyDown(prompt(), { key: 'z', ctrlKey: true })
+    expect(promptText(prompt())).toBe('/review ')
+    expect(live.threadDrafts.draft(THREAD).skills).toEqual([{ name: 'review', path: path('review') }])
+  })
   it('lists only invocable Claude skills by their slash token and holds the one-per-message limit', async () => {
     const { live, prompt } = mount(CLAUDE)
     type(prompt(), '/')
     const list = await screen.findByRole('listbox', { name: 'Skills' })
-    expect(within(list).getAllByRole('option').map(option => option.querySelector('.composer-picker__name')!.textContent)).toEqual(['/review', '/release-notes'])
+    expect(within(list).getAllByRole('option').map(option => option.querySelector('.composer-picker__name')!.textContent)).toEqual(['review', 'release-notes'])
     expect(screen.getByText('Claude expands one slash invocation per message.')).toBeInTheDocument()
     fireEvent.keyDown(prompt(), { key: 'ArrowDown' })
     fireEvent.keyDown(prompt(), { key: 'Enter' })
-    expect(prompt()).toHaveValue('/review ')
+    expect(promptText(prompt())).toBe('/review ')
+    expect(prompt().querySelector('[data-skill-token]')).toHaveAttribute('data-skill-token', '/review')
     expect(live.threadDrafts.draft(THREAD).skills).toEqual([{ name: 'review', path: path('review') }])
 
     type(prompt(), '/review then $rel')
@@ -96,7 +170,7 @@ describe('provider skill picker', () => {
     expect(screen.getByText('Claude takes one skill per message. Remove /review to choose another.')).toHaveAttribute('role', 'status')
     fireEvent.keyDown(prompt(), { key: 'Enter' })
     fireEvent.click(option)
-    expect(prompt()).toHaveValue('/review then $rel')
+    expect(promptText(prompt())).toBe('/review then $rel')
     expect(requests(live, 'manual-send')).toHaveLength(0)
 
     // Removing the first mention frees the one slot.
@@ -105,7 +179,7 @@ describe('provider skill picker', () => {
     const freed = await screen.findByRole('listbox', { name: 'Skills' })
     expect(within(freed).getByRole('option')).not.toHaveAttribute('aria-disabled')
     fireEvent.keyDown(prompt(), { key: 'Enter' })
-    expect(prompt()).toHaveValue('then /release-notes ')
+    expect(promptText(prompt())).toBe('then /release-notes ')
   })
 
   it('says a provider cannot list skills and still sends what was typed', async () => {

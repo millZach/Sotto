@@ -1,5 +1,7 @@
 # Sotto subscription reasoning correction
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 This records the first subscription implementation. Its model restrictions and Grok placeholder are superseded by the [complete native model-selection follow-up](subscription-model-selection-qa.md).
 
 Acceptance checklist for the September 9, 2026 desktop correction:

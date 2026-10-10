@@ -1,17 +1,16 @@
 import { readFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { vi } from 'vitest'
-import { startHeadlessHost } from '../../src/host'
+import { startFixtureHeadlessHost } from './desktopHostStack'
 import { ClaudeSessionLog } from '../../src/main/agents/claudeSessionLog'
-import { desktopWindowClient } from '../../src/main/agents/hostService'
 import type { AgentHost, ThreadReadPurpose } from '../../src/main/agents/host'
+import { desktopWindowClient } from '../../src/main/agents/hostService'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
-import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { AtomicJsonStore } from '../../src/main/storage/atomicJsonStore'
 import { publicProviderEntityId, type AgentCommand } from '../../src/shared/agents'
-import type { AdapterFixture } from '../integration/adapterContract'
+import type { AdapterFixture, RecordedRpc } from './adapterFixture'
 import { claudeFixture } from './claudeFixture'
-import { codexFixture, type RecordedRpc } from './codexFixture'
+import { codexFixture } from './codexFixture'
 import { grokFixture } from './fakeGrokThreadFixture'
 
 export type SendStackProvider = 'claude' | 'codex' | 'grok'
@@ -63,8 +62,7 @@ export interface SendCost {
 export async function sendStack(provider: SendStackProvider, native: AdapterFixture & { adapter: AgentHost },
   /** Grow the thread's history in the provider after its first exchange; a second exchange then takes it in. */
   seed?: (sessionId: string) => Promise<void>) {
-  const providers = { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), [provider]: native.host }
-  const host = await startHeadlessHost({ dataDirectory: native.root, providers, reasoner: e2eAgentReasoner })
+  const host = await startFixtureHeadlessHost({ dataDirectory: native.root, providers: { [provider]: native.host } })
   const client = desktopWindowClient('send-reads')
   const command = async (value: AgentCommand) => {
     const state = await host.service.command(value, client)
@@ -75,7 +73,7 @@ export async function sendStack(provider: SendStackProvider, native: AdapterFixt
   await command({ type: 'connect', provider })
   const created = await command({ type: 'create-project', provider, title: 'Send project', path: native.root, useExisting: true })
   const projectId = created.host.projects.find(project => project.path === native.root)!.id
-  const thread = await command({ type: 'create-thread', projectId, title: 'Send thread', modelId: publicProviderEntityId(provider, 'model', native.modelId), workingCopy: 'shared', managed: false })
+  const thread = await command({ type: 'create-thread', projectId, title: 'Send thread', modelId: publicProviderEntityId(provider, 'model', native.modelId), workingCopy: 'shared' })
   const threadId = thread.activeThreadId!
   await command({ type: 'select-thread', threadId })
   await command({ type: 'observe-threads', threadIds: [threadId] })

@@ -1,5 +1,7 @@
 # The desktop app runs on Linux, Omarchy first
 
+October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-management.md) removes every reply voice and the ONNX runtime assets and manifest described below. Packaging verifies the surviving Claude SDK and terminal assets with `npm run assets:verify`. Linux's dictation, compositor bindings, paste and desktop profile remain unchanged.
+
 ## Status
 
 Accepted October 9, 2026, by the owner. He agreed to the proposals on October 8, answered the three questions marked **Owner** below (the answers follow each question), and approved the merge on October 9. Revised the same day to describe what had been built by then (#847, #848, #856, #858, #868), and to settle the points the Sotto bug review raised on this pull request.
@@ -50,7 +52,7 @@ The owner picked no window controls on Linux (#839, built in #856): Super+W send
 
 **Output reaches the Wayland clipboard and pastes on Hyprland** (built in #868 for #838). Electron's clipboard write never reaches Wayland while Sotto is unfocused, so Linux writes through `wl-copy` (and the primary selection for terminals). With automatic paste on, Sotto sends Ctrl+V to apps and Shift+Insert to terminals, as Omarchy's universal paste does, in one Hyprland request, and never while the session is locked.
 
-**The widget on Omarchy is a shell plugin** (#850). The owner picked a Sotto glyph in the bar and a pill in the shell's style (widget B), placed at the top centre under the bar, dragged to snap to an edge as on Windows, and shown on the display the mouse is on when dictation starts. While the plugin is installed, the Electron widget steps aside.
+**The widget on Omarchy is a shell plugin** (#850). The owner picked a Sotto glyph in the bar and a pill in the shell's style (widget B), placed at the top centre under the bar, dragged to snap to an edge as on Windows, and shown on the display the mouse is on when dictation starts. While the plugin is installed and Sotto’s dictation socket has started with a live state file, the Electron widget steps aside. If commands cannot start or publication is lost, the Electron widget remains available and steps aside again when publication recovers (#877).
 
 **Release path.** Three options were considered:
 

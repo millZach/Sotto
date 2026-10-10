@@ -7,12 +7,12 @@
  *
  *   npx playwright test tests/e2e/send-stage-timings.spec.ts
  */
-import { execFileSync } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { initializeGitRepository } from '../fixtures/gitRepository'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { SEND_STAGE_FIELDS } from '../../src/main/agents/sendStages'
 import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
 
@@ -22,14 +22,13 @@ const REPLY = 'Synthetic stage-timing reply'
 for (const provider of ['claude', 'codex'] as const) {
   test(`${provider}: a send writes how long each step took to its turn record`, async () => {
     test.setTimeout(180_000)
-    const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-stages-'))
+    const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-stages-' })).directory
     const root = join(profile, 'native-fixture')
     const project = join(root, 'project')
     for (const folder of ['claude', 'codex', 'project']) await mkdir(join(root, folder), { recursive: true })
     for (const folder of ['claude', 'codex']) await writeFile(join(root, folder, 'script.json'), JSON.stringify({ reply: REPLY }))
     await writeFile(join(project, 'README.md'), 'Filler\n')
-    const git = (...args: string[]) => execFileSync('git', ['-c', 'user.name=Sotto e2e', '-c', 'user.email=e2e@example.invalid', ...args], { cwd: project, stdio: 'ignore', windowsHide: true })
-    git('init', '-q', '-b', 'main'); git('add', '-A'); git('commit', '-q', '-m', 'Filler')
+    await initializeGitRepository(project, { files: {}, message: 'Filler', identity: { name: 'Sotto e2e', email: 'e2e@example.invalid' } })
     const previous = { root: process.env.SOTTO_E2E_NATIVE_FIXTURE_ROOT, executable: process.env.SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE }
     process.env.SOTTO_E2E_NATIVE_FIXTURE_ROOT = root
     process.env.SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE = process.execPath
@@ -40,7 +39,7 @@ for (const provider of ['claude', 'codex'] as const) {
       const threadId = await page.evaluate(async ({ provider, project, prompt }) => {
         await window.sotto!.updateSettings({ onboardingComplete: true })
         const agents = window.sotto!.agents!
-        const configured = await agents.command({ type: 'configure', patch: { provider, enabled: true, enabledProviders: [provider], speak: false } })
+        const configured = await agents.command({ type: 'configure', patch: { provider, enabled: true, enabledProviders: [provider], } })
         if (configured.error) throw new Error(configured.error)
         const connected = await agents.command({ type: 'connect', provider })
         if (connected.error) throw new Error(connected.error)
@@ -49,7 +48,7 @@ for (const provider of ['claude', 'codex'] as const) {
         const projectId = created.host.projects.find(item => item.title === 'Stage timings')!.id
         const model = (await agents.get()).host.models.find(item => item.providerId === provider && item.ready)
         if (!model) throw new Error(`No ready ${provider} model.`)
-        const thread = await agents.command({ type: 'create-thread', projectId, title: 'Timed', titleSource: 'user', modelId: model.id, workingCopy: 'shared', managed: false })
+        const thread = await agents.command({ type: 'create-thread', projectId, title: 'Timed', titleSource: 'user', modelId: model.id, workingCopy: 'shared' })
         if (thread.error || !thread.activeThreadId) throw new Error(thread.error ?? 'No thread was created.')
         // Twice: the first send starts the provider's session, the second is a send to a session already running.
         for (let index = 0; index < 2; index++) {
@@ -82,7 +81,7 @@ for (const provider of ['claude', 'codex'] as const) {
       for (const [key, value] of [['SOTTO_E2E_NATIVE_FIXTURE_ROOT', previous.root], ['SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE', previous.executable]] as const) {
         if (value === undefined) delete process.env[key]; else process.env[key] = value
       }
-      await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+      await removeOwnedE2EProfile(profile)
     }
   })
 }

@@ -1,40 +1,24 @@
+import { captureSotto } from './support/sottoCapture'
+import { resizeContentWindow } from './support/sottoWindow'
 import { createServer } from 'node:http'
-import { mkdir, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { mkdir } from 'node:fs/promises'
+import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import type { BrowserTask } from '../../src/shared/browser'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
-const SHOTS = resolve('artifacts/test-iphone')
+const SHOTS = evidenceDirectory('artifacts/test-iphone')
 // A small phone app, like an Expo web build: a list taller than the screen, a field and a button that answer touch.
 const APP = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Daybook</title><style>*{box-sizing:border-box}body{margin:0;background:#f4f3f8;color:#1d1b29;font:16px system-ui}main{padding:56px 22px 40px}h1{font-size:32px;margin:0 0 4px;letter-spacing:-.02em}small{color:#6e6b80;letter-spacing:.1em;text-transform:uppercase;font-size:11px}#habit{display:block;width:100%;margin:22px 0 10px;padding:12px 14px;border:2px solid #7b5cc2;border-radius:14px;font:inherit;background:#fff}#add{width:100%;padding:13px;border:0;border-radius:14px;background:#7b5cc2;color:#fff;font:600 16px system-ui}ul{list-style:none;padding:0;margin:22px 0 0}li{background:#fff;border-radius:14px;padding:16px;margin-bottom:10px}</style></head><body><main><h1>Daybook</h1><small>Your routines</small><input id="habit" placeholder="New habit" aria-label="New habit"><button id="add" ontouchend="window.touched=true">Add habit</button><ul id="list">${Array.from({ length: 12 }, (_, index) => `<li>Routine ${index + 1}</li>`).join('')}</ul></main><script>const add=()=>{const v=document.querySelector('#habit').value.trim();if(!v)return;const li=document.createElement('li');li.textContent=v;document.querySelector('#list').prepend(li);document.querySelector('#habit').value=''};document.querySelector('#add').addEventListener('click',add);document.querySelector('#habit').addEventListener('keydown',e=>{if(e.key==='Enter')add()})</script></body></html>`
 
 async function resize(launched: LaunchedSotto, width: number, height: number): Promise<void> {
-  await launched.app.evaluate(({ BrowserWindow }, size) => {
-    const host = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().endsWith('/index.html'))!
-    host.setMinimumSize(800, 540); host.setContentSize(size.width, size.height)
-  }, { width, height })
-  await expect.poll(() => launched.page.evaluate(() => `${innerWidth}x${innerHeight}`)).toBe(`${width}x${height}`)
+  await resizeContentWindow(launched, width, height, [800, 540])
 }
 /** The window as the user sees it, native pages included: a page screenshot alone would show the phone's screen empty. */
 async function screenshot(launched: LaunchedSotto, name: string): Promise<void> {
   const title = `Sotto test iPhone ${name}`
-  await launched.app.evaluate(({ BrowserWindow }, title) => {
-    const host = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().endsWith('/index.html'))!; host.setTitle(title); host.show()
-  }, title)
-  const png = await launched.app.evaluate(async ({ BrowserWindow, desktopCapturer, screen }, title) => {
-    const bounds = BrowserWindow.getAllWindows().find(item => item.getTitle() === title)!.getBounds()
-    const scale = screen.getDisplayMatching(bounds).scaleFactor
-    // The OS window manager can be slow to register the retitled window under load; a reached deadline costs nothing.
-    for (let attempt = 0; ; attempt++) {
-      const sources = await desktopCapturer.getSources({ types: ['window'], thumbnailSize: { width: Math.round(bounds.width * scale), height: Math.round(bounds.height * scale) } })
-      const source = sources.find(item => item.name === title)
-      if (source) return source.thumbnail.toPNG().toString('base64')
-      if (attempt >= 9) throw new Error('Native window capture unavailable')
-      await new Promise(resolve => setTimeout(resolve, 500))
-    }
-  }, title)
-  await writeFile(join(SHOTS, `${name}.png`), Buffer.from(png, 'base64'))
+  await captureSotto(launched, join(SHOTS, `${name}.png`), { mode: 'native-window', title, retries: 9, retryDelayMs: 500 })
 }
 /** The native pages drawn in the main window: each one's address and rectangle. */
 async function nativeViews(launched: LaunchedSotto): Promise<{ url: string; bounds: { x: number; y: number; width: number; height: number }; zoom: number }[]> {
@@ -61,7 +45,7 @@ test('an agent tests a web build on the test iPhone while the user watches it fl
     await page.evaluate(async () => {
       // The ADR-0029 default stays on: the phone runs without asking, the way a user first meets it.
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload(); await resize(launched, 1280, 800); await openThreads(page)
@@ -82,6 +66,8 @@ test('an agent tests a web build on the test iPhone while the user watches it fl
     // The page lays out at the iPhone's 393 CSS pixels however small the player draws it.
     const screen = phone.locator('.phone-player__screen')
     await expect.poll(async () => (await nativeViews(launched)).find(view => view.url === url)?.bounds.width ?? 0).toBeGreaterThan(100)
+    // Measure after the entrance animation: its transform changes the screen's rectangle each frame.
+    await expect.poll(() => phone.evaluate(element => element.getAnimations().every(animation => animation.playState === 'finished'))).toBe(true)
     const box = await screen.evaluate(element => { const rect = element.getBoundingClientRect(); const x = Math.round(rect.left), y = Math.round(rect.top); return { x, y, width: Math.round(rect.right) - x, height: Math.round(rect.bottom) - y } })
     await expect.poll(async () => (await nativeViews(launched)).find(view => view.url === url)?.bounds).toEqual(box)
     const textOf = (result: Awaited<ReturnType<typeof agent>>): string => { const item = result.content.find(entry => entry.type === 'text'); return item?.type === 'text' ? item.text : '' }

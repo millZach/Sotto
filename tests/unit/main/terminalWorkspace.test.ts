@@ -10,8 +10,10 @@ import type { WorkspaceTerminalEvent } from '../../../src/shared/terminalWorkspa
 import type { ToolsResult } from '../../../src/shared/tools'
 import { createTerminalWorkspaceBridge } from '../../../src/preload/terminals'
 import { registerTerminalWorkspaceIpc } from '../../../src/main/terminals/ipc'
-import type { IpcInvocationEvent } from '../../../src/main/ipc/registerIpc'
 import { runWorktreeGit, ThreadWorktrees, TERMINAL_WORKTREE_HOME } from '../../../src/main/agents/threadWorktrees'
+
+import { ipcRegistry } from '../../fixtures/ipcHarness'
+import { deferred } from '../../fixtures/deferred'
 
 const unwrap = <T>(result: ToolsResult<T>): T => { if (!result.ok) throw new Error(JSON.stringify(result)); return result.value }
 const cleanup: (() => Promise<void>)[] = []
@@ -204,7 +206,7 @@ describe('terminal workspace service', () => {
     const f = await fixture({ executableExists })
     const { terminal } = await started(f.service, { projectId: 'p1', title: 'Build', workingCopy: 'shared', launch: shellLaunch })
     if (closed) unwrap(await f.service.close({ id: terminal.id }))
-    const gate = Promise.withResolvers<boolean>(), entered = Promise.withResolvers<void>()
+    const gate = deferred<boolean>(), entered = deferred<void>()
     executableExists.mockImplementationOnce(() => { entered.resolve(); return gate.promise })
     const restarting = f.service.restart({ id: terminal.id })
     try {
@@ -224,7 +226,7 @@ describe('terminal workspace service', () => {
     const executableExists = vi.fn(async () => true)
     const f = await fixture({ executableExists })
     const { terminal } = await started(f.service, { projectId: 'p1', title: 'Build', workingCopy: 'shared', launch: shellLaunch })
-    const gate = Promise.withResolvers<boolean>(), entered = Promise.withResolvers<void>()
+    const gate = deferred<boolean>(), entered = deferred<void>()
     executableExists.mockImplementationOnce(() => { entered.resolve(); return gate.promise })
     const restarting = f.service.restart({ id: terminal.id })
     try {
@@ -241,7 +243,7 @@ describe('terminal workspace service', () => {
 
   it('Close settles before an initial checkout finishes and prevents its late process', async () => {
     const f = await fixture()
-    const gate = Promise.withResolvers<AgentWorktree>(), entered = Promise.withResolvers<void>()
+    const gate = deferred<AgentWorktree>(), entered = deferred<void>()
     f.worktrees.ensure.mockImplementationOnce(() => { entered.resolve(); return gate.promise })
     const opened = unwrap(await f.service.open({ projectId: 'p1', title: 'Build', workingCopy: 'independent', launch: shellLaunch }))
     let closed = false
@@ -260,7 +262,7 @@ describe('terminal workspace service', () => {
 
   it('Reopen waits for initial checkout preparation and reclamation before restoring after Close', async () => {
     const f = await fixture()
-    const checkout = Promise.withResolvers<AgentWorktree>(), directory = Promise.withResolvers<string>(), directoryEntered = Promise.withResolvers<void>()
+    const checkout = deferred<AgentWorktree>(), directory = deferred<string>(), directoryEntered = deferred<void>()
     f.worktrees.ensure.mockImplementationOnce(() => checkout.promise)
     f.worktrees.workingDirectory.mockImplementationOnce(() => { directoryEntered.resolve(); return directory.promise })
     const opened = unwrap(await f.service.open({ projectId: 'p1', title: 'Build', workingCopy: 'independent', launch: shellLaunch }))
@@ -321,7 +323,7 @@ describe('terminal workspace service', () => {
     const executableExists = vi.fn(async () => true)
     const f = await fixture({ executableExists })
     const { terminal } = await started(f.service, { projectId: 'p1', title: 'Build', workingCopy: 'shared', launch: shellLaunch })
-    const gate = Promise.withResolvers<boolean>(), entered = Promise.withResolvers<void>()
+    const gate = deferred<boolean>(), entered = deferred<void>()
     executableExists.mockImplementationOnce(() => { entered.resolve(); return gate.promise })
     const restarting = f.service.restart({ id: terminal.id })
     await entered.promise
@@ -351,9 +353,12 @@ describe('terminal workspace service', () => {
 
   it('lists every Closed row through IPC, releases its output, and keeps the active limit on reopen', async () => {
     const f = await fixture()
-    const handlers = new Map<string, (event: IpcInvocationEvent, ...args: unknown[]) => unknown>()
-    const url = 'file:///main.html', mainFrame = { parent: null, url }, sender = { mainFrame, getURL: () => url, isDestroyed: () => false }
-    const unregister = registerTerminalWorkspaceIpc({ handle: (channel, fn) => { handlers.set(channel, fn) }, removeHandler: channel => { handlers.delete(channel) } }, f.service, () => [{ role: 'main', url, webContents: sender }])
+    const registry = ipcRegistry()
+    const { ipc, handlers } = registry
+    const { main } = registry
+    const { url, webContents: sender } = main
+    const { mainFrame } = sender
+    const unregister = registerTerminalWorkspaceIpc(ipc, f.service, () => [{ role: 'main', url, webContents: sender }])
     const bridge = createTerminalWorkspaceBridge({ invoke: async (channel, ...args) => handlers.get(channel)!({ sender, senderFrame: mainFrame }, ...args), on: vi.fn(), removeListener: vi.fn() })
     cleanup.push(async () => unregister())
     const closed = []

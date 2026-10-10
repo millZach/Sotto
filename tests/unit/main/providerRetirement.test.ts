@@ -12,6 +12,7 @@ import { agentCommandSchema } from '../../../src/shared/agents'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 import { handleOf, PIXEL_DATA_URL, PIXEL_PNG } from '../../fixtures/stagedImages'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
 
 /** The recovered draft's inline image as the coordinator carries it once staged at start (ADR-0031). */
 const staged = handleOf(PIXEL_PNG, 'image', 'image.png')
@@ -29,8 +30,8 @@ async function fixture() {
   const host = new FakeProviderHost(); const connect = vi.spyOn(host, 'connect'); const execute = vi.spyOn(host, 'execute')
   let historyEnabled = true
   const create = () => {
-    const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, historyEnabled: () => historyEnabled,
-      reasoner: { intent: vi.fn(), decide: vi.fn() } as never,
+    const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, historyEnabled: () => historyEnabled,
+      reasoner: {},
     })
     controls.push(control); return control
   }
@@ -41,7 +42,7 @@ async function fixture() {
     queue: [{ id: 'permission', threadId: 'old-id', kind: 'permission', text: 'Private question', requestId: 'request', createdAt: new Date().toISOString(), deferred: false }],
     draft: 'Recovered answer', draftThreadId: 'old-id', draftRequestId: 'request',
     draftAttachments: [{ id: 'image', name: 'image.png', mimeType: 'image/png', dataUrl: PIXEL_DATA_URL }],
-    activeThreadId: 'old-id', activeProjectId: 'old-project', pendingRequest: 'Private utterance', contextSavedAt: Date.now(), composing: true,
+    activeThreadId: 'old-id', activeProjectId: 'old-project', contextSavedAt: Date.now(), composing: true,
     outbox: [{ id: 'unknown-command', type: 'answer', threadId: 'old-id', requestId: 'request' }] }
   return { root, path, state, credentials, decrypt, host, connect, execute, create,
     history(value: boolean) { historyEnabled = value },
@@ -54,13 +55,13 @@ describe('native provider retirement', () => {
   it('keeps the recovered draft through new-thread creation and binds it only by explicit choice', async () => {
     const f = await fixture(); await f.save(); const control = f.create(); await control.start()
     await control.command({ type: 'connect' })
-    const created = await control.command({ type: 'create-thread', projectId: 'project', title: 'New native work', modelId: 'fake:model', managed: false })
+    const created = await control.command({ type: 'create-thread', projectId: 'project', title: 'New native work', modelId: 'fake:model' })
     expect(created.error).toBeNull()
     expect(created).toMatchObject({ draft: f.state.draft, draftAttachments: [staged], draftThreadId: null, composing: false })
     const threadId = created.activeThreadId!
     expect(agentCommandSchema.safeParse({ type: 'recover-draft', threadId }).success).toBe(true)
     const restored = await control.command({ type: 'recover-draft', threadId })
-    expect(restored).toMatchObject({ draft: f.state.draft, draftAttachments: [staged], draftThreadId: threadId, draftRequestId: null, composing: true, assignments: [] })
+    expect(restored).toMatchObject({ draft: f.state.draft, draftAttachments: [staged], draftThreadId: threadId, draftRequestId: null, composing: true })
     expect(f.host.commands.filter(command => command.type === 'send' || command.type === 'answer')).toEqual([])
   })
 
@@ -69,16 +70,17 @@ describe('native provider retirement', () => {
     expect(control.get()).toMatchObject({ configuration: { provider: 'codex', enabled: false }, providerUpgrade: null })
     expect(f.connect).not.toHaveBeenCalled(); expect(await readdir(f.root)).not.toContain('provider-retirement-v1.json')
   })
-  it.each(['explicit', 'omitted'])('archives %s legacy authority before keeping the draft unbound, without provider effects', async kind => {
+  it.each(['explicit', 'omitted'])('ends %s legacy authority before keeping the draft unbound, without provider effects', async kind => {
     const f = await fixture(); if (kind === 'omitted') delete (f.state.configuration as Record<string, unknown>).provider
     await f.credentials.set('t3', 'old encrypted secret'); await f.credentials.set('reasoning', 'independent')
     await f.save(); const control = f.create(); await control.start()
     expect(control.get()).toMatchObject({ configuration: { provider: 'codex', enabled: false, defaultModelId: '' },
-      assignments: [], queue: [], draft: 'Recovered answer', draftAttachments: [staged],
-      draftThreadId: null, draftRequestId: null, activeThreadId: null, activeProjectId: null, pendingRequest: '', composing: false,
+      draft: 'Recovered answer', draftAttachments: [staged],
+      draftThreadId: null, draftRequestId: null, activeThreadId: null, activeProjectId: null, composing: false,
       providerUpgrade: { recoveryPath: join(f.root, 'provider-retirement-v1.json') } })
     const recovery = await f.recovery()
-    expect(recovery.state).toMatchObject({ outbox: f.state.outbox, assignments: f.state.assignments, draftRequestId: 'request', draftThreadId: 'old-id', pendingRequest: 'Private utterance' })
+    expect(recovery.state).not.toHaveProperty('assignments'); expect(recovery.state).not.toHaveProperty('pendingRequest')
+    expect(recovery.state).toMatchObject({ outbox: f.state.outbox, draftRequestId: 'request', draftThreadId: 'old-id' })
     expect(JSON.stringify(recovery)).not.toContain('old encrypted secret'); expect(f.decrypt).not.toHaveBeenCalled()
     expect(f.credentials.has('t3')).toBe(false); expect(f.credentials.has('reasoning')).toBe(true)
     expect(f.connect).not.toHaveBeenCalled(); expect(f.execute).not.toHaveBeenCalled()
@@ -89,10 +91,10 @@ describe('native provider retirement', () => {
     expect((await restarted.command({ type: 'configure', patch: { provider: 'claude' } })).error).toBeNull()
     expect(f.execute).not.toHaveBeenCalled()
   })
-  it.each(['codex', 'claude', 'grok'])('preserves existing %s configuration and authority while dropping its obsolete endpoint', async provider => {
+  it.each(['codex', 'claude', 'grok'])('preserves existing %s configuration and drafts while dropping its obsolete endpoint', async provider => {
     const f = await fixture(); f.state.configuration.provider = provider; f.state.configuration.enabled = false; await f.save()
     const control = f.create(); await control.start()
-    expect(control.get()).toMatchObject({ configuration: { provider, defaultModelId: 'old-model' }, draftThreadId: 'old-id', draftRequestId: 'request', assignments: f.state.assignments, providerUpgrade: null })
+    expect(control.get()).toMatchObject({ configuration: { provider, defaultModelId: 'old-model' }, draftThreadId: 'old-id', draftRequestId: 'request', providerUpgrade: null })
     expect(JSON.parse(await readFile(f.path, 'utf8')).outbox).toEqual(f.state.outbox.map((item: Record<string, unknown>) => ({ ...item, provider })))
     await control.command({ type: 'configure', patch: { provider: provider === 'grok' ? 'codex' : 'grok' } })
     expect(JSON.parse(await readFile(f.path, 'utf8')).outbox[0].provider).toBe(provider)

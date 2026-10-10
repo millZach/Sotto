@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-import type { AgentAssignment, AgentModel, AgentProject, AgentThread } from './agents'
+import type { AgentModel, AgentProject, AgentThread } from './agents'
 import { agentMessageSchema, agentRequestSchema } from './agents'
 import { agentActivitySchema, MAX_AGENT_ACTIVITIES } from './agentActivity'
 import { agentBackgroundWorkSchema, agentMonitoringSchema } from './agentMonitoring'
@@ -41,6 +41,7 @@ export const e2eScenarioSchema = z.enum([
   'clipboard-recovery',
   'desktop-clipboard-unavailable',
   'transcription-failure',
+  'transcription-turned-away-once',
   'transcription-turned-away-twice',
   'design-permission',
   'design-processing',
@@ -63,7 +64,7 @@ export type E2EScenario = z.infer<typeof e2eScenarioSchema>
 export type E2ESnapshot = z.infer<typeof e2eSnapshotSchema>
 
 export const e2eAgentEventSchema = z.object({
-  type: z.enum(['ready', 'manual', 'question', 'permission', 'disconnect', 'failure', 'reasoner-release', 'uncertain', 'reject', 'connect-reject', 'history', 'stream', 'monitoring', 'background-work', 'settings', 'settings-unconfirmed']),
+  type: z.enum(['ready', 'manual', 'question', 'permission', 'disconnect', 'failure', 'uncertain', 'reject', 'connect-reject', 'history', 'stream', 'monitoring', 'background-work', 'settings', 'settings-unconfirmed']),
   threadId: z.string(), text: z.string(), requestId: z.string().optional(), status: z.enum(['idle', 'running', 'error']).optional(),
   request: agentRequestSchema.optional(), activities: z.array(agentActivitySchema).max(MAX_AGENT_ACTIVITIES).optional(),
   // Bounded synthetic histories and same-message deltas for the renderer performance lane.
@@ -97,25 +98,18 @@ export interface DesignThreadsFixture {
   readonly models: readonly AgentModel[]
   readonly projects: readonly AgentProject[]
   readonly threads: readonly AgentThread[]
-  /** Saved coordinator assignments for the fixture threads; `contextUpdatedAt` is stamped by the caller. */
-  readonly assignments: readonly Omit<AgentAssignment, 'contextUpdatedAt'>[]
 }
 
 /**
  * Every Threads page state at once: a permission waiting on the user, two
- * running threads, two finished today, one Sotto stopped at the follow-up
- * limit yesterday, one finished yesterday, one from earlier in the week, and
- * one thread Sotto is not managing. Times are relative to `E2E_THREADS_NOW`.
+ * running threads, two finished today, one failed yesterday, one finished
+ * yesterday, and one from earlier in the week. Times are relative to `E2E_THREADS_NOW`.
  */
 export function designThreadsFixture(): DesignThreadsFixture {
   const message = (id: string, role: 'user' | 'assistant', dayOffset: number, hour: number, minute: number, text: string): AgentThread['messages'][number] =>
     ({ id, role, text, createdAt: fixtureAt(dayOffset, hour, minute) })
   const thread = (id: string, title: string, projectId: string, modelId: string, status: AgentThread['status'], messages: AgentThread['messages'], requests: AgentThread['requests'] = []): AgentThread =>
     ({ id, title, projectId, modelId, status, messages, requests })
-  const assignment = (threadId: string, startedAt: string, origin: AgentAssignment['origin'], followups: number, seen: readonly string[], own: readonly string[],
-    extra: Partial<Omit<AgentAssignment, 'contextUpdatedAt'>> = {}): Omit<AgentAssignment, 'contextUpdatedAt'> =>
-    ({ threadId, mode: 'managed', instruction: '', followups, paused: false, seenMessageIds: [...seen], ownMessageIds: [...own], handledRequestIds: [],
-      lastFailure: '', startedAt, origin, stopReason: 'none', stoppedAt: '', ...extra })
   const threads = [
     thread('visual-gate', 'Visual gate flake', 'workshop', 'claude:sonnet', 'running', [
       message('visual-gate-1', 'user', 0, 19, 32, 'Find why the visual gate flakes on the widget listening capture and fix it.'),
@@ -137,7 +131,7 @@ export function designThreadsFixture(): DesignThreadsFixture {
       message('grok-previews-1', 'user', 0, 14, 5, 'Add a preview button beside each Grok voice and move the key into the system keychain.'),
       message('grok-previews-2', 'assistant', 0, 14, 58, 'Done. The preview plays a two-second sample through the selected voice, and the key never touches settings.json.'),
     ]),
-    thread('wav-stall', 'Streaming WAV stall', 'workshop', 'codex:gpt', 'idle', [
+    thread('wav-stall', 'Streaming WAV stall', 'workshop', 'codex:gpt', 'error', [
       message('wav-stall-1', 'user', -1, 15, 40, 'Fix the streaming WAV stall. Playback stops at the length marker.'),
       message('wav-stall-2', 'assistant', -1, 17, 2, 'The length marker fix still fails the same playback test. I do not have an approach that differs from the last three.'),
     ]),
@@ -162,7 +156,6 @@ export function designThreadsFixture(): DesignThreadsFixture {
       entry.settledAt = entry.updatedAt
     }
   }
-  const ids = (threadId: string): string[] => threads.find(entry => entry.id === threadId)?.messages.map(entry => entry.id) ?? []
   return {
     models: [
       { id: 'claude:sonnet', provider: 'Claude', name: 'Sonnet 4.5', ready: true },
@@ -175,15 +168,5 @@ export function designThreadsFixture(): DesignThreadsFixture {
       { id: 'notes', title: 'notes', path: 'C:/notes' },
     ],
     threads,
-    assignments: [
-      assignment('visual-gate', fixtureAt(0, 19, 32), 'voice', 2, ids('visual-gate'), []),
-      assignment('footer-links', fixtureAt(0, 19, 38), 'voice', 0, ids('footer-links'), []),
-      assignment('weekly-note', fixtureAt(0, 19, 31), 'typed', 1, ids('weekly-note'), ['weekly-note-1']),
-      assignment('release-notes', fixtureAt(0, 16, 8), 'voice', 3, ids('release-notes'), []),
-      assignment('grok-previews', fixtureAt(0, 14, 5), 'typed', 4, ids('grok-previews'), []),
-      assignment('wav-stall', fixtureAt(-1, 15, 40), 'voice', 5, ids('wav-stall'), [], { paused: true, stopReason: 'limit', stoppedAt: fixtureAt(-1, 17, 2) }),
-      assignment('thread-routing', fixtureAt(-1, 14, 2), 'typed', 4, ids('thread-routing'), []),
-      assignment('benchmark', fixtureAt(-4, 17, 10), 'voice', 1, ids('benchmark'), []),
-    ],
   }
 }

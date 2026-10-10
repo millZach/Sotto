@@ -152,7 +152,7 @@ describe('Claude transcript catch-up', () => {
       expect(completed.activities?.find(row => row.id === 'claude-task-reused-task')).toMatchObject({ status: 'completed', ...(mode !== 'event-store' ? { text: 'Earlier result' } : {}), taskUpdatesExcluded: true })
       if (workspace) {
         expect(completed.activities?.find(row => row.id === 'claude-task-reused-task')?.text).toBeUndefined()
-        expect((await workspace.subagentAssignments({ threadId: sottoId, agentId: 'claude-agent-task-reused-task' })).assignments[0]?.result).toBe('Earlier result')
+
         const published = (await workspace.snapshot()).threads.find(thread => thread.id === sottoId)!
         expect(published.activities?.find(row => row.id === 'claude-task-retained-task')).toMatchObject({ status: 'completed', text: 'Fresh completion after reconnect' })
       }

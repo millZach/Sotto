@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { deferred } from '../fixtures/deferred'
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { access, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -61,7 +62,7 @@ describe.skipIf(process.platform !== 'win32')('the Windows askpass helper', () =
   })
 
   it('removes the helper folder when closed during an unanswered question', async () => {
-    const waiting = Promise.withResolvers<void>()
+    const waiting = deferred<void>()
     const broker = await AskpassBroker.start(async (_caller, _question, withdrawn) => {
       waiting.resolve()
       await new Promise<void>(resolve => withdrawn.addEventListener('abort', () => resolve(), { once: true }))

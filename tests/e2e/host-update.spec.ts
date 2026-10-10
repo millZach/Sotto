@@ -1,14 +1,32 @@
+import { agentState } from './support/agentAccess'
+import { resizeWindow } from './support/sottoWindow'
+import { insideWindow as inside } from './support/hostCapture'
+async function capture(launched: LaunchedSotto, name: string, check: () => Promise<void>, sizes: readonly (readonly [number, number])[] = SIZES): Promise<void> {
+  const { page } = launched
+  for (const [width, height] of sizes) {
+    await resizeWindow(launched, width, height)
+    for (const appearance of ['dark', 'light'] as const) {
+      await page.evaluate(async value => window.sotto!.updateSettings({ appearance: value }), appearance)
+      await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
+      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+      await check()
+      for (const { element, text, ratio } of await updateContrast(page)) expect(ratio, `${text} (${element}) in ${name} at ${width} ${appearance}`).toBeGreaterThanOrEqual(4.5)
+      await page.screenshot({ path: test.info().outputPath(`${name}-${width}x${height}-${appearance}.png`), animations: 'disabled' })
+    }
+  }
+  await page.evaluate(async () => window.sotto!.updateSettings({ appearance: 'dark' }))
+  await resizeWindow(launched, 1280, 800)
+}
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
 import { isBuiltin } from 'node:module'
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { build } from 'vite'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { hostRelease, localArchiveName, releasesPage, sidecar, tarGz } from '../fixtures/hostArchive'
 import { version as desktopVersion } from '../../package.json'
-import { closeSotto, launchSotto, openPage, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 
 /**
  * #475 in the built app: forge runs an older Sotto host than this computer, and the user updates it from the pill beside
@@ -53,31 +71,12 @@ function updateContrast(page: Page) {
   })
 }
 /** Whether an element sits wholly inside the window, so nothing clips at the minimum size. */
-const inside = (locator: Locator) => locator.evaluate(element => {
-  const box = element.getBoundingClientRect()
-  return box.left >= 0 && box.top >= 0 && box.right <= innerWidth + 0.5 && box.bottom <= innerHeight + 0.5
-})
+
 /** Captures each size and appearance, checking that nothing overflows and that the pill's and panel's text is readable. */
-async function capture(launched: LaunchedSotto, name: string, check: () => Promise<void>, sizes: readonly (readonly [number, number])[] = SIZES): Promise<void> {
-  const { page } = launched
-  for (const [width, height] of sizes) {
-    await resizeWindow(launched, width, height)
-    for (const appearance of ['dark', 'light'] as const) {
-      await page.evaluate(async value => window.sotto!.updateSettings({ appearance: value }), appearance)
-      await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
-      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-      await check()
-      for (const { element, text, ratio } of await updateContrast(page)) expect(ratio, `${text} (${element}) in ${name} at ${width} ${appearance}`).toBeGreaterThanOrEqual(4.5)
-      await page.screenshot({ path: test.info().outputPath(`${name}-${width}x${height}-${appearance}.png`), animations: 'disabled' })
-    }
-  }
-  await page.evaluate(async () => window.sotto!.updateSettings({ appearance: 'dark' }))
-  await resizeWindow(launched, 1280, 800)
-}
 
 test('an older host shows a pill on the Threads page, fails an update with its old version still running, then updates on Try again', async () => {
   test.setTimeout(300_000)
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-host-update-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-host-update-' })).directory
   const root = join(profile, 'ssh-root')
   const installPath = join(root, '~', '.local', 'share', 'sotto-host')
   // forge's host as installed before host updates: one flat install, which says it is 0.1.22.
@@ -132,7 +131,7 @@ test('an older host shows a pill on the Threads page, fails an update with its o
       const projectId = state.host.projects.find(item => item.title === 'render-farm')!.id
       const ids: string[] = []
       for (const title of ['Bake the hero shot lighting', 'Move finished renders']) {
-        await agents.command({ type: 'create-thread', projectId, title, modelId: state.host.models[0]!.id, managed: false, workingCopy: 'shared' })
+        await agents.command({ type: 'create-thread', projectId, title, modelId: state.host.models[0]!.id, workingCopy: 'shared' })
         ids.push((await agents.get()).host.threads.find(item => item.title === title)!.id)
       }
       return ids
@@ -222,7 +221,7 @@ test('an older host shows a pill on the Threads page, fails an update with its o
     // The old install stays where it was, and forge's threads are back on the new host under the same IDs.
     await expect(readFile(join(installPath, 'host', 'index.js'), 'utf8')).resolves.toBeTruthy()
     await expect.poll(async () => (await page.evaluate(() => window.sotto!.hosts!.get())).hosts[0]).toMatchObject({ phase: 'connected', version: desktopVersion })
-    await expect.poll(async () => (await page.evaluate(() => window.sotto!.agents!.get())).host.threads.filter(thread => thread.clientConnected).map(thread => thread.id)).toEqual(expect.arrayContaining(threads))
+    await expect.poll(async () => (await agentState(page)).host.threads.filter(thread => thread.clientConnected).map(thread => thread.id)).toEqual(expect.arrayContaining(threads))
     expect(releases.requests.filter(path => path.endsWith('.tar.gz')).length).toBe(2)
 
     // Dismiss puts it away, and nothing is offered for a host that is up to date.
@@ -235,6 +234,6 @@ test('an older host shows a pill on the Threads page, fails an update with its o
     if (launched) await closeSotto(launched)
     await releases.close()
     for (const [key, value] of Object.entries(previous)) { if (value === undefined) delete process.env[key]; else process.env[key] = value }
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 })

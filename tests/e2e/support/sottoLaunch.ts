@@ -1,6 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './e2eProfile'
 
 import { _electron as electron, expect, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 
@@ -42,10 +40,6 @@ export function e2eEnvironment(scenario: E2EScenario, userData: string): Record<
   }).filter((entry): entry is [string, string] => entry[1] !== undefined && entry[0] !== 'ELECTRON_RUN_AS_NODE'))
 }
 
-async function removeOwnedProfile(path: string): Promise<void> {
-  await rm(requireOwnedE2EProfile(path), { recursive: true, force: true })
-}
-
 export async function firstSottoWindow(application: ElectronApplication): Promise<Page> {
   const first = await application.firstWindow()
   await first.waitForLoadState('domcontentloaded')
@@ -58,11 +52,19 @@ export async function firstSottoWindow(application: ElectronApplication): Promis
   } })
 }
 
+/** The widget is created after onboarding; wait for its page and navigation to arrive. */
+export async function sottoWidget(application: ElectronApplication): Promise<Page> {
+  await expect.poll(() => application.windows().some(page => page.url().endsWith('/widget.html'))).toBe(true)
+  const widget = application.windows().find(page => page.url().endsWith('/widget.html'))!
+  await widget.waitForLoadState('domcontentloaded')
+  return widget
+}
+
 const defaultDependencies: LaunchDependencies = {
-  createProfile: () => mkdtemp(join(tmpdir(), 'sotto-e2e-')),
+  createProfile: async () => (await ownedE2EProfile()).directory,
   launch: (options) => electron.launch(options),
   firstWindow: firstSottoWindow,
-  removeProfile: removeOwnedProfile,
+  removeProfile: removeOwnedE2EProfile,
 }
 
 export async function launchSotto(
@@ -71,7 +73,7 @@ export async function launchSotto(
   dependencies: LaunchDependencies = defaultDependencies,
 ): Promise<LaunchedSotto> {
   const ownsUserData = userData === undefined
-  const profile = userData ?? await dependencies.createProfile()
+  const profile = userData ?? requireOwnedE2EProfile(await dependencies.createProfile())
   let application: ElectronApplication | undefined
   try {
     application = await dependencies.launch({
@@ -88,33 +90,12 @@ export async function launchSotto(
   }
 }
 
-/** Resize the main window and wait for the page to see the new width; fractional display scaling rounds it by a pixel or two. */
-export async function resizeWindow(launched: LaunchedSotto, width: number, height: number): Promise<void> {
-  await launched.app.evaluate(({ BrowserWindow }, size) => {
-    const window = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().endsWith('/index.html'))!
-    window.setSize(size.width, size.height)
-  }, { width, height })
-  await expect.poll(async () => Math.abs(await launched.page.evaluate(() => innerWidth) - width)).toBeLessThanOrEqual(2)
-}
-
-/**
- * The main window as it is drawn on screen, through Electron's own capture of its composited frame. Playwright's
- * screenshot of the page composes a `<webview>` guest (an interactive visual's page, ADR-0060) at the wrong scale on a
- * scaled display, 1.5 times too large and cut off at 150%, though the screen shows it right; a capture that shows one
- * is taken here instead.
- */
-export async function captureWindow(application: ElectronApplication, path: string): Promise<void> {
-  const png = await application.evaluate(async ({ BrowserWindow }) => {
-    const window = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().endsWith('/index.html'))
-    if (!window) throw new Error('No main window to capture.')
-    return (await window.webContents.capturePage()).toPNG().toString('base64')
-  })
-  await writeFile(path, Buffer.from(png, 'base64'))
-}
+export { resizeWindow } from './sottoWindow'
+export { captureWindow } from './sottoCapture'
 
 export async function closeSotto(launched: LaunchedSotto): Promise<void> {
   await launched.app.close().catch(() => undefined)
-  if (launched.ownsUserData) await removeOwnedProfile(launched.userData)
+  if (launched.ownsUserData) await removeOwnedE2EProfile(launched.userData)
 }
 
 /** The Threads page landmark, whichever sidebar mode the window last remembered. */
@@ -127,7 +108,7 @@ const FIRST_RUN_STEPS = ['welcome', 'look', 'microphone', 'key', 'shortcut', 'ag
 export type FirstRunStepId = typeof FIRST_RUN_STEPS[number]
 
 export interface FirstRunSetupOptions {
-  /** 'test' runs the microphone test and waits for it to report ready before leaving that step; 'skip' (the default) leaves it untested. */
+  /** 'test' runs the microphone test and waits for it to hear a voice before leaving that step; 'skip' (the default) leaves it untested. */
   readonly microphone?: 'test' | 'skip'
 }
 
@@ -148,7 +129,7 @@ async function advanceFirstRunStep(page: Page, step: FirstRunStepId, options: Fi
   }
   if (step === 'microphone' && options.microphone === 'test') {
     await page.getByRole('button', { name: /test microphone/i }).click()
-    await expect(page.getByText(/microphone ready/i)).toBeVisible()
+    await expect(page.getByText('Sotto heard you. Your microphone works.')).toBeVisible()
   }
   if (step === 'phone') {
     await page.getByRole('button', { name: /finish setup/i }).click()
@@ -194,14 +175,18 @@ export async function completeFirstRunSetup(page: Page, options: FirstRunSetupOp
 
 /**
  * Opens the Threads page from wherever the window happens to be. Sotto now
- * opens on Threads, so the common case is that the sidebar is already there and
- * nothing is clicked. Otherwise the page is reached through the footer link on
+ * opens on Threads, so the common case is that the workspace is already there and
+ * nothing is clicked. The sidebar alone also appears beside Dictate, History and Help.
+ * Otherwise the page is reached through the footer link on
  * the pages that still have a footer, and through the Dictate/Threads switch on
  * the pages that do not.
  */
 export async function openThreads(page: Page): Promise<void> {
   const sidebar = threadSidebar(page)
-  if (await sidebar.isVisible()) return
+  if (await page.locator('.threads-view').isVisible()) {
+    await expect(sidebar).toBeVisible()
+    return
+  }
   const link = page.getByRole('link', { name: 'Threads', exact: true })
   if ((await link.count()) > 0) await link.click()
   else await page.getByRole('tab', { name: 'Threads', exact: true }).click()
@@ -225,43 +210,6 @@ export async function openPage(page: Page, name: SottoPageName): Promise<void> {
 }
 
 /**
- * Turns the voice coordinator, and memory with it, on in a profile before its
- * window opens. The beta hides the Agents room, the wake phrase and every "let
- * Sotto manage" control behind `voiceCoordinatorEnabled`, and the Memory page
- * with the questionnaire that greets the Agents room behind `memoryEnabled`, so
- * a spec that still exercises them has to seed the settings. Whatever else the spec already wrote is kept; a profile with
- * no settings file yet gets one holding only the flag, which the main process
- * fills out from the defaults when it reads it.
- */
-export async function enableVoiceCoordinator(userData: string): Promise<void> {
-  const file = join(userData, 'settings.json')
-  let persisted: Record<string, unknown> = {}
-  try {
-    const parsed: unknown = JSON.parse(await readFile(file, 'utf8'))
-    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) persisted = parsed as Record<string, unknown>
-  } catch {
-    // No settings file yet, or one this profile is about to replace anyway.
-  }
-  await mkdir(userData, { recursive: true })
-  await writeFile(file, `${JSON.stringify({ ...persisted, voiceCoordinatorEnabled: true, memoryEnabled: true }, null, 2)}\n`, 'utf8')
-}
-
-/**
- * Launches with the voice coordinator already on, in a throwaway profile this
- * module still owns, so the spec's own cleanup removes it as usual.
- */
-export async function launchSottoWithVoice(scenario: E2EScenario = 'success'): Promise<LaunchedSotto> {
-  return launchSotto(scenario, undefined, {
-    ...defaultDependencies,
-    createProfile: async () => {
-      const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-voice-'))
-      await enableVoiceCoordinator(profile)
-      return profile
-    },
-  })
-}
-
-/**
  * The texts of a thread's user messages, read through the thread-detail bridge: the shell that
  * `agents.get()` answers with summarises every history instead of carrying it.
  */
@@ -274,7 +222,7 @@ export async function userMessageTexts(page: Page, threadId: string): Promise<st
 
 /**
  * Runs one of a pane's More-menu actions. The pane header keeps a single menu
- * button now; Rename, Manage, Reconnect, Settle and their kin sit behind it.
+ * button now; Rename, Reconnect, Settle and their kin sit behind it.
  * Scoped to a pane locator when several panes are open, or to the page when
  * one pane is.
  */

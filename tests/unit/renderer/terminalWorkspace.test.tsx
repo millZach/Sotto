@@ -1,10 +1,12 @@
+import { terminalWorkspaceBridgeFixture, workspaceTerminal } from '../../fixtures/renderer/terminalWorkspaceBridge'
+import { fakeTerminalViews } from '../../fixtures/renderer/terminalBridge'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AgentCommand, AgentState } from '../../../src/shared/agents'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
-import type { TerminalOpenRequest, TerminalWorkspaceBridge, WorkspaceTerminal, WorkspaceTerminalEvent, WorkspaceTerminalSnapshot } from '../../../src/shared/terminalWorkspace'
+import type { TerminalOpenRequest, WorkspaceTerminal, WorkspaceTerminalSnapshot } from '../../../src/shared/terminalWorkspace'
 import type { ToolsResult } from '../../../src/shared/tools'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { SIDEBAR_MODE_KEY } from '../../../src/renderer/src/agents/SidebarFrame'
@@ -13,9 +15,8 @@ import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { TerminalWorkspaceStore } from '../../../src/renderer/src/terminals/terminalWorkspaceStore'
 import { TerminalPane } from '../../../src/renderer/src/terminals/TerminalPane'
 import { describeTerminals } from '../../../src/renderer/src/terminals/terminalFacts'
-import type { TerminalViewFactory, TerminalViewHandlers } from '../../../src/renderer/src/tools/terminalStore'
-import { liveAgentState, threadsStateFixture } from './liveAgentState'
-import { paneMenuItem } from './paneMenu'
+import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
+import { paneMenuItem } from '../../fixtures/renderer/paneMenu'
 
 vi.mock('../../../src/renderer/src/tools/terminalView', () => { throw new Error('Chunk unavailable') })
 
@@ -115,20 +116,15 @@ it.each(['restart', 'close', 'stop'] as const)('does not carry queued workspace 
 })
 
 function terminal(id: string, patch: Partial<WorkspaceTerminal> = {}): WorkspaceTerminal {
-  return {
-    id, projectId: 'workshop', title: 'Build', launch: { provider: 'claude', modelId: 'claude:sonnet', reasoning: null, permission: 'ask' },
-    workingCopy: 'shared', workingDirectory: 'C:/workshop', branch: 'main', command: 'claude --model claude:sonnet', status: 'running', cols: 80, rows: 24,
-    exitCode: null, openedAt: NOW - 4 * 60_000, closedAt: null, ...patch,
-  }
+  return workspaceTerminal(id, { openedAt: NOW - 4 * 60_000, ...patch })
 }
 
 /** Main's terminal workspace as the renderer sees it: a listing, snapshots, and one event stream. */
 function fakeBridge(initial: WorkspaceTerminal[]) {
   let terminals = initial
   let next = 0
-  const listeners = new Set<(event: WorkspaceTerminalEvent) => void>()
   const find = (id: string): WorkspaceTerminal => terminals.find(item => item.id === id)!
-  const bridge: TerminalWorkspaceBridge = {
+  const published = terminalWorkspaceBridgeFixture({ commands: {
     list: vi.fn(async () => ok({ terminals, shell: 'pwsh' })),
     // Main answers as soon as the terminal exists: no process yet, no branch, nothing on screen.
     open: vi.fn(async (request: TerminalOpenRequest) => {
@@ -149,13 +145,13 @@ function fakeBridge(initial: WorkspaceTerminal[]) {
     }),
     close: vi.fn(async ({ id }) => {
       terminals = terminals.map(item => item.id === id ? { ...item, status: 'exited' as const, closedAt: NOW } : item)
-      for (const listener of [...listeners]) listener({ type: 'terminal', terminal: find(id) })
+      published.publish({ type: 'terminal', terminal: find(id) })
       return ok(undefined)
     }),
     pasteImage: vi.fn(async () => ok({ path: 'C:\\workshop\\.sotto\\clipboard\\20260916-101010-abcdef12.png' })),
-    onEvent: vi.fn(listener => { listeners.add(listener); return () => { listeners.delete(listener) } }),
-  }
-  const emit = (event: WorkspaceTerminalEvent): void => { for (const listener of [...listeners]) listener(event) }
+  } })
+  const bridge = published.bridge
+  const emit = published.publish
   /** Main finishing a start: the process is up, the branch is known and the first line arrives. */
   const settle = (id: string): void => {
     terminals = terminals.map(item => item.id === id ? { ...item, status: 'running' as const, branch: 'main' } : item)
@@ -167,22 +163,7 @@ function fakeBridge(initial: WorkspaceTerminal[]) {
 
 /** A stand-in for xterm that records what it was asked to draw. */
 function fakeViews() {
-  const views: { handlers: TerminalViewHandlers; written: string[]; input: boolean[]; focused: number }[] = []
-  const factory: TerminalViewFactory = handlers => {
-    const record = { handlers, written: [] as string[], input: [] as boolean[], focused: 0 }
-    views.push(record)
-    return {
-      mount: container => { container.replaceChildren(Object.assign(document.createElement('textarea'), { className: 'fake-xterm' })) },
-      unmount: () => {},
-      write: (data, done) => { record.written.push(data); done?.() },
-      reset: () => { record.written.push('<reset>') },
-      setInputEnabled: enabled => { record.input.push(enabled) },
-      fit: () => ({ cols: 100, rows: 30 }),
-      focus: () => { record.focused += 1 },
-      dispose: () => {},
-    }
-  }
-  return { views, factory }
+  return fakeTerminalViews({ tag: 'textarea' })
 }
 
 function mount(initial: WorkspaceTerminal[] = [], options: { readonly mode?: 'threads' | 'terminals'; readonly bridge?: boolean; readonly lazy?: boolean; readonly devinDefault?: boolean } = {}) {
@@ -192,8 +173,7 @@ function mount(initial: WorkspaceTerminal[] = [], options: { readonly mode?: 'th
     state.host.models.unshift({ id: 'native:devin:model:swe-1-6-fast', provider: 'Devin', providerId: 'devin', name: 'SWE fast', ready: true })
     state.configuration.defaultModelId = 'native:devin:model:swe-1-6-fast'
   }
-  state.assignments = []
-  state.queue = []
+
   const live = liveAgentState(state)
   const command = vi.fn(async (request: AgentCommand): Promise<AgentState | null> => live.command(request))
   vi.mocked(useAgents).mockImplementation(() => ({ ...live.useLive(), command }))
@@ -201,7 +181,7 @@ function mount(initial: WorkspaceTerminal[] = [], options: { readonly mode?: 'th
   const { views, factory } = fakeViews()
   const store = new TerminalWorkspaceStore()
   const terminals = { store, bridge: options.bridge === false ? undefined : fake.bridge, ...(options.lazy ? {} : { viewFactory: factory }), layoutStore: new SplitLayoutStore(), platform: 'win32' }
-  render(<ThreadsView onOpenAgents={vi.fn()} now={NOW} layoutStore={new SplitLayoutStore()} paneAreaWidth={WIDE} terminals={terminals} />)
+  render(<ThreadsView now={NOW} layoutStore={new SplitLayoutStore()} paneAreaWidth={WIDE} terminals={terminals} />)
   return { ...fake, views, store, command }
 }
 

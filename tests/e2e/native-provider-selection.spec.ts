@@ -1,8 +1,8 @@
 import { expect, test } from '@playwright/test'
-import { closeSotto, launchSottoWithVoice } from './support/sottoLaunch'
+import { closeSotto, launchSotto } from './support/sottoLaunch'
 
-test('provider configuration and coordinator choices have separate settings', async () => {
-  const launched = await launchSottoWithVoice()
+test('provider configuration and new-thread defaults have separate settings', async () => {
+  const launched = await launchSotto()
   const { page } = launched
   try {
     await page.evaluate(() => window.sotto!.updateSettings({ onboardingComplete: true }))
@@ -37,8 +37,8 @@ test('provider configuration and coordinator choices have separate settings', as
     await expect(coordinator.getByRole('heading', { name: 'Agents', exact: true })).toBeVisible()
     await expect(coordinator.getByRole('button', { name: 'Configure agents', exact: true })).toHaveCount(0)
     await expect(coordinator.getByRole('combobox', { name: 'Thread provider', exact: true })).toHaveCount(0)
-    await coordinator.getByRole('combobox', { name: 'Reasoning account', exact: true }).selectOption('claude')
-    await expect.poll(async () => (await page.evaluate(async () => window.sotto!.agents!.get())).configuration.reasoning).toBe('claude')
+    await expect(coordinator.getByRole('combobox', { name: 'Reasoning account', exact: true })).toHaveCount(0)
+    await expect(coordinator.getByRole('combobox', { name: 'Thread model', exact: true })).toBeVisible()
     const after = await page.evaluate(async () => (await window.sotto!.agents!.get()).configuration)
     expect(after.provider).toBe(before.provider)
     expect(after.enabledProviders).toEqual(before.enabledProviders)

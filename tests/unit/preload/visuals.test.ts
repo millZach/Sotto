@@ -1,5 +1,7 @@
+// @vitest-environment node
+import { preloadElectron } from '../../fixtures/preloadElectron'
 import { describe, expect, it, vi } from 'vitest'
-vi.mock('electron', () => ({ contextBridge: { exposeInMainWorld: vi.fn() }, ipcRenderer: { invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn() } }))
+vi.mock('electron', async () => (await import('../../fixtures/preloadElectron')).preloadElectron())
 import { createSottoBridge, createSottoWidgetBridge } from '../../../src/preload'
 import { VISUAL_PAGE_OPEN, type VisualPageRequest } from '../../../src/shared/visualPages'
 
@@ -8,7 +10,7 @@ const theme = { mode: 'dark', reducedMotion: false, tokens: Object.fromEntries([
 
 describe('interactive visual preload contract (ADR-0060)', () => {
   it('lets the main window ask for a page by thread and visual, never send one, and checks the answer', async () => {
-    const ipc = { invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn() }
+    const ipc = preloadElectron().ipcRenderer
     const bridge = createSottoBridge(ipc, 'win32').visuals!
     expect(Object.keys(bridge)).toEqual(['open'])
     expect(Object.isFrozen(bridge)).toBe(true)

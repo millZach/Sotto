@@ -1,9 +1,10 @@
 import { mkdir, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, openThreads } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
-const SHOTS = resolve('artifacts/terminal-display')
+const SHOTS = evidenceDirectory('artifacts/terminal-display')
 
 /** Pixel assertion on the rendered grid, independent of DOM/WebGL implementation details. */
 async function orangeCoverage(page: Page, png: Buffer): Promise<number> {
@@ -37,7 +38,7 @@ test('native terminal preserves truecolor, contiguous block glyphs and redraws a
   try {
     const folder = await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', reducedMotion: 'on' })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       const state = await window.sotto!.agents!.command({ type: 'connect' })
       const thread = state.host.threads.find(item => item.id === 'workshop' || item.id.endsWith(':workshop'))!
       return state.host.projects.find(project => project.id === thread.projectId)!.path

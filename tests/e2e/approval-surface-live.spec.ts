@@ -1,8 +1,12 @@
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
+import { ownedE2EProfile } from './support/e2eProfile'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { firstSottoWindow, openThreads } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
+
+const artifacts = evidenceDirectory('artifacts/approval-surface')
 
 /**
  * The approval surface, end to end through the installed Claude Code client (ADR-0043). Sotto used to
@@ -15,11 +19,10 @@ const enabled = process.env.SOTTO_APPROVAL_SURFACE_LIVE === '1'
 
 test('claude: a real approval and a real question both reach the user', async () => {
   test.skip(!enabled, 'Explicit live approval-surface opt-in required.')
-  const root = await mkdtemp(join(tmpdir(), 'sotto-e2e-native-'))
+  const root = (await ownedE2EProfile({ prefix: 'sotto-e2e-native-' })).directory
   const profile = join(root, 'profile'); const project = join(root, 'project')
   await mkdir(profile); await mkdir(project)
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ onboardingComplete: true }))
-  const artifacts = resolve('artifacts/approval-surface')
   await mkdir(artifacts, { recursive: true })
   let app: ElectronApplication | undefined
   let page: Page | undefined
@@ -32,7 +35,7 @@ test('claude: a real approval and a real question both reach the user', async ()
     const connection = await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true })
       const configured = await window.sotto!.agents!.command({ type: 'configure', patch: {
-        provider: 'claude', enabled: true, enabledProviders: ['claude'], speak: false, reasoning: 'none', followupLimit: 0 } })
+        provider: 'claude', enabled: true, enabledProviders: ['claude'], reasoning: 'none', } })
       if (configured.error) throw new Error(configured.error)
       const connected = await window.sotto!.agents!.command({ type: 'connect', provider: 'claude' })
       if (connected.error) throw new Error(connected.error)
@@ -58,7 +61,7 @@ test('claude: a real approval and a real question both reach the user', async ()
     await dialog.getByRole('button', { name: 'Create thread' }).click()
     await expect(dialog).toHaveCount(0, { timeout: 45_000 })
 
-    const prompt = page.getByRole('textbox', { name: 'Prompt', exact: true })
+    const prompt = promptField(page)
     const requests = async () => page!.evaluate(async () => {
       const state = await window.sotto!.agents!.get()
       // Kinds only: what a provider asked belongs in the window and the capture, not in a console line.
@@ -66,7 +69,7 @@ test('claude: a real approval and a real question both reach the user', async ()
     })
 
     // A write needs a person under approval-required, and the CLI must ask Sotto rather than deny it.
-    await prompt.fill('Create a file named surface.txt containing the word banana in this directory, using the Write tool. Do not ask first, just do it.')
+    await fillPrompt(prompt, 'Create a file named surface.txt containing the word banana in this directory, using the Write tool. Do not ask first, just do it.')
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
     await expect.poll(async () => await requests(), { timeout: 120_000 }).toContain('permission')
     const permission = page.locator('.agent-request').first()
@@ -76,8 +79,8 @@ test('claude: a real approval and a real question both reach the user', async ()
     await expect.poll(async () => (await requests()).length, { timeout: 60_000 }).toBe(0)
 
     // AskUserQuestion exists only where there is a surface, so a real question card is the proof of it.
-    await expect(prompt).toHaveValue('', { timeout: 60_000 })
-    await prompt.fill('Use the AskUserQuestion tool right now to ask me which cache to use, offering Redis, Memcached and In-memory. Ask only; change nothing.')
+    await expectPromptText(prompt, '', { timeout: 60_000 })
+    await fillPrompt(prompt, 'Use the AskUserQuestion tool right now to ask me which cache to use, offering Redis, Memcached and In-memory. Ask only; change nothing.')
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
     await expect.poll(async () => await requests(), { timeout: 120_000 }).toContain('question')
     const question = page.locator('.agent-request').first()

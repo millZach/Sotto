@@ -10,7 +10,7 @@ import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { PageSidebar } from '../../../src/renderer/src/agents/PageSidebar'
 import { SIDEBAR_MODE_KEY, SidebarChromeProvider } from '../../../src/renderer/src/agents/SidebarFrame'
 import { takeNewThreadIntent } from '../../../src/renderer/src/agents/threadIntent'
-import { liveAgentState, threadsStateFixture } from './liveAgentState'
+import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 vi.mock('../../../src/renderer/src/state/AppContext', async importOriginal => ({
   ...await importOriginal<typeof import('../../../src/renderer/src/state/AppContext')>(),
@@ -62,7 +62,7 @@ describe('the Threads sidebar beside another page', () => {
   })
 
   it('lights Threads for the Agents page while the coordinator is off, since that page is the Threads page', () => {
-    mount(threadsStateFixture(), 'agents')
+    mount(threadsStateFixture(), 'threads')
     expect(within(sidebar()).getByRole('tab', { name: 'Threads' })).toHaveAttribute('aria-selected', 'true')
   })
 

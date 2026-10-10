@@ -10,6 +10,7 @@ vi.mock('node:util', async importOriginal => {
 })
 import { AgentStateBroadcaster } from '../../../src/main/agents/agentStateBroadcast'
 import { defaultAgentConfiguration, EMPTY_AGENT_HOST, type AgentClientHost, type AgentModel, type AgentState, type AgentStateBroadcast } from '../../../src/shared/agents'
+import { threadsStateFixture } from '../../fixtures/agentState'
 
 function model(id: string, overrides: Partial<AgentModel> = {}): AgentModel {
   return { id, provider: 'codex', name: id, ready: true, ...overrides }
@@ -21,16 +22,13 @@ function clientHost(hostId: string, models: AgentModel[]): AgentClientHost {
 
 /** A shell whose only interesting field is its host's catalogs; everything else stays the fixed shape. */
 function state(models: AgentModel[], clientHosts?: AgentClientHost[]): AgentState {
-  return {
-    configuration: defaultAgentConfiguration(), connection: 'connected',
+  return threadsStateFixture({
+    configuration: defaultAgentConfiguration(),
     host: { ...structuredClone(EMPTY_AGENT_HOST), hostId: 'aaaaaaaa-0000-4000-8000-000000000000', models, ...(clientHosts ? { clientHosts } : {}) },
-    assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
-    draftRequestId: null, draftAttachments: [], deliveredDrafts: [], threadDrafts: [], deliveries: [], pendingRequest: '',
-    globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' },
-    voice: { status: 'off', error: null, action: 'none', revision: 0 },
-    credentials: { reasoning: false, grokSpeech: false, secure: false },
-    reasoningAccounts: [],
-  }
+    topLevel: { activeThreadId: null, activeProjectId: null, draftAttachments: [],
+      credentials: { reasoning: false, secure: false } },
+    cloneOverrides: false,
+  })
 }
 
 describe('AgentStateBroadcaster', () => {
@@ -38,48 +36,34 @@ describe('AgentStateBroadcaster', () => {
     const broadcaster = new AgentStateBroadcaster()
     const sent: AgentStateBroadcast[] = []
     const first = state([model('gpt-5'), model('gpt-5-mini')])
-    broadcaster.send(first, 'main', payload => { sent.push(payload); return true })
+    broadcaster.send(first, payload => { sent.push(payload); return true })
     expect(sent[0]!.host.models).toEqual({ revision: 1, models: first.host.models })
 
     // clientAgentState deep-clones on every shell, so a second, content-identical array is not the same
     // reference -- the broadcaster must still recognise it as unchanged.
     const second = state(first.host.models.map(entry => ({ ...entry })))
-    broadcaster.send(second, 'main', payload => { sent.push(payload); return true })
+    broadcaster.send(second, payload => { sent.push(payload); return true })
     expect(sent[1]!.host.models).toEqual({ revision: 1, omitted: true })
   })
 
   it('sends the catalog again once its content changes', () => {
     const broadcaster = new AgentStateBroadcaster()
     const sent: AgentStateBroadcast[] = []
-    broadcaster.send(state([model('gpt-5')]), 'main', payload => { sent.push(payload); return true })
-    broadcaster.send(state([model('gpt-5', { ready: false })]), 'main', payload => { sent.push(payload); return true })
+    broadcaster.send(state([model('gpt-5')]), payload => { sent.push(payload); return true })
+    broadcaster.send(state([model('gpt-5', { ready: false })]), payload => { sent.push(payload); return true })
     expect(sent[0]!.host.models).toMatchObject({ revision: 1 })
     expect(sent[1]!.host.models).toMatchObject({ revision: 2, models: [model('gpt-5', { ready: false })] })
-  })
-
-  it('tracks each destination window apart: the widget still needs its own first send', () => {
-    const broadcaster = new AgentStateBroadcaster()
-    const mainSent: AgentStateBroadcast[] = []
-    const widgetSent: AgentStateBroadcast[] = []
-    const shell = state([model('gpt-5')])
-    broadcaster.send(shell, 'main', payload => { mainSent.push(payload); return true })
-    broadcaster.send(shell, 'main', payload => { mainSent.push(payload); return true })
-    broadcaster.send(shell, 'widget', payload => { widgetSent.push(payload); return true })
-    expect(mainSent[0]!.host.models).toMatchObject({ revision: 1, models: shell.host.models })
-    expect(mainSent[1]!.host.models).toEqual({ revision: 1, omitted: true })
-    // The widget has never been sent revision 1, so its first send is full even though main's was not.
-    expect(widgetSent[0]!.host.models).toMatchObject({ revision: 1, models: shell.host.models })
   })
 
   it('does not mark a catalog sent when delivery fails, so the next attempt sends it in full again', () => {
     const broadcaster = new AgentStateBroadcaster()
     const shell = state([model('gpt-5')])
     const failed: AgentStateBroadcast[] = []
-    const delivered = broadcaster.send(shell, 'main', payload => { failed.push(payload); return false })
+    const delivered = broadcaster.send(shell, payload => { failed.push(payload); return false })
     expect(delivered).toBe(false)
     expect(failed[0]!.host.models).toMatchObject({ models: shell.host.models })
     const succeeded: AgentStateBroadcast[] = []
-    broadcaster.send(shell, 'main', payload => { succeeded.push(payload); return true })
+    broadcaster.send(shell, payload => { succeeded.push(payload); return true })
     // Nothing was ever confirmed delivered, so this window still needed the catalog in full.
     expect(succeeded[0]!.host.models).toMatchObject({ models: shell.host.models })
   })
@@ -91,7 +75,7 @@ describe('AgentStateBroadcaster', () => {
     const hostB = 'bbbbbbbb-0000-4000-8000-000000000000'
     const shellModels = [model('gpt-5')]
     const first = state(shellModels, [clientHost(hostA, shellModels), clientHost(hostB, [model('grok-4')])])
-    broadcaster.send(first, 'main', payload => { sent.push(payload); return true })
+    broadcaster.send(first, payload => { sent.push(payload); return true })
     // host.models and the selected host's own clientHosts entry are the same array, so they share a revision.
     expect(sent[0]!.host.models).toMatchObject({ revision: 1 })
     expect(sent[0]!.host.clientHosts![0]!.models).toMatchObject({ revision: 1, models: shellModels })
@@ -100,7 +84,7 @@ describe('AgentStateBroadcaster', () => {
     // Only host B's catalog changes; host A and the primary catalog stay omitted.
     const second = state(shellModels.map(entry => ({ ...entry })),
       [clientHost(hostA, shellModels.map(entry => ({ ...entry }))), clientHost(hostB, [model('grok-4', { ready: false })])])
-    broadcaster.send(second, 'main', payload => { sent.push(payload); return true })
+    broadcaster.send(second, payload => { sent.push(payload); return true })
     expect(sent[1]!.host.models).toEqual({ revision: 1, omitted: true })
     expect(sent[1]!.host.clientHosts![0]!.models).toEqual({ revision: 1, omitted: true })
     expect(sent[1]!.host.clientHosts![1]!.models).toMatchObject({ revision: 2, models: [model('grok-4', { ready: false })] })
@@ -114,7 +98,7 @@ describe('AgentStateBroadcaster', () => {
     const clientModels = [model('grok-4')]
     // Contrived: host.models and the selected host's own entry hold different content, which
     // `DesktopHostRouter.shell()` never does today but nothing stops it in principle.
-    const send = () => broadcaster.send(state(hostModels, [clientHost(hostId, clientModels)]), 'main', payload => { sent.push(payload); return true })
+    const send = () => broadcaster.send(state(hostModels, [clientHost(hostId, clientModels)]), payload => { sent.push(payload); return true })
     send()
     expect(sent[0]!.host.models).toMatchObject({ revision: 1, models: hostModels })
     expect(sent[0]!.host.clientHosts![0]!.models).toMatchObject({ revision: 1, models: clientModels })
@@ -135,7 +119,7 @@ describe('AgentStateBroadcaster', () => {
     const shellModels = [model('gpt-5')]
     const shell = state(shellModels, [clientHost(hostA, shellModels), clientHost(hostB, [model('grok-4')])])
     const sent: AgentStateBroadcast[] = []
-    broadcaster.send(shell, 'main', payload => { sent.push(payload); return true })
+    broadcaster.send(shell, payload => { sent.push(payload); return true })
 
     const receipt = broadcaster.encodeReceipt(state(shellModels.map(entry => ({ ...entry })),
       [clientHost(hostA, shellModels.map(entry => ({ ...entry }))), clientHost(hostB, [model('grok-4')])]))
@@ -148,24 +132,23 @@ describe('AgentStateBroadcaster', () => {
   it('advances the shared revision when a receipt sees a changed catalog, and records nothing as sent', () => {
     const broadcaster = new AgentStateBroadcaster()
     const sent: AgentStateBroadcast[] = []
-    broadcaster.send(state([model('gpt-5')]), 'main', payload => { sent.push(payload); return true })
+    broadcaster.send(state([model('gpt-5')]), payload => { sent.push(payload); return true })
     const changed = state([model('gpt-5', { ready: false })])
     expect(broadcaster.encodeReceipt(changed).host.models).toEqual({ revision: 2, omitted: true })
     // The window was never sent revision 2, so its next broadcast carries it in full.
-    broadcaster.send(changed, 'main', payload => { sent.push(payload); return true })
+    broadcaster.send(changed, payload => { sent.push(payload); return true })
     expect(sent[1]!.host.models).toEqual({ revision: 2, models: changed.host.models })
   })
 
-  it('compares a catalog shared by host.models and its clientHosts entry once per shell, across both windows and a receipt', () => {
+  it('compares a catalog shared by host.models and its clientHosts entry once per shell and receipt', () => {
     const broadcaster = new AgentStateBroadcaster()
     const hostId = 'aaaaaaaa-0000-4000-8000-000000000000'
     const fresh = (): AgentState => { const models = [model('gpt-5'), model('gpt-5-mini')]; return state(models, [clientHost(hostId, models)]) }
     const deliver = (): boolean => true
-    broadcaster.send(fresh(), 'main', deliver)
+    broadcaster.send(fresh(), deliver)
     compare.spy.mockClear()
     const shell = fresh()
-    broadcaster.send(shell, 'main', deliver)
-    broadcaster.send(shell, 'widget', deliver)
+    broadcaster.send(shell, deliver)
     expect(compare.spy).toHaveBeenCalledTimes(1)
     compare.spy.mockClear()
     expect(broadcaster.encodeReceipt(fresh()).host.models).toEqual({ revision: 1, omitted: true })
@@ -176,13 +159,13 @@ describe('AgentStateBroadcaster', () => {
     const broadcaster = new AgentStateBroadcaster()
     const sent: AgentStateBroadcast[] = []
     const deliver = (payload: AgentStateBroadcast): boolean => { sent.push(payload); return true }
-    broadcaster.send(state([model('gpt-5')]), 'main', deliver)
+    broadcaster.send(state([model('gpt-5')]), deliver)
     const repeat = state([model('gpt-5')])
-    broadcaster.send(repeat, 'main', deliver)
+    broadcaster.send(repeat, deliver)
     expect(sent[1]!.host.models).toEqual({ revision: 1, omitted: true })
     // A shell is rebuilt, never edited; this is the edit that assumption rules out.
     repeat.host.models.push(model('gpt-5-mini'))
-    broadcaster.send(repeat, 'main', deliver)
+    broadcaster.send(repeat, deliver)
     expect(sent[2]!.host.models).toEqual({ revision: 2, models: repeat.host.models })
   })
 })

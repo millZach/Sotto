@@ -1,6 +1,8 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
+import { agentState } from './support/agentAccess'
+import { ownedE2EProfile } from './support/e2eProfile'
 import { randomUUID } from 'node:crypto'
-import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { chmod, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
@@ -8,6 +10,9 @@ import type { ThreadUsage } from '../../src/shared/threadUsage'
 import { storedClaudeOrigins } from '../fixtures/claudeOrigins'
 import { nativeUsageBoundary } from '../fixtures/nativeUsageBoundary'
 import { firstSottoWindow, openThreads } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
+
+const artifacts = evidenceDirectory('artifacts/review-389/electron')
 
 const NATIVE_MODEL = 'claude-sonnet-4-6'
 const PUBLIC_MODEL = 'native:claude:model:claude-sonnet-4-6'
@@ -15,9 +20,8 @@ const persistenceWait = { timeout: 30_000 }
 
 test('native Claude usage survives replay and a graceful quit with its latest archive write held', async () => {
   test.setTimeout(120_000)
-  const root = await realpath(await mkdtemp(join(tmpdir(), 'sotto-e2e-usage-')))
+  const root = await realpath((await ownedE2EProfile({ prefix: 'sotto-e2e-usage-' })).directory)
   const profile = join(root, 'profile'), project = join(root, 'project'), client = join(root, 'client'), home = join(root, 'home')
-  const artifacts = resolve('artifacts/review-389/electron')
   let app: ElectronApplication | undefined
   let page: Page
   let closing: Promise<void> | undefined
@@ -59,13 +63,13 @@ test('native Claude usage survives replay and a graceful quit with its latest ar
     await page.waitForFunction(() => !!window.sotto?.agents)
     // Preload exists before main finishes admitting the loaded renderer as an IPC sender.
     // Retry a read, never configuration or a native turn, until that boundary is ready.
-    await expect(async () => expect(await page.evaluate(() => window.sotto!.agents!.get())).toHaveProperty('host')).toPass(persistenceWait)
+    await expect(async () => expect(await agentState(page)).toHaveProperty('host')).toPass(persistenceWait)
     expect(await page.evaluate(() => typeof window.sottoE2E)).toBe('undefined')
     expect(await app.evaluate(({ app }) => app.getPath('userData'))).toBe(profile)
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!.setContentSize(1280, 800))
     await page.evaluate(async () => {
       const configured = await window.sotto!.agents!.command({ type: 'configure', patch: {
-        provider: 'claude', enabledProviders: ['claude'], enabled: true, speak: false, reasoning: 'none', followupLimit: 0,
+        provider: 'claude', enabledProviders: ['claude'], enabled: true, reasoning: 'none',
       } })
       if (configured.error) throw new Error(configured.error)
       const connected = await window.sotto!.agents!.command({ type: 'connect', provider: 'claude' })
@@ -95,7 +99,7 @@ test('native Claude usage survives replay and a graceful quit with its latest ar
       const project = state.host.projects.find(value => value.title === 'Synthetic usage project')!
       const model = state.host.models.find(value => value.providerId === 'claude' && value.ready)!
       const thread = await agents.command({ type: 'create-thread', projectId: project.id, title: 'Native usage verification', titleSource: 'user', modelId: model.id,
-        workingCopy: 'shared', runtimeMode: 'approval-required', managed: false })
+        workingCopy: 'shared', runtimeMode: 'approval-required' })
       if (thread.error) throw new Error(thread.error)
       const id = thread.activeThreadId!
       await agents.command({ type: 'select-thread', threadId: id })
@@ -103,9 +107,9 @@ test('native Claude usage survives replay and a graceful quit with its latest ar
       return id
     }, project)
     await openThreads(page!)
-    const composer = () => page.getByRole('textbox', { name: 'Prompt', exact: true })
+    const composer = () => promptField(page)
     await expect(composer()).toBeEditable()
-    await composer().fill('Exercise the synthetic usage ledger.')
+    await fillPrompt(composer(), 'Exercise the synthetic usage ledger.')
     await page!.getByRole('button', { name: 'Send prompt', exact: true }).click()
     await expect(page!.getByLabel('Thread transcript')).toContainText('Exercise the synthetic usage ledger.')
     // The workspace echoes the prompt before creating the native session. Wait for its durable
@@ -178,9 +182,9 @@ test('native Claude usage survives replay and a graceful quit with its latest ar
     expect(nativeUsageBoundary(afterReplay, PUBLIC_MODEL)).toEqual({ ...beforeSnapshot, elapsedMs: 222 })
     await expect(page!.getByLabel('Thread transcript')).toContainText('Synthetic usage reply 1')
     await expect(composer()).toBeEditable()
-    await composer().fill('An unsent draft stays editable after replay.')
-    await expect(composer()).toHaveValue('An unsent draft stays editable after replay.')
-    await composer().fill('')
+    await fillPrompt(composer(), 'An unsent draft stays editable after replay.')
+    await expectPromptText(composer(), 'An unsent draft stays editable after replay.')
+    await fillPrompt(composer(), '')
     await visibleHistory('initial')
     await capture('native-usage-after-replay.png')
     await writeFile(join(root, 'hold-usage-write'), '')
@@ -222,8 +226,8 @@ test('native Claude usage survives replay and a graceful quit with its latest ar
     await openThreads(page!)
     await expect(page!.getByRole('heading', { name: 'Native usage verification', exact: true })).toBeVisible()
     await expect(composer()).toBeEditable()
-    await composer().fill('Still usable after restart.')
-    await expect(composer()).toHaveValue('Still usable after restart.')
+    await fillPrompt(composer(), 'Still usable after restart.')
+    await expectPromptText(composer(), 'Still usable after restart.')
     await expect(page!.getByRole('button', { name: 'Send prompt', exact: true })).toBeEnabled()
     await visibleHistory('replayed')
     const renderedHistory = await page!.getByLabel('Thread transcript').evaluate(element => ({

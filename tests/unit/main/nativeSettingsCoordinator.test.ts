@@ -14,6 +14,7 @@ import {
   type AppSettings,
   type SettingsPatch,
 } from '../../../src/shared/settings'
+import { deferred } from '../../fixtures/deferred'
 
 function createHarness() {
   let persisted: AppSettings = { ...DEFAULT_SETTINGS }
@@ -263,10 +264,8 @@ describe('NativeSettingsCoordinator', () => {
 
   it('serializes concurrent native mutations in call order', async () => {
     const harness = createHarness()
-    let releaseFirst!: () => void
-    const firstWrite = new Promise<void>((resolve) => {
-      releaseFirst = resolve
-    })
+
+    const { promise: firstWrite, resolve: releaseFirst } = deferred<void>()
     harness.repository.update.mockImplementationOnce(async (patch) => {
       await firstWrite
       return { ...harness.persisted, ...patch }

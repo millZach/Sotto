@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { agentStateSchema, agentThreadSchema, defaultAgentConfiguration, EMPTY_AGENT_HOST } from '../../../src/shared/agents'
 import { clockLabel, describeThreads, groupThreads, listThreads, threadCounts } from '../../../src/renderer/src/agents/threadFacts'
@@ -9,9 +10,9 @@ function stateFor(fields: Record<string, unknown> = {}) {
   return agentStateSchema.parse({
     configuration: defaultAgentConfiguration(), connection: 'connected',
     host: { ...EMPTY_AGENT_HOST, threads: [{ id: 'thread', projectId: 'project', title: 'Thread', modelId: '', status: 'idle', messages: [], requests: [], ...fields }] },
-    assignments: [], queue: [], activeThreadId: null, activeProjectId: null,
-    draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
-    speech: { id: 0, text: '' }, voice: { status: 'off', error: null, action: 'none', revision: 0 },
+    activeThreadId: null, activeProjectId: null,
+    draft: '', draftThreadId: null, draftRequestId: null, composing: false, globalLaneBusy: false, notice: '', error: null,
+
     credentials: { reasoning: false, secure: true },
   })
 }
@@ -58,7 +59,6 @@ describe('thread facts metadata regressions', () => {
     { archivedAt: OLD },
   ])('suppresses stale attention for parked/archived work %j', metadata => {
     const state = stateFor({ ...metadata, status: 'error', requests: [{ id: 'request', kind: 'permission', text: 'Old permission', options: [] }] })
-    state.queue.push({ id: 'queue', threadId: 'thread', kind: 'permission', requestId: 'request', text: 'Old permission', deferred: false, createdAt: NEW })
     const rows = describeThreads(state, NOW)
     expect(rows[0]).toMatchObject({ state: 'done', attention: false, request: undefined })
     expect(listThreads(rows, 'does not match').listed).toEqual([])
@@ -80,7 +80,6 @@ describe('thread facts metadata regressions', () => {
   it('restores attention after provider activity explicitly unsets settlement', () => {
     const state = stateFor({ updatedAt: NEW, settledAt: null, archivedAt: null, settledOverride: null,
       requests: [{ id: 'question', kind: 'question', text: 'A fresh question', options: [] }] })
-    state.queue.push({ id: 'queue', threadId: 'thread', kind: 'question', requestId: 'question', text: 'A fresh question', deferred: false, createdAt: NEW })
     const rows = describeThreads(state, NOW)
     expect(rows[0]).toMatchObject({ state: 'needs', attention: true, request: { requestId: 'question' } })
     expect(groupThreads(rows).map(group => group.id)).toEqual(['unsettled'])

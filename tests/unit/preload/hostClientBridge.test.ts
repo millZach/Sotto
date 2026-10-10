@@ -1,15 +1,16 @@
+import { threadsStateFixture as sharedThreadsStateFixture } from '../../fixtures/agentState'
 // @vitest-environment node
 import { expect, it, vi } from 'vitest'
 import { hostClientBridge } from '../../../src/preload/hostClientBridge'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
 import { agentCommandSchema, EMPTY_AGENT_HOST, defaultAgentConfiguration, type AgentState, type AgentCommand, type AgentThreadDetail } from '../../../src/shared/agents'
 function threadsStateFixture(): AgentState {
-  return { configuration: defaultAgentConfiguration(), connection: 'connected',
+  return sharedThreadsStateFixture({ configuration: defaultAgentConfiguration(),
     host: { ...EMPTY_AGENT_HOST, threads: [{ id: 'visual-gate', projectId: 'project', title: 'Task', modelId: 'model', status: 'idle', messages: [], requests: [] }] },
-    assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null,
-    composing: false, pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
-    speech: { id: 0, text: '' }, voice: { status: 'off', error: null, action: 'none', revision: 0 },
-    credentials: { reasoning: false, grokSpeech: false, secure: false }, reasoningAccounts: [],  }
+    topLevel: { activeThreadId: null, activeProjectId: null,
+      threadDrafts: undefined, deliveries: undefined, deliveredDrafts: undefined,
+      credentials: { reasoning: false, secure: false } },
+  })
 }
 
 const HOST = '11111111-1111-4111-8111-111111111111'
@@ -38,7 +39,6 @@ it('decodes thread/project command IDs before wire validation and projects every
     { type: 'select-project', projectId: hostEntityKey(HOST, 'p:a|b') },
     { type: 'observe-threads', threadIds: [hostEntityKey(HOST, id), hostEntityKey(HOST, 'other')] },
     { type: 'create-thread', threadId: hostEntityKey(HOST, HOST), projectId: hostEntityKey(HOST, 'p'), title: 'Task', modelId: 'model' },
-    { type: 'select-attention', itemId: hostEntityKey(HOST, 'queue') },
   ]
   for (const command of commands) expect((await bridge.agents.command(command)).hostId).toBe(HOST)
   expect(raw.agents.command.mock.calls.map(call => call[0])).toEqual([
@@ -46,7 +46,6 @@ it('decodes thread/project command IDs before wire validation and projects every
     { type: 'select-project', projectId: 'p:a|b' },
     { type: 'observe-threads', threadIds: [id, 'other'] },
     { type: 'create-thread', threadId: HOST, projectId: 'p', title: 'Task', modelId: 'model' },
-    { type: 'select-attention', itemId: 'queue' },
   ])
 })
 it('scopes detail push/read and decodes attachment, project, files and request-draft lookups', async () => {

@@ -1,12 +1,12 @@
-import { isBuiltin } from 'node:module'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { buildSshHost } from './support/sshHost'
+import { captureHostMatrix as capture } from './support/hostCapture'
+import { ownedE2EProfile } from './support/e2eProfile'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
-import { build } from 'vite'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
-import { closeSotto, launchSotto, openPage, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 
 /**
  * #459 in the built app, over a scripted ssh that runs the real launch script and a real headless host with scripted
@@ -14,22 +14,7 @@ import { closeSotto, launchSotto, openPage, openThreads, resizeWindow, type Laun
  * names forge and the page to go to. Then the providers are signed in on forge, the host is stopped and switched on
  * again, and it connects all four on its own, with nothing saved to tell it to, and the same project is added.
  */
-async function capture(launched: LaunchedSotto, name: string, check: () => Promise<void>): Promise<void> {
-  const { page } = launched
-  for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
-    await resizeWindow(launched, width, height)
-    for (const appearance of ['dark', 'light'] as const) {
-      await page.evaluate(async value => window.sotto!.updateSettings({ appearance: value }), appearance)
-      await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
-      // Nothing overflows at any size: the page does not scroll sideways and the dialog sits inside the window.
-      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-      await check()
-      await page.screenshot({ path: test.info().outputPath(`${name}-${width}x${height}-${appearance}.png`), animations: 'disabled' })
-    }
-  }
-  await page.evaluate(async () => window.sotto!.updateSettings({ appearance: 'dark' }))
-  await resizeWindow(launched, 1280, 800)
-}
+
 const providers = (page: Page) => page.evaluate(async () => {
   const state = await window.sotto!.agents!.get()
   return Object.fromEntries((state.host.clientHosts?.[0]?.providers ?? []).map(provider => [provider.id, provider.connection]))
@@ -37,13 +22,11 @@ const providers = (page: Page) => page.evaluate(async () => {
 
 test('a host names itself when no provider is connected, and connects every signed-in provider when it starts', async () => {
   test.setTimeout(240_000)
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-host-providers-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-host-providers-' })).directory
   const root = join(profile, 'ssh-root')
   await mkdir(join(root, '~', 'code', 'site'), { recursive: true })
   const install = join(root, '~', '.local', 'share', 'sotto-host', 'host')
-  await build({ configFile: false, logLevel: 'silent', define: { 'require.main': 'undefined' }, ssr: { noExternal: true },
-    build: { ssr: resolve('tests/fixtures/e2eSshHost.ts'), target: 'node24', outDir: install, emptyOutDir: false,
-      rollupOptions: { external: id => isBuiltin(id), output: { format: 'cjs', entryFileNames: 'index.js' } } } })
+  await buildSshHost(install)
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, localHostEnabled: false, reducedMotion: 'on' }))
   const modeFile = join(root, 'mode')
   const signedOut = join(root, 'signed-out')

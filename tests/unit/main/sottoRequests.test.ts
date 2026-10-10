@@ -39,17 +39,16 @@ it('merges Sotto\'s request beside the provider\'s own and leaves other threads 
   expect(withSottoRequests(merged, new Map()).threads[0]!.requests.map(request => request.id)).toEqual(['provider-1'])
 })
 
-it('puts the request in the attention queue of a managed thread, as a provider\'s permission is, until it is answered', async () => {
+it('keeps the request on the thread until it is answered', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-sotto-requests-'))
   const control = await manualSendCoordinator(directory, new E2EAgentHost())
   try {
     await control.start(); await control.command({ type: 'connect' })
-    await control.command({ type: 'assign', threadId: 'workshop' })
     const { requests, set } = source()
     control.useSottoRequests(requests)
     set(new Map([['workshop', [ADD]]]))
-    const queued = () => control.get().queue.filter(item => item.requestId === ADD.id)
-    expect(queued()).toEqual([expect.objectContaining({ threadId: 'workshop', kind: 'permission' })])
+    const queued = () => control.get().host.threads.find(t => t.id === 'workshop')!.requests.filter(item => item.id === ADD.id)
+    expect(queued()).toEqual([expect.objectContaining({ id: ADD.id, kind: 'permission' })])
     // A refresh from the provider, which knows nothing of the request, keeps it queued.
     await control.command({ type: 'refresh' })
     expect(queued()).toHaveLength(1)
