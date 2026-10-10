@@ -31,7 +31,7 @@ const MODELS = 753
 const REPEATS = 20
 const ITERATIONS = 40
 
-describe.skipIf(!PERF_BENCH)('socket shell with and without the model catalog', () => {
+describe.skipIf(!PERF_BENCH)("socket shell with and without the model catalog (timing benchmark; requires SOTTO_PERF_BENCH=1)", () => {
   let root = ''
   let close: (() => Promise<void>) | undefined
   afterAll(async () => { await close?.(); if (root) await rm(root, { recursive: true, force: true }) })

@@ -35,11 +35,11 @@ export function composerEnterIntent(event: ComposerKeyEvent): ComposerEnterInten
  * `menuOwnsEnter` is the composer's own knowledge that a highlighted menu choice takes Enter.
  * Without it, the textarea's aria-expanded stands in, as before the skills picker.
  */
-export function readComposerKey(event: KeyboardEvent<HTMLTextAreaElement>, menuOwnsEnter?: boolean): ComposerKeyEvent {
+export function readComposerKey(event: KeyboardEvent<HTMLElement>, menuOwnsEnter?: boolean): ComposerKeyEvent {
   return {
     key: event.key, shiftKey: event.shiftKey, altKey: event.altKey, defaultPrevented: event.defaultPrevented,
     isComposing: event.nativeEvent.isComposing, keyCode: event.keyCode,
-    menuOpen: menuOwnsEnter ?? event.currentTarget.getAttribute('aria-expanded') === 'true',
+    menuOpen: menuOwnsEnter ?? (event.target instanceof HTMLElement ? event.target : event.currentTarget).getAttribute('aria-expanded') === 'true',
   }
 }
 
@@ -75,7 +75,7 @@ export interface ComposerMenu {
  * Offer this keydown to one open menu. True when the menu took it, and the composer's own keys —
  * Enter above all — stand down for this keystroke.
  */
-export function runComposerMenuKey(event: KeyboardEvent<HTMLTextAreaElement>, key: ComposerKeyEvent, menu: ComposerMenu): boolean {
+export function runComposerMenuKey(event: KeyboardEvent<HTMLElement>, key: ComposerKeyEvent, menu: ComposerMenu): boolean {
   if (!menu.open) return false
   const action = composerMenuKeyAction({ ...key, ctrlKey: event.ctrlKey, metaKey: event.metaKey }, { optionCount: menu.optionCount, highlighted: menu.activeIndex !== null })
   if (action === 'none') return false

@@ -1,6 +1,6 @@
 # Explicit memory retrieval — ticket #17
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0065](../adr/0065-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 The coordinator now retrieves relevant, current explicit memories before intent reasoning and supervision. On the Windows PC, the production retrieval function measured **10.12 ms p95 in Electron 43.1.0**, below the spec section 9 target of 100 ms. The synthetic explicit-preference evaluation retrieved the expected evidence in 10/10 recall cases, with zero project or authority leaks in the seven labelled exclusion cases.
 

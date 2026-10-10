@@ -6,13 +6,16 @@ import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { expectWithinBudget } from '../../fixtures/perfBudget'
 import { AgentControl } from '../../../src/main/agents/control'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
+
 import type { AgentHostCommand, AgentHostResult } from '../../../src/main/agents/host'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { agentCommandSchema, agentStateSchema, type AgentAttachmentHandle, type AgentState } from '../../../src/shared/agents'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 import { handleOf, PIXEL_PNG, pngOfSize, stageInto } from '../../fixtures/stagedImages'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
+import { deferred } from '../../fixtures/deferred'
 
 const roots: string[] = []
 const controls = new Set<AgentControl>()
@@ -27,11 +30,7 @@ afterEach(async () => {
 })
 const image = handleOf(PIXEL_PNG)
 const OTHER_PNG = pngOfSize(64, 1)
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>(done => { resolve = done })
-  return { promise, resolve }
-}
+
 class DraftHost extends E2EAgentHost {
   attempts: AgentHostCommand[] = []
   gate: Promise<void> | undefined
@@ -46,11 +45,11 @@ class DraftHost extends E2EAgentHost {
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'sotto-thread-drafts-')); roots.push(root)
   const host = new DraftHost()
-  const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: bytes => bytes.toString() })
-  await credentials.load()
+  const credentials = await testCredentials(root, { mode: 'unavailable' })
+
   let history = true
   const create = () => {
-    const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner, historyEnabled: () => history,
+    const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner, historyEnabled: () => history,
     })
     controls.add(control); return control
   }
@@ -86,7 +85,7 @@ describe('persistent per-thread drafts', () => {
     expect(f.host.attempts).toEqual([])
   })
 
-  it('keeps a foreign draft with its owner when another thread enters managed mode', async () => {
+  it('keeps a foreign draft with its owner when saving a draft for another thread', async () => {
     const f = await fixture()
     await f.control.command({ type: 'select-thread', threadId: 'workshop' })
     await f.control.command({ type: 'compose', text: 'Workshop draft', attachments: [image] })

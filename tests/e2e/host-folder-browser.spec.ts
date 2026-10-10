@@ -3,8 +3,9 @@ import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { closeSotto, launchSotto, openThreads, resizeWindow } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
-const SHOTS = 'artifacts/host-folder-browser-run'
+const SHOTS = evidenceDirectory('artifacts/host-folder-browser-run')
 
 /**
  * Add project with this computer the only host: the computer step is skipped and the folder browser opens in the home

@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { gitPullRequestRequestSchema, gitPullRequestResultSchema, pullRequestAddress, pullRequestKey } from '../../../src/shared/gitPullRequests'
 

@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { deferred } from '../fixtures/deferred'
 import { randomUUID } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
@@ -49,13 +50,8 @@ function guardedRuntime(f: Fixture, id: string): void {
 }
 /** Only the original lookup waits; a replacement connection gets its own immediate ordinary-thread answer. */
 function pendingProfileLookup(f: Fixture) {
-  let resolveLookup!: (value: CommandCenterLaunchProfile | undefined) => void
-  let rejectLookup!: (error: Error) => void
-  let lookupEntered!: () => void
-  const entered = new Promise<void>(resolveEntered => { lookupEntered = resolveEntered })
-  const lookup = new Promise<CommandCenterLaunchProfile | undefined>((resolvePending, rejectPending) => {
-    resolveLookup = resolvePending; rejectLookup = rejectPending
-  })
+  const { promise: entered, resolve: lookupEntered } = deferred<void>()
+  const { promise: lookup, resolve: resolveLookup, reject: rejectLookup } = deferred<CommandCenterLaunchProfile | undefined>()
   let first = true
   f.adapter.useLaunchProfiles({ profileFor: () => {
     if (first) { first = false; lookupEntered(); return lookup }
@@ -75,10 +71,8 @@ describe('Claude command-center profile', () => {
 
   it('does not start an ordinary session after disconnection while its profile lookup waits', async () => {
     const f = await fixture(), id = await ordinary(f), before = await starts(f)
-    let resolveLookup!: (value: undefined) => void
-    let lookupEntered!: () => void
-    const entered = new Promise<void>(resolve => { lookupEntered = resolve })
-    const lookup = new Promise<undefined>(resolve => { resolveLookup = resolve })
+    const { promise: entered, resolve: lookupEntered } = deferred<void>()
+    const { promise: lookup, resolve: resolveLookup } = deferred<undefined>()
     f.adapter.useLaunchProfiles({ profileFor: () => { lookupEntered(); return lookup } })
     const reading = f.host.refreshThread!(id)
     const stopped = expect(reading).rejects.toThrow('connection changed')
@@ -310,12 +304,10 @@ describe('Claude command-center profile', () => {
 
   it('preserves an ordinary request cancellation while durable profile resolution is pending', async () => {
     const f = await fixture(), id = await ordinary(f), requestId = randomUUID()
-    let release!: () => void
-    const gate = new Promise<void>(resolveGate => { release = resolveGate })
+    const { promise: gate, resolve: release } = deferred<void>()
     const resolver = vi.fn(async () => { await gate; return undefined })
     const marker = randomUUID()
-    let followingFrame!: () => void
-    const reached = new Promise<void>(resolve => { followingFrame = resolve })
+    const { promise: reached, resolve: followingFrame } = deferred<void>()
     const unsubscribe = f.host.subscribeEvents!(event => { if (event.event.kind === 'message-added' && event.event.message.id === marker) followingFrame() })
     cleanup.push(async () => { unsubscribe() })
     f.adapter.useLaunchProfiles({ profileFor: resolver })
@@ -507,9 +499,8 @@ describe('Claude command-center profile', () => {
     const { value } = admit(f, id)
     const internal = f.adapter as unknown as { stopRuntime(id: string, runtime: unknown): Promise<unknown> }
     const stop = internal.stopRuntime.bind(f.adapter)
-    let release!: () => void, stopped!: () => void
-    const gate = new Promise<void>(resolve => { release = resolve })
-    const observed = new Promise<void>(resolve => { stopped = resolve })
+    const { promise: gate, resolve: release } = deferred<void>()
+    const { promise: observed, resolve: stopped } = deferred<void>()
     internal.stopRuntime = async (threadId, runtime) => { const result = await stop(threadId, runtime); stopped(); await gate; return result }
     const starting = f.adapter.startThreadSession(id)
     const cancelled = expect(starting).rejects.toThrow('cancelled')

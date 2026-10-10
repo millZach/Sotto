@@ -1,3 +1,4 @@
+import { setPromptText, setPromptSelection, promptText } from './helpers/promptEditor'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -9,9 +10,10 @@ import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
+import type { PromptEditorElement } from '../../../src/renderer/src/agents/promptSelection'
 import { ThreadComposer } from '../../../src/renderer/src/agents/ThreadComposer'
 import { describeThreads } from '../../../src/renderer/src/agents/threadFacts'
-import { liveAgentState, threadsStateFixture } from './liveAgentState'
+import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 
@@ -41,16 +43,16 @@ function mount(state: AgentState, options: Parameters<typeof liveAgentState>[1] 
   const live = liveAgentState(state, options)
   vi.mocked(useAgents).mockImplementation(live.useLive)
   const view = render(<ThreadsView now={NOW} />)
-  return { live, view, prompt: () => screen.getByRole('textbox', { name: 'Prompt' }) as HTMLTextAreaElement }
+  return { live, view, prompt: () => screen.getByRole('textbox', { name: 'Prompt' }) as HTMLElement }
 }
 
 const requests = <T extends AgentCommand['type']>(live: ReturnType<typeof liveAgentState>, type: T): Extract<AgentCommand, { type: T }>[] =>
   live.command.mock.calls.map(([request]) => request).filter((request): request is Extract<AgentCommand, { type: T }> => request.type === type)
 
 /** Type into the prompt with the caret at the end, as a person would. */
-function type(prompt: HTMLTextAreaElement, value: string): void {
-  fireEvent.change(prompt, { target: { value, selectionStart: value.length, selectionEnd: value.length } })
-  prompt.setSelectionRange(value.length, value.length)
+function type(prompt: HTMLElement, value: string): void {
+  setPromptText(prompt, value)
+  setPromptSelection(prompt, value.length, value.length)
   fireEvent.select(prompt)
 }
 
@@ -85,11 +87,11 @@ describe('follow-up queue in the Threads composer', () => {
     await waitFor(() => expect(live.state.followups).toHaveLength(1))
     const queue = screen.getByRole('region', { name: 'Queued messages' })
     expect(within(queue).getByRole('button', { name: 'Steer now' })).toBeEnabled()
-    expect(prompt()).toHaveValue('')
+    expect(promptText(prompt())).toBe('')
     type(prompt(), 'Keep this newer draft')
     fireEvent.click(within(queue).getByRole('button', { name: 'Steer now' }))
     expect(requests(live, 'steer-followup')).toEqual([{ type: 'steer-followup', threadId: THREAD, itemId: live.state.followups![0]!.id }])
-    expect(prompt()).toHaveValue('Keep this newer draft')
+    expect(promptText(prompt())).toBe('Keep this newer draft')
   })
 
   it('returns focus to the prompt when the last queued message is steered and the queue empties after main’s reply', async () => {
@@ -112,7 +114,7 @@ describe('follow-up queue in the Threads composer', () => {
     act(() => { live.publish({ followups: [] }) })
     expect(screen.queryByRole('region', { name: 'Queued messages' })).not.toBeInTheDocument()
     expect(prompt()).toHaveFocus()
-    expect(prompt()).toHaveValue('Keep this newer draft')
+    expect(promptText(prompt())).toBe('Keep this newer draft')
   })
 
   it('leaves focus in the prompt when the user has gone back to writing before a removal shows in the queue', async () => {
@@ -135,7 +137,7 @@ describe('follow-up queue in the Threads composer', () => {
     expect(within(queue).queryByText('One')).not.toBeInTheDocument()
     // Without the check, focus would jump to the next message's Remove in the middle of the sentence.
     expect(prompt()).toHaveFocus()
-    expect(prompt()).toHaveValue('Still writing')
+    expect(promptText(prompt())).toBe('Still writing')
   })
 
   it('queues with Enter while a turn runs, empties the composer on the press and echoes the message in the transcript', async () => {
@@ -144,7 +146,7 @@ describe('follow-up queue in the Threads composer', () => {
     const started = performance.now()
     expect(fireEvent.keyDown(prompt(), { key: 'Enter' })).toBe(false)
     // The press is the feedback: an empty composer, the queue row, and the message where it will be read.
-    expect(prompt()).toHaveValue('')
+    expect(promptText(prompt())).toBe('')
     const queue = screen.getByRole('region', { name: 'Queued messages' })
     expect(within(queue).getByText('Then run the visual gate')).toBeInTheDocument()
     expect(within(queue).getByText('Queuing…')).toBeInTheDocument()
@@ -162,7 +164,7 @@ describe('follow-up queue in the Threads composer', () => {
     expect(within(queue).getByText('Then run the visual gate')).toBeInTheDocument()
     // The queue owns it now, and its own echo replaces the one this window was showing: never two.
     expect(screen.getAllByLabelText('Queued message')).toHaveLength(1)
-    expect(prompt()).toHaveValue('A newer thought')
+    expect(promptText(prompt())).toBe('A newer thought')
     expect(screen.queryByLabelText('Pending message')).not.toBeInTheDocument()
   })
 
@@ -170,7 +172,7 @@ describe('follow-up queue in the Threads composer', () => {
     const { live, prompt } = mount(manualState({ running: true }))
     type(prompt(), 'Queued prompt')
     fireEvent.click(screen.getByRole('button', { name: 'Queue prompt' }))
-    expect(prompt()).toHaveValue('')
+    expect(promptText(prompt())).toBe('')
     await waitFor(() => expect(live.state.followups?.map(item => item.text)).toEqual(['Queued prompt']))
     // The turn finishes, but a message typed now still lines up behind the queued one.
     act(() => { live.publish({ host: { ...live.state.host, threads: live.state.host.threads.map(thread => thread.id === THREAD ? { ...thread, status: 'idle' as const } : thread) } }) })
@@ -184,7 +186,7 @@ describe('follow-up queue in the Threads composer', () => {
   it('edits, reorders and removes queued items and resumes a paused queue without touching the composer', async () => {
     const state = manualState({ running: true })
     state.followups = [
-      followup({ id: '10000000-0000-4000-8000-000000000001', text: 'First follow-up', skills: [{ name: 'deploy', path: CATALOG.skills[1]!.path }] }),
+      followup({ id: '10000000-0000-4000-8000-000000000001', text: 'First follow-up $deploy', skills: [{ name: 'deploy', path: CATALOG.skills[1]!.path }] }),
       followup({ id: '10000000-0000-4000-8000-000000000002', text: 'Second follow-up', status: 'paused', error: 'The turn was interrupted. Resume when ready.' }),
     ]
     const { live, prompt } = mount(state)
@@ -195,7 +197,8 @@ describe('follow-up queue in the Threads composer', () => {
 
     fireEvent.click(within(queue).getByRole('button', { name: 'Edit queued message 1' }))
     const editor = within(queue).getByRole('textbox', { name: 'Edit queued message' })
-    fireEvent.change(editor, { target: { value: 'First follow-up, then $deploy' } })
+    setPromptText(editor, 'First follow-up, then $deploy')
+    await waitFor(() => expect(editor.querySelector('[data-skill-token]')).toHaveAttribute('data-skill-token', '$deploy'))
     fireEvent.keyDown(editor, { key: 'Enter', keyCode: 229 })
     expect(requests(live, 'edit-followup')).toHaveLength(0)
     fireEvent.keyDown(editor, { key: 'Enter' })
@@ -213,7 +216,35 @@ describe('follow-up queue in the Threads composer', () => {
     fireEvent.click(within(queue).getByRole('button', { name: 'Remove queued message 2' }))
     await waitFor(() => expect(within(queue).queryByText('First follow-up, then $deploy')).not.toBeInTheDocument())
     expect(requests(live, 'remove-followup')).toEqual([{ type: 'remove-followup', threadId: THREAD, itemId: state.followups[0]!.id }])
-    expect(prompt()).toHaveValue('Unrelated draft')
+    expect(promptText(prompt())).toBe('Unrelated draft')
+  })
+
+  it.each(['suffix', 'remove'] as const)('saves queued skill references from the remaining pills after %s', async action => {
+    const state = manualState({ running: true, capabilities: { skills: true } })
+    const reference = { name: 'deploy', path: CATALOG.skills[1]!.path }
+    state.followups = [followup({ id: '20000000-0000-4000-8000-000000000004', text: '$deploy ', skills: [reference] })]
+    const { live } = mount(state, { catalog: () => CATALOG })
+    fireEvent.click(screen.getByRole('button', { name: 'Edit queued message 1' }))
+    const editor = screen.getByRole('textbox', { name: 'Edit queued message' }) as PromptEditorElement
+    await waitFor(() => expect(editor.querySelector('[data-skill-token]')).toBeInTheDocument())
+    if (action === 'suffix') {
+      setPromptSelection(editor, '$deploy'.length)
+      act(() => { editor.editor.commands.insertContent('ing') })
+      expect(promptText(editor)).toBe('$deploy ing ')
+    } else {
+      setPromptSelection(editor, '$deploy '.length)
+      act(() => { editor.editor.commands.insertContent('$deploy') })
+      expect(editor.querySelectorAll('[data-skill-token]')).toHaveLength(1)
+      setPromptSelection(editor, '$deploy'.length)
+      fireEvent.keyDown(editor, { key: 'Backspace' })
+      expect(promptText(editor)).toBe(' $deploy')
+      expect(editor.querySelector('[data-skill-token]')).toBeNull()
+    }
+    fireEvent.keyDown(editor, { key: 'Enter' })
+    await waitFor(() => expect(requests(live, 'edit-followup')).toHaveLength(1))
+    expect(requests(live, 'edit-followup')[0]).toMatchObject({
+      text: action === 'suffix' ? '$deploy ing ' : ' $deploy', skills: action === 'suffix' ? [reference] : [],
+    })
   })
 
   it('never offers changes to a dispatching or unconfirmed item and tells an unconfirmed one apart from a failed one', () => {
@@ -257,13 +288,13 @@ describe('follow-up queue in the Threads composer', () => {
     const queue = await screen.findByRole('region', { name: 'Queued messages' })
     await waitFor(() => expect(within(queue).getByText('Not queued')).toBeInTheDocument())
     expect(queue).toHaveTextContent('Could not save this follow-up. Nothing was queued.')
-    expect(prompt()).toHaveValue('Queue me')
+    expect(promptText(prompt())).toBe('Queue me')
     const first = requests(live, 'queue-followup')[0]!
     fireEvent.click(within(queue).getByRole('button', { name: 'Try again' }))
     expect(requests(live, 'queue-followup')).toHaveLength(2)
     expect(requests(live, 'queue-followup')[1]!.draftId).toBe(first.draftId)
     act(() => live.heldQueue[1]!.finish())
-    await waitFor(() => expect(prompt()).toHaveValue(''))
+    await waitFor(() => expect(promptText(prompt())).toBe(''))
   })
 
   it('calls an unanswered queue admission unconfirmed rather than refused, and asking again cannot add it twice', async () => {
@@ -281,7 +312,7 @@ describe('follow-up queue in the Threads composer', () => {
     fireEvent.click(within(queue).getByRole('button', { name: 'Try again' }))
     const [first, second] = requests(live, 'queue-followup')
     expect(second!.draftId).toBe(first!.draftId)
-    await waitFor(() => expect(prompt()).toHaveValue(''))
+    await waitFor(() => expect(promptText(prompt())).toBe(''))
     expect(live.state.followups).toHaveLength(1)
   })
 
@@ -318,7 +349,7 @@ describe('follow-up queue in the Threads composer', () => {
     uncertain.threadDrafts = [{ threadId: THREAD, draftId, text: 'Unconfirmed send', attachments: [], requestId: null, updatedAt: at }]
     uncertain.deliveries = [{ threadId: THREAD, draftId, status: 'uncertain', createdAt: at, updatedAt: at }]
     const second = mount(uncertain)
-    expect(second.prompt()).toHaveValue('Unconfirmed send')
+    expect(promptText(second.prompt())).toBe('Unconfirmed send')
     expect(screen.getByRole('button', { name: 'Queue prompt' })).toBeDisabled()
     // Retyped, the unconfirmed prompt could reach the provider twice, so a newer revision waits too.
     type(second.prompt(), 'Unconfirmed send, edited')
@@ -342,7 +373,7 @@ describe('sending a prompt', () => {
     const started = performance.now()
     fireEvent.click(screen.getByRole('button', { name: 'Send prompt' }))
     // Nothing here waits for the provider: a cold thread and a warm one look the same until the reply starts.
-    expect(prompt()).toHaveValue('')
+    expect(promptText(prompt())).toBe('')
     expect(screen.getByLabelText('Pending message')).toHaveTextContent('Start the cold thread')
     expect(screen.getByTestId('thread-activity-live')).toBeInTheDocument()
     expectWithinBudget(performance.now() - started, 100, 'sending a prompt, emptying the composer and painting its message')
@@ -354,7 +385,7 @@ describe('sending a prompt', () => {
     type(prompt(), 'Refuse me')
     fireEvent.click(screen.getByRole('button', { name: 'Send prompt' }))
     act(() => live.deliver(THREAD, 'failed'))
-    await waitFor(() => expect(prompt()).toHaveValue('Refuse me'))
+    await waitFor(() => expect(promptText(prompt())).toBe('Refuse me'))
     const message = screen.getByLabelText('Pending message')
     expect(message).toHaveTextContent('It is back in the composer.')
     expect(within(message).queryByRole('button', { name: 'Restore prompt' })).not.toBeInTheDocument()
@@ -365,15 +396,15 @@ describe('sending a prompt', () => {
     type(prompt(), 'Written while it was sending')
     act(() => live.deliver(THREAD, 'failed'))
     const refused = await screen.findByLabelText('Pending message')
-    expect(prompt()).toHaveValue('Written while it was sending')
+    expect(promptText(prompt())).toBe('Written while it was sending')
     expect(refused).toHaveTextContent('Restoring it replaces the draft in the composer.')
     fireEvent.click(within(refused).getByRole('button', { name: 'Restore prompt' }))
-    expect(prompt()).toHaveValue('A different prompt')
+    expect(promptText(prompt())).toBe('A different prompt')
     // Sending it again is the same revision, so the provider can never take it twice.
     fireEvent.click(within(refused).getByRole('button', { name: 'Retry' }))
     const sends = requests(live, 'manual-send')
     expect(sends.at(-1)!.draftId).toBe(sends.at(-2)!.draftId)
-    expect(prompt()).toHaveValue('')
+    expect(promptText(prompt())).toBe('')
   })
 })
 
@@ -387,7 +418,7 @@ describe('Steer now', () => {
     expect(requests(live, 'steer')).toEqual([{ type: 'steer', threadId: THREAD, draftId: expect.any(String), text: 'Use the staging database instead' }])
     expect(requests(live, 'queue-followup')).toHaveLength(0)
     act(() => live.deliver(THREAD, 'accepted', 'Use the staging database instead'))
-    await waitFor(() => expect(prompt()).toHaveValue(''))
+    await waitFor(() => expect(promptText(prompt())).toBe(''))
   })
 
   it('offers only queueing when the provider cannot steer', () => {
@@ -418,10 +449,10 @@ describe('skills picker', () => {
     act(() => live.publishCatalog(CATALOG))
     const list = await screen.findByRole('listbox', { name: 'Skills' })
     // Search narrows the native list; the scope stays with each native entry.
-    expect(within(list).getAllByRole('option').map(option => option.textContent)).toEqual(['$review-prReview the open pull requestProject'])
+    expect(within(list).getAllByRole('option').map(option => option.textContent)).toEqual(['review-prReview the open pull requestProject'])
     expect(prompt()).toHaveAttribute('aria-activedescendant', within(list).getAllByRole('option')[0]!.id)
     fireEvent.keyDown(prompt(), { key: 'Enter' })
-    expect(prompt()).toHaveValue('Please $review-pr ')
+    expect(promptText(prompt())).toBe('Please $review-pr ')
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
     expect(requests(live, 'manual-send')).toHaveLength(0)
     act(() => { live.threadDrafts.flushAll() })
@@ -453,9 +484,9 @@ describe('skills picker', () => {
     fireEvent.keyDown(prompt(), { key: 'ArrowDown' })
     fireEvent.keyDown(prompt(), { key: 'Enter', isComposing: true })
     fireEvent.keyDown(prompt(), { key: 'Enter', keyCode: 229 })
-    expect(prompt()).toHaveValue('/')
+    expect(promptText(prompt())).toBe('/')
     fireEvent.keyDown(prompt(), { key: 'Tab' })
-    expect(prompt()).toHaveValue('$deploy ')
+    expect(promptText(prompt())).toBe('$deploy ')
     expect(live.threadDrafts.draft(THREAD).skills).toEqual([{ name: 'deploy', path: CATALOG.skills[1]!.path }])
     expect(requests(live, 'manual-send')).toHaveLength(0)
   })
@@ -467,7 +498,7 @@ describe('skills picker', () => {
     expect(prompt()).toHaveAttribute('aria-expanded', 'true')
     fireEvent.keyDown(prompt(), { key: 'Escape' })
     expect(screen.queryByText(/No skills match/)).not.toBeInTheDocument()
-    expect(prompt()).toHaveValue('echo $HOME')
+    expect(promptText(prompt())).toBe('echo $HOME')
     fireEvent.keyDown(prompt(), { key: 'Enter' })
     expect(requests(live, 'manual-send')).toEqual([{ type: 'manual-send', threadId: THREAD, draftId: expect.any(String), text: 'echo $HOME' }])
   })
@@ -488,7 +519,7 @@ describe('skills picker', () => {
     expect(await screen.findByRole('listbox', { name: 'Skills' })).toBeInTheDocument()
     expect(screen.getByText('1 skill file couldn’t be read')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Refresh' })).toBeEnabled()
-    expect(prompt()).toHaveValue('Keep this draft $')
+    expect(promptText(prompt())).toBe('Keep this draft $')
   })
 
   it('says an empty native catalog is empty, which is not a failure', async () => {
@@ -518,7 +549,7 @@ describe('skills with queue and steer', () => {
       return <ThreadComposer row={row} state={connection.state!} command={connection.command} store={connection.threadDrafts} onSend={vi.fn()} composerId={id} />
     }
     render(<><Pane id="pane-a" /><Pane id="pane-b" /></>)
-    const [a, b] = screen.getAllByRole('textbox', { name: 'Prompt' }) as HTMLTextAreaElement[]
+    const [a, b] = screen.getAllByRole('textbox', { name: 'Prompt' }) as HTMLElement[]
     expect([a!.id, b!.id]).toEqual(['pane-a', 'pane-b'])
     expect(a!.closest('form')).toHaveAttribute('data-thread-id', THREAD)
     type(a!, '$')
@@ -532,7 +563,7 @@ describe('skills with queue and steer', () => {
     type(prompt(), 'Queue $dep')
     await screen.findByRole('listbox', { name: 'Skills' })
     fireEvent.keyDown(prompt(), { key: 'Enter' })
-    expect(prompt()).toHaveValue('Queue $deploy ')
+    expect(promptText(prompt())).toBe('Queue $deploy ')
     fireEvent.keyDown(prompt(), { key: 'Enter' })
     const deploy = { name: 'deploy', path: CATALOG.skills[1]!.path }
     expect(requests(live, 'queue-followup')).toEqual([{ type: 'queue-followup', threadId: THREAD, draftId: expect.any(String), text: 'Queue $deploy ', skills: [deploy] }])

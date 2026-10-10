@@ -1,3 +1,4 @@
+import { threadsStateFixture } from '../../fixtures/agentState'
 /**
  * An interactive visual in the transcript (ADR-0060): the card asks main for a one-time page address by thread and
  * visual, never sends the page, runs at most three pages at once and only near the view, sizes the page to the height
@@ -191,10 +192,10 @@ describe('a card whose page cannot run', () => {
   const HERE = '11111111-1111-4111-8111-111111111111'
   const THERE = '22222222-2222-4222-8222-222222222222'
   const ON_ANOTHER_COMPUTER = 'This page belongs to a thread on another computer, so it is not shown here.'
-  const routedState = (): AgentState => ({ configuration: defaultAgentConfiguration(), connection: 'connected', host: { ...EMPTY_AGENT_HOST, hostId: HERE },
-    activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false,     globalLaneBusy: false, notice: '', error: null,
-    credentials: { reasoning: false, secure: false }, reasoningAccounts: [], hostId: HERE, clientScoped: true,
-    connections: [{ hostId: HERE, name: 'This computer', kind: 'local', connected: true }, { hostId: THERE, name: 'Forge', kind: 'remote', connected: true }] })
+  const routedState = (): AgentState => (threadsStateFixture({ cloneOverrides: false,
+    configuration: defaultAgentConfiguration(),
+    host: { ...EMPTY_AGENT_HOST, hostId: HERE },
+    topLevel: { activeThreadId: null, activeProjectId: null, credentials: { reasoning: false, secure: false }, hostId: HERE, clientScoped: true, connections: [{ hostId: HERE, name: 'This computer', kind: 'local', connected: true }, { hostId: THERE, name: 'Forge', kind: 'remote', connected: true }] } }))
 
   it('keeps the transcript, and says a paired host\'s page is on another computer, through the window\'s real bridge', async () => {
     const state = routedState()

@@ -1,29 +1,27 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
+import { agentState } from './support/agentAccess'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { resizeContentWindow } from './support/sottoWindow'
 import { hostEntityKey } from '../../src/shared/clientIdentity'
 import { execFileSync } from 'node:child_process'
 import { createServer } from 'node:http'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, launchSotto, openThreads, userMessageTexts, type LaunchedSotto } from './support/sottoLaunch'
 import { terminalOutput } from './support/terminal'
-import { evidenceDirectory } from './support/evidence'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 // Full app, real controller/IPC/files/PTY/browser/Git/worktrees; coding providers are explicit fixtures.
 // GitHub is a scripted gh (tests/fixtures/fakeGh.mjs), reached AFTER a real push to an owned local bare repository.
 const SHOTS = evidenceDirectory('artifacts/issue-74-daily-workspace')
 const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', windowsHide: true, timeout: 15000 }).trim()
 async function size(launched: LaunchedSotto, width = 1600, height = 1000): Promise<void> {
-  await launched.app.evaluate(({ BrowserWindow }, [width, height]) => {
-    const window = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!
-    window.setMinimumSize(800, 540); window.setContentSize(width, height)
-  }, [width, height] as const)
-  await expect.poll(() => launched.page.evaluate(() => `${innerWidth}x${innerHeight}`)).toBe(`${width}x${height}`)
+  await resizeContentWindow(launched, width, height, [800, 540])
 }
 async function profile(): Promise<string> {
-  const directory = await mkdtemp(join(tmpdir(), 'sotto-e2e-daily-workspace-'))
+  const directory = (await ownedE2EProfile({ prefix: 'sotto-e2e-daily-workspace-' })).directory
   await writeFile(join(directory, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'dark' }))
   return directory
 }
@@ -40,7 +38,7 @@ async function capture(page: Page, name: string): Promise<void> {
 async function focusThread(page: Page, id: string, title: string): Promise<void> {
   // The sidebar stays available while a restored split changes from narrow tabs to wide panes.
   await page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: title, exact: true }).click()
-  await page.locator(`section.thread-pane[data-thread-id="${id}"]`).getByRole('textbox', { name: 'Prompt', exact: true }).click()
+  await promptField(page.locator(`section.thread-pane[data-thread-id="${id}"]`)).click()
 }
 async function beside(page: Page, title: string): Promise<void> {
   const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
@@ -102,9 +100,9 @@ test('daily mixed-provider workspace joins independent work, tools, reviewed com
     await page.getByRole('button', { name: 'Daily implementation', exact: true }).first().click()
     await beside(page, 'Daily review')
     const pane = (id: string) => page.locator(`section.thread-pane[data-thread-id="${id}"]`)
-    const prompt = (id: string) => pane(id).getByRole('textbox', { name: 'Prompt', exact: true })
-    await prompt(first).fill('Make the greeting friendlier.'); await prompt(first).press('Enter')
-    await prompt(second).fill('Review the greeting independently.'); await prompt(second).press('Enter')
+    const prompt = (id: string) => promptField(pane(id))
+    await fillPrompt(prompt(first), 'Make the greeting friendlier.'); await prompt(first).press('Enter')
+    await fillPrompt(prompt(second), 'Review the greeting independently.'); await prompt(second).press('Enter')
     // Each first send makes its thread's worktree and starts its provider: three to six seconds on a loaded desktop, so the
     // default five-second poll was a race. The deadline is generous on purpose; it ends as soon as both are running.
     await expect.poll(() => page.evaluate(async ids => (await window.sotto!.agents!.get()).host.threads.filter(thread => ids.includes(thread.id)).map(thread => thread.status), [first, second]), { timeout: 30_000 }).toEqual(['running', 'running'])
@@ -116,7 +114,7 @@ test('daily mixed-provider workspace joins independent work, tools, reviewed com
     const working = implementation!.worktree!.path!, other = review!.worktree!.path!
     expect(working).not.toBe(other)
     await page.evaluate(async threadId => window.sottoE2E!.agentEvent!({ type: 'ready', threadId, status: 'idle', text: 'Review prepared in my own working copy.' }), second)
-    await prompt(second).fill('Keep this review draft private to this pane.')
+    await fillPrompt(prompt(second), 'Keep this review draft private to this pane.')
     await page.evaluate(async threadId => window.sottoE2E!.agentEvent!({ type: 'ready', threadId, status: 'idle', text: 'The greeting is ready.\n\n```mermaid\nflowchart LR\n  Draft --> Review --> Commit\n```', activities: [{ id: 'daily-command', turnId: 'daily-turn', sequence: 0, kind: 'command', status: 'completed', title: 'Inspect greeting', command: 'Get-Content greeting.txt', output: 'Hello', exitCode: 0 }] }), first)
     await expect(pane(first).locator('.rich-diagram__canvas img')).toBeVisible()
     const activity = pane(first).getByRole('button', { name: /Ran 1 command/ })
@@ -202,8 +200,8 @@ test('daily mixed-provider workspace joins independent work, tools, reviewed com
     await expect(panel.getByRole('list', { name: 'Linked pull requests' })).toContainText('Created from this thread')
     await capture(page, 'owned-push-fixture-pr')
     await focusThread(page, second, 'Daily review')
-    await expect(prompt(second)).toHaveValue('Keep this review draft private to this pane.')
-    const state = await page.evaluate(async () => window.sotto!.agents!.get())
+    await expectPromptText(prompt(second), 'Keep this review draft private to this pane.')
+    const state = await agentState(page)
     expect(state).not.toHaveProperty('assignments')
     for (const [id, own, foreign] of [[first, 'Make the greeting friendlier.', 'Review the greeting independently.'], [second, 'Review the greeting independently.', 'Make the greeting friendlier.']]) {
       const messages = await userMessageTexts(page, id!)
@@ -218,7 +216,7 @@ test('daily mixed-provider workspace joins independent work, tools, reviewed com
     for (const [key, value] of [['SOTTO_E2E_GH_SCRIPT', previousGh.script], ['SOTTO_E2E_GH_EXECUTABLE', previousGh.executable], ['FAKE_GH_STATE', previousGh.state]] as const) {
       if (value === undefined) delete process.env[key]; else process.env[key] = value
     }
-    await rm(requireOwnedE2EProfile(directory), { recursive: true, force: true })
+    await removeOwnedE2EProfile(directory)
   }
 })
 
@@ -236,12 +234,12 @@ test('mixed pane drafts, queued work, settlement and preferences recover without
     const hostId = await page.evaluate(async () => (await window.sotto!.agents!.get()).hostId)
     const key = (id: string): string => hostEntityKey(hostId, id)
     const pane = (id: string) => page.locator(`section.thread-pane[data-thread-id="${key(id)}"]`)
-    const prompt = (id: string) => pane(id).getByRole('textbox', { name: 'Prompt', exact: true })
-    await prompt('grok-previews').fill('Unsent Claude draft for tomorrow.')
-    await prompt('footer-links').fill('Queued Codex follow-up after this turn.')
+    const prompt = (id: string) => promptField(pane(id))
+    await fillPrompt(prompt('grok-previews'), 'Unsent Claude draft for tomorrow.')
+    await fillPrompt(prompt('footer-links'), 'Queued Codex follow-up after this turn.')
     await prompt('footer-links').press('Enter')
     await expect(pane('footer-links').getByRole('region', { name: 'Queued messages' })).toContainText('Queued Codex follow-up after this turn.')
-    await prompt('footer-links').fill('Newer unsent Codex draft.')
+    await fillPrompt(prompt('footer-links'), 'Newer unsent Codex draft.')
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ appearance: 'light', darkTheme: 'nocturne', lightTheme: 'linen', webLinkDestination: 'embedded' })
       await window.sotto!.agents!.command({ type: 'settle-thread', threadId: 'grok-previews' })
@@ -262,11 +260,11 @@ test('mixed pane drafts, queued work, settlement and preferences recover without
     const drafts = async () => page.evaluate(async ids => (await window.sotto!.agents!.get()).threadDrafts?.filter(draft => ids.includes(draft.threadId)).map(draft => [draft.threadId, draft.text]).sort(), [key('grok-previews'), key('footer-links')])
     const expected = [[key('footer-links'), 'Newer unsent Codex draft.'], [key('grok-previews'), 'Unsent Claude draft for tomorrow.']]
     await expect.poll(drafts).toEqual(expected)
-    await expect(prompt('footer-links')).toHaveValue('Newer unsent Codex draft.')
+    await expectPromptText(prompt('footer-links'), 'Newer unsent Codex draft.')
     await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'disconnect', threadId: 'footer-links', text: '' }))
-    await expect(prompt('footer-links')).toHaveValue('Newer unsent Codex draft.')
+    await expectPromptText(prompt('footer-links'), 'Newer unsent Codex draft.')
     await page.evaluate(async () => window.sotto!.agents!.command({ type: 'connect' }))
-    const before = await page.evaluate(async () => window.sotto!.agents!.get())
+    const before = await agentState(page)
     expect(before.followups).toEqual([expect.objectContaining({ threadId: key('footer-links'), text: 'Queued Codex follow-up after this turn.' })])
     expect(before.host.threads.flatMap(thread => thread.messages).some(message => message.text === 'Queued Codex follow-up after this turn.')).toBe(false)
     await capture(page, 'reconnect-pinned-drafts-light')
@@ -276,16 +274,16 @@ test('mixed pane drafts, queued work, settlement and preferences recover without
     await connect(page); await size(launched)
     await openThreads(page)
     await focusThread(page, key('grok-previews'), 'Grok voice previews')
-    await expect(prompt('grok-previews')).toHaveValue('Unsent Claude draft for tomorrow.')
+    await expectPromptText(prompt('grok-previews'), 'Unsent Claude draft for tomorrow.')
     await focusThread(page, key('footer-links'), 'Footer links')
-    await expect(prompt('footer-links')).toHaveValue('Newer unsent Codex draft.')
+    await expectPromptText(prompt('footer-links'), 'Newer unsent Codex draft.')
     // Tools chrome is explicitly session-scoped; reopening follows the currently focused thread.
     await expect(page.getByRole('complementary', { name: 'Tools' })).toBeHidden()
     await pane('footer-links').getByRole('button', { name: 'Tools', exact: true }).click()
     await expect(page.getByRole('complementary', { name: 'Tools' }).getByRole('button', { name: 'Pin to Footer links', exact: true })).toBeVisible()
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
     expect(await page.evaluate(async () => window.sotto!.getSettings())).toMatchObject({ appearance: 'light', lightTheme: 'linen', darkTheme: 'nocturne', webLinkDestination: 'embedded' })
-    const restored = await page.evaluate(async () => window.sotto!.agents!.get())
+    const restored = await agentState(page)
     expect(restored.followups).toEqual([expect.objectContaining({ threadId: key('footer-links'), text: 'Queued Codex follow-up after this turn.' })])
     expect((await userMessageTexts(page, 'footer-links')).some(text => text === 'Queued Codex follow-up after this turn.')).toBe(false)
     expect(restored).not.toHaveProperty('assignments')
@@ -294,19 +292,17 @@ test('mixed pane drafts, queued work, settlement and preferences recover without
     await queue.getByRole('button', { name: 'Resume queue', exact: true }).click()
     await expect.poll(() => userMessageTexts(page, 'footer-links').then(texts => texts.filter(text => text === 'Queued Codex follow-up after this turn.').length)).toBe(1)
     await page.evaluate(async () => window.sotto!.agents!.command({ type: 'connect' }))
-    const delivered = await page.evaluate(async () => window.sotto!.agents!.get())
+    const delivered = await agentState(page)
     expect((await userMessageTexts(page, 'footer-links')).filter(text => text === 'Queued Codex follow-up after this turn.')).toHaveLength(1)
     for (const thread of delivered.host.threads.filter(thread => thread.id !== key('footer-links'))) {
       expect((await userMessageTexts(page, thread.id)).some(text => text === 'Queued Codex follow-up after this turn.'), thread.id).toBe(false)
     }
-    await expect(prompt('footer-links')).toHaveValue('Newer unsent Codex draft.')
+    await expectPromptText(prompt('footer-links'), 'Newer unsent Codex draft.')
     await page.getByRole('complementary', { name: 'Tools' }).getByRole('button', { name: 'Close tools panel', exact: true }).click()
     await size(launched, 820, 560)
     await expect(prompt('footer-links')).toBeInViewport()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     await capture(page, 'restored-queue-minimum-light')
   } catch (error) { await capture(launched.page, 'recovery-failure').catch(() => undefined); throw error }
-  finally { await closeSotto(launched); await rm(requireOwnedE2EProfile(directory), { recursive: true, force: true }) }
+  finally { await closeSotto(launched); await removeOwnedE2EProfile(directory) }
 })
-
-

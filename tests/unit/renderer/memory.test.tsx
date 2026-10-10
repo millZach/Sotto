@@ -1,3 +1,4 @@
+import { deferred } from '../../fixtures/deferred'
 import React from 'react'
 import { act, cleanup, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -21,12 +22,7 @@ const item = (id: string, content: string, overrides: Partial<MemoryItem> = {}):
   supersededBy: null, provenance: [{ source: 'questionnaire', ref: `submission:${id}`, recordedAt: at }],
   tags: ['communication'], state: 'active', authority: 'preference', ...overrides,
 })
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  let reject!: (error: Error) => void
-  const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail })
-  return { promise, resolve, reject }
-}
+
 function bridge(snapshot = empty()) {
   let listener: ((value: MemorySnapshot) => void) | undefined
   const stop = vi.fn()

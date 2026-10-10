@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
 import { TurnRecorder } from '../../../src/main/agents/turns'
 import { E2EAgentHost } from '../../../src/main/e2e/agentEffects'
 import { MemoryProfile } from '../../../src/main/memory/profile'
@@ -12,6 +11,8 @@ import { MemoryStore } from '../../../src/main/memory/store'
 import { PolicyStore } from '../../../src/main/memory/policies'
 import { memoryTopics } from '../../../src/shared/memory'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
 
 const roots: string[] = [], controls: AgentControl[] = [], stores: MemoryStore[] = []
 afterEach(async () => {
@@ -24,15 +25,14 @@ afterEach(async () => {
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'sotto-agent-memory-')); roots.push(root)
   const host = new E2EAgentHost(), execute = vi.spyOn(host, 'execute')
-  const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => true, encryptString: text => Buffer.from(text), decryptString: bytes => bytes.toString() })
-  await credentials.load()
+  const credentials = await testCredentials(root, { mode: 'plain' })
   let store: MemoryStore, profile: MemoryProfile, control: AgentControl
   const turns = new TurnRecorder({ directory: root, resolveSession: () => undefined })
   const restart = async () => {
     control?.dispose(); store?.close()
     store = new MemoryStore(join(root, 'memory.sqlite')); stores.push(store); store.open()
     profile = new MemoryProfile(store)
-    control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: {}, authority: new PolicyStore(store), turns })
+    control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: {}, authority: new PolicyStore(store), turns })
     controls.push(control); await control.start(); await control.command({ type: 'connect' })
   }
   await restart()

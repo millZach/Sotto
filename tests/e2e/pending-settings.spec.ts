@@ -2,9 +2,13 @@ import { mkdir } from 'node:fs/promises'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
 import { REMOTE_PERMISSION_DENIED } from '../../src/main/agents/authority'
+import { evidenceDirectory } from '../fixtures/evidence'
 
-/** Every capture this spec takes; the verification note copies the few it cites into `artifacts/pending-settings/`. */
-const ARTIFACTS = 'artifacts/pending-settings-run'
+/**
+ * Every capture this spec takes; the verification note copies the few it cites into artifacts/pending-settings/.
+ * See "E2e evidence" in docs/ci.md for default, publish and root override paths.
+ */
+const ARTIFACTS = evidenceDirectory('artifacts/pending-settings-run')
 const SIZES = [[1600, 1000], [1280, 800], [820, 560]] as const
 
 async function savedMode(page: Page): Promise<string | undefined> {

@@ -1,7 +1,12 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
+import { agentState } from './support/agentAccess'
+import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { evidenceDirectory } from './support/evidence'
+import { evidenceDirectory } from '../fixtures/evidence'
 import { hostKeys } from './support/hostKeys'
 import { closeSotto, launchSotto, openThreads, userMessageTexts } from './support/sottoLaunch'
+
+const evidence = evidenceDirectory('artifacts/queued-steering')
 
 test('steers a queued message from the keyboard without consuming the newer draft', async () => {
   const launched = await launchSotto('queued-steering')
@@ -17,19 +22,19 @@ test('steers a queued message from the keyboard without consuming the newer draf
     await openThreads(page)
     await page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: 'Docs', exact: true }).click()
     const pane = page.locator(`section.thread-pane[data-thread-id="${docs}"]`)
-    const prompt = pane.locator('form.thread-prompt textarea')
-    await prompt.fill('Start the work')
+    const prompt = promptField(pane)
+    await fillPrompt(prompt, 'Start the work')
     await prompt.press('Enter')
     await expect(pane.getByLabel('Thread transcript')).toContainText('Start the work')
     await expect.poll(() => page.evaluate(async docs => (await window.sotto!.agents!.get()).host.threads.find(t => t.id === docs)?.lastTurn?.status, docs)).toBe('running')
     const turn = await page.evaluate(async docs => (await window.sotto!.agents!.get()).host.threads.find(t => t.id === docs)!.lastTurn!.id, docs)
     for (const text of ['Keep this queued', 'Use the simpler approach']) {
-      await prompt.fill(text)
+      await fillPrompt(prompt, text)
       await prompt.press('Enter')
     }
     const queue = pane.getByRole('region', { name: 'Queued messages' })
     await expect(queue.getByRole('button', { name: 'Steer now', exact: true })).toHaveCount(2)
-    await prompt.fill('Keep this newer draft')
+    await fillPrompt(prompt, 'Keep this newer draft')
     for (const appearance of ['dark', 'light'] as const) {
       await page.evaluate(appearance => window.sotto!.updateSettings({ appearance }), appearance)
       for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]]) {
@@ -42,7 +47,7 @@ test('steers a queued message from the keyboard without consuming the newer draf
         if (await toggle.getAttribute('aria-expanded') === 'false') await toggle.click()
         await expect(queue.getByRole('button', { name: 'Steer now' }).last()).toBeVisible()
         expect(await queue.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
-        await page.screenshot({ path: `${evidenceDirectory('artifacts/queued-steering')}/${appearance}-${width}.png`, animations: 'disabled' })
+        await page.screenshot({ path: join(evidence, `${appearance}-${width}.png`), animations: 'disabled' })
       }
     }
     await page.emulateMedia({ reducedMotion: 'reduce' })
@@ -52,9 +57,9 @@ test('steers a queued message from the keyboard without consuming the newer draf
     await page.keyboard.press('Enter')
     await expect(queue).not.toContainText('Use the simpler approach')
     await expect(queue).toContainText('Keep this queued')
-    await expect(prompt).toHaveValue('Keep this newer draft')
+    await expectPromptText(prompt, 'Keep this newer draft')
     await expect(queue.getByRole('button', { name: /^Queued/ })).toBeFocused()
-    const state = await page.evaluate(() => window.sotto!.agents!.get())
+    const state = await agentState(page)
     const thread = state.host.threads.find(t => t.id === docs)!
     expect(thread.lastTurn?.id).toBe(turn)
     expect(await userMessageTexts(page, 'docs')).toEqual(['Start the work', 'Use the simpler approach'])
@@ -63,7 +68,7 @@ test('steers a queued message from the keyboard without consuming the newer draf
     await page.keyboard.press('Enter')
     await expect(queue).toHaveCount(0)
     await expect(prompt).toBeFocused()
-    await expect(prompt).toHaveValue('Keep this newer draft')
+    await expectPromptText(prompt, 'Keep this newer draft')
     expect(await userMessageTexts(page, 'docs')).toEqual(['Start the work', 'Use the simpler approach', 'Keep this queued'])
   } finally { await closeSotto(launched) }
 })

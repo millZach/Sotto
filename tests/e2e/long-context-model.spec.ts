@@ -1,3 +1,5 @@
+import { promptField } from './support/prompt'
+import { agentState } from './support/agentAccess'
 import { readFile } from 'node:fs/promises'
 import { expect, test } from '@playwright/test'
 import { closeSotto, launchSotto, openThreads } from './support/sottoLaunch'
@@ -22,7 +24,7 @@ test('a thread on a long-context model its catalog lists only by the base takes 
     // The chip carries the provider's mark beside the name, so its title is the name alone.
     await expect(page.getByRole('combobox', { name: 'Thread model' })).toHaveAttribute('title', 'Claude Test')
     await expect(page.getByRole('button', { name: 'Attach screenshots', exact: true })).toBeEnabled()
-    const prompt = page.getByRole('textbox', { name: 'Prompt', exact: true })
+    const prompt = promptField(page)
     await prompt.evaluate((element, data) => {
       const transfer = new DataTransfer()
       transfer.items.add(new File([Uint8Array.from(atob(data), char => char.charCodeAt(0))], 'Screenshot.png', { type: 'image/png' }))
@@ -32,7 +34,7 @@ test('a thread on a long-context model its catalog lists only by the base takes 
     await expect(page.getByText('This model does not support screenshots.', { exact: false })).toHaveCount(0)
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
     await expect(page.getByLabel('Thread transcript', { exact: true }).getByAltText('Screenshot.png')).toBeVisible()
-    const state = await page.evaluate(async () => window.sotto!.agents!.get())
+    const state = await agentState(page)
     expect(state.host.threads.find(thread => thread.title === 'Long context')?.modelId).toBe('claude:test[1m]')
   } finally { await closeSotto(launched) }
 })

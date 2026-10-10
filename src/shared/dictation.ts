@@ -142,6 +142,8 @@ export type WidgetSnapshot = WidgetSnapshotMetadata &
         readonly status: 'error'
         readonly sessionId?: string | undefined
         readonly code: WidgetErrorCode
+        /** Linux shell copy distinguishes a missing microphone from one lost after capture began. */
+        readonly captureStarted?: boolean | undefined
         /** Whether the recording is kept, so the widget offers Try again. */
         readonly kept?: boolean | undefined
         /** Whether Try again was pressed and failed too, so the pill says so. */

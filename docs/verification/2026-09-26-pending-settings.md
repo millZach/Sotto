@@ -1,6 +1,8 @@
 # A thread setting shows the moment it is pressed (#319)
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0065](../adr/0065-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
 
 Checked on September 26, 2026, on Windows, in the built app driven by `tests/e2e/pending-settings.spec.ts`
 (`npm run build`, then `npx playwright test tests/e2e/pending-settings.spec.ts`: 1 passed). The provider is the e2e
@@ -8,7 +10,9 @@ fixture host. Through the e2e bridge the spec holds its thread settings changes 
 (`settings` with `hold` and `release`), has the next one refused outright (`refuse`) or refused with a reason
 (`reject`), or has it answered with no result and an error, as a lost answer is (`settings-unconfirmed`), keeping the
 change for the thread's next start, which `apply` stands for. The captures it cites are in `artifacts/pending-settings/`;
-every capture the run takes lands in the ignored `artifacts/pending-settings-run/`. The design is variant A of the
+current runs put every capture in ignored `artifacts/e2e-runs/pending-settings-run/` by default, or
+`artifacts/pending-settings-run/` with `SOTTO_E2E_EVIDENCE=publish`. See [E2e evidence](../ci.md#e2e-evidence)
+for the root override. The design is variant A of the
 mock-up, recorded in `docs/plans/2026-09-26-pending-settings.md`.
 
 The fixture's model names its provider "Claude" and its threads carry no provider, so the running app says "Claude"
@@ -69,7 +73,7 @@ other spec and design capture over it shows, so it was left.
   through the chip over a real coordinator, not in the running app. The chips fixed while a prompt is on its way, a
   refusal kept while another chip is pressed, a press back to the value in force keeping its mark while the save before
   it is in flight, and a change main lets go without the thread showing it are unit tests
-  (`tests/unit/renderer/threadOptions.test.tsx`, `tests/unit/renderer/pendingSettings.test.ts`).
+  (`tests/unit/renderer/agents/threadOptions.test.tsx`, `tests/unit/renderer/agents/threadEffort.test.tsx`, `tests/unit/renderer/pendingSettings.test.ts`).
 - The managed composer (Manage), which places the same line under its own footer, in the running app.
 - Model and effort in the running app: their pressed value shows without a mark, which the unit tests cover.
 - A real provider. `docs/perf/2026-09-26-settings-press-to-paint.md` times the real Claude and Codex adapters over

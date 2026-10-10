@@ -1,4 +1,5 @@
 /** Local opt-in benchmark; runs the real HEAD and working-tree workspace in isolated processes. */
+import { upperMedian as median, percentile } from './support/statistics.mjs'
 import assert from 'node:assert/strict'
 import { Buffer } from 'node:buffer'
 import { execFileSync } from 'node:child_process'
@@ -17,8 +18,6 @@ const require = createRequire(import.meta.url)
 const script = fileURLToPath(import.meta.url)
 const root = resolve(dirname(script), '../..')
 const round = value => Math.round(value * 1000) / 1000
-const median = values => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)]
-const percentile = (values, fraction) => [...values].sort((a, b) => a - b)[Math.min(values.length - 1, Math.floor(values.length * fraction))]
 const memory = () => { globalThis.gc?.(); return process.memoryUsage() }
 
 async function measure(bundle, seedBundle, count, directory) {

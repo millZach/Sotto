@@ -1,3 +1,4 @@
+import { setPromptText, setPromptSelection, promptText } from './helpers/promptEditor'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -14,7 +15,7 @@ import {
   retainFileReferences, searchFileEntries, unmentionableCount, type FileEntry,
 } from '../../../src/renderer/src/agents/composerFiles'
 import { FilePicker, type FilePickerModel } from '../../../src/renderer/src/agents/FilePicker'
-import { liveAgentState, threadsStateFixture } from './liveAgentState'
+import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 
@@ -55,15 +56,15 @@ function mount() {
   const live = liveAgentState(state)
   vi.mocked(useAgents).mockImplementation(live.useLive)
   render(<ThreadsView now={NOW} />)
-  return { live, prompt: () => screen.getByRole('textbox', { name: 'Prompt' }) as HTMLTextAreaElement }
+  return { live, prompt: () => screen.getByRole('textbox', { name: 'Prompt' }) as HTMLElement }
 }
 
 const requests = <T extends AgentCommand['type']>(live: ReturnType<typeof liveAgentState>, type: T): Extract<AgentCommand, { type: T }>[] =>
   live.command.mock.calls.map(([request]) => request).filter((request): request is Extract<AgentCommand, { type: T }> => request.type === type)
 
-function type(prompt: HTMLTextAreaElement, value: string): void {
-  fireEvent.change(prompt, { target: { value, selectionStart: value.length, selectionEnd: value.length } })
-  prompt.setSelectionRange(value.length, value.length)
+function type(prompt: HTMLElement, value: string): void {
+  setPromptText(prompt, value)
+  setPromptSelection(prompt, value.length, value.length)
   fireEvent.select(prompt)
 }
 
@@ -127,12 +128,12 @@ describe('composer file picker', () => {
 
     // Arrows move and Enter takes the highlighted entry; a folder keeps browsing.
     fireEvent.keyDown(prompt(), { key: 'Enter' })
-    expect(prompt()).toHaveValue('Read @src/')
+    expect(promptText(prompt())).toBe('Read @src/')
     const inside = await screen.findByRole('listbox', { name: 'Files' })
     expect(optionNames(inside)).toEqual(['app.ts', 'app.css'])
     fireEvent.keyDown(prompt(), { key: 'ArrowDown' })
     fireEvent.keyDown(prompt(), { key: 'Enter' })
-    expect(prompt()).toHaveValue('Read @src/app.css ')
+    expect(promptText(prompt())).toBe('Read @src/app.css ')
     expect(live.threadDrafts.draft(THREAD).files).toEqual([{ path: 'src/app.css' }])
 
     fireEvent.keyDown(prompt(), { key: 'Enter' })
@@ -154,7 +155,7 @@ describe('composer file picker', () => {
     type(prompt(), 'Read @READ')
     await screen.findByRole('listbox', { name: 'Files' })
     fireEvent.keyDown(prompt(), { key: 'Enter' })
-    expect(prompt()).toHaveValue('Read @README.md ')
+    expect(promptText(prompt())).toBe('Read @README.md ')
     expect(live.threadDrafts.draft(THREAD).files).toEqual([{ path: 'README.md' }])
 
     type(prompt(), 'Read the readme')
@@ -191,7 +192,7 @@ describe('composer file picker', () => {
     type(prompt(), 'Read @src/app')
     await screen.findByRole('listbox', { name: 'Files' })
     fireEvent.keyDown(prompt(), { key: 'Enter' })
-    expect(prompt()).toHaveValue('Read @src/app.ts ')
+    expect(promptText(prompt())).toBe('Read @src/app.ts ')
     await act(async () => { live.threadDrafts.flushAll(); await Promise.resolve() })
     const saved = requests(live, 'save-thread-draft').at(-1)!
     expect(saved).toMatchObject({ text: 'Read @src/app.ts ', files: [{ path: 'src/app.ts' }] })

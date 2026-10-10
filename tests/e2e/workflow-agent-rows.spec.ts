@@ -1,11 +1,14 @@
+import { resizeContentWindow } from './support/sottoWindow'
 import { mkdir, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 import type { AgentActivity, ObservedAgent } from '../../src/shared/agentActivity'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 // Every capture of the run; docs/verification/workflow-agent-rows.md cites copies in artifacts/workflow-agent-rows/.
-const shots = resolve('artifacts/workflow-agent-rows-run')
+// See "E2e evidence" in docs/ci.md for default, publish and root override paths.
+const shots = evidenceDirectory('artifacts/workflow-agent-rows-run')
 const started = new Date(Date.now() - 15 * 60_000).toISOString()
 const workflow: ObservedAgent = { id: 'claude-agent-flow', assignmentId: 'claude-task-wf', kind: 'workflow', title: 'Implement the phase 1 perf issues', description: 'phase-1-perf',
   prompt: 'Implement the phase 1 perf issues, #311 to #316, one agent per issue, each in its own worktree.', message: 'Three agents have finished; one failed.', status: 'running', startedAt: started }
@@ -31,12 +34,7 @@ async function report(page: Page, run: ObservedAgent, agents: ObservedAgent[]): 
   }, { run: { ...run, progress: progress(agents) }, agents, solo })
 }
 async function size(app: LaunchedSotto, width: number, height: number): Promise<void> {
-  await app.app.evaluate(({ BrowserWindow }, size) => {
-    const window = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().endsWith('/index.html'))!
-    window.setMinimumSize(800, 540)
-    window.setContentSize(size.width, size.height)
-  }, { width, height })
-  await expect.poll(() => app.page.evaluate(() => `${innerWidth}x${innerHeight}`)).toBe(`${width}x${height}`)
+  await resizeContentWindow(app, width, height, [800, 540])
 }
 async function minimumContrast(page: Page): Promise<number> {
   return page.locator('.tools-panel__sheet').evaluate(panel => {

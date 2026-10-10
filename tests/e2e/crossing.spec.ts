@@ -1,5 +1,10 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
+import { join } from 'node:path'
+import { evidenceDirectory } from '../fixtures/evidence'
 import { expect, test } from '@playwright/test'
 import { closeSotto, completeFirstRunSetup, launchSotto, openPage, openThreads } from './support/sottoLaunch'
+
+const evidence = evidenceDirectory('artifacts/crossing')
 
 test('Crossing keeps dictation, history, settings and sessions usable', async () => {
   const launched = await launchSotto()
@@ -9,7 +14,7 @@ test('Crossing keeps dictation, history, settings and sessions usable', async ()
     await completeFirstRunSetup(page, { microphone: 'test' })
     // Onboarding hands over to Threads now, so dictation is a deliberate stop.
     await openPage(page, 'Dictate')
-    await page.screenshot({ animations: 'disabled', path: 'artifacts/crossing/dictate.png' })
+    await page.screenshot({ animations: 'disabled', path: join(evidence, 'dictate.png') })
     await page.getByRole('button', { name: 'Start dictation', exact: true }).click()
     await page.getByRole('button', { name: 'Stop', exact: true }).click()
     await page.getByRole('link', { name: 'History', exact: true }).click()
@@ -17,10 +22,10 @@ test('Crossing keeps dictation, history, settings and sessions usable', async ()
     await page.locator('.history-entry__toggle').click()
     await page.getByRole('button', { name: 'Copy transcript', exact: true }).click()
     await expect(page.getByText('Transcript copied.', { exact: true })).toBeAttached()
-    await page.screenshot({ animations: 'disabled', path: 'artifacts/crossing/history.png' })
+    await page.screenshot({ animations: 'disabled', path: join(evidence, 'history.png') })
     await page.getByRole('link', { name: 'Settings', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Dictation', exact: true })).toBeVisible()
-    await page.screenshot({ animations: 'disabled', path: 'artifacts/crossing/settings.png' })
+    await page.screenshot({ animations: 'disabled', path: join(evidence, 'settings.png') })
     await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Output', exact: true }).click()
     await page.getByLabel('Paste delay', { exact: true }).fill('10')
     await page.getByLabel('Paste delay', { exact: true }).press('Tab')
@@ -32,15 +37,15 @@ test('Crossing keeps dictation, history, settings and sessions usable', async ()
     const coordinator = page.locator('#settings-agents')
     await expect(coordinator.getByLabel('Default projects directory', { exact: true })).toBeVisible()
     await page.getByRole('link', { name: 'Help', exact: true }).click()
-    await page.screenshot({ animations: 'disabled', path: 'artifacts/crossing/help.png' })
+    await page.screenshot({ animations: 'disabled', path: join(evidence, 'help.png') })
     await page.keyboard.press('Control+k')
     await expect(page.getByRole('searchbox', { name: 'Search transcripts' })).toBeFocused()
     await openThreads(page)
     await page.getByRole('button', { name: 'Workshop', exact: true }).click()
-    await page.getByLabel('Prompt', { exact: true }).fill('Keep this draft until I explicitly send it.')
+    await fillPrompt(promptField(page), 'Keep this draft until I explicitly send it.')
     await openPage(page, 'Dictate')
     await openThreads(page)
-    await expect(page.getByLabel('Prompt', { exact: true })).toHaveValue('Keep this draft until I explicitly send it.')
+    await expectPromptText(promptField(page), 'Keep this draft until I explicitly send it.')
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
     await expect(page.getByLabel('Thread transcript')).toContainText('Keep this draft until I explicitly send it.')
     await page.getByRole('button', { name: 'New thread', exact: true }).click()
@@ -53,7 +58,7 @@ test('Crossing keeps dictation, history, settings and sessions usable', async ()
     // The page still names itself for assistive technology; the heading is no longer drawn.
     await expect(page.getByRole('heading', { name: 'Threads', exact: true })).toBeAttached()
   } catch (error) {
-    await page.screenshot({ path: 'artifacts/crossing/failure.png' }).catch(() => undefined)
+    await page.screenshot({ path: join(evidence, 'failure.png') }).catch(() => undefined)
     throw error
   } finally { await closeSotto(launched) }
 })

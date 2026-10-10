@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { deferred } from '../fixtures/deferred'
 import { randomUUID } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -202,11 +203,9 @@ describe('Codex command-center profile', () => {
     await f.host.connect()
     await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Fixture', path: f.root })
     await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: 'worker', projectId: f.projectId, title: 'Fixture', modelId: f.modelId })
-    let resolveLookup!: (value: undefined) => void
-    let lookupEntered!: () => void
     let first = true
-    const entered = new Promise<void>(resolve => { lookupEntered = resolve })
-    const lookup = new Promise<undefined>(resolve => { resolveLookup = resolve })
+    const { promise: entered, resolve: lookupEntered } = deferred<void>()
+    const { promise: lookup, resolve: resolveLookup } = deferred<undefined>()
     f.host.useLaunchProfiles!({ profileFor: () => { if (!first) return Promise.resolve(undefined); first = false; lookupEntered(); return lookup } })
     f.host.observeThreads!(['worker'])
     await entered
@@ -221,10 +220,8 @@ describe('Codex command-center profile', () => {
   it('does not start stale ordinary work when its profile lookup crosses reconnect', async () => {
     const f = await codexFixture(); cleanups.push(f.cleanup)
     await f.host.connect()
-    let resolveLookup!: (value: undefined) => void
-    let lookupEntered!: () => void
-    const entered = new Promise<void>(resolve => { lookupEntered = resolve })
-    const lookup = new Promise<undefined>(resolve => { resolveLookup = resolve })
+    const { promise: entered, resolve: lookupEntered } = deferred<void>()
+    const { promise: lookup, resolve: resolveLookup } = deferred<undefined>()
     f.host.useLaunchProfiles!({ profileFor: () => { lookupEntered(); return lookup } })
     const starting = f.host.startThreadSession!('draft', { modelId: f.modelId, workingDirectory: f.root })
     const cancelled = expect(starting).rejects.toThrow('connection changed')
@@ -245,12 +242,9 @@ describe('Codex command-center profile', () => {
     // Model an already-profiled process only at this defensive callback seam.
     frames.runtimes.get('worker')!.commandCenter = true
     const original = frames.runtimes.get('worker')!.server
-    let resolveLookup!: (value: undefined) => void
-    let rejectLookup!: (reason: Error) => void
-    let lookupEntered!: () => void
     let first = true
-    const entered = new Promise<void>(resolve => { lookupEntered = resolve })
-    const lookup = new Promise<undefined>((resolve, reject) => { resolveLookup = resolve; rejectLookup = reject })
+    const { promise: entered, resolve: lookupEntered } = deferred<void>()
+    const { promise: lookup, resolve: resolveLookup, reject: rejectLookup } = deferred<undefined>()
     f.host.useLaunchProfiles!({ profileFor: () => { if (!first) return Promise.resolve(undefined); first = false; lookupEntered(); return lookup } })
     const handling = frames.frame(original, { id: 991, method: 'item/commandExecution/requestApproval', params: {
       threadId: await f.realId('worker'), turnId: 'fixture-turn', itemId: 'fixture-item', command: 'fixture-command', cwd: f.root,
@@ -349,10 +343,8 @@ it('does not reopen an ordinary Devin session after disconnect while its profile
   await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Fixture', path: f.root })
   await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: 'worker', projectId: f.projectId, title: 'Fixture', modelId: f.modelId })
   const before = (await f.driver.requests()).length
-  let resolveLookup!: (value: undefined) => void
-  let lookupEntered!: () => void
-  const entered = new Promise<void>(resolve => { lookupEntered = resolve })
-  const lookup = new Promise<undefined>(resolve => { resolveLookup = resolve })
+  const { promise: entered, resolve: lookupEntered } = deferred<void>()
+  const { promise: lookup, resolve: resolveLookup } = deferred<undefined>()
   f.host.useLaunchProfiles({ profileFor: () => { lookupEntered(); return lookup } })
   const reading = f.host.refreshThread('worker')
   const cancelled = expect(reading).rejects.toThrow('connection changed')

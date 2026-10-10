@@ -4,13 +4,16 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
+
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { agentCommandSchema, type AgentHostSnapshot } from '../../../src/shared/agents'
 import type { AgentHostCommand, AgentHostResult } from '../../../src/main/agents/host'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import type { AgentReasoner } from '../../../src/main/agents/reasoning'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
+import { deferred } from '../../fixtures/deferred'
 
 class WorkspaceHost extends E2EAgentHost {
   transform = (snapshot: AgentHostSnapshot): AgentHostSnapshot => snapshot
@@ -26,9 +29,9 @@ const fixtures: { root: string; control: AgentControl }[] = []
 async function fixture(reasoner: AgentReasoner = e2eAgentReasoner) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-attention-workspace-'))
   const host = new WorkspaceHost()
-  const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: value => value.toString() })
-  await credentials.load()
-  const create = () => new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner, })
+  const credentials = await testCredentials(root, { mode: 'unavailable' })
+
+  const create = () => createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner, })
   const f = { root, host, control: create(), async restart() { this.control.dispose(); this.control = create(); await this.control.start() } }
   fixtures.push(f)
   await f.control.start(); await f.control.command({ type: 'connect' })
@@ -169,8 +172,8 @@ describe('workspace manual prompt authority and durable dispatch', () => {
 
   it('allows a different thread to send while the first manual acknowledgement is pending', async () => {
     const f = await fixture()
-    let release!: () => void
-    const gate = new Promise<void>(resolve => { release = resolve })
+
+    const { promise: gate, resolve: release } = deferred<void>()
     const original = f.host.execute.bind(f.host)
     vi.spyOn(f.host, 'execute').mockImplementation(async command => {
       if ('threadId' in command && command.threadId === 'workshop') await gate

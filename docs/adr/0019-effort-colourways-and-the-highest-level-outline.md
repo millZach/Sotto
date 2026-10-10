@@ -1,6 +1,6 @@
 # Effort colourways and the highest-level outline
 
-October 9, 2026 amendment: [ADR-0065](0065-remove-voice-control-and-thread-management.md) records the removal. The managed composer described below has been removed. The thread composer keeps the effort outline, arrival and reduced-motion behavior.
+October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-management.md) records the removal. The managed composer described below has been removed. The thread composer keeps the effort outline, arrival and reduced-motion behavior.
 
 Accepted September 20, 2026. Zach reviewed two rounds of effort-control prototypes and two references, Codex's effort slider and Claude Code's effort picker, and asked for Codex's slider with a reaction of Sotto's own at a model's highest level; he then chose the Wash arrival, asked to see it in other colours, and asked for those colours to be a choice in Settings and for the composer to wear an outline in the chosen colour while a thread sits at its highest level. This decides where those colours come from, which is the one place the main window's colour does not come from the theme.
 

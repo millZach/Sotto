@@ -1,13 +1,14 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
+import { resizeContentWindow } from './support/sottoWindow'
+import { join } from 'node:path'
+import { evidenceDirectory } from '../fixtures/evidence'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 
+const evidence = evidenceDirectory('artifacts/thread-sidebar')
+
 async function resize(launched: LaunchedSotto, width: number, height: number): Promise<void> {
-  await launched.app.evaluate(({ BrowserWindow }, size) => {
-    const window = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().endsWith('/index.html'))!
-    window.setMinimumSize(800, 540)
-    window.setContentSize(size.width, size.height)
-  }, { width, height })
-  await expect.poll(() => launched.page.evaluate(() => `${innerWidth}x${innerHeight}`)).toBe(`${width}x${height}`)
+  await resizeContentWindow(launched, width, height, [800, 540])
 }
 
 async function prepare(launched: LaunchedSotto): Promise<void> {
@@ -78,8 +79,8 @@ test('project rows resize by pointer and keyboard, retain drafts, and remember c
     await expect(separator(page)).toHaveAttribute('aria-valuemax', '480')
     const preview = row(page, 'Grok voice previews')
     // Row actions temporarily occupy the narrow metadata line on hover or keyboard focus.
-    await page.getByRole('textbox', { name: 'Prompt', exact: true }).focus()
-    await page.getByRole('textbox', { name: 'Prompt', exact: true }).hover()
+    await promptField(page).focus()
+    await promptField(page).hover()
     await expect(preview.locator('.thread-nav__provider')).toBeVisible()
     // The provider is its mark; its name is the hover text.
     await expect(preview.locator('.thread-nav__provider svg.provider-mark[data-provider="claude"]')).toBeVisible()
@@ -90,8 +91,8 @@ test('project rows resize by pointer and keyboard, retain drafts, and remember c
     // This fixture has no worktree metadata. A wide row must not invent a branch.
     await expect(preview.locator('.thread-nav__branch svg.lucide-git-branch')).toHaveCount(0)
     await expect(preview.locator('.thread-nav__branch-name')).toHaveText('Project folder')
-    const prompt = page.getByRole('textbox', { name: 'Prompt', exact: true })
-    await prompt.fill('Keep this original draft through every sidebar change.')
+    const prompt = promptField(page)
+    await fillPrompt(prompt, 'Keep this original draft through every sidebar change.')
     const settings = sidebar(page).getByRole('link', { name: 'Settings', exact: true })
     await expect(settings.locator('svg.lucide-settings')).toBeVisible()
     const settingsSymbol = await settings.locator('svg').innerHTML()
@@ -111,13 +112,13 @@ test('project rows resize by pointer and keyboard, retain drafts, and remember c
     const remembered = Number(await separator(page).getAttribute('aria-valuenow'))
     expect(remembered).toBeLessThan(480)
     expect(remembered).toBeGreaterThan(420)
-    await expect(prompt).toHaveValue('Keep this original draft through every sidebar change.')
+    await expectPromptText(prompt, 'Keep this original draft through every sidebar change.')
     await expect(settings.locator('svg')).toHaveJSProperty('innerHTML', settingsSymbol)
 
     await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
     await expect(page.getByRole('button', { name: 'Expand sidebar', exact: true })).toBeVisible()
     await expect(separator(page)).toBeHidden()
-    await expect(prompt).toHaveValue('Keep this original draft through every sidebar change.')
+    await expectPromptText(prompt, 'Keep this original draft through every sidebar change.')
     await page.reload()
     await expect(page.getByRole('button', { name: 'Expand sidebar', exact: true })).toBeVisible()
     await openPage(page, 'Settings')
@@ -125,7 +126,7 @@ test('project rows resize by pointer and keyboard, retain drafts, and remember c
     await expect(page.getByRole('button', { name: 'Expand sidebar', exact: true })).toBeVisible()
     await page.getByRole('button', { name: 'Expand sidebar', exact: true }).click()
     await expectWidth(page, remembered)
-    await expect(prompt).toHaveValue('Keep this original draft through every sidebar change.')
+    await expectPromptText(prompt, 'Keep this original draft through every sidebar change.')
     await openPage(page, 'Settings')
     await page.getByRole('tab', { name: 'Threads', exact: true }).click()
     await expectWidth(page, remembered)
@@ -133,7 +134,7 @@ test('project rows resize by pointer and keyboard, retain drafts, and remember c
     await page.reload()
     await openThreads(page)
     await expectWidth(page, remembered)
-    await expect(prompt).toHaveValue('Keep this original draft through every sidebar change.')
+    await expectPromptText(prompt, 'Keep this original draft through every sidebar change.')
   } finally { await closeSotto(launched) }
 })
 
@@ -156,12 +157,12 @@ test('expanded and collapsed sidebars fit desktop sizes in both appearances and 
         await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
         await expectNoOverflow(page)
         await expect(sidebar(page).getByRole('link', { name: 'Settings', exact: true }).locator('svg.lucide-settings')).toBeVisible()
-        await page.screenshot({ path: `artifacts/thread-sidebar/expanded-${width}-${appearance}.png`, animations: 'disabled' })
+        await page.screenshot({ path: join(evidence, `expanded-${width}-${appearance}.png`), animations: 'disabled' })
         await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
         await expect(page.getByRole('button', { name: 'Expand sidebar', exact: true })).toBeVisible()
         await expectNoOverflow(page)
         await expectCollapsedNavigation(page)
-        await page.screenshot({ path: `artifacts/thread-sidebar/collapsed-${width}-${appearance}.png`, animations: 'disabled' })
+        await page.screenshot({ path: join(evidence, `collapsed-${width}-${appearance}.png`), animations: 'disabled' })
         await page.getByRole('button', { name: 'Expand sidebar', exact: true }).click()
         await expectWidth(page, Math.min(480, width - 470))
       }

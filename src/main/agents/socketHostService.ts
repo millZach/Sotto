@@ -3,7 +3,7 @@ import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import type { z } from 'zod'
 import { SocketFrames } from '../../host/socketFrames'
-import { agentAttachmentHandleSchema, agentThreadDetailResultSchema, agentAttachmentPreviewResultSchema, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
+import { PROVIDER_CONNECTION_NOTICES, providerConnectionNotice, agentAttachmentHandleSchema, agentThreadDetailResultSchema, agentAttachmentPreviewResultSchema, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import { applyAgentThreadDetailDelta } from '../../shared/agentThreadDetail'
 import type { StoredThreadEvent } from '../../shared/threadEvents'
 import { gitRefsPageSchema, type GitRefsPage, type GitRefsRequest } from '../../shared/gitRefs'
@@ -82,6 +82,9 @@ export class SocketHostService implements HostService {
   private frames: SocketFrames | undefined
   private session?: HostSession
   private cached?: AgentState
+  /** Desktop-only feedback: old v1 hosts must receive their original strict connect packet. */
+  private readonly quietConnectionNotices = new Map<string, string>()
+  private explicitConnectionGeneration = 0
   private readonly details = new Map<string, AgentThreadDetail | null>()
   private readonly storedEvents = new Map<number, StoredThreadEvent>()
   private readonly answerTargets = new Map<string, HostAnswerTarget>()
@@ -344,8 +347,12 @@ export class SocketHostService implements HostService {
     const hostId = this.session?.hostId
     if (hostId && (state.hostId !== hostId || state.host.hostId !== hostId || state.host.threads.some(thread => thread.hostId && thread.hostId !== hostId) || state.host.projects.some(project => project.hostId && project.hostId !== hostId))) throw new HostConnectionError('The host returned another host identity. Reconnect before continuing.', 'unauthenticated')
   }
+  private preserveConnectionFeedback(previous: string): void {
+    for (const text of this.quietConnectionNotices.keys()) this.quietConnectionNotices.set(text, previous)
+  }
   private publish(state: AgentState, authoritative = false): void {
     this.validateState(state)
+    if (!this.quietConnectionNotices.has(state.notice)) this.preserveConnectionFeedback(state.notice)
     delete state.clientScoped; delete state.connections
     if (authoritative) this.snapshotEpoch++
     for (let edit of this.retainedDrafts.list(this.retainedHostId())) {
@@ -402,6 +409,7 @@ export class SocketHostService implements HostService {
   shell(): AgentState {
     if (!this.cached) throw new Error('Connect to the host before reading its state.')
     const state = structuredClone(this.cached)
+    state.notice = this.quietConnectionNotices.get(state.notice) ?? state.notice
     for (const edit of this.retainedDrafts.list(this.retainedHostId())) {
       const draft = edit.saved && edit.hostDraftId ? { ...edit.draft, draftId: edit.hostDraftId } : edit.draft
       state.threadDrafts = [...(state.threadDrafts ?? []).filter(draft => draft.threadId !== edit.draft.threadId), draft]
@@ -723,8 +731,32 @@ export class SocketHostService implements HostService {
       providerId: requestDraftProvider(before.host, thread, before.configuration.provider), requestId: request.id,
       questionsDigest: requestQuestionsDigest(questions) } : undefined
     const generation = this.generation, epoch = this.snapshotEpoch
-    const operation = { op: 'command' as const, command: command.type === 'create-thread' ? { ...command, managed: false } : command }
+    let wireCommand = command
+    let quietConnectGeneration: number | undefined
+    if (command.type === 'connect') {
+      const { notice, ...connect } = command
+      wireCommand = connect
+      if (notice === false) {
+        quietConnectGeneration = this.explicitConnectionGeneration
+        this.preserveConnectionFeedback(before.notice)
+        const texts = command.provider ? [providerConnectionNotice(before, command.provider)] : PROVIDER_CONNECTION_NOTICES
+        for (const text of texts) this.quietConnectionNotices.set(text, before.notice)
+      } else this.explicitConnectionGeneration++
+    }
+    const operation = { op: 'command' as const, command: wireCommand.type === 'create-thread' ? { ...wireCommand, managed: false } : wireCommand }
     const state = this.read(protocolAgentStateSchema, await (onPlacement ? this.call(operation, commandId, onPlacement) : this.call(operation, commandId))); this.sameGeneration(generation)
+    if (command.type === 'connect' && !state.error) {
+      const text = providerConnectionNotice(state, command.provider)
+      if (quietConnectGeneration === this.explicitConnectionGeneration) {
+        const previous = this.shell().notice
+        this.preserveConnectionFeedback(previous)
+        this.quietConnectionNotices.set(text, previous)
+      } else if (command.notice !== false && state.notice === text) {
+        // A Threads success stays visible even if an earlier quiet connection acknowledges later.
+        this.preserveConnectionFeedback(text)
+        this.quietConnectionNotices.delete(text)
+      }
+    }
     if (command.type === 'preview-reclaim-thread-worktree') { this.validateState(state); return state }
     if (retainedId && 'threadId' in command && command.threadId
       && this.retainedDrafts.get(this.retainedHostId(), command.threadId)?.draft.draftId !== retainedId) {

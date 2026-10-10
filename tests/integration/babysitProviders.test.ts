@@ -6,24 +6,26 @@
  * reports a check failing, and the thread is woken with exactly one message, marked as Sotto's. Then Stop, settling and
  * the switch each end or refuse babysitting as decided.
  */
+import { testCredentials } from '../fixtures/testCredentials'
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { DEFAULT_SETTINGS, type AppSettings } from '../../src/shared/settings'
-import type { AgentCommand, AgentState, ProviderId } from '../../src/shared/agents'
-import { createAgentRuntime } from '../../src/main/agents/runtime'
-import { AgentCredentials } from '../../src/main/agents/credentials'
+
 import { desktopWindowClient } from '../../src/main/agents/hostService'
-import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { BABYSITTING_SWITCHED_OFF, PULL_REQUEST_MCP_SERVER, PullRequestToolServer } from '../../src/main/agents/pullRequestTools'
+import { createAgentRuntime } from '../../src/main/agents/runtime'
 import type { ThreadMcpServer } from '../../src/main/agents/threadToolServer'
-import { codexFixture, type RecordedRpc } from '../fixtures/codexFixture'
-import { claudeFixture } from '../fixtures/claudeFixture'
-import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
+import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
+import type { AgentCommand, AgentState, ProviderId } from '../../src/shared/agents'
+import { DEFAULT_SETTINGS, type AppSettings } from '../../src/shared/settings'
+import type { AdapterFixture, RecordedRpc } from '../fixtures/adapterFixture'
 import { scriptedGitHub, type ScriptedPull } from '../fixtures/babysitGitHub'
+import { claudeFixture } from '../fixtures/claudeFixture'
+import { codexFixture } from '../fixtures/codexFixture'
+
+import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
 import type { McpReply } from '../fixtures/visualToolCall'
-import type { AdapterFixture } from './adapterContract'
 
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { for (const fn of cleanup.splice(0).reverse()) await fn() })
@@ -63,8 +65,7 @@ async function call(server: Pick<ThreadMcpServer, 'url' | 'headers'>, name: stri
 async function stack(provider: 'codex' | 'claude' | 'grok', fixture: AdapterFixture, pulls: ScriptedPull[]) {
   const github = scriptedGitHub(pulls)
   let settings: AppSettings = { ...DEFAULT_SETTINGS }
-  const credentials = new AgentCredentials(join(fixture.root, 'vault'), { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
-  await credentials.load()
+  const credentials = await testCredentials(join(fixture.root, 'vault'), { mode: 'unavailable' })
   const directory = join(fixture.root, 'sotto')
   await mkdir(directory, { recursive: true })
   const runtime = await createAgentRuntime({

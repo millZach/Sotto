@@ -1,3 +1,4 @@
+import { setPromptText, promptText } from './helpers/promptEditor'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -6,7 +7,7 @@ import type { AgentCapabilities, AgentCommand, AgentFollowup, AgentState } from 
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
-import { liveAgentState, threadsStateFixture } from './liveAgentState'
+import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 
@@ -28,14 +29,14 @@ function mount(state: AgentState, options: Parameters<typeof liveAgentState>[1] 
   const live = liveAgentState(state, options)
   vi.mocked(useAgents).mockImplementation(live.useLive)
   const view = render(<ThreadsView now={NOW} />)
-  return { live, view, prompt: () => screen.getByRole('textbox', { name: 'Prompt' }) as HTMLTextAreaElement }
+  return { live, view, prompt: () => screen.getByRole('textbox', { name: 'Prompt' }) as HTMLElement }
 }
 
 const requests = <T extends AgentCommand['type']>(live: ReturnType<typeof liveAgentState>, type: T): Extract<AgentCommand, { type: T }>[] =>
   live.command.mock.calls.map(([request]) => request).filter((request): request is Extract<AgentCommand, { type: T }> => request.type === type)
 
-function type(prompt: HTMLTextAreaElement, value: string): void {
-  fireEvent.change(prompt, { target: { value, selectionStart: value.length, selectionEnd: value.length } })
+function type(prompt: HTMLElement, value: string): void {
+  setPromptText(prompt, value)
 }
 
 function followup(patch: Partial<AgentFollowup> & Pick<AgentFollowup, 'id' | 'text'>): AgentFollowup {
@@ -64,7 +65,7 @@ describe('queued message editor focus', () => {
     const dialog = screen.getByRole('dialog', { name: 'Edit queued message' })
     const editor = within(dialog).getByRole('textbox', { name: 'Edit queued message' })
     expect(editor).toHaveFocus()
-    expect(editor).toHaveValue('Second follow-up')
+    expect(promptText(editor)).toBe('Second follow-up')
     // The editor is not clipped by the list: its actions are not inside the list.
     expect(within(dialog).getByRole('button', { name: 'Save' }).closest('.thread-followups__list')).toBeNull()
     fireEvent.keyDown(editor, { key: 'Escape' })
@@ -81,7 +82,7 @@ describe('queued message editor focus', () => {
     const queue = screen.getByRole('region', { name: 'Queued messages' })
     fireEvent.click(within(queue).getByRole('button', { name: 'Edit queued message 1' }))
     const dialog = screen.getByRole('dialog', { name: 'Edit queued message' })
-    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'First follow-up, edited' } })
+    setPromptText(within(dialog).getByRole('textbox'), 'First follow-up, edited')
     fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(within(queue).getByText('First follow-up, edited')).toBeInTheDocument()
@@ -200,7 +201,7 @@ describe('composer admission', () => {
     fireEvent.keyDown(prompt(), { key: 'Enter' })
     expect(requests(live, 'queue-followup')).toEqual([expect.objectContaining({ text: 'Then run the audio suite' })])
     expect(requests(live, 'manual-send')).toHaveLength(1)
-    await waitFor(() => expect(prompt()).toHaveValue(''))
+    await waitFor(() => expect(promptText(prompt())).toBe(''))
     // No answer from the provider: nothing newer lines up until the user reviews it.
     act(() => live.deliver(THREAD, 'uncertain'))
     type(prompt(), 'Start the long job.')
@@ -220,7 +221,7 @@ describe('composer admission', () => {
     fireEvent.keyDown(prompt(), { key: 'Enter' })
     expect(requests(live, 'manual-send')).toEqual([])
     expect(requests(live, 'queue-followup')).toEqual([])
-    expect(prompt()).toHaveValue('Draft kept while setup failed.')
+    expect(promptText(prompt())).toBe('Draft kept while setup failed.')
     expect(screen.getByText('Available once the working folder is ready.')).toBeInTheDocument()
   })
 })
@@ -230,7 +231,7 @@ describe('composer while a turn runs', () => {
     const { live, prompt } = mount(manualState({ running: true }))
     const form = prompt().closest('form')!
     expect(form).toHaveAttribute('data-running')
-    expect(prompt().placeholder).toMatch(/is working\. Write a follow-up to queue it\.$/u)
+    expect(prompt().getAttribute('data-placeholder')).toMatch(/is working\. Write a follow-up to queue it\.$/u)
     expect(form.querySelector('.thread-prompt__status')).toBeNull()
     expect(within(form).queryByRole('button', { name: 'Queue prompt' })).not.toBeInTheDocument()
     fireEvent.click(within(form).getByRole('button', { name: 'Stop agent' }))
@@ -253,6 +254,6 @@ describe('composer while a turn runs', () => {
     const { prompt } = mount(manualState())
     expect(screen.queryByRole('button', { name: 'Stop agent' })).not.toBeInTheDocument()
     expect(prompt().closest('form')).not.toHaveAttribute('data-running')
-    expect(prompt().placeholder).toBe('What would you like to do next?')
+    expect(prompt()).toHaveAttribute('data-placeholder', 'What would you like to do next?')
   })
 })

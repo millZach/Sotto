@@ -1,6 +1,6 @@
 # Phase 3 independent review
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0065](../adr/0065-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 Two independent gpt-6-astra/high CLI reviewers assessed Standards and Spec separately against baseline `bf500b42f91cfc1bd198c2d75d62ee48ef4232a8`, with successive bounded reviews through `e5d0a53168a51dfe4ab1c5af830ca2bc90460adc`. All ten canonical Phase 3 tickets and the user's themes, icon/orb/widget and naming corrections were included. Source review, executed regressions and rendered inspection are distinguished below.
 
@@ -63,7 +63,7 @@ Source/rule checks (line numbers refer to the final source):
 
 - `src/renderer/src/features/settings/themes/ThemeEditor.tsx:252-262` captures the opener once before the name input's `autoFocus` (`:698`). Cleanup defers restoration and checks both lost focus and a connected opener. The session key (`:192`) gives each replacement its own capture. The guard preserves focus already held by a replacement editor or another control. This remains local lifecycle logic, without a material Mysterious Name, Feature Envy or Speculative Generality smell.
 - Escape, Close and Cancel converge on closing the session (`ThemeEditor.tsx:303,652-657,686,770`; `themeEditorSession.ts:39-43`). The change preserves the floating editor and draft-preview lifecycle (`ThemeEditor.tsx:245-250`), consistent with `CONTEXT.md:148` and `docs/adr/0011-main-window-themes-replace-the-accent.md:17`. Terminology respects the glossary rule in `docs/agents/domain.md:28`.
-- `tests/unit/renderer/themeLibrary.test.tsx:254-305` checks keyboard close paths, replacement focus and a detached opener. `tests/e2e/phase-three-final-visual-fixes.spec.ts:191-205` asserts name autofocus and Edit-button restoration after Escape/Close. These support the keyboard-journey acceptance rule at `docs/plans/2026-09-12-threads-workspace.md:135`.
+- `tests/unit/renderer/themeLibrary.test.tsx:254-305` checks keyboard close paths, replacement focus and a detached opener. `tests/e2e/theme-editor-and-request-layout.spec.ts:191-205` asserts name autofocus and Edit-button restoration after Escape/Close. These support the keyboard-journey acceptance rule at `docs/plans/2026-09-12-threads-workspace.md:135`.
 
 Limits: source/test inspection only. No tests, build, Electron, package or visual journeys executed; supplied red/green and mutation counts were not independently reproduced. Actual Electron close-path verification remains with root. No source edits, subagents, providers, app launch or remote writes; only this report was written.
 
@@ -78,7 +78,7 @@ Requirement: the supplied focus correction must return keyboard users to the ope
 
 Source resolution: `src/renderer/src/features/settings/themes/ThemeEditor.tsx:252–263` captures the opener during initial render, before the name input's `autoFocus` at line 698. Unmount queues restoration until removal has completed, requires BODY/null focus, and checks that the opener remains connected. Session IDs increment in `themeEditorSession.ts:34–36`; the panel is keyed by that ID (`ThemeEditor.tsx:192`), so replacement receives its own opener and retains its newly focused input. Escape, Close and Cancel converge on session closure (`ThemeEditor.tsx:303,652–657,686,770`; `themeEditorSession.ts:39–42`). No concrete missing/wrong behavior or material unasked scope creep found in this delta.
 
-Independent verification: executed `npm exec -- vitest run tests/unit/renderer/themeLibrary.test.tsx -t 'returns keyboard focus|leaves a replacing editor' --maxWorkers=1`: **2 passed, 17 excluded by filter**. Tests at lines 254–307 cover Create/Escape, Duplicate/Close, Edit/Cancel, replacement autofocus and disconnected opener. Reviewed the gallery E2E autofocus/Edit restoration assertions at `tests/e2e/phase-three-final-visual-fixes.spec.ts:194–205` as source only. Relevant reviewed/tested files match the exact SHA.
+Independent verification: executed `npm exec -- vitest run tests/unit/renderer/themeLibrary.test.tsx -t 'returns keyboard focus|leaves a replacing editor' --maxWorkers=1`: **2 passed, 17 excluded by filter**. Tests at lines 254–307 cover Create/Escape, Duplicate/Close, Edit/Cancel, replacement autofocus and disconnected opener. Reviewed the gallery E2E autofocus/Edit restoration assertions at `tests/e2e/theme-editor-and-request-layout.spec.ts:194–205` as source only. Relevant reviewed/tested files match the exact SHA.
 
 Limits: JSDOM focus verification only; no actual Electron, pointer/viewport matrix, build or package execution. Root owns those checks. Builder red/green and mutation results were supplied context, not independently reproduced. No source changes, subagents, providers, remote writes or Standards assessment.
 

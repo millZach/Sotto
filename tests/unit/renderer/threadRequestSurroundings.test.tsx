@@ -7,7 +7,7 @@ import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { requestAnswerStore } from '../../../src/renderer/src/agents/requests/requestAnswers'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
-import { liveAgentState, threadsStateFixture } from './liveAgentState'
+import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 
@@ -43,7 +43,8 @@ describe('the composer beside a pending permission', () => {
   it('sends the reader to the provider’s app when Sotto has no choice to send, without repeating itself', () => {
     mount(permissionState([]))
     const prompt = screen.getByRole('textbox', { name: 'Prompt' })
-    expect(prompt).toHaveAttribute('placeholder', 'Waiting on the request above.')
+    expect(prompt).toHaveAttribute('data-placeholder', 'Waiting on the request above.')
+    expect(prompt).toHaveAttribute('contenteditable', 'false')
     expect(prompt).toHaveAccessibleDescription(/Sending returns once the request above is answered in .+’s app\./u)
     expect(screen.queryByText(/Allow or deny/u)).not.toBeInTheDocument()
   })
@@ -51,7 +52,8 @@ describe('the composer beside a pending permission', () => {
   it.each([['native choices', CHOICES], ['legacy approval', undefined]] as const)('still asks to allow or deny with %s, once', (_name, choices) => {
     const { view } = mount(permissionState(choices))
     const prompt = screen.getByRole('textbox', { name: 'Prompt' })
-    expect(prompt).toHaveAttribute('placeholder', 'Allow or deny the request above to continue.')
+    expect(prompt).toHaveAttribute('data-placeholder', 'Allow or deny the request above to continue.')
+    expect(prompt).toHaveAttribute('aria-disabled', 'true')
     // The empty prompt already says it; the line under the model picker does not say it again.
     const form = prompt.closest('form')!
     expect(within(form).queryByText(/Allow or deny/u)).not.toBeInTheDocument()

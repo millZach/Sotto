@@ -1,27 +1,16 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
+import { agentCommand as command, agentState as state } from './support/agentAccess'
 import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { hostEntityKey } from '../../src/shared/clientIdentity'
-import type { AgentCommand, AgentCommandReceipt, AgentState } from '../../src/shared/agents'
+import type { AgentCommandReceipt, AgentState } from '../../src/shared/agents'
 import type { SottoBridge } from '../../src/shared/contracts'
 import type { SottoE2EBridge } from '../../src/shared/e2e'
 import { closeSotto, completeFirstRunSetup, launchSotto, openThreads, userMessageTexts } from './support/sottoLaunch'
 
 type BrowserGlobals = { sotto: SottoBridge; sottoE2E: SottoE2EBridge }
-async function command(page: Page, value: AgentCommand): Promise<AgentCommandReceipt> {
-  return page.evaluate(async request => {
-    const bridge = (globalThis as unknown as BrowserGlobals).sotto.agents
-    if (!bridge) throw new Error('Agent bridge unavailable')
-    return bridge.command(request)
-  }, value)
-}
-async function state(page: Page): Promise<AgentState> {
-  return page.evaluate(async () => {
-    const bridge = (globalThis as unknown as BrowserGlobals).sotto.agents
-    if (!bridge) throw new Error('Agent bridge unavailable')
-    return bridge.get()
-  })
-}
+
 async function event(page: Page, value: Parameters<NonNullable<SottoE2EBridge['agentEvent']>>[0]): Promise<void> {
   await page.evaluate(async data => { await (globalThis as unknown as BrowserGlobals).sottoE2E.agentEvent?.(data) }, value)
 }
@@ -88,16 +77,16 @@ test('retains a rejected prompt and allows a deliberate retry after refreshing t
   try {
     await onboard(page)
     await page.getByRole('button', { name: 'Workshop', exact: true }).click()
-    await page.getByLabel('Prompt', { exact: true }).fill('Retry this only after I ask.')
+    await fillPrompt(promptField(page), 'Retry this only after I ask.')
     await event(page, { type: 'reject', threadId: 'workshop', text: 'The provider rejected the request before starting a turn.' })
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
     await expect(page.getByRole('alert')).toContainText('The provider rejected the request')
-    await expect(page.getByLabel('Prompt', { exact: true })).toHaveValue('Retry this only after I ask.')
+    await expectPromptText(promptField(page), 'Retry this only after I ask.')
     expect(await userMessageTexts(page, 'workshop')).toHaveLength(0)
 
     await command(page, { type: 'refresh' })
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
-    await expect(page.getByLabel('Prompt', { exact: true })).toHaveValue('')
+    await expectPromptText(promptField(page), '')
     // The manual composer clears on submission; wait for the provider to confirm the retry.
     await expect.poll(() => userMessageTexts(page, 'workshop')).toEqual(['Retry this only after I ask.'])
     const snapshot = await state(page)

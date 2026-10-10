@@ -1,6 +1,6 @@
 # Phase 3 #54: multi-pane thread layouts
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0065](../adr/0065-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 Verified on Windows 11, September 13, 2026, on `work/phase3-layout` from baseline `bf500b4`. The production Electron build ran through `tests/e2e/support/sottoLaunch.ts` with the `design-threads` fixture providers and owned temporary E2E profiles. No native provider turns were used, and no user profile was opened.
 

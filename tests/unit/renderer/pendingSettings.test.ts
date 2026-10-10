@@ -1,19 +1,18 @@
+// @vitest-environment node
+import { deferred } from '../../fixtures/deferred'
+import { threadsStateFixture } from '../../fixtures/agentState'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defaultAgentConfiguration, PROVIDER_REJECTED_ACTION, type AgentState, type AgentThread } from '../../../src/shared/agents'
 import { CONFIRMED_HOLD_MS, PendingSettingsStore, unconfirmedKinds, type SendSettings, type SettingValues } from '../../../src/renderer/src/agents/pendingSettings'
 
 const caps = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true }
 function state(thread: Partial<AgentThread> = {}, error: string | null = null, unconfirmed?: AgentState['unconfirmedSettings']): AgentState {
-  return {
-    configuration: defaultAgentConfiguration(), connection: 'connected',
+  return threadsStateFixture({ cloneOverrides: false,
+    configuration: defaultAgentConfiguration(),
     host: { connected: true, name: 'Providers', version: '', capabilities: caps, projects: [],
       models: [{ id: 'model', name: 'Model', provider: 'Codex', providerId: 'codex', ready: true, reasoningEfforts: ['low', 'high'], defaultReasoningEffort: 'low', runtimeModes: ['approval-required', 'full-access'] }],
       threads: [{ id: 'thread', providerId: 'codex', projectId: 'project', title: 'Work', modelId: 'model', status: 'idle', messages: [], requests: [], runtimeMode: 'approval-required', ...thread }] },
-    activeThreadId: 'thread', activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false,
-    globalLaneBusy: false, notice: '', error,
-    credentials: { reasoning: false, secure: true }, reasoningAccounts: [],
-    ...(unconfirmed ? { unconfirmedSettings: unconfirmed } : {}),
-  }
+    topLevel: { activeThreadId: 'thread', activeProjectId: null, error, ...(unconfirmed ? { unconfirmedSettings: unconfirmed } : {}) } })
 }
 const drawn = (permissions: string, effort = 'low'): SettingValues => ({ model: 'model', effort, permissions })
 const settle = async (): Promise<void> => { for (let index = 0; index < 5; index += 1) await Promise.resolve() }
@@ -98,7 +97,7 @@ describe('pending settings store', () => {
     const store = new PendingSettingsStore()
     let release!: () => void
     const send = vi.fn<SendSettings>(async request => {
-      await new Promise<void>(done => { release = done })
+      await (() => { const pending = deferred<void>(); release = pending.resolve; return pending.promise })()
       return state({ runtimeMode: request.runtimeMode! })
     })
     store.press('thread', 'permissions', 'full-access', { runtimeMode: 'full-access' }, send, drawn('approval-required'))

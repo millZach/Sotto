@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { deferred } from '../fixtures/deferred'
 import { randomUUID } from 'node:crypto'
 import { basename, dirname, join, resolve } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -57,9 +58,7 @@ const nativeProcessStopped = async (): Promise<boolean> => {
   try { process.kill(pid, 0); return false } catch (error) { return (error as NodeJS.ErrnoException).code === 'ESRCH' }
 }
 function delayedProfile() {
-  let resolve!: (value: CommandCenterLaunchProfile | undefined) => void
-  let reject!: (error: Error) => void
-  const promise = new Promise<CommandCenterLaunchProfile | undefined>((accept, refuse) => { resolve = accept; reject = refuse })
+  const { promise: promise, resolve: resolve, reject: reject } = deferred<CommandCenterLaunchProfile | undefined>()
   return { promise, resolve, reject }
 }
 

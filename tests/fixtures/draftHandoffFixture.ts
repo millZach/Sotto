@@ -1,11 +1,12 @@
 // Shared controller/store boundary for draft handoff regressions. All storage/provider effects are synthetic.
+import { createAgentControl } from './agentControlFixture'
+import { testCredentials } from './testCredentials'
 import { randomUUID } from 'node:crypto'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import type { BindRequestDraftDecision } from '../../src/main/agents/requestDrafts'
-import { AgentControl } from '../../src/main/agents/control'
-import { AgentCredentials } from '../../src/main/agents/credentials'
+
 import { E2EAgentHost } from '../../src/main/e2e/agentEffects'
 import type { AgentHostCommand } from '../../src/main/agents/host'
 import type { Authority } from '../../src/main/agents/authority'
@@ -20,10 +21,9 @@ export async function draftHandoffFixture(bindRequestDraftDecision?: BindRequest
   const attempts: AgentHostCommand[] = []
   const execute = host.execute.bind(host)
   host.execute = command => { attempts.push(command); return execute(command) }
-  const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: text => text.toString() })
-  await credentials.load()
+  const credentials = await testCredentials(root, { mode: 'unavailable' })
   let history = true
-  const create = () => new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, ...(bindRequestDraftDecision ? { bindRequestDraftDecision } : {}), ...(authority ? { authority } : {}), historyEnabled: () => history,
+  const create = () => createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, ...(bindRequestDraftDecision ? { bindRequestDraftDecision } : {}), ...(authority ? { authority } : {}), historyEnabled: () => history,
     reasoner: {},
   })
   let control = create(); await control.start(); await stageInto(control, PIXEL_PNG); await control.command({ type: 'connect' }); await control.command({ type: 'select-thread', threadId: 'workshop' })

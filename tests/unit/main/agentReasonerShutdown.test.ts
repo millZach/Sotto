@@ -2,11 +2,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { type SubscriptionAccount } from '../../../src/shared/agents'
 import { ConfiguredAgentReasoner } from '../../../src/main/agents/reasoning'
+import { deferred } from '../../fixtures/deferred'
 
-function deferred() {
-  let release!: () => void
-  return { promise: new Promise<void>(resolve => { release = resolve }), release }
-}
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe('reasoning runtime shutdown', () => {
@@ -14,8 +11,8 @@ describe('reasoning runtime shutdown', () => {
   it('cancels account discovery and drains it before reporting closure', async () => {
     const started = deferred(), cancelled = deferred(), cleanup = deferred()
     const status = vi.fn(async (signal?: AbortSignal): Promise<SubscriptionAccount> => {
-      started.release()
-      await new Promise<void>(resolve => signal!.addEventListener('abort', () => { cancelled.release(); resolve() }, { once: true }))
+      started.resolve()
+      await new Promise<void>(resolve => signal!.addEventListener('abort', () => { cancelled.resolve(); resolve() }, { once: true }))
       await cleanup.promise
       // Native status adapters may report unavailable after a canceled probe. The reasoner
       // still rejects the stale observation instead of publishing it after shutdown.
@@ -30,7 +27,7 @@ describe('reasoning runtime shutdown', () => {
     await cancelled.promise
     await new Promise<void>(resolve => setImmediate(resolve))
     expect(closed).toBe(false)
-    cleanup.release()
+    cleanup.resolve()
     await closing
     await rejected
     await expect(reasoner.account('grok')).rejects.toThrow('Sotto reasoning stopped.')

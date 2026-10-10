@@ -48,7 +48,7 @@ async function time(work: () => unknown): Promise<number> {
   return round(median(samples), 3)
 }
 
-describe.skipIf(!PERF_BENCH)('command receipt size', () => {
+describe.skipIf(!PERF_BENCH)("command receipt size (timing benchmark; requires SOTTO_PERF_BENCH=1)", () => {
   let root = ''
   let dispose: (() => void) | undefined
   afterAll(async () => {

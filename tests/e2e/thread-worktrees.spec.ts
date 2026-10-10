@@ -1,29 +1,21 @@
-import { execFileSync } from 'node:child_process'
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
+import { initializeGitRepository, initializeBareGitRepository } from '../fixtures/gitRepository'
+import { commitFile, e2eGit as git } from './support/git'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { resizeContentWindow } from './support/sottoWindow'
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, openPage, openThreads, userMessageTexts, type LaunchedSotto } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
-const SHOTS = 'artifacts/new-thread-setup'
+const SHOTS = evidenceDirectory('artifacts/new-thread-setup')
 /** The host reads these folders on its own timer, and Git's index lock is held for a moment each time; a test command that meets it tries again. */
-const git = (cwd: string, ...args: string[]): string => {
-  for (let attempt = 0; ; attempt += 1) {
-    try { return execFileSync('git', ['-c', 'user.name=Sotto E2E', '-c', 'user.email=e2e@sotto.invalid', '-c', 'init.defaultBranch=main', '-c', 'core.autocrlf=false', ...args], { cwd, encoding: 'utf8', windowsHide: true }).trim() }
-    catch (error) {
-      if (attempt >= 30 || !/index\.lock/u.test(error instanceof Error ? error.message : '')) throw error
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100)
-    }
-  }
-}
+
 const sameFolder = (left: string, right: string): boolean => left.replace(/[\\/]+$/, '').replace(/\\/gu, '/').toLowerCase() === right.replace(/[\\/]+$/, '').replace(/\\/gu, '/').toLowerCase()
 const countWorktrees = (repo: string): number => git(repo, 'worktree', 'list', '--porcelain').split('\n').filter(line => line.startsWith('worktree ')).length
-async function commitFile(repo: string, name: string, text: string): Promise<void> {
-  await writeFile(join(repo, name), text)
-  git(repo, 'add', name)
-  git(repo, 'commit', '-q', '-m', `Add ${name}`)
-}
+
 async function activeThread(page: Page) {
   return page.evaluate(async () => {
     const state = await window.sotto!.agents!.get()
@@ -31,12 +23,7 @@ async function activeThread(page: Page) {
   })
 }
 async function resize(launched: LaunchedSotto, width: number, height: number): Promise<void> {
-  await launched.app.evaluate(({ BrowserWindow }, size) => {
-    const window = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!
-    window.setMinimumSize(800, 540)
-    window.setContentSize(size.width, size.height)
-  }, { width, height })
-  await expect.poll(() => launched.page.evaluate(() => `${innerWidth}x${innerHeight}`)).toBe(`${width}x${height}`)
+  await resizeContentWindow(launched, width, height, [800, 540])
 }
 /** The chooser at each size, appearance and motion setting; there is no options form left to check (issue #347). */
 async function captureMatrix(launched: LaunchedSotto, dialog: Locator): Promise<void> {
@@ -115,8 +102,8 @@ async function createByKeyboard(page: Page, project: string, title: string, inde
 }
 async function send(page: Page, text: string): Promise<void> {
   const id = (await activeThread(page)).id
-  const prompt = page.getByRole('textbox', { name: 'Prompt', exact: true })
-  await prompt.fill(text)
+  const prompt = promptField(page)
+  await fillPrompt(prompt, text)
   await prompt.press('Enter')
   await expect.poll(() => userMessageTexts(page, id)).toContain(text)
   await page.evaluate(async threadId => window.sottoE2E!.agentEvent!({ type: 'ready', threadId, status: 'idle', text: 'Fixture turn completed.' }), id)
@@ -139,10 +126,9 @@ async function launch(folders: readonly (readonly [string, string])[]): Promise<
 
 test('shared checkout is the default; independent worktrees are lazy, editable and reusable', async () => {
   test.setTimeout(180_000)
-  const root = await mkdtemp(join(tmpdir(), 'sotto-e2e-worktrees-')), repo = join(root, 'repo-app')
+  const root = (await ownedE2EProfile({ prefix: 'sotto-e2e-worktrees-' })).directory, repo = join(root, 'repo-app')
   await mkdir(repo)
-  git(repo, 'init', '-q')
-  await commitFile(repo, 'README.md', 'Committed checkout\n')
+  await initializeGitRepository(repo, { files: { 'README.md': 'Committed checkout\n' }, message: 'Add README.md', identity: { name: 'Sotto E2E', email: 'e2e@sotto.invalid' } })
   git(repo, 'branch', 'release')
   await writeFile(join(repo, 'README.md'), 'Uncommitted project edit\n')
   const initialWorktrees = git(repo, 'worktree', 'list', '--porcelain'), initialBranches = git(repo, 'branch', '--format=%(refname)')
@@ -201,7 +187,7 @@ test('shared checkout is the default; independent worktrees are lazy, editable a
     await expect.poll(() => git(repo, 'branch', '--show-current')).toBe('release')
     await expect(toolbar(page).getByRole('combobox', { name: 'Choose branch', exact: true })).toHaveText(/release/)
     await expect(page.getByRole('button', { name: 'Working copy: release', exact: true })).toBeVisible()
-    await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Still no notice after a switch made here.')
+    await fillPrompt(promptField(page), 'Still no notice after a switch made here.')
     await expect(page.locator('.branch-notice')).toHaveCount(0)
     await expect.poll(async () => (await activeThread(page)).worktree?.sentBranch).toBe('release')
     // Create new ref: a name nothing matches becomes a branch from HEAD, checked out.
@@ -222,7 +208,7 @@ test('shared checkout is the default; independent worktrees are lazy, editable a
     await expect(page.locator('.thread-workspace__error')).toHaveCount(0) // said once, under the row, not again by the pane
     expect(git(repo, 'branch', '--show-current')).toBe('main')
     expect(await readFile(join(repo, 'README.md'), 'utf8')).toBe('Uncommitted project edit\n')
-    await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('')
+    await fillPrompt(promptField(page), '')
     await createByKeyboard(page, 'repo-app', 'Shared second')
     expect(sameFolder((await activeThread(page)).workingDirectory!, repo)).toBe(true)
     expect(git(repo, 'worktree', 'list', '--porcelain')).toBe(initialWorktrees)
@@ -292,7 +278,7 @@ ${initialBranches}`) // only the picker's own branch was added
     await details.press('Escape')
 
     git(worktreePath, 'checkout', '-q', '-b', 'feat/task-branch')
-    await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Continue on the task branch.')
+    await fillPrompt(promptField(page), 'Continue on the task branch.')
     await expect(page.getByRole('button', { name: 'Working copy: feat/task-branch', exact: true })).toBeVisible()
     await expect(page.locator('.branch-notice')).toHaveCount(0)
     await send(page, 'Continue on the task branch.')
@@ -322,16 +308,15 @@ ${initialBranches}`) // only the picker's own branch was added
     await expect.poll(async () => sameFolder((await activeThread(page)).workingDirectory!, independent.workingDirectory!)).toBe(true)
   } finally {
     if (launched) await closeSotto(launched)
-    await rm(root, { recursive: true, force: true })
+    await removeOwnedE2EProfile(root)
   }
 })
 
 test('shared branch notices survive pane remount dismissal and restore safely with a draft', async () => {
   test.setTimeout(120_000)
-  const root = await mkdtemp(join(tmpdir(), 'sotto-e2e-branch-notices-')), repo = join(root, 'repo-app')
+  const root = (await ownedE2EProfile({ prefix: 'sotto-e2e-branch-notices-' })).directory, repo = join(root, 'repo-app')
   await mkdir(repo)
-  git(repo, 'init', '-q')
-  await commitFile(repo, 'README.md', 'Original checkout\n')
+  await initializeGitRepository(repo, { files: { 'README.md': 'Original checkout\n' }, message: 'Add README.md', identity: { name: 'Sotto E2E', email: 'e2e@sotto.invalid' } })
   let launched: LaunchedSotto | undefined
   try {
     launched = await launch([['repo-app', repo]])
@@ -339,8 +324,8 @@ test('shared branch notices survive pane remount dismissal and restore safely wi
     await createByKeyboard(page, 'repo-app', 'Shared branch task')
     await send(page, 'First turn on main.')
     git(repo, 'checkout', '-q', '-b', 'feat/other-task')
-    const prompt = page.getByRole('textbox', { name: 'Prompt', exact: true })
-    await prompt.fill('Keep this draft while inspecting the checkout.')
+    const prompt = promptField(page)
+    await fillPrompt(prompt, 'Keep this draft while inspecting the checkout.')
     const notice = page.locator('.branch-notice')
     await expect(notice).toContainText('Branch changed, was main.')
     await mkdir(SHOTS, { recursive: true })
@@ -348,7 +333,7 @@ test('shared branch notices survive pane remount dismissal and restore safely wi
     await notice.getByRole('button', { name: 'Dismiss the branch notice', exact: true }).click()
     await openPage(page, 'Settings')
     await openThreads(page)
-    await expect(prompt).toHaveValue('Keep this draft while inspecting the checkout.')
+    await expectPromptText(prompt, 'Keep this draft while inspecting the checkout.')
     await expect(notice).toHaveCount(0)
     git(repo, 'checkout', '-q', '-b', 'feat/another-task')
     await page.evaluate(() => window.dispatchEvent(new Event('focus')))
@@ -361,31 +346,31 @@ test('shared branch notices survive pane remount dismissal and restore safely wi
     await page.screenshot({ path: `${SHOTS}/dirty-branch-confirmation.png`, animations: 'disabled' })
     await confirmation.getByRole('button', { name: 'Keep this branch', exact: true }).click()
     expect(git(repo, 'branch', '--show-current')).toBe('feat/another-task')
-    await expect(prompt).toHaveValue('Keep this draft while inspecting the checkout.')
+    await expectPromptText(prompt, 'Keep this draft while inspecting the checkout.')
     await notice.getByRole('button', { name: 'Restore branch main', exact: true }).click()
     await confirmation.getByRole('button', { name: 'Switch branch', exact: true }).click()
     await expect(notice).toHaveCount(0)
     expect(git(repo, 'branch', '--show-current')).toBe('main')
     expect(await readFile(join(repo, 'README.md'), 'utf8')).toBe('Uncommitted changes survive a restore\n')
-    await expect(prompt).toHaveValue('Keep this draft while inspecting the checkout.')
+    await expectPromptText(prompt, 'Keep this draft while inspecting the checkout.')
     git(repo, 'checkout', '-q', 'feat/other-task')
     await page.evaluate(() => window.dispatchEvent(new Event('focus')))
     await send(page, 'Adopt the current shared checkout.')
     expect((await activeThread(page)).worktree?.sentBranch).toBe('feat/other-task')
     git(repo, 'checkout', '-q', '--detach')
-    await prompt.fill('Detached checkout remains usable.')
+    await fillPrompt(prompt, 'Detached checkout remains usable.')
     await page.evaluate(() => window.dispatchEvent(new Event('focus')))
     await expect(page.getByRole('button', { name: 'Working copy: Detached HEAD', exact: true })).toBeVisible()
     await expect(notice).toHaveCount(0)
   } finally {
     if (launched) await closeSotto(launched)
-    await rm(root, { recursive: true, force: true })
+    await removeOwnedE2EProfile(root)
   }
 })
 
 test('failed first-send setup preserves the draft and retries without dispatching twice', async () => {
   test.setTimeout(120_000)
-  const root = await mkdtemp(join(tmpdir(), 'sotto-e2e-worktree-retry-')), fresh = join(root, 'fresh-repo'), plain = join(root, 'plain-notes')
+  const root = (await ownedE2EProfile({ prefix: 'sotto-e2e-worktree-retry-' })).directory, fresh = join(root, 'fresh-repo'), plain = join(root, 'plain-notes')
   await mkdir(fresh); await mkdir(plain)
   git(fresh, 'init', '-q')
   let launched: LaunchedSotto | undefined
@@ -398,37 +383,36 @@ test('failed first-send setup preserves the draft and retries without dispatchin
     expect(existsSync(join(plain, '.git'))).toBe(false)
     await createByKeyboard(page, 'fresh-repo', 'Fresh task', true)
     await expect(page.locator('.working-copy-notice')).toHaveCount(0)
-    const prompt = page.getByRole('textbox', { name: 'Prompt', exact: true })
-    await prompt.fill('Draft kept after failed setup.')
+    const prompt = promptField(page)
+    await fillPrompt(prompt, 'Draft kept after failed setup.')
     await prompt.press('Enter')
     const notice = page.getByRole('alert').filter({ hasText: 'Worktree not ready.' })
     await expect(notice).toBeVisible()
     const failed = await activeThread(page)
     expect(failed).toMatchObject({ nativeSessionStarted: false, worktree: { status: 'error' } })
     expect(await userMessageTexts(page, failed.id)).toEqual([])
-    await expect(prompt).toHaveValue('Draft kept after failed setup.')
+    await expectPromptText(prompt, 'Draft kept after failed setup.')
     await commitFile(fresh, 'START.md', 'First commit\n')
     await notice.getByRole('button', { name: 'Retry setup', exact: true }).focus()
     await page.keyboard.press('Enter')
     await expect(notice).toHaveCount(0)
-    await expect(prompt).toHaveValue('Draft kept after failed setup.')
+    await expectPromptText(prompt, 'Draft kept after failed setup.')
     expect(await userMessageTexts(page, failed.id)).toEqual([])
     await send(page, 'Draft kept after failed setup.')
     expect(await userMessageTexts(page, failed.id)).toEqual(['Draft kept after failed setup.'])
     expect(countWorktrees(fresh)).toBe(2)
   } finally {
     if (launched) await closeSotto(launched)
-    await rm(root, { recursive: true, force: true })
+    await removeOwnedE2EProfile(root)
   }
 })
 
-const RECLAIM_SHOTS = 'artifacts/reclaim-worktrees'
+const RECLAIM_SHOTS = evidenceDirectory('artifacts/reclaim-worktrees')
 test('a worktree can be reclaimed from the pane or on settle, keeps its branch, and comes back on the next send', async () => {
   test.setTimeout(180_000)
-  const root = await mkdtemp(join(tmpdir(), 'sotto-e2e-reclaim-')), repo = join(root, 'repo-app')
+  const root = (await ownedE2EProfile({ prefix: 'sotto-e2e-reclaim-' })).directory, repo = join(root, 'repo-app')
   await mkdir(repo)
-  git(repo, 'init', '-q')
-  await commitFile(repo, 'README.md', 'Committed checkout\n')
+  await initializeGitRepository(repo, { files: { 'README.md': 'Committed checkout\n' }, message: 'Add README.md', identity: { name: 'Sotto E2E', email: 'e2e@sotto.invalid' } })
   await commitFile(repo, '.gitignore', 'node_modules/\n.env\n.local/\n.worktrees/\n')
   let launched: LaunchedSotto | undefined
   try {
@@ -530,8 +514,7 @@ test('a worktree can be reclaimed from the pane or on settle, keeps its branch, 
     // Nested work is named plainly and goes only after the separate tick.
     const nested = join(worktreePath, '.worktrees', 'n')
     await mkdir(nested, { recursive: true })
-    git(nested, 'init', '-q')
-    await commitFile(nested, 'saved.txt', 'committed nested history')
+    await initializeGitRepository(nested, { files: { 'saved.txt': 'committed nested history' }, message: 'Add saved.txt', identity: { name: 'Sotto E2E', email: 'e2e@sotto.invalid' } })
     await writeFile(join(nested, 'unsaved.txt'), 'nested uncommitted work')
     await details.getByRole('button', { name: 'Remove worktree folder, keeping its branch', exact: true }).click()
     await expect(question).toContainText('Nested repository · 1 uncommitted change · 1 commit not on any remote')
@@ -602,21 +585,19 @@ test('a worktree can be reclaimed from the pane or on settle, keeps its branch, 
     expect(git(repo, 'branch', '--list', branch)).toContain(branch)
   } finally {
     if (launched) await closeSotto(launched)
-    await rm(root, { recursive: true, force: true })
+    await removeOwnedE2EProfile(root)
   }
 })
 
 test('clean submodule branch and tag history is listed and requires the tick in both removal questions', async () => {
   test.setTimeout(120_000)
-  const root = await mkdtemp(join(tmpdir(), 'sotto-e2e-submodule-history-')), repo = join(root, 'repo-app'), origin = join(root, 'module-origin'), childOrigin = join(root, 'child-origin')
+  const root = (await ownedE2EProfile({ prefix: 'sotto-e2e-submodule-history-' })).directory, repo = join(root, 'repo-app'), origin = join(root, 'module-origin'), childOrigin = join(root, 'child-origin')
   await mkdir(repo); await mkdir(origin); await mkdir(childOrigin)
-  git(repo, 'init', '-q'); git(origin, 'init', '-q'); git(childOrigin, 'init', '-q')
   // The app's own Git reads the repository's config, so its worktree checks files out the way this test's Git does
   // rather than by the machine's global line-ending setting; the status checks below compare the two.
-  git(repo, 'config', 'core.autocrlf', 'false')
-  await commitFile(repo, 'README.md', 'Parent checkout\n')
-  await commitFile(origin, 'module.txt', 'Published module\n')
-  await commitFile(childOrigin, 'child.txt', 'Published child\n')
+  await initializeGitRepository(repo, { files: { 'README.md': 'Parent checkout\n' }, message: 'Add README.md', identity: { name: 'Sotto E2E', email: 'e2e@sotto.invalid' } })
+  await initializeGitRepository(origin, { files: { 'module.txt': 'Published module\n' }, message: 'Add module.txt', identity: { name: 'Sotto E2E', email: 'e2e@sotto.invalid' } })
+  await initializeGitRepository(childOrigin, { files: { 'child.txt': 'Published child\n' }, message: 'Add child.txt', identity: { name: 'Sotto E2E', email: 'e2e@sotto.invalid' } })
   git(origin, '-c', 'protocol.file.allow=always', 'submodule', 'add', childOrigin, 'child')
   git(origin, 'commit', '-q', '-am', 'Add child module')
   git(repo, '-c', 'protocol.file.allow=always', 'submodule', 'add', origin, 'module')
@@ -721,21 +702,23 @@ test('clean submodule branch and tag history is listed and requires the tick in 
     expect(git(repo, 'branch', '--list', branch)).toContain(branch)
   } finally {
     if (launched) await closeSotto(launched)
-    await rm(root, { recursive: true, force: true })
+    await removeOwnedE2EProfile(root)
   }
 })
 
-/** Every run writes here (ignored); the images the verification note names are copied to artifacts/worktree-origin-fallback/. */
-const ORIGIN_SHOTS = 'artifacts/worktree-origin-fallback-run'
+/**
+ * The images the verification note names are copied to artifacts/worktree-origin-fallback/.
+ * See "E2e evidence" in docs/ci.md for default, publish and root override paths.
+ */
+const ORIGIN_SHOTS = evidenceDirectory('artifacts/worktree-origin-fallback-run')
 test('a new worktree with Start from origin on starts from the local branch when origin does not have it, and says so', async () => {
   test.setTimeout(120_000)
   // A repository with a real origin that has main, and a local-only branch the shared folder is left on: the case
   // the shared-checkout default makes common, and the one that used to refuse setup (ADR-0014, #328).
-  const root = await mkdtemp(join(tmpdir(), 'sotto-e2e-origin-fallback-')), repo = join(root, 'repo-app'), remote = join(root, 'origin.git')
+  const root = (await ownedE2EProfile({ prefix: 'sotto-e2e-origin-fallback-' })).directory, repo = join(root, 'repo-app'), remote = join(root, 'origin.git')
   await mkdir(repo); await mkdir(remote)
-  git(repo, 'init', '-q', '-b', 'main')
-  await commitFile(repo, 'README.md', 'Committed checkout\n')
-  git(remote, 'init', '-q', '--bare')
+  await initializeGitRepository(repo, { files: { 'README.md': 'Committed checkout\n' }, message: 'Add README.md', identity: { name: 'Sotto E2E', email: 'e2e@sotto.invalid' } })
+  await initializeBareGitRepository(remote, { identity: { name: 'Sotto E2E', email: 'e2e@sotto.invalid' } })
   git(repo, 'remote', 'add', 'origin', remote)
   git(repo, 'push', '-q', 'origin', 'main')
   git(repo, 'checkout', '-q', '-b', 'feat/local-only')
@@ -772,6 +755,6 @@ test('a new worktree with Start from origin on starts from the local branch when
     await expect(page.getByRole('status').filter({ hasText: 'was not found' })).toHaveCount(0)
   } finally {
     if (launched) await closeSotto(launched)
-    await rm(root, { recursive: true, force: true })
+    await removeOwnedE2EProfile(root)
   }
 })

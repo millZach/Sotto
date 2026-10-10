@@ -1,12 +1,16 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
+import { agentState } from './support/agentAccess'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { defaultAgentConfiguration } from '../../src/shared/agents'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { hostKeys } from './support/hostKeys'
 import { closeSotto, launchSotto, openThreads, userMessageTexts, type LaunchedSotto } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
+
+const evidence = evidenceDirectory('artifacts/crossing')
 
 async function size(launched: LaunchedSotto, width: number, height = 1000): Promise<void> {
   await launched.app.evaluate(({ BrowserWindow }, [width, height]) => {
@@ -22,7 +26,7 @@ async function capture(page: Page, name: string): Promise<void> {
   for (const appearance of ['dark', 'light'] as const) {
     await page.evaluate(async mode => window.sotto!.updateSettings({ appearance: mode, accent: 'teal' }), appearance)
     await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
-    await page.screenshot({ path: `artifacts/crossing/split-${name}-${appearance}.png`, animations: 'disabled' })
+    await page.screenshot({ path: join(evidence, `split-${name}-${appearance}.png`), animations: 'disabled' })
   }
   await page.evaluate(async () => window.sotto!.updateSettings({ appearance: 'dark', accent: 'teal' }))
 }
@@ -31,7 +35,7 @@ const threadStatus = (page: Page, id: string) => page.evaluate(async threadId =>
 
 test('two threads split the workspace and stay independent through resize, narrow focus and close', async () => {
   test.setTimeout(120_000)
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-split-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-split-' })).directory
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'dark', accent: 'teal' }))
   await writeFile(join(profile, 'agents.json'), JSON.stringify({
     configuration: { ...defaultAgentConfiguration(), enabled: true, },
@@ -60,14 +64,14 @@ test('two threads split the workspace and stay independent through resize, narro
     await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5, { steps: 4 })
     await page.mouse.move(box.x + box.width * 0.78, box.y + box.height * 0.5, { steps: 8 })
     await expect(page.getByText('Open on the right', { exact: true })).toBeVisible()
-    await page.screenshot({ path: 'artifacts/crossing/split-drop-target-dark.png', animations: 'disabled' })
+    await page.screenshot({ path: join(evidence, 'split-drop-target-dark.png'), animations: 'disabled' })
     await page.mouse.up()
 
     const footer = panes.locator(`section.thread-pane[data-thread-id="${key('footer-links')}"]`)
     await expect(panes.getByRole('region', { name: 'Footer links', exact: true })).toBeVisible()
     await expect(panes.locator('section.thread-pane[role="region"]:not([data-hidden])')).toHaveCount(2)
     await expect(footer).toHaveAttribute('data-focused')
-    await expect.poll(async () => (await page.evaluate(async () => window.sotto!.agents!.get())).activeThreadId).toBe(key('footer-links'))
+    await expect.poll(async () => (await agentState(page)).activeThreadId).toBe(key('footer-links'))
     const divider = page.getByRole('separator', { name: 'Resize panes' })
     await expect(divider).toHaveAttribute('aria-valuenow', '50')
     const [left, right] = [(await previews.boundingBox())!, (await footer.boundingBox())!]
@@ -78,24 +82,22 @@ test('two threads split the workspace and stay independent through resize, narro
 
     // Each pane writes to its own thread; a send in one leaves the other's draft where it was.
     await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'ready', threadId: 'footer-links', text: 'Footer links are ready for review.' }))
-    const previewsPrompt = previews.getByRole('textbox', { name: 'Prompt', exact: true })
-    const footerPrompt = footer.getByRole('textbox', { name: 'Prompt', exact: true })
-    await previewsPrompt.fill('Keep this draft with the previews thread.')
+    const previewsPrompt = promptField(previews)
+    const footerPrompt = promptField(footer)
+    await fillPrompt(previewsPrompt, 'Keep this draft with the previews thread.')
     await expect(previews).toHaveAttribute('data-focused')
-    await footerPrompt.fill('Check the footer link targets.')
+    await fillPrompt(footerPrompt, 'Check the footer link targets.')
     await expect(footer).toHaveAttribute('data-focused')
     await footerPrompt.press('Enter')
     await expect(footer.getByLabel('Thread transcript')).toContainText('Check the footer link targets.')
     await expect(previews.getByLabel('Thread transcript')).not.toContainText('Check the footer link targets.')
-    await expect(previewsPrompt).toHaveValue('Keep this draft with the previews thread.')
-    await expect(footerPrompt).toHaveValue('')
-
-    await page.evaluate(async () => window.sotto!.agents!.get())
+    await expectPromptText(previewsPrompt, 'Keep this draft with the previews thread.')
+    await expectPromptText(footerPrompt, '')
     await expect.poll(async () => (await userMessageTexts(page, 'footer-links')).filter(text => text === 'Check the footer link targets.')).toHaveLength(1)
     expect((await userMessageTexts(page, 'grok-previews')).some(text => text.includes('footer link targets'))).toBe(false)
 
     await expect.poll(() => threadStatus(page, key('footer-links'))).toBe('running')
-    await footerPrompt.fill('Next: compare the mobile footer.')
+    await fillPrompt(footerPrompt, 'Next: compare the mobile footer.')
     await capture(page, 'two-panes')
 
     // Keyboard resize, then F6 between panes.
@@ -103,12 +105,12 @@ test('two threads split the workspace and stay independent through resize, narro
     await page.keyboard.press('ArrowRight')
     await page.keyboard.press('ArrowRight')
     await expect(divider).toHaveAttribute('aria-valuenow', '60')
-    await page.screenshot({ path: 'artifacts/crossing/split-divider-focus-dark.png', animations: 'disabled' })
+    await page.screenshot({ path: join(evidence, 'split-divider-focus-dark.png'), animations: 'disabled' })
     await footerPrompt.focus()
     await page.keyboard.press('F6')
     await expect(previewsPrompt).toBeFocused()
     await expect(previews).toHaveAttribute('data-focused')
-    await expect.poll(async () => (await page.evaluate(async () => window.sotto!.agents!.get())).activeThreadId).toBe(key('grok-previews'))
+    await expect.poll(async () => (await agentState(page)).activeThreadId).toBe(key('grok-previews'))
 
     // The shipped minimum width shows one pane at a time and keeps the arrangement for later.
     await size(launched, 820, 800)
@@ -120,25 +122,25 @@ test('two threads split the workspace and stay independent through resize, narro
     await capture(page, 'narrow-focus')
     await tabs.getByRole('tab', { name: 'Footer links' }).click()
     await expect(footerPrompt).toBeVisible()
-    await expect(footerPrompt).toHaveValue('Next: compare the mobile footer.')
+    await expectPromptText(footerPrompt, 'Next: compare the mobile footer.')
     await expect(previewsPrompt).toBeHidden()
     await size(launched, 760, 760)
-    await page.screenshot({ path: 'artifacts/crossing/split-narrow-760-dark.png', animations: 'disabled' })
+    await page.screenshot({ path: join(evidence, 'split-narrow-760-dark.png'), animations: 'disabled' })
     await size(launched, 1600)
     await expect(divider).toHaveAttribute('aria-valuenow', '60')
-    await expect(previewsPrompt).toHaveValue('Keep this draft with the previews thread.')
+    await expectPromptText(previewsPrompt, 'Keep this draft with the previews thread.')
 
     // Closing a pane closes the view only: the agent keeps running and the thread stays in the sidebar.
     await footer.getByRole('button', { name: 'Close Footer links pane' }).click()
     await expect(panes.locator('section.thread-pane[role="region"]:not([data-hidden])')).toHaveCount(1)
     await expect(divider).toHaveCount(0)
     expect(await threadStatus(page, key('footer-links'))).toBe('running')
-    await expect.poll(async () => (await page.evaluate(async () => window.sotto!.agents!.get())).activeThreadId).toBe(key('grok-previews'))
+    await expect.poll(async () => (await agentState(page)).activeThreadId).toBe(key('grok-previews'))
     await expect(sidebar.getByRole('button', { name: 'Footer links', exact: true })).toBeVisible()
     await sidebar.getByRole('button', { name: 'Footer links', exact: true }).hover()
     await sidebar.getByRole('button', { name: 'Open Footer links beside', exact: true }).click()
     await expect(panes.locator('section.thread-pane[role="region"]:not([data-hidden])')).toHaveCount(2)
-    await expect(footerPrompt).toHaveValue('Next: compare the mobile footer.')
+    await expectPromptText(footerPrompt, 'Next: compare the mobile footer.')
 
     // Larger text scaling at a typical laptop width.
     await size(launched, 1280, 900)
@@ -149,10 +151,10 @@ test('two threads split the workspace and stay independent through resize, narro
     await expect(footer.getByRole('button', { name: 'Close Footer links pane' })).toBeInViewport()
     // Playwright's capture does not follow Electron's zoom factor, so the window captures itself.
     const zoomed = await launched.app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!.webContents.capturePage()).toPNG().toString('base64'))
-    await writeFile('artifacts/crossing/split-scale-125-dark.png', Buffer.from(zoomed, 'base64'))
+    await writeFile(join(evidence, 'split-scale-125-dark.png'), Buffer.from(zoomed, 'base64'))
     await launched.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!.webContents.setZoomFactor(1))
   } finally {
     await closeSotto(launched)
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 })

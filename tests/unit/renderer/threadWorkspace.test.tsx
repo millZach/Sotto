@@ -1,3 +1,5 @@
+import { setPromptText, promptText } from './helpers/promptEditor'
+import { deferred } from '../../fixtures/deferred'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -10,8 +12,8 @@ import { sendThreadRevision } from '../../../src/renderer/src/agents/ThreadCompo
 import { ThreadDraftStore, submissionStatus } from '../../../src/renderer/src/agents/threadDraftStore'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { describeThreads, organizeWorkspace } from '../../../src/renderer/src/agents/threadFacts'
-import { liveAgentState, threadsStateFixture } from './liveAgentState'
-import { openPaneMenu, paneMenuItem } from './paneMenu'
+import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
+import { openPaneMenu, paneMenuItem } from '../../fixtures/renderer/paneMenu'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 
@@ -61,7 +63,7 @@ describe('Threads manual composer', () => {
     const row = describeThreads(state, NOW).find(item => item.thread.id === state.activeThreadId)!
     let answer!: (state: AgentState | null) => void
     const command = vi.fn(async (request: AgentCommand): Promise<AgentState | null> => request.type === 'queue-followup'
-      ? new Promise(done => { answer = done }) : state)
+      ? (() => { const pending = deferred<AgentState | null>(); answer = pending.resolve; return pending.promise })() : state)
     const store = new ThreadDraftStore(command)
     store.edit(row.thread.id, { text: 'Already queued' })
     const draft = store.draft(row.thread.id)
@@ -117,10 +119,10 @@ describe('Threads manual composer', () => {
     expect(live.command).toHaveBeenLastCalledWith({ type: 'refresh', provider: 'claude' })
     // A fresh page has no local submission text to use. Clearing the current
     // draft must not remove the independent durable recovery action either.
-    fireEvent.change(prompt(), { target: { value: '' } })
+    setPromptText(prompt(), '')
     view.unmount()
     render(<ThreadsView now={NOW} />)
-    expect(prompt()).toHaveValue('')
+    expect(promptText(prompt())).toBe('')
     expect(check()).toBeEnabled()
     act(() => live.publish({ host: { ...live.state.host, providers: live.state.host.providers!.map(provider => provider.id === 'claude' ? { ...provider, connection: 'disconnected' } : provider) } }))
     // Disconnected, the pending line points to the one Reconnect the pane's More menu offers.
@@ -143,13 +145,13 @@ describe('Threads manual composer', () => {
       }
       return original(request)
     })
-    fireEvent.change(prompt(), { target: { value: 'Possibly delivered' } })
+    setPromptText(prompt(), 'Possibly delivered')
     fireEvent.keyDown(prompt(), { key: 'Enter' })
     await screen.findByRole('button', { name: 'Check again' })
     expect(screen.getByLabelText('Pending message')).toHaveTextContent('Unconfirmed')
     expect(screen.getByLabelText('Pending message')).not.toHaveTextContent('Not sent')
     expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
-    fireEvent.change(prompt(), { target: { value: 'Keep newer text' } })
+    setPromptText(prompt(), 'Keep newer text')
     view.unmount()
     render(<ThreadsView now={NOW} />)
     fireEvent.keyDown(prompt(), { key: 'Enter' })
@@ -160,22 +162,23 @@ describe('Threads manual composer', () => {
     const draftId = live.sentDraftId('grok-previews')
     act(() => live.publish({ deliveredDrafts: [{ threadId: 'grok-previews', draftId }] }))
     expect(screen.queryByLabelText('Pending message')).not.toBeInTheDocument()
-    expect(prompt()).toHaveValue('Keep newer text')
+    expect(promptText(prompt())).toBe('Keep newer text')
     expect(screen.getByRole('button', { name: 'Send prompt' })).toBeEnabled()
   })
 
   it('sends with Enter, shows the pending message at once and ignores IME and open-menu Enter', () => {
     const { live, prompt } = mount(manualState())
-    fireEvent.change(prompt(), { target: { value: 'Ship the preview' } })
+    setPromptText(prompt(), 'Ship the preview')
     expect(fireEvent.keyDown(prompt(), { key: 'Enter', keyCode: 229 })).toBe(true)
     prompt().setAttribute('aria-expanded', 'true')
     fireEvent.keyDown(prompt(), { key: 'Enter' })
     prompt().removeAttribute('aria-expanded')
-    expect(fireEvent.keyDown(prompt(), { key: 'Enter', shiftKey: true })).toBe(true)
+    expect(fireEvent.keyDown(prompt(), { key: 'Enter', shiftKey: true })).toBe(false)
+    expect(promptText(prompt())).toBe('Ship the preview\n')
     expect(live.manualSends()).toBe(0)
     expect(fireEvent.keyDown(prompt(), { key: 'Enter' })).toBe(false)
     expect(screen.getByLabelText('Pending message')).toHaveTextContent('Ship the preview')
-    expect(live.command).toHaveBeenCalledWith({ type: 'manual-send', threadId: 'grok-previews', draftId: expect.any(String), text: 'Ship the preview' })
+    expect(live.command).toHaveBeenCalledWith({ type: 'manual-send', threadId: 'grok-previews', draftId: expect.any(String), text: 'Ship the preview\n' })
     // Main saves the revision as it admits the send, so no draft save goes in front of it.
     const send = live.command.mock.calls.findIndex(([request]) => request.type === 'manual-send')
     expect(live.command.mock.calls.slice(0, send).some(([request]) => request.type === 'save-thread-draft')).toBe(false)
@@ -184,53 +187,53 @@ describe('Threads manual composer', () => {
 
   it('keeps edits made during a pending send and clears nothing when the earlier prompt is accepted', async () => {
     const { live, prompt } = mount(manualState())
-    fireEvent.change(prompt(), { target: { value: 'First prompt' } })
+    setPromptText(prompt(), 'First prompt')
     fireEvent.keyDown(prompt(), { key: 'Enter' })
-    fireEvent.change(prompt(), { target: { value: 'Second thought while it sends' } })
+    setPromptText(prompt(), 'Second thought while it sends')
     act(() => live.deliver('grok-previews', 'accepted', 'First prompt'))
     await waitFor(() => expect(screen.queryByLabelText('Pending message')).not.toBeInTheDocument())
-    expect(prompt()).toHaveValue('Second thought while it sends')
+    expect(promptText(prompt())).toBe('Second thought while it sends')
     expect(screen.getByLabelText('Thread transcript')).toHaveTextContent('First prompt')
   })
 
   it('empties the composer on the press and leaves it empty when the revision is accepted', async () => {
     const { live, prompt } = mount(manualState())
-    fireEvent.change(prompt(), { target: { value: 'Only prompt' } })
+    setPromptText(prompt(), 'Only prompt')
     fireEvent.click(screen.getByRole('button', { name: 'Send prompt' }))
-    expect(prompt()).toHaveValue('')
+    expect(promptText(prompt())).toBe('')
     expect(screen.getByLabelText('Pending message')).toHaveTextContent('Only prompt')
     act(() => live.deliver('grok-previews', 'accepted', 'Only prompt'))
     await waitFor(() => expect(screen.queryByLabelText('Pending message')).not.toBeInTheDocument())
-    expect(prompt()).toHaveValue('')
+    expect(promptText(prompt())).toBe('')
   })
 
   it('offers Retry for a failed send under its own revision, whatever the composer holds', async () => {
     const { live, prompt } = mount(manualState())
-    fireEvent.change(prompt(), { target: { value: 'Try this' } })
+    setPromptText(prompt(), 'Try this')
     fireEvent.keyDown(prompt(), { key: 'Enter' })
     const draftId = live.sentDraftId('grok-previews')
     act(() => live.deliver('grok-previews', 'failed'))
     await waitFor(() => expect(screen.getByLabelText('Pending message')).toHaveTextContent('Not sent'))
     expect(screen.getByRole('alert')).toHaveTextContent('It is back in the composer.')
     // The refusal put the prompt back in the composer, and retrying takes it out again.
-    expect(prompt()).toHaveValue('Try this')
+    expect(promptText(prompt())).toBe('Try this')
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
-    expect(prompt()).toHaveValue('')
+    expect(promptText(prompt())).toBe('')
     expect(live.manualSends()).toBe(2)
     expect(live.sentDraftId('grok-previews')).toBe(draftId)
     act(() => live.deliver('grok-previews', 'failed'))
     await waitFor(() => expect(screen.getByRole('button', { name: 'Retry' })).toBeVisible())
-    fireEvent.change(prompt(), { target: { value: 'Try this instead' } })
+    setPromptText(prompt(), 'Try this instead')
     expect(screen.getByRole('button', { name: 'Retry' })).toBeVisible()
     expect(screen.getByLabelText('Pending message')).toHaveTextContent('Restoring it replaces the draft in the composer.')
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
     expect(screen.queryByLabelText('Pending message')).not.toBeInTheDocument()
-    expect(prompt()).toHaveValue('Try this instead')
+    expect(promptText(prompt())).toBe('Try this instead')
   })
 
   it('announces a rejected send once when delivery status arrives before its command receipt', async () => {
     const { live, prompt } = mount(manualState())
-    fireEvent.change(prompt(), { target: { value: 'Keep this rejected prompt' } })
+    setPromptText(prompt(), 'Keep this rejected prompt')
     fireEvent.keyDown(prompt(), { key: 'Enter' })
     act(() => { live.publish({
       error: 'The provider rejected this action.',
@@ -241,16 +244,16 @@ describe('Threads manual composer', () => {
     act(() => live.deliver('grok-previews', 'failed'))
     await waitFor(() => expect(within(screen.getByLabelText('Pending message')).getByRole('alert')).toHaveTextContent('The provider rejected this action.'))
     expect(screen.getAllByRole('alert')).toHaveLength(1)
-    expect(prompt()).toHaveValue('Keep this rejected prompt')
+    expect(promptText(prompt())).toBe('Keep this rejected prompt')
   })
 
   it('never resends an unconfirmed prompt: it offers Check again, or Reconnect when disconnected', async () => {
     const { live, prompt } = mount(manualState())
-    fireEvent.change(prompt(), { target: { value: 'Maybe delivered' } })
+    setPromptText(prompt(), 'Maybe delivered')
     fireEvent.keyDown(prompt(), { key: 'Enter' })
     act(() => live.deliver('grok-previews', 'uncertain'))
     await waitFor(() => expect(screen.getByLabelText('Pending message')).toHaveTextContent('Unconfirmed'))
-    fireEvent.change(prompt(), { target: { value: 'A new prompt' } })
+    setPromptText(prompt(), 'A new prompt')
     expect(fireEvent.keyDown(prompt(), { key: 'Enter' })).toBe(false)
     expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
@@ -266,12 +269,12 @@ describe('Threads manual composer', () => {
     fireEvent.click(within(menu).getByRole('menuitem', { name: 'Reconnect' }))
     expect(live.command).toHaveBeenLastCalledWith({ type: 'connect' })
     expect(live.manualSends()).toBe(1)
-    expect(prompt()).toHaveValue('A new prompt')
+    expect(promptText(prompt())).toBe('A new prompt')
   })
 
   it('does not repeat an unconfirmed prompt that already appears in the provider history', async () => {
     const { live, prompt } = mount(manualState())
-    fireEvent.change(prompt(), { target: { value: 'Maybe delivered' } })
+    setPromptText(prompt(), 'Maybe delivered')
     fireEvent.keyDown(prompt(), { key: 'Enter' })
     act(() => live.deliver('grok-previews', 'uncertain'))
     const draftId = live.sentDraftId('grok-previews')
@@ -292,19 +295,19 @@ describe('Threads manual composer', () => {
 
   it('keeps each thread’s draft across navigation and a new window', async () => {
     const { live, prompt, view } = mount(manualState())
-    fireEvent.change(prompt(), { target: { value: 'Draft for previews' } })
+    setPromptText(prompt(), 'Draft for previews')
     act(() => { live.publish({ activeThreadId: 'wav-stall' }) })
     // Leaving the thread saved it without waiting for the debounce.
     expect(live.command).toHaveBeenCalledWith(expect.objectContaining({ type: 'save-thread-draft', threadId: 'grok-previews', text: 'Draft for previews' }))
-    expect(prompt()).toHaveValue('')
-    fireEvent.change(prompt(), { target: { value: 'Draft for the stall' } })
+    expect(promptText(prompt())).toBe('')
+    setPromptText(prompt(), 'Draft for the stall')
     act(() => { live.publish({ activeThreadId: 'grok-previews' }) })
-    expect(prompt()).toHaveValue('Draft for previews')
+    expect(promptText(prompt())).toBe('Draft for previews')
     view.unmount()
     render(<ThreadsView now={NOW} />)
-    expect(prompt()).toHaveValue('Draft for previews')
+    expect(promptText(prompt())).toBe('Draft for previews')
     act(() => { live.publish({ activeThreadId: 'wav-stall' }) })
-    await waitFor(() => expect(prompt()).toHaveValue('Draft for the stall'))
+    await waitFor(() => expect(promptText(prompt())).toBe('Draft for the stall'))
   })
 
   it('queues by default while a turn runs and says so, even with an empty composer', () => {
@@ -329,7 +332,7 @@ describe('Threads manual composer', () => {
 
     const { live } = mount(state)
     const answer = screen.getByRole('textbox', { name: 'Your answer' })
-    fireEvent.change(answer, { target: { value: 'Go left' } })
+    setPromptText(answer, 'Go left')
     fireEvent.keyDown(answer, { key: 'Enter' })
     expect(live.command).toHaveBeenCalledWith(expect.objectContaining({ type: 'save-thread-draft', threadId: 'visual-gate', text: 'Go left', requestId: 'direction' }))
     await waitFor(() => expect(live.command).toHaveBeenCalledWith({ type: 'answer', threadId: 'visual-gate', requestId: 'direction', answer: 'Go left' }))
@@ -340,7 +343,7 @@ describe('Threads manual composer', () => {
     const state = manualState()
     state.host.connected = false
     const { prompt } = mount(state)
-    fireEvent.change(prompt(), { target: { value: 'Later' } })
+    setPromptText(prompt(), 'Later')
     expect(prompt()).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
     expect(screen.getByText('Reconnect to send. Your draft stays here.')).toBeVisible()
@@ -352,9 +355,9 @@ describe('Threads manual composer', () => {
     const state = manualState()
     state.host.threads = state.host.threads.map(thread => ({ ...thread, clientConnected: false, clientReconnecting: true }))
     const { prompt } = mount(state)
-    fireEvent.change(prompt(), { target: { value: 'After the update' } })
+    setPromptText(prompt(), 'After the update')
     expect(prompt()).toBeEnabled()
-    expect(prompt()).toHaveValue('After the update')
+    expect(promptText(prompt())).toBe('After the update')
     expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
     expect(screen.getByText('Its host is restarting after an update. Your draft stays here.')).toBeVisible()
   })
@@ -533,7 +536,6 @@ describe('Thread transcript scrolling', () => {
     await waitFor(() => { expect(live.command).toHaveBeenCalledWith({ type: 'load-earlier-messages', threadId: 'grok-previews' }) })
   })
 })
-
 
 it('shows a history save notice on its thread while keeping its composer available', () => {
   const state = manualState()

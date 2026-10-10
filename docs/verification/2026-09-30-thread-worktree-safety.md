@@ -1,6 +1,6 @@
 # Thread worktree removal, restore and setup recovery
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0065](../adr/0065-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 Package pkg-03: #485 (S-003), #506 (S-026), #507 (S-027). Windows verification uses real Git, synthetic projects, a fixture provider and the built Electron app. No personal profile or live provider was used. Actual macOS execution remains unverified.
 
@@ -101,7 +101,7 @@ The independent Spec review found that deinitialization leaves the module Git di
 The expanded Electron case checks deinitialization in the pane and Settle questions too. It initially caught a confirmation-record key-order mismatch after command validation; retained rows now use the same field order as existing repository rows. The rebuilt journey passed in 22.2 seconds after that fix. No deadline or assertion was weakened. The coordinator guide's obsolete cache-file sentence was corrected to the binding file-count rule. The reviewers' shared confirmation-type refactor suggestion remains outside this safety batch.
 
 
-The fresh full run on `59a8fce6` passed 6,660 tests with 153 skipped and one failure: `workspace.test.ts` waited only one second for its branch-name writer to start. The unchanged file passed all 41 tests in isolation. Comparing with current main showed that an earlier integration had replaced main's explicit fixture start signals in two naming cases with polls. Those two signals were restored exactly from main, retaining all assertions and the normal whole-test deadline. No production naming behavior changed.
+The fresh full run on `59a8fce6` passed 6,660 tests with 153 skipped and one failure: a branch-naming case now in `tests/integration/workspaceBranchNaming.test.ts` waited only one second for its branch-name writer to start. The original combined workspace file passed all 41 tests in isolation. Comparing with current main showed that an earlier integration had replaced main's explicit fixture start signals in two naming cases with polls. Those two signals were restored exactly from main, retaining all assertions and the normal whole-test deadline. No production naming behavior changed.
 
 The next full run hit the default 15-second ceiling in five new multi-step real-Git submodule scenarios while four worktrees ran full suites on the shared machine. Running those same five scenarios with a 60-second ceiling passed all five in 51.2 seconds of test execution. Those scenarios now have a 60-second failure ceiling for fixture creation and repeated removal checks; assertions and production deadlines are unchanged. The superseded full run was stopped before restarting on current main.
 

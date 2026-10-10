@@ -1,16 +1,19 @@
+import { promptField } from './support/prompt'
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, openThreads, resizeWindow } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 /**
  * The terminal drawer in a thread pane: its own shells in the thread's working copy, apart from the Tools
  * panel's terminal, kept running while hidden, and Ctrl+J from inside the shell and back. With
  * SOTTO_PANE_TERMINAL_EVIDENCE=1 it also saves the drawer at the three verified window sizes, in dark and light,
- * to artifacts/pane-terminal.
+ * to artifacts/e2e-runs/pane-terminal/ by default. SOTTO_E2E_EVIDENCE=publish refreshes the committed
+ * artifacts/pane-terminal/ (unless SOTTO_E2E_ARTIFACT_ROOT overrides the destination).
  */
 const evidence = process.env.SOTTO_PANE_TERMINAL_EVIDENCE === '1'
-const SHOTS = resolve('artifacts/pane-terminal')
+const SHOTS = evidenceDirectory('artifacts/pane-terminal')
 
 async function drawerSessions(page: Page, threadId: string, place: 'drawer' | 'tools'): Promise<Array<{ id: string; status: string }>> {
   return page.evaluate(async ({ thread, where }) => {
@@ -70,7 +73,7 @@ test('a pane opens its own terminal below the composer, keeps it running while h
     await input.pressSequentially('Write-Output ("unsent" + "-line")')
     await page.keyboard.press('Control+KeyJ')
     await expect(drawer).toHaveCount(0)
-    await expect(pane.locator('.thread-workspace__compose textarea')).toBeFocused()
+    await expect(promptField(pane)).toBeFocused()
     expect((await drawerSessions(page, threadId, 'drawer')).map(session => session.status)).toEqual(['running'])
 
     // And again from the composer: the drawer comes back with the same shell and takes focus.

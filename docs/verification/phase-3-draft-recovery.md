@@ -1,5 +1,7 @@
 # Draft recovery corrections
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 Verified September 13, 2026 in `work/phase3-draft-recovery`, based on `c7b2b549db5b1ed68a111612ed71ca1ff98ef96a`. Production source and regressions: `a8e3a931a17dc0b4d4f332d14602662bf50a4456`, then `81d0c8aa3700d86f2f2fcc5c83e715d9df0f8deb`.
 
 This corrects two Spec P2 findings in the earlier [answer-draft verification](phase-3-answer-drafts.md). That earlier Electron restart fixture reintroduced questions. It did not demonstrate recovering answers after Codex shutdown declines and clears native pending requests.
@@ -22,12 +24,12 @@ Personal history-disabled redaction retains only safe recovery metadata (IDs, de
 
 ## Verification
 
-The pre-fix command `npx vitest run tests/unit/main/requestDrafts.test.ts --maxWorkers=1` reproduced both losses: changed-definition reconciliation wrote an empty draft array, and a legacy personal receipt erased the newer held answer during submitting. Both assertions now pass.
+The pre-fix command `npx vitest run tests/unit/main/requestDraftPersistence.test.ts tests/unit/main/requestDraftDelivery.test.ts tests/unit/main/requestDraftLegacyPrivacy.test.ts tests/unit/main/requestDraftRetirement.test.ts --maxWorkers=1` reproduced both losses: changed-definition reconciliation wrote an empty draft array, and a legacy personal receipt erased the newer held answer during submitting. Both assertions now pass.
 
 Final scoped run: **262 tests passed in 11 files**, no skips. Both TypeScript projects, ESLint for all changed TS/TSX files, and `git diff --check` passed.
 
 ```powershell
-npx vitest run tests/unit/main/requestDrafts.test.ts tests/unit/main/requestDraftIpc.test.ts tests/unit/preload/requestDrafts.test.ts tests/unit/renderer/requests tests/integration/requestDraftDelivery.test.ts tests/integration/personalChatAnswerPrivacy.test.ts tests/unit/main/agentControlRecovery.test.ts tests/integration/draftManagementHandoff.test.ts tests/integration/ipc.test.ts --maxWorkers=1
+npx vitest run tests/unit/main/requestDraftPersistence.test.ts tests/unit/main/requestDraftDelivery.test.ts tests/unit/main/requestDraftLegacyPrivacy.test.ts tests/unit/main/requestDraftRetirement.test.ts tests/unit/main/requestDraftIpc.test.ts tests/unit/preload/requestDrafts.test.ts tests/unit/renderer/requests tests/integration/requestDraftDelivery.test.ts tests/integration/personalChatAnswerPrivacy.test.ts tests/unit/main/agentProviderConfigurationRecovery.test.ts tests/unit/main/agentCompositionNavigation.test.ts tests/unit/main/agentCoordinatorGate.test.ts tests/unit/main/agentSupervisionRecovery.test.ts tests/unit/main/agentQuestionDraftRecovery.test.ts tests/unit/main/agentClarificationRecovery.test.ts tests/integration/draftManagementHandoff.test.ts tests/integration/preloadBridge.test.ts tests/integration/ipcAuthorization.test.ts tests/integration/transcriptionIpc.test.ts tests/integration/updateIpc.test.ts tests/integration/settingsHistoryIpc.test.ts tests/integration/outputIpc.test.ts tests/integration/ipcLifecycle.test.ts tests/integration/widgetPresentationIpc.test.ts tests/unit/main/app/permissionPolicy.test.ts tests/unit/main/startupServiceIdempotence.test.ts tests/unit/main/tray/trayController.test.ts tests/unit/main/app/bootstrap.test.ts tests/unit/main/app/nativeRuntime.test.ts --maxWorkers=1
 npm run typecheck
 ```
 

@@ -1,34 +1,32 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-
 import { expect, test, type Page } from '@playwright/test'
-
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { type E2EScenario } from '../../src/shared/e2e'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../src/shared/settings'
 import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 /**
  * Rendered evidence for ticket #73 that the pixel gate does not hold: the
  * native select popup, the widget staying on its own scheme, overlays and the
  * Threads page in the light room, and how quickly a choice repaints. Run with
- * SOTTO_APPEARANCE_EVIDENCE=1 after `npm run build`; images land in
+ * SOTTO_APPEARANCE_EVIDENCE=1 after `npm run build`; images use disposable run evidence by default; publication uses
  * artifacts/verification/phase-1-appearance.
  */
 const enabled = process.env.SOTTO_APPEARANCE_EVIDENCE === '1'
 /** Screen captures include whatever covers Sotto's window, so they need their own opt-in. */
 const screenCaptureEnabled = process.env.SOTTO_APPEARANCE_SCREEN_CAPTURE === '1'
-const evidenceRoot = resolve(process.cwd(), 'artifacts/verification/phase-1-appearance')
+const evidenceRoot = evidenceDirectory('artifacts/verification/phase-1-appearance')
 
 async function withProfile(
   settings: Partial<AppSettings>,
   run: (launched: LaunchedSotto) => Promise<void>,
   options: { readonly scenario?: E2EScenario; readonly threads?: boolean } = {},
 ): Promise<void> {
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-appearance-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-appearance-' })).directory
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, ...settings }), 'utf8')
-  // The Agents room is hidden for the beta, so the evidence that records it asks for the coordinator by name.
+  // Threads captures start with the fixture host connected.
   if (options.threads === true) {
     await writeFile(join(profile, 'agents.json'), JSON.stringify({
       configuration: { provider: 'codex', enabled: true, projectsDirectory: '', defaultModelId: 'claude:sonnet', reasoning: 'none', reasoningModel: '', reasoningEffort: '', },
@@ -42,7 +40,7 @@ async function withProfile(
     await run(launched)
   } finally {
     if (launched !== undefined) await closeSotto(launched)
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 }
 

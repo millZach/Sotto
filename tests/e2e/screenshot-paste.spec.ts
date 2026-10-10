@@ -1,6 +1,12 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
+import { agentState } from './support/agentAccess'
+import { join } from 'node:path'
+import { evidenceDirectory } from '../fixtures/evidence'
 import { readFile } from 'node:fs/promises'
 import { expect, test } from '@playwright/test'
 import { closeSotto, launchSotto, openThreads } from './support/sottoLaunch'
+
+const evidence = evidenceDirectory('artifacts/codex-images')
 
 test('pasting screenshots previews, sends image-only input, and queues another screenshot', async () => {
   test.setTimeout(60_000)
@@ -15,7 +21,7 @@ test('pasting screenshots previews, sends image-only input, and queues another s
     })
     await page.reload(); await openThreads(page)
     await page.getByRole('button', { name: 'Workshop', exact: true }).click()
-    const prompt = page.getByRole('textbox', { name: 'Prompt', exact: true })
+    const prompt = promptField(page)
     const paste = async (name: string) => {
       await prompt.evaluate((element, data) => {
         const transfer = new DataTransfer()
@@ -26,7 +32,7 @@ test('pasting screenshots previews, sends image-only input, and queues another s
     }
     await expect(page.getByRole('button', { name: 'Attach screenshots', exact: true })).toBeEnabled()
     await paste('Screenshot.png')
-    await expect(prompt).toHaveValue('')
+    await expectPromptText(prompt, '')
     await page.emulateMedia({ reducedMotion: 'reduce' })
     for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]]) {
       await launched.app.evaluate(({ BrowserWindow }, size) => {
@@ -37,7 +43,7 @@ test('pasting screenshots previews, sends image-only input, and queues another s
         await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
         await expect(page.getByRole('button', { name: 'Send prompt', exact: true })).toBeInViewport()
         await expect(page.getByLabel('Attached screenshots').getByAltText('Screenshot.png')).toBeInViewport()
-        await page.screenshot({ path: `artifacts/codex-images/pasted-${width}-${appearance}.png`, animations: 'disabled' })
+        await page.screenshot({ path: join(evidence, `pasted-${width}-${appearance}.png`), animations: 'disabled' })
       }
     }
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
@@ -45,13 +51,13 @@ test('pasting screenshots previews, sends image-only input, and queues another s
     await expect(transcript.getByAltText('Screenshot.png')).toBeVisible()
     await expect(page.getByLabel('Attached screenshots')).toHaveCount(0)
     await paste('Next screenshot.png')
-    await prompt.fill('Check this next.')
+    await fillPrompt(prompt, 'Check this next.')
     await prompt.press('Enter')
     const queue = page.getByRole('region', { name: 'Queued messages' })
     await expect(queue).toContainText('Check this next.')
-    const state = await page.evaluate(async () => window.sotto!.agents!.get())
+    const state = await agentState(page)
     expect(state.followups).toContainEqual(expect.objectContaining({ attachments: [expect.objectContaining({ name: 'Next screenshot.png' })] }))
     expect(state).not.toHaveProperty('assignments')
-    await page.screenshot({ path: 'artifacts/codex-images/sent-and-queued.png', animations: 'disabled' })
+    await page.screenshot({ path: join(evidence, 'sent-and-queued.png'), animations: 'disabled' })
   } finally { await closeSotto(launched) }
 })

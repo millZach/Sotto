@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { deferred } from '../fixtures/deferred'
 import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -128,7 +129,7 @@ describe('the sign-in on the host', () => {
     // could spawn. The older one ends without running a client (a start that answers "ended" never spawned), the newer one runs.
     const lookups: (() => void)[] = []
     const fake = fakeSignInCommand(root)
-    const slow = (provider: ProviderId) => new Promise<void>(resolve => { lookups.push(resolve) }).then(() => fake(provider))
+    const slow = (provider: ProviderId) => (() => { const pending = deferred<void>(); lookups.push(pending.resolve); return pending.promise })().then(() => fake(provider))
     const service = new ProviderSignIns({ command: slow, connect: async () => undefined })
     try {
       const first = service.start('codex', 'desktop'), second = service.start('codex', 'desktop')

@@ -15,8 +15,10 @@ export async function verifyTerminalAssets(options = {}) {
   if (metadata.version !== '1.1.0') throw new Error('Terminal asset version drift')
   const required = platform === 'win32'
     ? ['conpty.node', 'conpty_console_list.node', 'conpty/conpty.dll', 'conpty/OpenConsole.exe', 'pty.node', 'winpty.dll', 'winpty-agent.exe']
-    : ['pty.node', 'spawn-helper']
-  const directory = join(root, 'prebuilds', `${platform}-${arch}`)
+    : platform === 'linux' ? ['pty.node'] : ['pty.node', 'spawn-helper']
+  const directory = platform === 'linux'
+    ? join(root, 'build', 'Release')
+    : join(root, 'prebuilds', `${platform}-${arch}`)
   for (const file of required) {
     const info = await lstat(join(directory, file))
     if (!info.isFile() || info.isSymbolicLink() || info.size === 0) throw new Error(`Invalid terminal asset: ${file}`)

@@ -1,3 +1,5 @@
+import { deferred } from '../../../fixtures/deferred'
+import { threadsStateFixture } from '../../../fixtures/agentState'
 import React from 'react'
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -44,7 +46,9 @@ function mount(options: { detail?: GitPullRequestRead | ((request: { reference?:
   const writeText = vi.fn(async () => undefined)
   vi.stubGlobal('sotto', { agents: { gitPullRequest }, openExternalLink })
   vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
-  const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => ({ notice: 'Pull request merged.', error: null, ...options.result }) as AgentState)
+  const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => threadsStateFixture({ cloneOverrides: false,
+    host: { projects: [], threads: [], models: [] },
+    topLevel: { activeThreadId: null, activeProjectId: null, notice: 'Pull request merged.', ...options.result } , ...options.result}))
   const onStatus = vi.fn()
   const view = render(<PullRequestSurface thread={options.thread ?? thread()} command={command} onStatus={onStatus} babysit={options.babysit} />)
   return { ...view, command, gitPullRequest, openExternalLink, writeText, onStatus }
@@ -438,7 +442,9 @@ describe('the Pull request surface', () => {
   it('puts focus back on the pull request when a press settles its line and takes its button away', async () => {
     let ready = false
     const { command } = mount({ detail: () => detail({ draft: !ready }) })
-    command.mockImplementation(async () => { ready = true; return { notice: 'Marked ready for review.', error: null } as unknown as AgentState })
+    command.mockImplementation(async () => { ready = true; return threadsStateFixture({ cloneOverrides: false,
+    host: { projects: [], threads: [], models: [] },
+    topLevel: { activeThreadId: null, activeProjectId: null, notice: 'Marked ready for review.' } }) })
     await opened()
     const press = within(lines()[4]!).getByRole('button', { name: 'Ready for review' })
     press.focus()
@@ -449,7 +455,7 @@ describe('the Pull request surface', () => {
   it('keeps every press off until GitHub has been read again after one, so nothing is pressed twice over the old reading', async () => {
     let answer: ((value: GitPullRequestDetail) => void) | null = null
     let reads = 0
-    const { command } = mount({ detail: (() => { reads += 1; return reads === 1 ? detail({ behindBy: 2 }) : new Promise<GitPullRequestDetail>(resolve => { answer = resolve }) }) as never })
+    const { command } = mount({ detail: (() => { reads += 1; return reads === 1 ? detail({ behindBy: 2 }) : (() => { const pending = deferred<GitPullRequestDetail>(); answer = pending.resolve; return pending.promise })() }) as never })
     await opened()
     fireEvent.click(screen.getByRole('button', { name: 'Update branch' }))
     await waitFor(() => expect(reads).toBe(2))
@@ -557,7 +563,7 @@ describe('babysitting the pull request shown (ADR-0061, variant C)', () => {
   it('holds Stop while a press is under way without taking focus from it', async () => {
     let answer!: (state: AgentState) => void
     const { command } = mount({ babysit: { agent: 'Codex' }, thread: babysat('user') })
-    command.mockImplementation(() => new Promise(resolve => { answer = resolve }))
+    command.mockImplementation(() => { const pending = deferred<AgentState>(); answer = pending.resolve; return pending.promise })
     await opened()
     const stop = screen.getByRole('button', { name: 'Stop babysitting #74' })
     stop.focus()
@@ -567,13 +573,15 @@ describe('babysitting the pull request shown (ADR-0061, variant C)', () => {
     expect(stop).toHaveFocus()
     fireEvent.click(stop)
     expect(command).toHaveBeenCalledTimes(1)
-    await act(async () => { answer({ notice: 'Stopped.', error: null } as AgentState) })
+    await act(async () => { answer(threadsStateFixture({ cloneOverrides: false,
+    host: { projects: [], threads: [], models: [] },
+    topLevel: { activeThreadId: null, activeProjectId: null, notice: 'Stopped.' } })) })
   })
 
   it('leaves focus where the user moved it while a slow Stop was under way', async () => {
     let answer!: (state: AgentState) => void
     const { command, onStatus } = mount({ babysit: { agent: 'Codex' }, thread: babysat('user') })
-    command.mockImplementation(() => new Promise(resolve => { answer = resolve }))
+    command.mockImplementation(() => { const pending = deferred<AgentState>(); answer = pending.resolve; return pending.promise })
     await opened()
     const stop = screen.getByRole('button', { name: 'Stop babysitting #74' })
     stop.focus()
@@ -585,7 +593,9 @@ describe('babysitting the pull request shown (ADR-0061, variant C)', () => {
     document.body.append(composer)
     try {
       composer.focus()
-      await act(async () => { answer({ notice: 'Stopped babysitting PR #74.', error: null } as AgentState) })
+      await act(async () => { answer(threadsStateFixture({ cloneOverrides: false,
+    host: { projects: [], threads: [], models: [] },
+    topLevel: { activeThreadId: null, activeProjectId: null, notice: 'Stopped babysitting PR #74.' } })) })
       await waitFor(() => expect(onStatus).toHaveBeenCalledWith('Stopped babysitting #74'))
       await act(async () => { await new Promise(resolve => requestAnimationFrame(() => resolve(undefined))) })
       expect(composer).toHaveFocus()

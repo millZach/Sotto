@@ -1,3 +1,5 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
+import { agentState } from './support/agentAccess'
 import { createHash } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { cpus } from 'node:os'
@@ -66,12 +68,12 @@ async function seed(page: Page): Promise<void> {
       } })
   }, { ids: IDS, records: RECORDS, outputBytes: OUTPUT_BYTES })
   await expect.poll(async () => {
-    const state = await page.evaluate(() => window.sotto!.agents!.get())
+    const state = await agentState(page)
     return IDS.filter(id => state.host.threads.find(thread => thread.id === hostEntityKey(state.hostId, id))
       ?.summary?.activityCount === RECORDS).length
   }).toBe(IDS.length)
   await expect.poll(async () => {
-    const state = await page.evaluate(() => window.sotto!.agents!.get())
+    const state = await agentState(page)
     return state.host.threads.find(thread => thread.id === hostEntityKey(state.hostId, PERMISSION_THREAD))
       ?.requests.map(request => request.id)
   }).toContain('cpu-permission')
@@ -133,7 +135,7 @@ test('synthetic thread histories keep streaming and permission available across 
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload()
-    const hostId = (await page.evaluate(() => window.sotto!.agents!.get())).hostId
+    const hostId = (await agentState(page)).hostId
     const key = (id: string): string => hostEntityKey(hostId, id)
     await resize(launched, 1600, 1000)
     await openThreads(page)
@@ -149,18 +151,18 @@ test('synthetic thread histories keep streaming and permission available across 
     await expect(permission.getByRole('button', { name: 'Deny' })).toBeEnabled()
     await expect(pane(page, key(STREAM_THREAD)).getByLabel('Thread transcript')).toContainText('Synthetic work is in progress.')
 
-    const prompt = pane(page, key(STREAM_THREAD)).getByRole('textbox', { name: 'Prompt', exact: true })
+    const prompt = promptField(pane(page, key(STREAM_THREAD)))
     let started = performance.now()
     await prompt.click()
     await expect(pane(page, key(STREAM_THREAD))).toHaveAttribute('data-focused')
     interactions.focusMs = performance.now() - started
     started = performance.now()
-    await prompt.fill('Synthetic CPU verification prompt.')
-    await expect(prompt).toHaveValue('Synthetic CPU verification prompt.')
+    await fillPrompt(prompt, 'Synthetic CPU verification prompt.')
+    await expectPromptText(prompt, 'Synthetic CPU verification prompt.')
     interactions.typeMs = performance.now() - started
     started = performance.now()
     await prompt.press('Enter')
-    await expect(prompt).toHaveValue('')
+    await expectPromptText(prompt, '')
     interactions.sendAcknowledgedMs = performance.now() - started
 
     async function emitStream(phase: string) {
@@ -240,7 +242,7 @@ test('synthetic thread histories keep streaming and permission available across 
     await page.screenshot({ path: testInfo.outputPath('cpu-820x560-reduced-motion.png'), animations: 'disabled' })
     await expect(permission.getByRole('button', { name: 'Deny' })).toBeEnabled()
     await permission.getByRole('button', { name: 'Deny' }).click()
-    await expect.poll(async () => (await page.evaluate(() => window.sotto!.agents!.get())).host.threads
+    await expect.poll(async () => (await agentState(page)).host.threads
       .find(thread => thread.id === key(PERMISSION_THREAD))?.requests.map(request => request.id)).not.toContain('cpu-permission')
 
   } finally {

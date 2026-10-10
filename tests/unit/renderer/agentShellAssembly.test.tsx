@@ -1,3 +1,5 @@
+import { deferred } from '../../fixtures/deferred'
+import { threadsStateFixture } from '../../fixtures/agentState'
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -22,14 +24,10 @@ function thread(id: string, messages: AgentMessage[]): AgentThread {
 const model = (id: string): AgentModel => ({ id, provider: 'Claude Code', providerId: 'claude', name: id, ready: true })
 
 function fullState(threads: AgentThread[], activeThreadId: string | null = null): AgentState {
-  return {
-    configuration: { ...defaultAgentConfiguration(), enabled: true }, connection: 'connected',
+  return threadsStateFixture({ cloneOverrides: false,
+    configuration: { ...defaultAgentConfiguration(), enabled: true },
     host: { ...EMPTY_AGENT_HOST, connected: true, threads },
-    activeThreadId, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
-    draftRequestId: null, draftAttachments: [], deliveredDrafts: [], threadDrafts: [], deliveries: [],     globalLaneBusy: false, notice: '', error: null,
-    credentials: { reasoning: false, secure: false }, reasoningAccounts: [],
-     historyEnabled: true,
-  }
+    topLevel: { activeThreadId, activeProjectId: null, draftAttachments: [], credentials: { reasoning: false, secure: false }, historyEnabled: true } })
 }
 
 /** A bridge that carries only the shell, with the detail of each thread on request or on push. */
@@ -372,7 +370,7 @@ describe('the startup shell cache', () => {
     expect(restored.host.clientHosts!.find(entry => entry.hostId === 'remote-host')!.models).toEqual([remoteModel])
   })
 
-  it('keeps a remote thread\'s model in the host\'s own catalog, where the Agents room looks it up', () => {
+  it('keeps a remote thread\'s model in the host\'s own catalog, where the Threads room looks it up', () => {
     // Model IDs are not host-keyed, so the same model can sit in both catalogs.
     const shared = model('native:claude:model:sonnet')
     const live = fullState([
@@ -505,7 +503,7 @@ describe('a sync command reply racing a low-priority broadcast', () => {
     const { result } = renderHook(() => useAgentConnection(wire.bridge))
     await waitFor(() => expect(result.current.state).not.toBeNull())
     let resolveCommand!: (state: AgentState) => void
-    vi.mocked(wire.bridge.command).mockImplementationOnce(() => new Promise(resolve => { resolveCommand = resolve }))
+    vi.mocked(wire.bridge.command).mockImplementationOnce(() => { const pending = deferred<AgentState>(); resolveCommand = pending.resolve; return pending.promise })
     wire.publish({ ...initial, notice: 'from the broadcast' })
     // `refresh` is a provider operation and runs at once rather than waiting behind the command lane,
     // so `bridge.command` (and `resolveCommand`) is called synchronously here.

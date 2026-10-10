@@ -9,11 +9,11 @@ import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { IpcInvocationEvent, IpcMainAdapter, TrustedIpcSender } from '../../../src/main/ipc/registerIpc'
+
 import { AGENT_COMMAND, type AgentCommand, type AgentState } from '../../../src/shared/agents'
-import { AgentControl } from '../../../src/main/agents/control'
+
 import { AttachmentPreviews } from '../../../src/main/agents/attachmentPreviews'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
+
 import { LocalHostService } from '../../../src/main/agents/hostService'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { DesktopHostRouter } from '../../../src/main/hosts/desktopHostRouter'
@@ -23,6 +23,9 @@ import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => 'D:/fixture' } }))
 import { AgentStateBroadcaster } from '../../../src/main/agents/agentStateBroadcast'
 import { registerAgentIpc } from '../../../src/main/agents/ipc'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
+import { ipcRegistry } from '../../fixtures/ipcHarness'
 
 const HOST_ID = '11111111-1111-4111-8111-111111111111'
 const roots: string[] = []
@@ -39,9 +42,9 @@ afterEach(async () => {
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'sotto-command-reply-')); roots.push(root)
   const host = new E2EAgentHost()
-  const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: bytes => bytes.toString() })
-  await credentials.load()
-  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
+  const credentials = await testCredentials(root, { mode: 'unavailable' })
+
+  const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
   })
   disposables.push(() => control.dispose())
   await control.start(); await control.command({ type: 'connect' })
@@ -54,13 +57,11 @@ async function fixture() {
   router.add({ hostId: HOST_ID, name: 'This computer', kind: 'local', service: new LocalHostService({ control }),
     detail: threadId => control.threadDetail(threadId), preview: () => null })
 
-  const listeners = new Map<string, (event: IpcInvocationEvent, ...args: unknown[]) => unknown>()
-  const ipc: IpcMainAdapter = { handle: (channel, handler) => { listeners.set(channel, handler) }, removeHandler: channel => { listeners.delete(channel) } }
-  const url = 'file:///main.html'
-  const main: TrustedIpcSender = { role: 'main', url, webContents: { mainFrame: { parent: null, url }, isDestroyed: () => false, getURL: () => url } }
+  const registry = ipcRegistry()
+  const { ipc, main } = registry
   disposables.push(registerAgentIpc(ipc, router, router, () => [main], { encodeReceipt: new AgentStateBroadcaster().encodeReceipt }))
   const send = (command: AgentCommand) =>
-    listeners.get(AGENT_COMMAND)!({ sender: main.webContents, senderFrame: main.webContents.mainFrame }, command) as Promise<AgentState>
+    registry.invoke(AGENT_COMMAND, [command]) as Promise<AgentState>
   return { control, send }
 }
 

@@ -1,26 +1,20 @@
+import { phonesBridgeFixture, phonesState } from '../../fixtures/renderer/hostBridges'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
 import { PhonesSettings } from '../../../src/renderer/src/features/settings/PhonesSettings'
-import type { PairedPhone, PhonesBridge, PhonesCommand, PhonesState } from '../../../src/shared/phones'
+import type { PairedPhone, PhonesCommand, PhonesState } from '../../../src/shared/phones'
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 const DNS = 'laptop-russh2j5.tail5728ca.ts.net'
-const OFF: PhonesState = {
-  enabled: false, localHostRunning: true, phase: 'off', tailscale: { status: 'waiting' }, serve: { status: 'waiting' }, servePort: null, address: null,
-  computerName: 'LAPTOP-RUSSH2J5', defaultName: 'LAPTOP-RUSSH2J5', code: null, phones: [], answersAvailable: true,
-}
+const OFF: PhonesState = phonesState()
 const READY: PhonesState = { ...OFF, enabled: true, phase: 'on', tailscale: { status: 'ok', hostName: 'laptop-russh2j5', dnsName: DNS }, serve: { status: 'ok' }, servePort: 8443, address: `https://${DNS}:8443`, defaultName: 'laptop-russh2j5', computerName: 'laptop-russh2j5' }
 const PHONE: PairedPhone = { clientId: 'phone-1', name: 'Zach’s iPhone', pairedAt: '2026-09-26T10:00:00.000Z', connected: true, canAnswer: false }
 
 function fixture(initial: PhonesState, answer?: (command: PhonesCommand, state: PhonesState) => PhonesState) {
-  let state = initial
-  const listeners = new Set<(value: PhonesState) => void>()
-  const push = (next: Partial<PhonesState>): void => { state = { ...state, ...next }; act(() => { for (const listener of listeners) listener(state) }) }
-  const command = vi.fn<PhonesBridge['command']>(async input => { if (answer) state = answer(input, state); return state })
-  const bridge: PhonesBridge = { get: async () => state, command, onChanged: listener => { listeners.add(listener); return () => listeners.delete(listener) } }
-  return { bridge, command, push }
+  const published = phonesBridgeFixture({ initial, ...(answer ? { answer } : {}) })
+  return { ...published, push: (next: Partial<PhonesState>) => { act(() => published.publish(next)) } }
 }
 function show(state: PhonesState, options: { answer?: (command: PhonesCommand, state: PhonesState) => PhonesState; name?: string } = {}) {
   const { bridge, command, push } = fixture(state, options.answer)
@@ -216,19 +210,16 @@ it('shows unfinished cleanup and offers a retry while the setting is off', async
   expect(command).toHaveBeenCalledWith({ type: 'retry' })
 })
 
-
 it('explains when phone access settings could not be saved', async () => {
   show({ ...OFF, enabled: true, phase: 'failed', serve: { status: 'failed', reason: 'record' } })
   expect(await screen.findByText(/Phone access wasn’t started/)).toBeTruthy()
 })
-
 
 it('explains cleanup when the saved record could not be read', async () => {
   show({ ...OFF, phase: 'cleanup-failed', serve: { status: 'failed', reason: 'cleanup-record' } })
   expect(await screen.findByText(/couldn’t read its saved cleanup record/)).toBeVisible()
   expect(screen.getByText(/Remove Sotto’s setting on port 8443 or 10000 in Tailscale, then press Try again/)).toBeVisible()
 })
-
 
 it('keeps pairing unavailable as soon as the setting turns off', async () => {
   show({ ...READY, enabled: false })

@@ -1,6 +1,6 @@
 # macOS keeps its Dock icon and the widget is a panel
 
-October 9, 2026 amendment: [ADR-0065](0065-remove-voice-control-and-thread-management.md) records the removal. The widget no longer expands to show threads, so the thread-button focus consequence below is historical. The dictation widget remains a macOS panel and Sotto keeps its Dock icon.
+October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-management.md) records the removal. The widget no longer expands to show threads, so the thread-button focus consequence below is historical. The dictation widget remains a macOS panel and Sotto keeps its Dock icon.
 
 Accepted October 1, 2026 (#670).
 

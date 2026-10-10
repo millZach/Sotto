@@ -1,6 +1,6 @@
+import { ipcRegistry, trustedIpcSender } from '../../fixtures/ipcHarness'
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { IpcInvocationEvent, IpcMainAdapter, TrustedIpcSender } from '../../../src/main/ipc/registerIpc'
 import { AGENT_ATTACHMENT_CONTENT, AGENT_ATTACHMENT_PREVIEW, AGENT_ATTACHMENT_STAGE, type AgentAttachmentHandle, type AgentState } from '../../../src/shared/agents'
 import type { AgentControl } from '../../../src/main/agents/control'
 
@@ -14,14 +14,10 @@ const disposables: Array<() => void> = []
 afterEach(() => { for (const dispose of disposables.splice(0)) dispose(); vi.clearAllMocks() })
 
 function fixture() {
-  const listeners = new Map<string, (event: IpcInvocationEvent, ...args: unknown[]) => unknown>()
-  const ipc: IpcMainAdapter = { handle: (channel, handler) => { listeners.set(channel, handler) }, removeHandler: channel => { listeners.delete(channel) } }
-  const sender = (role: 'main' | 'widget'): TrustedIpcSender => {
-    const url = `file:///${role}.html`
-    return { role, url, webContents: { mainFrame: { parent: null, url }, isDestroyed: () => false, getURL: () => url } }
-  }
-  const main = sender('main'), widget = sender('widget')
-  const stranger = sender('main'); stranger.webContents.getURL = () => 'https://elsewhere.test/'
+  const registry = ipcRegistry()
+  const { ipc, main, widget, handlers: listeners } = registry
+
+  const stranger = trustedIpcSender('main'); stranger.webContents.getURL = () => 'https://elsewhere.test/'
   const attachmentPreview = vi.fn<AgentControl['attachmentPreview']>(async () => ({ dataUrl: PNG }))
   const handle: AgentAttachmentHandle = { id: 'image', name: 'Shot.png', mimeType: 'image/png', sizeBytes: 8, digest: 'a'.repeat(64) }
   const stageAttachment = vi.fn(async () => handle)
@@ -29,9 +25,9 @@ function fixture() {
   const control = { get: () => ({} as AgentState), shell: () => ({} as AgentState), threadDetail: () => null, command: vi.fn<AgentControl['command']>(), attachmentPreview, stageAttachment, attachmentContent }
   disposables.push(registerAgentIpc(ipc, control, { command: command => control.command(command) }, () => [main, widget], { encodeReceipt: new AgentStateBroadcaster().encodeReceipt }))
   const invoke = async (payload: unknown, source = main) =>
-    listeners.get(AGENT_ATTACHMENT_PREVIEW)!({ sender: source.webContents, senderFrame: source.webContents.mainFrame }, payload)
+    registry.invoke(AGENT_ATTACHMENT_PREVIEW, [payload], registry.event(source))
   const call = async (channel: string, payload: unknown, source = main) =>
-    listeners.get(channel)!({ sender: source.webContents, senderFrame: source.webContents.mainFrame }, payload)
+    registry.invoke(channel, [payload], registry.event(source))
   return { invoke, call, attachmentPreview, stageAttachment, attachmentContent, handle, main, widget, stranger, listeners }
 }
 

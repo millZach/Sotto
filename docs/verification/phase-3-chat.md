@@ -1,5 +1,7 @@
 # Phase 3 personal-chat backend verification (#68)
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 Scope: backend/native/persistence, main-window IPC and preload only, built from `bf500b4` in `phase3-chat`. Renderer implementation and visible Windows review belong to the main integrator. No dependency installs, pushes, external comments or additional agents were used.
 
 ## Acceptance checklist
@@ -22,8 +24,8 @@ TDD red runs established the missing service, missing durable answer intent and 
 - `npx vitest run tests/integration/personalChats.test.ts`: 12 passed on the baseline contracts; 2 shared structured-request tests are conditional until the provider worker's #52 schema lands. Covers saved/restarted drafts, uncertain creation, lost send acknowledgement, identity/origins, default changes, global retrieval/authority exclusion, explicit native skills, subsequent-memory refresh, cross-chat request rejection, disk failure before dispatch and cache privacy.
 - The local durable-ack test requires less than 100 ms while native acknowledgement is delayed 350 ms. This is service acknowledgement, not renderer feedback or network response latency.
 - `tests/unit/main/personalChatIpc.test.ts` and `tests/unit/preload/personalChats.test.ts`: passed; IPC trust, strict payloads, main-only surface, parsed state subscriptions and unsubscription.
-- `tests/unit/main/codexHost.test.ts`: all 42 existing project-host tests passed alongside the initial two personal tests (44 total), preserving project functionality.
-- Personal chat plus `tests/unit/main/codexActivity.test.ts`, `tests/integration/codexActivity.test.ts`, `tests/unit/main/codexSkills.test.ts`: 35 passed plus the then-pending structured test skip. Activity parameter narrowing changes no projection behavior.
+- `tests/integration/codexAdapterBoundary.test.ts`: all 42 existing project-host tests passed alongside the initial two personal tests (44 total), preserving project functionality.
+- Personal chat plus `tests/unit/main/codexActivity.test.ts`, `tests/integration/codexActivity.test.ts`, `tests/unit/main/codexSkills.test.ts`, `tests/integration/codexSkillDelivery.test.ts`: 35 passed plus the then-pending structured test skip. Activity parameter narrowing changes no projection behavior.
 - Temporary provider integration overlay (only copies in this worktree, fully restored afterward): provider worker's shared agents/skills/host, codexRequests/nativeRequests and its one-line Codex answer forwarding. All 16 tests across personal integration, IPC and preload passed, including exact structured question mapping and rejection of an invented session permission. Node typecheck passed. Those shared changes remain owned by the provider worker and must be included by the integrator; this commit derives from them rather than maintaining a second answer schema.
 - `npm run typecheck`: passed for node and web configurations.
 - Scoped ESLint: passed. `npm run build`: passed for Electron main/preload/renderer (existing Lucide `use client` bundling notices only). No full suite was run; the integrator owns that final gate.

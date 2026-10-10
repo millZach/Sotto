@@ -87,6 +87,24 @@ describe('dictation command client endpoint validation', () => {
     expect(process.exitCode).toBeUndefined()
     expect(guidance).not.toHaveBeenCalled()
   })
+  it.each([
+    ['retry'], ['discard'], ['place', 'top'], ['place', 'bottom'], ['place', 'left'], ['place', 'right'],
+  ])('sends the shell verb %j unchanged', async (...args) => {
+    process.argv = ['node', 'dictationClient.js', 'dictation', ...args]
+    const socket = Object.assign(new EventEmitter(), {
+      setTimeout: vi.fn(), setEncoding: vi.fn(), write: vi.fn(), destroy: vi.fn(),
+    })
+    connect.mockReturnValue(socket)
+    await import('../../../src/main/hotkeys/dictationClient')
+    socket.emit('connect')
+    expect(socket.write).toHaveBeenCalledWith(`${args.join(' ')}\n`)
+  })
+  it.each(['centre', '../left', 'left;id', 'left\n'])('refuses place %j before connecting', async edge => {
+    process.argv = ['node', 'dictationClient.js', 'dictation', 'place', edge]
+    await import('../../../src/main/hotkeys/dictationClient')
+    expect(connect).not.toHaveBeenCalled()
+    expect(process.exitCode).toBe(2)
+  })
   it('passes the binding stamp through without replacing it with client startup time', async () => {
     process.argv.push('--at', '1791486000123456789')
     const socket = Object.assign(new EventEmitter(), {

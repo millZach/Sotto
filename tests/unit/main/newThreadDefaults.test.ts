@@ -4,10 +4,11 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentHostSnapshot } from '../../../src/shared/agents'
-import { AgentControl } from '../../../src/main/agents/control'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
+
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
 
 /**
  * A second model beside the fixture's own, missing Allow edits and offering fewer reasoning levels, so a
@@ -44,8 +45,8 @@ afterEach(async () => {
 async function controlFixture() {
   const root = await mkdtemp(join(tmpdir(), 'sotto-new-thread-defaults-')); roots.push(root)
   const host = new GrokLikeHost()
-  const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() }); await credentials.load()
-  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
+  const credentials = await testCredentials(root, { mode: 'unavailable' });
+  const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
   })
   disposers.push(async () => { control.dispose(); await control.privacyChanged() })
   await control.start(); await control.command({ type: 'connect' })

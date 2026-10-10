@@ -87,6 +87,17 @@ let initialized = false
 let deferredInit
 const released = name => new Promise(resolve => { const timer = setInterval(() => { if (existsSync(join(root, name))) { clearInterval(timer); resolve() } }, 10) })
 /**
+ * script.json `steering`: a prompt sent while a turn runs, as Claude Code 2.1.295 takes it. It goes into the CLI's own
+ * queue, said at once with a `queued` lifecycle frame, and is read into the running turn at its next model step (`say`):
+ * its echo, then `started`. One still queued when the turn ends runs as the next turn, and a stop leaves it queued
+ * (`still_queued`) to run next the same way.
+ */
+let turnOpen = false
+const steered = []
+const lifecycleOf = (uuid, state) => output({ type: 'command_lifecycle', command_uuid: uuid, state, uuid: randomUUID(), session_id: session })
+const readSteered = () => { for (const frame of steered.splice(0)) { output(persist(frame)); lifecycleOf(frame.uuid, 'started') } }
+const turnEnded = () => { turnOpen = steered.length > 0; readSteered() }
+/**
  * A finished reply. With `thinking` it opens on a thinking block, streamed the way Claude Code 2.1.289 streams one
  * (start, thinking deltas, a signature delta, stop), and written to the transcript as its own line with
  * `apiBlockIndex` and `thinkingDurationMs`. `thinking: ''` is a block with no words and `redacted: true` a
@@ -126,6 +137,7 @@ async function complete(action) {
   if (agent) output({ type: 'system', subtype: 'task_started', session_id: session, uuid: randomUUID(), task_id: agent.task, tool_use_id: agent.tool,
     description: action.background.description, subagent_type: 'general-purpose', is_backgrounded: true, spawn_depth: 1, task_type: 'local_agent' })
   output(persist(frame)); output({ type: 'result', subtype: 'success', session_id: session, is_error: false, result: action.text })
+  turnEnded()
 }
 // The settings this process runs: what it was launched with, then whatever a settings request changed. Written to
 // settings-<session>.json on every change so a test reads what the running CLI would use for its next turn.
@@ -179,6 +191,7 @@ const act = () => {
   }
   // One API message of a turn that goes on, as Claude writes before a tool call: the next message has its own ID.
   if (action.type === 'say') {
+    readSteered()
     const id = randomUUID()
     output({ type: 'stream_event', session_id: session, event: { type: 'message_start', message: { id, role: 'assistant' } } })
     output({ type: 'stream_event', session_id: session, event: { type: 'content_block_delta', delta: { type: 'text_delta', text: action.text } } })
@@ -271,8 +284,9 @@ lines.on('line', line => {
     else if (frame.request.subtype === 'interrupt') {
       // interrupt-script.json `error`: close the stopped turn as Claude Code does, with an error result.
       const error = existsSync(join(root, 'interrupt-script.json')) && JSON.parse(readFileSync(join(root, 'interrupt-script.json'), 'utf8')).error === true
-      output({ type: 'control_response', response: { subtype: 'success', request_id: frame.request_id, response: {} } })
+      output({ type: 'control_response', response: { subtype: 'success', request_id: frame.request_id, response: steered.length ? { still_queued: steered.map(held => held.uuid) } : {} } })
       output(error ? { type: 'result', subtype: 'error_during_execution', session_id: session, is_error: true, result: '' } : { type: 'result', subtype: 'success', session_id: session, is_error: false, result: '' })
+      turnEnded()
     } else violation('Unknown control request')
   } else if (frame.type === 'user') {
     const initScriptPath = join(root, 'initialize-script.json')
@@ -302,6 +316,8 @@ lines.on('line', line => {
         ...(script.evidence === 'none' ? {} : { user_message_uuid: frame.uuid, user_message_uuids: [frame.uuid] }) })
       lifecycle('completed'); return
     }
+    if (script.steering && turnOpen) { steered.push(frame); lifecycleOf(frame.uuid, 'queued'); return }
+    turnOpen = true
     const reply = persist(frame)
     if (script.writeCwd) writeFileSync(join(process.cwd(), 'native-cwd-proof.txt'), typeof frame.message.content === 'string' ? frame.message.content : frame.message.content.find(item => item.type === 'text')?.text ?? '')
     if (script.delay) { writeFileSync(scriptPath, '{}'); setTimeout(() => output(reply), script.delay) } else output(reply)

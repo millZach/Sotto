@@ -1,11 +1,16 @@
-import { mkdtemp, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
+import { agentState as state } from './support/agentAccess'
+import { ownedE2EProfile } from './support/e2eProfile'
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import type { AgentState, ProviderId } from '../../src/shared/agents'
 import { PROVIDER_LABELS } from '../../src/shared/agents'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { firstSottoWindow, openThreads } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
+
+const artifacts = evidenceDirectory('artifacts/multi-provider-live')
 
 // Opt in separately from the single-provider smoke. Exactly three native turns;
 // restore-only mode never creates a thread or sends another prompt.
@@ -13,10 +18,6 @@ test.describe.configure({ retries: 0, timeout: 360_000 })
 const providers = ['codex', 'claude', 'grok'] as const
 const prompt = 'Reply with exactly the one word READY. Do not use any tools, read any files, modify any files, or perform any other actions.'
 const title = (provider: ProviderId): string => `Independent ${PROVIDER_LABELS[provider]} acceptance`
-
-async function state(page: Page): Promise<AgentState> {
-  return page.evaluate(async () => window.sotto!.agents!.get())
-}
 
 function identities(snapshot: AgentState) {
   return snapshot.host.threads.map(thread => ({ id: thread.id, title: thread.title, providerId: thread.providerId,
@@ -35,7 +36,6 @@ async function settleProviders(page: Page): Promise<void> {
   await expect(navigation).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByRole('tabpanel', { name: 'Providers', exact: true })).toBeVisible()
 }
-
 
 async function openProviders(page: Page): Promise<void> {
   await page.getByRole('link', { name: 'Settings', exact: true }).click()
@@ -94,7 +94,7 @@ async function aliases(profile: string) {
 test('three native providers coexist independently of Sotto reasoning and survive restart', async () => {
   test.skip(process.env.SOTTO_MULTI_PROVIDER_LIVE !== '1', 'Explicit three-provider native subscription smoke opt-in required.')
   const restoreRoot = process.env.SOTTO_MULTI_PROVIDER_RESTORE_ROOT
-  const root = restoreRoot ? requireOwnedE2EProfile(restoreRoot) : await mkdtemp(join(tmpdir(), 'sotto-e2e-native-'))
+  const root = restoreRoot ? requireOwnedE2EProfile(restoreRoot) : (await ownedE2EProfile({ prefix: 'sotto-e2e-native-' })).directory
   const profile = join(root, 'profile')
   const project = join(root, 'project')
   if (!restoreRoot) {
@@ -102,7 +102,6 @@ test('three native providers coexist independently of Sotto reasoning and surviv
     // Prevent legacy-profile migration; all provider connections use the real UI.
     await writeFile(join(profile, 'settings.json'), JSON.stringify({ onboardingComplete: true }))
   }
-  const artifacts = resolve('artifacts/multi-provider-live')
   await mkdir(artifacts, { recursive: true })
   const evidence: Record<string, unknown> = { root, project, syntheticOnly: true, restoreOnly: !!restoreRoot,
     startedAt: new Date().toISOString(), submittedProviders: [] }
@@ -169,14 +168,14 @@ test('three native providers coexist independently of Sotto reasoning and surviv
         expect(created.host.threads).toHaveLength(index + 1)
 
         expect(created.host.threads.find(thread => thread.id === created.activeThreadId)).toMatchObject({ providerId: provider, modelId: model!.id })
-        await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill(prompt)
+        await fillPrompt(promptField(page), prompt)
         // Persist intent before the paid action. A failed run is investigated or
         // restored without automatically resubmitting uncertain native turns.
         evidence.submittedProviders = [...providers.slice(0, index + 1)]
         await saveEvidence()
         await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
         await expect(page.getByLabel('Thread transcript').locator('[data-role="assistant"]')).toContainText('READY', { timeout: 90_000 })
-        await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('', { timeout: 15_000 })
+        await expectPromptText(promptField(page), '', { timeout: 15_000 })
         await expect(page.getByLabel('Pending message')).toHaveCount(0)
         await expectCompleted(page, provider)
         await page.screenshot({ animations: 'disabled', path: join(artifacts, `${provider}-reply.png`) })
@@ -219,7 +218,6 @@ test('three native providers coexist independently of Sotto reasoning and surviv
       window.setSize(previous.size[0]!, previous.size[1]!)
     }, previousSize)
 
-
     await page.getByRole('link', { name: 'Settings', exact: true }).click()
     await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Agents', exact: true }).click()
     for (const coordinator of ['codex', 'claude'] as const) {
@@ -231,7 +229,6 @@ test('three native providers coexist independently of Sotto reasoning and surviv
       expect(await registry(profile)).toEqual(bindingBefore)
     }
     await page.screenshot({ animations: 'disabled', path: join(artifacts, 'independent-coordinator.png') })
-
 
 
     // Disconnect only a completed provider; other native connections and all

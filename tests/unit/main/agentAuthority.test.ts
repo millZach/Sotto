@@ -5,7 +5,7 @@ import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { classifyRiskyAction, mayGrantLocally, UNPAIRED_CLIENT_ERROR, type Authority, type RiskyAction } from '../../../src/main/agents/authority'
 import { AgentControl } from '../../../src/main/agents/control'
-import { AgentCredentials, type CredentialEncryption } from '../../../src/main/agents/credentials'
+
 import type { AgentHostCommand } from '../../../src/main/agents/host'
 import type { ClientIdentity } from '../../../src/main/agents/hostService'
 import { TurnRecorder } from '../../../src/main/agents/turns'
@@ -13,15 +13,13 @@ import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffec
 import { PolicyStore } from '../../../src/main/memory/policies'
 import { MemoryStore } from '../../../src/main/memory/store'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
+import { deferred } from '../../fixtures/deferred'
 
 const roots: string[] = []
 const controls: AgentControl[] = []
 const stores: MemoryStore[] = []
-const encryption: CredentialEncryption = {
-  isEncryptionAvailable: () => true,
-  encryptString: value => Buffer.from(Buffer.from(value).map(byte => byte ^ 0xa5)),
-  decryptString: value => Buffer.from(value.map(byte => byte ^ 0xa5)).toString('utf8'),
-}
 
 class RecordingHost extends E2EAgentHost {
   readonly executed: AgentHostCommand[] = []
@@ -46,12 +44,12 @@ async function fixture(partialAuthority?: Pick<Authority, 'authorizes'> & Partia
       : { mayGrant: mayGrantLocally, authorizes: query => partialAuthority.authorizes(query) }
   const root = await mkdtemp(join(tmpdir(), 'sotto-agent-authority-'))
   roots.push(root)
-  const credentials = new AgentCredentials(join(root, 'vault'), encryption)
-  await credentials.load()
+  const credentials = await testCredentials(join(root, 'vault'), { mode: 'xor' })
+
   const recorder = new TurnRecorder({ directory: root, resolveSession: id => ({ provider: 'codex', sessionId: `session-${id}` }) })
   const reasoner = { ...e2eAgentReasoner }
   const host = new RecordingHost()
-  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner,
+  const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner,
     ...(recordTurns ? { turns: recorder } : {}),
     ...(authority === undefined ? {} : { authority }),
   })
@@ -226,9 +224,8 @@ describe('authority at dispatch', () => {
     const f = await fixture({ authorizes: () => ({ allowed: false, reason: 'no-policy' }),
       mayGrant: identity => identity.transport === 'ipc' ? { allowed: true, reason: 'local-window' }
         : { allowed: false, reason: 'no-policy' } })
-        await f.control.command({ type: 'select-thread', threadId: 'workshop' })
-    let release!: () => void
-    const held = new Promise<void>(resolve => { release = resolve })
+    await f.control.command({ type: 'select-thread', threadId: 'workshop' })
+    const { promise: held, resolve: release } = deferred<void>()
     const read = f.host.snapshot.bind(f.host)
     const snapshot = vi.spyOn(f.host, 'snapshot').mockImplementationOnce(async () => { await held; return read() })
     const refresh = f.control.command({ type: 'refresh' })

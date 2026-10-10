@@ -1,6 +1,6 @@
 # State pipeline cost
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0065](../adr/0065-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 What one published agent state costs on the way from main to the window. Measured with
 `npx vitest run tests/perf/statePipeline.perf.test.ts` over a copy of the local Sotto data folder

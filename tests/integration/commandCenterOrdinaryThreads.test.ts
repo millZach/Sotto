@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { deferred } from '../fixtures/deferred'
 import { randomUUID } from 'node:crypto'
 import * as fs from 'node:fs/promises'
 import { join } from 'node:path'
@@ -124,9 +125,9 @@ for (const provider of ['claude', 'codex', 'grok', 'devin'] as const) describe(`
     if (action === 'stale refusal') {
       const profiles = (host as unknown as { launchProfiles: CommandCenterLaunchProfiles }).launchProfiles
       const resolve = profiles.profileFor.bind(profiles)
-      let entered!: () => void, release!: () => void, first = true
-      const waiting = new Promise<void>(done => { entered = done })
-      const gate = new Promise<void>(done => { release = done })
+      let first = true
+      const { promise: waiting, resolve: entered } = deferred<void>()
+      const { promise: gate, resolve: release } = deferred<void>()
       vi.spyOn(profiles, 'profileFor').mockImplementation(async id => {
         if (!first) return resolve(id)
         first = false
@@ -219,8 +220,7 @@ it('cancels a Claude early launch refused while its tool server is still startin
     kind: 'project', providerId: 'claude', projectId: f.projectId, title: 'Fixture', modelId: f.modelId,
     status: 'idle', messages: [], requests: [] } as AgentThread)))
   const launches = (await f.driver.requests()).filter(request => ['launch', 'resume'].includes(request.method ?? ''))
-  let entered!: () => void, release!: () => void
-  const waiting = new Promise<void>(done => { entered = done }), gate = new Promise<void>(done => { release = done })
+  const { promise: waiting, resolve: entered } = deferred<void>(), { promise: gate, resolve: release } = deferred<void>()
   f.host.useThreadTools!([{ name: 'fixture_tools', definitions: [], mcpServer: async () => { entered(); await gate; return undefined } }])
   const starting = f.host.startThreadSession!(threadId, { modelId: f.modelId, workingDirectory: f.root })
   try {

@@ -1,6 +1,6 @@
 # Issue 74 short workspace regressions
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0065](../adr/0065-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 Scope: the existing Windows desktop Threads workspace at 1280x560, 820x560 and regular desktop sizes. Preserve the selected Sidecar composition, fonts, colors, draft contents, attachments and thread ownership. No new design direction or animation is needed for this scoped fix.
 

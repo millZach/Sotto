@@ -4,14 +4,14 @@
 
 ## When each job runs
 
-Gates (Windows) runs for every push to `main` and every pull request, and is the check a merge waits for. A push to `main` also runs the other three jobs every time. On a pull request, a short Linux job, Changed areas, reads the files the pull request changes and decides whether the three slower jobs are needed:
+Gates (Windows) runs for every push to `main` and every pull request. Main's ruleset requires it and Package result, and requires a pull request to be up to date with `main` before it merges. Nobody bypasses the ruleset, admins included, so every change reaches `main` through a pull request, release commits too ([the release procedure](release/releasing.md)). The gate's job has a 30-minute limit and the suite takes about 25 to 27 minutes on the runner (#895). A gate cancelled at the limit is rerun, never bypassed. A push to `main` also runs the other three jobs every time. On a pull request, a short Linux job, Changed areas, reads the files the pull request changes and decides whether the three slower jobs are needed:
 
 - **Host archive and socket contract (Linux)** runs unless every changed file is in the renderer (`src/renderer/`, `src/preload/`), the iOS client, `docs/`, `artifacts/`, `design/`, `handoff/`, the e2e, renderer-unit or perf tests, or a Markdown file at the root other than `THIRD_PARTY_NOTICES.md`. A path that list does not name runs the job, so a new area is covered until someone decides otherwise.
 - **Package (Windows)** runs unless every changed file is a document (`docs/`, `artifacts/`, `design/`, `handoff/`, a Markdown file at the root), a test under `tests/`, or the native iPhone or Android client. It runs `npm ci`, `npm run assets:verify` and `npm run package:dir`: the build, the build provenance, `electron-builder --dir --win --x64` and `scripts/verify-packaged-resources.mjs` on `release/win-unpacked`. That is the release's packaging step without the installer. It exists so a change to `electron-builder.yml`, the packaging scripts, the packaged resources or anything the build bundles fails on the pull request rather than on the Windows PC at release time. Linux work on the desktop app (#833) made it necessary (#844).
 
   Changed areas also runs it when a document the package carries changes: the root `README.md`, `LICENSE.md` and `THIRD_PARTY_NOTICES.md`. The file list is read with rename detection off, so a file moved into a skipped area still counts its old path.
 
-  Before packaging, the job verifies the installed Claude SDK history helper and terminal assets. Voice workers and ONNX runtime assets are retired (ADR-0065); the packaged-resource check refuses them.
+  Before packaging, the job verifies the installed Claude SDK history helper and terminal assets. Voice workers and ONNX runtime assets are retired (ADR-0068); the packaged-resource check refuses them.
 
   **Package result** is a short Linux job that always runs after it. It fails if Changed areas did not finish, or if Package (Windows) was needed and did not pass. A skipped job counts as passing for a required check, so a ruleset that requires packaging names Package result, not Package (Windows).
 - **Native iOS client (macOS)** runs only when `apps/ios/`, `src/shared/hostProtocol.ts` (which the client's wire types mirror) or this workflow changed. Its Swift tests and simulator build read nothing outside `apps/ios/`.
@@ -49,7 +49,7 @@ The job cancels a superseded run on the same ref (`concurrency` with `cancel-in-
 
 - **Playwright end-to-end tests** (`npm run test:e2e`) and the widget design captures — they need a real Electron window and committed reference images captured on a developer machine.
 - **Live provider suites.** Every one of them is gated behind an explicit `SOTTO_*` environment variable (`SOTTO_CLAUDE_LIVE`, `SOTTO_GROK_LIVE`, `SOTTO_NATIVE_THREADS_LIVE`, `SOTTO_SIDE_WRITING_LIVE`, and friends). CI sets none of them and holds no credentials, so they stay skipped.
-- **Perf benchmarks.** The three data-backed files (`statePipeline.perf.test.ts`, `threadsRender.perf.test.tsx`, and `longTranscript.perf.test.tsx`) require both `SOTTO_PERF_BENCH=1` and an explicit nonempty `SOTTO_PERF_DATA` directory containing `workspace.json`. Without both settings they skip before probing any data directory. There is no personal-profile fallback. Use a synthetic or deliberately selected copy; the benchmarks make temporary working copies and remove them after the run. CI sets neither variable. The benchmarks that build their own workload and only report timings, `claudeFramer.perf.test.ts`, `checkpointSend.perf.test.ts`, `claudeSettings.perf.test.ts`, `codexOpenApply.perf.test.ts`, `codexSendRead.perf.test.ts`, `commandReceipt.perf.test.ts`, `commandReply.perf.test.ts`, `earlyStart.perf.test.ts`, `devinSendPath.perf.test.ts`, `firstWordsBridge.perf.test.ts`, `grokChunkAppend.perf.test.ts`, `previewSend.perf.test.ts`, `screenshotResize.perf.test.ts`, `screenshotTotal.perf.test.tsx`, `sendReads.perf.test.ts`, `sendToFirstWords.perf.test.ts`, `sendWrites.perf.test.ts`, `snapshotCloning.perf.test.ts`, `threadCommandLanes.perf.test.tsx`, `threadSettings.perf.test.ts`, `usageStreamWrites.perf.test.ts` and the timed half of `attachmentHandles.perf.test.ts`, skip themselves unless `SOTTO_PERF_BENCH=1` is set (`tests/fixtures/perfBench.ts`, which also holds the median they report). They tell a run nothing and cost it seconds, so CI never sets the switch. `screenshotResize.perf.test.ts` launches the built app, so run `npm run build` before it. The same switch runs one Playwright spec, `tests/e2e/native-process-memory.spec.ts`, which launches the built app with the real Claude and Codex adapters over the fake CLIs, holds 1, 4 and 8 long threads, and prints the working sets of main, the renderer and the provider processes, with main's and the renderer's heaps and private bytes, with one pane showing and with none (`docs/perf/2026-09-27-native-process-memory.md`). CI runs no Playwright spec, and run by hand without the switch it reports as skipped: `npm run build`, then `$env:SOTTO_PERF_BENCH = '1'; npx playwright test tests/e2e/native-process-memory.spec.ts` in PowerShell or `SOTTO_PERF_BENCH=1 npx playwright test tests/e2e/native-process-memory.spec.ts` in sh. `codexSendRead.perf.test.ts` also takes `SOTTO_PERF_WITHOUT_TURNS_LIST=1`, which has the fake refuse `thread/turns/list` so that a send reads the way it did before the newest-turn check. `devinSendPath.perf.test.ts` also takes `SOTTO_DEVIN_PIECES=1`, which times the two integration lists and an ACP process start against the installed Devin CLI without sending any prompt (`docs/perf/2026-10-06-devin-send-path.md`). `sendToFirstWords.perf.test.ts` sends through the host service, the coordinator, the workspace with checkpoints wired in and the real Claude and Codex adapters over the fake CLIs, in a small Git working copy and one past the checkpoint limit that it writes to the temporary folder first (about 280 MiB, plus Git's copy); `SOTTO_PERF_LARGE_FILES`, `SOTTO_PERF_LARGE_MIB` and `SOTTO_PERF_SENDS` change its size and length (`docs/perf/2026-10-05-send-to-first-words.md`). Unlike the others it takes about two minutes a run. `checkpointSend.perf.test.ts` compares the send's checkpoint step with the commit #764 started from, and takes three more switches: `SOTTO_PERF_CHECKPOINT_ONLY` runs only the working copies whose names contain it, `SOTTO_PERF_CHECKPOINT_REPO` points its "this repository" copy at another checkout, and `SOTTO_PERF_CHECKPOINT_BASE` names another commit to compare with (`docs/perf/2026-10-05-checkpoint-send.md`). Three need no data and assert something other than time, so they do run: `markdownRender.perf.test.tsx` renders the same reply incrementally and whole, logs both timings, and always checks that incremental parsing processes less than a third of the characters; `detailCacheRecency.perf.test.tsx` scripts a session over the window's connection and always checks that coming back to the thread the user works in never fetches its detail again; and the byte half of `attachmentHandles.perf.test.ts` stages an 8 MiB screenshot and always checks that a draft save, its answer, the shell, `agents.json` and the preview file each stay under 64 KB with it in the draft. The markdown file's elapsed-time comparison is opt-in like the other stopwatch budgets below.
+- **Perf benchmarks.** The three data-backed files (`statePipeline.perf.test.ts`, `threadsRender.perf.test.tsx`, and `longTranscript.perf.test.tsx`) require both `SOTTO_PERF_BENCH=1` and an explicit nonempty `SOTTO_PERF_DATA` directory containing `workspace.json`. Without both settings they skip before probing any data directory. There is no personal-profile fallback. Use a synthetic or deliberately selected copy; the benchmarks make temporary working copies and remove them after the run. CI sets neither variable. The benchmarks that build their own workload and only report timings, `claudeFramer.perf.test.ts`, `checkpointSend.perf.test.ts`, `claudeSettings.perf.test.ts`, `codexOpenApply.perf.test.ts`, `codexSendRead.perf.test.ts`, `commandReceipt.perf.test.ts`, `commandReply.perf.test.ts`, `earlyStart.perf.test.ts`, `devinSendPath.perf.test.ts`, `firstWordsBridge.perf.test.ts`, `grokChunkAppend.perf.test.ts`, `previewSend.perf.test.ts`, `screenshotResize.perf.test.ts`, `screenshotTotal.perf.test.tsx`, `sendReads.perf.test.ts`, `sendToFirstWords.perf.test.ts`, `sendWrites.perf.test.ts`, `snapshotCloning.perf.test.ts`, `threadCommandLanes.perf.test.tsx`, `threadSettings.perf.test.ts`, `usageStreamWrites.perf.test.ts` and the timed half of `attachmentHandles.perf.test.ts`, skip themselves unless `SOTTO_PERF_BENCH=1` is set (`tests/fixtures/perfBench.ts`, which also holds the median they report). They tell a run nothing and cost it seconds, so CI never sets the switch. `screenshotResize.perf.test.ts` launches the built app, so run `npm run build` before it. The same switch runs one Playwright spec, `tests/e2e/native-process-memory.spec.ts`, which launches the built app with the real Claude and Codex adapters over the fake CLIs, holds 1, 4 and 8 long threads, and prints the working sets of main, the renderer and the provider processes, with main's and the renderer's heaps and private bytes, with one pane showing and with none (`docs/perf/2026-09-27-native-process-memory.md`). CI runs no Playwright spec, and run by hand without the switch it reports as skipped: `npm run build`, then `$env:SOTTO_PERF_BENCH = '1'; npx playwright test tests/e2e/native-process-memory.spec.ts` in PowerShell or `SOTTO_PERF_BENCH=1 npx playwright test tests/e2e/native-process-memory.spec.ts` in sh. `codexSendRead.perf.test.ts` also takes `SOTTO_PERF_WITHOUT_TURNS_LIST=1`, which has the fake refuse `thread/turns/list` so that a send reads the way it did before the newest-turn check. `devinSendPath.perf.test.ts` also takes `SOTTO_DEVIN_PIECES=1`, which times the two integration lists and an ACP process start against the installed Devin CLI without sending any prompt (`docs/perf/2026-10-06-devin-send-path.md`). `sendToFirstWords.perf.test.ts` sends through the host service, the coordinator, the workspace with checkpoints wired in and the real Claude and Codex adapters over the fake CLIs, in a small Git working copy and one past the checkpoint limit that it writes to the temporary folder first (about 280 MiB, plus Git's copy); `SOTTO_PERF_LARGE_FILES`, `SOTTO_PERF_LARGE_MIB` and `SOTTO_PERF_SENDS` change its size and length (`docs/perf/2026-10-05-send-to-first-words.md`). Unlike the others it takes about two minutes a run. `checkpointSend.perf.test.ts` compares the send's checkpoint step with the commit #764 started from, and takes three more switches: `SOTTO_PERF_CHECKPOINT_ONLY` runs only the working copies whose names contain it, `SOTTO_PERF_CHECKPOINT_REPO` points its "this repository" copy at another checkout, and `SOTTO_PERF_CHECKPOINT_BASE` names another commit to compare with (`docs/perf/2026-10-05-checkpoint-send.md`). The structural checks need no benchmark data and assert something other than time, so they do run: `markdownRender.perf.test.tsx` renders the same reply incrementally and whole, logs both timings, and always checks that incremental parsing processes less than a third of the characters; `detailCacheRecency.perf.test.tsx` scripts a session over the window's connection and always checks that coming back to the thread the user works in never fetches its detail again; and the byte half of `attachmentHandles.perf.test.ts` stages an 8 MiB screenshot and always checks that a draft save, its answer, the shell, `agents.json` and the preview file each stay under 64 KB with it in the draft. `activitySummaries.perf.test.ts` always checks the summary frame's byte bound; only its timing case is gated. `shellDetailCommits.perf.test.tsx` always checks commits per streamed chunk in both shell/detail arrival orders. The sentinel cases in `codexOpenApply.perf.test.ts` and `snapshotCloning.perf.test.ts` always check that the adapter and activity members their opt-in benchmarks wrap still exist. The markdown file's elapsed-time comparison is opt-in like the other stopwatch budgets below.
 
   Run a timing benchmark by hand on an idle machine. Each prints its medians to the console; the matching note in `docs/perf/` says what they mean:
 
@@ -76,6 +76,46 @@ folder keeping its draft. Every separate
 Playwright config under `tests/` must have an npm runner;
 `tests/unit/release/testDiscovery.test.ts` checks that boundary.
 
+## E2e evidence
+
+E2e specs and the four opt-in native evidence probes use `tests/fixtures/evidence.ts`.
+Ordinary runs write to ignored `artifacts/e2e-runs/<name>/`. The name is the default
+directory's path relative to `artifacts/`, including any subdirectories; a default
+directory outside `artifacts/` is rejected. For example, appearance captures go to
+`artifacts/e2e-runs/verification/phase-1-appearance/`, and the two Electron review
+folders stay separate as `review-381/electron/` and `review-389/electron/`.
+Both Git and ESLint ignore `artifacts/e2e-runs/`. It sits outside Playwright's
+`test-results/` output, so starting another Playwright command keeps earlier evidence.
+
+`SOTTO_E2E_ARTIFACT_ROOT` takes precedence and puts that same relative path
+under the chosen root, including when publication is requested. Without that override,
+`SOTTO_E2E_EVIDENCE=publish` writes to the historical `artifacts/` folder instead.
+Set it only to refresh committed evidence on purpose, then inspect the working
+tree and keep only the captures the verification note cites. Existing artifact
+folder names stay as they are so those citations keep working.
+
+For example, publish theme-library evidence after building the app:
+
+```sh
+SOTTO_E2E_EVIDENCE=publish SOTTO_THEMES_E2E=1 npx playwright test tests/e2e/theme-library-evidence.spec.ts
+```
+
+```powershell
+$env:SOTTO_E2E_EVIDENCE = 'publish'
+$env:SOTTO_THEMES_E2E = '1'
+try { npx playwright test tests/e2e/theme-library-evidence.spec.ts }
+finally { Remove-Item Env:SOTTO_E2E_EVIDENCE, Env:SOTTO_THEMES_E2E }
+```
+
+The five design-capture surface specs under `tests/e2e/` are
+`design-capture-pages.spec.ts`, `design-capture-threads.spec.ts`,
+`design-capture-appearance.spec.ts`, `design-capture-voice-widget.spec.ts` and
+`design-capture-scaling.spec.ts`. They share their explicit baseline-update flag
+through `tests/e2e/support/designCapture.ts`; `tests/e2e/support/designCaptureManifest.mjs`
+validates the complete matrix once all five finish. `visual-previews.spec.ts` also
+keeps its own explicit baseline-update flag. Evidence publication does not update
+those baselines.
+
 ## Opt-in appearance and theme captures
 
 `npm run test:e2e` builds and runs the ordinary Electron suite with one worker.
@@ -86,10 +126,10 @@ suite and only skip the captures. These captures are developer evidence, not par
 Build first with `npm run build`, then enable the spec you want to capture:
 
 ```sh
-SOTTO_THEMES_E2E=1 npx playwright test tests/e2e/phase-three-themes.spec.ts
+SOTTO_THEMES_E2E=1 npx playwright test tests/e2e/theme-library-evidence.spec.ts
 SOTTO_APPEARANCE_EVIDENCE=1 npx playwright test tests/e2e/appearance-evidence.spec.ts
 SOTTO_THEME_EVIDENCE=1 npx playwright test tests/e2e/theme-palettes-evidence.spec.ts
-SOTTO_THEME_BRANDING_EVIDENCE=1 npx playwright test tests/e2e/phase-three-theme-branding.spec.ts
+SOTTO_THEME_BRANDING_EVIDENCE=1 npx playwright test tests/e2e/theme-branding-evidence.spec.ts
 SOTTO_FROST_EVIDENCE=1 npx playwright test tests/e2e/frosted-window.spec.ts
 SOTTO_PANE_TERMINAL_EVIDENCE=1 npx playwright test tests/e2e/pane-terminal.spec.ts
 ```
@@ -98,16 +138,16 @@ In PowerShell, set the matching variable before the command and remove it after:
 
 ```powershell
 $env:SOTTO_THEMES_E2E = '1'
-try { npx playwright test tests/e2e/phase-three-themes.spec.ts }
+try { npx playwright test tests/e2e/theme-library-evidence.spec.ts }
 finally { Remove-Item Env:SOTTO_THEMES_E2E }
 ```
 
-| Spec | Capture folder |
+| Spec | Publication folder (`SOTTO_E2E_EVIDENCE=publish`) |
 | --- | --- |
-| `phase-three-themes.spec.ts` | `artifacts/phase-three-themes/` |
+| `theme-library-evidence.spec.ts` | `artifacts/phase-three-themes/` |
 | `appearance-evidence.spec.ts` | `artifacts/verification/phase-1-appearance/` |
 | `theme-palettes-evidence.spec.ts` | `artifacts/verification/sotto-palettes/` |
-| `phase-three-theme-branding.spec.ts` | `artifacts/phase-three-theme-branding/` |
+| `theme-branding-evidence.spec.ts` | `artifacts/phase-three-theme-branding/` |
 | `frosted-window.spec.ts` | `artifacts/frosted-window/` (git-ignored: screen captures show the desktop behind the window) |
 | `pane-terminal.spec.ts` | `artifacts/pane-terminal/` |
 
@@ -115,8 +155,9 @@ The appearance spec's optional whole-screen capture additionally needs
 `SOTTO_APPEARANCE_SCREEN_CAPTURE=1` and an otherwise clear desktop. Leave it unset
 for app-window captures. Run Electron captures serially on an interactive desktop;
 inspect their images before claiming visual verification. These commands write
-evidence files, so inspect the working tree afterward and keep only intended
-captures. They do not regenerate the design comparison baselines.
+disposable evidence by default. Publication needs the separate setting above;
+keep only intended captures when publishing. They do not regenerate the design
+comparison baselines.
 
 ## Devin native verification
 
@@ -294,6 +335,8 @@ is still releasing a just-exited child's handles.
 
 Measured on a warm developer machine: install 18 s, runtime preparation 1 s, typecheck 22 s, lint 31 s, vitest with two workers 234 s, notices 2 s — about five minutes of gate time. A cold runner adds the dependency install and the Electron binary download, so a full run is expected to land inside the 15-minute budget, with the 30-minute job timeout as a backstop.
 
+That measurement predates the suite's growth. On October 9, 2026, on the Windows development laptop with nothing else running, `npm test -- --maxWorkers=2` took 1,328 s for 9,099 cases at `c53d2908c`, before the #123 cleanup, and 1,248 s for 9,617 cases after it: about 11% less time per case. Gates (Windows) on GitHub took 24 to 28 minutes for the pull requests of that week, so the job now runs close to its 30-minute timeout.
+
 ## Native usage archive writes
 
 Native usage archive write bounds run in `tests/unit/main/nativeUsagePersistence.test.ts`, beside the accounting cases in `nativeUsage.test.ts`. They check unchanged replay, coalescing, latest-total drain and observable persistence failures without stopwatch assertions. The isolated before/after benchmark in `tests/perf/nativeUsageWrites.perf.test.ts` requires `SOTTO_PERF_BENCH=1`; run it alone with one worker. See [the workload and verification state](perf/2026-09-27-native-usage-writes.md); since #767 the ledger is also written at most once a second while a reply streams ([the note](perf/2026-10-06-send-writes.md)).
@@ -366,7 +409,7 @@ $env:SOTTO_CODEX_COMPUTER_USE_LIVE = '1'
 npx vitest run tests/integration/codexComputerUseLive.test.ts --maxWorkers=1
 ```
 
-Build and run `npx playwright test tests/e2e/agent-browser.spec.ts tests/e2e/tools-sidecar.spec.ts tests/e2e/phase-three-tools-bridge.spec.ts` to exercise the real Electron browser, permission continuation, feedback drafts and the Tools pane. The agent test uses a local page and test-only provider entry point; it needs no provider account. Screenshots and a geometry report are written to ignored `artifacts/agent-browser/`. Native-provider compatibility and actual desktop results are recorded separately in `docs/verification/`.
+Build and run `npx playwright test tests/e2e/agent-browser.spec.ts tests/e2e/tools-sidecar.spec.ts tests/e2e/native-tool-ownership.spec.ts` to exercise the real Electron browser, permission continuation, feedback drafts and the Tools pane. The agent test uses a local page and test-only provider entry point; it needs no provider account. Screenshots and a geometry report are written to ignored `artifacts/e2e-runs/agent-browser/` by default. Native-provider compatibility and actual desktop results are recorded separately in `docs/verification/`.
 
 ## Manual Windows desktop check
 
@@ -374,11 +417,11 @@ After `npm ci`, run `npm run test:desktop-smoke` from the release checkout on an
 
 The command runs `test:recovery`, which checks focused real application boundaries, builds once and drives receipt, queued-steering and completed-dictation recovery. It then uses that same build for both daily-workspace cases and the Settings index journey. The daily check drives actual keyboard input through a Windows shell, verifies the changed file, reads its diff, commits and pushes only to an owned temporary bare repository; its GitHub client is scripted. The restart case checks drafts and queues, while Settings checks real saves, failure feedback, keyboard navigation, themes and persistence.
 
-Electron journeys run serially with one worker. Do not run another Electron journey on the same desktop concurrently. The wrapper refuses other platforms, clears live-provider and timing-benchmark flags and any alternate Electron entry point, and supplies a verified absent owned performance-data path. Fixtures create and remove only their owned temporary profiles. `SOTTO_E2E_ARTIFACT_ROOT` routes the selected journeys' screenshots and proof files into ignored `artifacts/review-393/desktop-run/`, each in its own named subdirectory; the runner does not modify or restore committed captures. Standalone spec runs keep their usual evidence paths unless that option is supplied. Inspect the emitted screenshots after a UI change and keep only selected evidence. A failed stage stops the command and blocks the release check; investigate its assertion before rerunning. Record the source commit, actual test counts and platform in the release evidence. A local Windows pass does not establish macOS execution.
+Electron journeys run serially with one worker. Do not run another Electron journey on the same desktop concurrently. The wrapper refuses other platforms, clears live-provider and timing-benchmark flags and any alternate Electron entry point, and supplies a verified absent owned performance-data path. Fixtures create and remove only their owned temporary profiles. `SOTTO_E2E_ARTIFACT_ROOT` routes the selected journeys' screenshots and proof files into ignored `artifacts/review-393/desktop-run/`, each in its own named subdirectory using its path relative to `artifacts/`; the runner does not modify or restore committed captures. The wrapper's selected specs use single-segment names, so their layout stays the same. Standalone spec runs use ignored `artifacts/e2e-runs/` by default; `SOTTO_E2E_EVIDENCE=publish` deliberately refreshes their historical evidence folders. Inspect the emitted screenshots after a UI change and keep only selected evidence. A failed stage stops the command and blocks the release check; investigate its assertion before rerunning. Record the source commit, actual test counts and platform in the release evidence. A local Windows pass does not establish macOS execution.
 
 ## Recovery through application boundaries
 
-`npm run test:recovery` is the compact recovery check (#395). It runs seven focused test files with two Vitest workers, builds the app, then runs the dictation recovery, command receipt and queued steering journeys in one Electron worker. Run it from an installed checkout on the desktop being verified, with no other Electron journey running. Every case uses isolated temporary storage and scripted effects; it needs no provider account or paid turn and does not regenerate design baselines.
+`npm run test:recovery` is the compact recovery check (#395). It runs fifteen focused test files with two Vitest workers, builds the app, then runs the dictation recovery, command receipt and queued steering journeys in one Electron worker. Run it from an installed checkout on the desktop being verified, with no other Electron journey running. Every case uses isolated temporary storage and scripted effects; it needs no provider account or paid turn and does not regenerate design baselines.
 
 | Boundary | Assertions |
 | --- | --- |
@@ -417,6 +460,8 @@ The workflow has no path filters, so changes under `apps/ios` and the host proto
 ## Current-session reaper observations
 
 The Claude fixture's stopped check reads its current child ownership marker and probes that PID. Grok records residency after an accepted load or close; a historical or rejected close is not evidence that its current session stopped. `sessionFixtureObservation.test.ts` covers a real resumed Claude child and a Grok close/reload, including a rejected close. The host contracts keep their existing deadlines and assert actual session ownership rather than elapsed time.
+
+The adapter and HostService contracts receive static skip reasons from each fixture. Known fixture features are checked before any fixture is constructed or connected, including session drivers, live settings, event publication, background work, confirmation loss and client updates. The adapter's thread-settings result cases still wait for the connected provider's configuration capability and advertised model modes to decide whether an alternative setting exists.
 
 ## Grok idle history maintenance
 

@@ -1,6 +1,6 @@
 # The read before a Codex send - September 26, 2026
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0065](../adr/0065-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 Issue #324. Before `turn/start`, a Codex send called `refreshThread`, which read the whole transcript with
 `thread/read` and `includeTurns: true`, applied every turn, saved the thread record, and tried again up to three times

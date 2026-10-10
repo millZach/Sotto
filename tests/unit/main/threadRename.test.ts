@@ -5,21 +5,24 @@
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
+
 import { e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { agentCommandSchema, type AgentThread } from '../../../src/shared/agents'
 import type { AgentHostCommand } from '../../../src/main/agents/host'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 import { workspaceFixture } from '../../fixtures/workspaceFixture'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
+import { deferred } from '../../fixtures/deferred'
 
 const opened: { control: AgentControl; stop: () => Promise<void> }[] = []
 const removals: (() => Promise<void>)[] = []
 async function coordinator(root?: string) {
   const workspace = await workspaceFixture(root)
   if (root === undefined) removals.push(workspace.remove)
-  const credentials = new AgentCredentials(workspace.root, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: bytes => bytes.toString() })
-  await credentials.load()
-  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: workspace.root, host: workspace.host, credentials, reasoner: e2eAgentReasoner })
+  const credentials = await testCredentials(workspace.root, { mode: 'unavailable' })
+
+  const control = createAgentControl({ schedule: immediatePublishScheduler, directory: workspace.root, host: workspace.host, credentials, reasoner: e2eAgentReasoner })
   opened.push({ control, stop: workspace.stop })
   await control.start()
   await control.command({ type: 'connect' })
@@ -78,10 +81,9 @@ describe('renaming a thread', () => {
     const threadId = workshop(f.control).id
     const adapter = f.adapters.codex
     const inner = adapter.execute.bind(adapter)
-    let release!: () => void
-    let started!: () => void
-    const held = new Promise<void>(resolve => { release = resolve })
-    const sending = new Promise<void>(resolve => { started = resolve })
+
+    const { promise: held, resolve: release } = deferred<void>()
+    const { promise: sending, resolve: started } = deferred<void>()
     adapter.execute = async (command: AgentHostCommand) => {
       if (command.type === 'send') { started(); await held }
       return inner(command)

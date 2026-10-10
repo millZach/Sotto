@@ -1,17 +1,18 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { expectPromptText, promptField } from './support/prompt'
+import { agentState } from './support/agentAccess'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { EMPTY_AGENT_HOST, defaultAgentConfiguration } from '../../src/shared/agents'
 import { hostEntityKey } from '../../src/shared/clientIdentity'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, launchSotto, openThreads } from './support/sottoLaunch'
 
 test('desktop migration keeps raw host IDs and restores scoped panes and drafts after restart', async () => {
   const testInfo = test.info()
   test.setTimeout(120_000)
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-host-identity-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-host-identity-' })).directory
   const snapshot = { ...EMPTY_AGENT_HOST, projects: [{ id: 'project', title: 'Identity project', path: profile }],
     threads: ['first', 'second'].map(id => ({ id, projectId: 'project', title: `${id} identity task`, modelId: '', status: 'idle', messages: [], requests: [], nativeSessionStarted: false })) }
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true }))
@@ -28,7 +29,7 @@ test('desktop migration keeps raw host IDs and restores scoped panes and drafts 
         originalHost ??= identity.hostId
         expect(identity.hostId).toBe(originalHost)
         const first = hostEntityKey(identity.hostId, 'first'), second = hostEntityKey(identity.hostId, 'second')
-        const state = await page.evaluate(() => window.sotto!.agents!.get())
+        const state = await agentState(page)
         expect(state.hostId).toBe(identity.hostId)
         expect(state.host.threads.find(thread => thread.id === first)?.hostId).toBe(identity.hostId)
         expect(state.host.threads.find(thread => thread.id === second)?.projectId).toBe(hostEntityKey(identity.hostId, 'project'))
@@ -49,9 +50,9 @@ test('desktop migration keeps raw host IDs and restores scoped panes and drafts 
         const draft = await page.evaluate(async () => (await window.sotto!.agents!.get()).threadDrafts)
         expect(draft).toContainEqual(expect.objectContaining({ threadId: first, text: 'Draft retained across host migration' }))
         await page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: 'first identity task', exact: true }).click()
-        await expect(page.locator(`section.thread-pane[data-thread-id="${first}"]`).getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('Draft retained across host migration')
+        await expectPromptText(promptField(page.locator(`section.thread-pane[data-thread-id="${first}"]`)), 'Draft retained across host migration')
         await page.screenshot({ path: testInfo.outputPath(`${phase}.png`), animations: 'disabled' })
       } finally { await closeSotto(launched) }
     }
-  } finally { await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true }) }
+  } finally { await removeOwnedE2EProfile(profile) }
 })

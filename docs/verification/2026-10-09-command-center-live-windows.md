@@ -142,7 +142,7 @@ Step keys: S setup; 1 supplied tool; 2 file/shell; 3 web/delegation; 4 extra pro
 
 ## What remains unproved
 
-macOS has no live evidence or admission. Linux has no admission path in this ticket. Codex's native tool inventory is absent from its protocol: absence of native writes, shell, web and delegation is proved only by these observed turns, not an OS sandbox audit or every future client/model. Admission still checks every process report and refuses mismatches. The live checks used two supplied stand-in tools, not the full production command-center tool set or a renderer journey. No project trust setting was changed. Administrator-installed policy/hooks remain the trusted boundary in ADR-0066.
+macOS has no live evidence or admission. Linux has no admission path in this ticket. Codex's native tool inventory is absent from its protocol: absence of native writes, shell, web and delegation is proved only by these observed turns, not an OS sandbox audit or every future client/model. Admission still checks every process report and refuses mismatches. The live checks used two supplied stand-in tools, not the full production command-center tool set or a renderer journey. No project trust setting was changed. Administrator-installed policy/hooks remain the trusted boundary in ADR-0069.
 
 Claude's remaining plugin refusal and Grok's extra-tool confirmation need further work and another authorized complete live run before either receives an entry. Their cold resumes and changed settings are unproved. Ordinary-thread behavior and adapter contracts are covered by the fake-provider suite; this note does not claim they were exercised against real projects.
 

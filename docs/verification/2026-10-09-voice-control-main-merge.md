@@ -1,5 +1,7 @@
 # Bring voice-control removal up to date with main
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 October 9, 2026. Local merge of `origin/main` at `9d6eff099a46a9d1dbd1a8570e90f385719b50cb` into `feat/remove-voice-control`, whose previous tip was `006442f7b0e14f7a6cfd244faccbda89c785f770`. No push or release.
 
 ## Acceptance checks
@@ -7,7 +9,7 @@ October 9, 2026. Local merge of `origin/main` at `9d6eff099a46a9d1dbd1a8570e90f3
 - Main's owl mark, Linux dictation and desktop profile, Claude Code naming, explicit babysitting, nine-step first-run setup and four-stop Threads tour survive.
 - Dictation is the only listener. Reply speech, wake code, Agents room, orb, Manage, assignments, attention and supervision remain removed.
 - Production dependencies are exactly `node-pty` and `zod`; main's package versions and app version 0.1.34 remain.
-- Removal is [ADR-0065](../adr/0065-remove-voice-control-and-thread-management.md): main already occupied 0062 (Linux), 0063 (setup) and 0064 (owl).
+- Removal is [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md): main already occupied 0062 (Linux), 0063 (setup) and 0064 (owl).
 
 ## Main additions that met the removal
 
@@ -185,7 +187,7 @@ The [complete pixel audit](../../artifacts/voice-control-removal/merged-setup/pi
 
 ## ADR reference audit
 
-Renamed the removal record to `0065-remove-voice-control-and-thread-management.md` and updated removal references across 135 files: AGENTS, CONTEXT, ADR amendment lines, current docs, dated plans, performance notes and verification history. The [reference-file inventory](../../artifacts/voice-control-removal/merged-setup/adr-references.json) lists every file. A tracked-text scan found no old removal filename. Seven surviving ADR-0062 references all mean Linux and were preserved; main's owl references remain ADR-0064. There were no surviving code or test references to renumber. The future command-center plan's unassigned proposed record is described by name rather than colliding with accepted ADR-0063.
+Renamed the removal record to `0068-remove-voice-control-and-thread-management.md` and updated removal references across 135 files: AGENTS, CONTEXT, ADR amendment lines, current docs, dated plans, performance notes and verification history. The [reference-file inventory](../../artifacts/voice-control-removal/merged-setup/adr-references.json) lists every file. A tracked-text scan found no old removal filename. Seven surviving ADR-0062 references all mean Linux and were preserved; main's owl references remain ADR-0064. There were no surviving code or test references to renumber. The future command-center plan's unassigned proposed record is described by name rather than colliding with accepted ADR-0063.
 
 ## Review and limits
 

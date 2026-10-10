@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Sotto
+Comment=Dictation and manual coding threads
+Exec=sotto %U
+Icon=sotto
+Terminal=false
+Categories=Utility;
+StartupWMClass=sotto

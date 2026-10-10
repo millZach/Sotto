@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { verifyClaudeSdkAssets } from './claude-sdk-package.mjs'
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import process from 'node:process'
 import { pathToFileURL, URL } from 'node:url'
 
@@ -14,6 +14,7 @@ import { listAsarEntries, readAsarText } from './asar-entries.mjs'
 import { verifyThirdPartyNotices } from './verify-notices.mjs'
 import { verifyExternalDependencyInventories } from './release-external-dependencies.mjs'
 import { releasePlatformProfile } from './release-platform-profile.mjs'
+import { verifyLinuxArchiveContents } from './verify-linux-tarball.mjs'
 import {
   fileSha256,
   verifyBuildProvenance,
@@ -54,10 +55,12 @@ function requireReleaseFile(input) {
 export async function verifyInstallerAppAsar(installerInput, unpackedAsarPath) {
   const distributablePath = requireReleaseFile(installerInput)
   let embedded
+  let archiveContents
   try {
-    embedded = await profile.openDistributable(distributablePath, async (embeddedAsarPath) =>
-      existsSync(embeddedAsarPath) ? await fileSha256(embeddedAsarPath) : null,
-    )
+    embedded = await profile.openDistributable(distributablePath, async (embeddedAsarPath, extractedRoot) => {
+      if (profile.key === 'linux') archiveContents = await verifyLinuxArchiveContents(dirname(dirname(unpackedAsarPath)), extractedRoot)
+      return existsSync(embeddedAsarPath) ? await fileSha256(embeddedAsarPath) : null
+    })
   } catch (error) {
     fail(error instanceof Error ? error.message : String(error))
   }
@@ -66,7 +69,7 @@ export async function verifyInstallerAppAsar(installerInput, unpackedAsarPath) {
   if (JSON.stringify(embedded) !== JSON.stringify(unpacked)) {
     fail(`${profile.distributableLabel} embedded app.asar differs from verified ${profile.packagedDirName} app.asar`)
   }
-  return { name: basename(distributablePath), ...embedded }
+  return { name: basename(distributablePath), ...embedded, ...(archiveContents === undefined ? {} : archiveContents) }
 }
 
 function productionModuleRoots(entries) {

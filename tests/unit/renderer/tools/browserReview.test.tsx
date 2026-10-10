@@ -1,7 +1,9 @@
+import { deferred } from '../../../fixtures/deferred'
+import { browserBridgeFixture, browserPage, browserTask } from '../../../fixtures/renderer/browserBridge'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { BrowserBridge, BrowserCapture, BrowserEvent, BrowserPage, BrowserTask } from '../../../../src/shared/browser'
+import type { BrowserBridge, BrowserCapture, BrowserPage, BrowserTask } from '../../../../src/shared/browser'
 import type { ToolsResult } from '../../../../src/shared/tools'
 import { BrowserTaskDetails } from '../../../../src/renderer/src/tools/BrowserTaskDetails'
 import { BrowserPlayer } from '../../../../src/renderer/src/tools/BrowserPlayer'
@@ -11,27 +13,25 @@ import { appendBrowserFeedback, BrowserFeedback } from '../../../../src/renderer
 import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
 import { ToolsPanelToggle } from '../../../../src/renderer/src/tools/ToolsPanel'
 import { ThreadDraftStore } from '../../../../src/renderer/src/agents/threadDraftStore'
-import { threadsStateFixture } from '../liveAgentState'
+import { threadsStateFixture } from '../../../fixtures/renderer/liveAgentState'
 import { handleOf } from '../../../fixtures/stagedImages'
 import type { AgentAttachmentStageRequest } from '../../../../src/shared/agents'
 
 const workspace = { threadId: 'visual-gate', projectId: 'workshop', workingDirectory: 'D:/work', workspaceId: 'workspace' }
-const page: BrowserPage = { id: '11111111-1111-4111-8111-111111111111', workspace, url: 'http://localhost:5173/', title: 'Preview', status: 'ready', error: null, canGoBack: false, canGoForward: false }
+const page: BrowserPage = browserPage(workspace, { url: 'http://localhost:5173/', title: 'Preview' })
 const image = 'data:image/png;base64,YWJj'
 const capture: BrowserCapture = { image, url: page.url, width: 1280, height: 800, element: null }
-const task = (patch: Partial<BrowserTask> = {}): BrowserTask => ({ id: '22222222-2222-4222-8222-222222222222', threadId: workspace.threadId, workspaceId: workspace.workspaceId, pageId: page.id, status: 'working', description: 'Checking the form', steps: [], thumbnail: image, summary: null, unchecked: [], updatedAt: 1, pendingAction: null, output: null, ...patch })
+const task = (patch: Partial<BrowserTask> = {}): BrowserTask => browserTask({ threadId: workspace.threadId, workspaceId: workspace.workspaceId, pageId: page.id, thumbnail: image, ...patch })
 const ok = <T,>(value: T): ToolsResult<T> => ({ ok: true, value })
 function fake(initial: BrowserTask[] = [task()]) {
-  const listeners = new Set<(event: BrowserEvent) => void>()
-  const bridge: BrowserBridge = {
+  const published = browserBridgeFixture({ workspace, commands: {
     tasks: vi.fn(async () => ok(initial)), list: vi.fn(async () => ok({ workspace, pages: [page] })),
     create: vi.fn(async () => ok(page)), navigate: vi.fn(async () => ok(page)), back: vi.fn(async () => ok(page)), forward: vi.fn(async () => ok(page)), reload: vi.fn(async () => ok(page)), close: vi.fn(async () => ok(undefined)), mount: vi.fn(async () => ok(undefined)),
     share: vi.fn(async () => ok(page)), viewport: vi.fn(async () => ok(page)), capture: vi.fn(async () => ok(capture)),
     controlTask: vi.fn(async request => ok(task({ status: request.control === 'pause' ? 'paused' : 'working', updatedAt: Date.now() }))),
     answerAction: vi.fn(async () => ok(task())), stopGrant: vi.fn(async () => ok(undefined)), openLink: vi.fn(async () => ok({ destination: 'external' as const })),
-    onEvent: vi.fn(listener => { listeners.add(listener); return () => { listeners.delete(listener) } }),
-  }
-  return { bridge, emit: (event: BrowserEvent) => listeners.forEach(listener => listener(event)) }
+  } })
+  return { ...published, emit: published.publish }
 }
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers() })
 
@@ -206,7 +206,7 @@ describe('the browser player', () => {
   })
   it('hides on request, leaving Tools > Browser as the way back, and moves focus to the composer', async () => {
     const browser = fake(); const store = new ToolsPanelStore(); const playerStore = new BrowserPlayerStore()
-    render(<><section className="thread-pane" data-focused><form className="thread-prompt"><textarea aria-label="Message" /></form></section>
+    render(<><section className="thread-pane" data-focused><form className="thread-prompt"><div className="prompt-editor" role="textbox" contentEditable aria-label="Message" tabIndex={0} /></form></section>
       <BrowserPlayer state={threadsStateFixture()} focusedThreadId="visual-gate" bridge={browser.bridge} store={store} playerStore={playerStore} /></>)
     await screen.findByRole('complementary', { name: 'Browser for Visual gate flake' })
     fireEvent.click(screen.getByRole('button', { name: 'Hide the browser; the agent keeps working' }))
@@ -216,7 +216,7 @@ describe('the browser player', () => {
   })
   it('shrinks the player and returns focus to the composer on Escape', async () => {
     const browser = fake(); const store = new ToolsPanelStore(); const playerStore = new BrowserPlayerStore()
-    render(<><section className="thread-pane" data-focused><form className="thread-prompt"><textarea aria-label="Message" /></form></section>
+    render(<><section className="thread-pane" data-focused><form className="thread-prompt"><div className="prompt-editor" role="textbox" contentEditable aria-label="Message" tabIndex={0} /></form></section>
       <BrowserPlayer state={threadsStateFixture()} focusedThreadId="visual-gate" bridge={browser.bridge} store={store} playerStore={playerStore} /></>)
     const player = await screen.findByRole('complementary', { name: 'Browser for Visual gate flake' })
     fireEvent.keyDown(player, { key: 'Escape' })
@@ -249,7 +249,7 @@ describe('the browser player', () => {
     const pending = task({ pendingAction: { id: '33333333-3333-4333-8333-333333333333', action: { type: 'click', x: 10, y: 20 }, description: 'Click at 10, 20 on localhost', expiresAt: Date.now() + 10000 } })
     const browser = fake([pending]); const store = new ToolsPanelStore(); const playerStore = new BrowserPlayerStore()
     let settleAnswer: (() => void) | null = null
-    browser.bridge.answerAction = vi.fn<NonNullable<BrowserBridge['answerAction']>>(() => new Promise(resolve => { settleAnswer = () => resolve(ok(task())) }))
+    browser.bridge.answerAction = vi.fn<NonNullable<BrowserBridge['answerAction']>>(() => { const pending = deferred<ToolsResult<BrowserTask>>(); settleAnswer = () => pending.resolve(ok(task())); return pending.promise })
     render(<BrowserPlayer state={threadsStateFixture()} focusedThreadId="visual-gate" bridge={browser.bridge} store={store} playerStore={playerStore} />)
     const allowOnce = await screen.findByRole('button', { name: 'Allow once' })
     const deny = screen.getByRole('button', { name: 'Deny' })
@@ -441,7 +441,7 @@ describe('browser feedback', () => {
     drafts.edit('visual-gate', { text: 'Keep this thought' })
     const before = drafts.draft('visual-gate')
     let finish: (value: { blob: Blob }) => void = () => undefined
-    const prepare = vi.fn(() => new Promise<{ blob: Blob }>(resolve => { finish = resolve }))
+    const prepare = vi.fn(() => { const pending = deferred<{ blob: Blob }>(); finish = pending.resolve; return pending.promise })
     const controller = new AbortController()
     const added = appendBrowserFeedback(drafts, 'visual-gate', capture, 'Too tight', true, { prepare, signal: controller.signal })
     controller.abort()
@@ -453,7 +453,7 @@ describe('browser feedback', () => {
     const browser = fake(); const close = vi.fn()
     let signal: AbortSignal | undefined
     let finish: (error: string | null) => void = () => undefined
-    const add = vi.fn((_capture: unknown, _comment: string, given: AbortSignal) => { signal = given; return new Promise<string | null>(resolve => { finish = resolve }) })
+    const add = vi.fn((_capture: unknown, _comment: string, given: AbortSignal) => { signal = given; const pending = deferred<string | null>(); finish = pending.resolve; return pending.promise })
     render(<BrowserFeedback page={page} initial={capture} bridge={browser.bridge} onAdd={add} onClose={close} />)
     fireEvent.change(screen.getByRole('textbox', { name: 'Browser feedback comment' }), { target: { value: 'Give this more space' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add to draft' }))
@@ -474,7 +474,7 @@ describe('browser feedback', () => {
     const drafts = new ThreadDraftStore(vi.fn(async () => null))
     const dimensions = { original: { width: 5120, height: 2880 }, sent: { width: 2576, height: 1449 } }
     let finish: (value: { blob: Blob, dimensions: typeof dimensions }) => void = () => undefined
-    const prepare = vi.fn<(image: Blob) => Promise<{ blob: Blob, dimensions: typeof dimensions }>>(() => new Promise(resolve => { finish = resolve }))
+    const prepare = vi.fn<(image: Blob) => Promise<{ blob: Blob, dimensions: typeof dimensions }>>(() => { const pending = deferred<{ blob: Blob; dimensions: { original: { width: number; height: number; }; sent: { width: number; height: number; }; }; }>(); finish = pending.resolve; return pending.promise })
     const added = appendBrowserFeedback(drafts, 'visual-gate', { ...capture, width: 5120, height: 2880 }, 'Too tight', true, { prepare })
     // The capture is decoded from its data URL once, and those bytes are what is prepared.
     expect(new Uint8Array(await prepare.mock.calls[0]![0].arrayBuffer())).toEqual(new Uint8Array(Buffer.from('abc')))

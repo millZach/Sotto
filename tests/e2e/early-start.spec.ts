@@ -1,3 +1,4 @@
+import { promptField } from './support/prompt'
 /**
  * Early start (#769, ADR-0057) in the built app. The real Claude adapter runs over the fake CLI in `tests/fixtures/`
  * (`SOTTO_E2E_NATIVE_FIXTURE_ROOT` in `src/main/index.ts`). Typing in a new thread's composer starts the CLI its first
@@ -5,11 +6,10 @@
  *
  *   npm run build && npx playwright test tests/e2e/early-start.spec.ts
  */
-import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { mkdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { fakeClaudeLaunches, fakeClaudePrompts as prompts, fakeClaudeSessionFiles as sessionFiles } from '../fixtures/fakeClaudeRecords'
 import { closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
 
@@ -18,7 +18,7 @@ const launches = async (root: string) => (await fakeClaudeLaunches(root)).map(({
 
 test('typing in a new Claude thread starts its CLI before Send, and Send starts no other', async () => {
   test.setTimeout(180_000)
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-early-start-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-early-start-' })).directory
   const root = join(profile, 'native-fixture')
   const claude = join(root, 'claude')
   const project = join(root, 'project')
@@ -58,7 +58,7 @@ test('typing in a new Claude thread starts its CLI before Send, and Send starts 
     // Nothing has started for a thread whose first send has not happened.
     expect(await launches(claude)).toEqual([])
 
-    const prompt = pane.getByRole('textbox', { name: 'Prompt' })
+    const prompt = promptField(pane)
     await prompt.click()
     await page.keyboard.type('Synthetic early start prompt')
     // The first keystrokes started the CLI the first send will use, and Claude Code has no session for it yet.
@@ -79,6 +79,6 @@ test('typing in a new Claude thread starts its CLI before Send, and Send starts 
     for (const [key, value] of [['SOTTO_E2E_NATIVE_FIXTURE_ROOT', previous.root], ['SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE', previous.executable]] as const) {
       if (value === undefined) delete process.env[key]; else process.env[key] = value
     }
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 })

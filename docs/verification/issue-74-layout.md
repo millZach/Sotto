@@ -1,6 +1,6 @@
 # Issue 74: Windows layout and recovery regression lane
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0065](../adr/0065-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 Scope: the three failures left in `2026-09-14-terminal-display.md`, on the existing Sotto Windows desktop at 1280x860, 1600x1000 and the shipped 820x560 minimum. The current Sotto sidecar is the reference: compact context and surface tabs, no redundant Tools rail, unchanged theme tokens and terminal fidelity. Physical microphone testing remains pending in #81; macOS is explicitly deferred by the user and unverified.
 
@@ -20,7 +20,7 @@ Scoped visual checks: retain Sotto typography and theme colors, reduce excess sp
 Red command, run twice against the initial production build:
 
 ```powershell
-npx playwright test tests/e2e/phase-three-ui.spec.ts tests/e2e/phase-three-ui-final-fixes.spec.ts --grep 'keeps the working folder|reviews changes|starts, continues' --workers=1 --output=test-results/issue74-layout
+npx playwright test tests/e2e/tools-workspace.spec.ts tests/e2e/tools-footer-and-terminal-themes.spec.ts --grep 'keeps the working folder|reviews changes|starts, continues' --workers=1 --output=test-results/issue74-layout
 ```
 
 Both runs: 3 failed, consistently in the same assertions. Folder height was 1px instead of >30; selected row containment was false; personal transcript was 142.667px instead of >=150. The existing journeys reach the real AppShell/renderer/IPC and services using temporary owned profiles, fixture providers, real Git folders and terminal/browser services. No provider turn is paid or sent to an installed account.
@@ -38,14 +38,14 @@ Production changes are eight lines of CSS: the compact Changes strip now allows 
 Green command:
 
 ```powershell
-npx playwright test tests/e2e/phase-three-ui.spec.ts tests/e2e/phase-three-ui-final-fixes.spec.ts tests/e2e/phase-three-ui-recovery.spec.ts --grep 'working-folder actions|reviews changes|starts, continues|explains a page|recovers a message' --workers=1 --output=test-results/issue74-layout
+npx playwright test tests/e2e/tools-workspace.spec.ts tests/e2e/tools-footer-and-terminal-themes.spec.ts tests/e2e/browser-retry-and-terminal-themes.spec.ts --grep 'working-folder actions|reviews changes|starts, continues|explains a page|recovers a message' --workers=1 --output=test-results/issue74-layout
 ```
 
 **5 passed in 30.2 seconds.** This includes keyboard Home/End selection inside the single-row Changes strip, restoring app.ts and closing its diff, real terminal input and local browser placement/menu/reduced-motion behavior, keyboard folder-path copy verified against the clipboard, personal-chat draft/skill persistence across disconnect/restart/default changes, a refused native browser page recovering after its working folder returns, and a failed personal message merged with a newer draft without a duplicate send. The final resend is explicit and accepted once the owned fixture can save again.
 
-Rendered review caught the first capture occurring during diff loading after keyboard reselection. The test now waits for the actual added greeting before capture. Repeated `npx playwright test tests/e2e/phase-three-ui.spec.ts --grep 'reviews changes' --workers=1 --output=test-results/issue74-layout`: **1 passed in 9.7 seconds**, with refreshed dark/light code captures inspected. No empty/loading diff is used as final evidence.
+Rendered review caught the first capture occurring during diff loading after keyboard reselection. The test now waits for the actual added greeting before capture. Repeated `npx playwright test tests/e2e/tools-workspace.spec.ts --grep 'reviews changes' --workers=1 --output=test-results/issue74-layout`: **1 passed in 9.7 seconds**, with refreshed dark/light code captures inspected. No empty/loading diff is used as final evidence.
 
-`npm run build` passed. `npx eslint tests/e2e/phase-three-ui.spec.ts tests/e2e/phase-three-ui-final-fixes.spec.ts` passed. Scoped `git diff --check` passed. Temporary metric instrumentation was removed. Broader typecheck/tests and final integration are owned by the parent #74 lane.
+`npm run build` passed. `npx eslint tests/e2e/tools-workspace.spec.ts tests/e2e/tools-footer-and-terminal-themes.spec.ts` passed. Scoped `git diff --check` passed. Temporary metric instrumentation was removed. Broader typecheck/tests and final integration are owned by the parent #74 lane.
 
 ## Rendered acceptance
 

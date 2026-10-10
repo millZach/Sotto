@@ -1,10 +1,12 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { mkdir } from 'node:fs/promises'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import sharp from 'sharp'
 import { hostKeys } from './support/hostKeys'
 import { closeSotto, launchSotto, openThreads, resizeWindow } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
-const ARTIFACTS = 'artifacts/effort-slider'
+const ARTIFACTS = evidenceDirectory('artifacts/effort-slider')
 
 async function savedEffort(page: Page): Promise<string | undefined> {
   const workshop = (await hostKeys(page))('workshop')
@@ -159,11 +161,11 @@ test('the effort card previews a drag, saves on release, plays the arrival at th
     await expect(card).toHaveCount(0)
 
     // Ultrathink stays a visible instruction in the Claude draft, added once.
-    const prompt = page.getByRole('textbox', { name: 'Prompt', exact: true })
-    await prompt.fill('Review the parser.')
+    const prompt = promptField(page)
+    await fillPrompt(prompt, 'Review the parser.')
     await chip.click()
     await card.getByRole('button', { name: 'Add Ultrathink to prompt', exact: true }).click()
-    await expect(prompt).toHaveValue('Review the parser.\n\nultrathink')
+    await expectPromptText(prompt, 'Review the parser.\n\nultrathink')
     await expect(prompt).toBeFocused()
     expect(await savedEffort(page)).toBe('low')
     expect((await page.evaluate(async () => window.sotto!.agents!.threadDetail!('workshop')))?.messages).toHaveLength(0)

@@ -27,8 +27,7 @@ export function publishFixtureState(state: AgentState): void {
 export function useAgents() {
   const state = useSyncExternalStore(listener => { listeners.add(listener); return () => { listeners.delete(listener) } }, () => current)
   return {
-    state, command, threadDrafts, error: null, voice: { status: 'off' as const },
-    muteVoice: () => undefined, stopSpeech: () => undefined, retryVoice: () => undefined,
+    state, command, threadDrafts, error: null,
   }
 }
 export const useOptionalAgents = useAgents

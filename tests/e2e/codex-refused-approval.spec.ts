@@ -1,13 +1,12 @@
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
 import { randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 
 test('Codex shows a refused child approval without approving or routing it', async () => {
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-codex-refusal-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-codex-refusal-' })).directory
   const root = join(profile, 'native-fixture')
   for (const folder of ['claude', 'codex', 'project']) await mkdir(join(root, folder), { recursive: true })
   await writeFile(join(root, 'codex', 'script.json'), JSON.stringify({ reply: 'Ready for the next request.' }))
@@ -75,6 +74,6 @@ test('Codex shows a refused child approval without approving or routing it', asy
     else process.env.SOTTO_E2E_NATIVE_FIXTURE_ROOT = previous.root
     if (previous.executable === undefined) delete process.env.SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE
     else process.env.SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE = previous.executable
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 })

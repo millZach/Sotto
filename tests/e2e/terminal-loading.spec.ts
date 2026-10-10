@@ -1,9 +1,11 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { mkdir, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { closeSotto, launchSotto, openThreads } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
-const SHOTS = resolve('artifacts/terminal-loading')
+const SHOTS = evidenceDirectory('artifacts/terminal-loading')
 
 for (const surface of ['tools', 'workspace'] as const) {
   test(`${surface} terminal recovers a failed view without restarting its shell or losing a draft`, async () => {
@@ -120,14 +122,14 @@ for (const surface of ['tools', 'workspace'] as const) {
       // The current document still caches the failed import; the recovery button reloads it.
       if (surface === 'tools') {
         await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!.setContentSize(1600, 1000))
-        await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Keep this draft through terminal recovery.')
+        await fillPrompt(promptField(page), 'Keep this draft through terminal recovery.')
       }
       await page.getByRole('button', { name: 'Reload window', exact: true }).press('Enter', { noWaitAfter: true })
       await page.waitForLoadState('domcontentloaded')
       await openThreads(page)
       if (surface === 'tools') {
         await page.getByRole('button', { name: 'Workshop', exact: true }).first().click()
-        await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('Keep this draft through terminal recovery.')
+        await expectPromptText(promptField(page), 'Keep this draft through terminal recovery.')
       }
       await show()
       await expect(page.locator('.xterm-helper-textarea')).toBeVisible()

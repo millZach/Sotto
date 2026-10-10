@@ -1,3 +1,4 @@
+import { setPromptText } from './helpers/promptEditor'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -7,8 +8,8 @@ import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { SplitLayoutStore } from '../../../src/renderer/src/agents/splitLayout'
-import { liveAgentState, threadsStateFixture } from './liveAgentState'
-import { openPaneMenu } from './paneMenu'
+import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
+import { openPaneMenu } from '../../fixtures/renderer/paneMenu'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 
@@ -53,7 +54,7 @@ describe('a busy thread beside an idle one in the same window', () => {
     expect(idle.getByRole('menuitem', { name: 'Settle' })).toBeEnabled()
     const prompt = idle.getByRole('textbox', { name: 'Prompt' })
     expect(prompt).toBeEnabled()
-    fireEvent.change(prompt, { target: { value: 'Keep working here' } })
+    setPromptText(prompt, 'Keep working here')
     expect(idle.getByRole('button', { name: 'Send prompt' })).toBeEnabled()
   })
 

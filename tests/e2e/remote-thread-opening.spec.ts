@@ -1,9 +1,9 @@
-import { isBuiltin } from 'node:module'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { promptField } from './support/prompt'
+import { buildSshHost } from './support/sshHost'
+import { ownedE2EProfile } from './support/e2eProfile'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { build } from 'vite'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { REMOTE_PERMISSION_DENIED } from '../../src/main/agents/authority'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
@@ -11,13 +11,11 @@ import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } fr
 
 test('opening a thread on a paired host shows its composer with no error or permission banner', async () => {
   test.setTimeout(180_000)
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-remote-thread-opening-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-remote-thread-opening-' })).directory
   const root = join(profile, 'ssh-root')
   await mkdir(root, { recursive: true })
   const install = join(root, '~', '.local', 'share', 'sotto-host', 'host')
-  await build({ configFile: false, logLevel: 'silent', define: { 'require.main': 'undefined' }, ssr: { noExternal: true },
-    build: { ssr: resolve('tests/fixtures/e2eSshHost.ts'), target: 'node24', outDir: install, emptyOutDir: false,
-      rollupOptions: { external: id => isBuiltin(id), output: { format: 'cjs', entryFileNames: 'index.js' } } } })
+  await buildSshHost(install)
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true,
     localHostEnabled: true, reducedMotion: 'on' }))
   const modeFile = join(root, 'mode')
@@ -67,7 +65,7 @@ test('opening a thread on a paired host shows its composer with no error or perm
     await expect.poll(() => page.evaluate(async () => (await window.sotto!.agents!.get()).activeThreadId)).toBe(localThread)
     await page.getByRole('button', { name: 'Remote thread opening', exact: true }).click()
     await expect.poll(() => page.evaluate(async () => (await window.sotto!.agents!.get()).activeThreadId)).toBe(remoteThread)
-    await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toBeVisible()
+    await expect(promptField(page)).toBeVisible()
     expect(await page.evaluate(async () => (await window.sotto!.agents!.get()).error)).toBeNull()
     await expect(page.getByText(REMOTE_PERMISSION_DENIED)).toHaveCount(0)
     await expect(page.locator('.thread-workspace__error')).toHaveCount(0)

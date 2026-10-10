@@ -1,12 +1,13 @@
+import { setPromptText } from './helpers/promptEditor'
 import React from 'react'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AgentState } from '../../../src/shared/agents'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
-import { liveAgentState, threadsStateFixture } from './liveAgentState'
+import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 
@@ -21,8 +22,8 @@ function mount(open: boolean) {
   const live = liveAgentState(state)
   vi.mocked(useAgents).mockImplementation(live.useLive)
   render(<ThreadsView now={E2E_THREADS_NOW} />)
-  const prompt = () => screen.getByRole('textbox', { name: 'Prompt' }) as HTMLTextAreaElement
-  const type = (text: string) => { for (let end = 1; end <= text.length; end++) fireEvent.change(prompt(), { target: { value: text.slice(0, end) } }) }
+  const prompt = () => screen.getByRole('textbox', { name: 'Prompt' }) as HTMLElement
+  const type = (text: string) => { for (let end = 1; end <= text.length; end++) setPromptText(prompt(), text.slice(0, end)) }
   const starts = () => live.command.mock.calls.map(([request]) => request).filter(request => request.type === 'start-thread-session')
   /** Main publishes the thread's provider session as open, or as stopped. */
   const session = (opened: boolean) => act(() => {
@@ -68,7 +69,7 @@ describe('early start from the composer', () => {
   it('does not ask again for a session that never opened', () => {
     const { prompt, type, starts } = mount(false)
     type('One')
-    fireEvent.change(prompt(), { target: { value: '' } })
+    setPromptText(prompt(), '')
     type('Two')
     expect(starts()).toHaveLength(1)
   })

@@ -1,42 +1,26 @@
+import { captureSotto } from './support/sottoCapture'
+import { resizeContentWindow } from './support/sottoWindow'
 import { createServer } from 'node:http'
-import { mkdir, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { mkdir } from 'node:fs/promises'
+import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 // Evidence for the browser player's keyboard and pointer resize/move path, and the corner-resize jump fix
 // (two-axis review of #331's floating player). `agent-browser.spec.ts` and `tools-sidecar.spec.ts` already cover
 // the player's layout, contrast and lifecycle at every window size; this spec covers what those never drove with
 // real pointer and keyboard input.
-const SHOTS = resolve('artifacts/thread-browser-player')
+const SHOTS = evidenceDirectory('artifacts/thread-browser-player')
 const CONTENT = `<!doctype html><html><head><title>Fieldnotes</title></head><body><h1>Fieldnotes</h1></body></html>`
 
 async function resize(launched: LaunchedSotto, width: number, height: number): Promise<void> {
-  await launched.app.evaluate(({ BrowserWindow }, size) => {
-    const host = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().endsWith('/index.html'))!
-    host.setMinimumSize(800, 540); host.setContentSize(size.width, size.height)
-  }, { width, height })
-  await expect.poll(() => launched.page.evaluate(() => `${innerWidth}x${innerHeight}`)).toBe(`${width}x${height}`)
+  await resizeContentWindow(launched, width, height, [800, 540])
 }
 
 async function nativeCapture(launched: LaunchedSotto, name: string): Promise<void> {
   const title = `Sotto browser player controls ${name}`
-  await launched.app.evaluate(({ BrowserWindow }, title) => {
-    const host = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().endsWith('/index.html'))!; host.setTitle(title); host.show()
-  }, title)
-  const png = await launched.app.evaluate(async ({ BrowserWindow, desktopCapturer, screen }, title) => {
-    const bounds = BrowserWindow.getAllWindows().find(item => item.getTitle() === title)!.getBounds()
-    const scale = screen.getDisplayMatching(bounds).scaleFactor
-    // The OS window manager can be slow to register the retitled window under load; a reached deadline costs nothing.
-    for (let attempt = 0; ; attempt++) {
-      const sources = await desktopCapturer.getSources({ types: ['window'], thumbnailSize: { width: Math.round(bounds.width * scale), height: Math.round(bounds.height * scale) } })
-      const source = sources.find(item => item.name === title)
-      if (source) return source.thumbnail.toPNG().toString('base64')
-      if (attempt >= 9) throw new Error('Native window capture unavailable')
-      await new Promise(resolve => setTimeout(resolve, 500))
-    }
-  }, title)
-  await writeFile(join(SHOTS, `${name}.png`), Buffer.from(png, 'base64'))
+  await captureSotto(launched, join(SHOTS, `${name}.png`), { mode: 'native-window', title, retries: 9, retryDelayMs: 500 })
 }
 
 test('the browser player moves and resizes with the pointer and the keyboard, without a first-resize jump', async () => {

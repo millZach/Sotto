@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
-import type { RecordedRpc } from '../fixtures/codexFixture'
+import type { RecordedRpc } from '../fixtures/adapterFixture'
 import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
 
 // One ACP process per thread session, the way T3 Code runs Grok: each thread's work runs on its own

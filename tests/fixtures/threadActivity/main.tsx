@@ -1,3 +1,4 @@
+import { agentThread, threadsStateFixture } from '../agentState'
 // Test-only page: the real Threads page and transcript with Codex activity records in each state the UI must read.
 import React from 'react'
 import { createRoot } from 'react-dom/client'
@@ -89,20 +90,32 @@ function state(scenario: Scenario): AgentState {
     updatedAt: at(live ? 58 : 14), messages: messages(live), requests: [],
     activities: live ? liveActivities() : settledActivities(scenario === 'restored'),
   }
-  return {
+  return threadsStateFixture({
     configuration: { ...defaultAgentConfiguration(), enabled: true, defaultModelId: 'codex:gpt' },
-    connection: 'connected',
     host: {
       connected: scenario !== 'disconnected', name: 'Codex', version: 'fixture',
       capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true },
-      models: [...fixture.models], projects: [...fixture.projects], threads: [thread, ...structuredClone(fixture.threads).filter(item => item.projectId !== 'workshop')] as AgentState['host']['threads'],
+      models: [...fixture.models], projects: [...fixture.projects], threads: [thread, ...fixture.threads.filter(item => item.projectId !== 'workshop')].map(agentThread),
     },
-    activeThreadId: THREAD, activeProjectId: 'workshop',
-    draft: '', draftThreadId: null, draftRequestId: null, composing: false, threadDrafts: [], deliveries: [], deliveredDrafts: [],
-    globalLaneBusy: false, notice: '', error: null,
+    topLevel: { connection: 'connected',
 
-    credentials: { reasoning: false, secure: true }, reasoningAccounts: [],
-  }
+      activeThreadId: THREAD,
+      activeProjectId: 'workshop',
+      draft: '',
+      draftThreadId: null,
+      draftRequestId: null,
+      composing: false,
+      threadDrafts: [],
+      deliveries: [],
+      deliveredDrafts: [],
+
+      globalLaneBusy: false,
+      notice: '',
+      error: null,
+
+      credentials: { reasoning: false, secure: true },
+      reasoningAccounts: [] },
+  })
 }
 
 const params = new URLSearchParams(location.search)

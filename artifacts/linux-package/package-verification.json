@@ -1,0 +1,35 @@
+{
+  "platform": "linux",
+  "target": "linux-unpacked",
+  "asarBytes": 97558359,
+  "asarSha256": "d466805c555889e8b868013884051933ea04e05ca711d5619508eac3c62460fb",
+  "executableBytes": 219811064,
+  "provenance": {
+    "sourceCommit": "7f5344795666c6453d91dba87c730d66e91fcd32",
+    "buildInputsRevision": "bd1746107db8b1ccc63cedf4ca3f09f4a24cdc72eeec85bc932e60c1f9baa409",
+    "buildSha256": "85a3f66f00345a48e366141c2bbdaca80f9b77a25e390cacefed4df5772a6797",
+    "artifactCount": 629
+  },
+  "installer": {
+    "name": "Sotto-0.1.34-linux-x64.tar.gz",
+    "bytes": 97558359,
+    "sha256": "d466805c555889e8b868013884051933ea04e05ca711d5619508eac3c62460fb",
+    "filesChecked": 254
+  },
+  "memoryStore": {
+    "sqliteVersion": "3.53.1",
+    "migrationVersion": 4,
+    "matchedId": "memory-probe",
+    "fts5": true,
+    "terminal": {
+      "modules": "148",
+      "napi": "10",
+      "exitCode": 0,
+      "output": "SOTTO_PTY_PACKAGE_OK"
+    }
+  },
+  "smoke": {
+    "language": "auto",
+    "workletUrl": "file:///home/zach/Projects/Sotto/.worktrees/linux-package/release/linux-unpacked/resources/app.asar/out/renderer/audio-capture-worklet.js"
+  }
+}

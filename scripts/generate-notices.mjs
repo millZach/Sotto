@@ -1,7 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 
-import { NOTICE_COMPONENTS } from './verify-notices.mjs'
+import { COMPOSER_NOTICE_COMPONENTS, NOTICE_COMPONENTS } from './verify-notices.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 const read = (path) => readFile(join(root, path), 'utf8')
@@ -342,6 +342,8 @@ const licenseSections = [
   ['Electron MIT license', await read('node_modules/electron/dist/LICENSE')],
   ['React, React DOM, and Scheduler MIT license', await read('node_modules/react/LICENSE')],
   ['Lucide ISC and Feather MIT licenses', await read('node_modules/lucide-react/LICENSE')],
+  ['Thread composer MIT licenses', (await Promise.all(COMPOSER_NOTICE_COMPONENTS.map(async component =>
+    `${component.name}\n${await read(`${component.packagePath}/${component.name.startsWith('@tiptap/') && component.name !== '@tiptap/pm' ? 'LICENSE.md' : 'LICENSE'}`)}`))).join('\n\n')],
   ['Zod MIT license', await read('node_modules/zod/LICENSE')],
   ['xterm.js MIT licenses', `@xterm/xterm
 ${await read('node_modules/@xterm/xterm/LICENSE')}

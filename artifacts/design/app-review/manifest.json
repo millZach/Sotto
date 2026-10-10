@@ -451,7 +451,7 @@
       "relativePath": "artifacts/design/app-review/baseline/onboarding-step-1-welcome.png",
       "width": 1070,
       "height": 660,
-      "sha256": "0455bba3c85a40c7e0b719c346fc8c408d2f587a7d5aee5cd1624888f9608391"
+      "sha256": "548221e0684fa66aa7c0ba6500b81735a5b485593d897ba0c4989b1661ec21d5"
     },
     {
       "theme": "dark",
@@ -465,7 +465,7 @@
       "relativePath": "artifacts/design/app-review/baseline/onboarding-step-2-look.png",
       "width": 1070,
       "height": 660,
-      "sha256": "5db14c4e85f390475015ef444ddf582e56c918f038d12032084fb1a29feff6eb"
+      "sha256": "7d110145cbc8042fde7da62cd5b567796e1c89028ec111fef297104145b7722c"
     },
     {
       "theme": "dark",
@@ -479,7 +479,7 @@
       "relativePath": "artifacts/design/app-review/baseline/onboarding-step-3-microphone-ready.png",
       "width": 1070,
       "height": 660,
-      "sha256": "5f4edccff70003b4f42e70fa50113d870c48fcd9e8f6f2702cc75c9ee67fc93b"
+      "sha256": "b0a6ad7b896f42a2c7d16ea7a634263e6cb9142169e159bf8527e235b486403e"
     },
     {
       "theme": "dark",
@@ -493,7 +493,7 @@
       "relativePath": "artifacts/design/app-review/baseline/onboarding-step-4-openrouter.png",
       "width": 1070,
       "height": 660,
-      "sha256": "dcd34c65d7bb69fd4a98c291216e3983db9b869ec3131263d948dc0d836bd1d4"
+      "sha256": "894577eb99841885c152b7593d2db39402dae8386217d79bb91190d8af692365"
     },
     {
       "theme": "light",
@@ -507,7 +507,7 @@
       "relativePath": "artifacts/design/app-review/baseline/onboarding-step-4-openrouter-light.png",
       "width": 1070,
       "height": 660,
-      "sha256": "524e3e26ccfd58ab3de9f7cf27205f8f163b2cbeff676c85f06c3e10ffae71c9"
+      "sha256": "c31f18b26335da0edef69c7d201022640c26b46e8230f35a0cbb814524f9875a"
     },
     {
       "theme": "dark",
@@ -521,7 +521,7 @@
       "relativePath": "artifacts/design/app-review/baseline/onboarding-step-5-shortcut.png",
       "width": 1070,
       "height": 660,
-      "sha256": "164cda0aa0b5f19b5a9aeb8b292bcbdb554c1d7adf097d6217ece5e5643e546e"
+      "sha256": "6365942cb6afb7459004ae6aacf06d2434c7ac6d9d88d476e65ca210d31974aa"
     },
     {
       "theme": "dark",
@@ -535,7 +535,7 @@
       "relativePath": "artifacts/design/app-review/baseline/onboarding-step-6-agents.png",
       "width": 1070,
       "height": 660,
-      "sha256": "e1ddea73f65c40959d8bb49e7b941f89f9ca81cd70308d7091ccf0e812effbf7"
+      "sha256": "b5b3301642b14768896145bcfb555a4998cd5f264eed9bf4943972d5eaf95e52"
     },
     {
       "theme": "dark",
@@ -549,7 +549,7 @@
       "relativePath": "artifacts/design/app-review/baseline/onboarding-step-7-project.png",
       "width": 1070,
       "height": 660,
-      "sha256": "aa238c1ce111d0878e89874b7e5620cb5ef8aa6e0dcd96858eaf1a356db3cccb"
+      "sha256": "4b20a97f00972123ccfd83280630a7e1809c7f7301c9ea1ecba76d154ba8f4c3"
     },
     {
       "theme": "dark",
@@ -563,7 +563,7 @@
       "relativePath": "artifacts/design/app-review/baseline/onboarding-step-8-computers.png",
       "width": 1070,
       "height": 660,
-      "sha256": "dd4f51af24a82b3f990666e4d51df0a576e5f9d51ec11d3e48fa3612475bb3e9"
+      "sha256": "495fd4e177f1d0dd37e5528f1e62fb5a5d59957faa17c485f5ac575fc8532273"
     },
     {
       "theme": "dark",
@@ -577,7 +577,7 @@
       "relativePath": "artifacts/design/app-review/baseline/onboarding-step-9-phone.png",
       "width": 1070,
       "height": 660,
-      "sha256": "e166a819f298553aa4ab402a807a09a28f46bcd9388f514b13b557cc83c66b29"
+      "sha256": "f008e1c5f821db095f6fa01cacf21c9f9042c165b4c0fbfe98cc34aabd69733a"
     },
     {
       "theme": "dark",
@@ -647,7 +647,7 @@
       "relativePath": "artifacts/design/app-review/baseline/scale-100-onboarding.png",
       "width": 1070,
       "height": 660,
-      "sha256": "dcd34c65d7bb69fd4a98c291216e3983db9b869ec3131263d948dc0d836bd1d4"
+      "sha256": "894577eb99841885c152b7593d2db39402dae8386217d79bb91190d8af692365"
     },
     {
       "theme": "dark",
@@ -773,7 +773,7 @@
       "relativePath": "artifacts/design/app-review/baseline/scale-125-onboarding.png",
       "width": 1340,
       "height": 828,
-      "sha256": "5e845d21ce42bf5b74ccf7d7fee306150f72c74282da95ddfe9ed869f326ea29"
+      "sha256": "5abf9969d94d36589b798aa536be1fa5b349b5e4e9738c7f5847ff0cf5aa2210"
     },
     {
       "theme": "dark",
@@ -899,7 +899,7 @@
       "relativePath": "artifacts/design/app-review/baseline/scale-150-onboarding.png",
       "width": 1605,
       "height": 942,
-      "sha256": "d0ba0bd6e7245c366c7d90f5cf83a4285c42af41714657cc067d68553c2f0105"
+      "sha256": "54f02b6e6ddbb6eeb2b80dd82bae8872dca6216ebc5bd5f97b7d7a14b5d4067b"
     },
     {
       "theme": "dark",
@@ -1025,7 +1025,7 @@
       "relativePath": "artifacts/design/app-review/baseline/scale-200-onboarding.png",
       "width": 2138,
       "height": 1320,
-      "sha256": "2b213ce6d8f51a019b9a58ce34c9ef975549d7bc898a253c69d87fc3d9a75957"
+      "sha256": "573d78bf021063669ea18d9ab2ab33528fe80d20fcb0a78a1c3e0cfde1d1246b"
     },
     {
       "theme": "dark",

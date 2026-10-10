@@ -1,12 +1,12 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
 import { expect, it, vi } from 'vitest'
-import { claudeFixture } from '../fixtures/claudeFixture'
-import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
-import { codexFixture } from '../fixtures/codexFixture'
-import type { AdapterFixture } from './adapterContract'
 import type { CodexProcess, RpcFrame } from '../../src/main/agents/codexProcess'
 import type { GrokRpc } from '../../src/main/agents/grokRpc'
+import type { AdapterFixture } from '../fixtures/adapterFixture'
+import { claudeFixture } from '../fixtures/claudeFixture'
+import { codexFixture } from '../fixtures/codexFixture'
+import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
 
 for (const provider of ['claude', 'grok'] as const) it(`${provider} does not replay an already dispatched native request after reconnect`, async () => {
   let f: AdapterFixture = provider === 'claude' ? await claudeFixture() : await grokFixture()

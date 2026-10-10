@@ -1,3 +1,4 @@
+import { deferred } from './deferred'
 import fs from 'node:fs'
 import type { FileHandle } from 'node:fs/promises'
 import { syncBuiltinESMExports } from 'node:module'
@@ -81,8 +82,7 @@ export function recordDurableWrites(): DurableWriteRecorder {
     since: (from, until = Number.POSITIVE_INFINITY) => tally(from, until, () => 1),
     bytesSince: (from, until = Number.POSITIVE_INFINITY) => tally(from, until, write => write.bytes),
     hold: file => {
-      let release!: () => void
-      const held = new Promise<void>(done => { release = done })
+      const { promise: held, resolve: release } = deferred<void>()
       holds.set(file, { held, release })
       return () => { if (holds.get(file)?.held === held) holds.delete(file); release() }
     },

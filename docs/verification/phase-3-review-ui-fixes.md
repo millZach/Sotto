@@ -1,6 +1,8 @@
 # Phase 3 review UI fixes
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0065](../adr/0065-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
 
 Two Spec review P2 findings (`../phase3-orchestration/spec-review-result.md`, findings 2 and 3), fixed in the existing
 design. Target: the desktop app window (pointer and keyboard), reviewed at 1280px and 820px wide as the brief requires.
@@ -82,15 +84,15 @@ existing app (the permission card's head, tag and context blocks; the placed-pan
 ## Verification
 
 - Unit, run 1: `splitWorkspace.test.tsx` (25), `agentRequestCard.test.tsx` (23) and `threadRequestSurroundings.test.tsx`
-  pass, 54/54. Run 2: `personalChatsView.test.tsx`, `threadRequestSurroundings.test.tsx` and `threadsView.test.tsx`
+  pass, 54/54. Run 2: `personalChatsView.test.tsx`, `threadRequestSurroundings.test.tsx` and `tests/unit/renderer/agents/threadFacts.test.tsx`, `tests/unit/renderer/agents/threadCreationRecovery.test.tsx`, `tests/unit/renderer/agents/threadsView.test.tsx`
   pass, 46/46.
 - `tsc --noEmit -p tsconfig.node.json` and `-p tsconfig.web.json` pass. ESLint on the five touched source and test files is clean.
 - Own build in this worktree (`electron-vite build`, runtime `.wasm` copied from main). The new Electron spec
-  `tests/e2e/phase-three-review-ui-fixes.spec.ts` passes 2/2. The existing neighbours `pane-layouts`, `split-workspace`,
+  `tests/e2e/compact-pane-and-request-layout.spec.ts` passes 2/2. The existing neighbours `pane-layouts`, `split-workspace`,
   `phase-three-requests` and `phase-three-personal-requests` pass 5/5.
 - Screenshots those neighbour specs rewrote were restored or deleted and are not part of this change. Two of them now
   differ, as expected, and both were inspected: `phase-three-layout/five-row-compact-1600` shows the switch beside Close,
-  and the `phase3-requests-workshop-form` fixture's separate `text` ("Settings page questions") now shows as its explanation.
+  and the `request-forms-workshop-form` fixture's separate `text` ("Settings page questions") now shows as its explanation.
 - Not run: full unit or E2E suites, native providers, macOS.
 
 ## Tastify results

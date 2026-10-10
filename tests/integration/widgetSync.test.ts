@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 // Mounts the real DictationController and widget shell, which read document.hasFocus() and the DOM.
+import { deferred } from '../fixtures/deferred'
 import { act, render, waitFor } from '@testing-library/react'
 import { createElement, type ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
@@ -22,16 +23,6 @@ import {
   type AppControllerFactory,
   type AppControllerFactoryBindings,
 } from '../../src/renderer/src/state/AppContext'
-
-function deferred<Value>() {
-  let resolve!: (value: Value) => void
-  let reject!: (reason?: unknown) => void
-  const promise = new Promise<Value>((res, rej) => {
-    resolve = res
-    reject = rej
-  })
-  return { promise, reject, resolve }
-}
 
 const OK = Object.freeze({ ok: true as const })
 
@@ -137,7 +128,6 @@ function mountProvider(bridge: SottoBridge, createController: AppControllerFacto
 }
 
 describe('AppProvider dictation integration', () => {
-
 
   it('loads settings and history in parallel, then replays every buffered command exactly once', async () => {
     const settings = deferred<AppSettings>()

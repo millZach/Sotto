@@ -1,6 +1,6 @@
 # Issue 24: actual native Threads UI acceptance
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0065](../adr/0065-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 Verified on Windows, September 12, 2026, using the production Electron build of `afa135f` in an isolated worktree. This closes the earlier evidence gap between deterministic renderer tests and separate adapter/CLI probes: these runs used the actual Threads page, coordinator, thread registry and native adapters together.
 

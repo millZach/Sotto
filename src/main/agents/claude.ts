@@ -309,6 +309,14 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private readonly recordUnechoed = new Map<string, () => void>()
   /** Origins Claude Code has said it started running, whose echo has not come. */
   private readonly startedOrigins = new Set<string>()
+  /**
+   * Steers Claude Code holds and has not read, by origin. It queues a prompt sent while a turn runs and reads it into
+   * that turn at its next model step; `carried` once the turn ended first, a stop included, so it starts the next turn.
+   * `unconfirmed` once its acknowledgement never came: still told apart from a turn's prompt, but not waited for.
+   */
+  private readonly steers = new Map<string, { readonly threadId: string; carried: boolean; unconfirmed?: true }>()
+  /** Steers read into a running turn: part of that turn, never the prompt it answers. */
+  private readonly foldedSteers = new Set<string>()
   private readonly dispatching = new Set<string>()
   /** Threads whose stop has gone out: the error result that closes the turn may arrive before the stop is acknowledged. */
   private readonly interrupting = new Set<string>()
@@ -368,7 +376,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     void work.then(() => this.closures.delete(work), () => this.closures.delete(work))
   }
   private state: AgentHostSnapshot = { connected: false, name: 'Claude Code', version: '', models: [], projects: [], threads: [],
-    capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true, skills: true, compact: true } }
+    capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true, skills: true, steer: true, compact: true } }
   constructor(private readonly options: ClaudeStreamJsonHostOptions) {
     this.usage = new NativeUsage(options.userDataPath, 'claude')
     // Compact: it holds every thread's record and every origin, and is rewritten whole.
@@ -420,7 +428,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     let ended: { label: string }[] = []
     if (this.runtimes.get(id) === runtime) {
       ended = thread?.backgroundWork?.length ? [...thread.backgroundWork] : [...thread?.monitoring ?? []]
-      this.runtimes.delete(id); this.clearMonitoring(id)
+      this.runtimes.delete(id); this.clearMonitoring(id); this.dropSteers(id)
       const wasOpen = !!thread && 'providerSessionOpen' in thread
       if (thread && wasOpen) delete thread.providerSessionOpen
       if (this.thinkingEnded(id) || wasOpen) this.emit()
@@ -478,7 +486,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       threadId: id, messages: this.messageLog.messages(id), activities: thread.activities ?? [], ...(thread.historyEpoch ? { historyEpoch: thread.historyEpoch } : {}),
     }]))
     this.messageLog.forgetAll()
-    this.threads.clear(); this.logs.clear(); this.activity.clear(); this.subagentModels.clear(); this.logOrigins.clear(); this.lastLogDigest.clear(); this.replays.clear(); this.readsBeforeSend.clear(); this.nativeTakeovers.clear(); this.completedOrigins.clear(); this.selfTurns.clear(); this.queries.clear(); this.interrupting.clear(); this.assistantBlocks.clear()
+    this.threads.clear(); this.logs.clear(); this.activity.clear(); this.subagentModels.clear(); this.logOrigins.clear(); this.lastLogDigest.clear(); this.replays.clear(); this.readsBeforeSend.clear(); this.nativeTakeovers.clear(); this.completedOrigins.clear(); this.steers.clear(); this.foldedSteers.clear(); this.selfTurns.clear(); this.queries.clear(); this.interrupting.clear(); this.assistantBlocks.clear()
     for (const [id, stored] of Object.entries(aliases)) {
       if (stored.kind === 'personal') continue
       let alias = stored
@@ -746,7 +754,6 @@ export class ClaudeStreamJsonHost implements AgentHost {
   }
   private async dispatchNative(command: AgentHostCommand): Promise<AgentHostResult> {
     if ('threadId' in command && this.aliases[command.threadId]?.kind === 'personal') throw new Error('That thread is unavailable.')
-    if (command.type === 'steer') throw new Error('This provider does not support native steering. Queue a follow-up instead.')
     if (!this.state.connected) throw new Error('Connect Claude Code before continuing.')
     if (command.type === 'create-project') {
       if (!isAbsolute(command.path)) throw new Error('Choose an absolute project folder.')
@@ -828,26 +835,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
           this.nativeTakeovers.delete(id)
         }
         const runtime = await this.start(id)
-        verifyFileMentions(command.text, command.files)
-        // The provider's own form of each staged image, read from the store at the protocol boundary (ADR-0031).
-        const images = await Promise.all((command.attachments ?? []).map(async image => ({ type: 'image', source: { type: 'base64', media_type: image.mimeType,
-          data: Buffer.from(await image.read()).toString('base64') } })))
-        const nativePrompt = command.skills?.length ? claudeSkillPrompt(command.text, command.skills, await this.listThreadSkills(id, true)) : command.text
-        const nativeText = typeof nativePrompt === 'string' ? nativePrompt : claudeText(nativePrompt)
-        const origin = { messageId: command.messageId, commandId: command.commandId, uuid: randomUUID(), digest: claudeDigest(nativeText), createdAt: new Date().toISOString(),
-          ...(command.attachments?.length ? { attachments: command.attachments.map(attachment => ({ id: attachment.id, name: attachment.name, mimeType: attachment.mimeType, sizeBytes: attachment.sizeBytes })) } : {}) }
-        alias.origins.push(origin)
-        try { await this.recordOrigin(id, origin) } catch (error) {
-          alias.origins = alias.origins.filter(candidate => candidate.uuid !== origin.uuid)
-          // The line may be on disk though its sync or close failed. A whole write moves the generation past it, so
-          // the next connect never folds back the origin of a prompt that was not sent.
-          await this.persist().catch(() => undefined)
-          throw error
-        }
-        const content: unknown = images.length ? [
-          ...images,
-          ...(typeof nativePrompt === 'string' ? (nativePrompt ? [{ type: 'text', text: nativePrompt }] : []) : nativePrompt),
-        ] : nativePrompt
+        const { content, nativeText, origin } = await this.nativePrompt(id, command)
+        await this.addOrigin(id, alias, origin)
         // Resume and durable origin writes can yield while the user takes over.
         // Recheck at the dispatch boundary; an undispatched origin is safe to remove.
         try {
@@ -894,6 +883,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
         return { accepted: true }
       } finally { this.dispatching.delete(id) }
     }
+    if (command.type === 'steer') return this.steerTurn(id, alias, thread, command, readForSend)
     // Answering and interrupting start the session too, so a reaped thread behaves like a live one.
     let runtime: Runtime
     try { runtime = await this.start(id) }
@@ -951,7 +941,15 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (command.type === 'interrupt') {
       await this.denyPending(id, runtime)
       this.interrupting.add(id)
-      try { await runtime.protocol.control({ subtype: 'interrupt' }); this.interrupting.delete(id); this.clearMonitoring(id); thread.status = 'idle'; thread.lastTurn = { id: thread.lastTurn?.id ?? command.commandId, status: 'interrupted' }; this.markTurn(id, 'interrupted'); this.emit(); return { accepted: true } }
+      const stopping = thread.lastTurn
+      try {
+        await runtime.protocol.control({ subtype: 'interrupt' }); this.interrupting.delete(id); this.clearMonitoring(id)
+        // A steer Claude Code still holds runs next, so the thread goes on to it, or has already; the stop names the turn it stopped.
+        const next = thread.lastTurn?.id !== stopping?.id || [...this.steers.values()].some(steer => steer.threadId === id && !steer.unconfirmed)
+        if (!next) { thread.status = 'idle'; thread.lastTurn = { id: thread.lastTurn?.id ?? command.commandId, status: 'interrupted' } }
+        this.markTurn(id, 'interrupted', stopping && alias.origins.find(origin => origin.uuid === stopping.id)?.messageId)
+        this.emit(); return { accepted: true }
+      }
       catch { this.interrupting.delete(id); return { accepted: false, uncertain: true } }
     }
     throw new Error('Unsupported Claude command.')
@@ -1247,6 +1245,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
           thread.compaction = saved.compaction; this.trackClosure(this.persist().catch(() => undefined))
         }
         if (cut) thread.status = 'error'
+        this.dropSteers(id)
         if (turn?.status === 'running') {
           thread.lastTurn = { id: turn.id, status: 'failed' }; this.completedOrigins.add(turn.id)
           // A prompt still waiting for its echo was not confirmed, so its send reports uncertain now rather than at the deadline.
@@ -1540,6 +1539,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
     // A prompt Claude Code took without an echo is taken when its local command replies, which puts it above the reply.
     // A result naming it is the last word. Any other reply may belong to a turn the prompt is still held behind.
     if (frame.type === 'command_lifecycle' && frame.state === 'started' && typeof frame.command_uuid === 'string' && this.recordUnechoed.has(frame.command_uuid)) this.startedOrigins.add(frame.command_uuid)
+    // Any word of a steer's place in Claude Code's own queue means it holds the steer.
+    if (frame.type === 'command_lifecycle' && typeof frame.command_uuid === 'string' && this.steers.has(frame.command_uuid)) this.acknowledgements.get(frame.command_uuid)?.()
     if (this.recordUnechoed.size && !frame.parent_tool_use_id) {
       const localReply = frame.type === 'assistant' && typeof frame.local_command_source === 'string'
       const resultFor = frame.type === 'result' && typeof frame.user_message_uuid === 'string' ? frame.user_message_uuid : undefined
@@ -1555,7 +1556,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
       this.message(id, frame, false)
       const uuid = typeof frame.uuid === 'string' ? frame.uuid : ''
       if (alias.origins.some(origin => origin.uuid === uuid)) {
-        if (!this.completedOrigins.has(uuid)) { thread.status = 'running'; this.markTurn(id, 'running') }
+        // A steer read into the running turn is part of it. One held past that turn's end starts the next, as any prompt does.
+        const steer = this.steers.get(uuid); this.steers.delete(uuid)
+        if (steer && !steer.carried) this.foldedSteers.add(uuid)
+        // Its turn is its own message's, though a later steer may already be shown.
+        else if (!this.completedOrigins.has(uuid)) { thread.status = 'running'; if (steer) thread.lastTurn = { id: uuid, status: 'running' }; this.markTurn(id, 'running', steer ? alias.origins.find(origin => origin.uuid === uuid)?.messageId : undefined) }
         this.acknowledgements.get(uuid)?.()
       }
     }
@@ -1610,8 +1615,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
         this.markTurn(id, status, alias.origins.find(value => value.uuid === origin)?.messageId, failure ?? undefined)
       }
       this.assistantErrors.delete(id)
-      // A prompt of Sotto's that Claude Code held behind its own turn starts next, so the thread goes straight on to it.
-      const held = alias.origins.some(value => this.acknowledgements.has(value.uuid))
+      // A prompt of Sotto's that Claude Code held behind its own turn starts next, so the thread goes straight on to it,
+      // and so does a steer the turn ended before reading.
+      const steers = [...this.steers.values()].filter(steer => steer.threadId === id)
+      for (const steer of steers) steer.carried = true
+      const held = steers.some(steer => !steer.unconfirmed) || alias.origins.some(value => this.acknowledgements.has(value.uuid))
       thread.status = failure !== null ? 'error' : held ? 'running' : 'idle'
       if (frame.is_error === true) this.clearMonitoring(id)
       if (failure !== null) { this.turnFailures.set(id, failure); this.state.error = failure }
@@ -1778,6 +1786,79 @@ export class ClaudeStreamJsonHost implements AgentHost {
    * Claude reports no turn lifecycle, so Sotto records the turn it watched. The turn is identified by
    * its user message, the same identity the projected activity rows already carry.
    */
+  /** Adds a prompt's origin and makes it durable before the prompt goes; one that could not be made durable is taken back. */
+  private async addOrigin(id: string, alias: Alias, origin: Alias['origins'][number]): Promise<void> {
+    alias.origins.push(origin)
+    try { await this.recordOrigin(id, origin) } catch (error) {
+      alias.origins = alias.origins.filter(candidate => candidate.uuid !== origin.uuid)
+      // The line may be on disk though its sync or close failed. A whole write moves the generation past it, so
+      // the next connect never folds back the origin of a prompt that was not sent.
+      await this.persist().catch(() => undefined)
+      throw error
+    }
+  }
+  /** A steer the CLI held unread ends with the CLI; one still unacknowledged reports uncertain now rather than at the deadline. */
+  private dropSteers(id: string): void {
+    for (const [uuid, steer] of this.steers) if (steer.threadId === id) { this.steers.delete(uuid); this.acknowledgements.get(uuid)?.(false) }
+  }
+  /** A prompt's native content and the origin that names it. Each staged image is read from the store here, at the protocol boundary (ADR-0031). */
+  private async nativePrompt(id: string, command: Extract<AgentHostCommand, { type: 'send' | 'steer' }>): Promise<{ content: unknown; nativeText: string; origin: Alias['origins'][number] }> {
+    verifyFileMentions(command.text, command.files)
+    const images = await Promise.all((command.attachments ?? []).map(async image => ({ type: 'image', source: { type: 'base64', media_type: image.mimeType,
+      data: Buffer.from(await image.read()).toString('base64') } })))
+    const nativePrompt = command.skills?.length ? claudeSkillPrompt(command.text, command.skills, await this.listThreadSkills(id, true)) : command.text
+    const nativeText = typeof nativePrompt === 'string' ? nativePrompt : claudeText(nativePrompt)
+    const origin = { messageId: command.messageId, commandId: command.commandId, uuid: randomUUID(), digest: claudeDigest(nativeText), createdAt: new Date().toISOString(),
+      ...(command.attachments?.length ? { attachments: command.attachments.map(attachment => ({ id: attachment.id, name: attachment.name, mimeType: attachment.mimeType, sizeBytes: attachment.sizeBytes })) } : {}) }
+    const content: unknown = images.length ? [
+      ...images,
+      ...(typeof nativePrompt === 'string' ? (nativePrompt ? [{ type: 'text', text: nativePrompt }] : []) : nativePrompt),
+    ] : nativePrompt
+    return { content, nativeText, origin }
+  }
+  /**
+   * Steering: a prompt written to the CLI while its turn runs. Claude Code queues it and says so at once, which is the
+   * acknowledgement, so the thread shows it from then as it shows a Codex steer. Claude reads it in at the turn's next
+   * model step; one the turn ends before reading, a stop included, starts the next turn (see `steers`).
+   */
+  private async steerTurn(id: string, alias: Alias, thread: AgentThread, command: Extract<AgentHostCommand, { type: 'steer' }>, readForSend: () => boolean): Promise<AgentHostResult> {
+    validatePromptAttachments(this.state, alias.modelId, command.attachments)
+    if (alias.origins.some(origin => origin.messageId === command.messageId)) return this.messageLog.has(id, command.messageId) ? { accepted: true } : { accepted: false, uncertain: true }
+    const runtime = this.runtimes.get(id)
+    const validate = (): void => {
+      if (!runtime || this.runtimes.get(id) !== runtime || this.nativeTakeovers.has(id) || thread.status !== 'running') throw new Error('The Claude turn ended before steering. Queue this follow-up instead.')
+      if (thread.requests.length) throw new Error('Answer the pending Claude request explicitly before steering.')
+      if (command.expectedLastUserMessageId !== undefined && (this.messageLog.lastUserMessageId(id) ?? null) !== command.expectedLastUserMessageId) throw new Error('The thread changed in Claude Code. Review it before steering.')
+    }
+    if (!readForSend()) await this.sync(id)
+    validate()
+    if (this.dispatching.has(id)) throw new Error('A Claude prompt is already being submitted.')
+    this.dispatching.add(id)
+    try {
+      const { content, nativeText, origin } = await this.nativePrompt(id, command)
+      await this.addOrigin(id, alias, origin)
+      try { await this.sync(id); validate() }
+      catch (error) { alias.origins = alias.origins.filter(candidate => candidate.uuid !== origin.uuid); await this.persist(); throw error }
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const forget = (): void => { clearTimeout(timer); this.acknowledgements.delete(origin.uuid) }
+      // Unconfirmed, a steer is not counted on to start a turn, and an echo that still comes is read as a steer's.
+      const unconfirmed = (): void => { const steer = this.steers.get(origin.uuid); if (steer) steer.unconfirmed = true }
+      const acknowledged = new Promise<boolean>(resolve => {
+        timer = setTimeout(() => { forget(); unconfirmed(); resolve(false) }, this.options.requestTimeoutMs ?? 15000)
+        this.acknowledgements.set(origin.uuid, (delivered = true) => {
+          forget()
+          if (delivered && !this.messageLog.has(id, origin.messageId)) this.addMessage(id, { id: origin.messageId, role: 'user', text: nativeText, createdAt: origin.createdAt, commandId: origin.commandId, ...(origin.attachments ? { attachments: origin.attachments } : {}) })
+          resolve(delivered)
+        })
+      })
+      this.steers.set(origin.uuid, { threadId: id, carried: false })
+      try { await runtime!.protocol.write({ type: 'user', uuid: origin.uuid, session_id: alias.sessionId, parent_tool_use_id: null, message: { role: 'user', content } }) }
+      catch { forget(); unconfirmed(); return { accepted: false, uncertain: true } }
+      if (!await acknowledged) return { accepted: false, uncertain: true }
+      this.emit()
+      return { accepted: true }
+    } finally { this.dispatching.delete(id) }
+  }
   private markTurn(id: string, status: AgentActivity['status'], turnId?: string, error?: string): void {
     const thread = this.threads.get(id); if (!thread) return
     const last = this.messageLog.lastUserMessageId(id)
@@ -1791,7 +1872,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const alias = this.aliases[id]!; const thread = this.threads.get(id)!
     // Claude Code leaves its own prompt's identity off the result of a turn it gave itself and says where that prompt
     // came from instead, so such a result never ends a prompt of Sotto's still waiting to go out.
-    const origin = typeof frame.user_message_uuid === 'string' ? frame.user_message_uuid : this.selfTurns.get(id) ?? (object(frame.origin) ? undefined : alias.origins.at(-1)?.uuid)
+    // Without a name, the turn answers the latest prompt that started one: a steer read into it or still held started none.
+    const origin = typeof frame.user_message_uuid === 'string' ? frame.user_message_uuid : this.selfTurns.get(id)
+      ?? (object(frame.origin) ? undefined : alias.origins.findLast(value => !this.foldedSteers.has(value.uuid) && !this.steers.has(value.uuid))?.uuid)
     // A turn the user stopped ends in an error result, which is no failure of Claude Code's.
     const stopped = this.interrupting.has(id) || thread.lastTurn?.status === 'interrupted' && (!origin || thread.lastTurn.id === origin)
     return { origin, stopped, status: stopped ? 'interrupted' : frame.is_error === true ? 'failed' : 'completed' }

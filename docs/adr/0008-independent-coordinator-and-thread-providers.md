@@ -1,6 +1,6 @@
 # Independent coordinator and thread providers
 
-October 9, 2026 amendment: [ADR-0065](0065-remove-voice-control-and-thread-management.md) records the removal. The reasoning and supervision behavior and its enablement controls below are historical. Independent provider connections, native account discovery and saved new-thread default resolution remain; dormant reasoning controls are hidden.
+October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-management.md) records the removal. The reasoning and supervision behavior and its enablement controls below are historical. Independent provider connections, native account discovery and saved new-thread default resolution remain; dormant reasoning controls are hidden.
 
 Accepted September 12, 2026 following the provider-settings correction to ticket #24. Sotto's coordinator account, model and enablement control reasoning and supervision; installed thread providers have independent connections, and a new thread's model chooses its provider. This supersedes the single active-provider lifecycle in ADR-0005: a composite host aggregates catalogs and routes existing Sotto thread IDs through their durable bindings, with per-provider connection and capability checks.
 

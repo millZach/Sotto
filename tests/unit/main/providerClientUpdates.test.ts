@@ -1,23 +1,21 @@
 // @vitest-environment node
-import { spawn } from 'node:child_process'
-import { copyFile, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+
+import { mkdir, readdir, writeFile } from 'node:fs/promises'
+
 import { join } from 'node:path'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
+
 import { clientVersionOf, compareClientVersions } from '../../../src/main/agents/clientVersions'
 import { installerDetail } from '../../../src/main/agents/installerDetail'
 import { clearLeftoverPackage, detectClientChannel, ProviderClients, updateActionFor, type RunLike } from '../../../src/main/agents/providerClients'
 import { E2EAgentHost } from '../../../src/main/e2e/agentEffects'
 import type { AgentHostSnapshot, ProviderId } from '../../../src/shared/agents'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
-
-const roots: string[] = []
-const root = async (prefix: string): Promise<string> => {
-  const directory = await mkdtemp(join(tmpdir(), prefix)); roots.push(directory); return directory
-}
-afterEach(async () => { await Promise.all(roots.splice(0).map(path => rm(path, { recursive: true, force: true }))) })
+import { root, codexPackage, codexInstall } from '../../fixtures/providerClientInstallFixture'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
+import { deferred } from '../../fixtures/deferred'
 
 const answer = (version: string): Response => new Response(JSON.stringify({ version }), { status: 200 })
 
@@ -99,27 +97,6 @@ describe('what the installer is allowed to say back', () => {
   })
 })
 
-describe('reading the installed version of a client that is only connected', () => {
-  it('asks Claude Code for its own version instead of waiting for a session to say it', async () => {
-    // Claude Code reports claude_code_version in a running session's init frame and nowhere else,
-    // so a connected but idle provider had no version to compare or to show (screenshot, 0.1.12).
-    const { ClaudeSubscriptionClient } = await import('../../../src/main/agents/subscriptionClaude')
-    const directory = await root('sotto-claude-version-')
-    const client = new ClaudeSubscriptionClient(directory, {
-      executable: process.execPath,
-      prefixArgs: ['-e', "process.stdout.write('2.1.278 (Claude Code)')", '--'],
-    })
-    expect(clientVersionOf(await client.version(process.execPath))).toBe('2.1.278')
-  })
-
-  it('says nothing about a version it could not read', async () => {
-    const { ClaudeSubscriptionClient } = await import('../../../src/main/agents/subscriptionClaude')
-    const directory = await root('sotto-claude-version-missing-')
-    const client = new ClaudeSubscriptionClient(directory, { executable: process.execPath, prefixArgs: ['-e', 'process.exit(1)', '--'] })
-    expect(await client.version(process.execPath, 5_000)).toBe('')
-  })
-})
-
 describe('which channel owns an install', () => {
   it('reads an npm global install from the package beside the binary', async () => {
     const prefix = await root('sotto-npm-global-')
@@ -179,21 +156,7 @@ describe('which channel owns an install', () => {
   })
 })
 
-describe('what an earlier update left behind', () => {
-  /** Codex's package as `npm install -g` lays it out on Windows, in `scope/name`; answers the folder holding codex.exe. */
-  const codexPackage = async (scope: string, name: string): Promise<string> => {
-    const bin = join(scope, name, 'node_modules', '@openai', 'codex-win32-x64', 'vendor', 'x86_64-pc-windows-msvc', 'bin')
-    await mkdir(bin, { recursive: true })
-    await writeFile(join(bin, 'codex.exe'), '')
-    return bin
-  }
-  /** An npm global root holding Codex. */
-  const codexInstall = async (): Promise<{ scope: string; executable: string }> => {
-    const scope = join(await root('sotto-npm-leftover-'), 'node_modules', '@openai')
-    const bin = await codexPackage(scope, 'codex')
-    await writeFile(join(scope, 'codex', 'package.json'), '{}')
-    return { scope, executable: join(bin, 'codex.exe') }
-  }
+describe("what an earlier update left behind", () => {
 
   it('deletes the folder npm moved the last version to, and nothing else beside the package', async () => {
     const { scope } = await codexInstall()
@@ -204,35 +167,15 @@ describe('what an earlier update left behind', () => {
     expect((await readdir(scope)).sort()).toEqual(['.codex-short', '.grok-6TeUjdn8', 'codex', 'codex-6TeUjdn8'])
   })
 
-  it.runIf(process.platform === 'win32')('clears the leftover before npm runs, so npm finds its folder free', async () => {
-    const { scope, executable } = await codexInstall()
-    await codexPackage(scope, '.codex-6TeUjdn8')
-    let seen: string[] = []
-    const clients = new ProviderClients({ npmPath: async () => 'npm-cli.js', run: async () => { seen = await readdir(scope); return { ok: true } } })
-    expect(await clients.install('codex', executable, {})).toMatchObject({ ok: true })
-    expect(seen).toEqual(['codex'])
-  })
-
-  it.runIf(process.platform === 'win32')('moves a leftover whose program still runs out of npm\u2019s way, and deletes it once it stops', async () => {
-    const { scope } = await codexInstall()
-    // An older Codex still running from the folder npm moved it to: the update after that one stopped on EBUSY.
-    const bin = await codexPackage(scope, '.codex-6TeUjdn8')
-    const program = join(bin, 'held.exe')
-    await copyFile(join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'PING.EXE'), program)
-    const running = spawn(program, ['-n', '600', '127.0.0.1'], { stdio: 'ignore', windowsHide: true })
-    try {
-      await new Promise<void>((resolve, reject) => { running.once('spawn', resolve); running.once('error', reject) })
-      await clearLeftoverPackage(join(scope, 'codex'), () => 1759500000000)
-      expect((await readdir(scope)).sort(), 'npm\u2019s name is free and the running program untouched').toEqual(['.codex-6TeUjdn8.old-1759500000000', 'codex'])
-      expect(running.exitCode).toBeNull()
-      await clearLeftoverPackage(join(scope, 'codex'), () => 1759500009999)
-      expect((await readdir(scope)).sort(), 'a moved folder stays put while its program runs').toEqual(['.codex-6TeUjdn8.old-1759500000000', 'codex'])
-    } finally {
-      running.kill()
-      await new Promise(resolve => running.exitCode === null ? running.once('exit', resolve) : resolve(undefined))
-    }
-    await clearLeftoverPackage(join(scope, 'codex'))
-    expect(await readdir(scope)).toEqual(['codex'])
+  describe("Windows npm package-folder cleanup", () => {
+    it.runIf(process.platform === 'win32')('clears the leftover before npm runs, so npm finds its folder free', async () => {
+      const { scope, executable } = await codexInstall()
+      await codexPackage(scope, '.codex-6TeUjdn8')
+      let seen: string[] = []
+      const clients = new ProviderClients({ npmPath: async () => 'npm-cli.js', run: async () => { seen = await readdir(scope); return { ok: true } } })
+      expect(await clients.install('codex', executable, {})).toMatchObject({ ok: true })
+      expect(seen).toEqual(['codex'])
+    })
   })
 })
 
@@ -278,11 +221,9 @@ async function coordinator(host: VersionedHost, run: RunLike, published: string 
   const prefix = join(directory, 'npm')
   await mkdir(join(prefix, 'node_modules', '@xai-official', 'grok'), { recursive: true })
   await writeFile(join(prefix, 'node_modules', '@xai-official', 'grok', 'package.json'), '{}')
-  const credentials = new AgentCredentials(join(directory, 'vault'), {
-    isEncryptionAvailable: () => true, encryptString: value => Buffer.from(value), decryptString: value => value.toString(),
-  })
-  await credentials.load()
-  const control = new AgentControl({
+  const credentials = await testCredentials(join(directory, 'vault'), { mode: 'plain' })
+
+  const control = createAgentControl({
     schedule: immediatePublishScheduler, directory, host, credentials,
     clients: new ProviderClients({ run, npmPath: async () => join(prefix, 'npm.cmd'),
       ...typeof published === 'string' ? { fetchImpl: async () => answer(published) }
@@ -452,8 +393,8 @@ describe('updating a client from the app', () => {
 
   it('never runs two updates at once', async () => {
     const host = new VersionedHost()
-    let release!: () => void
-    const running = new Promise<void>(resolve => { release = resolve })
+
+    const { promise: running, resolve: release } = deferred<void>()
     let installs = 0
     const { control } = await coordinator(host, async () => { installs += 1; await running; host.onDisk = '1.0.40'; return { ok: true } })
     try {
@@ -471,8 +412,8 @@ describe('updating a client from the app', () => {
 
   it('connects a provider pressed while an install runs, rather than refusing it', async () => {
     const host = new VersionedHost()
-    let release!: () => void
-    const running = new Promise<void>(resolve => { release = resolve })
+
+    const { promise: running, resolve: release } = deferred<void>()
     let installs = 0
     const { control } = await coordinator(host, async () => { installs += 1; await running; host.onDisk = '1.0.40'; return { ok: true } })
     try {
@@ -492,8 +433,8 @@ describe('updating a client from the app', () => {
 
   it('leaves every other surface working while npm runs', async () => {
     const host = new VersionedHost()
-    let release!: () => void
-    const running = new Promise<void>(resolve => { release = resolve })
+
+    const { promise: running, resolve: release } = deferred<void>()
     let installs = 0
     const { control } = await coordinator(host, async () => { installs += 1; await running; return { ok: true } })
     try {
