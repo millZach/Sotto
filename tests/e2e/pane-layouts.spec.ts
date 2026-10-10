@@ -99,9 +99,9 @@ test('three, four and five panes snap, resize, move, zoom and come back after a 
     await fillPrompt(prompt('footer-links'), 'Footer draft stays with its pane.')
     await fillPrompt(prompt('weekly-note'), 'Weekly draft stays with its pane.')
     await capture(page, 'three-1600')
-    await expect(prompt('grok-previews')).toHaveValue('Grok draft stays with its pane.')
-    await expect(prompt('footer-links')).toHaveValue('Footer draft stays with its pane.')
-    await expect(prompt('weekly-note')).toHaveValue('Weekly draft stays with its pane.')
+    await expectPromptText(prompt('grok-previews'), 'Grok draft stays with its pane.')
+    await expectPromptText(prompt('footer-links'), 'Footer draft stays with its pane.')
+    await expectPromptText(prompt('weekly-note'), 'Weekly draft stays with its pane.')
 
     // A single row from the focused pane's controls, and back to the grid with its sizes.
     const rowToggle = pane('weekly-note').getByRole('button', { name: 'Single row' })
