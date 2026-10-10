@@ -259,7 +259,7 @@ struct TerminalView: View {
     }
     private func resolveAnswer() {
         guard !sending, !leaving, let answeredRow, model.terminalPending(ref) == nil, let approval = answeredRow.terminal.approval else { return }
-        if !model.terminalAnswerConfirmed(approval, in: ref), model.terminal(ref)?.approval?.id == approval.id { self.answeredRow = nil; return }
+        if model.shouldRestoreTerminalApproval(approval, in: ref) { self.answeredRow = nil; return }
         leaving = true
         Task {
             try? await Task.sleep(nanoseconds: 900_000_000)
@@ -588,7 +588,7 @@ struct ThreadsView: View {
         for (id, row) in sentTerminals {
             guard !sendingTerminals.contains(id), !leavingTerminals.contains(id), model.terminalPending(row.ref) == nil,
                   let approval = row.terminal.approval else { continue }
-            if !model.terminalAnswerConfirmed(approval, in: row.ref), model.terminal(row.ref)?.approval?.id == approval.id {
+            if model.shouldRestoreTerminalApproval(approval, in: row.ref) {
                 sentTerminals[id] = nil
                 continue
             }

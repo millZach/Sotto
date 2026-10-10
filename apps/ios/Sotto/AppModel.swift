@@ -24,6 +24,12 @@ extension AppModel {
     func terminalAnswerConfirmed(_ approval: TerminalApproval, in ref: TerminalRef) -> Bool {
         confirmedTerminalAnswers.contains(ref.id + "/" + approval.id)
     }
+    /// Return a settled answer card to the same waiting request when the hook did not confirm it.
+    /// A screen redraw changes its preview, not the request identity.
+    func shouldRestoreTerminalApproval(_ approval: TerminalApproval, in ref: TerminalRef) -> Bool {
+        terminalPending(ref) == nil && !terminalAnswerConfirmed(approval, in: ref)
+            && terminal(ref)?.approval?.id == approval.id
+    }
     func canAnswerTerminal(_ ref: TerminalRef, approval: TerminalApproval?) -> Bool {
         guard online(ref.hostID), supportsTerminals(ref.hostID), mayAnswer(ref.hostID), !answering(ref.hostID),
               let current = terminal(ref), current.hasAnswerChannel, let approval, current.approval == approval,

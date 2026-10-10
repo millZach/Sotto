@@ -127,6 +127,7 @@ final class TerminalModelTests: XCTestCase {
         await model.answerTerminal(ref, approval: approval, decision: .deny)
         XCTAssertNotNil(answerID); XCTAssertTrue(model.pending.isEmpty)
         XCTAssertTrue(model.terminalAnswerConfirmed(approval, in: ref))
+        XCTAssertFalse(model.shouldRestoreTerminalApproval(approval, in: ref), "A confirmed request keeps its Answered feedback")
         XCTAssertFalse(model.canAnswerTerminal(ref, approval: approval), "A stale shell cannot answer a confirmed request twice")
     }
     @MainActor func testLostAcknowledgementUsesReceiptWithoutResending() async throws {
@@ -269,11 +270,31 @@ final class TerminalModelTests: XCTestCase {
         await model.checkDelivery(hostID)
         XCTAssertEqual(model.pending, [marker])
         XCTAssertFalse(model.terminalAnswerConfirmed(approval, in: ref))
+        XCTAssertFalse(model.shouldRestoreTerminalApproval(approval, in: ref), "An uncertain answer keeps its receipt feedback")
         HostConnection.receipts[marker.id] = .object(["status": .string("completed"), "answerDelivered": .bool(true)])
         await model.checkDelivery(hostID)
         XCTAssertTrue(model.pending.isEmpty)
         XCTAssertTrue(model.terminalAnswerConfirmed(approval, in: ref))
         XCTAssertTrue(model.terminalAnswerConfirmed(try XCTUnwrap(model.terminal(ref)?.approval), in: ref))
         XCTAssertEqual(connection.terminalCalls.filter { $0["op"] == .string("answer-terminal") }.count, 1)
+    }
+    @MainActor func testRejectedAnswerRestoresSameRequestAfterScreenRedraw() async throws {
+        let model = try await fixture()
+        defer { model.phase(.background); HostConnection.terminalHandler = nil }
+        await model.readTerminalApproval(ref)
+        let approval = try XCTUnwrap(model.terminal(ref)?.approval), connection = try XCTUnwrap(HostConnection.instances.last)
+        HostConnection.terminalHandler = { op, _, _ in
+            guard op == "answer-terminal" else { return .null }
+            connection.push(.shell(try self.shell(fingerprint: String(repeating: "b", count: 64)).decode(Shell.self)))
+            throw HostRefusal(failure: try JSONValue.object(["code": .string("stale_request"), "message": .string("Review the current permission.")]).decode(WireFailure.self))
+        }
+        await model.answerTerminal(ref, approval: approval, decision: .allow)
+        XCTAssertTrue(model.pending.isEmpty)
+        XCTAssertFalse(model.terminalAnswerConfirmed(approval, in: ref))
+        XCTAssertTrue(model.shouldRestoreTerminalApproval(approval, in: ref), "The screen changed, but the same request still needs an answer")
+        connection.push(.shell(try shell(includeApproval: false).decode(Shell.self)))
+        XCTAssertFalse(model.shouldRestoreTerminalApproval(approval, in: ref), "A withdrawn binding cannot restore the old approval controls")
+        connection.push(.shell(try shell(request: "request-2").decode(Shell.self)))
+        XCTAssertFalse(model.shouldRestoreTerminalApproval(approval, in: ref), "A new request does not inherit the old card")
     }
 }
