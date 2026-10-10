@@ -728,7 +728,169 @@ private struct MarkdownBlockView: View {
                 .overlay(alignment: .leading) { Capsule().fill(Palette.border).frame(width: 3) }
         case .rule:
             Rectangle().fill(Palette.hairline).frame(height: 1).padding(.vertical, Space.s1)
+        case .table(let table):
+            MarkdownTableView(table: table)
         }
+    }
+}
+
+/// A table on the code surface: a grid when its columns fit the message's width, and one card per row when they
+/// don't, with the first column as the card's title and every other column a label and its value (#902). Nothing
+/// scrolls sideways. A column its separator row sets trailing keeps its numbers at the trailing edge.
+private struct MarkdownTableView: View {
+    let table: MarkdownTable
+    @Environment(\.sottoTheme) private var theme
+    @Environment(\.sottoDensity) private var density
+    /// The widest a grid cell's words run before they wrap, so the grid's width says whether it fits.
+    @ScaledMetric(relativeTo: .footnote) private var cellWidth: CGFloat = 180
+    /// The widest a card's labels run before they wrap, leaving the rest of the row to the value.
+    @ScaledMetric(relativeTo: .footnote) private var labelWidth: CGFloat = 140
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+        ViewThatFits(in: .horizontal) {
+            grid
+            cards
+        }
+        .background(Palette.code, in: shape)
+        .clipShape(shape)
+        .overlay(shape.strokeBorder(Palette.hairline, lineWidth: 1))
+    }
+
+    private var columns: Range<Int> { 0..<table.header.count }
+
+    private var grid: some View {
+        Grid(alignment: .topLeading, horizontalSpacing: 0, verticalSpacing: 0) {
+            GridRow {
+                ForEach(columns, id: \.self) { column in
+                    cell(table.header[column], column: column, header: true)
+                }
+            }
+            ForEach(Array(table.rows.enumerated()), id: \.offset) { _, row in
+                Rectangle().fill(Palette.hairline).frame(height: 1).gridCellUnsizedAxes(.horizontal)
+                GridRow {
+                    ForEach(columns, id: \.self) { column in
+                        cell(row[column], column: column, header: false)
+                    }
+                }
+            }
+        }
+    }
+
+    /// The first column takes the room the grid has to spare, so the others sit together at the trailing edge.
+    private func cell(_ text: MarkdownInline, column: Int, header: Bool) -> some View {
+        let alignment = table.alignments[column]
+        return CappedWidth(width: cellWidth) {
+            Text(InlineStyle.render(text, theme: theme))
+                .font((header ? Font.sotto(.caption, .semibold) : Font.sotto(.small)).monospacedDigit())
+                .foregroundStyle(header ? Palette.muted : Palette.ink)
+                .multilineTextAlignment(Self.textAlignment(alignment))
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+        }
+        .frame(maxWidth: column == 0 ? .infinity : nil, alignment: Self.frameAlignment(alignment))
+        .padding(.horizontal, Space.s3)
+        .padding(.vertical, Space.dense(Space.s2 + 2, density))
+        .gridColumnAlignment(Self.columnAlignment(alignment))
+    }
+
+    @ViewBuilder private var cards: some View {
+        if table.rows.isEmpty {
+            // A table still being written has only its header so far.
+            Text(table.header.map(\.text).joined(separator: " · "))
+                .font(.sotto(.caption, .semibold))
+                .foregroundStyle(Palette.muted)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, Space.s4)
+                .padding(.vertical, Space.dense(Space.s3, density))
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(table.rows.enumerated()), id: \.offset) { index, row in
+                    if index > 0 { Rectangle().fill(Palette.hairline).frame(height: 1) }
+                    card(row)
+                }
+            }
+        }
+    }
+
+    private func card(_ row: [MarkdownInline]) -> some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            VStack(alignment: .leading, spacing: 2) {
+                if !table.header[0].source.isEmpty {
+                    Text(InlineStyle.render(table.header[0], theme: theme))
+                        .font(.sotto(.caption, .semibold))
+                        .foregroundStyle(Palette.muted)
+                }
+                Text(InlineStyle.render(row[0], theme: theme))
+                    .font(.sotto(.body, .semibold))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
+            if row.count > 1 {
+                Grid(alignment: .topLeading, horizontalSpacing: Space.s3, verticalSpacing: Space.s1) {
+                    ForEach(1..<row.count, id: \.self) { column in
+                        GridRow {
+                            CappedWidth(width: labelWidth) {
+                                Text(InlineStyle.render(table.header[column], theme: theme))
+                                    .foregroundStyle(Palette.muted)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            value(row[column], trailing: table.alignments[column] == .trailing)
+                        }
+                    }
+                }
+                .font(.sotto(.small))
+            }
+        }
+        .padding(.horizontal, Space.s4)
+        .padding(.vertical, Space.dense(Space.s3, density))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// A card's value; a centred column reads as leading, since a card has no column to centre it in.
+    private func value(_ text: MarkdownInline, trailing: Bool) -> some View {
+        Text(InlineStyle.render(text, theme: theme))
+            .font(.sotto(.small).monospacedDigit())
+            .multilineTextAlignment(trailing ? .trailing : .leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: trailing ? .trailing : .leading)
+    }
+
+    private static func textAlignment(_ alignment: MarkdownTable.Alignment) -> TextAlignment {
+        switch alignment {
+        case .leading: return .leading
+        case .center: return .center
+        case .trailing: return .trailing
+        }
+    }
+    private static func frameAlignment(_ alignment: MarkdownTable.Alignment) -> Alignment {
+        switch alignment {
+        case .leading: return .topLeading
+        case .center: return .top
+        case .trailing: return .topTrailing
+        }
+    }
+    private static func columnAlignment(_ alignment: MarkdownTable.Alignment) -> HorizontalAlignment {
+        switch alignment {
+        case .leading: return .leading
+        case .center: return .center
+        case .trailing: return .trailing
+        }
+    }
+}
+
+/// Offers its one view no more than `width`, so a cell's ideal width is its words on one line or `width`, whichever
+/// is less, and longer words wrap at `width`.
+private struct CappedWidth: Layout {
+    let width: CGFloat
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let view = subviews.first else { return .zero }
+        return view.sizeThatFits(ProposedViewSize(width: min(proposal.width ?? width, width), height: nil))
+    }
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(width: bounds.width, height: bounds.height))
     }
 }
 

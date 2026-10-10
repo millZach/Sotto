@@ -12,7 +12,9 @@ The chosen theme colours the room. Each tab opens on a soft wash mixed from the 
 
 The Messages and Activity tabs are gone. The agent's steps (reading, editing, running commands) sit in the conversation in time order, each a small muted line under a faint guide, and the running step ticks at the end. Messages are placed by the time the host already sends with them and steps by their start time, so nothing new crosses the protocol. Only a slim bar stays pinned: back, a status pill, and the title once the big one has scrolled off. The big title, the provider and computer, and a row of chips for the branch, its changed lines and its pull request scroll away with the conversation. The chips read the Git status the host already puts on the thread's worktree record; checks are left for the Git work that follows. While the reply keyboard is open the top stays one line.
 
-Messages render as blocks (headings, lists, code blocks, paragraphs) with inline Markdown inside each block, as the desktop does, so a stray backtick can no longer turn the rest of a message into code. A key chord such as Ctrl+` reads as a key, not as the start of a code span.
+Messages render as blocks (headings, lists, code blocks, tables, paragraphs) with inline Markdown inside each block, as the desktop does, so a stray backtick can no longer turn the rest of a message into code. A key chord such as Ctrl+` reads as a key, not as the start of a code span.
+
+A table is drawn as a grid when its columns fit the message's width, and as one card per row when they don't: the first column titles the card and every other column is a label and its value, so nothing scrolls sideways. A column its separator row sets to the right keeps its numbers there. Zach chose this from three layouts in an HTML prototype (a grid that scrolls sideways, cards always, or this), kept as the tag `prototype/iphone-markdown-tables` (#902).
 
 ## Settings on this iPhone
 

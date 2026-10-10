@@ -426,7 +426,7 @@ struct HeldDetail {
                 "options": none, "questions": [question]]
     }
     /// A review reply as an agent wrote it, in Markdown: bold headings, a bulleted and a numbered list with bold lead-ins,
-    /// key chords that end in a backtick, and a fenced code block.
+    /// key chords that end in a backtick, a fenced code block, a table narrow enough for a grid and one too wide for it.
     private static let fixtureReview = """
     **Not asked for**
     - **Remembered state:** open state and height are remembered per thread across restarts.
@@ -442,6 +442,20 @@ struct HeldDetail {
     ```sh
     npm test -- tests/unit/renderer/terminalDrawer.test.ts
     ```
+
+    Where the time went:
+
+    | Step | Before | After |
+    |---|---:|---:|
+    | Open the thread | 1.2 s | 0.3 s |
+    | First reply | 2.4 s | 0.9 s |
+
+    What is left:
+
+    | Finding | Where | Fixed | What to do next |
+    |---|---|:---:|---|
+    | Drawer toggle | Terminal mode | No | Move the toggle on screen before the drawer opens |
+    | Tooltips | Every pane | No | Name the chord only while the shortcut is on |
     """
     /// The fixture has no computer to carry an answer, so once the answer is checked its request leaves the thread, as
     /// it would when the computer confirmed it.
