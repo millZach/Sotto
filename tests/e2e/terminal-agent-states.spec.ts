@@ -226,7 +226,7 @@ test('native fake agents report state and only unseen successful turns earn Just
         if (!result.ok) throw new Error(result.error.message)
         return { status: result.value.terminal.status, agentState: result.value.terminal.agentState }
       }, id)).toEqual({ status: 'running', agentState: 'exited' })
-      await command(page, id, 'Write-Output SOTTO_RETAINED_SHELL')
+      await command(page, id, "Write-Output ('SOTTO_RETAINED_' + 'SHELL')")
       await expect.poll(() => page.evaluate(async id => {
         const result = await window.sotto!.terminals!.read({ id })
         return result.ok ? result.value.output : ''
