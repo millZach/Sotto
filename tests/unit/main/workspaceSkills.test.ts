@@ -22,6 +22,6 @@ it('routes a local unstarted thread catalog to its provider without creating nat
   const claude = snapshot.models.find(model => model.providerId === 'claude')!
   await f.host.execute({ type: 'configure-thread', commandId: 'switch', threadId: 'local', modelId: claude.id })
   await expect(f.host.listThreadSkills('local')).rejects.toThrow('does not expose skills')
-  await expect(f.host.execute({ type: 'send', commandId: 'send', threadId: 'local', messageId: 'message', text: '$native-review Check', skills: [{ name: 'native-review', path: '/skill/SKILL.md' }] })).rejects.toThrow('another provider')
+  await expect(f.host.execute({ type: 'send', commandId: 'send', threadId: 'local', messageId: 'message', text: '$native-review Check', skills: [{ name: 'native-review', path: '/skill/SKILL.md' }] })).rejects.toThrow('Claude Code does not take skills')
   expect(f.adapters.claude.commands).toEqual([])
 })

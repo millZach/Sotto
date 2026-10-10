@@ -20,7 +20,7 @@ const ok = <T,>(value: T): ToolsResult<T> => ({ ok: true, value })
 
 function fakeTerminal(initial: TerminalSession[] = []) {
   const published: ReturnType<typeof terminalBridgeFixture> = terminalBridgeFixture({ workspace, sessions: initial, commands: {
-    list: vi.fn(async ({ threadId }) => ok({ workspace, sessions: published.sessions().filter(item => item.workspace.threadId === threadId) })),
+    list: vi.fn(async ({ threadId }) => ok({ workspace, sessions: published.sessions().filter(item => item.workspace.threadId === threadId), capacity: { count: published.sessions().length, version: 0 } })),
     create: vi.fn(async ({ threadId }) => {
       const created = session(threadId === workspace.threadId ? ID_1 : ID_2, { workspace: { ...workspace, threadId } })
       published.setSessions([...published.sessions(), created])

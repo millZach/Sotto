@@ -18,7 +18,7 @@ export function terminalBridgeFixture(options: { workspace: FileWorkspace; sessi
   const pendingRead: { release: (() => void) | null } = { release: null }
   const reads = new Set<() => void>()
   const bridge: TerminalBridge = {
-    list: vi.fn<TerminalBridge['list']>(async () => ({ ok: true, value: { workspace: options.workspace, sessions } })),
+    list: vi.fn<TerminalBridge['list']>(async () => ({ ok: true, value: { workspace: options.workspace, sessions, capacity: { count: sessions.length, version: 0 } } })),
     create: vi.fn<TerminalBridge['create']>(),
     read: vi.fn<TerminalBridge['read']>(async ({ sessionId }) => {
       if (hold.read) {

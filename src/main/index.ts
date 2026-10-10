@@ -1258,9 +1258,21 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const gitChanges = new GitChangesService({ files, checkpoints: checkpointIntegration.checkpoints, canMutate: checkpointIntegration.canMutate,
         acted: threadId => { void agentHost.gitActionFinished(threadId).catch(() => undefined) },
         copyPath: copyOutput, reveal: path => shell.showItemInFolder(path), emit: event => { windows.sendToMain(GIT_CHANGES_EVENT, event) } })
+      // A pane drawer starts in the project folder, even for a thread with its own worktree.
+      const terminalService = new TerminalService({ files, directory: userDataPath,
+        projectFolder: projectId => agentControl.projects().find(project => project.id === projectId)?.path,
+        acquireStart: workspace => agentHost.acquireTerminalStart(workspace.workingDirectory),
+        emit: event => { windows.sendToMain(TERMINAL_EVENT, event) } })
       const cleanupTerminals = registerTerminalWorkspaceIpc(ipcMain, new TerminalWorkspaceService({
         projects: () => agentControl.projects(), git: runWorktreeGit,
         worktrees: new ThreadWorktrees(userDataPath, runWorktreeGit, TERMINAL_WORKTREE_HOME),
+        acquireReclaim: async directory => {
+          const release = await agentHost.acquireWorktreeReclaim(directory)
+          try {
+            if (await terminalService.hasRunningTerminalInCheckout(directory)) throw new Error('A terminal is open in this folder, so it stays.')
+            return release
+          } catch (error) { release(); throw error }
+        },
         emit: event => { windows.sendToMain(TERMINALS_EVENT, event) },
       }), () => windows.getTrustedRenderers())
       browserService = new BrowserService({ files,
@@ -1284,10 +1296,6 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       quitHandles.cloudIphone = { close: () => cloudIphoneService?.dispose() ?? Promise.resolve() }
       // Resumes any release or deletion a previous run could not finish, using the key already in the credential store.
       void cloudIphoneService.resumeCleanup()
-      // A pane drawer's shell starts in the project folder, even for a thread with its own worktree.
-      const terminalService = new TerminalService({ files, directory: userDataPath,
-        projectFolder: projectId => agentControl.projects().find(project => project.id === projectId)?.path,
-        emit: event => { windows.sendToMain(TERMINAL_EVENT, event) } })
       // A folder with a shell still running in it is not reclaimed under that shell.
       if (worktreeCleanup) {
         agentHost.setWorktreeInUse(threadId => terminalService.hasRunningTerminal(threadId))
