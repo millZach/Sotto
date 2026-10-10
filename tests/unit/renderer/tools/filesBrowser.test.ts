@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { deferred } from '../../../fixtures/deferred'
 import { describe, expect, it, vi } from 'vitest'
 import type { FilesBridge, FilesResult, FilePreview } from '../../../../src/shared/files'

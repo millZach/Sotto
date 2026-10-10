@@ -71,7 +71,7 @@ async function stageInstall(): Promise<string> {
   return directory
 }
 
-describe.skipIf(!enabled)('the SSH transport against a real OpenSSH server', () => {
+describe.skipIf(!enabled)("the SSH transport against a real OpenSSH server (requires SOTTO_REAL_SSHD=1 and a real OpenSSH server)", () => {
   beforeAll(async () => {
     root = await mkdtemp(join(tmpdir(), 'sotto-real-sshd-'))
     data = join(root, 'host-data')

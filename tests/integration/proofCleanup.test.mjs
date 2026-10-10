@@ -125,7 +125,7 @@ describe('proof runtime folders', () => {
     })
   })
 })
-describe.skipIf(!hasUserSystemd())('proof process ownership', () => {
+describe.skipIf(!hasUserSystemd())("proof process ownership (Linux with a working user systemd manager)", () => {
   it('execs the command in its recorded PID and proof scope without the desktop bus', async () => {
     const owned = createOwnedProofProcesses(() => undefined)
     try {

@@ -84,7 +84,7 @@ describe('shell dictation copy', () => {
   })
 })
 
-describe.skipIf(process.platform !== 'linux')('private shell dictation state', () => {
+describe.skipIf(process.platform !== 'linux')("private shell dictation state (Linux shell dictation state)", () => {
   let runtime: string
   let file: DictationStateFile | undefined
   const failure = vi.fn()

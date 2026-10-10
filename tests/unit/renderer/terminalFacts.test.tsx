@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import type { WorkspaceTerminal } from '../../../src/shared/terminalWorkspace'
 import { SIDEBAR_STATE, describeTerminals, isOpenTerminal, lastNotableLine, organizeTerminals, terminalState, terminalStateLabel } from '../../../src/renderer/src/terminals/terminalFacts'

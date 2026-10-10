@@ -80,7 +80,7 @@ function adapter(provider: ProviderId, data: string): AgentHost & { closed?: () 
   return new GrokAcpHost(data, { pollIntervalMs: 500 })
 }
 
-describe.skipIf(!live)('side writing against the installed clients', () => {
+describe.skipIf(!live)("side writing against the installed clients (requires SOTTO_SIDE_WRITING_LIVE=1)", () => {
   for (const provider of (['claude', 'codex', 'grok'] as const).filter(id => wanted.includes(id))) {
     it(`${provider} names a new thread on the side, and the thread never sees the naming prompt`, async () => {
       const started = Date.now()

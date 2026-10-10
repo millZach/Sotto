@@ -52,20 +52,22 @@ describe('Linux tarball verification', () => {
       verifyLinuxArchiveContents(packaged, extracted))).rejects.toThrow('tarball differs at sotto')
   })
 
-  it.skipIf(process.platform === 'win32').each([
-    ['file execute', 'sotto', 0o755, 0o750],
-    ['file read', 'resources/app.asar', 0o644, 0o640],
-    ['file write', 'resources/app.asar', 0o644, 0o664],
-    ['directory read', 'resources/runtime', 0o755, 0o751],
-    ['directory write', 'resources/runtime', 0o755, 0o775],
-    ['directory traverse', 'resources/runtime', 0o755, 0o754],
-    ['root directory traverse', '.', 0o755, 0o754],
-  ])('rejects changed %s permissions even when contents match', async (_kind, path, expectedMode, archivedMode) => {
-    const { packaged, archive, pack } = await fixture()
-    const entry = join(packaged, path)
-    await chmod(entry, archivedMode)
-    try { pack() } finally { await chmod(entry, expectedMode) }
-    await expect(releasePlatformProfile('linux').openDistributable(archive, (_asar, extracted) =>
-      verifyLinuxArchiveContents(packaged, extracted))).rejects.toThrow(`tarball differs at ${path}`)
+  describe("POSIX permissions; Windows cannot preserve Unix mode bits", () => {
+    it.skipIf(process.platform === 'win32').each([
+      ['file execute', 'sotto', 0o755, 0o750],
+      ['file read', 'resources/app.asar', 0o644, 0o640],
+      ['file write', 'resources/app.asar', 0o644, 0o664],
+      ['directory read', 'resources/runtime', 0o755, 0o751],
+      ['directory write', 'resources/runtime', 0o755, 0o775],
+      ['directory traverse', 'resources/runtime', 0o755, 0o754],
+      ['root directory traverse', '.', 0o755, 0o754],
+    ])('rejects changed %s permissions even when contents match', async (_kind, path, expectedMode, archivedMode) => {
+      const { packaged, archive, pack } = await fixture()
+      const entry = join(packaged, path)
+      await chmod(entry, archivedMode)
+      try { pack() } finally { await chmod(entry, expectedMode) }
+      await expect(releasePlatformProfile('linux').openDistributable(archive, (_asar, extracted) =>
+        verifyLinuxArchiveContents(packaged, extracted))).rejects.toThrow(`tarball differs at ${path}`)
+    })
   })
 })

@@ -9,11 +9,11 @@ import { afterAll, beforeAll } from 'vitest'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { publicProviderEntityId, type ProviderId } from '../../src/shared/agents'
 import type { HostDescriptor } from '../../src/shared/hostProtocol'
-import type { AdapterFixture, AdapterSessionOptions, HostServiceFixture } from '../fixtures/adapterFixture'
-import { claudeFixture } from '../fixtures/claudeFixture'
-import { codexFixture } from '../fixtures/codexFixture'
-import { devinFixture } from '../fixtures/devinFixture'
-import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
+import type { AdapterContractSkips, AdapterFixture, AdapterSessionOptions, HostServiceFixture } from '../fixtures/adapterFixture'
+import { claudeFixture, claudeFixtureSkips } from '../fixtures/claudeFixture'
+import { codexFixture, codexFixtureSkips } from '../fixtures/codexFixture'
+import { devinFixture, devinFixtureSkips } from '../fixtures/devinFixture'
+import { grokFixture, grokFixtureSkips } from '../fixtures/fakeGrokThreadFixture'
 import { serveStandIn } from '../fixtures/serveStandIn'
 import { ensureFixtureDesktopAnswers } from '../fixtures/sshDesktopAnswers'
 import { describeHostServiceContract } from './hostServiceContract'
@@ -75,12 +75,12 @@ async function fixture(provider: ProviderId, native: AdapterFixture, session: Ad
     cleanup: async () => { await stop(); await native.cleanup() },
   }
 }
-const providers: { provider: ProviderId; create: (session?: AdapterSessionOptions) => Promise<AdapterFixture> }[] = [
-  { provider: 'codex', create: session => codexFixture(undefined, false, undefined, session) },
-  { provider: 'claude', create: session => claudeFixture(undefined, undefined, undefined, session) },
-  { provider: 'grok', create: session => grokFixture(undefined, undefined, undefined, session) },
-  { provider: 'devin', create: session => devinFixture(undefined, undefined, undefined, session) },
+const providers: { provider: ProviderId; create: (session?: AdapterSessionOptions) => Promise<AdapterFixture>; skips: AdapterContractSkips }[] = [
+  { provider: 'codex', create: session => codexFixture(undefined, false, undefined, session), skips: codexFixtureSkips },
+  { provider: 'claude', create: session => claudeFixture(undefined, undefined, undefined, session), skips: claudeFixtureSkips },
+  { provider: 'grok', create: session => grokFixture(undefined, undefined, undefined, session), skips: grokFixtureSkips },
+  { provider: 'devin', create: session => devinFixture(undefined, undefined, undefined, session), skips: devinFixtureSkips },
 ]
-for (const provider of providers) describeHostServiceContract('Socket child ' + provider.provider, async session => fixture(provider.provider, await provider.create(session), session))
+for (const provider of providers) describeHostServiceContract('Socket child ' + provider.provider, async session => fixture(provider.provider, await provider.create(session), session), provider.skips)
 // The same contract over a desktop's tailnet connection. The transport is what changes, so one provider carries it.
-describeHostServiceContract('Socket child codex over the tailnet', async session => fixture('codex', await providers[0]!.create(session), session, true))
+describeHostServiceContract('Socket child codex over the tailnet', async session => fixture('codex', await providers[0]!.create(session), session, true), codexFixtureSkips)

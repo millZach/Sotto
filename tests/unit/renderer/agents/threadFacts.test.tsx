@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { NOW, stateFixture } from '../../../fixtures/renderer/threadsViewHarness'
 import { describe, expect, it } from 'vitest'
 import { describeThreads, groupThreads, listThreads, providerKey } from '../../../../src/renderer/src/agents/threadFacts'
