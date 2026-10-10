@@ -24,6 +24,8 @@ import type {
 } from '../../../../shared/settings'
 import { WORKTREE_CLEANUP_DAYS } from '../../../../shared/settings'
 import { UPDATES_UNSUPPORTED_MESSAGE } from '../updates/updateControlLogic'
+import { releaseTrackName } from '../../../../shared/releaseTrack'
+import { releaseTrackOf } from '../../state/useReleaseTrack'
 import { Button } from '../../components/Button'
 import { OpenSystemSettingsButton } from '../../components/OpenSystemSettingsButton'
 import { Card } from '../../components/Card'
@@ -603,7 +605,7 @@ export function SettingsView({
                   <div className="settings-section__heading"><h2>Updates</h2><p>Sotto looks for new releases on GitHub and installs them itself.</p></div>
                   <div className="settings-update-row">
                     <div>
-                      <p className="settings-update-version">{updateStatus === null ? 'Sotto' : `Sotto ${updateStatus.currentVersion}`}</p>
+                      <p className="settings-update-version">{updateStatus === null ? 'Sotto' : `${releaseTrackName(releaseTrackOf(updateStatus))} ${updateStatus.currentVersion}`}</p>
                       <p className="settings-update-status" aria-live="polite">{updateStatusCopy(updateStatus)}</p>
                     </div>
                     <div className="settings-update-actions">

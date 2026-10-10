@@ -2,6 +2,7 @@ import React, { type ReactNode } from 'react'
 import { ChevronDown } from 'lucide-react'
 
 import type { SottoPlatform } from '../../../../shared/platform'
+import { releaseTrackName, type ReleaseTrack } from '../../../../shared/releaseTrack'
 import { ShortcutKey } from '../../components/ShortcutKey'
 import { platformCopy } from '../../platformCopy'
 
@@ -10,6 +11,8 @@ export interface HelpViewProps {
   readonly platform: SottoPlatform
   /** The running version, when the main process has reported it. */
   readonly version?: string | undefined
+  /** The running build's track, which names it in the About line; stable when unknown. */
+  readonly releaseTrack?: ReleaseTrack | undefined
 }
 
 interface Topic {
@@ -29,8 +32,12 @@ function TopicList({ topics }: { readonly topics: readonly Topic[] }): ReactNode
   ))
 }
 
-export function HelpView({ shortcut, platform, version }: HelpViewProps): ReactNode {
+export function HelpView({ shortcut, platform, version, releaseTrack = 'stable' }: HelpViewProps): ReactNode {
   const copy = platformCopy(platform)
+  const name = releaseTrackName(releaseTrack)
+  // An Owl version is one word on the line, never broken at its hyphen; a stable version has none to break at.
+  const about = version === undefined ? name
+    : releaseTrack === 'owl' ? <>{name} <span className="help-about__version">{version}</span></> : `${name} ${version}`
   const mac = platform === 'darwin'
   const linux = platform === 'linux'
   const modifier = mac ? '⌘' : 'Ctrl'
@@ -79,7 +86,7 @@ export function HelpView({ shortcut, platform, version }: HelpViewProps): ReactN
           <section className="tt-panel">
             <div className="tt-panel__header"><h2>About</h2></div>
             <p className="help-about">
-              {version === undefined ? 'Sotto' : `Sotto ${version}`}, {mac ? 'macOS' : linux ? 'Linux' : 'Windows'}. No account with Sotto and no telemetry.
+              {about}, {mac ? 'macOS' : linux ? 'Linux' : 'Windows'}. No account with Sotto and no telemetry.
               <br />
               Transcription uses your OpenRouter account.
             </p>

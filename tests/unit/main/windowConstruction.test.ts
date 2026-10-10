@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { platformProfile } from '../../../src/main/platformProfile'
+import { getReleaseTrack, releaseTrackName } from '../../../src/shared/releaseTrack'
 import { darwinOverrides, createHarness } from '../../fixtures/windowManager'
 
 describe('WindowManager construction', () => {
@@ -349,6 +350,22 @@ describe('WindowManager construction', () => {
       absent.windows[0],
     )
     expect(failing.windows[0]!.setAlwaysOnTop).toHaveBeenCalledWith(true, 'floating')
+  })
+
+  // Main names the window from app.getVersion() exactly this way; the page's own <title> says Sotto on every build.
+  it.each([
+    ['0.1.34', 'Sotto'],
+    ['0.1.35-owl.20261009.1', 'Sotto Owl'],
+  ])('titles the main window for the build it is (%s) and keeps that title against the page', async (version, title) => {
+    const { manager, options, windows } = createHarness({ title: releaseTrackName(getReleaseTrack(version)) })
+
+    await manager.createMainWindow()
+    await manager.createWidgetWindow()
+
+    expect(options[0]).toMatchObject({ title })
+    expect(windows[0]!.emit('page-title-updated').preventDefault).toHaveBeenCalledOnce()
+    // The widget's window is never named for the build.
+    expect(options[1]).not.toHaveProperty('title')
   })
 
   it('retains one instance of each window', async () => {

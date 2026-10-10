@@ -1,0 +1,195 @@
+{
+  "stable-dark": {
+    "track": "stable",
+    "appearance": "dark",
+    "reportedVersion": "0.1.34",
+    "titles": {
+      "window": "Sotto",
+      "document": "Sotto"
+    },
+    "threads-1280x800": {
+      "brand": "mark and wordmark"
+    },
+    "threads-820x560": {
+      "brand": "mark and wordmark"
+    },
+    "helpAbout": {
+      "text": "Sotto 0.1.34, Windows. No account with Sotto and no telemetry.",
+      "contrast": 9.48
+    },
+    "settingsVersion": {
+      "text": "Sotto 0.1.34",
+      "contrast": 19.55
+    },
+    "settings-1280x800": {
+      "brand": "mark and wordmark"
+    },
+    "settings-820x560": {
+      "brand": "mark and wordmark"
+    }
+  },
+  "stable-light": {
+    "track": "stable",
+    "appearance": "light",
+    "reportedVersion": "0.1.34",
+    "titles": {
+      "window": "Sotto",
+      "document": "Sotto"
+    },
+    "threads-1280x800": {
+      "brand": "mark and wordmark"
+    },
+    "threads-820x560": {
+      "brand": "mark and wordmark"
+    },
+    "helpAbout": {
+      "text": "Sotto 0.1.34, Windows. No account with Sotto and no telemetry.",
+      "contrast": 6.72
+    },
+    "settingsVersion": {
+      "text": "Sotto 0.1.34",
+      "contrast": 15.74
+    },
+    "settings-1280x800": {
+      "brand": "mark and wordmark"
+    },
+    "settings-820x560": {
+      "brand": "mark and wordmark"
+    }
+  },
+  "owl-dark": {
+    "track": "owl",
+    "appearance": "dark",
+    "reportedVersion": "0.1.35-owl.20261010.1",
+    "titles": {
+      "window": "Sotto Owl",
+      "document": "Sotto Owl"
+    },
+    "threads-1280x800": {
+      "brand": "tile",
+      "size": [
+        24,
+        24
+      ],
+      "tile": "#47b8a9",
+      "glyph": "#000000",
+      "glyphContrast": 8.7
+    },
+    "controls-1280x800": "same as stable",
+    "threads-820x560": {
+      "brand": "tile",
+      "size": [
+        24,
+        24
+      ],
+      "tile": "#47b8a9",
+      "glyph": "#000000",
+      "glyphContrast": 8.7
+    },
+    "controls-820x560": "same as stable",
+    "helpAbout": {
+      "text": "Sotto Owl 0.1.35-owl.20261010.1, Windows. No account with Sotto and no telemetry.",
+      "contrast": 9.48
+    },
+    "settingsVersion": {
+      "text": "Sotto Owl 0.1.35-owl.20261010.1",
+      "contrast": 19.55
+    },
+    "settings-1280x800": {
+      "brand": "tile",
+      "size": [
+        24,
+        24
+      ],
+      "tile": "#47b8a9",
+      "glyph": "#000000",
+      "glyphContrast": 8.7
+    },
+    "settings-820x560": {
+      "brand": "tile",
+      "size": [
+        24,
+        24
+      ],
+      "tile": "#47b8a9",
+      "glyph": "#000000",
+      "glyphContrast": 8.7
+    }
+  },
+  "owl-light": {
+    "track": "owl",
+    "appearance": "light",
+    "reportedVersion": "0.1.35-owl.20261010.1",
+    "titles": {
+      "window": "Sotto Owl",
+      "document": "Sotto Owl"
+    },
+    "threads-1280x800": {
+      "brand": "tile",
+      "size": [
+        24,
+        24
+      ],
+      "tile": "#47b8a9",
+      "glyph": "#000000",
+      "glyphContrast": 8.7
+    },
+    "controls-1280x800": "same as stable",
+    "threads-820x560": {
+      "brand": "tile",
+      "size": [
+        24,
+        24
+      ],
+      "tile": "#47b8a9",
+      "glyph": "#000000",
+      "glyphContrast": 8.7
+    },
+    "controls-820x560": "same as stable",
+    "helpAbout": {
+      "text": "Sotto Owl 0.1.35-owl.20261010.1, Windows. No account with Sotto and no telemetry.",
+      "contrast": 6.72
+    },
+    "settingsVersion": {
+      "text": "Sotto Owl 0.1.35-owl.20261010.1",
+      "contrast": 15.74
+    },
+    "settings-1280x800": {
+      "brand": "tile",
+      "size": [
+        24,
+        24
+      ],
+      "tile": "#47b8a9",
+      "glyph": "#000000",
+      "glyphContrast": 8.7
+    },
+    "settings-820x560": {
+      "brand": "tile",
+      "size": [
+        24,
+        24
+      ],
+      "tile": "#47b8a9",
+      "glyph": "#000000",
+      "glyphContrast": 8.7
+    }
+  },
+  "owl-dark-reduced-motion": {
+    "brand": "tile",
+    "size": [
+      24,
+      24
+    ],
+    "tile": "#47b8a9",
+    "glyph": "#000000",
+    "glyphContrast": 8.7
+  },
+  "owl-first-run-strip": {
+    "brand": "tile",
+    "size": [
+      24,
+      24
+    ]
+  }
+}

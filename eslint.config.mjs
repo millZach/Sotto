@@ -5,6 +5,7 @@ export default tseslint.config(
   {
     ignores: [
       'artifacts/sotto-owl-release/**',
+      'artifacts/sotto-owl-branding/**',
       'artifacts/command-center-benchmark/**',
       'artifacts/command-center-live/**',
       'artifacts/voice-control-removal/merged-setup/**',

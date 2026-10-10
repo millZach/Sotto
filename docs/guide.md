@@ -770,4 +770,6 @@ If Sotto cannot read its saved keys, it preserves the encrypted file and shows a
 
 Sotto Owl is Sotto's preview track for Watcher. Close Sotto and install the Owl installer over it to keep your existing data. Owl offers only newer Owl builds; downloads and restarts still ask. Install a stable installer over Owl to return to the stable feed.
 
+You can tell an Owl build at a glance: the top of the sidebar shows the owl's teal tile alone, where Sotto shows the owl beside its name. The window's title and the tray icon's tooltip read Sotto Owl, and so does the version in Help and in Settings → Application, for example "Sotto Owl 0.1.35-owl.20261009.1".
+
 Current stable keeps ordinary threads, conversation history, drafts, keys, settings and the dictation shortcut, but drops Watcher's control record and thread roles on save. Its conversations then appear as ordinary threads. Back up the closed profile if you need to return to Watcher. See [the release procedure](release/releasing.md#cutting-a-sotto-owl-build-windows) for the tested data behavior and publishing steps. Owl is Windows only; macOS has no updater and Linux is outside this preview track.

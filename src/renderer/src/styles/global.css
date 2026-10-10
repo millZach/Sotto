@@ -1179,6 +1179,13 @@ textarea.tt-input {
   height: 20px;
 }
 
+/* Sotto Owl: the mark alone, as the sidebar's top row shows it. */
+.app-mark__tile {
+  display: block;
+  width: 24px;
+  height: 24px;
+}
+
 /* The switch: two tabs in one pill-shaped track, the selected one filled. */
 .app-switch {
   -webkit-app-region: no-drag;
@@ -2394,6 +2401,11 @@ textarea.tt-input {
   color: var(--tt-text-muted);
   font-size: 12.5px;
   line-height: 1.55;
+}
+
+/* An Owl version reads as one word: its hyphen is not a place to break the line. */
+.help-about__version {
+  white-space: nowrap;
 }
 
 /* ---- dialogs ---- */

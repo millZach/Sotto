@@ -169,4 +169,4 @@ Omarchy’s `sotto.dictation` plugin draws a bar indicator and a shell pill with
 
 ## Sotto Owl preview builds
 
-Sotto Owl is the Windows preview track for Watcher. Its installer replaces Sotto and keeps the same local data. Owl receives only newer Owl builds; stable remains on its stable feed. [The release procedure](docs/release/releasing.md#cutting-a-sotto-owl-build-windows) explains switching tracks and the Watcher metadata current stable drops when switching back.
+Sotto Owl is the Windows preview track for Watcher. Its installer replaces Sotto and keeps the same local data. An Owl build shows the owl's tile alone at the top of the sidebar and calls itself Sotto Owl in its window title, tray tooltip and version. Owl receives only newer Owl builds; stable remains on its stable feed. [The release procedure](docs/release/releasing.md#cutting-a-sotto-owl-build-windows) explains switching tracks and the Watcher metadata current stable drops when switching back.
