@@ -84,6 +84,17 @@ export interface AdapterFixture {
   clientUpdate?: { provider: ProviderId; install(): Promise<string> }
 }
 
+/** Create a settled thread before a contract test acts on its provider session. */
+export async function createContractThread(f: Pick<AdapterFixture, 'host' | 'projectId' | 'modelId'>, title: string): Promise<string> {
+  const id = randomUUID()
+  const result = await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: f.modelId, title })
+  expect(result.accepted || result.uncertain).toBe(true)
+  // A late acknowledgement may still publish this exact thread. Do not send through an alias that
+  // is not there yet, and do not create it again; the contract starts once creation has settled.
+  await expect.poll(async () => (await f.host.snapshot()).threads.some(thread => thread.id === id), { timeout: 12_000 }).toBe(true)
+  return id
+}
+
 /** New provider adapters must pass these behavioural checks with observable fake effects. */
 export function describeAdapterContract(name: string, factory: (session?: AdapterSessionOptions) => Promise<AdapterFixture>): void {
   describe(`${name} thread interface contract`, () => {
@@ -321,11 +332,7 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
     // The window still has to outlast the setup between creating a thread and watching it.
     const impatient = { reaperSweepMs: 20, sessionIdleMs: 150 }
     const thread = async (id: string) => (await f.host.snapshot()).threads.find(t => t.id === id)!
-    const create = async (title: string): Promise<string> => {
-      const id = randomUUID()
-      await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: f.modelId, title })
-      return id
-    }
+    const create = (title: string) => createContractThread(f, title)
     const send = (id: string, messageId: string, text: string) =>
       f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId, text })
     const starts = (id: string) => f.sessions!.starts(id)
