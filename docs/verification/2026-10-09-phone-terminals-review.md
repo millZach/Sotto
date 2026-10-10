@@ -24,4 +24,12 @@ Three findings:
 
 The issue's simulator screenshots and green macOS compile/test job remain follow-ups. Android was left untouched under the lead's explicit no-JDK exception.
 
-Standards: three documented findings corrected, one heuristic deferred, native verification pending. Spec: three findings corrected, native verification pending. The exact executed Windows gate results are in [the verification note](2026-10-09-phone-terminals.md).
+## Follow-up review
+
+Two further independent Sol (`gpt-6.1-sol`) reviewers at max reasoning reviewed `02a1165dc...d05deeff181935223252c250407a6115ab91abc0`, including the review corrections and exact file-identity fix. Both completed read-only after the same Windows shell setup failure, using Node to read the pinned Git objects. Neither ran builds or tests.
+
+**Standards:** one documented P1 finding remained: a Yes/No structured question titled “Do you want to proceed?” matched the permission branch before the question branch. The question footer's “esc to cancel” made it look like permission evidence. Commit `e2ffe8ea2` recognizes questions first and excludes question footers from permission evidence, including incomplete question choices. The exact reproducer failed three assertions before the fix; all 132 focused screen and phone cases passed afterwards. A new possible duplication heuristic identified the same restoration decision in the terminal detail and list. Commit `a6806472f` moves it into `AppModel.shouldRestoreTerminalApproval`, preserving copy, timing and receipt handling; a native rejection/redraw test is written but unrun here.
+
+**Spec:** the same P1 overlap was the only actionable finding. The reviewer confirmed the bigint helper preserves exact identities through its callers. The question correction now prevents both a preview and hook dispatch against that screen.
+
+Standards: four documented findings corrected across both passes, one new UI heuristic corrected, one transport heuristic deferred, native verification pending. Spec: four findings corrected across both passes, native verification pending. The exact executed Windows gate results are in [the verification note](2026-10-09-phone-terminals.md).

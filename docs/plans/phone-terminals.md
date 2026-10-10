@@ -8,7 +8,7 @@ Issue [#884](https://github.com/millZach/Sotto/issues/884), based on `feat/termi
 - [x] Keep output out of rows and pushes. Read at most eight current screen lines for one live Claude approval. Require an exact reviewed preview, current Can answer and hook acknowledgement.
 - [x] Put terminal rows into Needs you, Working and Recent on iOS; clear Just finished only while a foreground detail shows the terminal.
 - [x] Add protocol, SottoCore, AppModel and simulator journey tests.
-- [ ] Complete the required Windows gates after review corrections.
+- [x] Complete the required Windows gates after review corrections; record exact results in `../verification/2026-10-09-phone-terminals.md`.
 - [x] Review standards and issue requirements independently; fix concrete findings and commit coherent changes without pushing.
 
 The small status view is the working assumption for tapping a terminal without an approval. It provides the foreground detail observation ADR-0066 already defines. The lead was asked and no reply arrived, so this reversible choice was retained; it does not change the approved list or Permission card.
