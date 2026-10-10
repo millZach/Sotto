@@ -1,16 +1,18 @@
 import { randomUUID } from 'node:crypto'
-import { access, mkdir, writeFile } from 'node:fs/promises'
-import { basename, join, win32 as win32Path } from 'node:path'
+import { access } from 'node:fs/promises'
+import { basename, win32 as win32Path } from 'node:path'
 import type { IPty, IPtyForkOptions } from 'node-pty'
 import type { AgentProject, AgentWorktree } from '../../shared/agents'
+import type { ToolsResult } from '../../shared/tools'
 import { TERMINAL_MAX_OUTPUT } from '../../shared/terminal'
 import { commandLine, nativeModelName, providerCommand } from '../../shared/terminalCommands'
 import {
-  TERMINAL_IMAGE_MAX_BYTES, TERMINALS_MAX, terminalOpenSchema, workspaceTerminalImageSchema, workspaceTerminalRequestSchema, workspaceTerminalResizeSchema, workspaceTerminalWriteSchema,
+  TERMINALS_MAX, terminalOpenSchema, workspaceTerminalImageSchema, workspaceTerminalRequestSchema, workspaceTerminalResizeSchema, workspaceTerminalWriteSchema,
   type TerminalLaunch, type WorkspaceTerminal, type WorkspaceTerminalEvent, type WorkspaceTerminalSnapshot,
 } from '../../shared/terminalWorkspace'
 import type { RunGit, ThreadWorktrees } from '../agents/threadWorktrees'
 import { ToolOperations, fail, parse } from '../tools/common'
+import { saveTerminalImage, terminalImageInput } from './clipboard'
 
 export interface TerminalWorkspaceDependencies {
   projects: () => readonly AgentProject[]
@@ -45,7 +47,6 @@ type SpawnProcess = (file: string, args: string[], options: IPtyForkOptions) => 
 /** `discovered` marks a shell found by scanning PATH: only that one can disappear under the cache. */
 interface ResolvedShell { readonly path: string; readonly discovered: boolean }
 
-const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 
 const shellName = (path: string, platform: NodeJS.Platform): string =>
   (platform === 'win32' ? win32Path.basename(path) : basename(path)).replace(/\.exe$/iu, '')
@@ -62,6 +63,7 @@ export class TerminalWorkspaceService extends ToolOperations {
   private cachedShell: ResolvedShell | null = null
   private shellLookup: Promise<ResolvedShell> | null = null
   private spawnLoad: Promise<SpawnProcess> | null = null
+  private readonly inputLanes = new Map<string, Promise<unknown>>()
   constructor(private readonly dependencies: TerminalWorkspaceDependencies) {
     super()
     this.warm()
@@ -285,12 +287,23 @@ export class TerminalWorkspaceService extends ToolOperations {
   }
 
   read(payload: unknown) { return this.run(async () => this.snapshot(await this.owned(parse(workspaceTerminalRequestSchema, payload).id))) }
-  write(payload: unknown) { return this.run(async () => {
-    const request = parse(workspaceTerminalWriteSchema, payload)
+  private input<T>(id: string, action: () => Promise<T>): Promise<ToolsResult<T>> {
+    const previous = this.inputLanes.get(id) ?? Promise.resolve()
+    const pending = previous.then(() => this.run(action))
+    this.inputLanes.set(id, pending)
+    void pending.then(() => { if (this.inputLanes.get(id) === pending) this.inputLanes.delete(id) })
+    return pending
+  }
+  write(payload: unknown) {
+    const parsed = workspaceTerminalWriteSchema.safeParse(payload)
+    if (!parsed.success) return this.run(async () => { parse(workspaceTerminalWriteSchema, payload) })
+    const request = parsed.data
+    return this.input(request.id, async () => {
     const record = await this.owned(request.id)
     if (!record.pty) return fail('not-running', 'This terminal has exited. Restart it to run the command again.')
     record.pty.write(request.data)
-  }) }
+    })
+  }
   resize(payload: unknown) { return this.run(async () => {
     const request = parse(workspaceTerminalResizeSchema, payload)
     // A size never waits for the process: a terminal still starting spawns at the size its pane already measured.
@@ -349,29 +362,21 @@ export class TerminalWorkspaceService extends ToolOperations {
     record.output = ''
     this.publish(record)
   }) }
-  pasteImage(payload: unknown) { return this.run(async () => {
-    const request = parse(workspaceTerminalImageSchema, payload)
+  pasteImage(payload: unknown) {
+    const parsed = workspaceTerminalImageSchema.safeParse(payload)
+    if (!parsed.success) return this.run(async () => { parse(workspaceTerminalImageSchema, payload); return { path: '' } })
+    const request = parsed.data
+    return this.input(request.id, async () => {
     const record = await this.owned(request.id)
     if (!record.pty) return fail('not-running', 'This terminal has exited.')
-    const match = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/u.exec(request.dataUrl)
-    const bytes = match ? Buffer.from(match[1]!, 'base64') : null
-    if (!bytes || bytes.length > TERMINAL_IMAGE_MAX_BYTES || !bytes.subarray(0, 8).equals(PNG_SIGNATURE)) return fail('invalid-request', 'Only a PNG image up to 10 MiB can be pasted into a terminal.')
-    const folder = join(record.terminal.workingDirectory, '.sotto', 'clipboard')
-    // <timestamp>.png, to the millisecond; a second paste in the same millisecond counts up.
-    const stamp = new Date(this.now()).toISOString().replace(/[-:]/gu, '').replace('T', '-').replace('.', '-').replace(/Z$/u, '')
-    let path = join(folder, `${stamp}.png`)
-    try {
-      await mkdir(folder, { recursive: true })
-      // The images are for pasting, not for committing.
-      await writeFile(join(folder, '.gitignore'), '*\n', { flag: 'wx' }).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'EEXIST') throw error })
-      for (let attempt = 2; ; attempt += 1) {
-        try { await writeFile(path, bytes, { flag: 'wx' }); break }
-        catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST' || attempt > 100) throw error; path = join(folder, `${stamp}-${attempt}.png`) }
-      }
-    } catch { return fail('path-unavailable', 'The image could not be saved under this folder.') }
-    record.pty.write(/\s/u.test(path) ? `"${path}"` : path)
+    const pty = record.pty
+    const path = await saveTerminalImage(record.terminal.workingDirectory, request.dataUrl, this.now())
+    await this.owned(request.id)
+    if (record.pty !== pty) return fail('not-running', 'The image was saved, but this terminal has exited. Paste it again in the restarted terminal.')
+    record.pty.write(terminalImageInput(path, this.dependencies.platform ?? process.platform))
     return { path }
-  }) }
+    })
+  }
 
   /** Ends the process; the record and its output stay. A process ended here has no exit code of its own. */
   private end(record: LiveTerminal): void {

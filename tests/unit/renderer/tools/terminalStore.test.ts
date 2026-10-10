@@ -2,7 +2,7 @@ import { terminalBridgeFixture, terminalSession } from '../../../fixtures/render
 import { describe, expect, it, vi } from 'vitest'
 import type { TerminalSession, TerminalSnapshot } from '../../../../src/shared/terminal'
 import type { ToolsResult } from '../../../../src/shared/tools'
-import { TerminalStore } from '../../../../src/renderer/src/tools/terminalStore'
+import { TerminalStore, type TerminalViewHandlers } from '../../../../src/renderer/src/tools/terminalStore'
 
 const workspace = { threadId: 'thread-a', projectId: 'workshop', workingDirectory: 'D:\\work\\workshop', workspaceId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }
 const ID_TOOLS = '11111111-1111-4111-8111-111111111111'
@@ -21,6 +21,62 @@ function fakeBridge(sessions: TerminalSession[]) {
 }
 
 describe('a terminal store filters by place', () => {
+  it.each(['tools', 'drawer'] as const)('keeps conversion, staging, later pastes and Enter ordered in %s', async place => {
+    const { bridge } = fakeBridge([session(ID_TOOLS, place)])
+    const store = new TerminalStore(place)
+    await store.activate(bridge, 'thread-a')
+    let handlers!: TerminalViewHandlers
+    store.attach(bridge, 'thread-a', ID_TOOLS, document.createElement('div'), callbacks => {
+      handlers = callbacks
+      return { mount() {}, unmount() {}, write(_data, done) { done?.() }, reset() {}, setInputEnabled() {}, fit: () => null, focus() {}, dispose() {} }
+    })
+    await vi.waitFor(() => expect(store.replaying(ID_TOOLS)).toBe(false))
+    const conversion = Promise.withResolvers<string | null>(), staging = Promise.withResolvers<ToolsResult<void>>()
+    const calls: string[] = []
+    vi.mocked(bridge.pasteImage).mockImplementationOnce(request => { calls.push(request.dataUrl); return staging.promise })
+      .mockImplementation(async request => { calls.push(request.dataUrl); return ok(undefined) })
+    vi.mocked(bridge.write).mockImplementation(async request => { calls.push(request.data); return ok(undefined) })
+    handlers.onPasteImage!(conversion.promise)
+    handlers.onPasteImage!('second image')
+    handlers.onInput('\r')
+    await Promise.resolve(); await Promise.resolve()
+    expect(calls).toEqual([])
+    conversion.resolve('first image')
+    await vi.waitFor(() => expect(calls).toEqual(['first image']))
+    staging.resolve(ok(undefined))
+    await vi.waitFor(() => expect(calls).toEqual(['first image', 'second image', '\r']))
+    const failed = Promise.withResolvers<string | null>()
+    handlers.onPasteImage!(failed.promise); handlers.onInput('\r')
+    failed.resolve(null)
+    await vi.waitFor(() => expect(store.thread('thread-a')!.notice).toContain('clipboard image could not be read'))
+    expect(store.thread('thread-a')!.notice).toContain('Later queued input was discarded.')
+    expect(calls).toEqual(['first image', 'second image', '\r'])
+    handlers.onInput('fresh')
+    await vi.waitFor(() => expect(calls.at(-1)).toBe('fresh'))
+  })
+  it.each(['tools', 'drawer'] as const)('routes pasted images from %s to its running session, and reports a save failure', async place => {
+    const { bridge, emit } = fakeBridge([session(ID_TOOLS, place)])
+    const store = new TerminalStore(place)
+    await store.activate(bridge, 'thread-a')
+    let handlers: TerminalViewHandlers | undefined
+    store.attach(bridge, 'thread-a', ID_TOOLS, document.createElement('div'), callbacks => {
+      handlers = callbacks
+      return { mount() {}, unmount() {}, write(_data, done) { done?.() }, reset() {}, setInputEnabled() {}, fit: () => null, focus() {}, dispose() {} }
+    })
+    await vi.waitFor(() => expect(store.replaying(ID_TOOLS)).toBe(false))
+    handlers!.onPasteImage!('data:image/png;base64,AAAA')
+    await vi.waitFor(() => expect(bridge.pasteImage).toHaveBeenCalledWith({ threadId: 'thread-a', workspaceId: workspace.workspaceId, sessionId: ID_TOOLS, dataUrl: 'data:image/png;base64,AAAA' }))
+    handlers!.onPasteImage!('data:image/png;base64,' + 'A'.repeat(Math.ceil(11 * 1024 * 1024 * 4 / 3)))
+    await vi.waitFor(() => expect(store.thread('thread-a')!.notice).toContain('larger than 10 MiB'))
+    expect(bridge.pasteImage).toHaveBeenCalledOnce()
+    vi.mocked(bridge.pasteImage).mockResolvedValueOnce({ ok: false, error: { code: 'path-unavailable', message: 'The image could not be saved under this folder.' } })
+    handlers!.onPasteImage!('data:image/png;base64,BBBB')
+    await vi.waitFor(() => expect(store.thread('thread-a')!.notice).toContain('The image could not be saved under this folder.'))
+    emit({ type: 'session', session: session(ID_TOOLS, place, { status: 'exited' }) })
+    handlers!.onPasteImage!('data:image/png;base64,CCCC')
+    expect(bridge.pasteImage).toHaveBeenCalledTimes(2)
+    await store.close(bridge, 'thread-a', ID_TOOLS)
+  })
   it('lists only its own place, passing it on every list and create call', async () => {
     const { bridge } = fakeBridge([session(ID_TOOLS, 'tools'), session(ID_DRAWER, 'drawer')])
     const toolsStore = new TerminalStore('tools')

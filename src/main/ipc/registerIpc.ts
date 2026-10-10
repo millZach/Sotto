@@ -88,6 +88,7 @@ const settingKeys = [
   'effortColor',
   'customThemes',
   'reducedMotion',
+  'terminalFontSize',
   'microphoneId',
   'maxRecordingSeconds',
   'soundCues',

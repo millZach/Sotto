@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import type { TerminalOpenRequest, TerminalWorkspaceBridge, WorkspaceTerminal, WorkspaceTerminalEvent, WorkspaceTerminalSnapshot } from '../../../shared/terminalWorkspace'
 import type { ToolsError, ToolsResult } from '../../../shared/tools'
+import { terminalImageSizeError } from '../../../shared/terminal'
 import type { TerminalViewFactory, TerminalViewLike } from '../tools/terminalStore'
 import { lastNotableLine } from './terminalFacts'
 
@@ -38,6 +39,7 @@ interface TerminalRecord {
   pasted: { readonly path: string; readonly at: number } | null
   inputTail: Promise<void>
   inputVersion: number
+  inputSequence: number
   inputBlocked: boolean
 }
 
@@ -150,6 +152,7 @@ export class TerminalWorkspaceStore {
     const record = this.records.get(id)
     if (!bridge || !record || record.replaying || record.inputBlocked || this.terminal(id)?.status !== 'running') return
     const version = record.inputVersion
+    record.inputSequence++
     // Keep separate key events behind every chunk of an earlier paste.
     const chunks = data.match(/[\s\S]{1,16384}/gu) ?? []
     record.inputTail = record.inputTail.then(async () => {
@@ -171,13 +174,27 @@ export class TerminalWorkspaceStore {
   }
 
   /** Saves the clipboard image under the terminal's folder; main types the path. The path shows in the pane briefly. */
-  async pasteImage(bridge: TerminalWorkspaceBridge | undefined, id: string, dataUrl: string): Promise<void> {
+  async pasteImage(bridge: TerminalWorkspaceBridge | undefined, id: string, dataUrl: string | Promise<string | null>): Promise<void> {
     const record = this.records.get(id)
-    if (!bridge || !record) return
-    const result = await settle(bridge.pasteImage({ id, dataUrl }))
-    if (!result.ok) { this.set({ ...this.state, notice: this.words(result.error, 'Could not paste the image.') }); return }
-    record.pasted = { path: result.value.path, at: Date.now() }
-    this.emit()
+    if (!bridge || !record || record.replaying || record.inputBlocked || this.terminal(id)?.status !== 'running') return
+    const version = record.inputVersion
+    const sequence = ++record.inputSequence
+    record.inputTail = record.inputTail.then(async () => {
+      const image = await Promise.resolve(dataUrl).catch(() => null)
+      if (this.records.get(id) !== record || record.inputVersion !== version || record.replaying || record.inputBlocked || this.terminal(id)?.status !== 'running') return
+      const error = image ? terminalImageSizeError(image) : { code: 'invalid-request' as const, message: 'The clipboard image could not be read.' }
+      const result = error ? { ok: false as const, error } : await settle(Promise.resolve().then(() => bridge.pasteImage({ id, dataUrl: image! })))
+      if (this.records.get(id) !== record || record.inputVersion !== version) return
+      if (!result.ok) {
+        record.inputVersion++
+        const discarded = record.inputSequence > sequence ? ' Later queued input was discarded.' : ''
+        this.set({ ...this.state, notice: this.words(result.error, `Could not paste the image.${discarded} Check the command before trying again.`) })
+        return
+      }
+      record.pasted = { path: result.value.path, at: Date.now() }
+      this.emit()
+    })
+    await record.inputTail
   }
   clearPasted(id: string): void {
     const record = this.records.get(id)
@@ -208,6 +225,7 @@ export class TerminalWorkspaceStore {
           copyNotice = notice
         },
         onPasteImage: dataUrl => void this.pasteImage(bridge, id, dataUrl),
+        onResize: size => this.resize(bridge, id, size),
       })
     }
     record.view.mount(container)
@@ -342,7 +360,7 @@ export class TerminalWorkspaceStore {
   private ensureRecord(id: string): TerminalRecord {
     let record = this.records.get(id)
     if (!record) {
-      record = { view: null, sequence: 0, replaying: false, buffer: [], loaded: false, pending: null, size: null, loadError: null, lastOutputAt: Number.NEGATIVE_INFINITY, tail: '', pasted: null, inputTail: Promise.resolve(), inputVersion: 0, inputBlocked: false }
+      record = { view: null, sequence: 0, replaying: false, buffer: [], loaded: false, pending: null, size: null, loadError: null, lastOutputAt: Number.NEGATIVE_INFINITY, tail: '', pasted: null, inputTail: Promise.resolve(), inputVersion: 0, inputSequence: 0, inputBlocked: false }
       this.records.set(id, record)
     }
     return record

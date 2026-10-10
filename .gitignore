@@ -1,4 +1,5 @@
 node_modules/
+artifacts/terminal-search-links-zoom/
 artifacts/skill-pill-composer/*
 !artifacts/skill-pill-composer/proof.json
 !artifacts/skill-pill-composer/dark-1600x1000.png

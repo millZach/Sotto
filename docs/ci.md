@@ -2,6 +2,12 @@
 
 `.github/workflows/ci.yml` runs the same gates a developer runs by hand, on a `windows-latest` runner, for every push to `main` and every pull request against `main`. It never builds desktop installers, never publishes, and uses no secrets. A second Windows job builds and verifies the unpacked Windows app, a separate Linux job builds and verifies the plain Node host archive, and a macOS job tests and compiles the native iOS client.
 
+## Terminal interaction verification
+
+After a build, run `npx playwright test tests/e2e/terminal-search-links-zoom.spec.ts tests/e2e/terminal-display.spec.ts tests/e2e/pane-terminal.spec.ts tests/e2e/terminal-loading.spec.ts tests/e2e/terminal-closed-output.spec.ts`. The interaction spec drives real Windows ConPTYs in Terminal mode, the pane drawer and Tools. It checks output search, safe modifier-click links through a stubbed external opener, font size and PTY resize, size persistence through a full app restart, and native clipboard image paste. Terminal mode first searches on WebGL, then falls back to DOM after a simulated context loss; drawers and Tools use DOM. The display spec separately checks WebGL colours and contiguous glyphs.
+
+The interaction spec writes light and dark search and link-choice captures at 1600x1000, 1280x800 and 820x560 with reduced motion on through the shared evidence helper. Ordinary runs use ignored `artifacts/e2e-runs/terminal-search-links-zoom/`; set `SOTTO_E2E_EVIDENCE=publish` to refresh the cited images under `artifacts/terminal-search-links-zoom/` on purpose. Selected captures cited in the verification note are committed explicitly. It needs no provider account or network page and runs serially under the existing one-worker Playwright configuration. This is local desktop verification, not a new CI gate.
+
 ## When each job runs
 
 Gates (Windows) runs for every push to `main` and every pull request. Main's ruleset requires it and Package result, and requires a pull request to be up to date with `main` before it merges. Nobody bypasses the ruleset, admins included, so every change reaches `main` through a pull request, release commits too ([the release procedure](release/releasing.md)). The gate's job has a 30-minute limit and the suite takes about 25 to 27 minutes on the runner (#895). A gate cancelled at the limit is rerun, never bypassed. A push to `main` also runs the other three jobs every time. On a pull request, a short Linux job, Changed areas, reads the files the pull request changes and decides whether the three slower jobs are needed:

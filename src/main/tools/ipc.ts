@@ -30,7 +30,7 @@ const NOT_ON_HOST: Partial<Record<typeof GIT_CHANGES_METHODS[number], string>> =
 }
 const NO_CHECKPOINTS = 'Turn checkpoints are kept only for threads on this computer. Nothing was changed.'
 
-export function registerToolsIpc(ipc: IpcMainAdapter, services: { terminal: TerminalService; browser: BrowserService; gitChanges: GitChangesService; hostedGitChanges?: HostedGitChanges }, senders: () => readonly TrustedIpcSender[]): () => void {
+export function registerToolsIpc(ipc: IpcMainAdapter, services: { terminal: TerminalService; browser: BrowserService; gitChanges: GitChangesService; hostedGitChanges?: HostedGitChanges; onTerminalFocus?: (focused: boolean) => void }, senders: () => readonly TrustedIpcSender[]): () => void {
   const channels: string[] = []
   const register = (channel: string, operation: (payload: unknown) => unknown): void => {
     ipc.handle(channel, (event, ...args) => {
@@ -50,7 +50,8 @@ export function registerToolsIpc(ipc: IpcMainAdapter, services: { terminal: Term
     if (method === 'copyPath') { const parsed = gitPathRequestSchema.safeParse(payload); return parsed.success ? hosted.copyPath(parsed.data) : invalid }
     return { ok: false, error: { code: 'unavailable', message: NOT_ON_HOST[method] ?? NO_CHECKPOINTS } }
   }
-  for (const method of ['list', 'create', 'read', 'write', 'resize', 'interrupt', 'close', 'reopen'] as const) register(TERMINAL_CHANNEL + method, payload => services.terminal[method](payload))
+  for (const method of ['list', 'create', 'read', 'write', 'resize', 'interrupt', 'close', 'reopen', 'pasteImage'] as const) register(TERMINAL_CHANNEL + method, payload => services.terminal[method](payload))
+  register(TERMINAL_CHANNEL + 'focus', payload => { services.onTerminalFocus?.(z.boolean().parse(payload)); return { ok: true, value: undefined } })
   for (const method of ['list', 'create', 'navigate', 'back', 'forward', 'reload', 'close', 'mount', 'openLink', 'tasks', 'share', 'controlTask', 'answerAction', 'stopGrant', 'viewport', 'capture'] as const) register(BROWSER_CHANNEL + method, payload => services.browser[method](payload))
   for (const method of GIT_CHANGES_METHODS) register(GIT_CHANGES_CHANNEL + method, payload => namesHostThread(payload) ? onHost(method, payload) : services.gitChanges[method](payload))
   return () => {

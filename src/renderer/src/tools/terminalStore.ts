@@ -1,6 +1,7 @@
 import { useCallback, useSyncExternalStore } from 'react'
 import type { FileWorkspace } from '../../../shared/files'
 import type { TerminalBridge, TerminalEvent, TerminalPlace, TerminalSession, TerminalSnapshot } from '../../../shared/terminal'
+import { terminalImageSizeError } from '../../../shared/terminal'
 import type { ToolsError, ToolsResult } from '../../../shared/tools'
 
 /** What the store needs from a rendered terminal. The xterm implementation lives in terminalView.ts. */
@@ -23,12 +24,16 @@ export interface TerminalViewHandlers {
   readonly onInterrupt: () => void
   /** Copy feedback, shown by the surface that owns this terminal. */
   readonly onNotice?: ((message: string | null) => void) | undefined
-  /** An image was pasted: its PNG as a data URL. Left out where images have nowhere to go. */
-  readonly onPasteImage?: ((dataUrl: string) => void) | undefined
+  /** Reserve a paste's input order immediately, while its PNG conversion may still be pending. */
+  readonly onPasteImage?: ((dataUrl: string | Promise<string | null>) => void) | undefined
   /** A key the page acts on: the terminal leaves it to the page instead of sending it to the shell. */
   readonly isPageShortcut?: ((event: KeyboardEvent) => boolean) | undefined
   /** Whether the terminal turns see-through while the room is frosted (ADR-0048), as a pane's drawer does. */
   readonly followsFrost?: boolean | undefined
+  /** Font zoom changes the cell grid as well as the renderer; main must resize the PTY. */
+  readonly onResize?: ((size: { cols: number; rows: number }) => void) | undefined
+  /** A drawer reserves enough height for search and at least one output row, restoring its saved height on close. */
+  readonly onSearchVisibilityChange?: ((visible: boolean) => void) | undefined
 }
 
 export type TerminalViewFactory = (handlers: TerminalViewHandlers) => TerminalViewLike
@@ -63,6 +68,7 @@ interface SessionRecord {
   loadError: string | null
   inputTail: Promise<void>
   inputVersion: number
+  inputSequence: number
   closing: boolean
 }
 
@@ -175,6 +181,7 @@ export class TerminalStore {
     const session = this.threads.get(threadId)?.sessions.find(item => item.id === sessionId)
     if (!bridge || !target || !record || record.replaying || record.closing || session?.status !== 'running') return
     const version = record.inputVersion
+    record.inputSequence++
     // One tail covers every input event, not just the chunks of one paste.
     const chunks = data.match(/[\s\S]{1,16384}/gu) ?? []
     record.inputTail = record.inputTail.then(async () => {
@@ -217,6 +224,25 @@ export class TerminalStore {
       record.view = factory({
         onInput: data => this.write(bridge, threadId, sessionId, data),
         onInterrupt: () => this.interrupt(bridge, threadId, sessionId),
+        onResize: size => this.resize(bridge, threadId, sessionId, size),
+        onPasteImage: dataUrl => {
+          const target = this.target(threadId)
+          if (!bridge || !target || record.replaying || record.closing || !this.running(threadId, sessionId)) return
+          const version = record.inputVersion
+          const sequence = ++record.inputSequence
+          record.inputTail = record.inputTail.then(async () => {
+            const image = await Promise.resolve(dataUrl).catch(() => null)
+            if (this.records.get(sessionId) !== record || record.inputVersion !== version || record.replaying || record.closing || !this.running(threadId, sessionId) || this.target(threadId)?.workspaceId !== target.workspaceId) return
+            const error = image ? terminalImageSizeError(image) : { code: 'invalid-request' as const, message: 'The clipboard image could not be read.' }
+            const result = error ? { ok: false as const, error } : await settle(Promise.resolve().then(() => bridge.pasteImage({ ...target, sessionId, dataUrl: image! })))
+            if (this.records.get(sessionId) !== record || record.inputVersion !== version) return
+            if (!result.ok) {
+              record.inputVersion++
+              const discarded = record.inputSequence > sequence ? ' Later queued input was discarded.' : ''
+              this.fail(bridge, threadId, result.error, `The image could not be pasted.${discarded} Check the command before trying again.`)
+            }
+          })
+        },
         onNotice: notice => {
           if (notice !== null || this.thread(threadId)?.notice === copyNotice) this.patch(threadId, { notice })
           copyNotice = notice
@@ -375,7 +401,7 @@ export class TerminalStore {
   private ensureRecord(threadId: string, sessionId: string): SessionRecord {
     let record = this.records.get(sessionId)
     if (!record) {
-      record = { threadId, view: null, sequence: 0, replaying: false, buffer: [], loaded: false, pending: null, size: null, loadError: null, inputTail: Promise.resolve(), inputVersion: 0, closing: false }
+      record = { threadId, view: null, sequence: 0, replaying: false, buffer: [], loaded: false, pending: null, size: null, loadError: null, inputTail: Promise.resolve(), inputVersion: 0, inputSequence: 0, closing: false }
       this.records.set(sessionId, record)
     }
     return record

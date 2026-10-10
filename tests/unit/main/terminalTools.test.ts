@@ -1,11 +1,12 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { IPty } from 'node-pty'
 import { FilesService } from '../../../src/main/files/service'
 import { TerminalService, type TerminalDependencies } from '../../../src/main/tools/terminal'
+import * as clipboard from '../../../src/main/terminals/clipboard'
 import { TERMINAL_MAX_OUTPUT, type TerminalEvent } from '../../../src/shared/terminal'
 import type { ToolsResult } from '../../../src/shared/tools'
 import { deferred } from '../../fixtures/deferred'
@@ -38,6 +39,39 @@ async function fixture(options: Pick<TerminalDependencies, 'env' | 'platform'> =
   return { service, createService, target, files, processes, spawn, events, directory, change: () => { cwd = other } }
 }
 describe('persistent terminal service', () => {
+  it('keeps Enter and a second paste behind image staging in main', async () => {
+    const f = await fixture(), first = unwrap(await f.service.create(f.target))
+    const request = { ...f.target, sessionId: first.session.id }
+    const staging = Promise.withResolvers<string>(), entered = Promise.withResolvers<void>()
+    const save = vi.spyOn(clipboard, 'saveTerminalImage').mockImplementationOnce(() => { entered.resolve(); return staging.promise }).mockResolvedValue('second.png')
+    const pending = f.service.pasteImage({ ...request, dataUrl: 'data:image/png;base64,AAAA' })
+    await entered.promise
+    const next = f.service.pasteImage({ ...request, dataUrl: 'data:image/png;base64,BBBB' })
+    const enter = f.service.write({ ...request, data: '\r' })
+    try { expect(f.processes[0]!.pty.write).not.toHaveBeenCalled() }
+    finally { staging.resolve('first.png'); await Promise.all([pending, next, enter]); save.mockRestore() }
+    expect(vi.mocked(f.processes[0]!.pty.write).mock.calls.map(args => args[0])).toEqual(["'first.png'", "'second.png'", '\r'])
+  })
+  it.each(['tools', 'drawer'] as const)('saves a pasted PNG and types its quoted path in %s, refusing invalid images and other owners', async place => {
+    const f = await fixture()
+    const snapshot = unwrap(await f.service.create({ ...f.target, place }))
+    const request = { ...f.target, sessionId: snapshot.session.id }
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64')
+    const dataUrl = `data:image/png;base64,${png.toString('base64')}`
+    expect(await f.service.pasteImage({ ...request, dataUrl: 'data:image/png;base64,ZmFrZQ==' })).toMatchObject({ ok: false, error: { code: 'invalid-request' } })
+    expect(await f.service.pasteImage({ ...request, threadId: 'b', dataUrl })).toMatchObject({ ok: false, error: { code: 'session-unavailable' } })
+    expect(f.processes[0]!.pty.write).not.toHaveBeenCalled()
+    unwrap(await f.service.pasteImage({ ...request, dataUrl }))
+    const directory = join(f.directory, '.sotto', 'clipboard')
+    const [image] = (await readdir(directory)).filter(name => name.endsWith('.png'))
+    const path = join(directory, image!)
+    expect(await readFile(path)).toEqual(png)
+    expect(await readFile(join(directory, '.gitignore'), 'utf8')).toBe('*\n')
+    expect(f.processes[0]!.pty.write).toHaveBeenCalledWith(`'${path}'`)
+    f.processes[0]!.exit(0)
+    expect(await f.service.pasteImage({ ...request, dataUrl })).toMatchObject({ ok: false, error: { code: 'not-running' } })
+    expect(f.processes[0]!.pty.write).toHaveBeenCalledOnce()
+  })
   it('keeps writes in request order while another session can pass a held workspace validation', async () => {
     const f = await fixture()
     const first = unwrap(await f.service.create(f.target)), other = unwrap(await f.service.create(f.target))
