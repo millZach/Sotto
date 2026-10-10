@@ -4,7 +4,7 @@ October 9, 2026. Main advanced to `558929679e5aff28d70c240c2e667eba2129e2f5` (#8
 
 Production source, E2E source, the design runner/profile and all baselines are unchanged from `afd6186d6`. Its 25 setup journeys and one onboarding design surface, including the unchanged Threads tour, remain applicable. The manifest was verified again. No extra captures were refreshed.
 
-The first merge evidence is in [the shared-fixtures/setup note](2026-10-09-voice-control-fixtures-setup-merge.md). Its capture wording is being clarified: the shorter key sentence naturally raises the key row and helper text. All six main-copy control renders have zero differences above the runner channel noise floor of 6; a raw comparison has 25-51 differing pixels per image, with maximum delta 2/255. This is tolerance equality, not byte equality. The only layout change is caused by the shortened copy; no capture-specific production CSS was added.
+The first merge evidence is in [the shared-fixtures/setup note](2026-10-09-voice-control-fixtures-setup-merge.md). Its clarified capture wording records that the shorter key sentence naturally raises the key row and helper text. All six main-copy control renders have zero differences above the runner channel noise floor of 6; a raw comparison has 25-51 differing pixels per image, with maximum delta 2/255. This is tolerance equality, not byte equality. The only layout change is caused by the shortened copy; no capture-specific production CSS was added.
 
 ## Fast gates
 
@@ -46,4 +46,4 @@ The first merge evidence is in [the shared-fixtures/setup note](2026-10-09-voice
 
 Cleanly merged adapter/host contract skip metadata, registration, teardown and provider lookup/update skip explanations were audited. Pure renderer facts now import common state/time directly, without a DOM/mock harness. No active voice or management setup was restored.
 
-The second merge will be pushed immediately after these fast gates. Full local gates and CI continue after that push. PR #880 remains open.
+Merge commit `a818678e51e2f9b4cd59f6387ac7134ffc1f021d`, "Merge test skip explanations into voice removal", was pushed at 17:50:18 Pacific after these fast gates. CI started on the mergeable PR. The later `60b388ad5` cleanup follow-up fixed an existing Windows file-ID precision failure reproduced on this exact main checkout; its proof is in [the cleanup note](2026-10-09-proof-cleanup-file-identities.md). All full local gates subsequently passed, including 8,818 tests, 155 notices, 28 remaining Electron journeys, seven theme-evidence cases, nine design cases, 144 manifest tuples and the Windows unpacked package. The earlier 25 setup journeys remain applicable. Full output and CI snapshots are in the shared-fixtures/setup note. PR #880 remains open.

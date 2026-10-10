@@ -6,11 +6,11 @@ Every initial, Check again and named setup connect in `src/renderer/src/features
 
 The new test beside the existing connect-notice regression is `leaves every installed agent setup connection quiet, while each Threads connection still announces itself` in `tests/unit/main/agentProviderConfigurationRecovery.test.ts`: Codex, Claude Code and Grok Build connect concurrently with no notice, then each explicitly connects from Threads with its provider success notice. Renderer coverage in `tests/unit/renderer/onboardingSteps.test.tsx` also checks initial/Check again/named connections and several installed clients beside an existing connection. Removing only the quiet guard made the new test red with `Grok Build connected` instead of an empty notice; restoring the guard made it green. The existing setup and Settings cases remain green.
 
-The first typecheck exposed a lost `TestClock` beside the replaced fixture state builder. Main’s clock and scheduler import were restored. Five conflict-resolution scripts had double-decoded punctuation in renderer tests; the damaged lines were restored against main’s UTF-8 bytes before the passing gates. These were merge-resolution defects, not claims of failures on main. The first targeted batch also found 47 Threads view failures because production imports preceded the shared harness?s hook mocks. Loading the harness first fixed all 47; the unchanged 107 suites had passed and two suites were skipped. The repaired suite and three compatibility suites then passed 78 tests. No test deadline was changed. Production dependencies remain exactly `zod` and `node-pty`; the lockfile is unchanged.
+The first typecheck exposed a lost `TestClock` beside the replaced fixture state builder. Main’s clock and scheduler import were restored. Five conflict-resolution scripts had double-decoded punctuation in renderer tests; the damaged lines were restored against main’s UTF-8 bytes before the passing gates. These were merge-resolution defects, not claims of failures on main. The first targeted batch also found 47 Threads view failures because production imports preceded the shared harness's hook mocks. Loading the harness first fixed all 47; the unchanged 107 suites had passed and two suites were skipped. The repaired suite and three compatibility suites then passed 78 tests. No test deadline was changed. Production dependencies remain exactly `zod` and `node-pty`; the lockfile is unchanged.
 
 ## Onboarding baselines
 
-Start from #887’s six affected PNGs and its other incoming onboarding captures. Use the real design runner’s `withSotto`, owned profile and `captureSection` helpers to drive first use through the successful microphone test and take only the OpenRouter key surface in dark/light and at 100/125/150/200 percent. Recompute the six entries with the runner’s SHA-256 `digest` export, retaining the 144-entry removal matrix. Compare each actual capture with the pinned main PNG using the runner’s channel noise floor (6), checking that changed pixels lie only inside the key description’s measured DOM bounds. Every other incoming or previously approved baseline remains unchanged, including `threads-tour-projects.png`.
+Start from #887’s six affected PNGs and its other incoming onboarding captures. Use the real design runner’s `withSotto`, owned profile and `captureSection` helpers to drive first use through the successful microphone test and take only the OpenRouter key surface in dark/light and at 100/125/150/200 percent. Recompute the six entries with the runner’s SHA-256 `digest` export, retaining the 144-entry removal matrix. Compare each actual capture with the pinned main PNG using the runner's channel noise floor (6). The shorter sentence naturally removes a wrapped line and raises the key row and helper text. Restore main's exact sentence in the merged app's DOM as a causal control: each control render has zero changed pixels above that noise floor against its pinned main image. This supports copy as the only visible cause, with no added production CSS. Every other incoming or previously approved baseline remains unchanged, including `threads-tour-projects.png`.
 
 | Baseline | Geometry | Changed pixels | Main-copy control changed pixels | SHA-256 |
 | --- | --- | ---: | ---: | --- |
@@ -21,11 +21,13 @@ Start from #887’s six affected PNGs and its other incoming onboarding captures
 | `scale-150-onboarding.png` | 1605 × 942 | 18387 | 0 | `54f02b6e6ddbb6eeb2b80dd82bae8872dca6216ebc5bd5f97b7d7a14b5d4067b` |
 | `scale-200-onboarding.png` | 2138 × 1320 | 33027 | 0 | `573d78bf021063669ea18d9ab2ab33528fe80d20fcb0a78a1c3e0cfde1d1246b` |
 
-The six side-by-side comparisons were opened and visually inspected against main’s fitted layout. Only the key description drops “and Kokoro voice”; the card, controls, spacing and other text match.
+The six side-by-side comparisons were opened and visually inspected against main’s fitted layout. Only the key description loses the Kokoro wording; its shorter wrap naturally raises the key row and helper text. The main-copy control renders match main within the runner noise floor, including the card, controls, spacing and all other text.
+
+The control comparison uses the design runner noise floor, not byte equality. With that floor, all six have zero changed pixels. A raw comparison finds only 25-51 pixels per image with a maximum channel difference of 2/255, below the runner floor of 6. The fitted layout is unchanged apart from the copy-caused reflow.
 
 ## Gate output
 
-Memory is checked with `(Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory` before every run; a run waits below 3 GiB. Heavy local runs are serial. The fast gates permit the first push; the full local gates and GitHub CI continue after it.
+Memory is checked with `(Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory` before every run; a run waits below 3 GiB. The full suite and Playwright runs do not overlap locally. The fast gates permit the first push; the full local gates and GitHub CI continue after it.
 
 | Run | Result/output | Seconds | Free memory, KiB |
 | --- | --- | ---: | ---: |
@@ -42,22 +44,45 @@ Memory is checked with `(Get-CimInstance Win32_OperatingSystem).FreePhysicalMemo
 | `capture` | PASS; exit 0; 5 passed (16.9s) | 18.23 | 6624992 |
 | `fast-e2e` | PASS; exit 0; 25 passed (2.1m) | 128.72 | 7278256 |
 | `fast-design` | PASS; exit 0; 1 passed (25.1s) | 26.09 | 7953588 |
-| `manifest` | PASS; exit 0; Verified 144 exact deterministic design-review tuples. | 1.17 | 7833972 |
+| `manifest` | PASS; exit 0; Verified 144 exact deterministic design-review tuples. | 0.93 | 8337548 |
+| `second-typecheck` | PASS; exit 0 | 43.56 | 6800984 |
+| `second-lint` | PASS; exit 0 | 20.44 | 6843328 |
+| `second-build` | PASS; exit 0 | 18.42 | 7418872 |
+| `second-targeted` | PASS; exit 0; Test Files  13 passed / 1 skipped (14); Tests  314 passed / 9 skipped (323) | 56.36 | 7348376 |
+| `second-manifest` | PASS; exit 0; Verified 144 exact deterministic design-review tuples. | 1.25 | 7471304 |
+| `cleanup-typecheck` | PASS; exit 0 | 39.7 | 8114264 |
+| `cleanup-lint` | PASS; exit 0 | 20.53 | 6096308 |
+| `cleanup-build` | PASS; exit 0 | 16.42 | 7651252 |
+| `cleanup-red` | expected red; exit 1; Test Files  1 failed (1); Tests  1 failed / 16 skipped (17) | 1.24 | 8092916 |
+| `cleanup-after-build` | PASS; exit 0; Test Files  1 passed (1); Tests  14 passed / 3 skipped (17) | 1.74 | 6978720 |
+| `full` | FAIL; exit 1; Test Files  1 failed / 708 passed / 54 skipped (763); Tests  1 failed / 8816 passed / 274 skipped (9091) | 1047.5 | 7666108 |
+| `full-fixed` | PASS; exit 0; Test Files  709 passed / 54 skipped (763); Tests  8818 passed / 274 skipped (9092) | 1023.04 | 6560592 |
+| `notices` | PASS; exit 0; Verified 155 third-party notice components. | 0.5 | 6871484 |
+| `rest-e2e` | PASS; exit 0; 28 passed (1.9m) | 115.03 | 6366252 |
+| `themes` | PASS; exit 0; 7 passed (32.1s) | 33.16 | 8744208 |
+| `design` | PASS; exit 0; 9 passed (2.1m); Verified 144 exact deterministic design-review tuples. | 145.57 | 6980072 |
+| `package` | PASS; exit 0; Verified Claude SDK 0.3.270 history helper assets and 7 terminal assets. | 31.27 | 8274012 |
 
 The first typecheck attempt failed before the restored clock; the table records its subsequent pass. Build output transforms main, host, preload and renderer. The fast design gate uses `tests/e2e/design-capture-pages.spec.ts`, the surface that owns onboarding, and verifies the unchanged Threads tour. Baseline refresh is part of the merge commit.
+
+The typecheck, lint and build labels run their corresponding npm scripts. `full` and `full-fixed` both run `npm test -- --maxWorkers=2`; the latter is the complete passing rerun after the cleanup fix. Targeted Vitest commands also use `--maxWorkers=2`. The first batch plus its repaired Threads suite and three compatibility suites cover 113 distinct files: 111 passing files, two skipped files, 1,997 passing tests and 42 skipped tests. The later main increment's 14-file command is recorded in the test-skip note.
+
+`fast-e2e` runs `app.spec.ts`, `onboarding-microphone-step.spec.ts`, `first-run-setup-fit.spec.ts`, `host-setup.spec.ts`, `host-agent-setup.spec.ts` and `agentSetup.spec.ts` with Playwright's line reporter. `rest-e2e` runs widget-dictation, pill-controls, dictation-focus, dictation-retry, settings-index, settings-mode-row, agentControl, agentAnswers, agents, crossing, effort-picker, screenshot-paste, thread-creation, remote-thread-opening and thread-sidebar-question under `tests/e2e/`, with the same reporter.
+
+`themes` runs `theme-palettes-evidence.spec.ts` and `theme-branding-evidence.spec.ts` with both `SOTTO_THEME_EVIDENCE=1` and `SOTTO_THEME_BRANDING_EVIDENCE=1`. `design` runs `npm run design:verify` across appearance, pages, scaling, threads and voice-widget surface specs; the last retains dictation-widget cases only. `manifest` runs `node scripts/verify-design-captures.mjs` separately, and `package` runs `npm run package:dir`.
 
 ## Conflicts
 
 All 128 conflicts, one resolution per file:
 
 - `.gitignore`: Combine the removal evidence ignore with Linux shell/plumbing/plugin evidence exceptions.
-- `artifacts/design/app-review/baseline/onboarding-step-4-openrouter-light.png`: Start from main?s fitted onboarding baseline and recapture only the OpenRouter key description without Kokoro voice.
-- `artifacts/design/app-review/baseline/onboarding-step-4-openrouter.png`: Start from main?s fitted onboarding baseline and recapture only the OpenRouter key description without Kokoro voice.
-- `artifacts/design/app-review/baseline/scale-100-onboarding.png`: Start from main?s fitted onboarding baseline and recapture only the OpenRouter key description without Kokoro voice.
-- `artifacts/design/app-review/baseline/scale-125-onboarding.png`: Start from main?s fitted onboarding baseline and recapture only the OpenRouter key description without Kokoro voice.
-- `artifacts/design/app-review/baseline/scale-150-onboarding.png`: Start from main?s fitted onboarding baseline and recapture only the OpenRouter key description without Kokoro voice.
-- `artifacts/design/app-review/baseline/scale-200-onboarding.png`: Start from main?s fitted onboarding baseline and recapture only the OpenRouter key description without Kokoro voice.
-- `artifacts/design/app-review/manifest.json`: Keep the removal matrix and main?s incoming layout hashes; recalculate only the six key-copy image hashes with the runner digest.
+- `artifacts/design/app-review/baseline/onboarding-step-4-openrouter-light.png`: Start from main's fitted onboarding baseline and recapture only the OpenRouter key description without Kokoro voice.
+- `artifacts/design/app-review/baseline/onboarding-step-4-openrouter.png`: Start from main's fitted onboarding baseline and recapture only the OpenRouter key description without Kokoro voice.
+- `artifacts/design/app-review/baseline/scale-100-onboarding.png`: Start from main's fitted onboarding baseline and recapture only the OpenRouter key description without Kokoro voice.
+- `artifacts/design/app-review/baseline/scale-125-onboarding.png`: Start from main's fitted onboarding baseline and recapture only the OpenRouter key description without Kokoro voice.
+- `artifacts/design/app-review/baseline/scale-150-onboarding.png`: Start from main's fitted onboarding baseline and recapture only the OpenRouter key description without Kokoro voice.
+- `artifacts/design/app-review/baseline/scale-200-onboarding.png`: Start from main's fitted onboarding baseline and recapture only the OpenRouter key description without Kokoro voice.
+- `artifacts/design/app-review/manifest.json`: Keep the removal matrix and main's incoming layout hashes; recalculate only the six key-copy image hashes with the runner digest.
 - `docs/guide.md`: Keep Linux shell verbs/plugin instructions, manual Threads wording and quiet connect guidance; remove the restored hosted-reply voice claim.
 - `eslint.config.mjs`: Combine the removal evidence ignore with Linux shell/plumbing/plugin artifact ignores.
 - `src/renderer/src/features/onboarding/AgentsStep.tsx`: Keep fitted rows and every-installed-agent discovery; send notice:false from every initial, Check again and named Connect command.
@@ -72,7 +97,7 @@ All 128 conflicts, one resolution per file:
 - `tests/e2e/compact-pane-and-request-layout.spec.ts`: Keep shared profile/window wrappers; remove speak, assignments, queue and pending-request seed fields.
 - `tests/e2e/composer-short-window.spec.ts`: Keep the shared resize helper; retain manual composer setup and omit the unused moved assignment accessor.
 - `tests/e2e/daily-workspace.spec.ts`: Keep shared agent-state reads and assert that removed assignments are absent.
-- `tests/e2e/dictation-focus.spec.ts`: Keep shared owned profile cleanup and the removal?s reliable widget-page wait; no voice coordinator setup.
+- `tests/e2e/dictation-focus.spec.ts`: Keep shared owned profile cleanup and the removal's reliable widget-page wait; no voice coordinator setup.
 - `tests/e2e/frosted-window.spec.ts`: Keep owned profiles and the reduced thread seed; omit the unused assignment fixture import.
 - `tests/e2e/native-codex-workspace-live.spec.ts`: Keep owned profile creation and assets verification in place of removed runtime verification.
 - `tests/e2e/native-provider-selection.spec.ts`: Retain absent reasoning-account assertions and the visible Thread model control.
@@ -303,30 +328,53 @@ or inspected
 
 - `tests/e2e/support/monitoredThread.ts`: removed the newly moved `speak: false` configuration setup; both consumers keep the shared helper.
 - `tests/e2e/design-capture-threads.spec.ts`: corrected obsolete comments that described management as a beta gate; retained assertions that Pause/Resume managing controls are absent.
-- `tests/e2e/support/agentAccess.ts`, `e2eProfile.ts`, `sottoWindow.ts`, `sottoCapture.ts`, `hostCapture.ts`, `designCapture.ts` and design-capture pages/appearance/scaling were inspected: no active voice setup or removed room switch. Generic ?management scrollport? wording refers to the page layout, not thread management.
+- `tests/e2e/support/agentAccess.ts`, `e2eProfile.ts`, `sottoWindow.ts`, `sottoCapture.ts`, `hostCapture.ts`, `designCapture.ts` and design-capture pages/appearance/scaling were inspected: no active voice setup or removed room switch. Generic "management scrollport" wording refers to the page layout, not thread management.
 - `tests/e2e/first-run-setup-fit.spec.ts` and the #887 microphone assertions in setup/design helpers remain intact.
 
-- `tests/unit/main/threadDrafts.test.ts` ? Rename the surviving foreign-draft case to describe saving a draft for another thread, removing stale managed-mode wording.
-- `tests/unit/main/followups.test.ts` ? Rename the surviving explicit follow-up admission case, removing stale management wording.
-- `tests/integration/threadRowAttention.test.ts` ? Describe host request publication without a coordinator queue.
+- `tests/unit/main/threadDrafts.test.ts` - Rename the surviving foreign-draft case to describe saving a draft for another thread, removing stale managed-mode wording.
+- `tests/unit/main/followups.test.ts` - Rename the surviving explicit follow-up admission case, removing stale management wording.
+- `tests/integration/threadRowAttention.test.ts` - Describe host request publication without a coordinator queue.
 
 Audited 29 clean overlaps between main changes and removal edits. Remaining matches refer to native subagents, pull-request wake-up messages, or explicit legacy upgrade/refusal assertions; no live voice or per-thread management setup was restored.
 
-- `tests/fixtures/agentControlFixture.ts` ? Remove relocated retired state defaults or voice hooks; preserve all remaining fixture behavior and shared structure.
-- `tests/fixtures/agentState.ts` ? Remove relocated retired state defaults or voice hooks; preserve all remaining fixture behavior and shared structure.
-- `tests/fixtures/threadActivity/agentContextStub.ts` ? Remove relocated retired state defaults or voice hooks; preserve all remaining fixture behavior and shared structure.
-- `tests/perf/support/transcriptState.ts` ? Remove relocated retired state defaults or voice hooks; preserve all remaining fixture behavior and shared structure.
-- `tests/unit/renderer/branchToolbar.test.tsx` ? Remove relocated retired state defaults or voice hooks; preserve all remaining fixture behavior and shared structure.
-- `tests/unit/renderer/features/dictation/dictationLifecycle.test.ts` ? Remove relocated retired state defaults or voice hooks; preserve all remaining fixture behavior and shared structure.
-- `tests/unit/renderer/gitActionButton.test.tsx` ? Remove relocated retired state defaults or voice hooks; preserve all remaining fixture behavior and shared structure.
-- `tests/unit/renderer/localBranchNotice.test.tsx` ? Remove relocated retired state defaults or voice hooks; preserve all remaining fixture behavior and shared structure.
-- `tests/unit/renderer/threadBranchNotice.test.tsx` ? Remove relocated retired state defaults or voice hooks; preserve all remaining fixture behavior and shared structure.
-- `tests/unit/renderer/threadDraftStore.test.ts` ? Remove relocated retired state defaults or voice hooks; preserve all remaining fixture behavior and shared structure.
-- `tests/unit/renderer/threadWorkingCopy.test.tsx` ? Remove relocated retired state defaults or voice hooks; preserve all remaining fixture behavior and shared structure.
-- `tests/unit/renderer/threadWorktreeReclaim.test.tsx` ? Remove relocated retired state defaults or voice hooks; preserve all remaining fixture behavior and shared structure.
-- `tests/unit/renderer/tools/pullRequestSurface.test.tsx` ? Remove relocated retired state defaults or voice hooks; preserve all remaining fixture behavior and shared structure.
-- `tests/unit/renderer/unusedNewThread.test.tsx` ? Remove relocated retired state defaults or voice hooks; preserve all remaining fixture behavior and shared structure.
+- `tests/fixtures/agentControlFixture.ts` - Remove relocated retired state defaults or voice hooks; preserve all remaining fixture behavior and shared structure.
+- `tests/fixtures/agentState.ts` - Remove relocated retired state defaults or voice hooks; preserve all remaining fixture behavior and shared structure.
+- `tests/fixtures/threadActivity/agentContextStub.ts` - Remove relocated retired state defaults or voice hooks; preserve all remaining fixture behavior and shared structure.
+- `tests/perf/support/transcriptState.ts` - Remove relocated retired state defaults or voice hooks; preserve all remaining fixture behavior and shared structure.
+- `tests/unit/renderer/branchToolbar.test.tsx` - Remove relocated retired state defaults or voice hooks; preserve all remaining fixture behavior and shared structure.
+- `tests/unit/renderer/features/dictation/dictationLifecycle.test.ts` - Remove relocated retired state defaults or voice hooks; preserve all remaining fixture behavior and shared structure.
+- `tests/unit/renderer/gitActionButton.test.tsx` - Remove relocated retired state defaults or voice hooks; preserve all remaining fixture behavior and shared structure.
+- `tests/unit/renderer/localBranchNotice.test.tsx` - Remove relocated retired state defaults or voice hooks; preserve all remaining fixture behavior and shared structure.
+- `tests/unit/renderer/threadBranchNotice.test.tsx` - Remove relocated retired state defaults or voice hooks; preserve all remaining fixture behavior and shared structure.
+- `tests/unit/renderer/threadDraftStore.test.ts` - Remove relocated retired state defaults or voice hooks; preserve all remaining fixture behavior and shared structure.
+- `tests/unit/renderer/threadWorkingCopy.test.tsx` - Remove relocated retired state defaults or voice hooks; preserve all remaining fixture behavior and shared structure.
+- `tests/unit/renderer/threadWorktreeReclaim.test.tsx` - Remove relocated retired state defaults or voice hooks; preserve all remaining fixture behavior and shared structure.
+- `tests/unit/renderer/tools/pullRequestSurface.test.tsx` - Remove relocated retired state defaults or voice hooks; preserve all remaining fixture behavior and shared structure.
+- `tests/unit/renderer/unusedNewThread.test.tsx` - Remove relocated retired state defaults or voice hooks; preserve all remaining fixture behavior and shared structure.
 
 ## Delivery and CI
 
-All fast gates are green: 111 test files passed and two were skipped (1,997 tests passed, 42 skipped across the unchanged batch plus the repaired/compatibility run), 25 setup Playwright tests passed, one onboarding design-surface test passed, and 144 exact manifest tuples verified. The first push follows these results; full local gates and GitHub CI are pending. This note will record their actual results. PR #880 will remain open; merging the PR is not authorized.
+Merge commit `afd6186d62ed4f405a13afe52c21e07c98eeaa64` - **Merge shared fixtures and fitted setup into voice removal** - was pushed to `origin/feat/remove-voice-control`; push completion was observed at 2026-10-09T17:42:25.045393-07:00. The merge has parents `54438f767` and pinned main `6db93c4b7`. Full local gates and CI are running after the fast push. No PR merge.
+
+Main advanced to `558929679` (#893), so the first push remained conflicting and CI did not start. The owned full run was stopped to integrate that increment. Merge commit `a818678e51e2f9b4cd59f6387ac7134ffc1f021d` - **Merge test skip explanations into voice removal** - was pushed at 17:50:18 Pacific after its fast gates passed. It has parents `afd6186d6` and `558929679`. The full local gates and CI now continue on this tree.
+
+
+Follow-up `60b388ad573a1b245a4764a838f409206409d52c` - **Keep full file identities in proof cleanup** - was pushed at 18:15:11 Pacific. The first complete local suite found one existing cleanup failure (8,816 passed, 274 skipped); the exact assertion failed on clean pinned main. Its own [proof and red/green regression note](2026-10-09-proof-cleanup-file-identities.md) records the fix. Typecheck/lint/build/targeted cleanup/manifest passed before this push; the full suite reruns after it.
+
+
+Post-push local gates passed on source commit `60b388ad5`: 8,818 tests passed (274 skipped; 709 passing files), 155 notices, 28 remaining Electron journeys, seven theme-evidence cases, all nine design cases across five specs, 144 manifest tuples and the unpacked Windows package. The earlier 25 setup journeys remain valid: no app/E2E/design source changed in the test-skip merge or cleanup follow-up. Production dependencies and the lockfile stayed unchanged. No tracked artifact changes were left by these runs.
+
+The Windows package verified the reviewed imports, native SQLite 3.53.1 with FTS5 and migration 4, a successful terminal process (`SOTTO_PTY_PACKAGE_OK`, exit 0), and the packaged app/worklet startup. Two-axis reviews of both merges and the cleanup fix found no remaining issues; the two initial capture-evidence wording findings are corrected here.
+
+CI snapshot on `60b388ad5` at 18:40 Pacific, before the evidence-only follow-up push:
+
+| CI job | Observed result |
+| --- | --- |
+| [Changed areas](https://github.com/millZach/Sotto/actions/runs/38012457196/job/114095509808) | success |
+| [Gates (Windows)](https://github.com/millZach/Sotto/actions/runs/38012457196/job/114095509976) | success |
+| [Native iOS client (macOS)](https://github.com/millZach/Sotto/actions/runs/38012457196/job/114095570302) | in_progress |
+| [Package (Windows)](https://github.com/millZach/Sotto/actions/runs/38012457196/job/114095570309) | success |
+| [Host archive and socket contract (Linux)](https://github.com/millZach/Sotto/actions/runs/38012457196/job/114095570319) | success |
+| [Package result](https://github.com/millZach/Sotto/actions/runs/38012457196/job/114096062814) | success |
+
+The superseded `a818678` run was automatically cancelled by the cleanup push. The evidence-only follow-up will start CI for its final head; final check outcomes are reported after that run completes. Live checks: [PR #880](https://github.com/millZach/Sotto/pull/880/checks). The PR remains open and has no auto-merge request.
