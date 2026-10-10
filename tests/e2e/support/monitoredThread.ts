@@ -6,7 +6,7 @@ export async function startMonitoredThread(launched: LaunchedSotto, readKeys: (p
   pane: (page: Page) => Locator): Promise<void> {
   await launched.page.evaluate(async () => {
     await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', reducedMotion: 'system' })
-    await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+    await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true } })
     await window.sotto!.agents!.command({ type: 'connect' })
   })
   await launched.page.reload()

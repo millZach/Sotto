@@ -4,7 +4,6 @@ import { testCredentials } from '../fixtures/testCredentials'
 import { randomUUID } from 'node:crypto'
 import { expect, it } from 'vitest'
 
-import { e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { claudeFixture } from '../fixtures/claudeFixture'
 import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
 import { immediatePublishScheduler } from '../fixtures/publishScheduler'
@@ -13,7 +12,7 @@ import { immediatePublishScheduler } from '../fixtures/publishScheduler'
 it.each([{ name: 'Claude', create: () => claudeFixture(), steers: true }, { name: 'Grok', create: () => grokFixture(), steers: false }])('$name dispatches a queued follow-up only after native completion', async ({ create, steers }) => {
   const f = await create(); const threadId = randomUUID()
   const credentials = await testCredentials(f.root, { mode: 'unavailable' });
-  const control = createAgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials, reasoner: e2eAgentReasoner,
+  const control = createAgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
   })
   try {
     await f.host.connect()

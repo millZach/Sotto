@@ -27,7 +27,7 @@ async function profile(): Promise<string> {
 }
 async function connect(page: Page): Promise<void> {
   await page.evaluate(async () => {
-    await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+    await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
     await window.sotto!.agents!.command({ type: 'connect' })
   })
 }
@@ -84,7 +84,7 @@ test('daily mixed-provider workspace joins independent work, tools, reviewed com
       const created = []
       for (const [title, modelId] of [['Daily implementation', 'codex:gpt'], ['Daily review', 'claude:sonnet']]) {
         // Named the way New thread names a thread the user typed a name for, so the first message does not rename it.
-        const state = await agents.command({ type: 'create-thread', projectId, title: title!, titleSource: 'user', modelId: modelId!, managed: false, workingCopy: 'independent' })
+        const state = await agents.command({ type: 'create-thread', projectId, title: title!, titleSource: 'user', modelId: modelId!, workingCopy: 'independent' })
         if (state.error) throw new Error(state.error)
         created.push(state.host.threads.find(thread => thread.id === state.activeThreadId)!)
       }
@@ -202,7 +202,7 @@ test('daily mixed-provider workspace joins independent work, tools, reviewed com
     await focusThread(page, second, 'Daily review')
     await expectPromptText(prompt(second), 'Keep this review draft private to this pane.')
     const state = await agentState(page)
-    expect(state.assignments).toEqual([])
+    expect(state).not.toHaveProperty('assignments')
     for (const [id, own, foreign] of [[first, 'Make the greeting friendlier.', 'Review the greeting independently.'], [second, 'Review the greeting independently.', 'Make the greeting friendlier.']]) {
       const messages = await userMessageTexts(page, id!)
       expect(messages.filter(message => message === own)).toHaveLength(1)
@@ -286,7 +286,7 @@ test('mixed pane drafts, queued work, settlement and preferences recover without
     const restored = await agentState(page)
     expect(restored.followups).toEqual([expect.objectContaining({ threadId: key('footer-links'), text: 'Queued Codex follow-up after this turn.' })])
     expect((await userMessageTexts(page, 'footer-links')).some(text => text === 'Queued Codex follow-up after this turn.')).toBe(false)
-    expect(restored.assignments).toEqual([])
+    expect(restored).not.toHaveProperty('assignments')
     await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'ready', threadId: 'footer-links', text: 'The original Codex turn is complete.' }))
     const queue = pane('footer-links').getByRole('region', { name: 'Queued messages' })
     await queue.getByRole('button', { name: 'Resume queue', exact: true }).click()

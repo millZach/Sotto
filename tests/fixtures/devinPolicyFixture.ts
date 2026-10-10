@@ -13,4 +13,3 @@ export async function setup() {
   return { root, cwd, userData: join(root, 'sotto'), nativeConfig: join(root, 'native') }
 }
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
-

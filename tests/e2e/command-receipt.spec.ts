@@ -95,7 +95,7 @@ test('drafts save, settings stay and a model can be picked after a reconnect, wi
   try {
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload()
@@ -126,13 +126,14 @@ test('drafts save, settings stay and a model can be picked after a reconnect, wi
     // 2. Change a setting and see the card keep it once its receipt has come back.
     await openPage(page, 'Settings')
     await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Agents', exact: true }).click()
-    const account = page.locator('#settings-agents').getByRole('combobox', { name: 'Reasoning account', exact: true })
-    const chosen = await account.inputValue() === 'claude' ? 'codex' : 'claude'
+    const directory = page.locator('#settings-agents').getByLabel('Default projects directory', { exact: true })
+    const chosen = 'D:\\Receipt projects'
     const beforeSetting = await settled(page, traffic)
-    await account.selectOption(chosen)
+    await directory.fill(chosen)
+    await directory.press('Tab')
     await settled(page, traffic, seen => answered(seen, 'configure') > answered(beforeSetting, 'configure'))
-    expect((await agentState(page)).configuration.reasoning).toBe(chosen)
-    await expect(account).toHaveValue(chosen)
+    expect((await agentState(page)).configuration.projectsDirectory).toBe(chosen)
+    await expect(directory).toHaveValue(chosen)
     await page.screenshot({ path: `${ARTIFACTS}/setting-kept.png`, animations: 'disabled' })
 
     // 3. Pick a model after the provider reconnects. The disconnect goes straight to main; the reconnect is the
@@ -150,9 +151,6 @@ test('drafts save, settings stay and a model can be picked after a reconnect, wi
     const reconnectReads = reconnected.reads - beforeReconnect.reads
     const reconnectedRevision = replyRevision(reconnected)
     console.info(`catalog revisions across a reconnect: ${JSON.stringify({ connectedRevision, disconnectedRevision, reconnectedRevision, reconnectReads })}`)
-    // The Reasoning account chosen in step 2 is a subscription whose own model the fixture does not list, and
-    // an unset "New threads start with" follows it, so choose a model the fixture has. A main-process receipt
-    // alone does not show that the renderer has accepted a direct bridge configuration.
     await openPage(page, 'Settings')
     await page.getByRole('tab', { name: 'Agents', exact: true }).click()
     const defaultModel = page.getByRole('combobox', { name: 'Thread model', exact: true })

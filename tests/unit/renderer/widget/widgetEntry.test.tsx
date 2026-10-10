@@ -1,14 +1,11 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import React, { Profiler, StrictMode } from 'react'
+import React, { StrictMode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { WidgetEntry } from '../../../../src/renderer/src/widget/WidgetApp'
-import type { AgentBridge, AgentState } from '../../../../src/shared/agents'
 import type { SottoWidgetBridge } from '../../../../src/shared/contracts'
 import { type WidgetSnapshot } from '../../../../src/shared/dictation'
 import { DEFAULT_WIDGET_PALETTE, themeBrand, widgetPaletteFor } from '../../../../src/shared/themeBranding'
-import { agentWireBridge } from '../../../fixtures/agentBridge'
-import { threadsStateFixture } from '../../../fixtures/renderer/liveAgentState'
 import { commandSucceeded, setupWidgetTests, snapshot, win32Copy } from '../../../fixtures/renderer/widgetHarness'
 
 setupWidgetTests()
@@ -541,45 +538,22 @@ describe('WidgetEntry', () => {
     expect(container).not.toHaveTextContent('private cancel failure')
   })
 
-  it('holds no agent connection while the voice coordinator is off, and a whole one when it turns on', async () => {
-    const shells = new Set<(state: AgentState) => void>()
-    let agentState = threadsStateFixture()
-    const agents: AgentBridge = {
-      get: vi.fn(async () => agentState),
-      command: vi.fn(async () => agentState),
-      onState: vi.fn((listener: (state: AgentState) => void) => { shells.add(listener); return () => { shells.delete(listener) } }),
-    }
+it('ignores a stale agent bridge while dictation remains available', () => {
+    const agents = { get: vi.fn(), onState: vi.fn(), command: vi.fn() }
     const { bridge, emit } = liveBridge()
-    let commits = 0
-    render(<Profiler id="widget" onRender={() => { commits += 1 }}><WidgetEntry bridge={{ ...bridge, agents: agentWireBridge(agents) }} platform="win32" preview={null} /></Profiler>)
-    /** One streamed chunk per shell, each a new state, the way main publishes while an agent works. */
-    const stream = (count: number): void => {
-      for (let index = 0; index < count; index += 1) {
-        agentState = { ...agentState, notice: `chunk ${index}` }
-        act(() => { for (const listener of shells) listener(agentState) })
-      }
-    }
+    const staleBridge = { ...bridge, agents }
+    const { container } = render(<WidgetEntry bridge={staleBridge} platform="win32" preview={null} />)
 
     emit(snapshot({ status: 'idle' }))
-    emit(snapshot({ status: 'idle', voiceCoordinator: false }))
-    await act(async () => Promise.resolve())
-    const before = commits
-    stream(100)
-    expect(agents.onState).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByTestId('widget-sliver'))
+    expect(bridge.requestToggle).toHaveBeenCalledOnce()
+    emit(snapshot({ status: 'listening', sessionId: 'dictation', startedAt: 0, level: 0.5, cancellable: true }))
+    expect(screen.getByTestId('listening-bars')).toBeInTheDocument()
+    expect(container.querySelector('.widget-agent-actions')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Expand threads' })).not.toBeInTheDocument()
     expect(agents.get).not.toHaveBeenCalled()
-    expect(commits - before).toBe(0)
-
-    // Turning the coordinator on connects afresh: one subscription, one whole fetch, every shell drawn.
-    emit(snapshot({ status: 'idle', voiceCoordinator: true }))
-    await waitFor(() => expect(agents.get).toHaveBeenCalledTimes(1))
-    expect(agents.onState).toHaveBeenCalledTimes(1)
-    await act(async () => Promise.resolve())
-    const connected = commits
-    stream(100)
-    expect(commits - connected).toBe(100)
-
-    // And off again lets go of it.
-    emit(snapshot({ status: 'idle', voiceCoordinator: false }))
-    expect(shells.size).toBe(0)
+    expect(agents.onState).not.toHaveBeenCalled()
+    expect(agents.command).not.toHaveBeenCalled()
   })
+
 })

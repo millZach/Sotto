@@ -1,5 +1,5 @@
-import { agentControlFixture, stubAgentReasoner } from '../fixtures/agentControlFixture'
 // @vitest-environment node
+import { agentControlFixture } from '../fixtures/agentControlFixture'
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -15,7 +15,7 @@ async function fixture() {
   await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, path: f.root, title: 'Synthetic' })
   await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId, projectId: f.projectId, modelId: f.modelId, title: 'Synthetic' })
   const stack = await agentControlFixture({ directory: f.root, host: f.host, credentialOptions: { mode: 'unavailable' },
-    reasoner: stubAgentReasoner({ intent: async () => ({ type: 'clarify', text: 'Choose' }) }),
+    reasoner: {},
   })
   const { create, control } = stack
   await control.start(); await control.command({ type: 'connect' })

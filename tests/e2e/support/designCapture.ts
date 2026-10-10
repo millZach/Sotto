@@ -23,7 +23,7 @@ type CaptureMotion = 'normal' | 'reduced'
 type CaptureFocusTarget = 'none' | 'tab' | 'navigation' | 'input' | 'switch' | 'destructive'
 
 interface CaptureMetadata {
-  readonly category: 'onboarding' | 'dictate' | 'agents' | 'history' | 'settings' | 'help' | 'threads' | 'scale' | 'widget' | 'appearance' | 'width'
+  readonly category: 'onboarding' | 'dictate' | 'history' | 'settings' | 'help' | 'threads' | 'scale' | 'widget' | 'appearance' | 'width'
   readonly state: string
   readonly theme: CaptureTheme
   readonly scalePercent: CaptureScale

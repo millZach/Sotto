@@ -1,5 +1,7 @@
 # Send to first words - October 5, 2026
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 Issue #763, part of #762. Nothing measured a send from Send to the first words on screen, so #762's figures were
 pieced together after the fact from `agents.json`, `claude-threads.json` and Claude Code's own session logs. Two
 things now measure it: every send's turn record times each send stage (`CONTEXT.md`, Send stage), and

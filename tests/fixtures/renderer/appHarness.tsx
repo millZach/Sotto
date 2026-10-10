@@ -11,8 +11,6 @@ import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
 
 const OK = Object.freeze({ ok: true as const })
 
-
-
 function createBridge(overrides: Partial<SottoBridge> = {}): SottoBridge {
   return {
     platform: 'win32',

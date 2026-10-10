@@ -18,12 +18,12 @@ const remove = (oldLine: number, text: string): ReviewLine => ({ kind: 'remove',
 
 function mount(running = false) {
   const state: AgentState = threadsStateFixture()
-  state.assignments = []
+
   state.activeThreadId = THREAD
   if (running) state.host = { ...state.host, threads: state.host.threads.map(thread => thread.id === THREAD ? { ...thread, status: 'running' as const } : thread) }
   const live = liveAgentState(state)
   vi.mocked(useAgents).mockImplementation(live.useLive)
-  render(<ThreadsView onOpenAgents={vi.fn()} now={E2E_THREADS_NOW} />)
+  render(<ThreadsView now={E2E_THREADS_NOW} />)
   return { live, prompt: () => screen.getByRole('textbox', { name: 'Prompt' }) as HTMLElement }
 }
 

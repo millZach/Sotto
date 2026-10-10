@@ -24,7 +24,7 @@ From a development checkout, prepare and build with Node 24, then use the launch
 ```sh
 mise exec node@24.21.0 -- npm ci
 mise exec node@24.21.0 -- node node_modules/electron/install.js
-mise exec node@24.21.0 -- npm run runtime:prepare
+mise exec node@24.21.0 -- npm run assets:verify
 mise exec node@24.21.0 -- npm run build
 /absolute/path/to/Sotto/apps/omarchy/sotto
 /absolute/path/to/Sotto/apps/omarchy/sotto dictation start

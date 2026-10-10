@@ -210,19 +210,16 @@ it('shows unfinished cleanup and offers a retry while the setting is off', async
   expect(command).toHaveBeenCalledWith({ type: 'retry' })
 })
 
-
 it('explains when phone access settings could not be saved', async () => {
   show({ ...OFF, enabled: true, phase: 'failed', serve: { status: 'failed', reason: 'record' } })
   expect(await screen.findByText(/Phone access wasn’t started/)).toBeTruthy()
 })
-
 
 it('explains cleanup when the saved record could not be read', async () => {
   show({ ...OFF, phase: 'cleanup-failed', serve: { status: 'failed', reason: 'cleanup-record' } })
   expect(await screen.findByText(/couldn’t read its saved cleanup record/)).toBeVisible()
   expect(screen.getByText(/Remove Sotto’s setting on port 8443 or 10000 in Tailscale, then press Try again/)).toBeVisible()
 })
-
 
 it('keeps pairing unavailable as soon as the setting turns off', async () => {
   show({ ...READY, enabled: false })

@@ -42,7 +42,7 @@ async function host() {
   // A host connects every provider not turned off when it starts (ADR-0036). The scripted ones here hold stand-in
   // sessions in a folder that does not exist, which would make sole ownership unprovable, so only Codex is left on.
   await writeFile(join(data, 'agents.json'), JSON.stringify({ configuration: { ...defaultAgentConfiguration(), enabledProviders: ['codex'], disconnectedProviders: ['claude', 'grok', 'devin'] },
-    assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false, outbox: [] }))
+    activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false, outbox: [] }))
   // The fake's stand-in sessions name a folder that does not exist, which would make sole ownership unprovable.
   const codex = new FakeProviderHost()
   codex.state.threads.length = 0
@@ -61,7 +61,7 @@ async function host() {
   /** A thread with its own worktree, made by its first send, whose turn has finished. */
   const worktreeThread = async (): Promise<string> => {
     const threadId = randomUUID()
-    await command({ type: 'create-thread', threadId, projectId, title: 'Worktree thread', modelId, workingCopy: 'independent', managed: false })
+    await command({ type: 'create-thread', threadId, projectId, title: 'Worktree thread', modelId, workingCopy: 'independent' })
     await command({ type: 'manual-send', threadId, text: 'Synthetic prompt' })
     for (const session of codex.state.threads) session.status = 'idle'
     codex.emit()

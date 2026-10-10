@@ -16,7 +16,7 @@ function snapshot(error: string | null = null): AgentState {
   return threadsStateFixture({ cloneOverrides: false,
     configuration: defaultAgentConfiguration(),
     host: { projects: [], threads: [], models: [] },
-    topLevel: { assignments: [], queue: [], activeThreadId: null, activeProjectId: null, error } })
+    topLevel: { activeThreadId: null, activeProjectId: null, error } })
 }
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 

@@ -70,7 +70,7 @@ async function stack(provider: 'codex' | 'claude' | 'grok', fixture: AdapterFixt
   await mkdir(directory, { recursive: true })
   const runtime = await createAgentRuntime({
     directory, credentials, settings: () => settings, writingSettings: async () => settings,
-    historyEnabled: () => true, coordinatorEnabled: () => false, openExternal: async () => undefined, reasoner: e2eAgentReasoner,
+    historyEnabled: () => true, openExternal: async () => undefined, reasoner: e2eAgentReasoner,
     providers: { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), [provider]: fixture.host },
     gitStatus: { fetchIntervalMs: () => 3_600_000, foreground: () => false },
     babysitting: { agentTool: () => settings.babysitPullRequests, run: github.run },
@@ -92,7 +92,7 @@ async function stack(provider: 'codex' | 'claude' | 'grok', fixture: AdapterFixt
   const project = (await command({ type: 'create-project', provider, title: 'Project', path: folder, useExisting: true })).host.projects.find(item => item.path === folder)!
   const modelId = runtime.agentControl.get().host.models.find(model => model.providerId === provider)!.id
   const threadId = randomUUID()
-  expect((await command({ type: 'create-thread', threadId, projectId: project.id, title: 'Babysat', modelId, workingCopy: 'shared', managed: false })).error).toBeNull()
+  expect((await command({ type: 'create-thread', threadId, projectId: project.id, title: 'Babysat', modelId, workingCopy: 'shared' })).error).toBeNull()
   await command({ type: 'observe-threads', threadIds: [threadId] })
   const thread = () => runtime.agentControl.get().host.threads.find(item => item.id === threadId)!
   const sessionId = () => runtime.threadRegistry!.byThread(threadId)!.sessionId

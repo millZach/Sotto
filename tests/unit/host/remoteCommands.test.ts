@@ -2,10 +2,10 @@
 import { describe, expect, it } from 'vitest'
 import { REMOTE_COMMANDS, REMOTE_CONFIGURATION_FIELDS, REMOTE_SIGN_IN_OPERATIONS, remoteCommandRefusal } from '../../../src/host/remoteCommands'
 import { agentCommandSchema, type AgentCommand } from '../../../src/shared/agents'
-import { hostRequestSchema } from '../../../src/shared/hostProtocol'
+import { hostRequestSchema, commandFromProtocolV1, protocolAgentCommandSchema } from '../../../src/shared/hostProtocol'
 
 /** Commands that stay on the host machine. A new command type must land here or in REMOTE_COMMANDS. */
-const HOST_LOCAL = ['credential', 'check-reasoning', 'update-client', 'preview-voice', 'utterance', 'voice', 'voice-state', 'open-thread-folder']
+const HOST_LOCAL = ['credential', 'check-reasoning', 'update-client', 'open-thread-folder']
 type Option = { shape: { type: { value?: string; options?: string[] } } & Record<string, unknown> }
 const schemaFields = new Map((agentCommandSchema.options as unknown as Option[]).flatMap(option => {
   const types = option.shape.type.options ?? [option.shape.type.value!]
@@ -14,12 +14,34 @@ const schemaFields = new Map((agentCommandSchema.options as unknown as Option[])
 const refuse = (command: AgentCommand, mayAnswer = false, askingProviderModes?: string[]) => remoteCommandRefusal(command, { mayAnswer, askingProviderModes })
 
 describe('remote command allow-list', () => {
+  it('accepts v1 connects with optional false-only feedback without granting any other field or command', () => {
+    for (const provider of [undefined, 'codex'] as const) {
+      for (const feedback of [{}, { notice: false }] as const) {
+        const command = { type: 'connect', ...(provider ? { provider } : {}), ...feedback } as const
+        const wire = { v: 1, id: 'connect', session: 'session', op: 'command', command }
+        expect(hostRequestSchema.safeParse(wire).success).toBe(true)
+        expect(commandFromProtocolV1(protocolAgentCommandSchema.parse(command))).toEqual(command)
+        for (const mayAnswer of [false, true]) expect(refuse(command, mayAnswer)).toBeNull()
+      }
+    }
+    for (const notice of [true, 'Approved', {}, null]) {
+      const command = { type: 'connect', notice }
+      expect(protocolAgentCommandSchema.safeParse(command).success).toBe(false)
+      expect(refuse(command as unknown as AgentCommand, true)).toBe('forbidden')
+    }
+    for (const command of [
+      { type: 'connect', notice: false, approved: true },
+      { type: 'interrupt', threadId: 'thread', notice: false },
+      { type: 'voice', action: 'mute', notice: false },
+    ]) {
+      expect(protocolAgentCommandSchema.safeParse(command).success).toBe(false)
+      expect(refuse(command as unknown as AgentCommand, true)).toBe('forbidden')
+    }
+  })
   it('lets a paired client change only the coordinator settings decided on purpose, none of them a key, endpoint or voice engine', () => {
-    // Spoken replies on or off and the orb colour are preferences; the follow-up limit bounds work the user
-    // already assigned, and a paired device may send those follow-ups itself. None of them answers anything.
-    expect([...REMOTE_CONFIGURATION_FIELDS].sort()).toEqual(['defaultModelId', 'enabled', 'enabledProviders', 'followupLimit', 'orbColor', 'provider',
-      'reasoning', 'reasoningEffort', 'reasoningModel', 'speak'])
-    for (const patch of [{ speak: false }, { followupLimit: 3 }]) expect(refuse({ type: 'configure', patch }), Object.keys(patch)[0]).toBeNull()
+    expect([...REMOTE_CONFIGURATION_FIELDS].sort()).toEqual(['defaultModelId', 'enabled', 'enabledProviders', 'provider',
+      'reasoning', 'reasoningEffort', 'reasoningModel'])
+    for (const patch of [{ speak: false }, { followupLimit: 3 }]) expect(() => commandFromProtocolV1(protocolAgentCommandSchema.parse({ type: 'configure', patch })), Object.keys(patch)[0]).toThrow()
     for (const patch of [{ speechVoice: 'F2' }, { speechProvider: 'grok' }, { wakeModelDirectory: '/tmp' }])
       expect(refuse({ type: 'configure', patch } as AgentCommand, true), Object.keys(patch)[0]).toBe('forbidden')
   })

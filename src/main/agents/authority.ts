@@ -6,8 +6,6 @@ export const riskyActionSchema = z.enum(['spend', 'publish', 'destroy', 'relax-v
 export type RiskyAction = z.infer<typeof riskyActionSchema>
 /** Every action a policy record can be written about: the risky classes, plus who may grant remotely. */
 export type PolicyAction = RiskyAction | 'remote-answer'
-export const approvalWords: readonly string[] = ['allow', 'approve']
-export const denialWords: readonly string[] = ['deny', 'reject']
 
 export interface AuthorizationQuery {
   action: PolicyAction; resource: string; scope: string; at?: string

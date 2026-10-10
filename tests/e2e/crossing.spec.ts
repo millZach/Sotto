@@ -1,12 +1,13 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { join } from 'node:path'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { expect, test } from '@playwright/test'
-import { closeSotto, completeFirstRunSetup, launchSottoWithVoice, openPage, openThreads } from './support/sottoLaunch'
+import { closeSotto, completeFirstRunSetup, launchSotto, openPage, openThreads } from './support/sottoLaunch'
 
 const evidence = evidenceDirectory('artifacts/crossing')
 
 test('Crossing keeps dictation, history, settings and sessions usable', async () => {
-  const launched = await launchSottoWithVoice()
+  const launched = await launchSotto()
   const { page } = launched
   page.setDefaultTimeout(5_000)
   try {
@@ -34,48 +35,19 @@ test('Crossing keeps dictation, history, settings and sessions usable', async ()
     await expect.poll(() => page.evaluate(async () => (await window.sotto!.getSettings()).pasteDelayMs)).toBe(250)
     await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Agents', exact: true }).click()
     const coordinator = page.locator('#settings-agents')
-    await expect(coordinator.getByLabel('Reasoning account', { exact: true })).toBeVisible()
-    await page.screenshot({ animations: 'disabled', path: join(evidence, 'account.png') })
-    await coordinator.getByLabel('Reasoning account', { exact: true }).selectOption('openrouter')
-    await coordinator.getByLabel('Reasoning API key', { exact: true }).fill('fixture-only-key')
-    await coordinator.getByLabel('Reasoning API key', { exact: true }).press('Tab')
-    await expect(coordinator.getByRole('button', { name: 'Remove reasoning API key', exact: true })).toBeVisible()
-    await coordinator.getByRole('button', { name: 'Remove reasoning API key', exact: true }).click()
-    await expect.poll(() => page.evaluate(async () => (await window.sotto!.agents!.get()).credentials.reasoning)).toBe(false)
-    await coordinator.getByLabel('Reasoning account', { exact: true }).selectOption('none')
+    await expect(coordinator.getByLabel('Default projects directory', { exact: true })).toBeVisible()
     await page.getByRole('link', { name: 'Help', exact: true }).click()
     await page.screenshot({ animations: 'disabled', path: join(evidence, 'help.png') })
     await page.keyboard.press('Control+k')
     await expect(page.getByRole('searchbox', { name: 'Search transcripts' })).toBeFocused()
-    await page.getByRole('tab', { name: 'Agents', exact: true }).click()
-    await page.getByRole('button', { name: 'Not now', exact: true }).click()
-    // First-run setup's own Coding agents step already connected this computer's provider.
-    await expect(page.getByRole('button', { name: 'New session', exact: true })).toBeEnabled()
-    await page.screenshot({ animations: 'disabled', path: join(evidence, 'agents.png') })
-    // The sphere wears the theme; there is no separate orb colour to choose.
-    await expect(page.getByRole('button', { name: /orb$/ })).toHaveCount(0)
-    const orbColors = await page.locator('canvas.agent-orb').getAttribute('data-orb-colors')
-    expect(orbColors).toMatch(/^#[0-9a-f]{6} #[0-9a-f]{6}$/)
-    await page.evaluate(async () => { await window.sotto!.updateSettings({ lightTheme: 'citrine', darkTheme: 'citrine' }) })
-    await expect(page.locator('html')).toHaveAttribute('data-theme-id', 'citrine')
-    await expect(page.locator('canvas.agent-orb')).not.toHaveAttribute('data-orb-colors', orbColors!)
-    await page.getByRole('button', { name: 'New session', exact: true }).click()
-    await expect(page.getByRole('dialog', { name: 'New thread', exact: true })).toBeVisible()
-    await page.screenshot({ animations: 'disabled', path: join(evidence, 'new-session.png') })
-    await page.keyboard.press('Escape')
-    await expect(page.getByRole('dialog')).toHaveCount(0)
-    await page.getByRole('button', { name: 'Open Workshop', exact: true }).click()
-    await page.getByRole('button', { name: 'Manage this thread', exact: true }).click()
-    await page.getByLabel('Prompt', { exact: true }).fill('Keep this draft until I explicitly send it.')
-    await page.keyboard.press('Escape')
-    await page.getByRole('button', { name: 'Open Workshop', exact: true }).click()
-    await expect(page.getByLabel('Prompt', { exact: true })).toHaveValue('Keep this draft until I explicitly send it.')
-    await page.screenshot({ animations: 'disabled', path: join(evidence, 'session.png') })
-    await page.getByRole('button', { name: 'Send it', exact: true }).click()
-    await expect(page.getByLabel('Session transcript')).toContainText('Keep this draft until I explicitly send it.')
-    await page.keyboard.press('Escape')
     await openThreads(page)
-    await page.screenshot({ animations: 'disabled', path: join(evidence, 'threads.png') })
+    await page.getByRole('button', { name: 'Workshop', exact: true }).click()
+    await fillPrompt(promptField(page), 'Keep this draft until I explicitly send it.')
+    await openPage(page, 'Dictate')
+    await openThreads(page)
+    await expectPromptText(promptField(page), 'Keep this draft until I explicitly send it.')
+    await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
+    await expect(page.getByLabel('Thread transcript')).toContainText('Keep this draft until I explicitly send it.')
     await page.getByRole('button', { name: 'New thread', exact: true }).click()
     const newThread = page.getByRole('dialog', { name: 'New thread', exact: true })
     await expect(newThread).toBeVisible()

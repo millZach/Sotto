@@ -29,14 +29,14 @@ afterEach(cleanup)
 
 it('keeps typing within the composer once the draft has content', () => {
   const state = threadsStateFixture()
-  state.assignments = []
-  state.queue = []
+
+
   state.activeThreadId = 'grok-previews'
   const live = liveAgentState(state)
   vi.mocked(useAgents).mockImplementation(live.useLive)
   const row = describeThreads(state, E2E_THREADS_NOW).find(row => row.thread.id === state.activeThreadId)!
   const store = new ThreadDraftStore(live.command)
-  render(<ThreadPane row={row} state={state} command={live.command} store={store} focused promptId="prompt" error={null} onOpenThread={vi.fn()} />)
+  render(<ThreadPane row={row} state={state} command={live.command} store={store} focused promptId="prompt" error={null} />)
   const input = screen.getByRole('textbox', { name: 'Prompt' })
   setPromptText(input, 'a')
   const before = renders.transcript
@@ -51,8 +51,8 @@ it('keeps typing within the composer once the draft has content', () => {
 
 it('does not process a closed model picker catalog while typing or deleting', () => {
   const state = threadsStateFixture()
-  state.assignments = []
-  state.queue = []
+
+
   state.activeThreadId = 'grok-previews'
   const thread = state.host.threads.find(thread => thread.id === state.activeThreadId)!
   thread.nativeSessionStarted = false
@@ -66,7 +66,7 @@ it('does not process a closed model picker catalog while typing or deleting', ()
   vi.mocked(useAgents).mockImplementation(live.useLive)
   const row = describeThreads(state, E2E_THREADS_NOW).find(row => row.thread.id === thread.id)!
   const store = new ThreadDraftStore(live.command)
-  render(<ThreadPane row={row} state={state} command={live.command} store={store} focused promptId="prompt" error={null} onOpenThread={vi.fn()} />)
+  render(<ThreadPane row={row} state={state} command={live.command} store={store} focused promptId="prompt" error={null} />)
   const input = screen.getByRole('textbox', { name: 'Prompt' })
   setPromptText(input, 'a')
   const before = namesRead
@@ -79,14 +79,14 @@ it('does not process a closed model picker catalog while typing or deleting', ()
 
 it('sends the latest text after edits that did not render the surrounding controls', async () => {
   const state = threadsStateFixture()
-  state.assignments = []
-  state.queue = []
+
+
   state.activeThreadId = 'grok-previews'
   const live = liveAgentState(state)
   vi.mocked(useAgents).mockImplementation(live.useLive)
   const row = describeThreads(state, E2E_THREADS_NOW).find(row => row.thread.id === state.activeThreadId)!
   const store = new ThreadDraftStore(live.command)
-  render(<ThreadPane row={row} state={state} command={live.command} store={store} focused promptId="prompt" error={null} onOpenThread={vi.fn()} />)
+  render(<ThreadPane row={row} state={state} command={live.command} store={store} focused promptId="prompt" error={null} />)
   const input = screen.getByRole('textbox', { name: 'Prompt' })
   setPromptText(input, 'First')
   const before = renders.options

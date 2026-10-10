@@ -25,11 +25,11 @@ test('inspects a completed checkpoint and explicitly rewinds files and the same 
     try {
       const threadId = await page.evaluate(async repo => {
         const agents = window.sotto!.agents!
-        await agents.command({ type: 'configure', patch: { enabled: true, speak: false } })
+        await agents.command({ type: 'configure', patch: { enabled: true } })
         await agents.command({ type: 'connect' })
         const created = await agents.command({ type: 'create-project', title: 'Checkpoint project', path: repo, useExisting: true })
         const projectId = created.host.projects.find(project => project.title === 'Checkpoint project')!.id
-        const state = await agents.command({ type: 'create-thread', projectId, title: 'Checkpoint review', modelId: 'codex:gpt', managed: false, workingCopy: 'shared' })
+        const state = await agents.command({ type: 'create-thread', projectId, title: 'Checkpoint review', modelId: 'codex:gpt', workingCopy: 'shared' })
         if (!state.activeThreadId || state.error) throw new Error(state.error ?? 'No selected thread')
         await agents.command({ type: 'manual-send', threadId: state.activeThreadId, text: 'Make the greeting friendlier.' })
         return state.activeThreadId

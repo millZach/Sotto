@@ -4,17 +4,17 @@ import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { hostKeys } from './support/hostKeys'
-import { closeSotto, launchSottoWithVoice, openThreads, userMessageTexts } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, userMessageTexts } from './support/sottoLaunch'
 
 const evidence = evidenceDirectory('artifacts/queued-steering')
 
 test('steers a queued message from the keyboard without consuming the newer draft', async () => {
-  const launched = await launchSottoWithVoice('queued-steering')
+  const launched = await launchSotto('queued-steering')
   const { page } = launched
   try {
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload()

@@ -65,9 +65,9 @@ test('three, four and five panes snap, resize, move, zoom and come back after a 
   const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-pane-layouts-' })).directory
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'dark', accent: 'teal' }))
   await writeFile(join(profile, 'agents.json'), JSON.stringify({
-    configuration: { ...defaultAgentConfiguration(), enabled: true, speak: false },
-    assignments: [], queue: [], activeThreadId: 'grok-previews', activeProjectId: 'workshop',
-    draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', outbox: [],
+    configuration: { ...defaultAgentConfiguration(), enabled: true, },
+    activeThreadId: 'grok-previews', activeProjectId: 'workshop',
+    draft: '', draftThreadId: null, draftRequestId: null, composing: false, outbox: [],
   }))
   let launched = await launchSotto('design-threads', profile)
   try {
@@ -296,7 +296,7 @@ test('three, four and five panes snap, resize, move, zoom and come back after a 
     const order = (await boxes(page)).map(box => box.id)
     const before = await agents(page)
     const userMessages = (state: typeof before) => state.host.threads.map(thread => [thread.id, thread.messages.filter(message => message.role === 'user').length])
-    expect(before.assignments).toHaveLength(0)
+
     await page.waitForTimeout(800)
     await closeSotto(launched)
 
@@ -313,7 +313,7 @@ test('three, four and five panes snap, resize, move, zoom and come back after a 
     await expectPromptText(promptField(restored.locator(`section.thread-pane[data-thread-id="${key('weekly-note')}"]`)), 'Weekly draft survives the restart.')
     await expectPromptText(promptField(restored.locator(`section.thread-pane[data-thread-id="${key('grok-previews')}"]`)), 'Grok draft stays with its pane.')
     const after = await agents(page)
-    expect(after.assignments).toHaveLength(0)
+
     expect(userMessages(after)).toEqual(userMessages(before))
     await capture(page, 'four-restored-1600')
   } finally {

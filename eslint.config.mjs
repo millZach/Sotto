@@ -4,6 +4,7 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   {
     ignores: [
+      'artifacts/voice-control-removal/merged-setup/**',
       'artifacts/skill-pill-composer/**',
       'artifacts/omarchy-shell-plugin/**',
       'artifacts/linux-shell-plumbing/**',
@@ -99,7 +100,6 @@ export default tseslint.config(
       'out/**',
       'playwright-report/**',
       'release/**',
-      'resources/runtime/*.mjs',
       'test-results/**',
     ],
   },

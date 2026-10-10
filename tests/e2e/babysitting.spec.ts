@@ -130,7 +130,7 @@ test('a thread babysits its pull request from the surface, gets a wake-up as Sot
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
       const agents = window.sotto!.agents!
-      await agents.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await agents.command({ type: 'configure', patch: { enabled: true } })
       await agents.command({ type: 'connect' })
     })
     await page.reload()

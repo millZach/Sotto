@@ -4,7 +4,7 @@ import { promptOffsetToPosition, promptPositionToOffset } from './promptDocument
 export interface PromptSelection { readonly selectionStart: number; readonly selectionEnd: number }
 export type PromptEditorElement = HTMLDivElement & { editor: Editor }
 
-/** The focused thread's manual composer uses Tiptap; managed drafts have their own agent-composer surface. */
+/** The focused thread's prompt field uses Tiptap. */
 export function focusedComposerField(): HTMLElement | null {
   return document.querySelector<HTMLElement>('.thread-pane[data-focused] .thread-prompt .prompt-editor')
 }

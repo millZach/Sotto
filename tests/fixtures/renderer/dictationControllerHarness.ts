@@ -14,7 +14,6 @@ import type {
 import { type WidgetSnapshot } from '../../../src/shared/dictation'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings'
 
-
 export { deferred } from '../deferred'
 
 export function settings(overrides: Partial<AppSettings> = {}): AppSettings {

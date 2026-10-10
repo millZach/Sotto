@@ -73,7 +73,7 @@ export async function sendStack(provider: SendStackProvider, native: AdapterFixt
   await command({ type: 'connect', provider })
   const created = await command({ type: 'create-project', provider, title: 'Send project', path: native.root, useExisting: true })
   const projectId = created.host.projects.find(project => project.path === native.root)!.id
-  const thread = await command({ type: 'create-thread', projectId, title: 'Send thread', modelId: publicProviderEntityId(provider, 'model', native.modelId), workingCopy: 'shared', managed: false })
+  const thread = await command({ type: 'create-thread', projectId, title: 'Send thread', modelId: publicProviderEntityId(provider, 'model', native.modelId), workingCopy: 'shared' })
   const threadId = thread.activeThreadId!
   await command({ type: 'select-thread', threadId })
   await command({ type: 'observe-threads', threadIds: [threadId] })

@@ -8,7 +8,6 @@ import { Button } from '../components/Button'
 import { SottoMark } from '../components/SottoMark'
 import { useOptionalApp, type AppNavigation } from '../state/AppContext'
 import { useMemoryEnabled } from '../state/memoryFeature'
-import { useVoiceCoordinatorEnabled } from '../state/voiceCoordinator'
 import type { AgentConnection } from './AgentContext'
 import { useAddProject } from './addProject'
 import { useSidebarSize } from './sidebarSize'
@@ -77,16 +76,12 @@ export function SidebarTop({ children }: { readonly children?: ReactNode }): Rea
 export function SidebarFoot(): ReactNode {
   const app = useOptionalApp()
   const { updateControl } = useContext(SidebarChromeContext)
-  const coordinator = useVoiceCoordinatorEnabled()
   const memory = useMemoryEnabled()
-  // With the coordinator off the Agents page is the Threads page (App.tsx), so the foot lights Threads for it.
-  const shown = app === null || app.navigation === 'onboarding' || (app.navigation === 'agents' && !coordinator) ? 'threads' : app.navigation
+  const shown = app === null || app.navigation === 'onboarding' ? 'threads' : app.navigation
   const room = roomFor(shown)
   const go = (destination: AppNavigation): void => { app?.actions.navigate(destination) }
-  // The same rooms the strip offers: Agents joins only while the voice coordinator is switched on.
   const rooms: ReadonlyArray<{ readonly id: string; readonly label: string; readonly destination: AppNavigation }> = [
     { id: 'dictate', label: 'Dictate', destination: 'home' },
-    ...(coordinator ? [{ id: 'agents', label: 'Agents', destination: 'agents' as const }] : []),
     { id: 'threads', label: 'Threads', destination: 'threads' },
   ]
   /** Arrow keys walk the switch, as they do in the strip: only the lit tab is in the Tab order, so this is how the others are reached. */

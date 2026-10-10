@@ -45,7 +45,7 @@ test('an agent tests a web build on the test iPhone while the user watches it fl
     await page.evaluate(async () => {
       // The ADR-0029 default stays on: the phone runs without asking, the way a user first meets it.
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload(); await resize(launched, 1280, 800); await openThreads(page)
@@ -66,6 +66,8 @@ test('an agent tests a web build on the test iPhone while the user watches it fl
     // The page lays out at the iPhone's 393 CSS pixels however small the player draws it.
     const screen = phone.locator('.phone-player__screen')
     await expect.poll(async () => (await nativeViews(launched)).find(view => view.url === url)?.bounds.width ?? 0).toBeGreaterThan(100)
+    // Measure after the entrance animation: its transform changes the screen's rectangle each frame.
+    await expect.poll(() => phone.evaluate(element => element.getAnimations().every(animation => animation.playState === 'finished'))).toBe(true)
     const box = await screen.evaluate(element => { const rect = element.getBoundingClientRect(); const x = Math.round(rect.left), y = Math.round(rect.top); return { x, y, width: Math.round(rect.right) - x, height: Math.round(rect.bottom) - y } })
     await expect.poll(async () => (await nativeViews(launched)).find(view => view.url === url)?.bounds).toEqual(box)
     const textOf = (result: Awaited<ReturnType<typeof agent>>): string => { const item = result.content.find(entry => entry.type === 'text'); return item?.type === 'text' ? item.text : '' }

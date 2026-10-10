@@ -238,12 +238,6 @@ export interface AppSettings {
    */
   tailnetConnections: boolean
   /**
-   * The voice coordinator (the wake phrase, the Agents room, spoken hints, the
-   * widget's voice controls and assignment) is hidden for the beta. Off keeps
-   * every one of those surfaces out of the window; dictation is unaffected.
-   */
-  voiceCoordinatorEnabled: boolean
-  /**
    * Whether memory (the Memory page, the questionnaire that greets the Agents
    * room and the preferences retrieved for a turn) is shown at all. Off for
    * the beta; the store and its code stay in place.
@@ -339,7 +333,6 @@ const fieldSchemas = {
   phoneAccess: z.boolean(),
   phoneAccessName: z.string().trim().max(63),
   tailnetConnections: z.boolean(),
-  voiceCoordinatorEnabled: z.boolean(),
   memoryEnabled: z.boolean(),
   cloudIphoneMonthlyMinutes: z.number().int().min(10).max(100_000),
   cloudIphoneIdleMinutes: z.number().int().min(1).max(60),
@@ -436,9 +429,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   phoneAccessName: '',
   // Off until a desktop turns it on over SSH, at Add host or in Edit connection (ADR-0053).
   tailnetConnections: false,
-  // Off for the beta: the voice coordinator is not ready to ship, so nothing
-  // voice-shaped is shown until it is turned on here.
-  voiceCoordinatorEnabled: false,
   // Off for the beta: memory does not ship in the first one.
   memoryEnabled: false,
   // About run.cloud's free $15 a month at its $0.02-a-minute price (ADR-0047).
@@ -544,7 +534,6 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     phoneAccess: parseField(persisted, 'phoneAccess', defaults),
     phoneAccessName: parseField(persisted, 'phoneAccessName', defaults),
     tailnetConnections: parseField(persisted, 'tailnetConnections', defaults),
-    voiceCoordinatorEnabled: parseField(persisted, 'voiceCoordinatorEnabled', defaults),
     memoryEnabled: parseField(persisted, 'memoryEnabled', defaults),
     cloudIphoneMonthlyMinutes: parseField(persisted, 'cloudIphoneMonthlyMinutes', defaults),
     cloudIphoneIdleMinutes: parseField(persisted, 'cloudIphoneIdleMinutes', defaults),

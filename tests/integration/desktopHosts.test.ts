@@ -93,7 +93,7 @@ describe('desktop remote host management over a real socket', () => {
     await fixture.router.command({ type: 'connect', provider: 'codex' }, local)
     const state = await fixture.router.command({ type: 'create-project', provider: 'codex', title: 'Remote', path: fixture.root, useExisting: true }, local)
     const project = state.host.projects.find(item => item.path === fixture.root)!
-    const created = await fixture.router.command({ type: 'create-thread', projectId: project.id, modelId: state.host.models[0]!.id, title: 'Remote permissions', managed: false }, local)
+    const created = await fixture.router.command({ type: 'create-thread', projectId: project.id, modelId: state.host.models[0]!.id, title: 'Remote permissions' }, local)
     expect(created.error).toBeNull()
     const threadId = created.host.threads.find(item => item.title === 'Remote permissions')!.id
     for (const runtimeMode of ['full-access', 'auto', 'auto-accept-edits', 'approval-required'] as const) {
@@ -175,7 +175,7 @@ describe('desktop remote host management over a real socket', () => {
     const project = state.host.projects.find(project => project.path === fixture.root)!
     const model = state.host.models[0]!
     const threadId = randomUUID()
-    await fixture.router.command({ type: 'create-thread', projectId: project.id, threadId, title: 'Remote task', modelId: model.id, managed: false, workingCopy: 'shared' }, client)
+    await fixture.router.command({ type: 'create-thread', projectId: project.id, threadId, title: 'Remote task', modelId: model.id, workingCopy: 'shared' }, client)
     const qualified = hostEntityKey(fixture.reportedHostId, threadId)
     await fixture.router.command({ type: 'observe-threads', threadIds: [qualified] }, client)
     await fixture.router.command({ type: 'manual-send', threadId: qualified, draftId: randomUUID(), text: 'Synthetic remote prompt' }, client)
@@ -365,7 +365,7 @@ describe('desktop remote host management over a real socket', () => {
     const state = await fixture.host.service.command({ type: 'create-project', provider: 'codex', title: 'Logged', path: fixture.root, useExisting: true }, client)
     const project = state.host.projects.find(project => project.path === fixture.root)!
     const threadId = randomUUID()
-    await fixture.host.service.command({ type: 'create-thread', projectId: project.id, threadId, title: 'Logged task', modelId: state.host.models[0]!.id, managed: false, workingCopy: 'shared' }, client)
+    await fixture.host.service.command({ type: 'create-thread', projectId: project.id, threadId, title: 'Logged task', modelId: state.host.models[0]!.id, workingCopy: 'shared' }, client)
     await fixture.host.service.command({ type: 'manual-send', threadId, draftId: randomUUID(), text: 'Synthetic logged prompt' }, client)
     await expect.poll(() => fixture.host.service.events(0).length).toBeGreaterThan(0)
     const connect = vi.spyOn(SocketHostService.prototype, 'connect'), readEvents = vi.spyOn(SocketHostService.prototype, 'readEvents')

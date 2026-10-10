@@ -1,5 +1,7 @@
 # Phase 5 Git / pull-request verification
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 Ticket #61; desktop target already agreed: 1280x860, 1600x1000, minimum 820x560; dark/light/system, keyboard and reduced motion.
 
 Acceptance checklist:

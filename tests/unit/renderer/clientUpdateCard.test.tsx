@@ -20,7 +20,7 @@ function fixture(clientUpdates: ProviderClientUpdate[], running = false): AgentS
       providers: providerIdSchema.options.map(id => ({ id, name: PROVIDER_LABELS[id], version: '1.0.5', connection: 'connected' as const, capabilities: caps })),
       threads: [{ id: 'thread', providerId: 'grok', projectId: 'project', title: 'Grok work', modelId: 'grok:4.7', status: running ? 'running' : 'idle', messages: [], requests: [] }],
     },
-    topLevel: { clientUpdates, assignments: [], queue: [], activeThreadId: null, activeProjectId: null } })
+    topLevel: { clientUpdates, activeThreadId: null, activeProjectId: null } })
 }
 function provide(state: AgentState) {
   const command = vi.fn(async () => state)

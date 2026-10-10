@@ -107,7 +107,7 @@ async function bench(provider: typeof PROVIDERS[number], repository: string): Pr
   const credentials = await testCredentials(join(f.root, 'vault'), { mode: 'unavailable' })
   const runtime = await createAgentRuntime({
     directory: f.root, credentials, settings: () => DEFAULT_SETTINGS, writingSettings: async () => DEFAULT_SETTINGS,
-    historyEnabled: () => true, coordinatorEnabled: () => false, openExternal: async () => undefined, reasoner: e2eAgentReasoner,
+    historyEnabled: () => true, openExternal: async () => undefined, reasoner: e2eAgentReasoner,
     providers: { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), [provider]: f.adapter },
     gitStatus: { fetchIntervalMs: () => DEFAULT_SETTINGS.gitFetchIntervalSeconds * 1000, foreground: () => true },
   })
@@ -135,7 +135,7 @@ async function bench(provider: typeof PROVIDERS[number], repository: string): Pr
       .host.projects.find(item => resolve(item.path) === resolve(repository))!
     const modelId = runtime.agentControl.get().host.models.find(model => model.providerId === provider)!.id
     const threadId = randomUUID()
-    await command({ type: 'create-thread', threadId, projectId: project.id, title: 'Benchmark', modelId, workingCopy: 'shared', managed: false })
+    await command({ type: 'create-thread', threadId, projectId: project.id, title: 'Benchmark', modelId, workingCopy: 'shared' })
     await command({ type: 'observe-threads', threadIds: [threadId] })
     await writeFile(join(f.root, 'script.json'), JSON.stringify({ reply: REPLY }))
     const thread = () => runtime.agentControl.get().host.threads.find(item => item.id === threadId)!
