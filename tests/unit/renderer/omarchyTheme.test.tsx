@@ -6,7 +6,7 @@ import { closeThemeEditor } from '../../../src/renderer/src/features/settings/th
 import { resolveThemeFor } from '../../../src/shared/themes/library'
 import { ThemeGallery } from '../../../src/renderer/src/features/settings/themes/ThemeGallery'
 import { applyAppearance, appearancePreview, resolveAppearance } from '../../../src/renderer/src/state/appearance'
-import { DEFAULT_SETTINGS, type SettingsPatch } from '../../../src/shared/settings'
+import { DEFAULT_SETTINGS, type SettingsPatch, type AppSettings } from '../../../src/shared/settings'
 import { OMARCHY_THEME_ID, omarchySuccessText, parseOmarchyTheme } from '../../../src/shared/themes/omarchy'
 import fixtures from '../../fixtures/omarchy-themes.json'
 import { ThemeLivePreview } from '../../../src/renderer/src/features/settings/themes/ThemeLivePreview'
@@ -24,7 +24,7 @@ describe('Omarchy Appearance', () => {
  it.each(['matching', 'waiting', 'missing'] as const)('Create theme copies the painted half when Omarchy is %s', async state => {
   const runtime = parseOmarchyTheme(fixtures.themes['tokyo-night'].rendered, 'Tokyo Night')
   const resolved = state === 'matching' ? 'dark' : 'light'
-  const shown = { ...DEFAULT_SETTINGS, appearance: resolved, lightTheme: OMARCHY_THEME_ID, darkTheme: OMARCHY_THEME_ID, omarchyTheme: state === 'missing' ? null : runtime }
+  const shown: AppSettings = { ...DEFAULT_SETTINGS, appearance: resolved, lightTheme: OMARCHY_THEME_ID, darkTheme: OMARCHY_THEME_ID, omarchyTheme: state === 'missing' ? null : runtime }
   const painted = resolveThemeFor(shown, resolved).colors
   const save = vi.fn<(patch: SettingsPatch) => Promise<boolean>>(async () => true)
   render(<><ThemeGallery shown={shown} resolved={resolved} system="Linux" onChooseMode={vi.fn()} onSelect={vi.fn()} onRemove={vi.fn()} onExport={vi.fn()} onAddTheme={vi.fn()} /><ThemeEditorHost settings={shown} onSave={save} getSettings={() => shown} /></>)
