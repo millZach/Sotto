@@ -39,8 +39,8 @@ import { connectCheckpoints } from './tools/checkpointIntegration'
 import { RequestDraftService } from './agents/requestDrafts'
 import { RetainedDraftStore } from './agents/retainedDraftStore'
 import { registerRequestDraftIpc } from './agents/requestDraftIpc'
-import { isThreadProviderConnected } from '../shared/agents'
-import { REQUEST_DRAFT_CHANGED, requestDraftProvider } from '../shared/requestDrafts'
+import { requestDraftOwnerState } from './agents/requestDraftOwners'
+import { REQUEST_DRAFT_CHANGED } from '../shared/requestDrafts'
 import { version as appVersion } from '../../package.json'
 import {
   app,
@@ -703,12 +703,12 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // The runtime builds the worktree cleanup (ADR-0041). Only the local host has worktrees on this
   // computer; with it off the inactive host's cleanup does nothing, and no terminal check is wired.
   const worktreeCleanup = startupSettings.localHostEnabled ? localRuntime.worktreeCleanup : null
-  const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.get().hostId), {
+  const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.hostId()), {
     bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
   })
   quitHandles.hostRouter = hostRouter
   if (startupSettings.localHostEnabled) hostRouter.add({
-    hostId: agentControl.get().hostId!, name: 'This computer', kind: 'local', service: hostService,
+    hostId: agentControl.hostId()!, name: 'This computer', kind: 'local', service: hostService,
     detail: id => agentControl.threadDetail(id), preview: request => agentControl.attachmentPreview(request),
     stage: image => agentControl.stageAttachment(image), content: digest => agentControl.attachmentContent(digest),
     gitRefs: request => agentControl.gitRefs(request), gitChangedFiles: request => agentControl.gitChangedFiles(request), gitPullRequest: request => agentControl.gitPullRequest(request),
@@ -785,7 +785,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     startProxy: startDeadProxy,
   }, {
     read: (threadId, visualId) => agentHost.visual(threadId, visualId),
-    localHostId: () => agentControl.get().hostId,
+    localHostId: () => agentControl.hostId(),
     mainWebContents: () => windows.getMainWebContents(), senders: () => windows.getTrustedRenderers(),
     preloadDirectory: join(__dirname, '../preload'), fontCss: FIGTREE_FONT_FACES,
   })
@@ -839,22 +839,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   })
   quitHandles.phoneAccess = phoneAccess
   void phoneAccess.start().catch(() => logOperational('phone-access-start-failed'))
-  const requestDrafts: RequestDraftService = new RequestDraftService(userDataPath, owner => {
-    if (owner.kind !== 'thread') return undefined
-    const key = parseHostEntityKey(owner.ownerId)
-    const remote = key !== null && key.hostId !== agentControl.get().hostId
-    if (remote) return hostRouter.requestDraftState(owner)
-    const state = agentControl.shell()
-    const id = key?.id ?? owner.ownerId
-    const thread = state.host.threads.find(item => item.id === id
-      && requestDraftProvider(state.host, item, state.configuration.provider) === owner.providerId)
-    const recovery = agentControl.requestAnswerRecovery(id, owner.providerId)
-    return thread ? { connected: isThreadProviderConnected(state.host, thread), ready: thread.historyStatus !== 'loading' && thread.historyStatus !== 'error',
-      requests: thread.requests, ...recovery } : recovery.completed.length ? { connected: false, ready: false, requests: [], ...recovery } : undefined
-  }, async (target, decisionId) => {
+  const requestDrafts: RequestDraftService = new RequestDraftService(userDataPath, owner => requestDraftOwnerState(owner, agentControl, hostRouter), async (target, decisionId) => {
     if (target.kind !== 'thread') throw new Error('Standalone chats are no longer available.')
     const key = parseHostEntityKey(target.ownerId)
-    if (key && key.hostId !== agentControl.get().hostId) await hostRouter.refreshRequestDraft(target, decisionId)
+    if (key && key.hostId !== agentControl.hostId()) await hostRouter.refreshRequestDraft(target, decisionId)
     else await agentControl.refreshRequestDraft(key?.id ?? target.ownerId, target.requestId)
   })
   await requestDrafts.start()
@@ -876,12 +864,12 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // and keep startup available when inaccessible storage needs a later Settings retry.
   await cleanRetiredHistory().catch(() => undefined)
   await hostRouter.reconcileRequestDrafts(requestDrafts).catch(() => undefined)
-  const reconcileRequestDrafts = (): void => { void hostRouter.reconcileRequestDrafts(requestDrafts).catch(() => undefined) }
 
   // Only the threads the main window has declared viewed receive their messages.
   const agentStateBroadcaster = new AgentStateBroadcaster()
   const agentStatePublisher = coalesceAgentStatePublishes(state => {
-    reconcileRequestDrafts()
+    // Every published state asks for answer recovery; the router runs one pass at a time, at most twice a second.
+    hostRouter.scheduleRequestDraftReconcile(requestDrafts)
     // A window's model catalog rarely changes; omitting a repeat is most of what this saves (issue #286).
     agentStateBroadcaster.send(state, payload => windows.sendToMain(AGENT_STATE, payload))
   })
@@ -1335,7 +1323,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       })
       const cleanupHosts = registerHostsIpc(ipcMain, desktopHosts, () => windows.getTrustedRenderers(), state => windows.sendToMain(HOSTS_CHANGED, state), hostTailscale)
       const cleanupPhones = registerPhonesIpc(ipcMain, phoneAccess, () => windows.getTrustedRenderers(), state => windows.sendToMain(PHONES_CHANGED, state))
-      const cleanupAgents = registerAgentIpc(ipcMain, hostRouter, hostRouter, () => windows.getTrustedRenderers(), { encodeReceipt: agentStateBroadcaster.encodeReceipt, workingCopyOptions: projectId => { const key = parseHostEntityKey(projectId); if (key && key.hostId !== agentControl.get().hostId) throw new Error('Working-copy choices are on the host machine. Use the existing project folder or create its worktree there.'); return agentHost.workingCopyOptions(key?.id ?? projectId) } })
+      const cleanupAgents = registerAgentIpc(ipcMain, hostRouter, hostRouter, () => windows.getTrustedRenderers(), { encodeReceipt: agentStateBroadcaster.encodeReceipt, workingCopyOptions: projectId => { const key = parseHostEntityKey(projectId); if (key && key.hostId !== agentControl.hostId()) throw new Error('Working-copy choices are on the host machine. Use the existing project folder or create its worktree there.'); return agentHost.workingCopyOptions(key?.id ?? projectId) } })
       // An E2E run never leaves the app for System Settings.
       const systemSettingsOpener = e2eConfiguration === null ? createSystemSettingsOpener(platform, url => shell.openExternal(url)) : null
       const cleanup = registerIpc(ipcMain, {

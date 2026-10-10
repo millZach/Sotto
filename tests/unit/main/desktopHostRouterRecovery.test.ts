@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { tmpdir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
-import { DesktopHostRouter, type DesktopHostConnection } from '../../../src/main/hosts/desktopHostRouter'
+import { DesktopHostRouter, REQUEST_DRAFT_PASS_INTERVAL_MS, type DesktopHostConnection } from '../../../src/main/hosts/desktopHostRouter'
 import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
 import { RequestDraftService, requestQuestionsDigest } from '../../../src/main/agents/requestDrafts'
 import type { RequestDraft, RequestDraftTarget } from '../../../src/shared/requestDrafts'
@@ -139,4 +139,63 @@ describe('independent answer receipt recovery', () => {
     } finally { gate.resolve(); await vi.runAllTimersAsync(); await Promise.all(runs); router.dispose(); vi.useRealTimers() }
   })
 
+})
+
+describe('answer recovery asked for by published states', () => {
+  // A provider publishes dozens of times a second while it streams. One pass per published state queued
+  // without bound behind the slower passes, and main spent minutes draining them after a reply.
+  it('runs one pass for a burst and one more after its gap, and invents none in a quiet gap', async () => {
+    vi.useFakeTimers()
+    const router = new DesktopHostRouter(emptyDesktopState)
+    router.add(host(REMOTE_A, 'remote').connection)
+    const drafts = { heldThreadAnswers: vi.fn(async () => []), reconcile: vi.fn(async () => {}) }
+    try {
+      for (let index = 0; index < 100; index++) router.scheduleRequestDraftReconcile(drafts)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(drafts.reconcile).toHaveBeenCalledOnce()
+      await vi.advanceTimersByTimeAsync(REQUEST_DRAFT_PASS_INTERVAL_MS - 1)
+      expect(drafts.reconcile).toHaveBeenCalledOnce()
+      await vi.advanceTimersByTimeAsync(1)
+      expect(drafts.reconcile).toHaveBeenCalledTimes(2)
+      await vi.advanceTimersByTimeAsync(REQUEST_DRAFT_PASS_INTERVAL_MS * 4)
+      expect(drafts.reconcile).toHaveBeenCalledTimes(2)
+      router.scheduleRequestDraftReconcile(drafts)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(drafts.reconcile).toHaveBeenCalledTimes(3)
+    } finally { router.dispose(); expect(vi.getTimerCount()).toBe(0); vi.useRealTimers() }
+  })
+
+  it('retires a known local acceptance on the next pass while an earlier pass\'s receipt read is still pending', async () => {
+    vi.useFakeTimers()
+    const router = new DesktopHostRouter(emptyDesktopState)
+    const local = host(LOCAL, 'local'), remote = host(REMOTE_A, 'remote')
+    router.add(local.connection); router.add(remote.connection)
+    const drafts = new RequestDraftService(tmpdir(), owner => router.requestDraftState(owner), async () => {}, { write: async () => {} })
+    const started = deferred(), gate = deferred()
+    remote.read.mockImplementation(async () => { started.resolve(); await gate.promise })
+    try {
+      await hold(drafts, target(REMOTE_A), 'remote'); await hold(drafts, target(LOCAL), 'local')
+      router.scheduleRequestDraftReconcile(drafts)
+      await started.promise
+      accept(local.recovery, 'local')
+      router.scheduleRequestDraftReconcile(drafts)
+      await vi.advanceTimersByTimeAsync(REQUEST_DRAFT_PASS_INTERVAL_MS)
+      expect(await drafts.get(target(LOCAL))).toBeNull()
+      expect((await drafts.get(target(REMOTE_A)))?.held).toBe(true)
+      expect(remote.read).toHaveBeenCalledOnce()
+    } finally { gate.resolve(); await vi.runAllTimersAsync(); router.dispose(); vi.useRealTimers() }
+  })
+
+  it('builds no host state for a pass with no held remote answer', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState)
+    const remote = host(REMOTE_A, 'remote')
+    const shell = vi.fn(() => remote.state)
+    remote.connection.service.shell = shell
+    router.add(remote.connection)
+    shell.mockClear()
+    try {
+      await router.reconcileRequestDrafts({ heldThreadAnswers: async () => [], reconcile: async () => {} })
+      expect(shell).not.toHaveBeenCalled()
+    } finally { router.dispose() }
+  })
 })
