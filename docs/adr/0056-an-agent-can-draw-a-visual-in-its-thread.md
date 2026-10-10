@@ -1,6 +1,6 @@
 # An agent can draw a visual in its thread
 
-October 9, 2026 amendment: [ADR-0065](0065-remove-voice-control-and-thread-management.md) records the removal. The supervision exception cited below has ended. Drawing a visual remains confined to the thread and grants no authority; the browser grant and user-answer rules remain.
+October 9, 2026 amendment: [ADR-0066](0066-remove-voice-control-and-thread-management.md) records the removal. The supervision exception cited below has ended. Drawing a visual remains confined to the thread and grants no authority; the browser grant and user-answer rules remain.
 
 ## Status
 

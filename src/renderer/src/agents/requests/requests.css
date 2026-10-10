@@ -25,6 +25,9 @@
 .agent-request__question legend:not(.tt-visually-hidden) { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; float: left; width: 100%; padding: 0; }
 .agent-request__question legend + * { clear: both; }
 .agent-request__prompt { font-size: 16px; line-height: 1.5; color: var(--tt-text); overflow-wrap: anywhere; white-space: pre-wrap; }
+/* A web address in a question, its choices or its explanation: underlined in the link colour, as in a message. */
+.agent-request__link { color: var(--tt-link); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; border-radius: 2px; cursor: pointer; }
+.agent-request__link:hover { color: var(--tt-primary-hover); }
 .agent-request__note { color: var(--tt-text-muted); font-size: 13px; }
 .agent-request__options { display: grid; gap: 2px; }
 .agent-request__option { display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: start; gap: 10px; padding: 7px 8px; margin: 0 -8px; border-radius: var(--tt-radius-md); cursor: pointer; }

@@ -1,6 +1,6 @@
 # Fit the Settings room switch (#388)
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0065](../adr/0065-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0066](../adr/0066-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 Zach selected prototype A: keep the horizontal row and existing sidebar width, fitting both the two-room beta default and three-room voice-enabled state. The primary source is `prototype/code-base-review-workflows` at `58917d59`, with the choice and both-state clarification recorded on issue #388. Production uses equal adaptive columns and removes only button side padding in the Settings sidebar. The 12.5px label size, names, theme roles and keyboard handlers are unchanged.
 

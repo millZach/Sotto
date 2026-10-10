@@ -1,6 +1,6 @@
 # Thread workspace follow-up
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0065](../adr/0065-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0066](../adr/0066-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 September 11 merge preparation (user authorized push and merge of the completed overhaul): full serial Vitest run passed **2,232 tests**, with 8 existing skips, across 127 passing files and 3 skipped files. The initial two-worker run had one Codex fixture acknowledgement timeout at its 200 ms deadline; its complete adapter suite passed in isolation and the subsequent full serial run passed unchanged. Typecheck, full lint, build, third-party notices (46 components), and staged whitespace checks passed. The authoritative design baselines were refreshed for the approved thread workspace/footer changes; all six capture journeys and the 83-tuple manifest passed. Temporary agent prompts, logs, probes, and diagnostic captures remain local. Release packaging is outside the requested merge.
 

@@ -1,6 +1,6 @@
 # Coordinator recovery
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0065](../adr/0065-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0066](../adr/0066-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 Verified on Windows, September 30, 2026, with scripted providers. No live provider account was used.
 

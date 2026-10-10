@@ -1,6 +1,6 @@
 # Wake and activated capture diagnosis — 2026-09-14
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0065](../adr/0065-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0066](../adr/0066-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 The user reported intermittent “Hey Sotto” activation and no response while the room said it was listening. This investigation covers microphone segmentation; the separate hidden-draft routing defect is handled in the integrated change.
 

@@ -1,6 +1,6 @@
 # Sotto ships its own palettes, chosen in Light and Dark columns
 
-October 9, 2026 amendment: [ADR-0065](0065-remove-voice-control-and-thread-management.md) records the removal. The voice-sphere prototypes below are historical; the live orb and voice settings have been removed. The palette library, Light and Dark columns, Sotto mark and dictation widget remain.
+October 9, 2026 amendment: [ADR-0066](0066-remove-voice-control-and-thread-management.md) records the removal. The voice-sphere prototypes below are historical; the live orb and voice settings have been removed. The palette library, Light and Dark columns, Sotto mark and dictation widget remain.
 
 Accepted September 22, 2026. Zach asked for the themes to stop being "a straight copy of T3 code". Settings →
 Appearance showed T3 Code's card grid, with a sun and moon on every card, and five of the six built-ins were T3's

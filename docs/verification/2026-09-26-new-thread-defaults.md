@@ -1,6 +1,6 @@
 # A new thread opens straight away, on defaults from Settings (#347)
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0065](../adr/0065-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0066](../adr/0066-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 Checked on September 26, 2026, on Windows, in the built app (`npm run build`, then `npx playwright test tests/e2e/thread-creation.spec.ts tests/e2e/settled-folder-new-thread.spec.ts tests/e2e/thread-agent-inheritance.spec.ts tests/e2e/workspace-projects.spec.ts tests/e2e/thread-worktrees.spec.ts --workers=1`, plus a one-off capture run for the 1600x1000 and reduced-motion pair below). The captures are in `artifacts/new-thread-defaults/`. The design is variant b of the prototype on `prototype/new-thread-defaults`, with the composer's own model selector.
 

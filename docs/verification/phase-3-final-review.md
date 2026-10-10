@@ -1,6 +1,6 @@
 # Phase 3 independent review
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0065](../adr/0065-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0066](../adr/0066-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 Two independent gpt-6-astra/high CLI reviewers assessed Standards and Spec separately against baseline `bf500b42f91cfc1bd198c2d75d62ee48ef4232a8`, with successive bounded reviews through `e5d0a53168a51dfe4ab1c5af830ca2bc90460adc`. All ten canonical Phase 3 tickets and the user's themes, icon/orb/widget and naming corrections were included. Source review, executed regressions and rendered inspection are distinguished below.
 

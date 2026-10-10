@@ -1,6 +1,6 @@
 # How agents reach Sotto's browser and their own tools
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0065](../adr/0065-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0066](../adr/0066-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 An audit of three reports from Zach, compared with T3 Code, and a plan to fix them. Audited on `origin/main` at `02e9185a`; T3 Code read at `pingdotgg/t3code@e5a46d6c`. Line numbers are from those commits.
 

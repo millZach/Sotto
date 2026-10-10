@@ -1,6 +1,6 @@
 # Voice and thread routing follow-up
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0065](../adr/0065-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0066](../adr/0066-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 User reports, September 9, 2026: spoken replies sound robotic; saying Soto often requires three attempts; asking to add a prompt and then naming a thread still produces an error.
 

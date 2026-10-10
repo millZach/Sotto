@@ -1,6 +1,6 @@
 Sotto voice model candidates. All linked sources checked 2026-09-10; September findings stop at that date. This is a benchmark proposal, not measured Sotto results.
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0065](../adr/0065-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0066](../adr/0066-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 Shortlist three local challengers: **Kokoro v1.0**, **Pocket TTS ONNX**, **Supertonic 3**. Kokoro offers the clearest JavaScript integration; Pocket tests incremental synthesis; Supertonic 3 tests an incumbent-family upgrade. Hosted challengers: **Cartesia Sonic 3.6**, **Deepgram Flux TTS**, **ElevenLabs Flash v2.5**. Cartesia is the strongest quality-led candidate; Flux provides useful interruption controls; Flash supplies a latency reference. Retain current Supertonic, system speech and Grok as controls.
 
