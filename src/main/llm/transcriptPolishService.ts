@@ -27,7 +27,7 @@ interface CleanupModels {
 
 /**
  * One model does every cleanup; the user only turns AI formatting on or off
- * (ADR-0065). Claude Haiku 5.5 made the fewest word errors in the 2026-10-09
+ * (ADR-0069). Claude Haiku 5.5 made the fewest word errors in the 2026-10-09
  * benchmark (docs/perf/2026-10-09-cleanup-haiku-5-5.md) and spelled every
  * dictionary name right. At low effort it skipped thinking on every
  * benchmarked transcript, so it answers as fast as with thinking off without

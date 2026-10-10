@@ -2,7 +2,7 @@
 
 AI cleanup had four quality tiers in a Settings picker. The owner wanted one model and no picker, and asked how
 Claude Haiku 5.5 (on OpenRouter since October 7) does as that model. This note measures it against every tier's
-model on speed, quality, word accuracy and cost. [ADR-0065](../adr/0065-one-model-does-ai-cleanup.md) records the
+model on speed, quality, word accuracy and cost. [ADR-0069](../adr/0069-one-model-does-ai-cleanup.md) records the
 choice it led to: Haiku 5.5 at low effort, with Mercury 2 as the backup.
 
 ## Answer

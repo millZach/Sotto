@@ -177,7 +177,7 @@ describe('settings', () => {
   })
 
   it('drops the retired cleanup quality tier and keeps every other choice, whichever tier was saved', () => {
-    // One model does every cleanup (ADR-0065); an older settings file still names a tier.
+    // One model does every cleanup (ADR-0069); an older settings file still names a tier.
     for (const llmQuality of ['low', 'medium', 'value', 'high', 'ultra']) {
       const legacy = { ...customSettings, llmQuality }
       expect(parseSettings(legacy)).toEqual(customSettings)

@@ -1,7 +1,7 @@
 # One cleanup model verification
 
 October 9, 2026, on `feat/one-cleanup-model` from `main` at cc732e39. The decision is
-[ADR-0065](../adr/0065-one-model-does-ai-cleanup.md); the measurements are
+[ADR-0069](../adr/0069-one-model-does-ai-cleanup.md); the measurements are
 [the 2026-10-09 benchmark](../perf/2026-10-09-cleanup-haiku-5-5.md). The owner picked the look from a throwaway
 before/after prototype of Settings → Cleanup, captured as the tag `prototype/single-cleanup-model`, which stays off
 `main`.

@@ -17,7 +17,7 @@
 // excluded from scores but retained and charged. No API keys are persisted.
 // The cleanup deadline mirrors production: max(user timeout 2500ms, the cleanup
 // model's floor 8000ms) plus min(9000, 30ms per word), so a timed-out cleanup
-// here means a timed-out cleanup in the app. Runs before ADR-0065 (2026-10-09)
+// here means a timed-out cleanup in the app. Runs before ADR-0069 (2026-10-09)
 // used the retired medium tier: Nova 2 Lite, then Gemini 3.1 Flash Lite, 7000ms.
 
 /* global AbortSignal */
@@ -47,7 +47,7 @@ const CONFIGS = Object.entries(MODELS).flatMap(([base, spec]) =>
     id: base + suffix, base, ...spec, hints: suffix.includes('+hints'), cleanup: suffix.includes('+cleanup'),
     requestForm: suffix.includes('+hints') ? 'json/input_audio/wav' : 'multipart/file/wav',
   })))
-// Mirrors CLEANUP_MODELS in src/main/llm/transcriptPolishService.ts (ADR-0065).
+// Mirrors CLEANUP_MODELS in src/main/llm/transcriptPolishService.ts (ADR-0069).
 const CLEANUP = [
   { model: 'anthropic/claude-haiku-5.5', reasoning: { effort: 'low' } },
   { model: 'inception/mercury-2', reasoning: { enabled: false } },

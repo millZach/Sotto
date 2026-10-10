@@ -198,7 +198,7 @@ export interface AppSettings {
    */
   microphoneSkipped: boolean
   /**
-   * AI cleanup on or off. One model does every cleanup (ADR-0065); the `llmQuality` tier
+   * AI cleanup on or off. One model does every cleanup (ADR-0069); the `llmQuality` tier
    * picker is gone, and a settings file that still carries the key parses and drops it.
    */
   llmFormatting: boolean

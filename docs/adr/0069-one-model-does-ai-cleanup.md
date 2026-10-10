@@ -8,6 +8,9 @@ be measured as the likely model, then chose it at low effort with Mercury 2 as t
 ([2026-10-09 benchmark](../perf/2026-10-09-cleanup-haiku-5-5.md)). Asked whether the switch should be renamed "AI
 cleanup", they kept "AI formatting".
 
+Numbered 0069 before it merged: ADR-0065 went to Claude thread steering while this was in review, and open terminal
+agent work holds 0066. The decision is unchanged.
+
 ## Context
 
 The cleanup pass had four quality tiers behind a "Formatting quality" picker in Settings → Cleanup: Low (Mercury 2,
