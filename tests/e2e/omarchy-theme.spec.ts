@@ -117,8 +117,8 @@ test('Omarchy switches repaint both windows, keep choices, and read at all revie
   try {
     launched=await launch()
     const page=launched.page
-    await expect(page.locator('html')).toHaveAttribute('data-theme-id','omarchy')
-    expect(await page.evaluate(()=>window.sotto!.getSettings())).toMatchObject({appearance:'system',lightTheme:'omarchy',darkTheme:'omarchy'})
+    await expect(page.locator('html')).toHaveAttribute('data-theme-id',OMARCHY_THEME_ID)
+    expect(await page.evaluate(()=>window.sotto!.getSettings())).toMatchObject({appearance:'system',lightTheme:OMARCHY_THEME_ID,darkTheme:OMARCHY_THEME_ID})
     await completeFirstRunSetup(page)
     await openThreads(page)
     await page.getByRole('complementary', { name: /Thread sidebar/ }).getByText('Visual gate flake', { exact: true }).click()
@@ -129,7 +129,7 @@ test('Omarchy switches repaint both windows, keep choices, and read at all revie
     await dark.getByRole('radio',{name:'Sotto',exact:true}).click()
     await expect(page.locator('html')).toHaveAttribute('data-theme-id','t3-code')
     await dark.getByRole('radio',{name:'Omarchy Tokyo Night'}).click()
-    await expect(page.locator('html')).toHaveAttribute('data-theme-id','omarchy')
+    await expect(page.locator('html')).toHaveAttribute('data-theme-id',OMARCHY_THEME_ID)
     await page.emulateMedia({reducedMotion:'reduce'})
     await expect.poll(()=>launched!.app.windows().some(page=>page.url().endsWith('/widget.html'))).toBe(true)
     const widget=launched.app.windows().find(page=>page.url().endsWith('/widget.html'))!
@@ -160,11 +160,11 @@ test('Omarchy switches repaint both windows, keep choices, and read at all revie
     await writeFile(file,'{{ broken }}')
     await expect(page.locator('html')).toHaveAttribute('data-theme-id','t3-code')
     await rm(file)
-    expect(await page.evaluate(()=>window.sotto!.getSettings())).toMatchObject({lightTheme:'omarchy',darkTheme:'omarchy',omarchyTheme:null})
+    expect(await page.evaluate(()=>window.sotto!.getSettings())).toMatchObject({lightTheme:OMARCHY_THEME_ID,darkTheme:OMARCHY_THEME_ID,omarchyTheme:null})
     await renderTheme(home,'tokyo-night')
-    await expect(page.locator('html')).toHaveAttribute('data-theme-id','omarchy')
+    await expect(page.locator('html')).toHaveAttribute('data-theme-id',OMARCHY_THEME_ID)
     await closeSotto(launched);launched=await launch()
-    await expect(launched.page.locator('html')).toHaveAttribute('data-theme-id','omarchy')
+    await expect(launched.page.locator('html')).toHaveAttribute('data-theme-id',OMARCHY_THEME_ID)
     expect(JSON.parse(await readFile(join(profile.directory,'settings.json'),'utf8'))).not.toHaveProperty('omarchyTheme')
     await writeFile(join(evidence,'proof.json'),JSON.stringify(proof,null,2)+'\n')
   } finally { if(launched)await closeSotto(launched);await profile.dispose() }

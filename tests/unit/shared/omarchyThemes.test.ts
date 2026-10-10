@@ -9,7 +9,7 @@ import { DEFAULT_SETTINGS, parseSettings } from '../../../src/shared/settings'
 import { widgetPaletteFor, widgetPresentationFor } from '../../../src/shared/themeBranding'
 import { contrastRatio, parseThemeRgb, toCanonicalThemeColor } from '../../../src/shared/themes/color'
 import { BUILT_IN_THEMES, DEFAULT_THEME_ID, resolveThemeFor, parseCustomThemes } from '../../../src/shared/themes/library'
-import { OMARCHY_TEXT_PAIRS, parseOmarchyTheme, readableOmarchyMix } from '../../../src/shared/themes/omarchy'
+import { OMARCHY_THEME_ID, OMARCHY_TEXT_PAIRS, parseOmarchyTheme, readableOmarchyMix } from '../../../src/shared/themes/omarchy'
 import { parseTokenBlocks, rootDeclarations, resolveColor, contrast, over } from '../../fixtures/renderer/themeTokenResolver'
 
 const entries = Object.entries(fixtures.themes)
@@ -79,22 +79,22 @@ describe('Omarchy M3 and readability check', () => {
   })
   it('preserves waiting Linux selections, resolves only the matching half, and follows in the widget', () => {
     const theme = parseOmarchyTheme(fixtures.themes['catppuccin-latte'].rendered)
-    const settings = { ...parseSettings({ lightTheme:'omarchy', darkTheme:'omarchy' }, DEFAULT_SETTINGS, true), omarchyTheme: theme }
-    expect(settings.darkTheme).toBe('omarchy')
-    expect(resolveThemeFor(settings, 'light').theme.id).toBe('omarchy')
+    const settings = { ...parseSettings({ lightTheme:OMARCHY_THEME_ID, darkTheme:OMARCHY_THEME_ID }, DEFAULT_SETTINGS, true), omarchyTheme: theme }
+    expect(settings.darkTheme).toBe(OMARCHY_THEME_ID)
+    expect(resolveThemeFor(settings, 'light').theme.id).toBe(OMARCHY_THEME_ID)
     expect(resolveThemeFor(settings, 'dark').theme.id).toBe(DEFAULT_THEME_ID)
     expect(widgetPaletteFor(settings).light.canvas).toBe(theme.colors.canvas)
     expect(widgetPresentationFor(settings).theme).toBe('light')
     expect(resolveThemeFor({ ...settings, omarchyTheme: null }, 'light').theme.id).toBe(DEFAULT_THEME_ID)
   })
   it.each(['Windows', 'macOS'])('%s keeps its defaults and six palettes, ignoring any persisted Omarchy state', () => {
-    const settings = parseSettings({ lightTheme: 'omarchy', darkTheme: 'omarchy', omarchyTheme: parseOmarchyTheme(fixtures.themes.hackerman.rendered) })
+    const settings = parseSettings({ lightTheme: OMARCHY_THEME_ID, darkTheme: OMARCHY_THEME_ID, omarchyTheme: parseOmarchyTheme(fixtures.themes.hackerman.rendered) })
     expect(settings.lightTheme).toBe(DEFAULT_THEME_ID)
     expect(settings.darkTheme).toBe(DEFAULT_THEME_ID)
     expect(settings.appearance).toBe('dark')
     expect(settings).not.toHaveProperty('omarchyTheme')
     expect(BUILT_IN_THEMES).toHaveLength(6)
     // Existing Windows and macOS imports named Omarchy remain user themes.
-    expect(parseCustomThemes([parseOmarchyTheme(fixtures.themes.hackerman.rendered)])[0]?.id).toBe('omarchy')
+    expect(parseCustomThemes([{ ...parseOmarchyTheme(fixtures.themes.hackerman.rendered), id: 'omarchy' }])[0]?.id).toBe('omarchy')
   })
 })

@@ -6,7 +6,8 @@ import * as fs from 'node:fs'
 import { OmarchyThemeMonitor, initializeOmarchySelection } from '../../../src/main/themes/omarchy'
 import { SettingsRepository } from '../../../src/main/storage/settingsRepository'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
-import { parseOmarchyTheme } from '../../../src/shared/themes/omarchy'
+import { OMARCHY_THEME_ID, parseOmarchyTheme } from '../../../src/shared/themes/omarchy'
+import { isThemeId, parseCustomThemes, resolveThemeFor } from '../../../src/shared/themes/library'
 import fixtures from '../../fixtures/omarchy-themes.json'
 
 vi.mock('node:fs', async (original) => {
@@ -42,7 +43,7 @@ describe('Linux Omarchy theme reader', () => {
         const repository = { exists: vi.fn(async () => exists), update: vi.fn(async () => DEFAULT_SETTINGS) }
         await initializeOmarchySelection(platform, theme, repository)
         expect(repository.update).toHaveBeenCalledTimes(platform === 'linux' && !exists ? 1 : 0)
-        if (platform === 'linux' && !exists) expect(repository.update).toHaveBeenCalledWith({ appearance:'system', lightTheme:'omarchy', darkTheme:'omarchy' })
+        if (platform === 'linux' && !exists) expect(repository.update).toHaveBeenCalledWith({ appearance:'system', lightTheme:OMARCHY_THEME_ID, darkTheme:OMARCHY_THEME_ID })
       }
     }
     const repository = { exists: vi.fn(async () => false), update: vi.fn(async () => DEFAULT_SETTINGS) }
@@ -99,6 +100,30 @@ describe('Linux Omarchy theme reader', () => {
     expect(fs.openSync).not.toHaveBeenCalled()
     expect(log).not.toHaveBeenCalled()
   })
+  it.each([true, false])('keeps an older custom omarchy theme and both selections with a rendered file: %s', async present => {
+    const directory = home()
+    if (present) render(directory, 'tokyo-night')
+    const { theme } = monitor(directory)
+    theme.load()
+    const custom = parseCustomThemes([{
+      ...parseOmarchyTheme(fixtures.themes['tokyo-night'].rendered), id: 'omarchy', label: 'My Omarchy',
+      variants: { light: parseOmarchyTheme(fixtures.themes['catppuccin-latte'].rendered).colors },
+    }])[0]!
+    const path = join(directory, 'settings.json')
+    const saved = JSON.stringify({ ...DEFAULT_SETTINGS, lightTheme: 'omarchy', darkTheme: 'omarchy', customThemes: [custom] })
+    writeFileSync(path, saved)
+    const repository = new SettingsRepository(path, { omarchyTheme: () => theme.get() })
+    await initializeOmarchySelection('linux', theme.get(), repository)
+    const settings = await repository.get()
+    expect(settings).toMatchObject({ lightTheme: 'omarchy', darkTheme: 'omarchy', customThemes: [custom] })
+    for (const mode of ['light', 'dark'] as const) {
+      expect(resolveThemeFor(settings, mode).theme.id).toBe('omarchy')
+      expect(resolveThemeFor(settings, mode).colors).toEqual(mode === 'dark' ? custom.colors : custom.variants!.light)
+    }
+    expect(readFileSync(path, 'utf8')).toBe(saved)
+    expect(isThemeId(OMARCHY_THEME_ID)).toBe(false)
+    expect(parseCustomThemes([{ ...custom, id: OMARCHY_THEME_ID }])).toEqual([])
+  })
   it('projects live palettes through settings reads and saves only the selection', async () => {
     const directory = home()
     render(directory, 'tokyo-night')
@@ -106,12 +131,12 @@ describe('Linux Omarchy theme reader', () => {
     theme.load()
     const path = join(directory, 'settings.json')
     const repository = new SettingsRepository(path, { omarchyTheme: () => theme.get() })
-    await repository.update({ lightTheme: 'omarchy', darkTheme: 'omarchy', appearance: 'system' })
+    await repository.update({ lightTheme: OMARCHY_THEME_ID, darkTheme: OMARCHY_THEME_ID, appearance: 'system' })
     expect((await repository.get()).omarchyTheme?.sourceName).toBe('Tokyo Night')
     expect(JSON.parse(readFileSync(path, 'utf8'))).not.toHaveProperty('omarchyTheme')
-    expect((await repository.update({ glassOpacity: 85 })).darkTheme).toBe('omarchy')
+    expect((await repository.update({ glassOpacity: 85 })).darkTheme).toBe(OMARCHY_THEME_ID)
     const reopened = new SettingsRepository(path, { omarchyTheme: () => null })
-    expect(await reopened.get()).toMatchObject({ lightTheme:'omarchy', darkTheme:'omarchy', omarchyTheme:null })
+    expect(await reopened.get()).toMatchObject({ lightTheme:OMARCHY_THEME_ID, darkTheme:OMARCHY_THEME_ID, omarchyTheme:null })
     const nonLinux = new SettingsRepository(path)
     expect((await nonLinux.get()).darkTheme).toBe(DEFAULT_SETTINGS.darkTheme)
   })

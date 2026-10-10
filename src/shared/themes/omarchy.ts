@@ -8,7 +8,8 @@ import {
   type ThemeColors, type ThemeColorRole, type ThemeDefinition, type ThemeAppearance,
 } from './palettes'
 
-export const OMARCHY_THEME_ID = 'omarchy'
+/** Outside the custom-theme ID grammar, so an older library can never own it. */
+export const OMARCHY_THEME_ID = '__omarchy'
 export interface OmarchyTheme extends ThemeDefinition { readonly sourceName: string }
 
 const colorsSchema = (color: z.ZodType<string>) => z.object(Object.fromEntries(
@@ -17,7 +18,7 @@ const colorsSchema = (color: z.ZodType<string>) => z.object(Object.fromEntries(
 
 /** Only fully rendered, opaque template colours are admitted. No imports or partial palettes. */
 export const omarchyFileSchema = z.object({
-  version: z.literal(1), id: z.literal(OMARCHY_THEME_ID), name: z.literal('Omarchy'),
+  version: z.literal(1), id: z.literal('omarchy'), name: z.literal('Omarchy'),
   appearance: z.enum(['light', 'dark']), colors: colorsSchema(z.string().regex(/^#[\da-f]{6}$/iu)),
 }).strict()
 
