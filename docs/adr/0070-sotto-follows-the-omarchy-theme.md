@@ -4,7 +4,7 @@
 
 Accepted October 9, 2026 by the owner on [#840](https://github.com/millZach/Sotto/issues/840#issuecomment-6092412183). The approved specification is mapping M3 in `docs/prototypes/omarchy-theme-prototype.html` on `prototype/omarchy-theme`. This amends ADR-0011 and ADR-0024 for Linux under ADR-0062.
 
-0069 was checked against `origin/main` at `738ba1fd` and all eight open pull-request diffs on October 9, 2026: #904, #903, #900, #896, #891, #888, #885 and #816. Main now owns 0068 for voice removal (#880), so this branch moved Omarchy from provisional 0068 to next-free 0069 and updated its citations. No audited diff claims 0069. The number remains provisional until merge, following `docs/agents/domain.md`.
+0070 was checked against `origin/main` at `738ba1fd` and all eight open pull-request diffs on October 9, 2026: #904, #903, #900, #896, #891, #888, #885 and #816. Main owns 0068 for voice removal (#880), and #891 now claims 0069 for cleanup. This branch therefore moved Omarchy from provisional 0068 to next-free 0070 and updated every citation. No audited diff claims 0070. The number remains provisional until merge, following `docs/agents/domain.md`.
 
 ## Decision
 

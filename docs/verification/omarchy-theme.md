@@ -1,14 +1,14 @@
 # Sotto follows the Omarchy theme — forge verification
 
-October 9, 2026. Ticket [#840](https://github.com/millZach/Sotto/issues/840), approved prototype M3, ADR-0069. Branch `feat/omarchy-theme`, originally based on `1312da73`; main through `738ba1fd` (#880 and #898) is merged by this update. Omarchy is now ADR-0069 because main owns ADR-0068 for voice removal. The earlier gate and capture details below will be replaced after verifying the merged source.
+October 9, 2026. Ticket [#840](https://github.com/millZach/Sotto/issues/840), approved prototype M3, ADR-0070. Branch `feat/omarchy-theme` merges `origin/main` at `738ba1fd794e6ea0ba8aeadafd6a02b99d4d513a` in merge commit `cda85809ec121197c2e1e1d56b720b004a9f875f`. Main includes #880’s removal of voice control and #898’s release PR procedure. This note and the 28 captures describe the merged app.
 
 ## Surface and isolation
 
-Verified the built Sotto 0.1.34 app (Electron 43.1.0) on forge, Omarchy 4.0.4 and Hyprland 0.56. Node was 24.21.0 through mise. The app ran on native Wayland in an owned nested Hyprland, with a fresh isolated HOME, XDG config/state/data/cache directories and profile inside this worktree. `XDG_RUNTIME_DIR` supplies only the owned nested Wayland sockets; the app’s test dictation socket stays in its owned profile. Omarchy rendered the installed template in that HOME. No live theme or Hyprland configuration was changed, and no input was sent to the locked live session.
+Verified the built Sotto 0.1.34 app (Electron 43.1.0) on forge, Omarchy 4.0.4 and Hyprland 0.56. Node was 24.21.0 through mise. The app targeted an owned nested Hyprland through its Wayland socket and its own Xwayland display, with a fresh isolated HOME, XDG config/state/data/cache directories and profile inside this worktree. `XDG_RUNTIME_DIR` supplies only the owned nested Wayland sockets; the app’s test dictation socket stays in its owned profile. Omarchy rendered the installed template in that HOME. No live theme or Hyprland configuration was changed, and no input was sent to the locked live session.
 
 The live compositor constrained the outer nested window, so a second owned compositor inside it supplied a 1600×1000 display at scale 1. All app inputs, resizing and captures targeted that inner instance. No nested Omarchy shell or global shell services ran. The test uses `--password-store=basic` for this disposable profile and never opens the live keyring.
 
-The tested main build SHA-256 is `54ffc635beee51946ed1bea8d4fdf34ccc90f923724c8e7b562c9542fb62aedb`. The reviewed fixes were built before the refreshed capture run. Main’s merge changes only the composer ADR and its citation; the final build is checked against this hash.
+The tested main build SHA-256 is `23576a66b6c69ba0e573b5d78234a196bd7add3a1400345b00f6875fbc9f3ee9`. The merged source was built before the refreshed capture run. The final record commit changes only documents and evidence; its rebuilt main output is checked against this hash.
 
 ## Journey
 
@@ -45,35 +45,40 @@ Widgets: [Tokyo Night](../../artifacts/omarchy-theme/widget-tokyo-night.png), [C
 
 ## Final gates
 
-The final head is the commit titled **“Record isolated verification alongside background usage updates”**, which records the completed review audit and the precise live-folder comparison. `8f5b09f7` retains the refreshed evidence. Resolve its full hash with `git log -1 --format=%H -- docs/verification/omarchy-theme.md`; its parent is `956d6378`, with the source fixes through `def3678b` and the main merge `a851277c`. All gates below are repeated after that record commit, on that final head. The earlier 9,599-test result applied to `97173df0`, before `ae101acc` restored the base’s duplicate composer ADR, and did not establish a pass on the review head.
+The final gate head is the commit titled **“Record merged Omarchy verification after voice removal”**, whose parent is `cda85809ec121197c2e1e1d56b720b004a9f875f`. It records these results and the refreshed evidence. Its full SHA is resolved with `git log -1 --format=%H -- docs/verification/omarchy-theme.md`. All gates below are repeated after that record commit, on that exact head; the app source is identical to the verified merge commit.
 
-Commands use Node 24.21.0 through mise, in the owned nested sandbox with an isolated HOME. Only one suite runs at a time: two Vitest workers or one Playwright worker. For Vitest, bubblewrap binds this worktree’s private `.t` folder as `/tmp` inside the test process, with the rest of the filesystem read-only except the worktree. This gives Linux sockets a short path and prevents plain fixture folders from discovering Sotto’s enclosing repository. The initial run without that mount failed 21 tests from those two sandbox path problems; no application or out-of-scope test fix was needed.
+Commands use Node 24.21.0 through mise and an isolated HOME. Only one suite runs at a time: two Vitest workers or one Playwright worker. Vitest uses a private, user-owned bubblewrap root, read-only system mounts and this worktree’s `.t` at `/tmp`. This preserves dictation runtime ownership checks, gives Linux sockets short paths and prevents fixture folders from finding the enclosing checkout. An initial wrapper using the host root failed ownership checks; correcting the sandbox made the 119 affected tests pass without application changes. The visual journey runs directly in the owned nested session, with its isolated HOME and owned `DISPLAY`; wrapping Electron in bubblewrap left the widget unmapped. Both corrections concern the test environment only. Setup repeated `npm ci` and Electron’s installer in isolation. Main removed the voice runtime preparation script; `runtime:prepare --if-present` is consequently a no-op, and no retired runtime files are restored.
 
 | Command | Result |
 | --- | --- |
 | `npm run typecheck` | PASS, all three TypeScript projects |
 | `npm run lint` | PASS |
-| `npm test -- --maxWorkers=2` | PASS, 741 files and 9,635 tests; 52 files and 184 tests skipped |
-| `npm run notices:verify` | PASS, 201 third-party components |
+| `npm test -- --maxWorkers=2` | PASS, 719 files and 9,032 tests; 52 files and 184 tests skipped |
+| `npm run notices:verify` | PASS, 182 third-party components |
 | `npm run build` | PASS; main SHA-256 matches the capture build above |
 | Build external-dependency allowlist | `allowlist check: PASS` (`node-pty`, `zod`, `electron`), repeated immediately before push |
 | Nested Omarchy Playwright journey, one worker | PASS, 1 test |
+| Design capture manifest and hashes | PASS, all 144 exact tuples and hashes |
+| `ls docs/adr \| cut -c1-4 \| sort \| uniq -d` | PASS, no output |
 
-[#901](https://github.com/millZach/Sotto/pull/901) owns the composer ADR’s number. After `gh pr view 901 -R millZach/Sotto --json state` reported MERGED, `a851277c` merged `origin/main` (`66793b8c`) with a merge commit. The composer decision is now ADR-0067 and the uniqueness check passes. Omarchy remains ADR-0069. The separate `b71e3199` gate repair still makes test-owned Tiptap editors close before jsdom does; it changes no runtime behaviour.
+Main owns ADR-0068 for voice removal. A fresh audit of all eight open PR diffs found that #891 now claims ADR-0069 for cleanup. Omarchy therefore takes the next free number, ADR-0070. Neither `origin/main` at `738ba1fd` nor #904, #903, #900, #896, #891, #888, #885 or #816 claims 0070. Every Omarchy citation is updated; main’s ADR-0068 citations remain intact. The audit is repeated before push.
 
-## Review fixes
+The active main ruleset requires an up-to-date branch, **Gates (Windows)** and **Package result**, with no bypass actors. Local forge results do not satisfy those GitHub checks. This request publishes only the feature branch and opens no PR; both required checks must pass on its future PR before merge.
 
-| Finding | Fix commit |
+## Merge conflicts and review
+
+| Conflict | Resolution |
 | --- | --- |
-| 2. Runtime settings update | `b6c2eefb`: omit `omarchyTheme` from update requests; reject before writes or notifications on win32, darwin and linux. |
-| 3. Success text and coverage | `58b246a2`: repair derived success text only for Omarchy; widen the surface inventory and pin 35%/36%. `bdbb152b` checks the widget’s own CSS projection. `def3678b` includes the sidebar attention text alias explicitly. |
-| 4. Custom ID collision | `43324b7e`: runtime `__omarchy` cannot be a custom ID; upgrades keep custom `omarchy` themes and both selections, with and without a rendered file. |
-| 5. Create theme | `d4216ce2`: seed from `resolveThemeFor` for the painted appearance, including the waiting/missing fallback. `7e85b041` keeps the fixture’s settings type exact. |
-| 6. Live repaint | `80bf486c`: assert the expected colours separately in both windows and the gallery name, including same-mode switches, fallback, recovery and restart. |
-| 7. ADR and evidence | `2eb5afd0`: remove the obsolete renumbering inventory and leave the composer number to #901; the final record commit names the gate head. |
-| 1. Main | `a851277c`: merge main after #901’s merge. |
+| `CONTEXT.md` | Keep the Omarchy terms and Linux default; use main’s widget and dictation wording and retain its retired voice-control entry. |
+| `docs/adr/0024-sotto-ships-its-own-palettes-in-light-and-dark-columns.md` | Keep both amendments: main’s removal in ADR-0068 and the Linux gallery addition in ADR-0070. |
+| `eslint.config.mjs` | Keep both sets of generated-folder exclusions, including main’s removal evidence and this branch’s sandbox. |
+| `src/main/storage/settingsRepository.ts` | Keep main’s serialized writes and mutation queue; combine Linux pending-ID parsing and read-only palette projection. Parse again before serialization so neither the runtime palette nor removed settings is persisted. |
+| `src/renderer/src/features/settings/themes/ThemeLivePreview.tsx` | Keep main’s idle dictation waveform. Resolve the widget’s Omarchy mode and retain its copy without restoring an orb. |
+| `tests/unit/renderer/nativeSkills.test.tsx` | Keep main’s `ThreadsView` props and this branch’s mounted-editor cleanup. |
 
-Standards and issue review found no remaining in-scope findings. Built-in palettes, Windows/macOS token definitions, packaging and design baselines remain unchanged. No host, permission authority or runtime dependency was added.
+The automatic merges of `themeBranding`, the widget and onboarding’s Look step were checked against main. Their diff contains only palette and appearance resolution; none restores voice control. The Omarchy e2e fixture now uses main’s remaining agent configuration and store shape. Main’s removed voice coordinator, wake states, settings, orb and captures stay removed.
+
+Standards and issue review found no remaining in-scope findings. Built-in palettes, Windows/macOS token definitions, packaging and design baselines have no diff against merged main. No host, permission authority or runtime dependency was added. The retained editor cleanup changes tests only.
 
 ## Review
 
@@ -117,7 +122,7 @@ Paths are relative to the repository root.
 | `tests/unit/renderer/omarchyTheme.test.tsx` | Gallery, names, waiting state, keyboard and unchanged non-Linux imports. |
 | `tests/e2e/omarchy-theme.spec.ts` | Isolated real rendering, live main/widget repaint and PNG measurements. |
 | `tests/unit/renderer/nativeSkills.test.tsx` | Destroy test editors before the DOM closes. |
-| `docs/adr/0069-sotto-follows-the-omarchy-theme.md` | Mapping, readability, Linux default and ADR-number audit. |
+| `docs/adr/0070-sotto-follows-the-omarchy-theme.md` | Mapping, readability, Linux default and ADR-number audit. |
 | `docs/adr/0024-sotto-ships-its-own-palettes-in-light-and-dark-columns.md` | Record the Linux gallery addition. |
 | `CONTEXT.md` | Omarchy theme and readability-check terms, default and widget behaviour. |
 | `README.md` | Linux theme overview. |
@@ -132,13 +137,13 @@ Paths are relative to the repository root.
 
 Windows and macOS were not run on their native desktops. Package (Windows) and Gates (Windows) cannot be claimed green from forge; the workflow runs on main pushes and PRs, and this request publishes only a feature branch with no PR. Built-in palettes, shared token definitions, packaging configuration, dependencies and committed design baselines have no diff.
 
-`npm run design:verify` was attempted in the owned nested session. After correcting the nested compositor's initial tiling, captures reached the baseline dimensions, but five comparisons still failed and five later cases did not run. For example, the welcome capture contains the existing Linux compositor-binding instructions where the Windows baseline contains Windows instructions, and its text rasterisation differs. The five failed images were onboarding welcome, light OpenRouter, onboarding at 100%, populated Threads and voice wake. No baseline was regenerated. The committed manifest and all 152 baseline hashes still verify. This is not Windows capture verification.
+The committed design manifest and baseline hashes verify, and the branch has no diff in `artifacts/design` against main. Native Windows visual comparison was not run on forge; no capture baseline was regenerated.
 
-The live Omarchy and Hyprland configuration trees and the current theme state matched their pre-verification fingerprints. The broad state-tree comparison changed only `agents/usage/` and its three existing Claude, Codex and Fireworks JSON records. The installed agents plugin periodically runs `omarchy-agent-usage-update`, which owns those records; this workflow ran no nested Quickshell, usage collector or live refresh command. Comparing all three trees with that background usage folder excluded passed. The live collector was left alone. The two owned nested compositors are stopped at completion, and the quit-drain image is restored if any suite rewrites it.
+The live Omarchy and Hyprland configuration trees, current theme state and the live shell’s long-running process identities match their pre-verification fingerprints. This workflow runs no nested Quickshell, usage collector or live refresh command. The owned compositors and their stale runtime instance folders are removed after the final journey. The quit-drain image is restored if a suite rewrites it.
 
 ## Repeat
 
-Start an owned nested Hyprland using the forge sandbox procedure, with HOME and all XDG folders under this worktree. Set `WAYLAND_DISPLAY` and `HYPRLAND_INSTANCE_SIGNATURE` to that owned instance, not the live desktop. Give it a 1600×1000 display at scale 1; use an owned outer compositor when the locked live session constrains the nested window.
+Start an owned nested Hyprland using the forge sandbox procedure, with HOME and all XDG folders under this worktree. Set `WAYLAND_DISPLAY` and `HYPRLAND_INSTANCE_SIGNATURE` to that owned instance. If Electron needs `DISPLAY`, take the display belonging to that instance’s Xwayland child. Give every owned app window a floating rule in the generated nested configuration; no live rules are changed. Give it a 1600×1000 display at scale 1; use an owned outer compositor when the locked live session constrains the nested window.
 
 ```sh
 mise exec node@24.21.0 -- npm run build

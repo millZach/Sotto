@@ -61,7 +61,7 @@ This copies `sotto.json.tpl` to `~/.config/omarchy/themed/` and renders it once 
 
 On first start with a valid file, Sotto chooses **Omarchy** in both Appearance columns and **Match Linux**. An existing install keeps its choices: select Omarchy in **Settings → Appearance**, in each half you want to follow. The matching half names the current Omarchy theme; the other says it waits for that mode and paints Sotto until a matching theme arrives. Omarchy re-renders the template on every theme switch; Sotto and its floating widget repaint live. The shell pill keeps taking the shell’s own theme as before.
 
-The mapping is M3 from the approved prototype (ADR-0068). A readability check repairs text to 4.5:1, and keeps red and amber meaningful. A missing or malformed file paints Sotto until a valid one returns. It never changes your saved choice or custom themes. Windows and macOS have no Omarchy entry.
+The mapping is M3 from the approved prototype (ADR-0070). A readability check repairs text to 4.5:1, and keeps red and amber meaningful. A missing or malformed file paints Sotto until a valid one returns. It never changes your saved choice or custom themes. Windows and macOS have no Omarchy entry.
 
 To stop following it, choose another theme in the picker. To remove the template, delete `~/.config/omarchy/themed/sotto.json.tpl` and `~/.local/state/omarchy/current/theme/sotto.json`; your Sotto themes remain available.
 

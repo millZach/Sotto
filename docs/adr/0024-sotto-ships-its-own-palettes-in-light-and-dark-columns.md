@@ -2,7 +2,7 @@
 
 October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-management.md) records the removal. The voice-sphere prototypes below are historical; the live orb and voice settings have been removed. The palette library, Light and Dark columns, Sotto mark and dictation widget remain.
 
-Amended October 9, 2026 by [ADR-0069](0069-sotto-follows-the-omarchy-theme.md): Linux gains the read-only Omarchy choice in both columns. A fresh Omarchy install follows it by default; a missing matching half waits on Sotto. Windows and macOS keep the six palettes and their defaults.
+Amended October 9, 2026 by [ADR-0070](0070-sotto-follows-the-omarchy-theme.md): Linux gains the read-only Omarchy choice in both columns. A fresh Omarchy install follows it by default; a missing matching half waits on Sotto. Windows and macOS keep the six palettes and their defaults.
 
 Accepted September 22, 2026. Zach asked for the themes to stop being "a straight copy of T3 code". Settings →
 Appearance showed T3 Code's card grid, with a sun and moon on every card, and five of the six built-ins were T3's

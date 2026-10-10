@@ -139,22 +139,22 @@
       {
         "text": "Codex",
         "foreground": {
-          "r": 154,
-          "g": 161,
-          "b": 194
+          "r": 205,
+          "g": 176,
+          "b": 143
         },
         "background": "39,41,54",
-        "ratio": 5.664104494387506
+        "ratio": 7.003858505271072
       },
       {
-        "text": "Done",
+        "text": "Needs attention",
         "foreground": {
-          "r": 154,
-          "g": 161,
-          "b": 194
+          "r": 205,
+          "g": 176,
+          "b": 143
         },
         "background": "39,41,54",
-        "ratio": 5.664104494387506
+        "ratio": 7.003858505271072
       },
       {
         "text": "sotto-site",
@@ -1267,22 +1267,22 @@
       {
         "text": "Codex",
         "foreground": {
-          "r": 154,
-          "g": 161,
-          "b": 194
+          "r": 205,
+          "g": 176,
+          "b": 143
         },
         "background": "39,41,54",
-        "ratio": 5.664104494387506
+        "ratio": 7.003858505271072
       },
       {
-        "text": "Done",
+        "text": "Needs attention",
         "foreground": {
-          "r": 154,
-          "g": 161,
-          "b": 194
+          "r": 205,
+          "g": 176,
+          "b": 143
         },
         "background": "39,41,54",
-        "ratio": 5.664104494387506
+        "ratio": 7.003858505271072
       },
       {
         "text": "sotto-site",
@@ -2295,22 +2295,22 @@
       {
         "text": "Codex",
         "foreground": {
-          "r": 154,
-          "g": 161,
-          "b": 194
+          "r": 205,
+          "g": 176,
+          "b": 143
         },
         "background": "39,41,54",
-        "ratio": 5.664104494387506
+        "ratio": 7.003858505271072
       },
       {
-        "text": "Done",
+        "text": "Needs attention",
         "foreground": {
-          "r": 154,
-          "g": 161,
-          "b": 194
+          "r": 205,
+          "g": 176,
+          "b": 143
         },
         "background": "39,41,54",
-        "ratio": 5.664104494387506
+        "ratio": 7.003858505271072
       },
       {
         "text": "sotto-site",
@@ -3102,22 +3102,22 @@
       {
         "text": "Codex",
         "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
+          "r": 255,
+          "g": 185,
+          "b": 0
         },
         "background": "30,33,43",
-        "ratio": 7.99514066714708
+        "ratio": 9.323420337400282
       },
       {
-        "text": "Done",
+        "text": "Needs attention",
         "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
+          "r": 255,
+          "g": 185,
+          "b": 0
         },
         "background": "30,33,43",
-        "ratio": 7.99514066714708
+        "ratio": 9.323420337400282
       },
       {
         "text": "sotto-site",
@@ -4230,22 +4230,22 @@
       {
         "text": "Codex",
         "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
+          "r": 255,
+          "g": 185,
+          "b": 0
         },
         "background": "30,33,43",
-        "ratio": 7.99514066714708
+        "ratio": 9.323420337400282
       },
       {
-        "text": "Done",
+        "text": "Needs attention",
         "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
+          "r": 255,
+          "g": 185,
+          "b": 0
         },
         "background": "30,33,43",
-        "ratio": 7.99514066714708
+        "ratio": 9.323420337400282
       },
       {
         "text": "sotto-site",
@@ -5258,22 +5258,22 @@
       {
         "text": "Codex",
         "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
+          "r": 255,
+          "g": 185,
+          "b": 0
         },
         "background": "30,33,43",
-        "ratio": 7.99514066714708
+        "ratio": 9.323420337400282
       },
       {
-        "text": "Done",
+        "text": "Needs attention",
         "foreground": {
-          "r": 167,
-          "g": 186,
-          "b": 195
+          "r": 255,
+          "g": 185,
+          "b": 0
         },
         "background": "30,33,43",
-        "ratio": 7.99514066714708
+        "ratio": 9.323420337400282
       },
       {
         "text": "sotto-site",
@@ -6065,22 +6065,22 @@
       {
         "text": "Codex",
         "foreground": {
-          "r": 85,
-          "g": 88,
-          "b": 114
+          "r": 136,
+          "g": 77,
+          "b": 46
         },
         "background": "224,226,232",
-        "ratio": 5.359519616975467
+        "ratio": 5.150575401031641
       },
       {
-        "text": "Done",
+        "text": "Needs attention",
         "foreground": {
-          "r": 85,
-          "g": 88,
-          "b": 114
+          "r": 136,
+          "g": 77,
+          "b": 46
         },
         "background": "224,226,232",
-        "ratio": 5.359519616975467
+        "ratio": 5.150575401031641
       },
       {
         "text": "sotto-site",
@@ -7233,22 +7233,22 @@
       {
         "text": "Codex",
         "foreground": {
-          "r": 85,
-          "g": 88,
-          "b": 114
+          "r": 136,
+          "g": 77,
+          "b": 46
         },
         "background": "224,226,232",
-        "ratio": 5.359519616975467
+        "ratio": 5.150575401031641
       },
       {
-        "text": "Done",
+        "text": "Needs attention",
         "foreground": {
-          "r": 85,
-          "g": 88,
-          "b": 114
+          "r": 136,
+          "g": 77,
+          "b": 46
         },
         "background": "224,226,232",
-        "ratio": 5.359519616975467
+        "ratio": 5.150575401031641
       },
       {
         "text": "sotto-site",
@@ -8301,22 +8301,22 @@
       {
         "text": "Codex",
         "foreground": {
-          "r": 85,
-          "g": 88,
-          "b": 114
+          "r": 136,
+          "g": 77,
+          "b": 46
         },
         "background": "224,226,232",
-        "ratio": 5.359519616975467
+        "ratio": 5.150575401031641
       },
       {
-        "text": "Done",
+        "text": "Needs attention",
         "foreground": {
-          "r": 85,
-          "g": 88,
-          "b": 114
+          "r": 136,
+          "g": 77,
+          "b": 46
         },
         "background": "224,226,232",
-        "ratio": 5.359519616975467
+        "ratio": 5.150575401031641
       },
       {
         "text": "sotto-site",
@@ -9108,22 +9108,22 @@
       {
         "text": "Codex",
         "foreground": {
-          "r": 93,
-          "g": 88,
-          "b": 126
+          "r": 154,
+          "g": 77,
+          "b": 36
         },
         "background": "235,229,227",
-        "ratio": 5.327708101497592
+        "ratio": 4.868309289125234
       },
       {
-        "text": "Done",
+        "text": "Needs attention",
         "foreground": {
-          "r": 93,
-          "g": 88,
-          "b": 126
+          "r": 154,
+          "g": 77,
+          "b": 36
         },
         "background": "235,229,227",
-        "ratio": 5.327708101497592
+        "ratio": 4.868309289125234
       },
       {
         "text": "sotto-site",
@@ -10266,22 +10266,22 @@
       {
         "text": "Codex",
         "foreground": {
-          "r": 93,
-          "g": 88,
-          "b": 126
+          "r": 154,
+          "g": 77,
+          "b": 36
         },
         "background": "235,229,227",
-        "ratio": 5.327708101497592
+        "ratio": 4.868309289125234
       },
       {
-        "text": "Done",
+        "text": "Needs attention",
         "foreground": {
-          "r": 93,
-          "g": 88,
-          "b": 126
+          "r": 154,
+          "g": 77,
+          "b": 36
         },
         "background": "235,229,227",
-        "ratio": 5.327708101497592
+        "ratio": 4.868309289125234
       },
       {
         "text": "sotto-site",
@@ -11324,22 +11324,22 @@
       {
         "text": "Codex",
         "foreground": {
-          "r": 93,
-          "g": 88,
-          "b": 126
+          "r": 154,
+          "g": 77,
+          "b": 36
         },
         "background": "235,229,227",
-        "ratio": 5.327708101497592
+        "ratio": 4.868309289125234
       },
       {
-        "text": "Done",
+        "text": "Needs attention",
         "foreground": {
-          "r": 93,
-          "g": 88,
-          "b": 126
+          "r": 154,
+          "g": 77,
+          "b": 36
         },
         "background": "235,229,227",
-        "ratio": 5.327708101497592
+        "ratio": 4.868309289125234
       },
       {
         "text": "sotto-site",
