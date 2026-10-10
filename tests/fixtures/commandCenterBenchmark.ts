@@ -89,7 +89,7 @@ async function filesUnder(root: string, prefix = ''): Promise<string[]> {
   }
   return result
 }
-export async function createBenchmarkCopies(): Promise<BenchmarkCopies> {
+export async function createBenchmarkCopies(revision = 'HEAD'): Promise<BenchmarkCopies> {
   const root = await mkdtemp(join(tmpdir(), PREFIX)), sotto = join(root, 'Sotto'), relay = join(root, 'Relay')
   const baseline = new Map<string, string>()
   let files = 0, bytes = 0
@@ -104,7 +104,7 @@ export async function createBenchmarkCopies(): Promise<BenchmarkCopies> {
   }
   try {
     await mkdir(sotto); await mkdir(relay)
-    const sourceCommit = (await exec('git', ['rev-parse', 'HEAD'], { cwd: process.cwd() })).stdout.trim()
+    const sourceCommit = (await exec('git', ['rev-parse', '--verify', revision], { cwd: process.cwd() })).stdout.trim()
     const archive = join(root, 'source.tar')
     stage = 'archive'
     await exec('git', ['archive', '--format=tar', `--output=${archive}`, sourceCommit], { cwd: process.cwd() })
