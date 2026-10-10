@@ -41,6 +41,7 @@ import { markSendStage } from './sendStages'
 import type { CommandCenterLaunchProfile, ThreadLaunchProfiles } from './host'
 import { CommandCenterProfileRefusal, validateCommandCenterProfile } from './commandCenterProfile'
 import { COMMAND_CENTER_SYSTEM_PROMPT } from './commandCenterPrompt'
+import { probeCommandCenterCodexSandbox } from './commandCenterCodexSandbox'
 import { assertCommandCenterPermission, assertCommandCenterPermissionChoice, commandCenterThreadTools } from './commandCenterProviderTools'
 
 const commandCenterCodexPolicy = Object.freeze({ approvalPolicy: 'on-request', approvalsReviewer: 'user', sandbox: 'read-only' })
@@ -192,6 +193,7 @@ export class CodexAppServerHost implements AgentHost {
     const configuration = await threadConfig(profile ? undefined : this.browserTools, id, effort,
       profile ? commandCenterThreadTools(this.threadTools) : this.threadTools)
     if (profile) {
+      if (process.platform === 'win32') configuration.config['windows.sandbox'] = 'unelevated'
       configuration.config.mcp_servers = { ...(configuration.config.mcp_servers as Record<string, unknown> | undefined),
         [profile.server.name]: { url: profile.server.url, enabled: true,
           http_headers: Object.fromEntries(profile.server.headers.map(header => [header.name, header.value])),
@@ -377,7 +379,7 @@ export class CodexAppServerHost implements AgentHost {
   /** Start an app-server from `executable`. What it says reaches `frame` only while this connection lasts. */
   private spawnServer(executable: string, profile?: CommandCenterLaunchProfile): CodexProcess {
     const generation = this.generation
-    const server = new CodexProcess({ executable, args: [...(this.options.args ?? ['app-server', '--stdio', ...configArguments]), ...(profile ? ['-c', 'sandbox_mode="read-only"', '-c', 'approval_policy="on-request"', '-c', 'approvals_reviewer="user"'] : [])], cwd: this.options.userDataPath,
+    const server = new CodexProcess({ executable, args: [...(this.options.args ?? ['app-server', '--stdio', ...configArguments]), ...(profile ? ['-c', 'sandbox_mode="read-only"', '-c', 'approval_policy="on-request"', '-c', 'approvals_reviewer="user"', ...(process.platform === 'win32' ? ['-c', 'windows.sandbox="unelevated"'] : [])] : [])], cwd: this.options.userDataPath,
       env: withCliPath({ ...nativeEnvironment(), CODEX_HOME: this.codexHome() }, executable), requestTimeoutMs: this.options.requestTimeoutMs ?? 15000,
       enqueue: task => this.enqueue(task),
       onFrame: (from, frame) => generation === this.generation ? this.frame(from, frame) : Promise.resolve(),
@@ -461,7 +463,7 @@ export class CodexAppServerHost implements AgentHost {
    * The thread's own app-server, started and introduced when it has none. A thread's live work goes to it
    * alone, and what it asks is answered on it. One started after `clientUpdated` runs the new client.
    */
-  private async runtimeServer(id: string): Promise<CodexProcess> {
+  private async runtimeServer(id: string, workingDirectory?: string): Promise<CodexProcess> {
     const generation = this.generation
     const profile = await this.checkLaunchProfile(id)
     if (generation !== this.generation) throw new Error('Codex connection changed while starting this thread.')
@@ -491,8 +493,14 @@ export class CodexAppServerHost implements AgentHost {
       try {
         await this.rpc('initialize', clientInfo, undefined, undefined, server)
         server.write({ method: 'initialized' })
+        if (profile && process.platform === 'win32') {
+          const project = workingDirectory ?? this.aliases[id]?.cwd
+          if (!project) throw new CommandCenterProfileRefusal("Codex's read-only sandbox could not be checked because Watcher's folder is unavailable. Nothing was sent.")
+          await probeCommandCenterCodexSandbox(server, project)
+        }
       } catch (error) {
         this.endServer(server)
+        if (error instanceof CommandCenterProfileRefusal) { this.state.error = error.message; this.emit(); throw error }
         throw new SessionUnavailable(error)
       }
       if (generation !== this.generation || !this.state.connected) { this.endServer(server); throw new Error('Codex connection changed while starting this thread.') }
@@ -964,7 +972,7 @@ export class CodexAppServerHost implements AgentHost {
     if (!this.state.connected) return
     if (this.aliases[id]) { await this.open(id); return }
     if (!draft || this.creating.has(id)) return
-    await this.runtimeServer(id)
+    await this.runtimeServer(id, draft.workingDirectory)
     this.reaper.touch(id)
   }
   /** Opening a thread resumes it and reads its turns once, when Sotto holds no history for it. */
@@ -1313,7 +1321,7 @@ export class CodexAppServerHost implements AgentHost {
         catch (error) { this.creating.delete(command.threadId); throw error }
         // The thread starts on its own app-server, which then holds its session.
         let server: CodexProcess
-        try { server = await this.runtimeServer(command.threadId) }
+        try { server = await this.runtimeServer(command.threadId, cwd) }
         catch (error) { this.creating.delete(command.threadId); throw error }
         this.reaper.touch(command.threadId)
         await this.rpc('thread/start', { cwd, model: command.modelId, modelProvider: 'openai', allowProviderModelFallback: false,

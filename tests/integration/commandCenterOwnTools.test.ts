@@ -56,6 +56,8 @@ function assertConfiguration(provider: keyof typeof factories, records: Recorded
         developerInstructions: expect.stringContaining(COMMAND_CENTER_SYSTEM_PROMPT) })
       expect(params!.developerInstructions).toContain('Synthetic project developer instructions')
       const config = params!.config as { mcp_servers: Record<string, unknown> }
+      if (process.platform === 'win32') expect(config).toHaveProperty('windows.sandbox', 'unelevated')
+      else expect(config).not.toHaveProperty('windows.sandbox')
       expect(Object.keys(config.mcp_servers).sort()).toEqual([...names].sort())
       expect(config.mcp_servers.sotto_threads).toMatchObject({ enabled_tools: ['list_threads'], default_tools_approval_mode: 'prompt',
         tools: { list_threads: { approval_mode: 'approve' } } })
@@ -138,6 +140,10 @@ for (const provider of Object.keys(factories) as (keyof typeof factories)[]) des
       const servers = (await readFile(join(f.root, 'servers.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line))
       for (const server of servers.filter(server => server.method === 'initialize' && server.args.includes('sandbox_mode="read-only"'))) {
         expect(server.args).toContain('approval_policy="on-request"')
+        if (process.platform === 'win32') {
+          expect(server.args).toContain('windows.sandbox="unelevated"')
+          expect(servers.filter(record => record.pid === server.pid && record.method === 'command/exec')).toHaveLength(2)
+        } else expect(server.args).not.toContain('windows.sandbox="unelevated"')
         expect(server.args.some((arg: string) => arg.includes('enabled=false') || arg.includes('shell_tool'))).toBe(false)
       }
     }
@@ -200,4 +206,29 @@ it('pins every Codex uncertain-settings resume, including a resident recovery re
   f.host.disconnect(); await f.adapter.closed()
   await f.host.connect(); await f.host.startThreadSession!(id)
   assertConfiguration('codex', await f.driver.requests())
+})
+
+for (const outcome of ['read-failed', 'write-allowed', 'setup-failed', 'unrelated-write-failure'] as const) it.skipIf(process.platform !== 'win32')(`stops a Windows center before sending when its sandbox probe returns ${outcome}`, async () => {
+  const f = await codexFixture(undefined, false, 10_000); cleanups.push(f.cleanup)
+  const id = randomUUID()
+  await attach(f.host, f.root, id, f.projectId, 'codex')
+  await f.script({ commandCenterSandbox: outcome })
+  await f.host.connect()
+  await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Synthetic', path: f.root })
+  await expect(f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Center', modelId: f.modelId }))
+    .rejects.toThrow("Codex's read-only sandbox isn't working on this computer")
+  const records = await f.driver.requests()
+  expect(records.some(record => record.method === 'turn/start')).toBe(false)
+  expect(records.some(record => record.method === 'thread/start')).toBe(false)
+  expect((await f.host.snapshot()).connected).toBe(true)
+  // The failed Watcher launch cannot change an ordinary thread's sandbox or block it.
+  f.host.useBrowserTools!({ call: async () => ({ content: [] }), definitions: [], mcpServer: async () => ({ name: 'sotto_browser', type: 'http', url: 'http://127.0.0.1:12345/mcp', headers: [] }) })
+  const ordinary = randomUUID()
+  await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: ordinary, projectId: f.projectId, title: 'Ordinary', modelId: f.modelId, runtimeMode: 'full-access' })
+  await f.host.execute({ type: 'send', commandId: randomUUID(), threadId: ordinary, messageId: randomUUID(), text: 'Synthetic ordinary turn' })
+  expect((await f.driver.requests()).find(record => record.method === 'thread/start')?.params).toMatchObject({ sandbox: 'danger-full-access', approvalPolicy: 'never' })
+  const servers = (await readFile(join(f.root, 'servers.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line))
+  const ordinaryServer = servers.findLast(record => record.method === 'thread/start')!.pid
+  expect(servers.find(record => record.method === 'initialize' && record.pid === ordinaryServer).args).not.toContain('windows.sandbox="unelevated"')
+  expect(servers.filter(record => record.pid === ordinaryServer && record.method === 'command/exec')).toEqual([])
 })
