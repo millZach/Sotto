@@ -1,6 +1,6 @@
 # Codex questions and thread-owned Agents
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0066](../adr/0066-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0067](../adr/0067-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 September 23, 2026. Initial checkout: `11e60a67f5529a1eefad5be5bc5990ef069f5205`. This note covers local source and the locally built Windows Electron app, not an installed release or a paid native model turn.
 

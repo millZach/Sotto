@@ -5,6 +5,7 @@ export default tseslint.config(
   {
     ignores: [
       'artifacts/voice-control-removal/merged-setup/**',
+      'artifacts/skill-pill-composer/**',
       'artifacts/omarchy-shell-plugin/**',
       'artifacts/linux-shell-plumbing/**',
       'artifacts/linux-package/**',

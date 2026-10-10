@@ -23,7 +23,7 @@ These checks extend the surviving `AgentControl`, `WorkspaceHost`, `ThreadStore`
 
 ## 0. Land voice removal first
 
-Ticket 0 is [the removal plan](2026-10-08-remove-voice-control.md) and ADR-0066. Its finished tree has no voice coordinator, Agents room, `voiceCoordinatorEnabled`, assignments, attention queue, `reasoning.intent` or `decide`. Old saved fields are migration input, not authority for the command center. Inert host-v1 compatibility fields remain only where that plan requires them.
+Ticket 0 is [the removal plan](2026-10-08-remove-voice-control.md) and ADR-0067. Its finished tree has no voice coordinator, Agents room, `voiceCoordinatorEnabled`, assignments, attention queue, `reasoning.intent` or `decide`. Old saved fields are migration input, not authority for the command center. Inert host-v1 compatibility fields remain only where that plan requires them.
 
 Keep the removal's retained paths: `src/main/agents/control.ts` and its command lanes, outbox and delivery receipts; provider adapters; `followups.ts`; `babysitting.ts`; `wakeUp.ts`; scoped thread tool servers; native takeover observations; and the text-free turn recorder. Keep dictation and memory on their existing paths and gates. The command center has no voice gate and uses no dormant coordinator reasoning account. Model and title side calls remain on the thread's provider under ADR-0026.
 
@@ -289,7 +289,7 @@ Provider, model and effort belong to the current master record/ordinary thread o
 
 ## 9. Decisions and documentation
 
-Write the proposed command-center ADR, with its number assigned when it is written, after ADR-0066 lands. Record the single current master, native-plan billing, special profile and file broker, main-owned bounded start/send authority, human-only answers, takeover, event wake-ups, scoped Stop all, privacy storage and host feature enforcement. Explicitly amend the authority described by ADR-0004/0005 for command-center start/send without resurrecting automatic supervision; preserve their human-only answers. Relate ADR-0002 identity, ADR-0016 history, ADR-0035 special threads, ADR-0061 wake-ups and any provider-change exception/policy. If no supported launch can enforce a provider profile, record refusal rather than changing the decision to permissive mode.
+Write the proposed command-center ADR, with its number assigned when it is written, after ADR-0067 lands. Record the single current master, native-plan billing, special profile and file broker, main-owned bounded start/send authority, human-only answers, takeover, event wake-ups, scoped Stop all, privacy storage and host feature enforcement. Explicitly amend the authority described by ADR-0004/0005 for command-center start/send without resurrecting automatic supervision; preserve their human-only answers. Relate ADR-0002 identity, ADR-0016 history, ADR-0035 special threads, ADR-0061 wake-ups and any provider-change exception/policy. If no supported launch can enforce a provider profile, record refusal rather than changing the decision to permissive mode.
 
 Update `CONTEXT.md` using `docs/agents/domain.md` and the domain-modeling vocabulary:
 
@@ -347,7 +347,7 @@ Each ticket is one coherent PR-sized slice with its own tests and relevant docs.
 
 ### Ticket 0 — Remove voice control and per-thread Manage
 
-- Goal: land the whole removal plan and ADR-0066, preserving manual threads, dictation, memory boundaries and babysitting.
+- Goal: land the whole removal plan and ADR-0067, preserving manual threads, dictation, memory boundaries and babysitting.
 - Builder/ownership: the removal's own Sol and Opus 5.5 slices; owns every file named by that plan.
 - Depends on: none; all command-center integration waits for its final retained interfaces.
 - Done-check: removal's CI/e2e/native-phone/design proof and two-axis review, with no live old authority remaining.
@@ -430,7 +430,7 @@ Other unspecified values have concrete reversible recommendations in this plan: 
 
 Path: `docs/plans/2026-10-08-command-center.md`.
 
-1. Voice removal and ADR-0066 land before any command-center work.
+1. Voice removal and ADR-0067 land before any command-center work.
 2. One current native master thread is recovered by Sotto identity and kind.
 3. It uses Claude Code, Codex or Grok Build on the user's own plan.
 4. Fixed provider profiles remove native editing/execution and unverified launches refuse.
@@ -444,7 +444,7 @@ Path: `docs/plans/2026-10-08-command-center.md`.
 12. Optional host-v1 features enforce remote authority and preserve phone workers.
 13. Tests, native read-only proof, design checks and docs are assigned to ten tickets.
 
-Ticket 0 — Remove voice control and per-thread Manage; land ADR-0066 first.
+Ticket 0 — Remove voice control and per-thread Manage; land ADR-0067 first.
 Ticket 1 — Record identity, closed contracts, limits and privacy-aware migrations (Sol).
 Ticket 2 — Enforce and prove immutable native provider profiles (Sol).
 Ticket 3 — Serve local tools through existing commands and safe project reads (Sol).

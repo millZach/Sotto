@@ -1,6 +1,6 @@
 # The voice coordinator is hidden for the beta
 
-Superseded October 8, 2026 by [ADR-0066](0066-remove-voice-control-and-thread-management.md). The decision below records the earlier beta gate; voice control and thread management are being removed.
+Superseded October 8, 2026 by [ADR-0067](0067-remove-voice-control-and-thread-management.md). The decision below records the earlier beta gate; voice control and thread management are being removed.
 
 Amended October 6, 2026: standalone Chats was retired under ADR-0010. References below to personal chats, their provider connections and their voice or memory paths describe historical behavior; those paths are removed. Thread behavior and the remaining beta gates continue as described.
 

@@ -1,3 +1,4 @@
+import { promptText, setPromptText } from './helpers/promptEditor'
 import { deferred } from '../../fixtures/deferred'
 import { createAgentControl } from '../../fixtures/agentControlFixture'
 import { testCredentials } from '../../fixtures/testCredentials'
@@ -95,7 +96,7 @@ describe('thread draft recovery through the real connection and disk', () => {
       // of the composer. Its authoritative echo resolves the retained outbox.
       await act(async () => { await original(execute.mock.calls[0]![0]) })
       await waitFor(() => expect(screen.queryByRole('button', { name: 'Check again' })).not.toBeInTheDocument())
-      expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('Independent newer draft')
+      expect(promptText(screen.getByRole('textbox', { name: 'Prompt' }))).toBe('Independent newer draft')
       await f.control.privacyChanged()
       expect((await f.disk()).threadDrafts).toContainEqual(expect.objectContaining({ draftId: newId, text: 'Independent newer draft' }))
       expect(execute).toHaveBeenCalledTimes(1)
@@ -187,7 +188,7 @@ describe('thread draft recovery through the real connection and disk', () => {
         }
         return original.call(this, value)
       })
-      fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Keep this unsaved draft' } })
+      setPromptText(screen.getByRole('textbox', { name: 'Prompt' }), 'Keep this unsaved draft')
       act(() => { store.edit('workshop', { attachments: [image] }); store.flush('workshop') })
       await waitFor(() => expect(writing).toBe(true))
       expect((await f.disk()).threadDrafts).toEqual([])
@@ -200,7 +201,7 @@ describe('thread draft recovery through the real connection and disk', () => {
       await act(async () => { await controls.command({ type: 'observe-threads', threadIds: ['workshop'] }) })
       view.rerender(page(true))
       expect(controls.threadDrafts).toBe(store)
-      expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('Keep this unsaved draft')
+      expect(promptText(screen.getByRole('textbox', { name: 'Prompt' }))).toBe('Keep this unsaved draft')
       expect(screen.getByRole('img', { name: 'pixel.png' })).toBeVisible()
       if (stage === 'pending') {
         expect(store.snapshot('workshop').save).toBe('saving')
@@ -352,7 +353,7 @@ describe('thread navigation through the real renderer connection and controller'
       fireEvent.keyDown(prompt, { key: 'Enter' })
       const queue = await screen.findByRole('region', { name: 'Queued messages' })
       // The composer empties on the press; the durable queue taking the revision is what the test waits for.
-      expect(prompt).toHaveValue('')
+      expect(promptText(prompt)).toBe('')
       await waitFor(() => expect(f.control.get().followups).toEqual([expect.objectContaining({ threadId: 'workshop', text: 'Then run $deploy', skills: [skill], status: 'queued' })]))
       expect((await f.followupsOnDisk()).items).toEqual([expect.objectContaining({ text: 'Then run $deploy', skills: [skill] })])
       await waitFor(async () => expect((await f.disk()).threadDrafts).toEqual([]))
@@ -397,10 +398,10 @@ describe('thread navigation through the real renderer connection and controller'
       fireEvent.keyDown(prompt, { key: 'Enter' })
       await waitFor(() => expect(f.control.get().followups?.map(item => [item.text, item.status])).toEqual([['Then run $deploy', 'dispatching'], ['And then post the link', 'queued']]))
       await waitFor(() => expect(resolved.mock.calls.some(([threadId, draftId]) => threadId === 'workshop' && draftId === secondDraftId)).toBe(true))
-      await waitFor(() => expect(prompt).toHaveValue(''))
+      await waitFor(() => expect(promptText(prompt)).toBe(''))
       if (holdObservation) expect(f.control.get().error).toBe('Working-copy status is unavailable.')
       await act(async () => { releaseObservation() })
-      expect(prompt).toHaveValue('')
+      expect(promptText(prompt)).toBe('')
       await act(async () => { deliver() })
       await waitFor(() => expect(f.control.get().followups?.map(item => item.text)).toEqual(['And then post the link']))
       expect(f.control.get().host.threads.find(thread => thread.id === 'workshop')!.messages.filter(message => message.text === 'Then run $deploy')).toHaveLength(1)

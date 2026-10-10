@@ -1,3 +1,4 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
 import { agentCommand as command, agentState as state } from './support/agentAccess'
 import { expect, test, type Page } from '@playwright/test'
@@ -49,10 +50,10 @@ test('keeps an answer on its own request through thread navigation and restart u
     await onboard(launched.page)
     await event(launched.page, workshopQuestion)
     await event(launched.page, docsQuestion)
-    await launched.page.getByRole('textbox', { name: 'Your answer', exact: true }).fill('Keep the existing layout and controls.')
+    await fillPrompt(promptField(launched.page, 'Your answer'), 'Keep the existing layout and controls.')
     await expect.poll(async () => (await state(launched.page)).threadDrafts?.find(draft => draft.requestId === 'layout-question')?.text).toBe('Keep the existing layout and controls.')
     await launched.page.getByRole('button', { name: 'Docs', exact: true }).click()
-    await expect(launched.page.getByRole('textbox', { name: 'Your answer', exact: true })).toHaveValue('')
+    await expectPromptText(promptField(launched.page, 'Your answer'), '')
     expect(thread(await state(launched.page), 'workshop')?.requests).toHaveLength(1)
     await closeSotto(launched)
 
@@ -62,12 +63,12 @@ test('keeps an answer on its own request through thread navigation and restart u
     await event(launched.page, workshopQuestion)
     await event(launched.page, docsQuestion)
     await launched.page.getByRole('button', { name: 'Workshop', exact: true }).click()
-    await expect(launched.page.getByRole('textbox', { name: 'Your answer', exact: true })).toHaveValue('Keep the existing layout and controls.')
+    await expectPromptText(promptField(launched.page, 'Your answer'), 'Keep the existing layout and controls.')
     await launched.page.getByRole('button', { name: 'Send answer', exact: true }).click()
     await expect.poll(async () => thread(await state(launched.page), 'workshop')?.requests.length).toBe(0)
     expect(thread(await state(launched.page), 'docs')?.requests.map(request => request.id)).toEqual(['audience-question'])
     expect(await userMessageTexts(launched.page, 'workshop')).toHaveLength(0)
-    await expect(launched.page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('')
+    await expectPromptText(promptField(launched.page), '')
   } finally {
     await closeSotto(launched)
     await removeOwnedE2EProfile(directory)

@@ -1,3 +1,4 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
 import { readFile, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
@@ -156,7 +157,7 @@ test('keeps a saved remote manual draft across restart without sending it', asyn
   let restarted: LaunchedSotto | undefined
   const text = 'Fix the remote parser after I explicitly send this.'
   try {
-    await f.launched.page.getByLabel('Prompt', { exact: true }).fill(text)
+    await fillPrompt(promptField(f.launched.page), text)
     await expect.poll(() => f.host.service.shell().threadDrafts?.find(draft => draft.text === text)?.requestId).toBeNull()
     await closeSotto(f.launched)
     restarted = await launchSotto('success', f.profile)
@@ -164,7 +165,7 @@ test('keeps a saved remote manual draft across restart without sending it', asyn
     await restarted.app.evaluate((_, connection) => globalThis.sottoRemoteHostE2E!.connect(connection), f.connection)
     await openThreads(restarted.page)
     await restarted.page.getByRole('button', { name: 'Forge question fixture', exact: true }).click()
-    await expect(restarted.page.getByLabel('Prompt', { exact: true })).toHaveValue(text)
+    await expectPromptText(promptField(restarted.page), text)
     expect(f.native.prompts).toHaveLength(0)
     expect(f.native.answers).toHaveLength(0)
     await capture(restarted, 'manual-draft-restart')

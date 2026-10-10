@@ -1,6 +1,6 @@
 # Issue 9 implementation record
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0066](../adr/0066-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0067](../adr/0067-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 Historical evidence: #610 removed the membership implementation and its tests. Membership and paid-launch statements below no longer describe Sotto.
 Baseline: `63c3c6e913da561deb314e8d337f7eaf04c0672e` on `main`. Issue: [#9](https://github.com/millZach/Sotto/issues/9). Implementation date: 2026-09-09.

@@ -1,3 +1,4 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { agentState } from './support/agentAccess'
 import { ownedE2EProfile } from './support/e2eProfile'
 import { mkdir, readFile, writeFile, readdir } from 'node:fs/promises'
@@ -125,12 +126,12 @@ for (const provider of ['codex', 'claude', 'grok'] as const) {
           if (pending && observations.at(-1) !== pending) observations.push(pending)
         }).observe(document.body, { childList: true, subtree: true, characterData: true })
       })
-      await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill(prompt)
+      await fillPrompt(promptField(page), prompt)
       await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
       await expect(page.getByLabel('Thread transcript')).toContainText(prompt, { timeout: 15_000 })
       await page.screenshot({ path: join(artifacts, 'sending.png') })
       await expect(page.getByLabel('Thread transcript').locator('[data-role="assistant"]')).toContainText('READY', { timeout: 90_000 })
-      await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('', { timeout: 15_000 })
+      await expectPromptText(promptField(page), '', { timeout: 15_000 })
       await expect(page.getByLabel('Pending message')).toHaveCount(0)
       // A streamed reply can precede the native turn's final result event.
       await waitForIdle(page)

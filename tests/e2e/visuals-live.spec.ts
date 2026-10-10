@@ -1,3 +1,4 @@
+import { fillPrompt, promptField } from './support/prompt'
 import { ownedE2EProfile } from './support/e2eProfile'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
@@ -61,7 +62,7 @@ for (const provider of ['claude', 'codex', 'grok'] as const) {
     })
     const idle = (page: Page) => expect.poll(async () => (await state(page)).status, { timeout: 240_000 }).toBe('idle')
     const send = async (page: Page, prompt: string) => {
-      await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill(prompt)
+      await fillPrompt(promptField(page), prompt)
       await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
       await expect(page.getByLabel('Thread transcript')).toContainText(prompt.slice(0, 40), { timeout: 15_000 })
     }
@@ -88,7 +89,7 @@ for (const provider of ['claude', 'codex', 'grok'] as const) {
       await dialog.getByRole('button', { name: /Local folder/ }).click()
       await page.getByRole('dialog', { name: /Choose a folder for the new thread/ }).getByRole('button', { name: 'Browse with File Explorer' }).click()
       // Choosing the folder creates the thread at once, in the provider's default permissions.
-      await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toBeVisible({ timeout: 45_000 })
+      await expect(promptField(page)).toBeVisible({ timeout: 45_000 })
       const notNow = page.getByRole('button', { name: 'Not now', exact: true })
       if (await notNow.isVisible().catch(() => false)) await notNow.click()
 

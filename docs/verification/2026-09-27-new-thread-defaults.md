@@ -1,6 +1,6 @@
 # New threads keep their starting defaults
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0066](../adr/0066-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0067](../adr/0067-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 Zach reported that New thread opened settled work, ignored the saved default model, and showed a blank field over the default effort slider in Settings.
 

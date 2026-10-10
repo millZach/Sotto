@@ -1,3 +1,4 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { expect, test } from '@playwright/test'
 import { closeSotto, launchSotto, openThreads } from './support/sottoLaunch'
 
@@ -13,8 +14,8 @@ test('hidden players do not scan the window during composer edits', async () => 
     await page.reload()
     await openThreads(page)
     await page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: 'Grok voice previews', exact: true }).click()
-    const input = page.locator('#thread-workspace-prompt')
-    await input.fill('Start')
+    const input = promptField(page)
+    await fillPrompt(input, 'Start')
     await expect(page.locator('.phone-player, .browser-player')).toHaveCount(0)
     await page.evaluate(() => {
       const original = document.querySelectorAll.bind(document)
@@ -26,7 +27,7 @@ test('hidden players do not scan the window during composer edits', async () => 
       }) as typeof document.querySelectorAll
     })
     await input.pressSequentially(' typing a few more letters', { delay: 20 })
-    await expect(input).toHaveValue('Start typing a few more letters')
+    await expectPromptText(input, 'Start typing a few more letters')
     const result = await page.evaluate(() => (window as unknown as { __hiddenPlayerAudit: { scans: number } }).__hiddenPlayerAudit)
     expect(result.scans, 'A hidden player scanned the entire document during ordinary typing').toBe(0)
   } finally { await closeSotto(launched) }

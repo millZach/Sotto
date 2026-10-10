@@ -1,6 +1,6 @@
 # The desktop lets paired phones reach its threads
 
-October 9, 2026 amendment: [ADR-0066](0066-remove-voice-control-and-thread-management.md) records the removal. The assignment-context and coordinator-reasoning disclosure below is historical. Saved reasoning choices and credentials remain for native default resolution, but manual threads do not send context to a separate reasoning host. Phone access, pairing and Can answer policy remain unchanged.
+October 9, 2026 amendment: [ADR-0067](0067-remove-voice-control-and-thread-management.md) records the removal. The assignment-context and coordinator-reasoning disclosure below is historical. Saved reasoning choices and credentials remain for native default resolution, but manual threads do not send context to a separate reasoning host. Phone access, pairing and Can answer policy remain unchanged.
 
 ## Status
 

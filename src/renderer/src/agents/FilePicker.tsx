@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type 
 import { RotateCw } from 'lucide-react'
 import type { AgentFileReference } from '../../../shared/agentFiles'
 import type { FilesBridge } from '../../../shared/files'
+import type { PromptSelection } from './promptSelection'
 import { detectFileTrigger, fileLimitReached, fileQueryParts, MAX_MENTIONED_FILES, searchFileEntries, unmentionableCount, type FileEntry, type FileTrigger } from './composerFiles'
 
 type Listing =
@@ -31,8 +32,8 @@ export interface FilePickerModel {
   readonly highlight: (index: number) => void
   readonly close: () => void
   readonly refresh: () => void
-  /** The caret or selection moved in the textarea. */
-  readonly track: (element: HTMLTextAreaElement) => void
+  /** The caret or selection moved, in serialised draft-text offsets. */
+  readonly track: (element: PromptSelection) => void
   /** Focus left the composer's text and the picker. */
   readonly leave: () => void
 }

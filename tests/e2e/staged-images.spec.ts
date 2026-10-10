@@ -1,3 +1,4 @@
+import { promptField } from './support/prompt'
 import { agentState } from './support/agentAccess'
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -54,7 +55,7 @@ test('repairs a missing staged screenshot when the user attaches the same image 
 })
 
 async function paste(page: Page, image: string, name: string): Promise<void> {
-  await page.getByRole('textbox', { name: 'Prompt', exact: true }).evaluate((element, data) => {
+  await promptField(page).evaluate((element, data) => {
     const transfer = new DataTransfer()
     transfer.items.add(new File([Uint8Array.from(atob(data.image), char => char.charCodeAt(0))], data.name, { type: 'image/png' }))
     element.dispatchEvent(new ClipboardEvent('paste', { clipboardData: transfer, bubbles: true, cancelable: true }))

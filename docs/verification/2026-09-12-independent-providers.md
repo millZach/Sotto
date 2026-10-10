@@ -1,6 +1,6 @@
 # Independent thread providers and Sotto coordinator
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0066](../adr/0066-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0067](../adr/0067-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 The provider-settings correction separates Sotto's reasoning coordinator from the native clients running threads. Codex, Claude Code and Grok Build can stay connected together. Configure agents chooses the coordinator account/model/effort; Providers manages each native connection and its catalog. Existing threads retain their native provider and session.
 

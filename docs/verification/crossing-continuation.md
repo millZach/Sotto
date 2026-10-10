@@ -1,6 +1,6 @@
 # Crossing continuation
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0066](../adr/0066-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0067](../adr/0067-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 Reference: `design/redesign-3/01-crossing.html`, its PNGs, and issues #32–37.
 

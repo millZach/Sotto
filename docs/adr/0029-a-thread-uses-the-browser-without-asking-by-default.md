@@ -1,6 +1,6 @@
 # A thread uses Sotto's browser without asking, by default
 
-October 9, 2026 amendment: [ADR-0066](0066-remove-voice-control-and-thread-management.md) records the removal. The supervision references below are historical; that machinery and its Codex confirmation exception have been removed. The browser grant, its Stop control and the user's explicit answers remain unchanged.
+October 9, 2026 amendment: [ADR-0067](0067-remove-voice-control-and-thread-management.md) records the removal. The supervision references below are historical; that machinery and its Codex confirmation exception have been removed. The browser grant, its Stop control and the user's explicit answers remain unchanged.
 
 ## Status
 

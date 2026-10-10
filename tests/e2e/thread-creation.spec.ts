@@ -1,3 +1,4 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
 import { writeFile } from 'node:fs/promises'
 import { agentState } from './support/agentAccess'
@@ -43,8 +44,8 @@ test('creates a project thread without replacing a leftover draft from an earlie
     await page.getByRole('button', { name: 'New thread in Sotto test', exact: true }).click()
     await expect(page.getByRole('dialog', { name: 'New thread', exact: true })).toHaveCount(0)
     await expect(page.getByRole('heading', { name: 'New thread', exact: true })).toBeVisible()
-    await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toBeEnabled()
-    await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('')
+    await expect(promptField(page)).toBeEnabled()
+    await expectPromptText(promptField(page), '')
     // Wait for confirmation of the thread this pane opened; the singleton draft keeps its earlier owner.
     const pane = page.getByRole('region', { name: 'New thread', exact: true })
     const threadId = await pane.getAttribute('data-thread-id')
@@ -63,10 +64,10 @@ test('creates a project thread without replacing a leftover draft from an earlie
     expect(state.host.threads.some(thread => thread.id === draftThreadId)).toBe(false)
     expect(state).toMatchObject({ draft: leftover, draftThreadId, draftRequestId: null })
     expect(state).not.toHaveProperty('assignments')
-    await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Only send this new prompt')
+    await fillPrompt(promptField(page), 'Only send this new prompt')
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
     await expect(page.getByLabel('Thread transcript')).toContainText('Only send this new prompt')
-    await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('')
+    await expectPromptText(promptField(page), '')
     expect(await agentState(page)).toMatchObject({ draft: leftover, draftThreadId })
     await page.screenshot({ animations: 'disabled', path: join(savedDraftEvidence, 'created-and-sent.png') })
   } finally {
@@ -127,18 +128,18 @@ test('creates a thread in a centered popup, configures it, and sends file and pa
     await expect(page.getByRole('combobox', { name: 'Thread permissions' })).toHaveText('Allow edits')
     await page.getByLabel('Screenshot files').setInputFiles({ name: 'screen.png', mimeType: 'image/png', buffer: screenshot })
     await expect(page.getByRole('img', { name: 'screen.png' })).toBeVisible()
-    await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Review this screenshot.')
+    await fillPrompt(promptField(page), 'Review this screenshot.')
     await page.screenshot({ animations: 'disabled', path: join(evidence, 'thread-screenshot-draft.png') })
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
     await expect(page.getByLabel('Thread transcript')).toContainText('screen.png')
-    await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('')
+    await expectPromptText(promptField(page), '')
     await expect(page.getByLabel('Attached screenshots').getByRole('img', { name: 'screen.png' })).toHaveCount(0)
     await expect(page.getByLabel('Thread transcript').getByRole('img', { name: 'screen.png' })).toBeVisible()
     await page.getByRole('button', { name: 'Stop agent', exact: true }).click()
     await expect(page.getByRole('button', { name: 'Stop agent', exact: true })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Attach screenshots' })).toBeEnabled()
-    await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toBeEnabled()
-    await page.getByRole('textbox', { name: 'Prompt', exact: true }).evaluate((node, base64) => {
+    await expect(promptField(page)).toBeEnabled()
+    await promptField(page).evaluate((node, base64) => {
       const bytes = Uint8Array.from(atob(base64), char => char.charCodeAt(0))
       const data = new DataTransfer()
       data.items.add(new File([bytes], 'pasted.png', { type: 'image/png' }))

@@ -1,3 +1,4 @@
+import { promptField } from './support/prompt'
 import { agentState } from './support/agentAccess'
 import { readFile } from 'node:fs/promises'
 import { expect, test } from '@playwright/test'
@@ -23,7 +24,7 @@ test('a thread on a long-context model its catalog lists only by the base takes 
     // The chip carries the provider's mark beside the name, so its title is the name alone.
     await expect(page.getByRole('combobox', { name: 'Thread model' })).toHaveAttribute('title', 'Claude Test')
     await expect(page.getByRole('button', { name: 'Attach screenshots', exact: true })).toBeEnabled()
-    const prompt = page.getByRole('textbox', { name: 'Prompt', exact: true })
+    const prompt = promptField(page)
     await prompt.evaluate((element, data) => {
       const transfer = new DataTransfer()
       transfer.items.add(new File([Uint8Array.from(atob(data), char => char.charCodeAt(0))], 'Screenshot.png', { type: 'image/png' }))

@@ -1,3 +1,4 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { agentCommand as command, agentState as state } from './support/agentAccess'
 import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -76,16 +77,16 @@ test('retains a rejected prompt and allows a deliberate retry after refreshing t
   try {
     await onboard(page)
     await page.getByRole('button', { name: 'Workshop', exact: true }).click()
-    await page.getByLabel('Prompt', { exact: true }).fill('Retry this only after I ask.')
+    await fillPrompt(promptField(page), 'Retry this only after I ask.')
     await event(page, { type: 'reject', threadId: 'workshop', text: 'The provider rejected the request before starting a turn.' })
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
     await expect(page.getByRole('alert')).toContainText('The provider rejected the request')
-    await expect(page.getByLabel('Prompt', { exact: true })).toHaveValue('Retry this only after I ask.')
+    await expectPromptText(promptField(page), 'Retry this only after I ask.')
     expect(await userMessageTexts(page, 'workshop')).toHaveLength(0)
 
     await command(page, { type: 'refresh' })
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
-    await expect(page.getByLabel('Prompt', { exact: true })).toHaveValue('')
+    await expectPromptText(promptField(page), '')
     // The manual composer clears on submission; wait for the provider to confirm the retry.
     await expect.poll(() => userMessageTexts(page, 'workshop')).toEqual(['Retry this only after I ask.'])
     const snapshot = await state(page)

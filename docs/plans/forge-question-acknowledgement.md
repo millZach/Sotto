@@ -1,6 +1,6 @@
 # Forge question acknowledgement
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0066](../adr/0066-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0067](../adr/0067-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 User report: answers sent from the laptop reach agents on Forge, across multiple providers, but the desktop retains a delivery warning.
 

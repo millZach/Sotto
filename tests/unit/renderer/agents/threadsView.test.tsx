@@ -1,3 +1,4 @@
+import { setPromptText, promptText } from '../helpers/promptEditor'
 import { deferred } from '../../../fixtures/deferred'
 import { connection, connectionStores, NOW, renderThreads, stateFixture } from '../../../fixtures/renderer/threadsViewHarness'
 import { useAgents } from '../../../../src/renderer/src/agents/AgentContext'
@@ -27,7 +28,7 @@ describe('ThreadsView workspace', () => {
     const live = liveAgentState(state)
     vi.mocked(useAgents).mockImplementation(live.useLive)
     render(<ThreadsView now={NOW} />)
-    fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Show this pending message immediately.' } })
+    setPromptText(screen.getByRole('textbox', { name: 'Prompt' }), 'Show this pending message immediately.')
     fireEvent.click(screen.getByRole('button', { name: 'Send prompt' }))
     expect(screen.getByLabelText('Pending message')).toHaveTextContent('Show this pending message immediately.')
     expect(screen.getByLabelText('Pending message')).toHaveTextContent('Queued')
@@ -37,16 +38,16 @@ describe('ThreadsView workspace', () => {
     await waitFor(() => expect(screen.getByLabelText('Pending message')).toHaveTextContent('Unconfirmed'))
     expect(screen.getByRole('button', { name: 'Check again' })).toBeEnabled()
     // The prompt is in its message, not the composer: an unconfirmed send is never written twice.
-    expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('')
+    expect(promptText(screen.getByRole('textbox', { name: 'Prompt' }))).toBe('')
     expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
-    fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Keep my replacement draft.' } })
+    setPromptText(screen.getByRole('textbox', { name: 'Prompt' }), 'Keep my replacement draft.')
     // Another revision's receipt is not this message's receipt.
     act(() => { live.publish({ deliveredDrafts: [{ threadId: 'grok-previews', draftId: crypto.randomUUID() }] }) })
     expect(screen.getByLabelText('Pending message')).toBeVisible()
     act(() => live.deliver('grok-previews', 'accepted', 'Show this pending message immediately.'))
     await waitFor(() => expect(screen.queryByLabelText('Pending message')).not.toBeInTheDocument())
     expect(screen.getByLabelText('Thread transcript')).toHaveTextContent('Show this pending message immediately.')
-    expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('Keep my replacement draft.')
+    expect(promptText(screen.getByRole('textbox', { name: 'Prompt' }))).toBe('Keep my replacement draft.')
     expect(live.manualSends()).toBe(1)
   })
 
@@ -56,11 +57,11 @@ describe('ThreadsView workspace', () => {
     state.draft = 'Keep the saved draft'; state.draftThreadId = 'visual-gate'
     const { rerender } = renderThreads(state)
     expect(screen.getByRole('textbox', { name: 'Prompt' })).toBeEnabled()
-    fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'My next prompt' } })
+    setPromptText(screen.getByRole('textbox', { name: 'Prompt' }), 'My next prompt')
     state.host.threads.find(thread => thread.id === 'grok-previews')!.status = 'running'
     rerender(<ThreadsView now={NOW} />)
     expect(screen.getByRole('textbox', { name: 'Prompt' })).toBeEnabled()
-    expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('My next prompt')
+    expect(promptText(screen.getByRole('textbox', { name: 'Prompt' }))).toBe('My next prompt')
     // A running thread queues the next prompt instead of refusing it.
     expect(screen.getByRole('button', { name: 'Queue prompt' })).toBeEnabled()
     expect(state.draft).toBe('Keep the saved draft')
@@ -81,22 +82,22 @@ describe('ThreadsView workspace', () => {
     onTestFinished(() => { vi.unstubAllGlobals() })
     const { rerender } = renderThreads(state, command)
     const imageFile = () => new File([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], 'same-name.png', { type: 'image/png' })
-    fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Review this' } })
+    setPromptText(screen.getByRole('textbox', { name: 'Prompt' }), 'Review this')
     fireEvent.change(screen.getByLabelText('Screenshot files'), { target: { files: [imageFile()] } })
     await screen.findByRole('img', { name: 'same-name.png' })
     fireEvent.click(screen.getByRole('button', { name: 'Send prompt' }))
     await screen.findByRole('button', { name: 'Check again' })
     // The press emptied the composer; the prompt and its image are in the message below the conversation.
-    expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('')
+    expect(promptText(screen.getByRole('textbox', { name: 'Prompt' }))).toBe('')
     expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
     if (edited) {
-      fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'And review this too' } })
+      setPromptText(screen.getByRole('textbox', { name: 'Prompt' }), 'And review this too')
       fireEvent.change(screen.getByLabelText('Screenshot files'), { target: { files: [imageFile()] } })
       await screen.findAllByRole('img', { name: 'same-name.png' })
     }
     vi.mocked(useAgents).mockReturnValue(connection({ ...state, deliveredDrafts: [{ threadId: 'grok-previews', draftId }] }, command))
     rerender(<ThreadsView now={NOW} />)
-    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue(edited ? 'And review this too' : ''))
+    await waitFor(() => expect(promptText(screen.getByRole('textbox', { name: 'Prompt' }))).toBe(edited ? 'And review this too' : ''))
     expect(screen.queryAllByRole('img', { name: 'same-name.png' })).toHaveLength(edited ? 1 : 0)
     expect(command.mock.calls.filter(([request]) => (request as AgentCommand).type === 'manual-send')).toHaveLength(1)
   })
@@ -140,7 +141,7 @@ describe('ThreadsView workspace', () => {
       state.host.models.forEach(model => { model.supportsImages = true })
       const { command, rerender } = renderThreads(state)
       const drafts = connectionStores.get(command)!
-      fireEvent.change(screen.getByRole('textbox', { name: /prompt/i }), { target: { value: 'Look at this' } })
+      setPromptText(screen.getByRole('textbox', { name: /prompt/i }), 'Look at this')
       fireEvent.change(screen.getByLabelText('Screenshot files'), { target: { files: [new File([new Uint8Array(64)], 'moving.png', { type: 'image/png' })] } })
       state.activeThreadId = 'release-notes'
       rerender(<ThreadsView now={NOW} />)
@@ -211,13 +212,13 @@ describe('ThreadsView workspace', () => {
     state.host.models = [{ id: thread.modelId, provider: 'claude', providerId: 'claude', name: 'Claude', ready: true, reasoningEfforts: ['low', 'high'], defaultReasoningEffort: 'low' }]
     const { command } = renderThreads(state)
     const prompt = screen.getByRole('textbox', { name: 'Prompt' })
-    fireEvent.change(prompt, { target: { value: 'Review this plan.' } })
+    setPromptText(prompt, 'Review this plan.')
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
     fireEvent.click(screen.getByRole('button', { name: 'Add Ultrathink to prompt' }))
-    expect(prompt).toHaveValue('Review this plan.\n\nultrathink')
+    expect(promptText(prompt)).toBe('Review this plan.\n\nultrathink')
     fireEvent.click(screen.getByRole('button', { name: 'Send prompt' }))
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'manual-send', threadId: thread.id, draftId: expect.any(String), text: 'Review this plan.\n\nultrathink' }))
-    expect(prompt).toHaveValue('')
+    expect(promptText(prompt)).toBe('')
     expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'configure-thread' }))
   })
 
@@ -240,13 +241,13 @@ describe('ThreadsView workspace', () => {
   it('keeps an unconfirmed manual prompt in its message, with the composer empty and blocked', async () => {
     const state = stateFixture();  state.activeThreadId = 'grok-previews'
     const { command } = renderThreads(state)
-    fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'An edited unsent prompt' } })
+    setPromptText(screen.getByRole('textbox', { name: 'Prompt' }), 'An edited unsent prompt')
     fireEvent.click(screen.getByRole('button', { name: 'Send prompt' }))
     await screen.findByRole('button', { name: 'Check again' })
     expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
     expect(command).toHaveBeenCalledWith({ type: 'manual-send', threadId: 'grok-previews', draftId: expect.any(String), text: 'An edited unsent prompt' })
     expect(screen.getByLabelText('Pending message')).toHaveTextContent('An edited unsent prompt')
-    expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('')
+    expect(promptText(screen.getByRole('textbox', { name: 'Prompt' }))).toBe('')
   })
 
   it('offers New thread without submitting or assigning any work', () => {
@@ -373,7 +374,7 @@ describe('monitoring in the thread composer', () => {
     thread.monitoring = [{ id: '56d13d2c-f6d0-4968-a9ed-18c87a7d5b5a', label: 'Watch the build' }]
     const view = renderThreads(state)
     const prompt = screen.getByRole('textbox', { name: 'Prompt' })
-    fireEvent.change(prompt, { target: { value: 'Keep my draft' } })
+    setPromptText(prompt, 'Keep my draft')
     const creature = view.container.querySelector('.thread-monitor__creature')
     expect(creature).not.toBeNull()
     thread.monitoring[0]!.label = 'Waiting for build completion'
@@ -383,7 +384,7 @@ describe('monitoring in the thread composer', () => {
     thread.monitoring = []
     view.rerender(<ThreadsView now={NOW} />)
     expect(view.container.querySelector('.thread-monitor')).toBeNull()
-    expect(prompt).toHaveValue('Keep my draft')
+    expect(promptText(prompt)).toBe('Keep my draft')
   })
 
   it.each(['unconfirmed', 'disconnected', 'settled', 'archived', 'error', 'permission', 'question'] as const)(
@@ -535,7 +536,7 @@ it('reconciles a late manual receipt after leaving its composer', async () => {
       return { ...state, error: 'Not confirmed yet' }
     })
     const { rerender } = renderThreads(state, command)
-    fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Deliver this only once' } })
+    setPromptText(screen.getByRole('textbox', { name: 'Prompt' }), 'Deliver this only once')
     fireEvent.click(screen.getByRole('button', { name: 'Send prompt' }))
     await screen.findByRole('button', { name: 'Check again' })
     expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
@@ -546,7 +547,7 @@ it('reconciles a late manual receipt after leaving its composer', async () => {
     rerender(<ThreadsView now={NOW} />)
     vi.mocked(useAgents).mockReturnValue(connection({ ...state, activeThreadId: 'grok-previews', deliveredDrafts: [{ threadId: 'grok-previews', draftId }] }, command))
     rerender(<ThreadsView now={NOW} />)
-    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue(''))
+    await waitFor(() => expect(promptText(screen.getByRole('textbox', { name: 'Prompt' }))).toBe(''))
     expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
     expect(command.mock.calls.filter(([request]) => (request as AgentCommand).type === 'manual-send')).toHaveLength(1)
   })

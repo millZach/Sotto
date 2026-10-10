@@ -1,3 +1,4 @@
+import { setPromptText, promptText } from './helpers/promptEditor'
 import React from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -37,14 +38,14 @@ it('keeps typing within the composer once the draft has content', () => {
   const store = new ThreadDraftStore(live.command)
   render(<ThreadPane row={row} state={state} command={live.command} store={store} focused promptId="prompt" error={null} />)
   const input = screen.getByRole('textbox', { name: 'Prompt' })
-  fireEvent.change(input, { target: { value: 'a' } })
+  setPromptText(input, 'a')
   const before = renders.transcript
   const optionsBefore = renders.options
-  for (const text of ['ab', 'abc', 'abcd']) fireEvent.change(input, { target: { value: text } })
-  expect(input).toHaveValue('abcd')
+  for (const text of ['ab', 'abc', 'abcd']) setPromptText(input, text)
+  expect(promptText(input)).toBe('abcd')
   expect(renders.transcript).toBe(before)
   expect(renders.options).toBe(optionsBefore)
-  fireEvent.change(input, { target: { value: '' } })
+  setPromptText(input, '')
   expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
 })
 
@@ -67,11 +68,11 @@ it('does not process a closed model picker catalog while typing or deleting', ()
   const store = new ThreadDraftStore(live.command)
   render(<ThreadPane row={row} state={state} command={live.command} store={store} focused promptId="prompt" error={null} />)
   const input = screen.getByRole('textbox', { name: 'Prompt' })
-  fireEvent.change(input, { target: { value: 'a' } })
+  setPromptText(input, 'a')
   const before = namesRead
   const optionsBefore = renders.options
-  for (const text of ['ab', 'abc', 'ab', 'a']) fireEvent.change(input, { target: { value: text } })
-  expect(input).toHaveValue('a')
+  for (const text of ['ab', 'abc', 'ab', 'a']) setPromptText(input, text)
+  expect(promptText(input)).toBe('a')
   expect(namesRead).toBe(before)
   expect(renders.options).toBe(optionsBefore)
 })
@@ -87,13 +88,13 @@ it('sends the latest text after edits that did not render the surrounding contro
   const store = new ThreadDraftStore(live.command)
   render(<ThreadPane row={row} state={state} command={live.command} store={store} focused promptId="prompt" error={null} />)
   const input = screen.getByRole('textbox', { name: 'Prompt' })
-  fireEvent.change(input, { target: { value: 'First' } })
+  setPromptText(input, 'First')
   const before = renders.options
-  fireEvent.change(input, { target: { value: 'First, then the latest edit' } })
+  setPromptText(input, 'First, then the latest edit')
   expect(renders.options).toBe(before)
   fireEvent.keyDown(input, { key: 'Enter' })
   await waitFor(() => expect(live.command).toHaveBeenCalledWith(expect.objectContaining({
     type: 'manual-send', threadId: state.activeThreadId, text: 'First, then the latest edit',
   })))
-  expect(input).toHaveValue('')
+  expect(promptText(input)).toBe('')
 })

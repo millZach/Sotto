@@ -1,6 +1,6 @@
 # Phase 2 implementation and verification
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0066](../adr/0066-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0067](../adr/0067-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 All seven implementations and independent reviews are complete through `e6cdcda` on `work/threads-phase-2`, based on Phase 1 `17c47b5`. The complete Electron regression and final capture comparison pass. This record does not claim an installer or public release.
 

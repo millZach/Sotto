@@ -1,6 +1,6 @@
 # Local wake detector evidence — 2026-09-09
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0066](../adr/0066-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0067](../adr/0067-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 Wake audio is processed locally in an isolated worker. Sotto does not include or download wake model weights or the standard Sherpa runtime. A user must explicitly configure existing supported model/runtime folders; missing setup is shown before microphone capture starts. Development builds can use the pinned development runtime. This is an implementation with unresolved distribution prerequisites, not a release-ready wake experience.
 

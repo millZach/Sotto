@@ -34,7 +34,7 @@ function storage(): ShellCacheStorage | null {
  * a thread already carries until the real state lands (`ThreadOptions.canCreateWith` already refuses every
  * model but a thread's own while disconnected). The account's full catalog, hundreds of models on some
  * accounts, repaints from main once connected. The host's own catalog keeps every thread's model, whichever
- * host the thread is on: the Agents room and the browser read the active thread's model from it directly.
+ * host the thread is on: Threads and the browser read the active thread's model from it directly.
  */
 function trimCatalogsToReferencedModels(host: AgentHostSnapshot): AgentHostSnapshot {
   const referenced = new Map<readonly AgentModel[], Set<string>>([[host.models, new Set(host.threads.map(thread => thread.modelId))]])

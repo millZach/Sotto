@@ -1,3 +1,4 @@
+import { setPromptText, promptText } from './helpers/promptEditor'
 import { deferred } from '../../fixtures/deferred'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
@@ -78,8 +79,8 @@ describe('split thread workspace', () => {
     await act(async () => { fireEvent.click(openBesideButton('Notes cleanup')) })
     expect(within(view.pane('Notes cleanup')).getByText('notes')).toBeInTheDocument()
     expect(within(view.pane('Grok voice previews')).getByText('workshop')).toBeInTheDocument()
-    fireEvent.change(view.prompt('Grok voice previews'), { target: { value: 'Draft for the previews thread' } })
-    fireEvent.change(view.prompt('Notes cleanup'), { target: { value: 'Send this to notes' } })
+    setPromptText(view.prompt('Grok voice previews'), 'Draft for the previews thread')
+    setPromptText(view.prompt('Notes cleanup'), 'Send this to notes')
     const drafts = vi.mocked(useAgents).mock.results.at(-1)!.value.threadDrafts
     expect(drafts.draft('grok-previews').text).toBe('Draft for the previews thread')
     expect(drafts.draft('notes-cleanup').text).toBe('Send this to notes')
@@ -88,7 +89,7 @@ describe('split thread workspace', () => {
     expect(sends).toEqual([expect.objectContaining({ type: 'manual-send', threadId: 'notes-cleanup', text: 'Send this to notes' })])
     expect(within(view.pane('Notes cleanup')).getByLabelText('Pending message')).toHaveTextContent('Send this to notes')
     expect(within(view.pane('Grok voice previews')).queryByLabelText('Pending message')).toBeNull()
-    expect(view.prompt('Grok voice previews')).toHaveValue('Draft for the previews thread')
+    expect(promptText(view.prompt('Grok voice previews'))).toBe('Draft for the previews thread')
     // Typing in the other pane never moved its text anywhere else.
     expect(drafts.draft('grok-previews').text).toBe('Draft for the previews thread')
   })
@@ -161,14 +162,14 @@ describe('split thread workspace', () => {
     const view = mount()
     await act(async () => { fireEvent.click(openBesideButton('Streaming WAV stall')) })
     fireEvent.keyDown(screen.getByRole('separator', { name: 'Resize panes' }), { key: 'ArrowRight' })
-    fireEvent.change(view.prompt('Grok voice previews'), { target: { value: 'Kept while hidden' } })
+    setPromptText(view.prompt('Grok voice previews'), 'Kept while hidden')
     view.resize(700)
     expect(screen.queryByRole('separator', { name: /^Resize (?!sidebar$)/ })).toBeNull()
     const tabs = screen.getByRole('tablist', { name: 'Open panes' })
     expect(within(tabs).getAllByRole('tab').map(tab => [tab.textContent, tab.getAttribute('aria-selected')])).toEqual([['Grok voice previews', 'false'], ['Streaming WAV stall', 'true']])
     const hidden = document.getElementById('thread-pane-grok-previews')!
     expect(hidden).toHaveAttribute('inert')
-    expect(within(hidden).getByDisplayValue('Kept while hidden')).toBeInTheDocument()
+    expect(promptText(within(hidden).getByRole('textbox', { name: 'Prompt', hidden: true }))).toBe('Kept while hidden')
     await act(async () => { fireEvent.keyDown(within(tabs).getByRole('tab', { name: 'Streaming WAV stall' }), { key: 'ArrowLeft' }) })
     expect(view.selections().at(-1)).toBe('grok-previews')
     expect(document.getElementById('thread-pane-wav-stall')).toHaveAttribute('inert')
@@ -176,7 +177,7 @@ describe('split thread workspace', () => {
     view.resize(WIDE)
     expect(screen.queryByRole('tablist', { name: 'Open panes' })).toBeNull()
     expect(screen.getByRole('separator', { name: 'Resize panes' })).toHaveAttribute('aria-valuenow', '55')
-    expect(view.prompt('Grok voice previews')).toHaveValue('Kept while hidden')
+    expect(promptText(view.prompt('Grok voice previews'))).toBe('Kept while hidden')
   })
 
   it('opens a dragged sidebar thread on the side it is dropped, and replaces a pane when dropped on it', async () => {
@@ -357,7 +358,7 @@ describe('multi-pane workspace', () => {
     const view = mount({ height: TALL })
     await openAll('Streaming WAV stall', 'Footer links', 'Weekly note')
     fireEvent.keyDown(screen.getByRole('separator', { name: 'Resize rows 1 and 2' }), { key: 'ArrowUp' })
-    fireEvent.change(view.prompt('Footer links'), { target: { value: 'Footer draft while zoomed' } })
+    setPromptText(view.prompt('Footer links'), 'Footer draft while zoomed')
     const before = view.command.mock.calls.length
     await act(async () => { fireEvent.click(within(view.pane('Grok voice previews')).getByRole('button', { name: 'Zoom Grok voice previews pane' })) })
     const tabs = screen.getByRole('tablist', { name: 'Open panes' })
@@ -375,7 +376,7 @@ describe('multi-pane workspace', () => {
     expect(within(screen.getByRole('tablist', { name: 'Open panes' })).getByRole('tab', { name: 'Footer links' })).toHaveAttribute('aria-selected', 'true')
     await act(async () => { fireEvent.click(within(document.getElementById('thread-pane-footer-links')!).getByRole('button', { name: 'Show all panes' })) })
     expect(regions()).toEqual(['Grok voice previews', 'Streaming WAV stall', 'Footer links', 'Weekly note'])
-    expect(view.prompt('Footer links')).toHaveValue('Footer draft while zoomed')
+    expect(promptText(view.prompt('Footer links'))).toBe('Footer draft while zoomed')
     // Drafting in this legacy thread inspects its existing checkout; layout changes send no work.
     expect(view.command.mock.calls.filter(([request]) => request.type !== 'select-thread')).toEqual([[{ type: 'refresh-thread-worktree', threadId: 'footer-links', background: true }]])
   })
@@ -400,7 +401,7 @@ describe('multi-pane workspace', () => {
     await openAll('Streaming WAV stall', 'Footer links', 'Weekly note')
     const rows = screen.getByRole('separator', { name: 'Resize rows 1 and 2' })
     fireEvent.keyDown(rows, { key: 'ArrowUp' })
-    fireEvent.change(view.prompt('Footer links'), { target: { value: 'Footer draft through compact' } })
+    setPromptText(view.prompt('Footer links'), 'Footer draft through compact')
     await act(async () => { fireEvent.click(within(view.pane('Weekly note')).getByRole('button', { name: 'Single row' })) })
     const tabs = screen.getByRole('tablist', { name: 'Open panes' })
     expect(within(tabs).getByRole('tab', { name: 'Weekly note' })).toHaveAttribute('aria-selected', 'true')
@@ -421,14 +422,14 @@ describe('multi-pane workspace', () => {
     expect(within(view.pane('Weekly note')).getByRole('button', { name: 'Single row' })).toHaveAttribute('aria-pressed', 'false')
     expect(document.activeElement).toBe(within(view.pane('Weekly note')).getByRole('button', { name: 'Single row' }))
     expect(document.querySelector('.thread-panes > [role="status"]')).toHaveTextContent('Panes arranged in a grid')
-    expect(view.prompt('Footer links')).toHaveValue('Footer draft through compact')
+    expect(promptText(view.prompt('Footer links'))).toBe('Footer draft through compact')
     expect(view.command.mock.calls.filter(([request]) => request.type !== 'select-thread')).toEqual([[{ type: 'refresh-thread-worktree', threadId: 'footer-links', background: true }]])
   })
 
   it('moves a pane from its handle with the arrow keys, keeping focus, drafts and the selection where they were', async () => {
     const view = mount({ height: TALL })
     await openAll('Streaming WAV stall', 'Footer links', 'Weekly note')
-    fireEvent.change(view.prompt('Grok voice previews'), { target: { value: 'Previews draft' } })
+    setPromptText(view.prompt('Grok voice previews'), 'Previews draft')
     const before = view.command.mock.calls.length
     const grip = within(view.pane('Grok voice previews')).getByRole('button', { name: 'Move Grok voice previews pane' })
     grip.focus()
@@ -438,7 +439,7 @@ describe('multi-pane workspace', () => {
     expect(regions()).toEqual(['Streaming WAV stall', 'Weekly note', 'Footer links', 'Grok voice previews'])
     expect(grip).toHaveFocus()
     expect(screen.getByText('Grok voice previews moved to pane 4 of 4')).toHaveAttribute('role', 'status')
-    expect(view.prompt('Grok voice previews')).toHaveValue('Previews draft')
+    expect(promptText(view.prompt('Grok voice previews'))).toBe('Previews draft')
     expect(view.command.mock.calls.slice(before)).toEqual([])
     expect(view.pane('Weekly note')).toHaveAttribute('data-focused')
   })
@@ -475,7 +476,7 @@ describe('multi-pane workspace', () => {
       'Grok voice previews', 'Resize Grok voice previews and Streaming WAV stall', 'Streaming WAV stall', 'Resize rows 1 and 2',
       'Footer links', 'Resize Footer links and Weekly note', 'Weekly note',
     ])
-    const tabbable = [...within(group).getByRole('region', { name: 'Footer links' }).querySelectorAll<HTMLElement>('button, textarea')].filter(item => !item.hasAttribute('disabled'))
+    const tabbable = [...within(group).getByRole('region', { name: 'Footer links' }).querySelectorAll<HTMLElement>('button, textarea, [role="textbox"]')].filter(item => !item.hasAttribute('disabled'))
     expect(tabbable[0]).toHaveAccessibleName('Move Footer links pane')
     expect(tabbable.at(-1)!.closest('.thread-pane__controls')).toBeNull()
   })
@@ -520,10 +521,10 @@ describe('multi-pane workspace', () => {
   it('closes a pane from a grid without losing the other drafts, and re-snaps the rest', async () => {
     const view = mount({ height: TALL })
     await openAll('Streaming WAV stall', 'Footer links', 'Weekly note')
-    fireEvent.change(view.prompt('Weekly note'), { target: { value: 'Weekly draft' } })
+    setPromptText(view.prompt('Weekly note'), 'Weekly draft')
     await act(async () => { fireEvent.click(within(view.pane('Streaming WAV stall')).getByRole('button', { name: 'Close Streaming WAV stall pane' })) })
     expect(regions()).toEqual(['Grok voice previews', 'Footer links', 'Weekly note'])
-    expect(view.prompt('Weekly note')).toHaveValue('Weekly draft')
+    expect(promptText(view.prompt('Weekly note'))).toBe('Weekly draft')
     expect(view.pane('Weekly note').parentElement!.style.getPropertyValue('--pane-2-w')).toBe('calc((100% - 0px) * 1)')
     expect(within(sidebar()).getByRole('button', { name: 'Streaming WAV stall' })).toBeInTheDocument()
   })

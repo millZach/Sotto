@@ -1,3 +1,4 @@
+import { fillPrompt, promptField } from './support/prompt'
 import { resizeContentWindow } from './support/sottoWindow'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { hostEntityKey } from '../../src/shared/clientIdentity'
@@ -45,7 +46,7 @@ async function expectCardWhole(page: Page, threadId: string, submit: RegExp, wit
     const bottom = (target: Element | null | undefined) => target ? Math.round(target.getBoundingClientRect().bottom) : null
     return {
       limit: Math.round(limit), card: bottom(card), image: bottom(image), action: bottom(action), meta: bottom(element.querySelector('.thread-pane__meta')),
-      promptFont: getComputedStyle(card.querySelector('textarea')!).fontSize,
+      promptFont: getComputedStyle(card.querySelector('.prompt-editor, textarea')!).fontSize,
       controls: [...element.querySelectorAll('.thread-workspace__actions .tt-button')].map(button => ({ height: button.getBoundingClientRect().height, font: getComputedStyle(button).fontSize })),
       paneScroll: element.scrollHeight - element.clientHeight, transcript: element.querySelector('[aria-label="Thread transcript"]')!.clientHeight,
     }
@@ -68,7 +69,7 @@ async function expectCardWhole(page: Page, threadId: string, submit: RegExp, wit
 }
 
 async function attachDraft(thread: Locator, prompt: Locator): Promise<void> {
-  await prompt.fill(DRAFT)
+  await fillPrompt(prompt, DRAFT)
   await thread.getByLabel('Screenshot files').setInputFiles({ name: 'draft-image.png', mimeType: 'image/png', buffer: PNG })
   await expect(thread.getByRole('img', { name: 'draft-image.png' })).toBeVisible()
 }
@@ -83,12 +84,12 @@ test('one attached image keeps the prompt and its action above the window edge a
     await openThreads(page)
     await open(page, 'Docs')
     const docs = pane(page, 'docs')
-    const docsManual = docs.locator('form.thread-prompt textarea')
-    await docsManual.fill('Start the long job.')
+    const docsManual = promptField(docs)
+    await fillPrompt(docsManual, 'Start the long job.')
     await docsManual.press('Enter')
     await expect(docs.getByLabel('Thread transcript')).toContainText('Start the long job.')
     for (const text of ['Queued first.', 'Queued second.']) {
-      await docsManual.fill(text)
+      await fillPrompt(docsManual, text)
       // The transcript shows the optimistic send before main admits the running
       // turn. Build the layout fixture only once the next prompt can be queued.
       await expect(docs.getByRole('button', { name: 'Queue prompt', exact: true })).toBeEnabled()
@@ -99,7 +100,7 @@ test('one attached image keeps the prompt and its action above the window edge a
 
     await open(page, 'Workshop')
     const workshop = pane(page, 'workshop')
-    await attachDraft(workshop, workshop.locator('form.thread-prompt textarea'))
+    await attachDraft(workshop, promptField(workshop))
     await expectCardWhole(page, 'workshop', /^Send prompt$/u)
     await open(page, 'Docs')
     await attachDraft(docs, docsManual)

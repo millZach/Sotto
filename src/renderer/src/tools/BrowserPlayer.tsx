@@ -1,3 +1,4 @@
+import { focusedComposerField } from '../agents/promptSelection'
 import React, { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import { Globe, Minimize2, PanelRight, Pause, Play, X } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
@@ -109,7 +110,7 @@ export function BrowserPlayer({ state, focusedThreadId, bridge, store, autoShow 
     if (event.key !== 'Escape' || event.defaultPrevented) return
     event.preventDefault()
     playerStore.shrink(threadId)
-    document.querySelector<HTMLTextAreaElement>('.thread-pane[data-focused] .thread-prompt textarea')?.focus()
+    focusedComposerField()?.focus()
   }
 
   if (visibility === 'shrunk') {
@@ -179,7 +180,7 @@ export function BrowserPlayer({ state, focusedThreadId, bridge, store, autoShow 
   }
   const hideToComposer = (): void => {
     playerStore.hide(threadId)
-    requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('.thread-pane[data-focused] .thread-prompt textarea')?.focus())
+    requestAnimationFrame(() => focusedComposerField()?.focus())
   }
   const answer = (allow: boolean, forThread = false): void => {
     setProblem(null); setAnswering(true)

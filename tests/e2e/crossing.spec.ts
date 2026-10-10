@@ -1,3 +1,4 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { join } from 'node:path'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { expect, test } from '@playwright/test'
@@ -41,10 +42,10 @@ test('Crossing keeps dictation, history, settings and sessions usable', async ()
     await expect(page.getByRole('searchbox', { name: 'Search transcripts' })).toBeFocused()
     await openThreads(page)
     await page.getByRole('button', { name: 'Workshop', exact: true }).click()
-    await page.getByLabel('Prompt', { exact: true }).fill('Keep this draft until I explicitly send it.')
+    await fillPrompt(promptField(page), 'Keep this draft until I explicitly send it.')
     await openPage(page, 'Dictate')
     await openThreads(page)
-    await expect(page.getByLabel('Prompt', { exact: true })).toHaveValue('Keep this draft until I explicitly send it.')
+    await expectPromptText(promptField(page), 'Keep this draft until I explicitly send it.')
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
     await expect(page.getByLabel('Thread transcript')).toContainText('Keep this draft until I explicitly send it.')
     await page.getByRole('button', { name: 'New thread', exact: true }).click()
