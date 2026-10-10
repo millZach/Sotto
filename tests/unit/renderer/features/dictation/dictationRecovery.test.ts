@@ -1,21 +1,17 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
-import { TranscriptionError } from '../../../../../src/renderer/src/transcription/openRouterTranscriber'
+import { TranscriptionError } from '../../../../../src/renderer/src/transcription/localTranscriber'
 
-import type { TranscriptionResult } from '../../../../../src/renderer/src/transcription/openRouterTranscriber'
+import type { TranscriptionResult } from '../../../../../src/renderer/src/transcription/localTranscriber'
 import { widgetSnapshotSchema } from '../../../../../src/shared/contracts'
 import { TRANSCRIPTION_KEPT_DETAIL } from '../../../../../src/shared/dictation'
 import { createHarness, deferred, recorderOptions, settings, snapshots } from '../../../../fixtures/renderer/dictationControllerHarness'
 
-describe('hosted transcription failures', () => {
+describe('local transcription failures', () => {
   it.each([
-    ['unconfigured', 'TRANSCRIPTION_UNCONFIGURED'],
-    ['unauthorized', 'TRANSCRIPTION_UNAUTHORIZED'],
-    ['network', 'TRANSCRIPTION_OFFLINE'],
-    ['timeout', 'TRANSCRIPTION_OFFLINE'],
-    ['billing', 'TRANSCRIPTION_BILLING'],
-    ['rate-limited', 'TRANSCRIPTION_RATE_LIMITED'],
-    ['http', 'TRANSCRIPTION_SERVICE_ERROR'],
+    ['model-not-ready', 'TRANSCRIPTION_MODEL_NOT_READY'],
+    ['failed', 'TRANSCRIPTION_FAILED'],
+    ['timeout', 'TRANSCRIPTION_FAILED'],
     ['malformed', 'TRANSCRIPTION_FAILED'],
   ] as const)('surfaces %s as %s', async (reason, code) => {
     const harness = createHarness({ transcribe: async () => { throw new TranscriptionError(reason) } })
@@ -25,13 +21,24 @@ describe('hosted transcription failures', () => {
     expect(harness.deliverOutput).not.toHaveBeenCalled()
     expect(harness.addHistory).not.toHaveBeenCalled()
   })
+
+  it('fails start before recording when the speech model is not ready', async () => {
+    const harness = createHarness({ speechModelReady: () => false })
+    await harness.controller.start()
+    expect(harness.controller.getState()).toMatchObject({ status: 'error', code: 'SPEECH_MODEL_NOT_READY' })
+    expect(harness.controller.getState()).not.toHaveProperty('kept')
+    expect(harness.createRecorder).not.toHaveBeenCalled()
+    expect(harness.transcriber.transcribe).not.toHaveBeenCalled()
+    expect(harness.publishWidgetState).toHaveBeenLastCalledWith(expect.objectContaining({
+      status: 'error', code: 'SPEECH_MODEL_NOT_READY',
+    }))
+  })
 })
 describe('kept recordings', () => {
   // A dictation of two streamed segments and a tail, where the second segment is turned away once.
-  function turnedAway(failures: Array<'rate-limited' | null> = ['rate-limited']) {
+  function turnedAway(failures: Array<'failed' | null> = ['failed']) {
     const calls: number[] = []
     const harness = createHarness({
-      currentSettings: settings({ streamingAsr: true }),
       transcribe: async (options) => {
         const part = options.audio[0]!
         calls.push(part)
@@ -59,11 +66,11 @@ describe('kept recordings', () => {
     const { harness, record } = turnedAway()
     await record()
     expect(harness.controller.getState()).toMatchObject({
-      status: 'error', code: 'TRANSCRIPTION_RATE_LIMITED', kept: true,
-      message: TRANSCRIPTION_KEPT_DETAIL.TRANSCRIPTION_RATE_LIMITED,
+      status: 'error', code: 'TRANSCRIPTION_FAILED', kept: true,
+      message: TRANSCRIPTION_KEPT_DETAIL.TRANSCRIPTION_FAILED,
     })
     const last = snapshots(harness).at(-1)!
-    expect(last).toMatchObject({ status: 'error', code: 'TRANSCRIPTION_RATE_LIMITED', kept: true, cancellable: false })
+    expect(last).toMatchObject({ status: 'error', code: 'TRANSCRIPTION_FAILED', kept: true, cancellable: false })
     expect(widgetSnapshotSchema.safeParse(last).success).toBe(true)
     expect(harness.deliverOutput).not.toHaveBeenCalled()
     expect(harness.addHistory).not.toHaveBeenCalled()
@@ -91,7 +98,7 @@ describe('kept recordings', () => {
   })
 
   it('keeps the recording again when Try again is turned away too', async () => {
-    const { harness, calls, record } = turnedAway(['rate-limited', 'rate-limited'])
+    const { harness, calls, record } = turnedAway(['failed', 'failed'])
     await record()
     expect(harness.controller.getState()).not.toHaveProperty('retried')
     await harness.controller.retry()
@@ -130,20 +137,20 @@ describe('kept recordings', () => {
     const harness = createHarness({
       transcribe: async () => {
         call += 1
-        if (call === 1) throw new TranscriptionError('network')
+        if (call === 1) throw new TranscriptionError('failed')
         if (call === 2) return pending.promise
         return { text: 'kept words', language: 'en' }
       },
     })
     await harness.controller.start()
     await harness.controller.stop()
-    expect(harness.controller.getState()).toMatchObject({ status: 'error', code: 'TRANSCRIPTION_OFFLINE', kept: true })
+    expect(harness.controller.getState()).toMatchObject({ status: 'error', code: 'TRANSCRIPTION_FAILED', kept: true })
     const retry = harness.controller.retry()
     expect(harness.controller.getState()).toMatchObject({ status: 'processing' })
 
     await harness.controller.cancel()
     expect(harness.transcriber.cancel).toHaveBeenCalledWith('session')
-    expect(harness.controller.getState()).toMatchObject({ status: 'error', code: 'TRANSCRIPTION_OFFLINE', kept: true })
+    expect(harness.controller.getState()).toMatchObject({ status: 'error', code: 'TRANSCRIPTION_FAILED', kept: true })
     expect(harness.controller.getState()).not.toHaveProperty('retried')
 
     // The cancelled attempt's late answer decides nothing.
@@ -164,7 +171,7 @@ describe('kept recordings', () => {
       currentSettings: settings({ llmFormatting: true }),
       transcribe: async () => {
         call += 1
-        if (call === 1) throw new TranscriptionError('rate-limited')
+        if (call === 1) throw new TranscriptionError('failed')
         return { text: 'kept words', language: 'en' }
       },
       polishTranscript: async (text) => {
@@ -178,7 +185,7 @@ describe('kept recordings', () => {
     await vi.waitFor(() => expect(polishes).toBe(1))
 
     await harness.controller.cancel()
-    expect(harness.controller.getState()).toMatchObject({ status: 'error', code: 'TRANSCRIPTION_RATE_LIMITED', kept: true })
+    expect(harness.controller.getState()).toMatchObject({ status: 'error', code: 'TRANSCRIPTION_FAILED', kept: true })
     // The cancelled attempt stops waiting at once, though the cleanup call runs on.
     await retry
     cleanup.resolve({ text: 'Cleaned words.', applied: true })
@@ -202,7 +209,7 @@ describe('kept recordings', () => {
       currentSettings: settings({ llmFormatting: true }),
       transcribe: async () => {
         call += 1
-        if (call === 1) throw new TranscriptionError('rate-limited')
+        if (call === 1) throw new TranscriptionError('failed')
         return { text: 'kept words', language: 'en' }
       },
       polishTranscript: async () => {
@@ -229,11 +236,10 @@ describe('kept recordings', () => {
     const sent: number[] = []
     let retrying = false
     const harness = createHarness({
-      currentSettings: settings({ streamingAsr: true }),
       transcribe: async (options) => {
         const part = options.audio[0]!
         sent.push(part)
-        if (!retrying && part !== 1) throw new TranscriptionError('rate-limited')
+        if (!retrying && part !== 1) throw new TranscriptionError('failed')
         if (retrying && part === 3 && sent.filter((value) => value === 3).length === 2) return lastPart.promise
         return { text: `part-${part}`, language: 'en' }
       },
@@ -267,7 +273,7 @@ describe('kept recordings', () => {
     const harness = createHarness({
       transcribe: async () => {
         call += 1
-        if (call <= 2) throw new TranscriptionError('rate-limited')
+        if (call <= 2) throw new TranscriptionError('failed')
         return pending.promise
       },
     })

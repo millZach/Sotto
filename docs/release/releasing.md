@@ -42,6 +42,14 @@ macOS builds are ad-hoc signed (`identity: '-'`) and not notarized, so the relea
 
 electron-builder's publish config and the Windows auto-update feed point at `millZach/Sotto-releases`. Windows installs are offered the new version by the in-app updater; macOS users download the disk image by hand. Linux users install the next pacman package; once `sotto-bin` is in the AUR, `omarchy update` brings it.
 
+## Speech model
+
+The speech model is not in any installer (ADR-0071). Its four files are release assets on `millZach/Sotto-releases` under their own tag, `speech-model-parakeet-tdt-0.6b-v3-int8-1`, and every Sotto downloads them on first run. Publish that release once, and again only when the model changes:
+
+- Create it as a **pre-release** and never mark it Latest. The updater reads only the release marked Latest, so an app release stays Latest and update checks are unaffected.
+- Upload `encoder.int8.onnx`, `decoder.int8.onnx`, `joiner.int8.onnx` and `tokens.txt` exactly as sherpa-onnx publishes them in its `asr-models` release (`sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8`). Their sizes and SHA-256 sums must match `SPEECH_MODEL` in `src/shared/speechModel.ts`, or every download is refused.
+- A new model version gets a new tag and new pins in the same change; never replace the assets under an existing tag, because installed copies would refuse them.
+
 ## Linux desktop package
 
 Cut by hand on forge (Omarchy, x64), using Node 24.21.0 and a clean `npm ci`. Never change shared electron-builder keys for Linux: `package:linux` enables the native rebuild on its command line and the `linux:` block owns the target. Windows and macOS keep their release commands.

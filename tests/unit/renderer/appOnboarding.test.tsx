@@ -17,7 +17,7 @@ describe('Sotto application onboarding integration', () => {
     expect(screen.getByRole('tab', { name: 'Dictate' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.queryByRole('tab', { name: /agents/i })).not.toBeInTheDocument()
     expect(screen.getByRole('navigation', { name: 'Pages' })).toBeInTheDocument()
-    expect(screen.getByRole('contentinfo')).toHaveTextContent(/add your openrouter api key in settings/i)
+    expect(screen.getByRole('contentinfo')).toHaveTextContent(/parakeet v3 on this computer/i)
   })
 
   it('navigates the management shell and copies History through the trusted bridge without auto-paste', async () => {
@@ -204,7 +204,7 @@ describe('Sotto application onboarding integration', () => {
     await user.click(screen.getByRole('button', { name: /skip for now/i }))
     stopped.resolve()
 
-    await screen.findByRole('heading', { name: /connect your openrouter key/i })
+    await screen.findByRole('heading', { name: /download the speech model/i })
     await act(async () => undefined)
     expect(createMicrophoneTest).toHaveBeenCalledOnce()
     expect(replacement.start).not.toHaveBeenCalled()
@@ -295,7 +295,7 @@ describe('Sotto application onboarding integration', () => {
     await waitFor(() => expect(microphone.stop).toHaveBeenCalledOnce())
     started.resolve('ready')
 
-    await screen.findByRole('heading', { name: /connect your openrouter key/i })
+    await screen.findByRole('heading', { name: /download the speech model/i })
     await act(async () => undefined)
     expect(microphone.stop).toHaveBeenCalledOnce()
   })

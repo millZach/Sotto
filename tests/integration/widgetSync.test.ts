@@ -50,9 +50,12 @@ function createBridge(overrides: Partial<SottoBridge> = {}): SottoBridge {
       text: request.text,
       applied: false,
     })),
-    transcribe: vi.fn(async () => ({ ok: false as const, reason: 'unconfigured' as const })),
+    transcribe: vi.fn(async () => ({ ok: false as const, reason: 'model-not-ready' as const })),
     cancelTranscription: vi.fn(async () => OK),
-    checkTranscriptionKey: vi.fn(async () => ({ ok: false as const, reason: 'unconfigured' as const })),
+    getSpeechModelStatus: vi.fn(async () => ({ state: 'ready' as const })),
+    downloadSpeechModel: vi.fn(async () => OK),
+    onSpeechModelStatus: vi.fn(() => () => undefined),
+    checkOpenRouterKey: vi.fn(async () => ({ ok: false as const, reason: 'unconfigured' as const })),
     ensureMicrophoneAccess: vi.fn(async () => true),
     getUpdateStatus: vi.fn(async () => ({ ok: false as const, reason: 'unavailable' as const })),
     checkForUpdates: vi.fn(async () => ({ ok: false as const, reason: 'unavailable' as const })),
@@ -455,7 +458,7 @@ describe('AppProvider dictation integration', () => {
 })
 
 describe('production controller seam', () => {
-  it('constructs the recorder, hosted transcriber, and sound cue player through injectable factories', async () => {
+  it('constructs the recorder, local transcriber, and sound cue player through injectable factories', async () => {
     const recorder = { start: vi.fn(async () => undefined), stop: vi.fn(async () => null), cancel: vi.fn(async () => undefined) }
     const transcriber = { transcribe: vi.fn(), cancel: vi.fn(), dispose: vi.fn() }
     const cuePlayer = { playStart: vi.fn(), playStop: vi.fn() }

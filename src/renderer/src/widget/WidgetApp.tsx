@@ -30,6 +30,7 @@ import { formatAccelerator } from '../../../shared/accelerator'
 import {
   isTranscriptionErrorCode,
   MICROPHONE_NOT_SET_UP_DETAIL,
+  SPEECH_MODEL_NOT_READY_DETAIL,
   TRANSCRIPTION_ERROR_DETAIL,
   TRANSCRIPTION_KEPT_DETAIL,
   type WidgetErrorCode,
@@ -52,12 +53,10 @@ const PREVIEW_NOW = 13_340
 
 const processingLabels: Record<WidgetProcessingStage, string> = {
   'preparing-audio': 'Preparing audio',
-  'loading-model': 'Preparing transcription',
+  'loading-model': 'Starting the speech model',
   transcribing: 'Transcribing',
   'delivering-output': 'Delivering text',
 }
-/** Before the upload starts nothing has left the computer, so only these stages say where the audio went. */
-const AUDIO_SENT_STAGES: ReadonlySet<WidgetProcessingStage> = new Set(['transcribing', 'delivering-output'])
 
 function errorCopyFor(
   copy: PlatformCopy,
@@ -75,6 +74,10 @@ function errorCopyFor(
       title: 'No microphone set up',
       detail: MICROPHONE_NOT_SET_UP_DETAIL,
     },
+    SPEECH_MODEL_NOT_READY: {
+      title: 'Model not ready',
+      detail: SPEECH_MODEL_NOT_READY_DETAIL,
+    },
     MIC_START_FAILED: {
       title: 'Microphone unavailable',
       detail: 'Check the selected microphone and try again.',
@@ -87,29 +90,9 @@ function errorCopyFor(
       title: 'No speech detected',
       detail: 'Speak closer to the microphone and try again.',
     },
-    TRANSCRIPTION_UNCONFIGURED: {
-      title: 'API key needed',
-      detail: TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_UNCONFIGURED,
-    },
-    TRANSCRIPTION_UNAUTHORIZED: {
-      title: 'API key rejected',
-      detail: TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_UNAUTHORIZED,
-    },
-    TRANSCRIPTION_OFFLINE: {
-      title: 'Connection unavailable',
-      detail: TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_OFFLINE,
-    },
-    TRANSCRIPTION_BILLING: {
-      title: 'Out of credit',
-      detail: TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_BILLING,
-    },
-    TRANSCRIPTION_RATE_LIMITED: {
-      title: 'Too many requests',
-      detail: TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_RATE_LIMITED,
-    },
-    TRANSCRIPTION_SERVICE_ERROR: {
-      title: 'OpenRouter error',
-      detail: TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_SERVICE_ERROR,
+    TRANSCRIPTION_MODEL_NOT_READY: {
+      title: 'Model not ready',
+      detail: TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_MODEL_NOT_READY,
     },
     TRANSCRIPTION_FAILED: {
       title: 'Couldn’t transcribe',
@@ -224,7 +207,7 @@ function getCopy(snapshot: WidgetSnapshot, platform: SottoPlatform): WidgetCopy 
     case 'processing':
       return {
         tone: 'processing', title: processingLabels[snapshot.stage],
-        detail: AUDIO_SENT_STAGES.has(snapshot.stage) ? copy.widgetProcessingDetail : 'Audio is never saved',
+        detail: copy.widgetProcessingDetail,
         icon: <CircleEllipsis aria-hidden="true" size={23} strokeWidth={2.1} />,
       }
     case 'success':
@@ -249,8 +232,8 @@ function getCopy(snapshot: WidgetSnapshot, platform: SottoPlatform): WidgetCopy 
         const again = snapshot.retried === true
         return {
           tone: 'error',
-          title: again ? (snapshot.code === 'TRANSCRIPTION_RATE_LIMITED' ? 'Still busy · retry' : 'Failed again · retry') : 'Click to try again',
-          detail: `${again ? 'Try again did not get through. ' : ''}${entry.title}. ${TRANSCRIPTION_KEPT_DETAIL[snapshot.code]}`,
+          title: again ? 'Failed again · retry' : 'Click to try again',
+          detail: `${again ? 'Try again failed too. ' : ''}${entry.title}. ${TRANSCRIPTION_KEPT_DETAIL[snapshot.code]}`,
           icon: <RotateCcw aria-hidden="true" size={23} strokeWidth={2.2} />,
         }
       }
@@ -763,7 +746,7 @@ export function parseVisualPreview(
     case 'error':
       return { ...common, status: 'error', code: 'MIC_PERMISSION_DENIED', cancellable: false }
     case 'kept':
-      return { ...common, status: 'error', code: 'TRANSCRIPTION_RATE_LIMITED', kept: true, cancellable: false }
+      return { ...common, status: 'error', code: 'TRANSCRIPTION_FAILED', kept: true, cancellable: false }
   }
 }
 

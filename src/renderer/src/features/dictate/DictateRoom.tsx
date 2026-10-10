@@ -2,11 +2,14 @@ import React, { useEffect, useMemo, useState, type ReactNode } from 'react'
 
 import {
   MICROPHONE_NOT_SET_UP_DETAIL,
+  SPEECH_MODEL_NOT_READY_DETAIL,
   TRANSCRIPTION_ERROR_DETAIL,
   TRANSCRIPTION_KEPT_DETAIL,
   isTranscriptionErrorCode,
   type DictationState,
 } from '../../../../shared/dictation'
+import { speechModelSummary } from '../../components/SpeechModelStatus'
+import type { SpeechModelStatus } from '../../../../shared/speechModel'
 import type { HistoryEntry } from '../../../../shared/history'
 import type { SottoPlatform } from '../../../../shared/platform'
 import type { AppSettings } from '../../../../shared/settings'
@@ -18,6 +21,8 @@ import type { HistoryStatus } from '../../state/AppContext'
 
 export interface DictateRoomProps {
   readonly settings: AppSettings
+  /** Where the speech model stands (ADR-0071); null until main answers, which counts as ready. */
+  readonly speechModel: SpeechModelStatus | null
   readonly platform: SottoPlatform
   readonly dictation: DictationState
   readonly entries: readonly HistoryEntry[]
@@ -68,12 +73,13 @@ export function transcriptStamp(createdAt: number, now: number): { dateTime?: st
 
 function errorDetail(code: string, copy: PlatformCopy, kept = false, retried = false): string {
   if (kept && isTranscriptionErrorCode(code)) {
-    return retried ? `Try again did not get through. ${TRANSCRIPTION_KEPT_DETAIL[code]}` : TRANSCRIPTION_KEPT_DETAIL[code]
+    return retried ? `Try again failed too. ${TRANSCRIPTION_KEPT_DETAIL[code]}` : TRANSCRIPTION_KEPT_DETAIL[code]
   }
   switch (code) {
     case 'MIC_PERMISSION_DENIED': return copy.homeMicrophonePermissionDenied
     case 'MIC_DEVICE_NOT_FOUND': return 'The selected microphone is unavailable. Choose another microphone in Settings.'
     case 'MIC_NOT_SET_UP': return MICROPHONE_NOT_SET_UP_DETAIL
+    case 'SPEECH_MODEL_NOT_READY': return SPEECH_MODEL_NOT_READY_DETAIL
     case 'NO_SPEECH': return 'No speech was detected. Try again a little closer to the microphone.'
     case 'OUTPUT_FAILED':
     case 'OUTPUT_UNAVAILABLE': return 'Your completed text is below. Copy it again, or select and copy it yourself.'
@@ -89,11 +95,17 @@ export function dictateSentence(
   state: DictationState,
   copy: PlatformCopy,
   microphoneSkipped = false,
+  speechModelReady = true,
 ): { sentence: string; detail?: string; tone: 'normal' | 'error' } {
   // Setup was finished without a microphone, so the resting room says so
   // rather than offering a start that could only fail.
   if (microphoneSkipped && state.status === 'idle') {
     return { sentence: 'No microphone is set up.', detail: MICROPHONE_NOT_SET_UP_DETAIL, tone: 'normal' }
+  }
+  // The same for a speech model still downloading, starting or stopped; the pill
+  // and the line beside it say which (ADR-0071).
+  if (!speechModelReady && state.status === 'idle') {
+    return { sentence: 'The speech model is not ready yet.', tone: 'normal' }
   }
   switch (state.status) {
     case 'requesting-permission': return { sentence: 'Connecting to your microphone.', detail: copy.homeRequestingPermissionDetail, tone: 'normal' }
@@ -119,6 +131,7 @@ function waveStage(state: DictationState): VoiceWaveStage {
  */
 export function DictateRoom({
   settings,
+  speechModel,
   platform,
   dictation,
   entries,
@@ -136,12 +149,13 @@ export function DictateRoom({
   const [copying, setCopying] = useState(false)
   const [now, setNow] = useState(() => Date.now())
   const copy = platformCopy(platform)
-  const configured = settings.llmApiKey.trim().length > 0
+  const configured = speechModel === null || speechModel.state === 'ready'
+  const modelLabel = speechModel?.state === 'downloading' ? 'Downloading speech model' : speechModel?.state === 'loading' ? 'Starting speech model' : 'Speech model needed'
   const stage = waveStage(dictation)
   const listening = dictation.status === 'listening'
   const sessionId = 'sessionId' in dictation ? dictation.sessionId : undefined
   const microphoneSkipped = settings.microphoneSkipped
-  const said = dictateSentence(dictation, copy, microphoneSkipped)
+  const said = dictateSentence(dictation, copy, microphoneSkipped, configured)
 
   useEffect(() => {
     if (!listening) return
@@ -168,7 +182,7 @@ export function DictateRoom({
     try { await onCopy(latest.text) } catch { /* the notice belongs to the caller */ } finally { setCopying(false) }
   }
 
-  let actionLabel = microphoneSkipped ? 'Microphone needed' : configured ? 'Start dictation' : 'API key required'
+  let actionLabel = microphoneSkipped ? 'Microphone needed' : configured ? 'Start dictation' : modelLabel
   let actionDisabled = submitting || !configured || microphoneSkipped
   let action = onStart
   if (dictation.status === 'requesting-permission') {
@@ -218,8 +232,7 @@ export function DictateRoom({
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [dismiss, errorKey])
-  const keyProblem = !configured || (dictation.status === 'error'
-    && (dictation.code === 'TRANSCRIPTION_UNCONFIGURED' || dictation.code === 'TRANSCRIPTION_UNAUTHORIZED'))
+  const modelProblem = !configured || (dictation.status === 'error' && dictation.code === 'TRANSCRIPTION_MODEL_NOT_READY')
 
   const liveProps = said.tone === 'error'
     ? { role: 'alert' as const, 'aria-live': 'assertive' as const }
@@ -258,8 +271,8 @@ export function DictateRoom({
           )}
           {/* The shortcut starts a new dictation, which lets a kept recording go,
               so it is not offered as another way to press Try again. A kept
-              recording that failed on the key still points at Settings. */}
-          {dictation.status === 'error' && dictation.code === 'DESKTOP_CLIPBOARD_UNAVAILABLE' ? null : kept ? (keyProblem ? <Button variant="secondary" onClick={onOpenSettings}>Open Settings</Button> : null) : configured && !microphoneSkipped ? (
+              recording that failed because the speech model was not ready still points at Settings. */}
+          {dictation.status === 'error' && dictation.code === 'DESKTOP_CLIPBOARD_UNAVAILABLE' ? null : kept ? (modelProblem ? <Button variant="secondary" onClick={onOpenSettings}>Open Settings</Button> : null) : configured && !microphoneSkipped ? (
             <span className="dictate__hint">
               {platform === 'linux'
                 ? listening
@@ -270,7 +283,10 @@ export function DictateRoom({
                 : <>or press <ShortcutKey accelerator={settings.hotkey} platform={platform} /> {listening ? 'again' : 'in any app'}</>}
             </span>
           ) : (
-            <Button variant="secondary" onClick={onOpenSettings}>Open Settings</Button>
+            <>
+              {microphoneSkipped ? null : <span className="dictate__hint">{speechModelSummary(speechModel)}</span>}
+              <Button variant="secondary" onClick={onOpenSettings}>Open Settings</Button>
+            </>
           )}
         </div>
       </div>

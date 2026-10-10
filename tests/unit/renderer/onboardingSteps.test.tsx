@@ -429,7 +429,16 @@ describe('PhoneStep', () => {
 })
 
 describe('Onboarding forward button labels', () => {
-  const base = { settings: DEFAULT_SETTINGS, onUpdateSettings: vi.fn(async () => true), onCheckTranscriptionKey: vi.fn(async () => ({ ok: true as const })), shortcut: 'Ctrl+Shift+Space', platform: 'win32' as const, onRequestMicrophone: vi.fn(), onComplete: vi.fn() }
+  const base = {
+    settings: DEFAULT_SETTINGS,
+    onUpdateSettings: vi.fn(async () => true),
+    speechModel: { state: 'missing' as const },
+    onDownloadSpeechModel: vi.fn(),
+    shortcut: 'Ctrl+Shift+Space',
+    platform: 'win32' as const,
+    onRequestMicrophone: vi.fn(),
+    onComplete: vi.fn(),
+  }
 
   it('reads Continue on steps that are always done', async () => {
     const user = userEvent.setup()
@@ -456,13 +465,13 @@ describe('Onboarding forward button labels', () => {
     expect(await screen.findByRole('button', { name: 'Continue' })).toBeVisible()
   })
 
-  it('reads Skip for now on the key step while the key is empty', async () => {
+  it('reads Skip for now on the speech-model step while it has not downloaded', async () => {
     const user = userEvent.setup()
     render(<Onboarding {...base} microphoneState="ready" />)
     await user.click(screen.getByRole('button', { name: 'Get started' }))
     await user.click(screen.getByRole('button', { name: 'Continue' }))
     await user.click(screen.getByRole('button', { name: 'Skip for now' }))
-    expect(screen.getByRole('heading', { name: 'Connect your OpenRouter key' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Download the speech model' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Skip for now' })).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Skip for now' }))
     expect(screen.getByRole('heading', { name: 'One shortcut from speech to text' })).toBeVisible()

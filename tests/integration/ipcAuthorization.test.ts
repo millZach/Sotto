@@ -13,7 +13,7 @@ import {
   SETTINGS_GET,
   SETTINGS_UPDATE,
   TRANSCRIPTION_CANCEL,
-  TRANSCRIPTION_CHECK_KEY,
+  OPENROUTER_CHECK_KEY,
   TRANSCRIPTION_TRANSCRIBE,
   WIDGET_PUBLISH
 } from '../../src/shared/channels'
@@ -61,7 +61,7 @@ describe('IPC validation and lifecycle', () => {
       OUTPUT_DELIVER,
       TRANSCRIPTION_TRANSCRIBE,
       TRANSCRIPTION_CANCEL,
-      TRANSCRIPTION_CHECK_KEY,
+      OPENROUTER_CHECK_KEY,
       MICROPHONE_ENSURE_ACCESS,
     ])(
       'denies widget renderer invocation of main-only channel %s',

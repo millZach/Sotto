@@ -9,14 +9,13 @@ import { transcriptionTimeoutMs } from '../../../shared/contracts'
 import type { DictationTranscriber } from '../features/dictation/dictationController'
 
 /**
- * Stands in for a window that was built without a transcription bridge. It
- * fails the way a missing key does, because from where the user sits that is
- * the same thing: nothing is set up to reach OpenRouter.
+ * Stands in for a window that was built without a transcription bridge: nothing
+ * can reach the speech model in main, so every segment fails.
  */
 export function createUnconfiguredTranscriber() {
   return {
     async load() {},
-    async transcribe(): Promise<never> { throw new TranscriptionError('unconfigured') },
+    async transcribe(): Promise<never> { throw new TranscriptionError('failed') },
     cancel() {},
     dispose() {},
   } satisfies DictationTranscriber
@@ -31,10 +30,10 @@ export interface LoadOptions {
 export interface TranscribeOptions extends LoadOptions {
   readonly sessionId: string
   readonly audio: Float32Array
-  readonly language: string
 }
 export interface TranscriptionResult {
   readonly text: string
+  /** The speech model works out the language itself and does not say which, so History records 'auto'. */
   readonly language: string
 }
 export class TranscriptionError extends Error {
@@ -48,9 +47,10 @@ export class TranscriptionError extends Error {
 const WATCHDOG_GRACE_MS = 1_000
 
 /**
- * OpenRouter reports no progress, so the widget gets the one honest edge there
- * is: the audio left this machine and the answer is outstanding. A middling
- * value reads as motion without claiming a percentage nobody measured.
+ * The speech model reports no progress within a segment, so the widget gets
+ * the one honest edge there is: the segment is with the model and the answer
+ * is outstanding. A middling value reads as motion without claiming a
+ * percentage nobody measured.
  */
 const TRANSCRIPTION_PROGRESS = 0.5
 
@@ -59,7 +59,7 @@ export interface TranscriptionBridge {
   cancelTranscription(requestId: string): Promise<unknown>
 }
 
-export interface OpenRouterTranscriberOptions {
+export interface LocalTranscriberOptions {
   readonly bridge: TranscriptionBridge
   readonly createRequestId?: () => string
   readonly setTimer?: (callback: () => void, delayMs: number) => unknown
@@ -81,7 +81,7 @@ const defaultSetTimer = (callback: () => void, delayMs: number): unknown =>
 const defaultClearTimer = (handle: unknown): void =>
   globalThis.clearTimeout(handle as ReturnType<typeof setTimeout>)
 
-export class OpenRouterTranscriber implements DictationTranscriber {
+export class LocalTranscriber implements DictationTranscriber {
   private readonly bridge: TranscriptionBridge
   private readonly createRequestId: () => string
   private readonly setTimer: (callback: () => void, delayMs: number) => unknown
@@ -89,7 +89,7 @@ export class OpenRouterTranscriber implements DictationTranscriber {
   private readonly pending = new Map<string, PendingRequest>()
   private disposed = false
 
-  constructor(options: OpenRouterTranscriberOptions) {
+  constructor(options: LocalTranscriberOptions) {
     this.bridge = options.bridge
     this.createRequestId = options.createRequestId ?? createId
     this.setTimer = options.setTimer ?? defaultSetTimer
@@ -99,7 +99,7 @@ export class OpenRouterTranscriber implements DictationTranscriber {
   load(): Promise<void> { return Promise.resolve() }
 
   transcribe(options: TranscribeOptions): Promise<TranscriptionResult> {
-    // A disposed transcriber is a teardown, not a missing key: say so honestly.
+    // A disposed transcriber is a teardown, not a failure: say so honestly.
     if (this.disposed) return Promise.reject(new TranscriptionError('cancelled'))
 
     let wav: Uint8Array
@@ -131,17 +131,18 @@ export class OpenRouterTranscriber implements DictationTranscriber {
             // returns false there; the late answer is simply dropped.
             if (!this.settle(requestId)) return
             if (result.ok) {
-              resolve({ text: result.text, language: options.language })
+              resolve({ text: result.text, language: 'auto' })
             } else {
               reject(new TranscriptionError(result.reason))
             }
           },
           (error: unknown) => {
             if (!this.settle(requestId)) return
+            // A bridge that threw never reached the speech model; the audio was fine.
             reject(
               error instanceof TranscriptionError
                 ? error
-                : new TranscriptionError('malformed'),
+                : new TranscriptionError('failed'),
             )
           },
         )
@@ -173,7 +174,7 @@ export class OpenRouterTranscriber implements DictationTranscriber {
     try {
       options.onProgress?.({ stage: 'transcribing', progress: TRANSCRIPTION_PROGRESS })
     } catch {
-      // Observer failures cannot disrupt an outstanding upload.
+      // Observer failures cannot disrupt an outstanding segment.
     }
   }
 
@@ -198,7 +199,7 @@ export class OpenRouterTranscriber implements DictationTranscriber {
         () => undefined,
       )
     } catch {
-      // Aborting the upload is best effort; the deadline releases it regardless.
+      // Cancelling in main is best effort; the deadline releases it regardless.
     }
   }
 }
