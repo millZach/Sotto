@@ -4,7 +4,7 @@
 
 Accepted October 9, 2026 by the owner on [#840](https://github.com/millZach/Sotto/issues/840#issuecomment-6092412183). The approved specification is mapping M3 in `docs/prototypes/omarchy-theme-prototype.html` on `prototype/omarchy-theme`. This amends ADR-0011 and ADR-0024 for Linux under ADR-0062.
 
-0070 was checked against `origin/main` at `738ba1fd` and all eight open pull-request diffs on October 9, 2026: #904, #903, #900, #896, #891, #888, #885 and #816. Main owns 0068 for voice removal (#880), and #891 now claims 0069 for cleanup. This branch therefore moved Omarchy from provisional 0068 to next-free 0070 and updated every citation. No audited diff claims 0070. The number remains provisional until merge, following `docs/agents/domain.md`.
+0070 was rechecked against `origin/main` at `73020885` and all nine open pull-request diffs on October 9, 2026: #906 (this branch), #905, #904, #903, #900, #896, #888, #885 and #816. Main owns 0068 for voice removal (#880) and 0069 for one cleanup model (#891). Only #906 claims 0070; main and the other eight open PRs leave it free. The number remains provisional until merge, following `docs/agents/domain.md`.
 
 ## Decision
 
@@ -20,7 +20,7 @@ Main validates the complete, opaque hex file with zod and converts it to canonic
 
 Both Appearance columns offer Omarchy on Linux, ahead of the six built-ins. The matching half names the current theme from Omarchy's `theme.name`; the other says “Waits for a light/dark Omarchy theme” and uses Sotto until such a theme arrives. A waiting selection survives restarts and missing files. The current palette travels through the existing settings notification and widget projection as read-only state; it is never saved in `settings.json` or the custom-theme library and cannot be patched over IPC. The runtime selection uses `__omarchy`, outside the custom-theme ID grammar; existing custom `omarchy` themes keep their IDs and choices. Create theme copies the palette actually painting the chosen appearance, including Sotto while a half waits or the file is missing.
 
-Windows and macOS do no Omarchy reads or watching. They retain six palettes, their defaults and their gallery. The shared role tokens and design baselines do not change. The stock-theme fixtures are rendered by Omarchy itself in an isolated HOME on forge; the unit suite uses those exact outputs on Windows, and also repeats the real renderer check when Omarchy is installed.
+Windows and macOS reject `__omarchy` in either selection over IPC before any settings write or notification, just as they reject an unknown ID. Linux accepts either waiting selection. Windows and macOS do no Omarchy reads or watching. They retain six palettes, their defaults and their gallery. The shared role tokens and design baselines do not change. The stock-theme fixtures are rendered by Omarchy itself in an isolated HOME on forge; the unit suite uses those exact outputs on Windows, and also repeats the real renderer check when Omarchy is installed.
 
 ## Consequences
 

@@ -1,6 +1,6 @@
 # Sotto follows the Omarchy theme — forge verification
 
-October 9, 2026. Ticket [#840](https://github.com/millZach/Sotto/issues/840), approved prototype M3, ADR-0070. Branch `feat/omarchy-theme` merges `origin/main` at `738ba1fd794e6ea0ba8aeadafd6a02b99d4d513a` in merge commit `cda85809ec121197c2e1e1d56b720b004a9f875f`. Main includes #880’s removal of voice control and #898’s release PR procedure. This note and the 28 captures describe the merged app.
+October 9, 2026. Ticket [#840](https://github.com/millZach/Sotto/issues/840), approved prototype M3, ADR-0070. PR [#906](https://github.com/millZach/Sotto/pull/906), branch `feat/omarchy-theme`, merges `origin/main` at `73020885bf39c484d9454b91c83043ebf7e35160` in merge commit `4d2f7be6c3e5eabd73d0e091c10670769dbc2241`. Main includes #880’s removal of voice control, #898’s release PR procedure and #891’s single cleanup model. The second-review fix is `d8b18c1a`: Windows and macOS reject the reserved selection before mutation; Linux retains waiting choices. This note and the 28 captures describe the merged app.
 
 ## Surface and isolation
 
@@ -8,7 +8,7 @@ Verified the built Sotto 0.1.34 app (Electron 43.1.0) on forge, Omarchy 4.0.4 an
 
 The live compositor constrained the outer nested window, so a second owned compositor inside it supplied a 1600×1000 display at scale 1. All app inputs, resizing and captures targeted that inner instance. No nested Omarchy shell or global shell services ran. The test uses `--password-store=basic` for this disposable profile and never opens the live keyring.
 
-The tested main build SHA-256 is `23576a66b6c69ba0e573b5d78234a196bd7add3a1400345b00f6875fbc9f3ee9`. The merged source was built before the refreshed capture run. The final record commit changes only documents and evidence; its rebuilt main output is checked against this hash.
+The tested main build SHA-256 is `e7c3447335aa42dd77846758d4229b303839712f73ba3af39240933a35cfb434`. The merged source was built before the refreshed capture run. The final record commit changes only documents and evidence; its rebuilt main output is checked against this hash.
 
 ## Journey
 
@@ -45,7 +45,7 @@ Widgets: [Tokyo Night](../../artifacts/omarchy-theme/widget-tokyo-night.png), [C
 
 ## Final gates
 
-The final gate head is the commit titled **“Record merged Omarchy verification after voice removal”**, whose parent is `cda85809ec121197c2e1e1d56b720b004a9f875f`. It records these results and the refreshed evidence. Its full SHA is resolved with `git log -1 --format=%H -- docs/verification/omarchy-theme.md`. All gates below are repeated after that record commit, on that exact head; the app source is identical to the verified merge commit.
+The final gate head is the commit titled **“Record the final Omarchy review checks”**, whose parent is `9a65603e33935c500a110351510c5a7e058799be`. Its full SHA is resolved with `git log -1 --format=%H -- docs/verification/omarchy-theme.md`. The complete gate set and nested journey are repeated after this record commit on that exact head; the application source is identical to the verified merge commit. The ignored `artifacts/omarchy-theme/review2/final-head-results.json` records the resolved SHA and gate exits.
 
 Commands use Node 24.21.0 through mise and an isolated HOME. Only one suite runs at a time: two Vitest workers or one Playwright worker. Vitest uses a private, user-owned bubblewrap root, read-only system mounts and this worktree’s `.t` at `/tmp`. This preserves dictation runtime ownership checks, gives Linux sockets short paths and prevents fixture folders from finding the enclosing checkout. An initial wrapper using the host root failed ownership checks; correcting the sandbox made the 119 affected tests pass without application changes. The visual journey runs directly in the owned nested session, with its isolated HOME and owned `DISPLAY`; wrapping Electron in bubblewrap left the widget unmapped. Both corrections concern the test environment only. Setup repeated `npm ci` and Electron’s installer in isolation. Main removed the voice runtime preparation script; `runtime:prepare --if-present` is consequently a no-op, and no retired runtime files are restored.
 
@@ -53,7 +53,7 @@ Commands use Node 24.21.0 through mise and an isolated HOME. Only one suite runs
 | --- | --- |
 | `npm run typecheck` | PASS, all three TypeScript projects |
 | `npm run lint` | PASS |
-| `npm test -- --maxWorkers=2` | PASS, 719 files and 9,032 tests; 52 files and 184 tests skipped |
+| `npm test -- --maxWorkers=2` | PASS, 719 files and 9,042 tests; 52 files and 184 tests skipped |
 | `npm run notices:verify` | PASS, 182 third-party components |
 | `npm run build` | PASS; main SHA-256 matches the capture build above |
 | Build external-dependency allowlist | `allowlist check: PASS` (`node-pty`, `zod`, `electron`), repeated immediately before push |
@@ -61,9 +61,9 @@ Commands use Node 24.21.0 through mise and an isolated HOME. Only one suite runs
 | Design capture manifest and hashes | PASS, all 144 exact tuples and hashes |
 | `ls docs/adr \| cut -c1-4 \| sort \| uniq -d` | PASS, no output |
 
-Main owns ADR-0068 for voice removal. A fresh audit of all eight open PR diffs found that #891 now claims ADR-0069 for cleanup. Omarchy therefore takes the next free number, ADR-0070. Neither `origin/main` at `738ba1fd` nor #904, #903, #900, #896, #891, #888, #885 or #816 claims 0070. Every Omarchy citation is updated; main’s ADR-0068 citations remain intact. The audit is repeated before push.
+Main owns ADR-0068 for voice removal and ADR-0069 for the single cleanup model. The fresh audit checks `origin/main` at `73020885bf39c484d9454b91c83043ebf7e35160` and all nine open PR diffs: #906 (this branch), #905, #904, #903, #900, #896, #888, #885 and #816. Only #906 claims 0070; main and every other open PR leave it free. The duplicate-number command prints nothing. The audit is repeated immediately before push.
 
-The active main ruleset requires an up-to-date branch, **Gates (Windows)** and **Package result**, with no bypass actors. Local forge results do not satisfy those GitHub checks. This request publishes only the feature branch and opens no PR; both required checks must pass on its future PR before merge.
+The active main ruleset requires an up-to-date branch, **Gates (Windows)** and **Package result**, with no bypass actors. Local forge results do not satisfy those GitHub checks. This request updates only the existing PR’s feature branch and posts no comment; both required checks must pass before PR #906 can merge.
 
 ## Merge conflicts and review
 
@@ -78,7 +78,11 @@ The active main ruleset requires an up-to-date branch, **Gates (Windows)** and *
 
 The automatic merges of `themeBranding`, the widget and onboarding’s Look step were checked against main. Their diff contains only palette and appearance resolution; none restores voice control. The Omarchy e2e fixture now uses main’s remaining agent configuration and store shape. Main’s removed voice coordinator, wake states, settings, orb and captures stay removed.
 
-Standards and issue review found no remaining in-scope findings. Built-in palettes, Windows/macOS token definitions, packaging and design baselines have no diff against merged main. No host, permission authority or runtime dependency was added. The retained editor cleanup changes tests only.
+The second review’s platform finding is fixed at the settings IPC validation boundary. Four cases cover both theme fields on Windows and macOS with a valid appearance change in the same patch: the reserved selection and an unknown ID each fail without even reading settings, writing or publishing a notification. Two Linux cases accept either half with a missing palette, and the existing waiting-selection persistence coverage remains. The prior runtime-field rejection tests now run against the actual simulated platform.
+
+The new merge of #891 had no conflicts. Cleanup, its settings/UI, documentation and main’s revised Cleanup baseline are taken from main. The branch no longer writes `llmQuality` or chooses cleanup tiers. The only remaining source mention of `llmQuality` documents that old settings discard it. No voice coordinator, wake state, control setting or orb returns.
+
+Standards and issue review found no remaining in-scope findings. Built-in palettes, Windows/macOS token definitions, packaging and design baselines have no diff against merged main. No host, permission authority or runtime dependency was added. The retained editor cleanup changes tests only. An initial full run passed all 9,042 assertions but exited red with two unhandled `document is not defined` errors from Tiptap’s deferred teardown in `threadQueueSkills` and `composerFileMentions`. The isolated rerun passed 43 tests, exposing a suite-load cleanup race. Commit `9a65603e` owns those editors and destroys them before jsdom closes, following the existing native-skills cleanup. The three affected renderer files then passed all 52 tests without an unhandled error. No timeout, assertion or product behavior was relaxed. The complete suite is rerun on the final record head.
 
 ## Review
 
@@ -103,8 +107,8 @@ Paths are relative to the repository root.
 | `src/shared/themes/omarchy.ts` | Strict schemas, whole-percent readability, derived success text and status safeguards. |
 | `src/shared/themes/library.ts` | Resolve the matching Omarchy half, or Sotto while waiting. |
 | `src/shared/settings.ts` | Read-only runtime field and Linux ID parsing. |
-| `src/main/ipc/registerIpc.ts` | Reject the runtime field in update requests. |
-| `tests/integration/settingsHistoryIpc.test.ts` | Rejection before writes or notifications on all three platforms. |
+| `src/main/ipc/registerIpc.ts` | Reject the runtime field and non-Linux reserved selections before mutation. |
+| `tests/integration/settingsHistoryIpc.test.ts` | Runtime-field rejection on all three platforms, both-half Windows/macOS ID rejection and Linux waiting-selection acceptance. |
 | `tests/fixtures/renderer/omarchyTextSurfaces.ts` | Audited text-on-surface pairs and graphical token exceptions. |
 | `src/shared/themeBranding.ts` | Keep the floating widget's mode and palette together. |
 | `src/renderer/src/state/appearance.ts` | Live projection, pending choices, Linux mode and startup cache. |
@@ -122,6 +126,8 @@ Paths are relative to the repository root.
 | `tests/unit/renderer/omarchyTheme.test.tsx` | Gallery, names, waiting state, keyboard and unchanged non-Linux imports. |
 | `tests/e2e/omarchy-theme.spec.ts` | Isolated real rendering, live main/widget repaint and PNG measurements. |
 | `tests/unit/renderer/nativeSkills.test.tsx` | Destroy test editors before the DOM closes. |
+| `tests/unit/renderer/threadQueueSkills.test.tsx` | Own and destroy mounted prompt/queue editors before jsdom closes. |
+| `tests/unit/renderer/composerFileMentions.test.tsx` | Destroy the mounted prompt editor before jsdom closes. |
 | `docs/adr/0070-sotto-follows-the-omarchy-theme.md` | Mapping, readability, Linux default and ADR-number audit. |
 | `docs/adr/0024-sotto-ships-its-own-palettes-in-light-and-dark-columns.md` | Record the Linux gallery addition. |
 | `CONTEXT.md` | Omarchy theme and readability-check terms, default and widget behaviour. |
@@ -135,7 +141,7 @@ Paths are relative to the repository root.
 
 ## Limits
 
-Windows and macOS were not run on their native desktops. Package (Windows) and Gates (Windows) cannot be claimed green from forge; the workflow runs on main pushes and PRs, and this request publishes only a feature branch with no PR. Built-in palettes, shared token definitions, packaging configuration, dependencies and committed design baselines have no diff.
+Windows and macOS were not run on their native desktops. Package (Windows) and Gates (Windows) cannot be claimed green from forge; the workflow runs on main pushes and PRs, and this request updates only PR #906’s feature branch without waiting for its CI. Built-in palettes, shared token definitions, packaging configuration, dependencies and committed design baselines have no diff.
 
 The committed design manifest and baseline hashes verify, and the branch has no diff in `artifacts/design` against main. Native Windows visual comparison was not run on forge; no capture baseline was regenerated.
 
