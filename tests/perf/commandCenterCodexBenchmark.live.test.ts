@@ -2,7 +2,7 @@
 /** Paid Codex benchmark. Never in CI; opt in with SOTTO_COMMAND_CENTER_BENCHMARK=1.
  * PowerShell: $env:SOTTO_COMMAND_CENTER_BENCHMARK='1';
  * npx vitest run tests/perf/commandCenterCodexBenchmark.live.test.ts --maxWorkers=1
- * Complete only the eight missing B cells: also set SOTTO_COMMAND_CENTER_BENCHMARK_COMPLETE=1.
+ * Rerun all ten B cells: also set SOTTO_COMMAND_CENTER_BENCHMARK_ON_REQUEST=1.
  * Twenty serial, fresh threads; five minutes per send. No replies, tool arguments or protocol bodies saved.
  */
 import { execFile } from 'node:child_process'
@@ -25,11 +25,13 @@ import { BenchmarkStandIns, BENCHMARK_TASKS, benchmarkKeys, createBenchmarkCopie
   type BenchmarkArm, type BenchmarkCopies, type BenchmarkTask, type BenchmarkToolName } from '../fixtures/commandCenterBenchmark'
 
 const LIVE = process.env.SOTTO_COMMAND_CENTER_BENCHMARK === '1' && !process.env.CI
-const COMPLETE = process.env.SOTTO_COMMAND_CENTER_BENCHMARK_COMPLETE === '1'
+const ON_REQUEST = process.env.SOTTO_COMMAND_CENTER_BENCHMARK_ON_REQUEST === '1'
+const NATIVE_POLICY = { approvalPolicy: 'on-request', approvalsReviewer: 'user', sandbox: 'read-only' } as const
 const OPERATION_MS = 30_000, TURN_MS = 5 * 60_000
 const ARTIFACTS = join(process.cwd(), 'artifacts', 'command-center-benchmark')
 const exec = promisify(execFile)
-type Reason = 'client-start-failed' | 'setup-timeout' | 'setup-refused' | 'send-refused' | 'turn-failed' | 'turn-timeout' | 'request-raised' | 'profile-revoked' | 'unexpected-native-tool' | 'missing-reply' | 'missing-usage' | 'copy-changed' | 'cleanup-failed'
+type Reason = 'client-start-failed' | 'setup-timeout' | 'setup-refused' | 'send-refused' | 'turn-failed' | 'turn-timeout' | 'request-raised' | 'profile-revoked' | 'unexpected-native-tool' | 'missing-reply' | 'missing-usage' | 'copy-changed' | 'cleanup-failed' | 'harness-interrupted'
+type RequestKind = 'command' | 'file-change' | 'network' | 'mcp-tool' | 'question' | 'other'
 interface Run {
   sequence: number; task: BenchmarkTask; arm: BenchmarkArm; repetition: number; extra: boolean
   outcome: 'passed' | 'wrong-answer' | 'failed' | 'timed-out'; reason?: Reason
@@ -42,8 +44,10 @@ interface Run {
   suppliedToolCount?: number
   originalKeys?: Record<string, boolean>; originalOutcome?: Run['outcome']; rechecked?: boolean
   nativeMcpKinds?: string[]
-  profile?: 'sotto-only' | 'read-only-never-isolated' | 'asking-inherited'
+  profile?: 'sotto-only' | 'read-only-never-isolated' | 'asking-inherited' | 'read-only-on-request-inherited'
   replacesSequence?: number
+  requestEvents?: { kind: RequestKind; atMs: number | null }[]
+  requestInterrupt?: 'confirmed' | 'failed' | 'unavailable'
 }
 interface Evidence {
   startedAt: string; completedAt?: string; sourceCommit: string; machine: { hostname: string; platform: string; release: string; cpu: string; cores: number; ramGiB: number; node: string }
@@ -51,6 +55,8 @@ interface Evidence {
   runs: Run[]; extraRuns: number; summary?: unknown
   firstPassRuns?: Run[]
   completion?: { startedAt: string; completedAt?: string; runs: Run[]; retries: number }
+  beforeOnRequestRuns?: Run[]
+  onRequest?: { startedAt: string; completedAt?: string; runs: Run[]; retries: number }
 }
 /** Test-only view, following the live compatibility suite's private frame interposition.
  * No product interface is widened. Never exposes a provider home or credential contents.
@@ -58,6 +64,8 @@ interface Evidence {
 interface ObservedHost {
   frame(server: CodexProcess, frame: RpcFrame): Promise<void>
   rpc(method: string, params: unknown, apply?: (value: unknown) => void, rejected?: undefined, target?: CodexProcess): Promise<void>
+  policy(): typeof NATIVE_POLICY
+  runningTurns: Map<string, string>
   watcher?: { stop(): void }
   options: { args?: string[] }
   runtimes: Map<string, { server: CodexProcess }>
@@ -80,11 +88,11 @@ function toml(value: unknown): string {
   return JSON.stringify(value)
 }
 function nativeArguments(profile: Pick<CommandCenterLaunchProfile, 'server'>): string[] {
-  // Ordinary host launch defaults, plus only our supplied server. A dotted override merges
+  // The requested sandbox/policy pair, plus only our supplied server. A dotted override merges
   // this server into the user's configuration instead of replacing their MCP server table.
-  // The public approval-required mode supplies untrusted/read-only on thread/start and turns.
+  // The test-only policy hook supplies the same pair on thread/start and turn/start.
   return ['app-server', '--stdio', ...Object.entries({
-    model_provider: 'openai', approval_policy: 'on-request', approvals_reviewer: 'user', sandbox_mode: 'workspace-write',
+    model_provider: 'openai', approval_policy: 'on-request', approvals_reviewer: 'user', sandbox_mode: 'read-only',
     'mcp_servers.sotto_threads': { url: profile.server.url,
       http_headers: Object.fromEntries(profile.server.headers.map(header => [header.name, header.value])),
       default_tools_approval_mode: 'approve' },
@@ -122,23 +130,36 @@ async function waitForMemory(evidence: Evidence): Promise<void> {
   }
 }
 const requests = new Set(['item/commandExecution/requestApproval', 'item/fileChange/requestApproval', 'item/permissions/requestApproval', 'item/tool/requestUserInput', 'mcpServer/elicitation/request'])
-async function run(copies: BenchmarkCopies, evidence: Evidence, sequence: number, task: typeof BENCHMARK_TASKS[number], arm: BenchmarkArm, repetition: number, extra: boolean): Promise<Run> {
-  const result: Run = { sequence, task: task.id, arm, repetition, extra, outcome: 'failed', wallMs: null, firstModelReply: false,
-    keys: benchmarkKeys(task.id, '', [], 0), calls: { ...Object.fromEntries([...THREAD_TOOL_NAMES, ...FILE_TOOL_NAMES].map(name => [name, 0])), nativeCommands: 0, nativeReads: 0, nativeOther: 0 } as Run['calls'],
+/** Inspect scope only in memory; never retain the command, URL, server, arguments or request body. */
+function requestKind(method: string, params: Record<string, unknown>): RequestKind {
+  if (/network/iu.test(method) || params.networkApprovalContext != null || object(params.permissions).network != null) return 'network'
+  if (method === 'item/fileChange/requestApproval' || method === 'item/permissions/requestApproval') return 'file-change'
+  if (/mcp|elicitation/iu.test(method) || typeof params.serverName === 'string') return 'mcp-tool'
+  if (method === 'item/commandExecution/requestApproval') return 'command'
+  if (method === 'item/tool/requestUserInput') return 'question'
+  return 'other'
+}
+function emptyRun(evidence: Evidence, sequence: number, task: BenchmarkTask, arm: BenchmarkArm, repetition: number, extra: boolean): Run {
+  return { sequence, task, arm, repetition, extra, outcome: 'failed', wallMs: null, firstModelReply: false,
+    keys: benchmarkKeys(task, '', [], 0), calls: { ...Object.fromEntries([...THREAD_TOOL_NAMES, ...FILE_TOOL_NAMES].map(name => [name, 0])), nativeCommands: 0, nativeReads: 0, nativeOther: 0 } as Run['calls'],
     tokens: { input: null, output: null, cached: null }, requests: {}, model: evidence.model, effort: evidence.effort, clientVersion: evidence.clientVersion,
     usageNotifications: 0, usagePartial: null, effectivePolicyVerified: false, toolsVerified: false,
-    profile: arm === 'A' ? 'sotto-only' : 'asking-inherited' }
+    profile: arm === 'A' ? 'sotto-only' : 'read-only-on-request-inherited', requestEvents: [] }
+}
+async function run(copies: BenchmarkCopies, evidence: Evidence, sequence: number, task: typeof BENCHMARK_TASKS[number], arm: BenchmarkArm, repetition: number, extra: boolean): Promise<Run> {
+  const result = emptyRun(evidence, sequence, task.id, arm, repetition, extra)
   const data = join(copies.root, `run-${sequence}`), threadId = randomUUID()
   await mkdir(data)
   let host: CodexAppServerHost | undefined, unsubscribe: (() => void) | undefined, aborted = false, started: number | undefined
   let phase: 'connect' | 'setup' | 'send' | 'turn' = 'connect', idleAt: number | undefined, latest: AgentThread | undefined
+  let requestStop = false, interruption: Promise<void> | undefined
   const preserveUsage = (): void => {
     const usage = host ? (host as unknown as ObservedHost).usage.get(threadId) : undefined
     if (!usage?.total) return
     result.tokens = { input: usage.total.input ?? null, output: usage.total.output ?? null, cached: usage.total.cached ?? null }
     result.usagePartial = usage.partial
   }
-  const abort = (): void => { if (aborted) return; preserveUsage(); aborted = true; host?.disconnect() }
+  const abort = (): void => { if (aborted) return; preserveUsage(); aborted = true; if (!requestStop) host?.disconnect() }
   const failure = commandCenterLiveFailure(abort)
   const standIn = new BenchmarkStandIns(copies, threadId, arm, () => failure.reason === undefined)
   const fail = (reason: Reason): void => failure.fail(reason)
@@ -158,8 +179,22 @@ async function run(copies: BenchmarkCopies, evidence: Evidence, sequence: number
       // Only a permission/question request fails B, not a user's own native MCP tool call.
       // Stop before the real handler could hold or answer the request.
       if (frame.id !== undefined && frame.method !== undefined && (requests.has(frame.method) || needsPerson(frame.method))) {
+        const params = object(frame.params), atMs = started === undefined ? null : Math.round(performance.now() - started)
         const kind = requests.has(frame.method) ? frame.method : 'other-request'
         result.requests[kind] = (result.requests[kind] ?? 0) + 1
+        result.requestEvents!.push({ kind: requestKind(frame.method, params), atMs })
+        if (!failure.reason) {
+          result.wallMs = atMs
+          requestStop = true
+          const nativeId = typeof params.threadId === 'string' ? params.threadId : undefined
+          const turnId = typeof params.turnId === 'string' ? params.turnId : internal.runningTurns.get(threadId)
+          if (nativeId && turnId) {
+            // Start but do not await inside frame: responses share this serialized frame queue.
+            // A direct interrupt avoids execute(interrupt)'s decline of held requests.
+            interruption = bounded(from.rpc('turn/interrupt', { threadId: nativeId, turnId }), OPERATION_MS, () => host?.disconnect())
+              .then(() => { result.requestInterrupt = 'confirmed' }, () => { result.requestInterrupt = 'failed' })
+          } else result.requestInterrupt = 'unavailable'
+        }
         fail('request-raised'); return
       }
       const params = object(frame.params), item = object(params.item)
@@ -183,6 +218,9 @@ async function run(copies: BenchmarkCopies, evidence: Evidence, sequence: number
       if (frame.method === 'thread/tokenUsage/updated') preserveUsage()
     }
     if (arm === 'B') {
+      // Public modes cannot express read-only/on-request. Keep this override test-only;
+      // the real adapter sends it and validates the client's effective thread settings.
+      internal.policy = () => NATIVE_POLICY
       host.useThreadTools([{ name: server.name, definitions: standIn.tools.definitions, async mcpServer(id) { return id === threadId ? server : undefined } }])
     } else {
       const profile: CommandCenterLaunchProfile = { kind: 'command-center', server, toolNames: standIn.toolNames,
@@ -208,7 +246,7 @@ async function run(copies: BenchmarkCopies, evidence: Evidence, sequence: number
     await requireAccepted({ type: 'create-project', commandId: randomUUID(), projectId: 'sotto', title: 'Sotto', path: copies.sotto })
     await requireAccepted({ type: 'create-project', commandId: randomUUID(), projectId: 'relay', title: 'Relay', path: copies.relay })
     result.setupStage = 'thread'
-    await requireAccepted({ type: 'create-thread', commandId: randomUUID(), threadId, projectId: 'sotto', title: `Benchmark ${arm} ${task.id}`, modelId: selected.model, reasoningEffort: selected.effort, workingDirectory: copies.sotto, workingCopy: 'shared', ...(arm === 'B' ? { runtimeMode: 'approval-required' as const } : {}) })
+    await requireAccepted({ type: 'create-thread', commandId: randomUUID(), threadId, projectId: 'sotto', title: `Benchmark ${arm} ${task.id}`, modelId: selected.model, reasoningEffort: selected.effort, workingDirectory: copies.sotto, workingCopy: 'shared' })
     const runtime = internal.runtimes.get(threadId)
     if (!runtime) throw new Error('Benchmark runtime unavailable.')
     result.setupStage = 'tools'
@@ -268,6 +306,7 @@ async function run(copies: BenchmarkCopies, evidence: Evidence, sequence: number
     result.outcome = failure.reason === 'turn-timeout' ? 'timed-out' : 'failed'
   } finally {
     if (failure.reason) result.reason = failure.reason as Reason
+    if (interruption) await interruption
     preserveUsage()
     for (const name of [...THREAD_TOOL_NAMES, ...FILE_TOOL_NAMES]) result.calls[name] = standIn.calls[name]
     unsubscribe?.()
@@ -325,11 +364,13 @@ async function preflight(copies: BenchmarkCopies): Promise<void> {
     expect(benchmarkKeys('across', 'Sotto does not declare zod as a runtime dependency in package.json. Its settings are in src/shared/settings.ts. Relay has no runtime dependencies, and its configuration is in src/config.ts.', [], 0).sottoZod).toBe(false)
     expect(benchmarkKeys('across', 'Sotto declares zod as a runtime dependency in package.json; settings are in src/shared/settings.ts. Relay has no runtime dependencies; configuration is in src/config.ts.', [], 0).sottoZod).toBe(true)
     expect(benchmarkKeys('across', 'Sotto declares zod in package.json; settings are in src/shared/settings.ts. Relay does not use Python. It declares zod; configuration is in src/config.ts.', [], 0).relayNoZod).toBe(false)
+    expect(benchmarkKeys('across', 'Sotto declares zod in package.json; settings are in src/shared/settings.ts. Relay has an empty runtime dependency set; configuration is in src/config.ts.', [], 0).relayNoZod).toBe(true)
+    expect(benchmarkKeys('across', 'Sotto declares zod in package.json; settings are in src/shared/settings.ts. Relay has an empty dev dependency set and declares zod; configuration is in src/config.ts.', [], 0).relayNoZod).toBe(false)
     expect(benchmarkKeys('roster', 'Choose Android storage needs you. PR #42 is ready for review.', [], 0).readyPullRequest).toBe(true)
   } finally { await standIn.tools.close() }
 }
 
-it.skipIf(!LIVE || COMPLETE || process.env.SOTTO_COMMAND_CENTER_BENCHMARK_RECHECK === '1')('benchmarks twenty command-center Codex turns with and without native code tools', async () => {
+it.skipIf(!LIVE || ON_REQUEST || process.env.SOTTO_COMMAND_CENTER_BENCHMARK_RECHECK === '1')('benchmarks twenty command-center Codex turns with and without native code tools', async () => {
   expect(process.platform).toBe('win32')
   const copies = await createBenchmarkCopies()
   let evidence: Evidence = { startedAt: new Date().toISOString(), sourceCommit: copies.sourceCommit,
@@ -391,63 +432,57 @@ it.skipIf(!LIVE || COMPLETE || process.env.SOTTO_COMMAND_CENTER_BENCHMARK_RECHEC
   }
 }, 150 * 60_000)
 
-/** Preserve A and the two graded B briefs. Keep every superseded attempt as numeric history.
- * Eight replacements in the original B order, at most two client-start retries; never retry a
- * harness failure, request, timeout or wrong answer. An interrupted invocation consumes its saved budget.
+/** Rerun all ten B trials, preserving both earlier passes and A's original evidence.
+ * Reserve each attempt before launch so an interruption cannot silently reset the paid budget.
  */
-it.skipIf(!LIVE || !COMPLETE)('completes the eight ungraded B trials with asking mode and inherited tools', async () => {
+it.skipIf(!LIVE || !ON_REQUEST || process.env.SOTTO_COMMAND_CENTER_BENCHMARK_RECHECK === '1')('benchmarks all ten B trials with read-only sandbox and on-request approvals', async () => {
   const evidence = JSON.parse(await readFile(join(ARTIFACTS, 'results.json'), 'utf8')) as Evidence
   expect(evidence.machine.hostname).toBe(hostname())
   expect(evidence.runs).toHaveLength(20)
-  if (!evidence.firstPassRuns) {
-    evidence.firstPassRuns = structuredClone(evidence.runs)
-    for (const original of evidence.firstPassRuns) original.profile = original.arm === 'A' ? 'sotto-only' : 'read-only-never-isolated'
-  }
-  const originals = evidence.firstPassRuns.filter(run => run.arm === 'B' && run.task !== 'brief').sort((a, b) => a.sequence - b.sequence)
-  expect(originals).toHaveLength(8)
-  expect(originals.every(run => run.outcome === 'failed')).toBe(true)
-  evidence.completion ??= { startedAt: new Date().toISOString(), runs: [], retries: 0 }
-  const completion = evidence.completion, copies = await createBenchmarkCopies(evidence.sourceCommit)
+  if (!evidence.firstPassRuns) throw new Error('On-request pass requires retained first-pass evidence.')
+  evidence.beforeOnRequestRuns ??= structuredClone(evidence.runs)
+  const originals = evidence.firstPassRuns.filter(run => run.arm === 'B').sort((a, b) => a.sequence - b.sequence)
+  expect(originals).toHaveLength(10)
+  evidence.onRequest ??= { startedAt: new Date().toISOString(), runs: [], retries: 0 }
+  const pass = evidence.onRequest, copies = await createBenchmarkCopies(evidence.sourceCommit)
   const save = async (): Promise<void> => {
     evidence.summary = summarize(evidence.runs)
     await writeFile(join(ARTIFACTS, 'results.json'), JSON.stringify(evidence, null, 2) + '\n', 'utf8')
   }
-  const attempt = async (original: Run, extra: boolean): Promise<Run> => {
-    const sequence = 21 + completion.runs.length
+  const attempt = async (original: Run, extra: boolean): Promise<void> => {
+    const sequence = 29 + pass.runs.length
     const task = BENCHMARK_TASKS.find(task => task.id === original.task)!
+    const slot = evidence.runs.findIndex(run => (run.replacesSequence ?? run.sequence) === original.sequence)
+    if (slot < 0) throw new Error('On-request pass lost its scheduled cell.')
+    const reserved = emptyRun(evidence, sequence, task.id, 'B', original.repetition, extra)
+    reserved.reason = 'harness-interrupted'; reserved.replacesSequence = original.sequence
+    const index = pass.runs.length
+    pass.runs.push(reserved); evidence.runs[slot] = reserved
+    await save()
     const result = await run(copies, evidence, sequence, task, 'B', original.repetition, extra)
     result.replacesSequence = original.sequence
-    completion.runs.push(result)
-    const slot = evidence.runs.findIndex(run => (run.replacesSequence ?? run.sequence) === original.sequence)
-    if (slot < 0) throw new Error('Benchmark completion lost its scheduled cell.')
-    evidence.runs[slot] = result
+    pass.runs[index] = result; evidence.runs[slot] = result
     await save()
-    console.info(`Benchmark completion run ${completion.runs.length}: B ${task.id} ${result.outcome}${result.reason ? ` (${result.reason})` : ''}.`)
+    console.info(`Benchmark on-request run ${pass.runs.length}: B ${task.id} ${result.outcome}${result.reason ? ` (${result.reason})` : ''}.`)
     if (result.reason === 'copy-changed' || result.reason === 'cleanup-failed') throw new Error('Benchmark copy or process cleanup failed; stopped.')
-    return result
   }
   try {
     await preflight(copies)
     for (const original of originals) {
-      if (!completion.runs.some(run => run.replacesSequence === original.sequence && !run.extra)) await attempt(original, false)
+      if (!pass.runs.some(run => run.replacesSequence === original.sequence && !run.extra)) await attempt(original, false)
     }
-    // Consume retries only for a client that never started, including a retry of that same failure.
-    while (completion.retries < 2) {
-      const failed = evidence.runs.find(run => run.replacesSequence !== undefined && run.reason === 'client-start-failed')
+    while (pass.retries < 2) {
+      const failed = evidence.runs.find(run => run.arm === 'B' && run.reason === 'client-start-failed')
       if (!failed) break
-      completion.retries++
+      pass.retries++
       await attempt(originals.find(run => run.sequence === failed.replacesSequence)!, true)
     }
-    completion.completedAt = new Date().toISOString()
-    evidence.completedAt = completion.completedAt
-    expect(completion.runs.filter(run => !run.extra)).toHaveLength(8)
-    expect(completion.runs.filter(run => run.extra)).toHaveLength(completion.retries)
-    const preserved = evidence.firstPassRuns.filter(run => run.arm === 'A' || run.task === 'brief').map(original => {
-      const copy = { ...original }; delete copy.profile; return copy
-    })
-    expect(evidence.runs.filter(run => run.arm === 'A' || run.task === 'brief')).toEqual(preserved)
+    pass.completedAt = new Date().toISOString(); evidence.completedAt = pass.completedAt
+    expect(pass.runs.filter(run => !run.extra)).toHaveLength(10)
+    expect(pass.runs.filter(run => run.extra)).toHaveLength(pass.retries)
+    expect(evidence.runs.filter(run => run.arm === 'A')).toEqual(evidence.beforeOnRequestRuns.filter(run => run.arm === 'A'))
   } finally { await save(); await copies.close() }
-}, 65 * 60_000)
+}, 75 * 60_000)
 
 /** Recheck stored native answers through the client, without a model turn or direct session-file reads.
  * Replies remain in this callback only. Original grades are retained so a scorer fix is visible.
@@ -464,11 +499,35 @@ it.skipIf(!LIVE || process.env.SOTTO_COMMAND_CENTER_BENCHMARK_RECHECK !== '1')('
   }
   const cleanup = async (): Promise<void> => {
     if (dirname(resolve(data)) !== resolve(tmpdir()) || !data.split(/[\\/]/u).at(-1)?.startsWith('sotto-command-center-key-check-')) throw new Error('Key-check cleanup refused unexpected folder.')
-    await rm(data, { recursive: true, force: true })
+    await rm(data, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
   }
   try {
     await bounded(host.connect(), OPERATION_MS, () => host.disconnect())
     internal.watcher?.stop(); delete internal.watcher
+    if (ON_REQUEST && evidence.onRequest && evidence.onRequest.runs.some(run => !identities[String(run.sequence)])) {
+      // Recover only native identities from the client. Neither preview nor protocol bodies leave memory.
+      const start = Date.parse(evidence.onRequest.startedAt) / 1000, end = Date.parse(evidence.onRequest.completedAt ?? '') / 1000
+      const candidates: Record<string, unknown>[] = [], seen = new Set<string>()
+      let cursor: string | undefined
+      do {
+        await bounded(internal.rpc('thread/list', { limit: 100, sortKey: 'created_at', sortDirection: 'desc', ...(cursor ? { cursor } : {}) }, value => {
+          const page = object(value)
+          if (!Array.isArray(page.data)) throw new Error('Benchmark identity metadata unavailable.')
+          candidates.push(...page.data.map(object).filter(thread => typeof thread.cwd === 'string' && /sotto-command-center-benchmark-[^\\/]+[\\/]Sotto$/u.test(thread.cwd)
+            && typeof thread.createdAt === 'number' && thread.createdAt >= Math.floor(start) && thread.createdAt <= Math.ceil(end)))
+          cursor = typeof page.nextCursor === 'string' ? page.nextCursor : undefined
+          if (page.data.map(object).some(thread => typeof thread.createdAt === 'number' && thread.createdAt < start)) cursor = undefined
+        }), OPERATION_MS, () => host.disconnect())
+        if (cursor) { if (seen.has(cursor)) throw new Error('Benchmark identity metadata repeated a page.'); seen.add(cursor) }
+      } while (cursor)
+      const threads = candidates.sort((a, b) => Number(a.createdAt) - Number(b.createdAt))
+      if (threads.length !== 10 || new Set(threads.map(thread => thread.cwd)).size !== 1) throw new Error('Benchmark identity recovery refused ambiguous threads.')
+      for (let index = 0; index < threads.length; index++) {
+        if (typeof threads[index]!.id !== 'string') throw new Error('Benchmark identity unavailable.')
+        identities[String(evidence.onRequest.runs[index]!.sequence)] = { sottoId: 'protocol-key-check-only', nativeId: threads[index]!.id as string }
+      }
+      await writeFile(join(ARTIFACTS, 'identities.json'), JSON.stringify(identities, null, 2) + '\n')
+    }
     // A recovery helper for the last completed thread when cleanup won the metadata capture race.
     if (process.env.SOTTO_COMMAND_CENTER_BENCHMARK_RECOVER_LAST_CWD && !identities['20']) {
       const cwd = process.env.SOTTO_COMMAND_CENTER_BENCHMARK_RECOVER_LAST_CWD
@@ -481,6 +540,7 @@ it.skipIf(!LIVE || process.env.SOTTO_COMMAND_CENTER_BENCHMARK_RECHECK !== '1')('
       }), OPERATION_MS, () => host.disconnect())
     }
     for (const run of evidence.runs) {
+      if (ON_REQUEST && run.profile !== 'read-only-on-request-inherited') continue
       const identity = identities[String(run.sequence)]
       if (!identity || run.wallMs === null || run.task === 'brief') continue
       await bounded(internal.rpc('thread/read', { threadId: identity.nativeId, includeTurns: true }, value => {
@@ -493,6 +553,10 @@ it.skipIf(!LIVE || process.env.SOTTO_COMMAND_CENTER_BENCHMARK_RECHECK !== '1')('
         run.keys = benchmarkKeys(run.task, reply, [], 0)
         run.outcome = Object.values(run.keys).every(Boolean) ? 'passed' : 'wrong-answer'; run.rechecked = true
       }, undefined, internal.provider), OPERATION_MS, () => host.disconnect())
+      if (ON_REQUEST && evidence.onRequest) {
+        const index = evidence.onRequest.runs.findIndex(item => item.sequence === run.sequence)
+        if (index >= 0) evidence.onRequest.runs[index] = run
+      }
     }
     evidence.summary = summarize(evidence.runs)
     await writeFile(join(ARTIFACTS, 'results.json'), JSON.stringify(evidence, null, 2) + '\n')

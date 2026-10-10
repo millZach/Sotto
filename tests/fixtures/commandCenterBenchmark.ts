@@ -286,6 +286,6 @@ export function benchmarkKeys(task: BenchmarkTask, reply: string, starts: readon
   const sottoZod = sottoSections.some(section => /\bzod\b/iu.test(section) && /runtime|dependenc|declares?|uses?|depends/iu.test(section)
     && !/\b(?:does not|doesn't|no|not|without|neither)\b[^.\n]{0,80}\bzod\b|\bzod\b[^.\n]{0,80}\b(?:absent|missing|not a runtime)\b/iu.test(section))
   const relaySections = [...text.matchAll(/\bRelay\b(?:(?!\bSotto\b)[\s\S]){0,800}/giu)].map(match => match[0].replace(/[*_]/gu, ''))
-  const relayNoZod = relaySections.some(section => /no runtime dependencies|no (?:runtime )?dependency|\bno\b[^.\n]{0,80}\bzod\b|(?:does not|doesn.t) (?:declare|use|include|list|have)[^.\n]{0,80}\bzod\b|\bzod\b[^.\n]{0,80}(?:not (?:declared|listed|present)|absent|missing)|^Relay\s*[:|–-]\s*No\b|dependencies[^\n]{0,30}\{\s*\}/iu.test(section))
+  const relayNoZod = relaySections.some(section => /no runtime dependencies|no (?:runtime )?dependency|\bno\b[^.\n]{0,80}\bzod\b|(?:does not|doesn.t) (?:declare|use|include|list|have)[^.\n]{0,80}\bzod\b|\bzod\b[^.\n]{0,80}(?:not (?:declared|listed|present)|absent|missing)|^Relay\s*[:|–-]\s*No\b|dependencies[^\n]{0,30}\{\s*\}|\b(?:empty|zero) (?:runtime )?dependenc(?:ies|y)(?: set)?\b|(?<!dev )\b(?:runtime )?dependenc(?:ies|y)\b[^.\n]{0,50}\b(?:empty|none)\b/iu.test(section))
   return { sottoZod: sottoZod && has('package.json'), sottoSettings: has('src/shared/settings.ts'), relayNoZod, relayConfig: has('src/config.ts') }
 }
