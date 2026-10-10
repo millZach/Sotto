@@ -1,9 +1,10 @@
+import { threadsStateFixture } from '../../fixtures/agentState'
 import React, { useSyncExternalStore } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { defaultAgentConfiguration, type AgentAttachmentHandle, type AgentCommand, type AgentState } from '../../../src/shared/agents'
-import { designThreadsFixture, E2E_THREADS_NOW } from '../../../src/shared/e2e'
+import { type AgentAttachmentHandle, type AgentCommand, type AgentState } from '../../../src/shared/agents'
+import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
@@ -20,23 +21,8 @@ const SHOT: AgentAttachmentHandle = { id: 'release-page', name: 'release-page.pn
 
 /** The design fixture with no pane open, and the coordinator holding a draft written for `draftThreadId`. */
 function withDraft(draftThreadId: string | null, connection: AgentState['connection'] = 'connected'): AgentState {
-  const fixture = designThreadsFixture()
-  return {
-    configuration: { ...defaultAgentConfiguration(), enabled: true, defaultModelId: 'claude:sonnet' },
-    connection,
-    host: {
-      connected: connection === 'connected', name: 'Codex', version: 'test',
-      capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true },
-      models: [...fixture.models], projects: [...fixture.projects], threads: structuredClone(fixture.threads) as AgentState['host']['threads'],
-    },
-
-    activeThreadId: null, activeProjectId: 'workshop',
-    draft: LEFTOVER, draftThreadId, draftRequestId: null, composing: false,
-    globalLaneBusy: false, notice: '', error: null,
-
-    credentials: { reasoning: false, secure: true },
-    reasoningAccounts: [],
-  }
+  return threadsStateFixture({ host: { connected: connection === 'connected' },
+    topLevel: { connection, activeThreadId: null, activeProjectId: 'workshop', draft: LEFTOVER, draftThreadId } })
 }
 
 type Command = (request: AgentCommand) => Promise<AgentState | null>

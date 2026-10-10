@@ -1,3 +1,4 @@
+import { deferred } from '../../fixtures/deferred'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -61,7 +62,7 @@ describe('Threads manual composer', () => {
     const row = describeThreads(state, NOW).find(item => item.thread.id === state.activeThreadId)!
     let answer!: (state: AgentState | null) => void
     const command = vi.fn(async (request: AgentCommand): Promise<AgentState | null> => request.type === 'queue-followup'
-      ? new Promise(done => { answer = done }) : state)
+      ? (() => { const pending = deferred<AgentState | null>(); answer = pending.resolve; return pending.promise })() : state)
     const store = new ThreadDraftStore(command)
     store.edit(row.thread.id, { text: 'Already queued' })
     const draft = store.draft(row.thread.id)
@@ -533,7 +534,6 @@ describe('Thread transcript scrolling', () => {
     await waitFor(() => { expect(live.command).toHaveBeenCalledWith({ type: 'load-earlier-messages', threadId: 'grok-previews' }) })
   })
 })
-
 
 it('shows a history save notice on its thread while keeping its composer available', () => {
   const state = manualState()

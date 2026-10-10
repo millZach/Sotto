@@ -1,12 +1,13 @@
 // @vitest-environment node
+import { preloadElectron } from '../../fixtures/preloadElectron'
 import { describe, expect, it, vi } from 'vitest'
-vi.mock('electron', () => ({ contextBridge: { exposeInMainWorld: vi.fn() }, ipcRenderer: { invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn() } }))
+vi.mock('electron', async () => (await import('../../fixtures/preloadElectron')).preloadElectron())
 import { createSottoBridge } from '../../../src/preload'
 import { SETTINGS_CHANGED } from '../../../src/shared/channels'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
 
 function fixture() {
-  const ipc = { invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn() }
+  const ipc = preloadElectron().ipcRenderer
   const bridge = createSottoBridge(ipc, 'win32')
   const handler = ipc.on.mock.calls.find(([channel]) => channel === SETTINGS_CHANGED)![1] as (event: unknown, ...args: unknown[]) => void
   return { bridge, emit: (payload: unknown) => handler({}, payload) }

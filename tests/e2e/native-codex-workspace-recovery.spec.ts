@@ -1,3 +1,4 @@
+import { agentState } from './support/agentAccess'
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { readFile, realpath, writeFile } from 'node:fs/promises'
@@ -52,7 +53,7 @@ test('installed Codex: recover owned Phase 2 evidence without replay', async () 
       await window.sotto!.agents!.command({ type: 'refresh', provider: 'codex' })
     }, threadId)
   }
-  const state = () => page.evaluate(() => window.sotto!.agents!.get())
+  const state = () => agentState(page)
   const current = async () => (await state()).host.threads.find(value => value.id === threadId)!
   const identities = (value: typeof cached[0]) => ({ messages: value.messages.map((m: { id: string }) => hash(m.id)).sort(),
     activities: value.activities.map((a: { id: string; afterMessageId?: string }) => [hash(a.id), a.afterMessageId ? hash(a.afterMessageId) : null]).sort(), cwd: value.workingDirectory,

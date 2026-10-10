@@ -1,9 +1,9 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { writeFile } from 'node:fs/promises'
+import { agentState } from './support/agentAccess'
 import { join } from 'node:path'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { expect, test } from '@playwright/test'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { defaultAgentConfiguration } from '../../src/shared/agents'
 import { hostKeys } from './support/hostKeys'
 import { closeSotto, launchSotto,  openThreads, resizeWindow } from './support/sottoLaunch'
@@ -15,7 +15,7 @@ const evidence = evidenceDirectory('artifacts/new-thread-setup')
 const screenshot = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5FoAAAAASUVORK5CYII=', 'base64')
 
 test('creates a project thread without replacing a leftover draft from an earlier thread', async () => {
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-thread-creation-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-thread-creation-' })).directory
   const leftover = 'Keep the earlier thread draft'
   // Upgrade state can retain a prompt whose thread is no longer listed (CONTEXT.md: Leftover draft).
   await writeFile(join(profile, 'agents.json'), JSON.stringify({
@@ -23,7 +23,7 @@ test('creates a project thread without replacing a leftover draft from an earlie
     draft: leftover, draftThreadId: 'removed-thread', draftRequestId: null, composing: false, outbox: [],
   }), 'utf8')
   const launched = await launchSotto('success', profile).catch(async error => {
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
     throw error
   })
   const { page } = launched
@@ -54,7 +54,7 @@ test('creates a project thread without replacing a leftover draft from an earlie
       return !state.globalLaneBusy && state.host.threads.some(thread => thread.id === threadId
         && thread.title === 'New thread' && thread.projectId === state.activeProjectId)
     }, threadId)).toBe(true)
-    const state = await page.evaluate(async () => window.sotto!.agents!.get())
+    const state = await agentState(page)
     expect(state.error).toBeNull()
     expect(state.host.threads).toContainEqual(expect.objectContaining({ id: threadId, title: 'New thread', projectId: state.activeProjectId }))
     const key = await hostKeys(page)
@@ -67,11 +67,11 @@ test('creates a project thread without replacing a leftover draft from an earlie
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
     await expect(page.getByLabel('Thread transcript')).toContainText('Only send this new prompt')
     await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('')
-    expect(await page.evaluate(async () => window.sotto!.agents!.get())).toMatchObject({ draft: leftover, draftThreadId })
+    expect(await agentState(page)).toMatchObject({ draft: leftover, draftThreadId })
     await page.screenshot({ animations: 'disabled', path: join(savedDraftEvidence, 'created-and-sent.png') })
   } finally {
     await closeSotto(launched)
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 })
 
@@ -150,7 +150,7 @@ test('creates a thread in a centered popup, configures it, and sends file and pa
     // Pending transcript content appears before the native delivery receipt clears the draft.
     await expect(page.getByLabel('Attached screenshots').getByRole('img', { name: 'pasted.png' })).toHaveCount(0)
     await expect(page.getByLabel('Thread transcript').getByRole('img', { name: 'pasted.png' })).toBeVisible()
-    const state = await page.evaluate(async () => window.sotto!.agents!.get())
+    const state = await agentState(page)
     // The shell summarises histories; the detail bridge carries the messages themselves.
     const created = (await page.evaluate(async id => window.sotto!.agents!.threadDetail!(id), state.activeThreadId!))!
     expect(created.messages.filter(message => message.role === 'user')).toHaveLength(2)

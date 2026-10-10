@@ -7,7 +7,7 @@ import { useOptionalAgents } from '../../agents/AgentContext'
 import { ProviderMark } from '../../agents/ProviderMark'
 import { Button } from '../../components/Button'
 import { shownVersion } from '../settings/HostProviders'
-import { liveAgentState, localHostId, localProviders, providerLabel, SETUP_PROVIDERS } from './localAgents'
+import { liveAgentState, localHostId, localProviderChoices, localProviders, providerLabel, SETUP_PROVIDERS } from './localAgents'
 
 export interface AgentsStepProps {
   readonly heading: ReactNode
@@ -22,10 +22,11 @@ const LOCAL_HOST_OFF = 'This computer’s local host is off, so Sotto can’t ru
 const SWITCH_FAILED = 'Sotto could not switch to this computer, so it checked nothing. Press Check again.'
 
 /**
- * One provider's row. Only main's own answer says a client is missing: Connect providers tries the default client it
- * finds installed, not every one, so a client it has not tried is Not connected, with Connect.
+ * One provider's row. Only main's own answer says a client is missing: a connect that failed for want of it, or a
+ * Connect providers that looked for it (`installed`) and did not find it. A client the user turned off says so, with
+ * Connect; one Sotto has not looked for yet is Not connected, with Connect.
  */
-function rowFor(status: AgentProviderStatus | undefined, working: boolean): Row {
+function rowFor(status: AgentProviderStatus | undefined, working: boolean, installed: boolean | undefined, off: boolean): Row {
   const version = status?.version ? shownVersion(status.version) : ''
   if (status?.connection === 'connected') return { kind: 'ready', state: 'Ready', detail: [status.account, version].filter(Boolean).join(' · ') || 'Signed in', guide: false }
   if (status?.connection === 'connecting' || working) return { kind: 'checking', state: 'Checking…', detail: version, guide: false }
@@ -39,15 +40,18 @@ function rowFor(status: AgentProviderStatus | undefined, working: boolean): Row 
       default: return { kind: 'needs-you', state: 'Needs attention', detail: said || 'Sotto could not connect it.', guide: false }
     }
   }
+  if (status && installed === false) return { kind: 'not-installed', state: 'Not installed', detail: 'Not found on this computer.', guide: true }
+  if (status && off) return { kind: 'off', state: 'Turned off', detail: 'You turned it off on this computer. Connect it to use it here.', guide: false }
   if (status) return { kind: 'off', state: 'Not connected', detail: 'Connect it to use it on this computer.', guide: false }
   return { kind: 'unchecked', state: 'Not checked yet', detail: '', guide: false }
 }
 
 /**
  * Setup's coding agents: which of Codex, Claude Code, Grok Build and Devin this computer can run, and what each one
- * needs. Arriving runs Connect providers, which connects the default client found installed; each other client has
- * Connect, as Settings › Providers does, and says Not installed only once main has found it missing. Check again
- * retries the clients that reported a problem after the user installs or signs in to one. Sotto signs in to nothing.
+ * needs. Arriving runs Connect providers, which turns on and connects every client installed here that the user has not
+ * turned off. A client it did not find says Not installed, with its install guide; one turned off has Connect, as
+ * Settings › Providers does. Check again retries the clients that reported a problem and runs Connect providers again,
+ * which picks up a client installed since. Sotto signs in to nothing.
  */
 export function AgentsStep({ heading, onOpenLink }: AgentsStepProps): ReactNode {
   const agents = useOptionalAgents()
@@ -104,10 +108,9 @@ export function AgentsStep({ heading, onOpenLink }: AgentsStepProps): ReactNode 
     if (!command) return
     setChecking(true)
     if (!await selectThisComputer()) { setChecking(false); return }
-    const current = providersRef.current
-    const troubled = current.filter(provider => provider.connection === 'error').map(provider => provider.id)
+    const troubled = providersRef.current.filter(provider => provider.connection === 'error').map(provider => provider.id)
     await Promise.all(troubled.map(provider => run(() => command({ type: 'refresh', provider }))))
-    if (!current.some(provider => provider.connection === 'connected')) await run(() => command({ type: 'connect', notice: false }))
+    await run(() => command({ type: 'connect', notice: false }))
     setChecking(false)
   }, [command, run, selectThisComputer])
 
@@ -118,17 +121,18 @@ export function AgentsStep({ heading, onOpenLink }: AgentsStepProps): ReactNode 
     setConnecting(current => { const next = new Set(current); next.delete(provider); return next })
   }
 
-  const anyConnected = providers.some(provider => provider.connection === 'connected')
+  // Arriving connects whatever is installed, even when the default client is already connected.
   useEffect(() => {
-    if (started.current || !state || anyConnected) return
+    if (started.current || !state) return
     started.current = true
     void check()
-  }, [state, anyConnected, check])
+  }, [state, check])
 
+  const choices = state ? localProviderChoices(state) : null
   const rows = SETUP_PROVIDERS.map(id => {
     const status = providers.find(provider => provider.id === id)
     const working = connecting.has(id) || (checking && status?.connection !== 'connected' && status?.connection !== 'error')
-    return { id, row: rowFor(status, working) }
+    return { id, row: rowFor(status, working, choices?.installed?.includes(id), choices?.off.includes(id) === true) }
   })
   const ready = rows.filter(({ row }) => row.kind === 'ready').length
 
@@ -163,7 +167,10 @@ export function AgentsStep({ heading, onOpenLink }: AgentsStepProps): ReactNode 
         ))}
       </ul>
       <div className="onboarding-agents__foot">
-        <span role="status">{checking ? 'Checking this computer…' : `${ready} of ${rows.length} ready`}</span>
+        <span role="status">{checking ? 'Connecting the agents on this computer…'
+          : state && !hostProblem && providers.length === 0 ? 'Sotto has no word yet on this computer’s agents. Press Check again.'
+          : ready === 0 ? 'None ready yet. Threads need at least one; Settings › Providers has them later too.'
+          : `${ready} of ${rows.length} ready. Settings › Providers manages them later.`}</span>
         <Button variant="secondary" disabled={checking || !command} onClick={() => void check()}>
           <RefreshCw aria-hidden="true" size={15} />
           {checking ? 'Checking…' : 'Check again'}
@@ -171,10 +178,6 @@ export function AgentsStep({ heading, onOpenLink }: AgentsStepProps): ReactNode 
       </div>
       {failure ? <p className="onboarding-recovery" role="alert">{failure}</p> : null}
       {hostProblem ? <p className="onboarding-recovery" role="alert">{hostProblem}</p> : null}
-      {state && !checking && !hostProblem && providers.length === 0
-        ? <p className="onboarding-recovery" role="status">Sotto has no word yet on this computer's agents. Press Check again, or connect them later in Settings › Providers.</p>
-        : null}
-      <p className="onboarding-aside">Threads need at least one agent. You can connect more later in Settings › Providers.</p>
     </section>
   )
 }

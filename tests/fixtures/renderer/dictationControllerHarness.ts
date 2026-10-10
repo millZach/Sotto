@@ -1,3 +1,4 @@
+
 import { vi } from 'vitest'
 
 import { type AudioRecorderOptions } from '../../../src/renderer/src/audio/audioRecorder'
@@ -13,16 +14,7 @@ import type {
 import { type WidgetSnapshot } from '../../../src/shared/dictation'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings'
 
-
-export function deferred<T>() {
-  let resolve!: (value: T) => void
-  let reject!: (reason?: unknown) => void
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise
-    reject = rejectPromise
-  })
-  return { promise, reject, resolve }
-}
+export { deferred } from '../deferred'
 
 export function settings(overrides: Partial<AppSettings> = {}): AppSettings {
   return { ...DEFAULT_SETTINGS, ...overrides }

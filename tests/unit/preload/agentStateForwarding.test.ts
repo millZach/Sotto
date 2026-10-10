@@ -1,22 +1,19 @@
 // @vitest-environment node
+import { preloadElectron } from '../../fixtures/preloadElectron'
+import { threadsStateFixture } from '../../fixtures/agentState'
 import { describe, expect, it, vi } from 'vitest'
-vi.mock('electron', () => ({ contextBridge: { exposeInMainWorld: vi.fn() }, ipcRenderer: { invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn() } }))
+vi.mock('electron', async () => (await import('../../fixtures/preloadElectron')).preloadElectron())
 import { createSottoBridge } from '../../../src/preload'
 import { AGENT_STATE, defaultAgentConfiguration, EMPTY_AGENT_HOST, type AgentState } from '../../../src/shared/agents'
 
-const state: AgentState = {
-  hostId: 'aaaaaaaa-0000-4000-8000-000000000000',
-  configuration: defaultAgentConfiguration(), connection: 'connected',
-  host: { ...EMPTY_AGENT_HOST, hostId: 'aaaaaaaa-0000-4000-8000-000000000000' },
-  activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
-  draftRequestId: null, draftAttachments: [], deliveredDrafts: [], threadDrafts: [], deliveries: [],   globalLaneBusy: false, notice: '', error: null,
-  credentials: { reasoning: false, secure: false },
-  reasoningAccounts: [],
-}
+const state: AgentState = threadsStateFixture({ cloneOverrides: false,
+    configuration: defaultAgentConfiguration(),
+    host: { ...EMPTY_AGENT_HOST, hostId: 'aaaaaaaa-0000-4000-8000-000000000000' },
+    topLevel: { hostId: 'aaaaaaaa-0000-4000-8000-000000000000', activeThreadId: null, activeProjectId: null, draftAttachments: [], credentials: { reasoning: false, secure: false } } })
 
 describe('agent state broadcast forwarding', () => {
   it('forwards a broadcast raw, without reassembling an omitted catalog itself', () => {
-    const ipc = { invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn() }
+    const ipc = preloadElectron().ipcRenderer
     const bridge = createSottoBridge(ipc, 'win32').agents!
     const listener = vi.fn()
     bridge.onState(listener)
@@ -34,7 +31,7 @@ describe('agent state broadcast forwarding', () => {
 describe('agent command receipt parsing', () => {
   it('accepts a receipt that names its catalog by revision and leaves putting it back to the page', async () => {
     const receipt = { ...state, host: { ...state.host, models: { revision: 3, omitted: true } } }
-    const ipc = { invoke: vi.fn(async () => receipt), on: vi.fn(), removeListener: vi.fn() }
+    const ipc = ({ ...preloadElectron().ipcRenderer, invoke: vi.fn(async () => receipt) })
     const bridge = createSottoBridge(ipc, 'win32').agents!
     await expect(bridge.command({ type: 'select-thread', threadId: 'workshop' })).resolves.toMatchObject({ host: { models: { revision: 3, omitted: true } } })
   })
@@ -42,7 +39,7 @@ describe('agent command receipt parsing', () => {
   it('refuses a receipt whose catalog is anything but a revision, a whole list included', async () => {
     for (const models of [{ revision: 3 }, []]) {
       const receipt = { ...state, host: { ...state.host, models } }
-      const ipc = { invoke: vi.fn(async () => receipt), on: vi.fn(), removeListener: vi.fn() }
+      const ipc = ({ ...preloadElectron().ipcRenderer, invoke: vi.fn(async () => receipt) })
       const bridge = createSottoBridge(ipc, 'win32').agents!
       await expect(bridge.command({ type: 'select-thread', threadId: 'workshop' })).rejects.toThrow()
     }

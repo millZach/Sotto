@@ -1,6 +1,10 @@
 // @vitest-environment node
+import { preloadElectron } from '../../fixtures/preloadElectron'
 import { describe, expect, it, vi } from 'vitest'
-vi.mock('electron', () => ({ contextBridge: { exposeInMainWorld: vi.fn() }, ipcRenderer: { invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn() } }))
+vi.mock('electron', async () => {
+  const { preloadElectron } = await import('../../fixtures/preloadElectron')
+  return preloadElectron()
+})
 import { createSottoBridge, createSottoWidgetBridge } from '../../../src/preload'
 import { FILES_LIST, FILES_PREVIEW, FILES_COPY_PATH, FILES_REVEAL, type FileListRequest, type FileRequest } from '../../../src/shared/files'
 
@@ -8,7 +12,7 @@ const workspace = { threadId: 'thread', projectId: 'project', workingDirectory: 
 const request = { threadId: 'thread', path: 'file.md', workspaceId: workspace.workspaceId }
 describe('Files preload contract', () => {
   it('exposes only the four typed methods on the main window, parses requests and replies', async () => {
-    const ipc = { invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn() }
+    const ipc = preloadElectron().ipcRenderer
     const bridge = createSottoBridge(ipc, 'win32').files!
     expect(Object.keys(bridge).sort()).toEqual(['copyPath', 'list', 'preview', 'reveal'])
     expect(Object.isFrozen(bridge)).toBe(true)
@@ -29,7 +33,7 @@ describe('Files preload contract', () => {
     }
   })
   it('does not dispatch invalid paths, root overrides or tokenless stale selections', () => {
-    const ipc = { invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn() }
+    const ipc = preloadElectron().ipcRenderer
     const bridge = createSottoBridge(ipc, 'win32').files!
     expect(() => bridge.list({ threadId: 'thread', path: '', root: 'C:/' } as FileListRequest)).toThrow()
     expect(() => bridge.list({ threadId: 'thread', path: 'subdir' })).toThrow()
@@ -40,7 +44,7 @@ describe('Files preload contract', () => {
     expect(ipc.invoke).not.toHaveBeenCalled()
   })
   it('returns recoverable errors and rejects malformed or active-content image replies', async () => {
-    const ipc = { invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn() }
+    const ipc = preloadElectron().ipcRenderer
     const bridge = createSottoBridge(ipc, 'win32').files!
     const unavailable = { ok: false, error: { code: 'workspace-changed', message: 'Refresh Files.' } }
     ipc.invoke.mockResolvedValueOnce(unavailable)

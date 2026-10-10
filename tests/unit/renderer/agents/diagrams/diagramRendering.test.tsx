@@ -1,3 +1,4 @@
+import { deferred } from '../../../../fixtures/deferred'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mixHex, readDiagramPalette } from '../../../../../src/renderer/src/agents/diagrams/diagramPalette'
 import { svgDataUrl, toInertDiagramSvg } from '../../../../../src/renderer/src/agents/diagrams/diagramSvg'
@@ -168,7 +169,7 @@ describe('diagram renderer', () => {
     vi.useFakeTimers()
     let finishSlow!: (value: { svg: string }) => void
     mermaid.mermaidAPI.getDiagramFromText.mockResolvedValue(parsedGraph)
-    mermaid.render.mockImplementationOnce(() => new Promise(resolve => { finishSlow = resolve }))
+    mermaid.render.mockImplementationOnce(() => { const pending = deferred<unknown>(); finishSlow = pending.resolve; return pending.promise })
     const slow = renderDiagram('stateDiagram-v2\n  slow', palette, 30)
     const next = renderDiagram('stateDiagram-v2\n  next', palette, 30)
     await vi.advanceTimersByTimeAsync(31)

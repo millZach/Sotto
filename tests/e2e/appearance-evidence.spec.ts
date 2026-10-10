@@ -1,10 +1,7 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-
 import { expect, test, type Page } from '@playwright/test'
-
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { type E2EScenario } from '../../src/shared/e2e'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../src/shared/settings'
 import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
@@ -27,7 +24,7 @@ async function withProfile(
   run: (launched: LaunchedSotto) => Promise<void>,
   options: { readonly scenario?: E2EScenario; readonly threads?: boolean } = {},
 ): Promise<void> {
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-appearance-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-appearance-' })).directory
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, ...settings }), 'utf8')
   // Threads captures start with the fixture host connected.
   if (options.threads === true) {
@@ -43,7 +40,7 @@ async function withProfile(
     await run(launched)
   } finally {
     if (launched !== undefined) await closeSotto(launched)
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 }
 

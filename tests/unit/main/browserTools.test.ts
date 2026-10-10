@@ -8,6 +8,7 @@ import { BaseWindow, WebContentsView, type BrowserWindow } from 'electron'
 import { BrowserService } from '../../../src/main/tools/browser'
 import { FilesService } from '../../../src/main/files/service'
 import type { ToolsResult } from '../../../src/shared/tools'
+import { deferred } from '../../fixtures/deferred'
 
 vi.mock('electron', async () => {
   const { EventEmitter } = await import('node:events')
@@ -70,7 +71,7 @@ describe('browser service lifecycle', () => {
     const bounds = { x: 400, y: 100, width: 600, height: 500 }
     unwrap(await service.mount({ ...target, pageId: first.id, bounds }))
     let finishValidation!: (value: Awaited<ReturnType<FilesService['resolveWorkspace']>>) => void
-    vi.spyOn(files, 'resolveWorkspace').mockImplementationOnce(() => new Promise(resolve => { finishValidation = resolve }))
+    vi.spyOn(files, 'resolveWorkspace').mockImplementationOnce(() => { const pending = deferred<Awaited<ReturnType<FilesService['resolveWorkspace']>>>(); finishValidation = pending.resolve; return pending.promise })
     const mounting = service.mount({ ...target, pageId: second.id, bounds })
     if (action === 'hide') unwrap(await service.mount({ ...target, pageId: first.id, bounds: null }))
     else unwrap(await service.close({ ...target, pageId: first.id }))
@@ -199,9 +200,13 @@ describe('browser agent boundaries', () => {
     const { service, target, view } = await browserFixture()
     unwrap(await service.share({ ...target, enabled: true }))
     const task = unwrap(await service.startTask({ ...target, description: 'Check the page' }))
+    const captureGate = deferred<{ data: string }>()
     let release!: (value: { data: string }) => void
     const original = vi.mocked(view.webContents.debugger.sendCommand).getMockImplementation()!
-    vi.mocked(view.webContents.debugger.sendCommand).mockImplementation(async (...args) => args[0] === 'Page.captureScreenshot' ? new Promise(resolve => { release = resolve }) : original(...args))
+    vi.mocked(view.webContents.debugger.sendCommand).mockImplementation(async (...args) => {
+      if (args[0] === 'Page.captureScreenshot') { release = captureGate.resolve; return captureGate.promise }
+      return original(...args)
+    })
     const operation = service.action({ ...target, taskId: task.id, action: { type: 'screenshot' } })
     await vi.waitFor(() => expect(release).toBeDefined())
     unwrap(await service.share({ ...target, enabled: false }))
@@ -333,9 +338,13 @@ describe('browser agent boundaries', () => {
 
   it.each([false, true])('cleans up a hidden capture lease without detaching a newly visible page: mount=%s', async mount => {
     const { service, target, view, attached } = await browserFixture(true)
+    const captureGate = deferred<{ data: string }>()
     let release!: (value: { data: string }) => void
     const original = vi.mocked(view.webContents.debugger.sendCommand).getMockImplementation()!
-    vi.mocked(view.webContents.debugger.sendCommand).mockImplementation(async (...args) => args[0] === 'Page.captureScreenshot' ? new Promise(resolve => { release = resolve }) : original(...args))
+    vi.mocked(view.webContents.debugger.sendCommand).mockImplementation(async (...args) => {
+      if (args[0] === 'Page.captureScreenshot') { release = captureGate.resolve; return captureGate.promise }
+      return original(...args)
+    })
     const capture = service.capture(target)
     await vi.waitFor(() => expect(release).toBeDefined())
     expect(attached.has(view)).toBe(false)
@@ -476,7 +485,6 @@ describe('browser grant (ADR-0029)', () => {
     expect(page).toMatchObject({ url: 'https://accounts.example.com/signin', status: 'ready', sharedOrigin: 'https://accounts.example.com' })
     expect(unwrap(await service.action({ ...target, taskId: task.id, action: { type: 'inspect' } })).approvalRequired).toBe(false)
   })
-
 
   it('reaches no other thread and is never made by a denial', async () => {
     const { service, target } = await browserFixture()

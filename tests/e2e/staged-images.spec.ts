@@ -1,3 +1,4 @@
+import { agentState } from './support/agentAccess'
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
@@ -28,8 +29,8 @@ test('repairs a missing staged screenshot when the user attaches the same image 
     await page.getByRole('button', { name: 'Workshop', exact: true }).click()
     await paste(page, image, 'Repair.png')
     await thumbnail(page, 'Repair.png')
-    await expect.poll(async () => (await page.evaluate(async () => window.sotto!.agents!.get())).threadDrafts?.[0]?.attachments[0]?.name).toBe('Repair.png')
-    const draft = (await page.evaluate(async () => window.sotto!.agents!.get())).threadDrafts![0]!
+    await expect.poll(async () => (await agentState(page)).threadDrafts?.[0]?.attachments[0]?.name).toBe('Repair.png')
+    const draft = (await agentState(page)).threadDrafts![0]!
     const handle = draft.attachments[0]!
     const file = join(launched.userData, 'attachments', `${handle.digest}.png`)
     await rm(file)
@@ -90,8 +91,8 @@ test('stages a pasted screenshot once, carries its handle, and restores its chip
     expect(Math.max(drawn.width, drawn.height)).toBeLessThanOrEqual(256)
     expect(drawn.src).not.toContain(image.slice(0, 200))
     // What main holds and publishes names the image; its bytes are in the store, once.
-    await expect.poll(async () => (await page.evaluate(async () => window.sotto!.agents!.get())).threadDrafts?.[0]?.attachments[0]).toMatchObject({ name: 'Staged.png', sizeBytes: icon.length })
-    const state = await page.evaluate(async () => window.sotto!.agents!.get())
+    await expect.poll(async () => (await agentState(page)).threadDrafts?.[0]?.attachments[0]).toMatchObject({ name: 'Staged.png', sizeBytes: icon.length })
+    const state = await agentState(page)
     expect(JSON.stringify(state)).not.toContain(image.slice(0, 200))
     const digest = state.threadDrafts![0]!.attachments[0]!.digest
     expect(await readdir(join(profile, 'attachments'))).toEqual(expect.arrayContaining([`${digest}.png`, 'index.json']))

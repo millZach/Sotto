@@ -1,3 +1,4 @@
+import { deferred } from '../../../../fixtures/deferred'
 import { LOCAL, REMOTE, host, fixture, openAddHost, typeAHost, neverPaired, settings } from '../../../../fixtures/renderer/hostsSettingsHarness'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -55,7 +56,7 @@ it('sends a changed choice with changed SSH settings, and has nothing to choose 
 it('asks SSH’s question and shows Tailscale’s approval inside Edit connection while a save signs in, and says why a save failed', async () => {
   let refuse: ((reason: Error) => void) | undefined
   const forge = host({ target: 'forge', name: 'forge', prefer: 'tailnet', via: 'tailnet' })
-  const { bridge, command, push } = fixture([forge], (input, current) => input.type === 'save' ? new Promise<HostsState>((_, reject) => { refuse = reject }) : current)
+  const { bridge, command, push } = fixture([forge], (input, current) => input.type === 'save' ? (() => { const pending = deferred<HostsState>(); refuse = pending.reject; return pending.promise })() : current)
   const user = userEvent.setup()
   settings(bridge)
   await user.click(await screen.findByRole('button', { name: 'More for forge' }))
@@ -80,7 +81,7 @@ it('asks SSH’s question and shows Tailscale’s approval inside Edit connectio
 
 it('stops an Edit connection save’s admin sign-in when the dialog closes while Tailscale waits for approval', async () => {
   const forge = host({ target: 'forge', name: 'forge', prefer: 'tailnet', via: 'tailnet' })
-  const { bridge, command, push } = fixture([forge], (input, current) => input.type === 'save' ? new Promise<HostsState>(() => undefined) : current)
+  const { bridge, command, push } = fixture([forge], (input, current) => input.type === 'save' ? deferred<HostsState>().promise : current)
   const user = userEvent.setup()
   settings(bridge)
   await user.click(await screen.findByRole('button', { name: 'More for forge' }))
@@ -97,7 +98,7 @@ it('stops an Edit connection save’s admin sign-in when the dialog closes while
 
 it('asks the SSH question of the connect an Edit connection save waits on, though it is not an admin connection', async () => {
   const forge = host({ target: 'forge', name: 'forge', prefer: 'tailnet', via: 'tailnet' })
-  const { bridge, command, push } = fixture([forge], (input, current) => input.type === 'save' ? new Promise<HostsState>(() => undefined) : current)
+  const { bridge, command, push } = fixture([forge], (input, current) => input.type === 'save' ? deferred<HostsState>().promise : current)
   const user = userEvent.setup()
   settings(bridge)
   await user.click(await screen.findByRole('button', { name: 'More for forge' }))
@@ -140,7 +141,7 @@ it('shows Tailscale’s approval inside Forget while its sign-in waits for it, a
   const url = 'https://login.tailscale.com/a/l1a2b3c4'
   let release!: () => void
   const { bridge, command, push } = fixture([host({ phase: 'disconnected', enabled: false })], async (input, current) => {
-    if (input.type === 'forget') await new Promise<void>(resolve => { release = resolve })
+    if (input.type === 'forget') await (() => { const pending = deferred<void>(); release = pending.resolve; return pending.promise })()
     return input.type === 'forget' ? { ...current, hosts: [] } : current
   })
   const user = userEvent.setup()
@@ -212,7 +213,7 @@ it('lets Keep host stop Forget’s sign-in while it waits, and says SSH’s ques
   const prompt = { id: 'prompt-9', kind: 'password' as const, text: 'Password:' }
   let release!: () => void
   const { bridge, command, push } = fixture([host({ phase: 'disconnected', enabled: false })], async (input, current) => {
-    if (input.type === 'forget') await new Promise<void>(resolve => { release = resolve })
+    if (input.type === 'forget') await (() => { const pending = deferred<void>(); release = pending.resolve; return pending.promise })()
     if (input.type === 'stop-admin-sign-in') release()
     return current
   })

@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { deferred } from '../fixtures/deferred'
 import { expect, it, vi } from 'vitest'
 import { desktopWindowClient } from '../../src/main/agents/hostService'
 import { request, target } from '../fixtures/answerDraftFixture'
@@ -31,8 +32,10 @@ it.each([false, true])('keeps exact stable answer delivery proof across restart 
   try {
     f.host.event({ type: 'question', threadId: target.threadId, text: '', request: { ...request, delivery: undefined } })
     const execute = f.host.execute.bind(f.host)
-    let entered: () => void = () => undefined
-    const started = new Promise<void>(resolve => { entered = resolve }), gate = new Promise<void>(resolve => { release = resolve })
+    const { promise: started, resolve: entered } = deferred<void>()
+
+    const { promise: gate, resolve: gateResolve } = deferred<void>()
+    release = gateResolve
     vi.spyOn(f.host, 'execute').mockImplementationOnce(async command => { entered(); await gate; return execute(command) })
     sending = f.control.commandShell(packet, client)
     await Promise.race([started, sending!.then(result => { throw new Error(`Native answer was refused: ${(result as { error: string }).error}`) })])
@@ -54,8 +57,10 @@ it('joins only an identical stable Send while its native call is held', async ()
   let release: () => void = () => undefined, first: Promise<unknown> | undefined, duplicate: Promise<unknown> | undefined
   try {
     const execute = f.host.execute.bind(f.host)
-    let entered: () => void = () => undefined
-    const started = new Promise<void>(resolve => { entered = resolve }), gate = new Promise<void>(resolve => { release = resolve })
+    const { promise: started, resolve: entered } = deferred<void>()
+
+    const { promise: gate, resolve: gateResolve } = deferred<void>()
+    release = gateResolve
     const native = vi.spyOn(f.host, 'execute').mockImplementationOnce(async command => { entered(); await gate; return execute(command) })
     first = f.control.commandShell(packet); await started
     duplicate = f.control.commandShell(packet)
@@ -88,8 +93,7 @@ it.each(['prompt', 'answer'] as const)('does not replay an unresolved stable %s 
 it('publishes only positive late acceptance for a stable answer and preserves its newer revision', async () => {
   const f = await draftHandoffFixture(undefined, { authorizes: () => ({ allowed: false, reason: 'no-policy' }), mayGrant: () => ({ allowed: true, reason: 'paired-client' }) })
   const draftId = '00000000-0000-4000-8000-000000000113', newerId = '00000000-0000-4000-8000-000000000114'
-  let complete: (accepted: boolean) => void = () => undefined
-  const completion = new Promise<boolean>(resolve => { complete = resolve })
+  const { promise: completion, resolve: complete } = deferred<boolean>()
   const client = { clientId: 'paired', user: 'User', transport: 'socket' as const, selectedThreadId: target.threadId }
   const packet = { type: 'send' as const, draft: { threadId: target.threadId, draftId, text: 'Blue', binding: { requestId: request.id, questionsDigest: target.questionsDigest } } }
   try {

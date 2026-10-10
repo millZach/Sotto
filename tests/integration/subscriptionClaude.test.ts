@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { parseProviderRecords } from '../fixtures/providerRecords'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -81,7 +82,7 @@ else {
     CLAUDE_CODE_USE_BEDROCK: '1', CLAUDE_CONFIG_DIR: 'fixture-other-login', XAI_API_KEY: 'fixture-unrelated-secret' }
   const client = new ClaudeSubscriptionClient(join(root, 'reasoning'), { executable: process.execPath, prefixArgs: [script], environment, ...options })
   return { root, client, configure, environment, async calls(): Promise<Invocation[]> {
-    return (await readFile(logPath, 'utf8')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line) as Invocation)
+    return parseProviderRecords<Invocation>(await readFile(logPath, 'utf8'))
   } }
 }
 

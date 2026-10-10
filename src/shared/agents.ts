@@ -631,6 +631,11 @@ export const agentStateSchema = z.object({
   clientUpdateRun: clientUpdateRunSchema.optional(),
   /** The card stays down until the next check finds something else. */
   clientUpdatesDismissedAt: z.string().optional(),
+  /**
+   * The thread clients the last Connect providers press found installed on this machine: presence only, no sign-in.
+   * Absent until a press looks, and on a machine that cannot look. Setup reads it to tell Not installed from off.
+   */
+  installedProviders: z.array(providerIdSchema).max(4).optional(),
   connection: z.enum(['disconnected', 'connecting', 'connected', 'error']),
   host: agentHostSnapshotSchema,
   activeThreadId: z.string().nullable(), activeProjectId: z.string().nullable(),
@@ -1008,23 +1013,25 @@ export function hostForThread(host: AgentHostSnapshot, thread: Pick<AgentThread,
   const source = host.clientHosts?.find(item => item.hostId === thread.hostId)
   return source ? { ...host, ...source, providers: source.providers } : host
 }
-const INSTALLED_PROVIDER_ORDER = ['codex', 'claude', 'grok'] as const
+const INSTALLED_PROVIDER_ORDER = ['codex', 'claude', 'grok', 'devin'] as const
 /**
- * The clients to connect when the current selection is not installed.
- * Codex remains the default when its CLI is present; otherwise Claude Code, then Grok Build.
- * A provider the user turned off stays off. Devin is included only when it was already enabled and its CLI is present.
- * Returns null when the current selection can already connect, or when every installed client was turned off.
+ * What Connect providers turns on: every thread client installed on this machine, Devin included, except one the user
+ * turned off, added to the ones already on, as a headless host connects them all (ADR-0036). A client already on stays
+ * on even when it is not found, since one being updated can be missing for a moment. When the default's own client is
+ * not installed, the default moves to the first of Codex, Claude Code, Grok Build and Devin that is, and the on set
+ * becomes the installed clients, so the missing default is not tried again. Returns null when that changes nothing, or
+ * when no client is installed and on.
  */
 export function selectInstalledProviders(configuration: AgentConfiguration, installed: readonly ProviderId[]): Pick<AgentConfiguration, 'provider' | 'enabledProviders'> | null {
   const present = new Set(installed)
-  const enabled = enabledThreadProviders(configuration)
-  if (present.has(configuration.provider) && enabled.some(id => present.has(id))) return null
   const off = new Set(configuration.disconnectedProviders ?? [])
-  const enabledProviders: ProviderId[] = INSTALLED_PROVIDER_ORDER.filter(id => present.has(id) && !off.has(id))
-  if (enabled.includes('devin') && present.has('devin') && !off.has('devin')) enabledProviders.push('devin')
-  const provider = enabledProviders[0]
+  const found: ProviderId[] = INSTALLED_PROVIDER_ORDER.filter(id => present.has(id) && !off.has(id))
+  const keepDefault = found.includes(configuration.provider)
+  const provider = keepDefault ? configuration.provider : found[0]
   if (!provider) return null
-  if (provider === configuration.provider && enabled.length === enabledProviders.length && enabled.every((id, index) => id === enabledProviders[index])) return null
+  const enabled = enabledThreadProviders(configuration)
+  const enabledProviders = keepDefault ? [...new Set([...enabled.filter(id => !off.has(id)), ...found])] : found
+  if (provider === configuration.provider && enabled.length === enabledProviders.length && enabledProviders.every(id => enabled.includes(id))) return null
   return { provider, enabledProviders }
 }
 export function capabilitiesForThread(host: AgentHostSnapshot, thread: AgentThread): AgentCapabilities {

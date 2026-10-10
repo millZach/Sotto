@@ -1,3 +1,4 @@
+import { agentState } from './support/agentAccess'
 import { mkdir } from 'node:fs/promises'
 import { expect, test, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, openPage, openThreads, paneMenuAction, type LaunchedSotto } from './support/sottoLaunch'
@@ -130,7 +131,7 @@ test('drafts save, settings stay and a model can be picked after a reconnect, wi
     await directory.fill(chosen)
     await directory.press('Tab')
     await settled(page, traffic, seen => answered(seen, 'configure') > answered(beforeSetting, 'configure'))
-    expect((await page.evaluate(async () => window.sotto!.agents!.get())).configuration.projectsDirectory).toBe(chosen)
+    expect((await agentState(page)).configuration.projectsDirectory).toBe(chosen)
     await expect(directory).toHaveValue(chosen)
     await page.screenshot({ path: `${ARTIFACTS}/setting-kept.png`, animations: 'disabled' })
 

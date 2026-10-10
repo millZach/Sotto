@@ -1,9 +1,8 @@
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
 import { randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type Locator } from '@playwright/test'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 
@@ -33,7 +32,7 @@ async function textContrast(locator: Locator): Promise<number> {
 
 test('uses Devin through the native adapter and preserves explicit thread decisions', async () => {
   test.setTimeout(180_000)
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-devin-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-devin-' })).directory
   const root = join(profile, 'devin-fixture')
   const projectPath = join(root, 'project')
   await mkdir(projectPath, { recursive: true })
@@ -170,6 +169,6 @@ test('uses Devin through the native adapter and preserves explicit thread decisi
     if (launched) await closeSotto(launched)
     if (previousRoot === undefined) delete process.env.SOTTO_E2E_DEVIN_ROOT; else process.env.SOTTO_E2E_DEVIN_ROOT = previousRoot
     if (previousExecutable === undefined) delete process.env.SOTTO_E2E_DEVIN_EXECUTABLE; else process.env.SOTTO_E2E_DEVIN_EXECUTABLE = previousExecutable
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 })

@@ -1,4 +1,4 @@
-import { deferred, createBridge, shell, openPage, renderApp, reachMicrophoneStep, finishRemainingSteps, completeReadySetup, setupThreadsTourTests } from '../../fixtures/renderer/appHarness'
+import { deferred, heardStart, createBridge, shell, openPage, renderApp, reachMicrophoneStep, finishRemainingSteps, completeReadySetup, setupThreadsTourTests } from '../../fixtures/renderer/appHarness'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
@@ -97,7 +97,7 @@ describe('Sotto application onboarding integration', () => {
   })
 
   it('uses the saved dictation input when testing during onboarding', async () => {
-    const microphone = { start: vi.fn(async () => 'ready' as const), stop: vi.fn(async () => undefined) }
+    const microphone = { start: vi.fn(heardStart), stop: vi.fn(async () => undefined) }
     renderApp(createBridge({ getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, microphoneId: 'saved-headset' })) }), () => microphone)
     await reachMicrophoneStep(userEvent.setup())
     await userEvent.click(screen.getByRole('button', { name: /test microphone/i }))
@@ -105,24 +105,24 @@ describe('Sotto application onboarding integration', () => {
   })
 
   it('stops a ready onboarding test and asks for a new one when another input is chosen', async () => {
-    const microphone = { start: vi.fn(async () => 'ready' as const), stop: vi.fn(async () => undefined) }
+    const microphone = { start: vi.fn(heardStart), stop: vi.fn(async () => undefined) }
     renderApp(createBridge({ getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, microphoneId: 'saved-headset' })) }), () => microphone)
     const user = userEvent.setup()
     await reachMicrophoneStep(user)
     await user.click(screen.getByRole('button', { name: 'Test microphone' }))
-    await screen.findByText(/Microphone ready/i)
+    await screen.findByText(/Sotto heard you/i)
     expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled()
 
     await user.selectOptions(screen.getByRole('combobox', { name: 'Microphone' }), '')
 
     await waitFor(() => expect(microphone.stop).toHaveBeenCalledOnce())
     expect(microphone.start).toHaveBeenCalledOnce()
-    expect(screen.getByText('Run a quick input-level test.')).toBeVisible()
+    expect(screen.getByText('Not tested yet.')).toBeVisible()
     expect(screen.queryByRole('button', { name: 'Continue' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Skip for now' })).toBeEnabled()
 
     await user.click(screen.getByRole('button', { name: 'Test microphone' }))
-    await screen.findByText(/Microphone ready/i)
+    await screen.findByText(/Sotto heard you/i)
     expect(microphone.start).toHaveBeenLastCalledWith(expect.any(Function), undefined, expect.any(Function))
   })
 
@@ -136,34 +136,31 @@ describe('Sotto application onboarding integration', () => {
 
     await user.selectOptions(screen.getByRole('combobox', { name: 'Microphone' }), '')
 
-    expect(await screen.findByText('Run a quick input-level test.')).toBeVisible()
+    expect(await screen.findByText('Not tested yet.')).toBeVisible()
     expect(screen.queryByText('Microphone access is blocked.')).not.toBeInTheDocument()
     expect(microphone.start).toHaveBeenCalledOnce()
   })
 
-  it('reports an ended onboarding input and ignores an older ended callback after retry', async () => {
+  it('reports an input that ends while the test listens, and ignores an older ended callback after retry', async () => {
     const ended: Array<(outcome: 'missing') => void> = []
-    const start = vi.fn<MicrophoneTestController['start']>(async (onLevel, _id, onEnded) => {
+    // Silence keeps the test listening, so the stream is still open when the input ends.
+    const start = vi.fn<MicrophoneTestController['start']>(async (_onLevel, _id, onEnded) => {
       ended.push(onEnded!)
-      onLevel(0.6)
       return 'ready'
     })
     renderApp(createBridge(), () => ({ start, stop: vi.fn(async () => undefined) }))
     await reachMicrophoneStep(userEvent.setup())
     await userEvent.click(screen.getByRole('button', { name: 'Test microphone' }))
-    await screen.findByText(/Microphone ready/i)
-    expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled()
+    await screen.findByText('Listening. Say something.')
     act(() => ended[0]!('missing'))
     expect(screen.getByText('No microphone was found.')).toBeVisible()
     expect(screen.queryByRole('meter', { name: 'Microphone level' })).not.toBeInTheDocument()
     expect(document.querySelector('.onboarding-microphone-test .voice-wave')).toHaveAttribute('data-stage', 'idle')
-    expect(screen.queryByRole('button', { name: 'Continue' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Skip for now' })).toBeEnabled()
     await userEvent.click(screen.getByRole('button', { name: 'Try microphone again' }))
-    await screen.findByText(/Microphone ready/i)
+    await screen.findByText('Listening. Say something.')
     act(() => ended[0]!('missing'))
-    expect(screen.getByText(/Microphone ready/i)).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled()
+    expect(screen.getByText('Listening. Say something.')).toBeVisible()
     act(() => ended[1]!('missing'))
     expect(screen.getByText('No microphone was found.')).toBeVisible()
   })
@@ -171,7 +168,7 @@ describe('Sotto application onboarding integration', () => {
   it('releases an active microphone test across StrictMode unmount cleanup', async () => {
     const user = userEvent.setup()
     const microphone = {
-      start: vi.fn(async () => 'ready' as const),
+      start: vi.fn(heardStart),
       stop: vi.fn(async () => undefined),
     }
     const mounted = renderApp(createBridge(), () => microphone, true)
@@ -187,11 +184,11 @@ describe('Sotto application onboarding integration', () => {
     const user = userEvent.setup()
     const stopped = deferred<void>()
     const active = {
-      start: vi.fn(async () => 'ready' as const),
+      start: vi.fn(heardStart),
       stop: vi.fn(() => stopped.promise),
     }
     const replacement = {
-      start: vi.fn(async () => 'ready' as const),
+      start: vi.fn(heardStart),
       stop: vi.fn(async () => undefined),
     }
     const createMicrophoneTest = vi.fn()
@@ -200,9 +197,9 @@ describe('Sotto application onboarding integration', () => {
     renderApp(createBridge(), createMicrophoneTest)
     await reachMicrophoneStep(user)
     await user.click(screen.getByRole('button', { name: /test microphone/i }))
-    await screen.findByText(/microphone ready/i)
+    await screen.findByText(/Sotto heard you/i)
 
-    await user.click(screen.getByRole('button', { name: /retest microphone/i }))
+    await user.click(screen.getByRole('button', { name: /test again/i }))
     await waitFor(() => expect(active.stop).toHaveBeenCalledOnce())
     await user.click(screen.getByRole('button', { name: /skip for now/i }))
     stopped.resolve()
@@ -219,11 +216,11 @@ describe('Sotto application onboarding integration', () => {
     const user = userEvent.setup()
     const stopped = deferred<void>()
     const active = {
-      start: vi.fn(async () => 'ready' as const),
+      start: vi.fn(heardStart),
       stop: vi.fn(() => stopped.promise),
     }
     const replacement = {
-      start: vi.fn(async () => 'ready' as const),
+      start: vi.fn(heardStart),
       stop: vi.fn(async () => undefined),
     }
     const createMicrophoneTest = vi.fn()
@@ -232,9 +229,9 @@ describe('Sotto application onboarding integration', () => {
     const mounted = renderApp(createBridge(), createMicrophoneTest)
     await reachMicrophoneStep(user)
     await user.click(screen.getByRole('button', { name: /test microphone/i }))
-    await screen.findByText(/microphone ready/i)
+    await screen.findByText(/Sotto heard you/i)
 
-    await user.click(screen.getByRole('button', { name: /retest microphone/i }))
+    await user.click(screen.getByRole('button', { name: /test again/i }))
     await waitFor(() => expect(active.stop).toHaveBeenCalledOnce())
     mounted.unmount()
     stopped.resolve()
@@ -249,15 +246,15 @@ describe('Sotto application onboarding integration', () => {
     const user = userEvent.setup()
     const stopped = deferred<void>()
     const active = {
-      start: vi.fn(async () => 'ready' as const),
+      start: vi.fn(heardStart),
       stop: vi.fn(() => stopped.promise),
     }
     const replacement = {
-      start: vi.fn(async () => 'ready' as const),
+      start: vi.fn(heardStart),
       stop: vi.fn(async () => undefined),
     }
     const staleReplacement = {
-      start: vi.fn(async () => 'ready' as const),
+      start: vi.fn(heardStart),
       stop: vi.fn(async () => undefined),
     }
     const createMicrophoneTest = vi.fn()
@@ -267,9 +264,9 @@ describe('Sotto application onboarding integration', () => {
     renderApp(createBridge(), createMicrophoneTest)
     await reachMicrophoneStep(user)
     await user.click(screen.getByRole('button', { name: /test microphone/i }))
-    await screen.findByText(/microphone ready/i)
+    await screen.findByText(/Sotto heard you/i)
 
-    const retest = screen.getByRole('button', { name: /retest microphone/i })
+    const retest = screen.getByRole('button', { name: /test again/i })
     act(() => {
       retest.click()
       retest.click()

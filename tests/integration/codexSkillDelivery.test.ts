@@ -1,10 +1,10 @@
 // @vitest-environment node
+import { createAgentControl } from '../fixtures/agentControlFixture'
+import { testCredentials } from '../fixtures/testCredentials'
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { AgentControl } from '../../src/main/agents/control'
-import { AgentCredentials } from '../../src/main/agents/credentials'
 
 import { controls, fixture, skill } from '../fixtures/codexSkillFixture'
 import { immediatePublishScheduler } from '../fixtures/publishScheduler'
@@ -59,9 +59,8 @@ describe("Codex native skills", () => {
 
   it('refreshes without changing focus, draft, assignment or durability; a late older response cannot replace a newer catalog', async () => {
     const f = await fixture()
-    const credentials = new AgentCredentials(join(f.root, 'vault'), { isEncryptionAvailable: () => true, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
-    await credentials.load()
-    const control = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
+    const credentials = await testCredentials(join(f.root, 'vault'), { mode: 'plain' })
+    const control = createAgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
       reasoner: {},
     })
     controls.push(control); await control.start(); await control.command({ type: 'connect' })

@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
+import { testCredentials } from '../../fixtures/testCredentials'
 import { PROVIDER_LABELS } from '../../../src/shared/agents'
 import { hostHelloSchema, hostPushSchema, shellForProtocolV1 } from '../../../src/shared/hostProtocol'
 import { encryption, fixture, registerAgentControlRecoveryCleanup, ROUTER_KEY, UnacknowledgedCreationHost } from '../../fixtures/agentControlRecovery'
@@ -56,8 +56,8 @@ describe('reasoning account route isolation', () => {
     await f.credentials.set('membership-cache', 'retired-cache')
     await f.credentials.set('formatting', 'keep-this-key')
     await f.restart()
-    const reloaded = new AgentCredentials(f.credentialsDirectory, encryption)
-    await reloaded.load()
+    const reloaded = await testCredentials(f.credentialsDirectory, { encryption: encryption })
+
     expect(reloaded.has('membership')).toBe(false)
     expect(reloaded.has('membership-cache')).toBe(false)
     expect(reloaded.get('formatting')).toBe('keep-this-key')
@@ -131,8 +131,8 @@ describe('reasoning account route isolation', () => {
     await mkdir(stateFile)
     const failed = await f.control.command({ type: 'configure', patch: { reasoning: 'openai' } })
     expect(failed.error).toMatch(/could not save/iu)
-    const reloaded = new AgentCredentials(f.credentialsDirectory, encryption)
-    await reloaded.load()
+    const reloaded = await testCredentials(f.credentialsDirectory, { encryption: encryption })
+
     expect(reloaded.has('reasoning')).toBe(false)
     expect(f.credentials.has('reasoning')).toBe(false)
   })
@@ -160,6 +160,22 @@ it.each([
   expect(requested.notice).toBe('Codex connected')
 })
 
+it('leaves every installed agent setup connection quiet, while each Threads connection still announces itself', async () => {
+  const installed = ['codex', 'claude', 'grok'] as const
+  const f = await fixture(undefined, { installedProviders: async () => installed })
+  await f.restart()
+  const connect = vi.spyOn(f.host, 'connect')
+  const connections = await Promise.all(installed.map(provider => f.control.command({ type: 'connect', provider, notice: false })))
+  expect(connections).toHaveLength(installed.length)
+  for (const connected of connections) expect(connected).toMatchObject({ connection: 'connected', notice: '', error: null })
+  expect(f.control.get().notice).toBe('')
+  for (const provider of installed) expect(connect).toHaveBeenCalledWith(provider)
+  for (const provider of installed) {
+    const requested = await f.control.command({ type: 'connect', provider })
+    expect(requested.notice).toBe(`${PROVIDER_LABELS[provider]} connected`)
+  }
+})
+
 it('clears the retired speech key on reload while preserving reasoning credentials', async () => {
     const f = await fixture()
     await f.account()
@@ -173,8 +189,7 @@ it('clears the retired speech key on reload while preserving reasoning credentia
     expect(JSON.stringify(f.control.get())).not.toContain(key)
     expect(await readFile(join(f.credentialsDirectory, 'credentials.json'), 'utf8')).not.toContain(key)
     expect(await readFile(join(f.root, 'agents.json'), 'utf8')).not.toContain(key)
-    const reloaded = new AgentCredentials(f.credentialsDirectory, encryption)
-    await reloaded.load()
+    const reloaded = await testCredentials(f.credentialsDirectory, { encryption })
     expect(reloaded.get('grokSpeech')).toBe('')
     expect(reloaded.get('reasoning')).toBe(ROUTER_KEY)
     await f.control.command({ type: 'configure', patch: { reasoning: 'openai' } })
@@ -221,6 +236,6 @@ it('changes the default provider while preserving threads and unrelated reasonin
     const changed = await f.control.command({ type: 'configure', patch: { provider: 'claude' } })
     expect(changed).toMatchObject({ error: null, configuration: { provider: 'claude' }, connection: 'connected', credentials: { reasoning: true } })
     expect(f.credentials.get('reasoning')).toBe('fixture-reasoning-token')
-    const reloaded = new AgentCredentials(f.credentialsDirectory, encryption); await reloaded.load()
+    const reloaded = await testCredentials(f.credentialsDirectory, { encryption })
     expect(reloaded.get('reasoning')).toBe('fixture-reasoning-token')
   })

@@ -1,13 +1,12 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { readFile, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test, type Locator } from '@playwright/test'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { startHeadlessHost } from '../../src/host'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import type { AgentHostCommand, AgentHostResult, ThreadReadPurpose } from '../../src/main/agents/host'
-import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
+import { E2EAgentHost } from '../../src/main/e2e/agentEffects'
 import type { RemoteHostE2EConnection } from '../../src/main/e2e/remoteHost'
 import type { AgentRequest, ProviderId } from '../../src/shared/agents'
 import type { RequestDraft } from '../../src/shared/requestDrafts'
@@ -75,7 +74,7 @@ const drafts = async (profile: string): Promise<RequestDraft[]> => JSON.parse(aw
 
 async function fixture(provider: ProviderId, uncertain = false, answerCompletion?: Promise<boolean>, keepQuestion = false,
   options: { historyEnabled?: boolean } = {}) {
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-remote-question-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-remote-question-' })).directory
   let host: Awaited<ReturnType<typeof startHeadlessHost>> | undefined
   let setup: SocketHostService | undefined
   let launched: LaunchedSotto | undefined
@@ -86,7 +85,7 @@ async function fixture(provider: ProviderId, uncertain = false, answerCompletion
     await Promise.all(Object.entries(providers).map(([id, provider]) => provider.initializeWorkingFolders(join(profile, 'working-folders', id))))
     const native = providers[provider]
     host = await startHeadlessHost({ dataDirectory: join(profile, 'remote-host'), port: 0,
-      providers, reasoner: e2eAgentReasoner })
+      providers })
     const url = `http://127.0.0.1:${host.descriptor!.port}`
     const paired = await SocketHostService.pair(url, host.pairing.issuePairingCode().code, 'Synthetic laptop')
     // The harness bypasses SSH, not the saved identity that admits restart recovery.
@@ -122,14 +121,14 @@ async function fixture(provider: ProviderId, uncertain = false, answerCompletion
       async close() {
         await closeSotto(ownedApp)
         await ownedHost.close()
-        await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+        await removeOwnedE2EProfile(profile)
       },
     }
   } catch (error) {
     if (launched) await closeSotto(launched)
     await setup?.close()
     await host?.close()
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
     throw error
   }
 }

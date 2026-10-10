@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { deferred } from '../fixtures/deferred'
 import { expect, it, vi } from 'vitest'
 import { request, target } from '../fixtures/answerDraftFixture'
 import { draftHandoffFixture } from '../fixtures/draftHandoffFixture'
@@ -10,8 +11,10 @@ it.each([false, true])('records only the captured draft accepted by a direct ans
   try {
     f.host.event({ type: 'question', threadId: target.threadId, text: '', request: { ...request, delivery: undefined } })
     await f.command({ type: 'save-thread-draft', threadId: target.threadId, draftId, requestId: request.id, text: 'Blue' })
-    let entered: () => void = () => undefined
-    const started = new Promise<void>(resolve => { entered = resolve }), gate = new Promise<void>(resolve => { release = resolve })
+    const { promise: started, resolve: entered } = deferred<void>()
+
+    const { promise: gate, resolve: gateResolve } = deferred<void>()
+    release = gateResolve
     const execute = f.host.execute.bind(f.host)
     vi.spyOn(f.host, 'execute').mockImplementationOnce(async command => { entered(); await gate; return execute(command) })
     answering = f.command({ type: 'answer', threadId: target.threadId, requestId: request.id, answer: 'Blue' })
@@ -73,8 +76,9 @@ it('keeps a newer active draft when a different structured answer finishes', asy
     f.host.event({ type: 'question', threadId: target.threadId, text: '', request: { ...request, delivery: undefined } })
     await f.command({ type: 'compose', text: 'Blue' })
     await f.command({ type: 'save-thread-draft', threadId: target.threadId, draftId, requestId: request.id, text: 'Blue' })
-    let entered: () => void = () => undefined
-    const started = new Promise<void>(resolve => { entered = resolve }), gate = new Promise<void>(resolve => { release = resolve })
+    const { promise: started, resolve: entered } = deferred<void>()
+    const { promise: gate, resolve: gateResolve } = deferred<void>()
+    release = gateResolve
     const execute = f.host.execute.bind(f.host)
     vi.spyOn(f.host, 'execute').mockImplementationOnce(async command => { entered(); await gate; return execute(command) })
     answering = f.command({ type: 'answer', threadId: target.threadId, requestId: request.id, answer: '',
@@ -97,8 +101,10 @@ it.each([false, true])('publishes obsolete revisions only after a durable write 
     await f.command({ type: 'save-thread-draft', threadId: target.threadId, draftId, requestId: null, text: 'Durable original' })
     const control = f.control as unknown as { store: { write(value: unknown): Promise<void> } }
     const write = control.store.write.bind(control.store)
-    let entered: () => void = () => undefined
-    const started = new Promise<void>(resolve => { entered = resolve }), gate = new Promise<void>(resolve => { release = resolve })
+    const { promise: started, resolve: entered } = deferred<void>()
+
+    const { promise: gate, resolve: gateResolve } = deferred<void>()
+    release = gateResolve
     vi.spyOn(control.store, 'write').mockImplementation(async value => {
       entered(); await gate
       if (fails) throw new Error('Synthetic disk write failure')

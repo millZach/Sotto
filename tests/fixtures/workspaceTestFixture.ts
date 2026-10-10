@@ -1,5 +1,6 @@
 // @vitest-environment node
 
+export { deferred } from './deferred'
 import { afterEach, vi } from 'vitest'
 import { workspaceFixture } from './workspaceFixture'
 
@@ -18,7 +19,3 @@ export async function local(f: Awaited<ReturnType<typeof fixture>>, id = 'local'
   return { project, model }
 }
 export const send = (threadId = 'local') => ({ type: 'send' as const, commandId: `send-${threadId}`, threadId, messageId: `message-${threadId}`, text: 'Implement the task' })
-export function deferred() {
-  let release!: () => void
-  return { promise: new Promise<void>(resolve => { release = resolve }), release }
-}

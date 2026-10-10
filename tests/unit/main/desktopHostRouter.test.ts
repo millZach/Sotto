@@ -12,7 +12,8 @@ import { requestQuestionsDigest } from '../../../src/main/agents/requestDrafts'
 import { desktopWindowClient } from '../../../src/main/agents/hostService'
 import { HostConnectionError, SocketHostService } from '../../../src/main/agents/socketHostService'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
-import { agentStateSchema, MAX_DELIVERED_DRAFTS, hostForThread, capabilitiesForThread, noProviderRefusal, type AgentCommand } from '../../../src/shared/agents'
+import { agentStateSchema, MAX_DELIVERED_DRAFTS, hostForThread, capabilitiesForThread, noProviderRefusal, type AgentCommand, type AgentState } from '../../../src/shared/agents'
+import { deferred } from '../../fixtures/deferred'
 
 const LOCAL = '11111111-1111-4111-8111-111111111111'
 const REMOTE = '22222222-2222-4222-8222-222222222222'
@@ -106,8 +107,8 @@ describe('desktop host routing', () => {
 
   it.each(['error', 'selection', 'shell', 'reconnect'] as const)('does not suppress a refused autosave notice after an intervening %s while its reply is held', async intervening => {
     const f = unsupportedComposer()
-    let release!: () => void, started!: () => void
-    const gate = new Promise<void>(resolve => { release = resolve }), entered = new Promise<void>(resolve => { started = resolve })
+
+    const { promise: gate, resolve: release } = deferred<void>(), { promise: entered, resolve: started } = deferred<void>()
     const actual = f.service.command.bind(f.service)
     let running: Promise<ReturnType<typeof f.router.shell>> | undefined
     try {
@@ -347,7 +348,7 @@ describe('desktop host routing', () => {
       it('keeps a selection the user made while the host created it', async () => {
         const { router, remote } = setup()
         let finish: () => void = () => undefined
-        remote.command.mockImplementationOnce(() => new Promise(resolve => { finish = () => { addNewThread(remote); resolve(remote.state) } }))
+        remote.command.mockImplementationOnce(() => { const pending = deferred<AgentState>(); finish = () => { addNewThread(remote); pending.resolve(remote.state) }; return pending.promise })
         const creating = createFromWindow(router)
         await router.command({ type: 'select-thread', threadId: hostEntityKey(LOCAL, 'other') }, desktopWindowClient())
         finish(); await creating
@@ -371,7 +372,7 @@ describe('desktop host routing', () => {
         const { router, remote } = setup()
         await router.command({ type: 'select-thread', threadId: hostEntityKey(LOCAL, 'thread') }, desktopWindowClient())
         let finish: () => void = () => undefined
-        remote.command.mockImplementationOnce(() => new Promise(resolve => { finish = () => { addNewThread(remote); resolve(remote.state) } }))
+        remote.command.mockImplementationOnce(() => { const pending = deferred<AgentState>(); finish = () => { addNewThread(remote); pending.resolve(remote.state) }; return pending.promise })
         const creating = createFromWindow(router)
         router.remove(REMOTE)
         finish(); await creating
@@ -392,7 +393,7 @@ describe('desktop host routing', () => {
       const { router, local, moveLocalTo } = setup()
       await router.command({ type: 'select-thread', threadId: hostEntityKey(LOCAL, 'thread') }, desktopWindowClient())
       let finish: () => void = () => undefined
-      local.command.mockImplementationOnce(() => new Promise(resolve => { finish = () => { moveLocalTo('other'); resolve(local.state) } }))
+      local.command.mockImplementationOnce(() => { const pending = deferred<AgentState>(); finish = () => { moveLocalTo('other'); pending.resolve(local.state) }; return pending.promise })
       const creating = router.command({ type: 'create-thread', projectId: hostEntityKey(LOCAL, 'project'), title: 'Task', modelId: 'model' }, desktopWindowClient())
       await router.command({ type: 'select-thread', threadId: hostEntityKey(REMOTE, 'thread') }, desktopWindowClient())
       finish(); await creating

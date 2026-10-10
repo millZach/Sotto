@@ -3,9 +3,9 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach } from 'vitest'
-import { startHeadlessHost } from '../../src/host'
+import { startFixtureHeadlessHost as startHeadlessHost } from './desktopHostStack'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
-import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
+import { E2EAgentHost } from '../../src/main/e2e/agentEffects'
 
 export function useSocketHostFixture() {
   let root: string
@@ -21,7 +21,7 @@ export function useSocketHostFixture() {
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), 'sotto-socket-'))
     native = new E2EAgentHost()
-    host = await startHeadlessHost({ dataDirectory: root, port: 0, providers: { codex: native, claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost() }, reasoner: e2eAgentReasoner })
+    host = await startHeadlessHost({ dataDirectory: root, port: 0, providers: { codex: native } })
     url = 'http://127.0.0.1:' + host.descriptor!.port; clients = []
   })
 

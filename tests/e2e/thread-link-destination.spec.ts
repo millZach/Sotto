@@ -1,9 +1,8 @@
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
 import { createServer } from 'node:http'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 
@@ -28,7 +27,7 @@ async function openThreadWithLink(page: Page, url: string): Promise<void> {
 }
 
 test('the thread link destination saves through Settings and controls ordinary clicks after restart', async () => {
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-link-preference-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-link-preference-' })).directory
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true }))
   const server = createServer((_request, response) => {
     response.setHeader('Content-Type', 'text/html')
@@ -73,6 +72,6 @@ test('the thread link destination saves through Settings and controls ordinary c
   } finally {
     if (launched) await closeSotto(launched)
     await new Promise<void>(resolve => server.close(() => resolve()))
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 })

@@ -1,3 +1,4 @@
+import { threadsStateFixture } from '../../../../fixtures/agentState'
 import { baseProps, copy, deferred, selectCategory } from '../../../../fixtures/renderer/settingsViewHarness'
 import React from 'react'
 import { render, screen, within } from '@testing-library/react'
@@ -130,13 +131,10 @@ describe('SettingsView', () => {
 
 it('places Hosts, Phones and Agents after Providers and keeps new-thread defaults inline', async () => {
     const capabilities = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true }
-    const state: AgentState = {
-      configuration: { ...defaultAgentConfiguration(), reasoning: 'claude' }, connection: 'disconnected',
-      host: { connected: false, name: 'Providers', version: '', capabilities, projects: [], models: [], threads: [] },
-      activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
-      draftRequestId: null, globalLaneBusy: false, notice: '', error: null,
-      credentials: { reasoning: false, secure: true }, reasoningAccounts: [],
-    }
+    const state: AgentState = threadsStateFixture({ cloneOverrides: false,
+    configuration: { ...defaultAgentConfiguration(), reasoning: 'claude' },
+    host: { connected: false, name: 'Providers', version: '', capabilities, projects: [], models: [], threads: [] },
+    topLevel: { connection: 'disconnected', activeThreadId: null, activeProjectId: null } })
     vi.mocked(useOptionalAgents).mockReturnValue(agentContextFixture(state, vi.fn(async () => state)))
     const { container } = render(<SettingsView {...baseProps()} />)
     await selectCategory('Agents')
@@ -147,26 +145,23 @@ it('places Hosts, Phones and Agents after Providers and keeps new-thread default
     const agents = container.querySelector('#settings-agents') as HTMLElement
     expect(within(agents).queryByRole('button', { name: 'Configure agents' })).toBeNull()
     expect(within(agents).queryByRole('combobox', { name: 'Reasoning account' })).toBeNull()
+    expect(within(agents).queryByRole('textbox', { name: 'Automatic follow-up limit' })).toBeNull()
+    expect(within(agents).queryByLabelText('Reasoning API key')).toBeNull()
     expect(screen.queryByRole('dialog', { name: 'Agent configuration' })).toBeNull()
   })
 
 it('preserves saved defaults without dormant reasoning, voice or wake controls', async () => {
     const capabilities = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true }
-    const state: AgentState = {
-      configuration: { ...defaultAgentConfiguration(), reasoning: 'claude' }, connection: 'disconnected',
-      host: { connected: false, name: 'Providers', version: '', capabilities, projects: [], models: [], threads: [] },
-      activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
-      draftRequestId: null, globalLaneBusy: false, notice: '', error: null,
-      credentials: { reasoning: false, secure: true }, reasoningAccounts: [],
-    }
+    const state: AgentState = threadsStateFixture({ cloneOverrides: false,
+    configuration: { ...defaultAgentConfiguration(), reasoning: 'claude' },
+    host: { connected: false, name: 'Providers', version: '', capabilities, projects: [], models: [], threads: [] },
+    topLevel: { connection: 'disconnected', activeThreadId: null, activeProjectId: null } })
     vi.mocked(useOptionalAgents).mockReturnValue(agentContextFixture(state, vi.fn(async () => state)))
     const { container, rerender } = render(<SettingsView {...baseProps()} />)
     await selectCategory('Agents')
     const agents = container.querySelector('#settings-agents') as HTMLElement
     expect(within(agents).getByText('New threads & projects')).toBeInTheDocument()
     expect(within(agents).queryByText('Advanced wake settings')).toBeNull()
-    expect(within(agents).queryByRole('textbox', { name: 'Automatic follow-up limit' })).toBeNull()
-    expect(within(agents).queryByLabelText('Reasoning API key')).toBeNull()
     expect(within(agents).queryByRole('button', { name: 'Stop speech' })).toBeNull()
     expect(within(agents).queryByRole('combobox', { name: 'Reasoning account' })).toBeNull()
     // A legacy flag cannot restore the removed controls.

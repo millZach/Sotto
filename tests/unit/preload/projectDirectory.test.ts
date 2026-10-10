@@ -1,11 +1,12 @@
 // @vitest-environment node
+import { preloadElectron } from '../../fixtures/preloadElectron'
 import { describe, expect, it, vi } from 'vitest'
-vi.mock('electron', () => ({ contextBridge: { exposeInMainWorld: vi.fn() }, ipcRenderer: { invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn() } }))
+vi.mock('electron', async () => (await import('../../fixtures/preloadElectron')).preloadElectron())
 import { createSottoBridge, createSottoWidgetBridge } from '../../../src/preload'
 import { AGENT_CHOOSE_PROJECT_DIRECTORY } from '../../../src/shared/agents'
 
 function fixture() {
-  const ipc = { invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn() }
+  const ipc = preloadElectron().ipcRenderer
   return { ipc, main: createSottoBridge(ipc, 'win32'), widget: createSottoWidgetBridge(ipc, 'win32') }
 }
 

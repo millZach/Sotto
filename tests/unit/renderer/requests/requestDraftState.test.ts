@@ -1,3 +1,5 @@
+import type { SubmitOutcome } from '../../../../src/renderer/src/agents/requests/requestAnswers'
+import { deferred as gate, deferred } from '../../../fixtures/deferred'
 import { describe, expect, it, vi } from 'vitest'
 import { requestAnswerOwnerKey, RequestAnswerStore } from '../../../../src/renderer/src/agents/requests/requestAnswers'
 import { requestDraftSchema, type RequestDraft, type RequestDraftBridge, type RequestDraftCheckResult, type RequestDraftTarget } from '../../../../src/shared/requestDrafts'
@@ -5,7 +7,7 @@ import { requestDraftSchema, type RequestDraft, type RequestDraftBridge, type Re
 it('does not restore a pruned answer when an old submit completes after its request ID is reused', async () => {
   const store = new RequestAnswerStore(() => undefined)
   let finish!: (value: { error: null }) => void
-  const old = store.submit('thread', 'reused', null, () => new Promise(resolve => { finish = resolve }))
+  const old = store.submit('thread', 'reused', null, () => { const pending = deferred<SubmitOutcome>(); finish = pending.resolve; return pending.promise })
   store.prune('thread', [])
   await store.submit('thread', 'reused', null, async () => ({ error: 'Try again' }))
   finish({ error: null })
@@ -19,7 +21,7 @@ const target: RequestDraftTarget = { kind: 'thread', ownerId: 'thread', provider
 ] }
 const selection = (text: string) => ({ text, optionIds: [], other: false })
 const draft = (text: string, revision = 1, held = false): RequestDraft => requestDraftSchema.parse({ target, selections: { q: selection(text) }, revision, held })
-function gate<T>() { let resolve!: (value: T) => void; let reject!: (reason: unknown) => void; const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail }); return { promise, resolve, reject } }
+
 function bridge(): RequestDraftBridge {
   const api: RequestDraftBridge = { list: vi.fn(async () => []), discard: vi.fn(async () => false), get: vi.fn(async () => null),
     status: vi.fn(async target => { const draft = await api.get(target); return draft ? { status: 'draft' as const, draft } : { status: 'missing' as const } }),

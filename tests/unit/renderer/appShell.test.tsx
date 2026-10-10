@@ -1,3 +1,4 @@
+import { deferred } from '../../fixtures/deferred'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import React from 'react'
@@ -300,7 +301,7 @@ describe('AppShell', () => {
     const user = userEvent.setup()
     const { ConfirmationDialog } = await import('../../../src/renderer/src/components/ConfirmationDialog')
     let finish!: (value: boolean) => void
-    const onConfirm = vi.fn(() => new Promise<boolean>(resolve => { finish = resolve }))
+    const onConfirm = vi.fn(() => { const pending = deferred<boolean>(); finish = pending.resolve; return pending.promise })
     render(<ConfirmationDialog submitOnEnter title="Continue?" description={<input aria-label="Answer" />} confirmLabel="Continue" cancelLabel="Cancel" onCancel={vi.fn()} onConfirm={onConfirm} />)
     await user.click(screen.getByRole('textbox', { name: 'Answer' }))
     await user.keyboard('{Enter}{Enter}')

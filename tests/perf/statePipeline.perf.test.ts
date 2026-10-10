@@ -7,6 +7,9 @@
  *   Set SOTTO_PERF_BENCH=1 and SOTTO_PERF_DATA=<folder with workspace.json and attachment-previews.json>.
  *   npx vitest run tests/perf/statePipeline.perf.test.ts --maxWorkers=1
  */
+import { round } from '../fixtures/perfBench'
+import { upperMedian as median } from './support/statistics.mjs'
+import { threadsStateFixture } from '../fixtures/agentState'
 import { mkdtemp, readFile, copyFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -20,11 +23,6 @@ import { AttachmentStore } from '../../src/main/agents/attachmentStore'
 
 const ITERATIONS = 20
 
-function median(samples: number[]): number {
-  const sorted = [...samples].sort((a, b) => a - b)
-  return sorted[Math.floor(sorted.length / 2)]!
-}
-
 function time(work: () => void): number {
   const samples: number[] = []
   for (let index = 0; index < ITERATIONS; index++) {
@@ -36,13 +34,18 @@ function time(work: () => void): number {
 }
 
 function stateAround(host: AgentHostSnapshot): AgentState {
-  return {
-    configuration: defaultAgentConfiguration(), connection: 'connected', host,
-    activeThreadId: host.threads[0]?.id ?? null, activeProjectId: host.projects[0]?.id ?? null,
-    draft: '', draftThreadId: null, composing: false, draftRequestId: null, draftAttachments: [], deliveredDrafts: [], threadDrafts: [], deliveries: [],
-    globalLaneBusy: false, notice: '', error: null,
-    credentials: { reasoning: false, secure: true }, reasoningAccounts: [],
-  }
+  return threadsStateFixture({
+    cloneOverrides: false,
+    configuration: defaultAgentConfiguration(),
+    host,
+    topLevel: {
+      connection: 'connected', activeThreadId: host.threads[0]?.id ?? null, activeProjectId: host.projects[0]?.id ?? null,
+      draft: '', draftThreadId: null, composing: false, draftRequestId: null, draftAttachments: [], deliveredDrafts: [],
+      threadDrafts: [], deliveries: [], globalLaneBusy: false, notice: '', error: null,
+      credentials: { reasoning: false, secure: true },
+      reasoningAccounts: [],
+    },
+  })
 }
 
 describe('state pipeline cost', async () => {
@@ -90,8 +93,8 @@ describe('state pipeline cost', async () => {
     const report = {
       threads: state.host.threads.length, messages,
       payloadKB: Math.round(bytes / 1024), payloadWithoutPreviewsKB: Math.round(bare / 1024),
-      ms: { clone: round(clone), decorate: round(decorate), serialize: round(send), deserialize: round(receive),
-        schemaParse: round(guard), schemaParseSkipped: round(parse), total: round(total) },
+      ms: { clone: round(clone, 2), decorate: round(decorate, 2), serialize: round(send, 2), deserialize: round(receive, 2),
+        schemaParse: round(guard, 2), schemaParseSkipped: round(parse, 2), total: round(total, 2) },
     }
     console.info(`state pipeline: ${JSON.stringify(report)}`)
     expect(report.threads).toBeGreaterThan(0)
@@ -122,9 +125,9 @@ describe('state pipeline cost', async () => {
       payloadKB: Math.round(shellBytes / 1024),
       detailThread: busiest.id.slice(0, 8), detailMessages: busiest.messages.length,
       detailActivities: busiest.activities?.length ?? 0,
-      detailPayloadKB: Math.round(detailBytes / 1024), detailCloneMs: round(detailClone),
-      ms: { clone: round(shellClone), decorate: 0, serialize: round(shellSend), deserialize: round(shellReceive),
-        schemaParse: round(shellGuard), total: round(shellTotal) },
+      detailPayloadKB: Math.round(detailBytes / 1024), detailCloneMs: round(detailClone, 2),
+      ms: { clone: round(shellClone, 2), decorate: 0, serialize: round(shellSend, 2), deserialize: round(shellReceive, 2),
+        schemaParse: round(shellGuard, 2), total: round(shellTotal, 2) },
     }
     console.info(`state pipeline (shell): ${JSON.stringify(shellReport)}`)
     expect(shellBytes).toBeLessThan(bare)
@@ -149,16 +152,14 @@ describe('state pipeline cost', async () => {
 
     const streamingReport = {
       thread: busiest.id.slice(0, 8), messages: held.messages.length, activities: held.activities!.length,
-      full: { payloadKB: Math.round(detailBytes / 1024), produceMs: round(detailClone), serializeMs: round(fullSend),
-        deserializeMs: round(fullReceive), totalMs: round(detailClone + fullSend + fullReceive) },
-      delta: { payloadBytes: streamedWire.byteLength, produceMs: round(diff), serializeMs: round(streamedSend),
-        deserializeMs: round(streamedReceive), applyMs: round(apply),
-        totalMs: round(diff + streamedSend + streamedReceive + apply) },
+      full: { payloadKB: Math.round(detailBytes / 1024), produceMs: round(detailClone, 2), serializeMs: round(fullSend, 2),
+        deserializeMs: round(fullReceive, 2), totalMs: round(detailClone + fullSend + fullReceive, 2) },
+      delta: { payloadBytes: streamedWire.byteLength, produceMs: round(diff, 2), serializeMs: round(streamedSend, 2),
+        deserializeMs: round(streamedReceive, 2), applyMs: round(apply, 2),
+        totalMs: round(diff + streamedSend + streamedReceive + apply, 2) },
     }
     console.info(`state pipeline (streaming delta): ${JSON.stringify(streamingReport)}`)
     expect(streamedWire.byteLength).toBeLessThan(detailBytes)
     expect(applyAgentThreadDetailDelta(held, streamed)!.messages.at(-1)!.text.endsWith(chunk)).toBe(true)
   })
 })
-
-function round(value: number): number { return Math.round(value * 100) / 100 }

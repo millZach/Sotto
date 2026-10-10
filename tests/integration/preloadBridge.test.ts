@@ -1,6 +1,7 @@
 import { registerAgentIpc } from '../../src/main/agents/ipc'
 import { MICROPHONE_ENSURE_ACCESS, TRANSCRIPT_POLISH, TRANSCRIPTION_CANCEL, TRANSCRIPTION_CHECK_KEY, TRANSCRIPTION_TRANSCRIBE } from '../../src/shared/channels'
 // @vitest-environment node
+import type { preloadElectron } from '../fixtures/preloadElectron'
 import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 import { createSystemSettingsOpener } from '../../src/main/app/systemSettings'
 import {
@@ -40,28 +41,12 @@ import {
 import { DEFAULT_WIDGET_PALETTE } from '../../src/shared/themeBranding'
 import { createIpcHarness, idleWidgetSnapshot } from '../fixtures/ipcHarness'
 
-const electronMock = vi.hoisted(() => {
-  const exposed = { name: '', value: undefined as unknown }
-  const ipcRenderer = {
-    invoke: vi.fn<(channel: string, ...args: unknown[]) => Promise<unknown>>(
-      async () => undefined,
-    ),
-    on: vi.fn<(channel: string, listener: (...args: unknown[]) => void) => void>(),
-    removeListener: vi.fn<(channel: string, listener: (...args: unknown[]) => void) => void>(),
-  }
-  const contextBridge = {
-    exposeInMainWorld: vi.fn((name: string, value: unknown) => {
-      exposed.name = name
-      exposed.value = value
-    }),
-  }
-  return { contextBridge, exposed, ipcRenderer }
+vi.mock('electron', async () => {
+  const mock = (await import('../fixtures/preloadElectron')).preloadElectron()
+  mock.ipcRenderer.invoke.mockResolvedValue(undefined)
+  return mock
 })
-
-vi.mock('electron', () => ({
-  contextBridge: electronMock.contextBridge,
-  ipcRenderer: electronMock.ipcRenderer,
-}))
+const electronMock = await import('electron') as unknown as ReturnType<typeof preloadElectron>
 
 describe('typed preload bridge', () => {
   it('opens only validated web/mail links through the trusted main bridge', async () => {

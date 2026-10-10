@@ -6,7 +6,7 @@ import { assertDictationDirectories, validateDictationRuntime } from './dictatio
 
 const request = parseDictationArguments(process.argv.slice(2))
 if (request === null) {
-  console.error('Use: sotto dictation start|stop|toggle|cancel [--at epoch-ns]')
+  console.error('Use: sotto dictation start|stop|toggle|cancel|retry|discard [--at epoch-ns], or sotto dictation place top|bottom|left|right [--at epoch-ns]')
   process.exitCode = 2
 } else {
   let guidance = 'Dictation needs a private desktop runtime folder owned by you, with no folder links. Open Sotto in a desktop session that provides one, then try again.'

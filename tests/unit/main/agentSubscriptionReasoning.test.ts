@@ -3,21 +3,23 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
+
 import { ConfiguredAgentReasoner } from '../../../src/main/agents/reasoning'
 import { AgentControl } from '../../../src/main/agents/control'
 import { E2EAgentHost } from '../../../src/main/e2e/agentEffects'
 import { agentCommandSchema, agentConfigurationSchema, defaultAgentConfiguration, type SubscriptionProvider } from '../../../src/shared/agents'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
+import { deferred } from '../../fixtures/deferred'
 
 const roots: string[] = []
 const controls: AgentControl[] = []
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'sotto-subscription-'))
   roots.push(root)
-  const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => true,
-    encryptString: text => Buffer.from(text), decryptString: bytes => bytes.toString() })
-  await credentials.load()
+  const credentials = await testCredentials(root, { mode: 'plain' })
+
   const configuration = defaultAgentConfiguration()
   const client = {
     status: vi.fn(async () => ({ provider: 'claude' as const, installed: true, ready: true, label: 'Claude Max', detail: 'Connected', models: [] })),
@@ -47,7 +49,7 @@ describe('Sotto subscription reasoning integration', () => {
     const f = await fixture()
     const grok = { ...f.client, status: vi.fn(async () => ({ provider: 'grok' as const, installed: true, ready: true, label: 'Grok', detail: 'Connected',
       models: [{ id: 'grok-4.6', name: 'Grok 4.6', reasoningEfforts: ['low', 'high'] }] })) }
-    const control: AgentControl = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, credentials: f.credentials, host: new E2EAgentHost(),
+    const control: AgentControl = createAgentControl({ schedule: immediatePublishScheduler, directory: f.root, credentials: f.credentials, host: new E2EAgentHost(),
       reasoner: new ConfiguredAgentReasoner({ claude: f.client, grok }),
     })
     controls.push(control)
@@ -66,7 +68,7 @@ describe('Sotto subscription reasoning integration', () => {
     let control: AgentControl
     const reasoner = new ConfiguredAgentReasoner({ claude: f.client })
     const start = async () => {
-      control = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, credentials: f.credentials, reasoner, host: new E2EAgentHost(),
+      control = createAgentControl({ schedule: immediatePublishScheduler, directory: f.root, credentials: f.credentials, reasoner, host: new E2EAgentHost(),
       })
       controls.push(control)
       await control.start()
@@ -81,9 +83,9 @@ describe('Sotto subscription reasoning integration', () => {
     expect(JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')).configuration.reasoning).toBe('claude')
     initial.dispose()
     let finishStatus!: () => void
-    f.client.status.mockImplementationOnce(() => new Promise(resolveStatus => { finishStatus = () => resolveStatus({
+    f.client.status.mockImplementationOnce(() => { const pending = deferred<Awaited<ReturnType<typeof f.client.status>>>(); finishStatus = () => pending.resolve({
       provider: 'claude', installed: true, ready: true, label: 'Claude Max', detail: 'Connected', models: [],
-    }) }))
+    }); return pending.promise })
     const restarted = await start()
     // A native client can stall without delaying the rest of Sotto's startup.
     expect(restarted.get().configuration.reasoning).toBe('claude')

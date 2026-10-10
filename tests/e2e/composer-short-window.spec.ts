@@ -1,3 +1,4 @@
+import { resizeContentWindow } from './support/sottoWindow'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { hostEntityKey } from '../../src/shared/clientIdentity'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
@@ -19,13 +20,7 @@ async function start(launched: LaunchedSotto): Promise<void> {
 }
 
 async function size(launched: LaunchedSotto, width: number, height: number): Promise<void> {
-  await launched.app.evaluate(({ BrowserWindow }, [width, height]) => {
-    const window = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().endsWith('/index.html'))!
-    // The shipped minimum is enforced on the outer frame; lower it so the content is exactly the size under test.
-    window.setMinimumSize(700, 500)
-    window.setContentSize(width, height)
-  }, [width, height] as const)
-  await expect.poll(() => launched.page.evaluate(() => `${window.innerWidth}x${window.innerHeight}`)).toBe(`${width}x${height}`)
+  await resizeContentWindow(launched, width, height, [700, 500])
   await launched.page.waitForTimeout(200)
 }
 

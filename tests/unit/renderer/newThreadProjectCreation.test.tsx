@@ -1,3 +1,5 @@
+import { deferred } from '../../fixtures/deferred'
+import { threadsStateFixture } from '../../fixtures/agentState'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -8,16 +10,12 @@ const path = 'C:/Users/zache/Documents/Codex'
 const actual = { id: 'actual-project', title: 'Codex', path: 'C:\\Users\\zache\\Documents\\Codex' }
 const unrelated = { id: 'other-project', title: 'Other', path: 'C:/Other' }
 function fixture(projects: AgentState['host']['projects'] = [unrelated], activeProjectId: string | null = unrelated.id): AgentState {
-  return {
-    configuration: defaultAgentConfiguration(), connection: 'connected',
+  return threadsStateFixture({ cloneOverrides: false,
+    configuration: defaultAgentConfiguration(),
     host: { connected: true, name: 'Codex', version: 'test',
       capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true },
       projects, threads: [], models: [{ id: 'codex:model', name: 'Model', provider: 'Codex', providerId: 'codex', ready: true, reasoningEfforts: ['low', 'high'], runtimeModes: ['approval-required', 'full-access'] }] },
-    activeProjectId, activeThreadId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false,
-    globalLaneBusy: false, notice: '', error: null,
-    credentials: { reasoning: false, secure: true },
-    reasoningAccounts: [],
-  }
+    topLevel: { activeProjectId, activeThreadId: null } })
 }
 function setup(command: (command: AgentCommand) => Promise<AgentState | null>, state = fixture()) {
   vi.stubGlobal('sotto', { agents: { chooseProjectDirectory: vi.fn(async () => path) } })
@@ -37,7 +35,7 @@ describe('native folder project resolution', () => {
   it('ignores repeated project choices while creation is waiting', async () => {
     let release!: (state: AgentState) => void
     const state = fixture([actual, unrelated])
-    const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(() => new Promise(resolve => { release = resolve }))
+    const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(() => { const pending = deferred<AgentState>(); release = pending.resolve; return pending.promise })
     const view = setup(command, state)
     const choice = screen.getByRole('button', { name: /^CodexC:/ })
     const other = screen.getByRole('button', { name: /^OtherC:/ })
@@ -174,7 +172,7 @@ describe('a client-minted thread id', () => {
 
   it('hands the creation over the moment it is issued, with the record the window can show', async () => {
     let settle: () => void = () => undefined
-    const command = vi.fn(() => new Promise<AgentState>(resolve => { settle = () => resolve(fixture([actual])) }))
+    const command = vi.fn(() => { const pending = deferred<AgentState>(); settle = () => pending.resolve(fixture([actual])); return pending.promise })
     const view = startCreation(command)
     await browse()
     await waitFor(() => expect(view.onCreating).toHaveBeenCalledOnce())
@@ -235,7 +233,7 @@ describe('working copy default', () => {
 
   it('locks the chooser while creation is in flight', async () => {
     let finish: (state: AgentState) => void = () => undefined
-    const command = vi.fn(() => new Promise<AgentState>(resolve => { finish = resolve }))
+    const command = vi.fn(() => { const pending = deferred<AgentState>(); finish = pending.resolve; return pending.promise })
     setup(command, fixture([actual]))
     await browse()
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Opening the thread…'))

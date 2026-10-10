@@ -1,5 +1,5 @@
-import { vi } from 'vitest'
 
+import { vi } from 'vitest'
 
 import {
   AudioRecorder,
@@ -9,7 +9,6 @@ import {
   type AudioWorkletNodeAdapter,
   type MediaStreamAdapter
 } from '../../../src/renderer/src/audio/audioRecorder'
-
 
 export class FakeNode implements AudioNodeAdapter {
   readonly connect = vi.fn<(node: AudioNodeAdapter) => AudioNodeAdapter>((node) => node)
@@ -33,15 +32,7 @@ export class FakeContext implements AudioContextAdapter {
   readonly close = vi.fn(async () => undefined)
 }
 
-export function deferred<T>() {
-  let resolvePromise!: (value: T) => void
-  let rejectPromise!: (reason: unknown) => void
-  const promise = new Promise<T>((resolve, reject) => {
-    resolvePromise = resolve
-    rejectPromise = reject
-  })
-  return { promise, reject: rejectPromise, resolve: resolvePromise }
-}
+export { deferred } from '../deferred'
 
 export function createHarness(overrides: Partial<AudioRecorderDependencies> = {}, sampleRate = 48_000) {
   const context = new FakeContext(sampleRate)

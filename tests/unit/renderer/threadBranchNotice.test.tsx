@@ -18,7 +18,10 @@ const moved: AgentWorktree = { mode: 'shared', status: 'ready', path: worktreePa
   branch: 'feat/agent-chose', sentBranch: 'sotto/thread-7f1c', dirty: false }
 const thread: WorkingCopyThread = { id: 'thread-1', nativeSessionStarted: true, workingDirectory: worktreePath, worktree: moved }
 function snapshot(): AgentState {
-  return { configuration: defaultAgentConfiguration(), connection: 'connected', error: null } as unknown as AgentState
+  return threadsStateFixture({ cloneOverrides: false,
+    configuration: defaultAgentConfiguration(),
+    host: { projects: [], threads: [], models: [] },
+    topLevel: { activeThreadId: null, activeProjectId: null,  } })
 }
 afterEach(() => { cleanup(); resetBranchNoticeDismissals() })
 

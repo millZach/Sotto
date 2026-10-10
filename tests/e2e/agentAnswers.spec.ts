@@ -1,34 +1,16 @@
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { agentCommand as command, agentState as state } from './support/agentAccess'
 import { expect, test, type Page } from '@playwright/test'
 import { hostEntityKey } from '../../src/shared/clientIdentity'
-import type { AgentCommand, AgentCommandReceipt, AgentState } from '../../src/shared/agents'
+import type { AgentCommandReceipt, AgentState } from '../../src/shared/agents'
 import type { SottoBridge } from '../../src/shared/contracts'
 import type { SottoE2EBridge } from '../../src/shared/e2e'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, launchSotto, openThreads, userMessageTexts } from './support/sottoLaunch'
 
 type BrowserGlobals = { sotto: SottoBridge; sottoE2E: SottoE2EBridge }
 type HostEvent = Parameters<NonNullable<SottoE2EBridge['agentEvent']>>[0] & {
   requestId?: string
   status?: 'idle' | 'running' | 'error'
-}
-
-async function command(page: Page, value: AgentCommand): Promise<AgentCommandReceipt> {
-  return page.evaluate(async request => {
-    const bridge = (globalThis as unknown as BrowserGlobals).sotto.agents
-    if (!bridge) throw new Error('Agent bridge unavailable')
-    return bridge.command(request)
-  }, value)
-}
-
-async function state(page: Page): Promise<AgentState> {
-  return page.evaluate(async () => {
-    const bridge = (globalThis as unknown as BrowserGlobals).sotto.agents
-    if (!bridge) throw new Error('Agent bridge unavailable')
-    return bridge.get()
-  })
 }
 
 function thread(snapshot: AgentState | AgentCommandReceipt, id: string) {
@@ -61,7 +43,7 @@ const docsQuestion: HostEvent = {
 }
 
 test('keeps an answer on its own request through thread navigation and restart until explicit submission', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'sotto-e2e-'))
+  const directory = (await ownedE2EProfile({ prefix: 'sotto-e2e-' })).directory
   let launched = await launchSotto('success', directory)
   try {
     await onboard(launched.page)
@@ -88,7 +70,7 @@ test('keeps an answer on its own request through thread navigation and restart u
     await expect(launched.page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('')
   } finally {
     await closeSotto(launched)
-    await rm(requireOwnedE2EProfile(directory), { recursive: true, force: true })
+    await removeOwnedE2EProfile(directory)
   }
 })
 

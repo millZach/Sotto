@@ -1,3 +1,4 @@
+import { deferred } from '../../../fixtures/deferred'
 import { connection, connectionStores, NOW, renderThreads, stateFixture } from '../../../fixtures/renderer/threadsViewHarness'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import React from 'react'
@@ -20,8 +21,7 @@ describe('a thread created without a round trip', () => {
 
   it('shows the pane and its composer before main answers, and keeps a draft typed meanwhile', async () => {
     const state = stateFixture()
-    let settle: (value: AgentState) => void = () => undefined
-    const creating = new Promise<AgentState>(resolve => { settle = resolve })
+    const { promise: creating, resolve: settle } = deferred<AgentState>()
     const command = vi.fn(async (...args: unknown[]) => {
       const request = args[0] as AgentCommand
       return request.type === 'create-thread' ? creating : state
@@ -78,8 +78,7 @@ describe('a thread created without a round trip', () => {
 
   it.each(['unsent', 'sent', 'sent with newer typing', 'sent with overflow', 'sent after navigation', 'sent into reused thread'])('recovers the %s prompt and staged images after creation is refused', async mode => {
     const state = stateFixture()
-    let settle: (value: AgentState) => void = () => undefined
-    const refusing = new Promise<AgentState>(resolve => { settle = resolve })
+    const { promise: refusing, resolve: settle } = deferred<AgentState>()
     let creations = 0
     const command = vi.fn(async (...args: unknown[]) => {
       const request = args[0] as AgentCommand
@@ -130,8 +129,7 @@ describe('a thread created without a round trip', () => {
 
   it('does not recover a sent prompt when published creation precedes a lost command reply', async () => {
     const state = stateFixture()
-    let settle: (value: AgentState | null) => void = () => undefined
-    const creating = new Promise<AgentState | null>(resolve => { settle = resolve })
+    const { promise: creating, resolve: settle } = deferred<AgentState | null>()
     const command = vi.fn(async (...args: unknown[]) => (args[0] as AgentCommand).type === 'create-thread' ? creating : state)
     vi.mocked(useAgents).mockReturnValue(connection(state, command))
     const { rerender } = render(<ThreadsView now={NOW} />)
@@ -155,12 +153,11 @@ describe('a thread created without a round trip', () => {
   it.each([false, true])('keeps a screenshot whose staging finishes after refusal (after reopening: %s)', async reopenFirst => {
     const state = stateFixture()
     state.host.models.forEach(model => { model.supportsImages = true })
-    let refuse: (state: AgentState) => void = () => undefined
-    const creating = new Promise<AgentState>(resolve => { refuse = resolve })
+    const { promise: creating, resolve: refuse } = deferred<AgentState>()
     let creations = 0
     const command = vi.fn(async (...args: unknown[]) => (args[0] as AgentCommand).type === 'create-thread' && ++creations === 1 ? creating : state)
     let finishStaging: (handle: ReturnType<typeof handleOf>) => void = () => undefined
-    const stageAttachment = vi.fn(() => new Promise<ReturnType<typeof handleOf>>(resolve => { finishStaging = resolve }))
+    const stageAttachment = vi.fn(() => { const pending = deferred<ReturnType<typeof handleOf>>(); finishStaging = pending.resolve; return pending.promise })
     vi.stubGlobal('sotto', { agents: { stageAttachment } })
     onTestFinished(() => { vi.unstubAllGlobals() })
     renderThreads(state, command)
@@ -188,8 +185,7 @@ describe('a thread created without a round trip', () => {
 
   it('carries text typed before a refusal to the next new thread opened in the same project', async () => {
     const state = stateFixture()
-    let settle: (value: AgentState) => void = () => undefined
-    const refusing = new Promise<AgentState>(resolve => { settle = resolve })
+    const { promise: refusing, resolve: settle } = deferred<AgentState>()
     let creations = 0
     const command = vi.fn(async (...args: unknown[]) => {
       const request = args[0] as AgentCommand

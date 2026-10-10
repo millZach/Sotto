@@ -1,20 +1,20 @@
 // @vitest-environment node
+import { deferred } from '../fixtures/deferred'
+import { testCredentials } from '../fixtures/testCredentials'
 import { randomUUID } from 'node:crypto'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { startHeadlessHost } from '../../src/host'
+import { startFixtureHeadlessHost as startHeadlessHost, desktopHostStack } from '../fixtures/desktopHostStack'
 import { HostCredentialEncryption } from '../../src/host/credentials'
-import { AgentCredentials } from '../../src/main/agents/credentials'
+
 import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
 import type { ThreadMcpServer } from '../../src/main/agents/threadToolServer'
-import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
-import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
-import { DesktopHosts } from '../../src/main/hosts/desktopHosts'
+
 import { HostSetup, type HostSetupThreads } from '../../src/main/hosts/hostSetup'
 import { HOST_SETUP_MCP_SERVER, HostSetupToolServer, type HostSetupToolHandlers } from '../../src/main/hosts/hostSetupTools'
-import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
+
 import { SshFailure, SshHostLauncher, type SshCallbacks, type SshHostConfiguration, type SshHostConnection } from '../../src/main/hosts/sshLauncher'
 import type { ProviderId } from '../../src/shared/agents'
 import type { AdapterFixture } from '../fixtures/adapterFixture'
@@ -135,14 +135,14 @@ describe('the host setup tool over Add host', () => {
   it('checks the one device, reports the missing Node, adds it only after the user answers, and pairs once', async () => {
     const root = await mkdtemp(join(tmpdir(), 'sotto-host-setup-tools-'))
     cleanup.push(() => rm(root, { recursive: true, force: true }))
-    const remote = await startHeadlessHost({ dataDirectory: join(root, 'remote'), port: 0, providers: { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost() }, reasoner: e2eAgentReasoner })
+    const remote = await startHeadlessHost({ dataDirectory: join(root, 'remote'), port: 0 })
     cleanup.push(() => remote.close())
-    const credentials = new AgentCredentials(join(root, 'desktop'), new HostCredentialEncryption('synthetic-desktop-credential-key')); await credentials.load()
-    const router = new DesktopHostRouter(emptyDesktopState); cleanup.push(async () => router.dispose())
+    const credentials = await testCredentials(join(root, 'desktop'), { encryption: new HostCredentialEncryption('synthetic-desktop-credential-key') });
     // The first connect is the user's own Add it on another machine, which fails; the setup's first check follows.
     const failures: Error[] = [new SshFailure('auth-failed'), new SshFailure('node-missing')], connects: SshHostConfiguration[] = []
-    const hosts = new DesktopHosts({ directory: join(root, 'desktop'), credentials, router, localHostRunning: true, localHostEnabled: () => true, restart: () => undefined,
+    const { router, manager: hosts } = desktopHostStack({ directory: join(root, 'desktop'), credentials, localHostRunning: true, localHostEnabled: () => true, restart: () => undefined,
       launcher: () => new ScriptedSsh(remote, failures, connects, join(root, 'remote')) })
+    cleanup.push(async () => router.dispose())
     await hosts.start(); cleanup.push(() => hosts.close())
     const threads: HostSetupThreads = {
       choice: () => ({ models: [{ id: 'claude:opus', name: 'Claude Opus 5.5', provider: 'Claude Code' }], modelId: 'claude:opus' }),
@@ -199,17 +199,18 @@ describe('the host setup tool over Add host', () => {
   it('Stop setup during a check leaves no saved host and no credential', async () => {
     const root = await mkdtemp(join(tmpdir(), 'sotto-host-setup-stop-'))
     cleanup.push(() => rm(root, { recursive: true, force: true }))
-    const remote = await startHeadlessHost({ dataDirectory: join(root, 'remote'), port: 0, providers: { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost() }, reasoner: e2eAgentReasoner })
+    const remote = await startHeadlessHost({ dataDirectory: join(root, 'remote'), port: 0 })
     cleanup.push(() => remote.close())
-    const credentials = new AgentCredentials(join(root, 'desktop'), new HostCredentialEncryption('synthetic-desktop-credential-key')); await credentials.load()
-    const router = new DesktopHostRouter(emptyDesktopState); cleanup.push(async () => router.dispose())
-    let release: () => void = () => undefined
-    const held = new Promise<void>(resolve => { release = resolve })
+    const credentials = await testCredentials(join(root, 'desktop'), { encryption: new HostCredentialEncryption('synthetic-desktop-credential-key') });
+
+    const { promise: held, resolve: release } = deferred<void>()
+
     class HeldSsh extends SshHostLauncher {
       override async connect(): Promise<SshHostConnection> { await held; throw new SshFailure('cancelled') }
       override async disconnect(): Promise<void> { release() }
     }
-    const hosts = new DesktopHosts({ directory: join(root, 'desktop'), credentials, router, localHostRunning: true, localHostEnabled: () => true, restart: () => undefined, launcher: () => new HeldSsh() })
+    const { router, manager: hosts } = desktopHostStack({ directory: join(root, 'desktop'), credentials, localHostRunning: true, localHostEnabled: () => true, restart: () => undefined, launcher: () => new HeldSsh() })
+    cleanup.push(async () => router.dispose())
     await hosts.start(); cleanup.push(() => hosts.close())
     const interrupted: string[] = []
     const setup = new HostSetup({ version: '0.1.21', hosts: { check: connection => hosts.check(connection), add: connection => hosts.setupAdd(connection), forget: id => hosts.forgetSaved(id),

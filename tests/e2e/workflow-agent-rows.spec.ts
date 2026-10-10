@@ -1,3 +1,4 @@
+import { resizeContentWindow } from './support/sottoWindow'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
@@ -33,12 +34,7 @@ async function report(page: Page, run: ObservedAgent, agents: ObservedAgent[]): 
   }, { run: { ...run, progress: progress(agents) }, agents, solo })
 }
 async function size(app: LaunchedSotto, width: number, height: number): Promise<void> {
-  await app.app.evaluate(({ BrowserWindow }, size) => {
-    const window = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().endsWith('/index.html'))!
-    window.setMinimumSize(800, 540)
-    window.setContentSize(size.width, size.height)
-  }, { width, height })
-  await expect.poll(() => app.page.evaluate(() => `${innerWidth}x${innerHeight}`)).toBe(`${width}x${height}`)
+  await resizeContentWindow(app, width, height, [800, 540])
 }
 async function minimumContrast(page: Page): Promise<number> {
   return page.locator('.tools-panel__sheet').evaluate(panel => {

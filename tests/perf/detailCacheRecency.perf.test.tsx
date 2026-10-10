@@ -1,6 +1,6 @@
+import { threadsStateFixture } from '../fixtures/agentState'
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-
 import { useAgentConnection } from '../../src/renderer/src/agents/AgentContext'
 import { approximateDetailBytes } from '../../src/renderer/src/agents/detailCacheSize'
 import { agentShell, defaultAgentConfiguration, EMPTY_AGENT_HOST,
@@ -31,14 +31,18 @@ const history = (id: string, extra = ''): AgentMessage[] => Array.from({ length:
 }))
 
 function fullState(threads: AgentThread[], notice = ''): AgentState {
-  return {
-    configuration: { ...defaultAgentConfiguration(), enabled: true }, connection: 'connected',
+  return threadsStateFixture({
+    cloneOverrides: false,
+    configuration: { ...defaultAgentConfiguration(), enabled: true },
     host: { ...EMPTY_AGENT_HOST, connected: true, threads },
-    activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
-    draftRequestId: null, draftAttachments: [], deliveredDrafts: [], threadDrafts: [], deliveries: [],     globalLaneBusy: false, notice, error: null,
-    credentials: { reasoning: false, secure: false }, reasoningAccounts: [],
-     historyEnabled: true,
-  }
+    topLevel: {
+      connection: 'connected', activeThreadId: null, activeProjectId: null, draft: '',
+      draftThreadId: null, composing: false, draftRequestId: null, draftAttachments: [], deliveredDrafts: [],
+      threadDrafts: [], deliveries: [], globalLaneBusy: false, notice, error: null,
+      credentials: { reasoning: false, secure: false },
+      reasoningAccounts: [], historyEnabled: true,
+    },
+  })
 }
 
 function threadsAt(tick: number): AgentThread[] {

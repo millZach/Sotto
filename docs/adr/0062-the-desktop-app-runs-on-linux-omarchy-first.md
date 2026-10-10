@@ -52,7 +52,7 @@ The owner picked no window controls on Linux (#839, built in #856): Super+W send
 
 **Output reaches the Wayland clipboard and pastes on Hyprland** (built in #868 for #838). Electron's clipboard write never reaches Wayland while Sotto is unfocused, so Linux writes through `wl-copy` (and the primary selection for terminals). With automatic paste on, Sotto sends Ctrl+V to apps and Shift+Insert to terminals, as Omarchy's universal paste does, in one Hyprland request, and never while the session is locked.
 
-**The widget on Omarchy is a shell plugin** (#850). The owner picked a Sotto glyph in the bar and a pill in the shell's style (widget B), placed at the top centre under the bar, dragged to snap to an edge as on Windows, and shown on the display the mouse is on when dictation starts. While the plugin is installed, the Electron widget steps aside.
+**The widget on Omarchy is a shell plugin** (#850). The owner picked a Sotto glyph in the bar and a pill in the shell's style (widget B), placed at the top centre under the bar, dragged to snap to an edge as on Windows, and shown on the display the mouse is on when dictation starts. While the plugin is installed and Sotto’s dictation socket has started with a live state file, the Electron widget steps aside. If commands cannot start or publication is lost, the Electron widget remains available and steps aside again when publication recovers (#877).
 
 **Release path.** Three options were considered:
 

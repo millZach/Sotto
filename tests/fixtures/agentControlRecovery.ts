@@ -1,10 +1,12 @@
+import { createAgentControl, type AgentControlOptions } from './agentControlFixture'
+import { testCredentials, xorCredentialEncryption } from './testCredentials'
 // @vitest-environment node
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, vi } from 'vitest'
 import { AgentControl } from '../../src/main/agents/control'
-import { AgentCredentials, type CredentialEncryption } from '../../src/main/agents/credentials'
+import { type CredentialEncryption } from '../../src/main/agents/credentials'
 import type { AgentHostCommand, AgentHostResult } from '../../src/main/agents/host'
 import { ConfiguredAgentReasoner } from '../../src/main/agents/reasoning'
 import { E2EAgentHost } from '../../src/main/e2e/agentEffects'
@@ -12,15 +14,12 @@ import { type AgentConfiguration } from '../../src/shared/agents'
 import { immediatePublishScheduler } from './publishScheduler'
 
 const roots: string[] = []
+
 const controls: AgentControl[] = []
 export const ROUTER_KEY = 'fixture-openrouter-key'
 
 // OS encryption and native coding adapters are scripted; coordinator and stores are real.
-export const encryption: CredentialEncryption = {
-  isEncryptionAvailable: () => true,
-  encryptString: value => Buffer.from(Buffer.from(value).map(byte => byte ^ 0xa5)),
-  decryptString: value => Buffer.from(value.map(byte => byte ^ 0xa5)).toString('utf8'),
-}
+export const encryption: CredentialEncryption = xorCredentialEncryption()
 
 export class UnacknowledgedCreationHost extends E2EAgentHost {
   readonly creationAttempts: AgentHostCommand[] = []
@@ -38,16 +37,15 @@ export class UnacknowledgedCreationHost extends E2EAgentHost {
   }
 }
 
-export async function fixture(host = new E2EAgentHost()) {
+export async function fixture(host = new E2EAgentHost(), options: Pick<AgentControlOptions, 'installedProviders'> = {}) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-control-recovery-'))
   roots.push(root)
   const credentialsDirectory = join(root, 'vault')
-  const credentials = new AgentCredentials(credentialsDirectory, encryption)
-  await credentials.load()
+  const credentials = await testCredentials(credentialsDirectory, { encryption: encryption })
   let control: AgentControl
   const reasoner = new ConfiguredAgentReasoner()
   const create = async (): Promise<void> => {
-    control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner,
+    control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner, ...options,
     })
     controls.push(control)
     await control.start()

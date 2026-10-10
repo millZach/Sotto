@@ -1,6 +1,7 @@
+import { painted, near } from './support/terminal'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
 import { execFile } from 'node:child_process'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import sharp from 'sharp'
@@ -21,7 +22,7 @@ const SHOTS = evidenceDirectory('artifacts/phase-three-ui-final-fixes')
 type Mode = 'dark' | 'light'
 
 async function ownedProfile(prefix: string): Promise<string> {
-  const profile = await mkdtemp(join(tmpdir(), prefix))
+  const profile = (await ownedE2EProfile({ prefix: prefix })).directory
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'dark', lightTheme: 'nocturne', darkTheme: 'nocturne' }))
   return profile
 }
@@ -128,30 +129,11 @@ test('keeps working-folder actions accessible in the footer while an open diff h
     await shoot(page, 'tools-path-diff-1280', ['light'])
   } finally {
     await closeSotto(launched)
-    await rm(launched.userData, { recursive: true, force: true }).catch(() => undefined)
+    await removeOwnedE2EProfile(launched.userData).catch(() => undefined)
   }
 })
 
 /** The sRGB the page paints for a CSS colour, independently of the terminal's own resolver. */
-function painted(page: Page, css: string): Promise<string> {
-  return page.evaluate(css => {
-    const probe = document.body.appendChild(document.createElement('div'))
-    probe.style.background = css
-    const context = document.createElement('canvas').getContext('2d')!
-    context.fillStyle = getComputedStyle(probe).backgroundColor
-    probe.remove()
-    context.fillRect(0, 0, 1, 1)
-    const [r, g, b] = context.getImageData(0, 0, 1, 1).data
-    return `#${[r, g, b].map(channel => channel!.toString(16).padStart(2, '0')).join('')}`
-  }, css)
-}
-
-function near(actual: string | undefined, expected: string, tolerance = 3): boolean {
-  if (!actual) return false
-  const channels = (hex: string) => [1, 3, 5].map(index => parseInt(hex.slice(index, index + 2), 16))
-  const a = channels(actual), b = channels(expected)
-  return a.every((value, index) => Math.abs(value - b[index]!) <= tolerance)
-}
 
 /** The most common colour in a capture of the element: for the terminal, the field behind its rows. */
 async function fieldColor(locator: Locator): Promise<string> {
@@ -287,6 +269,6 @@ test('repaints one running terminal with the DOM fallback through the theme gall
     await view.screenshot({ path: join(SHOTS, 'terminal-after-themes-dark.png'), animations: 'disabled' })
   } finally {
     await closeSotto(launched)
-    await rm(launched.userData, { recursive: true, force: true }).catch(() => undefined)
+    await removeOwnedE2EProfile(launched.userData).catch(() => undefined)
   }
 })

@@ -84,6 +84,8 @@ Add shared modules under `tests/fixtures/` and replace the copies:
 - the preload Electron mock
 - host, tools and cloud iPhone bridge builders
 - e2e window, profile and capture helpers
+- The eight e2e specs that leave their profile behind remove it after the whole journey.
+- The rich-message launch helper cleans up when the launch fails.
 
 Each case still gets fresh state; no mutable coordinator, repository or app is shared between cases. Measure whether a Git seed made once and copied into each case saves time, and keep it only if it does.
 
@@ -92,8 +94,6 @@ Each case still gets fresh state; no mutable coordinator, repository or app is s
 - Every skip shows its reason.
 - `tests/integration/adapterContract.ts` and `tests/integration/hostServiceContract.ts` decide a capability skip before starting the fixture.
 - Pure tests that inherit jsdom get the node environment header.
-- The eight e2e specs that leave their profile behind remove it after the whole journey.
-- The rich-message launch helper cleans up when the launch fails.
 - `docs/ci.md` records the new baseline next to the old one.
 - The PR reports wall time before and after, and closes #123.
 

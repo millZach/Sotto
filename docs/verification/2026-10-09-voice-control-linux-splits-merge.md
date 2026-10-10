@@ -1,5 +1,7 @@
 # Linux package and split-test merge into voice removal
 
+October 9, later main update: merged `main` at `6db93c4b7` with Omarchy shell/plugin plumbing, shared test fixtures and fitted first-run setup. Every setup connect remains quiet, including several installed agents. Six OpenRouter-copy onboarding captures were refreshed against the new layout; all other baselines remain inherited. Typecheck, lint, build, the 113 targeted unit/integration files, 25 setup journeys, the onboarding design surface and all 144 manifest tuples passed. Full local gates and CI continue after the fast push. See [the conflict and gate record](2026-10-09-voice-control-fixtures-setup-merge.md).
+
 October 9, 2026. Merged main at `2342e7d28833fbec03b83b491067c6a757a55f39` into `feat/remove-voice-control` for PR #880, in `9c046ab78` ("Merge Linux packaging and split tests into voice removal"). This includes #875, #878 and their main follow-ups. The result keeps Omarchy packaging, sign-in startup, the five design surface specs, adapter/host-service contract split and test fixtures, while retaining ADR-0065's removal and manual journeys. The follow-up below records Zach's design decision and resolves the remaining strict comparison failures.
 
 ## October 9 decision and follow-up

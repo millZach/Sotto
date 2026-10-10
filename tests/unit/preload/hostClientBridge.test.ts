@@ -1,15 +1,16 @@
+import { threadsStateFixture as sharedThreadsStateFixture } from '../../fixtures/agentState'
 // @vitest-environment node
 import { expect, it, vi } from 'vitest'
 import { hostClientBridge } from '../../../src/preload/hostClientBridge'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
 import { agentCommandSchema, EMPTY_AGENT_HOST, defaultAgentConfiguration, type AgentState, type AgentCommand, type AgentThreadDetail } from '../../../src/shared/agents'
 function threadsStateFixture(): AgentState {
-  return { configuration: defaultAgentConfiguration(), connection: 'connected',
+  return sharedThreadsStateFixture({ configuration: defaultAgentConfiguration(),
     host: { ...EMPTY_AGENT_HOST, threads: [{ id: 'visual-gate', projectId: 'project', title: 'Task', modelId: 'model', status: 'idle', messages: [], requests: [] }] },
-    activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null,
-    composing: false, globalLaneBusy: false, notice: '', error: null,
-
-    credentials: { reasoning: false, secure: false }, reasoningAccounts: [],  }
+    topLevel: { activeThreadId: null, activeProjectId: null,
+      threadDrafts: undefined, deliveries: undefined, deliveredDrafts: undefined,
+      credentials: { reasoning: false, secure: false } },
+  })
 }
 
 const HOST = '11111111-1111-4111-8111-111111111111'

@@ -1,5 +1,7 @@
 // @vitest-environment node
 
+import { initializeBareGitRepository } from '../fixtures/gitRepository'
+import { deferred } from '../fixtures/deferred'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 
 import { basename, dirname, join } from 'node:path'
@@ -67,10 +69,11 @@ describe("independent working-copy allocation", () => {
     const first = await f.service.allocate(f.project, 'independent')
     const second = await f.service.allocate(linked, 'independent')
     const independent = await other.service.allocate(other.project, 'independent')
-    let started!: () => void
-    const staged = new Promise<void>(resolve => { started = resolve })
-    let release!: () => void
-    const held = new Promise<void>(resolve => { release = resolve })
+
+    const { promise: staged, resolve: started } = deferred<void>()
+
+    const { promise: held, resolve: release } = deferred<void>()
+
     let firstAdd = true
     const run: RunGit = async (cwd, args) => {
       if (cwd !== f.project || args[0] !== 'worktree' || args[1] !== 'add' || !firstAdd) return git(cwd, args)
@@ -222,7 +225,7 @@ describe("independent working-copy allocation", () => {
   it('fetches the explicitly selected origin branch instead of silently using local HEAD', async () => {
     const f = await fixture()
     const remote = join(f.root, 'origin'); await mkdir(remote)
-    await git(remote, ['init', '--bare'])
+    await initializeBareGitRepository(remote)
     await git(f.project, ['remote', 'add', 'origin', remote])
     await git(f.project, ['push', 'origin', 'HEAD:refs/heads/base'])
     await git(f.project, ['branch', 'base'])

@@ -1,3 +1,4 @@
+import { deferred } from '../../../fixtures/deferred'
 import React from 'react'
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -338,7 +339,6 @@ describe('native permission choices', () => {
     expect(screen.getByText('{"permissions":{"network":true}}')).toBeTruthy()
   })
 
-
   it('keeps legacy Allow and Deny only when choices are absent', () => {
     setup(base)
     expect(screen.getAllByRole('button').map(button => button.textContent)).toEqual(['Deny', 'Allow'])
@@ -391,7 +391,7 @@ describe('simultaneous requests', () => {
   it('sends one answer while delivery is pending or unknown, ignores edits, and keys owners apart', async () => {
     const store = new RequestAnswerStore()
     let release!: (outcome: SubmitOutcome) => void
-    const send = vi.fn(() => new Promise<SubmitOutcome>(resolve => { release = resolve }))
+    const send = vi.fn(() => { const pending = deferred<SubmitOutcome>(); release = pending.resolve; return pending.promise })
     const first = store.submit('thread-a', 'req', 'allow', send)
     await store.submit('thread-a', 'req', 'allow', send)
     store.select('thread-a', 'req', 'q', { optionIds: ['x'], other: false, text: '' })
@@ -479,7 +479,6 @@ describe('native request explanation and tool context', () => {
     expect(view.container.querySelector('.agent-request__details')!.textContent).toBe('{"reason":"schema v3"}')
   })
 })
-
 
 describe('composer question choices', () => {
   it('keeps a dedicated custom answer through choice changes and collapse, and sends only the explicit choice', async () => {

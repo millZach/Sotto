@@ -41,6 +41,7 @@ export const e2eScenarioSchema = z.enum([
   'clipboard-recovery',
   'desktop-clipboard-unavailable',
   'transcription-failure',
+  'transcription-turned-away-once',
   'transcription-turned-away-twice',
   'design-permission',
   'design-processing',

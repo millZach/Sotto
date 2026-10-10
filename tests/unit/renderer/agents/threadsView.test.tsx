@@ -1,11 +1,12 @@
+import { deferred } from '../../../fixtures/deferred'
 import { connection, connectionStores, NOW, renderThreads, stateFixture } from '../../../fixtures/renderer/threadsViewHarness'
-import React from 'react'
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { useAgents } from '../../../../src/renderer/src/agents/AgentContext'
 import { draftThreads } from '../../../../src/renderer/src/agents/draftThreads'
 import { ThreadsView } from '../../../../src/renderer/src/agents/ThreadsView'
 import type { AgentAttachmentStageRequest } from '../../../../src/shared/agents'
+import React from 'react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { type AgentCommand } from '../../../../src/shared/agents'
 import { E2E_THREADS_NOW } from '../../../../src/shared/e2e'
 import { liveAgentState } from '../../../fixtures/renderer/liveAgentState'
@@ -128,7 +129,7 @@ describe('ThreadsView workspace', () => {
     const bridge = window.sotto
     vi.stubGlobal('sotto', { ...bridge, agents: { ...bridge?.agents, stageAttachment: async (request: AgentAttachmentStageRequest) => handleOf(request.bytes, crypto.randomUUID(), request.name) } })
     onTestFinished(() => { vi.unstubAllGlobals() })
-    vi.stubGlobal('createImageBitmap', async () => { await new Promise<void>(resolve => { decoded = resolve }); return { width: 3840, height: 2160, close: () => undefined } })
+    vi.stubGlobal('createImageBitmap', async () => { await (() => { const pending = deferred<void>(); decoded = pending.resolve; return pending.promise })(); return { width: 3840, height: 2160, close: () => undefined } })
     vi.stubGlobal('OffscreenCanvas', class {
       constructor(readonly width: number, readonly height: number) {}
       getContext() { return { drawImage: () => undefined } }

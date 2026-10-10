@@ -1,3 +1,4 @@
+import { threadsStateFixture } from '../../fixtures/agentState'
 import React from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -13,7 +14,10 @@ function thread(originBase: AgentWorktree['originBase'], id = 'thread-1'): Worki
     branch: 'sotto/7f1c', baseBranch: 'feat/local-only', startFromOrigin: true, ...(originBase ? { originBase } : {}), dirty: false }
   return { id, nativeSessionStarted: true, workingDirectory: worktreePath, worktree }
 }
-const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => ({ configuration: defaultAgentConfiguration(), connection: 'connected', error: null } as unknown as AgentState))
+const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => (threadsStateFixture({ cloneOverrides: false,
+    configuration: defaultAgentConfiguration(),
+    host: { projects: [], threads: [], models: [] },
+    topLevel: { activeThreadId: null, activeProjectId: null,  } })))
 afterEach(() => { cleanup(); resetBranchNoticeDismissals() })
 
 describe('the local branch notice', () => {

@@ -1,13 +1,12 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
 
 test('Codex replies stay visible when saved user receipts replay after reconnect', async () => {
   test.setTimeout(90_000)
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-codex-history-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-codex-history-' })).directory
   const root = join(profile, 'native-fixture')
   for (const folder of ['claude', 'codex', 'project']) await mkdir(join(root, folder), { recursive: true })
   await writeFile(join(root, 'codex', 'script.json'), JSON.stringify({ reply: 'The saved Codex reply is still here.' }))
@@ -63,6 +62,6 @@ test('Codex replies stay visible when saved user receipts replay after reconnect
     else process.env.SOTTO_E2E_NATIVE_FIXTURE_ROOT = previous.root
     if (previous.executable === undefined) delete process.env.SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE
     else process.env.SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE = previous.executable
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 })

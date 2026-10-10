@@ -1,5 +1,6 @@
 import type { ThreadReadPurpose } from '../../src/main/agents/host'
 // @vitest-environment node
+import { deferred } from '../fixtures/deferred'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, it, vi } from 'vitest'
@@ -14,8 +15,10 @@ it.each([false, true])('keeps queued targeted socket Compose feedback private (i
   let release: () => void = () => undefined, predecessor: Promise<unknown> | undefined, saving: Promise<unknown> | undefined
   try {
     const image = await f.control.stageAttachment({ name: 'synthetic.png', mimeType: 'image/png', bytes: PIXEL_PNG })
-    let entered: () => void = () => undefined
-    const started = new Promise<void>(resolve => { entered = resolve }), gate = new Promise<void>(resolve => { release = resolve })
+    const { promise: started, resolve: entered } = deferred<void>()
+
+    const { promise: gate, resolve: gateResolve } = deferred<void>()
+    release = gateResolve
     const control = f.control as unknown as { persist(): Promise<void> }, persist = control.persist.bind(control)
     vi.spyOn(control, 'persist').mockImplementationOnce(async () => { entered(); await gate; await persist() })
     predecessor = f.command({ type: 'configure', patch: { reasoningEffort: 'high' } })

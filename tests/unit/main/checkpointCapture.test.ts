@@ -8,6 +8,8 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as worktrees from '../../../src/main/agents/threadWorktrees'
 import { CheckpointCapture } from '../../../src/main/tools/checkpointCapture'
+import { initializeGitRepository } from '../../fixtures/gitRepository'
+import { deferred } from '../../fixtures/deferred'
 
 vi.mock('node:fs/promises', async importOriginal => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
@@ -26,13 +28,18 @@ async function fixture(options: { files?: Record<string, string | Buffer>; repos
   const root = await realpath(await mkdtemp(join(tmpdir(), 'sotto-checkpoint-capture-')))
   cleanup.push(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
   const repo = join(root, 'repo'); await mkdir(repo)
+  const files = options.files ?? { 'app.txt': 'before\n', 'notes.txt': 'original notes\n' }
   if (options.repository !== false) {
-    git(repo, 'init', '-q'); git(repo, 'config', 'core.autocrlf', 'false'); git(repo, 'config', 'user.name', 'Sotto capture fixture'); git(repo, 'config', 'user.email', 'fixture@example.invalid')
+    await initializeGitRepository(repo, { files, message: 'Fixture',
+      identity: { name: 'Sotto capture fixture', email: 'fixture@example.invalid' } })
+    // The capture cases edit Git's local ignore file; the fixture disables Git templates.
+    await mkdir(join(repo, '.git', 'info'), { recursive: true })
+    await writeFile(join(repo, '.git', 'info', 'exclude'), '')
+  } else {
+    for (const [path, contents] of Object.entries(files)) {
+      await mkdir(join(repo, path, '..'), { recursive: true }); await writeFile(join(repo, path), contents)
+    }
   }
-  for (const [path, contents] of Object.entries(options.files ?? { 'app.txt': 'before\n', 'notes.txt': 'original notes\n' })) {
-    await mkdir(join(repo, path, '..'), { recursive: true }); await writeFile(join(repo, path), contents)
-  }
-  if (options.repository !== false) { git(repo, 'add', '.'); git(repo, '-c', 'commit.gpgSign=false', 'commit', '-qm', 'Fixture') }
   const commands: string[][] = []
   const blobSizes = new Map<string, number>()
   const capture = new CheckpointCapture({ blobDirectory: join(root, 'blobs'), blobSizes, now: options.now ?? later,
@@ -367,7 +374,7 @@ describe('checkpoint capture', () => {
     let hold = true, active = 0, most = 0
     vi.spyOn(fsPromises, 'readFile').mockImplementation(async (...args) => {
       active++; most = Math.max(most, active)
-      try { if (hold) await new Promise<void>(resolve => held.push(resolve)); return await realReadFile(...args) } finally { active-- }
+      try { if (hold) { const pending = deferred(); held.push(pending.resolve); await pending.promise }; return await realReadFile(...args) } finally { active-- }
     })
     const snapshot = f.capture.snapshot(f.repo, { reuse: true })
     await expect.poll(() => held.length).toBe(8)

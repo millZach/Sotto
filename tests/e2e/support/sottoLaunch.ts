@@ -1,6 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './e2eProfile'
 
 import { _electron as electron, expect, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 
@@ -42,10 +40,6 @@ export function e2eEnvironment(scenario: E2EScenario, userData: string): Record<
   }).filter((entry): entry is [string, string] => entry[1] !== undefined && entry[0] !== 'ELECTRON_RUN_AS_NODE'))
 }
 
-async function removeOwnedProfile(path: string): Promise<void> {
-  await rm(requireOwnedE2EProfile(path), { recursive: true, force: true })
-}
-
 export async function firstSottoWindow(application: ElectronApplication): Promise<Page> {
   const first = await application.firstWindow()
   await first.waitForLoadState('domcontentloaded')
@@ -67,10 +61,10 @@ export async function sottoWidget(application: ElectronApplication): Promise<Pag
 }
 
 const defaultDependencies: LaunchDependencies = {
-  createProfile: () => mkdtemp(join(tmpdir(), 'sotto-e2e-')),
+  createProfile: async () => (await ownedE2EProfile()).directory,
   launch: (options) => electron.launch(options),
   firstWindow: firstSottoWindow,
-  removeProfile: removeOwnedProfile,
+  removeProfile: removeOwnedE2EProfile,
 }
 
 export async function launchSotto(
@@ -79,7 +73,7 @@ export async function launchSotto(
   dependencies: LaunchDependencies = defaultDependencies,
 ): Promise<LaunchedSotto> {
   const ownsUserData = userData === undefined
-  const profile = userData ?? await dependencies.createProfile()
+  const profile = userData ?? requireOwnedE2EProfile(await dependencies.createProfile())
   let application: ElectronApplication | undefined
   try {
     application = await dependencies.launch({
@@ -96,33 +90,12 @@ export async function launchSotto(
   }
 }
 
-/** Resize the main window and wait for the page to see the new width; fractional display scaling rounds it by a pixel or two. */
-export async function resizeWindow(launched: LaunchedSotto, width: number, height: number): Promise<void> {
-  await launched.app.evaluate(({ BrowserWindow }, size) => {
-    const window = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().endsWith('/index.html'))!
-    window.setSize(size.width, size.height)
-  }, { width, height })
-  await expect.poll(async () => Math.abs(await launched.page.evaluate(() => innerWidth) - width)).toBeLessThanOrEqual(2)
-}
-
-/**
- * The main window as it is drawn on screen, through Electron's own capture of its composited frame. Playwright's
- * screenshot of the page composes a `<webview>` guest (an interactive visual's page, ADR-0060) at the wrong scale on a
- * scaled display, 1.5 times too large and cut off at 150%, though the screen shows it right; a capture that shows one
- * is taken here instead.
- */
-export async function captureWindow(application: ElectronApplication, path: string): Promise<void> {
-  const png = await application.evaluate(async ({ BrowserWindow }) => {
-    const window = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().endsWith('/index.html'))
-    if (!window) throw new Error('No main window to capture.')
-    return (await window.webContents.capturePage()).toPNG().toString('base64')
-  })
-  await writeFile(path, Buffer.from(png, 'base64'))
-}
+export { resizeWindow } from './sottoWindow'
+export { captureWindow } from './sottoCapture'
 
 export async function closeSotto(launched: LaunchedSotto): Promise<void> {
   await launched.app.close().catch(() => undefined)
-  if (launched.ownsUserData) await removeOwnedProfile(launched.userData)
+  if (launched.ownsUserData) await removeOwnedE2EProfile(launched.userData)
 }
 
 /** The Threads page landmark, whichever sidebar mode the window last remembered. */
@@ -135,7 +108,7 @@ const FIRST_RUN_STEPS = ['welcome', 'look', 'microphone', 'key', 'shortcut', 'ag
 export type FirstRunStepId = typeof FIRST_RUN_STEPS[number]
 
 export interface FirstRunSetupOptions {
-  /** 'test' runs the microphone test and waits for it to report ready before leaving that step; 'skip' (the default) leaves it untested. */
+  /** 'test' runs the microphone test and waits for it to hear a voice before leaving that step; 'skip' (the default) leaves it untested. */
   readonly microphone?: 'test' | 'skip'
 }
 
@@ -156,7 +129,7 @@ async function advanceFirstRunStep(page: Page, step: FirstRunStepId, options: Fi
   }
   if (step === 'microphone' && options.microphone === 'test') {
     await page.getByRole('button', { name: /test microphone/i }).click()
-    await expect(page.getByText(/microphone ready/i)).toBeVisible()
+    await expect(page.getByText('Sotto heard you. Your microphone works.')).toBeVisible()
   }
   if (step === 'phone') {
     await page.getByRole('button', { name: /finish setup/i }).click()

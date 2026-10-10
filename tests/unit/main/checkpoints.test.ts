@@ -9,6 +9,8 @@ import { FilesService } from '../../../src/main/files/service'
 import { CheckoutMutations } from '../../../src/main/agents/checkoutMutations'
 import { CheckpointService } from '../../../src/main/tools/checkpoints'
 import type { CheckpointDependencies, CheckpointThread } from '../../../src/main/tools/checkpointTypes'
+import { deferred } from '../../fixtures/deferred'
+import { initializeGitRepository } from '../../fixtures/gitRepository'
 
 vi.mock('node:fs/promises', async importOriginal => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
@@ -22,10 +24,9 @@ const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd,
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'sotto-checkpoint-unit-'))
   cleanup.push(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
-  const repo = join(root, 'repo'); await mkdir(repo)
-  git(repo, 'init', '-q'); git(repo, 'config', 'core.autocrlf', 'false'); git(repo, 'config', 'user.name', 'Sotto checkpoint fixture'); git(repo, 'config', 'user.email', 'fixture@example.invalid')
-  await writeFile(join(repo, 'app.txt'), 'before\n'); await writeFile(join(repo, 'notes.txt'), 'original notes\n')
-  git(repo, 'add', '.'); git(repo, '-c', 'commit.gpgSign=false', 'commit', '-qm', 'Fixture')
+  const repo = join(root, 'repo')
+  await initializeGitRepository(repo, { files: { 'app.txt': 'before\n', 'notes.txt': 'original notes\n' },
+    message: 'Fixture', identity: { name: 'Sotto checkpoint fixture', email: 'fixture@example.invalid' } })
   const state: CheckpointThread = { threadId: 'thread-a', providerId: 'codex', bindingId: 'native-a', userMessageIds: [], busy: false, running: false, rollbackSupported: true }
   const second: CheckpointThread = { ...state, threadId: 'thread-b', bindingId: 'native-b', userMessageIds: [] }
   const files = new FilesService({ resolveBinding: threadId => ({ threadId, projectId: 'project', workingDirectory: repo }), copyPath: vi.fn(), reveal: vi.fn() })
@@ -84,9 +85,9 @@ describe('completed native turn checkpoints', () => {
     f.dependencies.acquireMutation = () => mutations.acquire(f.repo, 'mutation')
     const internals = f.service as unknown as { checkFiles(...args: unknown[]): Promise<void> }
     const original = internals.checkFiles.bind(internals)
-    let release!: () => void, enter!: () => void
-    const paused = new Promise<void>(resolve => { release = resolve })
-    const entered = new Promise<void>(resolve => { enter = resolve })
+
+    const { promise: paused, resolve: release } = deferred<void>()
+    const { promise: entered, resolve: enter } = deferred<void>()
     vi.spyOn(internals, 'checkFiles').mockImplementation(async (...args) => { enter(); await paused; await original(...args) })
     const revert = f.service.revertCheckpoint({ ...target, confirmed: true })
     try { await entered; await expect(mutations.acquire(f.repo, 'send')).rejects.toThrow('Your message was not sent') }
@@ -99,9 +100,9 @@ describe('completed native turn checkpoints', () => {
     expect(unwrap(await f.service.revertCheckpoint({ ...target, confirmed: true })).status).toBe('uncertain')
     f.state.userMessageIds = []
     f.dependencies.acquireMutation = () => mutations.acquire(f.repo, 'mutation')
-    let release!: () => void, enter!: () => void
-    const paused = new Promise<void>(resolve => { release = resolve })
-    const entered = new Promise<void>(resolve => { enter = resolve })
+
+    const { promise: paused, resolve: release } = deferred<void>()
+    const { promise: entered, resolve: enter } = deferred<void>()
     f.dependencies.refresh = async () => { enter(); await paused }
     const recovery = f.service.recoverCheckpoint(target)
     try { await entered; await expect(mutations.acquire(f.repo, 'send')).rejects.toThrow('Your message was not sent') }
@@ -113,9 +114,9 @@ describe('completed native turn checkpoints', () => {
     const f = await fixture(), target = await f.complete(), mutations = new CheckoutMutations()
     f.dependencies.acquireMutation = () => mutations.acquire(f.repo, 'mutation')
     const rollback = f.dependencies.rollback
-    let release!: () => void, enter!: () => void
-    const paused = new Promise<void>(resolve => { release = resolve })
-    const entered = new Promise<void>(resolve => { enter = resolve })
+
+    const { promise: paused, resolve: release } = deferred<void>()
+    const { promise: entered, resolve: enter } = deferred<void>()
     f.dependencies.rollback = async (...args) => { enter(); await paused; return rollback(...args) }
     const revert = f.service.revertCheckpoint({ ...target, confirmed: true })
     try {
@@ -133,9 +134,9 @@ describe('completed native turn checkpoints', () => {
     const onLane = <T>(work: () => Promise<T>): Promise<T> => {
       const next = lane.then(work, work); lane = next.catch(() => undefined); return next
     }
-    let release!: () => void, checking!: () => void
-    const paused = new Promise<void>(resolve => { release = resolve })
-    const entered = new Promise<void>(resolve => { checking = resolve })
+
+    const { promise: paused, resolve: release } = deferred<void>()
+    const { promise: entered, resolve: checking } = deferred<void>()
     const internals = f.service as unknown as { checkFiles: (...args: unknown[]) => Promise<void> }
     const checkFiles = internals.checkFiles.bind(f.service)
     vi.spyOn(internals, 'checkFiles').mockImplementationOnce(async (...args) => { checking(); await paused; await checkFiles(...args) })

@@ -1,16 +1,15 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { EMPTY_AGENT_HOST, defaultAgentConfiguration } from '../../src/shared/agents'
 import { computerUseNeeds } from '../../src/main/agents/codexActivity'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, launchSotto, openThreads, resizeWindow } from './support/sottoLaunch'
 
 test('Computer Use connection guidance wraps in the built app and opens from the keyboard', async () => {
   test.setTimeout(120_000)
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-computer-use-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-computer-use-' })).directory
   const providerError = 'Computer Use native pipe is unavailable: failed to connect native pipe: The system cannot find the file specified. (os error 2)'
   const guidance = computerUseNeeds(providerError, false)!
   const snapshot = { ...EMPTY_AGENT_HOST, projects: [{ id: 'project', title: 'Test project', path: profile }],
@@ -56,5 +55,5 @@ test('Computer Use connection guidance wraps in the built app and opens from the
       await page.keyboard.press('Enter')
       await expect(error).toHaveCount(0)
     } finally { await closeSotto(launched) }
-  } finally { await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true }) }
+  } finally { await removeOwnedE2EProfile(profile) }
 })

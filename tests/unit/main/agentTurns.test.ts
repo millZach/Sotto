@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
-import { AgentCredentials, type CredentialEncryption } from '../../../src/main/agents/credentials'
 import { ConfiguredAgentReasoner } from '../../../src/main/agents/reasoning'
 import { TurnRecorder, turnRecordSchema } from '../../../src/main/agents/turns'
 import { markSendStage, SEND_STAGE_FIELDS } from '../../../src/main/agents/sendStages'
@@ -13,6 +12,9 @@ import { TrayController } from '../../../src/main/tray/trayController'
 import { E2EAgentHost } from '../../../src/main/e2e/agentEffects'
 import type { AgentConfiguration } from '../../../src/shared/agents'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
+import { deferred as gate } from '../../fixtures/deferred'
 
 vi.mock('node:fs/promises', async importOriginal => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
@@ -23,18 +25,6 @@ const roots: string[] = []
 const controls: AgentControl[] = []
 const ROUTER_KEY = 'fixture-openrouter-key'
 
-const encryption: CredentialEncryption = {
-  isEncryptionAvailable: () => true,
-  encryptString: value => Buffer.from(Buffer.from(value).map(byte => byte ^ 0xa5)),
-  decryptString: value => Buffer.from(value.map(byte => byte ^ 0xa5)).toString('utf8'),
-}
-
-function gate() {
-  let resolve!: () => void
-  const promise = new Promise<void>(release => { resolve = release })
-  return { promise, resolve }
-}
-
 let historyEnabled = true
 
 async function fixture() {
@@ -42,15 +32,14 @@ async function fixture() {
   roots.push(root)
   historyEnabled = true
   const credentialsDirectory = join(root, 'vault')
-  const credentials = new AgentCredentials(credentialsDirectory, encryption)
-  await credentials.load()
+  const credentials = await testCredentials(credentialsDirectory, { mode: 'xor' })
   const recorder = new TurnRecorder({
     directory: root, resolveSession: id => ({ provider: 'codex', sessionId: `session-${id}` }),
   })
   const binding: { control: AgentControl } = {} as { control: AgentControl }
   const reasoner = new ConfiguredAgentReasoner()
   const host = new E2EAgentHost()
-  binding.control = new AgentControl({ schedule: immediatePublishScheduler,
+  binding.control = createAgentControl({ schedule: immediatePublishScheduler,
     directory: root, host, credentials, reasoner, turns: recorder, historyEnabled: () => historyEnabled,
 
   })

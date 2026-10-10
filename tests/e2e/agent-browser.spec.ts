@@ -1,3 +1,5 @@
+import { captureSotto } from './support/sottoCapture'
+import { resizeContentWindow } from './support/sottoWindow'
 import { createServer } from 'node:http'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -12,31 +14,12 @@ const CONTENT = `<!doctype html><html><head><meta name="viewport" content="width
 // Test 2's own page, apart from CONTENT: an input field to prove typing runs without asking, kept off the other test's element order.
 const GRANT_CONTENT = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fieldnotes</title><style>*{box-sizing:border-box}body{margin:0;background:#f3f1e8;color:#273e34;font:16px system-ui}header{padding:20px 24px;border-bottom:1px solid #ced8c9}main{padding:24px;max-width:660px}h1{font-size:40px;font-weight:500;letter-spacing:-.04em;margin:10px 0}p{line-height:1.6;color:#546850}.landscape{height:120px;background:linear-gradient(150deg,#dbe0d0 35%,#a7b8a0 35%,#a7b8a0 57%,#688a73 57%,#688a73 76%,#294b3e 76%);margin:20px 0}button{background:#304f3d;color:white;border:0;border-radius:5px;padding:12px 18px;font:inherit}input{display:block;margin-top:12px;padding:8px;font:inherit}#saved{min-height:28px}</style></head><body><header>Fieldnotes</header><main><h1>Take the long way home.</h1><p>A place to save the trails you want to return to.</p><div class="landscape"></div><button id="save" onclick="document.querySelector('#saved').textContent='Trail saved';localStorage.setItem('saved','yes')">Save trail</button><p id="saved" role="status"></p><input id="note" type="text" placeholder="Trail notes"></main></body></html>`
 async function resize(launched: LaunchedSotto, width: number, height: number): Promise<void> {
-  await launched.app.evaluate(({ BrowserWindow }, size) => {
-    const host = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().endsWith('/index.html'))!
-    host.setMinimumSize(800, 540); host.setContentSize(size.width, size.height)
-  }, { width, height })
-  await expect.poll(() => launched.page.evaluate(() => `${innerWidth}x${innerHeight}`)).toBe(`${width}x${height}`)
+  await resizeContentWindow(launched, width, height, [800, 540])
 }
 async function screenshot(launched: LaunchedSotto, name: string, native: boolean): Promise<void> {
-  if (!native) { await launched.page.screenshot({ path: join(SHOTS, `${name}.png`), animations: 'disabled' }); return }
+  if (!native) { await captureSotto(launched, join(SHOTS, `${name}.png`), { mode: 'dom', screenshot: { animations: 'disabled' } }); return }
   const title = `Sotto browser review ${name}`
-  await launched.app.evaluate(({ BrowserWindow }, title) => {
-    const host = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().endsWith('/index.html'))!; host.setTitle(title); host.show()
-  }, title)
-  const png = await launched.app.evaluate(async ({ BrowserWindow, desktopCapturer, screen }, title) => {
-    const bounds = BrowserWindow.getAllWindows().find(item => item.getTitle() === title)!.getBounds()
-    const scale = screen.getDisplayMatching(bounds).scaleFactor
-    // The OS window manager can be slow to register the retitled window under load; a reached deadline costs nothing.
-    for (let attempt = 0; ; attempt++) {
-      const sources = await desktopCapturer.getSources({ types: ['window'], thumbnailSize: { width: Math.round(bounds.width * scale), height: Math.round(bounds.height * scale) } })
-      const source = sources.find(item => item.name === title)
-      if (source) return source.thumbnail.toPNG().toString('base64')
-      if (attempt >= 9) throw new Error('Native window capture unavailable')
-      await new Promise(resolve => setTimeout(resolve, 500))
-    }
-  }, title)
-  await writeFile(join(SHOTS, `${name}.png`), Buffer.from(png, 'base64'))
+  await captureSotto(launched, join(SHOTS, `${name}.png`), { mode: 'native-window', title, retries: 9, retryDelayMs: 500 })
 }
 
 test('agents and users share the real browser page, permissions, feedback and visible checks', async () => {

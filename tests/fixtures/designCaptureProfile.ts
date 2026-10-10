@@ -1,5 +1,5 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { ownedE2EProfile } from '../e2e/support/e2eProfile'
+import { rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import { _electron as electron, expect } from '@playwright/test'
@@ -71,7 +71,8 @@ async function createProfile(
     readonly memory?: boolean
   },
 ): Promise<string> {
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-design-'))
+  const owner = await ownedE2EProfile({ prefix: 'sotto-e2e-design-' })
+  const profile = owner.directory
   const settings = {
     ...DEFAULT_SETTINGS,
     reducedMotion: options.motion === 'reduced' ? 'on' : 'system',

@@ -1,8 +1,8 @@
+import { deferred } from '../deferred'
 import { useSyncExternalStore } from 'react'
 import { vi } from 'vitest'
 import type { AgentSkillCatalog } from '../../../src/shared/agentSkills'
-import { defaultAgentConfiguration, type AgentCommand, type AgentDelivery, type AgentFollowup, type AgentState } from '../../../src/shared/agents'
-import { designThreadsFixture } from '../../../src/shared/e2e'
+import { type AgentCommand, type AgentDelivery, type AgentFollowup, type AgentState } from '../../../src/shared/agents'
 import type { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
 import { agentContextFixture } from '../agentContext'
@@ -10,25 +10,7 @@ import { FOLDER_TOGGLES_KEY, folderKey } from '../../../src/renderer/src/agents/
 
 type Connection = ReturnType<typeof useAgents>
 
-/** The Threads design fixture as the coordinator publishes it, with per-thread drafts and deliveries. */
-export function threadsStateFixture(): AgentState {
-  const fixture = designThreadsFixture()
-  return {
-    configuration: { ...defaultAgentConfiguration(), enabled: true, defaultModelId: 'claude:sonnet' },
-    connection: 'connected',
-    host: {
-      connected: true, name: 'Codex', version: 'test',
-      capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true },
-      models: [...fixture.models], projects: [...fixture.projects], threads: structuredClone(fixture.threads) as AgentState['host']['threads'],
-    },
-    activeThreadId: 'visual-gate', activeProjectId: 'workshop',
-    draft: '', draftThreadId: null, draftRequestId: null, composing: false, threadDrafts: [], deliveries: [], deliveredDrafts: [],
-    globalLaneBusy: false, notice: '', error: null,
-
-    credentials: { reasoning: false, secure: true },
-    reasoningAccounts: [],
-  }
-}
+export { threadsStateFixture } from '../agentState'
 
 type Status = AgentDelivery['status']
 
@@ -99,7 +81,7 @@ export function liveAgentState(initial: AgentState, options: {
   const command = vi.fn(async (request: AgentCommand): Promise<AgentState | null> => {
     if (request.type === 'queue-followup') {
       if (!options.holdQueue) return admit(request)
-      return new Promise(resolve => { heldQueue.push({ command: request, finish: (error = null) => resolve(admit(request, error)) }) })
+      const pending = deferred<AgentState | null>(); heldQueue.push({ command: request, finish: (error = null) => pending.resolve(admit(request, error)) }); return pending.promise
     }
     if (request.type === 'edit-followup') {
       return publish({ followups: followups().map(item => item.id === request.itemId ? { ...item, text: request.text, attachments: request.attachments ?? [], ...(request.skills ? { skills: request.skills } : {}), updatedAt: now() } : item) })
@@ -116,16 +98,16 @@ export function liveAgentState(initial: AgentState, options: {
       const publishCatalog = (catalog: AgentSkillCatalog | null): AgentState | null => catalog === null ? null
         : publish({ skillCatalogs: [...(current.skillCatalogs ?? []).filter(item => item.threadId !== catalog.threadId), catalog] })
       if (options.catalog) return publishCatalog(options.catalog(request))
-      return new Promise(resolve => { heldCatalogs.push(catalog => resolve(publishCatalog(catalog))) })
+      const pending = deferred<AgentState | null>(); heldCatalogs.push(catalog => pending.resolve(publishCatalog(catalog))); return pending.promise
     }
     if (request.type === 'save-thread-draft') {
       if (!options.holdSaves) return saveDraft(request)
-      return new Promise(resolve => { heldSaves.push({ command: request, finish: (error = null) => resolve(saveDraft(request, error)) }) })
+      const pending = deferred<AgentState | null>(); heldSaves.push({ command: request, finish: (error = null) => pending.resolve(saveDraft(request, error)) }); return pending.promise
     }
     if (request.type === 'manual-send' || request.type === 'steer') {
       const pending = current.deliveries!.some(item => item.threadId === request.threadId && ['queued', 'submitting', 'uncertain'].includes(item.status))
       if (!pending) publish({ threadDrafts: putDraft({ ...request, draftId: request.draftId! }), deliveries: setDelivery(request.threadId, request.draftId!, 'queued') })
-      return new Promise(resolve => { sends.set(`${request.threadId}\n${request.draftId}`, resolve) })
+      return (() => { const pending = deferred<AgentState | null>(); sends.set(`${request.threadId}\n${request.draftId}`, pending.resolve); return pending.promise })()
     }
     return current
   })
@@ -133,7 +115,7 @@ export function liveAgentState(initial: AgentState, options: {
   threadDrafts.receive(current)
   const useLive = (): Connection => {
     const state = useSyncExternalStore(listener => { listeners.add(listener); return () => { listeners.delete(listener) } }, () => current)
-    return { ...agentContextFixture(state, command), threadDrafts }
+    return agentContextFixture(state, command, { threadDrafts })
   }
   const sentDraftId = (threadId: string): string => {
     const call = command.mock.calls.map(([request]) => request).findLast(request => (request.type === 'manual-send' || request.type === 'steer') && request.threadId === threadId)

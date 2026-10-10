@@ -4,27 +4,24 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
-import { AgentCredentials, type CredentialEncryption } from '../../../src/main/agents/credentials'
+
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
+import { deferred } from '../../fixtures/deferred'
 
 const roots: string[] = []
 const controls: AgentControl[] = []
 
-const encryption: CredentialEncryption = {
-  isEncryptionAvailable: () => false,
-  encryptString: value => Buffer.from(value),
-  decryptString: value => value.toString(),
-}
-
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'sotto-persistence-'))
   roots.push(root)
-  const credentials = new AgentCredentials(root, encryption)
-  await credentials.load()
+  const credentials = await testCredentials(root, { mode: 'unavailable' })
+
   const host = new E2EAgentHost()
-  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
+  const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
   })
   controls.push(control)
   await control.start()
@@ -120,10 +117,8 @@ describe('coordinator persistence', () => {
     const writes = agentsWriteSpy()
     await settle(writes)
     const initial = f.control.get().configuration.checkClientUpdates
-    let started!: () => void
-    const writing = new Promise<void>(resolve => { started = resolve })
-    let release!: () => void
-    const held = new Promise<void>(resolve => { release = resolve })
+    const { promise: writing, resolve: started } = deferred<void>()
+    const { promise: held, resolve: release } = deferred<void>()
     let blocked = false
     // Hold the physical write inside the real queue, so later writes retain their ordering.
     const prototype = AtomicJsonStore.prototype as unknown as { writeImmediately(value: unknown): Promise<void> }

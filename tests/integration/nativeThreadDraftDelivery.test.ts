@@ -1,19 +1,19 @@
 // @vitest-environment node
+import { createAgentControl } from '../fixtures/agentControlFixture'
+import { testCredentials } from '../fixtures/testCredentials'
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
-import { AgentControl } from '../../src/main/agents/control'
-import { AgentCredentials } from '../../src/main/agents/credentials'
+
 import { codexFixture } from '../fixtures/codexFixture'
 import { immediatePublishScheduler } from '../fixtures/publishScheduler'
 
 it('restores drafts and reconciles a lost native acknowledgement under the original Sotto binding without a duplicate turn', async () => {
   const f = await codexFixture(undefined, true)
   const threadId = randomUUID(); const draftId = randomUUID(); const newerId = randomUUID()
-  const credentials = new AgentCredentials(join(f.root, 'vault'), { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
-  await credentials.load()
-  const create = () => new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
+  const credentials = await testCredentials(join(f.root, 'vault'), { mode: 'unavailable' })
+  const create = () => createAgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
     reasoner: {},
   })
   let control = create()

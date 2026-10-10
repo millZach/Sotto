@@ -1,10 +1,8 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-
 import { expect, test, type Page } from '@playwright/test'
 
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../src/shared/settings'
 import { BUILT_IN_THEMES } from '../../src/shared/themes/library'
 import { closeSotto, launchSotto, openPage, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
@@ -26,7 +24,7 @@ async function withProfile(
   options: { readonly threads?: boolean } = {},
 ): Promise<void> {
   const threads = options.threads === true
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-palettes-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-palettes-' })).directory
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, ...settings }), 'utf8')
   if (threads) {
     await writeFile(join(profile, 'agents.json'), JSON.stringify({
@@ -41,7 +39,7 @@ async function withProfile(
     await run(launched)
   } finally {
     if (launched !== undefined) await closeSotto(launched)
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 }
 

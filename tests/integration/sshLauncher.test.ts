@@ -1,4 +1,6 @@
 // @vitest-environment node
+import { parseProviderRecords } from '../fixtures/providerRecords'
+import { deferred } from '../fixtures/deferred'
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
@@ -35,7 +37,7 @@ async function fixture(mode = 'started', options: { authenticationTimeoutMs?: nu
     ...(options.approvalTimeoutMs ? { approvalTimeoutMs: options.approvalTimeoutMs } : {}),
     ...(options.platform ? { platform: options.platform } : {}) })
   launchers.push(launcher)
-  const events = async () => (await readFile(record, 'utf8')).trim().split('\n').map(line => JSON.parse(line) as Spawned & { kind?: string; accepted?: boolean; owned?: boolean })
+  const events = async () => parseProviderRecords<Spawned & { kind?: string; accepted?: boolean; owned?: boolean }>(await readFile(record, 'utf8'), { keepEmptyLines: true })
   return { launcher, path, events, spawns: async () => (await events()).filter(event => event.type === 'spawn') }
 }
 async function failure(promise: Promise<unknown>): Promise<SshFailure> {
@@ -66,7 +68,7 @@ it.each(['started', 'discovered'])('discovers readiness, verifies the forward an
 }, 150_000)
 it('starts the sign-in deadline after the askpass helper is ready', async () => {
   const { launcher } = await fixture('started', { authenticationTimeoutMs: 10_000 })
-  const preparing = Promise.withResolvers<void>(), ready = Promise.withResolvers<void>()
+  const preparing = deferred<void>(), ready = deferred<void>()
   const start = AskpassBroker.start.bind(AskpassBroker)
   const preparation = vi.spyOn(AskpassBroker, 'start').mockImplementation(async (...args) => {
     preparing.resolve()
@@ -139,7 +141,7 @@ it('asks for a password once per connect although three ssh processes sign in, a
   // Password reuse is the assertion here; allow the same sign-in budget as the real launcher.
   const { launcher, events } = await fixture('password', { authenticationTimeoutMs: 120_000 })
   const prompts: SshPrompt[] = []
-  const promptReady = Promise.withResolvers<SshPrompt>()
+  const promptReady = deferred<SshPrompt>()
   let waiting: SshPrompt | null = null
   const connecting = launcher.connect(configuration, { onPrompt: prompt => { waiting = prompt; if (prompt) { prompts.push(prompt); promptReady.resolve(prompt) } } })
   // Observe rejection immediately, including cleanup after an assertion fails before connecting is awaited.
