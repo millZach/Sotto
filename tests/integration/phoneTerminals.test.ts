@@ -29,6 +29,7 @@ let hooks: PrepareTerminalAgentHooksOptions
 let runId: string
 let data: (value: string) => void
 let hookWrite: ReturnType<typeof vi.fn<(answer: TerminalHookAnswer) => boolean>>
+let prepareHookGate: Promise<void> | undefined
 const writes = vi.fn()
 const screen = (text: string) => `\x1b[2J\x1b[HClaude Code v2.1.295\r\n${text}`
 const idle = screen('❯ \r\n? for shortcuts')
@@ -40,6 +41,7 @@ beforeAll(async () => {
     providers: { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost() } })
 })
 beforeEach(async () => {
+  prepareHookGate = undefined
   allowed = true; writes.mockClear(); runId = randomUUID()
   hookWrite = vi.fn(() => true)
   terminals = new TerminalWorkspaceService({ projects: () => [{ id: 'p', title: 'Project', path: root }],
@@ -47,7 +49,7 @@ beforeEach(async () => {
     spawn: () => ({ write: writes, resize: () => {}, kill: () => {},
       onData: (callback: typeof data) => { data = callback; return { dispose() {} } }, onExit: () => ({ dispose() {} }),
     }) as unknown as IPty,
-    prepareHooks: async options => { hooks = options; return { runId, args: [], env: {}, answer: answer => hookWrite(answer), dispose: () => {} } },
+    prepareHooks: async options => { await prepareHookGate; hooks = options; return { runId, args: [], env: {}, answer: answer => hookWrite(answer), dispose: () => {} } },
   })
   const result = await terminals.open({ projectId: 'p', title: 'Claude terminal', workingCopy: 'shared',
     launch: { provider: 'claude', modelId: null, reasoning: null, permission: 'ask' } })
@@ -216,6 +218,28 @@ it('does not acknowledge a refused detail observation as visible', async () => {
   vi.spyOn(terminals, 'visibility').mockResolvedValueOnce({ ok: false, error: { code: 'busy', message: 'This tool is busy. Try again shortly.' } })
   expect(await call({ op: 'observe-terminals', terminalIds: [terminalId] })).toMatchObject({ ok: false, error: { code: 'busy' } })
   expect(terminals.phoneRows()[0]!.state).toBe('just-finished')
+})
+
+it('withdraws phone visibility while eight terminal operations are pending and marks unseen completion', async () => {
+  await hello()
+  expect(await call({ op: 'observe-terminals', terminalIds: [terminalId] })).toMatchObject({ ok: true })
+  let release!: () => void
+  prepareHookGate = new Promise<void>(resolve => { release = resolve })
+  const opening = terminals.open({ projectId: 'p', title: 'Held terminal', workingCopy: 'shared',
+    launch: { provider: 'claude', modelId: null, reasoning: null, permission: 'ask' } })
+  const reads: ReturnType<typeof terminals.read>[] = []
+  try {
+    await expect.poll(() => terminals.phoneRows().find(row => row.title === 'Held terminal')?.state).toBe('starting')
+    const heldId = terminals.phoneRows().find(row => row.title === 'Held terminal')!.id
+    for (let index = 0; index < 8; index++) reads.push(terminals.read({ id: heldId }))
+    expect(await terminals.read({ id: terminalId })).toMatchObject({ ok: false, error: { code: 'busy' } })
+    expect(await call({ op: 'observe-terminals', terminalIds: [] })).toMatchObject({ ok: true })
+    data(working); data(idle)
+    expect(terminals.phoneRows().find(row => row.id === terminalId)?.state).toBe('just-finished')
+  } finally {
+    release()
+    await Promise.all([opening, ...reads])
+  }
 })
 
 it('keeps the preview to eight active rows and refuses a removed phone before delivery', async () => {

@@ -64,9 +64,38 @@ extension AppModel {
         guard supportsTerminals(hostID), online(hostID), let connection = connections[hostID] else { return }
         let epoch = generations[hostID]
         let visible = foreground && selectedTerminal?.hostID == hostID ? selectedTerminal : nil
-        _ = try await connection.call(["op": .string("observe-terminals"), "terminalIds": .array(visible.map { [.string($0.terminalID)] } ?? [])])
+        do {
+            _ = try await connection.call(["op": .string("observe-terminals"), "terminalIds": .array(visible.map { [.string($0.terminalID)] } ?? [])])
+        } catch {
+            if let epoch, generations[hostID] == epoch { retryTerminalObservation(hostID, epoch: epoch) }
+            throw error
+        }
+        guard generations[hostID] == epoch else { return }
+        cancelTerminalObservationRetry(hostID)
         let now = foreground && selectedTerminal?.hostID == hostID ? selectedTerminal : nil
-        if generations[hostID] == epoch && now != visible { try await observeTerminals(hostID) }
+        if now != visible { try await observeTerminals(hostID) }
+    }
+    private func cancelTerminalObservationRetry(_ hostID: String) {
+        terminalObservationRetries.removeValue(forKey: hostID)?.task.cancel()
+    }
+    /// Failed observations reconcile current visibility, never replay the selection that failed.
+    private func retryTerminalObservation(_ hostID: String, epoch: UUID) {
+        if terminalObservationRetries[hostID]?.epoch == epoch { return }
+        cancelTerminalObservationRetry(hostID)
+        let token = UUID()
+        let task = Task { [weak self] in
+            guard let self else { return }
+            defer {
+                if terminalObservationRetries[hostID]?.token == token { terminalObservationRetries[hostID] = nil }
+            }
+            var delay: UInt64 = 250_000_000
+            while generations[hostID] == epoch && online(hostID) && supportsTerminals(hostID) {
+                do { try await terminalObservationSleep(delay) } catch { return }
+                guard !Task.isCancelled, generations[hostID] == epoch, online(hostID) else { return }
+                do { try await observeTerminals(hostID); return } catch { delay = min(delay * 2, 4_000_000_000) }
+            }
+        }
+        terminalObservationRetries[hostID] = (epoch, token, task)
     }
     /// Read once for this card and request, or explicitly refresh. The host returns null when the live bottom
     /// cannot safely explain the pending approval. No output is subscribed to or saved.
@@ -332,6 +361,8 @@ struct HeldDetail {
     /// Hands a sent reply's photos to whatever draws the thread, so it has them before their message arrives.
     var photosSent: (([DraftPhoto], ThreadRef) -> Void)?
     private let receiptSleep: @Sendable (UInt64) async throws -> Void
+    private let terminalObservationSleep: @Sendable (UInt64) async throws -> Void
+    private var terminalObservationRetries: [String: (epoch: UUID, token: UUID, task: Task<Void, Never>)] = [:]
     /// The computer step 1 of adding found, waiting for its code in step 2.
     @Published private(set) var found: FoundHost?
     /// Whether the Add computer sheet is over the tabs.
@@ -726,12 +757,14 @@ struct HeldDetail {
          retrySleep: @escaping @Sendable (UInt64) async throws -> Void = { try await Task.sleep(nanoseconds: $0) },
          preparePhoto: @escaping @Sendable (Data, String) async throws -> PreparedPhoto = { try await PhotoPipeline.prepare($0, name: $1) },
          receiptSleep: @escaping @Sendable (UInt64) async throws -> Void = { try await Task.sleep(nanoseconds: $0) },
+         terminalObservationSleep: @escaping @Sendable (UInt64) async throws -> Void = { try await Task.sleep(nanoseconds: $0) },
          photoLoadLimit: @escaping @Sendable () async throws -> Void = { try await Task.sleep(nanoseconds: 120_000_000_000) }) {
         self.keychain = keychain
         self.retrySleep = retrySleep
         self.retryJitter = retryJitter
         self.preparePhoto = preparePhoto
         self.receiptSleep = receiptSleep
+        self.terminalObservationSleep = terminalObservationSleep
         self.photoLoadLimit = photoLoadLimit
         #if DEBUG && os(iOS)
         if ProcessInfo.processInfo.arguments.contains("--ui-fixture") {
@@ -846,7 +879,7 @@ struct HeldDetail {
             cancelDetailReload()
             retries.values.forEach { $0.cancel() }; retries.removeAll(); retryAttempts.removeAll(); retryingSince.removeAll()
             active = false; pairGeneration = UUID(); working = false; holdDetail()
-            for (hostID, connection) in connections { generations[hostID] = UUID(); connection.disconnect() }
+            for (hostID, connection) in connections { cancelTerminalObservationRetry(hostID); generations[hostID] = UUID(); connection.disconnect() }
             connecting.removeAll(); watches.removeAll()
             // A computer that gave up stays given up: coming back connects only the others.
             live = live.mapValues { (state: Live) -> Live in
@@ -895,6 +928,7 @@ struct HeldDetail {
             return
         }
         retries.removeValue(forKey: hostID)?.cancel()
+        cancelTerminalObservationRetry(hostID)
         let current = UUID(); generations[hostID] = current; connecting.insert(hostID)
         shellSequences[hostID] = 0; watches[hostID] = nil
         defer { if generations[hostID] == current { connecting.remove(hostID) } }
@@ -984,6 +1018,7 @@ struct HeldDetail {
         made.onPush = { [weak self] frame, sequence in self?.push(frame, from: hostID, sequence: sequence) }
         made.onDisconnect = { [weak self] in
             guard let self else { return }
+            cancelTerminalObservationRetry(hostID)
             generations[hostID] = UUID(); connecting.remove(hostID); watches[hostID] = nil
             if selected?.hostID == hostID { cancelDetailReload() }
             connectionEnded(hostID, problem: ClientError.disconnected.localizedDescription, retrying: true)
@@ -1106,6 +1141,7 @@ struct HeldDetail {
         if let computerIndexAccount { try? keychain.write(rest.map(\.hostID), account: computerIndexAccount) }
         try? keychain.write(markers, account: ComputerStore.pendingAccount)
         retries.removeValue(forKey: hostID)?.cancel(); retryAttempts[hostID] = nil; retryingSince[hostID] = nil; wasOnline.remove(hostID)
+        cancelTerminalObservationRetry(hostID)
         generations[hostID] = UUID(); connecting.remove(hostID)
         connections[hostID]?.close(); connections[hostID] = nil
         let gone = Set(pending.filter { $0.hostID == hostID }.map(\.id))

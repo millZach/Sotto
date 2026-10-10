@@ -6,7 +6,8 @@ final class TerminalModelTests: XCTestCase {
     private let terminalID = "33333333-3333-4333-8333-333333333333"
     private var ref: TerminalRef { TerminalRef(hostID: hostID, terminalID: terminalID) }
     @MainActor private func fixture(feature: Bool = true, mayAnswer: Bool = true, provider: String = "claude", state: String = "needs-you",
-                                   receiptSleep: @escaping @Sendable (UInt64) async throws -> Void = { try await Task.sleep(nanoseconds: $0) }) async throws -> AppModel {
+                                   receiptSleep: @escaping @Sendable (UInt64) async throws -> Void = { try await Task.sleep(nanoseconds: $0) },
+                                   observationSleep: @escaping @Sendable (UInt64) async throws -> Void = { try await Task.sleep(nanoseconds: $0) }) async throws -> AppModel {
         TestKeychain.items = [:]; TestKeychain.locked = false; TestKeychain.unreadableAccount = nil; TestKeychain.unwritableAccount = nil
         HostConnection.instances = []; HostConnection.features = feature ? ["terminals"] : []
         HostConnection.mayAnswer = mayAnswer; HostConnection.failConnect = false; HostConnection.failDetail = false; HostConnection.holdDetail = false
@@ -18,7 +19,7 @@ final class TerminalModelTests: XCTestCase {
         try TestKeychain.store.write(SavedComputer(address: "https://laptop.example.ts.net:8443", pairing: pairing, reportedName: "Laptop"), account: ComputerStore.account(hostID))
         HostConnection.shell = shell(provider: provider, state: state)
         HostConnection.terminalHandler = { op, _, _ in op == "terminal-approval" ? self.preview() : .null }
-        let model = AppModel(keychain: TestKeychain.store, receiptSleep: receiptSleep)
+        let model = AppModel(keychain: TestKeychain.store, receiptSleep: receiptSleep, terminalObservationSleep: observationSleep)
         model.phase(.active); await model.waitForActivation()
         return model
     }
@@ -114,6 +115,56 @@ final class TerminalModelTests: XCTestCase {
         connection.push(.shell(try shell(request: "new-request", mayAnswer: true).decode(Shell.self)))
         XCTAssertNil(model.terminalPreviews[ref.id])
         XCTAssertFalse(model.canAnswerTerminal(ref, approval: approval))
+    }
+    @MainActor func testRefusedWithdrawalRetriesTheLatestSelection() async throws {
+        let clock = TerminalObservationClock()
+        let model = try await fixture(observationSleep: { _ in await clock.wait() })
+        defer { model.phase(.background); HostConnection.terminalHandler = nil }
+        let connection = try XCTUnwrap(HostConnection.instances.last)
+        await model.selectTerminal(ref)
+        var visible = true
+        var refuse = true
+        HostConnection.terminalHandler = { op, operation, _ in
+            guard op == "observe-terminals" else { return .null }
+            if refuse { throw HostRefusal(failure: try JSONValue.object(["code": .string("busy"), "message": .string("Try again.")]).decode(WireFailure.self)) }
+            visible = operation["terminalIds"] != .array([])
+            return .null
+        }
+        await model.selectTerminal(nil)
+        XCTAssertTrue(visible, "The refused withdrawal left the host's previous visibility intact")
+        let deadline = Date().addingTimeInterval(10)
+        while !(await clock.waiting) && Date() < deadline { await Task.yield() }
+        let waiting = await clock.waiting
+        XCTAssertTrue(waiting)
+        // Even another refused selection must not leave the retry holding that terminal ID.
+        await model.selectTerminal(ref)
+        await model.selectTerminal(nil)
+        refuse = false
+        await clock.release()
+        while visible && Date() < deadline { await Task.yield() }
+        XCTAssertFalse(visible)
+        XCTAssertEqual(connection.terminalCalls.last?["terminalIds"], .array([]))
+    }
+    @MainActor func testObservationRetryDoesNotSurviveAConnectionGenerationChange() async throws {
+        let clock = TerminalObservationClock()
+        let model = try await fixture(observationSleep: { _ in await clock.wait() })
+        defer { model.phase(.background); HostConnection.terminalHandler = nil }
+        let connection = try XCTUnwrap(HostConnection.instances.last)
+        await model.selectTerminal(ref)
+        HostConnection.terminalHandler = { _, _, _ in throw ClientError.uncertain }
+        await model.selectTerminal(nil)
+        let deadline = Date().addingTimeInterval(10)
+        while !(await clock.waiting) && Date() < deadline { await Task.yield() }
+        let waiting = await clock.waiting
+        XCTAssertTrue(waiting)
+        HostConnection.terminalHandler = { _, _, _ in .null }
+        await model.connect(hostID)
+        let calls = connection.terminalCalls.count
+        await clock.release()
+        // Let the canceled retry's continuation finish before comparing calls.
+        while !(await clock.released) && Date() < deadline { await Task.yield() }
+        await Task.yield()
+        XCTAssertEqual(connection.terminalCalls.count, calls)
     }
     @MainActor func testScreenOnlyProvidersHaveNoPreviewOrAnswer() async throws {
         for provider in ["codex", "grok"] {
@@ -323,4 +374,15 @@ final class TerminalModelTests: XCTestCase {
         connection.push(.shell(try shell(request: "request-2").decode(Shell.self)))
         XCTAssertFalse(model.shouldRestoreTerminalApproval(approval, in: ref), "A new request does not inherit the old card")
     }
+}
+
+private actor TerminalObservationClock {
+    private var pending: CheckedContinuation<Void, Never>?
+    private(set) var waiting = false
+    private(set) var released = false
+    func wait() async {
+        await withCheckedContinuation { pending = $0; waiting = true }
+        released = true
+    }
+    func release() { pending?.resume(); pending = nil }
 }

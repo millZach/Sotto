@@ -10,7 +10,8 @@ import {
   type TerminalLaunch, type WorkspaceTerminal, type WorkspaceTerminalEvent, type WorkspaceTerminalSnapshot,
 } from '../../shared/terminalWorkspace'
 import type { RunGit, ThreadWorktrees } from '../agents/threadWorktrees'
-import { ToolOperations, fail, parse } from '../tools/common'
+import { ToolFailure, ToolOperations, fail, parse } from '../tools/common'
+import type { ToolsResult } from '../../shared/tools'
 import { prepareTerminalAgentHooks, type PreparedTerminalAgentHooks } from './hooks'
 import { TerminalAgentStateMachine } from './state'
 import type { PhoneTerminal, PhoneTerminalAnswer, PhoneTerminalApproval, PhoneTerminals } from '../../shared/phoneTerminals'
@@ -108,11 +109,18 @@ export class TerminalWorkspaceService extends ToolOperations implements PhoneTer
   }
   private isVisible(id: string): boolean { return [...this.visibleClients.values()].some(client => client.ids.has(id) && client.active()) }
   /** Trusted clients publish panes, not selection. The desktop IPC supplies an actual-window predicate. */
-  visibility(payload: unknown, client: object = this.defaultVisibilityClient, active: () => boolean = () => true) { return this.run(async () => {
-    const { ids } = parse(workspaceTerminalVisibilitySchema, payload)
-    this.visibleClients.set(client, { ids: new Set(ids), active })
-    this.refreshVisibility()
-  }) }
+  async visibility(payload: unknown, client: object = this.defaultVisibilityClient, active: () => boolean = () => true): Promise<ToolsResult<void>> {
+    // Closing a visible pane must take effect even while all eight terminal operations are waiting.
+    if (this.disposed) return { ok: false, error: { code: 'unavailable', message: 'This tool has shut down.' } }
+    try {
+      const { ids } = parse(workspaceTerminalVisibilitySchema, payload)
+      this.visibleClients.set(client, { ids: new Set(ids), active })
+      this.refreshVisibility()
+      return { ok: true, value: undefined }
+    } catch (error) {
+      return { ok: false, error: error instanceof ToolFailure ? { code: error.code, message: error.message } : { code: 'unavailable', message: 'This tool is unavailable. Refresh and try again.' } }
+    }
+  }
   refreshVisibility(): void {
     for (const record of this.terminals.values()) { record.agent?.setVisible(this.isVisible(record.terminal.id)); this.syncAgent(record) }
   }
