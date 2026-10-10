@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 // @ts-expect-error The fixture generator is a plain Node tool.
 import { renderOmarchyStockThemes } from '../../../scripts/render-omarchy-theme-fixtures.mjs'
@@ -9,7 +9,8 @@ import { DEFAULT_SETTINGS, parseSettings } from '../../../src/shared/settings'
 import { widgetPaletteFor, widgetPresentationFor } from '../../../src/shared/themeBranding'
 import { contrastRatio, parseThemeRgb, toCanonicalThemeColor } from '../../../src/shared/themes/color'
 import { BUILT_IN_THEMES, DEFAULT_THEME_ID, resolveThemeFor, parseCustomThemes } from '../../../src/shared/themes/library'
-import { OMARCHY_THEME_ID, OMARCHY_TEXT_PAIRS, parseOmarchyTheme, readableOmarchyMix } from '../../../src/shared/themes/omarchy'
+import { OMARCHY_THEME_ID, OMARCHY_TEXT_PAIRS, guardOmarchyColors, omarchySuccessText, parseOmarchyTheme, readableOmarchyMix } from '../../../src/shared/themes/omarchy'
+import { OMARCHY_CSS_TEXT_PAIRS, OMARCHY_GRAPHIC_COLOR_TOKENS } from '../../fixtures/renderer/omarchyTextSurfaces'
 import { parseTokenBlocks, rootDeclarations, resolveColor, contrast, over } from '../../fixtures/renderer/themeTokenResolver'
 
 const entries = Object.entries(fixtures.themes)
@@ -32,23 +33,31 @@ describe('Omarchy M3 and readability check', () => {
     const declarations = rootDeclarations(theme.appearance, DEFAULT_THEME_ID, { colors: theme.colors }, blocks)
     const canvas = resolveColor('--tt-canvas', declarations)
     const color = (token: string) => over(resolveColor(`--tt-${token}`, declarations), canvas)
-    const pairs: ReadonlyArray<readonly [string, readonly string[]]> = [
-      ['text', ['canvas', 'surface', 'surface-elevated', 'surface-overlay', 'selected', 'sidebar']],
-      ['text-2', ['canvas', 'surface', 'surface-elevated', 'selected']],
-      ['text-muted', ['canvas', 'surface', 'surface-elevated', 'sidebar', 'selected']],
-      ['text-faint', ['canvas', 'surface', 'surface-elevated']],
-      ['sidebar-text', ['sidebar', 'sidebar-row-hover', 'sidebar-row-selected']],
-      ['sidebar-text-muted', ['sidebar', 'sidebar-row-hover', 'sidebar-row-selected']],
-      ['accent-text', ['canvas', 'surface', 'selected']],
-      ['warning', ['canvas', 'surface', 'sidebar']], ['error', ['canvas', 'surface', 'sidebar']],
-      ['on-accent', ['accent']], ['primary-contrast', ['primary']], ['bubble-text', ['bubble']],
-      ['code-text', ['code-bg']], ['error-text', ['error-surface']], ['update-text', ['update-surface']],
-      ['terminal-foreground', ['terminal-background']], ['effort-text', ['surface-elevated']],
-    ]
-    for (const [ink, surfaces] of pairs) for (const surface of surfaces) {
+    declarations.set('--tt-success', omarchySuccessText(theme.colors, theme.appearance))
+    declarations.set('--tt-diff-add', 'color-mix(in srgb, var(--tt-success) 12%, var(--tt-code-bg))')
+    declarations.set('--tt-diff-remove', 'color-mix(in srgb, var(--tt-error) 12%, var(--tt-code-bg))')
+    declarations.set('--tt-diff-hunk', 'color-mix(in srgb, var(--tt-accent) 14%, var(--tt-code-bg))')
+    declarations.set('--tt-danger-hover', 'color-mix(in srgb, var(--tt-error) 86%, var(--tt-canvas))')
+    for (const [ink, surfaces] of OMARCHY_CSS_TEXT_PAIRS) for (const surface of surfaces) {
       expect(contrast(color(ink), color(surface)), `${name}: ${ink} on ${surface}`).toBeGreaterThanOrEqual(4.5)
     }
     expect(contrast(color('focus-ring'), color('canvas'))).toBeGreaterThanOrEqual(3)
+  })
+  it('accounts for every --tt token used as color in the main and widget stylesheets', () => {
+    const covered = new Set([...OMARCHY_CSS_TEXT_PAIRS.map(([ink]) => ink), ...OMARCHY_GRAPHIC_COLOR_TOKENS])
+    const visit = (path: string): void => {
+      for (const entry of readdirSync(path, { withFileTypes: true })) {
+        const file = `${path}/${entry.name}`
+        if (entry.isDirectory()) visit(file)
+        else if (file.endsWith('.css')) {
+          const css = readFileSync(file, 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '')
+          for (const declaration of css.matchAll(/(?<![-\w])color\s*:\s*([^;}]+)/gu)) {
+            for (const [token] of declaration[1]!.matchAll(/--tt-[\w-]+/gu)) expect(covered.has(token.slice(5)), `${file}: ${token}`).toBe(true)
+          }
+        }
+      }
+    }
+    visit('src/renderer/src')
   })
   it('uses the first whole percent that reads, including a no-op and an impossible mix', () => {
     const amount = readableOmarchyMix('#666666', '#ffffff', color => contrastRatio(rgb(color), rgb('#333333')))
@@ -68,6 +77,21 @@ describe('Omarchy M3 and readability check', () => {
     const raw = structuredClone(fixtures.themes['tokyo-night'].rendered)
     raw.colors.error = '#300000'
     expect(parseOmarchyTheme(raw).colors.error).toBe(toCanonicalThemeColor(own.error))
+  })
+  it.each([
+    ['error', '#e35e00', '#e35c00'],
+    ['warning', '#908100', '#8b8200'],
+  ] as const)('%s keeps 35%% and falls back at 36%%', (kind, at35, at36) => {
+    const raw = structuredClone(fixtures.themes['tokyo-night'].rendered)
+    const score = (color: string): number => Math.min(...['canvas', 'surface', 'sidebar'].map(surface =>
+      contrastRatio(rgb(color), rgb(raw.colors[surface as keyof typeof raw.colors])),
+    ))
+    expect(readableOmarchyMix(at35, raw.colors.text, score)).toBe(35)
+    expect(readableOmarchyMix(at36, raw.colors.text, score)).toBe(36)
+    raw.colors[kind] = at35
+    expect(guardOmarchyColors(raw.colors, 'dark')[kind]).toBe(toCanonicalThemeColor(at35))
+    raw.colors[kind] = at36
+    expect(guardOmarchyColors(raw.colors, 'dark')[kind]).toBe(toCanonicalThemeColor(resolveThemeFor(DEFAULT_SETTINGS, 'dark').colors[kind]))
   })
   it('rejects partial, unresolved, injected, translucent and unreadable palettes', () => {
     for (const change of [{ text: '{{ foreground }}' }, { text: 'url(secret)' }, { text: '#ffffff00' }, { text: '#222222', canvas: '#222222', sidebar: '#ffffff' }]) {

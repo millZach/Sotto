@@ -6,8 +6,8 @@ import { closeThemeEditor } from '../../../src/renderer/src/features/settings/th
 import { resolveThemeFor } from '../../../src/shared/themes/library'
 import { ThemeGallery } from '../../../src/renderer/src/features/settings/themes/ThemeGallery'
 import { applyAppearance, appearancePreview, resolveAppearance } from '../../../src/renderer/src/state/appearance'
-import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
-import { OMARCHY_THEME_ID, parseOmarchyTheme } from '../../../src/shared/themes/omarchy'
+import { DEFAULT_SETTINGS, type SettingsPatch } from '../../../src/shared/settings'
+import { OMARCHY_THEME_ID, omarchySuccessText, parseOmarchyTheme } from '../../../src/shared/themes/omarchy'
 import fixtures from '../../fixtures/omarchy-themes.json'
 import { ThemeLivePreview } from '../../../src/renderer/src/features/settings/themes/ThemeLivePreview'
 
@@ -26,7 +26,7 @@ describe('Omarchy Appearance', () => {
   const resolved = state === 'matching' ? 'dark' : 'light'
   const shown = { ...DEFAULT_SETTINGS, appearance: resolved, lightTheme: OMARCHY_THEME_ID, darkTheme: OMARCHY_THEME_ID, omarchyTheme: state === 'missing' ? null : runtime }
   const painted = resolveThemeFor(shown, resolved).colors
-  const save = vi.fn(async () => true)
+  const save = vi.fn<(patch: SettingsPatch) => Promise<boolean>>(async () => true)
   render(<><ThemeGallery shown={shown} resolved={resolved} system="Linux" onChooseMode={vi.fn()} onSelect={vi.fn()} onRemove={vi.fn()} onExport={vi.fn()} onAddTheme={vi.fn()} /><ThemeEditorHost settings={shown} onSave={save} getSettings={() => shown} /></>)
   fireEvent.click(screen.getByRole('button', {name:'Create theme'}))
   const dialog = screen.getByRole('dialog', {name:'Create theme'})
@@ -95,6 +95,14 @@ describe('Omarchy Appearance', () => {
   expect(root.dataset.themeId).toBe('t3-code')
   expect(root.dataset.theme).toBe('dark')
   expect(resolveAppearance('system',true,{...shown,lightTheme:'t3-code'})).toBe('dark')
+ })
+ it('repairs the runtime green on its surfaces and restores stock tokens when switching away', () => {
+  const theme = parseOmarchyTheme(fixtures.themes['catppuccin-latte'].rendered)
+  const root = document.createElement('div')
+  applyAppearance({...DEFAULT_SETTINGS, appearance:'light', lightTheme:OMARCHY_THEME_ID, omarchyTheme:theme}, root, false, null, false)
+  expect(root.style.getPropertyValue('--tt-success')).toBe(omarchySuccessText(theme.colors, 'light'))
+  applyAppearance({...DEFAULT_SETTINGS, appearance:'light'}, root, false, null, false)
+  expect(root.style.getPropertyValue('--tt-success')).toBe('')
  })
  it('explains the same Omarchy mode that the live widget preview wears', () => {
   const theme = parseOmarchyTheme(fixtures.themes['catppuccin-latte'].rendered)

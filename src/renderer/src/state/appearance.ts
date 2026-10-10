@@ -2,7 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from 'react'
 
 import { DEFAULT_SETTINGS, EFFORT_COLORS, type AppSettings, type Appearance, type EffortColor } from '../../../shared/settings'
 import { APP_ICON_BRAND_ATTRIBUTE, wearsAppIcon } from '../../../shared/themeBranding'
-import { OMARCHY_THEME_ID, omarchyThemeSchema, type OmarchyTheme } from '../../../shared/themes/omarchy'
+import { OMARCHY_THEME_ID, omarchySuccessText, omarchyThemeSchema, type OmarchyTheme } from '../../../shared/themes/omarchy'
 import { isCanonicalThemeColor } from '../../../shared/themes/color'
 import {
   APPEARANCE_CONTRAST,
@@ -132,6 +132,10 @@ export function applyAppearance(
     const value = painted[role]
     if (isCanonicalThemeColor(value)) root.style.setProperty(themeColorVariable(role), value)
   }
+  // Only the runtime palette needs the derived green repaired against its own surfaces.
+  // Remove the override when leaving it, so stock and user themes retain their tokens.
+  if (draft === null && theme.id === OMARCHY_THEME_ID) root.style.setProperty('--tt-success', omarchySuccessText(colors, resolved))
+  else root.style.removeProperty('--tt-success')
   const contrast = clampStep(choice.appearanceContrast, APPEARANCE_CONTRAST)
   root.style.setProperty('--theme-contrast-base', `${Math.min(contrast, 100)}%`)
   root.style.setProperty('--theme-contrast-boost', `${Math.max(contrast - 100, 0)}%`)

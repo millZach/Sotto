@@ -41,8 +41,8 @@ export function readableOmarchyMix(from: string, to: string, score: (color: stri
 }
 
 export interface OmarchyTextPair { readonly foreground: ThemeColorRole; readonly surfaces: readonly ThemeColorRole[] }
-const room = ['canvas', 'surface', 'surfaceRaised', 'surfaceOverlay', 'accentSurface', 'sidebarRowSelected'] as const
-const sidebar = ['sidebar', 'sidebarRowSelected', 'sidebarRowHover', 'sidebarControlSurface'] as const
+const room = ['canvas', 'surface', 'surfaceRaised', 'surfaceOverlay', 'accentSurface', 'secondary', 'muted', 'messageSurface', 'codeBackground', 'sidebarRowSelected'] as const
+const sidebar = ['sidebar', 'sidebarRowSelected', 'sidebarRowHover', 'sidebarRowActive', 'sidebarControlSurface'] as const
 /** Every text role, on the surfaces used by the main window and widget. */
 export const OMARCHY_TEXT_PAIRS: readonly OmarchyTextPair[] = [
   { foreground: 'text', surfaces: [...room, ...sidebar] },
@@ -53,7 +53,7 @@ export const OMARCHY_TEXT_PAIRS: readonly OmarchyTextPair[] = [
   { foreground: 'textMuted', surfaces: room },
   { foreground: 'mutedForeground', surfaces: [...room, ...sidebar] },
   { foreground: 'sidebarMutedForeground', surfaces: sidebar },
-  { foreground: 'placeholder', surfaces: room },
+  { foreground: 'placeholder', surfaces: [...room, ...sidebar] },
   { foreground: 'secondaryLabel', surfaces: room },
   { foreground: 'iconMuted', surfaces: room },
   { foreground: 'secondaryForeground', surfaces: ['secondary'] },
@@ -63,12 +63,25 @@ export const OMARCHY_TEXT_PAIRS: readonly OmarchyTextPair[] = [
   { foreground: 'updateForeground', surfaces: [...room, ...sidebar, 'updateSurface'] },
   { foreground: 'errorForeground', surfaces: [...room, ...sidebar, 'errorSurface'] },
   { foreground: 'warningForeground', surfaces: [...room, ...sidebar, 'warningSurface'] },
+  { foreground: 'messageActionHover', surfaces: ['surface', 'sidebar', 'sidebarRowSelected', 'accentSurface'] },
 ]
 
 function meansStatus(kind: 'error' | 'warning', color: string): boolean {
   const { C, h: rawHue } = parseThemeColor(color)!.color
   const hue = (rawHue + 360) % 360
   return C >= 0.07 && (kind === 'error' ? hue <= 45 || hue >= 345 : hue >= 45 && hue <= 105)
+}
+
+/** The derived green is text in Tools, Changes and setup, as well as a finished ring. */
+export function omarchySuccessText(colors: ThemeColors, mode: ThemeAppearance): string {
+  const original = mode === 'dark' ? 'oklch(0.79 0.13 165)' : 'oklch(0.5 0.11 158)'
+  const score = (color: string): number => Math.min(
+    ...[...room, ...sidebar].map(surface => ratio(color, colors[surface])),
+    ratio(color, mix(colors.codeBackground, color, 12)), // Added lines in Changes.
+  )
+  const needed = readableOmarchyMix(original, colors.text, score)
+  if (needed === null) throw new Error('Omarchy theme cannot be made readable')
+  return mix(original, colors.text, needed)
 }
 
 /** M3's readability check. An impossible palette is refused, so it cannot paint a broken theme. */
@@ -102,6 +115,12 @@ export function guardOmarchyColors(input: ThemeColors, mode: ThemeAppearance): T
   for (const pair of OMARCHY_TEXT_PAIRS.slice(1)) {
     repair(pair.foreground, color => Math.min(...pair.surfaces.map(surface => ratio(color, colors[surface]))))
   }
+  // Changes paints text over translucent add/remove fills on codeBackground.
+  const added = mix(colors.codeBackground, omarchySuccessText(colors, mode), 12)
+  const removed = (): string => mix(colors.codeBackground, colors.errorForeground, 12)
+  repair('errorForeground', color => ratio(color, mix(colors.codeBackground, color, 12)))
+  repair('mutedForeground', color => Math.min(ratio(color, added), ratio(color, removed())))
+  repair('codeForeground', color => Math.min(ratio(color, added), ratio(color, removed())))
   repair('focus', color => Math.min(...['canvas', 'surface'].map(surface => ratio(color, colors[surface as ThemeColorRole]))), 3)
   // Verify the final roles as well: repairing the text can change subsequent targets.
   for (const pair of OMARCHY_TEXT_PAIRS) {
