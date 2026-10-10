@@ -9,7 +9,7 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "postinstall": "node scripts/node-pty-spawn-helper.mjs",
-    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.tests.json",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.tests.json && tsc --noEmit -p tsconfig.tests.node.json",
     "lint": "eslint .",
     "test": "vitest run",
     "test:recovery": "vitest run tests/integration/workspaceControl.test.ts tests/integration/workspaceHistoryRetry.test.ts tests/unit/main/workspacePaneActivity.test.ts tests/unit/main/threadNavigationDelivery.test.ts tests/unit/renderer/features/dictation/dictationLifecycle.test.ts tests/unit/renderer/features/dictation/dictationOutput.test.ts tests/unit/renderer/features/dictation/dictationPrewarm.test.ts tests/unit/renderer/features/dictation/dictationRecovery.test.ts tests/unit/renderer/appFrame.test.tsx tests/unit/renderer/appRecovery.test.tsx tests/unit/renderer/appAppearance.test.tsx tests/unit/renderer/appUpdates.test.tsx tests/unit/renderer/appOnboarding.test.tsx tests/unit/renderer/appPrewarm.test.tsx tests/unit/main/outputService.test.ts --maxWorkers=2 && npm run build && playwright test tests/e2e/dictation-recovery.spec.ts tests/e2e/command-receipt.spec.ts tests/e2e/queued-steering.spec.ts --workers=1",
