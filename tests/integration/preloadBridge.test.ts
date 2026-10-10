@@ -1,3 +1,5 @@
+import { registerAgentIpc } from '../../src/main/agents/ipc'
+import { MICROPHONE_ENSURE_ACCESS, TRANSCRIPT_POLISH, TRANSCRIPTION_CANCEL, TRANSCRIPTION_CHECK_KEY, TRANSCRIPTION_TRANSCRIBE } from '../../src/shared/channels'
 // @vitest-environment node
 import type { preloadElectron } from '../fixtures/preloadElectron'
 import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
@@ -192,14 +194,13 @@ describe('typed preload bridge', () => {
       expect(Object.isFrozen(surface)).toBe(true)
     }
     expect(Object.keys(bridge.memory!).sort()).toEqual(['command', 'get', 'onChanged'])
-    expect(Object.keys(bridge.agents!).sort()).toEqual(['attachmentContent', 'attachmentPreview', 'cancelSpeech', 'chooseProjectDirectory', 'command', 'detectWake', 'get', 'gitChangedFiles', 'gitPullRequest', 'gitRefs', 'grokVoices', 'hostFolders', 'onState', 'onThreadDetail', 'prepareWake', 'releaseWake', 'stageAttachment', 'synthesizeSpeech', 'threadDetail', 'voiceModel', 'workingCopyOptions'])
+    expect(Object.keys(bridge.agents!).sort()).toEqual(['attachmentContent', 'attachmentPreview', 'chooseProjectDirectory', 'command', 'get', 'gitChangedFiles', 'gitPullRequest', 'gitRefs', 'hostFolders', 'onState', 'onThreadDetail', 'stageAttachment', 'threadDetail', 'workingCopyOptions'])
   })
 
   it('creates a frozen widget surface without private settings, dictation history, or audio processing', async () => {
     const bridge = createSottoWidgetBridge(electronMock.ipcRenderer, 'win32')
     expect(Object.keys(bridge).sort()).toEqual(
       [
-        'agents',
         'onWidgetState',
         'onWidgetVisibilityChange',
         'platform',
@@ -217,8 +218,8 @@ describe('typed preload bridge', () => {
     expect(bridge).not.toHaveProperty('requestDictation')
     expect(bridge).not.toHaveProperty('deliverOutput')
     expect(Object.isFrozen(bridge)).toBe(true)
-    expect(Object.isFrozen(bridge.agents)).toBe(true)
-    expect(Object.keys(bridge.agents!).sort()).toEqual(['attachmentContent', 'attachmentPreview', 'command', 'get', 'onState', 'stageAttachment'])
+    expect(bridge).not.toHaveProperty('agents')
+    expect(electronMock.ipcRenderer.on.mock.calls.map(([channel]) => channel)).not.toContain('sotto:agents:state')
 
     electronMock.ipcRenderer.invoke
       .mockResolvedValueOnce({ ok: true })
@@ -302,6 +303,8 @@ describe('typed preload bridge', () => {
       { presentation: 'active', generation: -1 },
       { presentation: 'active', generation: 1.5 },
       { presentation: 'active', generation: 4, extra: true },
+      { presentation: 'pill-controls', generation: 4 },
+      { presentation: 'threads-expanded', generation: 4 },
     ]) {
       await expect(bridge.setPresentation(payload)).rejects.toThrow()
     }
@@ -624,3 +627,19 @@ describe('typed preload bridge', () => {
   })
 
 })
+
+it('leaves retired voice channels unregistered while keeping dictation IPC available', async () => {
+    const harness = createIpcHarness()
+    const removeAgents = registerAgentIpc(harness.ipc, {
+      get: vi.fn(), shell: vi.fn(), threadDetail: () => null, attachmentPreview: () => null,
+    }, { command: vi.fn() }, () => [{ role: 'main', webContents: harness.trustedContents, url: harness.trustedUrl }], { encodeReceipt: vi.fn() })
+    try {
+      for (const channel of ['sotto:agents:speech', 'sotto:agents:speech-cancel', 'sotto:agents:grok-voices', 'sotto:agents:voice-model', 'sotto:agents:wake']) {
+        expect(harness.ipc.handlers.has(channel)).toBe(false)
+        await expect(harness.ipc.invoke(channel)).rejects.toThrow(`missing handler: ${channel}`)
+      }
+      for (const channel of [DICTATION_REQUEST, TRANSCRIPTION_TRANSCRIBE, TRANSCRIPTION_CANCEL, TRANSCRIPTION_CHECK_KEY, MICROPHONE_ENSURE_ACCESS, TRANSCRIPT_POLISH, OUTPUT_DELIVER, WIDGET_PUBLISH, WIDGET_PRESENTATION, WIDGET_DRAG]) {
+        expect(harness.ipc.handlers.has(channel)).toBe(true)
+      }
+    } finally { removeAgents(); harness.cleanup() }
+  })

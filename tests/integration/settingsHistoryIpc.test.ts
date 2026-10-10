@@ -140,38 +140,40 @@ describe('IPC validation and lifecycle', () => {
     })
 
   it('validates a settings patch before persistence and strips no fields silently', async () => {
-      const { ipc, settings } = createIpcHarness()
+    const { ipc, settings } = createIpcHarness()
 
-      await expect(ipc.invoke(SETTINGS_UPDATE, { theme: 'dark', autoPaste: false })).resolves.toEqual({
-        ...DEFAULT_SETTINGS,
-        theme: 'dark',
-        autoPaste: false,
-      })
-      expect(settings.update).toHaveBeenCalledWith({ theme: 'dark', autoPaste: false })
-
-      // Every patchable settings field must survive the allow-list transform:
-      // a field missing from the IPC key list would be dropped silently and its
-      // Settings control would snap back on save.
-      const fullPatch: Record<string, unknown> = { ...DEFAULT_SETTINGS }
-      delete fullPatch['hotkey']
-      delete fullPatch['launchAtStartup']
-      // A headless host's own setting: its administrative route writes it, and nothing on a desktop sets it (ADR-0053).
-      delete fullPatch['tailnetConnections']
-      await ipc.invoke(SETTINGS_UPDATE, fullPatch)
-      expect(settings.update).toHaveBeenLastCalledWith(fullPatch)
-
-      await expect(ipc.invoke(SETTINGS_UPDATE, { theme: 'ultraviolet' })).rejects.toThrow(
-        'Invalid IPC payload',
-      )
-      // The OpenRouter writing model is gone (ADR-0026): nothing may set it, so nothing can bring it back.
-      await expect(ipc.invoke(SETTINGS_UPDATE, { writingModel: 'anthropic/claude-haiku-4.5' })).rejects.toThrow(
-        'Invalid IPC payload',
-      )
-      await expect(
-        ipc.invoke(SETTINGS_UPDATE, { theme: 'dark', injectedChannel: 'app:quit' }),
-      ).rejects.toThrow('Invalid IPC payload')
-      expect(settings.update).toHaveBeenCalledTimes(2)
+    await expect(ipc.invoke(SETTINGS_UPDATE, { theme: 'dark', autoPaste: false })).resolves.toEqual({
+      ...DEFAULT_SETTINGS,
+      theme: 'dark',
+      autoPaste: false,
     })
+    expect(settings.update).toHaveBeenCalledWith({ theme: 'dark', autoPaste: false })
+
+    // Every patchable settings field must survive the allow-list transform:
+    // a field missing from the IPC key list would be dropped silently and its
+    // Settings control would snap back on save.
+    const fullPatch: Record<string, unknown> = { ...DEFAULT_SETTINGS }
+    delete fullPatch['hotkey']
+    delete fullPatch['launchAtStartup']
+    // A headless host's own setting: its administrative route writes it, and nothing on a desktop sets it (ADR-0053).
+    delete fullPatch['tailnetConnections']
+    await ipc.invoke(SETTINGS_UPDATE, fullPatch)
+    expect(settings.update).toHaveBeenLastCalledWith(fullPatch)
+    await expect(ipc.invoke(SETTINGS_UPDATE, { voiceCoordinatorEnabled: true, microphoneId: 'rejected-microphone' })).rejects.toThrow('Invalid IPC payload')
+    expect(settings.update).toHaveBeenLastCalledWith(fullPatch)
+
+    await expect(ipc.invoke(SETTINGS_UPDATE, { theme: 'ultraviolet' })).rejects.toThrow(
+      'Invalid IPC payload',
+    )
+    // The OpenRouter writing model is gone (ADR-0026): nothing may set it, so nothing can bring it back.
+    await expect(ipc.invoke(SETTINGS_UPDATE, { writingModel: 'anthropic/claude-haiku-4.5' })).rejects.toThrow(
+      'Invalid IPC payload',
+    )
+    await expect(
+      ipc.invoke(SETTINGS_UPDATE, { theme: 'dark', injectedChannel: 'app:quit' }),
+    ).rejects.toThrow('Invalid IPC payload')
+    expect(settings.update).toHaveBeenCalledTimes(2)
+  })
 
   it('persists an explicit Sotto browser preference through settings IPC', async () => {
       const { ipc, settings } = createIpcHarness()

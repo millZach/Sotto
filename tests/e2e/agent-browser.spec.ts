@@ -37,7 +37,7 @@ test('agents and users share the real browser page, permissions, feedback and vi
     await page.evaluate(async () => {
       // This test proves the one-time permission cards, so it turns the ADR-0029 default off before the first open.
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', browserWithoutAsking: false })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload(); await resize(launched, 1280, 800); await openThreads(page)
@@ -199,7 +199,7 @@ test('a thread uses the browser without asking by default, the user can stop or 
     await page.evaluate(async () => {
       // ADR-0029: this profile keeps the default, Let agents use the browser without asking, on.
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload(); await resize(launched, 1280, 800); await openThreads(page)
@@ -385,7 +385,7 @@ test('under the default grant every page in the thread is shared: one the user o
     await page.evaluate(async () => {
       // ADR-0029: this profile keeps the default, Let agents use the browser without asking, on.
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload(); await resize(launched, 1280, 800); await openThreads(page)

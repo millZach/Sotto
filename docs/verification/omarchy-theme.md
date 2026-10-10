@@ -1,6 +1,6 @@
 # Sotto follows the Omarchy theme — forge verification
 
-October 9, 2026. Ticket [#840](https://github.com/millZach/Sotto/issues/840), approved prototype M3, ADR-0068. Branch `feat/omarchy-theme`, originally based on `1312da73`; main through `66793b8c` was merged in `a851277c` after #901 reported MERGED.
+October 9, 2026. Ticket [#840](https://github.com/millZach/Sotto/issues/840), approved prototype M3, ADR-0069. Branch `feat/omarchy-theme`, originally based on `1312da73`; main through `738ba1fd` (#880 and #898) is merged by this update. Omarchy is now ADR-0069 because main owns ADR-0068 for voice removal. The earlier gate and capture details below will be replaced after verifying the merged source.
 
 ## Surface and isolation
 
@@ -59,7 +59,7 @@ Commands use Node 24.21.0 through mise, in the owned nested sandbox with an isol
 | Build external-dependency allowlist | `allowlist check: PASS` (`node-pty`, `zod`, `electron`), repeated immediately before push |
 | Nested Omarchy Playwright journey, one worker | PASS, 1 test |
 
-[#901](https://github.com/millZach/Sotto/pull/901) owns the composer ADR’s number. After `gh pr view 901 -R millZach/Sotto --json state` reported MERGED, `a851277c` merged `origin/main` (`66793b8c`) with a merge commit. The composer decision is now ADR-0067 and the uniqueness check passes. Omarchy remains ADR-0068. The separate `b71e3199` gate repair still makes test-owned Tiptap editors close before jsdom does; it changes no runtime behaviour.
+[#901](https://github.com/millZach/Sotto/pull/901) owns the composer ADR’s number. After `gh pr view 901 -R millZach/Sotto --json state` reported MERGED, `a851277c` merged `origin/main` (`66793b8c`) with a merge commit. The composer decision is now ADR-0067 and the uniqueness check passes. Omarchy remains ADR-0069. The separate `b71e3199` gate repair still makes test-owned Tiptap editors close before jsdom does; it changes no runtime behaviour.
 
 ## Review fixes
 
@@ -74,12 +74,6 @@ Commands use Node 24.21.0 through mise, in the owned nested sandbox with an isol
 | 1. Main | `a851277c`: merge main after #901’s merge. |
 
 Standards and issue review found no remaining in-scope findings. Built-in palettes, Windows/macOS token definitions, packaging and design baselines remain unchanged. No host, permission authority or runtime dependency was added.
-
-## Voice-wake comparison
-
-The same design capture case (`design-capture-voice-widget.spec.ts`, “orb and session states follow the voice and permission journeys”) ran on a clean detached `origin/main` checkout at `1312da73`, before #901 merged. It had its own `npm ci`, Electron install, runtime preparation and build (main SHA-256 `734ed9ff5c4cef8d655e0de1ca7f800c212f13cc5446a16f0a3341a226097a85`). It used the owned nested compositor and isolated HOME, with Wayland and the disposable basic password store. No tracked source was changed.
-
-[Clean-main voice wake](../../artifacts/omarchy-theme/voice-wake-main.png) shows the teal mesh orb. **The blank orb did not reproduce on clean main in this run.** The case failed the Windows-baseline comparison because the nested Linux image was 1092×742 rather than the baseline’s dimensions; that failure is separate from the orb being visibly rendered. This observation cannot classify the earlier blank frame as a confirmed existing Linux defect or a theme regression. No voice rendering change was made. The temporary `.worktrees/voice-wake-main` checkout was removed afterwards.
 
 ## Review
 
@@ -123,7 +117,7 @@ Paths are relative to the repository root.
 | `tests/unit/renderer/omarchyTheme.test.tsx` | Gallery, names, waiting state, keyboard and unchanged non-Linux imports. |
 | `tests/e2e/omarchy-theme.spec.ts` | Isolated real rendering, live main/widget repaint and PNG measurements. |
 | `tests/unit/renderer/nativeSkills.test.tsx` | Destroy test editors before the DOM closes. |
-| `docs/adr/0068-sotto-follows-the-omarchy-theme.md` | Mapping, readability, Linux default and ADR-number audit. |
+| `docs/adr/0069-sotto-follows-the-omarchy-theme.md` | Mapping, readability, Linux default and ADR-number audit. |
 | `docs/adr/0024-sotto-ships-its-own-palettes-in-light-and-dark-columns.md` | Record the Linux gallery addition. |
 | `CONTEXT.md` | Omarchy theme and readability-check terms, default and widget behaviour. |
 | `README.md` | Linux theme overview. |
@@ -131,7 +125,7 @@ Paths are relative to the repository root.
 | `docs/verification/omarchy-theme.md` | This journey, results, file map, evidence and limits. |
 | `.gitignore` | Keep only the named captures and proof; ignore isolated scratch and short TMPDIR. |
 | `eslint.config.mjs` | Exclude the generated evidence folder and short TMPDIR. |
-| `artifacts/omarchy-theme/*.png` | The 28 individually linked theme captures and clean-main voice-wake comparison. |
+| `artifacts/omarchy-theme/*.png` | The 28 individually linked theme captures. |
 | `artifacts/omarchy-theme/proof.json` | Per-capture pixel measurements. |
 
 ## Limits

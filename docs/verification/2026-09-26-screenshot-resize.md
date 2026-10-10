@@ -1,5 +1,7 @@
 # Screenshot resize verification
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 Test citations use the current split files. Recorded counts and outcomes are from the original runs.
 
 September 26, 2026. Issue #321, on `perf/screenshot-resize` from `main` at e093bd6c. The bound, the sources behind it and the byte and timing measurements are in [the performance note](../perf/2026-09-26-screenshot-resize.md).

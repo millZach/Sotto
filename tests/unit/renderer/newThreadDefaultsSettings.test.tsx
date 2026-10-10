@@ -22,7 +22,7 @@ function fixture(configuration: Partial<AgentState['configuration']> = {}): Agen
       ],
       threads: [],
     },
-    topLevel: { assignments: [], queue: [], activeThreadId: null, activeProjectId: null } })
+    topLevel: { activeThreadId: null, activeProjectId: null } })
 }
 function provide(state: AgentState) {
   const command = vi.fn(async (): Promise<AgentState> => state)

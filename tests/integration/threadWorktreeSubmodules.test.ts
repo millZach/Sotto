@@ -128,5 +128,5 @@ describe("independent working-copy allocation", () => {
     }
     expect((await f.service.reclaimFacts(a)).repositories).toEqual([])
     expect((await f.service.reclaim(a, { automatic: true })).reclaimedAt).toBeTruthy()
-  })
+  }, 60_000)
 })

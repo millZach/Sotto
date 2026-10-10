@@ -26,7 +26,7 @@ export async function threadSettingsStack(provider: ProviderId, native: AdapterF
   await command({ type: 'connect', provider })
   const created = await command({ type: 'create-project', provider, title: 'Settings project', path: native.root, useExisting: true })
   const projectId = created.host.projects.find(project => project.path === native.root)!.id
-  const thread = await command({ type: 'create-thread', projectId, title: 'Settings thread', modelId: publicProviderEntityId(provider, 'model', native.modelId), workingCopy: 'shared', managed: false })
+  const thread = await command({ type: 'create-thread', projectId, title: 'Settings thread', modelId: publicProviderEntityId(provider, 'model', native.modelId), workingCopy: 'shared' })
   const threadId = thread.activeThreadId!
   await command({ type: 'observe-threads', threadIds: [threadId] })
   // The native session starts on the first send, so a finished turn leaves a thread with a provider session to reap.

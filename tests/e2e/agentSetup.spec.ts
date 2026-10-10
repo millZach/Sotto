@@ -4,22 +4,20 @@ import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import type { SottoE2EBridge } from '../../src/shared/e2e'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
+import { closeSotto, launchSotto, openThreads } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
-import { closeSotto, enableVoiceCoordinator, launchSotto } from './support/sottoLaunch'
 
 const evidence = evidenceDirectory('artifacts/agent-control-smoke')
 
 test('failed connection leaves one actionable error and allows a successful retry', async () => {
-  // First-run setup's Coding agents step connects the providers it finds, so the Agents room is still disconnected
+  // First-run setup's Coding agents step connects the providers it finds, so Threads is still disconnected
   // only on a profile that finished setup before; this one starts there.
   const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-agent-setup-' })).directory
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true }))
-  await enableVoiceCoordinator(profile)
   const launched = await launchSotto('success', profile)
   const { page } = launched
   try {
-    await page.getByRole('tab', { name: 'Agents', exact: true }).click()
-    await page.getByRole('button', { name: 'Not now', exact: true }).click()
+    await openThreads(page)
     const error = 'Codex could not be found. Install it and sign in, then reconnect.'
     await page.evaluate(async message => {
       await (globalThis as unknown as { sottoE2E: SottoE2EBridge }).sottoE2E.agentEvent?.({ type: 'connect-reject', threadId: '', text: message })

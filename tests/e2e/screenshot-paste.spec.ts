@@ -16,7 +16,7 @@ test('pasting screenshots previews, sends image-only input, and queues another s
   try {
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload(); await openThreads(page)
@@ -57,7 +57,7 @@ test('pasting screenshots previews, sends image-only input, and queues another s
     await expect(queue).toContainText('Check this next.')
     const state = await agentState(page)
     expect(state.followups).toContainEqual(expect.objectContaining({ attachments: [expect.objectContaining({ name: 'Next screenshot.png' })] }))
-    expect(state.assignments).toEqual([])
+    expect(state).not.toHaveProperty('assignments')
     await page.screenshot({ path: join(evidence, 'sent-and-queued.png'), animations: 'disabled' })
   } finally { await closeSotto(launched) }
 })

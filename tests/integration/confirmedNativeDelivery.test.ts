@@ -14,7 +14,7 @@ it.each(['before-read', 'during-read'] as const)('keeps a native-confirmed send 
   const draftId = randomUUID()
   const credentials = await testCredentials(join(f.root, 'vault'), { mode: 'plain' })
   const control = createAgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
-    reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
+    reasoner: {},
   })
   try {
     await f.host.connect()

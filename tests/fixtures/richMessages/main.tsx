@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { AttachmentPreviews, MessageContent, type MessageAttachment } from '../../../src/renderer/src/agents/MessageContent'
 import '../../../src/renderer/src/styles/global.css'
 import '../../../src/renderer/src/agents/threads.css'
+import '../../../src/renderer/src/agents/threadSidebar.css'
 
 declare global {
   interface Window {
@@ -92,8 +93,8 @@ function Fixture() {
       <header className="thread-nav__head"><h1>Threads</h1></header>
       <div className="thread-nav__scroll">
         <p className="thread-nav__label">Unsettled</p>
-        <button type="button" className="thread-nav__item" aria-current="page"><span className="thread-nav__project"><span>sotto-site</span><time>2 min</time></span><span className="thread-nav__title">Footer links</span><span className="thread-nav__status" data-state="working"><i />Working</span></button>
-        <button type="button" className="thread-nav__item"><span className="thread-nav__project"><span>workshop</span><time>12:41 pm</time></span><span className="thread-nav__title">Visual gate flake</span><span className="thread-nav__status">Done</span></button>
+        <button type="button" className="thread-nav__item" aria-current="page"><span className="thread-nav__mark" aria-hidden="true">C</span><span className="thread-nav__title">Footer links</span><time className="thread-nav__time">2 min</time><span className="thread-nav__status" data-state="working"><i />Working</span></button>
+        <button type="button" className="thread-nav__item"><span className="thread-nav__mark" aria-hidden="true">C</span><span className="thread-nav__title">Visual gate flake</span><time className="thread-nav__time">12:41 pm</time><span className="thread-nav__status">Done</span></button>
       </div>
     </aside>
     <section className="thread-workspace" aria-label="Thread workspace">

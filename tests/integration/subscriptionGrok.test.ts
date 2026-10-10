@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { parseProviderRecords } from '../fixtures/providerRecords'
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -55,30 +55,6 @@ rl.createInterface({input:process.stdin}).on('line', line => {
   return { root, nativeHome, client, configure, async calls(): Promise<Call[]> { return parseProviderRecords<Call>(await readFile(log, 'utf8')) } }
 }
 afterEach(async () => { for (const root of roots.splice(0)) { if (dirname(resolve(root)) !== resolve(tmpdir()) || !root.includes('sotto-grok-route-')) throw new Error('Unexpected temporary Grok directory'); await rm(root, { recursive: true, force: true }) } })
-describe('Grok reasoning shutdown', () => {
-  it('cancels a running native prompt, reaps its process and removes its temporary home', async () => {
-    const f = await fixture({ mode: 'timeout' }, 180_000)
-    const shutdown = new AbortController()
-    const result = f.client.complete('Return JSON.', { text: 'Synthetic shutdown prompt' }, '', undefined, shutdown.signal)
-    const rejected = expect(result).rejects.toThrow('Sotto reasoning stopped.')
-    try {
-      let pid = 0
-      await expect.poll(async () => {
-        const calls = await f.calls().catch(() => [])
-        pid = calls.find(call => call.method === 'session/prompt')?.pid ?? 0
-        return pid > 0
-      }).toBe(true)
-      shutdown.abort()
-      await rejected
-      expect(() => process.kill(pid, 0)).toThrow()
-      expect(await readdir(join(f.root, 'isolated'))).toEqual([])
-      const count = (await f.calls()).length
-      await expect(f.client.complete('Return JSON.', {}, '', undefined, shutdown.signal)).rejects.toThrow()
-      expect(await f.calls()).toHaveLength(count)
-    } finally { shutdown.abort(); await result.catch(() => undefined) }
-  })
-})
-
 describe('Grok native subscription client', () => {
   it('discovers native models and effort using only cached authentication and no inference', async () => {
     const f = await fixture()
@@ -108,53 +84,5 @@ describe('Grok native subscription client', () => {
       { id: 'grok-4.6', name: 'Grok 4.6', reasoningEfforts: ['low', 'medium', 'high', 'xhigh'], defaultReasoningEffort: 'high' },
       { id: 'grok-4.5', name: 'Grok 4.5', reasoningEfforts: ['low', 'medium', 'high'], defaultReasoningEffort: 'high' },
     ])
-  })
-  it('uses the discovered native default without requiring an API key or manually entered model', async () => {
-    const f = await fixture()
-    expect(await f.client.complete('Return JSON only.', { text: 'Private prompt $(never-a-shell)' }, '')).toEqual({ type: 'clarify', text: 'Which project?' })
-    const calls = await f.calls()
-    expect(calls.filter(call => call.method === 'session/prompt')).toHaveLength(1)
-    expect(calls.every(call => !call.args.join(' ').includes('Private prompt'))).toBe(true)
-    expect(await readdir(join(f.root, 'isolated'))).toEqual([])
-  })
-
-  it('applies the selected model and effort together and checks native acknowledgement', async () => {
-    const f = await fixture()
-    await f.client.complete('JSON only', {}, 'grok-native-new', 'xhigh')
-    const calls = await f.calls()
-    expect(calls.find(call => call.method === 'session/set_model')?.params).toEqual({ sessionId: 'native-session', modelId: 'grok-native-new', _meta: { reasoningEffort: 'xhigh' } })
-    await f.configure({ wrongEffort: true })
-    await expect(f.client.complete('JSON only', {}, 'grok-native-new', 'low')).rejects.toThrow(/did not confirm.*effort/u)
-    expect((await f.calls()).filter(call => call.method === 'session/prompt')).toHaveLength(1)
-  })
-
-  it('does not send a prompt when the selected model or effort is not available', async () => {
-    const f = await fixture()
-    await expect(f.client.complete('JSON only', {}, 'unknown-model')).rejects.toThrow(/current model|catalog/u)
-    await expect(f.client.complete('JSON only', {}, 'grok-native-fast', 'low')).rejects.toThrow(/does not report.*effort/u)
-    await f.configure({ wrongModel: true })
-    await expect(f.client.complete('JSON only', {}, 'grok-native-fast')).rejects.toThrow(/did not select.*model/u)
-    expect((await f.calls()).some(call => call.method === 'session/prompt')).toBe(false)
-  })
-
-  it('rechecks native cached authentication and never falls back after sign-out', async () => {
-    const f = await fixture({ auth: false })
-    const account = await f.client.status()
-    expect(account).toMatchObject({ installed: true, ready: false, models: [] })
-    expect(JSON.stringify(account)).not.toContain('fixture-private')
-    await expect(f.client.complete('JSON only', {}, '')).rejects.toThrow(/will not switch to API billing/u)
-    expect((await f.calls()).some(call => call.method === 'session/new' || call.method === 'session/prompt')).toBe(false)
-  })
-
-  it.each(['permission', 'tool'] as const)('rejects %s requests and cleans the isolated session', async mode => {
-    const f = await fixture({ mode })
-    await expect(f.client.complete('JSON only', {}, '')).rejects.toThrow(/action.*denied|tool call/u)
-    expect(await readdir(join(f.root, 'isolated'))).toEqual([])
-  })
-
-  it.each(['invalid', 'large', 'timeout'] as const)('bounds %s responses without exposing native output', async mode => {
-    const f = await fixture({ mode }, mode === 'timeout' ? 250 : 3_000)
-    await expect(f.client.complete('JSON only', {}, '')).rejects.toThrow(/valid JSON|size limit|timed out/u)
-    expect(await readdir(join(f.root, 'isolated'))).toEqual([])
   })
 })

@@ -2,12 +2,12 @@
 import { createAgentControl } from '../fixtures/agentControlFixture'
 import { testCredentials } from '../fixtures/testCredentials'
 import { randomUUID } from 'node:crypto'
-import { join } from 'node:path'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 
+import { controls, fixture, skill } from '../fixtures/codexSkillFixture'
 import { immediatePublishScheduler } from '../fixtures/publishScheduler'
-import { fixture, controls, skill } from '../fixtures/codexSkillFixture'
 
 describe("Codex native skills", () => {
 
@@ -61,7 +61,7 @@ describe("Codex native skills", () => {
     const f = await fixture()
     const credentials = await testCredentials(join(f.root, 'vault'), { mode: 'plain' })
     const control = createAgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
-      reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
+      reasoner: {},
     })
     controls.push(control); await control.start(); await control.command({ type: 'connect' })
     const draft = { type: 'save-thread-draft' as const, threadId: f.threadId, draftId: randomUUID(), text: 'Keep my draft' }
@@ -78,7 +78,7 @@ describe("Codex native skills", () => {
     expect(after.skillCatalogs?.[0]?.skills[0]?.path).toBe(join(f.root, 'new', 'SKILL.md'))
     expect(after.threadDrafts).toEqual(before.threadDrafts)
     expect(after.activeThreadId).toBe(before.activeThreadId)
-    expect(after.assignments).toEqual([])
+    expect(after).not.toHaveProperty('assignments')
     expect((await f.driver.requests()).filter(r => r.method === 'turn/start')).toHaveLength(0)
     expect(await readFile(join(f.root, 'agents.json'), 'utf8')).not.toContain('skillCatalogs')
   })

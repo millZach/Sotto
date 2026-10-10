@@ -6,12 +6,6 @@ import { LANELESS_THREAD_COMMAND_TYPES, THREAD_SCOPED_COMMAND_TYPES } from '../.
 import { wrapAgentBridge } from './agentStateCatalogs'
 import { clearShellCache, readShellCache, writeShellCache } from './shellCache'
 import type { AppSettings } from '../../../shared/settings'
-import type { DictationState } from '../../../shared/dictation'
-import { AgentVoiceSession, type AgentVoiceState } from './voiceSession'
-import { createE2EAgentVoiceEffects } from '../e2e/agentVoiceEffects'
-import { createConfiguredSpeech } from './naturalSpeech'
-import { playWakeCue } from './voiceCue'
-import { useAttentionReview, type AttentionReview } from './attentionReview'
 import { createStateSharing } from './stateSharing'
 import { ThreadDraftStore } from './threadDraftStore'
 import { approximateDetailBytes } from './detailCacheSize'
@@ -204,20 +198,18 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     // Send admission and draft saves must reach main in user order, without
     // waiting for an earlier IPC reply. Main still serializes execution and
     // checks busy state, provider locks and authority before dispatch.
-    const speechPreference = request.type === 'configure' && typeof request.patch.speak === 'boolean' && Object.keys(request.patch).length === 1
     const providerOperation = request.type === 'connect' || request.type === 'disconnect' || request.type === 'refresh'
-    const composerOperation = request.type === 'compose' || request.type === 'send' || request.type === 'utterance'
-      && request.text.trim().toLocaleLowerCase().replace(/[.!?,]+$/u, '').trim() === 'send it'
+    const composerOperation = request.type === 'compose' || request.type === 'send'
     // A command main runs in one thread's own lane goes straight to main: waiting here for another
     // thread's reply would undo that lane. Main orders a thread's commands in the order they arrive, so
     // sending at once keeps them in user order. A thread's commands that never enter a lane in main (Stop,
     // selection, its saved draft, its follow-up queue and its skills catalog) go at once too, and telling
     // main which panes are open grants nothing, so it does not wait either. What main keeps global
-    // (assignment moves, a new thread, settling or restoring a project, the single composer draft) still
+    // (a new thread, settling or restoring a project, the single composer draft) still
     // waits for the reply before it. Composer saves and Send reach main at once in invocation order;
     // their execution still shares main's global lane, so older saves cannot land after a Send.
     const threadCommand = THREAD_SCOPED_COMMAND_TYPES.has(request.type) || LANELESS_THREAD_COMMAND_TYPES.has(request.type)
-    if (threadCommand || composerOperation || request.type === 'observe-threads' || request.type === 'voice' || request.type === 'voice-state' || speechPreference || providerOperation) return run()
+    if (threadCommand || composerOperation || request.type === 'observe-threads' || providerOperation) return run()
     const operation = session.tail.then(run)
     session.tail = operation
     return operation
@@ -233,8 +225,8 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     // A streamed chunk arrives as two messages: the shell, then the open thread's detail delta. The shell
     // waits out the frame so the detail that follows commits with it; a shell nothing follows commits in
     // the frame it would have painted in anyway, and a second shell inside the frame commits the first —
-    // nothing published is skipped. Hidden windows cannot wait for animation frames: voice controls must
-    // still reach their effects. They and windows without a detail channel commit at once — still as a
+    // nothing published is skipped. Hidden windows cannot wait for animation frames: thread state must
+    // still reach its stores. They and windows without a detail channel commit at once — still as a
     // transition, which is fine: React's scheduler runs on its own timer, not a rAF, so it keeps
     // committing while the window is hidden.
     const flushPendingShell = (): void => { if (active) commitPendingShell() }
@@ -311,11 +303,6 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
 }
 
 interface AgentContextValue extends AgentConnection {
-  readonly attention: AttentionReview
-  readonly voice: AgentVoiceState
-  readonly muteVoice: () => void
-  readonly stopSpeech: () => void
-  readonly retryVoice: () => void
   readonly responseStreaming: AppSettings['responseStreaming']
   /** Whether the browser player opens on its own when an agent opens a page; off leaves the work and Tools > Browser unchanged. */
   readonly showBrowserPreviews: boolean
@@ -323,169 +310,16 @@ interface AgentContextValue extends AgentConnection {
 
 const AgentContext = createContext<AgentContextValue | null>(null)
 
-export function AgentProvider({ children, settings, dictation }: {
+export function AgentProvider({ children, settings }: {
   readonly children: ReactNode
   readonly settings: AppSettings | null
-  readonly dictation: DictationState
 }): ReactNode {
   const agentsBridge = window.sotto?.agents
   const connection = useAgentConnection(agentsBridge && wrapAgentBridge(agentsBridge))
-  const [voice, setVoice] = useState<AgentVoiceState>({ status: 'off' })
-  const voiceRef = useRef<AgentVoiceSession | null>(null)
-  const inputMuted = useRef(false)
-  const voiceRelease = useRef(Promise.resolve())
-  const stopVoiceSession = useCallback((session: AgentVoiceSession) => {
-    // A second stop can finish before the first microphone release. Keep both
-    // promises so the next audio owner waits for the actual input to close.
-    voiceRelease.current = Promise.all([voiceRelease.current, session.stop()]).then(() => undefined)
-    return voiceRelease.current
-  }, [])
-  const settingsRef = useRef(settings)
-  settingsRef.current = settings
-  const stateRef = useRef(connection.state)
-  stateRef.current = connection.state
-  const spoken = useRef<number | null>(null)
-  const voiceAction = useRef<number | null>(null)
-  const stopSpeech = useCallback(() => {
-    if (settingsRef.current?.voiceCoordinatorEnabled !== true) return
-    voiceRef.current?.stopSpeaking()
-    void connection.command({ type: 'voice', action: 'stop-speaking' })
-  }, [connection.command])
-  const attention = useAttentionReview(connection.state, connection.command, stopSpeech)
-
-  useEffect(() => {
-    if (connection.state?.configuration.speak === false) voiceRef.current?.stopSpeaking()
-  }, [connection.state?.configuration.speak])
-
-  useEffect(() => {
-    if (settings?.voiceCoordinatorEnabled !== true || window.sotto?.agents === undefined) {
-      setVoice({ status: 'off' })
-      return
-    }
-    let current = true
-    const agentBridge = window.sotto.agents
-    const speech = createConfiguredSpeech(agentBridge, () => stateRef.current?.configuration)
-    const session = new AgentVoiceSession({
-      transcriptionBridge: window.sotto,
-      wakeDetector: {
-        async load() {
-          if (agentBridge.prepareWake === undefined) throw new Error('Local wake detection is unavailable in this build.')
-          await agentBridge.prepareWake()
-        },
-        async detect(audio) {
-          if (agentBridge.detectWake === undefined) throw new Error('Local wake detection is unavailable in this build.')
-          return agentBridge.detectWake(audio)
-        },
-        dispose() { void agentBridge.releaseWake?.().catch(() => undefined) },
-      },
-      ...(agentBridge.synthesizeSpeech === undefined ? {} : { speechOutput: speech.output }),
-      getSettings: () => {
-        const current = settingsRef.current
-        if (current === null) throw new Error('Speech settings are not ready.')
-        return current
-      },
-      onState: (next) => {
-        if (!current || settingsRef.current?.voiceCoordinatorEnabled !== true) return
-        setVoice(next)
-        void connection.command({ type: 'voice-state', status: next.status, error: next.error ?? null })
-      },
-      onWake: () => {
-        if (settingsRef.current?.soundCues) playWakeCue()
-      },
-      onUtterance: async (text, voiceTiming) => {
-        if (current && settingsRef.current?.voiceCoordinatorEnabled === true) await connection.command({ type: 'utterance', text, ...(voiceTiming ? { voiceTiming } : {}) })
-      },
-      // A long composition must keep accepting speech after the user pauses to think.
-      conversationTimeoutMs: 0,
-    }, window.sottoE2E === undefined ? undefined : createE2EAgentVoiceEffects({
-      async speak(text) {
-        const state = stateRef.current
-        if (state?.configuration.speechProvider === 'kokoro' || (state?.configuration.speechProvider === 'grok' && state.credentials.grokSpeech)) await speech.output.speak(text)
-      },
-      stop() { speech.output.stop() },
-    }))
-    // Restore the input choice before the lifecycle effect can open capture.
-    if (inputMuted.current) void session.setMuted(true)
-    voiceRef.current = session
-    return () => {
-      current = false
-      // Read the actual bit: off hides mute, and a pending microphone release
-      // may not have published a muted status yet (including a spoken mute).
-      inputMuted.current = session.isMuted()
-      // A replacement session waits for the previous microphone to close.
-      void stopVoiceSession(session)
-      session.dispose()
-      speech.dispose()
-      voiceRef.current = null
-    }
-  }, [connection.command, settings?.voiceCoordinatorEnabled, stopVoiceSession])
-
-  // Setup finished without a microphone leaves wake listening off; the threads
-  // themselves stay fully usable by typing. The coordinator is hidden for the
-  // beta, and a hidden coordinator must never open the microphone, so the
-  // wake session also waits on the setting rather than on its own controls.
-  const voiceEnabled = connection.state?.configuration.enabled === true
-    && settings?.voiceCoordinatorEnabled === true
-    && settings?.onboardingComplete === true
-    && settings?.microphoneSkipped !== true
-  const dictationActive = dictation.status === 'requesting-permission'
-    || dictation.status === 'listening' || dictation.status === 'processing'
-  useEffect(() => {
-    const session = voiceRef.current
-    if (session === null) return
-    let current = true
-    void (async () => {
-      await voiceRelease.current
-      if (!current) return
-      await session.setDictationActive(dictationActive)
-      if (!current) return
-      if (voiceEnabled) await session.start()
-      else await stopVoiceSession(session)
-    })()
-    return () => { current = false; void stopVoiceSession(session) }
-  }, [voiceEnabled, dictationActive, settings?.microphoneId, connection.state?.configuration.wakeModelDirectory, connection.state?.configuration.wakeRuntimeDirectory, stopVoiceSession])
-
-  useEffect(() => {
-    const request = connection.state?.voice
-    if (request === undefined) return
-    if (voiceAction.current === null) { voiceAction.current = request.revision; return }
-    if (voiceAction.current === request.revision) return
-    voiceAction.current = request.revision
-    switch (request.action) {
-      case 'mute': void voiceRef.current?.setMuted(true); break
-      case 'unmute': void voiceRef.current?.setMuted(false); break
-      case 'stop-speaking': voiceRef.current?.stopSpeaking(); break
-      case 'sleep': voiceRef.current?.sleep(); break
-    }
-  }, [connection.state?.voice])
-
-  useEffect(() => {
-    const state = connection.state
-    if (state === null) return
-    // Reopening the management window should not replay an old announcement.
-    if (spoken.current === null) { spoken.current = state.speech.id; return }
-    if (spoken.current === state.speech.id) return
-    spoken.current = state.speech.id
-    // A hidden coordinator has no spoken hints, so an announcement is tracked
-    // but never voiced; the identifier still advances so switching voice on
-    // does not replay whatever was current while it was off.
-    if (settingsRef.current?.voiceCoordinatorEnabled !== true) return
-    if (state.speech.preview || (state.configuration.enabled && state.configuration.speak)) {
-      // Selection updates replace narration; they must not accumulate a backlog.
-      voiceRef.current?.stopSpeaking()
-      void voiceRef.current?.speak(state.speech.text)
-    }
-  }, [connection.state])
-
   return <AgentContext.Provider value={{
     ...connection,
     responseStreaming: settings?.responseStreaming ?? 'live',
     showBrowserPreviews: settings?.showBrowserPreviews ?? true,
-    attention,
-    voice,
-    muteVoice: () => { if (settingsRef.current?.voiceCoordinatorEnabled === true) void connection.command({ type: 'voice', action: voiceRef.current?.getState().status === 'muted' ? 'unmute' : 'mute' }) },
-    stopSpeech,
-    retryVoice: () => { void voiceRef.current?.start() },
   }}>{children}</AgentContext.Provider>
 }
 

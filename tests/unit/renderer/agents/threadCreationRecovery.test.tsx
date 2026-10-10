@@ -1,13 +1,13 @@
 import { setPromptText, promptText } from '../helpers/promptEditor'
 import { deferred } from '../../../fixtures/deferred'
-import { NOW, stateFixture, connectionStores, connection, renderThreads } from '../../../fixtures/renderer/threadsViewHarness'
-import React from 'react'
+import { connection, connectionStores, NOW, renderThreads, stateFixture } from '../../../fixtures/renderer/threadsViewHarness'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import React from 'react'
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
-import { type AgentCommand, type AgentState } from '../../../../src/shared/agents'
 import { useAgents } from '../../../../src/renderer/src/agents/AgentContext'
 import { ThreadsView } from '../../../../src/renderer/src/agents/ThreadsView'
 import { draftThreads } from '../../../../src/renderer/src/agents/draftThreads'
+import { type AgentCommand, type AgentState } from '../../../../src/shared/agents'
 import { handleOf } from '../../../fixtures/stagedImages'
 
 describe('a thread created without a round trip', () => {
@@ -28,7 +28,7 @@ describe('a thread created without a round trip', () => {
       return request.type === 'create-thread' ? creating : state
     })
     const observed: string[][] = []
-    const view = (): React.ReactElement => <ThreadsView onOpenAgents={vi.fn()} now={NOW} onPaneThreadsChange={ids => observed.push([...ids])} />
+    const view = (): React.ReactElement => <ThreadsView now={NOW} onPaneThreadsChange={ids => observed.push([...ids])} />
     vi.mocked(useAgents).mockReturnValue(connection(state, command))
     const { rerender } = render(view())
     createThread()
@@ -37,7 +37,7 @@ describe('a thread created without a round trip', () => {
     await waitFor(() => expect(screen.getByRole('heading', { name: 'New thread' })).toBeVisible())
     expect(screen.getByRole('textbox', { name: 'Prompt' })).toBeEnabled()
     const request = await waitFor(() => { const found = createRequest(command); expect(found).toBeDefined(); return found! })
-    expect(request).toMatchObject({ type: 'create-thread', projectId: 'workshop', title: 'New thread', titleSource: 'default', managed: false, threadId: expect.any(String) })
+    expect(request).toMatchObject({ type: 'create-thread', projectId: 'workshop', title: 'New thread', titleSource: 'default', threadId: expect.any(String) })
     const threadId = request.threadId!
     setPromptText(screen.getByRole('textbox', { name: 'Prompt' }), 'Start on the failing test.')
     const arrived: AgentState['host']['threads'][number] = { id: threadId, projectId: 'workshop', title: 'New thread', modelId: 'claude:sonnet',
@@ -107,7 +107,7 @@ describe('a thread created without a round trip', () => {
       const reusedState: AgentState = { ...state, activeThreadId: 'reusable', host: { ...state.host, threads: [...state.host.threads, { ...newThread, id: 'reusable', titleSource: 'default' }] } }
       act(() => store.edit('reusable', { text: 'Already here.' }))
       vi.mocked(useAgents).mockReturnValue(connection(reusedState, command))
-      view.rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+      view.rerender(<ThreadsView now={NOW} />)
     }
     createThread()
     await screen.findByRole('heading', { name: 'New thread' })
@@ -133,7 +133,7 @@ describe('a thread created without a round trip', () => {
     const { promise: creating, resolve: settle } = deferred<AgentState | null>()
     const command = vi.fn(async (...args: unknown[]) => (args[0] as AgentCommand).type === 'create-thread' ? creating : state)
     vi.mocked(useAgents).mockReturnValue(connection(state, command))
-    const { rerender } = render(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    const { rerender } = render(<ThreadsView now={NOW} />)
     createThread()
     await screen.findByRole('heading', { name: 'New thread' })
     const threadId = createRequest(command)!.threadId!
@@ -141,7 +141,7 @@ describe('a thread created without a round trip', () => {
     const published = { ...state, activeThreadId: threadId, host: { ...state.host, threads: [...state.host.threads, arrived] } }
     const connected = connection(published, command)
     vi.mocked(useAgents).mockReturnValue(connected)
-    rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    rerender(<ThreadsView now={NOW} />)
     await waitFor(() => expect(draftThreads.get()).toEqual([]))
     connected.threadDrafts.edit(threadId, { text: 'Already sent to the live thread.' })
     connected.threadDrafts.submit(threadId, NOW)

@@ -1,5 +1,7 @@
 # Ticket 19: remaining voice benchmark
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 Scope confirmed by Zach on September 11: transcription is complete; MAI is selected.
 This investigation covers text-to-speech only. The older ticket and spec language
 requiring Parakeet to remain standard is superseded by that decision and

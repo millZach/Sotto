@@ -58,10 +58,8 @@ async function fixture() {
     detail: threadId => control.threadDetail(threadId), preview: () => null })
 
   const registry = ipcRegistry()
-  const { ipc } = registry
-  const { main } = registry
-  disposables.push(registerAgentIpc(ipc, router, router, () => [main], 'win32', { status: vi.fn(), download: vi.fn() },
-    { synthesize: vi.fn(), voices: vi.fn(), cancel: vi.fn() }, { synthesize: vi.fn(), cancel: vi.fn() }, { voiceCoordinatorEnabled: true, wakeControl: control, encodeReceipt: new AgentStateBroadcaster().encodeReceipt }))
+  const { ipc, main } = registry
+  disposables.push(registerAgentIpc(ipc, router, router, () => [main], { encodeReceipt: new AgentStateBroadcaster().encodeReceipt }))
   const send = (command: AgentCommand) =>
     registry.invoke(AGENT_COMMAND, [command]) as Promise<AgentState>
   return { control, send }
@@ -69,7 +67,6 @@ async function fixture() {
 
 describe('a command reply to the window', () => {
   it.each<[string, (draftId: string) => AgentCommand]>([
-    ['voice', () => ({ type: 'voice', action: 'mute' })],
     ['save-thread-draft', draftId => ({ type: 'save-thread-draft', threadId: 'workshop', draftId, text: 'Keep this draft' })],
     ['select-thread', () => ({ type: 'select-thread', threadId: 'workshop' })],
     ['refresh', () => ({ type: 'refresh' })],

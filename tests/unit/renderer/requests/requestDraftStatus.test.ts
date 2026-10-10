@@ -12,7 +12,6 @@ const draft = (revision = 3, held = true, owner = target): RequestDraft => ({ ta
   selections: { notes: selection('Original answer') } })
 const accepted = (revision = 3): RequestDraftStatus & { status: 'accepted' } => ({ status: 'accepted', revision, decisionId: `attempt-${revision}` })
 
-
 function fixture(initial: RequestDraftStatus = { status: 'draft', draft: draft() }) {
   const values = new Map<string, RequestDraftStatus>([[requestDraftKey(target), initial]])
   const listeners = new Set<(owner: RequestDraftOwner) => void>()

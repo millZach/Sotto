@@ -6,6 +6,7 @@ export default tseslint.config(
     ignores: [
       '.t/**',
       'artifacts/omarchy-theme/**',
+      'artifacts/voice-control-removal/merged-setup/**',
       'artifacts/skill-pill-composer/**',
       'artifacts/omarchy-shell-plugin/**',
       'artifacts/linux-shell-plumbing/**',
@@ -101,7 +102,6 @@ export default tseslint.config(
       'out/**',
       'playwright-report/**',
       'release/**',
-      'resources/runtime/*.mjs',
       'test-results/**',
     ],
   },

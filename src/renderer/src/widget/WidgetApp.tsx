@@ -2,15 +2,10 @@ import {
   AlertCircle,
   Check,
   CircleEllipsis,
-  ChevronDown,
-  ChevronUp,
   Mic,
-  MicOff,
   RotateCcw,
   ShieldAlert,
   Square,
-  Volume2,
-  VolumeX,
   X,
 } from 'lucide-react'
 import {
@@ -49,9 +44,6 @@ import { ListeningBars } from '../components/ListeningBars'
 import { SottoMark } from '../components/SottoMark'
 import { platformCopy, type PlatformCopy } from '../platformCopy'
 import { useWidgetDragGesture } from './useWidgetDragGesture'
-import { useAgentConnection, type AgentConnection } from '../agents/AgentContext'
-import { wrapAgentBridge } from '../agents/agentStateCatalogs'
-import { WidgetThreads } from './WidgetThreads'
 
 const IDLE_HOVER_SETTLE_MS = 220
 /** How long after an error appears a click on its × is still taken as aimed at the esc before it. */
@@ -201,7 +193,6 @@ export interface WidgetAppProps {
   readonly onDrag?: (payload: WidgetDragPayload) => void
   readonly dragCancellationVersion?: number
   readonly visibilityGeneration?: number
-  readonly agents?: AgentConnection | undefined
 }
 
 export function formatElapsedTime(startedAt: number, now: number): string {
@@ -309,15 +300,11 @@ function WidgetAction({
   label,
   onClick,
   tone = 'neutral',
-  pressed,
-  expanded,
 }: {
   readonly children: ReactNode
   readonly label: string
   readonly onClick?: (() => void) | undefined
   readonly tone?: 'neutral' | 'stop'
-  readonly pressed?: boolean | undefined
-  readonly expanded?: boolean | undefined
 }): ReactNode {
   return (
     <button
@@ -326,8 +313,6 @@ function WidgetAction({
       data-tone={tone}
       aria-label={label}
       title={label}
-      aria-pressed={pressed}
-      aria-expanded={expanded}
       tabIndex={-1}
       onMouseDown={preventFocus}
       onPointerDown={stopPointerPropagation}
@@ -355,7 +340,6 @@ export function WidgetApp({
   onDrag,
   dragCancellationVersion,
   visibilityGeneration = 0,
-  agents,
 }: WidgetAppProps): ReactNode {
   const isIdle = snapshot.status === 'idle'
   const kept = snapshot.status === 'error' && snapshot.kept === true
@@ -366,16 +350,6 @@ export function WidgetApp({
   // A layout effect runs before the browser can deliver a click on the new ×.
   useLayoutEffect(() => { if (errorKey !== '') errorShownAt.current = Date.now() }, [errorKey])
   const orientation = useWidgetOrientation()
-  // The coordinator is hidden for the beta, and with it every control on the
-  // widget that speaks, listens or hands a thread to Sotto. Dictation is what
-  // remains, so the pill keeps its own stop and cancel affordances.
-  const agentState = snapshot.voiceCoordinator === true && agents?.state?.configuration.enabled ? agents.state : null
-  const dictationUsesMicrophone = snapshot.status === 'listening' || snapshot.status === 'requesting-permission'
-  const microphoneMuted = agentState?.voice.status === 'muted' && !dictationUsesMicrophone
-  const [threadsExpanded, setThreadsExpanded] = useState(false)
-  const showThreads = threadsExpanded && agentState !== null
-  useEffect(() => { setThreadsExpanded(false) }, [dragCancellationVersion])
-  useEffect(() => { if (agentState === null) setThreadsExpanded(false) }, [agentState])
   // Hovering the idle sliver expands it in place into a small pill carrying
   // the click-to-dictate affordance. Native resize/re-centering can briefly
   // synthesize leave/enter events, so collapse waits beyond the CSS transition.
@@ -428,8 +402,8 @@ export function WidgetApp({
     isIdle ? () => setExpanded(false) : undefined,
     dragCancellationVersion,
   )
-  const presentation: WidgetPresentation = showThreads ? 'threads-expanded' : !isIdle
-    ? agentState !== null ? 'pill-controls' : 'active'
+  const presentation: WidgetPresentation = !isIdle
+    ? 'active'
     : expanded || surface.dragging
       ? 'idle-hovered'
       : 'idle-resting'
@@ -438,33 +412,6 @@ export function WidgetApp({
     onPresentationChange?.(presentation)
   }, [onPresentationChange, presentation, visibilityGeneration])
 
-  const agentActions = agentState !== null && agents !== undefined ? (
-    <span className="widget-agent-actions">
-      <WidgetAction label={microphoneMuted ? 'Unmute microphone' : 'Mute microphone'}
-        pressed={microphoneMuted}
-        onClick={() => {
-          if (dictationUsesMicrophone) onCancel?.()
-          void agents.command({ type: 'voice', action: microphoneMuted ? 'unmute' : 'mute' })
-        }}>
-        {microphoneMuted ? <MicOff size={13} /> : <Mic size={13} />}
-      </WidgetAction>
-      <WidgetAction label={agentState.configuration.speak ? 'Mute voice' : 'Unmute voice'}
-        pressed={!agentState.configuration.speak}
-        onClick={() => {
-          void agents.command({ type: 'voice', action: 'stop-speaking' })
-          void agents.command({ type: 'configure', patch: { speak: !agentState.configuration.speak } })
-        }}>
-        {agentState.configuration.speak ? <Volume2 size={13} /> : <VolumeX size={13} />}
-      </WidgetAction>
-      <WidgetAction label={showThreads ? 'Collapse threads' : 'Expand threads'} expanded={showThreads}
-        onClick={() => setThreadsExpanded(!showThreads)}>
-        {showThreads ? <ChevronDown size={13} /> : <ChevronUp size={13} />}
-      </WidgetAction>
-    </span>
-  ) : null
-  const threadPanel = showThreads && agents !== undefined && agentState !== null
-    ? <WidgetThreads state={agentState} command={agents.command} /> : null
-
   if (snapshot.status === 'idle') {
     return (
       <aside
@@ -472,16 +419,13 @@ export function WidgetApp({
         aria-label="Sotto dictation status"
         data-status="idle"
         data-tone="idle"
-        data-orientation={showThreads ? 'horizontal' : orientation}
-        data-threads-expanded={showThreads || undefined}
-        data-agent-controls={agentState !== null || undefined}
+        data-orientation={orientation}
         data-dragging={surface.dragging || undefined}
       >
-        {threadPanel}
         <div
           className="widget-sliver"
           data-testid="widget-sliver"
-          data-expanded={expanded || showThreads || undefined}
+          data-expanded={expanded || undefined}
           tabIndex={-1}
           onMouseEnter={() => {
             hoverInsideRef.current = true
@@ -506,10 +450,9 @@ export function WidgetApp({
               and reveals the click-to-dictate prompt overlaid on it. */}
           <span className="widget-sliver__prompt">
             <span className="widget-sliver__prompt-action">Click to dictate</span>
-            {agentState === null && <span className="widget-sliver__prompt-keys">
+            <span className="widget-sliver__prompt-keys">
               {platform === 'linux' ? 'F9 to talk' : formatAccelerator(snapshot.shortcut, platform, 'display')}
-            </span>}
-            {agentActions}
+            </span>
           </span>
         </div>
       </aside>
@@ -582,12 +525,9 @@ export function WidgetApp({
       aria-label="Sotto dictation status"
       data-status={snapshot.status}
       data-tone={copy.tone}
-      data-orientation={showThreads ? 'horizontal' : orientation}
-      data-threads-expanded={showThreads || undefined}
-      data-agent-controls={agentState !== null || undefined}
+      data-orientation={orientation}
       data-dragging={surface.dragging || undefined}
     >
-      {threadPanel}
       <div
         className="widget-capsule"
         tabIndex={-1}
@@ -616,7 +556,6 @@ export function WidgetApp({
         {stopAction}
         {escAction}
         {dismissAction}
-        {agentActions}
       </div>
     </aside>
   )
@@ -692,11 +631,6 @@ export interface WidgetEntryProps {
 
 export function WidgetEntry({ bridge, preview, platform }: WidgetEntryProps): ReactNode {
   const [liveSnapshot, setLiveSnapshot] = useState<WidgetSnapshot | null>(null)
-  // The widget draws nothing from the agent state while the voice coordinator is gated off, so it holds
-  // no connection either: no shell per streaming frame, no reconciliation, no cache write. Turning the
-  // setting on hands the hook a bridge again, which opens a fresh session and fetches the state whole.
-  const widgetAgentsBridge = preview === null && liveSnapshot?.voiceCoordinator === true ? bridge?.agents : undefined
-  const agents = useAgentConnection(widgetAgentsBridge && wrapAgentBridge(widgetAgentsBridge))
   const snapshot = preview ?? liveSnapshot
   const [now, setNow] = useState(() => (preview === null ? Date.now() : PREVIEW_NOW))
   const [dragCancellationVersion, setDragCancellationVersion] = useState(0)
@@ -761,7 +695,6 @@ export function WidgetEntry({ bridge, preview, platform }: WidgetEntryProps): Re
       <WidgetAnnouncements snapshot={snapshot} platform={platform} />
       {snapshot === null ? null : (
         <WidgetApp
-          agents={agents}
           snapshot={snapshot}
           platform={platform}
           now={now}

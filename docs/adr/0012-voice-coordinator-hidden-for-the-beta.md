@@ -1,5 +1,7 @@
 # The voice coordinator is hidden for the beta
 
+Superseded October 8, 2026 by [ADR-0068](0068-remove-voice-control-and-thread-management.md). The decision below records the earlier beta gate; voice control and thread management are being removed.
+
 Amended October 6, 2026: standalone Chats was retired under ADR-0010. References below to personal chats, their provider connections and their voice or memory paths describe historical behavior; those paths are removed. Thread behavior and the remaining beta gates continue as described.
 
 Accepted September 18, 2026 for the Threads page redesign. The beta ships the threads and terminals the user works in every day, and it ships dictation, which is what Sotto is known for. It does not ship the voice coordinator: "Hey Sotto", the Agents room it answers in, the spoken hints and the management it offers to run a thread on the user's behalf. Wake detection depends on a phonetic model whose distribution licence is unresolved, spoken supervision is the least finished part of the product, and a control that cannot be relied on is worse than a control that is not there.

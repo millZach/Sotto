@@ -228,7 +228,7 @@ export function useDesktopHostFixture() {
     const state = await router.command({ type: 'create-project', provider: 'codex', title: 'Remote', path: root, useExisting: true }, client)
     const project = state.host.projects.find(item => item.path === root)!
     const threadId = randomUUID()
-    await router.command({ type: 'create-thread', projectId: project.id, threadId, title: 'Remote task', modelId: state.host.models[0]!.id, managed: false, workingCopy: 'shared' }, client)
+    await router.command({ type: 'create-thread', projectId: project.id, threadId, title: 'Remote task', modelId: state.host.models[0]!.id, workingCopy: 'shared' }, client)
     const qualified = hostEntityKey(reportedHostId, threadId)
     await router.command({ type: 'select-thread', threadId: qualified }, client)
     return qualified

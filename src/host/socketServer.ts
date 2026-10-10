@@ -14,6 +14,7 @@ import { isAgentThreadDetailDelta } from '../shared/agentThreadDetail'
 import { resolveModel } from '../shared/modelCatalog'
 import { version as packageVersion } from '../../package.json'
 import { REMOTE_PERMISSION_DENIED } from '../main/agents/authority'
+import { commandFromProtocolV1, managementCommandRefusal } from '../shared/hostProtocol'
 import { REMOTE_SIGN_IN_OPERATIONS, remoteCommandRefusal } from './remoteCommands'
 import { ProviderSignInRefusal, type ProviderSignIns } from './providerSignIn'
 import { SocketFrames } from './socketFrames'
@@ -400,7 +401,8 @@ export async function startSocketServer(options: SocketServerOptions) {
       if (previous.receipt.error) throw new Refusal(previous.receipt.error.code)
       return shell(peer)
     }
-    const input = request.command
+    if (managementCommandRefusal(request.command)) throw new Refusal('forbidden')
+    const input = commandFromProtocolV1(request.command)
     if ((input.type === 'send' && input.draft || input.type === 'compose' && input.threadId !== undefined)
       && !offers(peer, 'atomic-send')) throw new Refusal('invalid_request')
     if ((input.type === 'compose' && input.draftId !== undefined || input.type === 'send' && input.draft?.draftId !== undefined
@@ -414,7 +416,7 @@ export async function startSocketServer(options: SocketServerOptions) {
       .find(item => item.kind === 'question')
     const draftRequestId = nativeQuestion?.id ?? (state.composing && state.draftThreadId === targetThreadId ? state.draftRequestId
       : savedDraft ? savedDraft.requestId
-        : state.queue.find(item => item.threadId === targetThreadId && item.kind === 'question' && item.requestId)?.requestId)
+        : null)
     // Targeted Compose resolves its binding after earlier admitted saves in the coordinator's lane.
     // The coordinator checks current answer authority before staging that actual binding. Pairing,
     // shape and this peer's exact selected owner are still checked here; Send stays conservative.
@@ -452,7 +454,7 @@ export async function startSocketServer(options: SocketServerOptions) {
             ? await service.command(input, client, answerDecisionId(peer.client.clientId, request.id))
             : await service.command(input, client)
           if (input.type === 'compose' && result.error) peer.editingThreadId = previousEditor
-          if (['pause-draft', 'cancel-draft', 'send'].includes(input.type) && !result.error) peer.editingThreadId = null
+          if (['cancel-draft', 'send'].includes(input.type) && !result.error) peer.editingThreadId = null
           if (input.type === 'answer' || input.type === 'send' || input.type === 'save-thread-draft' || input.type === 'compose' && input.threadId !== undefined) privateError = result.error
           if (input.type === 'answer' || input.type === 'send' && draftRequestId) {
             receipt.answerDelivered = result.error == null

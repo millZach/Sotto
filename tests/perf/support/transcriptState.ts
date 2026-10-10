@@ -7,10 +7,10 @@ export function stateAround(host: AgentHostSnapshot, activeThreadId: string): Ag
     configuration: defaultAgentConfiguration(),
     host,
     topLevel: {
-      connection: 'connected', assignments: [], queue: [], activeThreadId, activeProjectId: host.threads.find(thread => thread.id === activeThreadId)?.projectId ?? host.projects[0]?.id ?? null,
+      connection: 'connected', activeThreadId, activeProjectId: host.threads.find(thread => thread.id === activeThreadId)?.projectId ?? host.projects[0]?.id ?? null,
       draft: '', draftThreadId: null, composing: false, draftRequestId: null, draftAttachments: [], deliveredDrafts: [],
-      threadDrafts: [], deliveries: [], pendingRequest: '', globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' },
-      voice: { status: 'off', error: null, action: 'none', revision: 0 }, credentials: { reasoning: false, grokSpeech: false, secure: true },
+      threadDrafts: [], deliveries: [], globalLaneBusy: false, notice: '', error: null,
+      credentials: { reasoning: false, secure: true },
       reasoningAccounts: [],
     },
   })

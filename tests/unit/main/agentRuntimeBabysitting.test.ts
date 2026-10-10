@@ -35,7 +35,7 @@ async function runtime(agentTool: boolean, root?: string, host = new E2EAgentHos
 
   return createAgentRuntime({
     directory: root, credentials, settings: () => DEFAULT_SETTINGS, writingSettings: async () => DEFAULT_SETTINGS,
-    historyEnabled: () => true, coordinatorEnabled: () => false, openExternal: async () => undefined, host, reasoner: e2eAgentReasoner,
+    historyEnabled: () => true, openExternal: async () => undefined, host, reasoner: e2eAgentReasoner,
     gitStatus: { fetchIntervalMs: () => 3_600_000, foreground: () => false },
     babysitting: { agentTool: () => agentTool, run },
   })

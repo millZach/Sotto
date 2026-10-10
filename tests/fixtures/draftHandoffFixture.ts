@@ -24,9 +24,9 @@ export async function draftHandoffFixture(bindRequestDraftDecision?: BindRequest
   const credentials = await testCredentials(root, { mode: 'unavailable' })
   let history = true
   const create = () => createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, ...(bindRequestDraftDecision ? { bindRequestDraftDecision } : {}), ...(authority ? { authority } : {}), historyEnabled: () => history,
-    reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
+    reasoner: {},
   })
-  let control = create(); await control.start(); await stageInto(control, PIXEL_PNG); await control.command({ type: 'connect' })
+  let control = create(); await control.start(); await stageInto(control, PIXEL_PNG); await control.command({ type: 'connect' }); await control.command({ type: 'select-thread', threadId: 'workshop' })
   const stores: ThreadDraftStore[] = []; const off: (() => void)[] = []; const pending = new Map<Promise<unknown>, AgentCommand>()
   const command = (request: AgentCommand) => control.command(agentCommandSchema.parse(request))
   return { root, host, attempts, command, get control() { return control },

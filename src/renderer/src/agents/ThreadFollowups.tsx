@@ -249,7 +249,6 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
   const paused = visible.filter(item => item.status === 'paused')
   const queuePaused = paused.length > 0 && !visible.some(item => item.status === 'queued')
   const pauseNote = queuePaused && paused.every(item => item.error === paused[0]!.error) ? paused[0]!.error : undefined
-  const managed = row.assignment?.mode === 'managed' && !isThreadClosed(row.thread)
   const tool = (itemId: string, name: string): HTMLElement | null | undefined =>
     section.current?.querySelector<HTMLElement>(`[data-followup="${itemId}"] [data-tool="${name}"]`)
   const toggle = (): HTMLElement | null | undefined => section.current?.querySelector<HTMLElement>('.thread-followups__toggle')
@@ -296,10 +295,6 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
   const listedAdmissions = expanded ? admissions : admissions.filter(item => submissionStatus(item, state).status === 'failed')
   const next = visible[0] ? itemWords(visible[0]) : admissions[0]?.text
   const added = arrival !== null && visible.some(item => item.id === arrival.id) ? arrival : null
-  // Collapsed without a pause to explain, the managed hold is the head's state instead of a line of its own.
-  const heldChip = managed && !expanded && !queuePaused
-  const notes = [pauseNote, managed && !heldChip ? 'Waits while Sotto manages this thread.' : undefined].filter(Boolean).join(' ')
-
   return <section ref={section} className="thread-followups" aria-label="Queued messages" data-expanded={expanded || undefined}>
     <div ref={measureTop} className="thread-followups__top">
     <header className="thread-followups__head">
@@ -311,7 +306,6 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
           : !expanded && next ? <span className="thread-followups__next"><span className="thread-followups__next-label">Next</span>{next}</span> : null}
       </button>
       {queuePaused ? <span className="thread-followup__state" data-status="paused"><i aria-hidden="true" />Paused</span>
-        : heldChip ? <span className="thread-followup__state" data-status="held">Waiting for Sotto</span>
         : !expanded && admissions.some(item => !item.resolved) ? <span className="thread-followup__state" role="status">Queuing…</span>
           : !expanded && visible.some(item => item.status === 'dispatching') ? <span className="thread-followup__state" data-status="dispatching"><i aria-hidden="true" />Sending</span> : null}
       {resumable ? <Button variant="secondary" disabled={!row.connected} onClick={() => {
@@ -326,7 +320,7 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
       }}>Resume queue</Button> : null}
     </header>
     <span className="tt-visually-hidden" role="status">{added ? `Queued: ${added.text}` : ''}</span>
-    {notes ? <p className="thread-followups__note">{notes}</p> : null}
+    {pauseNote ? <p className="thread-followups__note">{pauseNote}</p> : null}
     {queueError ? <p className="thread-followups__error" role="alert">{queueError}</p> : null}
     </div>
     {listed.length > 0 || listedAdmissions.length > 0 ? <ol id={listId} className="thread-followups__list">

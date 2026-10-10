@@ -39,10 +39,10 @@ function stateAround(host: AgentHostSnapshot): AgentState {
     configuration: defaultAgentConfiguration(),
     host,
     topLevel: {
-      connection: 'connected', assignments: [], queue: [], activeThreadId: host.threads[0]?.id ?? null, activeProjectId: host.projects[0]?.id ?? null,
+      connection: 'connected', activeThreadId: host.threads[0]?.id ?? null, activeProjectId: host.projects[0]?.id ?? null,
       draft: '', draftThreadId: null, composing: false, draftRequestId: null, draftAttachments: [], deliveredDrafts: [],
-      threadDrafts: [], deliveries: [], pendingRequest: '', globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' },
-      voice: { status: 'off', error: null, action: 'none', revision: 0 }, credentials: { reasoning: false, grokSpeech: false, secure: true },
+      threadDrafts: [], deliveries: [], globalLaneBusy: false, notice: '', error: null,
+      credentials: { reasoning: false, secure: true },
       reasoningAccounts: [],
     },
   })

@@ -80,38 +80,6 @@ export class GrokSubscriptionClient implements SubscriptionClient {
     } catch { return account }
   }
 
-  async complete(system: string, input: unknown, model: string, effort?: string, signal?: AbortSignal): Promise<unknown> {
-    signal?.throwIfAborted()
-    if ((model && !IDENTIFIER.safeParse(model).success) || (effort && !EFFORT.safeParse(effort).success)) throw new Error('Choose a valid Grok model and reasoning effort.')
-    let prompt: string
-    try { prompt = JSON.stringify(input) } catch { throw new Error('Grok reasoning needs a JSON-compatible request.') }
-    if (!prompt || Buffer.byteLength(prompt) > 1_000_000 || system.length > 30_000) throw new Error('The Grok reasoning request is too large or invalid.')
-    const executable = await this.findExecutable()
-    if (!executable) throw new Error('Install Grok CLI and sign in with your Grok subscription first.')
-    return this.withSession(executable, this.options.completionTimeoutMs ?? 180_000, async (rpc, directory) => {
-      const session = await this.initialize(rpc, directory, system)
-      const account = this.account(session)
-      const selectedModel = model || account.defaultModelId!
-      const selected = account.models.find(candidate => candidate.id === selectedModel)
-      if (!selected) throw new Error('Grok does not report this model in its subscription catalog. Check the connection and choose an available model.')
-      if (effort && !selected.reasoningEfforts?.includes(effort)) throw new Error('Grok does not report that reasoning effort for this model. Choose a supported effort or use the native default.')
-      rpc.sessionId = session.sessionId
-      // Grok 1.0.5 session/new ignores agent --model. Its native ACP model
-      // request applies model and effort together and publishes their exact values.
-      const selectedResult = await rpc.request('session/set_model', { sessionId: session.sessionId, modelId: selectedModel, ...(effort ? { _meta: { reasoningEffort: effort } } : {}) })
-      if (!z.object({ _meta: z.object({ model: z.object({ Ok: z.literal(selectedModel) }) }) }).safeParse(selectedResult).success) throw new Error('Grok did not select the requested model. Check the connection and try again.')
-      await rpc.confirmSelection(selectedModel, effort)
-      const result = await rpc.request('session/prompt', { sessionId: session.sessionId, prompt: [{ type: 'text', text: prompt }] })
-      if (!result || typeof result !== 'object' || (result as { stopReason?: string }).stopReason !== 'end_turn') throw new Error('Grok did not finish its reasoning response. Check its subscription and usage limits, then try again.')
-      // Grok may deliver trailing response chunks just after the turn result.
-      await rpc.drain()
-      try {
-        const value: unknown = JSON.parse(rpc.text.trim().replace(/^```(?:json)?\s*\n([\s\S]*?)\n```$/u, '$1'))
-        if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Expected JSON object')
-        return value
-      } catch { throw new Error('Grok did not return a valid JSON decision. Try again or choose another available Grok model.') }
-    }, signal)
-  }
 
   /**
    * Short text written by the user's own Grok on the thread's model, for Sotto's side writing (ADR-0026).

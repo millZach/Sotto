@@ -20,12 +20,12 @@ test('Codex shows a refused child approval without approving or routing it', asy
     await page.evaluate(async project => {
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
       const agents = window.sotto!.agents!
-      await agents.command({ type: 'configure', patch: { provider: 'codex', enabled: true, enabledProviders: ['codex'], speak: false, checkClientUpdates: false } })
+      await agents.command({ type: 'configure', patch: { provider: 'codex', enabled: true, enabledProviders: ['codex'], checkClientUpdates: false } })
       await agents.command({ type: 'connect', provider: 'codex' })
       const created = await agents.command({ type: 'create-project', provider: 'codex', title: 'Approval notice', path: project, useExisting: true })
       const projectId = created.host.projects.find(p => p.title === 'Approval notice')!.id
       const modelId = (await agents.get()).host.models.find(m => m.providerId === 'codex' && m.ready)!.id
-      const thread = await agents.command({ type: 'create-thread', projectId, title: 'Child approval', titleSource: 'user', modelId, workingCopy: 'shared', managed: false })
+      const thread = await agents.command({ type: 'create-thread', projectId, title: 'Child approval', titleSource: 'user', modelId, workingCopy: 'shared' })
       if (thread.error || !thread.activeThreadId) throw new Error(thread.error ?? 'Missing thread')
       await agents.command({ type: 'manual-send', threadId: thread.activeThreadId, text: 'Start the session.' })
     }, join(root, 'project'))

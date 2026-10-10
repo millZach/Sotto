@@ -1,6 +1,6 @@
 import { expect, type Locator, type Page } from '@playwright/test'
 
-/** Thread fields only. Managed voice drafts, personal chats and the widget keep their textareas. */
+/** Thread composer fields use the rich-text editor; structured answers and dictation keep plain fields. */
 export function promptField(scope: Page | Locator, name: 'Prompt' | 'Your answer' | 'Edit queued message' = 'Prompt'): Locator {
   return scope.getByRole('textbox', { name, exact: true })
 }

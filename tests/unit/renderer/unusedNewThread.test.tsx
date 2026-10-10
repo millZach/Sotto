@@ -13,7 +13,7 @@ const state = (threads: AgentThread[]): AgentState => (threadsStateFixture({ clo
     configuration: defaultAgentConfiguration(),
     host: { projects: [project], threads,
     models: [{ id: 'codex:model', name: 'Model', provider: 'Codex', providerId: 'codex', ready: true }] },
-    topLevel: { assignments: [], queue: [], activeThreadId: null, activeProjectId: null,  } }))
+    topLevel: { activeThreadId: null, activeProjectId: null,  } }))
 
 /** Pressing New thread twice, or by accident, should not leave empty threads behind (#347). */
 afterEach(() => pendingSettingsStore.clear())

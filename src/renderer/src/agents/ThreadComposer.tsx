@@ -63,13 +63,7 @@ export async function sendThreadRevision(store: ThreadDraftStore, row: ThreadRow
   const threadId = row.thread.id
   const draft = retryDraftId === undefined ? store.submit(threadId, submittedAt, mode, 'main') : store.retry(threadId, retryDraftId, submittedAt)
   if (draft === null) return
-  let attempted = false
   try {
-    if (row.assignment?.mode === 'managed' && isThreadClosed(row.thread)) {
-      const released = await command({ type: 'unassign', threadId })
-      if (released === null || released.error !== null) { store.resolve(threadId, draft.draftId, released?.error ?? 'Could not release this thread from management.', true); return }
-    }
-    attempted = true
     const payload = {
       threadId, draftId: draft.draftId, text: draft.text,
       ...(draft.attachments.length ? { attachments: [...draft.attachments] } : {}),
@@ -82,7 +76,7 @@ export async function sendThreadRevision(store: ThreadDraftStore, row: ThreadRow
       : mode === 'queue' && queuedRevision(result, threadId, draft.draftId) ? null : result.error
     store.resolve(threadId, draft.draftId, error)
   } catch {
-    store.resolve(threadId, draft.draftId, attempted ? UNCONFIRMED_SUBMISSION[mode] : 'Could not release this thread from management.', !attempted)
+    store.resolve(threadId, draft.draftId, UNCONFIRMED_SUBMISSION[mode])
   }
 }
 
@@ -119,7 +113,7 @@ function blockedReason(row: ThreadRow, state: AgentState, answering: boolean, in
  * offers it back if the provider refused it. While a turn runs, Enter queues; Steer now is the separate,
  * explicit way into the running turn, and Stop takes the send button's place until there is something to queue.
  */
-export function ThreadComposer({ row, state, command, store, onSend, composerId = THREAD_PROMPT_ID, handingOff = false, ornament, focused = true, onExplainedError, reviewComments = reviewCommentStore }: {
+export function ThreadComposer({ row, state, command, store, onSend, composerId = THREAD_PROMPT_ID, ornament, focused = true, onExplainedError, reviewComments = reviewCommentStore }: {
   readonly row: ThreadRow
   readonly state: AgentState
   readonly command: Command
@@ -128,8 +122,6 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   readonly onSend: () => void
   /** Unique per visible composer; the prompt, status and skills list IDs derive from it. */
   readonly composerId?: string
-  /** Manage or Resume is carrying this draft to Sotto; sending it meanwhile would race the handoff. Typing stays open. */
-  readonly handingOff?: boolean
   /** Live observation drawn on the top edge without changing composer interaction. */
   readonly ornament?: ReactNode
   /** Whether this pane has the user's attention; the branch toolbar's shortcuts answer only for the one that does. */
@@ -168,7 +160,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const queueBlocked = threadSendInFlight(state, threadId, localUnconfirmed, true)
   // Enter behind a prompt on its way queues instead of being refused, so the order typed is the order sent.
   const queueing = !answering && (queuesByDefault(row, state, localAdmissions) || sendInFlight && !queueBlocked)
-  const reason = (handingOff ? 'Handing this draft to Sotto…' : null) ?? blockedReason(row, state, answering, queueing ? queueBlocked : sendInFlight) ?? (staleAnswer ? 'This answer’s question is no longer pending.' : null)
+  const reason = blockedReason(row, state, answering, queueing ? queueBlocked : sendInFlight) ?? (staleAnswer ? 'This answer’s question is no longer pending.' : null)
   const editable = !row.thread.archivedAt && !permission
   const working = row.thread.status === 'running' && !isThreadClosed(row.thread)
   const placeholder = row.thread.archivedAt ? 'This thread is archived.' : permission ? permissionsOnlyInProvider(row) ? 'Waiting on the request above.' : PERMISSION_INSTRUCTION : answering ? 'Write your answer…' : working ? (row.thread.compaction?.status === 'running' ? 'Compacting the context. Write a follow-up to queue it.' : `${row.provider} is working. Write a follow-up to queue it.`) : 'What would you like to do next?'

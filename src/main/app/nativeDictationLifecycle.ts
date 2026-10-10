@@ -21,7 +21,7 @@ export interface NativeDictationLifecycleDependencies {
   readonly log: (code: NativeDictationLifecycleDiagnostic) => void
 }
 
-export type WidgetPresentationFields = Pick<WidgetSnapshot, 'theme' | 'palette' | 'reducedMotion' | 'voiceCoordinator'>
+export type WidgetPresentationFields = Pick<WidgetSnapshot, 'theme' | 'palette' | 'reducedMotion'>
 
 export type NativeDictationLifecycleDiagnostic =
   | 'native-widget-state-delivery-failed'

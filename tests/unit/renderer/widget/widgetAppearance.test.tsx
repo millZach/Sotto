@@ -302,8 +302,6 @@ describe('visual preview parser', () => {
       ":root[data-reduced-motion='on'] .widget-bars[data-speaking] .widget-bars__bar",
     )
     expect(css).toContain(":root[data-reduced-motion='on'] .widget-bars__bar,")
-    // The retired orb style left nothing behind.
-    expect(`${source}\n${css}`).not.toMatch(/orb(?!it)/i)
     expect(`${source}\n${css}`).not.toContain('widget-dot')
     expect(`${source}\n${css}`).not.toContain('data-widget-style')
     // The hover-expand affordance fully replaced the old floating tooltip.

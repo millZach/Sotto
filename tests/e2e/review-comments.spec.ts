@@ -46,7 +46,7 @@ test('a review comment goes from Changes to the composer and out with the next p
     const folder = await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
       const agents = window.sotto!.agents!
-      await agents.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await agents.command({ type: 'configure', patch: { enabled: true, } })
       const state = await agents.command({ type: 'connect' })
       const thread = state.host.threads.find(item => item.id === (state.hostId === undefined ? 'workshop' : `host:${state.hostId}:workshop`))!
       return state.host.projects.find(project => project.id === thread.projectId)!.path

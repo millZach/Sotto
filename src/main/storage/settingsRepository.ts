@@ -43,7 +43,7 @@ export class SettingsRepository {
   async save(input: unknown): Promise<AppSettings> {
     const settings = this.parse(input)
     return this.enqueueMutation(async () => {
-      await this.store.write(settings)
+      await this.writeSettings(settings)
       return this.project(settings)
     })
   }
@@ -53,7 +53,7 @@ export class SettingsRepository {
     return this.enqueueMutation(async () => {
       const current = await this.readSettings()
       const settings = this.parse({ ...current, ...patchSnapshot })
-      await this.store.write(settings)
+      await this.writeSettings(settings)
       return this.project(settings)
     })
   }
@@ -61,7 +61,7 @@ export class SettingsRepository {
   async reset(): Promise<AppSettings> {
     const settings = this.parse(this.defaults)
     return this.enqueueMutation(async () => {
-      await this.store.write(settings)
+      await this.writeSettings(settings)
       return this.project(settings)
     })
   }
@@ -84,7 +84,7 @@ export class SettingsRepository {
         delete defaults[id]
         changed = true
       }
-      if (changed) await this.store.write(this.parse({ ...settings, projectThreadWorkingCopyDefaults: defaults }))
+      if (changed) await this.writeSettings(this.parse({ ...settings, projectThreadWorkingCopyDefaults: defaults }))
     })
   }
 
@@ -96,6 +96,9 @@ export class SettingsRepository {
 
   private project(settings: AppSettings): AppSettings {
     return this.omarchyTheme ? { ...settings, omarchyTheme: this.omarchyTheme() } : settings
+  }
+  private writeSettings(settings: AppSettings): Promise<void> {
+    return this.store.writeSerialized(JSON.stringify(this.parse(settings), null, 2))
   }
 
   private enqueueMutation<Result>(mutation: () => Promise<Result>): Promise<Result> {

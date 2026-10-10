@@ -340,12 +340,6 @@ describe('native permission choices', () => {
     expect(screen.getByText('{"permissions":{"network":true}}')).toBeTruthy()
   })
 
-  it('does not show the voice hint for a request with no sendable choice', () => {
-    render(<AgentRequestCard ownerId="t" ownerTitle="T" request={{ ...base, permissionChoices: [] }} blocked={null} hint="Say “allow” or “deny”, or choose here."
-      onSubmit={async () => ({ error: null })} store={new RequestAnswerStore()} />)
-    expect(screen.queryByText(/Say “allow”/u)).toBeNull()
-  })
-
   it('keeps legacy Allow and Deny only when choices are absent', () => {
     setup(base)
     expect(screen.getAllByRole('button').map(button => button.textContent)).toEqual(['Deny', 'Allow'])

@@ -6,7 +6,7 @@ import { _electron as electron, expect, test, type Page } from '@playwright/test
 import sharp from 'sharp'
 import { ownedE2EProfile } from './support/e2eProfile'
 import { completeFirstRunSetup, firstSottoWindow, launchSotto, closeSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
-import { designThreadsFixture } from '../../src/shared/e2e'
+import { defaultAgentConfiguration } from '../../src/shared/agents'
 import { OMARCHY_THEME_ID, parseOmarchyTheme, type OmarchyTheme } from '../../src/shared/themes/omarchy'
 import { WIDGET_THEME_ROLES } from '../../src/shared/themeBranding'
 import { THEME_COLOR_ROLES, T3_CODE_THEME, getThemeColorsForMode, type ThemeColors } from '../../src/shared/themes/library'
@@ -128,8 +128,7 @@ test('Omarchy switches repaint both windows, keep choices, and read at all revie
   // Exercise the install path too, including its one-time render.
   await mkdir(join(home, 'runtime'))
   execFileSync(resolve('apps/omarchy/install-theme.sh'),[],{env:{...process.env,HOME:home,XDG_RUNTIME_DIR:join(home,'runtime')},stdio:'pipe'})
-  const fixture=designThreadsFixture()
-  await writeFile(join(profile.directory,'agents.json'),JSON.stringify({configuration:{provider:'codex',enabled:true,projectsDirectory:'',defaultModelId:'claude:sonnet',followupLimit:5,speak:false,speechProvider:'system',speechVoice:'F1',grokSpeechVoice:'ara',wakeModelDirectory:'',wakeRuntimeDirectory:'',reasoning:'none',reasoningModel:'',reasoningEffort:''},assignments:fixture.assignments,queue:[],activeThreadId:null,activeProjectId:null,draft:'',draftThreadId:null,draftRequestId:null,composing:false,pendingRequest:'',contextSavedAt:Date.now(),outbox:[]}))
+  await writeFile(join(profile.directory,'agents.json'),JSON.stringify({configuration:{...defaultAgentConfiguration(),enabled:true,defaultModelId:'claude:sonnet'},activeThreadId:null,activeProjectId:null,draft:'',draftThreadId:null,draftRequestId:null,contextSavedAt:Date.now(),outbox:[]}))
   const launch = () => launchSotto('design-threads',profile.directory,{
     createProfile:async()=>profile.directory,removeProfile:async()=>{},firstWindow:firstSottoWindow,
     launch:(options={})=>electron.launch({...options,args:['--ozone-platform=wayland','--password-store=basic',...options.args!],env:{...options.env,HOME:home,XDG_CONFIG_HOME:join(home,'.config'),XDG_STATE_HOME:join(home,'.local/state'),XDG_DATA_HOME:join(home,'.local/share'),XDG_CACHE_HOME:join(home,'.cache')}}),

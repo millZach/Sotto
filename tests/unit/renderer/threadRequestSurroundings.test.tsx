@@ -19,7 +19,7 @@ const CHOICES = [
 /** Visual Gate, unmanaged, with its pending permission offering `choices`. */
 function permissionState(choices: typeof CHOICES | [] | undefined): AgentState {
   const state = threadsStateFixture()
-  state.assignments = []
+
   state.activeThreadId = 'visual-gate'
   const thread = state.host.threads.find(item => item.id === 'visual-gate')!
   thread.requests = thread.requests.map(request => request.id === 'visual-gate-permission' ? { ...request, ...(choices ? { permissionChoices: choices } : {}) } : request)
@@ -29,7 +29,7 @@ function permissionState(choices: typeof CHOICES | [] | undefined): AgentState {
 function mount(state: AgentState) {
   const live = liveAgentState(state)
   vi.mocked(useAgents).mockImplementation(live.useLive)
-  return { live, view: render(<ThreadsView onOpenAgents={vi.fn()} now={E2E_THREADS_NOW} />) }
+  return { live, view: render(<ThreadsView now={E2E_THREADS_NOW} />) }
 }
 
 beforeEach(() => { vi.mocked(useAgents).mockReset() })

@@ -1246,10 +1246,9 @@ export class WindowManager {
   }
 
   private applyWidgetFocusability(widget: BrowserWindowLike): void {
-    const focusable = this.widgetPresentation === 'threads-expanded' || this.dependencies.chrome.widgetFocusable
+    const focusable = this.dependencies.chrome.widgetFocusable
     // On Windows, even setFocusable(false) on an already nonfocusable window
     // invokes native deactivation and can take focus from the dictation target.
-    // Only explicit thread expansion/collapse changes this policy.
     if (focusable !== this.widgetFocusable) {
       widget.setFocusable?.(focusable)
       this.widgetFocusable = focusable

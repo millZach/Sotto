@@ -32,7 +32,7 @@ async function laneFixture(holdReply: (request: AgentCommand) => boolean = () =>
   const credentials = await testCredentials(root, { mode: 'unavailable' })
   const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
   })
-  await control.start(); await control.command({ type: 'connect' })
+  await control.start(); await control.command({ type: 'connect' }); await control.command({ type: 'select-thread', threadId: 'workshop' })
   const { promise: gate, resolve: release } = deferred<void>()
   const arrived: string[] = [], answered: string[] = []
   const inner = agentBridgeFor(control)
@@ -56,7 +56,6 @@ describe('thread commands in the window', () => {
     const f = await laneFixture(request => request.type === 'compose' && request.text === 'First edit')
     let held: Promise<AgentState | null> | undefined, autosave: Promise<AgentState | null> | undefined, sending: Promise<AgentState | null> | undefined
     try {
-      await f.control.command({ type: 'assign', threadId: 'workshop', instruction: 'Work' })
       const { result } = renderHook(() => useAgentConnection(f.bridge))
       await waitFor(() => expect(result.current.state).not.toBeNull())
       act(() => { held = result.current.command({ type: 'compose', text: 'First edit' }) })
@@ -198,18 +197,18 @@ describe('thread commands in the window', () => {
     const arrived: string[] = []
     const bridge: AgentBridge = { get: () => deferred<AgentState>().promise, onState: () => () => undefined, command: async request => {
       arrived.push(label(request))
-      if (request.type === 'assign') await gate
+      if (request.type === 'configure') await gate
       throw new Error('Not answered in this test')
     } }
     const { result } = renderHook(() => useAgentConnection(bridge))
-    const held = result.current.command({ type: 'assign', threadId: 'docs' })
-    await waitFor(() => expect(arrived).toEqual(['assign:docs']))
+    const held = result.current.command({ type: 'configure', patch: { reasoningEffort: 'high' } })
+    await waitFor(() => expect(arrived).toEqual(['configure:']))
     const behind = result.current.command({ type: 'settle-project', projectId: 'project' })
     const beside = result.current.command({ type: 'compact-thread', threadId: 'workshop' })
     await act(async () => { await beside })
     // A command main keeps global still waits for the reply to the one before it; a thread's own does not.
-    expect(arrived).toEqual(['assign:docs', 'compact-thread:workshop'])
+    expect(arrived).toEqual(['configure:', 'compact-thread:workshop'])
     await act(async () => { release(); await held; await behind })
-    expect(arrived).toEqual(['assign:docs', 'compact-thread:workshop', 'settle-project:'])
+    expect(arrived).toEqual(['configure:', 'compact-thread:workshop', 'settle-project:'])
   })
 })

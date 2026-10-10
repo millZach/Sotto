@@ -8,7 +8,7 @@ import { AgentControl } from '../../../src/main/agents/control'
 
 import type { AgentHostCommand } from '../../../src/main/agents/host'
 import {
-  desktopWindowClient, LocalHostService, supervisionClient, DESKTOP_WINDOW_CLIENT_ID, SUPERVISION_CLIENT_ID,
+  desktopWindowClient, LocalHostService, DESKTOP_WINDOW_CLIENT_ID,
   type ClientIdentity, type HostService,
 } from '../../../src/main/agents/hostService'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
@@ -41,7 +41,7 @@ async function fixture(authority?: Authority) {
   const credentials = await testCredentials(join(root, 'vault'), { mode: 'xor' })
 
   const host = new RecordingHost()
-  const reasoner = { ...e2eAgentReasoner, decide: vi.fn(e2eAgentReasoner.decide) }
+  const reasoner = { ...e2eAgentReasoner }
   const control = createAgentControl({
     schedule: immediatePublishScheduler, directory: root, host, credentials,
     reasoner, logFailure,
@@ -51,7 +51,6 @@ async function fixture(authority?: Authority) {
   await control.start()
   const service: HostService = new LocalHostService({ control })
   await service.command({ type: 'connect' }, desktopWindowClient('tester'))
-  await service.command({ type: 'assign', threadId: 'workshop', instruction: 'Fix the tests' }, desktopWindowClient('tester'))
   return {
     control, host, service, reasoner, logFailure,
     permission(text = 'May I edit the tests?') {
@@ -147,16 +146,6 @@ describe('attribution on an answer', () => {
     expect(JSON.stringify(f.host.answers[0]?.event)).not.toContain('the main one please')
   })
 
-  it('attributes the coordinator’s own follow-up answer to Sotto rather than to the user', async () => {
-    expect(supervisionClient('tester')).toEqual({ clientId: SUPERVISION_CLIENT_ID, user: 'tester', transport: 'ipc' })
-    const f = await fixture()
-    await f.service.command({ type: 'configure', patch: { reasoning: 'openrouter', reasoningModel: 'fixture-model' } }, desktopWindowClient('tester'))
-    f.reasoner.decide.mockResolvedValue({ decision: 'followup', text: 'Use the main branch' })
-    f.question()
-    await vi.waitFor(() => expect(f.host.answers).toHaveLength(1))
-    expect(f.host.answers[0]?.event.attribution).toEqual({ clientId: SUPERVISION_CLIENT_ID, user: expect.any(String), transport: 'ipc' })
-    expect(f.host.answers[0]?.event.attribution.clientId).not.toBe(DESKTOP_WINDOW_CLIENT_ID)
-  })
 
   it('leaves the answer standing and says nothing to the user when the record cannot be written', async () => {
     const f = await fixture()
@@ -189,7 +178,7 @@ describe('whether a client may grant', () => {
     const state = await f.answer({ clientId: 'laptop', user: 'tester', transport: 'socket' })
     expect(state.error).toBe(UNPAIRED_CLIENT_ERROR)
     expect(f.host.executed.filter(command => command.type === 'answer')).toEqual([])
-    expect(f.control.get().queue).toContainEqual(expect.objectContaining({ requestId: 'permission' }))
+    expect(f.control.get().host.threads.find(t => t.id === 'workshop')?.requests).toContainEqual(expect.objectContaining({ id: 'permission' }))
   })
 
   it('lets a client a policy record names answer, and refuses it again once revoked', async () => {

@@ -7,9 +7,9 @@ import { agentCommandSchema, EMPTY_AGENT_HOST, defaultAgentConfiguration, type A
 function threadsStateFixture(): AgentState {
   return sharedThreadsStateFixture({ configuration: defaultAgentConfiguration(),
     host: { ...EMPTY_AGENT_HOST, threads: [{ id: 'visual-gate', projectId: 'project', title: 'Task', modelId: 'model', status: 'idle', messages: [], requests: [] }] },
-    topLevel: { assignments: [], queue: [], activeThreadId: null, activeProjectId: null,
+    topLevel: { activeThreadId: null, activeProjectId: null,
       threadDrafts: undefined, deliveries: undefined, deliveredDrafts: undefined,
-      credentials: { reasoning: false, grokSpeech: false, secure: false } },
+      credentials: { reasoning: false, secure: false } },
   })
 }
 
@@ -39,7 +39,6 @@ it('decodes thread/project command IDs before wire validation and projects every
     { type: 'select-project', projectId: hostEntityKey(HOST, 'p:a|b') },
     { type: 'observe-threads', threadIds: [hostEntityKey(HOST, id), hostEntityKey(HOST, 'other')] },
     { type: 'create-thread', threadId: hostEntityKey(HOST, HOST), projectId: hostEntityKey(HOST, 'p'), title: 'Task', modelId: 'model' },
-    { type: 'select-attention', itemId: hostEntityKey(HOST, 'queue') },
   ]
   for (const command of commands) expect((await bridge.agents.command(command)).hostId).toBe(HOST)
   expect(raw.agents.command.mock.calls.map(call => call[0])).toEqual([
@@ -47,7 +46,6 @@ it('decodes thread/project command IDs before wire validation and projects every
     { type: 'select-project', projectId: 'p:a|b' },
     { type: 'observe-threads', threadIds: [id, 'other'] },
     { type: 'create-thread', threadId: HOST, projectId: 'p', title: 'Task', modelId: 'model' },
-    { type: 'select-attention', itemId: 'queue' },
   ])
 })
 it('scopes detail push/read and decodes attachment, project, files and request-draft lookups', async () => {

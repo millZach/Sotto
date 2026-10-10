@@ -39,7 +39,7 @@ function readRootBrand(root: HTMLElement): ThemeBrand {
 }
 
 function brandKey(brand: ThemeBrand): string {
-  return `${brand.tile}|${brand.glyph}|${brand.orb[0]}|${brand.orb[1]}`
+  return `${brand.tile}|${brand.glyph}`
 }
 
 interface BrandStore {
