@@ -22,7 +22,7 @@ Hyprland adds 20 pixels to the Electron client minimum. Only the test lowered th
 
 ## Captures and contrast
 
-Every one of these 28 captures was opened and reviewed. `proof.json` records 1,174 measurements of actual solid text interiors and background pixels from the PNGs. The lowest measured ratio is 4.514:1, on Catppuccin Latte’s transcript author label. The check omits offscreen/clipped text and thin antialiased glyphs without a solid interior; it is not a claim about every antialias edge or inactive controls. The stock-theme checks cover 3,212 declared role/surface pairs, 4,114 main-window CSS text pairs and 352 widget CSS text pairs across all 22 themes, including success text in Tools and tinted Changes rows. A stylesheet scan accounts for every `--tt-*` used as `color:` and names the graphical exceptions; focus retains its separate 3:1 requirement. Red and amber each have real 35%/36% boundary cases.
+Every one of these 28 captures was opened and reviewed. `proof.json` records 1,174 measurements of actual solid text interiors and background pixels from the PNGs. The lowest measured ratio is 4.514:1, on Catppuccin Latte’s transcript author label. The check omits offscreen/clipped text and thin antialiased glyphs without a solid interior; it is not a claim about every antialias edge or inactive controls. The stock-theme checks cover 3,212 declared role/surface pairs, 4,224 main-window CSS text pairs and 352 widget CSS text pairs across all 22 themes, including success text in Tools and tinted Changes rows. A stylesheet scan accounts for every `--tt-*` used as `color:` and names the graphical exceptions; focus retains its separate 3:1 requirement. Red and amber each have real 35%/36% boundary cases.
 
 [Pixel measurements](../../artifacts/omarchy-theme/proof.json). The captures below are the retained evidence; intermediate profiles, prototype images, logs and compositor scripts are ignored.
 
@@ -45,7 +45,7 @@ Widgets: [Tokyo Night](../../artifacts/omarchy-theme/widget-tokyo-night.png), [C
 
 ## Final gates
 
-The final head is the commit titled **“Record the reviewed Omarchy fixes and final verification”**, which adds this record and the refreshed evidence. Resolve its full hash with `git log -1 --format=%H -- docs/verification/omarchy-theme.md`; its source parent is `a851277c`. All gates below are repeated after that evidence commit, on that final head. The earlier 9,599-test result applied to `97173df0`, before `ae101acc` restored the base’s duplicate composer ADR, and did not establish a pass on the review head.
+The final head is the commit titled **“Name the final verification head after the text audit”**, which records the completed review audit. `8f5b09f7` retains the refreshed evidence. Resolve its full hash with `git log -1 --format=%H -- docs/verification/omarchy-theme.md`; its source parent is `def3678b`, following the main merge `a851277c`. All gates below are repeated after that record commit, on that final head. The earlier 9,599-test result applied to `97173df0`, before `ae101acc` restored the base’s duplicate composer ADR, and did not establish a pass on the review head.
 
 Commands use Node 24.21.0 through mise, in the owned nested sandbox with an isolated HOME. Only one suite runs at a time: two Vitest workers or one Playwright worker. For Vitest, bubblewrap binds this worktree’s private `.t` folder as `/tmp` inside the test process, with the rest of the filesystem read-only except the worktree. This gives Linux sockets a short path and prevents plain fixture folders from discovering Sotto’s enclosing repository. The initial run without that mount failed 21 tests from those two sandbox path problems; no application or out-of-scope test fix was needed.
 
@@ -66,11 +66,11 @@ Commands use Node 24.21.0 through mise, in the owned nested sandbox with an isol
 | Finding | Fix commit |
 | --- | --- |
 | 2. Runtime settings update | `b6c2eefb`: omit `omarchyTheme` from update requests; reject before writes or notifications on win32, darwin and linux. |
-| 3. Success text and coverage | `58b246a2`: repair derived success text only for Omarchy; widen the surface inventory and pin 35%/36%. `bdbb152b` checks the widget’s own CSS projection. |
+| 3. Success text and coverage | `58b246a2`: repair derived success text only for Omarchy; widen the surface inventory and pin 35%/36%. `bdbb152b` checks the widget’s own CSS projection. `def3678b` includes the sidebar attention text alias explicitly. |
 | 4. Custom ID collision | `43324b7e`: runtime `__omarchy` cannot be a custom ID; upgrades keep custom `omarchy` themes and both selections, with and without a rendered file. |
 | 5. Create theme | `d4216ce2`: seed from `resolveThemeFor` for the painted appearance, including the waiting/missing fallback. `7e85b041` keeps the fixture’s settings type exact. |
 | 6. Live repaint | `80bf486c`: assert the expected colours separately in both windows and the gallery name, including same-mode switches, fallback, recovery and restart. |
-| 7. ADR and evidence | `2eb5afd0`: remove the obsolete renumbering inventory and leave the composer number to #901; this final evidence commit names the gate head. |
+| 7. ADR and evidence | `2eb5afd0`: remove the obsolete renumbering inventory and leave the composer number to #901; the final record commit names the gate head. |
 | 1. Main | `a851277c`: merge main after #901’s merge. |
 
 Standards and issue review found no remaining in-scope findings. Built-in palettes, Windows/macOS token definitions, packaging and design baselines remain unchanged. No host, permission authority or runtime dependency was added.
