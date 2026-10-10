@@ -12,6 +12,23 @@ public enum MarkdownBlock: Equatable, Sendable {
     case code(language: String?, text: String)
     case quote(MarkdownInline)
     case rule
+    /// A header row, a separator row of dashes, then the rows under them, as GitHub reads a table.
+    case table(MarkdownTable)
+}
+
+/// A table's cells, each with its own inline Markdown. Every row has as many cells as the header: a short row is
+/// filled with empty cells and a long one loses the cells past the header's.
+public struct MarkdownTable: Equatable, Sendable {
+    /// How a column's separator cell sets it: `---` and `:---` leading, `:---:` centred, `---:` trailing.
+    public enum Alignment: Equatable, Sendable { case leading, center, trailing }
+    public let header: [MarkdownInline]
+    public let alignments: [Alignment]
+    public let rows: [[MarkdownInline]]
+    public init(header: [MarkdownInline], alignments: [Alignment], rows: [[MarkdownInline]]) {
+        self.header = header
+        self.alignments = alignments
+        self.rows = rows
+    }
 }
 
 /// One item of a list, with its own marker so a nested list may be numbered under bullets.
@@ -205,6 +222,12 @@ public enum Markdown {
                 blocks.append(.quote(MarkdownInline(parts.joined(separator: "\n"))))
                 continue
             }
+            if let table = parseTable(lines, from: index) {
+                flushParagraph()
+                blocks.append(.table(table.table))
+                index = table.next
+                continue
+            }
             if MarkdownLine.listItem(line) != nil {
                 flushParagraph()
                 let list = parseList(lines, from: index)
@@ -233,7 +256,7 @@ public enum Markdown {
                 index += 1
                 continue
             }
-            if MarkdownLine.isRule(line) || MarkdownLine.fence(line) != nil || MarkdownLine.heading(line) != nil || MarkdownLine.quote(line) != nil { break }
+            if MarkdownLine.startsBlock(line) || MarkdownLine.tableStart(lines, at: index) != nil { break }
             if let item = MarkdownLine.listItem(line) {
                 if let first = items.first {
                     // A top-level item of the other kind starts a list of its own.
@@ -258,6 +281,27 @@ public enum Markdown {
         }
         let read = items.map { MarkdownListItem(marker: $0.marker, depth: $0.depth, text: MarkdownInline($0.lines.joined(separator: "\n"))) }
         return (read, index)
+    }
+
+    /// Reads a table whose header row is at `start`, and says where the line after its last row is. Nil when `start`
+    /// is not followed by a separator row with as many cells, such as a lone line with a pipe in it, or a table
+    /// whose separator row is still being written.
+    static func parseTable(_ lines: [String], from start: Int) -> (table: MarkdownTable, next: Int)? {
+        guard let head = MarkdownLine.tableStart(lines, at: start) else { return nil }
+        let width = head.header.count
+        func fit(_ cells: [String]) -> [MarkdownInline] {
+            (0..<width).map { MarkdownInline($0 < cells.count ? cells[$0] : "") }
+        }
+        var rows: [[MarkdownInline]] = []
+        var index = start + 2
+        // As on GitHub, a row runs until a blank line or the start of another block.
+        while index < lines.count {
+            let line = lines[index]
+            if MarkdownLine.isBlank(line) || MarkdownLine.startsBlock(line) || MarkdownLine.listItem(line) != nil { break }
+            rows.append(fit(MarkdownLine.cells(line)))
+            index += 1
+        }
+        return (MarkdownTable(header: fit(head.header), alignments: head.alignments, rows: rows), index)
     }
 
     static func isNumbered(_ marker: MarkdownListItem.Marker) -> Bool {
@@ -299,6 +343,11 @@ enum MarkdownLine {
     }
 
     static func isBlank(_ line: String) -> Bool { line.trimmingCharacters(in: .whitespaces).isEmpty }
+
+    /// A rule, a fence, a heading or a quote, any of which ends a list or a table above it.
+    static func startsBlock(_ line: String) -> Bool {
+        isRule(line) || fence(line) != nil || heading(line) != nil || quote(line) != nil
+    }
 
     static func content(_ line: String) -> Substring { line.drop(while: { $0 == " " || $0 == "\t" }) }
 
@@ -380,6 +429,63 @@ enum MarkdownLine {
         let body = after.dropFirst()
         guard body.isEmpty || body.first == " " || body.first == "\t" else { return nil }
         return Item(indent: indent(line), marker: .number(Int(String(digits)) ?? 1), text: body.trimmingCharacters(in: .whitespaces))
+    }
+
+    /// A table's header cells and column alignments when the line at `index` is a header row and the next line is a
+    /// separator row with as many cells. Both lines need a pipe, so a paragraph over a rule is never a table.
+    static func tableStart(_ lines: [String], at index: Int) -> (header: [String], alignments: [MarkdownTable.Alignment])? {
+        guard index + 1 < lines.count else { return nil }
+        let head = lines[index]
+        let separator = lines[index + 1]
+        guard indent(head) <= 3, indent(separator) <= 3, head.contains("|"), separator.contains("|"),
+              let aligned = alignments(separator) else { return nil }
+        let header = cells(head)
+        guard header.count == aligned.count else { return nil }
+        return (header, aligned)
+    }
+
+    /// The alignment each cell of a separator row sets, or nil when a cell is anything but dashes with an optional
+    /// colon at either end.
+    static func alignments(_ line: String) -> [MarkdownTable.Alignment]? {
+        var result: [MarkdownTable.Alignment] = []
+        for cell in cells(line) {
+            let leading = cell.hasPrefix(":")
+            let trailing = cell.hasSuffix(":")
+            let dashes = cell.dropFirst(leading ? 1 : 0).dropLast(trailing ? 1 : 0)
+            guard !dashes.isEmpty, dashes.allSatisfy({ $0 == "-" }) else { return nil }
+            result.append(leading && trailing ? .center : trailing ? .trailing : .leading)
+        }
+        return result.isEmpty ? nil : result
+    }
+
+    /// A table row's cells, trimmed: split at every pipe a backslash doesn't escape, with one pipe at either end of
+    /// the line dropped. An escaped pipe reads as a pipe, even inside a code span, as it does on GitHub.
+    static func cells(_ line: String) -> [String] {
+        let row = line.trimmingCharacters(in: .whitespaces)
+        var cells: [String] = []
+        var current = ""
+        var escaped = false
+        var endsWithPipe = false
+        for character in row {
+            endsWithPipe = false
+            if escaped {
+                if character != "|" { current.append("\\") }
+                current.append(character)
+                escaped = false
+            } else if character == "\\" {
+                escaped = true
+            } else if character == "|" {
+                cells.append(current)
+                current = ""
+                endsWithPipe = true
+            } else {
+                current.append(character)
+            }
+        }
+        if escaped { current.append("\\") }
+        if !endsWithPipe { cells.append(current) }
+        if row.hasPrefix("|"), !cells.isEmpty { cells.removeFirst() }
+        return cells.map { $0.trimmingCharacters(in: .whitespaces) }
     }
 
     /// The words of a line that is only bold text, such as `**Not asked for**`.
