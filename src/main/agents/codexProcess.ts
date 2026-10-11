@@ -124,13 +124,13 @@ export class CodexProcess {
     this.child.stdin.write(JSON.stringify(value) + '\n')
   }
 
-  rpc(method: string, params: unknown, apply: RpcApply = () => undefined, onRejected?: RpcRejected): Promise<void> {
+  rpc(method: string, params: unknown, apply: RpcApply = () => undefined, onRejected?: RpcRejected, beforeWrite?: () => void): Promise<void> {
     return new Promise((resolve, reject) => {
       const id = ++this.nextId; const key = JSON.stringify(id)
       // Keep the callback after timeout: late thread/start responses still establish durable aliases.
       const timer = setTimeout(() => reject(new Uncertain('Codex did not acknowledge the operation in time.')), this.options.requestTimeoutMs)
       this.waiters.set(key, { resolve, reject, apply, onRejected, timer })
-      try { this.write({ id, method, params }) } catch (error) { clearTimeout(timer); this.waiters.delete(key); reject(error) }
+      try { beforeWrite?.(); this.write({ id, method, params }) } catch (error) { clearTimeout(timer); this.waiters.delete(key); reject(error) }
     })
   }
 

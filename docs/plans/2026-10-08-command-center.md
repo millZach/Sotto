@@ -445,8 +445,10 @@ Ticket 7 — Show receipts and answer in the real beside pane (Opus 5.5 UI).
 Ticket 8 — Preserve phone visibility and phone-origin takeover (Sol; Opus 5.5 for any UI).
 Ticket 9 — Complete docs, native/room/host proof and final review (Opus 5.5 UI; Sol main).
 
-Open questions: hide the master on phones initially (recommended), or expose its typed thread; replace the native master on provider change with visible handover (recommended), or require cross-provider identity/transcript continuity. No npm, build, test or commit was run for this plan.
+The original phone-hiding question is superseded by Zach's October 11 decision: expose Watcher after ticket 8's prototype. Provider replacement retains native conversation identities and readable history; any handover still needs an explicit user continuation. No npm, build, test or commit was run while writing the original plan.
 
 ## Ticket 3 implementation notes, October 11
 
 The room contract is src/shared/watcherRoom.ts. It is private IPC and a gated optional preload API; its projection can later be served by a host. Stop all previews exact main-owned targets with a sixty-second confirmation identity. Creation retains exact model/effort in its text-free intent. Read reset cursors start at -1 before position zero. Operation card anchors are separate from expected-turn and last-user guards. Native project reads remain native; no file broker or phone UI is added. The local server replaces the profile stand-in at runtime, keeping all nine tool names. Ticket 4 supplies event wakes/evidence; ticket 5 supplies remote owning-host enforcement; tickets 6/7 consume the room projection and receipts.
+
+The machine guard continues through the provider router and identity translation to the native writer, because native preparation can await after the workspace's last check. Ordinary execute paths retain their behavior. Machine interrupts skip native denial-answer helpers. Targeted Stop fences every current participation on its target without releasing uncertain work. A recovered creation with no available thread reports its reserved target and receipt, with no replay. Queued user continuations stay in the original request. Stable retains machine queues aimed at ordinary workers as dormant records even with history off.

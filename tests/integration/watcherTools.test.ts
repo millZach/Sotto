@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -226,9 +226,47 @@ it('refuses a request appearing during the read before dispatch and holds the wa
     }
     return original(id, purpose)
   })
-  await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'now', text: 'synthetic_request_race' })
+  expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'now', text: 'synthetic_request_race' }))
+    .toMatchObject({ status: 'refused', code: 'PENDING_USER_REQUEST' })
   spy.mockRestore()
   expect(f.workspace.adapters.codex.commands.some(item => item.type === 'send' && item.text === 'synthetic_request_race')).toBe(false)
+  expect(f.service.state().inFlight).toBe(1)
+})
+
+it('fences an admitted send still waiting on a read before targeted Stop', async () => {
+  const f = await fixture(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  await f.finish(first.target.threadId)
+  const entered = deferred(), released = deferred(), read = f.workspace.host.refreshThread.bind(f.workspace.host)
+  vi.spyOn(f.workspace.host, 'refreshThread').mockImplementation(async (id, purpose) => {
+    if (id === first.target.threadId && purpose?.beforeSend) { entered.resolve(); await released.promise }
+    return read(id, purpose)
+  })
+  const machine = f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'now', text: 'Synthetic stopped preparation' })
+  try {
+    await entered.promise
+    expect(await f.call('stop_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target })).toMatchObject({ status: 'ok' })
+    released.resolve()
+    expect(await machine).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
+    expect(f.workspace.adapters.codex.commands.some(item => item.type === 'send' && item.text === 'Synthetic stopped preparation')).toBe(false)
+    expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'queue', text: 'Synthetic stopped replenishment' }))
+      .toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
+  } finally { released.resolve(); await machine }
+})
+
+it('reports the original reserved creation receipt after process loss before the target exists', async () => {
+  const f = await fixture(), input = f.start(), target = { hostId: f.control.hostId()!, threadId: randomUUID() }, operationId = randomUUID(), time = new Date().toISOString()
+  await f.control.updateWatcher(record => {
+    record.requests.find(item => item.id === f.requestId)!.participants.push({ requestId: f.requestId, target, startedBy: 'watcher', generation: 0, state: 'participating', promptCount: 1 })
+    record.operations.push({ id: operationId, requestId: f.requestId, retryKey: input.retryKey,
+      digest: createHash('sha256').update(JSON.stringify(['start_thread', watcherToolSchemas.start_thread.input.parse(input)])).digest('hex'), target, action: 'start', generation: 0,
+      delivery: 'now', deliveryState: 'queued', createdAt: time, updatedAt: time, receiptId: randomUUID(), cardId: randomUUID(),
+      creationReceiptId: randomUUID(), firstPromptReceiptId: randomUUID(), draftId: randomUUID(), messageId: randomUUID(), anchorMessageId: record.requests[0]!.rootUserMessageId })
+    record.reservations.push({ target, requestId: f.requestId, operationId, generation: 0, reason: 'creation' })
+  })
+  const before = f.workspace.adapters.codex.commands.length
+  expect(await f.call('start_thread', input)).toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN', receipt: { operationId, target, deliveryState: 'queued' } })
+  expect(f.workspace.adapters.codex.commands).toHaveLength(before)
   expect(f.service.state().inFlight).toBe(1)
 })
 

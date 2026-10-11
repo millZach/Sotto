@@ -69,7 +69,7 @@ export const watcherEvidenceSchema = z.object({ id, source: z.enum(['sotto-deliv
   changedFiles: counter.optional(), insertions: counter.optional(), deletions: counter.optional() }).strict()
 const takeover = z.object({ reason: z.enum(['user-send', 'native-user-send', 'user-stop', 'user-settle', 'user-reconfigure']), at: time }).strict()
 const participation = z.object({ requestId: z.uuid(), startedBy: z.enum(['watcher', 'user']), generation: counter,
-  state: z.enum(['participating', 'taken-over', 'relinquished']), takeover: takeover.optional() }).strict()
+  state: z.enum(['participating', 'taken-over', 'relinquished']), takeover: takeover.optional(), automationStopped: z.literal(true).optional() }).strict()
 const pr = z.object({ number: z.number().int().positive(), url: z.string().max(2_048), title: z.string().max(512),
   state: z.enum(['open', 'closed', 'merged']), draft: z.boolean() }).strict()
 const row = z.object({ target: watcherThreadTargetSchema, title: z.string().max(WATCHER_TITLE_MAX), projectId: entityId,

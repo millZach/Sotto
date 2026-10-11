@@ -424,7 +424,7 @@ export class AgentControl {
     /** Native CLIs present on this machine. Absent in tests that script the host themselves. */
     installedProviders?: () => Promise<readonly ProviderId[]>
   }) {
-    this.followupStore = new FollowupStore(dependencies.directory, () => dependencies.historyEnabled?.() !== false, id => this.dependencies.watcherEnabled === true && [this.watcher.current, this.watcher.creation?.identity, ...this.watcher.history].some(item => item?.target.threadId === id))
+    this.followupStore = new FollowupStore(dependencies.directory, () => dependencies.historyEnabled?.() !== false, id => this.dependencies.watcherEnabled === true && [this.watcher.current, this.watcher.creation?.identity, ...this.watcher.history].some(item => item?.target.threadId === id), () => this.dependencies.watcherEnabled === true)
     this.finishedUnread = new FinishedUnread([], dependencies.watcherEnabled === true ? undefined : id => !this.watcherAvailable(id))
     this.clients = dependencies.clients ?? new ProviderClients()
     this.state = {
@@ -2314,7 +2314,7 @@ export class AgentControl {
           this.setDelivery(thread.id, command.draftId, 'queued')
           this.publish({ receivedAt, threadId: thread.id, draftId: command.draftId })
           await this.followupStore.enqueue({ threadId: thread.id, draftId: command.draftId, text: command.text,
-            ...(origin?.operationId ? { watcherOperationId: origin.operationId } : {}),
+            ...(origin?.operationId ? { watcherOperationId: origin.operationId, messageId: this.watcher.operations.find(item => item.id === origin.operationId)?.messageId } : {}),
             attachments: command.attachments ?? [], skills: command.skills, files: command.files, ...(thread.status === 'idle' && !thread.requests.length ? { resumeAfterTurnId: thread.lastTurn?.id ?? 'unknown' } : {}) })
         } else {
           await this.followupStore.edit(thread.id, command.itemId, { text: command.text, attachments: command.attachments ?? existing?.attachments ?? [], skills: command.skills ?? existing?.skills, files: command.files ?? existing?.files })

@@ -35,6 +35,7 @@ export class WatcherService implements WatcherControlHooks {
   private recoveryNotice: string | null = null
   private readonly listeners = new Set<(state: WatcherRoomState) => void>()
   private readonly active = new Map<string, Promise<unknown>>()
+  private invocations = 0
   private readonly dispatchRefusals = new Map<string, Refusal>()
   private readonly nativeHeads = new Map<string, string | null>()
   private readonly confirmations = new Map<string, { targets: WatcherThreadTarget[]; signature: string; expires: number }>()
@@ -186,7 +187,7 @@ export class WatcherService implements WatcherControlHooks {
         if (thread.kind !== 'watcher' || thread.providerId !== previous.provider || thread.projectId !== previous.projectId) refuse('NOT_CURRENT_WATCHER', 'The saved Watcher identity does not match its thread. Nothing was changed.')
         if (previous.provider === input.provider && thread.modelId === input.modelId
           && (!input.reasoningEffort || thread.reasoningEffort === input.reasoningEffort)) return this.get()
-        if (thread.status === 'running' || thread.requests.length || this.active.size || this.options.control.hasPendingThreadWork(thread.id)
+        if (thread.status === 'running' || thread.requests.length || this.invocations || this.active.size || this.options.control.hasPendingThreadWork(thread.id)
           || record.operations.some(operation => ['queued', 'dispatching', 'uncertain'].includes(operation.deliveryState))) {
           refuse('THREAD_BUSY', 'Wait for Watcher and its pending deliveries before changing its provider, model or effort.', true)
         }
@@ -253,7 +254,7 @@ export class WatcherService implements WatcherControlHooks {
     }
     const reason = ['send', 'manual-send', 'queue-followup', 'steer', 'steer-followup'].includes(command.type) ? 'user-send'
       : command.type === 'interrupt' ? 'user-stop' : command.type === 'settle-thread' ? 'user-settle'
-        : ['configure-thread', 'configure-thread-working-copy'].includes(command.type) ? 'user-reconfigure' : undefined
+      : ['configure-thread', 'configure-thread-working-copy', 'edit-followup', 'resume-followups', 'reorder-followups', 'compact-thread'].includes(command.type) ? 'user-reconfigure' : undefined
     if (reason) this.takeover(threadId, reason)
     if (command.type === 'interrupt' && this.record().current?.target.threadId === threadId) {
       const stopped = new Set(this.record().requests.filter(item => item.state === 'active').map(item => item.id))
@@ -360,12 +361,15 @@ export class WatcherService implements WatcherControlHooks {
     }
   }
   private checkOperation(operationId: string): void {
+    if (this.closed) refuse('NOT_CURRENT_WATCHER', 'Watcher is stopping. Nothing was sent.')
     const record = this.record(), operation = record.operations.find(item => item.id === operationId)
     if (!operation || record.current?.target.threadId !== record.requests.find(item => item.id === operation.requestId)?.watcher.threadId) refuse('NOT_CURRENT_WATCHER', 'This operation no longer belongs to the current Watcher.')
     const request = record.requests.find(item => item.id === operation.requestId)!
+    if (operation.deliveryState === 'failed') refuse(operation.refusalCode ?? 'REQUEST_NOT_ACTIVE', 'This operation was cancelled before dispatch. Nothing was sent.')
     if (request.state !== 'active') refuse('REQUEST_NOT_ACTIVE', 'This Watcher request has stopped. Nothing was sent.')
     const participant = request.participants.find(item => key(item.target) === key(operation.target))
     if (!participant || participant.state !== 'participating' || participant.generation !== operation.generation) refuse('THREAD_TAKEN_OVER', 'You took over this thread. Watcher stopped sending to it.')
+    if (participant.automationStopped && (operation.action === 'start' || operation.action === 'send')) refuse('REQUEST_NOT_ACTIVE', 'Watcher stopped this participation. It will not send another prompt for this request.')
     if (operation.action === 'start' && !this.options.control.watcherSnapshot().threads.some(item => item.id === operation.target.threadId)) return
     const thread = this.thread(operation.target); this.protect(thread)
     if (!this.connected(thread)) refuse('HOST_DISCONNECTED', 'This thread is disconnected. Nothing was sent. Reconnect its provider.', true)
@@ -384,6 +388,7 @@ export class WatcherService implements WatcherControlHooks {
   }
 
   async invoke(threadId: string, name: WatcherToolName, args: unknown): Promise<unknown> {
+    this.invocations++
     try {
       this.checkCaller(threadId)
       const parsed = watcherToolSchemas[name].input.safeParse(args)
@@ -399,6 +404,7 @@ export class WatcherService implements WatcherControlHooks {
       }
       return await this.mutate(threadId, name, parsed.data as WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>)
     } catch (error) { return error instanceof Refusal ? error.result : watcherRefusal('PROVIDER_UNAVAILABLE', 'This Watcher call could not be completed. Check the operation receipt before trying again.', true) }
+    finally { this.invocations-- }
   }
   private async mutate(threadId: string, name: WatcherToolName, input: WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>): Promise<unknown> {
     const admitted = await this.transaction(async () => {
@@ -443,6 +449,7 @@ export class WatcherService implements WatcherControlHooks {
         if (this.options.control.hasPendingThreadWork(thread.id)) refuse('DELIVERY_UNCERTAIN', 'Reconcile this thread’s pending delivery before settling.')
       }
       const previous = request.participants.find(item => key(item.target) === key(target))
+      if (send && previous?.automationStopped) refuse('REQUEST_NOT_ACTIVE', 'Watcher stopped this participation. It will not send another prompt for this request.')
       if (start || send) {
         if (this.inFlight(record) > this.options.limit() || !record.reservations.some(item => key(item.target) === key(target)) && this.inFlight(record) >= this.options.limit()) refuse('IN_FLIGHT_LIMIT', 'Watcher’s threads in flight limit is reached. Wait for a thread to finish.', true)
         if ((previous?.promptCount ?? 0) >= WATCHER_PROMPTS_PER_THREAD) refuse('PROMPT_LIMIT', 'This thread has received four prompts for this Watcher request. The limit cannot be renewed by a retry.')
@@ -499,10 +506,15 @@ export class WatcherService implements WatcherControlHooks {
       } else command = { type: name === 'stop_thread' ? 'interrupt' : 'settle-thread', threadId: operation.target.threadId }
       if (operation.action === 'stop') {
         await this.options.control.updateWatcher(record => {
-          for (const pending of record.operations) if (pending.id !== operation.id && pending.requestId === operation.requestId
-            && key(pending.target) === key(operation.target) && pending.deliveryState === 'queued') { pending.deliveryState = 'failed'; pending.refusalCode = 'REQUEST_NOT_ACTIVE' }
+          for (const request of record.requests) for (const participant of request.participants) if (key(participant.target) === key(operation.target) && participant.state === 'participating') {
+            participant.generation++; participant.automationStopped = true
+          }
+          const participant = record.requests.find(item => item.id === operation.requestId)!.participants.find(item => key(item.target) === key(operation.target))!
+          record.operations.find(item => item.id === operation.id)!.generation = participant.generation
+          for (const pending of record.operations) if (pending.id !== operation.id && key(pending.target) === key(operation.target)
+            && pending.deliveryState === 'queued') { pending.deliveryState = 'failed'; pending.refusalCode = 'REQUEST_NOT_ACTIVE' }
         })
-        await this.options.control.cancelWatcherQueue(new Set(this.record().operations.filter(item => item.requestId === operation.requestId && key(item.target) === key(operation.target) && item.action !== 'stop').map(item => item.id)))
+        await this.options.control.cancelWatcherQueue(new Set(this.record().operations.filter(item => key(item.target) === key(operation.target) && item.action !== 'stop').map(item => item.id)))
       }
       const result = await this.options.control.commandFromWatcher(command, origin)
       const guardedRefusal = dispatchRefusal ?? this.dispatchRefusals.get(operation.id)
@@ -537,7 +549,9 @@ export class WatcherService implements WatcherControlHooks {
     if (operation.refusalCode) return { ...watcherRefusal(operation.refusalCode, operation.refusalCode === 'THREAD_TAKEN_OVER'
       ? 'You took over this thread. Watcher stopped sending to it.' : 'The operation could not be completed. Read its receipt before trying again.'), receipt: base.receipt }
     if (name === 'start_thread') {
-      const create = input as WatcherToolInput<'start_thread'>, thread = this.thread(operation.target)
+      const create = input as WatcherToolInput<'start_thread'>
+      const thread = this.options.control.watcherSnapshot().threads.find(item => item.id === operation.target.threadId)
+      if (!thread) return { ...watcherRefusal('DELIVERY_UNCERTAIN', 'The creation is recorded, but its thread is unavailable. This retry started nothing. Reconcile the original receipt.', true), receipt: base.receipt }
       return { status: 'ok', ...base, target: operation.target, creationReceiptId: operation.creationReceiptId!, firstPromptReceiptId: operation.firstPromptReceiptId!,
         effectiveChoices: { modelId: thread.modelId, reasoningEffort: thread.reasoningEffort ?? null,
           permission: thread.providerMode ? { kind: 'provider', choiceId: thread.providerMode } : { kind: 'runtime', mode: thread.runtimeMode ?? 'approval-required' },

@@ -275,7 +275,14 @@ export class SottoThreadHost implements AgentHost {
   }
 
   async execute(command: AgentHostCommand): Promise<AgentHostResult> {
+    return this.executeGuarded(command)
+  }
+  executeFromWatcher(command: AgentHostCommand, guard: () => void): Promise<AgentHostResult> {
+    return this.executeGuarded(command, guard)
+  }
+  private async executeGuarded(command: AgentHostCommand, guard?: () => void): Promise<AgentHostResult> {
     await this.registry.load()
+    guard?.()
     let translated = command
     if (command.type === 'create-thread') {
       const existing = this.registry.byThread(command.threadId)
@@ -292,7 +299,8 @@ export class SottoThreadHost implements AgentHost {
     }
     // Persist creation identity before dispatch, including when the provider loses its acknowledgment.
     await this.registry.flush()
-    const result = await this.inner.execute(translated)
+    guard?.()
+    const result = await (guard && this.inner.executeFromWatcher ? this.inner.executeFromWatcher(translated, guard) : this.inner.execute(translated))
     // A settings change's snapshot crosses this boundary the way every snapshot does: under Sotto's thread IDs.
     const mapped = result.snapshot ? { ...result, snapshot: this.mapSnapshot(result.snapshot) } : result
     await this.registry.flush().catch(() => { console.warn('registry-flush-deferred') })

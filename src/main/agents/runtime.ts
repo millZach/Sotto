@@ -212,13 +212,14 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     closing ??= (async () => {
       // A sweep in progress finishes its current worktree, and takes no other, before the host it asks is closed.
       // A babysitting pass finishes the pull request it is on, and records what it told, the same way.
-      watcher?.close(); await watcherTools?.close()
+      watcher?.close()
+      const closingWatcherTools = watcherTools?.close()
       await worktreeCleanup.close()
       if (babysitter) await babysitter.close()
       toolReads.dispose()
       agentControl.dispose()
       try {
-        const results = await Promise.allSettled([reasoner.close?.(), shortTextWriter.close(), ...Object.values(providers).map(provider => provider.closed?.())])
+        const results = await Promise.allSettled([reasoner.close?.(), shortTextWriter.close(), ...Object.values(providers).map(provider => provider.closed?.()), ...(closingWatcherTools ? [closingWatcherTools] : [])])
         await agentControl.closed()
         // A connection already starting when stop was requested has now settled. Stop and drain
         // once more so it cannot leave a late child outside the first provider closure snapshot.
@@ -239,10 +240,11 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   try {
     await agentControl.start(switchedOff ? { beforeConnect: async () => { await switchedOff.stop({ startedBy: 'agent' }, 'switch').catch(() => 0) } } : {})
   } catch (error) {
-    watcher?.close(); await watcherTools?.close()
+    watcher?.close()
+    const closingWatcherTools = watcherTools?.close()
     void babysitter?.close()
     agentControl.dispose()
-    await Promise.allSettled([reasoner.close?.(), shortTextWriter.close(), ...Object.values(providers).map(provider => provider.closed?.())])
+    await Promise.allSettled([reasoner.close?.(), shortTextWriter.close(), ...Object.values(providers).map(provider => provider.closed?.()), ...(closingWatcherTools ? [closingWatcherTools] : [])])
     agentHost.dispose()
     throw error
   }

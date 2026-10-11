@@ -2960,12 +2960,13 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         let result: AgentHostResult
         try {
           watcherGuard?.()
-          result = await this.inner.execute({ type: 'create-thread', commandId: creation.commandId, threadId: thread.id,
+          const createCommand: AgentHostCommand = { type: 'create-thread', commandId: creation.commandId, threadId: thread.id,
             projectId: thread.projectId, project, title: thread.title, modelId: thread.modelId,
             workingDirectory,
             ...(thread.reasoningEffort ? { reasoningEffort: thread.reasoningEffort } : {}),
             ...(thread.runtimeMode ? { runtimeMode: thread.runtimeMode } : {}),
-            ...(thread.providerMode ? { providerMode: thread.providerMode } : {}) })
+            ...(thread.providerMode ? { providerMode: thread.providerMode } : {}) }
+          result = await (watcherGuard && this.inner.executeFromWatcher ? this.inner.executeFromWatcher(createCommand, watcherGuard) : this.inner.execute(createCommand))
         } catch (error) { await rejected(); throw error }
         if (!result.accepted && !result.uncertain) { await rejected(); throw new Error('The provider rejected thread creation. Check its connection and settings, then retry your prompt.') }
         this.accept(await this.inner.snapshot(thread.providerId)); await this.flush()
@@ -3001,7 +3002,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         : command.type === 'configure-thread' ? this.hostRead(command) : command
       if (command.type === 'send') markSendStage(command.commandId, 'prepared')
       watcherGuard?.()
-      const result = await this.inner.execute(dispatched)
+      const result = await (watcherGuard && this.inner.executeFromWatcher ? this.inner.executeFromWatcher(dispatched, watcherGuard) : this.inner.execute(dispatched))
       if (command.type === 'send' && firstSend && result.accepted) this.nameBranch(thread.id, command.text)
       if (command.type === 'configure-thread') {
         const [confirmed, snapshot] = confirmedSettingsSnapshot(result)

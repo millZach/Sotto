@@ -39,9 +39,10 @@ it.skipIf(!enabled)('starts and reads a real Codex worker without confirmation a
     if (evidence.freeMemoryKB < 3 * 1024 * 1024) throw new Error('live-memory-below-three-gib')
   }
   const originalRpc = CodexProcess.prototype.rpc
-  const rpcObserver = vi.spyOn(CodexProcess.prototype, 'rpc').mockImplementation(function (this: CodexProcess, method, params, apply, rejected) {
+  const rpcObserver = vi.spyOn(CodexProcess.prototype, 'rpc').mockImplementation(function (this: CodexProcess, method, params, apply, rejected, beforeWrite) {
+    beforeWrite?.()
     if (method === 'turn/start') { if (evidence.modelTurns >= 6) throw new Error('live-turn-budget'); evidence.modelTurns++; void save() }
-    return originalRpc.call(this, method, params, apply, rejected)
+    return originalRpc.call(this, method, params, apply, rejected, beforeWrite)
   })
   const adapter = new CodexAppServerHost({ userDataPath: directory, requestTimeoutMs: 30_000, pollIntervalMs: 1_000 })
   const execute = adapter.execute.bind(adapter)

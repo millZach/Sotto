@@ -49,10 +49,11 @@ export interface FollowupView {
 export class FollowupStore {
   private state: State = { items: [], receipts: [] }
   private readonly dormant = new Map<string, Stored['items'][number]>()
+  private readonly gatedMachines = new Map<string, Stored['items'][number]>()
   private active: (threadId: string) => boolean = () => true
   private tail: Promise<unknown> = Promise.resolve()
   private readonly store: AtomicJsonStore<Stored>
-  constructor(directory: string, private readonly historyEnabled: () => boolean = () => true, private readonly isWatcherThread: (id: string) => boolean = () => false) {
+  constructor(directory: string, private readonly historyEnabled: () => boolean = () => true, private readonly isWatcherThread: (id: string) => boolean = () => false, private readonly watcherEnabled: () => boolean = () => true) {
     this.store = new AtomicJsonStore<Stored>(join(directory, 'followups.json'), storedSchema.parse, () => ({ items: [], receipts: [] }))
   }
   /**
@@ -66,6 +67,7 @@ export class FollowupStore {
     const items: State['items'] = []
     const lost = new Set<string>()
     for (const item of stored.items) {
+      if (item.watcherOperationId && !this.watcherEnabled()) { this.gatedMachines.set(item.id, structuredClone(item)); continue }
       if (!this.historyEnabled() && active(item.threadId) && (item.watcherOperationId || this.isWatcherThread(item.threadId))) continue
       if (!active(item.threadId)) {
         this.dormant.set(item.id, structuredClone(item))
@@ -108,12 +110,12 @@ export class FollowupStore {
     const task = this.tail.catch(() => undefined).then(async () => {
       const next = this.get()
       if (update(next) === false) return
-      await this.store.write({ ...next, items: next.items.filter(item => !this.active(item.threadId) || this.historyEnabled() || !item.watcherOperationId && !this.isWatcherThread(item.threadId)).map(item => this.dormant.get(item.id) ?? item) }); this.state = next
+      await this.store.write({ ...next, items: [...this.gatedMachines.values(), ...next.items.filter(item => !this.active(item.threadId) || this.historyEnabled() || !item.watcherOperationId && !this.isWatcherThread(item.threadId)).map(item => this.dormant.get(item.id) ?? item)] }); this.state = next
     })
     this.tail = task
     return task
   }
-  enqueue(input: Pick<AgentFollowup, 'threadId' | 'draftId' | 'text' | 'attachments' | 'skills' | 'files' | 'resumeAfterTurnId'> & { watcherOperationId?: string }): Promise<void> {
+  enqueue(input: Pick<AgentFollowup, 'threadId' | 'draftId' | 'text' | 'attachments' | 'skills' | 'files' | 'resumeAfterTurnId'> & { watcherOperationId?: string; messageId?: string | undefined }): Promise<void> {
     return this.change(state => {
       const receipt = state.receipts.find(r => r.threadId === input.threadId && r.draftId === input.draftId)
       const item = state.items.find(r => r.threadId === input.threadId && r.draftId === input.draftId)
@@ -226,7 +228,7 @@ export class FollowupStore {
     return this.change(state => {
       const item = state.items.find(item => item.id === id)
       if (!item || item.status !== 'queued' || mode === 'send' && state.items.find(candidate => candidate.threadId === item.threadId)?.id !== id) throw new Error(item?.wakeUp ? 'This wake-up is no longer ready to send.' : 'This follow-up is no longer ready to send.')
-      Object.assign(item, { status: 'dispatching', commandId: randomUUID(), messageId: randomUUID(), updatedAt: new Date().toISOString() })
+      Object.assign(item, { status: 'dispatching', commandId: randomUUID(), messageId: item.watcherOperationId && item.messageId ? item.messageId : randomUUID(), updatedAt: new Date().toISOString() })
     })
   }
   settle(id: string, status: 'accepted' | 'uncertain' | 'failed', error?: string): Promise<void> {
