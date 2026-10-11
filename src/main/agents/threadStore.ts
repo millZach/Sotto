@@ -501,10 +501,13 @@ export class ThreadStore {
   }
 
   /** Everything after `seq`, in the order it was written. */
-  eventsAfter(seq: number, threadId?: string, limit = -1): StoredThreadEvent[] {
+  eventsAfter(seq: number, threadId?: string, limit = -1, excludedThreadIds: readonly string[] = []): StoredThreadEvent[] {
+    // Visibility belongs before LIMIT so hidden history cannot exhaust a client's catch-up page.
+    const exclusion = excludedThreadIds.length ? ' AND thread_id NOT IN (SELECT value FROM json_each(?))' : ''
+    const excluded = excludedThreadIds.length ? [JSON.stringify(excludedThreadIds)] : []
     const rows = threadId === undefined
-      ? this.statement('SELECT seq, thread_id, payload FROM events WHERE seq > ? ORDER BY seq LIMIT ?').all(seq, limit)
-      : this.statement('SELECT seq, thread_id, payload FROM events WHERE seq > ? AND thread_id = ? ORDER BY seq LIMIT ?').all(seq, threadId, limit)
+      ? this.statement(`SELECT seq, thread_id, payload FROM events WHERE seq > ?${exclusion} ORDER BY seq LIMIT ?`).all(seq, ...excluded, limit)
+      : this.statement(`SELECT seq, thread_id, payload FROM events WHERE seq > ? AND thread_id = ?${exclusion} ORDER BY seq LIMIT ?`).all(seq, threadId, ...excluded, limit)
     return rows.map(row => ({ seq: Number(row.seq), threadId: String(row.thread_id), event: JSON.parse(String(row.payload)) as ThreadEvent }))
   }
 

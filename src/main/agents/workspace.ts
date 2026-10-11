@@ -1747,7 +1747,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   eventsAfter(seq: number, threadId?: string, limit?: number): StoredThreadEvent[] {
     if (this.storeUnavailable) return []
     this.writeEvents()
-    return this.threadStore.eventsAfter(seq, threadId, limit).filter(event => this.threadVisible(event.threadId))
+    return this.threadStore.eventsAfter(seq, threadId, limit, this.watcherEnabled ? [] : this.watcherThreadIds())
   }
   private stopDelivery(): void {
     this.stopping = true

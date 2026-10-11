@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
+import { ThreadStore } from '../../src/main/agents/threadStore'
+import { HOST_EVENT_PAGE_SIZE } from '../../src/shared/hostProtocol'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
 import { WatcherLaunchProfiles } from '../../src/main/agents/watcherLaunchProfiles'
 import type { WatcherProfileTools, AgentHost } from '../../src/main/agents/host'
@@ -19,7 +21,7 @@ import { devinFixture } from '../fixtures/devinFixture'
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 
-async function savedWatcher() {
+async function savedWatcher(watcherEnabled = false) {
   let f = await workspaceFixture()
   const root = f.root
   cleanups.push(() => f.remove())
@@ -42,7 +44,7 @@ async function savedWatcher() {
   record.current = identity
   record.history = [{ ...identity, target: { ...identity.target, threadId: ids[1]! } }]
   await writeFile(join(root, 'agents.json'), JSON.stringify({ watcher: record }))
-  f = await workspaceFixture(root, { watcherEnabled: false })
+  f = await workspaceFixture(root, { watcherEnabled })
   cleanups.push(() => f.stop())
   return { ...f, record, ids, saved, file, model, project }
 }
@@ -194,4 +196,37 @@ it.each([true, false])('keeps a restored Watcher selection, drafts, deliveries, 
   for (const key of ['watcher', 'activeThreadId', 'activeProjectId', 'draft', 'draftThreadId', 'draftRequestId', 'draftAttachments',
     'manualDraftId', 'composing', 'threadDrafts', 'deliveries', 'outbox']) expect(after[key]).toEqual(saved[key])
   expect(JSON.parse(await readFile(followupFile, 'utf8'))).toEqual(queue)
+})
+
+it.each([false, true])('fills ordinary catch-up pages across hidden Watcher history (enabled: %s)', async watcherEnabled => {
+  const f = await savedWatcher(watcherEnabled)
+  await f.host.connect('codex')
+  const threadId = randomUUID()
+  await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId, projectId: f.project.id,
+    modelId: f.model.id, title: 'Ordinary catch-up', workingCopy: 'shared' })
+  const store = new ThreadStore(join(f.root, 'threads.sqlite'))
+  store.open()
+  cleanups.push(async () => store.close())
+  const afterSeq = store.latestSeq()
+  const event = { kind: 'answer-given' as const, at: new Date().toISOString(), requestId: 'synthetic-request', attribution: { clientId: 'synthetic-desktop', transport: 'ipc' as const } }
+  for (const id of f.ids) store.appendMany(id, Array.from({ length: HOST_EVENT_PAGE_SIZE + 1 }, () => event))
+  store.appendMany(threadId, Array.from({ length: HOST_EVENT_PAGE_SIZE + 2 }, () => event))
+  const expected = store.eventsAfter(afterSeq).filter(row => watcherEnabled || row.threadId === threadId)
+  let cursor = afterSeq
+  const received = []
+  for (;;) {
+    // Socket catch-up asks for one extra visible record to compute hasMore.
+    const all = f.host.eventsAfter(cursor, undefined, HOST_EVENT_PAGE_SIZE + 1)
+    const page = all.slice(0, HOST_EVENT_PAGE_SIZE)
+    received.push(...page)
+    if (all.length <= page.length) break
+    expect(page.length).toBe(HOST_EVENT_PAGE_SIZE)
+    expect(page.at(-1)!.seq).toBeGreaterThan(cursor)
+    cursor = page.at(-1)!.seq
+  }
+  expect(received).toEqual(expected)
+  expect(f.host.eventsAfter(afterSeq, threadId, 1)).toEqual(store.eventsAfter(afterSeq, threadId, 1))
+  expect(f.host.eventsAfter(afterSeq, f.ids[0], 1)).toHaveLength(watcherEnabled ? 1 : 0)
+  expect(f.host.eventsAfter(afterSeq, undefined, 0)).toEqual([])
+  expect(store.eventsAfter(afterSeq)).toHaveLength(3 * HOST_EVENT_PAGE_SIZE + 4)
 })
