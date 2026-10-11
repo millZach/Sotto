@@ -37,3 +37,7 @@ The design pass's full-width attention edge, accessible pane/tab names, empty-fo
 Final gates at `2fe9391cf`: typecheck, lint, notices and build exit 0; six Electron cases passed; the single full run returned 9,399 tests passed and 222 skipped (9,621), across 628 files passed and 51 skipped (679). All eight supplied findings and the additional review/redraw findings have fixes and regressions. The final verification note records the earlier failed attempts and compatibility limits.
 
 Delivery completed on October 9: `feat/terminal-agent-states` was pushed and [PR #896](https://github.com/millZach/Sotto/pull/896) opened against `feat/terminal-agent-state-adr`. It was left unmerged as requested. No source changed after the final gates; the delivery record is documentation only.
+
+## October 10 merge onto main
+
+The stack base is now in main and PR #896 targets main. Merge `6fa6e883d` combines main at `9bc7c92f49` with the approved agent states; the seven follow-up fixes leave verified source/tests at `1954d65cf`. All requested gates passed, including the single two-worker full run (9,141 passed, 276 skipped) and eight terminal Playwright specs (15 passed). Windows unpacked packaging and the packaged hook helper also passed. The October 10 addition to the verification note retains the earlier evidence and records the combined behavior. This pass pushes the branch without editing the pull request.
