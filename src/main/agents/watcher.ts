@@ -7,7 +7,7 @@ import { resolveModel } from '../../shared/modelCatalog'
 import { RUNTIME_MODE_ORDER, resolveNewThreadPermission } from '../../shared/newThreadDefaults'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { watcherOverview } from '../../shared/watcherOverview'
-import { WATCHER_PROMPTS_PER_THREAD, WATCHER_READ_BYTES_MAX, watcherToolSchemas,
+import { WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_READ_BYTES_MAX, watcherToolSchemas,
   type WatcherIdentity, type WatcherOperation, type WatcherRecord, type WatcherRefusal, type WatcherThreadTarget,
   type WatcherToolInput, type WatcherToolName } from '../../shared/watcher'
 import { watcherOpenRequestSchema, type WatcherOpenRequest, type WatcherRoomResult, type WatcherRoomState,
@@ -628,7 +628,7 @@ export class WatcherService implements WatcherControlHooks {
           pullRequests: (thread.pullRequests ?? []).map(item => ({ number: item.number, url: item.url, title: item.title ?? '', state: item.state, draft: item.draft ?? false })),
           evidence: [], lastActivityAt: thread.messages.at(-1)?.createdAt ?? null, observedAt: null, connected: row.available,
           freshness: row.freshness, userReadAt: null, watcherReadAt: record.reads.find(item => key(item.target) === key(target))?.readAt ?? null,
-          participation: record.requests.flatMap(request => request.participants.filter(item => key(item.target) === key(target)).map(({ target: _target, promptCount: _count, lastUserMessageId: _head, ...participant }) => { void _target; void _count; void _head; return participant })),
+          participation: record.requests.flatMap(request => request.participants.filter(item => key(item.target) === key(target)).map(({ target: _target, promptCount: _count, lastUserMessageId: _head, ...participant }) => { void _target; void _count; void _head; return participant })).slice(-WATCHER_PARTICIPATION_HISTORY_MAX),
           protected: this.protectedThread(thread) } })
     const page = this.page(`threads:${digest([input.hostId, input.project, input.group, input.includeSettled])}`, rows, input.cursor, input.limit)
     return { status: 'ok', rows: page.rows, snapshotRevision: page.revision, nextCursor: page.nextCursor, observedAt: now(), staleHosts: [],

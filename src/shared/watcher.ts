@@ -6,6 +6,7 @@ export const WATCHER_PROMPT_BYTES_MAX = 32 * 1_024
 export const WATCHER_READ_BYTES_MAX = 64 * 1_024
 export const WATCHER_TITLE_MAX = 512
 export const WATCHER_ROSTER_MAX = 100
+export const WATCHER_PARTICIPATION_HISTORY_MAX = 100
 export const WATCHER_MESSAGES_MAX = 50
 export const WATCHER_TOOL_CALLS_MAX = 8
 export const WATCHER_PROMPTS_PER_THREAD = 4
@@ -77,7 +78,7 @@ const row = z.object({ target: watcherThreadTargetSchema, title: z.string().max(
   group: watcherGroupSchema, waitsOn: z.array(pending).max(100), branch: z.string().max(512).nullable(),
   workingCopy: workingCopy.nullable(), pullRequests: z.array(pr).max(50), evidence: z.array(watcherEvidenceSchema).max(100),
   lastActivityAt: time.nullable(), observedAt: time.nullable(), connected: z.boolean(), freshness,
-  userReadAt: time.nullable(), watcherReadAt: time.nullable(), participation: z.array(participation).max(100), protected: z.boolean() }).strict()
+  userReadAt: time.nullable(), watcherReadAt: time.nullable(), participation: z.array(participation).max(WATCHER_PARTICIPATION_HISTORY_MAX), protected: z.boolean() }).strict()
 const staleHost = z.object({ hostId: z.uuid(), observedAt: time.nullable() }).strict()
 const counts = z.object(Object.fromEntries(WATCHER_GROUPS.map(group => [group, counter])) as Record<typeof WATCHER_GROUPS[number], typeof counter>).strict()
 const paging = { cursor: cursor.optional(), limit: z.number().int().min(1).max(WATCHER_ROSTER_MAX).default(WATCHER_ROSTER_MAX) }

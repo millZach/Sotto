@@ -507,3 +507,25 @@ it('refunds a definite thrown command failure after the worker exists', async ()
   expect(f.service.state().requests[0]!.participants[0]!.promptCount).toBe(1)
 })
 
+
+it('keeps the roster readable after more than one hundred requests address a worker', async () => {
+  const f = await fixture(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  const latestRequestId = randomUUID()
+  await f.control.updateWatcher(record => {
+    const original = record.requests[0]!
+    for (let index = 0; index < 100; index++) {
+      const id = index === 99 ? latestRequestId : randomUUID()
+      record.requests.push({ ...original, id, rootUserMessageId: randomUUID(), state: 'closed', closedAt: original.createdAt,
+        participants: original.participants.map(item => ({ ...item, requestId: id, state: index === 99 ? 'taken-over' : 'relinquished',
+          ...(index === 99 ? { takeover: { reason: 'user-send', at: original.createdAt } } : {}) })) })
+    }
+  })
+  const result = await f.call('list_threads', { includeSettled: true })
+  expect(result.status).toBe('ok')
+  if (result.status !== 'ok' || !('rows' in result)) throw new Error('roster refused')
+  const row = result.rows.find(item => item.target.threadId === first.target.threadId)!
+  expect(row.participation).toHaveLength(100)
+  expect(row.participation.at(-1)).toMatchObject({ requestId: latestRequestId, state: 'taken-over', takeover: { reason: 'user-send' } })
+  expect(f.control.watcherRecord().requests).toHaveLength(101)
+})
