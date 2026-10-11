@@ -72,12 +72,29 @@ function meansStatus(kind: 'error' | 'warning', color: string): boolean {
   return C >= 0.07 && (kind === 'error' ? hue <= 45 || hue >= 345 : hue >= 45 && hue <= 105)
 }
 
+/** Changes layers these washes over context, added and removed lines (changes.css). */
+function diffRowSurfaces(background: ThemeRgb, colors: ThemeColors): ThemeRgb[] {
+  // CSS composites each translucent layer before painting; do not round between layers.
+  return [background, mixRgb(background, rgb(colors.accentSurface), 0.7), mixRgb(background, rgb(colors.accent), 0.22)]
+}
+
+function diffContrast(color: string, surface: ThemeRgb): number {
+  const ink = rgb(color)
+  // The final sRGB pixel is quantised too; a float-only 4.50 can paint below it.
+  const pixel = { r: Math.round(surface.r), g: Math.round(surface.g), b: Math.round(surface.b) }
+  return Math.min(contrastRatio(ink, surface), contrastRatio(ink, pixel))
+}
+
+function removedTextScore(color: string, colors: ThemeColors): number {
+  return Math.min(...diffRowSurfaces(mixRgb(rgb(colors.codeBackground), rgb(color), 0.12), colors).map(surface => diffContrast(color, surface)))
+}
+
 /** The derived green is text in Tools, Changes and setup, as well as a finished ring. */
 export function omarchySuccessText(colors: ThemeColors, mode: ThemeAppearance): string {
   const original = mode === 'dark' ? 'oklch(0.79 0.13 165)' : 'oklch(0.5 0.11 158)'
   const score = (color: string): number => Math.min(
     ...[...room, ...sidebar].map(surface => ratio(color, colors[surface])),
-    ratio(color, mix(colors.codeBackground, color, 12)), // Added lines in Changes.
+    ...diffRowSurfaces(mixRgb(rgb(colors.codeBackground), rgb(color), 0.12), colors).map(surface => diffContrast(color, surface)),
   )
   const needed = readableOmarchyMix(original, colors.text, score)
   if (needed === null) throw new Error('Omarchy theme cannot be made readable')
@@ -115,12 +132,28 @@ export function guardOmarchyColors(input: ThemeColors, mode: ThemeAppearance): T
   for (const pair of OMARCHY_TEXT_PAIRS.slice(1)) {
     repair(pair.foreground, color => Math.min(...pair.surfaces.map(surface => ratio(color, colors[surface]))))
   }
-  // Changes paints text over translucent add/remove fills on codeBackground.
-  const added = mix(colors.codeBackground, omarchySuccessText(colors, mode), 12)
-  const removed = (): string => mix(colors.codeBackground, colors.errorForeground, 12)
-  repair('errorForeground', color => ratio(color, mix(colors.codeBackground, color, 12)))
-  repair('mutedForeground', color => Math.min(ratio(color, added), ratio(color, removed())))
-  repair('codeForeground', color => Math.min(ratio(color, added), ratio(color, removed())))
+  // A selected Changes line keeps its add/remove tint under the accent wash. Settle
+  // body text against those actual layers before using it as the repair target.
+  const diffSurfaces = (palette: ThemeColors): ThemeRgb[] => [
+    ...diffRowSurfaces(rgb(palette.codeBackground), palette),
+    ...diffRowSurfaces(mixRgb(rgb(palette.codeBackground), rgb(omarchySuccessText(palette, mode)), 0.12), palette),
+    ...diffRowSurfaces(mixRgb(rgb(palette.codeBackground), rgb(palette.errorForeground), 0.12), palette),
+  ]
+  repair('text', color => {
+    const candidate = { ...colors, text: color }
+    // Status signs must be able to mix toward this candidate too. Their repaired
+    // colours determine the tints against which the body and line numbers read.
+    const errorMix = readableOmarchyMix(candidate.errorForeground, color, error => removedTextScore(error, candidate))
+    if (errorMix === null) return 0
+    candidate.errorForeground = mix(candidate.errorForeground, color, errorMix)
+    try { return Math.min(...diffSurfaces(candidate).map(surface => diffContrast(color, surface))) }
+    catch { return 0 } // A stronger body target may make the derived green readable.
+  })
+  repair('errorForeground', color => removedTextScore(color, colors))
+  const diffs = diffSurfaces(colors)
+  for (const role of ['mutedForeground', 'codeForeground'] as const) {
+    repair(role, color => Math.min(...diffs.map(surface => diffContrast(color, surface))))
+  }
   repair('focus', color => Math.min(...['canvas', 'surface'].map(surface => ratio(color, colors[surface as ThemeColorRole]))), 3)
   // Verify the final roles as well: repairing the text can change subsequent targets.
   for (const pair of OMARCHY_TEXT_PAIRS) {

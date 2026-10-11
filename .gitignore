@@ -375,3 +375,9 @@ artifacts/watcher-gate/*
 artifacts/watcher-thread-tools/*
 !artifacts/watcher-thread-tools/owl-dark-820x560.png
 !artifacts/watcher-thread-tools/stable-light-820x560.png
+# Omarchy muted-text proof; retain only the cited captures and measurements.
+artifacts/omarchy-muted/*
+!artifacts/omarchy-muted/changes-tokyo-night.png
+!artifacts/omarchy-muted/changes-catppuccin-latte.png
+!artifacts/omarchy-muted/browser-measurements.json
+!artifacts/omarchy-muted/measurements.json

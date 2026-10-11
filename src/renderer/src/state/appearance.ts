@@ -2,7 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from 'react'
 
 import { DEFAULT_SETTINGS, EFFORT_COLORS, type AppSettings, type Appearance, type EffortColor } from '../../../shared/settings'
 import { APP_ICON_BRAND_ATTRIBUTE, wearsAppIcon } from '../../../shared/themeBranding'
-import { OMARCHY_THEME_ID, omarchySuccessText, omarchyThemeSchema, type OmarchyTheme } from '../../../shared/themes/omarchy'
+import { OMARCHY_THEME_ID, guardOmarchyColors, omarchySuccessText, omarchyThemeSchema, type OmarchyTheme } from '../../../shared/themes/omarchy'
 import { isCanonicalThemeColor } from '../../../shared/themes/color'
 import {
   APPEARANCE_CONTRAST,
@@ -197,7 +197,11 @@ export function readCachedAppearance(storage: Pick<Storage, 'getItem'> | undefin
     const customThemes = parseCustomThemes(record.customThemes)
     const onLinux = typeof window !== 'undefined' && window.sotto?.platform === 'linux'
     const runtimeTheme = onLinux ? omarchyThemeSchema.nullable().safeParse(record.omarchyTheme) : null
-    const omarchyTheme = runtimeTheme?.success ? runtimeTheme.data : null
+    // This first-frame hint may have been saved by an older readability guard.
+    // Repair it before applyAppearance derives status text, or use the fallback
+    // below if it cannot read. Fresh settings remain the source of truth.
+    const cachedTheme = runtimeTheme?.success ? runtimeTheme.data : null
+    const omarchyTheme = cachedTheme ? { ...cachedTheme, colors: guardOmarchyColors(cachedTheme.colors, cachedTheme.appearance) } : null
     const half = (id: string, mode: ThemeAppearance): string => onLinux && id === OMARCHY_THEME_ID ? id : resolveThemeHalfId(id, mode, customThemes)
     const text = (value: unknown, otherwise: string): string => (typeof value === 'string' ? value : otherwise)
     const number = (value: unknown, otherwise: number): number => (typeof value === 'number' ? value : otherwise)
