@@ -142,7 +142,7 @@ Sotto is a desktop dictation app with manual coding threads across native provid
 
 All three surfaces choose the same shell: `pwsh.exe` on Windows PATH, else Windows PowerShell; `SHELL` elsewhere, else zsh on macOS or sh on Linux. A provider CLI exiting prints its exit code and leaves an interactive shell in the same folder. Tools and drawer shells share 32 slots across every thread, ended shells included; restored running records have no output and say so.
 
-The following terminal states are proposed in [ADR-0066](docs/adr/0066-a-terminal-agent-reports-state-through-run-scoped-hooks.md); today's output-based Running and Idle labels remain until that work ships. They describe Terminal mode's agents, apart from thread states. Plain shells keep Running and Idle.
+The following states describe Terminal mode's agents, apart from thread states ([ADR-0066](docs/adr/0066-a-terminal-agent-reports-state-through-run-scoped-hooks.md)). Plain shells keep output-based Running and Idle. Needs you and Working group terminals across projects; other terminals stay under their projects before Closed.
 
 **Starting (terminal).** A terminal whose provider CLI is opening and is not yet ready for input.
 
@@ -154,7 +154,7 @@ The following terminal states are proposed in [ADR-0066](docs/adr/0066-a-termina
 
 **Just finished (terminal).** A terminal whose agent completed a turn while no client showed it, held until a client views it or its agent works again, asks or exits. An on-screen pane counts whether focused or not; a list row does not. Avoid: "Done", "Needs you".
 
-**Exited (terminal).** A terminal whose launched provider CLI has ended. Its retained output is still readable, distinct from a Closed terminal whose output the user released.
+**Exited (terminal).** A terminal whose launched provider CLI has ended. Its retained output is still readable and its interactive shell remains usable in the same folder, distinct from a Closed terminal whose output the user released. Shell input and output leave the agent Exited; Restart begins a fresh agent run and Stop ends the shell too.
 
 **Terminal drawer.** A thread pane's own terminal, under its composer across the bottom third of the pane, opened with the pane's Terminal drawer button or Ctrl+J (Cmd+J on a Mac) in the pane the key lands in. Its terminal leaves Ctrl+J to the page; terminal search and text-size chords act in the focused terminal unless dictation uses that chord. Escape closes link choices first, then an open search, and otherwise belongs to the shell. Its shells start in the thread's project folder, even when the thread has its own worktree, and in the working copy only when the project folder is gone or cannot be opened; its bar names the branch only for a thread that shares the project folder. They are separate from the Tools panel's terminal: a shell started in one never shows in the other. Opening a drawer with no shell starts one; closing its last shell hides it. Hiding it leaves its shells running. Each thread remembers whether its drawer is open and how tall it is, and every pane of a split has its own. Under a Frosted window the drawer is see-through too, a little more solid than the room. A thread on a paired host has no drawer; its terminal is on the host (ADR-0049). Avoid: "bottom panel", "terminal tab", or "Terminal" alone, which is Terminal mode's.
 

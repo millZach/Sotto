@@ -17,6 +17,7 @@ export function terminalWorkspaceBridgeFixture(options: { terminals?: WorkspaceT
     list: vi.fn<TerminalWorkspaceBridge['list']>(async () => ({ ok: true, value: { terminals, shell: options.shell ?? 'pwsh' } })),
     read: vi.fn<TerminalWorkspaceBridge['read']>(async ({ id }) => ({ ok: true, value: { terminal: terminals.find(item => item.id === id)!, output: '', sequence: 0 } })),
     open: vi.fn(), write: vi.fn(), resize: vi.fn(), interrupt: vi.fn(), stop: vi.fn(), restart: vi.fn(), close: vi.fn(), pasteImage: vi.fn(),
+    visibility: vi.fn<TerminalWorkspaceBridge['visibility']>(async () => ({ ok: true, value: undefined })),
     onEvent: events.subscribe, ...options.commands,
   }
   return { ...events, bridge, setTerminals: (next: WorkspaceTerminal[]) => { terminals = next } }

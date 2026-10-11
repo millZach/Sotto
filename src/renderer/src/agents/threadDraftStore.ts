@@ -529,8 +529,8 @@ export class ThreadDraftStore {
       current.saving = null
       const status = result === null ? 'unsaved' : persistence(result, threadId, draft.draftId)
       current.saved ||= status === 'saved'
-      // The reply proves persistence, not that the snapshot stream has reached this revision.
-      // An older shell can still commit afterward; only receive() may mark it observed.
+      // A save reply proves durability, not that its publication has reached the window.
+      // Only receive() may mark the revision observed; an older queued shell cannot clear it.
       current.error = current.saved || status === 'saving' ? null : SAVE_ERROR
       this.emit(new Set([threadId]))
     }

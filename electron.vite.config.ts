@@ -92,6 +92,7 @@ export default defineConfig({
     build: { rollupOptions: { external: ['node-pty', 'sherpa-onnx-node'], input: {
       index: resolve(__dirname, 'src/main/index.ts'),
       dictationClient: resolve(__dirname, 'src/main/hotkeys/dictationClient.ts'),
+      terminalAgentHook: resolve(__dirname, 'src/main/terminals/helper.ts'),
     } } },
     // electron-updater is a devDependency that is compiled into the main chunk,
     // exactly like zod is compiled into the sandboxed preload: production

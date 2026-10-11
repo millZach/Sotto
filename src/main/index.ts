@@ -1290,7 +1290,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           } catch (error) { release(); throw error }
         },
         emit: event => { windows.sendToMain(TERMINALS_EVENT, event) },
-      }), () => windows.getTrustedRenderers())
+      }), () => windows.getTrustedRenderers(), sender => BrowserWindow.getAllWindows().find(window => window.webContents === sender))
       browserService = new BrowserService({ files,
         getWindow: () => BrowserWindow.getAllWindows().find(window => window.webContents === windows.getMainWebContents()) ?? null,
         emit: event => { windows.sendToMain(BROWSER_EVENT, event) },
