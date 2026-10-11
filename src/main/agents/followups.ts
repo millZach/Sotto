@@ -8,7 +8,7 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { StageInline } from './attachmentStore'
 import type { BabysitNews } from './babysitNews'
 import { pullRequestKey } from '../../shared/gitPullRequests'
-import { babysitNewsSchema, foldNews, WAKE_UP_NEWS_MAX } from './wakeUp'
+import { wakeUpNewsSchema, foldWakeUpNews, isWatcherNews, WAKE_UP_NEWS_MAX, type WakeUpNews } from './wakeUp'
 
 /** Why a follow-up came back from a restart without an image it had, whatever the reason the image was not kept. */
 export const LOST_IMAGES = 'An image in this follow-up was no longer kept when Sotto started, so the follow-up was paused rather than sent without it. Attach the image again or remove the follow-up.'
@@ -23,7 +23,7 @@ const receiptsSchema = z.array(agentDeliveryReceiptsSchema.element.extend({ dige
  * A queued item as the store keeps it. A wake-up keeps the news it was worded from, one part per pull request, so news
  * that comes later folds into it and a stop takes back its pull request's part; the window is sent the words alone.
  */
-const queuedSchema = agentFollowupSchema.extend({ watcherOperationId: z.uuid().optional(), news: z.array(babysitNewsSchema).max(WAKE_UP_NEWS_MAX).optional() })
+const queuedSchema = agentFollowupSchema.extend({ watcherOperationId: z.uuid().optional(), news: z.array(wakeUpNewsSchema).max(WAKE_UP_NEWS_MAX + 1).optional() })
 export type QueuedFollowup = z.infer<typeof queuedSchema>
 type State = { items: QueuedFollowup[]; receipts: z.infer<typeof receiptsSchema> }
 /**
@@ -32,7 +32,7 @@ type State = { items: QueuedFollowup[]; receipts: z.infer<typeof receiptsSchema>
  */
 const storedSchema = z.object({ items: z.array(queuedSchema.extend({ attachments: z.array(z.union([agentAttachmentHandleSchema, agentAttachmentSchema])) })), receipts: receiptsSchema })
 /** How a wake-up's news is worded, given all of it: the store folds news and the caller words it (`wakeUpText`). */
-export type WordWakeUp = (news: readonly BabysitNews[]) => string
+export type WordWakeUp<N extends WakeUpNews = BabysitNews> = (news: readonly N[]) => string
 /** Sotto's wake-up still waiting in a queue (ADR-0061 decision 8): one that has not started to send. */
 export const isWaitingWakeUp = (item: Pick<QueuedFollowup, 'wakeUp' | 'status'>): boolean => item.wakeUp === true && ['queued', 'paused', 'failed'].includes(item.status)
 /** Sotto's wake-up waiting in this thread's queue. */
@@ -201,14 +201,14 @@ export class FollowupStore {
    * once when the thread is ready and otherwise when it would send the next one. A thread holds one waiting wake-up,
    * and later news folds into it until it goes. Resolves once it is saved.
    */
-  queueWakeUp(threadId: string, news: BabysitNews, word: WordWakeUp, resumeAfterTurnId?: string): Promise<void> {
+  queueWakeUp<N extends WakeUpNews = BabysitNews>(threadId: string, news: N, word: WordWakeUp<N>, resumeAfterTurnId?: string): Promise<void> {
     return this.change(state => {
       const now = new Date().toISOString()
       const waiting = state.items.find(item => waitingWakeUp(item, threadId))
       if (waiting) {
-        const folded = foldNews(waiting.news ?? [], babysitNewsSchema.parse(news))
+        const folded = foldWakeUpNews(waiting.news ?? [], wakeUpNewsSchema.parse(news))
         // Checked before it is saved: a queue file its own schema refuses would be set aside whole on the next start.
-        const next = queuedSchema.parse({ ...waiting, news: folded, text: word(folded), updatedAt: now, ...resumeAfterTurnId ? { resumeAfterTurnId } : {} })
+        const next = queuedSchema.parse({ ...waiting, news: folded, text: word(folded as N[]), updatedAt: now, ...resumeAfterTurnId ? { resumeAfterTurnId } : {} })
         state.items = state.items.map(item => item === waiting ? next : item)
         return
       }
@@ -220,16 +220,16 @@ export class FollowupStore {
    * Takes back what a waiting wake-up says of one pull request, or of every one, once babysitting it ended quietly: a
    * stop, a settle or the switch sends the thread nothing (decision 9). A wake-up left with no news goes with it.
    */
-  withdrawWakeUp(threadId: string, url: string | undefined, word: WordWakeUp): Promise<void> {
+  withdrawWakeUp<N extends WakeUpNews = BabysitNews>(threadId: string, url: string | undefined, word: WordWakeUp<N>): Promise<void> {
     const key = url === undefined ? undefined : pullRequestKey(url)
     // Looked for inside the lane, never in the snapshot before it: a wake-up whose save is still pending is in the lane
     // ahead of this, and is taken back once it lands rather than left to send.
     return this.change(state => {
       const waiting = state.items.find(item => waitingWakeUp(item, threadId))
       if (!waiting) return false
-      const kept = key === undefined ? [] : (waiting.news ?? []).filter(item => pullRequestKey(item.pullRequest.url) !== key)
+      const kept = (waiting.news ?? []).filter(item => isWatcherNews(item) || key !== undefined && pullRequestKey(item.pullRequest.url) !== key)
       if (kept.length === (waiting.news ?? []).length) return false
-      if (kept.length) Object.assign(waiting, { news: kept, text: word(kept), updatedAt: new Date().toISOString() })
+      if (kept.length) Object.assign(waiting, { news: kept, text: word(kept as N[]), updatedAt: new Date().toISOString() })
       else state.items = state.items.filter(item => item !== waiting)
     })
   }
@@ -238,14 +238,14 @@ export class FollowupStore {
    * by the switch since it was told, and the item when nothing is left. One that had started to send goes back to
    * waiting, since nothing was sent. A wake-up without its news is left as it is.
    */
-  pruneWakeUp(id: string, due: (news: BabysitNews) => boolean, word: WordWakeUp): Promise<void> {
+  pruneWakeUp<N extends WakeUpNews = BabysitNews>(id: string, due: (news: N) => boolean, word: WordWakeUp<N>, transform?: (news: N) => N | undefined): Promise<void> {
     return this.change(state => {
       const item = state.items.find(candidate => candidate.id === id)
-      if (!item?.wakeUp || !item.news || (item.status !== 'queued' && item.status !== 'dispatching')) return false
-      const kept = item.news.filter(due)
-      if (kept.length === item.news.length && item.status === 'queued') return false
+      if (!item?.wakeUp || !item.news || !['queued', 'dispatching', 'paused', 'failed'].includes(item.status)) return false
+      const kept = item.news.flatMap(news => { const next = transform ? transform(news as N) : news as N; return next && due(next) ? [next] : [] })
+      if (JSON.stringify(kept) === JSON.stringify(item.news) && item.status === 'queued') return false
       if (!kept.length) { state.items = state.items.filter(candidate => candidate !== item); return }
-      Object.assign(item, { news: kept, text: word(kept), status: 'queued', updatedAt: new Date().toISOString() })
+      Object.assign(item, { news: kept, text: word(kept as N[]), status: item.status === 'dispatching' ? 'queued' : item.status, updatedAt: new Date().toISOString() })
       delete item.commandId; delete item.messageId; delete item.error
     })
   }

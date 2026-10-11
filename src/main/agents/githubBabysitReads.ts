@@ -2,6 +2,22 @@ import { z } from 'zod'
 import { RATE_LIMIT_SELECTION, rateLimitSchema } from './github'
 import { checkOf, checksRefused } from './gitPullRequests'
 import type { GitPullRequestCheck } from '../../shared/gitPullRequests'
+import type { PullRequestObservation } from './watcherEvidence'
+
+/** Publish facts from an existing read. Neither comments nor check names/output cross this boundary. */
+export function pullRequestObservation(fingerprint: PullRequestFingerprint, detail: DetailAnswer | null, observedAt: string,
+  previous?: PullRequestObservation): PullRequestObservation {
+  const matching = detail?.head === fingerprint.head && fingerprint.head !== null
+  const checks = matching ? detail?.checks : undefined
+  const known = !detail && previous?.head === fingerprint.head && previous.availability === 'available' ? previous : undefined
+  return { url: fingerprint.url, head: fingerprint.head, state: fingerprint.state, availability: 'available', observedAt,
+    checks: checks ? checks.some(check => ['failure', 'cancelled', 'action-required'].includes(check.status)) ? 'failed'
+      : checks.length && checks.every(check => ['success', 'skipped', 'neutral'].includes(check.status)) ? 'passed'
+      : checks.length ? 'pending' : 'unknown' : known?.checks ?? 'unknown',
+    ...(checks ? { checkCount: checks.length } : known?.checkCount !== undefined ? { checkCount: known.checkCount } : {}),
+    // Historical review pages do not establish GitHub's current review decision.
+  }
+}
 
 /**
  * What babysitting asks GitHub (ADR-0061 decision 13), as GraphQL documents and their readings. Two questions: the

@@ -3,6 +3,8 @@ import { AGENT_TEXT_MAX } from '../../shared/agents'
 import { babysitStarterSchema } from '../../shared/babysitting'
 import { printable, type BabysitChange, type BabysitCheckNews, type BabysitNews, type BabysitRemarkNews } from './babysitNews'
 import { pullRequestKey } from '../../shared/gitPullRequests'
+import { watcherNewsSchema, type WatcherNews } from '../../shared/watcherNews'
+import { foldWatcherNews, watcherNewsText } from './watcherNews'
 
 /**
  * The wake-up (ADR-0061 decision 7): the one message babysitting sends a thread, worded by Sotto from the reader's
@@ -35,6 +37,7 @@ const changeSchema = z.discriminatedUnion('kind', [
  * message and a stop can take back the news of the pull request it ended (decision 8).
  */
 export const babysitNewsSchema = z.object({
+  source: z.literal('pull-request').optional(),
   pullRequest: z.object({ url, number: z.number().int().positive(), title: line.nullable() }),
   startedBy: babysitStarterSchema,
   startedAt: z.string().max(40).optional(),
@@ -42,6 +45,20 @@ export const babysitNewsSchema = z.object({
   changes: z.array(changeSchema).max(8),
   ended: z.enum(['merged', 'closed', 'comment-limit', 'unreadable']).nullable(),
 })
+
+/** Old queue files remain readable; Watcher never impersonates a pull request. */
+export const wakeUpNewsSchema = z.union([babysitNewsSchema, watcherNewsSchema])
+export type WakeUpNews = BabysitNews | WatcherNews
+export const isWatcherNews = (news: WakeUpNews): news is WatcherNews => 'source' in news && news.source === 'watcher'
+export function foldWakeUpNews(earlier: readonly WakeUpNews[], later: WakeUpNews): WakeUpNews[] {
+  const workers = earlier.filter(isWatcherNews), prs = earlier.filter((news): news is BabysitNews => !isWatcherNews(news))
+  if (isWatcherNews(later)) return [...prs, foldWatcherNews(workers[0], later)]
+  return [...foldNews(prs, later), ...workers]
+}
+export function queuedWakeUpText(news: readonly WakeUpNews[], options: WakeUpOptions): string {
+  const prs = news.filter((item): item is BabysitNews => !isWatcherNews(item))
+  return [...prs.length ? [wakeUpText(prs, options)] : [], ...news.filter(isWatcherNews).map(watcherNewsText)].join('\n\n')
+}
 
 const sameAddress = (left: string, right: string): boolean => (pullRequestKey(left) ?? left) === (pullRequestKey(right) ?? right)
 type Change<Kind extends BabysitChange['kind']> = Extract<BabysitChange, { kind: Kind }>

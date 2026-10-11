@@ -6,7 +6,7 @@ import { capabilitiesForThread, isThreadProviderConnected, lastUserMessageIdOf,
 import { resolveModel } from '../../shared/modelCatalog'
 import { RUNTIME_MODE_ORDER, resolveNewThreadPermission } from '../../shared/newThreadDefaults'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../shared/threadActivity'
-import { watcherOverview } from '../../shared/watcherOverview'
+import { watcherOverview, type WatcherObservation } from '../../shared/watcherOverview'
 import { WATCHER_PROMPTS_PER_THREAD, WATCHER_READ_BYTES_MAX, watcherToolSchemas,
   type WatcherIdentity, type WatcherOperation, type WatcherRecord, type WatcherRefusal, type WatcherThreadTarget,
   type WatcherToolInput, type WatcherToolName } from '../../shared/watcher'
@@ -15,6 +15,9 @@ import { watcherOpenRequestSchema, type WatcherOpenRequest, type WatcherRoomResu
 import type { AgentHostCommand } from './host'
 import type { AgentControl } from './control'
 import type { WorkspaceHost } from './workspace'
+import { WatcherWakeUp } from './watcherWakeUp'
+import type { WatcherEvent } from '../../shared/watcherNews'
+import type { CheckpointObservation, PullRequestObservation } from './watcherEvidence'
 import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from './watcherCommands'
 
 const now = () => new Date().toISOString()
@@ -30,6 +33,7 @@ function refuse(code: WatcherRefusal['code'], message: string, retryable = false
 
 /** One main-owned admission transaction; provider work always runs after this lane is released. */
 export class WatcherService implements WatcherControlHooks {
+  readonly wakes: WatcherWakeUp
   private tail: Promise<unknown> = Promise.resolve()
   private opening: Promise<WatcherRoomResult> | undefined
   private recoveryNotice: string | null = null
@@ -46,6 +50,10 @@ export class WatcherService implements WatcherControlHooks {
   private readonly unsubscribe: () => void
   constructor(private readonly options: { directory: string; control: AgentControl; host: WorkspaceHost;
     limit: () => number; historyEnabled: () => boolean; revoke?: (id: string) => void }) {
+    this.wakes = new WatcherWakeUp({ snapshot: () => options.control.watcherSnapshot(), record: () => this.record(),
+      deliver: news => options.control.deliverWakeUp(news.watcher.threadId, news, { tool: false }),
+      prune: () => options.control.pruneWatcherWakeUps(), remember: ids => options.control.updateWatcher(record => { record.wakeEventIds = [...new Set([...record.wakeEventIds ?? [], ...ids])].slice(-1_000) }),
+      changed: () => this.publish(), failed: () => { this.recoveryNotice = 'Watcher news could not be saved. Reconnect or refresh its threads to retry. Nothing was approved.' } })
     const unhook = options.control.useWatcher(this), unsubscribe = options.control.subscribe(() => this.publish())
     this.unsubscribe = () => { unhook(); unsubscribe() }
   }
@@ -66,7 +74,12 @@ export class WatcherService implements WatcherControlHooks {
     try { this.checkCaller(threadId); return true } catch { return false }
   }
   subscribe(listener: (state: WatcherRoomState) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
-  private publish(): void { if (!this.closed) for (const listener of this.listeners) listener(this.state()) }
+  private publish(): void { if (!this.closed) { this.wakes.observe(); this.options.control.refreshWatcherObservation(); for (const listener of this.listeners) listener(this.state()) } }
+  watchedThreadIds(): string[] { return this.wakes.watchedThreadIds() }
+  wakeDue(event: WatcherEvent): boolean { return this.wakes.due(event) }
+  wakeReady(): boolean { return this.wakes.ready() }
+  pullRequestObserved(read: PullRequestObservation): void { this.wakes.pullRequest(read) }
+  checkpointObserved(read: CheckpointObservation): void { this.wakes.checkpoint(read) }
   private transaction<T>(work: () => Promise<T>): Promise<T> {
     const task = this.tail.catch(() => undefined).then(work); this.tail = task; return task
   }
@@ -140,11 +153,14 @@ export class WatcherService implements WatcherControlHooks {
         return { target, title: thread?.title ?? 'Unavailable thread', status: thread?.status ?? 'unavailable', connected: Boolean(thread && this.connected(thread)),
           settled: Boolean(thread && isWorkspaceThreadSettled(thread, state.host.projects.find(item => item.id === thread.projectId))),
           backgroundWorkCount: (thread?.backgroundWork?.length ?? 0) + (thread?.monitoring?.length ?? 0),
+          evidence: this.wakes.evidence.read(target, Boolean(thread && this.connected(thread))),
+          ...(thread && this.wakes.observations.get(JSON.stringify([thread.hostId ?? null, thread.id])) ? { observation: this.roomObservation(this.wakes.observations.get(JSON.stringify([thread.hostId ?? null, thread.id]))!) } : {}),
           waitsOn: thread?.requests.map(request => ({ id: request.id, kind: request.kind, openTarget: target })) ?? [],
           participation: record.requests.flatMap(request => request.participants.filter(item => key(item.target) === key(target))) }
       }), inFlight: this.inFlight(record), inFlightLimit: this.options.limit(), receipts: record.operations,
-      recoveryNotice: this.recoveryNotice, observedAt: now() }
+      news: this.wakes.news(), recoveryNotice: this.recoveryNotice, observedAt: now() }
   }
+  private roomObservation(observation: WatcherObservation) { const { landing: _landing, ...result } = observation; void _landing; return result }
   get(): WatcherRoomResult { return { status: 'ok', state: this.state() } }
 
   async recover(): Promise<void> {
@@ -165,7 +181,7 @@ export class WatcherService implements WatcherControlHooks {
       })
       this.observe(this.options.control.watcherSnapshot(), new Set())
     } catch { this.recoveryNotice = 'Watcher could not be recovered safely. Nothing was started. Restore its saved records and reopen Watcher.' }
-    this.publish()
+    this.wakes.start(); this.publish()
   }
   open(input: WatcherOpenRequest): Promise<WatcherRoomResult> {
     if (this.opening) return this.opening
@@ -617,7 +633,7 @@ export class WatcherService implements WatcherControlHooks {
   private listThreads(input: WatcherToolInput<'list_threads'>) {
     if (input.hostId && input.hostId !== this.hostId() || input.project && input.project.hostId !== this.hostId()) refuse('HOST_FEATURE_UNAVAILABLE', 'Remote Watcher thread reads are not available yet.')
     const state = this.options.control.shell(), record = this.record()
-    const rows = watcherOverview({ host: this.options.control.watcherSnapshot() }, Date.now()).filter(row => (!input.project || row.thread.projectId === input.project.projectId)
+    const rows = watcherOverview({ host: this.options.control.watcherSnapshot() }, Date.now(), this.wakes.observations).filter(row => (!input.project || row.thread.projectId === input.project.projectId)
       && (!input.group || row.group === input.group) && (input.includeSettled || !isWorkspaceThreadSettled(row.thread, state.host.projects.find(item => item.id === row.thread.projectId))))
       .map(row => { const thread = row.thread, target = this.target(thread.id)
         return { target, title: thread.title, projectId: thread.projectId, provider: thread.providerId ?? resolveModel(state.host.models, thread.modelId)?.providerId,
@@ -625,7 +641,7 @@ export class WatcherService implements WatcherControlHooks {
           waitsOn: thread.requests.map(item => ({ id: item.id, kind: item.kind, label: item.kind === 'permission' ? 'Open to answer permission' : 'Open to answer question', openTarget: target })),
           branch: thread.worktree?.branch ?? null, workingCopy: thread.worktree ? { kind: thread.worktree.mode === 'shared' ? 'shared' as const : 'new-worktree' as const } : null,
           pullRequests: (thread.pullRequests ?? []).map(item => ({ number: item.number, url: item.url, title: item.title ?? '', state: item.state, draft: item.draft ?? false })),
-          evidence: [], lastActivityAt: thread.messages.at(-1)?.createdAt ?? null, observedAt: null, connected: row.available,
+          evidence: this.wakes.evidence.read(target, row.available), lastActivityAt: this.wakes.observations.get(JSON.stringify([thread.hostId ?? null, thread.id]))?.lastProgressAt ?? null, observedAt: row.observedAt ?? null, connected: row.available,
           freshness: row.freshness, userReadAt: null, watcherReadAt: record.reads.find(item => key(item.target) === key(target))?.readAt ?? null,
           participation: record.requests.flatMap(request => request.participants.filter(item => key(item.target) === key(target)).map(({ target: _target, promptCount: _count, lastUserMessageId: _head, ...participant }) => { void _target; void _count; void _head; return participant })),
           protected: this.protectedThread(thread) } })
@@ -680,7 +696,7 @@ export class WatcherService implements WatcherControlHooks {
     if (input.position && input.position.historyEpoch !== read.historyEpoch) return { ...watcherRefusal('HISTORY_RESET', 'This thread’s history changed. Start a fresh read.'), historyCursor: { historyEpoch: read.historyEpoch, afterPosition: -1 } }
     const messages = read.messages.map(({ message, position }) => ({ id: message.id, position, role: message.role, text: message.text, createdAt: message.createdAt }))
     let result = { status: 'ok' as const, target: input.target, messages, waitsOn: this.thread(input.target).requests.map(item => ({ id: item.id, kind: item.kind,
-      label: item.kind === 'permission' ? 'Open to answer permission' : 'Open to answer question', openTarget: input.target })), activities: input.includeActivities ? read.activities : [], evidence: [],
+      label: item.kind === 'permission' ? 'Open to answer permission' : 'Open to answer question', openTarget: input.target })), activities: input.includeActivities ? read.activities : [], evidence: this.wakes.evidence.read(input.target, this.connected(thread)),
       historyEpoch: read.historyEpoch, firstPosition: messages[0]?.position ?? null, lastPosition: messages.at(-1)?.position ?? null,
       nextPosition: read.hasMore ? messages.at(-1)?.position ?? null : null, truncated: read.hasMore, earlierAvailable: read.earlierAvailable, observedAt: now() }
     while (Buffer.byteLength(JSON.stringify(result)) > WATCHER_READ_BYTES_MAX && result.messages.length > 1) {
@@ -738,5 +754,5 @@ export class WatcherService implements WatcherControlHooks {
     }
     this.publish(); return { status: 'ok', state: this.state(), results }
   }
-  close(): void { this.closed = true; this.unsubscribe(); this.listeners.clear(); this.confirmations.clear(); this.pages.clear(); this.copyChoices.clear() }
+  close(): void { this.closed = true; this.wakes.close(); this.unsubscribe(); this.listeners.clear(); this.confirmations.clear(); this.pages.clear(); this.copyChoices.clear() }
 }

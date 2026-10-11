@@ -19,7 +19,11 @@ export function connectCheckpoints(options: { files: FilesService; directory: st
   const pending = async (threadId: string, destinationFolder?: string): Promise<boolean> => (await sharedThreads(threadId, destinationFolder)).some(thread => thread.status === 'running' || thread.requests.length > 0
     || thread.historyStatus === 'loading' || thread.historyStatus === 'error' || control.hasPendingThreadWork(thread.id))
   const preserveThread = host.watcherThreadIds().some(id => host.preservesWatcherThread(id)) ? (id: string) => host.preservesWatcherThread(id) : undefined
-  const checkpoints = new CheckpointService({ report: options.report, ...(preserveThread ? { preserveThread } : {}), ...(options.historyEnabled ? { historyEnabled: options.historyEnabled } : {}), files: options.files, directory: join(options.directory, 'checkpoints'),
+  const observed: import('./checkpointTypes').CheckpointDependencies['observed'] = control.watcherObservationsEnabled?.() ? read => {
+    const turnId = host.workspaceSnapshot().threads.find(thread => thread.id === read.threadId)?.lastTurn?.id
+    control.checkpointObserved({ ...read, ...(turnId ? { turnId } : {}) })
+  } : undefined
+  const checkpoints = new CheckpointService({ ...(observed ? { observed } : {}), report: options.report, ...(preserveThread ? { preserveThread } : {}), ...(options.historyEnabled ? { historyEnabled: options.historyEnabled } : {}), files: options.files, directory: join(options.directory, 'checkpoints'),
     resolveThread: async (threadId, held) => {
       const snapshot = host.workspaceSnapshot(), thread = snapshot.threads.find(item => item.id === threadId)
       if (!thread?.providerId) return null

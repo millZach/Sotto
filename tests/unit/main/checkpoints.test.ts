@@ -519,3 +519,16 @@ describe('completed native turn checkpoints', () => {
     expect(f.state.userMessageIds).toEqual([])
   }, 20000)
 })
+
+it('publishes completed file counts without file contents and marks shared overlap unavailable', async () => {
+  const f = await fixture(), observed = vi.fn<NonNullable<CheckpointDependencies['observed']>>()
+  f.dependencies.observed = observed
+  await f.complete()
+  expect(observed).toHaveBeenCalledWith(expect.objectContaining({ threadId: 'thread-a', availability: 'available', changedFiles: 2 }))
+  expect(JSON.stringify(observed.mock.calls)).not.toMatch(/app.txt|new.txt|after\\n/)
+  observed.mockClear()
+  await f.service.beforeTurn('thread-a'); await f.service.beforeTurn('thread-b')
+  f.state.userMessageIds.push('user-2'); f.second.userMessageIds = ['other-user']
+  await f.service.afterTurn('thread-a'); await f.service.afterTurn('thread-b')
+  expect(observed.mock.calls.flat().every(read => read.availability === 'unavailable' && read.reason === 'shared-checkout' && read.changedFiles === undefined)).toBe(true)
+})

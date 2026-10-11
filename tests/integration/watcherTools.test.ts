@@ -462,3 +462,65 @@ it('keeps an unacknowledged native Stop uncertain in its original receipt', asyn
   expect(f.service.state().receipts.at(-1)!.deliveryState).toBe('accepted')
   expect(f.service.state().inFlight).toBe(0)
 })
+
+it.each(['finish', 'question', 'failure'] as const)('wakes the master from fake-provider %s through the existing queue without answering', async kind => {
+  const f = await fixture(false), started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+  const binding = f.workspace.registry.byThread(started.target.threadId)!
+  const native = f.workspace.adapters.codex.state.threads.find(thread => thread.id === binding.sessionId)!
+  // Keep the master busy while news folds, then release its real follow-up pump.
+  if (kind === 'question') native.requests = [{ id: 'private-card', kind: 'question', text: 'private_worker_question_82ac', options: [] }]
+  else { native.status = kind === 'failure' ? 'error' : 'idle'; native.lastTurn = { id: 'wake-proof-turn', status: kind === 'failure' ? 'failed' : 'completed' }; if (kind === 'failure') native.activities = [{ id: 'native-error', turnId: 'wake-proof-turn', sequence: 0, kind: 'turn', status: 'failed', title: 'private_worker_error_73ff' }] }
+  f.workspace.adapters.codex.emit()
+  await vi.waitFor(() => expect(f.control.shell().followups?.some(item => item.threadId === f.id && item.wakeUp)).toBe(true), { timeout: 15_000 })
+  const queued = f.control.shell().followups!.find(item => item.threadId === f.id && item.wakeUp)!
+  const expected = kind === 'finish' ? 'foreground turn finished' : kind === 'failure' ? 'turn failed' : 'Open this thread to answer'
+  expect(queued.text).toContain(expected)
+  expect(queued.text).not.toMatch(/private_worker_(question|error)/)
+  if (kind === 'failure') expect(f.service.state().watchedThreads.find(thread => thread.target.threadId === started.target.threadId)!.evidence)
+    .toEqual(expect.arrayContaining([expect.objectContaining({ source: 'native-turn', fact: 'turn-failed', failureCategory: 'provider-turn-failed' })]))
+  await f.finish(f.id)
+  await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.some(command => command.type === 'send' && command.threadId === f.workspace.registry.byThread(f.id)!.sessionId && command.text.includes(expected))).toBe(true))
+  expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'answer')).toHaveLength(0)
+  const contents = (await Promise.all((await readdir(f.root)).filter(name => name.endsWith('.json')).map(name => readFile(join(f.root, name), 'utf8')))).join('')
+  expect(contents).not.toMatch(/private_worker_(question|error)/)
+  expect(contents).not.toContain('Sotto saw changes in watched threads')
+})
+
+it('withdraws answered worker news while retaining the user queue before a busy master wake-up', async () => {
+  const f = await fixture(), started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+  const native = f.workspace.adapters.codex.state.threads.find(thread => thread.id === f.workspace.registry.byThread(started.target.threadId)!.sessionId)!
+  native.requests = [{ id: 'answer-before-delivery', kind: 'permission', text: 'private args', options: [] }]; f.workspace.adapters.codex.emit()
+  await vi.waitFor(() => expect(f.control.shell().followups?.some(item => item.threadId === f.id && item.text.includes('Open this thread to answer'))).toBe(true), { timeout: 15_000 })
+  await f.control.commandShell({ type: 'queue-followup', threadId: f.id, draftId: randomUUID(), text: 'User continuation first' })
+  const items = f.control.shell().followups!.filter(item => item.threadId === f.id)
+  expect(items[0]!.text).toBe('User continuation first'); expect(items.at(-1)!.wakeUp).toBe(true)
+  native.requests = []; f.workspace.adapters.codex.emit()
+  await vi.waitFor(() => expect(f.control.shell().followups?.some(item => item.threadId === f.id && item.text.includes('Open this thread to answer'))).toBe(false))
+  expect(f.control.shell().followups!.some(item => item.text === 'User continuation first')).toBe(true)
+})
+
+it('rechecks answered news after checkpoint preparation and before the provider writer', async () => {
+  const f = await fixture(), started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+  const native = f.workspace.adapters.codex.state.threads.find(thread => thread.id === f.workspace.registry.byThread(started.target.threadId)!.sessionId)!
+  native.requests = [{ id: 'late-answer', kind: 'question', text: 'private question', options: [] }]; f.workspace.adapters.codex.emit()
+  await vi.waitFor(() => expect(f.control.shell().followups?.some(item => item.threadId === f.id && item.text.includes('Open this thread to answer'))).toBe(true), { timeout: 15_000 })
+  const entered = deferred<void>(), release = deferred<void>()
+  f.workspace.host.setCheckpointHooks({ isBlocked: async () => false, beforeTurn: async id => { if (id === f.id) { entered.resolve(); await release.promise } } })
+  const master = f.workspace.registry.byThread(f.id)!.sessionId
+  const before = f.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.threadId === master).length
+  try {
+    const finishing = f.finish(f.id)
+    await entered.promise
+    expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.threadId === master)).toHaveLength(before)
+    native.requests = []; f.workspace.adapters.codex.emit()
+    await vi.waitFor(() => expect(f.control.watcherSnapshot().threads.find(thread => thread.id === started.target.threadId)!.requests).toHaveLength(0))
+    release.resolve()
+    await finishing
+    await vi.waitFor(() => expect(f.control.shell().followups?.some(item => item.threadId === f.id && item.text.includes('Open this thread to answer'))).toBe(false))
+    expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.threadId === master).slice(before)
+      .some(command => command.type === 'send' && command.text.includes('Open this thread to answer'))).toBe(false)
+  } finally { release.resolve() }
+})

@@ -170,7 +170,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const watcher = options.watcherEnabled === true && options.runsAs !== 'headless-host'
     ? new WatcherService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled,
       limit: () => options.settings().watcherInFlightLimit, revoke: id => watcherTools?.revoke(id) }) : undefined
-  if (watcher) { watcherTools = new WatcherToolServer(watcher); agentHost.useWatcherTools(watcherTools) }
+  if (watcher) { agentHost.setWatcherPrObserver(read => watcher.pullRequestObserved(read)); watcherTools = new WatcherToolServer(watcher); agentHost.useWatcherTools(watcherTools) }
   agentHost.setPendingThreadWork(threadId => agentControl.hasPendingThreadWork(threadId), threadId => agentControl.pendingThreadWorkReason(threadId))
   // Reclaims worktrees only under the rules the user turned on (ADR-0041); every rule starts off. The desktop's
   // local host and a headless host both own worktrees, so both get it. Its owner starts it once the owner's own
@@ -195,6 +195,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const SAID_ENDINGS: ReadonlySet<BabysitEndReason> = new Set(babysitEndedReasonSchema.options)
   const babysitRun = options.babysitting?.run ?? gitRun
   const babysitter = gitHubRateLimit && options.gitStatus ? new Babysitter({ store: agentHost, deliver: deliverWakeUp, rateLimit: gitHubRateLimit,
+    ...(watcher ? { observed: read => watcher.pullRequestObserved(read) } : {}),
     ...(babysitRun ? { run: babysitRun } : {}), ...(options.gitStatus.log ? { log: options.gitStatus.log } : {}),
     ended: async (threadId, url, reason) => {
       if (SAID_ENDINGS.has(reason)) await agentHost.recordBabysitEnded(threadId, url, reason as BabysitEndedReason).catch(() => undefined)

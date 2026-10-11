@@ -312,6 +312,7 @@ export class CheckpointService extends ToolOperations {
     if (reason) { record.status = 'unavailable'; record.reason = reason.slice(0, 2000) }
     this.records.set(record.id, record)
     await this.save(pending ? undefined : [record, ...overlapping])
+    if (record.status === 'unavailable') this.publishObservation(record)
   }) }
   async afterTurn(threadId: string): Promise<void> { return this.serial(async () => {
     if (this.dependencies.preserveThread?.(threadId)) return
@@ -321,18 +322,25 @@ export class CheckpointService extends ToolOperations {
     if (!record) return
     const thread = await this.dependencies.resolveThread(threadId, { historyOnly: true })
     if (!thread || (thread.running ?? thread.busy) !== false) return
-    if (!this.matches(record, thread) || !equal(thread.userMessageIds.slice(0, record.beforeUsers.length), record.beforeUsers)) { record.status = 'unavailable'; record.reason = 'The native conversation binding changed during this turn.'; await this.save(); return }
+    if (!this.matches(record, thread) || !equal(thread.userMessageIds.slice(0, record.beforeUsers.length), record.beforeUsers)) { record.status = 'unavailable'; record.reason = 'The native conversation binding changed during this turn.'; await this.save(); this.publishObservation(record); return }
     if (thread.userMessageIds.length === record.beforeUsers.length) return
     await workspace(this.dependencies.files, threadId, record.workspaceId)
     const release = await this.dependencies.acquireRead?.(threadId)
     try { record.after = await this.capture.snapshot(record.cwd, { reuse: true }) }
-    catch (error) { record.status = 'unavailable'; record.reason = error instanceof Error ? error.message.slice(0, 2000) : 'Completed file snapshot was unavailable.'; await this.save(); return }
+    catch (error) { record.status = 'unavailable'; record.reason = error instanceof Error ? error.message.slice(0, 2000) : 'Completed file snapshot was unavailable.'; await this.save(); this.publishObservation(record); return }
     finally { release?.() }
     record.afterUsers = [...thread.userMessageIds]
     record.status = record.reason ? 'unavailable' : 'ready'
     if (record.before.index !== record.after.index || record.before.head !== record.after.head) { record.status = 'unavailable'; record.reason = 'This turn changed Git history or staging. Review and restore it with Git.' }
     await this.save()
+    this.publishObservation(record)
   }) }
+  private publishObservation(record: CheckpointRecord): void {
+    if (!this.dependencies.observed) return
+    this.dependencies.observed({ threadId: record.threadId, checkpointId: record.id, observedAt: new Date(this.dependencies.now?.() ?? Date.now()).toISOString(),
+      availability: record.status === 'ready' ? 'available' : 'unavailable',
+      ...(record.status === 'ready' ? { changedFiles: this.changes(record).length } : { reason: record.reason?.includes('overlapped') ? 'shared-checkout' : 'capture-unavailable' }) })
+  }
   private matches(record: CheckpointRecord, thread: CheckpointThread): boolean { return record.threadId === thread.threadId && record.providerId === thread.providerId && record.bindingId === thread.bindingId }
   private changes(record: CheckpointRecord): Checkpoint['files'] {
     if (!record.after) return []

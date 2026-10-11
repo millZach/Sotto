@@ -1,3 +1,4 @@
+import type { CheckpointObservation } from '../agents/watcherEvidence'
 import type { ProviderId } from '../../shared/agents'
 import type { FilesService } from '../files/service'
 
@@ -15,6 +16,7 @@ export interface CheckpointThread {
   unsupportedReason?: string
 }
 export interface CheckpointDependencies {
+  observed?: (read: CheckpointObservation) => void
   report?: (message: string) => void
   historyEnabled?: () => boolean
   /** Dormant release-gated threads are carried through saves and excluded from cleanup and work. */
