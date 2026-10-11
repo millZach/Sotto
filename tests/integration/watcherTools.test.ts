@@ -421,3 +421,18 @@ it('leaves user queues untouched when a machine Stop loses its guard before inte
   expect(f.control.shell().followups!.filter(item => item.threadId === threadId)).toEqual(queued)
   expect(f.workspace.adapters.codex.commands.filter(item => item.type === 'interrupt')).toHaveLength(interrupts)
 })
+
+
+it('waits for active worker slots before replacing the master provider', async () => {
+  const f = await fixture(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  await f.finish(f.id)
+  await f.control.commandShell({ type: 'connect', provider: 'claude' })
+  const model = f.control.watcherSnapshot().models.find(item => item.providerId === 'claude' && item.ready)!
+  expect(f.service.state().inFlight).toBe(1)
+  expect(await f.service.open({ provider: 'claude', modelId: model.id })).toMatchObject({ status: 'refused', code: 'THREAD_BUSY' })
+  expect(f.service.state().current!.target.threadId).toBe(f.id)
+  await f.finish(first.target.threadId)
+  expect(f.service.state().inFlight).toBe(0)
+  expect(await f.service.open({ provider: 'claude', modelId: model.id })).toMatchObject({ status: 'ok' })
+})
