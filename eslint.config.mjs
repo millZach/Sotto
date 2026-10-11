@@ -9,6 +9,7 @@ export default tseslint.config(
       'artifacts/watcher-gate/**',
       'artifacts/*-center-*/**',
       'artifacts/watcher-live/**',
+      'artifacts/watcher-thread-tools/**',
       'artifacts/watcher-thread-tools-live/**',
       'artifacts/watcher-thread-tools-review/**',
       'artifacts/watcher-thread-tools-gates/**',

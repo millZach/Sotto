@@ -337,3 +337,8 @@ artifacts/watcher-rename/*
 artifacts/watcher-gate/*
 !artifacts/watcher-gate/*.png
 !artifacts/watcher-gate/profile.json
+
+# Selected Watcher thread-tool evidence; other generated captures stay local.
+artifacts/watcher-thread-tools/*
+!artifacts/watcher-thread-tools/owl-dark-820x560.png
+!artifacts/watcher-thread-tools/stable-light-820x560.png
