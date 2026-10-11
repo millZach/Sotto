@@ -131,13 +131,21 @@ test('daily mixed-provider workspace joins independent work, tools, reviewed com
     await expect(panel.getByRole('button', { name: 'Unpin from Daily implementation', exact: true })).toBeVisible()
     await panel.getByRole('tab', { name: 'Terminal', exact: true }).click()
     await panel.getByRole('button', { name: 'Start terminal' }).click()
-    await panel.locator('.xterm').click()
+    // A running PTY and mounted xterm do not mean PowerShell has started accepting commands.
+    await expect.poll(() => terminalOutput(page, first), {
+      message: 'PowerShell must print its initial prompt before the daily command is typed',
+    }).toMatch(/PS [\s\S]*> /u)
+    await expect(panel.locator('.terminal-view')).not.toHaveAttribute('data-replaying', 'true')
+    const terminalInput = panel.locator('.xterm-helper-textarea')
+    await terminalInput.focus()
+    await expect(terminalInput).toBeFocused()
     // The completed marker is absent from echoed input: only PowerShell execution can produce it.
-    await page.keyboard.type("Set-Content -LiteralPath greeting.txt -Value 'Hello, daily workspace' -Encoding utf8; Write-Output ('SOTTO_DAILY_' + 'TERMINAL')")
-    await page.keyboard.press('Enter')
+    await terminalInput.pressSequentially("Set-Content -LiteralPath greeting.txt -Value 'Hello, daily workspace' -Encoding utf8; Write-Output ('SOTTO_DAILY_' + 'TERMINAL')")
+    await terminalInput.press('Enter')
     await expect.poll(() => terminalOutput(page, first)).toContain('SOTTO_DAILY_TERMINAL')
     await expect.poll(() => readFile(join(working, 'greeting.txt'), 'utf8')).toContain('Hello, daily workspace')
     expect(await readFile(join(other, 'greeting.txt'), 'utf8')).toBe('Hello\n')
+    await capture(page, 'terminal-command-completed')
     await panel.getByRole('tab', { name: 'Files', exact: true }).click()
     await panel.getByRole('treeitem', { name: 'greeting.txt', exact: true }).click()
     await expect(panel.locator('.files-preview__text')).toContainText('Hello, daily workspace')
