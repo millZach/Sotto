@@ -7,7 +7,9 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { ThreadStore } from '../../../src/main/agents/threadStore'
 import { WorkspaceHost } from '../../../src/main/agents/workspace'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
+import { CertifyingProviderHost } from '../../fixtures/certifyingProviderHost'
 import type { AgentActivity } from '../../../src/shared/agentActivity'
+import type { AgentHostSnapshot } from '../../../src/shared/agents'
 
 // A thread nobody has open keeps its activity records in the thread store, not in memory (#918).
 
@@ -21,22 +23,26 @@ function record(id: string, sequence: number, extra: Partial<AgentActivity> = {}
 }
 
 /** A workspace whose first run saved `saved` for the workshop thread, reopened with a provider that has not read it. */
-async function stored(saved: AgentActivity[], history: () => boolean = () => true) {
+async function stored(saved: AgentActivity[], history: () => boolean = () => true, provider: FakeProviderHost = new FakeProviderHost()) {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-stored-activity-'))
   cleanup.push(async () => {
     if (dirname(resolve(directory)) !== resolve(tmpdir()) || !directory.includes('sotto-stored-activity-')) throw new Error('Unexpected test directory')
     await rm(directory, { recursive: true, force: true })
   })
-  const provider = new FakeProviderHost()
   provider.state.threads[0]!.activities = structuredClone(saved)
+  const closed = new Set<WorkspaceHost>()
+  // A privacy pass with the setting unchanged ends in a save, as quitting does.
+  const close = async (host: WorkspaceHost) => {
+    if (closed.has(host)) return
+    closed.add(host)
+    host.disconnect(); await host.privacyChanged().catch(() => undefined); host.dispose()
+  }
   const open = async () => {
     const host = new WorkspaceHost(provider, directory, history)
-    cleanup.push(async () => { host.disconnect(); await host.privacyChanged().catch(() => undefined); host.dispose() })
+    cleanup.push(() => close(host))
     await host.initialize()
     return host
   }
-  // A privacy pass with the setting unchanged ends in a save, as quitting does.
-  const close = async (host: WorkspaceHost) => { host.disconnect(); await host.privacyChanged(); host.dispose() }
   const first = await open()
   await first.connect()
   await close(first)
@@ -49,6 +55,12 @@ async function stored(saved: AgentActivity[], history: () => boolean = () => tru
   return { directory, provider, open, close, disk }
 }
 const workshop = (host: WorkspaceHost) => host.workspaceSnapshot().threads.find(thread => thread.id === THREAD)!
+/** The last snapshot the workspace published, which is what the coordinator holds. */
+function published(host: WorkspaceHost) {
+  let last: AgentHostSnapshot | undefined
+  host.subscribe(snapshot => { last = snapshot })
+  return () => last?.threads.find(thread => thread.id === THREAD)
+}
 
 it('reads no saved record at start, and counts them from the store', async () => {
   const f = await stored([record('a', 0), record('b', 1)])
@@ -98,6 +110,41 @@ it('lets the records go once saved after the window stops looking, and keeps the
   expect(workshop(host).summary?.activityCount).toBe(3)
   await f.close(host)
   expect(f.disk().map(item => item.id)).toEqual(['a', 'b', 'c'])
+})
+
+it('lets the records go when the window stops looking even when nothing else changed, and says so to the coordinator', async () => {
+  const f = await stored([record('a', 0)])
+  const host = await f.open()
+  await host.connect()
+  host.observeThreads([THREAD])
+  await host.snapshot()
+  expect(workshop(host).activities?.map(item => item.id)).toEqual(['a'])
+  const last = published(host)
+  host.observeThreads([])
+  await vi.waitFor(() => expect(workshop(host).activities).toBeUndefined())
+  await vi.waitFor(() => expect(last()?.activities).toBeUndefined())
+  expect(last()?.summary?.activityCount).toBe(1)
+})
+
+it('leaves a stored thread stored while its provider publishes the same certified list, and reads it back when that changes', async () => {
+  const provider = new CertifyingProviderHost()
+  const f = await stored([record('a', 0)], () => true, provider)
+  const host = await f.open()
+  await host.connect()
+  provider.state.threads[0]!.activities = [record('b', 0)]
+  provider.emitActivity()
+  await vi.waitFor(() => expect(workshop(host).activities?.map(item => item.id)).toEqual(['a', 'b']))
+  host.observeThreads([])
+  await vi.waitFor(() => expect(workshop(host).activities).toBeUndefined())
+  const read = vi.spyOn(ThreadStore.prototype, 'readActivities')
+  provider.emitActivity()
+  provider.emitActivity()
+  expect(read).not.toHaveBeenCalled()
+  expect(workshop(host).activities).toBeUndefined()
+  provider.state.threads[0]!.activities = [...provider.state.threads[0]!.activities!, record('c', 1)]
+  provider.emitActivity()
+  await vi.waitFor(() => expect(workshop(host).activities?.map(item => item.id)).toEqual(['a', 'b', 'c']))
+  expect(read).toHaveBeenCalledTimes(1)
 })
 
 it('keeps a running thread\'s records in memory after the window stops looking', async () => {
@@ -194,8 +241,11 @@ it('drops a stored thread\'s activity for this run when Keep local history is tu
   const f = await stored([record('a', 0)], () => history)
   const host = await f.open()
   await host.connect()
+  const last = published(host)
   history = false
   await host.privacyChanged()
+  // The coordinator is told, so the sidebar's count drops with the records.
+  expect(last()?.summary?.activityCount).toBe(0)
   host.observeThreads([THREAD])
   expect(workshop(host).activities ?? []).toEqual([])
   expect(workshop(host).summary?.activityCount).toBe(0)

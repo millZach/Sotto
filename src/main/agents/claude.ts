@@ -354,9 +354,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private history: ThreadHistorySource | undefined
   /**
    * Threads whose cursor resumed on the store's word that it holds their records, which are not read yet. Whatever first
-   * changes such a thread's activity reads them (`seeded`), so a thread nothing changes this run costs nothing (#918).
+   * changes such a thread's activity reads them (`ensureActivityHistory`), so a thread nothing changes this run costs nothing (#918).
    */
-  private readonly unseeded = new Set<string>()
+  private readonly activityHistoryPending = new Set<string>()
   /** The assistant message a stream has opened per thread, so its deltas are recorded as appends. */
   private readonly streaming = new Map<string, string>()
   private cursorTimer: ReturnType<typeof setTimeout> | undefined
@@ -444,7 +444,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
    * more, so its row stops running with it. Says whether any row changed.
    */
   private thinkingEnded(id: string): boolean {
-    const projector = this.activity.get(id); const thread = projector ? this.seeded(id) : undefined
+    const projector = this.activity.get(id); const thread = projector ? this.ensureActivityHistory(id) : undefined
     if (!thread || !projector) return false
     const activities = projector.runtimeEnded(thread.activities)
     if (activities === thread.activities) return false
@@ -482,10 +482,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
     for (const alias of Object.values(this.aliases)) if (alias.kind !== 'personal' && alias.compaction?.status === 'running') alias.compaction = { ...alias.compaction, status: 'uncertain', error: 'Native compaction was interrupted by disconnection. Reconnecting observes its result without retrying.' }
     // Reconnecting keeps what this process already projected, so its stored cursor stays usable.
     const held = new Map([...this.threads].map(([id, thread]) => [id, {
-      threadId: id, messages: this.messageLog.messages(id), ...(this.unseeded.has(id) ? {} : { activities: thread.activities ?? [] }), ...(thread.historyEpoch ? { historyEpoch: thread.historyEpoch } : {}),
+      threadId: id, messages: this.messageLog.messages(id), ...(this.activityHistoryPending.has(id) ? {} : { activities: thread.activities ?? [] }), ...(thread.historyEpoch ? { historyEpoch: thread.historyEpoch } : {}),
     }]))
     this.messageLog.forgetAll()
-    this.threads.clear(); this.unseeded.clear(); this.logs.clear(); this.activity.clear(); this.subagentModels.clear(); this.logOrigins.clear(); this.lastLogDigest.clear(); this.replays.clear(); this.readsBeforeSend.clear(); this.nativeTakeovers.clear(); this.completedOrigins.clear(); this.steers.clear(); this.foldedSteers.clear(); this.selfTurns.clear(); this.queries.clear(); this.interrupting.clear(); this.assistantBlocks.clear()
+    this.threads.clear(); this.activityHistoryPending.clear(); this.logs.clear(); this.activity.clear(); this.subagentModels.clear(); this.logOrigins.clear(); this.lastLogDigest.clear(); this.replays.clear(); this.readsBeforeSend.clear(); this.nativeTakeovers.clear(); this.completedOrigins.clear(); this.steers.clear(); this.foldedSteers.clear(); this.selfTurns.clear(); this.queries.clear(); this.interrupting.clear(); this.assistantBlocks.clear()
     for (const [id, stored] of Object.entries(aliases)) {
       if (stored.kind === 'personal') continue
       let alias = stored
@@ -1089,7 +1089,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const models = await reader.read(folder, targets)
     // A reconnect or a changed session replaced the projector while the files were read; its rows are not these.
     if (!models.size || this.activity.get(id) !== projector) return
-    const thread = this.seeded(id)
+    const thread = this.ensureActivityHistory(id)
     if (!thread) return
     const before = thread.activities ?? []
     let rows = before
@@ -1632,7 +1632,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (!stored.length || activities === undefined && !evidence) { replayAll(); return }
     this.messageLog.seed(id, stored)
     if (activities) this.threads.get(id)!.activities = structuredClone(activities.slice(-MAX_AGENT_ACTIVITIES))
-    else this.unseeded.add(id)
+    else this.activityHistoryPending.add(id)
     // A later block of an assistant message already projected must add to its text, not replace it.
     for (const message of matching?.messages ?? []) if (message.role === 'assistant') this.assistantBlocks.set(`${id}:${message.id}`, new Map([['restored', message.text]]))
     this.logOrigins.set(id, new Set(cursor.consumedOriginIds))
@@ -1656,16 +1656,16 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.cursorTimer.unref()
   }
   /** The thread, with its stored records read first if nothing has read them yet: every change builds on them. */
-  private seeded(id: string): AgentThread | undefined {
+  private ensureActivityHistory(id: string): AgentThread | undefined {
     const thread = this.threads.get(id)
-    if (thread && this.unseeded.delete(id)) {
+    if (thread && this.activityHistoryPending.delete(id)) {
       const activities = this.history?.activities?.(id, this.aliases[id]?.historyEpoch)
       if (activities) thread.activities = structuredClone(activities.slice(-MAX_AGENT_ACTIVITIES))
     }
     return thread
   }
   private ensureThread(id: string, alias: Alias): void {
-    this.unseeded.delete(id)
+    this.activityHistoryPending.delete(id)
     this.threads.set(id, { id, projectId: alias.projectId!, ...(alias.historyEpoch ? { historyEpoch: alias.historyEpoch } : {}), workingDirectory: alias.cwd, title: alias.title, modelId: alias.modelId, reasoningEffort: alias.reasoningEffort, runtimeMode: alias.runtimeMode ?? 'approval-required', status: 'idle', messages: [], requests: [], activities: [] })
     this.threads.get(id)!.usage = this.usage.get(id)
     this.threads.get(id)!.compaction = alias.compaction
@@ -1697,7 +1697,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
   }
   /** A compaction is not a turn and not a tool: the transcript says so on its own line. */
   private markCompaction(id: string, key: string, before: number | undefined, after: number | undefined, at: number | undefined): void {
-    const thread = this.seeded(id); if (!thread) return
+    const thread = this.ensureActivityHistory(id); if (!thread) return
     const anchor = this.lastTextMessageId(id)
     thread.activities = markCompactionActivity(thread.activities, { provider: 'claude', key,
       turnId: this.lastUserMessageId(id) ?? 'native-history',
@@ -1782,7 +1782,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     } finally { this.dispatching.delete(id) }
   }
   private markTurn(id: string, status: AgentActivity['status'], turnId?: string, error?: string): void {
-    const thread = this.seeded(id); if (!thread) return
+    const thread = this.ensureActivityHistory(id); if (!thread) return
     const last = this.messageLog.lastUserMessageId(id)
     const turn = turnId ?? last
     if (turn === undefined) return
@@ -1802,7 +1802,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     return { origin, stopped, status: stopped ? 'interrupted' : frame.is_error === true ? 'failed' : 'completed' }
   }
   private projectActivity(id: string, frame: ClaudeFrame, live = false, turnEnd?: AgentActivity['status']): void {
-    const thread = this.seeded(id)!
+    const thread = this.ensureActivityHistory(id)!
     let projector = this.activity.get(id)
     if (!projector) { projector = new ClaudeActivity(activityId => this.history?.activity?.(id, activityId, this.aliases[id]?.historyEpoch)); this.activity.set(id, projector) }
     const turnId = this.lastUserMessageId(id) ?? 'native-history'

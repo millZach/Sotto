@@ -330,8 +330,7 @@ export class ThreadStore {
       const rows = this.statement('SELECT activity_id, position, payload FROM activities WHERE thread_id = ? ORDER BY position').all(threadId)
       const records: ActivityState['records'] = new Map()
       for (const row of rows) {
-        const activity = agentActivitySchema.parse(JSON.parse(String(row.payload)))
-        if (activity.id !== row.activity_id) throw new Error('Stored activity identity does not match its record')
+        const activity = storedActivity(row)
         records.set(activity.id, { position: Number(row.position), activity })
       }
       state = { known: epochRow !== undefined, epoch: epoch === undefined || epoch === null ? undefined : String(epoch), resetSequence: epochRow?.message_reset_seq === null || epochRow?.message_reset_seq === undefined ? undefined : Number(epochRow.message_reset_seq), records }
@@ -418,11 +417,7 @@ export class ThreadStore {
   readActivities(threadId: string, options: { keep?: boolean } = {}): AgentActivity[] {
     const held = this.activityStates.get(threadId)
     if (held === undefined && options.keep === false) {
-      return this.statement('SELECT activity_id, payload FROM activities WHERE thread_id = ? ORDER BY position').all(threadId).map(row => {
-        const activity = agentActivitySchema.parse(JSON.parse(String(row.payload)))
-        if (activity.id !== row.activity_id) throw new Error('Stored activity identity does not match its record')
-        return activity
-      })
+      return this.statement('SELECT activity_id, payload FROM activities WHERE thread_id = ? ORDER BY position').all(threadId).map(storedActivity)
     }
     return [...(held ?? this.activityState(threadId)).records.values()].map(({ activity }) => agentActivitySchema.parse(activity))
   }
@@ -432,14 +427,6 @@ export class ThreadStore {
     const held = this.activityStates.get(threadId)
     if (held !== undefined) return [...held.records.keys()]
     return this.statement('SELECT activity_id FROM activities WHERE thread_id = ? ORDER BY position').all(threadId).map(row => String(row.activity_id))
-  }
-
-  /** One stored record by its identity, read on its own. */
-  readActivity(threadId: string, activityId: string): AgentActivity | undefined {
-    const held = this.activityStates.get(threadId)
-    if (held !== undefined) { const record = held.records.get(activityId); return record ? agentActivitySchema.parse(record.activity) : undefined }
-    const row = this.statement('SELECT payload FROM activities WHERE thread_id = ? AND activity_id = ?').get(threadId, activityId)
-    return row === undefined ? undefined : agentActivitySchema.parse(JSON.parse(String(row.payload)))
   }
 
   /** Persists the bounded authoritative list, encoding only records whose values changed. */
@@ -861,6 +848,13 @@ function rebuildProjection(db: DatabaseSync): void {
     db.exec('ROLLBACK')
     throw error
   }
+}
+
+/** One activity row as a record, checked against the identity it was stored under. */
+function storedActivity(row: Record<string, unknown>): AgentActivity {
+  const activity = agentActivitySchema.parse(JSON.parse(String(row.payload)))
+  if (activity.id !== row.activity_id) throw new Error('Stored activity identity does not match its record')
+  return activity
 }
 
 function readMeta(db: DatabaseSync, key: string): string | undefined {

@@ -1475,8 +1475,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * records go: the store holds exactly them, and the thread keeps its marker and count (#918). Before a window says
    * what it shows, every thread counts as in view, so nothing goes.
    */
-  private releaseIdleActivities(): void {
-    if (!this.historyWritable() || this.activityStoreUnavailable || this.storeUnavailable || !this.declared) return
+  private releaseIdleActivities(): boolean {
+    if (!this.historyWritable() || this.activityStoreUnavailable || this.storeUnavailable || !this.declared) return false
+    let released = false
     for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) {
       if (!thread.activities || this.inView(thread.id) || thread.status === 'running' || thread.activities.some(activity => activity.status === 'running')) continue
       if (!this.storesWhole(thread.id, thread.activities)) continue
@@ -1486,7 +1487,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       this.threadStore.releaseActivities(thread.id)
       delete thread.activities
       this.storedActivity.add(thread.id)
+      released = true
     }
+    return released
   }
   /**
    * Whether the store holds this list as this run shows it, so letting it go loses nothing: every record is there, and a
@@ -2016,8 +2019,12 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     // it, so sequence, anchors and finished states are kept; merging onto nothing would renumber every record.
     if (old && this.storedActivity.has(thread.id)) {
       if (old.historyEpoch !== thread.historyEpoch) this.storedActivity.delete(thread.id)
-      else if (input === undefined || input.length === 0 || this.storedInputs.get(thread.id) === input) return undefined
-      else this.heldForInput.set(thread.id, this.holdActivities(old))
+      else if (input !== undefined && input.length > 0 && this.storedInputs.get(thread.id) !== input) this.heldForInput.set(thread.id, this.holdActivities(old))
+      else {
+        // The array kept for this comparison is only ever the one the provider is still publishing, which it holds anyway.
+        if (this.storedInputs.get(thread.id) !== input) this.storedInputs.delete(thread.id)
+        return undefined
+      }
       this.storedInputs.delete(thread.id)
     }
     // A thread its provider has not read this run, as Codex before one is opened, comes with no activity, so what the
@@ -2271,8 +2278,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
           this.dirty = false
           // Messages live in the thread store, never here: `workspace.json` keeps organization alone,
           // so what it costs to write follows the number of threads rather than what they said (#119).
-          try { this.saveActivities(); this.noteSubagentWordsMoved(); this.releaseIdleActivities() }
-          catch (error) { this.dirty = true; throw error }
+          try {
+            this.saveActivities(); this.noteSubagentWordsMoved()
+            // The coordinator holds the lists it was last handed, so a release is published for it to let them go too.
+            if (this.releaseIdleActivities()) this.publishSoon()
+          } catch (error) { this.dirty = true; throw error }
           const saved = structuredClone({ ...this.state,
             snapshot: { ...this.state.snapshot, threads: this.state.snapshot.threads.map(thread => this.preservedWatcherThreads.get(thread.id) ?? this.withBabysitting(organizationOnly(thread, this.activityJsonFallbackAllowed && (this.storeUnavailable || this.activityStoreUnavailable)))) } })
           if (!this.historyEnabled()) for (const thread of saved.snapshot.threads.filter(thread => this.visible(thread))) {
@@ -2311,6 +2321,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   private async changeHistoryPrivacy(retryUnavailable: boolean): Promise<void> {
     this.activityInputs.clear()
+    /** Whether stored threads lost their records with the file, which the coordinator must be told. */
+    let dropped = false
     if (!this.historyEnabled()) {
       this.activityJsonFallbackAllowed = false
       this.pendingEventsPrivate = true
@@ -2399,6 +2411,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         this.storedAnchors.clear()
         // A thread whose records were left in the store has none now, as a thread out of view has no messages (#918).
         for (const thread of this.state.snapshot.threads) if (this.storedActivity.has(thread.id) && thread.summary) thread.summary = { ...thread.summary, activityCount: 0 }
+        dropped = this.storedActivity.size > 0
         this.storedActivity.clear()
         this.storedInputs.clear()
         // A visual has no copy but the store's (ADR-0056), so the windows stop showing the ones it no longer holds.
@@ -2410,6 +2423,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     }
     this.dirty = true
     await this.flush()
+    if (dropped) this.publish()
     if (retryUnavailable && this.storeUnavailable) {
       this.saveError = HISTORY_OPEN_ERROR
       throw new Error(HISTORY_OPEN_ERROR)
@@ -2983,6 +2997,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (!this.ready) return
     const wanted = new Set(ids)
     let changed = !this.declared
+    // A thread that leaves view, or every thread nobody asked for when a window first says what it shows, lets its records
+    // go at the next save, so one is asked for even when nothing else changed (#918).
+    let left = !this.declared
     if (!this.declared) {
       this.declared = true
       // Everything held only because nobody had said otherwise goes back to its summary now.
@@ -2997,7 +3014,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       this.storedAnchors.delete(id)
       this.unloadWindow(id)
       changed = true
+      left = true
     }
+    if (left) { this.dirty = true; this.writeSoon() }
     for (const id of wanted) if (!this.watched.has(id) && this.state.snapshot.threads.some(thread => thread.id === id)) {
       this.watched.set(id, FIRST_WINDOW_TURNS)
       this.loadWindow(id)
