@@ -1,5 +1,5 @@
 import { registerAgentIpc } from '../../src/main/agents/ipc'
-import { MICROPHONE_ENSURE_ACCESS, TRANSCRIPT_POLISH, TRANSCRIPTION_CANCEL, TRANSCRIPTION_CHECK_KEY, TRANSCRIPTION_TRANSCRIBE } from '../../src/shared/channels'
+import { MICROPHONE_ENSURE_ACCESS, TRANSCRIPT_POLISH, TRANSCRIPTION_CANCEL, OPENROUTER_CHECK_KEY, TRANSCRIPTION_TRANSCRIBE } from '../../src/shared/channels'
 // @vitest-environment node
 import type { preloadElectron } from '../fixtures/preloadElectron'
 import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
@@ -21,6 +21,7 @@ import {
   RECOVERY_NOTICE_LIST,
   SETTINGS_CHANGED,
   SETTINGS_UPDATE,
+  SPEECH_MODEL_STATUS,
   SYSTEM_SETTINGS_OPEN,
   UPDATE_STATUS,
   WIDGET_DRAG,
@@ -129,7 +130,8 @@ describe('typed preload bridge', () => {
         'browser',
           'cancelTranscription',
         'checkForUpdates',
-        'checkTranscriptionKey',
+        'checkOpenRouterKey',
+        'downloadSpeechModel',
         'ensureMicrophoneAccess',
         'clearHistory',
         'cloudIphone',
@@ -139,6 +141,7 @@ describe('typed preload bridge', () => {
         'files',
         'getHotkey',
         'getSettings',
+        'getSpeechModelStatus',
         'getStartup',
         'getUpdateStatus',
         'getWindowMaximized',
@@ -155,6 +158,7 @@ describe('typed preload bridge', () => {
         'onDictationCommand',
         'onRecoveryNotice',
         'onSettingsChanged',
+        'onSpeechModelStatus',
         'onUpdateCheckRequested',
         'onUpdateStatus',
         'onWindowMaximized',
@@ -387,9 +391,9 @@ describe('typed preload bridge', () => {
       ['electron', '--sotto-renderer-role=main'],
     )).toBe(true)
     expect(context.exposeInMainWorld).toHaveBeenCalledWith('sotto', expect.any(Object))
-    expect(electronMock.ipcRenderer.on).toHaveBeenCalledTimes(4)
+    expect(electronMock.ipcRenderer.on).toHaveBeenCalledTimes(5)
     expect(electronMock.ipcRenderer.on.mock.calls.map(([channel]) => channel).sort()).toEqual(
-      [DICTATION_COMMAND, RECOVERY_NOTICE, SETTINGS_CHANGED, UPDATE_STATUS].sort(),
+      [DICTATION_COMMAND, RECOVERY_NOTICE, SETTINGS_CHANGED, SPEECH_MODEL_STATUS, UPDATE_STATUS].sort(),
     )
 
     context.exposeInMainWorld.mockClear()
@@ -638,7 +642,7 @@ it('leaves retired voice channels unregistered while keeping dictation IPC avail
         expect(harness.ipc.handlers.has(channel)).toBe(false)
         await expect(harness.ipc.invoke(channel)).rejects.toThrow(`missing handler: ${channel}`)
       }
-      for (const channel of [DICTATION_REQUEST, TRANSCRIPTION_TRANSCRIBE, TRANSCRIPTION_CANCEL, TRANSCRIPTION_CHECK_KEY, MICROPHONE_ENSURE_ACCESS, TRANSCRIPT_POLISH, OUTPUT_DELIVER, WIDGET_PUBLISH, WIDGET_PRESENTATION, WIDGET_DRAG]) {
+      for (const channel of [DICTATION_REQUEST, TRANSCRIPTION_TRANSCRIBE, TRANSCRIPTION_CANCEL, OPENROUTER_CHECK_KEY, MICROPHONE_ENSURE_ACCESS, TRANSCRIPT_POLISH, OUTPUT_DELIVER, WIDGET_PUBLISH, WIDGET_PRESENTATION, WIDGET_DRAG]) {
         expect(harness.ipc.handlers.has(channel)).toBe(true)
       }
     } finally { removeAgents(); harness.cleanup() }

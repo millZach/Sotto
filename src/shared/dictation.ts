@@ -34,14 +34,10 @@ export const WIDGET_ERROR_CODES = [
   'MIC_DEVICE_NOT_FOUND',
   'MIC_START_FAILED',
   'MIC_NOT_SET_UP',
+  'SPEECH_MODEL_NOT_READY',
   'RECORDING_FAILED',
   'NO_SPEECH',
-  'TRANSCRIPTION_UNCONFIGURED',
-  'TRANSCRIPTION_UNAUTHORIZED',
-  'TRANSCRIPTION_OFFLINE',
-  'TRANSCRIPTION_BILLING',
-  'TRANSCRIPTION_RATE_LIMITED',
-  'TRANSCRIPTION_SERVICE_ERROR',
+  'TRANSCRIPTION_MODEL_NOT_READY',
   'TRANSCRIPTION_FAILED',
   'OUTPUT_UNAVAILABLE',
   'OUTPUT_FAILED',
@@ -59,24 +55,18 @@ export function isTranscriptionErrorCode(code: string): code is TranscriptionErr
 }
 
 /**
- * What went wrong reaching OpenRouter when nothing was kept, in the one wording
- * every surface uses. The controller keeps the recording for every
- * transcription failure today, so TRANSCRIPTION_KEPT_DETAIL is what users read;
- * these stay for a failure that keeps nothing.
- * The dictate room, the widget and the controller's error state all say the
- * same sentence, so a failure reads the same wherever the user happens to see
- * it, and the recovery it names is only ever changed in one place. Each one
- * says the recording is gone, because dictation audio is never kept.
+ * What went wrong transcribing when nothing was kept, in the one wording every
+ * surface uses. The controller keeps the recording for every transcription
+ * failure today, so TRANSCRIPTION_KEPT_DETAIL is what users read; these stay
+ * for a failure that keeps nothing. The dictate room, the widget and the
+ * controller's error state all say the same sentence, so a failure reads the
+ * same wherever the user happens to see it. Each one says the recording is
+ * gone, because dictation audio is never kept.
  */
 export const TRANSCRIPTION_ERROR_DETAIL: Readonly<Record<TranscriptionErrorCode, string>> =
   Object.freeze({
-    TRANSCRIPTION_UNCONFIGURED: 'Sotto has no OpenRouter API key yet. The recording was not kept. Add your key in Settings, then dictate again.',
-    TRANSCRIPTION_UNAUTHORIZED: 'OpenRouter rejected the API key. The recording was not kept. Check the key in Settings.',
-    TRANSCRIPTION_OFFLINE: 'Sotto could not reach OpenRouter. The recording was not kept. Check your connection and try again.',
-    TRANSCRIPTION_BILLING: 'OpenRouter has no credit left for this key. The recording was not kept. Add credit at openrouter.ai, then dictate again.',
-    TRANSCRIPTION_RATE_LIMITED: 'OpenRouter is limiting requests on this key. The recording was not kept. Wait a minute, then dictate again.',
-    TRANSCRIPTION_SERVICE_ERROR: 'OpenRouter’s transcription service returned an error. The recording was not kept. Dictate again in a moment.',
-    TRANSCRIPTION_FAILED: 'Sotto did not get usable text back. The recording was not kept. Dictate again.',
+    TRANSCRIPTION_MODEL_NOT_READY: 'The speech model stopped before it could transcribe. The recording was not kept. Check Settings → Transcription, then dictate again.',
+    TRANSCRIPTION_FAILED: 'The speech model could not transcribe this recording. The recording was not kept. Dictate again.',
   })
 
 /**
@@ -86,14 +76,16 @@ export const TRANSCRIPTION_ERROR_DETAIL: Readonly<Record<TranscriptionErrorCode,
  */
 export const TRANSCRIPTION_KEPT_DETAIL: Readonly<Record<TranscriptionErrorCode, string>> =
   Object.freeze({
-    TRANSCRIPTION_UNCONFIGURED: 'Sotto has no OpenRouter API key yet. Your recording is kept until you try again or discard it. Add your key in Settings, then try again.',
-    TRANSCRIPTION_UNAUTHORIZED: 'OpenRouter rejected the API key. Your recording is kept until you try again or discard it. Check the key in Settings, then try again.',
-    TRANSCRIPTION_OFFLINE: 'Sotto could not reach OpenRouter. Your recording is kept until you try again or discard it. Check your connection, then try again.',
-    TRANSCRIPTION_BILLING: 'OpenRouter has no credit left for this key. Your recording is kept until you try again or discard it. Add credit at openrouter.ai, then try again.',
-    TRANSCRIPTION_RATE_LIMITED: 'The transcription service is busy and turned part of this recording away. Your recording is kept until you try again or discard it.',
-    TRANSCRIPTION_SERVICE_ERROR: 'OpenRouter’s transcription service returned an error. Your recording is kept until you try again or discard it.',
-    TRANSCRIPTION_FAILED: 'Sotto did not get usable text back. Your recording is kept until you try again or discard it.',
+    TRANSCRIPTION_MODEL_NOT_READY: 'The speech model is not ready. Your recording is kept until you try again or discard it. Check Settings → Transcription, then try again.',
+    TRANSCRIPTION_FAILED: 'The speech model could not transcribe this recording. Your recording is kept until you try again or discard it.',
   })
+
+/**
+ * What every surface says when dictation starts before the speech model is
+ * ready: nothing is recorded, and the one place that shows the download says
+ * how far along it is.
+ */
+export const SPEECH_MODEL_NOT_READY_DETAIL = 'The speech model is not ready yet, so nothing was recorded. Settings → Transcription shows where its download stands.'
 
 /**
  * What every surface says when setup was finished without a microphone. The

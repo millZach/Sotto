@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 
+import { speechModelSummary } from './components/SpeechModelStatus'
+import type { SpeechModelStatus } from '../../shared/speechModel'
 import type { AppSettings } from '../../shared/settings'
 import { AppShell, layoutFor } from './components/AppShell'
 import { Card } from './components/Card'
@@ -19,7 +21,10 @@ import {
   type MicrophoneTestState,
 } from './features/onboarding/microphoneTest'
 import { useApp, type AppNavigation } from './state/AppContext'
+import { setTerminalPreferences } from './tools/terminalPreferences'
 import { useMemoryEnabled } from './state/memoryFeature'
+import { useReleaseTrack } from './state/useReleaseTrack'
+import { releaseTrackName } from '../../shared/releaseTrack'
 import { SettingsView } from './features/settings/SettingsView'
 import { HostQuestionDialog } from './features/settings/HostQuestionDialog'
 import { ToastRegion, type ToastMessage } from './components/ToastRegion'
@@ -44,7 +49,7 @@ const recoveryMessages = {
   ANSWER_HISTORY_NOT_CLEARED: 'Saved answer cleanup could not finish. The original file was preserved. Repair local storage, then restart Sotto to try again.',
   REMOTE_DRAFT_STORAGE_NOT_UPDATED: 'Unsent remote draft storage could not be updated. Draft text may not be saved, and older disk copies may remain. Keep a copy before quitting. Repair local storage, then save Settings or restart Sotto to try again.',
   REMOTE_DRAFTS_UNREADABLE: 'Unsent remote drafts could not be read. The original file was preserved. Repair local storage, then restart Sotto to try again.',
-  OPENROUTER_KEY_MIGRATION_FAILED: 'The OpenRouter key could not be stored securely. Enter it again in Settings → Transcription.',
+  OPENROUTER_KEY_MIGRATION_FAILED: 'The OpenRouter key could not be stored securely. Enter it again in Settings → Cleanup.',
   SETTINGS_RECOVERED: 'Sotto restored default settings after a local settings file could not be read. The original file was preserved.',
   CREDENTIALS_RECOVERED: 'Sotto could not read its saved keys. The encrypted file was preserved. Add your keys again in Settings.',
   HISTORY_RECOVERED: 'Sotto started with an empty history after its local history file could not be read. The original file was preserved.',
@@ -97,9 +102,10 @@ export function applyDocumentPreferences(
  * beside the sidebar, or the corner of a page that owns its window): what this
  * page keeps. Threads has no foot line, so it says nothing here.
  */
-function FooterStatus({ navigation, settings, historyKept }: {
+function FooterStatus({ navigation, settings, historyKept, speechModel }: {
   readonly navigation: Exclude<AppNavigation, 'onboarding'>
   readonly settings: AppSettings
+  readonly speechModel: SpeechModelStatus | null
   /** Whether History still holds transcripts the user could clear. */
   readonly historyKept: boolean
 }): ReactNode {
@@ -108,14 +114,13 @@ function FooterStatus({ navigation, settings, historyKept }: {
     case 'memory': return 'Your preferences, with their history.'
     case 'settings': return 'Changes save as you make them.'
     case 'help': return 'Shortcuts, privacy, and troubleshooting.'
-    default: return settings.llmApiKey.length > 0
-      ? 'MAI-Transcribe-2 via OpenRouter'
-      : 'Add your OpenRouter API key in Settings'
+    default: return speechModelSummary(speechModel)
   }
 }
 
 export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }: AppProps): ReactNode {
   const app = useApp()
+  const downloadSpeechModel = useCallback((): void => { void app.actions.downloadSpeechModel() }, [app.actions])
   const memoryEnabled = useMemoryEnabled()
   const [microphoneState, setMicrophoneState] = useState<MicrophoneTestState>('idle')
   const [microphoneLevel, setMicrophoneLevel] = useState(0)
@@ -138,6 +143,10 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
   const [themeNotice, setThemeNotice] = useState<ToastMessage | null>(null)
   const latestSettingsRef = useRef(app.settings)
   latestSettingsRef.current = app.settings
+  const releaseTrack = useReleaseTrack()
+
+  // The document names the running build, as main titles its window: "Sotto Owl" on that track.
+  useEffect(() => { document.title = releaseTrackName(releaseTrack) }, [releaseTrack])
 
   useEffect(() => {
     if (themeNotice === null) return
@@ -188,7 +197,8 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
   // the render that selected it, so the choice and the room never disagree.
   useLayoutEffect(() => {
     applyDocumentPreferences(app.settings, document.documentElement, systemDark, window.sotto?.canFrostWindow === true && !reducesTransparency)
-  }, [app.settings, systemDark, reducesTransparency, appearanceEdits])
+    if (app.settings) setTerminalPreferences(app.settings, app.actions.updateSettings)
+  }, [app.settings, app.actions, systemDark, reducesTransparency, appearanceEdits])
 
   useEffect(() => {
     const search = (event: KeyboardEvent): void => {
@@ -335,7 +345,8 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
           microphoneLevel={microphoneLevel}
           settings={app.settings}
           onUpdateSettings={app.actions.updateSettings}
-          onCheckTranscriptionKey={app.actions.checkTranscriptionKey}
+          speechModel={app.speechModel}
+          onDownloadSpeechModel={downloadSpeechModel}
           shortcut={app.settings.hotkey}
           platform={app.platform}
           onRequestMicrophone={requestMicrophone}
@@ -363,7 +374,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
     const layout = layoutFor(navigation, threadsPage)
     // A capture run holds the sidebar's clocks still.
     const captureNow = window.sottoE2E?.scenario === 'design-threads' ? E2E_THREADS_NOW : undefined
-    const statusText = <FooterStatus navigation={navigation} settings={app.settings} historyKept={app.historyStatus === 'ready' && app.history.length > 0} />
+    const statusText = <FooterStatus navigation={navigation} settings={app.settings} speechModel={app.speechModel} historyKept={app.historyStatus === 'ready' && app.history.length > 0} />
     const threadWorkspace = (
       <ThreadWorkspace
         updateControl={updateControl}
@@ -408,7 +419,9 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
           onSetStartup={app.actions.setStartup}
           onResetSettings={app.actions.resetSettings}
           onClearHistory={app.actions.clearHistory}
-          onCheckTranscriptionKey={app.actions.checkTranscriptionKey}
+          onCheckOpenRouterKey={app.actions.checkOpenRouterKey}
+          speechModel={app.speechModel}
+          onDownloadSpeechModel={downloadSpeechModel}
           onCheckForUpdates={updateFlow.check}
           onDownloadUpdate={updateFlow.download}
           // The press opens the same confirmation the footer control uses; the
@@ -417,11 +430,12 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
         />
         break
       case 'help':
-        view = <HelpView shortcut={app.settings.hotkey} platform={app.platform} version={app.update?.currentVersion} />
+        view = <HelpView shortcut={app.settings.hotkey} platform={app.platform} version={app.update?.currentVersion} releaseTrack={releaseTrack} />
         break
       default:
         view = <DictateRoom
           settings={app.settings}
+          speechModel={app.speechModel}
           platform={app.platform}
           dictation={app.dictation}
           entries={app.history}

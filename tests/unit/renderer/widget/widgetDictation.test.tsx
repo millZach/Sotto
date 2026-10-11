@@ -7,7 +7,13 @@ import {
   WidgetApp,
   formatElapsedTime
 } from '../../../../src/renderer/src/widget/WidgetApp'
-import { MICROPHONE_NOT_SET_UP_DETAIL, TRANSCRIPTION_KEPT_DETAIL, type WidgetErrorCode } from '../../../../src/shared/dictation'
+import {
+  MICROPHONE_NOT_SET_UP_DETAIL,
+  SPEECH_MODEL_NOT_READY_DETAIL,
+  TRANSCRIPTION_ERROR_DETAIL,
+  TRANSCRIPTION_KEPT_DETAIL,
+  type WidgetErrorCode,
+} from '../../../../src/shared/dictation'
 import { setupWidgetTests, snapshot, win32Copy } from '../../../fixtures/renderer/widgetHarness'
 
 setupWidgetTests()
@@ -30,17 +36,16 @@ describe('WidgetApp', () => {
     expect(container).not.toHaveTextContent('Ctrl+Shift+Space')
   })
 
-  it('says dictated audio went to OpenRouter only once transcription is underway, on both platforms', () => {
-    // ADR-0006: the audio is uploaded to OpenRouter for transcription, and it is never written to disk. Before the
-    // upload, a stop that fails or finds no speech sends nothing, so those stages only say the audio is not kept.
+  it('says the recording is transcribed on this computer at every processing stage, on both platforms', () => {
+    // ADR-0071: dictation transcribes on this computer, never saved, at every stage before delivery.
     const cases = [
-      ['preparing-audio', 'Preparing audio', 'Audio is never saved'],
-      ['loading-model', 'Preparing transcription', 'Audio is never saved'],
-      ['transcribing', 'Transcribing', 'Sent to OpenRouter, never saved'],
-      ['delivering-output', 'Delivering text', 'Sent to OpenRouter, never saved'],
+      ['preparing-audio', 'Preparing audio'],
+      ['loading-model', 'Starting the speech model'],
+      ['transcribing', 'Transcribing'],
+      ['delivering-output', 'Delivering text'],
     ] as const
     for (const platform of ['win32', 'darwin'] as const) {
-      for (const [stage, label, detail] of cases) {
+      for (const [stage, label] of cases) {
         render(
           <WidgetApp
             snapshot={snapshot({ status: 'processing', sessionId: `${platform}-${stage}`, startedAt: 0, stage, progress: 0.5, cancellable: true })}
@@ -48,7 +53,7 @@ describe('WidgetApp', () => {
             now={0}
           />,
         )
-        expect(screen.getByText(label)).toHaveAttribute('title', detail)
+        expect(screen.getByText(label)).toHaveAttribute('title', 'Transcribed on this computer, never saved')
         cleanup()
       }
     }
@@ -158,7 +163,7 @@ describe('WidgetApp', () => {
 
   it.each([
     ['preparing-audio', 'Preparing audio'],
-    ['loading-model', 'Preparing transcription'],
+    ['loading-model', 'Starting the speech model'],
     ['transcribing', 'Transcribing'],
     ['delivering-output', 'Delivering text'],
   ] as const)('renders the %s processing stage with bounded progress', (stage, label) => {
@@ -182,15 +187,11 @@ describe('WidgetApp', () => {
     ['MIC_DEVICE_NOT_FOUND', 'No microphone found', 'Connect a microphone and try again.'],
     ['MIC_START_FAILED', 'Microphone unavailable', 'Check the selected microphone and try again.'],
     ['MIC_NOT_SET_UP', 'No microphone set up', MICROPHONE_NOT_SET_UP_DETAIL],
+    ['SPEECH_MODEL_NOT_READY', 'Model not ready', SPEECH_MODEL_NOT_READY_DETAIL],
     ['RECORDING_FAILED', 'Recording stopped', 'Check your microphone and try again.'],
     ['NO_SPEECH', 'No speech detected', 'Speak closer to the microphone and try again.'],
-    ['TRANSCRIPTION_UNCONFIGURED', 'API key needed', 'Sotto has no OpenRouter API key yet. The recording was not kept. Add your key in Settings, then dictate again.'],
-    ['TRANSCRIPTION_UNAUTHORIZED', 'API key rejected', 'OpenRouter rejected the API key. The recording was not kept. Check the key in Settings.'],
-    ['TRANSCRIPTION_OFFLINE', 'Connection unavailable', 'Sotto could not reach OpenRouter. The recording was not kept. Check your connection and try again.'],
-    ['TRANSCRIPTION_BILLING', 'Out of credit', 'OpenRouter has no credit left for this key. The recording was not kept. Add credit at openrouter.ai, then dictate again.'],
-    ['TRANSCRIPTION_RATE_LIMITED', 'Too many requests', 'OpenRouter is limiting requests on this key. The recording was not kept. Wait a minute, then dictate again.'],
-    ['TRANSCRIPTION_SERVICE_ERROR', 'OpenRouter error', 'OpenRouter’s transcription service returned an error. The recording was not kept. Dictate again in a moment.'],
-    ['TRANSCRIPTION_FAILED', 'Couldn’t transcribe', 'Sotto did not get usable text back. The recording was not kept. Dictate again.'],
+    ['TRANSCRIPTION_MODEL_NOT_READY', 'Model not ready', TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_MODEL_NOT_READY],
+    ['TRANSCRIPTION_FAILED', 'Couldn’t transcribe', TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_FAILED],
     ['OUTPUT_UNAVAILABLE', 'Output unavailable', 'Open Sotto and try again.'],
     ['OUTPUT_FAILED', 'Couldn’t copy text', 'Try again from the Sotto app.'],
     ['HISTORY_FAILED', 'Saved to clipboard', 'Local history was not updated.'],
@@ -221,14 +222,14 @@ describe('WidgetApp', () => {
     const now = vi.spyOn(Date, 'now').mockReturnValue(1_000)
     const { container } = render(
       <WidgetApp
-        snapshot={snapshot({ status: 'error', sessionId: 'kept', code: 'TRANSCRIPTION_RATE_LIMITED', kept: true })}
+        snapshot={snapshot({ status: 'error', sessionId: 'kept', code: 'TRANSCRIPTION_FAILED', kept: true })}
         platform="win32" now={0}
         onRetry={onRetry} onCancel={onCancel} onDismiss={onDismiss} onStop={onStop}
       />,
     )
     const label = screen.getByText('Click to try again')
     expect(label).toBeVisible()
-    expect(label).toHaveAttribute('title', `Too many requests. ${TRANSCRIPTION_KEPT_DETAIL.TRANSCRIPTION_RATE_LIMITED}`)
+    expect(label).toHaveAttribute('title', `Couldn’t transcribe. ${TRANSCRIPTION_KEPT_DETAIL.TRANSCRIPTION_FAILED}`)
 
     fireEvent.click(container.querySelector('.widget-capsule')!)
     expect(onRetry).toHaveBeenCalledOnce()
@@ -248,10 +249,7 @@ describe('WidgetApp', () => {
     now.mockRestore()
   })
 
-  it.each([
-    ['TRANSCRIPTION_RATE_LIMITED', 'Still busy · retry'],
-    ['TRANSCRIPTION_OFFLINE', 'Failed again · retry'],
-  ] as const)('says when Try again on %s failed too', (code, title) => {
+  it.each(['TRANSCRIPTION_FAILED', 'TRANSCRIPTION_MODEL_NOT_READY'] as const)('always says Failed again · retry when Try again on %s failed too', (code) => {
     const onRetry = vi.fn()
     const { container } = render(
       <WidgetApp
@@ -259,7 +257,7 @@ describe('WidgetApp', () => {
         platform="win32" now={0} onRetry={onRetry}
       />,
     )
-    expect(screen.getByText(title)).toHaveAttribute('title', expect.stringMatching(/^Try again did not get through\. /))
+    expect(screen.getByText('Failed again · retry')).toHaveAttribute('title', expect.stringMatching(/^Try again failed too\. /))
     fireEvent.click(container.querySelector('.widget-capsule')!)
     expect(onRetry).toHaveBeenCalledOnce()
   })

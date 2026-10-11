@@ -1,5 +1,7 @@
 import React, { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { useOptionalApp } from '../state/AppContext'
+import { useWatcherEnabled } from '../state/watcherFeature'
+import { visibleWatcherState } from './watcherVisibility'
 import { useAgents } from './AgentContext'
 import { overlayDraftThreads, useDraftThreads } from './draftThreads'
 import { useClock } from './paneGrid'
@@ -25,12 +27,13 @@ export function PageSidebar({ now: fixedNow }: {
 }): ReactNode {
   const agents = useAgents()
   const app = useOptionalApp()
+  const watcherEnabled = useWatcherEnabled()
   const now = useClock(fixedNow)
   const [mode, setMode] = useSidebarMode()
   const [query, setQuery] = useState('')
   const drafts = useDraftThreads()
   const published = agents.state
-  const state = useMemo(() => overlayDraftThreads(published, drafts), [published, drafts])
+  const state = useMemo(() => visibleWatcherState(overlayDraftThreads(published, drafts), watcherEnabled), [published, drafts, watcherEnabled])
   const rows = useShared(useMemo(() => state === null ? [] : describeThreads(state, now), [state, now]))
   const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], matching: 0 } : organizeWorkspace(state, rows, query, state.activeProjectId), [state, rows, query]))
   const navigate = app?.actions.navigate

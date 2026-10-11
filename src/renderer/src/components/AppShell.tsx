@@ -2,8 +2,10 @@ import React, { useLayoutEffect, useRef, useState, type KeyboardEvent, type Mous
 import { MessagesSquare } from 'lucide-react'
 
 import type { SottoPlatform } from '../../../shared/platform'
+import { releaseTrackName } from '../../../shared/releaseTrack'
 import type { AppNavigation } from '../state/AppContext'
 import { useMemoryEnabled } from '../state/memoryFeature'
+import { useReleaseTrack } from '../state/useReleaseTrack'
 import { SottoMark } from './SottoMark'
 import { VoiceWave } from './VoiceWave'
 import { WindowControls } from './WindowControls'
@@ -102,6 +104,8 @@ export function AppShell({
   children,
 }: AppShellProps): ReactNode {
   const nativeWindowControls = platform === 'darwin'
+  // A Sotto Owl build shows the mark alone in the strip, as the sidebar's top row does.
+  const owl = useReleaseTrack() === 'owl'
   const management = navigation !== null
   const room = roomFor(navigation)
   // Memory is hidden for the beta: its link goes with it.
@@ -140,10 +144,16 @@ export function AppShell({
     <div className={shellClass} data-platform={platform}>
       {page || beside ? null : (
         <header className={nativeWindowControls ? 'app-strip app-strip--mac' : 'app-strip'}>
-          <div className="app-mark" aria-label="Sotto application">
-            <SottoMark className="app-mark__glyph" />
-            <span>Sotto</span>
-          </div>
+          {owl ? (
+            <div className="app-mark" role="img" aria-label={releaseTrackName('owl')}>
+              <SottoMark className="app-mark__tile" />
+            </div>
+          ) : (
+            <div className="app-mark" aria-label="Sotto application">
+              <SottoMark className="app-mark__glyph" />
+              <span>Sotto</span>
+            </div>
+          )}
           {management ? (
             <div className="app-switch" role="tablist" aria-label="Mode">
               {rooms.map(({ id, label, destination }, index) => (

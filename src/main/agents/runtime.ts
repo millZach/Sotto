@@ -36,6 +36,8 @@ type NativeHost = AgentHost & { closed?: () => Promise<void> }
 
 export interface AgentRuntimeOptions {
   directory: string
+  /** Immutable release-track gate, read once by the process owner. Absent fails closed. */
+  watcherEnabled?: boolean
   claudeHistoryModulePath?: string
   credentials: ControlDependencies['credentials']
   settings: () => AppSettings
@@ -106,7 +108,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     provider: () => agentControl.configuration().provider,
     enabledProviders: () => { const configuration = agentControl.configuration(); return configuration.enabledProviders ?? [configuration.provider] },
     threadProvider: threadId => threadRegistry?.byThread(threadId)?.provider,
-  }), directory, options.historyEnabled)
+  }), directory, options.historyEnabled, undefined, options.watcherEnabled ?? false)
   agentHost.setWorkingCopyDefaults(projectId => options.settings().projectThreadWorkingCopyDefaults[projectId] ?? options.settings().threadWorkingCopyDefault)
   let gitStatus: GitStatusReader | undefined
   let gitHubRateLimit: GitHubRateLimit | undefined
@@ -146,7 +148,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       grok: new GrokSubscriptionClient(join(directory, 'reasoning', 'grok')),
     })
   const agentControl: AgentControl = new AgentControl({
-    directory, host: agentHost, credentials, turns,
+    directory, host: agentHost, credentials, turns, watcherEnabled: options.watcherEnabled ?? false,
     historyEnabled: options.historyEnabled,
     ...(options.observeActiveThread === undefined ? {} : { observeActiveThread: options.observeActiveThread }),
     ...(options.authority ? { authority: options.authority } : {}),

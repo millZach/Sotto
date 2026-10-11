@@ -1,13 +1,20 @@
 // @vitest-environment node
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { describe, expect, it, vi } from 'vitest'
-import { DesktopHostRouter, type DesktopHostConnection } from '../../../src/main/hosts/desktopHostRouter'
-import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { AgentControl } from '../../../src/main/agents/control'
+import { E2EAgentHost } from '../../../src/main/e2e/agentEffects'
+import { DesktopHostRouter, REQUEST_DRAFT_PASS_INTERVAL_MS, type DesktopHostConnection } from '../../../src/main/hosts/desktopHostRouter'
+import { emptyDesktopState, inactiveLocalHost } from '../../../src/main/hosts/inactiveLocalHost'
+import { requestDraftOwnerState } from '../../../src/main/agents/requestDraftOwners'
 import { RequestDraftService, requestQuestionsDigest } from '../../../src/main/agents/requestDrafts'
 import type { RequestDraft, RequestDraftTarget } from '../../../src/shared/requestDrafts'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
 import type { RequestAnswerRecovery } from '../../../src/main/agents/hostService'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
 import { deferred } from '../../fixtures/deferred'
+import { testCredentials } from '../../fixtures/testCredentials'
 
 const LOCAL = '11111111-1111-4111-8111-111111111111'
 const REMOTE_A = '22222222-2222-4222-8222-222222222222'
@@ -42,6 +49,41 @@ function accept(recovery: RequestAnswerRecovery, decisionId: string) {
 }
 
 describe('independent answer receipt recovery', () => {
+  it.each(['watcher', 'watcher-history'] as const)('keeps a remote %s held answer dormant without a native receipt read', async kind => {
+    const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: false }), remote = host(REMOTE_A, 'remote')
+    router.add(remote.connection)
+    const drafts = new RequestDraftService(tmpdir(), owner => router.requestDraftState(owner), async () => {}, { write: async () => {} })
+    await hold(drafts, target(REMOTE_A), 'retained-watcher-answer')
+    const before = await drafts.heldThreadAnswers()
+    remote.state.host.threads[0]!.kind = kind
+    try {
+      await router.reconcileRequestDrafts(drafts)
+      expect(remote.read).not.toHaveBeenCalled()
+      expect(remote.command).not.toHaveBeenCalled()
+      expect(router.requestDraftState(target(REMOTE_A))).toBeUndefined()
+      expect(await drafts.heldThreadAnswers()).toEqual(before)
+    } finally { router.dispose() }
+  })
+  it('rechecks a queued receipt owner before reading a newly hidden Watcher', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: false }), remote = host(REMOTE_A, 'remote')
+    remote.state.host.threads.push({ ...remote.state.host.threads[0]!, id: 'second-thread' })
+    router.add(remote.connection)
+    const held: RequestDraft[] = ['thread', 'second-thread'].map((id, index) => ({
+      target: { ...target(REMOTE_A), ownerId: hostEntityKey(REMOTE_A, id) }, revision: 1, held: true,
+      decisionId: 'decision-' + index, selections: {} }))
+    const before = structuredClone(held), drafts = { heldThreadAnswers: async () => held, reconcile: async () => {} }
+    const started = deferred(), gate = deferred()
+    remote.read.mockImplementationOnce(async () => { started.resolve(); await gate.promise })
+    const running = router.reconcileRequestDrafts(drafts)
+    try {
+      await started.promise
+      remote.state.host.threads[1]!.kind = 'watcher'
+      gate.resolve()
+      await running
+      expect(remote.read).toHaveBeenCalledOnce()
+      expect(held).toEqual(before)
+    } finally { gate.resolve(); await running; router.dispose() }
+  })
   it('retires known local acceptance for independent provider owners while a remote receipt is pending', async () => {
     const router = new DesktopHostRouter(emptyDesktopState)
     const local = host(LOCAL, 'local'), remote = host(REMOTE_A, 'remote')
@@ -139,4 +181,128 @@ describe('independent answer receipt recovery', () => {
     } finally { gate.resolve(); await vi.runAllTimersAsync(); await Promise.all(runs); router.dispose(); vi.useRealTimers() }
   })
 
+})
+
+describe('answer recovery asked for by published states', () => {
+  // A provider publishes dozens of times a second while it streams. One pass per published state queued
+  // without bound behind the slower passes, and main spent minutes draining them after a reply.
+  it('runs one pass for a burst and one more after its gap, and invents none in a quiet gap', async () => {
+    vi.useFakeTimers()
+    const router = new DesktopHostRouter(emptyDesktopState)
+    router.add(host(REMOTE_A, 'remote').connection)
+    const drafts = { heldThreadAnswers: vi.fn(async () => []), reconcile: vi.fn(async () => {}) }
+    try {
+      for (let index = 0; index < 100; index++) router.scheduleRequestDraftReconcile(drafts)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(drafts.reconcile).toHaveBeenCalledOnce()
+      await vi.advanceTimersByTimeAsync(REQUEST_DRAFT_PASS_INTERVAL_MS - 1)
+      expect(drafts.reconcile).toHaveBeenCalledOnce()
+      await vi.advanceTimersByTimeAsync(1)
+      expect(drafts.reconcile).toHaveBeenCalledTimes(2)
+      await vi.advanceTimersByTimeAsync(REQUEST_DRAFT_PASS_INTERVAL_MS * 4)
+      expect(drafts.reconcile).toHaveBeenCalledTimes(2)
+      router.scheduleRequestDraftReconcile(drafts)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(drafts.reconcile).toHaveBeenCalledTimes(3)
+    } finally { router.dispose(); expect(vi.getTimerCount()).toBe(0); vi.useRealTimers() }
+  })
+
+  it('follows a pass slower than the interval at once, measuring the gap from its start', async () => {
+    vi.useFakeTimers()
+    const router = new DesktopHostRouter(emptyDesktopState)
+    router.add(host(REMOTE_A, 'remote').connection)
+    // A retirement write ahead of it on the draft service's lane holds the first pass up.
+    const slow = deferred()
+    const drafts = { heldThreadAnswers: vi.fn(async () => []), reconcile: vi.fn(async () => {}) }
+    drafts.reconcile.mockImplementationOnce(async () => { await slow.promise })
+    try {
+      router.scheduleRequestDraftReconcile(drafts)
+      await vi.advanceTimersByTimeAsync(100)
+      router.scheduleRequestDraftReconcile(drafts)
+      await vi.advanceTimersByTimeAsync(REQUEST_DRAFT_PASS_INTERVAL_MS + 100)
+      expect(drafts.reconcile).toHaveBeenCalledOnce()
+      slow.resolve()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(drafts.reconcile).toHaveBeenCalledTimes(2)
+    } finally { slow.resolve(); router.dispose(); vi.useRealTimers() }
+  })
+
+  it('retires a known local acceptance on the next pass while an earlier pass\'s receipt read is still pending', async () => {
+    vi.useFakeTimers()
+    const router = new DesktopHostRouter(emptyDesktopState)
+    const local = host(LOCAL, 'local'), remote = host(REMOTE_A, 'remote')
+    router.add(local.connection); router.add(remote.connection)
+    const drafts = new RequestDraftService(tmpdir(), owner => router.requestDraftState(owner), async () => {}, { write: async () => {} })
+    const started = deferred(), gate = deferred()
+    remote.read.mockImplementation(async () => { started.resolve(); await gate.promise })
+    try {
+      await hold(drafts, target(REMOTE_A), 'remote'); await hold(drafts, target(LOCAL), 'local')
+      router.scheduleRequestDraftReconcile(drafts)
+      await started.promise
+      accept(local.recovery, 'local')
+      router.scheduleRequestDraftReconcile(drafts)
+      await vi.advanceTimersByTimeAsync(REQUEST_DRAFT_PASS_INTERVAL_MS)
+      expect(await drafts.get(target(LOCAL))).toBeNull()
+      expect((await drafts.get(target(REMOTE_A)))?.held).toBe(true)
+      expect(remote.read).toHaveBeenCalledOnce()
+    } finally { gate.resolve(); await vi.runAllTimersAsync(); router.dispose(); vi.useRealTimers() }
+  })
+
+  it('builds no host state for a pass with no held remote answer', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState)
+    const remote = host(REMOTE_A, 'remote')
+    const shell = vi.fn(() => remote.state)
+    remote.connection.service.shell = shell
+    router.add(remote.connection)
+    shell.mockClear()
+    try {
+      await router.reconcileRequestDrafts({ heldThreadAnswers: async () => [], reconcile: async () => {} })
+      expect(shell).not.toHaveBeenCalled()
+    } finally { router.dispose() }
+  })
+})
+
+describe('a held answer looking up its thread', () => {
+  const roots: string[] = []
+  const controls: AgentControl[] = []
+  afterEach(async () => {
+    for (const control of controls.splice(0)) control.dispose()
+    for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
+  })
+  async function remoteHeld(local: Parameters<typeof requestDraftOwnerState>[1], root: string) {
+    const router = new DesktopHostRouter(emptyDesktopState)
+    router.add(host(REMOTE_A, 'remote').connection)
+    const drafts = new RequestDraftService(root, owner => requestDraftOwnerState(owner, local, router), async () => {}, { write: async () => {} })
+    await hold(drafts, target(REMOTE_A), 'remote')
+    return { router, drafts }
+  }
+
+  // `get()` copies every loaded thread's history. Read for the host ID on every published state, each copy
+  // blocked main for 200 to 430 ms on a desktop with 195 threads, and clicks and typing lagged by seconds.
+  it('reconciles an answer held on another host without copying this computer\'s histories', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-draft-owner-'))
+    roots.push(root)
+    const control = createAgentControl({ directory: root, host: new E2EAgentHost(), credentials: await testCredentials(root, { mode: 'unavailable' }) })
+    controls.push(control)
+    await control.start()
+    const { router, drafts } = await remoteHeld(control, root)
+    const copies = vi.spyOn(control, 'get')
+    try {
+      await router.reconcileRequestDrafts(drafts)
+      await drafts.reconcile()
+      expect((await drafts.get(target(REMOTE_A)))?.held).toBe(true)
+      expect(copies).not.toHaveBeenCalled()
+    } finally { router.dispose() }
+  })
+
+  it('reconciles an answer held on another host while this computer\'s host is off', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-draft-owner-off-'))
+    roots.push(root)
+    const { agentControl } = await inactiveLocalHost(root)
+    const { router, drafts } = await remoteHeld(agentControl, root)
+    try {
+      await expect(router.reconcileRequestDrafts(drafts)).resolves.toBeUndefined()
+      expect((await drafts.get(target(REMOTE_A)))?.held).toBe(true)
+    } finally { router.dispose() }
+  })
 })

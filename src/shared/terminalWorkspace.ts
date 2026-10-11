@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { agentWorktreeSchema } from './agents'
 import { TERMINAL_MAX_OUTPUT, terminalSizeSchema } from './terminal'
+export { TERMINAL_IMAGE_MAX_BYTES } from './terminal'
 import type { ToolsResult } from './tools'
 
 /** Terminal mode: terminals opened beside Threads, owned by a project rather than a thread. */
@@ -9,11 +10,12 @@ export const TERMINALS_EVENT = `${TERMINALS_CHANNEL}event`
 /** Active terminals only; the session's Closed shelf retains every row. */
 export const TERMINALS_MAX = 64
 /** A pasted image on its way to a terminal's folder: PNG only, the same ceiling as an attachment. */
-export const TERMINAL_IMAGE_MAX_BYTES = 10 * 1024 * 1024
 
 // Terminal launchers are implemented separately from thread-provider adapters.
 export const terminalProviderSchema = z.enum(['codex', 'claude', 'grok'])
 export type TerminalProvider = z.infer<typeof terminalProviderSchema>
+export const terminalAgentStateSchema = z.enum(['starting', 'working', 'idle', 'needs-you', 'just-finished', 'exited'])
+export type TerminalAgentState = z.infer<typeof terminalAgentStateSchema>
 
 const terminalPermissionSchema = z.enum(['ask', 'edits', 'everything'])
 export const terminalLaunchSchema = z.object({
@@ -39,6 +41,10 @@ export const workspaceTerminalSchema = z.object({
   command: z.string().max(4_096),
   /** `starting` is published the moment the terminal is asked for, before its process exists; its branch may still be null. */
   status: z.enum(['starting', 'running', 'exited', 'unavailable']),
+  /** Main's evidence for this provider run. Plain shells retain their output-activity labels. */
+  agentState: terminalAgentStateSchema.optional(),
+  /** Screen compatibility, separate from the process being alive or hooks reporting known work. */
+  stateDetection: z.enum(['available', 'unavailable']).optional(),
   ...terminalSizeSchema.shape,
   exitCode: z.number().int().nullable(),
   openedAt: z.number().finite(),
@@ -52,6 +58,7 @@ export const terminalOpenSchema = z.object({
   cols: terminalSizeSchema.shape.cols.optional(), rows: terminalSizeSchema.shape.rows.optional(),
 }).strict()
 export const workspaceTerminalRequestSchema = z.object({ id: z.string().uuid() }).strict()
+export const workspaceTerminalVisibilitySchema = z.object({ ids: z.array(z.string().uuid()).max(TERMINALS_MAX) }).strict()
 export const workspaceTerminalWriteSchema = workspaceTerminalRequestSchema.extend({ data: z.string().min(1).max(65536) }).strict()
 export const workspaceTerminalResizeSchema = workspaceTerminalRequestSchema.extend(terminalSizeSchema.shape).strict()
 export const workspaceTerminalImageSchema = workspaceTerminalRequestSchema.extend({ dataUrl: z.string().max(14_000_000) }).strict()
@@ -83,6 +90,8 @@ export interface TerminalWorkspaceBridge {
   /** Starts the same command again in the same folder, under the same ID, with fresh output. Reopens a closed terminal. */
   restart(request: z.infer<typeof workspaceTerminalRequestSchema>): Promise<ToolsResult<WorkspaceTerminalSnapshot>>
   close(request: z.infer<typeof workspaceTerminalRequestSchema>): Promise<ToolsResult<void>>
+  /** Every pane currently rendered, including unfocused split panes; main checks the window itself. */
+  visibility(request: z.infer<typeof workspaceTerminalVisibilitySchema>): Promise<ToolsResult<void>>
   /** Saves a pasted PNG under the terminal's folder and types its path into the terminal. */
   pasteImage(request: z.infer<typeof workspaceTerminalImageSchema>): Promise<ToolsResult<z.infer<typeof workspaceTerminalImageResultSchema>>>
   onEvent(listener: (event: WorkspaceTerminalEvent) => void): () => void

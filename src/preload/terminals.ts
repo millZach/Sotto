@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import {
   TERMINALS_CHANNEL, TERMINALS_EVENT, terminalOpenSchema, workspaceTerminalEventSchema, workspaceTerminalImageResultSchema, workspaceTerminalImageSchema, workspaceTerminalListingSchema,
-  workspaceTerminalRequestSchema, workspaceTerminalResizeSchema, workspaceTerminalSnapshotSchema, workspaceTerminalWriteSchema, type TerminalWorkspaceBridge,
+  workspaceTerminalRequestSchema, workspaceTerminalResizeSchema, workspaceTerminalSnapshotSchema, workspaceTerminalVisibilitySchema, workspaceTerminalWriteSchema, type TerminalWorkspaceBridge,
 } from '../shared/terminalWorkspace'
 import { toolsResultSchema } from '../shared/tools'
 import type { IpcRendererAdapter } from './index'
@@ -18,6 +18,7 @@ export function createTerminalWorkspaceBridge(renderer: IpcRendererAdapter): Ter
     stop: request => call('stop', workspaceTerminalRequestSchema, z.undefined(), request),
     restart: request => call('restart', workspaceTerminalRequestSchema, workspaceTerminalSnapshotSchema, request),
     close: request => call('close', workspaceTerminalRequestSchema, z.undefined(), request),
+    visibility: request => call('visibility', workspaceTerminalVisibilitySchema, z.undefined(), request),
     pasteImage: request => call('pasteImage', workspaceTerminalImageSchema, workspaceTerminalImageResultSchema, request),
     onEvent: listener => {
       const wrapped = (_event: unknown, ...args: unknown[]): void => {

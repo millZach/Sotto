@@ -1,0 +1,58 @@
+{
+  "provider": "codex",
+  "platform": "win32",
+  "date": "2026-10-10T05:08:12.937Z",
+  "version": "0.162.0",
+  "turnsSubmitted": 2,
+  "turnsCompleted": 2,
+  "cardsSeen": 0,
+  "answersSent": 0,
+  "checks": [
+    {
+      "name": "native-model-available",
+      "passed": true
+    },
+    {
+      "name": "turn-budget",
+      "passed": true
+    },
+    {
+      "name": "scoped-tool-accepted",
+      "passed": true
+    },
+    {
+      "name": "scoped-tool-no-card",
+      "passed": true
+    },
+    {
+      "name": "scoped-tool-completed",
+      "passed": true
+    },
+    {
+      "name": "scoped-tool-called",
+      "passed": true
+    },
+    {
+      "name": "turn-budget",
+      "passed": true
+    },
+    {
+      "name": "native-read-search-accepted",
+      "passed": true
+    },
+    {
+      "name": "native-read-search-no-card",
+      "passed": true
+    },
+    {
+      "name": "native-read-search-completed",
+      "passed": true
+    },
+    {
+      "name": "native-read-content",
+      "passed": false
+    }
+  ],
+  "result": "failed",
+  "failedCheck": "native-read-search"
+}

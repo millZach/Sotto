@@ -2,6 +2,7 @@ import React, { type ReactNode } from 'react'
 import { ChevronDown } from 'lucide-react'
 
 import type { SottoPlatform } from '../../../../shared/platform'
+import { releaseTrackName, type ReleaseTrack } from '../../../../shared/releaseTrack'
 import { ShortcutKey } from '../../components/ShortcutKey'
 import { platformCopy } from '../../platformCopy'
 
@@ -10,6 +11,8 @@ export interface HelpViewProps {
   readonly platform: SottoPlatform
   /** The running version, when the main process has reported it. */
   readonly version?: string | undefined
+  /** The running build's track, which names it in the About line; stable when unknown. */
+  readonly releaseTrack?: ReleaseTrack | undefined
 }
 
 interface Topic {
@@ -29,8 +32,12 @@ function TopicList({ topics }: { readonly topics: readonly Topic[] }): ReactNode
   ))
 }
 
-export function HelpView({ shortcut, platform, version }: HelpViewProps): ReactNode {
+export function HelpView({ shortcut, platform, version, releaseTrack = 'stable' }: HelpViewProps): ReactNode {
   const copy = platformCopy(platform)
+  const name = releaseTrackName(releaseTrack)
+  // An Owl version is one word on the line, never broken at its hyphen; a stable version has none to break at.
+  const about = version === undefined ? name
+    : releaseTrack === 'owl' ? <>{name} <span className="help-about__version">{version}</span></> : `${name} ${version}`
   const mac = platform === 'darwin'
   const linux = platform === 'linux'
   const modifier = mac ? '⌘' : 'Ctrl'
@@ -42,10 +49,10 @@ export function HelpView({ shortcut, platform, version }: HelpViewProps): ReactN
     linux
       ? { title: 'Global shortcut', body: <p>{copy.settingsGlobalShortcutDescription}</p> }
       : { title: 'Shortcut conflicts', body: <p>If another application owns a shortcut, Sotto keeps your previous working shortcut active. Choose a different combination in Settings. It saves when you leave the shortcut field.</p> },
-    { title: 'Transcription', body: <p>Microsoft MAI-Transcribe-2 transcribes your speech through OpenRouter. Add your OpenRouter API key in Settings and use Verify key to check the connection.</p> },
+    { title: 'Transcription', body: <p>Parakeet v3, by NVIDIA, transcribes your speech on this computer. It downloads once, 670 MB, and understands 25 European languages. Settings → Transcription shows whether it is ready.</p> },
   ]
   const privacy: Topic[] = [
-    { title: 'Privacy', body: <p>Audio you dictate is sent to OpenRouter for transcription. AI cleanup sends transcript text to OpenRouter. Agent prompts go to the connected coding provider. History stays on this computer.</p> },
+    { title: 'Privacy', body: <p>Audio you dictate never leaves this computer. AI cleanup, when it is on, sends the transcript text to OpenRouter on your key. Agent prompts go to the connected coding provider. History stays on this computer.</p> },
   ]
   const troubleshooting: Topic[] = [
     { title: 'Microphone access', body: <p>{copy.helpMicrophoneAccess}</p> },
@@ -79,9 +86,9 @@ export function HelpView({ shortcut, platform, version }: HelpViewProps): ReactN
           <section className="tt-panel">
             <div className="tt-panel__header"><h2>About</h2></div>
             <p className="help-about">
-              {version === undefined ? 'Sotto' : `Sotto ${version}`}, {mac ? 'macOS' : linux ? 'Linux' : 'Windows'}. No account with Sotto and no telemetry.
+              {about}, {mac ? 'macOS' : linux ? 'Linux' : 'Windows'}. No account with Sotto and no telemetry.
               <br />
-              Transcription uses your OpenRouter account.
+              Transcription runs on this computer; AI cleanup uses your OpenRouter account.
             </p>
           </section>
         </div>

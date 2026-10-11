@@ -4,6 +4,17 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   {
     ignores: [
+      'artifacts/watcher-benchmark/**',
+      'artifacts/watcher-rename/**',
+      'artifacts/watcher-gate/**',
+      'artifacts/*-center-*/**',
+      'artifacts/watcher-live/**',
+      'artifacts/watcher-own-tools-live/**',
+      'artifacts/watcher-own-tools-windows/**',
+      'artifacts/sotto-owl-release/**',
+      'artifacts/sotto-owl-branding/**',
+      'artifacts/sotto-owl-night-sky/**',
+      'artifacts/terminal-truths/**',
       'artifacts/voice-control-removal/merged-setup/**',
       'artifacts/skill-pill-composer/**',
       'artifacts/omarchy-shell-plugin/**',
@@ -78,6 +89,9 @@ export default tseslint.config(
       'artifacts/working-creature/**',
       'artifacts/background-command/**',
       'artifacts/terminal-loading/**',
+      'artifacts/terminal-agent-states/**',
+      'artifacts/phone-terminals/**',
+      'artifacts/terminal-search-links-zoom/**',
       'artifacts/thread-sidebar/**',
       'artifacts/frosted-window/**',
       'artifacts/forge-hand-test/**',

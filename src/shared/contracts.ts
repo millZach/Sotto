@@ -6,6 +6,7 @@ import type { HistoryEntry } from './history'
 import type { AppSettings, SettingsPatch } from './settings'
 import type { SottoE2EBridge } from './e2e'
 import type { RecoveryNotice } from './recoveryNotice'
+import type { SpeechModelStatus } from './speechModel'
 import type { SottoPlatform } from './platform'
 import { widgetPaletteSchema } from './themeBranding'
 
@@ -196,16 +197,15 @@ export type TranscriptPolishAsrContext = z.infer<typeof transcriptPolishAsrConte
 export type TranscriptPolishRequest = z.infer<typeof transcriptPolishRequestSchema>
 export type TranscriptPolishResult = z.infer<typeof transcriptPolishResultSchema>
 
-export const TRANSCRIPTION_MODEL = 'microsoft/mai-transcribe-2' as const
-export const TRANSCRIPTION_PRIVACY_NOTICE = 'The audio you dictate is uploaded to OpenRouter and transcribed by Microsoft. Your dictionary words are sent with it as spelling hints, and text comes back. Nothing is transcribed on this computer.' as const
+export const TRANSCRIPTION_PRIVACY_NOTICE = 'Your audio is transcribed on this computer and never leaves it. Only AI cleanup, when it is on, sends the transcript text to OpenRouter.' as const
 
 /** The recorder's own ceiling as PCM16 bytes, plus the WAV header. */
 const MAX_TRANSCRIPTION_AUDIO_BYTES = MAX_TRANSCRIPTION_SAMPLES * 2 + 44
 
 /**
- * How long one transcription may take, retries included. The 15-second floor
- * leaves room to wait out the provider's short rate-limit bursts (about one,
- * two and four seconds) before the dictation is given up on.
+ * How long the renderer waits for one segment before giving up on it. The speech model takes well
+ * under a second for a 15-second segment on a laptop; the 15-second floor is for a slow machine or
+ * a busy one, and a deadline that is never reached costs nothing.
  */
 export function transcriptionTimeoutMs(audioSeconds: number): number {
   return Math.min(30_000, Math.max(15_000, 8_000 + 300 * audioSeconds))
@@ -217,8 +217,13 @@ export const transcriptionRequestSchema = z.object({
   timeoutMs: z.number().int().min(250).max(30_000),
 }).strict()
 
+/**
+ * Why a segment was not transcribed: the speech model is not downloaded or running yet
+ * (`model-not-ready`), it ran and failed (`failed`), it took longer than the deadline (`timeout`),
+ * the dictation was cancelled, or the audio was not a WAV the recorder makes (`malformed`).
+ */
 export const transcriptionFailureReasonSchema = z.enum([
-  'unconfigured', 'unauthorized', 'billing', 'rate-limited', 'timeout', 'http', 'network', 'cancelled', 'malformed',
+  'model-not-ready', 'failed', 'timeout', 'cancelled', 'malformed',
 ])
 
 export const transcriptionResultSchema = z.discriminatedUnion('ok', [
@@ -226,7 +231,8 @@ export const transcriptionResultSchema = z.discriminatedUnion('ok', [
   z.object({ ok: z.literal(false), reason: transcriptionFailureReasonSchema }).strict(),
 ])
 
-export const transcriptionKeyCheckSchema = z.discriminatedUnion('ok', [
+/** Whether OpenRouter accepts the saved key, for AI cleanup (Verify key in Settings → Cleanup). */
+export const openRouterKeyCheckSchema = z.discriminatedUnion('ok', [
   z.object({ ok: z.literal(true) }).strict(),
   z.object({ ok: z.literal(false), reason: z.enum(['unconfigured', 'unauthorized', 'http', 'network', 'timeout']) }).strict(),
 ])
@@ -234,7 +240,7 @@ export const transcriptionKeyCheckSchema = z.discriminatedUnion('ok', [
 export type TranscriptionFailureReason = z.infer<typeof transcriptionFailureReasonSchema>
 export type TranscriptionRequest = z.infer<typeof transcriptionRequestSchema>
 export type TranscriptionResult = z.infer<typeof transcriptionResultSchema>
-export type TranscriptionKeyCheck = z.infer<typeof transcriptionKeyCheckSchema>
+export type OpenRouterKeyCheck = z.infer<typeof openRouterKeyCheckSchema>
 
 export const UPDATE_CHECK_PRIVACY_NOTICE = 'Asks GitHub whether a newer Sotto has been released. GitHub sees an ordinary web request from this computer — your IP address, the time, and the version you are running. No audio, transcripts, settings, or identifiers are sent, and turning this off stops the request entirely.' as const
 
@@ -274,6 +280,10 @@ export const updatePhaseSchema = z.discriminatedUnion('phase', [
 export const updateStatusSchema = z
   .object({
     currentVersion: updateVersionSchema,
+    /** Main supplies this even when updating is unsupported. Older fixtures may omit it. */
+    releaseTrack: z.enum(['stable', 'owl']).optional(),
+    /** Immutable startup gate, including the unpackaged test override. */
+    watcherEnabled: z.boolean().optional(),
     phase: updatePhaseSchema,
     /** When the last check started, as epoch milliseconds; null before the first. */
     checkedAt: z.number().int().nonnegative().nullable(),
@@ -354,7 +364,11 @@ export interface SottoBridge {
 
   transcribe(request: TranscriptionRequest): Promise<TranscriptionResult>
   cancelTranscription(requestId: string): Promise<CommandResult>
-  checkTranscriptionKey(): Promise<TranscriptionKeyCheck>
+  getSpeechModelStatus(): Promise<SpeechModelStatus>
+  /** Starts the speech model download, or retries one that failed; progress arrives through onSpeechModelStatus. */
+  downloadSpeechModel(): Promise<CommandResult>
+  onSpeechModelStatus(listener: (status: SpeechModelStatus) => void): Unsubscribe
+  checkOpenRouterKey(): Promise<OpenRouterKeyCheck>
   /** Asks the operating system for the microphone before Chromium captures. */
   ensureMicrophoneAccess(): Promise<boolean>
 

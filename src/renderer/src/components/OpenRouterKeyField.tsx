@@ -1,12 +1,12 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Check, CircleAlert } from 'lucide-react'
 
-import type { TranscriptionKeyCheck } from '../../../shared/contracts'
+import type { OpenRouterKeyCheck } from '../../../shared/contracts'
 import { STORED_CREDENTIAL_PLACEHOLDER, type SettingsPatch } from '../../../shared/settings'
 import { Button } from './Button'
 import { Field } from './Field'
 
-function transcriptionKeyStatusCopy(result: TranscriptionKeyCheck): string {
+function openRouterKeyStatusCopy(result: OpenRouterKeyCheck): string {
   if (result.ok) return 'Key verified.'
   switch (result.reason) {
     case 'unauthorized': return 'OpenRouter rejected this key.'
@@ -17,11 +17,11 @@ function transcriptionKeyStatusCopy(result: TranscriptionKeyCheck): string {
   }
 }
 
-export function OpenRouterKeyField({ apiKey, migrationFailed = false, onUpdateSettings, onCheckTranscriptionKey }: {
+export function OpenRouterKeyField({ apiKey, migrationFailed = false, onUpdateSettings, onCheckOpenRouterKey }: {
   readonly migrationFailed?: boolean
   readonly apiKey: string
   readonly onUpdateSettings: (patch: SettingsPatch) => Promise<boolean>
-  readonly onCheckTranscriptionKey: () => Promise<TranscriptionKeyCheck>
+  readonly onCheckOpenRouterKey: () => Promise<OpenRouterKeyCheck>
 }): ReactNode {
   const [draft, setDraft] = useState(apiKey)
   const [busy, setBusy] = useState(false)
@@ -61,14 +61,14 @@ export function OpenRouterKeyField({ apiKey, migrationFailed = false, onUpdateSe
     setStatus(null)
     try {
       if (!await save() || version !== editVersion.current) return
-      const result = await onCheckTranscriptionKey().catch((): TranscriptionKeyCheck => ({ ok: false, reason: 'network' }))
-      if (version === editVersion.current) setStatus({ text: transcriptionKeyStatusCopy(result), error: !result.ok })
+      const result = await onCheckOpenRouterKey().catch((): OpenRouterKeyCheck => ({ ok: false, reason: 'network' }))
+      if (version === editVersion.current) setStatus({ text: openRouterKeyStatusCopy(result), error: !result.ok })
     } finally { setBusy(false) }
   }
 
   return <div className="key-field">
     <div className="settings-input-action">
-      <Field label="OpenRouter API key" description="Used for transcription and AI cleanup. Stored in your operating system credential store.">
+      <Field label="OpenRouter API key" description="Only used for AI cleanup. Stored in your operating system credential store.">
         {/* An already-saved key is a state, not 47 characters of prose to show
             as dots in a field the user is meant to be able to read. */}
         <input className="tt-input" type="password" autoComplete="off"

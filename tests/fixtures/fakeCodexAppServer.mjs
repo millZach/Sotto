@@ -118,7 +118,8 @@ const alive = pid => { try { process.kill(pid, 0); return true } catch (error) {
 /** Record that this process has the thread loaded, in the shared state. */
 const owns = threadId => { state.owners = { ...state.owners, [threadId]: process.pid } }
 /** Which process Sotto started for what: an introduction, and each thread's start or resume. Never a body. */
-const served = (method, threadId) => appendFileSync(file('servers.jsonl'), JSON.stringify({ pid: process.pid, method, ...(threadId ? { threadId } : {}) }) + '\n')
+const served = (method, threadId) => appendFileSync(file('servers.jsonl'), JSON.stringify({ pid: process.pid, method,
+  ...(method === 'initialize' ? { args: process.argv.slice(3) } : {}), ...(threadId ? { threadId } : {}) }) + '\n')
 const emit = message => process.stdout.write(JSON.stringify(message) + '\n')
 const notify = (method, params) => emit({ method, params })
 const record = message => appendFileSync(file('requests.jsonl'), JSON.stringify(message) + '\n')
@@ -204,11 +205,30 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
     if (holdReply) heldReplies.set(method, rejection); else setTimeout(() => emit(rejection), delay)
     return
   }
+  if (method === 'command/exec') {
+    served(method)
+    if (!process.argv.includes('windows.sandbox="unelevated"') || params.sandboxPolicy?.type !== 'readOnly' || script.watcherSandbox === 'setup-failed') {
+      emit({ id, error: { code: -32603, message: 'Synthetic sandbox setup failure' } }); return
+    }
+    if (params.command.at(-1).startsWith('Get-Content')) {
+      reply(script.watcherSandbox === 'read-failed' ? { exitCode: 1, stdout: '', stderr: 'Synthetic read failure' }
+        : { exitCode: 0, stdout: readFileSync(join(params.cwd, 'read.txt'), 'utf8'), stderr: '' })
+    } else if (script.watcherSandbox === 'write-allowed') {
+      writeFileSync(join(params.cwd, 'write.txt'), 'SOTTO_UNASKED_WRITE')
+      reply({ exitCode: 0, stdout: 'SOTTO_PROBE_WRITE_DENIED', stderr: '' })
+    } else reply({ exitCode: 0, stdout: script.watcherSandbox === 'unrelated-write-failure' ? 'SOTTO_PROBE_WRITE_INCONCLUSIVE' : 'SOTTO_PROBE_WRITE_DENIED', stderr: '' })
+    return
+  }
   if (method === 'skills/list') { reply({ data: params.cwds.map(cwd => ({ cwd, skills: script.skills ?? [], errors: script.skillErrors ?? [] })) }); return }
+  const effective = script.effectiveConfig ?? {}
   if (method === 'config/read') {
     reply(script.configReadMalformed ? { config: null, origins: {}, layers: null }
-      : { config: { developer_instructions: script.developerInstructions ?? null }, origins: {}, layers: null })
+      : { config: { developer_instructions: script.developerInstructions ?? null, ...effective }, origins: {}, layers: null })
     return
+  }
+  // Native MCP status proves only MCP inventory. It deliberately says nothing about the builtin toolset.
+  if (method === 'mcpServerStatus/list') {
+    reply({ data: script.mcpServers ?? [], nextCursor: null }); return
   }
   if (method === 'config/mcpServer/reload') { mcpConfigStamp = configStamp(); reply({}); return }
   // Its account, only when a test scripts one (ADR-0037); otherwise the method is unknown, as from an older Codex.
@@ -228,7 +248,7 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
     served(method, thread.id)
     notify('thread/started', { thread })
     reply({ thread, model: params.model, cwd: params.cwd, approvalPolicy: thread.approvalPolicy, approvalsReviewer: thread.approvalsReviewer,
-      reasoningEffort: thread.reasoningEffort, sandbox: { type: thread.sandbox === 'read-only' ? 'readOnly' : thread.sandbox === 'danger-full-access' ? 'dangerFullAccess' : 'workspaceWrite' } })
+      reasoningEffort: thread.reasoningEffort, sandbox: { type: thread.sandbox === 'read-only' ? 'readOnly' : thread.sandbox === 'danger-full-access' ? 'dangerFullAccess' : 'workspaceWrite' }, ...script.threadStartSettings })
   } else if (method === 'thread/resume' || method === 'thread/read') {
     const thread = state.threads[params.threadId]
     if (thread) {
@@ -255,7 +275,7 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
       }
       const history = { ...JSON.parse(JSON.stringify(thread)), turns: method === 'thread/resume' && params.excludeTurns ? [] : historyTurns(thread, script) }
       reply({ thread: history, model: thread.model, approvalPolicy: thread.approvalPolicy, approvalsReviewer: thread.approvalsReviewer,
-        reasoningEffort: thread.reasoningEffort, sandbox: { type: thread.sandbox === 'read-only' ? 'readOnly' : thread.sandbox === 'danger-full-access' ? 'dangerFullAccess' : 'workspaceWrite' } })
+        reasoningEffort: thread.reasoningEffort, sandbox: { type: thread.sandbox === 'read-only' ? 'readOnly' : thread.sandbox === 'danger-full-access' ? 'dangerFullAccess' : 'workspaceWrite' }, ...(method === 'thread/resume' ? script.threadResumeSettings : {}) })
     }
     else emit({ id, error: { code: -32000, message: 'Unknown thread' } })
   } else if (method === 'thread/turns/list') {

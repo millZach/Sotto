@@ -368,7 +368,9 @@ describe.skipIf(process.platform === 'darwin')("start at boot in the launch scri
       const unitHost = (await descriptor(configuration)).pid
       const remove = await run(configuration, { op: 'boot-remove', restart: true })
       expect(remove.result).toMatchObject({ type: 'boot-removed', stopped: true, bootStart: { installed: false } })
-      expect(alive(unitHost)).toBe(false)
+      // The unit's own stop ended its host before the replacement started; probing the PID alone can race its exit.
+      expect(await systemd!.stops()).toContainEqual({ pid: unitHost, exited: true })
+      await expect.poll(() => alive(unitHost)).toBe(false)
       expect(await descriptor(configuration)).toMatchObject({ pid: remove.result.pid, startedBy: 'launch-script' })
     })
 

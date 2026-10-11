@@ -24,6 +24,8 @@ const mainImports = [
   'node:os',
   'node:path',
   'node:sqlite',
+  'node:stream',
+  'node:stream/promises',
   'node:string_decoder',
   'node:timers/promises',
   'node:url',
@@ -40,13 +42,13 @@ const mainImports = [
 ]
 
 const exactInventories = {
-  main: { version: 1, scope: 'main', imports: mainImports, dynamicImports: ['node-pty'] },
+  main: { version: 1, scope: 'main', imports: mainImports, dynamicImports: ['node-pty', 'sherpa-onnx-node'] },
   preload: { version: 1, scope: 'preload', imports: ['electron'], dynamicImports: [] },
 } as const
 
 describe('packaged external dependency metadata', () => {
   it('accepts the exact Rollup inventories when every package dependency exists', () => {
-    expect(() => verifyExternalDependencyInventories(exactInventories, ['node-pty', 'zod'], builtinModules))
+    expect(() => verifyExternalDependencyInventories(exactInventories, ['node-pty', 'sherpa-onnx-node', 'zod'], builtinModules))
       .not.toThrow()
   })
 
@@ -77,7 +79,7 @@ describe('packaged external dependency metadata', () => {
 
   it('requires the compression builtin used to unpack community themes', () => {
     const withoutCompression = builtinModules.filter(name => name !== 'zlib' && name !== 'node:zlib')
-    expect(() => verifyExternalDependencyInventories(exactInventories, ['node-pty', 'zod'], withoutCompression))
+    expect(() => verifyExternalDependencyInventories(exactInventories, ['node-pty', 'sherpa-onnx-node', 'zod'], withoutCompression))
       .toThrow('external Node builtin is unavailable: node:zlib')
   })
 })

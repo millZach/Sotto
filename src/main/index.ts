@@ -39,8 +39,8 @@ import { connectCheckpoints } from './tools/checkpointIntegration'
 import { RequestDraftService } from './agents/requestDrafts'
 import { RetainedDraftStore } from './agents/retainedDraftStore'
 import { registerRequestDraftIpc } from './agents/requestDraftIpc'
-import { isThreadProviderConnected } from '../shared/agents'
-import { REQUEST_DRAFT_CHANGED, requestDraftProvider } from '../shared/requestDrafts'
+import { requestDraftOwnerState } from './agents/requestDraftOwners'
+import { REQUEST_DRAFT_CHANGED } from '../shared/requestDrafts'
 import { version as appVersion } from '../../package.json'
 import {
   app,
@@ -109,7 +109,11 @@ import { createWarmPasteAdapter } from './output/pasteHelper'
 import { createOsascriptPasteAdapter, type OsascriptPasteEvent } from './output/pasteOsascript'
 import { createSystemSettingsOpener } from './app/systemSettings'
 import { TranscriptPolishService } from './llm/transcriptPolishService'
-import { OpenRouterTranscriptionService } from './asr/openRouterTranscriptionService'
+import { LocalTranscriptionService } from './asr/localTranscriptionService'
+import { loadParakeetEngine } from './asr/speechEngine'
+import { SpeechModelStore } from './asr/speechModelStore'
+import { checkOpenRouterKey } from './llm/openRouterKeyCheck'
+import type { SpeechModelStatus } from '../shared/speechModel'
 import { createElectronUpdaterAdapter } from './updates/electronUpdaterAdapter'
 import { UpdateService } from './updates/updateService'
 import { platformProfile, windowFrostFor, type WidgetAlwaysOnTopLevel } from './platformProfile'
@@ -141,7 +145,7 @@ import {
   type Rectangle,
   type RendererDiagnostic,
   type WebContentsLike,
-  type WindowConstructorOptions,
+  type WindowEventName,
 } from './windows/windowManager'
 import {
   DICTATION_COMMAND,
@@ -149,8 +153,12 @@ import {
   SETTINGS_CHANGED,
   UPDATE_CHECK_REQUESTED,
   UPDATE_STATUS,
+  SPEECH_MODEL_STATUS,
 } from '../shared/channels'
 import { APP_ID, APP_NAME } from '../shared/constants'
+import { getReleaseTrack, releaseTrackName } from '../shared/releaseTrack'
+import { hostReleaseVersion } from './hosts/hostReleaseVersion'
+import { runningVersion, watcherEnabledForRun } from './runningVersion'
 import type { DictationCommand } from '../shared/contracts'
 import type { WidgetSnapshot } from '../shared/dictation'
 import { widgetPresentationFor } from '../shared/themeBranding'
@@ -188,6 +196,7 @@ import { registerThemesIpc } from './themes/ipc'
 import { OpenVsxClient } from './themes/openVsx'
 import { createOpenVsxFixtureFetch } from './themes/openVsxFixture'
 import { TerminalService } from './tools/terminal'
+import { terminalTakesMenuShortcut } from './terminals/menuShortcuts'
 import { BrowserService } from './tools/browser'
 import { createBrowserAgentServer } from './tools/browserAgentTools'
 import { GitChangesService } from './tools/gitChanges'
@@ -326,13 +335,19 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
   }
 
   on(
-    event: 'close' | 'closed' | 'moved' | 'maximize' | 'unmaximize' | 'hide' | 'minimize',
+    event: WindowEventName,
     listener: (event: { preventDefault(): void }) => void,
   ): void {
     if (event === 'close') {
       const wrapped = (nativeEvent: { preventDefault(): void }): void => listener(nativeEvent)
       this.window.on('close', wrapped)
       this.windowListenerCleanups.set(listener, () => this.window.removeListener('close', wrapped))
+      return
+    }
+    if (event === 'page-title-updated') {
+      const wrapped = (nativeEvent: { preventDefault(): void }): void => listener(nativeEvent)
+      this.window.on('page-title-updated', wrapped)
+      this.windowListenerCleanups.set(listener, () => this.window.removeListener('page-title-updated', wrapped))
       return
     }
     if (event === 'hide' || event === 'minimize') {
@@ -367,7 +382,7 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
   }
 
   removeListener(
-    _event: 'close' | 'closed' | 'moved' | 'maximize' | 'unmaximize' | 'hide' | 'minimize',
+    _event: WindowEventName,
     listener: (event: { preventDefault(): void }) => void,
   ): void {
     this.windowListenerCleanups.get(listener)?.()
@@ -536,10 +551,6 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
   }
 }
 
-function createBrowserWindow(options: WindowConstructorOptions): BrowserWindowLike {
-  return new ElectronBrowserWindowAdapter(new BrowserWindow(options))
-}
-
 async function createRuntime(): Promise<NativeRuntimeController> {
   blockSpellcheckDictionaryDownloads(session.defaultSession)
   const resourceRoot = app.isPackaged ? process.resourcesPath : join(__dirname, '../../resources')
@@ -556,6 +567,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const unpackagedIconPath = app.isPackaged
     ? null
     : join(__dirname, platform === 'linux' ? '../../build/icon.png' : '../../build/icon.ico')
+  // Packaging can override the version without editing the source manifest, so it is read from the app (ADR-0072).
+  const appRunningVersion = runningVersion(app.getVersion(), process.versions.electron, appVersion)
+  const hostVersion = hostReleaseVersion(appRunningVersion, appVersion)
+  const watcherEnabled = watcherEnabledForRun({ version: appRunningVersion, isPackaged: app.isPackaged, override: process.env.SOTTO_WATCHER_ENABLED })
   const recoveryNotices = new RecoveryNoticeCenter()
   const { settings: plainSettings, history } = createStorageRepositories(
     userDataPath,
@@ -563,6 +578,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     Date.now,
     platformDefaults,
     logOperational,
+    watcherEnabled,
   )
   await history.initialize()
   const credentials = new AgentCredentials(userDataPath, safeStorage, notice => recoveryNotices.publish(notice))
@@ -594,8 +610,19 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // current theme halves, so a theme change repaints the widget mid-session.
   let widgetPresentation = widgetPresentationFor(await settings.get())
   let handleRendererProcessGone: (kind: 'main' | 'widget') => void = () => undefined
+  // What this build calls itself in words: the main window's title and the tray's tooltip, "Sotto Owl" on that track.
+  const buildName = releaseTrackName(getReleaseTrack(appRunningVersion))
+  const terminalFocus = new WeakSet<Electron.WebContents>()
   const windows = new WindowManager({
-    createWindow: createBrowserWindow,
+    title: buildName,
+    createWindow: options => {
+      const window = new BrowserWindow(options)
+      window.webContents.on('before-input-event', (_event, input) => {
+        window.webContents.setIgnoreMenuShortcuts(terminalTakesMenuShortcut(input, terminalFocus.has(window.webContents), platform))
+      })
+      window.webContents.on('did-start-loading', () => terminalFocus.delete(window.webContents))
+      return new ElectronBrowserWindowAdapter(window)
+    },
     display: screen,
     platform: profile.platform,
     chrome: profile,
@@ -646,10 +673,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   let windowBlurredAt = 0
   app.on('browser-window-focus', () => { windowBlurredAt = 0 })
   app.on('browser-window-blur', () => { windowBlurredAt = Date.now() })
-  const windowInFront = (): boolean => BrowserWindow.getAllWindows().some(window => window.getTitle() === APP_NAME && window.isVisible() && !window.isMinimized()
+  const windowInFront = (): boolean => BrowserWindow.getAllWindows().some(window => window.getTitle() === buildName && window.isVisible() && !window.isMinimized()
     && (window.isFocused() || (windowBlurredAt !== 0 && Date.now() - windowBlurredAt < 45_000)))
   const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
-    directory: userDataPath, credentials,
+    directory: userDataPath, credentials, watcherEnabled,
     ...(app.isPackaged ? { claudeHistoryModulePath: join(process.resourcesPath, 'claude-sdk', 'sdk.mjs') } : {}),
     settings: () => workingCopySettings, writingSettings: () => settings.get(),
     historyEnabled: () => agentHistoryEnabled,
@@ -703,12 +730,12 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // The runtime builds the worktree cleanup (ADR-0041). Only the local host has worktrees on this
   // computer; with it off the inactive host's cleanup does nothing, and no terminal check is wired.
   const worktreeCleanup = startupSettings.localHostEnabled ? localRuntime.worktreeCleanup : null
-  const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.get().hostId), {
+  const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.hostId()), { watcherEnabled,
     bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
   })
   quitHandles.hostRouter = hostRouter
   if (startupSettings.localHostEnabled) hostRouter.add({
-    hostId: agentControl.get().hostId!, name: 'This computer', kind: 'local', service: hostService,
+    hostId: agentControl.hostId()!, name: 'This computer', kind: 'local', service: hostService,
     detail: id => agentControl.threadDetail(id), preview: request => agentControl.attachmentPreview(request),
     stage: image => agentControl.stageAttachment(image), content: digest => agentControl.attachmentContent(digest),
     gitRefs: request => agentControl.gitRefs(request), gitChangedFiles: request => agentControl.gitChangedFiles(request), gitPullRequest: request => agentControl.gitPullRequest(request),
@@ -726,10 +753,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const tailnetStandIn = e2eConfiguration !== null && !app.isPackaged ? e2eTailnetMap(process.env['SOTTO_E2E_TAILNET_MAP']) : undefined
   /** The last page an end-to-end run asked the browser to open, which it never opens. */
   let openedExternalLink: string | null = null
-  const retainedDrafts = new RetainedDraftStore({ directory: userDataPath, historyEnabled: () => agentHistoryEnabled,
+  const retainedDrafts = new RetainedDraftStore({ directory: userDataPath, watcherEnabled, historyEnabled: () => agentHistoryEnabled,
     onRecovery: () => recoveryNotices.publish({ code: 'REMOTE_DRAFTS_UNREADABLE' }),
     onWriteFailure: () => recoveryNotices.publish({ code: 'REMOTE_DRAFT_STORAGE_NOT_UPDATED' }) })
-  const desktopHosts = new DesktopHosts({ directory: userDataPath, credentials, router: hostRouter, retainedDrafts,
+  const desktopHosts = new DesktopHosts({ directory: userDataPath, credentials, router: hostRouter, retainedDrafts, watcherEnabled, clientVersion: hostVersion,
     localHostRunning: startupSettings.localHostEnabled, localHostEnabled: () => workingCopySettings.localHostEnabled,
     restart: () => { app.relaunch(); app.quit() },
     ...(sshStandIn ? { launcher: () => new SshHostLauncher({ spawn: sshStandIn }) } : {}),
@@ -748,9 +775,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const providerJobs: HostProviderJobs = new HostProviderJobs({ threads: agentJobThreads,
     hosts: { host: id => desktopHosts.jobHost(id), provider: (id, provider) => desktopHosts.providerStatus(id, provider),
       refresh: (id, provider) => desktopHosts.refreshProvider(id, provider),
-      subscribe: listener => { const off = [hostRouter.subscribe(() => listener()), desktopHosts.subscribe(() => listener())]; return () => { for (const item of off) item() } } },
+      subscribe: listener => { const off = [hostRouter.subscribeChanges(listener), desktopHosts.subscribe(() => listener())]; return () => { for (const item of off) item() } } },
     busy: (): string | undefined => { const setup = hostSetup.state(); return setup && (setup.phase === 'starting' || setup.phase === 'running') ? `An agent is setting up ${setup.name} now. Stop that setup first. Nothing was started.` : undefined } })
-  const hostSetup: HostSetup = new HostSetup({ version: appVersion,
+  const hostSetup: HostSetup = new HostSetup({ version: hostVersion,
     hosts: { check: connection => desktopHosts.check(connection), add: connection => desktopHosts.setupAdd(connection), forget: id => desktopHosts.forgetSaved(id),
       attempt: id => desktopHosts.attempt(id), cancelAttempt: id => desktopHosts.cancelAttempt(id), savedAs: (target, port) => desktopHosts.savedAs(target, port) },
     threads: agentJobThreads, busy: (): string | undefined => providerJobs.busySentence() })
@@ -785,7 +812,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     startProxy: startDeadProxy,
   }, {
     read: (threadId, visualId) => agentHost.visual(threadId, visualId),
-    localHostId: () => agentControl.get().hostId,
+    localHostId: () => agentControl.hostId(),
     mainWebContents: () => windows.getMainWebContents(), senders: () => windows.getTrustedRenderers(),
     preloadDirectory: join(__dirname, '../preload'), fontCss: FIGTREE_FONT_FACES,
   })
@@ -798,12 +825,12 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const busyThreads: BusyHostThreads = {
     working: hostId => hostRouter.shell().host.threads.filter(thread => thread.hostId === hostId && threadKeepsHostBusy(thread)).map(thread => thread.id),
     interrupt: async threadId => { await hostRouter.command({ type: 'interrupt', threadId }, desktopWindowClient()) },
-    subscribe: listener => hostRouter.subscribe(() => listener()),
+    subscribe: listener => hostRouter.subscribeChanges(listener),
   }
   // Hosts that run an older Sotto than this computer, and their updates from the Threads page (ADR-0040). A development
   // end-to-end run serves its own releases.
   const releasesStandIn = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_HOST_RELEASES_URL'] : undefined
-  const hostUpdates = new HostUpdates({ version: appVersion, ...(releasesStandIn ? { releasesUrl: releasesStandIn } : {}),
+  const hostUpdates = new HostUpdates({ version: hostVersion, ...(releasesStandIn ? { releasesUrl: releasesStandIn } : {}),
     requiresManagementUpdate: hostId => hostRouter.requiresManagementUpdate(hostId),
     hosts: { candidates: () => desktopHosts.updateCandidates(), run: (id, operation, options) => desktopHosts.runUpdate(id, operation, options),
       restart: (id, version, options) => desktopHosts.restartForUpdate(id, version, options), subscribe: listener => desktopHosts.subscribe(() => listener()) },
@@ -830,32 +857,48 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   } }
   // Phone access serves the local host's own threads to paired phones over the tailnet (ADR-0033). Its
   // Tailscale checks can take seconds, so they run beside startup rather than in front of the window.
-  const phoneAccess = new PhoneAccess({ directory: userDataPath,
+  const files = new FilesService({
+    resolveBinding: threadId => agentControl.filesBinding(threadId),
+    copyPath: path => copyOutput(path),
+    reveal: path => shell.showItemInFolder(path),
+  })
+  // A pane drawer starts in the project folder, even for a thread with its own worktree.
+  const terminalService = new TerminalService({ files, directory: userDataPath,
+    projectFolder: projectId => agentControl.projects().find(project => project.id === projectId)?.path,
+    acquireStart: workspace => agentHost.acquireTerminalStart(workspace.workingDirectory),
+    emit: event => { windows.sendToMain(TERMINAL_EVENT, event) } })
+  const terminalWorkspace = new TerminalWorkspaceService({
+    projects: () => agentControl.projects(), git: runWorktreeGit,
+    worktrees: new ThreadWorktrees(userDataPath, runWorktreeGit, TERMINAL_WORKTREE_HOME),
+    acquireReclaim: async directory => {
+      const release = await agentHost.acquireWorktreeReclaim(directory)
+      try {
+        if (await terminalService.hasRunningTerminalInCheckout(directory)) throw new Error('A terminal is open in this folder, so it stays.')
+        return release
+      } catch (error) { release(); throw error }
+    },
+    emit: event => { windows.sendToMain(TERMINALS_EVENT, event) },
+  })
+  const phoneAccess = new PhoneAccess({ directory: userDataPath, listener: { sottoVersion: hostVersion },
     service: startupSettings.localHostEnabled ? hostService : undefined,
     tailscale: e2eConfiguration === null ? new TailscaleCli() : e2eTailscale(userDataPath),
     settings: () => workingCopySettings, policy: authority,
+    terminals: terminalWorkspace,
     openExternal: async url => { if (e2eConfiguration === null) await shell.openExternal(url) },
     log: logOperational,
   })
   quitHandles.phoneAccess = phoneAccess
   void phoneAccess.start().catch(() => logOperational('phone-access-start-failed'))
-  const requestDrafts: RequestDraftService = new RequestDraftService(userDataPath, owner => {
-    if (owner.kind !== 'thread') return undefined
-    const key = parseHostEntityKey(owner.ownerId)
-    const remote = key !== null && key.hostId !== agentControl.get().hostId
-    if (remote) return hostRouter.requestDraftState(owner)
-    const state = agentControl.shell()
-    const id = key?.id ?? owner.ownerId
-    const thread = state.host.threads.find(item => item.id === id
-      && requestDraftProvider(state.host, item, state.configuration.provider) === owner.providerId)
-    const recovery = agentControl.requestAnswerRecovery(id, owner.providerId)
-    return thread ? { connected: isThreadProviderConnected(state.host, thread), ready: thread.historyStatus !== 'loading' && thread.historyStatus !== 'error',
-      requests: thread.requests, ...recovery } : recovery.completed.length ? { connected: false, ready: false, requests: [], ...recovery } : undefined
-  }, async (target, decisionId) => {
+  const requestDrafts: RequestDraftService = new RequestDraftService(userDataPath, owner => requestDraftOwnerState(owner, agentControl, hostRouter), async (target, decisionId) => {
     if (target.kind !== 'thread') throw new Error('Standalone chats are no longer available.')
     const key = parseHostEntityKey(target.ownerId)
-    if (key && key.hostId !== agentControl.get().hostId) await hostRouter.refreshRequestDraft(target, decisionId)
+    if (key && key.hostId !== agentControl.hostId()) await hostRouter.refreshRequestDraft(target, decisionId)
     else await agentControl.refreshRequestDraft(key?.id ?? target.ownerId, target.requestId)
+  }, undefined, watcherEnabled ? undefined : owner => {
+    if (owner.kind !== 'thread') return false
+    const key = parseHostEntityKey(owner.ownerId)
+    if (key && key.hostId !== agentControl.hostId()) return hostRouter.preservesWatcherThread(owner.ownerId)
+    return localRuntime?.agentHost.watcherThreadIds?.().includes(key?.id ?? owner.ownerId) ?? false
   })
   await requestDrafts.start()
   const unsubscribeRequestDrafts = requestDrafts.onChanged(owner => windows.sendToMain(REQUEST_DRAFT_CHANGED, owner))
@@ -876,12 +919,12 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // and keep startup available when inaccessible storage needs a later Settings retry.
   await cleanRetiredHistory().catch(() => undefined)
   await hostRouter.reconcileRequestDrafts(requestDrafts).catch(() => undefined)
-  const reconcileRequestDrafts = (): void => { void hostRouter.reconcileRequestDrafts(requestDrafts).catch(() => undefined) }
 
   // Only the threads the main window has declared viewed receive their messages.
   const agentStateBroadcaster = new AgentStateBroadcaster()
   const agentStatePublisher = coalesceAgentStatePublishes(state => {
-    reconcileRequestDrafts()
+    // Every published state asks for answer recovery; the router runs one pass at a time, at most twice a second.
+    hostRouter.scheduleRequestDraftReconcile(requestDrafts)
     // A window's model catalog rarely changes; omitting a repeat is most of what this saves (issue #286).
     agentStateBroadcaster.send(state, payload => windows.sendToMain(AGENT_STATE, payload))
   })
@@ -965,7 +1008,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           : createSpawnProcessAdapter((executable, args, options) => spawn(executable, args, options)))
     : createE2EPasteProcess(e2eState!, e2eConfiguration.scenario, (text) => {
         const mainWindow = BrowserWindow.getAllWindows().find(
-          (candidate) => candidate.getTitle() === APP_NAME,
+          (candidate) => candidate.getTitle() === buildName,
         )
         mainWindow?.webContents.insertText(text)
       })
@@ -1022,19 +1065,26 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
   })
 
-  // Hosted transcription stays offline in E2E runs; the renderer uses its fake transcriber.
-  // Each failed request records its reason and HTTP status, so a lost dictation can be
-  // told apart afterwards: out of credit, rate limited, or a service error. A rate limit
-  // also records whether the provider or OpenRouter set it, and a request that was rate
-  // limited and then went through is recorded too, so the retries can be seen working.
+  // Dictation transcribes on this computer (ADR-0071). The speech model downloads once from Sotto's
+  // releases, starts loading when Sotto does and stays loaded. E2E runs never download it: they
+  // report it ready, and the renderer uses its fake transcriber. Each failed segment records why and
+  // how long it was in the transcription diagnostics, never what was said.
   const transcriptionDiagnostics = diagnosticsAppender('transcription-diagnostics.jsonl')
-  const transcription = new OpenRouterTranscriptionService({
-    getSettings: () => settings.forFormatting(),
+  const speechModelStore = e2eConfiguration === null
+    ? new SpeechModelStore({
+      directory: join(userDataPath, 'speech-models'),
+      loadEngine: loadParakeetEngine,
+      onStatus: (status) => { windows.sendToMain(SPEECH_MODEL_STATUS, status) },
+    })
+    : null
+  const speechModel = {
+    status: (): SpeechModelStatus => speechModelStore?.get() ?? { state: 'ready' },
+    download: (): void => { void speechModelStore?.ensure() },
+  }
+  speechModel.download()
+  const transcription = new LocalTranscriptionService({
+    engine: () => speechModelStore?.currentEngine() ?? null,
     onFailure: transcriptionDiagnostics,
-    onRecovered: transcriptionDiagnostics,
-    ...(e2eConfiguration === null
-      ? {}
-      : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
   })
 
   // GitHub Releases is only a real feed for the packaged Windows build: the
@@ -1043,7 +1093,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // 'unsupported' phase without constructing electron-updater at all.
   const updatesSupported = app.isPackaged && e2eConfiguration === null && profile.inAppUpdates
   const updates = new UpdateService({
-    currentVersion: appVersion,
+    currentVersion: appRunningVersion, watcherEnabled,
     getSettings: () => settings.get(),
     ...(updatesSupported ? { createUpdater: createElectronUpdaterAdapter } : {}),
     onStatusChanged: (status) => {
@@ -1097,7 +1147,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         },
         markTemplate: (icon) => { if (platform === 'darwin') icon.setTemplateImage(true) },
         createTray: (icon) => new Tray(icon),
-        configure: (tray) => tray.setToolTip(APP_NAME),
+        tooltip: buildName,
       })
     : { setContextMenu: () => undefined, destroy: () => undefined }
   try {
@@ -1251,11 +1301,6 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       ),
     registerIpc: () => {
       const cleanupRequestDrafts = registerRequestDraftIpc(ipcMain, requestDrafts, () => windows.getTrustedRenderers())
-      const files = new FilesService({
-        resolveBinding: threadId => agentControl.filesBinding(threadId),
-        copyPath: copyOutput,
-        reveal: path => shell.showItemInFolder(path),
-      })
       // A thread on a paired host is read on that host (ADR-0025, October 5 amendment). Copy path copies the host's own
       // path to this computer's clipboard, in the host's format; nothing on the host is opened or written.
       const copyHostPath = async <T extends { ok: true; value: { absolutePath: string } } | { ok: false }>(result: T): Promise<T> => { if (result.ok) await copyOutput(result.value.absolutePath); return result }
@@ -1270,11 +1315,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const gitChanges = new GitChangesService({ files, checkpoints: checkpointIntegration.checkpoints, canMutate: checkpointIntegration.canMutate,
         acted: threadId => { void agentHost.gitActionFinished(threadId).catch(() => undefined) },
         copyPath: copyOutput, reveal: path => shell.showItemInFolder(path), emit: event => { windows.sendToMain(GIT_CHANGES_EVENT, event) } })
-      const cleanupTerminals = registerTerminalWorkspaceIpc(ipcMain, new TerminalWorkspaceService({
-        projects: () => agentControl.projects(), git: runWorktreeGit,
-        worktrees: new ThreadWorktrees(userDataPath, runWorktreeGit, TERMINAL_WORKTREE_HOME),
-        emit: event => { windows.sendToMain(TERMINALS_EVENT, event) },
-      }), () => windows.getTrustedRenderers())
+      const cleanupTerminals = registerTerminalWorkspaceIpc(ipcMain, terminalWorkspace, () => windows.getTrustedRenderers(), sender => BrowserWindow.getAllWindows().find(window => window.webContents === sender))
       browserService = new BrowserService({ files,
         getWindow: () => BrowserWindow.getAllWindows().find(window => window.webContents === windows.getMainWebContents()) ?? null,
         emit: event => { windows.sendToMain(BROWSER_EVENT, event) },
@@ -1296,7 +1337,6 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       quitHandles.cloudIphone = { close: () => cloudIphoneService?.dispose() ?? Promise.resolve() }
       // Resumes any release or deletion a previous run could not finish, using the key already in the credential store.
       void cloudIphoneService.resumeCleanup()
-      const terminalService = new TerminalService({ files, directory: userDataPath, emit: event => { windows.sendToMain(TERMINAL_EVENT, event) } })
       // A folder with a shell still running in it is not reclaimed under that shell.
       if (worktreeCleanup) {
         agentHost.setWorktreeInUse(threadId => terminalService.hasRunningTerminal(threadId))
@@ -1304,6 +1344,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       }
       const cleanupTools = registerToolsIpc(ipcMain, {
         terminal: terminalService,
+        onTerminalFocus: focused => {
+          const main = BrowserWindow.getAllWindows().find(window => window.webContents === windows.getMainWebContents())?.webContents
+          if (main) { if (focused) terminalFocus.add(main); else terminalFocus.delete(main) }
+        },
         browser: browserService,
         gitChanges,
         hostedGitChanges: {
@@ -1332,7 +1376,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       })
       const cleanupHosts = registerHostsIpc(ipcMain, desktopHosts, () => windows.getTrustedRenderers(), state => windows.sendToMain(HOSTS_CHANGED, state), hostTailscale)
       const cleanupPhones = registerPhonesIpc(ipcMain, phoneAccess, () => windows.getTrustedRenderers(), state => windows.sendToMain(PHONES_CHANGED, state))
-      const cleanupAgents = registerAgentIpc(ipcMain, hostRouter, hostRouter, () => windows.getTrustedRenderers(), { encodeReceipt: agentStateBroadcaster.encodeReceipt, workingCopyOptions: projectId => { const key = parseHostEntityKey(projectId); if (key && key.hostId !== agentControl.get().hostId) throw new Error('Working-copy choices are on the host machine. Use the existing project folder or create its worktree there.'); return agentHost.workingCopyOptions(key?.id ?? projectId) } })
+      const cleanupAgents = registerAgentIpc(ipcMain, hostRouter, hostRouter, () => windows.getTrustedRenderers(), { encodeReceipt: agentStateBroadcaster.encodeReceipt, workingCopyOptions: projectId => { const key = parseHostEntityKey(projectId); if (key && key.hostId !== agentControl.hostId()) throw new Error('Working-copy choices are on the host machine. Use the existing project folder or create its worktree there.'); return agentHost.workingCopyOptions(key?.id ?? projectId) } })
       // An E2E run never leaves the app for System Settings.
       const systemSettingsOpener = e2eConfiguration === null ? createSystemSettingsOpener(platform, url => shell.openExternal(url)) : null
       const cleanup = registerIpc(ipcMain, {
@@ -1384,7 +1428,14 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         transcription: {
           transcribe: (request) => transcription.transcribe(request),
           cancel: (requestId) => transcription.cancel(requestId),
-          checkKey: () => transcription.checkKey(),
+        },
+        speechModel,
+        openRouterKey: {
+          // Verify key stays offline in E2E runs, like the cleanup pass.
+          check: () => checkOpenRouterKey({
+            getSettings: () => settings.forFormatting(),
+            ...(e2eConfiguration === null ? {} : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
+          }),
         },
         updates: {
           status: () => updates.status(),
@@ -1428,8 +1479,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         cleanupThemes()
         cleanupMemory()
         unsubscribeRecoveryNotices()
-        // No renderer is left to receive them, so abandon in-flight uploads.
+        // No renderer is left to receive them, so drop what is still being transcribed.
         transcription.dispose()
+        speechModelStore?.dispose()
         updates.dispose()
         cleanup()
       }
@@ -1461,7 +1513,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         }
         return { ...snapshotE2EState(
           e2eState,
-          BrowserWindow.getAllWindows().some((candidate) => candidate.getTitle() === APP_NAME && candidate.isVisible()),
+          BrowserWindow.getAllWindows().some((candidate) => candidate.getTitle() === buildName && candidate.isVisible()),
         ), openedThreadFolder, openedExternalLink }
       })
       ipcMain.handle(E2E_TRIGGER_SHORTCUT_CHANNEL, (event) => {

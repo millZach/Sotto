@@ -193,7 +193,7 @@ it('reports already retired acceptance before Check and after restart without an
   expect(refresh).not.toHaveBeenCalled()
   const contents = await readFile(join(directory, 'request-drafts.json'), 'utf8')
   for (const words of ['Destination?', 'A quiet beach', 'Keep this unsent', 'Coast', 'Notes?']) expect(contents).not.toContain(words)
-  expect(JSON.parse(contents)).toEqual({ version: 2, drafts: [], retirements: [{ owner, requestId: target.requestId,
+  expect(JSON.parse(contents)).toEqual({ version: 2, watcherOwners: [], drafts: [], retirements: [{ owner, requestId: target.requestId,
     questionsDigest: requestQuestionsDigest(questions), decisionId: 'background-accepted', revision: 1 }] })
 })
 

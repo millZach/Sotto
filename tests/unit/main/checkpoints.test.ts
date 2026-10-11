@@ -174,6 +174,36 @@ describe('completed native turn checkpoints', () => {
       expect(await readFile(backup, 'utf8')).toBe('backup')
     } finally { stat.mockRestore(); listing.mockRestore() }
   })
+  it('keeps dormant backup-only blobs when the storage directory cannot be listed, then retries cleanup', async () => {
+    const f = await fixture(); await f.complete(); await f.service.privacyChanged()
+    const saved = JSON.parse(await readFile(join(f.dependencies.directory, 'checkpoints.json'), 'utf8'))
+    const dormant = JSON.stringify({ ...saved, records: [{ ...saved.records[0], threadId: 'watcher-thread' }] })
+    const backup = join(f.dependencies.directory, 'checkpoints.json.corrupt-watcher')
+    await writeFile(backup, dormant)
+    const hashes = [...new Set([...dormant.matchAll(/"hash"\s*:\s*"([a-f0-9]{64})"/g)].map(match => match[1]!))]
+    expect(hashes.length).toBeGreaterThan(0)
+    const directory = join(f.dependencies.directory, 'blobs')
+    const contents = await Promise.all(hashes.map(hash => readFile(join(directory, hash))))
+    const orphan = join(directory, 'e'.repeat(64)); await writeFile(orphan, 'unreferenced')
+    f.dependencies.preserveThread = threadId => threadId === 'watcher-thread'
+    f.dependencies.historyEnabled = () => false
+    const report = vi.fn(); f.dependencies.report = report
+    const actualRead = fsPromises.readdir
+    const listing = vi.spyOn(fsPromises, 'readdir').mockImplementation((...args) => args[0] === f.dependencies.directory
+      ? Promise.reject(Object.assign(new Error('Unavailable directory'), { code: 'EACCES' })) : actualRead(...args))
+    try {
+      await expect(f.service.privacyChanged()).resolves.toBeUndefined()
+      expect(report).toHaveBeenCalledWith('checkpoint-cleanup-failed')
+      expect(await readFile(backup, 'utf8')).toBe(dormant)
+      expect(await Promise.all(hashes.map(hash => readFile(join(directory, hash))))).toEqual(contents)
+      expect(await readFile(orphan, 'utf8')).toBe('unreferenced')
+    } finally { listing.mockRestore() }
+    await f.service.privacyChanged()
+    expect(await readFile(backup, 'utf8')).toBe(dormant)
+    expect(await Promise.all(hashes.map(hash => readFile(join(directory, hash))))).toEqual(contents)
+    await expect(readFile(orphan)).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(JSON.parse(await readFile(join(f.dependencies.directory, 'checkpoints.json'), 'utf8')).records).toEqual([])
+  })
   it.each(['EBUSY', 'EPERM'])('retries %s blob removal and keeps sends working after cleanup fails', async code => {
     const f = await fixture(); await f.complete()
     const orphan = join(f.dependencies.directory, 'blobs', 'f'.repeat(64))

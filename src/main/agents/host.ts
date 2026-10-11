@@ -1,5 +1,5 @@
 import type { BrowserAgentTools } from './browserAgentServer'
-import type { ScopedThreadTools } from './threadToolServer'
+import type { ScopedThreadTools, ThreadMcpServer } from './threadToolServer'
 import type { AgentActivity } from '../../shared/agentActivity'
 import type { AgentSkillCatalog, AgentSkillReference } from '../../shared/agentSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
@@ -16,6 +16,20 @@ import type { ThreadEvent } from '../../shared/threadEvents'
  * store when the adapter builds the provider's own form of it. Nothing before the adapter holds the bytes.
  */
 export interface PromptImage extends AgentAttachmentHandle { read(): Promise<Uint8Array> }
+
+/** Internal capability supplied by main's durable identity, never part of a command or runtime mode. */
+export interface WatcherLaunchProfile {
+  readonly kind: 'watcher'
+  readonly server: Readonly<Omit<ThreadMcpServer, 'headers'>> & { readonly headers: readonly Readonly<{ name: string; value: string }>[] }
+  readonly toolNames: readonly string[]
+  /** Revokes this session's server admission; recovery requires a fresh admission. */
+  revoke(reason: string): void
+}
+export interface ThreadLaunchProfiles {
+  profileFor(threadId: string): Promise<WatcherLaunchProfile | undefined>
+}
+/** Ticket 3 supplies the server; ticket 2 consumes only this thread-bound capability. */
+export interface WatcherProfileTools extends ScopedThreadTools { revoke(threadId: string): void }
 
 export type AgentHostCommand =
   | { readonly type: 'create-project'; readonly provider?: ProviderId; readonly commandId: string; readonly projectId: string; readonly title: string; readonly path: string }
@@ -121,6 +135,11 @@ export interface ThreadHistorySource {
   message?(threadId: string, messageId: string): AgentMessage | undefined
   /** Bounded activity evidence for this history epoch; undefined means it must be read afresh. */
   activities?(threadId: string, historyEpoch?: string): readonly AgentActivity[] | undefined
+  /**
+   * Whether `activities` would answer for this history epoch, without reading the records. An adapter that resumes on
+   * this reads them when it first changes the thread's activity, so a thread nobody opens costs nothing (#918).
+   */
+  hasActivities?(threadId: string, historyEpoch?: string): boolean
   /** Indexed text-free classification for a native task older than the activity window. */
   activity?(threadId: string, activityId: string, historyEpoch?: string): AgentActivity | undefined
 }
@@ -149,6 +168,11 @@ export interface ActivitySubscriptionOptions {
  * prompt = execute send; cancel = execute interrupt; status = snapshot; events = subscribe.
  */
 export interface AgentHost {
+  /** Main-only launch capabilities. Wrappers translate identity before handing them to an adapter. */
+  useLaunchProfiles?(profiles: ThreadLaunchProfiles): void
+  useWatcherTools?(tools: WatcherProfileTools): void
+  /** Capture the owned runtime before main checks identity. A refusal cannot close its replacement. */
+  profileRefusalHandler?(threadId: string): ((reason: string) => void | Promise<void>) | undefined
   /** Inject shared browser tools before connecting the native providers. */
   useBrowserTools?(tools: BrowserAgentTools): void
   /**
@@ -172,6 +196,8 @@ export interface AgentHost {
   restoreThreadHistory?(threads: readonly RestoredThreadHistory[]): Promise<void>
   /** Local organization/history; available without a provider connection. */
   workspaceSnapshot?(): AgentHostSnapshot
+  /** Main-only saved Watcher identities and special kinds, including threads omitted by the release gate. */
+  watcherThreadIds?(): readonly string[]
   setWorkspaceSettled?(kind: 'project' | 'thread', id: string, settled: boolean): Promise<AgentHostSnapshot>
   /** Rename a thread in Sotto's own workspace and record where the name came from; a hand rename is
    * `user` and outranks everything later. The provider is not told. */
@@ -248,8 +274,8 @@ export interface AgentHost {
   resolveProjectId?(id: string): string
   resolveModelId?(id: string): string
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void
-  /** Internal readers may share deeply immutable activity trees. All other containers remain
-   * isolated for the consumer. Callers needing writable activities use subscribe/snapshot instead.
+  /** Internal readers may share deeply immutable activity trees and a certified model catalog (#917). All other
+   * containers remain isolated for the consumer. Callers needing writable activities use subscribe/snapshot instead.
    * Absence means mutable legacy data: never infer unchanged activity from array identity alone.
    * A subscriber that keeps history from `subscribeEvents` says so in `options`, and then a host that
    * publishes events carries every thread with its summary and no messages, held or not (ADR-0016, #322). */
