@@ -1,0 +1,1553 @@
+{
+  "limit": {
+    "saved": 3
+  },
+  "tab-order": [
+    "History",
+    "Settings",
+    "Help",
+    "Check for updates",
+    "Resize sidebar",
+    "More Watcher actions",
+    "Thread transcript",
+    "Copy message as Markdown",
+    "Copy reply as Markdown",
+    "Watcher message"
+  ],
+  "room-sotto-dark": {
+    "1600x1000": [
+      {
+        "name": ".watcher-overview__heading 0",
+        "ratio": 8
+      },
+      {
+        "name": ".watcher-overview__total 0",
+        "ratio": 8
+      },
+      {
+        "name": ".watcher-group__toggle 0",
+        "ratio": 11.13
+      },
+      {
+        "name": ".watcher-group__toggle 1",
+        "ratio": 11.12
+      },
+      {
+        "name": ".watcher-group__toggle 2",
+        "ratio": 11.12
+      },
+      {
+        "name": ".watcher-group__count 0",
+        "ratio": 7.76
+      },
+      {
+        "name": ".watcher-group__count 1",
+        "ratio": 7.76
+      },
+      {
+        "name": ".watcher-group__count 2",
+        "ratio": 7.76
+      },
+      {
+        "name": ".watcher-group__count 3",
+        "ratio": 7.76
+      },
+      {
+        "name": ".watcher-row__title 0",
+        "ratio": 11.12
+      },
+      {
+        "name": ".watcher-row__title 1",
+        "ratio": 11.12
+      },
+      {
+        "name": ".watcher-row__title 2",
+        "ratio": 11.12
+      },
+      {
+        "name": ".watcher-row__title 3",
+        "ratio": 11.12
+      },
+      {
+        "name": ".watcher-row__title 4",
+        "ratio": 11.12
+      },
+      {
+        "name": ".watcher-row__status 0 (needs)",
+        "ratio": 10.79
+      },
+      {
+        "name": ".watcher-row__status 1 (needs)",
+        "ratio": 10.79
+      },
+      {
+        "name": ".watcher-row__status 2 (working)",
+        "ratio": 10.23
+      },
+      {
+        "name": ".watcher-row__status 3 (working)",
+        "ratio": 10.23
+      },
+      {
+        "name": ".watcher-row__status 4 (idle)",
+        "ratio": 7.76
+      },
+      {
+        "name": ".watcher-row__where 0",
+        "ratio": 7.76
+      },
+      {
+        "name": ".watcher-row__where 1",
+        "ratio": 7.76
+      },
+      {
+        "name": ".watcher-row__where 2",
+        "ratio": 7.76
+      },
+      {
+        "name": ".watcher-row__where 3",
+        "ratio": 7.76
+      },
+      {
+        "name": ".watcher-row__where 4",
+        "ratio": 7.76
+      },
+      {
+        "name": ".watcher-row__asks 0",
+        "ratio": 11.12
+      },
+      {
+        "name": ".thread-nav__time 0",
+        "ratio": 7.76
+      },
+      {
+        "name": ".thread-nav__time 1",
+        "ratio": 7.76
+      },
+      {
+        "name": ".thread-nav__time 2",
+        "ratio": 7.76
+      },
+      {
+        "name": ".thread-nav__time 3",
+        "ratio": 7.76
+      },
+      {
+        "name": ".thread-nav__time 4",
+        "ratio": 7.76
+      },
+      {
+        "name": ".watcher-head h2 0",
+        "ratio": 19.55
+      },
+      {
+        "name": ".watcher-meter 0",
+        "ratio": 13.59
+      },
+      {
+        "name": ".thread-options__pinned 0",
+        "ratio": 9.2
+      }
+    ],
+    "1280x800": [
+      {
+        "name": ".watcher-overview__heading 0",
+        "ratio": 8
+      },
+      {
+        "name": ".watcher-overview__total 0",
+        "ratio": 8
+      },
+      {
+        "name": ".watcher-group__toggle 0",
+        "ratio": 11.13
+      },
+      {
+        "name": ".watcher-group__toggle 1",
+        "ratio": 11.12
+      },
+      {
+        "name": ".watcher-group__toggle 2",
+        "ratio": 11.12
+      },
+      {
+        "name": ".watcher-group__count 0",
+        "ratio": 7.76
+      },
+      {
+        "name": ".watcher-group__count 1",
+        "ratio": 7.76
+      },
+      {
+        "name": ".watcher-group__count 2",
+        "ratio": 7.76
+      },
+      {
+        "name": ".watcher-group__count 3",
+        "ratio": 7.76
+      },
+      {
+        "name": ".watcher-row__title 0",
+        "ratio": 11.12
+      },
+      {
+        "name": ".watcher-row__title 1",
+        "ratio": 11.12
+      },
+      {
+        "name": ".watcher-row__title 2",
+        "ratio": 11.12
+      },
+      {
+        "name": ".watcher-row__title 3",
+        "ratio": 11.12
+      },
+      {
+        "name": ".watcher-row__title 4",
+        "ratio": 11.12
+      },
+      {
+        "name": ".watcher-row__status 0 (needs)",
+        "ratio": 10.79
+      },
+      {
+        "name": ".watcher-row__status 1 (needs)",
+        "ratio": 10.79
+      },
+      {
+        "name": ".watcher-row__status 2 (working)",
+        "ratio": 10.23
+      },
+      {
+        "name": ".watcher-row__status 3 (working)",
+        "ratio": 10.23
+      },
+      {
+        "name": ".watcher-row__status 4 (idle)",
+        "ratio": 7.76
+      },
+      {
+        "name": ".watcher-row__where 0",
+        "ratio": 7.76
+      },
+      {
+        "name": ".watcher-row__where 1",
+        "ratio": 7.76
+      },
+      {
+        "name": ".watcher-row__where 2",
+        "ratio": 7.76
+      },
+      {
+        "name": ".watcher-row__where 3",
+        "ratio": 7.76
+      },
+      {
+        "name": ".watcher-row__where 4",
+        "ratio": 7.76
+      },
+      {
+        "name": ".watcher-row__asks 0",
+        "ratio": 11.12
+      },
+      {
+        "name": ".thread-nav__time 0",
+        "ratio": 7.76
+      },
+      {
+        "name": ".thread-nav__time 1",
+        "ratio": 7.76
+      },
+      {
+        "name": ".thread-nav__time 2",
+        "ratio": 7.76
+      },
+      {
+        "name": ".thread-nav__time 3",
+        "ratio": 7.76
+      },
+      {
+        "name": ".thread-nav__time 4",
+        "ratio": 7.76
+      },
+      {
+        "name": ".watcher-head h2 0",
+        "ratio": 19.55
+      },
+      {
+        "name": ".watcher-meter 0",
+        "ratio": 13.59
+      },
+      {
+        "name": ".thread-options__pinned 0",
+        "ratio": 9.2
+      }
+    ],
+    "820x560": [
+      {
+        "name": ".watcher-overview__heading 0",
+        "ratio": 8
+      },
+      {
+        "name": ".watcher-overview__total 0",
+        "ratio": 8
+      },
+      {
+        "name": ".watcher-group__toggle 0",
+        "ratio": 11.13
+      },
+      {
+        "name": ".watcher-group__toggle 1",
+        "ratio": 11.12
+      },
+      {
+        "name": ".watcher-group__toggle 2",
+        "ratio": 11.12
+      },
+      {
+        "name": ".watcher-group__count 0",
+        "ratio": 7.76
+      },
+      {
+        "name": ".watcher-group__count 1",
+        "ratio": 7.76
+      },
+      {
+        "name": ".watcher-group__count 2",
+        "ratio": 7.76
+      },
+      {
+        "name": ".watcher-group__count 3",
+        "ratio": 7.76
+      },
+      {
+        "name": ".watcher-row__title 0",
+        "ratio": 11.12
+      },
+      {
+        "name": ".watcher-row__title 1",
+        "ratio": 11.12
+      },
+      {
+        "name": ".watcher-row__title 2",
+        "ratio": 11.12
+      },
+      {
+        "name": ".watcher-row__title 3",
+        "ratio": 11.12
+      },
+      {
+        "name": ".watcher-row__title 4",
+        "ratio": 11.12
+      },
+      {
+        "name": ".watcher-row__status 0 (needs)",
+        "ratio": 10.79
+      },
+      {
+        "name": ".watcher-row__status 1 (needs)",
+        "ratio": 10.79
+      },
+      {
+        "name": ".watcher-row__status 2 (working)",
+        "ratio": 10.23
+      },
+      {
+        "name": ".watcher-row__status 3 (working)",
+        "ratio": 10.23
+      },
+      {
+        "name": ".watcher-row__status 4 (idle)",
+        "ratio": 7.76
+      },
+      {
+        "name": ".watcher-row__where 0",
+        "ratio": 7.76
+      },
+      {
+        "name": ".watcher-row__where 1",
+        "ratio": 7.76
+      },
+      {
+        "name": ".watcher-row__where 2",
+        "ratio": 7.76
+      },
+      {
+        "name": ".watcher-row__where 3",
+        "ratio": 7.76
+      },
+      {
+        "name": ".watcher-row__where 4",
+        "ratio": 7.76
+      },
+      {
+        "name": ".watcher-row__asks 0",
+        "ratio": 11.12
+      },
+      {
+        "name": ".watcher-head h2 0",
+        "ratio": 19.55
+      },
+      {
+        "name": ".watcher-meter 0",
+        "ratio": 13.59
+      },
+      {
+        "name": ".thread-options__pinned 0",
+        "ratio": 9.2
+      }
+    ]
+  },
+  "room-sotto-light": {
+    "1600x1000": [
+      {
+        "name": ".watcher-overview__heading 0",
+        "ratio": 6.37
+      },
+      {
+        "name": ".watcher-overview__total 0",
+        "ratio": 6.37
+      },
+      {
+        "name": ".watcher-group__toggle 0",
+        "ratio": 6
+      },
+      {
+        "name": ".watcher-group__toggle 1",
+        "ratio": 9.73
+      },
+      {
+        "name": ".watcher-group__toggle 2",
+        "ratio": 9.73
+      },
+      {
+        "name": ".watcher-group__count 0",
+        "ratio": 6.26
+      },
+      {
+        "name": ".watcher-group__count 1",
+        "ratio": 6.26
+      },
+      {
+        "name": ".watcher-group__count 2",
+        "ratio": 6.26
+      },
+      {
+        "name": ".watcher-group__count 3",
+        "ratio": 6.26
+      },
+      {
+        "name": ".watcher-row__title 0",
+        "ratio": 9.73
+      },
+      {
+        "name": ".watcher-row__title 1",
+        "ratio": 9.73
+      },
+      {
+        "name": ".watcher-row__title 2",
+        "ratio": 9.73
+      },
+      {
+        "name": ".watcher-row__title 3",
+        "ratio": 9.73
+      },
+      {
+        "name": ".watcher-row__title 4",
+        "ratio": 9.73
+      },
+      {
+        "name": ".watcher-row__status 0 (needs)",
+        "ratio": 5.89
+      },
+      {
+        "name": ".watcher-row__status 1 (needs)",
+        "ratio": 5.89
+      },
+      {
+        "name": ".watcher-row__status 2 (working)",
+        "ratio": 6.74
+      },
+      {
+        "name": ".watcher-row__status 3 (working)",
+        "ratio": 6.74
+      },
+      {
+        "name": ".watcher-row__status 4 (idle)",
+        "ratio": 6.26
+      },
+      {
+        "name": ".watcher-row__where 0",
+        "ratio": 6.26
+      },
+      {
+        "name": ".watcher-row__where 1",
+        "ratio": 6.26
+      },
+      {
+        "name": ".watcher-row__where 2",
+        "ratio": 6.26
+      },
+      {
+        "name": ".watcher-row__where 3",
+        "ratio": 6.26
+      },
+      {
+        "name": ".watcher-row__where 4",
+        "ratio": 6.26
+      },
+      {
+        "name": ".watcher-row__asks 0",
+        "ratio": 9.73
+      },
+      {
+        "name": ".thread-nav__time 0",
+        "ratio": 6.26
+      },
+      {
+        "name": ".thread-nav__time 1",
+        "ratio": 6.26
+      },
+      {
+        "name": ".thread-nav__time 2",
+        "ratio": 6.26
+      },
+      {
+        "name": ".thread-nav__time 3",
+        "ratio": 6.26
+      },
+      {
+        "name": ".thread-nav__time 4",
+        "ratio": 6.26
+      },
+      {
+        "name": ".watcher-head h2 0",
+        "ratio": 15.74
+      },
+      {
+        "name": ".watcher-meter 0",
+        "ratio": 10.44
+      },
+      {
+        "name": ".thread-options__pinned 0",
+        "ratio": 6.95
+      }
+    ],
+    "1280x800": [
+      {
+        "name": ".watcher-overview__heading 0",
+        "ratio": 6.37
+      },
+      {
+        "name": ".watcher-overview__total 0",
+        "ratio": 6.37
+      },
+      {
+        "name": ".watcher-group__toggle 0",
+        "ratio": 6
+      },
+      {
+        "name": ".watcher-group__toggle 1",
+        "ratio": 9.73
+      },
+      {
+        "name": ".watcher-group__toggle 2",
+        "ratio": 9.73
+      },
+      {
+        "name": ".watcher-group__count 0",
+        "ratio": 6.26
+      },
+      {
+        "name": ".watcher-group__count 1",
+        "ratio": 6.26
+      },
+      {
+        "name": ".watcher-group__count 2",
+        "ratio": 6.26
+      },
+      {
+        "name": ".watcher-group__count 3",
+        "ratio": 6.26
+      },
+      {
+        "name": ".watcher-row__title 0",
+        "ratio": 9.73
+      },
+      {
+        "name": ".watcher-row__title 1",
+        "ratio": 9.73
+      },
+      {
+        "name": ".watcher-row__title 2",
+        "ratio": 9.73
+      },
+      {
+        "name": ".watcher-row__title 3",
+        "ratio": 9.73
+      },
+      {
+        "name": ".watcher-row__title 4",
+        "ratio": 9.73
+      },
+      {
+        "name": ".watcher-row__status 0 (needs)",
+        "ratio": 5.89
+      },
+      {
+        "name": ".watcher-row__status 1 (needs)",
+        "ratio": 5.89
+      },
+      {
+        "name": ".watcher-row__status 2 (working)",
+        "ratio": 6.74
+      },
+      {
+        "name": ".watcher-row__status 3 (working)",
+        "ratio": 6.74
+      },
+      {
+        "name": ".watcher-row__status 4 (idle)",
+        "ratio": 6.26
+      },
+      {
+        "name": ".watcher-row__where 0",
+        "ratio": 6.26
+      },
+      {
+        "name": ".watcher-row__where 1",
+        "ratio": 6.26
+      },
+      {
+        "name": ".watcher-row__where 2",
+        "ratio": 6.26
+      },
+      {
+        "name": ".watcher-row__where 3",
+        "ratio": 6.26
+      },
+      {
+        "name": ".watcher-row__where 4",
+        "ratio": 6.26
+      },
+      {
+        "name": ".watcher-row__asks 0",
+        "ratio": 9.73
+      },
+      {
+        "name": ".thread-nav__time 0",
+        "ratio": 6.26
+      },
+      {
+        "name": ".thread-nav__time 1",
+        "ratio": 6.26
+      },
+      {
+        "name": ".thread-nav__time 2",
+        "ratio": 6.26
+      },
+      {
+        "name": ".thread-nav__time 3",
+        "ratio": 6.26
+      },
+      {
+        "name": ".thread-nav__time 4",
+        "ratio": 6.26
+      },
+      {
+        "name": ".watcher-head h2 0",
+        "ratio": 15.74
+      },
+      {
+        "name": ".watcher-meter 0",
+        "ratio": 10.44
+      },
+      {
+        "name": ".thread-options__pinned 0",
+        "ratio": 6.95
+      }
+    ],
+    "820x560": [
+      {
+        "name": ".watcher-overview__heading 0",
+        "ratio": 6.37
+      },
+      {
+        "name": ".watcher-overview__total 0",
+        "ratio": 6.37
+      },
+      {
+        "name": ".watcher-group__toggle 0",
+        "ratio": 6
+      },
+      {
+        "name": ".watcher-group__toggle 1",
+        "ratio": 9.73
+      },
+      {
+        "name": ".watcher-group__toggle 2",
+        "ratio": 9.73
+      },
+      {
+        "name": ".watcher-group__count 0",
+        "ratio": 6.26
+      },
+      {
+        "name": ".watcher-group__count 1",
+        "ratio": 6.26
+      },
+      {
+        "name": ".watcher-group__count 2",
+        "ratio": 6.26
+      },
+      {
+        "name": ".watcher-group__count 3",
+        "ratio": 6.26
+      },
+      {
+        "name": ".watcher-row__title 0",
+        "ratio": 9.73
+      },
+      {
+        "name": ".watcher-row__title 1",
+        "ratio": 9.73
+      },
+      {
+        "name": ".watcher-row__title 2",
+        "ratio": 9.73
+      },
+      {
+        "name": ".watcher-row__title 3",
+        "ratio": 9.73
+      },
+      {
+        "name": ".watcher-row__title 4",
+        "ratio": 9.73
+      },
+      {
+        "name": ".watcher-row__status 0 (needs)",
+        "ratio": 5.89
+      },
+      {
+        "name": ".watcher-row__status 1 (needs)",
+        "ratio": 5.89
+      },
+      {
+        "name": ".watcher-row__status 2 (working)",
+        "ratio": 6.74
+      },
+      {
+        "name": ".watcher-row__status 3 (working)",
+        "ratio": 6.74
+      },
+      {
+        "name": ".watcher-row__status 4 (idle)",
+        "ratio": 6.26
+      },
+      {
+        "name": ".watcher-row__where 0",
+        "ratio": 6.26
+      },
+      {
+        "name": ".watcher-row__where 1",
+        "ratio": 6.26
+      },
+      {
+        "name": ".watcher-row__where 2",
+        "ratio": 6.26
+      },
+      {
+        "name": ".watcher-row__where 3",
+        "ratio": 6.26
+      },
+      {
+        "name": ".watcher-row__where 4",
+        "ratio": 6.26
+      },
+      {
+        "name": ".watcher-row__asks 0",
+        "ratio": 9.73
+      },
+      {
+        "name": ".watcher-head h2 0",
+        "ratio": 15.74
+      },
+      {
+        "name": ".watcher-meter 0",
+        "ratio": 10.44
+      },
+      {
+        "name": ".thread-options__pinned 0",
+        "ratio": 6.95
+      }
+    ]
+  },
+  "room-tropic-dark": {
+    "1600x1000": [
+      {
+        "name": ".watcher-overview__heading 0",
+        "ratio": 5.97
+      },
+      {
+        "name": ".watcher-overview__total 0",
+        "ratio": 5.97
+      },
+      {
+        "name": ".watcher-group__toggle 0",
+        "ratio": 10.55
+      },
+      {
+        "name": ".watcher-group__toggle 1",
+        "ratio": 8.97
+      },
+      {
+        "name": ".watcher-group__toggle 2",
+        "ratio": 8.97
+      },
+      {
+        "name": ".watcher-group__count 0",
+        "ratio": 5.78
+      },
+      {
+        "name": ".watcher-group__count 1",
+        "ratio": 5.78
+      },
+      {
+        "name": ".watcher-group__count 2",
+        "ratio": 5.78
+      },
+      {
+        "name": ".watcher-group__count 3",
+        "ratio": 5.78
+      },
+      {
+        "name": ".watcher-row__title 0",
+        "ratio": 8.97
+      },
+      {
+        "name": ".watcher-row__title 1",
+        "ratio": 8.97
+      },
+      {
+        "name": ".watcher-row__title 2",
+        "ratio": 8.97
+      },
+      {
+        "name": ".watcher-row__title 3",
+        "ratio": 8.97
+      },
+      {
+        "name": ".watcher-row__title 4",
+        "ratio": 8.97
+      },
+      {
+        "name": ".watcher-row__status 0 (needs)",
+        "ratio": 10.21
+      },
+      {
+        "name": ".watcher-row__status 1 (needs)",
+        "ratio": 10.21
+      },
+      {
+        "name": ".watcher-row__status 2 (working)",
+        "ratio": 13.92
+      },
+      {
+        "name": ".watcher-row__status 3 (working)",
+        "ratio": 13.92
+      },
+      {
+        "name": ".watcher-row__status 4 (idle)",
+        "ratio": 5.78
+      },
+      {
+        "name": ".watcher-row__where 0",
+        "ratio": 5.78
+      },
+      {
+        "name": ".watcher-row__where 1",
+        "ratio": 5.78
+      },
+      {
+        "name": ".watcher-row__where 2",
+        "ratio": 5.78
+      },
+      {
+        "name": ".watcher-row__where 3",
+        "ratio": 5.78
+      },
+      {
+        "name": ".watcher-row__where 4",
+        "ratio": 5.78
+      },
+      {
+        "name": ".watcher-row__asks 0",
+        "ratio": 8.97
+      },
+      {
+        "name": ".thread-nav__time 0",
+        "ratio": 5.78
+      },
+      {
+        "name": ".thread-nav__time 1",
+        "ratio": 5.78
+      },
+      {
+        "name": ".thread-nav__time 2",
+        "ratio": 5.78
+      },
+      {
+        "name": ".thread-nav__time 3",
+        "ratio": 5.78
+      },
+      {
+        "name": ".thread-nav__time 4",
+        "ratio": 5.78
+      },
+      {
+        "name": ".watcher-head h2 0",
+        "ratio": 15.57
+      },
+      {
+        "name": ".watcher-meter 0",
+        "ratio": 10.04
+      },
+      {
+        "name": ".thread-options__pinned 0",
+        "ratio": 6.23
+      }
+    ],
+    "1280x800": [
+      {
+        "name": ".watcher-overview__heading 0",
+        "ratio": 5.97
+      },
+      {
+        "name": ".watcher-overview__total 0",
+        "ratio": 5.97
+      },
+      {
+        "name": ".watcher-group__toggle 0",
+        "ratio": 10.55
+      },
+      {
+        "name": ".watcher-group__toggle 1",
+        "ratio": 8.97
+      },
+      {
+        "name": ".watcher-group__toggle 2",
+        "ratio": 8.97
+      },
+      {
+        "name": ".watcher-group__count 0",
+        "ratio": 5.78
+      },
+      {
+        "name": ".watcher-group__count 1",
+        "ratio": 5.78
+      },
+      {
+        "name": ".watcher-group__count 2",
+        "ratio": 5.78
+      },
+      {
+        "name": ".watcher-group__count 3",
+        "ratio": 5.78
+      },
+      {
+        "name": ".watcher-row__title 0",
+        "ratio": 8.97
+      },
+      {
+        "name": ".watcher-row__title 1",
+        "ratio": 8.97
+      },
+      {
+        "name": ".watcher-row__title 2",
+        "ratio": 8.97
+      },
+      {
+        "name": ".watcher-row__title 3",
+        "ratio": 8.97
+      },
+      {
+        "name": ".watcher-row__title 4",
+        "ratio": 8.97
+      },
+      {
+        "name": ".watcher-row__status 0 (needs)",
+        "ratio": 10.21
+      },
+      {
+        "name": ".watcher-row__status 1 (needs)",
+        "ratio": 10.21
+      },
+      {
+        "name": ".watcher-row__status 2 (working)",
+        "ratio": 13.92
+      },
+      {
+        "name": ".watcher-row__status 3 (working)",
+        "ratio": 13.92
+      },
+      {
+        "name": ".watcher-row__status 4 (idle)",
+        "ratio": 5.78
+      },
+      {
+        "name": ".watcher-row__where 0",
+        "ratio": 5.78
+      },
+      {
+        "name": ".watcher-row__where 1",
+        "ratio": 5.78
+      },
+      {
+        "name": ".watcher-row__where 2",
+        "ratio": 5.78
+      },
+      {
+        "name": ".watcher-row__where 3",
+        "ratio": 5.78
+      },
+      {
+        "name": ".watcher-row__where 4",
+        "ratio": 5.78
+      },
+      {
+        "name": ".watcher-row__asks 0",
+        "ratio": 8.97
+      },
+      {
+        "name": ".thread-nav__time 0",
+        "ratio": 5.78
+      },
+      {
+        "name": ".thread-nav__time 1",
+        "ratio": 5.78
+      },
+      {
+        "name": ".thread-nav__time 2",
+        "ratio": 5.78
+      },
+      {
+        "name": ".thread-nav__time 3",
+        "ratio": 5.78
+      },
+      {
+        "name": ".thread-nav__time 4",
+        "ratio": 5.78
+      },
+      {
+        "name": ".watcher-head h2 0",
+        "ratio": 15.57
+      },
+      {
+        "name": ".watcher-meter 0",
+        "ratio": 10.04
+      },
+      {
+        "name": ".thread-options__pinned 0",
+        "ratio": 6.23
+      }
+    ],
+    "820x560": [
+      {
+        "name": ".watcher-overview__heading 0",
+        "ratio": 5.97
+      },
+      {
+        "name": ".watcher-overview__total 0",
+        "ratio": 5.97
+      },
+      {
+        "name": ".watcher-group__toggle 0",
+        "ratio": 10.55
+      },
+      {
+        "name": ".watcher-group__toggle 1",
+        "ratio": 8.97
+      },
+      {
+        "name": ".watcher-group__toggle 2",
+        "ratio": 8.97
+      },
+      {
+        "name": ".watcher-group__count 0",
+        "ratio": 5.78
+      },
+      {
+        "name": ".watcher-group__count 1",
+        "ratio": 5.78
+      },
+      {
+        "name": ".watcher-group__count 2",
+        "ratio": 5.78
+      },
+      {
+        "name": ".watcher-group__count 3",
+        "ratio": 5.78
+      },
+      {
+        "name": ".watcher-row__title 0",
+        "ratio": 8.97
+      },
+      {
+        "name": ".watcher-row__title 1",
+        "ratio": 8.97
+      },
+      {
+        "name": ".watcher-row__title 2",
+        "ratio": 8.97
+      },
+      {
+        "name": ".watcher-row__title 3",
+        "ratio": 8.97
+      },
+      {
+        "name": ".watcher-row__title 4",
+        "ratio": 8.97
+      },
+      {
+        "name": ".watcher-row__status 0 (needs)",
+        "ratio": 10.21
+      },
+      {
+        "name": ".watcher-row__status 1 (needs)",
+        "ratio": 10.21
+      },
+      {
+        "name": ".watcher-row__status 2 (working)",
+        "ratio": 13.92
+      },
+      {
+        "name": ".watcher-row__status 3 (working)",
+        "ratio": 13.92
+      },
+      {
+        "name": ".watcher-row__status 4 (idle)",
+        "ratio": 5.78
+      },
+      {
+        "name": ".watcher-row__where 0",
+        "ratio": 5.78
+      },
+      {
+        "name": ".watcher-row__where 1",
+        "ratio": 5.78
+      },
+      {
+        "name": ".watcher-row__where 2",
+        "ratio": 5.78
+      },
+      {
+        "name": ".watcher-row__where 3",
+        "ratio": 5.78
+      },
+      {
+        "name": ".watcher-row__where 4",
+        "ratio": 5.78
+      },
+      {
+        "name": ".watcher-row__asks 0",
+        "ratio": 8.97
+      },
+      {
+        "name": ".watcher-head h2 0",
+        "ratio": 15.57
+      },
+      {
+        "name": ".watcher-meter 0",
+        "ratio": 10.04
+      },
+      {
+        "name": ".thread-options__pinned 0",
+        "ratio": 6.23
+      }
+    ]
+  },
+  "room-tropic-light": {
+    "1600x1000": [
+      {
+        "name": ".watcher-overview__heading 0",
+        "ratio": 5.76
+      },
+      {
+        "name": ".watcher-overview__total 0",
+        "ratio": 5.76
+      },
+      {
+        "name": ".watcher-group__toggle 0",
+        "ratio": 5.74
+      },
+      {
+        "name": ".watcher-group__toggle 1",
+        "ratio": 9.52
+      },
+      {
+        "name": ".watcher-group__toggle 2",
+        "ratio": 9.52
+      },
+      {
+        "name": ".watcher-group__count 0",
+        "ratio": 5.67
+      },
+      {
+        "name": ".watcher-group__count 1",
+        "ratio": 5.67
+      },
+      {
+        "name": ".watcher-group__count 2",
+        "ratio": 5.67
+      },
+      {
+        "name": ".watcher-group__count 3",
+        "ratio": 5.67
+      },
+      {
+        "name": ".watcher-row__title 0",
+        "ratio": 9.52
+      },
+      {
+        "name": ".watcher-row__title 1",
+        "ratio": 9.52
+      },
+      {
+        "name": ".watcher-row__title 2",
+        "ratio": 9.52
+      },
+      {
+        "name": ".watcher-row__title 3",
+        "ratio": 9.52
+      },
+      {
+        "name": ".watcher-row__title 4",
+        "ratio": 9.52
+      },
+      {
+        "name": ".watcher-row__status 0 (needs)",
+        "ratio": 5.65
+      },
+      {
+        "name": ".watcher-row__status 1 (needs)",
+        "ratio": 5.65
+      },
+      {
+        "name": ".watcher-row__status 2 (working)",
+        "ratio": 14.42
+      },
+      {
+        "name": ".watcher-row__status 3 (working)",
+        "ratio": 14.42
+      },
+      {
+        "name": ".watcher-row__status 4 (idle)",
+        "ratio": 5.67
+      },
+      {
+        "name": ".watcher-row__where 0",
+        "ratio": 5.67
+      },
+      {
+        "name": ".watcher-row__where 1",
+        "ratio": 5.67
+      },
+      {
+        "name": ".watcher-row__where 2",
+        "ratio": 5.67
+      },
+      {
+        "name": ".watcher-row__where 3",
+        "ratio": 5.67
+      },
+      {
+        "name": ".watcher-row__where 4",
+        "ratio": 5.67
+      },
+      {
+        "name": ".watcher-row__asks 0",
+        "ratio": 9.52
+      },
+      {
+        "name": ".thread-nav__time 0",
+        "ratio": 5.67
+      },
+      {
+        "name": ".thread-nav__time 1",
+        "ratio": 5.67
+      },
+      {
+        "name": ".thread-nav__time 2",
+        "ratio": 5.67
+      },
+      {
+        "name": ".thread-nav__time 3",
+        "ratio": 5.67
+      },
+      {
+        "name": ".thread-nav__time 4",
+        "ratio": 5.67
+      },
+      {
+        "name": ".watcher-head h2 0",
+        "ratio": 16.43
+      },
+      {
+        "name": ".watcher-meter 0",
+        "ratio": 10.85
+      },
+      {
+        "name": ".thread-options__pinned 0",
+        "ratio": 6.21
+      }
+    ],
+    "1280x800": [
+      {
+        "name": ".watcher-overview__heading 0",
+        "ratio": 5.76
+      },
+      {
+        "name": ".watcher-overview__total 0",
+        "ratio": 5.76
+      },
+      {
+        "name": ".watcher-group__toggle 0",
+        "ratio": 5.74
+      },
+      {
+        "name": ".watcher-group__toggle 1",
+        "ratio": 9.52
+      },
+      {
+        "name": ".watcher-group__toggle 2",
+        "ratio": 9.52
+      },
+      {
+        "name": ".watcher-group__count 0",
+        "ratio": 5.67
+      },
+      {
+        "name": ".watcher-group__count 1",
+        "ratio": 5.67
+      },
+      {
+        "name": ".watcher-group__count 2",
+        "ratio": 5.67
+      },
+      {
+        "name": ".watcher-group__count 3",
+        "ratio": 5.67
+      },
+      {
+        "name": ".watcher-row__title 0",
+        "ratio": 9.52
+      },
+      {
+        "name": ".watcher-row__title 1",
+        "ratio": 9.52
+      },
+      {
+        "name": ".watcher-row__title 2",
+        "ratio": 9.52
+      },
+      {
+        "name": ".watcher-row__title 3",
+        "ratio": 9.52
+      },
+      {
+        "name": ".watcher-row__title 4",
+        "ratio": 9.52
+      },
+      {
+        "name": ".watcher-row__status 0 (needs)",
+        "ratio": 5.65
+      },
+      {
+        "name": ".watcher-row__status 1 (needs)",
+        "ratio": 5.65
+      },
+      {
+        "name": ".watcher-row__status 2 (working)",
+        "ratio": 14.42
+      },
+      {
+        "name": ".watcher-row__status 3 (working)",
+        "ratio": 14.42
+      },
+      {
+        "name": ".watcher-row__status 4 (idle)",
+        "ratio": 5.67
+      },
+      {
+        "name": ".watcher-row__where 0",
+        "ratio": 5.67
+      },
+      {
+        "name": ".watcher-row__where 1",
+        "ratio": 5.67
+      },
+      {
+        "name": ".watcher-row__where 2",
+        "ratio": 5.67
+      },
+      {
+        "name": ".watcher-row__where 3",
+        "ratio": 5.67
+      },
+      {
+        "name": ".watcher-row__where 4",
+        "ratio": 5.67
+      },
+      {
+        "name": ".watcher-row__asks 0",
+        "ratio": 9.52
+      },
+      {
+        "name": ".thread-nav__time 0",
+        "ratio": 5.67
+      },
+      {
+        "name": ".thread-nav__time 1",
+        "ratio": 5.67
+      },
+      {
+        "name": ".thread-nav__time 2",
+        "ratio": 5.67
+      },
+      {
+        "name": ".thread-nav__time 3",
+        "ratio": 5.67
+      },
+      {
+        "name": ".thread-nav__time 4",
+        "ratio": 5.67
+      },
+      {
+        "name": ".watcher-head h2 0",
+        "ratio": 16.43
+      },
+      {
+        "name": ".watcher-meter 0",
+        "ratio": 10.85
+      },
+      {
+        "name": ".thread-options__pinned 0",
+        "ratio": 6.21
+      }
+    ],
+    "820x560": [
+      {
+        "name": ".watcher-overview__heading 0",
+        "ratio": 5.76
+      },
+      {
+        "name": ".watcher-overview__total 0",
+        "ratio": 5.76
+      },
+      {
+        "name": ".watcher-group__toggle 0",
+        "ratio": 5.74
+      },
+      {
+        "name": ".watcher-group__toggle 1",
+        "ratio": 9.52
+      },
+      {
+        "name": ".watcher-group__toggle 2",
+        "ratio": 9.52
+      },
+      {
+        "name": ".watcher-group__count 0",
+        "ratio": 5.67
+      },
+      {
+        "name": ".watcher-group__count 1",
+        "ratio": 5.67
+      },
+      {
+        "name": ".watcher-group__count 2",
+        "ratio": 5.67
+      },
+      {
+        "name": ".watcher-group__count 3",
+        "ratio": 5.67
+      },
+      {
+        "name": ".watcher-row__title 0",
+        "ratio": 9.52
+      },
+      {
+        "name": ".watcher-row__title 1",
+        "ratio": 9.52
+      },
+      {
+        "name": ".watcher-row__title 2",
+        "ratio": 9.52
+      },
+      {
+        "name": ".watcher-row__title 3",
+        "ratio": 9.52
+      },
+      {
+        "name": ".watcher-row__title 4",
+        "ratio": 9.52
+      },
+      {
+        "name": ".watcher-row__status 0 (needs)",
+        "ratio": 5.65
+      },
+      {
+        "name": ".watcher-row__status 1 (needs)",
+        "ratio": 5.65
+      },
+      {
+        "name": ".watcher-row__status 2 (working)",
+        "ratio": 14.42
+      },
+      {
+        "name": ".watcher-row__status 3 (working)",
+        "ratio": 14.42
+      },
+      {
+        "name": ".watcher-row__status 4 (idle)",
+        "ratio": 5.67
+      },
+      {
+        "name": ".watcher-row__where 0",
+        "ratio": 5.67
+      },
+      {
+        "name": ".watcher-row__where 1",
+        "ratio": 5.67
+      },
+      {
+        "name": ".watcher-row__where 2",
+        "ratio": 5.67
+      },
+      {
+        "name": ".watcher-row__where 3",
+        "ratio": 5.67
+      },
+      {
+        "name": ".watcher-row__where 4",
+        "ratio": 5.67
+      },
+      {
+        "name": ".watcher-row__asks 0",
+        "ratio": 9.52
+      },
+      {
+        "name": ".watcher-head h2 0",
+        "ratio": 16.43
+      },
+      {
+        "name": ".watcher-meter 0",
+        "ratio": 10.85
+      },
+      {
+        "name": ".thread-options__pinned 0",
+        "ratio": 6.21
+      }
+    ]
+  }
+}
