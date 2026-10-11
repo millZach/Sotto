@@ -65,6 +65,22 @@ A dictation asked for anyway, the way the shortcut asks, records nothing. The wi
 ![Widget: Model not ready](../../artifacts/local-parakeet-transcription/missing-widget-dark.png)
 ![Dictate room after a dictation was asked for](../../artifacts/local-parakeet-transcription/missing-dictate-after-request-1280x800-dark.png)
 
+## The first-run download
+
+Once the release `speech-model-parakeet-tdt-0.6b-v3-int8-1` was published on `millZach/Sotto-releases` as a
+pre-release (v0.1.36 stays the release marked Latest, and `/releases/latest` still leads to it), a fresh profile
+with no model downloaded it for real. `github.com` sent each file on to `release-assets.githubusercontent.com`,
+the one asset host Sotto follows. First-run setup's speech model step showed the bar and the count as they grew,
+and its button read Continue while the download ran:
+
+![Speech model step mid-download, dark](../../artifacts/local-parakeet-transcription/download-onboarding-1280x800-dark.png)
+![Speech model step mid-download, light, 820x560](../../artifacts/local-parakeet-transcription/download-onboarding-820x560-light.png)
+
+Sampled once a second from inside the page, the step's count followed main's to the megabyte, four status updates
+a second, and a settings read took 3 to 8 ms while the download ran. The 670 MB took 150 s on one run and 218 s on
+another. Each file was checked, the marker written, the model loaded and ready, and the same 17-second dictation
+came back word for word 0.25 s after Stop (`run-download.json`).
+
 ## What the runs found, and what changed because of them
 
 - **The model would not load in the app.** The first run ended with the model failed for the engine reason. Main
@@ -86,9 +102,8 @@ A dictation asked for anyway, the way the shortcut asks, records nothing. The wi
 
 ## Not covered here
 
-- The download itself. The release assets are not published yet, so the progress bar, resume after a dropped
-  connection and a checksum refusal are covered by `tests/unit/main/speechModelStore.test.ts` and not yet by a
-  real download.
+- Resume after a dropped connection, and a checksum refusal, on a real download. Both are covered by
+  `tests/unit/main/speechModelStore.test.ts` against a GitHub stand-in.
 - macOS and Linux. The packaged-resources check loads the module on each; transcribing there still needs a run
   like this one.
 
