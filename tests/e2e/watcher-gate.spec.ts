@@ -91,7 +91,8 @@ test.describe('Watcher follows the running release track', () => {
           await page.evaluate(async appearance => { await window.sotto!.updateSettings({ appearance }) }, appearance)
           await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
           for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
-            await resizeContentWindow(launched, width, height)
+            // Leave native frame and scaling space below the exact content size we capture.
+            await resizeContentWindow(launched, width, height, [800, 540])
             await settle(page)
             expect(await pageBoundProblems(page)).toEqual([])
             for (const thread of special) await expect(sidebar.getByRole('button', { name: thread.title, exact: true })).toHaveCount(track === 'owl' ? 1 : 0)

@@ -36,7 +36,7 @@ Focused checks passed 108 tests, with six provider contract cases skipped, over 
 
 History-off inspection recursively checks Sotto-owned files for distinctive synthetic message, draft and queue strings. Additional cases inspect corrupt and abandoned queue copies, retain ordinary backup items, and preserve dormant stable copies until Owl owns cleanup. A private unreadable queue recovers without another plaintext corrupt backup. Control references survive without storing their words.
 
-The built Windows app checks both release tracks, private bridge availability, all five local-host-off refusals, unchanged limit, ordinary Send/reply, saved-kind preservation and stable layout recovery. Dark/light, reduced motion and bounds were checked at 1600x1000, 1280x800 and 820x560. Visually inspected the minimum-size [Owl dark](../../artifacts/e2e-runs/watcher-gate/owl-dark-820x560.png) and [stable light](../../artifacts/e2e-runs/watcher-gate/stable-light-820x560.png) captures; the existing controls and transcript fit. Captures are disposable synthetic app evidence, not live conversation captures. No new renderer surface or design baseline was created.
+The built Windows app checks both release tracks, private bridge availability, all five local-host-off refusals, unchanged limit, ordinary Send/reply, saved-kind preservation and stable layout recovery. Dark/light, reduced motion and bounds were checked at 1600x1000, 1280x800 and 820x560. Visually inspected the minimum-size [Owl dark](../../artifacts/watcher-thread-tools/owl-dark-820x560.png) and [stable light](../../artifacts/watcher-thread-tools/stable-light-820x560.png) captures; the existing controls and transcript fit. These two selected synthetic app captures are committed. Other generated captures stay gitignored; no live conversation was captured. No new renderer surface or design baseline was created.
 
 ## Live Codex
 
@@ -51,3 +51,70 @@ Independent Standards and Spec reviews ran separately through Codex CLI on `gpt-
 CONTEXT.md, ADR-0073 and the plan record the settled room contract, preview expiry, exact creation choices, cursor restart, guard/card identities, private native writer checks, request continuity, takeover recovery, refunds and uncertainty. The plan and ADR also reflect Zach's October 11 phone visibility decision. No phone code was built. Native launch profiles remain unchanged; adapters gained a private final-writer callback because native preparation can await after the workspace check.
 
 Ticket 3 is complete. Event wakes/evidence, remote owning-host automation and renderer/phone surfaces belong to later tickets. Packaging, macOS, Linux, phones and publication were not exercised.
+
+
+## Pull request #930 review follow-up
+
+Verified all nine supplied findings against the implementation. Eight behavioral/evidence findings reproduced in failing regressions; the duplicated outcome handling was a valid refactoring finding and shares the refund fix. No finding was dismissed.
+
+| Finding | Fix and regression | Local commit |
+| --- | --- | --- |
+| 1 | Refund definite queued preparation/native failures and thrown command failures once. Keep cancellation charged and unresolved native delivery reserved. Also reconcile a recovered uncertain receipt with a durable failed queue item. | `0df0ddaa5`, `e500ee5f6` |
+| 2 | Return the latest 100 participations per roster row while preserving the complete durable record. A worker with 101 participations now returns a valid roster, including its latest takeover. | `8fc4a341f` |
+| 3 | Return a matching settle receipt after the request closes. Conflicting keys and new work remain refused; the durable record and provider commands do not change. | `3311c2800` |
+| 4 | Keep working-copy/base-ref IDs in their list snapshot. Expire or evict the choices with that snapshot; pagination performs no new native read. Three regressions cover pagination, expiry and eviction before admission. | `dc9131341` |
+| 5 | Commit both linked minimum-size captures and verify the linked files exist and are not ignored. | `f5c18f188` |
+| 6 | Use one outcome handler for returned errors, thrown errors and definite queued failures; the failure regressions cover its behavior. | `0df0ddaa5` |
+| 7 | Preserve main's request/host/project context when converting image handles for the provider. Direct and queued image sends retain image bytes, request continuity and selection. | `45af8cd5b` |
+| 8 | Drop older messages from an oversized initial window; keep ordered prefixes for forward reads. Fifty 2,000-character messages now retain position 49 rather than ending at 29. | `bb2e38376` |
+| 9 | Accept the advertised restart sentinel. Thread, project and working-copy pages restart after expiry without changing selection. | `a7995c513` |
+
+The focused tool, native-fence, recovery and capture-evidence run passed 51 tests. The neighboring ordinary staged-image suite also passed. The shared outcome refactor initially retained stale uncertainty after a definitive queued failure; its additional failing regression led to `e500ee5f6` before final gates.
+
+Final ordered checks passed on Windows against code head `e500ee5f6b7519ebdf712565b69887f1085964ee`:
+
+| Command | Real result |
+| --- | --- |
+| `npm run typecheck` | Exit 0 |
+| `npm run lint` | Exit 0 |
+| `npm test -- --maxWorkers=2` | Exit 0; 771 files passed, 58 skipped; 9,528 tests passed, 280 skipped; 1,043.90 seconds |
+| `npm run notices:verify` | Exit 0; 189 components verified |
+| `npm run build` | Exit 0; main, host, preload and renderer built |
+| `npx playwright test tests/e2e/watcher-gate.spec.ts` | Exit 0; 3 passed in 10.1 seconds |
+
+Free physical memory before the full suite was 13,428,320 KB, above the 3 GB threshold. The full run passed on its first attempt; no isolated flaky-case rerun was needed. Gate counters and statuses are retained in gitignored `artifacts/watcher-thread-tools-gates/pr930.json`, without prompt text, model output or protocol bodies.
+
+The final built-app check drove stable and Owl ordinary Send/reply, saved-kind preservation and all local-host-off room refusals. It checked dark/light, reduced motion and layout bounds at 1600x1000, 1280x800 and 820x560. The two linked selected captures were refreshed from this final build and visually inspected. Packaging, other desktop platforms and phones were not exercised; the live Codex evidence above remains from the original implementation, with no additional paid model turns.
+
+No renderer file or production dependency changed. The private room/preload contract, channel names and result shapes stay unchanged. These fixes follow the existing plan and ADR; they settle no new domain decision, so CONTEXT.md, ADR-0073 and the plan need no follow-up amendment. No nested review, provider-config access, paid live turn, push, merge, rebase, stash, branch switch, new worktree, publication or extra install occurred in this follow-up.
+
+
+## Pull request #930 second follow-up
+
+Fetched origin and merged `73e4f8c8a` into the existing branch as merge commit `527d6f027`. There were no conflicts. Git automatically merged all seven overlapping files: `.gitignore`, `CONTEXT.md`, `README.md`, `docs/guide.md`, `eslint.config.mjs`, `src/main/index.ts` and `src/main/ipc/registerIpc.ts`. Inspection retained main's Omarchy theme/desktop CI changes alongside Watcher's gate, IPC and documentation. The merge body records these overlaps and no manual conflict resolution.
+
+| Finding | Verified outcome | Local commit |
+| --- | --- | --- |
+| 1 | Reproduced an ordinary Watcher follow-up invalidating Stop all. Sign sorted eligible target/request/Watcher ownership only. Normal prompt counters, generations and message heads do not change the confirmed scope. Changed targets or ownership still refuse before any stop; newly added and taken-over targets are covered. | `7e1c730be` |
+| 2 | Reproduced sends to a settled participant returning takeover, steer or capacity refusals. Refuse relinquished participation as `REQUEST_NOT_ACTIVE` before delivery checks and admission; no prompt, operation, queue or provider command is added. Four cases cover now/queue/steer and capacity below existing usage with another participant still active. | `5341c515a` |
+| 3 | Reproduced a fresh preview and successful Stop all after close. Both entry points now refuse `NOT_CURRENT_WATCHER` before effects; each interrupt guard also checks closure. The regression asserts zero durable update, queue cancellation or provider command. | `d8fd86863` |
+| 4 | Not a bug. The plan's section 2 `list_threads` contract explicitly says to include other special jobs as readable but protected; section 8 protects setup jobs from sends/stops. Added the requested source citation without changing behavior. Its check passed before a source change and verifies readable host-setup history, a protected roster row, refused start/send/stop/settle, master-read refusal, and unchanged selection/unread marks. | `5d908f973` (comment and coverage) |
+
+The focused tools/native-fence/recovery run passed 54 tests in three files. The new behavioral regressions for findings 1-3 were observed failing before their fixes. Typecheck subsequently caught a new test fixture using a user Send on the creation/configuration-only private room command path; the fixture now uses the ordinary user command path, and its focused check passed again before restarting the ordered gates.
+
+Final ordered checks passed against merged code head `5d908f97378e6fbbbe2136feaea26f5fbf7731e4`:
+
+| Command | Real result |
+| --- | --- |
+| `npm run typecheck` | Exit 0 |
+| `npm run lint` | Exit 0 |
+| `npm test -- --maxWorkers=2` | Exit 0; 775 files passed, 58 skipped; 9,633 tests passed, 283 skipped; 1,170.20 seconds |
+| `npm run notices:verify` | Exit 0; 189 components verified |
+| `npm run build` | Exit 0; main, host, preload and renderer built |
+| `npx playwright test tests/e2e/watcher-gate.spec.ts` | Exit 0; 3 passed in 11.2 seconds |
+
+Free physical memory was 12,415,548 KB before the full suite and 11,592,512 KB before Playwright, both above 3 GB. The full run passed on its first attempt; no isolated flaky-case rerun was needed. Its warnings were SQLite experimental, jsdom canvas and fixture line endings. Build emitted dependency directive warnings. The gate metadata in gitignored `artifacts/watcher-thread-tools-gates/pr930-second.json` retains counters and statuses only.
+
+The final built-app check covers stable and Owl ordinary Send/reply, saved-kind preservation and all local-host-off room refusals. It checks dark/light, reduced motion and bounds at 1600x1000, 1280x800 and 820x560. The two linked selected captures above were refreshed from this build and visually inspected. They contain only synthetic fixture conversations. Packaging, macOS, Linux and phones were not exercised. No additional paid model turn or native provider sign-in was used.
+
+The shared room/preload contract and channel/result shapes remain unchanged. These fixes follow the settled plan and ADR-0073; finding 4 already has an explicit rule. No new domain decision was made, so CONTEXT.md, ADR-0073 and the plan need no amendment beyond the authorized main integration. No renderer or dependency file was edited by the follow-up fixes; changes from main were preserved by the merge. No push, rebase, stash, branch switch, task worktree creation, nested review, provider-configuration access, publication or extra installation occurred. Nothing remains unfinished in this follow-up.

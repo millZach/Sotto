@@ -3222,7 +3222,7 @@ export class AgentControl {
       const providerStartedAt = Date.now()
       // The images become the adapter's to read here, at the provider boundary, and not before (ADR-0031).
       const hostCommand = (prompt?.attachments?.length
-        ? { ...prompt, attachments: prompt.attachments.map(image => this.promptImage(image)) } : command) as AgentHostCommand
+        ? { ...command, attachments: prompt.attachments.map(image => this.promptImage(image)) } : command) as AgentHostCommand
       try {
         this.canAct(undefined, draftKept)
         if (stages && prompt && !stages.has('dispatched')) {
