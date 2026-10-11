@@ -82,3 +82,9 @@ All failures are in `tests/unit/main/owlUpdates.test.ts`. After stashing the pro
 The current four-name built dependency allowlist is required before every push. The integrated script itself drives real Electron through Playwright and is the changed surface's end-to-end proof; app source is unchanged. No design baseline was regenerated.
 
 The standards review checked privacy, Linux confinement, private D-Bus, owned input and cleanup. The request review checked the local failure sentence and all eight integration steps. No findings remain. No app source, runtime dependency, permission or provider contact changes.
+
+## Windows CI repair
+
+The first [Gates run](https://github.com/millZach/Sotto/actions/runs/38171077685) had 9,489 passes, 276 skips and one failure: `watcherLaunchProfiles.test.ts`, “uses only the durable current identity, corroborated by host, kind, project and provider”, at the final changed-host check. Its fixture saved a same-size identity in place; Windows can preserve every field in the cache's stat signature for such a fast write. Production publishes through AtomicJsonStore's fresh-file/rename path, which changes the file identity.
+
+The fixture now uses that production publication path. A temporary deterministic reproduction held timestamp metadata unchanged: the in-place writer reproduced the same wrong admission, and the atomic writer passed with the changed-host refusal intact. All 12 permanent profile tests passed in the isolated two-worker rerun; typecheck and lint passed again. No production cache, identity check, assertion, deadline or skip changed. The latest Windows CI run is required before handoff.
