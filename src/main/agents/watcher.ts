@@ -564,7 +564,7 @@ export class WatcherService implements WatcherControlHooks {
     } catch (error) {
       await this.options.control.updateWatcher(record => {
         const saved = record.operations.find(item => item.id === operation.id)!
-        this.recordOutcome(record, saved, 'failed', error instanceof Refusal ? error.result.code : 'PROVIDER_UNAVAILABLE')
+        this.recordOutcome(record, saved, saved.deliveryState === 'uncertain' ? 'uncertain' : 'failed', error instanceof Refusal ? error.result.code : 'PROVIDER_UNAVAILABLE')
       })
     }
     this.observe(this.options.control.watcherSnapshot(), new Set())
@@ -574,9 +574,9 @@ export class WatcherService implements WatcherControlHooks {
     const wasFailed = operation.deliveryState === 'failed'
     const creationUncertain = operation.action === 'start' && this.options.host.watcherCreationPhase(operation.target.threadId) === 'starting'
     const unresolved = creationUncertain || this.options.control.watcherCommandOutstanding(operation.commandId)
-    if (operation.deliveryState !== 'accepted') operation.deliveryState = state === 'failed' && (unresolved || operation.deliveryState === 'uncertain') ? 'uncertain' : state
+    if (operation.deliveryState !== 'accepted') operation.deliveryState = state === 'failed' && unresolved ? 'uncertain' : state
     if (creationUncertain) operation.creationUncertain = true
-    if (creationUncertain || code !== undefined && state === 'failed' && operation.deliveryState === 'uncertain') operation.refusalCode = 'DELIVERY_UNCERTAIN'
+    if (creationUncertain || code !== undefined && operation.deliveryState === 'uncertain') operation.refusalCode = 'DELIVERY_UNCERTAIN'
     else if (operation.deliveryState === 'failed') {
       operation.refusalCode = code ?? 'PROVIDER_UNAVAILABLE'
       if (!wasFailed) this.refundPrompt(record, operation, operation.refusalCode)

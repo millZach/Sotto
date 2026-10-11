@@ -465,7 +465,7 @@ it('keeps an unacknowledged native Stop uncertain in its original receipt', asyn
 })
 
 
-it.each(['preparation', 'native'])('refunds a queued prompt after a definite %s failure exactly once', async failure => {
+it.each(['preparation', 'native', 'reconciled'])('refunds a queued prompt after a definite %s failure exactly once', async failure => {
   const f = await fixture(), first = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
   const input = { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'queue', text: 'Synthetic queued failure' }
@@ -483,6 +483,10 @@ it.each(['preparation', 'native'])('refunds a queued prompt after a definite %s 
     })
   await f.finish(first.target.threadId)
   await vi.waitFor(() => expect(f.control.shell().followups?.find(item => item.text === input.text)?.status).toBe('failed'))
+  if (failure === 'reconciled') await f.control.updateWatcher(record => {
+    // Recovery can fence a stale dispatch receipt as uncertain before observing the durable failed queue item.
+    record.operations.at(-1)!.deliveryState = 'uncertain'
+  })
   await f.control.commandShell({ type: 'refresh', provider: 'codex' })
   expect(f.service.state().receipts.at(-1)?.deliveryState).toBe('failed')
   expect(f.service.state().requests[0]!.participants[0]!.promptCount).toBe(1)
