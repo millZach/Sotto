@@ -394,8 +394,8 @@ Each ticket is one coherent PR-sized slice with its own tests and relevant docs.
 ### Ticket 8 — Preserve phone lists and phone-origin takeover
 
 - Goal: implement the chosen master visibility projection without changing ordinary phone worker journeys or host-v1 compatibility.
-- Builder: Sol for host projection/core wire behavior; any changed phone UI is an Opus 5.5-owned sub-slice handed off after the wire PR. Owns phone socket shell filtering, iOS SottoCore/AppModel and Android core/AppModel consumers/tests; no desktop renderer edits. Keep host projection edits after ticket 5's shared host files.
-- Depends on: Zach's visibility choice, 3's kind/takeover service and 5's final host protocol. Workers remain visible before this ticket; do not expose the master accidentally to old phones.
+- Builder: Sol for host projection/core wire behavior; any changed phone UI is an Opus 5.5-owned sub-slice handed off after the wire PR. Owns phone socket projection, iOS SottoCore/AppModel and Android core/AppModel consumers/tests; no desktop renderer edits. Keep host projection edits after ticket 5's shared host files.
+- Depends on: Zach's phone prototype pick, 3's kind/takeover service and 5's final host protocol. Watcher remains in phone projections; this ticket makes it usable through the computer running it without pretending that computer's combined roster is a phone host feature.
 - Done-check: old/new v1 decoder tests, iOS compile/XCTest, Android unit/assemble, real phone/simulator answer and ordinary-send takeover proof, desktop/host regressions. Any user-facing phone list change receives its own prototype/clarification before UI implementation.
 
 ### Ticket 9 — Prove and document the complete Watcher
@@ -458,3 +458,9 @@ The machine guard continues through the provider router and identity translation
 The optional room projection now carries text-free event news, per-target sourced evidence and observation times. Wake-ups use two-second trailing batching capped at five seconds; quiet has one cancellable twenty-minute deadline per connected episode. Participating-worker residency is independent of user read marks. The existing queue and native guarded writer handle delivery and stale-news checks. Restored news waits for reconciliation; the newest thousand queued-event digests survive restart.
 
 GitHub facts reuse babysitting and explicit Pull request reads, with no new poll. Existing Git snapshots supply working-copy counts. Checkpoints supply reliable completed file counts or stable unavailable reasons under the actual capture identity, without guessing the current native turn; this boundary omits unproved turn line totals. Git/GitHub facts become stale after five minutes when projected. The room channels and envelopes stay compatible, stable starts no observer, and no renderer or phone surface is built here.
+
+## Ticket 5 implementation notes, October 11
+
+The closed wire contract is `src/shared/watcherHost.ts`. Main's router supplies explicit owning-host snapshots and feature-gated control/read calls without changing selection. Headless hosts advertise the features on either track and reuse the local Watcher admission/queue/writer guards. Stable desktops use neither. Both listeners require the SSH-recorded paired desktop; ordinary remote commands have no machine-origin field. The master token never travels on the wire.
+
+The desktop reserves global capacity and exact operation identities before transmission. The host binds request attribution to the authenticated client, master creation, original root message and submitted ceiling, then applies both permission defaults at its writer. Host receipt and participation projections reconcile disconnect/restart uncertainty without replay and publish native/phone takeover. Read epochs and message positions belong to the owning store; projection fingerprints and detail revisions are separate. Projections are bounded snapshots of text-free changes, not an invented event stream. The host cannot mint master capacity. Phones retain their existing projections; ticket 8 implements Watcher access after its prototype.

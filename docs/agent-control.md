@@ -176,6 +176,8 @@ The same threads get Sotto's pull request tools (`sotto_pull_requests`: `babysit
 
 ## Local Watcher tools
 
+Paired-host routing uses optional host-v1 `watcher-control` and `watcher-reads` operations, with explicit owning-host IDs. Main reserves shared capacity and receipts before transmitting; the owning host reuses these coordinator lanes and writer guards. Its authenticated SSH-recorded desktop, original master/request identity and permission ceiling are retained as text-free attribution. Reconnect and host restart reconcile without replay. Native and phone instructions publish generation takeover on the host. Older hosts refuse automation before any new request is sent. No local tool bearer travels remotely, and no ordinary privileged command is a fallback. The protocol reference records the closed envelopes and positional reads.
+
 In Owl, main owns one Watcher service and its thread-bound sotto_threads server. Its durable creation intent includes the exact model and effort; recovery keeps its minted Sotto ID. The neutral watcher/workspace folder is excluded from ordinary project choices. A user Send supplies a main-minted request reference to the native Watcher turn. Tools cannot create that reference.
 
 The nine frozen tool names are list_threads, read_thread, start_thread, send_to_thread, stop_thread, settle_thread, list_projects, list_working_copies and read_operation. They use explicit local host and Sotto identities and the existing coordinator lanes, outbox, queue and receipts. Project reads remain native. Paired-host tools wait for the owning-host feature ticket; no privileged desktop fallback exists.

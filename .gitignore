@@ -337,3 +337,4 @@ artifacts/watcher-rename/*
 artifacts/watcher-gate/*
 !artifacts/watcher-gate/*.png
 !artifacts/watcher-gate/profile.json
+artifacts/watcher-paired-hosts/

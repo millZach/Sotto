@@ -11,6 +11,8 @@ type Fields<T extends CommandType> = readonly Exclude<keyof Extract<AgentCommand
  * absent is host-local: credentials, the voice commands and voice engine, reasoning checks,
  * opening a folder on the host machine, and `update-client`, which holds the request open for as long as the installer
  * runs. A headless host that lists the `client-updates` feature takes `queue-client-updates` instead: it puts clients in
+ * Machine origin is never a command field. `watcher-control` is a separate closed host feature, checked against the
+ * SSH-recorded desktop and admitted by the owning host's Watcher service before this coordinator path.
  * the host's own one-at-a-time update line and answers at once (#480). Updating a client answers no permission request
  * and replaces nothing the user made, so pairing is enough, as it is for `connect`.
  */
