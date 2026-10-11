@@ -754,8 +754,8 @@ const CHECKS = [
   { id: 'body', label: 'Body text on the room', fg: 'text', on: ['canvas', 'surface', 'surfaceRaised'], min: 4.5 },
   { id: 'sidebar', label: 'Thread names in the sidebar', fg: 'sidebarText', on: ['sidebar', 'sidebarRowSelected', 'sidebarRowHover'], min: 4.5 },
   { id: 'bubble', label: 'Your message', fg: 'bubbleText', on: ['bubble'], min: 4.5 },
-  { id: 'muted', label: 'Muted text on the room and cards', fg: 'textMuted', on: ['canvas', 'surface', 'surfaceRaised'], min: 4.5 },
-  { id: 'sidemuted', label: 'Muted text in the sidebar', fg: 'sidebarTextMuted', on: ['sidebar'], min: 4.5 },
+  { id: 'muted', label: 'Muted text on the room, cards and messages', fg: 'textMuted', on: ['canvas', 'surface', 'surfaceRaised', 'bubble'], min: 4.5 },
+  { id: 'sidemuted', label: 'Muted text in the sidebar', fg: 'sidebarTextMuted', on: ['sidebar', 'sidebarRowSelected', 'sidebarRowHover'], min: 4.5 },
   { id: 'faint', label: 'Composer placeholder', fg: 'textFaint', on: ['canvas', 'surface'], min: 4.5 },
   { id: 'accent', label: 'Accent text on the room', fg: 'accentText', on: ['canvas', 'surface'], min: 4.5 },
   { id: 'accentsel', label: 'Accent text on the chosen thread', fg: 'accentText', on: ['sidebarRowSelected', 'selected'], min: 4.5 },
@@ -920,8 +920,8 @@ function readHash() {
   const p = new URLSearchParams(location.hash.slice(1))
   const get = (key) => ([...p].find(([k]) => k.trim().toLowerCase() === key)?.[1] ?? '').trim().toLowerCase()
   const next = { ...DEFAULTS }
-  if (MAPS[get('map')]) next.map = get('map')
-  if (THEMES[get('theme')]) next.theme = get('theme')
+  if (Object.hasOwn(MAPS, get('map'))) next.map = get('map')
+  if (Object.hasOwn(THEMES, get('theme'))) next.theme = get('theme')
   next.mode = ['light', 'dark'].includes(get('mode')) ? get('mode') : THEMES[next.theme].mode
   if (['on', 'off'].includes(get('guard'))) next.guard = get('guard') === 'on'
   if (['template', 'rendered'].includes(get('file'))) next.file = get('file')
@@ -1295,7 +1295,11 @@ document.getElementById('guard').addEventListener('change', (e) => set({ guard: 
 document.getElementById('motion').addEventListener('change', (e) => set({ motion: e.target.checked }))
 document.getElementById('matrix').addEventListener('click', (e) => {
   const button = e.target.closest('[data-theme-pick]')
-  if (button) { set({ theme: button.dataset.themePick }); deskFrame.scrollIntoView({ block: 'start', behavior: S.motion ? 'auto' : 'smooth' }) }
+  if (button) {
+    set({ theme: button.dataset.themePick })
+    document.getElementById('pickTheme').focus({ preventScroll: true })
+    deskFrame.scrollIntoView({ block: 'start', behavior: S.motion || matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+  }
 })
 window.addEventListener('hashchange', () => { Object.assign(S, readHash()); normalize(); writeHash(); syncControls(); render() })
 new ResizeObserver(layout).observe(document.querySelector('.stage'))
