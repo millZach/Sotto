@@ -23,7 +23,8 @@ async function fixture(version: string, tags: string[], manifests: Record<string
     appUpdateConfigPath: join(directory, 'app-update.yml'), whenReady: async () => undefined,
     relaunch: () => undefined, quit: () => undefined, onQuit: () => undefined,
   })
-  Object.assign(updater, { httpExecutor: { request: async (options: { path: string }) => {
+  // NSIS and these scripted manifests describe Windows, regardless of the test host.
+  Object.assign(updater, { _testOnlyOptions: { platform: 'win32' }, httpExecutor: { request: async (options: { path: string }) => {
     requests.push(options.path)
     if (options.path.endsWith('.atom')) return `<feed>${tags.map(tag => `<entry><title>Sotto ${tag}</title><link href="https://github.com/millZach/Sotto-releases/releases/tag/v${tag}"/><content>Release</content></entry>`).join('')}</feed>`
     if (options.path.endsWith('/latest')) return JSON.stringify({ tag_name: 'v0.1.37' })
