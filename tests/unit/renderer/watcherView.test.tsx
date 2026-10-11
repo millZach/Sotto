@@ -193,6 +193,23 @@ describe("Watcher's room", () => {
     expect(line).toHaveTextContent('last turn failed')
   })
 
+  it('counts the names past five in the needs-you line, and the count opens All threads with focus coming back to it', async () => {
+    const state = stateWithWatcher()
+    for (const index of [1, 2, 3, 4, 5]) state.host.threads.push({ id: `asks-${index}`, title: `Asks ${index}`, projectId: 'workshop', modelId: 'claude:sonnet', providerId: 'claude',
+      status: 'idle', messages: [], requests: [{ id: `asks-${index}-question`, kind: 'question', text: 'Which branch?', options: [] }] })
+    renderRoom(state, roomState())
+    await paneReady()
+    const line = screen.getByRole('heading', { level: 2, name: '7 need you' }).closest('section')!
+    expect(within(line).getAllByRole('button')).toHaveLength(6)
+    const more = within(line).getByRole('button', { name: '2 more need you. Show all threads' })
+    more.focus()
+    fireEvent.click(more)
+    const filter = within(screen.getByRole('dialog', { name: 'All threads' })).getByRole('searchbox', { name: 'Filter threads' })
+    await waitFor(() => expect(filter).toHaveFocus())
+    fireEvent.keyDown(filter, { key: 'Escape' })
+    expect(more).toHaveFocus()
+  })
+
   it('opens the Overview over the room from All threads, in the decided order, and Escape returns focus to All threads', async () => {
     renderRoom(stateWithWatcher(), roomState())
     await paneReady()

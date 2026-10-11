@@ -4,8 +4,7 @@ import type { AgentState } from '../../../shared/agents'
 import { WATCHER_GROUPS, watcherOverview, type WatcherGroup, type WatcherOverviewRow } from '../../../shared/watcherOverview'
 import { ProviderMark } from '../agents/ProviderMark'
 import { RowTime } from '../agents/ThreadSidebar'
-import { useShared } from '../agents/stateSharing'
-import { describeThreads, rowStatus, type ThreadRow } from '../agents/threadFacts'
+import { rowStatus, type ThreadRow } from '../agents/threadFacts'
 import { WATCHED_BY_WATCHER, WatchedBadge } from './WatcherOwl'
 
 const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`
@@ -54,10 +53,9 @@ export function threadPress(open: OpenThread, threadId: string, atRequest: boole
 /**
  * Watcher's Overview: every other thread across the connected hosts, grouped by what the user must do, in the decided
  * order (ADR-0073), latest activity first within a group. It is a projection of the threads' own state, never a queue
- * of its own, and the current Watcher is not in it.
+ * of its own, and the current Watcher is not in it. `facts` are the room's own rows for the same state and clock.
  */
-export function useOverview(state: AgentState | null, now: number, exclude: string | null): readonly OverviewGroup[] {
-  const facts = useShared(useMemo(() => state === null ? [] : describeThreads(state, now), [state, now]))
+export function useOverview(state: AgentState | null, facts: readonly ThreadRow[], now: number, exclude: string | null): readonly OverviewGroup[] {
   return useMemo(() => {
     if (state === null) return []
     const byId = new Map(facts.map(row => [row.thread.id, row] as const))
@@ -167,18 +165,20 @@ const FOCUSABLE = 'button:not(:disabled), input:not(:disabled), [tabindex]:not([
 /**
  * The Overview as a light list over the room, opened by All threads in Watcher's header (Zach's pick on October 11,
  * 2026: the room has no sidebar, and the list is there when asked for). It opens with focus in its filter, keeps Tab
- * inside itself, and closes on Escape, which returns focus to All threads, or on a press outside it, which leaves focus
- * where that press put it. A thread opened from it closes it.
+ * inside itself, and closes on Escape, which returns focus to what opened it, or on a press outside it, which leaves
+ * focus where that press put it. A thread opened from it closes it, and closing that thread returns focus there too.
  */
-export function WatcherOverviewList({ groups, watched, besideId, liveClock, anchor, onOpen, onClose }: {
+export function WatcherOverviewList({ groups, watched, besideId, liveClock, anchor, opener, onOpen, onClose }: {
   readonly groups: readonly OverviewGroup[]
   readonly watched: ReadonlySet<string>
   readonly besideId: string | null
   readonly liveClock: boolean
-  /** All threads, which the list drops from and gives focus back to. */
+  /** All threads, which the list drops from. */
   readonly anchor: RefObject<HTMLButtonElement | null>
+  /** What opened the list (All threads, or the needs-you line's count), for focus to go back to. */
+  readonly opener: RefObject<HTMLElement | null>
   readonly onOpen: OpenThread
-  /** `refocus` is true when focus should go back to All threads. */
+  /** `refocus` is true when focus should go back to what opened the list. */
   readonly onClose: (refocus: boolean) => void
 }): ReactNode {
   const [query, setQuery] = useState('')
@@ -205,7 +205,7 @@ export function WatcherOverviewList({ groups, watched, besideId, liveClock, anch
   const needle = query.trim().toLocaleLowerCase()
   const shown = needle === '' ? groups : groups.map(group => ({ group: group.group, entries: group.entries.filter(entry => entry.overview.thread.title.toLocaleLowerCase().includes(needle)) }))
     .filter(group => group.entries.length > 0)
-  const open: OpenThread = (threadId, how) => { onClose(false); onOpen(threadId, { ...how, from: anchor.current }) }
+  const open: OpenThread = (threadId, how) => { const from = opener.current; onClose(false); onOpen(threadId, { ...how, from }) }
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     if (event.key === 'Escape' && !event.nativeEvent.isComposing) { event.preventDefault(); event.stopPropagation(); onClose(true); return }
     if (event.key !== 'Tab') return

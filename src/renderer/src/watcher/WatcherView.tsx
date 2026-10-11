@@ -287,15 +287,16 @@ export function WatcherView({ now: fixedNow, updateControl }: {
   const mac = app?.platform === 'darwin'
   const current = room?.state?.current ?? null
   const watcherId = room?.currentThreadId ?? null
-  const groups = useOverview(state, now, watcherId)
-  const needs = useMemo<readonly OverviewEntry[]>(() => groups.find(group => group.group === 'Needs you')?.entries ?? [], [groups])
   const rows = useShared(useMemo(() => state === null ? [] : describeThreads(state, now), [state, now]))
+  const groups = useOverview(state, rows, now, watcherId)
+  const needs = useMemo<readonly OverviewEntry[]>(() => groups.find(group => group.group === 'Needs you')?.entries ?? [], [groups])
   const rowsById = useMemo(() => new Map(rows.map(row => [row.thread.id, row] as const)), [rows])
   const view = useRoomView()
   const besideRow = view.besideId !== null && view.besideId !== watcherId ? rowsById.get(view.besideId) : undefined
   const watcherRow = watcherId === null ? undefined : rowsById.get(watcherId)
   const [listOpen, setListOpen] = useState(false)
   const listButton = useRef<HTMLButtonElement>(null)
+  const listOpener = useRef<HTMLElement | null>(null)
   const opener = useRef<HTMLElement | null>(null)
   const pendingFocus = useRef<{ readonly threadId: string; readonly atRequest: boolean } | null>(null)
   const [focusedPane, setFocusedPane] = useState<'watcher' | 'beside'>('watcher')
@@ -360,16 +361,21 @@ export function WatcherView({ now: fixedNow, updateControl }: {
     window.setTimeout(() => { if (back?.isConnected) back.focus(); else document.getElementById(WATCHER_PROMPT_ID)?.focus() }, 0)
   }, [])
 
+  /** Opens or closes the Overview over the room, remembering what opened it for focus to go back to. */
+  const toggleList = (from: HTMLElement | null, open?: boolean): void => {
+    listOpener.current = from
+    setListOpen(value => open ?? !value)
+  }
   const closeList = useCallback((refocus: boolean): void => {
     setListOpen(false)
-    if (refocus) listButton.current?.focus()
+    if (refocus) (listOpener.current?.isConnected ? listOpener.current : listButton.current)?.focus()
   }, [])
 
   const error = state?.error ?? agents.error ?? null
   const limit = room?.state?.inFlightLimit ?? app?.settings?.watcherInFlightLimit ?? 4
   const header = <>
-    <WatcherHeader room={room} limit={limit} count={overviewCount(groups)} listOpen={listOpen} listButton={listButton} onToggleList={() => setListOpen(value => !value)} />
-    <WatcherGlance entries={needs} onOpen={openThread} onShowAll={() => setListOpen(true)} />
+    <WatcherHeader room={room} limit={limit} count={overviewCount(groups)} listOpen={listOpen} listButton={listButton} onToggleList={() => toggleList(listButton.current)} />
+    <WatcherGlance entries={needs} onOpen={openThread} onShowAll={from => toggleList(from, true)} />
   </>
   let watcherContent: ReactNode
   const status = (text: string, alert = false): ReactNode => <>{header}<p className={alert ? 'agent-error watcher-room__status' : 'watcher-room__status'} role={alert ? 'alert' : 'status'}>{text}</p></>
@@ -407,6 +413,6 @@ export function WatcherView({ now: fixedNow, updateControl }: {
     <WatcherDock updateControl={updateControl} />
     <PageWindowControls />
     {listOpen ? <WatcherOverviewList groups={groups} watched={room?.watchedThreadIds ?? new Set()} besideId={besideRow?.thread.id ?? null}
-      liveClock={fixedNow === undefined} anchor={listButton} onOpen={openThread} onClose={closeList} /> : null}
+      liveClock={fixedNow === undefined} anchor={listButton} opener={listOpener} onOpen={openThread} onClose={closeList} /> : null}
   </div>
 }

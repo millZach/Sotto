@@ -14,7 +14,8 @@ const WHY: Record<WaitKind, string> = { question: 'question', permission: 'permi
 export function WatcherGlance({ entries, onOpen, onShowAll }: {
   readonly entries: readonly OverviewEntry[]
   readonly onOpen: OpenThread
-  readonly onShowAll: () => void
+  /** Opens All threads; `from` is the count that was pressed, for focus to come back to. */
+  readonly onShowAll: (from: HTMLElement) => void
 }): ReactNode {
   const heading = useId()
   if (entries.length === 0) return null
@@ -33,7 +34,7 @@ export function WatcherGlance({ entries, onOpen, onShowAll }: {
           <span className="watcher-glance__why" aria-hidden="true">{WHY[kind]}</span>
         </li>
       })}
-      {more > 0 ? <li><button type="button" className="watcher-glance__name tt-focusable" aria-label={`${more} more need you. Show all threads`} onClick={onShowAll}>{more} more</button></li> : null}
+      {more > 0 ? <li><button type="button" className="watcher-glance__name tt-focusable" aria-label={`${more} more need you. Show all threads`} onClick={event => onShowAll(event.currentTarget)}>{more} more</button></li> : null}
     </ul>
   </section>
 }
