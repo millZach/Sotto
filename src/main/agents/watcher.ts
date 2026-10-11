@@ -733,14 +733,21 @@ export class WatcherService implements WatcherControlHooks {
     return { targets: [...new Map(ownership.map(item => [key(item.target), item.target])).values()],
       signature: digest(ownership.map(item => [key(item.target), item.requestId, key(item.watcher)])) }
   }
+  private pruneConfirmations(): void {
+    for (const [id, confirmation] of this.confirmations) if (confirmation.expires < Date.now()) this.confirmations.delete(id)
+    while (this.confirmations.size > 16) this.confirmations.delete(this.confirmations.keys().next().value!)
+  }
   prepareStopAll(): WatcherPrepareStopAllResult {
     if (this.closed) return watcherRefusal('NOT_CURRENT_WATCHER', 'Watcher is stopping. Nothing was stopped. Reopen Sotto.')
+    this.pruneConfirmations()
     const { targets, signature } = this.stopAllScope(), id = randomUUID(), expires = Date.now() + 60_000
     this.confirmations.set(id, { targets, expires, signature })
+    this.pruneConfirmations()
     return { status: 'ok', confirmationId: id, targets, expiresAt: new Date(expires).toISOString() }
   }
   async stopAll(confirmationId: string): Promise<WatcherStopAllResult> {
     if (this.closed) return watcherRefusal('NOT_CURRENT_WATCHER', 'Watcher is stopping. Nothing was stopped. Reopen Sotto.')
+    this.pruneConfirmations()
     const confirmation = this.confirmations.get(confirmationId); this.confirmations.delete(confirmationId)
     if (!confirmation || confirmation.expires < Date.now() || confirmation.signature !== this.stopAllScope().signature) {
       return watcherRefusal('TARGET_CHANGED', 'The threads to stop changed or the confirmation expired. Review Stop all again.')

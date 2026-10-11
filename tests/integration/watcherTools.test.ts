@@ -237,6 +237,32 @@ it('refuses Stop all preview and confirmation after closing without coordinator 
   update.mockRestore(); cancel.mockRestore(); command.mockRestore()
 })
 
+it.each(['expiry', 'capacity'])('prunes unsubmitted Stop all previews by %s and keeps the newest confirmation usable', async reason => {
+  const f = await fixture(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  const oldest = f.service.prepareStopAll()
+  if (oldest.status !== 'ok') throw new Error('preview refused')
+  // Retained previews are a memory budget; expiry alone is otherwise invisible until an ID is submitted.
+  const retained = (f.service as unknown as { confirmations: ReadonlyMap<string, unknown> }).confirmations
+  const clock = reason === 'expiry' ? vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 60_001) : undefined
+  try {
+    let latest = oldest
+    for (let count = 0; count < (reason === 'expiry' ? 1 : 16); count++) {
+      const preview = f.service.prepareStopAll()
+      if (preview.status !== 'ok') throw new Error('preview refused')
+      latest = preview
+    }
+    expect(retained.has(oldest.confirmationId)).toBe(false)
+    expect(retained.size).toBe(reason === 'expiry' ? 1 : 16)
+    const record = f.control.watcherRecord()
+    expect(await f.service.stopAll(oldest.confirmationId)).toMatchObject({ status: 'refused', code: 'TARGET_CHANGED' })
+    expect(f.control.watcherRecord()).toEqual(record)
+    expect(f.workspace.adapters.codex.commands.filter(item => item.type === 'interrupt')).toHaveLength(0)
+    expect(await f.service.stopAll(latest.confirmationId)).toMatchObject({ status: 'ok', results: [{ target: first.target, status: 'stopped' }] })
+    expect(f.workspace.adapters.codex.commands.filter(item => item.type === 'interrupt')).toHaveLength(1)
+  } finally { clock?.mockRestore() }
+})
+
 it('keeps Stop all confirmation valid when a previewed worker receives another Watcher prompt', async () => {
   const f = await fixture(), first = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
