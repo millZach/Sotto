@@ -8,6 +8,7 @@ import { SocketFrames } from '../../src/host/socketFrames'
 import { phoneTerminalApprovalSchema } from '../../src/shared/phoneTerminals'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, firstSottoWindow, launchSotto, openThreads } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 // Usage: npm run build && npx playwright test tests/e2e/phone-terminals.spec.ts
 test('a paired phone reviews and answers a built desktop terminal through its live hook', async () => {
@@ -114,7 +115,7 @@ test('a paired phone reviews and answers a built desktop terminal through its li
       if (ink > 500) capture = png
       return ink
     }).toBeGreaterThan(500)
-    const folder = resolve('artifacts/phone-terminals'); await mkdir(folder, { recursive: true })
+    const folder = evidenceDirectory('artifacts/phone-terminals'); await mkdir(folder, { recursive: true })
     await writeFile(join(folder, 'desktop-live-approval.png'), capture!)
     const answer = { ...binding, decision: 'deny' }
     expect(await call({ op: 'answer-terminal', answer })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
