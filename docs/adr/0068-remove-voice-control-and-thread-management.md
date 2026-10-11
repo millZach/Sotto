@@ -1,6 +1,6 @@
 # Remove voice control and thread management
 
-Accepted October 8, 2026. Supersedes [ADR-0012](0012-voice-coordinator-hidden-for-the-beta.md). Zach chose to remove wake listening, every reply voice, the Agents room and per-thread Manage controls, while keeping dictation, manual threads and memory unchanged. A typed command center is separate work; saved instructions and earlier assignments give it no authority.
+Accepted October 8, 2026. Supersedes [ADR-0012](0012-voice-coordinator-hidden-for-the-beta.md). Zach chose to remove wake listening, every reply voice, the Agents room and per-thread Manage controls, while keeping dictation, manual threads and memory unchanged. A typed Watcher is separate work; saved instructions and earlier assignments give it no authority.
 
 Upgrades end every legacy assignment before provider refresh or observation. They discard attention and spoken clarification state, retain drafts and images with their question bindings, and preserve user follow-up queues, outbox entries, delivery evidence and provider history. Failed migration writes leave management unavailable in memory, keep drafts readable and report the failure; an uncertain send is never replayed. Retired-provider recovery cannot restore a grant. A temporary removal mode closes admission while the six removal commits land and is deleted with the unused machinery.
 

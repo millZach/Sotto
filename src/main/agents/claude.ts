@@ -16,7 +16,10 @@ import { z } from 'zod'
 import { agentAttachmentReferenceSchema, agentProjectSchema, agentRuntimeModeSchema, PROVIDER_LABELS, type AgentHostSnapshot, type AgentMessage, type AgentRuntimeMode, type AgentThread } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { ClaudeOriginJournal } from './claudeOriginJournal'
-import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose, ThreadSessionDraft } from './host'
+import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, WatcherLaunchProfile, ThreadLaunchProfiles, RestoredThreadHistory, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose, ThreadSessionDraft } from './host'
+import { WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
+import { WATCHER_SYSTEM_PROMPT } from './watcherPrompt'
+import { assertWatcherPermission, watcherThreadTools } from './watcherProviderTools'
 import { SIDE_WRITING_TIMEOUT_MS, sideWritingEffort } from './sideWriting'
 import { ThreadMessageLog } from './threadMessageLog'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
@@ -143,11 +146,12 @@ function permissionArguments(mode: AgentRuntimeMode = 'approval-required'): stri
 // listed one by one because the CLI does not match a wildcard against a tool added at launch, and
 // the flag is variadic, so it is only ever followed here by another option.
 /** Sotto's own tools carry no native prompt: the answer that matters is Sotto's (ADR-0020, ADR-0035). */
-function toolAllowance(servers: readonly { server: ThreadMcpServer; definitions: readonly { name: string }[] }[]): string[] {
+function toolAllowance(servers: readonly { server: Pick<ThreadMcpServer, 'name'>; definitions: readonly { name: string }[] }[]): string[] {
   const names = servers.flatMap(({ server, definitions }) => definitions.map(tool => `mcp__${server.name}__${tool.name}`))
   return names.length ? ['--allowedTools', ...names] : []
 }
 export interface ClaudeStreamJsonHostOptions {
+  /** Test-only admission override. Production wiring never supplies it. */
   userDataPath: string; executable?: string; args?: string[]; claudeHome?: string; environment?: NodeJS.ProcessEnv; requestTimeoutMs?: number; pollIntervalMs?: number
   /** Desktop supplies its packaged SDK resource; Node resolves the installed development SDK. */
   historyModulePath?: string
@@ -179,7 +183,7 @@ type Spare = { sessionId: string; cwd: string; settings: ClaudeSettings; frames:
 /** Which of Sotto's scoped servers answered for a session, in order: a spare is adopted only by a start that gets the same. */
 const scopedNames = (servers: readonly { tools: ScopedThreadTools }[]): string => servers.map(({ tools }) => tools.name).join('\n')
 /** `client` is the client generation the CLI was launched from: see `clientUpdated`. */
-type Runtime = { protocol: ClaudeProtocol; requests: Map<string, ClaudePending>; answered: Set<string>; answerWrites: Map<string, 'pending' | 'failed'>; clientRevision: number }
+type Runtime = { protocol: ClaudeProtocol; requests: Map<string, ClaudePending>; answered: Set<string>; answerWrites: Map<string, 'pending' | 'failed'>; clientRevision: number; watcher: boolean }
 
 /** A read of a thread's transcript from its first byte into a seeded log (`ClaudeStreamJsonHost.replays`). */
 interface Replay {
@@ -196,10 +200,75 @@ interface Replay {
 
 /** One native coding CLI per thread. Credentials and transcript persistence remain native. */
 export class ClaudeStreamJsonHost implements AgentHost {
+  private launchProfiles: ThreadLaunchProfiles | undefined
+  private readonly resolvedWatcherProfiles = new Map<string, WatcherLaunchProfile>()
+  private readonly checkingProfileRequests = new WeakMap<Runtime, Set<string>>()
+  useLaunchProfiles(profiles: ThreadLaunchProfiles): void { this.launchProfiles = profiles }
+  profileRefusalHandler(id: string) {
+    const generation = this.generation, runtime = this.runtimes.get(id), spare = this.spares.get(id)
+    if (!runtime && !spare) return undefined
+    return (reason: string) => {
+      if (generation !== this.generation || this.runtimes.get(id) !== runtime || this.spares.get(id) !== spare) return
+      return this.stopWatcher(id, this.resolvedWatcherProfiles.get(id), reason, generation, runtime)
+    }
+  }
   private browserTools: BrowserAgentTools | undefined
   useBrowserTools(tools: BrowserAgentTools): void { this.browserTools = tools }
   private threadTools: readonly ScopedThreadTools[] = []
   useThreadTools(tools: readonly ScopedThreadTools[]): void { this.threadTools = tools }
+  /** Resolve main's durable identity before even reusing a live process; permission preferences confer no profile. */
+  private checkProfileContinuation(id: string, generation: number, runtime?: Runtime): void {
+    if (generation !== this.generation || runtime && this.runtimes.get(id) !== runtime) throw new Error('Claude connection was cancelled.')
+  }
+  private async watcherProfile(id: string, _modelId?: string, generation = this.generation,
+    runtime?: Runtime): Promise<WatcherLaunchProfile | undefined> {
+    const profile = await this.resolveWatcherProfile(id, generation, runtime)
+    this.checkProfileContinuation(id, generation, runtime)
+    if (!profile) return undefined
+    validateWatcherProfile(profile)
+    return profile
+  }
+  private async resolveWatcherProfile(id: string, generation = this.generation, runtime?: Runtime): Promise<WatcherLaunchProfile | undefined> {
+    if (!this.launchProfiles) return undefined
+    try {
+      const profile = await this.launchProfiles.profileFor(id)
+      this.checkProfileContinuation(id, generation, runtime)
+      if (!profile && this.resolvedWatcherProfiles.has(id)) {
+        throw new WatcherProfileRefusal('Watcher’s profile is no longer available. Its session and tools were stopped. Reopen Watcher to recover.')
+      }
+      if (profile) this.resolvedWatcherProfiles.set(id, profile)
+      return profile
+    } catch (error) {
+      this.checkProfileContinuation(id, generation, runtime)
+      const reason = error instanceof WatcherProfileRefusal ? error.message : 'Watcher’s saved profile could not be verified. Its session was stopped. Reopen Watcher to recover.'
+      await this.stopWatcher(id, this.resolvedWatcherProfiles.get(id), reason, generation, runtime)
+      throw error instanceof WatcherProfileRefusal ? error : new WatcherProfileRefusal(reason)
+    }
+  }
+  private async stopWatcher(id: string, profile: WatcherLaunchProfile | undefined, reason: string,
+    generation = this.generation, expectedRuntime?: Runtime): Promise<void> {
+    this.checkProfileContinuation(id, generation, expectedRuntime)
+    try { profile?.revoke(reason) } catch { /* A broken tool-server cleanup must still stop its provider process. */ }
+    const spare = this.spares.get(id)
+    if (spare) {
+      spare.exited = true
+      // Drain startup without awaiting it here: spawn's own profile lookup can be the refusal.
+      void this.discardSpare(id)
+      if (spare.runtime) { spare.runtime.protocol.stop(); this.trackClosure(spare.runtime.protocol.closed) }
+    }
+    const runtime = expectedRuntime ?? this.runtimes.get(id)
+    if (runtime) await this.stopRuntime(id, runtime)
+    if (generation !== this.generation || this.runtimes.has(id) && this.runtimes.get(id) !== runtime) return
+    const thread = this.threads.get(id)
+    if (thread) {
+      thread.status = 'error'; thread.requests = []
+      if (thread.lastTurn?.status === 'running') {
+        this.acknowledgements.get(thread.lastTurn.id)?.(false)
+        thread.lastTurn = { ...thread.lastTurn, status: 'failed' }; this.markTurn(id, 'failed', undefined, reason)
+      }
+    }
+    this.state.error = reason; this.emit()
+  }
   private readonly usage: NativeUsage
   private readonly aliasStore: AtomicJsonStore<Record<string, Alias>>
   /** Origins recorded since `claude-threads.json` was last written whole; see `ClaudeOriginJournal`. */
@@ -436,7 +505,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const watched = [...this.observed].filter(id => aliases[id] && aliases[id].kind !== 'personal' && !aliases[id].rollbackPending)
     const startNext = async (): Promise<void> => {
       for (let id = watched.shift(); id !== undefined && generation === this.generation; id = watched.shift()) {
-        try { await this.start(id) } catch { if (generation === this.generation) { this.threads.get(id)!.status = 'error'; this.state.error = 'A Claude thread could not resume. Check its native session before sending again.' } }
+        try { await this.start(id) } catch (error) { if (generation === this.generation) { this.threads.get(id)!.status = 'error'; this.state.error = error instanceof WatcherProfileRefusal ? error.message : 'A Claude thread could not resume. Check its native session before sending again.' } }
       }
     }
     await Promise.all(Array.from({ length: Math.min(Math.max(1, this.options.connectStarts ?? CONNECT_STARTS), watched.length) }, startNext))
@@ -500,11 +569,13 @@ export class ClaudeStreamJsonHost implements AgentHost {
   }
   async snapshot(): Promise<AgentHostSnapshot> { await this.pollSessionLogs(); return this.view() }
   async listThreadSkills(threadId: string, _forceReload = false, scope?: AgentSkillScope): Promise<AgentSkillCatalog> {
+    const generation = this.generation
+    await this.watcherProfile(threadId)
+    this.checkProfileContinuation(threadId, generation)
     if (this.aliases[threadId]?.kind === 'personal') throw new Error('That thread is unavailable.')
     void _forceReload // Native discovery is always fresh; no account/directory cache can leak across threads.
     const cwd = this.aliases[threadId]?.cwd ?? (scope?.providerId === 'claude' ? scope.workingDirectory : undefined)
     if (!this.state.connected || !cwd) throw new Error('Reconnect this Claude thread before browsing skills.')
-    const generation = this.generation
     try {
       const catalog = await discoverClaudeSkills(threadId, await existingWorkingDirectory(cwd), this.executable, this.options.args ?? [], this.client.environment(), this.options.requestTimeoutMs ?? 15000)
       if (generation !== this.generation) throw new Error('Claude connection changed while discovering skills.')
@@ -517,11 +588,16 @@ export class ClaudeStreamJsonHost implements AgentHost {
    * its transcript never sees the prompt.
    */
   async writeShortText(id: string, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
-    if (this.aliases[id]?.kind === 'personal') return null
+    const generation = this.generation
+    const profile = await this.watcherProfile(id)
+    this.checkProfileContinuation(id, generation)
+    if (profile || this.aliases[id]?.kind === 'personal') return null
     const alias = this.aliases[id]
     if (!this.state.connected || !alias || !this.executable) return null
     const effort = sideWritingEffort(this.state.models, alias.modelId)
-    return this.client.write({ ...prompt, model: alias.modelId, ...(effort ? { effort } : {}), workingDirectory: await existingWorkingDirectory(alias.cwd),
+    const workingDirectory = await existingWorkingDirectory(alias.cwd)
+    this.checkProfileContinuation(id, generation)
+    return this.client.write({ ...prompt, model: alias.modelId, ...(effort ? { effort } : {}), workingDirectory,
       executable: this.executable, timeoutMs: SIDE_WRITING_TIMEOUT_MS, ...(signal ? { signal } : {}) })
   }
   /**
@@ -546,7 +622,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const generation = this.generation
     // Reading a thread is opening it, so a reaped or never-started session starts here. A start that
     // cannot happen is reported by the action that needs it, not by a read.
-    await this.start(id).catch(() => undefined)
+    await this.start(id).catch(error => { if (error instanceof WatcherProfileRefusal) throw error })
     await this.readLog(id)
     if (generation !== this.generation || !this.state.connected) throw new Error('Claude connection changed while reading the thread.')
     if (purpose?.retryUncertainAnswers) {
@@ -569,9 +645,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.observed.clear(); for (const id of ids) if (this.aliases[id]?.kind !== 'personal') this.observed.add(id)
     this.messageLog.observe([...this.observed])
     if (!this.state.connected) return
-    for (const id of this.observed) if (this.aliases[id]) void this.start(id).catch(() => {
+    const generation = this.generation
+    for (const id of this.observed) if (this.aliases[id]) void this.start(id).catch(error => {
+      if (generation !== this.generation) return
       const thread = this.threads.get(id); if (thread) thread.status = 'error'
-      this.state.error = 'A Claude thread could not resume. Check the native client.'; this.emit()
+      this.state.error = error instanceof WatcherProfileRefusal ? error.message : 'A Claude thread could not resume. Check the native client.'; this.emit()
     })
   }
   rollbackCapability(id: string): { supported: boolean; reason?: string } {
@@ -581,6 +659,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
       : { supported: true }
   }
   async rollbackThread(id: string, removeTurns: number, expectedUserMessageIds: readonly string[]): Promise<AgentHostResult> {
+    const generation = this.generation
+    await this.watcherProfile(id)
+    this.checkProfileContinuation(id, generation)
     const alias = this.aliases[id], thread = this.threads.get(id)
     if (!alias || !thread || !this.state.connected) throw new Error('Connect this Claude thread before rewinding.')
     if (alias.rollbackPending) throw new Error('Claude rollback is unconfirmed; it will not be replayed.')
@@ -588,7 +669,6 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (thread.status === 'running' || thread.requests.length || this.dispatching.has(id)) throw new Error('Wait for Claude and answer its requests before rewinding.')
     // Rewinding restarts the CLI, which would end the agents or commands it is still running for this thread.
     if (thread.backgroundWork?.length) throw new Error(backgroundWorkRunning(thread.backgroundWork, 'rewinding it'))
-    const generation = this.generation
     const history = new ClaudeHistory(this.client.environment(), this.options.claudeHome ?? join(homedir(), '.claude'), alias.cwd, this.options.historyModulePath)
     await this.sync(id)
     const matches = (): boolean => isDeepStrictEqual([...this.messageLog.userMessageIds(id)], [...expectedUserMessageIds])
@@ -658,6 +738,12 @@ export class ClaudeStreamJsonHost implements AgentHost {
   }
   async execute(command: AgentHostCommand): Promise<AgentHostResult> { return this.executeNative(command) }
   private async executeNative(command: AgentHostCommand): Promise<AgentHostResult> {
+    const generation = this.generation
+    if ('threadId' in command && await this.watcherProfile(command.threadId, 'modelId' in command ? command.modelId : undefined)) {
+      assertWatcherPermission(command)
+      if (command.type === 'create-thread') command = { ...command, runtimeMode: 'approval-required' }
+    }
+    if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
     // A command that ends (an answer, a stop, a dispatch let go) may leave an outdated CLI free to stop.
     try { return await this.dispatchNative(command) } finally { this.scheduleOutdatedStop() }
   }
@@ -685,7 +771,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
       try { await this.persist() } catch (error) { delete this.aliases[command.threadId]; throw error }
       this.ensureThread(command.threadId, alias); this.emit()
       // Creating a durable local identity does not require a paid model turn.
-      try { await this.start(command.threadId) } catch { this.threads.get(command.threadId)!.status = 'error'; this.emit(); return { accepted: false, uncertain: true } }
+      try { await this.start(command.threadId) } catch (error) {
+        this.threads.get(command.threadId)!.status = 'error'; this.emit()
+        if (error instanceof WatcherProfileRefusal) throw error
+        return { accepted: false, uncertain: true }
+      }
       return { accepted: true }
     }
     const id = command.threadId; const alias = this.aliases[id]; const thread = this.threads.get(id)
@@ -867,7 +957,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     try {
       // A CLI still starting is the one the change should reach, once it has.
       const runtime = this.starting.has(id) ? await this.starting.get(id)!.catch(() => undefined) : this.runtimes.get(id)
-      const steps = runtime && this.runtimes.get(id) === runtime ? settingsSteps(before, after) : undefined
+      const steps = runtime && !runtime.watcher && this.runtimes.get(id) === runtime ? settingsSteps(before, after) : undefined
       if (runtime && steps) {
         const live = await this.applySteps(runtime, before, after, steps)
         if (live.outcome === 'applied') return await this.settleSettings(id, command, after)
@@ -974,6 +1064,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
    * and not when a later connect has put a note of its own in place of the one this read began with.
    */
   private async readLog(id: string, log = this.log(id)): Promise<void> {
+    // A rejected process cannot smuggle turn frames back through its native transcript.
     const replay = this.replays.get(id)
     await log.poll()
     if (!replay?.reading || this.replays.get(id) !== replay || log.cursor() === undefined) return
@@ -1020,10 +1111,26 @@ export class ClaudeStreamJsonHost implements AgentHost {
   }
   async closed(): Promise<void> { while (this.closures.size) await Promise.all(this.closures); await this.usage.flushed() }
   private async start(id: string): Promise<Runtime> {
+    const generation = this.generation
+    const profile = await this.watcherProfile(id)
+    if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
     if (this.aliases[id]?.kind === 'personal') throw new Error('That thread is unavailable.')
     this.reaper.touch(id)
-    const pending = this.starting.get(id); if (pending) return pending
-    const runtime = this.runtimes.get(id); if (runtime) return runtime
+    const pending = this.starting.get(id)
+    if (pending) {
+      const started = await pending
+      this.checkProfileContinuation(id, generation)
+      if (!profile || started.watcher) return started
+      await this.stopRuntime(id, started)
+      this.checkProfileContinuation(id, generation)
+    }
+    const runtime = this.runtimes.get(id)
+    if (runtime) {
+      if (!profile || runtime.watcher) return runtime
+      await this.stopRuntime(id, runtime)
+      this.checkProfileContinuation(id, generation)
+    }
+    this.checkProfileContinuation(id, generation)
     const work = this.launch(id); this.starting.set(id, work)
     try {
       const started = await work; this.messageLog.pin(id)
@@ -1065,14 +1172,16 @@ export class ClaudeStreamJsonHost implements AgentHost {
    */
   private async spawn(id: string, alias: Pick<Alias, 'sessionId' | 'cwd' | 'modelId' | 'reasoningEffort' | 'runtimeMode'>, resume: boolean, spare?: Spare): Promise<{ runtime: Runtime; initialized: ClaudeFrame }> {
     const generation = this.generation
-    const browser = await this.browserTools?.mcpServer(id)
+    const profile = await this.watcherProfile(id, alias.modelId)
+    this.checkProfileContinuation(id, generation)
+    const browser = profile ? undefined : await this.browserTools?.mcpServer(id)
     if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
     // Each of Sotto's scoped servers that answers for this thread: the host setup tools while its setup runs, and the
     // visual tool while visuals are on.
-    const scoped = await scopedThreadServers(this.threadTools, id)
+    const scoped = await scopedThreadServers(profile ? watcherThreadTools(this.threadTools) : this.threadTools, id)
     if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
     if (spare) spare.scopedTools = scopedNames(scoped)
-    const servers = [...(browser ? [{ server: browser, definitions: this.browserTools?.definitions ?? [] }] : []),
+    const servers = [...(profile ? [{ server: profile.server, definitions: profile.toolNames.map(name => ({ name })) }] : []), ...(browser ? [{ server: browser, definitions: this.browserTools?.definitions ?? [] }] : []),
       ...scoped.map(({ server, tools }) => ({ server, definitions: tools.definitions }))]
     // The longest wait any offered server needs: a host setup check can wait 5 minutes, a browser action 6.
     const toolTimeoutMs = Math.max(0, ...(browser ? [360_000] : []), ...scoped.map(({ tools }) => tools.timeoutMs ?? 0))
@@ -1084,19 +1193,20 @@ export class ClaudeStreamJsonHost implements AgentHost {
         }])) }), { mode: 0o600, flag: 'wx' })
       } catch (error) { await this.removeConfig(mcpConfig); throw error }
     }
-    if (generation !== this.generation) { if (mcpConfig) await this.removeConfig(mcpConfig); throw new Error('Claude connection was cancelled.') }
+    if (generation !== this.generation || spare?.exited) { if (mcpConfig) await this.removeConfig(mcpConfig); throw new Error('Claude connection was cancelled.') }
     const toolArguments = mcpConfig ? ['--mcp-config', mcpConfig, ...toolAllowance(servers)] : []
     const args = [...(this.options.args ?? []), ...toolArguments, '--print', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
-      '--include-partial-messages', '--replay-user-messages', ...permissionArguments(alias.runtimeMode),
+      '--include-partial-messages', '--replay-user-messages', ...(profile ? ['--permission-mode', 'manual', '--permission-prompts', 'host', '--permission-prompt-tool', 'stdio'] : permissionArguments(alias.runtimeMode)), ...(profile ? ['--append-system-prompt', WATCHER_SYSTEM_PROMPT] : []),
       resume ? '--resume' : '--session-id', alias.sessionId, '--model', alias.modelId, ...(alias.reasoningEffort ? ['--effort', alias.reasoningEffort] : [])]
     let runtime: Runtime
-    try { runtime = { requests: new Map(), answered: new Set(), answerWrites: new Map(), clientRevision: this.clientRevision, protocol: new ClaudeProtocol(this.executable, args, alias.cwd, { ...this.client.environment(), ...(toolTimeoutMs ? { MCP_TOOL_TIMEOUT: String(toolTimeoutMs) } : {}) }, this.options.requestTimeoutMs ?? 15000,
+    try { runtime = { requests: new Map(), answered: new Set(), answerWrites: new Map(), clientRevision: this.clientRevision, watcher: !!profile, protocol: new ClaudeProtocol(this.executable, args, alias.cwd, { ...this.client.environment(), ...(toolTimeoutMs ? { MCP_TOOL_TIMEOUT: String(toolTimeoutMs) } : {}) }, this.options.requestTimeoutMs ?? 15000,
       frame => {
         if (this.runtimes.get(id) === runtime) this.frame(id, frame)
         // A spare keeps a bounded handful of frames for the send that adopts it; one that says more is let go.
         else if (spare?.runtime === runtime && this.spares.get(id) === spare && spare.frames.push(frame) > SPARE_FRAMES) this.discardSpare(id)
       }, () => {
-        if (spare?.runtime === runtime) { spare.exited = true; if (this.spares.get(id) === spare) this.spares.delete(id) }
+        const ownedSpare = spare?.runtime === runtime && this.spares.get(id) === spare
+        if (spare?.runtime === runtime) { spare.exited = true; if (ownedSpare) this.spares.delete(id) }
         if (this.runtimes.get(id) !== runtime) return
         // Each thread has its own CLI, so one ending is this thread's failure, not the provider's: the others
         // keep running, and this one starts again from its native session on its next action.
@@ -1126,7 +1236,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
     let initialized: ClaudeFrame
     try { initialized = await runtime.protocol.control({ subtype: 'initialize', hooks: {}, sdkMcpServers: [], promptSuggestions: false, supportedDialogKinds: ['resume_return'] }) }
     // A spare is not the thread's CLI, so it is stopped as one: only a thread on its session ID waits for its exit.
-    catch (error) { void (spare ? this.stopSpare(id, spare, runtime) : this.stopRuntime(id, runtime)); throw error }
+    catch (error) {
+      void (spare ? this.stopSpare(id, spare, runtime) : this.stopRuntime(id, runtime))
+      throw error
+    }
     if (generation !== this.generation) { await (spare ? this.stopSpare(id, spare, runtime) : this.stopRuntime(id, runtime)); throw new Error('Claude connection was cancelled.') }
     return { runtime, initialized }
   }
@@ -1152,11 +1265,13 @@ export class ClaudeStreamJsonHost implements AgentHost {
    * so a spare that is never used leaves nothing behind; the reaper stops it once idle, as it would a session.
    */
   async startThreadSession(id: string, draft?: ThreadSessionDraft): Promise<void> {
+    const generation = this.generation
+    await this.watcherProfile(id, draft?.modelId)
+    this.checkProfileContinuation(id, generation)
     if (!this.state.connected) return
     if (this.aliases[id]) { await this.start(id); return }
     // A spare runs in the thread's folder, so a thread whose worktree its first send makes gets none.
     if (!draft?.workingDirectory || this.spares.has(id) || !this.state.models.some(model => model.id === draft.modelId && model.ready)) return
-    const generation = this.generation
     const cwd = await existingWorkingDirectory(draft.workingDirectory)
     if (generation !== this.generation || this.aliases[id] || this.spares.has(id)) return
     const settings = settingsOf(draft)
@@ -1164,7 +1279,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.spares.set(id, spare)
     this.reaper.touch(id)
     spare.ready = this.spawn(id, { sessionId: spare.sessionId, cwd, ...settings }, false, spare)
-    try { await spare.ready } catch { if (this.spares.get(id) === spare) this.spares.delete(id) }
+    try { await spare.ready } catch (error) {
+      if (this.spares.get(id) === spare) this.spares.delete(id)
+      if (error instanceof WatcherProfileRefusal) throw error
+    }
   }
   /** The spare a thread's first send may run on, when it was started for exactly what that send creates. */
   private spareFor(id: string, cwd: string, settings: ClaudeSettings): Spare | undefined {
@@ -1178,9 +1296,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
    * starts a CLI of its own the usual way.
    */
   private async adoptSpare(id: string, alias: Alias): Promise<Runtime | undefined> {
+    const generation = this.generation
+    const profile = await this.watcherProfile(id, alias.modelId)
+    this.checkProfileContinuation(id, generation)
     const spare = this.spares.get(id)
     if (!spare) return undefined
-    const generation = this.generation
     // It stays the spare while it finishes starting, so what it says meanwhile is kept for this thread too.
     const started = await spare.ready?.catch(() => undefined)
     if (this.spares.get(id) !== spare) return undefined
@@ -1188,12 +1308,12 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (!started) return undefined
     let scoped: string
     // A tool server closed meanwhile, as Sotto quitting closes them, throws; the spare, in neither map now, is stopped first.
-    try { scoped = scopedNames(await scopedThreadServers(this.threadTools, id)) }
+    try { scoped = scopedNames(await scopedThreadServers(profile ? watcherThreadTools(this.threadTools) : this.threadTools, id)) }
     catch (error) { await this.stopSpare(id, spare, started.runtime); throw error }
     // It is in neither map now, so a disconnect meanwhile did not stop it; this does, and the start then reports the cancel.
     if (generation !== this.generation) { await this.stopSpare(id, spare, started.runtime); return undefined }
     // Checked again: a client update, or one of Sotto's scoped servers coming or going for the thread, can make a spare unfit after creation chose it.
-    if (spare.sessionId !== alias.sessionId || !spareFits(spare, alias.cwd, settingsOf(alias)) || scoped !== spare.scopedTools
+    if (started.runtime.watcher !== !!profile || spare.sessionId !== alias.sessionId || !spareFits(spare, alias.cwd, settingsOf(alias)) || scoped !== spare.scopedTools
       || started.runtime.clientRevision !== this.clientRevision || this.runtimes.has(id)) {
       await this.stopSpare(id, spare, started.runtime)
       return undefined
@@ -1253,6 +1373,33 @@ export class ClaudeStreamJsonHost implements AgentHost {
     await Promise.all(names.filter(name => /^claude-mcp-.*\.json$/.test(name)).map(name => this.removeConfig(join(this.options.userDataPath, name))))
   }
   private frame(id: string, frame: ClaudeFrame): void {
+    const currentRuntime = this.runtimes.get(id)
+    if (currentRuntime && frame.type === 'control_cancel_request' && typeof frame.request_id === 'string') {
+      this.checkingProfileRequests.get(currentRuntime)?.delete(frame.request_id)
+    }
+    if (currentRuntime?.watcher && frame.type === 'control_request') {
+      const runtime = currentRuntime
+      const requestId = typeof frame.request_id === 'string' ? frame.request_id : undefined
+      let checking = runtime ? this.checkingProfileRequests.get(runtime) : undefined
+      if (runtime && !checking) { checking = new Set(); this.checkingProfileRequests.set(runtime, checking) }
+      if (requestId) checking?.add(requestId)
+      if (!runtime) return
+      void this.guardWatcherRequest(id, frame, runtime).then(allowed => {
+        const pending = !requestId || checking?.delete(requestId)
+        if (allowed && pending && runtime && this.runtimes.get(id) === runtime) this.frameAfterProfileCheck(id, frame)
+      }).catch(() => { if (requestId) checking?.delete(requestId) })
+      return
+    }
+    this.frameAfterProfileCheck(id, frame)
+  }
+  /** Recheck identity before a request reaches the normal card path. Its own requests are allowed. */
+  private async guardWatcherRequest(id: string, _frame: ClaudeFrame, runtime: Runtime): Promise<boolean> {
+    const generation = this.generation
+    await this.resolveWatcherProfile(id, generation, runtime)
+    this.checkProfileContinuation(id, generation, runtime)
+    return true
+  }
+  private frameAfterProfileCheck(id: string, frame: ClaudeFrame): void {
     this.reaper.touch(id)
     const runtime = this.runtimes.get(id)!; const thread = this.threads.get(id)!; const alias = this.aliases[id]!
     if (typeof frame.session_id === 'string' && frame.session_id !== alias.sessionId) return

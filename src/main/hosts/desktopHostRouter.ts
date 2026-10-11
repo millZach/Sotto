@@ -1,3 +1,5 @@
+import { visibleWatcherState } from '../../shared/watcherVisibility'
+import { WATCHER_DISABLED } from '../agents/watcherLaunchProfiles'
 import { randomUUID } from 'node:crypto'
 import { agentCommandSchema, MAX_DELIVERED_DRAFTS, HOST_CANNOT_STAGE_SCREENSHOTS, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import { clientAgentState, hostEntityKey, mapHostReferences, parseHostEntityKey } from '../../shared/clientIdentity'
@@ -107,7 +109,25 @@ export class DesktopHostRouter {
   private readonly draftPass: { running: boolean; gap: ReturnType<typeof setTimeout> | undefined; wanted: RequestDraftRecovery | undefined; disposed: boolean } =
     { running: false, gap: undefined, wanted: undefined, disposed: false }
 
-  constructor(private readonly empty: () => AgentState, private readonly options: { bindRequestDraftDecision?: BindRequestDraftDecision } = {}) {}
+  constructor(private readonly empty: () => AgentState, private readonly options: { bindRequestDraftDecision?: BindRequestDraftDecision; watcherEnabled?: boolean } = {}) {}
+
+  private watcherAvailable(connection: DesktopHostConnection, id: string | undefined): boolean {
+    if (this.options.watcherEnabled === true || !id || id === '_') return true
+    const thread = connection.service.shell().host.threads.find(thread => thread.id === id)
+    return thread?.kind !== 'watcher' && thread?.kind !== 'watcher-history'
+  }
+  /** Saved owner classification stays available even when the public shell omits Watcher. */
+  preservesWatcherThread(threadId: string): boolean | undefined {
+    if (this.options.watcherEnabled === true) return false
+    const key = parseHostEntityKey(threadId)
+    if (!key) return false
+    const connection = this.hosts.get(key.hostId)?.connection
+    const thread = connection?.service.shell().host.threads.find(thread => thread.id === key.id)
+    return thread ? thread.kind === 'watcher' || thread.kind === 'watcher-history' : undefined
+  }
+  private visibleState(state: AgentState): AgentState {
+    return visibleWatcherState(state, this.options.watcherEnabled === true)
+  }
 
   requiresManagementUpdate(hostId: string): boolean {
     const connection = this.hosts.get(hostId)?.connection
@@ -120,6 +140,7 @@ export class DesktopHostRouter {
     if (this.hosts.has(connection.hostId)) throw new Error('This host is already connected.')
     const off = [connection.service.subscribe(() => this.emit())]
     if (connection.subscribeDetail) off.push(connection.subscribeDetail(detail => {
+      if (!this.watcherAvailable(connection, detail.threadId)) return
       const scoped = mapHostReferences(detail, id => hostEntityKey(connection.hostId, id))
       for (const listener of this.detailListeners) listener(scoped)
     }))
@@ -137,6 +158,7 @@ export class DesktopHostRouter {
     entry.off.forEach(off => off())
     const off = [connection.service.subscribe(() => this.emit())]
     if (connection.subscribeDetail) off.push(connection.subscribeDetail(detail => {
+      if (!this.watcherAvailable(connection, detail.threadId)) return
       const scoped = mapHostReferences(detail, id => hostEntityKey(connection.hostId, id))
       for (const listener of this.detailListeners) listener(scoped)
     }))
@@ -180,7 +202,7 @@ export class DesktopHostRouter {
         && item.questionsDigest === answer.target.questionsDigest)) this.notice = undefined
     }
     const entries = [...this.hosts.values()].map(({ connection }) => {
-      const original = connection.service.shell()
+      const original = this.visibleState(connection.service.shell())
       return { connection, original, state: clientAgentState(original) }
     })
     const selected = entries.find(item => item.connection.hostId === this.selectedHostId)
@@ -230,7 +252,9 @@ export class DesktopHostRouter {
     const hostId = key?.hostId ?? this.selectedHostId
     const entry = hostId ? this.hosts.get(hostId) : undefined
     if (!entry) throw new Error('Connect a host in Settings > Hosts to continue.')
-    return { connection: entry.connection, id: key?.id ?? id }
+    const localId = key?.id ?? id
+    if (!this.watcherAvailable(entry.connection, localId)) throw new Error(WATCHER_DISABLED)
+    return { connection: entry.connection, id: localId }
   }
   async threadDetail(threadId: string): Promise<AgentThreadDetail | null> {
     const { connection, id } = this.target(threadId)
@@ -244,13 +268,14 @@ export class DesktopHostRouter {
   /** The same owning-host projection is used for remote draft saves and recovery. */
   requestDraftState(owner: RequestDraftOwner): RequestDraftOwnerState | undefined {
     const key = parseHostEntityKey(owner.ownerId)
-    if (!key || !this.hosts.has(key.hostId)) return undefined
+    if (!key || !this.hosts.has(key.hostId) || !this.watcherAvailable(this.hosts.get(key.hostId)!.connection, key.id)) return undefined
     const state = this.shell()
     const recovery = this.requestAnswerRecovery(owner.ownerId, owner.providerId)
     const thread = state.host.threads.find(item => item.id === owner.ownerId
       && requestDraftProvider(state.host, item, state.configuration.provider) === owner.providerId)
     return thread ? { connected: isThreadProviderConnected(state.host, thread),
-      ready: thread.historyStatus !== 'loading' && thread.historyStatus !== 'error', requests: thread.requests, ...recovery }
+      ready: thread.historyStatus !== 'loading' && thread.historyStatus !== 'error', requests: thread.requests,
+      ...(thread.kind === 'watcher' || thread.kind === 'watcher-history' ? { watcher: true } : {}), ...recovery }
       : recovery.completed.length ? { connected: false, ready: false, requests: [], ...recovery } : undefined
   }
   /**
@@ -292,7 +317,7 @@ export class DesktopHostRouter {
       const identity = parseHostEntityKey(owner.ownerId)
       const connection = identity ? this.hosts.get(identity.hostId)?.connection : undefined
       if (!identity || !connection || connection.kind !== 'remote' || connection.available?.() === false
-        || !connection.refreshRequestAnswer || !draft.decisionId) continue
+        || !connection.refreshRequestAnswer || !draft.decisionId || !this.watcherAvailable(connection, identity.id)) continue
       let recovery = this.answerRecovery.get(connection)
       if (!recovery) {
         recovery = { checks: new Map(), lane: Promise.resolve(), window: 0, reads: 0 }
@@ -325,7 +350,7 @@ export class DesktopHostRouter {
         const budget = recovery
         const entry = { promise: Promise.resolve(), pending: true }
         entry.promise = budget.lane.then(async () => {
-          if (this.hosts.get(connection.hostId)?.connection !== connection || connection.available?.() === false) {
+          if (this.hosts.get(connection.hostId)?.connection !== connection || connection.available?.() === false || !this.watcherAvailable(connection, identity.id)) {
             checks.delete(key)
             return
           }
@@ -342,6 +367,7 @@ export class DesktopHostRouter {
             await new Promise(resolve => setTimeout(resolve, Math.max(0, 1000 - elapsed)))
             budget.window = Date.now(); budget.reads = 0
           }
+          if (this.hosts.get(connection.hostId)?.connection !== connection || connection.available?.() === false || !this.watcherAvailable(connection, identity.id)) { checks.delete(key); return }
           budget.reads++
           await connection.refreshRequestAnswer!(decisionId, { threadId: identity.id,
             providerId: owner.providerId, requestId: owner.requestId, questionsDigest })
@@ -475,8 +501,9 @@ export class DesktopHostRouter {
       await Promise.all([...this.hosts.values()].map(async ({ connection }) => {
         if (connection.available?.() === false) return
         const ids = rawIds.filter(id => (parseHostEntityKey(id)?.hostId ?? this.selectedHostId) === connection.hostId).map(id => parseHostEntityKey(id)?.id ?? id)
-        if (connection.observe) await connection.observe(ids)
-        else await connection.service.command({ type: 'observe-threads', threadIds: ids }, client)
+        const visibleIds = ids.filter(id => this.watcherAvailable(connection, id))
+        if (connection.observe) await connection.observe(visibleIds)
+        else await connection.service.command({ type: 'observe-threads', threadIds: visibleIds }, client)
       }))
       return this.shell()
     }
@@ -573,7 +600,11 @@ export class DesktopHostRouter {
     if (references.size > 1) throw new Error('This action includes items from different hosts. Select items from one host.')
     const hostId = [...references][0] ?? this.selectedHostId
     const { connection } = this.target(hostId ? hostEntityKey(hostId, '_') : undefined)
-    return { connection, command: agentCommandSchema.parse(mapHostReferences(input, id => parseHostEntityKey(id)?.id ?? id)) }
+    const command = agentCommandSchema.parse(mapHostReferences(input, id => parseHostEntityKey(id)?.id ?? id))
+    const threadId = 'threadId' in command ? command.threadId ?? undefined : command.type === 'send' ? command.draft?.threadId : undefined
+    const defaultThread = command.type === 'send' || command.type === 'compose' ? connection.service.shell().draftThreadId ?? connection.service.shell().activeThreadId ?? undefined : undefined
+    if (!this.watcherAvailable(connection, threadId ?? defaultThread)) throw new Error(WATCHER_DISABLED)
+    return { connection, command }
   }
   /**
    * Early start (#769) goes to the thread's own host and changes nothing here. It asks for nothing the user must know

@@ -23,6 +23,8 @@ import {
 import { useApp, type AppNavigation } from './state/AppContext'
 import { setTerminalPreferences } from './tools/terminalPreferences'
 import { useMemoryEnabled } from './state/memoryFeature'
+import { useReleaseTrack } from './state/useReleaseTrack'
+import { releaseTrackName } from '../../shared/releaseTrack'
 import { SettingsView } from './features/settings/SettingsView'
 import { HostQuestionDialog } from './features/settings/HostQuestionDialog'
 import { ToastRegion, type ToastMessage } from './components/ToastRegion'
@@ -141,6 +143,10 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
   const [themeNotice, setThemeNotice] = useState<ToastMessage | null>(null)
   const latestSettingsRef = useRef(app.settings)
   latestSettingsRef.current = app.settings
+  const releaseTrack = useReleaseTrack()
+
+  // The document names the running build, as main titles its window: "Sotto Owl" on that track.
+  useEffect(() => { document.title = releaseTrackName(releaseTrack) }, [releaseTrack])
 
   useEffect(() => {
     if (themeNotice === null) return
@@ -424,7 +430,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
         />
         break
       case 'help':
-        view = <HelpView shortcut={app.settings.hotkey} platform={app.platform} version={app.update?.currentVersion} />
+        view = <HelpView shortcut={app.settings.hotkey} platform={app.platform} version={app.update?.currentVersion} releaseTrack={releaseTrack} />
         break
       default:
         view = <DictateRoom

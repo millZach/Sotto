@@ -68,7 +68,7 @@ async function waitForStableFrame(page: Page): Promise<void> {
   })()`)
 }
 
-async function pageBoundProblems(page: Page): Promise<string[]> {
+export async function pageBoundProblems(page: Page): Promise<string[]> {
   return page.evaluate<string[]>(`(() => {
     const problems = []
     const tolerance = 1

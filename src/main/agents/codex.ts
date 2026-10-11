@@ -38,6 +38,13 @@ import { ReadsBeforeSend } from './readsBeforeSend'
 import { CodexProcess, Uncertain, type RpcApply, type RpcFrame, type RpcRejected } from './codexProcess'
 import { codexTurnIdentitySchema, compatibleClient, identityTurn, messageIdentity, messageOrigin, reconcileMessageIdentities, type CodexTurnIdentity, type IdentityItem } from './codexMessageIdentity'
 import { markSendStage } from './sendStages'
+import type { WatcherLaunchProfile, ThreadLaunchProfiles } from './host'
+import { WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
+import { WATCHER_SYSTEM_PROMPT } from './watcherPrompt'
+import { probeWatcherCodexSandbox } from './watcherCodexSandbox'
+import { assertWatcherPermission, assertWatcherPermissionChoice, watcherThreadTools } from './watcherProviderTools'
+
+const watcherCodexPolicy = Object.freeze({ approvalPolicy: 'on-request', approvalsReviewer: 'user', sandbox: 'read-only' })
 
 /** What a thread shows when its own app-server stopped under a running turn. */
 const SESSION_ENDED = 'Codex stopped before this reply finished, so it may be cut short. Send a message to carry on.'
@@ -132,7 +139,7 @@ class Rejected extends Error {
 /** A request Codex made of Sotto, with the process that made it: only that process can take its answer. */
 type HeldRequest = CodexPendingRequest & { server: CodexProcess }
 /** A thread's own app-server, and the client revision it was launched from (see `clientUpdated`). */
-type Runtime = { server: CodexProcess; clientRevision: number; configStamp: string | undefined; reloadSupported: boolean; refreshing?: Promise<void> }
+type Runtime = { server: CodexProcess; clientRevision: number; configStamp: string | undefined; reloadSupported: boolean; watcher: boolean; refreshing?: Promise<void> }
 /** A request's key among every process's: each app-server numbers its own requests from the start. */
 const heldKey = (server: CodexProcess, id: string | number): string => `rpc:${server.nonce}:${JSON.stringify(id)}`
 type ModelList = AgentHostSnapshot['models']
@@ -145,6 +152,72 @@ export interface CodexAppServerHostOptions {
 
 /** Provider session aliases isolate server-assigned Codex thread IDs from Sotto's thread interface. */
 export class CodexAppServerHost implements AgentHost {
+  private launchProfiles: ThreadLaunchProfiles | undefined
+  private readonly watcherProfiles = new Map<string, WatcherLaunchProfile>()
+  useLaunchProfiles(profiles: ThreadLaunchProfiles): void { this.launchProfiles = profiles }
+  profileRefusalHandler(id: string) {
+    const generation = this.generation, runtime = this.runtimes.get(id)
+    if (!runtime) return undefined
+    return (reason: string): void => {
+      if (generation !== this.generation || this.runtimes.get(id) !== runtime) return
+      try { this.watcherProfiles.get(id)?.revoke(reason) } catch { /* Cleanup failure never keeps the process alive. */ }
+      this.stopUnverifiedProfile(id, reason)
+    }
+  }
+  private async checkLaunchProfile(id: string): Promise<WatcherLaunchProfile | undefined> {
+    const generation = this.generation
+    try {
+      const profile = await this.launchProfiles?.profileFor(id)
+      if (generation !== this.generation) throw new Error('Codex connection changed.')
+      if (profile) { validateWatcherProfile(profile); this.watcherProfiles.set(id, profile) }
+      else if (this.watcherProfiles.has(id)) throw new WatcherProfileRefusal('Watcher’s tools are no longer admitted. Its session was stopped. Reopen Watcher to recover.')
+      if (profile && this.runtimes.has(id) && !this.runtimes.get(id)!.watcher) {
+        throw new WatcherProfileRefusal('This Codex process started without Watcher profile. Its session and tools were stopped. Nothing was sent. Reopen Watcher, or use an ordinary thread.')
+      }
+      return profile
+    } catch (error) {
+      if (generation !== this.generation) throw new Error('Codex connection changed.', { cause: error })
+      const refusal = error instanceof WatcherProfileRefusal ? error : new WatcherProfileRefusal('Watcher’s saved profile could not be verified. Its session was stopped. Reopen Watcher to recover.')
+      try { this.watcherProfiles.get(id)?.revoke(refusal.message) } catch { /* Revocation failure never keeps the process alive. */ }
+      this.stopUnverifiedProfile(id, refusal.message)
+      throw refusal
+    }
+  }
+  private policy(id: string, mode?: AgentRuntimeMode) {
+    return this.watcherProfiles.has(id) ? watcherCodexPolicy : runtimePolicy(mode)
+  }
+  private async threadConfiguration(id: string, effort?: string) {
+    const generation = this.generation
+    const profile = await this.checkLaunchProfile(id)
+    if (generation !== this.generation) throw new Error('Codex connection changed.')
+    const configuration = await threadConfig(profile ? undefined : this.browserTools, id, effort,
+      profile ? watcherThreadTools(this.threadTools) : this.threadTools)
+    if (profile) {
+      if (process.platform === 'win32') configuration.config['windows.sandbox'] = 'unelevated'
+      configuration.config.mcp_servers = { ...(configuration.config.mcp_servers as Record<string, unknown> | undefined),
+        [profile.server.name]: { url: profile.server.url, enabled: true,
+          http_headers: Object.fromEntries(profile.server.headers.map(header => [header.name, header.value])),
+          enabled_tools: [...profile.toolNames], omit_tools_from: ['deferred', 'code_mode'], default_tools_approval_mode: 'prompt',
+          tools: Object.fromEntries(profile.toolNames.map(name => [name, { approval_mode: 'approve' }])) } }
+    }
+    return configuration
+  }
+  private stopUnverifiedProfile(id: string, reason: string): void {
+    const runtime = this.runtimes.get(id)
+    if (runtime) { this.runtimeLost(id, runtime); this.endServer(runtime.server) }
+    this.live.delete(id); this.runningTurns.delete(id)
+    for (const [key, pending] of this.requests) if (pending.sessionId === id) this.removeRequest(key)
+    const thread = this.threads.get(id)
+    this.state.error = reason
+    if (thread) {
+      if (thread.lastTurn?.status === 'running') {
+        thread.lastTurn = { ...thread.lastTurn, status: 'failed' }
+        this.activity.turn(thread, { ...thread.lastTurn, error: { message: reason } }, true)
+      }
+      thread.status = 'error'; thread.requestNotice = reason
+    }
+    this.emit()
+  }
   private browserTools: BrowserAgentTools | undefined
   useBrowserTools(tools: BrowserAgentTools): void { this.browserTools = tools }
   private threadTools: readonly ScopedThreadTools[] = []
@@ -275,13 +348,15 @@ export class CodexAppServerHost implements AgentHost {
   }
   /** Refresh only the app-server about to receive a prompt. No prompt or UI action is retried. */
   private async refreshRuntimeConfig(id: string): Promise<void> {
-    const runtime = this.runtimes.get(id)
     const generation = this.generation
+    await this.checkLaunchProfile(id)
+    if (generation !== this.generation) throw new Error('Codex connection changed.')
+    const runtime = this.runtimes.get(id)
     if (!runtime) throw new Error('Codex stopped before sending the prompt. Nothing was sent. Try again.')
     const current = (): boolean => generation === this.generation && this.runtimes.get(id) === runtime && runtime.server.alive
     try {
-      if (!runtime.reloadSupported) return
       runtime.refreshing ??= (async () => {
+        if (!runtime.reloadSupported) return
         const stamp = await this.configStamp()
         if (!current()) throw new Error('Codex connection changed.')
         if (stamp === undefined || stamp === runtime.configStamp) return
@@ -297,13 +372,14 @@ export class CodexAppServerHost implements AgentHost {
       await runtime.refreshing
       if (!current()) throw new Error('Codex connection changed.')
     } catch (error) {
+      if (error instanceof WatcherProfileRefusal) throw error
       throw new Error('Codex could not refresh its tools. Nothing was sent. Try again, or reconnect Codex if it keeps happening.', { cause: error })
     }
   }
   /** Start an app-server from `executable`. What it says reaches `frame` only while this connection lasts. */
-  private spawnServer(executable: string): CodexProcess {
+  private spawnServer(executable: string, profile?: WatcherLaunchProfile): CodexProcess {
     const generation = this.generation
-    const server = new CodexProcess({ executable, args: this.options.args ?? ['app-server', '--stdio', ...configArguments], cwd: this.options.userDataPath,
+    const server = new CodexProcess({ executable, args: [...(this.options.args ?? ['app-server', '--stdio', ...configArguments]), ...(profile ? ['-c', 'sandbox_mode="read-only"', '-c', 'approval_policy="on-request"', '-c', 'approvals_reviewer="user"', ...(process.platform === 'win32' ? ['-c', 'windows.sandbox="unelevated"'] : [])] : [])], cwd: this.options.userDataPath,
       env: withCliPath({ ...nativeEnvironment(), CODEX_HOME: this.codexHome() }, executable), requestTimeoutMs: this.options.requestTimeoutMs ?? 15000,
       enqueue: task => this.enqueue(task),
       onFrame: (from, frame) => generation === this.generation ? this.frame(from, frame) : Promise.resolve(),
@@ -387,30 +463,48 @@ export class CodexAppServerHost implements AgentHost {
    * The thread's own app-server, started and introduced when it has none. A thread's live work goes to it
    * alone, and what it asks is answered on it. One started after `clientUpdated` runs the new client.
    */
-  private runtimeServer(id: string): Promise<CodexProcess> {
+  private async runtimeServer(id: string, workingDirectory?: string): Promise<CodexProcess> {
+    const generation = this.generation
+    const profile = await this.checkLaunchProfile(id)
+    if (generation !== this.generation) throw new Error('Codex connection changed while starting this thread.')
     const running = this.runtimes.get(id)
-    if (running?.server.alive) return Promise.resolve(running.server)
+    if (running?.server.alive && running.watcher === !!profile) return Promise.resolve(running.server)
     const pending = this.launching.get(id)
-    if (pending) return pending
+    if (pending) {
+      const server = await pending
+      if (generation !== this.generation) throw new Error('Codex connection changed while starting this thread.')
+      // A launch begun before this identity lookup cannot lend an ordinary process to the master.
+      if (profile && !this.runtimes.get(id)?.watcher) {
+        const reason = 'This Codex process started without Watcher profile. Its session and tools were stopped. Nothing was sent. Reopen Watcher, or use an ordinary thread.'
+        try { profile.revoke(reason) } catch { /* Stop even if cleanup fails. */ }
+        if (this.runtimes.get(id)?.server === server) this.stopUnverifiedProfile(id, reason)
+        throw new WatcherProfileRefusal(reason)
+      }
+      return server
+    }
     // One that can no longer be written to is ended rather than left running beside its replacement.
     if (running) { this.runtimes.delete(id); this.endServer(running.server) }
-    const generation = this.generation
     const launch = (async () => {
       if (!this.executable || !this.state.connected) throw new Error('Connect to Codex before sending a command.')
       const clientRevision = this.clientRevision
       const configStamp = await this.configStamp()
       if (generation !== this.generation || !this.state.connected) throw new Error('Codex connection changed while starting this thread.')
-      const server = this.spawnServer(this.executable)
+      const server = this.spawnServer(this.executable, profile)
       try {
-        // Only the provider's app-server says which version is installed: a thread's may be finishing on a replaced client.
         await this.rpc('initialize', clientInfo, undefined, undefined, server)
         server.write({ method: 'initialized' })
+        if (profile && process.platform === 'win32') {
+          const project = workingDirectory ?? this.aliases[id]?.cwd
+          if (!project) throw new WatcherProfileRefusal("Codex's read-only sandbox could not be checked because Watcher’s folder is unavailable. Nothing was sent.")
+          await probeWatcherCodexSandbox(server, project)
+        }
       } catch (error) {
         this.endServer(server)
+        if (error instanceof WatcherProfileRefusal) { this.state.error = error.message; this.emit(); throw error }
         throw new SessionUnavailable(error)
       }
       if (generation !== this.generation || !this.state.connected) { this.endServer(server); throw new Error('Codex connection changed while starting this thread.') }
-      this.runtimes.set(id, { server, clientRevision, configStamp, reloadSupported: true })
+      this.runtimes.set(id, { server, clientRevision, configStamp, reloadSupported: true, watcher: !!profile })
       // Launched from a client an update replaced meanwhile: it moves too, once its thread is idle.
       if (clientRevision !== this.clientRevision) { this.outdated.add(id); this.scheduleOutdatedStop() }
       return server
@@ -592,11 +686,14 @@ export class CodexAppServerHost implements AgentHost {
     if (kind) this.state.account = kind
   }
   async listThreadSkills(threadId: string, forceReload = false, scope?: AgentSkillScope): Promise<AgentSkillCatalog> {
+    const generation = this.generation
+    await this.checkLaunchProfile(threadId)
+    if (generation !== this.generation) throw new Error('Codex connection changed.')
     if (this.aliases[threadId]?.kind === 'personal') throw new Error('That thread is unavailable.')
     if (!this.state.connected) throw new Error('Reconnect Codex before browsing skills.')
     const cwd = this.aliases[threadId]?.cwd ?? (scope?.providerId === 'codex' ? scope.workingDirectory : undefined)
     if (!cwd || !isAbsolute(cwd)) throw new Error('This thread has no available Codex working folder.')
-    const generation = this.generation; const revision = this.skillsRevision
+    const revision = this.skillsRevision
     let catalog: AgentSkillCatalog | undefined
     let invalid = false
     try {
@@ -655,7 +752,7 @@ export class CodexAppServerHost implements AgentHost {
     return { ...this.state, threads: [...this.threads.values()]
       .filter((thread): thread is AgentThread => 'projectId' in thread).map(thread => this.log.activityThread(thread, historyFromEvents)) }
   }
-  private async projectInstructions(cwd: string): Promise<string> {
+  private async projectInstructions(cwd: string, id?: string): Promise<string> {
     // A thread's developerInstructions replaces Codex's configured value. Resolve
     // its own trusted config layers first, and retain only the field we append to.
     try {
@@ -665,7 +762,7 @@ export class CodexAppServerHost implements AgentHost {
         instructions = parsed.success ? parsed.data.config.developer_instructions ?? '' : undefined
       })
       if (typeof instructions !== 'string') throw new Error('Invalid native instructions')
-      return instructions ? `${instructions}\n\n${questionInstructions}` : questionInstructions
+      return [instructions, questionInstructions, ...(id && this.watcherProfiles.has(id) ? [WATCHER_SYSTEM_PROMPT] : [])].filter(Boolean).join('\n\n')
     } catch {
       throw new Error('Codex settings could not be read. No new work was sent. Reconnect and try again.')
     }
@@ -714,6 +811,9 @@ export class CodexAppServerHost implements AgentHost {
    * arguments in front of `exec`, the way they stand in for the app-server's.
    */
   async writeShortText(id: string, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
+    const generation = this.generation
+    if (await this.checkLaunchProfile(id)) return null
+    if (generation !== this.generation) throw new Error('Codex connection changed.')
     if (this.aliases[id]?.kind === 'personal') return null
     const alias = this.aliases[id]
     if (!this.state.connected || !alias) return null
@@ -748,7 +848,10 @@ export class CodexAppServerHost implements AgentHost {
       const alias = this.aliases[id]!
       await this.watcher?.pollThread(alias.codexThreadId)
       // Read an uncertain settings save without replaying its overrides.
-      if (alias.pendingSettings) await this.rpc('thread/resume', { threadId: alias.codexThreadId, excludeTurns: true }, value => this.applySettings(id, value))
+      if (alias.pendingSettings) await this.rpc('thread/resume', { threadId: alias.codexThreadId, excludeTurns: true,
+        ...(this.watcherProfiles.has(id) ? { cwd: alias.cwd, ...this.policy(id),
+          ...await this.threadConfiguration(id, alias.reasoningEffort), developerInstructions: await this.projectInstructions(alias.cwd, id) } : {}),
+      }, value => this.applySettings(id, value))
       let applied = purpose.beforeSend === true && await this.confirmNewestTurn(id, generation)
       for (let attempt = 0; attempt < 3 && !applied; attempt++) {
         const revision = this.revisions.get(id)
@@ -848,10 +951,14 @@ export class CodexAppServerHost implements AgentHost {
    * idle; a thread that has entered it has its session resumed now.
    */
   observeThreads(sessionIds: readonly string[]): void {
+    const generation = this.generation
     const watched = new Set(sessionIds.filter(id => this.aliases[id]?.kind !== 'personal'))
     this.observed.clear(); for (const id of watched) this.observed.add(id)
     this.log.observe([...this.observed])
-    if (this.state.connected) for (const id of this.observed) if (this.aliases[id]) void this.open(id).catch(() => { this.ensureThread(id).status = 'error'; this.emit() })
+    if (this.state.connected) for (const id of this.observed) if (this.aliases[id]) void this.open(id).catch(() => {
+      if (generation !== this.generation) return
+      this.ensureThread(id).status = 'error'; this.emit()
+    })
   }
   /**
    * Early start (#769): a thread Codex already has is resumed on its own app-server, as opening it does. A thread whose
@@ -859,10 +966,13 @@ export class CodexAppServerHost implements AgentHost {
    * nothing more: `thread/start` makes a Codex thread, so it waits for the send.
    */
   async startThreadSession(id: string, draft?: ThreadSessionDraft): Promise<void> {
+    const generation = this.generation
+    await this.checkLaunchProfile(id)
+    if (generation !== this.generation) throw new Error('Codex connection changed.')
     if (!this.state.connected) return
     if (this.aliases[id]) { await this.open(id); return }
     if (!draft || this.creating.has(id)) return
-    await this.runtimeServer(id)
+    await this.runtimeServer(id, draft.workingDirectory)
     this.reaper.touch(id)
   }
   /** Opening a thread resumes it and reads its turns once, when Sotto holds no history for it. */
@@ -884,27 +994,29 @@ export class CodexAppServerHost implements AgentHost {
       this.emit(); throw error
     }
   }
-  private resume(id: string): Promise<void> {
+  private async resume(id: string): Promise<void> {
+    const generation = this.generation
+    await this.checkLaunchProfile(id)
+    if (generation !== this.generation) throw new Error('Codex connection changed.')
     if (!this.aliases[id]) return Promise.resolve()
     this.reaper.touch(id)
     if (this.live.has(id)) return Promise.resolve()
     const pending = this.resuming.get(id)
     if (pending) return pending
     const alias = this.aliases[id]!
-    const generation = this.generation
     const operation = (async () => {
       await this.watcher?.pollThread(alias.codexThreadId)
       await this.runtimeServer(id)
       // Resume restores the conversation, never its transcript: turns are read when the
       // thread is opened, so resuming costs the same for a long thread and a short one.
       await this.rpc('thread/resume', { threadId: alias.codexThreadId, cwd: alias.cwd, excludeTurns: true,
-        ...(!alias.pendingSettings ? { model: alias.modelId, modelProvider: 'openai', ...runtimePolicy(alias.runtimeMode) } : {}),
-        ...await threadConfig(this.browserTools, id, alias.pendingSettings ? undefined : alias.reasoningEffort, this.threadTools),
-        developerInstructions: await this.projectInstructions(alias.cwd) }, async value => {
-      if (alias.pendingSettings) return this.applySettings(id, value)
-      this.applyThread(id, threadResponse.parse(value).thread); await this.persist(); this.live.add(id); this.log.pin(id)
-      // Resume carries no transcript, so a loading thread stays loading until its turns arrive.
-      this.emit()
+        ...(!alias.pendingSettings || this.watcherProfiles.has(id) ? { model: alias.pendingSettings?.modelId ?? alias.modelId, modelProvider: 'openai', ...this.policy(id, alias.runtimeMode) } : {}),
+        ...await this.threadConfiguration(id, this.watcherProfiles.has(id) ? alias.pendingSettings?.reasoningEffort ?? alias.reasoningEffort : alias.pendingSettings ? undefined : alias.reasoningEffort),
+        developerInstructions: await this.projectInstructions(alias.cwd, id) }, async value => {
+        if (alias.pendingSettings) return this.applySettings(id, value)
+        this.applyThread(id, threadResponse.parse(value).thread); await this.persist(); this.live.add(id); this.log.pin(id)
+        // Resume carries no transcript, so a loading thread stays loading until its turns arrive.
+        this.emit()
       })
     })().catch(error => {
       // Codex refused the resume, so the thread's app-server holds nothing: it is let go rather than kept for a watched thread.
@@ -918,7 +1030,8 @@ export class CodexAppServerHost implements AgentHost {
       if (generation === this.generation) { this.flushLogMessages(id); this.reconcileMessages(id); this.emit() }
       throw error
     }).finally(() => {
-      this.resuming.delete(id); this.scheduleOutdatedStop()
+      if (this.resuming.get(id) === operation) this.resuming.delete(id)
+      this.scheduleOutdatedStop()
     })
     this.resuming.set(id, operation); return operation
   }
@@ -1104,7 +1217,7 @@ export class CodexAppServerHost implements AgentHost {
     const desired = alias.pendingSettings
     if (!desired) return
     const response = settingsObservation.parse(value)
-    const policy = runtimePolicy(desired.runtimeMode)
+    const policy = this.policy(id, desired.runtimeMode)
     const sandboxType = policy.sandbox === 'read-only' ? 'readOnly' : policy.sandbox === 'workspace-write' ? 'workspaceWrite' : 'dangerFullAccess'
     if (response.model !== desired.modelId || response.approvalPolicy !== policy.approvalPolicy || response.approvalsReviewer !== policy.approvalsReviewer || response.sandbox.type !== sandboxType
       || desired.reasoningEffort !== undefined && response.reasoningEffort !== desired.reasoningEffort) {
@@ -1177,6 +1290,14 @@ export class CodexAppServerHost implements AgentHost {
     } finally { this.dispatching.delete(id); this.scheduleOutdatedStop() }
   }
   private async executeNative(command: AgentHostCommand): Promise<AgentHostResult> {
+    const generation = this.generation
+    if ('threadId' in command && command.type !== 'interrupt') {
+      if (await this.checkLaunchProfile(command.threadId)) {
+        assertWatcherPermission(command)
+        if (command.type === 'create-thread') command = { ...command, runtimeMode: 'approval-required' }
+      }
+    }
+    if (generation !== this.generation) throw new Error('Codex connection changed.')
     if ('threadId' in command && this.aliases[command.threadId]?.kind === 'personal') throw new Error('That thread is unavailable.')
     if (!this.state.connected) throw new Error('Connect to Codex before sending a command.')
     if (command.type === 'create-project') {
@@ -1196,18 +1317,18 @@ export class CodexAppServerHost implements AgentHost {
         const cwd = await existingWorkingDirectory(command.workingDirectory ?? project.path)
         this.creating.add(command.threadId)
         let developerInstructions: string
-        try { developerInstructions = await this.projectInstructions(cwd) }
+        try { developerInstructions = await this.projectInstructions(cwd, command.threadId) }
         catch (error) { this.creating.delete(command.threadId); throw error }
         // The thread starts on its own app-server, which then holds its session.
         let server: CodexProcess
-        try { server = await this.runtimeServer(command.threadId) }
+        try { server = await this.runtimeServer(command.threadId, cwd) }
         catch (error) { this.creating.delete(command.threadId); throw error }
         this.reaper.touch(command.threadId)
         await this.rpc('thread/start', { cwd, model: command.modelId, modelProvider: 'openai', allowProviderModelFallback: false,
           developerInstructions,
-          ...runtimePolicy(command.runtimeMode), ...await threadConfig(this.browserTools, command.threadId, command.reasoningEffort, this.threadTools), ephemeral: false, historyMode: 'legacy' }, async value => {
+          ...this.policy(command.threadId, command.runtimeMode), ...await this.threadConfiguration(command.threadId, command.reasoningEffort), ephemeral: false, historyMode: 'legacy' }, async value => {
           const response = settingsResponse.parse(value)
-          const policy = runtimePolicy(command.runtimeMode)
+          const policy = this.policy(command.threadId, command.runtimeMode)
           const sandboxType = policy.sandbox === 'read-only' ? 'readOnly' : policy.sandbox === 'workspace-write' ? 'workspaceWrite' : 'dangerFullAccess'
           if (response.model !== command.modelId || response.approvalPolicy !== policy.approvalPolicy || response.approvalsReviewer !== policy.approvalsReviewer
             || response.sandbox.type !== sandboxType || command.reasoningEffort !== undefined && response.reasoningEffort !== command.reasoningEffort) throw new Error('Codex did not confirm the requested thread options.')
@@ -1259,7 +1380,7 @@ export class CodexAppServerHost implements AgentHost {
           const modelId = command.modelId ?? alias.modelId
           const reasoningEffort = effortAfterChange(this.state, command, alias.reasoningEffort)
           const mode = command.runtimeMode ?? alias.runtimeMode ?? 'auto-accept-edits'
-          const policy = runtimePolicy(mode)
+          const policy = this.policy(id, mode)
           const previousPendingSettings = alias.pendingSettings
           const desired = { modelId, reasoningEffort, runtimeMode: mode }
           const generation = this.generation
@@ -1285,6 +1406,7 @@ export class CodexAppServerHost implements AgentHost {
               await this.persist()
             })
             if (!await confirmed) return { accepted: false, uncertain: true }
+            if (this.watcherProfiles.has(id)) { this.stopSession(id); await this.resume(id) }
           } finally {
             confirmation.settle(false)
             if (this.settingsConfirmations.get(id) === confirmation) this.settingsConfirmations.delete(id)
@@ -1342,6 +1464,7 @@ export class CodexAppServerHost implements AgentHost {
         } else if (command.type === 'answer') {
           const pending = this.requests.get(command.requestId)
           if (!pending || pending.sessionId !== id) throw new Error('This Codex request is no longer pending.')
+          if (this.watcherProfiles.has(id)) assertWatcherPermissionChoice(pending.request, command.permissionChoice)
           const result = answerRequest(pending, command.answer, command.approved, command.questionAnswers, command.permissionChoice)
           await this.respond(pending, result)
         } else if (command.type === 'interrupt') {
@@ -1398,8 +1521,8 @@ export class CodexAppServerHost implements AgentHost {
             markSendStage(command.commandId, 'written')
             try {
               await this.rpc('turn/start', { threadId: alias.codexThreadId, cwd: alias.cwd, clientUserMessageId: command.messageId,
-                input, approvalPolicy: runtimePolicy(alias.runtimeMode).approvalPolicy,
-                approvalsReviewer: runtimePolicy(alias.runtimeMode).approvalsReviewer,
+                input, approvalPolicy: this.policy(id, alias.runtimeMode).approvalPolicy,
+                approvalsReviewer: this.policy(id, alias.runtimeMode).approvalsReviewer,
                 ...(alias.reasoningEffort ? { effort: alias.reasoningEffort } : {}) }, value => {
                 const { turn } = z.object({ turn: turnSchema }).parse(value)
                 origin.turnId = turn.id
@@ -1446,6 +1569,15 @@ export class CodexAppServerHost implements AgentHost {
       return
     }
     if (frame.method && frame.id !== undefined) {
+      const generation = this.generation
+      const owner = [...this.runtimes].find(([, runtime]) => runtime.server === server)?.[0]
+      const current = (): boolean => generation === this.generation && server.alive
+        && (owner ? this.runtimes.get(owner)?.server === server : this.provider === server)
+      if (!current()) return
+      if (owner && this.runtimes.get(owner)?.watcher) {
+        try { await this.checkLaunchProfile(owner) } catch { return }
+        if (!current()) return
+      }
       const params = z.object({ threadId: z.string() }).safeParse(frame.params)
       const id = params.success ? this.sessionId(params.data.threadId) : undefined
       const item = z.object({ itemId: z.string().optional() }).safeParse(frame.params)

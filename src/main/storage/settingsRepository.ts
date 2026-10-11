@@ -4,6 +4,7 @@ import { AtomicJsonStore } from './atomicJsonStore'
 import { parseHostEntityKey } from '../../shared/clientIdentity'
 
 export interface SettingsRepositoryOptions {
+  watcherEnabled?: boolean
   now?: () => number
   store?: AtomicJsonStore<AppSettings>
   onRecovery?: (notice: RecoveryNotice) => void
@@ -14,9 +15,11 @@ export interface SettingsRepositoryOptions {
 export class SettingsRepository {
   private readonly store: AtomicJsonStore<AppSettings>
   private readonly defaults: AppSettings
+  private readonly watcherEnabled: boolean
   private mutationTail: Promise<void> = Promise.resolve()
 
   constructor(filePath: string, options: SettingsRepositoryOptions = {}) {
+    this.watcherEnabled = options.watcherEnabled ?? true
     this.defaults = options.defaults ?? DEFAULT_SETTINGS
     const defaults = this.defaults
     this.store =
@@ -37,8 +40,9 @@ export class SettingsRepository {
   }
 
   async save(input: unknown): Promise<AppSettings> {
-    const settings = parseSettings(input, this.defaults)
+    const parsed = parseSettings(input, this.defaults)
     return this.enqueueMutation(async () => {
+      const settings = this.watcherEnabled ? parsed : { ...parsed, watcherInFlightLimit: (await this.readSettings()).watcherInFlightLimit }
       await this.writeSettings(settings)
       return parseSettings(settings, this.defaults)
     })
@@ -48,6 +52,10 @@ export class SettingsRepository {
     const patchSnapshot = { ...patch }
     return this.enqueueMutation(async () => {
       const current = await this.readSettings()
+      if (!this.watcherEnabled && patchSnapshot.watcherInFlightLimit !== undefined && patchSnapshot.watcherInFlightLimit !== current.watcherInFlightLimit) {
+        throw new Error('Watcher settings are available in Sotto Owl. Nothing was changed.')
+      }
+      if (!this.watcherEnabled) delete patchSnapshot.watcherInFlightLimit
       const settings = parseSettings({ ...current, ...patchSnapshot }, this.defaults)
       await this.writeSettings(settings)
       return parseSettings(settings, this.defaults)
@@ -55,8 +63,9 @@ export class SettingsRepository {
   }
 
   async reset(): Promise<AppSettings> {
-    const settings = parseSettings(this.defaults, this.defaults)
+    const parsed = parseSettings(this.defaults, this.defaults)
     return this.enqueueMutation(async () => {
+      const settings = this.watcherEnabled ? parsed : { ...parsed, watcherInFlightLimit: (await this.readSettings()).watcherInFlightLimit }
       await this.writeSettings(settings)
       return parseSettings(settings, this.defaults)
     })

@@ -49,6 +49,41 @@ function accept(recovery: RequestAnswerRecovery, decisionId: string) {
 }
 
 describe('independent answer receipt recovery', () => {
+  it.each(['watcher', 'watcher-history'] as const)('keeps a remote %s held answer dormant without a native receipt read', async kind => {
+    const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: false }), remote = host(REMOTE_A, 'remote')
+    router.add(remote.connection)
+    const drafts = new RequestDraftService(tmpdir(), owner => router.requestDraftState(owner), async () => {}, { write: async () => {} })
+    await hold(drafts, target(REMOTE_A), 'retained-watcher-answer')
+    const before = await drafts.heldThreadAnswers()
+    remote.state.host.threads[0]!.kind = kind
+    try {
+      await router.reconcileRequestDrafts(drafts)
+      expect(remote.read).not.toHaveBeenCalled()
+      expect(remote.command).not.toHaveBeenCalled()
+      expect(router.requestDraftState(target(REMOTE_A))).toBeUndefined()
+      expect(await drafts.heldThreadAnswers()).toEqual(before)
+    } finally { router.dispose() }
+  })
+  it('rechecks a queued receipt owner before reading a newly hidden Watcher', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: false }), remote = host(REMOTE_A, 'remote')
+    remote.state.host.threads.push({ ...remote.state.host.threads[0]!, id: 'second-thread' })
+    router.add(remote.connection)
+    const held: RequestDraft[] = ['thread', 'second-thread'].map((id, index) => ({
+      target: { ...target(REMOTE_A), ownerId: hostEntityKey(REMOTE_A, id) }, revision: 1, held: true,
+      decisionId: 'decision-' + index, selections: {} }))
+    const before = structuredClone(held), drafts = { heldThreadAnswers: async () => held, reconcile: async () => {} }
+    const started = deferred(), gate = deferred()
+    remote.read.mockImplementationOnce(async () => { started.resolve(); await gate.promise })
+    const running = router.reconcileRequestDrafts(drafts)
+    try {
+      await started.promise
+      remote.state.host.threads[1]!.kind = 'watcher'
+      gate.resolve()
+      await running
+      expect(remote.read).toHaveBeenCalledOnce()
+      expect(held).toEqual(before)
+    } finally { gate.resolve(); await running; router.dispose() }
+  })
   it('retires known local acceptance for independent provider owners while a remote receipt is pending', async () => {
     const router = new DesktopHostRouter(emptyDesktopState)
     const local = host(LOCAL, 'local'), remote = host(REMOTE_A, 'remote')
