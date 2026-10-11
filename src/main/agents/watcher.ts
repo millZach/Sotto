@@ -720,19 +720,23 @@ export class WatcherService implements WatcherControlHooks {
     return result
   }
 
-  private eligible(): WatcherThreadTarget[] {
-    const record = this.record()
-    return [...new Map(record.requests.filter(request => request.state === 'active').flatMap(request => request.participants
-      .filter(item => item.startedBy === 'watcher' && item.state === 'participating').map(item => [key(item.target), item.target] as const))).values()]
+  private stopAllScope(): { targets: WatcherThreadTarget[]; signature: string } {
+    const ownership = this.record().requests.filter(request => request.state === 'active').flatMap(request => request.participants
+      .filter(item => item.startedBy === 'watcher' && item.state === 'participating')
+      .map(item => ({ target: item.target, requestId: request.id, watcher: request.watcher })))
+      .sort((a, b) => key(a.target).localeCompare(key(b.target)) || a.requestId.localeCompare(b.requestId))
+    // Sign eligibility and ownership, not prompt counts, generations or message heads that normal work changes.
+    return { targets: [...new Map(ownership.map(item => [key(item.target), item.target])).values()],
+      signature: digest(ownership.map(item => [key(item.target), item.requestId, key(item.watcher)])) }
   }
   prepareStopAll(): WatcherPrepareStopAllResult {
-    const targets = this.eligible(), id = randomUUID(), expires = Date.now() + 60_000
-    this.confirmations.set(id, { targets, expires, signature: digest([targets, this.record().requests]) })
+    const { targets, signature } = this.stopAllScope(), id = randomUUID(), expires = Date.now() + 60_000
+    this.confirmations.set(id, { targets, expires, signature })
     return { status: 'ok', confirmationId: id, targets, expiresAt: new Date(expires).toISOString() }
   }
   async stopAll(confirmationId: string): Promise<WatcherStopAllResult> {
     const confirmation = this.confirmations.get(confirmationId); this.confirmations.delete(confirmationId)
-    if (!confirmation || confirmation.expires < Date.now() || confirmation.signature !== digest([this.eligible(), this.record().requests])) {
+    if (!confirmation || confirmation.expires < Date.now() || confirmation.signature !== this.stopAllScope().signature) {
       return watcherRefusal('TARGET_CHANGED', 'The threads to stop changed or the confirmation expired. Review Stop all again.')
     }
     const targets = confirmation.targets

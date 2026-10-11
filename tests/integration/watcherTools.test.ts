@@ -188,6 +188,45 @@ it('requires a main preview for Stop all, stops only started participants and re
   expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'queue', text: 'Synthetic stopped request' })).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
 })
 
+it('keeps Stop all confirmation valid when a previewed worker receives another Watcher prompt', async () => {
+  const f = await fixture(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  await f.finish(first.target.threadId)
+  const selection = [f.control.shell().activeProjectId, f.control.shell().activeThreadId]
+  const preview = f.service.prepareStopAll()
+  if (preview.status !== 'ok') throw new Error('preview refused')
+  expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target,
+    delivery: 'now', text: 'Synthetic follow-up during confirmation' })).toMatchObject({ status: 'ok', limits: { promptCount: 2 } })
+  expect(await f.service.stopAll(preview.confirmationId)).toMatchObject({ status: 'ok', results: [{ target: first.target, status: 'stopped' }] })
+  expect(f.workspace.adapters.codex.commands.filter(item => item.type === 'interrupt')).toHaveLength(1)
+  expect([f.control.shell().activeProjectId, f.control.shell().activeThreadId]).toEqual(selection)
+})
+
+it('refuses a Stop all preview when its eligible ownership changes without stopping an unshown worker', async () => {
+  const f = await fixture(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  const preview = f.service.prepareStopAll()
+  if (preview.status !== 'ok') throw new Error('preview refused')
+  expect(preview.targets).toEqual([first.target])
+  expect(await f.call('start_thread', f.start())).toMatchObject({ status: 'ok' })
+  const record = f.control.watcherRecord()
+  expect(await f.service.stopAll(preview.confirmationId)).toMatchObject({ status: 'refused', code: 'TARGET_CHANGED' })
+  expect(f.control.watcherRecord()).toEqual(record)
+  expect(f.workspace.adapters.codex.commands.filter(item => item.type === 'interrupt')).toHaveLength(0)
+})
+
+it('refuses Stop all after a previewed worker is taken over without changing its saved record', async () => {
+  const f = await fixture(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  const preview = f.service.prepareStopAll()
+  if (preview.status !== 'ok') throw new Error('preview refused')
+  await f.control.commandShell({ type: 'manual-send', threadId: first.target.threadId, draftId: randomUUID(), text: 'Synthetic user takeover' })
+  const record = f.control.watcherRecord()
+  expect(await f.service.stopAll(preview.confirmationId)).toMatchObject({ status: 'refused', code: 'TARGET_CHANGED' })
+  expect(f.control.watcherRecord()).toEqual(record)
+  expect(f.workspace.adapters.codex.commands.filter(item => item.type === 'interrupt')).toHaveLength(0)
+})
+
 it('keeps a lost acknowledgement uncertain, retains its slot and never resends on a retry', async () => {
   const f = await fixture(), first = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
