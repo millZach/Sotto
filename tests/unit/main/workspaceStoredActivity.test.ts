@@ -1,0 +1,209 @@
+// @vitest-environment node
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
+import { afterEach, expect, it, vi } from 'vitest'
+import { ThreadStore } from '../../../src/main/agents/threadStore'
+import { WorkspaceHost } from '../../../src/main/agents/workspace'
+import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
+import type { AgentActivity } from '../../../src/shared/agentActivity'
+
+// A thread nobody has open keeps its activity records in the thread store, not in memory (#918).
+
+const cleanup: Array<() => Promise<void>> = []
+afterEach(async () => { vi.restoreAllMocks(); for (const close of cleanup.splice(0).reverse()) await close() })
+
+const THREAD = 'session-workshop'
+
+function record(id: string, sequence: number, extra: Partial<AgentActivity> = {}): AgentActivity {
+  return { id, turnId: 'turn', sequence, kind: 'tool', status: 'completed', title: 'Tool', output: `Output ${id}`, ...extra }
+}
+
+/** A workspace whose first run saved `saved` for the workshop thread, reopened with a provider that has not read it. */
+async function stored(saved: AgentActivity[], history: () => boolean = () => true) {
+  const directory = await mkdtemp(join(tmpdir(), 'sotto-stored-activity-'))
+  cleanup.push(async () => {
+    if (dirname(resolve(directory)) !== resolve(tmpdir()) || !directory.includes('sotto-stored-activity-')) throw new Error('Unexpected test directory')
+    await rm(directory, { recursive: true, force: true })
+  })
+  const provider = new FakeProviderHost()
+  provider.state.threads[0]!.activities = structuredClone(saved)
+  const open = async () => {
+    const host = new WorkspaceHost(provider, directory, history)
+    cleanup.push(async () => { host.disconnect(); await host.privacyChanged().catch(() => undefined); host.dispose() })
+    await host.initialize()
+    return host
+  }
+  // A privacy pass with the setting unchanged ends in a save, as quitting does.
+  const close = async (host: WorkspaceHost) => { host.disconnect(); await host.privacyChanged(); host.dispose() }
+  const first = await open()
+  await first.connect()
+  await close(first)
+  delete provider.state.threads[0]!.activities
+  const disk = () => {
+    const store = new ThreadStore(join(directory, 'threads.sqlite'))
+    store.open()
+    try { return store.readActivities(THREAD) } finally { store.close() }
+  }
+  return { directory, provider, open, close, disk }
+}
+const workshop = (host: WorkspaceHost) => host.workspaceSnapshot().threads.find(thread => thread.id === THREAD)!
+
+it('reads no saved record at start, and counts them from the store', async () => {
+  const f = await stored([record('a', 0), record('b', 1)])
+  const read = vi.spyOn(ThreadStore.prototype, 'readActivities')
+  const host = await f.open()
+  await host.connect()
+  expect(read).not.toHaveBeenCalled()
+  expect(workshop(host).activities).toBeUndefined()
+  expect(workshop(host).summary?.activityCount).toBe(2)
+})
+
+it('reads every record once on a profile whose store has not said subagent words moved, and none after', async () => {
+  const f = await stored([record('a', 0)])
+  const db = new DatabaseSync(join(f.directory, 'threads.sqlite'))
+  try { db.prepare("DELETE FROM meta WHERE key = 'subagentWordsMoved'").run() } finally { db.close() }
+  const read = vi.spyOn(ThreadStore.prototype, 'readActivities')
+  const first = await f.open()
+  expect(read).toHaveBeenCalledWith(THREAD)
+  expect(workshop(first).activities?.map(item => item.id)).toEqual(['a'])
+  await f.close(first)
+  read.mockClear()
+  const second = await f.open()
+  expect(read).not.toHaveBeenCalled()
+  expect(workshop(second).activities).toBeUndefined()
+})
+
+it('reads a thread\'s records back when a window looks at it, a saved running record no longer live', async () => {
+  const f = await stored([record('a', 0), record('b', 1, { status: 'running' })])
+  const host = await f.open()
+  await host.connect()
+  host.observeThreads([THREAD])
+  expect(workshop(host).activities?.map(item => [item.id, item.status])).toEqual([['a', 'completed'], ['b', 'unknown']])
+  expect(workshop(host).summary?.activityCount).toBe(2)
+})
+
+it('lets the records go once saved after the window stops looking, and keeps them in the store', async () => {
+  const f = await stored([record('a', 0), record('b', 1)])
+  const host = await f.open()
+  await host.connect()
+  host.observeThreads([THREAD])
+  f.provider.state.threads[0]!.activities = [record('c', 0)]
+  await host.snapshot()
+  expect(workshop(host).activities?.map(item => item.id)).toEqual(['a', 'b', 'c'])
+  host.observeThreads([])
+  await host.snapshot()
+  expect(workshop(host).activities).toBeUndefined()
+  expect(workshop(host).summary?.activityCount).toBe(3)
+  await f.close(host)
+  expect(f.disk().map(item => item.id)).toEqual(['a', 'b', 'c'])
+})
+
+it('keeps a running thread\'s records in memory after the window stops looking', async () => {
+  const f = await stored([record('a', 0)])
+  const host = await f.open()
+  await host.connect()
+  host.observeThreads([THREAD])
+  f.provider.state.threads[0]!.activities = [record('live', 1, { status: 'running' })]
+  await host.snapshot()
+  host.observeThreads([])
+  await host.snapshot()
+  expect(workshop(host).activities?.map(item => item.id)).toEqual(['a', 'live'])
+})
+
+it.each([
+  ['no list', undefined],
+  ['an empty list', []],
+])('never removes stored records when the provider publishes %s for the thread', async (_name, published) => {
+  const f = await stored([record('a', 0), record('b', 1)])
+  const host = await f.open()
+  await host.connect()
+  f.provider.state.threads[0]!.activities = published
+  f.provider.emit()
+  await host.snapshot()
+  expect(workshop(host).activities).toBeUndefined()
+  await f.close(host)
+  expect(f.disk().map(item => item.id)).toEqual(['a', 'b'])
+})
+
+it('merges a changed record onto the stored list, keeping its place, anchor and finished state', async () => {
+  const f = await stored([record('a', 0, { afterMessageId: 'message-1' }), record('b', 1)])
+  const host = await f.open()
+  await host.connect()
+  f.provider.state.threads[0]!.activities = [record('b', 9, { output: 'Changed' }), record('a', 4, { status: 'running' })]
+  await host.snapshot()
+  const merged = workshop(host).activities!
+  expect(merged.map(item => [item.id, item.sequence, item.status, item.output])).toEqual([['a', 0, 'completed', 'Output a'], ['b', 1, 'completed', 'Changed']])
+  expect(merged[0]!.afterMessageId).toBe('message-1')
+  await f.close(host)
+  expect(f.disk().map(item => item.output)).toEqual(['Output a', 'Changed'])
+})
+
+it('takes a new history epoch\'s list as the whole list', async () => {
+  const f = await stored([record('a', 0)])
+  const host = await f.open()
+  await host.connect()
+  f.provider.state.threads[0]!.historyEpoch = 'rewound'
+  f.provider.state.threads[0]!.activities = [record('z', 0)]
+  await host.snapshot()
+  expect(workshop(host).activities?.map(item => item.id)).toEqual(['z'])
+  await f.close(host)
+  expect(f.disk().map(item => item.id)).toEqual(['z'])
+})
+
+it('clears a stored thread\'s records when its history epoch changes with no list', async () => {
+  const f = await stored([record('a', 0)])
+  const host = await f.open()
+  await host.connect()
+  f.provider.state.threads[0]!.historyEpoch = 'rewound'
+  await host.snapshot()
+  expect(workshop(host).activities).toEqual([])
+  expect(host.hasActivities(THREAD, undefined)).toBe(false)
+  await f.close(host)
+  expect(f.disk()).toEqual([])
+})
+
+it('keeps a thread in memory while a subagent record has words the store does not keep', async () => {
+  const f = await stored([record('a', 0)])
+  const host = await f.open()
+  await host.connect()
+  host.observeThreads([THREAD])
+  f.provider.state.threads[0]!.activities = [record('task', 1, { kind: 'subagent', title: 'Review the parser' })]
+  await host.snapshot()
+  host.observeThreads([])
+  await host.snapshot()
+  expect(workshop(host).activities?.find(item => item.id === 'task')?.title).toBe('Review the parser')
+  expect(f.disk().find(item => item.id === 'task')?.title).toBe('Subagent')
+})
+
+it('hands an adapter a stored thread\'s records without keeping them', async () => {
+  const f = await stored([record('a', 0), record('b', 1, { status: 'running' })])
+  const host = await f.open()
+  await host.connect()
+  expect(host.hasActivities(THREAD, undefined)).toBe(true)
+  expect(host.hasActivities(THREAD, 'another epoch')).toBe(false)
+  const read = vi.spyOn(ThreadStore.prototype, 'readActivities')
+  expect(host.activities(THREAD, undefined)?.map(item => [item.id, item.status])).toEqual([['a', 'completed'], ['b', 'unknown']])
+  expect(read).toHaveBeenCalledWith(THREAD, { keep: false })
+  expect(workshop(host).activities).toBeUndefined()
+})
+
+it('drops a stored thread\'s activity for this run when Keep local history is turned off, as its messages', async () => {
+  let history = true
+  const f = await stored([record('a', 0)], () => history)
+  const host = await f.open()
+  await host.connect()
+  history = false
+  await host.privacyChanged()
+  host.observeThreads([THREAD])
+  expect(workshop(host).activities ?? []).toEqual([])
+  expect(workshop(host).summary?.activityCount).toBe(0)
+  // The record's identity was suppressed with the rest, so turning history back on does not save it again.
+  history = true
+  await host.privacyChanged()
+  f.provider.state.threads[0]!.activities = [record('a', 0), record('fresh', 1)]
+  await host.snapshot()
+  await f.close(host)
+  expect(f.disk().map(item => item.id)).toEqual(['fresh'])
+})

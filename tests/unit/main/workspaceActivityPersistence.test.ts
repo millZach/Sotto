@@ -30,6 +30,10 @@ async function fixture(history: () => boolean = () => true, legacy = false) {
     const host = new WorkspaceHost(provider, directory, history)
     cleanup.push(() => close(host))
     await host.initialize()
+    // A window shows every saved thread, so what each one restored is in hand: a thread none shows keeps its records in
+    // the store alone (#918, `workspaceStoredActivity.test.ts`). A first start has none to show and declares nothing.
+    const saved = host.workspaceSnapshot().threads.map(thread => thread.id)
+    if (saved.length) host.observeThreads(saved)
     return host
   }
   return { directory, provider, open, close }

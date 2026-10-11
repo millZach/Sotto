@@ -135,6 +135,11 @@ export interface ThreadHistorySource {
   message?(threadId: string, messageId: string): AgentMessage | undefined
   /** Bounded activity evidence for this history epoch; undefined means it must be read afresh. */
   activities?(threadId: string, historyEpoch?: string): readonly AgentActivity[] | undefined
+  /**
+   * Whether `activities` would answer for this history epoch, without reading the records. An adapter that resumes on
+   * this reads them when it first changes the thread's activity, so a thread nobody opens costs nothing (#918).
+   */
+  hasActivities?(threadId: string, historyEpoch?: string): boolean
   /** Indexed text-free classification for a native task older than the activity window. */
   activity?(threadId: string, activityId: string, historyEpoch?: string): AgentActivity | undefined
 }

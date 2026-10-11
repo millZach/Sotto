@@ -126,7 +126,10 @@ describe('Claude transcript catch-up', () => {
         await workspace.connect()
       } else await f.host.connect()
       const resumed = (await f.host.snapshot()).threads.find(thread => thread.id === id)!
-      expect(resumed.activities?.find(row => row.id === 'claude-task-retained-task')).toMatchObject({ title: mode === 'event-store' ? 'Subagent' : 'Retained task' })
+      // The event store's word that it holds the records is enough to resume on; they are read when a line first
+      // changes the thread, below (#918).
+      if (mode === 'event-store') expect(resumed.activities ?? []).toEqual([])
+      else expect(resumed.activities?.find(row => row.id === 'claude-task-retained-task')).toMatchObject({ title: 'Retained task' })
       if (workspace) {
         const retained = (await workspace.subagentPage({ threadId: sottoId })).rows.find(row => row.id === 'claude-agent-task-retained-task')
         expect(retained?.title).toBe('Retained task')
@@ -159,6 +162,41 @@ describe('Claude transcript catch-up', () => {
     } finally {
       if (workspace) { workspace.disconnect(); await f.adapter.closed(); await workspace.snapshot().catch(() => undefined); workspace.dispose() }
     }
+  })
+
+  it('resumes on the store\'s word that it holds the records, and reads them only when a line changes the thread (#918)', async () => {
+    const session = await f.realId(id)
+    const folder = join(f.root, 'home', 'projects', f.root.replace(/[^a-zA-Z0-9]/gu, '-'))
+    await mkdir(folder, { recursive: true })
+    const path = join(folder, `${session}.jsonl`)
+    const append = async (frames: Record<string, unknown>[]) => {
+      await appendFile(path, frames.map(frame => JSON.stringify({ ...frame, sessionId: session, timestamp: new Date().toISOString() })).join('\n') + '\n')
+      await f.adapter.pollSessionLogs()
+    }
+    await append([
+      { type: 'user', uuid: randomUUID(), message: { role: 'user', content: 'Cursor anchor' } },
+      { type: 'system', subtype: 'task_started', task_id: 'stored-task', task_type: 'local_agent', description: 'Stored task' },
+    ])
+    const before = (await f.host.snapshot()).threads.find(thread => thread.id === id)!
+    f.adapter.disconnect(); await f.adapter.closed(); f = await claudeFixture(f.root)
+    // Equal-length corruption behind the cursor: a read from the first byte would show it.
+    await writeFile(path, (await readFile(path, 'utf8')).replace('Cursor anchor', 'Tampered xxxx'))
+    let reads = 0
+    f.adapter.useThreadHistory({
+      messageIdentities: () => before.messages.map(({ id: messageId, role }) => ({ id: messageId, role })),
+      hasActivities: (_threadId, epoch) => epoch === before.historyEpoch,
+      activities: () => { reads++; return structuredClone(before.activities) },
+    })
+    await f.host.connect()
+    expect(reads).toBe(0)
+    expect((await f.host.snapshot()).threads.find(thread => thread.id === id)!.activities ?? []).toEqual([])
+    await append([{ type: 'system', subtype: 'task_notification', task_id: 'stored-task', status: 'completed', summary: 'Finished after the restart' }])
+    expect(reads).toBe(1)
+    const after = (await f.host.snapshot()).threads.find(thread => thread.id === id)!
+    expect(after.activities?.find(row => row.id === 'claude-task-stored-task')).toMatchObject({ status: 'completed', title: 'Stored task', text: 'Finished after the restart' })
+    expect(after.messages.some(message => message.text.includes('Tampered'))).toBe(false)
+    await append([{ type: 'user', uuid: randomUUID(), message: { role: 'user', content: 'Another line' } }])
+    expect(reads).toBe(1)
   })
 
   it.each(['messages-only restore', 'messages-only source', 'old history epoch'] as const)('replays task classification when given %s', async mode => {
