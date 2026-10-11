@@ -1,4 +1,5 @@
-// After build: mise exec node@24.21.0 -- node tools/capture-builtin-palette-contrast.mjs <output-dir> [main-entry]
+// After build: mise exec node@24.21.0 -- node tools/capture-builtin-palette-contrast.mjs <output-root> [main-entry]
+// The captures land in <output-root>/builtin-palette-contrast/, through SOTTO_E2E_ARTIFACT_ROOT (docs/ci.md, E2e evidence).
 // Captures the surfaces #936 fixed in every built-in half. The live session tiles an owned nested Hyprland (A) at
 // whatever size its layout allows, so a second one (B) runs inside A, floated at an exact size; the app runs on B
 // and grim captures B's output. B and the app share a private session bus with no service directories, so no
@@ -13,11 +14,11 @@ import { setTimeout as wait } from 'node:timers/promises'
 
 const SIZE = { width: 1280, height: 1000 }
 
-if (process.argv[2] === '--inner') await inner(process.argv[3], process.argv[4])
+if (process.argv[2] === '--inner') await inner(process.argv[3])
 else await outer(process.argv[2], process.argv[3])
 
 async function outer(output, entry) {
-  if (!output) throw new Error('Usage: node tools/capture-builtin-palette-contrast.mjs <output-dir> [main-entry]')
+  if (!output) throw new Error('Usage: node tools/capture-builtin-palette-contrast.mjs <output-root> [main-entry]')
   const evidence = resolve(output)
   mkdirSync(evidence, { recursive: true })
   const temporary = mkdtempSync('/tmp/sotto-palette-')
@@ -26,12 +27,12 @@ async function outer(output, entry) {
   writeFileSync(busConfig, '<busconfig><type>session</type><listen>unix:tmpdir=/tmp</listen><auth>EXTERNAL</auth><policy context="default"><allow send_destination="*"/><allow receive_sender="*"/><allow own="*"/></policy></busconfig>\n')
   const child = spawn(process.execPath, [
     'scripts/with-nested-hyprland.mjs', join(temporary, 'sandbox'), 'dbus-run-session', `--config-file=${busConfig}`, '--',
-    process.execPath, 'tools/capture-builtin-palette-contrast.mjs', '--inner', evidence, temporary,
+    process.execPath, 'tools/capture-builtin-palette-contrast.mjs', '--inner', temporary,
   ], { stdio: 'inherit', env: {
     ...process.env, HOME: join(temporary, 'home'), TMPDIR: join(temporary, 'tmp'),
     XDG_CONFIG_HOME: join(temporary, 'config'), XDG_STATE_HOME: join(temporary, 'state'),
     XDG_DATA_HOME: join(temporary, 'data'), XDG_CACHE_HOME: join(temporary, 'cache'),
-    SOTTO_PALETTE_CONTRAST_EVIDENCE: '1', SOTTO_PALETTE_CONTRAST_DIRECTORY: evidence,
+    SOTTO_PALETTE_CONTRAST_EVIDENCE: '1', SOTTO_E2E_ARTIFACT_ROOT: evidence,
     ...(entry ? { SOTTO_E2E_MAIN_ENTRY: resolve(entry) } : {}),
   } })
   console.log(`Owned nested capture runner PID ${child.pid}; isolated home ${temporary}`)
@@ -61,7 +62,7 @@ function removeInnerFolder(record) {
 }
 
 /** Runs on A, under the private bus: starts B inside A at an exact size, then the spec on B. */
-async function inner(evidence, temporary) {
+async function inner(temporary) {
   const a = { ...process.env }
   assert.ok(a.HYPRLAND_INSTANCE_SIGNATURE && a.WAYLAND_DISPLAY, 'Expected to run on the nested display A')
   const hypr = (signature, args) => execFileSync('hyprctl', args, { env: { ...a, HYPRLAND_INSTANCE_SIGNATURE: signature }, encoding: 'utf8' })

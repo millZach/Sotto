@@ -3,52 +3,12 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { _electron as electron, expect, test, type Locator } from '@playwright/test'
 import { ownedE2EProfile } from './support/e2eProfile'
+import { measurePaintedPair } from './support/paintedPair'
+import { evidenceDirectory } from '../fixtures/evidence'
 import { launchSotto, closeSotto, firstSottoWindow, openThreads } from './support/sottoLaunch'
 import { promptField, fillPrompt } from './support/prompt'
 import { contrastRatio } from '../../src/shared/themes/color'
 import { BUILT_IN_THEMES } from '../../src/shared/themes/library'
-
-/** The painted ink and the composited background behind it, as sRGB pixels. */
-async function measure(element: Locator) {
-  return element.evaluate(async element => {
-    await new Promise<void>(done => requestAnimationFrame(() => requestAnimationFrame(() => done())))
-    await Promise.all(document.getAnimations().filter(animation => animation.effect?.getComputedTiming().iterations !== Infinity)
-      .map(animation => animation.finished.catch(() => undefined)))
-    const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1
-    const context = canvas.getContext('2d')!
-    const color = (value: string) => {
-      const srgb = /^color\(srgb ([\d.e+-]+) ([\d.e+-]+) ([\d.e+-]+)(?: \/ ([\d.e+-]+))?\)$/u.exec(value)
-      if (srgb) return { r: Number(srgb[1]) * 255, g: Number(srgb[2]) * 255, b: Number(srgb[3]) * 255, a: Number(srgb[4] ?? 1) }
-      context.clearRect(0, 0, 1, 1); context.fillStyle = value; context.fillRect(0, 0, 1, 1)
-      const data = context.getImageData(0, 0, 1, 1).data
-      return { r: data[0]!, g: data[1]!, b: data[2]!, a: data[3]! / 255 }
-    }
-    const over = (top: ReturnType<typeof color>, bottom: ReturnType<typeof color>) => ({
-      r: top.r * top.a + bottom.r * (1 - top.a), g: top.g * top.a + bottom.g * (1 - top.a),
-      b: top.b * top.a + bottom.b * (1 - top.a), a: 1,
-    })
-    const ancestors: Element[] = []
-    for (let at: Element | null = element; at; at = at.parentElement) ancestors.unshift(at)
-    let background = color('black')
-    for (const ancestor of ancestors) {
-      const style = getComputedStyle(ancestor)
-      background = over(color(style.backgroundColor), background)
-      if (style.backgroundImage.startsWith('linear-gradient(')) {
-        const body = style.backgroundImage.slice('linear-gradient('.length)
-        let depth = 0, end = 0
-        for (; end < body.length; end++) {
-          if (body[end] === '(') depth++
-          if (body[end] === ')') depth--
-          if (body[end] === ',' && depth === 0) break
-        }
-        background = over(color(body.slice(0, end)), background)
-      }
-    }
-    const ink = over(color(getComputedStyle(element).color), background)
-    const round = (value: typeof ink) => ({ r: Math.round(value.r), g: Math.round(value.g), b: Math.round(value.b) })
-    return { foreground: round(ink), background: round(background) }
-  })
-}
 
 /**
  * Captures the surfaces #936 fixes, in every built-in half, for the before-and-after page
@@ -59,7 +19,7 @@ async function measure(element: Locator) {
 test('captures the built-in palettes\' text surfaces on the owned nested display', async () => {
   test.skip(process.platform !== 'linux' || process.env.SOTTO_PALETTE_CONTRAST_EVIDENCE !== '1', 'Run tools/capture-builtin-palette-contrast.mjs in its owned nested sandbox')
   test.setTimeout(300_000)
-  const evidence = process.env.SOTTO_PALETTE_CONTRAST_DIRECTORY!
+  const evidence = evidenceDirectory('artifacts/builtin-palette-contrast')
   await mkdir(evidence, { recursive: true })
   const profile = await ownedE2EProfile({ settings: { onboardingComplete: true, appearance: 'dark', reducedMotion: 'on' } })
   const home = join(profile.directory, 'home')
@@ -124,7 +84,7 @@ test('captures the built-in palettes\' text surfaces on the owned nested display
     }
     const record = async (half: string, surface: string, element: Locator) => {
       await expect(element).toBeInViewport()
-      const pair = await measure(element)
+      const pair = await measurePaintedPair(element)
       measurements.push({ half, surface, ...pair, ratio: contrastRatio(pair.foreground, pair.background) })
     }
     const tools = page.getByRole('button', { name: 'Tools', exact: true })
