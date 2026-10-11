@@ -80,6 +80,8 @@ it.skipIf(!enabled)('starts and reads a real Codex worker without confirmation a
     const selection = [control.shell().activeProjectId, control.shell().activeThreadId]
     if ((await service.open({ provider: 'codex', modelId: model.id })).status !== 'ok') throw new Error('live-watcher-open-refused')
     watcherId = service.state().current!.target.threadId
+    // Observe its transcript as the room will, without selecting it or changing user read marks.
+    await control.commandShell({ type: 'observe-threads', threadIds: [watcherId] })
     const seen = new Set<string>()
     unsubscribe = control.subscribe(state => {
       for (const thread of state.host.threads) for (const request of thread.requests) if (!seen.has(request.id)) {
