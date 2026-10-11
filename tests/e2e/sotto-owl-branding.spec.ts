@@ -1,6 +1,5 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
 
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
@@ -8,6 +7,7 @@ import { getReleaseTrack, releaseTrackName, type ReleaseTrack } from '../../src/
 import { contrastRatio, parseThemeRgb } from '../../src/shared/themes/color'
 import { withSotto } from '../fixtures/designCaptureProfile'
 import { evidenceDirectory } from '../fixtures/evidence'
+import { onReleaseTrack, OWL_E2E_VERSION } from './support/releaseTrack'
 import { captureWindow } from './support/sottoCapture'
 import { openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 import { resizeContentWindow } from './support/sottoWindow'
@@ -17,7 +17,6 @@ import { resizeContentWindow } from './support/sottoWindow'
  * titles, and the version lines in Help and Settings. Run after `npm run build`. Captures go to disposable run
  * evidence; `SOTTO_E2E_EVIDENCE=publish` writes artifacts/sotto-owl-branding.
  */
-const OWL_VERSION = '0.1.37-owl.20261012.1'
 const evidenceRoot = evidenceDirectory('artifacts/sotto-owl-branding')
 const SIZES = [[1280, 800], [820, 560]] as const
 const APPEARANCES = ['dark', 'light'] as const
@@ -26,31 +25,6 @@ const BLACK = { r: 0, g: 0, b: 0 }
 interface Geometry { readonly name: string; readonly x: number; readonly y: number; readonly width: number; readonly height: number }
 const recorded = new Map<string, unknown>()
 const geometry = new Map<string, readonly Geometry[]>()
-
-/**
- * Electron takes an app's version from the package.json in the folder it starts, which is all packaging changes
- * for Owl; this folder points that manifest at the same built main entry with an Owl version. Its name keeps any
- * default path Electron derives from it away from Sotto's own data folder; the run's profile is the owned one.
- */
-async function owlEntry(): Promise<string> {
-  const directory = await mkdtemp(join(tmpdir(), 'sotto-owl-entry-'))
-  await writeFile(join(directory, 'package.json'), `${JSON.stringify({
-    name: 'sotto-owl-branding-e2e', version: OWL_VERSION, main: resolve('out/main/index.js'),
-  }, null, 2)}\n`, 'utf8')
-  return directory
-}
-
-async function onTrack(track: ReleaseTrack, run: () => Promise<void>): Promise<void> {
-  if (track === 'stable') { await run(); return }
-  const previous = process.env.SOTTO_E2E_MAIN_ENTRY
-  const entry = await owlEntry()
-  process.env.SOTTO_E2E_MAIN_ENTRY = entry
-  try { await run() } finally {
-    if (previous === undefined) delete process.env.SOTTO_E2E_MAIN_ENTRY
-    else process.env.SOTTO_E2E_MAIN_ENTRY = previous
-    await rm(entry, { recursive: true, force: true })
-  }
-}
 
 async function settle(page: Page): Promise<void> {
   await page.mouse.move(0, 0)
@@ -147,8 +121,8 @@ test.describe('Sotto Owl branding on the built app', () => {
   for (const track of ['stable', 'owl'] as const) for (const appearance of APPEARANCES) {
     test(`${track} build, ${appearance}`, async () => {
       const name = releaseTrackName(track)
-      const version = track === 'owl' ? OWL_VERSION : null
-      await onTrack(track, () => withSotto({ onboardingComplete: true, appearance, scenario: 'design-threads', agents: 'design-threads' }, async (launched) => {
+      const version = track === 'owl' ? OWL_E2E_VERSION : null
+      await onReleaseTrack(track, () => withSotto({ onboardingComplete: true, appearance, scenario: 'design-threads', agents: 'design-threads' }, async (launched) => {
         const { page } = launched
         const reported = await page.evaluate(async () => {
           const status = await window.sotto!.getUpdateStatus()
@@ -212,7 +186,7 @@ test.describe('Sotto Owl branding on the built app', () => {
   }
 
   test('owl build with reduced motion', async () => {
-    await onTrack('owl', () => withSotto({ onboardingComplete: true, appearance: 'dark', motion: 'reduced', scenario: 'design-threads', agents: 'design-threads' }, async (launched) => {
+    await onReleaseTrack('owl', () => withSotto({ onboardingComplete: true, appearance: 'dark', motion: 'reduced', scenario: 'design-threads', agents: 'design-threads' }, async (launched) => {
       await openThreads(launched.page)
       const row = launched.page.getByRole('complementary', { name: 'Thread sidebar' }).locator('.thread-nav__top')
       await resizeContentWindow(launched, 1280, 800)
@@ -226,7 +200,7 @@ test.describe('Sotto Owl branding on the built app', () => {
   })
 
   test('owl build in the strip over first-run setup', async () => {
-    await onTrack('owl', () => withSotto({ onboardingComplete: false, appearance: 'dark' }, async (launched) => {
+    await onReleaseTrack('owl', () => withSotto({ onboardingComplete: false, appearance: 'dark' }, async (launched) => {
       const { page } = launched
       await expect(page.getByRole('button', { name: 'Get started', exact: true })).toBeVisible()
       await resizeContentWindow(launched, 1280, 800)

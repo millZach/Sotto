@@ -1,19 +1,17 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { EMPTY_AGENT_HOST, defaultAgentConfiguration } from '../../src/shared/agents'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { emptyWatcherRecord } from '../../src/shared/watcher'
-import type { ReleaseTrack } from '../../src/shared/releaseTrack'
 import { evidenceDirectory } from '../fixtures/evidence'
+import { onReleaseTrack } from './support/releaseTrack'
 import { ownedE2EProfile } from './support/e2eProfile'
 import { closeSotto, launchSotto, openPage, openThreads } from './support/sottoLaunch'
 import { resizeContentWindow } from './support/sottoWindow'
 import { pageBoundProblems } from './support/designCapture'
 
 const evidence = evidenceDirectory('artifacts/watcher-gate')
-const OWL_VERSION = '0.1.37-owl.20261011.1'
 const special = [
   { id: 'watcher-current', kind: 'watcher' as const, title: 'Saved Watcher' },
   { id: 'watcher-earlier', kind: 'watcher-history' as const, title: 'Saved Watcher history' },
@@ -27,37 +25,10 @@ async function settle(page: Page): Promise<void> {
   })
 }
 
-async function removeEntry(entry: string): Promise<void> {
-  if (dirname(entry) !== tmpdir() || !entry.startsWith(join(tmpdir(), 'sotto-owl-entry-'))) throw new Error('Unexpected Owl fixture folder')
-  await rm(entry, { recursive: true, force: true })
-}
-
-/** Use Electron's real running version without editing either repository manifest. */
-async function onTrack(track: ReleaseTrack, run: () => Promise<void>): Promise<void> {
-  const before = { entry: process.env.SOTTO_E2E_MAIN_ENTRY, gate: process.env.SOTTO_WATCHER_ENABLED }
-  delete process.env.SOTTO_WATCHER_ENABLED
-  let entry: string | undefined
-  try {
-    if (track === 'owl') {
-      entry = await mkdtemp(join(tmpdir(), 'sotto-owl-entry-'))
-      await writeFile(join(entry, 'package.json'), JSON.stringify({ name: 'sotto-watcher-gate-e2e', version: OWL_VERSION,
-        main: resolve('out/main/index.js') }), 'utf8')
-      process.env.SOTTO_E2E_MAIN_ENTRY = entry
-    } else delete process.env.SOTTO_E2E_MAIN_ENTRY
-    await run()
-  } finally {
-    if (before.entry === undefined) delete process.env.SOTTO_E2E_MAIN_ENTRY
-    else process.env.SOTTO_E2E_MAIN_ENTRY = before.entry
-    if (before.gate === undefined) delete process.env.SOTTO_WATCHER_ENABLED
-    else process.env.SOTTO_WATCHER_ENABLED = before.gate
-    if (entry) await removeEntry(entry)
-  }
-}
-
 test.describe('Watcher follows the running release track', () => {
   test.setTimeout(120_000)
   for (const track of ['stable', 'owl'] as const) test(`${track} keeps saved special kinds and ordinary thread actions`, async () => {
-    await onTrack(track, async () => {
+    await onReleaseTrack(track, async () => {
       const profile = await ownedE2EProfile({ prefix: 'sotto-e2e-watcher-gate-', settings: {
         ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'dark', reducedMotion: 'on', showWidgetWhenIdle: false,
       } })
@@ -169,7 +140,7 @@ test.describe('Watcher follows the running release track', () => {
           // Main records return to Owl; stable does not restore Watcher panes dropped by ordinary layout edits.
           await closeSotto(launched)
           launched = undefined
-          await onTrack('owl', async () => {
+          await onReleaseTrack('owl', async () => {
             launched = await launchSotto('success', profile.directory)
             await resizeContentWindow(launched, 1600, 1000)
             await openThreads(launched.page)

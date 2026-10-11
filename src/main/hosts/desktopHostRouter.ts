@@ -1,3 +1,4 @@
+import { visibleWatcherState } from '../../shared/watcherVisibility'
 import { WATCHER_DISABLED } from '../agents/watcherLaunchProfiles'
 import { randomUUID } from 'node:crypto'
 import { agentCommandSchema, MAX_DELIVERED_DRAFTS, HOST_CANNOT_STAGE_SCREENSHOTS, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
@@ -125,18 +126,7 @@ export class DesktopHostRouter {
     return thread ? thread.kind === 'watcher' || thread.kind === 'watcher-history' : undefined
   }
   private visibleState(state: AgentState): AgentState {
-    if (this.options.watcherEnabled === true) return state
-    const hidden = new Set(state.host.threads.filter(thread => thread.kind === 'watcher' || thread.kind === 'watcher-history').map(thread => thread.id))
-    const visible = { ...state, host: { ...state.host, threads: state.host.threads.filter(thread => !hidden.has(thread.id)) } }
-    if (visible.activeThreadId && hidden.has(visible.activeThreadId)) { visible.activeThreadId = null; visible.activeProjectId = null }
-    if (visible.draftThreadId && hidden.has(visible.draftThreadId)) {
-      visible.draft = ''; visible.draftThreadId = null; visible.draftRequestId = null; visible.draftAttachments = []; visible.composing = false
-    }
-    for (const key of ['threadDrafts', 'deliveries', 'deliveredDrafts', 'obsoleteDrafts', 'followups', 'followupReceipts', 'threadDraftPersistence', 'unconfirmedSettings'] as const) {
-      const records = visible[key]
-      if (records) (visible as Record<string, unknown>)[key] = records.filter(item => !hidden.has(item.threadId))
-    }
-    return visible
+    return visibleWatcherState(state, this.options.watcherEnabled === true)
   }
 
   requiresManagementUpdate(hostId: string): boolean {
