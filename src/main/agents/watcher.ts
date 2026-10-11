@@ -40,8 +40,8 @@ export class WatcherService implements WatcherControlHooks {
   private readonly dispatchRefusals = new Map<string, Refusal>()
   private readonly nativeHeads = new Map<string, string | null>()
   private readonly confirmations = new Map<string, { targets: WatcherThreadTarget[]; signature: string; expires: number }>()
-  private readonly pages = new Map<string, { kind: string; rows: unknown[]; expires: number }>()
-  private readonly copyChoices = new Map<string, { projectId: string; path?: string; branch?: string; revision: string }>()
+  private readonly pages = new Map<string, { kind: string; rows: unknown[]; expires: number; workingCopies?: { revision: string; baseRefs: { choiceId: string; name: string }[] } }>()
+  private readonly copyChoices = new Map<string, { projectId: string; path?: string; branch?: string; revision: string; snapshotId: string }>()
   private closed = false
   private readonly unsubscribe: () => void
   constructor(private readonly options: { directory: string; control: AgentControl; host: WorkspaceHost;
@@ -465,6 +465,7 @@ export class WatcherService implements WatcherControlHooks {
         if (!model?.ready) refuse('PROVIDER_UNAVAILABLE', 'Choose a ready worker model. Sotto will not switch accounts.')
         if (create.reasoningEffort && !model.reasoningEfforts?.includes(create.reasoningEffort)) refuse('INVALID_INPUT', 'Choose an effort this worker model offers.')
         this.permission(model, create.permission)
+        this.prunePages()
         if (create.workingCopy.kind === 'existing-worktree' && !this.copyChoices.has(create.workingCopy.choiceId)
           || create.baseRefChoiceId && !this.copyChoices.has(create.baseRefChoiceId)) refuse('WORKING_COPY_CHANGED', 'Read the working-copy choices again before starting this thread.')
       }
@@ -605,15 +606,20 @@ export class WatcherService implements WatcherControlHooks {
     return { status: 'ok', ...base, state: this.operationState(operation.target), ...(name === 'stop_thread' ? { stopRequested: true } : {}) }
   }
 
-  private page(kind: string, rows: unknown[], cursor: string | undefined, limit: number): { rows: unknown[]; revision: string; nextCursor: string | null } {
+  private prunePages(): void {
     for (const [id, page] of this.pages) if (page.expires < Date.now()) this.pages.delete(id)
-    if (this.pages.size > 16) this.pages.delete(this.pages.keys().next().value!)
+    while (this.pages.size > 16) this.pages.delete(this.pages.keys().next().value!)
+    for (const [id, choice] of this.copyChoices) if (!this.pages.has(choice.snapshotId)) this.copyChoices.delete(id)
+  }
+  private page(kind: string, rows: unknown[], cursor: string | undefined, limit: number): { rows: unknown[]; revision: string; nextCursor: string | null } {
+    this.prunePages()
     let revision: string, position = 0
     if (cursor) {
       const match = /^([a-f0-9-]{36}):(\d+)$/u.exec(cursor), page = match && this.pages.get(match[1]!)
       if (!page || page.kind !== kind) refuse('CURSOR_EXPIRED', 'This list changed or its cursor expired. Read its first page again.', true)
       revision = match![1]!; position = Number(match![2]); rows = page.rows
     } else { revision = randomUUID(); this.pages.set(revision, { kind, rows, expires: Date.now() + 60_000 }) }
+    this.prunePages()
     return { rows: rows.slice(position, position + limit), revision, nextCursor: position + limit < rows.length ? `${revision}:${position + limit}` : null }
   }
   private listThreads(input: WatcherToolInput<'list_threads'>) {
@@ -650,21 +656,31 @@ export class WatcherService implements WatcherControlHooks {
   }
   private async listWorkingCopies(input: WatcherToolInput<'list_working_copies'>) {
     if (input.project.hostId !== this.hostId()) refuse('HOST_FEATURE_UNAVAILABLE', 'Remote Watcher working-copy choices are not available yet.')
+    const kind = `copies:${input.project.projectId}`
+    if (input.cursor && input.cursor !== 'restart') {
+      const page = this.page(kind, [], input.cursor, input.limit), snapshot = this.pages.get(page.revision)!.workingCopies!
+      return { status: 'ok', project: input.project, revision: snapshot.revision, choices: page.rows, baseRefs: snapshot.baseRefs,
+        nextCursor: page.nextCursor, observedAt: now(), staleHosts: [] }
+    }
     const options = await this.options.host.workingCopyOptions(input.project.projectId), revision = digest(options)
+    const entries: { choiceId: string; path?: string; branch?: string }[] = []
     const choices = [{ choiceId: randomUUID(), kind: 'shared', branch: options.currentBranch, occupied: false, locked: false, limitations: [] as string[] },
       ...(options.isGit ? [{ choiceId: randomUUID(), kind: 'new-worktree', branch: options.currentBranch, occupied: false, locked: false, limitations: [] as string[] }] : [])]
     for (const copy of options.worktrees) {
       const occupied = this.options.control.watcherSnapshot().threads.some(thread => thread.worktree?.path === copy.path)
-      const choiceId = randomUUID(); this.copyChoices.set(choiceId, { projectId: input.project.projectId, path: copy.path, revision })
+      const choiceId = randomUUID(); entries.push({ choiceId, path: copy.path })
       choices.push({ choiceId, kind: 'existing-worktree', branch: copy.branch, occupied, locked: false, limitations: occupied ? ['Already used by a thread'] : [] })
     }
-    const baseRefs = options.branches.slice(0, 100).map(branch => { const choiceId = randomUUID(); this.copyChoices.set(choiceId, { projectId: input.project.projectId, branch, revision }); return { choiceId, name: branch } })
-    const page = this.page(`copies:${input.project.projectId}`, choices, input.cursor, input.limit)
+    const baseRefs = options.branches.slice(0, 100).map(branch => { const choiceId = randomUUID(); entries.push({ choiceId, branch }); return { choiceId, name: branch } })
+    const page = this.page(kind, choices, undefined, input.limit)
+    this.pages.get(page.revision)!.workingCopies = { revision, baseRefs }
+    for (const { choiceId, ...choice } of entries) this.copyChoices.set(choiceId, { ...choice, projectId: input.project.projectId, revision, snapshotId: page.revision })
     return { status: 'ok', project: input.project, revision, choices: page.rows, baseRefs, nextCursor: page.nextCursor, observedAt: now(), staleHosts: [] }
   }
   private async resolveCopies(input: WatcherToolInput<'start_thread'>) {
     if (input.workingCopy.kind === 'shared' && !input.baseRefChoiceId) return { workingCopy: 'shared' as const }
     const options = await this.options.host.workingCopyOptions(input.project.projectId), revision = digest(options)
+    this.prunePages()
     const copy = input.workingCopy.kind === 'existing-worktree' ? this.copyChoices.get(input.workingCopy.choiceId) : undefined
     const base = input.baseRefChoiceId ? this.copyChoices.get(input.baseRefChoiceId) : undefined
     if (copy && (copy.projectId !== input.project.projectId || copy.revision !== revision || !options.worktrees.some(item => item.path === copy.path))

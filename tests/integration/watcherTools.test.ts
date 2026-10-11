@@ -548,3 +548,36 @@ it('returns a settle receipt on retry after its request closes without reviving 
   expect(f.workspace.adapters.codex.commands).toHaveLength(commands)
   expect(f.control.watcherRecord()).toEqual(record)
 })
+
+
+it('keeps working-copy choices and base refs in the same snapshot across pages', async () => {
+  const f = await fixture()
+  const options = vi.spyOn(f.workspace.host, 'workingCopyOptions').mockResolvedValue({ isGit: true, currentBranch: 'main', branches: ['main'],
+    worktrees: [{ path: f.project.path, branch: 'main' }] })
+  const input = { project: f.start().project, limit: 1 }
+  const first = await f.call('list_working_copies', input)
+  if (first.status !== 'ok' || !('choices' in first) || !first.nextCursor) throw new Error('missing copy page')
+  const second = await f.call('list_working_copies', { ...input, cursor: first.nextCursor })
+  expect(second).toMatchObject({ status: 'ok', revision: first.revision, baseRefs: first.baseRefs })
+  expect(options).toHaveBeenCalledTimes(1)
+})
+
+it.each(['expiry', 'eviction'])('refuses obsolete working-copy choices after snapshot %s before admission', async expiry => {
+  const f = await fixture()
+  vi.spyOn(f.workspace.host, 'workingCopyOptions').mockResolvedValue({ isGit: true, currentBranch: 'main', branches: ['main'],
+    worktrees: [{ path: f.project.path, branch: 'main' }] })
+  const first = await f.call('list_working_copies', { project: f.start().project })
+  if (first.status !== 'ok' || !('choices' in first)) throw new Error('copy read refused')
+  const choice = first.choices.find(item => item.kind === 'existing-worktree')!
+  const clock = expiry === 'expiry' ? vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 60_001) : undefined
+  try {
+    if (expiry === 'eviction') for (let index = 0; index < 16; index++) await f.call('list_working_copies', { project: f.start().project })
+    const record = f.control.watcherRecord(), selected = f.control.shell().activeThreadId
+    expect(await f.call('start_thread', { ...f.start(), workingCopy: { kind: 'existing-worktree', choiceId: choice.choiceId } }))
+      .toMatchObject({ status: 'refused', code: 'WORKING_COPY_CHANGED' })
+    expect(await f.call('start_thread', { ...f.start(), baseRefChoiceId: first.baseRefs[0]!.choiceId }))
+      .toMatchObject({ status: 'refused', code: 'WORKING_COPY_CHANGED' })
+    expect(f.control.watcherRecord()).toEqual(record)
+    expect(f.control.shell().activeThreadId).toBe(selected)
+  } finally { clock?.mockRestore() }
+})
