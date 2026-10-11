@@ -1,4 +1,4 @@
-// Run: npm run build, then node tools/verify-removal-setup.mjs; no other Electron journey may use the desktop.
+// Run: npm run build, then node scripts/verify-removal-setup.mjs; no other Electron journey may use the desktop.
 /* global console */
 import fs from 'node:fs';
 import os from 'node:os';

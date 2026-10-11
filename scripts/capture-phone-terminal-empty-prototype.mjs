@@ -1,4 +1,4 @@
-// Usage: node tools/capture-phone-terminal-empty-prototype.mjs [output-folder]; captures copy scenarios in approved variant B, not SwiftUI.
+// Usage: node scripts/capture-phone-terminal-empty-prototype.mjs [output-folder]; captures copy scenarios in approved variant B, not SwiftUI.
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'

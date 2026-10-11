@@ -1,4 +1,4 @@
-// After build: mise exec node@24.21.0 -- node tools/verify-linux-window-minimum.mjs
+// After build: mise exec node@24.21.0 -- node scripts/verify-linux-window-minimum.mjs
 // --probe compares Electron options; --exec <command> [args] runs a spec on the same isolated desktop.
 import assert from 'node:assert/strict'
 import console from 'node:console'
@@ -9,8 +9,8 @@ import { appendFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync
 import { dirname, join, resolve } from 'node:path'
 import { setTimeout as wait } from 'node:timers/promises'
 import { promisify } from 'node:util'
-import { snapshotTree } from '../scripts/omarchy-shell-sandbox.mjs'
-import { assertProofInstancesPreserved, createOwnedProofProcesses, installProofCleanup, snapshotProofInstances, terminateThenCleanup } from '../scripts/owned-proof-processes.mjs'
+import { snapshotTree } from './omarchy-shell-sandbox.mjs'
+import { assertProofInstancesPreserved, createOwnedProofProcesses, installProofCleanup, snapshotProofInstances, terminateThenCleanup } from './owned-proof-processes.mjs'
 
 const checkout = resolve(import.meta.dirname, '..')
 const destination = join(checkout, 'artifacts/linux-window-minimum')

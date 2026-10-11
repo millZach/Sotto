@@ -1,10 +1,10 @@
-// node tools/verify-watcher-package.mjs: packaged stable ignores the development override on a fresh owned profile.
+// node scripts/verify-watcher-package.mjs: packaged stable ignores the development override on a fresh owned profile.
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import process from 'node:process'
 import { _electron as electron } from '@playwright/test'
-import { releasePlatformProfile } from '../scripts/release-platform-profile.mjs'
+import { releasePlatformProfile } from './release-platform-profile.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 const temporary = await mkdtemp(join(tmpdir(), 'sotto-watcher-package-'))

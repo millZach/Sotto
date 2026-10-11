@@ -1,11 +1,11 @@
 // Launch the unpacked Owl app with an isolated profile and check its real preload status.
-// node tools/verify-owl-package.mjs 0.1.37-owl.20261011.1
+// node scripts/verify-owl-package.mjs 0.1.37-owl.20261011.1
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import process from 'node:process'
 import { _electron as electron } from '@playwright/test'
-import { releasePlatformProfile } from '../scripts/release-platform-profile.mjs'
+import { releasePlatformProfile } from './release-platform-profile.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 const expectedVersion = process.argv[2]

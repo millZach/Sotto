@@ -40,7 +40,7 @@ The additional run sets `SOTTO_THEME_BRANDING_EVIDENCE=1`, so both branding case
 
 Setup commits `f6f68784b`, `956125abf`, `986848546`, `75a8807f6` and the capture fixes touched these e2e specs: `agentControl`, `agentSetup`, `agents`, `app`, `crossing`, `design-capture`, `onboarding-microphone-step` and `widget-topmost`. All are included in the required run, the additional setup run or design capture. The additional run also checks main's babysitting and the gated live theme-branding journey.
 
-`node tools/verify-removal-setup.mjs` printed:
+`node scripts/verify-removal-setup.mjs` printed:
 
 ```text
 Passed setup and all tour stops: 1600x1000-light

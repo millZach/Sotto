@@ -34,7 +34,7 @@ The four 820×560 frames were captured with grim on the owned nested output and 
 
 [proof.txt](../../artifacts/linux-window-minimum/proof.txt) records the passing native run and cleanup: sizing PID 1079959, session PID 1079973 and private journey PID 1079994 were stopped with the proof slice; all recorded PIDs/cgroups were empty. Both owned instance folders and `/tmp/slm-Gx19zJ` were removed. Prior instances and all four protected live trees, including `.sotto`, were unchanged.
 
-The [repeatable harness](../../tools/verify-linux-window-minimum.mjs) compares Electron options with `--probe`, then drives the built app without changing its minimum. It floats and resizes only the owned main window through the nested Hyprland instance and reads content size from both Electron and the renderer. It checks 1600×1000, 1280×800, 820×560 and a below-minimum request in Light and Dark, with reduced motion enabled. It captures with grim, never the desktop portal.
+The [repeatable harness](../../scripts/verify-linux-window-minimum.mjs) compares Electron options with `--probe`, then drives the built app without changing its minimum. It floats and resizes only the owned main window through the nested Hyprland instance and reads content size from both Electron and the renderer. It checks 1600×1000, 1280×800, 820×560 and a below-minimum request in Light and Dark, with reduced motion enabled. It captures with grim, never the desktop portal.
 
 ## Reproduce
 
@@ -42,8 +42,8 @@ The [repeatable harness](../../tools/verify-linux-window-minimum.mjs) compares E
 mise exec node@24.21.0 -- npm ci
 mise exec node@24.21.0 -- node node_modules/electron/install.js
 mise exec node@24.21.0 -- npm run build
-mise exec node@24.21.0 -- node tools/verify-linux-window-minimum.mjs --probe
-mise exec node@24.21.0 -- node tools/verify-linux-window-minimum.mjs
+mise exec node@24.21.0 -- node scripts/verify-linux-window-minimum.mjs --probe
+mise exec node@24.21.0 -- node scripts/verify-linux-window-minimum.mjs
 ```
 
 The harness requires the installed Hyprland/hyprctl, D-Bus, user systemd and grim. It takes the live display identity from Quickshell's process environment. A sizing compositor hosts an owned second compositor at 1800×1200; no resize, focus or input request is sent to the live instance. HOME, the XDG folders and TMPDIR are private; the app has its own `dbus-run-session` and no live portal access. Every long-lived process and descendant is in the owned proof slice. Cleanup stops that slice, removes only the owned compositor folders and temporary root, and checks the prior instances and protected live trees unchanged.
