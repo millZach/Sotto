@@ -279,7 +279,7 @@ Provider, model and effort belong to the current master record/ordinary thread o
 
 ## 9. Decisions and documentation
 
-Watcher contract is [ADR-0071](../adr/0070-Watcher-coordinates-threads-with-its-providers-own-tools.md), following ADR-0068. Record the single current master, native-plan billing, pinned asking mode and native reads, main-owned bounded start/send authority, human-only answers, takeover, event wake-ups, scoped Stop all, privacy storage and host feature enforcement. Explicitly amend the authority described by ADR-0004/0005 for Watcher start/send without resurrecting automatic supervision; preserve their human-only answers. Relate ADR-0002 identity, ADR-0016 history, ADR-0035 special threads, ADR-0061 wake-ups and any provider-change exception/policy. If no supported launch can enforce a provider profile, record refusal rather than changing the decision to permissive mode.
+Watcher contract is [ADR-0071](../adr/0071-watcher-coordinates-threads-with-its-providers-own-tools.md), following ADR-0068. Record the single current master, native-plan billing, pinned asking mode and native reads, main-owned bounded start/send authority, human-only answers, takeover, event wake-ups, scoped Stop all, privacy storage and host feature enforcement. Explicitly amend the authority described by ADR-0004/0005 for Watcher start/send without resurrecting automatic supervision; preserve their human-only answers. Relate ADR-0002 identity, ADR-0016 history, ADR-0035 special threads, ADR-0061 wake-ups and any provider-change exception/policy. If no supported launch can enforce a provider profile, record refusal rather than changing the decision to permissive mode.
 
 Update `CONTEXT.md` using `docs/agents/domain.md` and the domain-modeling vocabulary:
 
