@@ -23,7 +23,14 @@ beforeAll(async () => {
     ssr: resolve('src/main/terminals/helper.ts'), target: 'node24', outDir: root, emptyOutDir: false, minify: false,
     rollupOptions: { external: id => isBuiltin(id), output: { format: 'cjs', entryFileNames: 'helper.cjs' } },
   } })
-})
+  // A freshly downloaded Electron, as on a CI runner, takes several seconds over its first launches. Pay that here
+  // so the hook waits below time the hook rather than the runner's first start.
+  await new Promise<void>((resolveWarm, rejectWarm) => {
+    const warm = spawn(electronRunner, ['-e', ''], { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, windowsHide: true, stdio: 'ignore' })
+    warm.once('error', rejectWarm)
+    warm.once('exit', code => code === 0 ? resolveWarm() : rejectWarm(new Error(`Electron runner exited with ${code}`)))
+  })
+}, 120_000)
 afterEach(() => { for (const run of runs.splice(0)) run.dispose(); for (const child of children.splice(0)) child.kill() })
 afterAll(async () => { await rm(root, { recursive: true, force: true }) })
 
