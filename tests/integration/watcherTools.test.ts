@@ -10,6 +10,7 @@ import { watcherToolSchemas } from '../../src/shared/watcher'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
 import { deferred } from '../fixtures/deferred'
+import { PIXEL_PNG } from '../fixtures/stagedImages'
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
@@ -72,6 +73,34 @@ it('creates one current master, attaches exact tools only there, starts and read
   expect(await f.tools.mcpServer(f.id)).toMatchObject({ name: 'sotto_threads' })
   expect(f.tools.definitions.map(item => item.name).sort()).toEqual(Object.keys(watcherToolSchemas).sort())
   expect((await f.tools.call(f.id, 'answer', { approved: true })).structuredContent).toMatchObject({ status: 'refused' })
+})
+
+it('lists host-setup jobs as protected and readable while refusing their mutations and master reads', async () => {
+  const f = await fixture(), path = join(f.root, 'host-setup')
+  expect((await f.control.commandForWatcherRoom({ type: 'create-project', provider: 'codex', title: 'Synthetic host setup', path })).error).toBeNull()
+  const project = f.control.watcherSnapshot().projects.find(item => item.path === path)!
+  const target = { hostId: f.control.hostId()!, threadId: randomUUID() }
+  expect((await f.control.commandForWatcherRoom({ type: 'create-thread', threadId: target.threadId, projectId: project.id,
+    title: 'Synthetic setup job', modelId: f.model.id })).error).toBeNull()
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: target.threadId, draftId: randomUUID(),
+    text: 'Synthetic host setup progress' })).error).toBeNull()
+  const selection = [f.control.shell().activeProjectId, f.control.shell().activeThreadId]
+  const unread = f.control.watcherSnapshot().threads.find(item => item.id === target.threadId)!.finishedUnread
+  expect(await f.call('list_threads', {})).toMatchObject({ status: 'ok', rows: expect.arrayContaining([expect.objectContaining({ target, protected: true })]) })
+  expect(await f.call('read_thread', { target })).toMatchObject({ status: 'ok', messages: [{ text: 'Synthetic host setup progress' }] })
+  const record = f.control.watcherRecord(), commands = f.workspace.adapters.codex.commands.length
+  for (const name of ['send_to_thread', 'stop_thread', 'settle_thread'] as const) {
+    expect(await f.call(name, { requestId: f.requestId, retryKey: randomUUID(), target,
+      ...(name === 'send_to_thread' ? { delivery: 'now', text: 'Synthetic forbidden setup instruction' } : {}) }))
+      .toMatchObject({ status: 'refused', code: 'RESERVED_THREAD' })
+  }
+  expect(await f.call('start_thread', { ...f.start(), project: { hostId: target.hostId, projectId: project.id } }))
+    .toMatchObject({ status: 'refused', code: 'RESERVED_THREAD' })
+  expect(await f.call('read_thread', { target: f.service.state().current!.target })).toMatchObject({ status: 'refused', code: 'RESERVED_THREAD' })
+  expect(f.control.watcherRecord()).toEqual(record)
+  expect(f.workspace.adapters.codex.commands).toHaveLength(commands)
+  expect([f.control.shell().activeProjectId, f.control.shell().activeThreadId]).toEqual(selection)
+  expect(f.control.watcherSnapshot().threads.find(item => item.id === target.threadId)!.finishedUnread).toBe(unread)
 })
 
 it('enforces distinct target capacity from the current main setting and four prompts per target without replenishing retries', async () => {
@@ -185,6 +214,65 @@ it('requires a main preview for Stop all, stops only started participants and re
   expect(f.workspace.adapters.codex.commands.filter(item => item.type === 'interrupt')).toHaveLength(1)
   expect(await f.service.stopAll(preview.confirmationId)).toMatchObject({ status: 'refused', code: 'TARGET_CHANGED' })
   expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'queue', text: 'Synthetic stopped request' })).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
+})
+
+it('refuses Stop all preview and confirmation after closing without coordinator effects', async () => {
+  const f = await fixture(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  const preview = f.service.prepareStopAll()
+  if (preview.status !== 'ok') throw new Error('preview refused')
+  f.service.close()
+  const record = f.control.watcherRecord(), commands = f.workspace.adapters.codex.commands.length
+  const update = vi.spyOn(f.control, 'updateWatcher'), cancel = vi.spyOn(f.control, 'cancelWatcherQueue'), command = vi.spyOn(f.control, 'commandFromWatcher')
+  const latePreview = f.service.prepareStopAll()
+  const result = await f.service.stopAll(latePreview.status === 'ok' ? latePreview.confirmationId : preview.confirmationId)
+  expect(result).toMatchObject({ status: 'refused', code: 'NOT_CURRENT_WATCHER' })
+  expect(latePreview).toMatchObject({ status: 'refused', code: 'NOT_CURRENT_WATCHER' })
+  expect(f.control.watcherRecord()).toEqual(record)
+  expect(f.workspace.adapters.codex.commands).toHaveLength(commands)
+  expect(update).not.toHaveBeenCalled()
+  expect(cancel).not.toHaveBeenCalled()
+  expect(command).not.toHaveBeenCalled()
+  update.mockRestore(); cancel.mockRestore(); command.mockRestore()
+})
+
+it('keeps Stop all confirmation valid when a previewed worker receives another Watcher prompt', async () => {
+  const f = await fixture(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  await f.finish(first.target.threadId)
+  const selection = [f.control.shell().activeProjectId, f.control.shell().activeThreadId]
+  const preview = f.service.prepareStopAll()
+  if (preview.status !== 'ok') throw new Error('preview refused')
+  expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target,
+    delivery: 'now', text: 'Synthetic follow-up during confirmation' })).toMatchObject({ status: 'ok', limits: { promptCount: 2 } })
+  expect(await f.service.stopAll(preview.confirmationId)).toMatchObject({ status: 'ok', results: [{ target: first.target, status: 'stopped' }] })
+  expect(f.workspace.adapters.codex.commands.filter(item => item.type === 'interrupt')).toHaveLength(1)
+  expect([f.control.shell().activeProjectId, f.control.shell().activeThreadId]).toEqual(selection)
+})
+
+it('refuses a Stop all preview when its eligible ownership changes without stopping an unshown worker', async () => {
+  const f = await fixture(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  const preview = f.service.prepareStopAll()
+  if (preview.status !== 'ok') throw new Error('preview refused')
+  expect(preview.targets).toEqual([first.target])
+  expect(await f.call('start_thread', f.start())).toMatchObject({ status: 'ok' })
+  const record = f.control.watcherRecord()
+  expect(await f.service.stopAll(preview.confirmationId)).toMatchObject({ status: 'refused', code: 'TARGET_CHANGED' })
+  expect(f.control.watcherRecord()).toEqual(record)
+  expect(f.workspace.adapters.codex.commands.filter(item => item.type === 'interrupt')).toHaveLength(0)
+})
+
+it('refuses Stop all after a previewed worker is taken over without changing its saved record', async () => {
+  const f = await fixture(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  const preview = f.service.prepareStopAll()
+  if (preview.status !== 'ok') throw new Error('preview refused')
+  await f.control.commandShell({ type: 'manual-send', threadId: first.target.threadId, draftId: randomUUID(), text: 'Synthetic user takeover' })
+  const record = f.control.watcherRecord()
+  expect(await f.service.stopAll(preview.confirmationId)).toMatchObject({ status: 'refused', code: 'TARGET_CHANGED' })
+  expect(f.control.watcherRecord()).toEqual(record)
+  expect(f.workspace.adapters.codex.commands.filter(item => item.type === 'interrupt')).toHaveLength(0)
 })
 
 it('keeps a lost acknowledgement uncertain, retains its slot and never resends on a retry', async () => {
@@ -523,4 +611,214 @@ it('rechecks answered news after checkpoint preparation and before the provider 
     expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.threadId === master).slice(before)
       .some(command => command.type === 'send' && command.text.includes('Open this thread to answer'))).toBe(false)
   } finally { release.resolve() }
+})
+
+it.each(['preparation', 'native', 'reconciled'])('refunds a queued prompt after a definite %s failure exactly once', async failure => {
+  const f = await fixture(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  const input = { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'queue', text: 'Synthetic queued failure' }
+  expect(await f.call('send_to_thread', input)).toMatchObject({ status: 'ok', limits: { promptCount: 2 } })
+  const refresh = f.workspace.host.refreshThread.bind(f.workspace.host)
+  const execute = f.workspace.adapters.codex.execute.bind(f.workspace.adapters.codex)
+  const spy = failure === 'preparation'
+    ? vi.spyOn(f.workspace.host, 'refreshThread').mockImplementation(async (id, purpose) => {
+      if (id === first.target.threadId && purpose?.beforeSend) throw new Error('Synthetic preparation failure')
+      return refresh(id, purpose)
+    })
+    : vi.spyOn(f.workspace.adapters.codex, 'execute').mockImplementation(async command => {
+      if (command.type === 'send' && command.text === input.text) throw new Error('Synthetic native pre-write failure')
+      return execute(command)
+    })
+  await f.finish(first.target.threadId)
+  await vi.waitFor(() => expect(f.control.shell().followups?.find(item => item.text === input.text)?.status).toBe('failed'))
+  if (failure === 'reconciled') await f.control.updateWatcher(record => {
+    // Recovery can fence a stale dispatch receipt as uncertain before observing the durable failed queue item.
+    record.operations.at(-1)!.deliveryState = 'uncertain'
+  })
+  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect(f.service.state().receipts.at(-1)?.deliveryState).toBe('failed')
+  expect(f.service.state().requests[0]!.participants[0]!.promptCount).toBe(1)
+  expect(f.workspace.adapters.codex.commands.some(command => command.type === 'send' && command.text === input.text)).toBe(false)
+  spy.mockRestore()
+  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect(await f.call('send_to_thread', input)).toMatchObject({ status: 'refused', code: 'PROVIDER_UNAVAILABLE' })
+  expect(f.service.state().requests[0]!.participants[0]!.promptCount).toBe(1)
+  for (let count = 2; count <= 4; count++) {
+    expect(await f.call('send_to_thread', { ...input, retryKey: randomUUID() })).toMatchObject({ status: 'ok', limits: { promptCount: count } })
+    await f.finish(first.target.threadId)
+  }
+  expect(await f.call('send_to_thread', { ...input, retryKey: randomUUID() })).toMatchObject({ status: 'refused', code: 'PROMPT_LIMIT' })
+})
+
+it('refunds a definite thrown command failure after the worker exists', async () => {
+  const f = await fixture(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  await f.finish(first.target.threadId)
+  vi.spyOn(f.control, 'commandFromWatcher').mockRejectedValueOnce(new Error('Synthetic pre-dispatch failure'))
+  expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'now', text: 'Synthetic failed dispatch' }))
+    .toMatchObject({ status: 'refused', code: 'PROVIDER_UNAVAILABLE', receipt: { deliveryState: 'failed' } })
+  expect(f.service.state().requests[0]!.participants[0]!.promptCount).toBe(1)
+})
+
+
+it('keeps the roster readable after more than one hundred requests address a worker', async () => {
+  const f = await fixture(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  const latestRequestId = randomUUID()
+  await f.control.updateWatcher(record => {
+    const original = record.requests[0]!
+    for (let index = 0; index < 100; index++) {
+      const id = index === 99 ? latestRequestId : randomUUID()
+      record.requests.push({ ...original, id, rootUserMessageId: randomUUID(), state: 'closed', closedAt: original.createdAt,
+        participants: original.participants.map(item => ({ ...item, requestId: id, state: index === 99 ? 'taken-over' : 'relinquished',
+          ...(index === 99 ? { takeover: { reason: 'user-send', at: original.createdAt } } : {}) })) })
+    }
+  })
+  const result = await f.call('list_threads', { includeSettled: true })
+  expect(result.status).toBe('ok')
+  if (result.status !== 'ok' || !('rows' in result)) throw new Error('roster refused')
+  const row = result.rows.find(item => item.target.threadId === first.target.threadId)!
+  expect(row.participation).toHaveLength(100)
+  expect(row.participation.at(-1)).toMatchObject({ requestId: latestRequestId, state: 'taken-over', takeover: { reason: 'user-send' } })
+  expect(f.control.watcherRecord().requests).toHaveLength(101)
+})
+
+
+it.each([
+  { delivery: 'now', limit: 4 }, { delivery: 'queue', limit: 4 }, { delivery: 'steer', limit: 4 }, { delivery: 'now', limit: 1 },
+])('refuses $delivery to a settled participant before admission with capacity $limit', async ({ delivery, limit }) => {
+  const f = await fixture(), first = await f.call('start_thread', f.start()), second = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first) || second.status !== 'ok') throw new Error('start refused')
+  await f.finish(first.target.threadId)
+  expect(await f.call('settle_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target })).toMatchObject({ status: 'ok' })
+  expect(f.service.state().requests[0]).toMatchObject({ state: 'active', participants: [
+    { target: first.target, state: 'relinquished', promptCount: 1 }, { state: 'participating', promptCount: 1 },
+  ] })
+  f.setLimit(limit)
+  const record = f.control.watcherRecord(), commands = f.workspace.adapters.codex.commands.length
+  expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target,
+    delivery, text: 'Synthetic send after settle' })).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE',
+    message: 'Watcher settled this participation. It will not send another prompt for this request.' })
+  expect(f.control.watcherRecord()).toEqual(record)
+  expect(f.workspace.adapters.codex.commands).toHaveLength(commands)
+})
+
+it('returns a settle receipt on retry after its request closes without reviving it', async () => {
+  const f = await fixture(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  await f.finish(first.target.threadId)
+  await f.finish(f.id)
+  const input = { requestId: f.requestId, retryKey: randomUUID(), target: first.target }
+  const result = await f.call('settle_thread', input)
+  expect(result).toMatchObject({ status: 'ok', receipt: { deliveryState: 'accepted' } })
+  expect(f.service.state().requests[0]!.state).toBe('closed')
+  const commands = f.workspace.adapters.codex.commands.length
+  const record = f.control.watcherRecord()
+  expect(await f.call('settle_thread', input)).toMatchObject({ status: 'ok', receipt: 'receipt' in result ? result.receipt : undefined, state: { settled: true } })
+  expect(await f.call('stop_thread', input)).toMatchObject({ status: 'refused', code: 'RETRY_KEY_CONFLICT' })
+  expect(await f.call('settle_thread', { ...input, retryKey: randomUUID() })).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
+  expect(f.workspace.adapters.codex.commands).toHaveLength(commands)
+  expect(f.control.watcherRecord()).toEqual(record)
+})
+
+
+it('keeps working-copy choices and base refs in the same snapshot across pages', async () => {
+  const f = await fixture()
+  const options = vi.spyOn(f.workspace.host, 'workingCopyOptions').mockResolvedValue({ isGit: true, currentBranch: 'main', branches: ['main'],
+    worktrees: [{ path: f.project.path, branch: 'main' }] })
+  const input = { project: f.start().project, limit: 1 }
+  const first = await f.call('list_working_copies', input)
+  if (first.status !== 'ok' || !('choices' in first) || !first.nextCursor) throw new Error('missing copy page')
+  const second = await f.call('list_working_copies', { ...input, cursor: first.nextCursor })
+  expect(second).toMatchObject({ status: 'ok', revision: first.revision, baseRefs: first.baseRefs })
+  expect(options).toHaveBeenCalledTimes(1)
+})
+
+it.each(['expiry', 'eviction'])('refuses obsolete working-copy choices after snapshot %s before admission', async expiry => {
+  const f = await fixture()
+  vi.spyOn(f.workspace.host, 'workingCopyOptions').mockResolvedValue({ isGit: true, currentBranch: 'main', branches: ['main'],
+    worktrees: [{ path: f.project.path, branch: 'main' }] })
+  const first = await f.call('list_working_copies', { project: f.start().project })
+  if (first.status !== 'ok' || !('choices' in first)) throw new Error('copy read refused')
+  const choice = first.choices.find(item => item.kind === 'existing-worktree')!
+  const clock = expiry === 'expiry' ? vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 60_001) : undefined
+  try {
+    if (expiry === 'eviction') for (let index = 0; index < 16; index++) await f.call('list_working_copies', { project: f.start().project })
+    const record = f.control.watcherRecord(), selected = f.control.shell().activeThreadId
+    expect(await f.call('start_thread', { ...f.start(), workingCopy: { kind: 'existing-worktree', choiceId: choice.choiceId } }))
+      .toMatchObject({ status: 'refused', code: 'WORKING_COPY_CHANGED' })
+    expect(await f.call('start_thread', { ...f.start(), baseRefChoiceId: first.baseRefs[0]!.choiceId }))
+      .toMatchObject({ status: 'refused', code: 'WORKING_COPY_CHANGED' })
+    expect(f.control.watcherRecord()).toEqual(record)
+    expect(f.control.shell().activeThreadId).toBe(selected)
+  } finally { clock?.mockRestore() }
+})
+
+
+it.each(['manual-send', 'queue-followup'] as const)('keeps the Watcher request context on an image %s at the provider boundary', async type => {
+  const f = await fixture()
+  f.workspace.adapters.codex.state.models[0]!.supportsImages = true
+  f.workspace.adapters.codex.emit()
+  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  const image = await f.control.stageAttachment({ name: 'Synthetic.png', mimeType: 'image/png', bytes: PIXEL_PNG })
+  const selected = f.control.shell().activeThreadId
+  if (type === 'manual-send') await f.finish(f.id)
+  const result = await f.control.commandShell({ type, threadId: f.id, draftId: randomUUID(), text: 'Synthetic image instruction', attachments: [image] })
+  expect(result.error).toBeNull()
+  if (type === 'queue-followup') await f.finish(f.id)
+  await vi.waitFor(() => expect(f.workspace.adapters.codex.images).toHaveLength(1))
+  const sent = f.workspace.adapters.codex.commands.findLast(command => command.type === 'send' && command.attachments?.length)
+  if (!sent || sent.type !== 'send') throw new Error('image not sent')
+  expect(sent.text).toContain(`Sotto Watcher request: ${f.service.state().requests.at(-1)!.id}`)
+  expect(sent.text).toContain(`Local host: ${f.control.hostId()}`)
+  expect(sent.text).toContain(f.project.id)
+  expect(sent.attachments?.[0]?.id).toBe(image.id)
+  expect(Buffer.from(f.workspace.adapters.codex.images[0]!)).toEqual(PIXEL_PNG)
+  expect(f.control.shell().activeThreadId).toBe(selected)
+  expect(f.service.state().requests).toHaveLength(type === 'manual-send' ? 2 : 1)
+})
+
+
+it('keeps the newest messages in an oversized initial read and the oldest prefix in a forward read', async () => {
+  const f = await fixture(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  const historyEpoch = randomUUID(), createdAt = new Date().toISOString()
+  vi.spyOn(f.workspace.host, 'watcherRead').mockResolvedValue({ historyEpoch, hasMore: false, earlierAvailable: false, activities: [],
+    messages: Array.from({ length: 50 }, (_, position) => ({ position,
+      message: { id: randomUUID(), role: 'assistant', text: 'x'.repeat(2_000), createdAt } })) })
+  const initial = await f.call('read_thread', { target: first.target })
+  if (initial.status !== 'ok' || !('messages' in initial)) throw new Error('initial read refused')
+  expect(initial.lastPosition).toBe(49)
+  expect(initial.firstPosition).toBeGreaterThan(0)
+  expect(initial.messages.map(item => item.position)).toEqual(Array.from({ length: initial.messages.length }, (_, index) => initial.firstPosition! + index))
+  expect(initial).toMatchObject({ nextPosition: null, earlierAvailable: true, truncated: true })
+  expect(Buffer.byteLength(JSON.stringify(initial))).toBeLessThanOrEqual(64 * 1_024)
+  const forward = await f.call('read_thread', { target: first.target, position: { historyEpoch, afterPosition: -1 } })
+  if (forward.status !== 'ok' || !('messages' in forward)) throw new Error('forward read refused')
+  expect(forward.firstPosition).toBe(0)
+  expect(forward.lastPosition).toBeLessThan(49)
+  expect(forward.messages.map(item => item.position)).toEqual(Array.from({ length: forward.messages.length }, (_, index) => index))
+  expect(forward).toMatchObject({ nextPosition: forward.lastPosition, earlierAvailable: false, truncated: true })
+  expect(Buffer.byteLength(JSON.stringify(forward))).toBeLessThanOrEqual(64 * 1_024)
+})
+
+
+it.each(['list_threads', 'list_projects', 'list_working_copies'] as const)('restarts an expired %s page using the returned restart cursor', async name => {
+  const f = await fixture()
+  if (name === 'list_projects') {
+    const path = join(f.root, 'other-project')
+    expect((await f.control.commandShell({ type: 'create-project', path, title: 'Other synthetic project', provider: 'codex' })).error).toBeNull()
+  }
+  if (name === 'list_working_copies') vi.spyOn(f.workspace.host, 'workingCopyOptions').mockResolvedValue({ isGit: true, currentBranch: 'main', branches: ['main'], worktrees: [] })
+  const input = { limit: 1, ...(name === 'list_working_copies' ? { project: f.start().project } : name === 'list_threads' ? { includeSettled: true } : {}) }
+  const first = await f.call(name, input)
+  if (first.status !== 'ok' || !('nextCursor' in first) || !first.nextCursor) throw new Error('missing list page')
+  const selected = f.control.shell().activeThreadId, clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 60_001)
+  try {
+    const expired = await f.call(name, { ...input, cursor: first.nextCursor })
+    expect(expired).toMatchObject({ status: 'refused', code: 'CURSOR_EXPIRED', restartCursor: expect.any(String) })
+    if (expired.status !== 'refused' || !expired.restartCursor) throw new Error('missing restart cursor')
+    expect(await f.call(name, { ...input, cursor: expired.restartCursor })).toMatchObject({ status: 'ok' })
+    expect(f.control.shell().activeThreadId).toBe(selected)
+  } finally { clock.mockRestore() }
 })

@@ -1,4 +1,5 @@
 import { DEFAULT_SETTINGS, parseSettings, type AppSettings } from '../../shared/settings'
+import type { OmarchyTheme } from '../../shared/themes/omarchy'
 import type { RecoveryNotice } from '../../shared/recoveryNotice'
 import { AtomicJsonStore } from './atomicJsonStore'
 import { parseHostEntityKey } from '../../shared/clientIdentity'
@@ -10,24 +11,27 @@ export interface SettingsRepositoryOptions {
   onRecovery?: (notice: RecoveryNotice) => void
   /** Platform defaults; omitting them keeps the Windows row. */
   defaults?: AppSettings
+  /** Present only on Linux. The palette is projected into reads, never persisted. */
+  omarchyTheme?: () => OmarchyTheme | null
 }
 
 export class SettingsRepository {
   private readonly store: AtomicJsonStore<AppSettings>
   private readonly defaults: AppSettings
+  private readonly omarchyTheme: (() => OmarchyTheme | null) | undefined
   private readonly watcherEnabled: boolean
   private mutationTail: Promise<void> = Promise.resolve()
 
   constructor(filePath: string, options: SettingsRepositoryOptions = {}) {
     this.watcherEnabled = options.watcherEnabled ?? true
+    this.omarchyTheme = options.omarchyTheme
     this.defaults = options.defaults ?? DEFAULT_SETTINGS
-    const defaults = this.defaults
     this.store =
       options.store ??
       new AtomicJsonStore(
         filePath,
-        (input) => parseSettings(input, defaults),
-        () => parseSettings(defaults, defaults),
+        (input) => this.parse(input),
+        () => this.parse(this.defaults),
         options.now ?? Date.now,
         undefined,
         () => options.onRecovery?.({ code: 'SETTINGS_RECOVERED' }),
@@ -40,11 +44,11 @@ export class SettingsRepository {
   }
 
   async save(input: unknown): Promise<AppSettings> {
-    const parsed = parseSettings(input, this.defaults)
+    const parsed = this.parse(input)
     return this.enqueueMutation(async () => {
       const settings = this.watcherEnabled ? parsed : { ...parsed, watcherInFlightLimit: (await this.readSettings()).watcherInFlightLimit }
       await this.writeSettings(settings)
-      return parseSettings(settings, this.defaults)
+      return this.project(settings)
     })
   }
 
@@ -56,18 +60,18 @@ export class SettingsRepository {
         throw new Error('Watcher settings are available in Sotto Owl. Nothing was changed.')
       }
       if (!this.watcherEnabled) delete patchSnapshot.watcherInFlightLimit
-      const settings = parseSettings({ ...current, ...patchSnapshot }, this.defaults)
+      const settings = this.parse({ ...current, ...patchSnapshot })
       await this.writeSettings(settings)
-      return parseSettings(settings, this.defaults)
+      return this.project(settings)
     })
   }
 
   async reset(): Promise<AppSettings> {
-    const parsed = parseSettings(this.defaults, this.defaults)
+    const parsed = this.parse(this.defaults)
     return this.enqueueMutation(async () => {
       const settings = this.watcherEnabled ? parsed : { ...parsed, watcherInFlightLimit: (await this.readSettings()).watcherInFlightLimit }
       await this.writeSettings(settings)
-      return parseSettings(settings, this.defaults)
+      return this.project(settings)
     })
   }
 
@@ -89,15 +93,21 @@ export class SettingsRepository {
         delete defaults[id]
         changed = true
       }
-      if (changed) await this.writeSettings({ ...settings, projectThreadWorkingCopyDefaults: defaults })
+      if (changed) await this.writeSettings(this.parse({ ...settings, projectThreadWorkingCopyDefaults: defaults }))
     })
   }
 
   private async readSettings(): Promise<AppSettings> {
-    return parseSettings(await this.store.read(), this.defaults)
+    return this.project(this.parse(await this.store.read()))
+  }
+
+  private parse(input: unknown): AppSettings { return parseSettings(input, this.defaults, this.omarchyTheme !== undefined) }
+
+  private project(settings: AppSettings): AppSettings {
+    return this.omarchyTheme ? { ...settings, omarchyTheme: this.omarchyTheme() } : settings
   }
   private writeSettings(settings: AppSettings): Promise<void> {
-    return this.store.writeSerialized(JSON.stringify(settings, null, 2))
+    return this.store.writeSerialized(JSON.stringify(this.parse(settings), null, 2))
   }
 
   private enqueueMutation<Result>(mutation: () => Promise<Result>): Promise<Result> {

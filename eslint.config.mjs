@@ -4,11 +4,14 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   {
     ignores: [
+      '.t/**',
+      'artifacts/omarchy-theme/**',
       'artifacts/watcher-benchmark/**',
       'artifacts/watcher-rename/**',
       'artifacts/watcher-gate/**',
       'artifacts/*-center-*/**',
       'artifacts/watcher-live/**',
+      'artifacts/watcher-thread-tools/**',
       'artifacts/watcher-thread-tools-live/**',
       'artifacts/watcher-thread-tools-review/**',
       'artifacts/watcher-thread-tools-gates/**',
