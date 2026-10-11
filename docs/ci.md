@@ -124,6 +124,11 @@ validates the complete matrix once all five finish. `visual-previews.spec.ts` al
 keeps its own explicit baseline-update flag. Evidence publication does not update
 those baselines.
 
+`scripts/capture-design.mjs` starts the app with its version pinned to 0.1.36, the
+version the Help and Settings baselines show, so a release that bumps
+`package.json` changes no capture. Change the pinned version only together with
+regenerated baselines.
+
 ## Opt-in appearance and theme captures
 
 `npm run test:e2e` builds and runs the ordinary Electron suite with one worker.
