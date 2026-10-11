@@ -158,6 +158,19 @@ describe('explicit socket answer checks', () => {
 })
 
 describe('the version sentence', () => {
+  it('uses the running promoted version for host skew and update guidance', () => {
+    const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: '', clientVersion: '0.1.37', owned: true })
+    Object.assign(client, { hostVersion: '0.1.37' })
+    expect(client.hostIsNewer()).toBe(false)
+    const internals = client as unknown as { skewed(): boolean; mismatch(): string }
+    expect(internals.skewed()).toBe(false)
+    Object.assign(client, { hostVersion: '0.1.36' })
+    expect(internals.skewed()).toBe(true)
+    expect(internals.mismatch()).toContain('Sotto 0.1.37 host')
+    Object.assign(client, { hostVersion: '0.1.38' })
+    expect(client.hostIsNewer()).toBe(true)
+    expect(internals.mismatch()).toContain('Update Sotto on this computer')
+  })
   it('says which side to bring up to date, and offers Stop host only for a host Sotto started', () => {
     expect(hostIsNewer('0.1.16', '0.1.15')).toBe(true)
     expect(hostIsNewer('0.2.0', '0.10.0')).toBe(false)

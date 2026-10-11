@@ -1,4 +1,5 @@
 import { isBuiltin } from 'node:module'
+import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import process from 'node:process'
@@ -6,11 +7,20 @@ import { build } from 'vite'
 
 const root = resolve(import.meta.dirname, '..')
 
-export async function buildHost(outDir = resolve(root, process.env.SOTTO_HOST_OUT_DIR || 'out/host')) {
+export async function buildHost(outDir = resolve(root, process.env.SOTTO_HOST_OUT_DIR || 'out/host'), { version } = {}) {
+  if (version !== undefined && !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-owl\.[1-9]\d{7}\.[1-9]\d*)?$/u.test(version)) throw new Error('Host packaging needs a stable or Owl version.')
   await build({
     root,
     configFile: false,
-    plugins: [{
+    plugins: [...(version === undefined ? [] : [{
+      name: 'sotto-host-package-version',
+      enforce: 'pre',
+      async load(id) {
+        if (resolve(id.split('?')[0]) !== resolve(root, 'package.json')) return null
+        const pkg = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8'))
+        return JSON.stringify({ ...pkg, version })
+      },
+    }]), {
       name: 'sotto-host-inventory',
       generateBundle(_options, bundle) {
         const imports = new Set(), dynamicImports = new Set(), packages = new Set()

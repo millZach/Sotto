@@ -153,6 +153,7 @@ import {
 } from '../shared/channels'
 import { APP_ID, APP_NAME } from '../shared/constants'
 import { getReleaseTrack, releaseTrackName } from '../shared/releaseTrack'
+import { hostReleaseVersion } from './hosts/hostReleaseVersion'
 import { runningVersion, watcherEnabledForRun } from './runningVersion'
 import type { DictationCommand } from '../shared/contracts'
 import type { WidgetSnapshot } from '../shared/dictation'
@@ -567,6 +568,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     : join(__dirname, platform === 'linux' ? '../../build/icon.png' : '../../build/icon.ico')
   // Packaging can override the version without editing the source manifest, so it is read from the app (ADR-0072).
   const appRunningVersion = runningVersion(app.getVersion(), process.versions.electron, appVersion)
+  const hostVersion = hostReleaseVersion(appRunningVersion, appVersion)
   const watcherEnabled = watcherEnabledForRun({ version: appRunningVersion, isPackaged: app.isPackaged, override: process.env.SOTTO_WATCHER_ENABLED })
   const recoveryNotices = new RecoveryNoticeCenter()
   const { settings: plainSettings, history } = createStorageRepositories(
@@ -745,7 +747,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const retainedDrafts = new RetainedDraftStore({ directory: userDataPath, watcherEnabled, historyEnabled: () => agentHistoryEnabled,
     onRecovery: () => recoveryNotices.publish({ code: 'REMOTE_DRAFTS_UNREADABLE' }),
     onWriteFailure: () => recoveryNotices.publish({ code: 'REMOTE_DRAFT_STORAGE_NOT_UPDATED' }) })
-  const desktopHosts = new DesktopHosts({ directory: userDataPath, credentials, router: hostRouter, retainedDrafts, watcherEnabled,
+  const desktopHosts = new DesktopHosts({ directory: userDataPath, credentials, router: hostRouter, retainedDrafts, watcherEnabled, clientVersion: hostVersion,
     localHostRunning: startupSettings.localHostEnabled, localHostEnabled: () => workingCopySettings.localHostEnabled,
     restart: () => { app.relaunch(); app.quit() },
     ...(sshStandIn ? { launcher: () => new SshHostLauncher({ spawn: sshStandIn }) } : {}),
@@ -766,7 +768,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       refresh: (id, provider) => desktopHosts.refreshProvider(id, provider),
       subscribe: listener => { const off = [hostRouter.subscribe(() => listener()), desktopHosts.subscribe(() => listener())]; return () => { for (const item of off) item() } } },
     busy: (): string | undefined => { const setup = hostSetup.state(); return setup && (setup.phase === 'starting' || setup.phase === 'running') ? `An agent is setting up ${setup.name} now. Stop that setup first. Nothing was started.` : undefined } })
-  const hostSetup: HostSetup = new HostSetup({ version: appVersion,
+  const hostSetup: HostSetup = new HostSetup({ version: hostVersion,
     hosts: { check: connection => desktopHosts.check(connection), add: connection => desktopHosts.setupAdd(connection), forget: id => desktopHosts.forgetSaved(id),
       attempt: id => desktopHosts.attempt(id), cancelAttempt: id => desktopHosts.cancelAttempt(id), savedAs: (target, port) => desktopHosts.savedAs(target, port) },
     threads: agentJobThreads, busy: (): string | undefined => providerJobs.busySentence() })
@@ -819,7 +821,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // Hosts that run an older Sotto than this computer, and their updates from the Threads page (ADR-0040). A development
   // end-to-end run serves its own releases.
   const releasesStandIn = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_HOST_RELEASES_URL'] : undefined
-  const hostUpdates = new HostUpdates({ version: appVersion, ...(releasesStandIn ? { releasesUrl: releasesStandIn } : {}),
+  const hostUpdates = new HostUpdates({ version: hostVersion, ...(releasesStandIn ? { releasesUrl: releasesStandIn } : {}),
     requiresManagementUpdate: hostId => hostRouter.requiresManagementUpdate(hostId),
     hosts: { candidates: () => desktopHosts.updateCandidates(), run: (id, operation, options) => desktopHosts.runUpdate(id, operation, options),
       restart: (id, version, options) => desktopHosts.restartForUpdate(id, version, options), subscribe: listener => desktopHosts.subscribe(() => listener()) },
@@ -846,7 +848,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   } }
   // Phone access serves the local host's own threads to paired phones over the tailnet (ADR-0033). Its
   // Tailscale checks can take seconds, so they run beside startup rather than in front of the window.
-  const phoneAccess = new PhoneAccess({ directory: userDataPath,
+  const phoneAccess = new PhoneAccess({ directory: userDataPath, listener: { sottoVersion: hostVersion },
     service: startupSettings.localHostEnabled ? hostService : undefined,
     tailscale: e2eConfiguration === null ? new TailscaleCli() : e2eTailscale(userDataPath),
     settings: () => workingCopySettings, policy: authority,

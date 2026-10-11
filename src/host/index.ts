@@ -166,7 +166,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         // listener, which carries desktops the launch script recorded as well as phones (ADR-0053). This one, with the
         // administrative routes, stays reachable only from this machine and through the desktop's SSH (ADR-0050).
         phones = startHostPhoneAccess({ directory, service: runtime.hostService, pairing, policy, settings, startup,
-          desktops: new DesktopClients(directory, options.log), listener: { signIns, clientUpdates: true, receipts, about },
+          desktops: new DesktopClients(directory, options.log), listener: { signIns, clientUpdates: true, receipts, about, ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}) },
           ...(options.tailscale ? { tailscale: options.tailscale } : {}), ...(options.log ? { log: options.log } : {}) })
         const tailnet = phones
         listener = await startSocketServer({ service: runtime.hostService, pairing, port: options.port, signIns, clientUpdates: true, phones: tailnet.administration,

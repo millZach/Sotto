@@ -39,6 +39,22 @@ Captures: [stable dark, 1600](../../artifacts/watcher-gate/stable-dark-1600x1000
 
 `node tools/verify-watcher-package.mjs` passed against the actual unpacked stable executable with an isolated profile, automatic update checks and the local host off, and no e2e mode. Real output: `version=0.1.35, name=sotto, packaged=true, override=1, releaseTrack=stable, watcherEnabled=false, phase=idle`. The packaged build ignores the development override. Its [first-run capture](../../artifacts/watcher-gate/packaged-stable.png) was opened and inspected; the existing welcome screen and Get started control render fully.
 
+## Promotion
+
+Owl publication now prints reviewed `gh` commands with a twelve-character source suffix in the title and one full `Source commit:` line in the body, taken from `out/build-provenance.json`. It neither runs those commands nor publishes. The public, tokenless release check selects the newest published Owl, requires exactly one full source SHA, and compares it with a clean `git rev-parse HEAD`. A missing source never falls back to an older build or a tag target. Scripted feeds cover its decisions without network access.
+
+Windows and Mac stable packaging run that check first and set the promoted Owl version's base in the packaged manifest. Source manifests stay unchanged, output names follow the packaged version, and offline directory/Linux/CI packaging stays unchanged. Owl keeps its existing stable host-archive target; promoted stable advertises its actual packaged version. The release-only host archive command also packages that promoted base in its filename, runtime manifest and bundled listeners; default host packaging and CI remain offline.
+
+The release procedure promotes the chosen Owl commit after clean checkout, `npm ci`, normal gates and desktop smoke; publication is followed by the `Release X.Y.Z` pull request on main. Newer main commits wait for the next Owl. Daily Owl builds compare the newest Owl's source with `origin/main` and skip unchanged days. Mac ships the same promoted commit without a Mac Owl stage.
+
+The real public-feed check returned this refusal, with exit 1:
+
+```text
+The newest Owl release, Sotto Owl 0.1.35-owl.20261010.1, names no single full source commit. Publish an Owl build with "Source commit: <full sha>" in its release body before making a stable release.
+```
+
+The scripted promotion/publication/packaging tests passed in the full suite. Release-only host archive verification additionally passed 33 focused tests; real default 0.1.35 and overridden 0.1.37 Windows host archives started with matching manifest, HTTP health and socket versions. Source manifests were byte-identical afterward. Mac/Linux host execution is not claimed.
+
 ## Gates and review
 
 The requested commands ran in this order after the renderer simplification. These are actual results, including failures; neither the full suite nor design gate was repeated after the lead's instruction to run the gates once.
@@ -52,6 +68,7 @@ The requested commands ran in this order after the renderer simplification. Thes
 | `npm run build` | Exit 0 |
 | `npm run design:verify` | Exit 1; 6 specs passed, 3 Help captures failed on their About version line |
 | `npm run package:dir` | Exit 0; unchanged command; provenance, resource/dependency closure, normal startup, SQLite/FTS5 and native PTY exit 0 (`SOTTO_PTY_PACKAGE_OK`) |
+| `npm run release:check` | Exit 1; expected refusal from the real public feed, called once at HEAD `a940ad79fe75abe36d81a5fe1d67709a2065e7eb`, which is not Owl 1's source |
 
 The sole full-suite failure was the new Watcher surface fixture: it queried the contenteditable composer as an input value and put its prompt in the coordinator draft instead of the per-thread draft. The assertion and schema-valid fixture were corrected, without a runtime edit. The affected file then passed all four tests in 4.23 seconds, and its TypeScript test project passed. No named Git-heavy timeout occurred. An initial typecheck also caught a Playwright-only matcher option in that rewritten unit test; it was removed before the passing typecheck and full run above.
 

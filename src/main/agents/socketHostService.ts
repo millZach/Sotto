@@ -21,7 +21,7 @@ import type { HostFeature, HostAnswerTarget, HostHello, HostOperation, HostPairi
 import type { HostService, ClientIdentity, RequestAnswerRecovery } from './hostService'
 import { requestDraftProvider, requestDraftQuestions } from '../../shared/requestDrafts'
 import { requestQuestionsDigest } from './requestDrafts'
-import { version as clientVersion } from '../../../package.json'
+import { version as sourceVersion } from '../../../package.json'
 import { RetainedDraftStore, type RetainedDraft } from './retainedDraftStore'
 
 export const REMOTE_COMPOSE_UNSAVED = 'This host cannot save this draft yet. Your draft is kept on this computer and has not been saved on the host. Update the host.'
@@ -43,6 +43,8 @@ export class WrongHostError extends HostConnectionError {
 export interface SocketHostServiceOptions {
   url: string; token: string; expectedHostId?: string
   watcherEnabled?: boolean
+  /** The running packaged version, which may override the source manifest during promotion. */
+  clientVersion?: string
   retainedDrafts?: RetainedDraftStore
   retainedRegistrationId?: string
   /**
@@ -141,6 +143,7 @@ export class SocketHostService implements HostService {
     return command.type === 'send' || command.type === 'compose' || command.type === 'cancel-draft'
       ? this.cached?.draftThreadId ?? this.cached?.activeThreadId : undefined
   }
+  private get clientVersion(): string { return this.options.clientVersion ?? sourceVersion }
   private get catchesUp(): boolean { return this.options.catchUpEvents !== false }
   /**
    * Redeems a pairing code. A desktop pairs only through the SSH connection's forward, on this computer, so a code is never
@@ -292,11 +295,11 @@ export class SocketHostService implements HostService {
     pending.reject(new HostConnectionError(this.mismatch(), 'version_mismatch', pending.command ? id : undefined))
   }
   /** Whether the host runs another Sotto version than this client, by what it advertised. */
-  private skewed(): boolean { return this.hostVersion !== undefined && this.hostVersion !== clientVersion }
+  private skewed(): boolean { return this.hostVersion !== undefined && this.hostVersion !== this.clientVersion }
   /** The version sentence for this host, which says which side to bring up to date. */
-  private mismatch(): string { return hostVersionMismatch(clientVersion, this.hostVersion, this.options.owned ?? false) }
+  private mismatch(): string { return hostVersionMismatch(this.clientVersion, this.hostVersion, this.options.owned ?? false) }
   /** Whether the host last advertised a later Sotto than this client: stopping it would not help. */
-  hostIsNewer(): boolean { return hostIsNewer(this.hostVersion, clientVersion) }
+  hostIsNewer(): boolean { return hostIsNewer(this.hostVersion, this.clientVersion) }
   /** The Sotto version the host last advertised on this connection, if it said one. */
   sottoVersion(): string | undefined { return this.hostVersion }
   /** Reads what the host answered; from a host of another version, an answer this client cannot read is named as skew. */
