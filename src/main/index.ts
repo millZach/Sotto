@@ -857,10 +857,33 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   } }
   // Phone access serves the local host's own threads to paired phones over the tailnet (ADR-0033). Its
   // Tailscale checks can take seconds, so they run beside startup rather than in front of the window.
+  const files = new FilesService({
+    resolveBinding: threadId => agentControl.filesBinding(threadId),
+    copyPath: path => copyOutput(path),
+    reveal: path => shell.showItemInFolder(path),
+  })
+  // A pane drawer starts in the project folder, even for a thread with its own worktree.
+  const terminalService = new TerminalService({ files, directory: userDataPath,
+    projectFolder: projectId => agentControl.projects().find(project => project.id === projectId)?.path,
+    acquireStart: workspace => agentHost.acquireTerminalStart(workspace.workingDirectory),
+    emit: event => { windows.sendToMain(TERMINAL_EVENT, event) } })
+  const terminalWorkspace = new TerminalWorkspaceService({
+    projects: () => agentControl.projects(), git: runWorktreeGit,
+    worktrees: new ThreadWorktrees(userDataPath, runWorktreeGit, TERMINAL_WORKTREE_HOME),
+    acquireReclaim: async directory => {
+      const release = await agentHost.acquireWorktreeReclaim(directory)
+      try {
+        if (await terminalService.hasRunningTerminalInCheckout(directory)) throw new Error('A terminal is open in this folder, so it stays.')
+        return release
+      } catch (error) { release(); throw error }
+    },
+    emit: event => { windows.sendToMain(TERMINALS_EVENT, event) },
+  })
   const phoneAccess = new PhoneAccess({ directory: userDataPath, listener: { sottoVersion: hostVersion },
     service: startupSettings.localHostEnabled ? hostService : undefined,
     tailscale: e2eConfiguration === null ? new TailscaleCli() : e2eTailscale(userDataPath),
     settings: () => workingCopySettings, policy: authority,
+    terminals: terminalWorkspace,
     openExternal: async url => { if (e2eConfiguration === null) await shell.openExternal(url) },
     log: logOperational,
   })
@@ -1278,11 +1301,6 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       ),
     registerIpc: () => {
       const cleanupRequestDrafts = registerRequestDraftIpc(ipcMain, requestDrafts, () => windows.getTrustedRenderers())
-      const files = new FilesService({
-        resolveBinding: threadId => agentControl.filesBinding(threadId),
-        copyPath: copyOutput,
-        reveal: path => shell.showItemInFolder(path),
-      })
       // A thread on a paired host is read on that host (ADR-0025, October 5 amendment). Copy path copies the host's own
       // path to this computer's clipboard, in the host's format; nothing on the host is opened or written.
       const copyHostPath = async <T extends { ok: true; value: { absolutePath: string } } | { ok: false }>(result: T): Promise<T> => { if (result.ok) await copyOutput(result.value.absolutePath); return result }
@@ -1297,23 +1315,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const gitChanges = new GitChangesService({ files, checkpoints: checkpointIntegration.checkpoints, canMutate: checkpointIntegration.canMutate,
         acted: threadId => { void agentHost.gitActionFinished(threadId).catch(() => undefined) },
         copyPath: copyOutput, reveal: path => shell.showItemInFolder(path), emit: event => { windows.sendToMain(GIT_CHANGES_EVENT, event) } })
-      // A pane drawer starts in the project folder, even for a thread with its own worktree.
-      const terminalService = new TerminalService({ files, directory: userDataPath,
-        projectFolder: projectId => agentControl.projects().find(project => project.id === projectId)?.path,
-        acquireStart: workspace => agentHost.acquireTerminalStart(workspace.workingDirectory),
-        emit: event => { windows.sendToMain(TERMINAL_EVENT, event) } })
-      const cleanupTerminals = registerTerminalWorkspaceIpc(ipcMain, new TerminalWorkspaceService({
-        projects: () => agentControl.projects(), git: runWorktreeGit,
-        worktrees: new ThreadWorktrees(userDataPath, runWorktreeGit, TERMINAL_WORKTREE_HOME),
-        acquireReclaim: async directory => {
-          const release = await agentHost.acquireWorktreeReclaim(directory)
-          try {
-            if (await terminalService.hasRunningTerminalInCheckout(directory)) throw new Error('A terminal is open in this folder, so it stays.')
-            return release
-          } catch (error) { release(); throw error }
-        },
-        emit: event => { windows.sendToMain(TERMINALS_EVENT, event) },
-      }), () => windows.getTrustedRenderers(), sender => BrowserWindow.getAllWindows().find(window => window.webContents === sender))
+      const cleanupTerminals = registerTerminalWorkspaceIpc(ipcMain, terminalWorkspace, () => windows.getTrustedRenderers(), sender => BrowserWindow.getAllWindows().find(window => window.webContents === sender))
       browserService = new BrowserService({ files,
         getWindow: () => BrowserWindow.getAllWindows().find(window => window.webContents === windows.getMainWebContents()) ?? null,
         emit: event => { windows.sendToMain(BROWSER_EVENT, event) },

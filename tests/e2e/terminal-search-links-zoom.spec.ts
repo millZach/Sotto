@@ -83,9 +83,12 @@ const paint = () => process.stdout.write(e+'[3J'+e+'[2J'+e+'[H'+[
  'Unsafe '+e+']8;;file:///tmp/blocked'+e+'\\\\'+'blocked file'+e+']8;;'+e+'\\\\',
  'CJK 界 emoji 😀', 'GRID='+process.stdout.columns+'x'+process.stdout.rows
 ].join('\\r\\n')+'\\r\\n');
+// After the capture redraw, follow later PTY sizes instead of keeping a screen from the old grid.
+let repaintOnResize=false;
+process.stdout.on('resize', () => { if(repaintOnResize) paint(); });
 paint();
 process.stdin.setRawMode(true); process.stdin.resume(); let line='';
-process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x03') process.exit(0); if(c==='\\x0c') {paint();continue;} if(c==='\\x02') {process.stdout.write('\\r\\n'+('many-match\\r\\n').repeat(1001));continue;} if(c==='\\r') {process.stdout.write('INPUT='+line+'\\r\\n');line='';} else line+=c; } });
+process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x03') process.exit(0); if(c==='\\x0c') {repaintOnResize=true;paint();continue;} if(c==='\\x02') {process.stdout.write('\\r\\n'+('many-match\\r\\n').repeat(1001));continue;} if(c==='\\r') {process.stdout.write('INPUT='+line+'\\r\\n');line='';} else line+=c; } });
 `, 'utf8')
       await app.evaluate(({ shell }) => {
         const state = globalThis as typeof globalThis & { terminalOpenedLinks?: string[] }

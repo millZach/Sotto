@@ -49,6 +49,16 @@ export class TerminalAgentStateMachine {
     const supported = this.rules.supported
     return supported === false || supported === undefined && this.unversioned ? 'unavailable' : 'available'
   }
+  hasRequest(requestId: string): boolean { return this.state === 'needs-you' && this.requests.has(requestId) }
+  /** A request's reviewable live bottom, never scrollback. Input and incomplete redraws withdraw it. */
+  approvalLines(): string[] | null {
+    if (this.state !== 'needs-you' || !this.fresh || !this.screen.reliable || this.evidence.requestKind !== 'permission') return null
+    const lines = this.screen.lines(), last = lines.findLastIndex(line => line.trim() !== '')
+    if (last < 0) return null
+    const bottom = lines.slice(Math.max(0, last - 7), last + 1)
+    // Never truncate a permission's words and then authorize a review of the shortened copy.
+    return bottom.some(line => line.length > 512) || bottom.join('\n').length > 4096 ? null : bottom
+  }
   started(): void { this.live = true; this.reconcile() }
   setVisible(visible: boolean): void { this.visible = visible; if (visible && (this.completion || this.readyForCompletion)) this.completionViewed = true; if (visible && this.state === 'just-finished') this.state = 'idle' }
   resize(cols: number, rows: number): void { this.screen.resize(cols, rows); this.fresh = false; this.evidence = { detection: 'unavailable' }; this.detection = 'unavailable'; this.reconcile() }
@@ -106,6 +116,12 @@ export class TerminalAgentStateMachine {
         if (event.workPhase === 'submitted') {
           // Independent hook helpers can deliver submission after this turn's tool work or Stop. Its same opaque ID corroborates that turn, without starting it again.
           if (event.turnId && this.activeTurn === event.turnId) { this.awaitingSubmissionHook = false; break }
+          // The current permission redraw may precede its submission helper. Bind that locally submitted
+          // turn without invalidating the screen the user is already reviewing.
+          if (this.awaitingSubmissionHook && this.requests.size === 0 && !this.pendingSubmission && this.fresh &&
+            this.evidence.state === 'needs-you' && this.evidence.requestKind === 'permission') {
+            this.activeTurn = event.turnId; this.awaitingSubmissionHook = false; break
+          }
           // Native work and readiness can both precede the submitted helper. Bind the awaited turn while
           // retaining that observed readiness and its visibility; this callback does not submit it again.
           if (this.awaitingSubmissionHook && !this.pendingSubmission && this.readyForCompletion) {
@@ -128,6 +144,7 @@ export class TerminalAgentStateMachine {
       case 'permission':
         if (event.turnId && (this.inactiveTurns.has(event.turnId) || this.activeTurn && this.activeTurn !== event.turnId)) break
         if (this.interrupted || !event.requestId) break
+        this.activeTurn ??= event.turnId
         this.deferredCompletions.clear(); this.requests.add(event.requestId); this.completion = false; this.completionViewed = false; this.readyForCompletion = false; this.pendingSubmission = false; this.state = 'needs-you'; break
       case 'completed':
         if (this.provider === 'codex' && this.conflictingSession) break // A conflicted run uses only its current screen for completion.

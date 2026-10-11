@@ -350,7 +350,7 @@ export class SocketHostService implements HostService {
   }
   private call(operation: HostOperation, id: string = randomUUID(), onPlacement?: () => void): Promise<unknown> {
     const threadId = 'threadId' in operation ? operation.threadId : 'request' in operation && 'threadId' in operation.request ? operation.request.threadId
-      : 'answer' in operation ? operation.answer?.threadId : operation.op === 'command' ? this.commandThreadId(operation.command) : undefined
+      : 'answer' in operation && operation.answer && 'threadId' in operation.answer ? operation.answer.threadId : operation.op === 'command' ? this.commandThreadId(operation.command) : undefined
     if (!this.threadAvailable(threadId)) return Promise.reject(new Error('Watcher is available in Sotto Owl. Nothing was sent.'))
     const frames = this.frames, session = this.session
     if (!frames || !session) return Promise.reject(new HostConnectionError('The host is disconnected. Connect again before sending.', 'disconnected'))
