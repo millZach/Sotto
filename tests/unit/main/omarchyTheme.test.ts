@@ -50,7 +50,8 @@ describe('Linux Omarchy theme reader', () => {
     await initializeOmarchySelection('linux', null, repository)
     expect(repository.update).not.toHaveBeenCalled()
   })
-  it('survives successive directory and file replacements, falls back, and recovers', async () => {
+  // The reader runs only on Linux; these journeys depend on Linux folder replacement and watch semantics.
+  it.skipIf(process.platform !== 'linux')('survives successive directory and file replacements, falls back, and recovers', async () => {
     const directory = home()
     render(directory, 'tokyo-night')
     const { theme, changed, log } = monitor(directory)
@@ -73,7 +74,7 @@ describe('Linux Omarchy theme reader', () => {
     render(directory, 'rose-pine')
     expect(theme.get()?.sourceName).toBe('Tokyo Night')
   })
-  it('finds an installation made after starting with no Omarchy folders', async () => {
+  it.skipIf(process.platform !== 'linux')('finds an installation made after starting with no Omarchy folders', async () => {
     const directory = home(), { theme, log } = monitor(directory)
     expect(theme.load()).toBeNull()
     theme.start()

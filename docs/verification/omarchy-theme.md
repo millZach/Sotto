@@ -181,3 +181,12 @@ The journey owns and removes its isolated profile, installs/renders the template
 ```sh
 mise exec node@24.21.0 -- node scripts/render-omarchy-theme-fixtures.mjs
 ```
+
+
+## October 11 refresh for Windows CI
+
+Merged main `99cb180b` with a merge commit. The five conflicts were in `.gitignore`, `eslint.config.mjs`, `src/main/index.ts`, `src/main/storage/repositories.ts` and `src/main/storage/settingsRepository.ts`. Both evidence ignore lists survive. Main's app and host version handling and Watcher setting gates remain, with the Linux Omarchy monitor and palette projection added alongside them. Voice control remains removed.
+
+Windows run [38030560712](https://github.com/millZach/Sotto/actions/runs/38030560712) failed the successive replacement watcher journey. The two real watcher journeys now use Linux-only guards: the reader runs only on Linux, and directory replacement and watch notification behavior are platform-specific. Portable win32 and darwin cases still assert no file reads, watchers or operational logs with a rendered file present. One-shot parsing, settings projection, renderer and stock palette checks remain portable; invoking the installed Omarchy renderer is explicitly Linux-only.
+
+The e2e uses main's evidence helper: disposable repeats go to `artifacts/e2e-runs/omarchy-theme/`; publishing curated evidence remains explicit. The refresh gate logs and owned nested-session identities are retained locally in ignored `artifacts/omarchy-theme/ci-refresh/`. Final-head verification runs typecheck, lint, the complete suite with two workers, notices, build and the dependency allowlist, followed by `tests/e2e/omarchy-theme.spec.ts` in an isolated HOME and owned nested Hyprland. The e2e measures text pixels in all 28 captures, covering Tokyo Night, Catppuccin Latte, Rose Pine and Hackerman, both windows and all three review sizes.

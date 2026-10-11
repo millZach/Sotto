@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path'
 import { _electron as electron, expect, test, type Page } from '@playwright/test'
 import sharp from 'sharp'
 import { ownedE2EProfile } from './support/e2eProfile'
+import { evidenceDirectory } from '../fixtures/evidence'
 import { completeFirstRunSetup, firstSottoWindow, launchSotto, closeSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 import { defaultAgentConfiguration } from '../../src/shared/agents'
 import { OMARCHY_THEME_ID, parseOmarchyTheme, type OmarchyTheme } from '../../src/shared/themes/omarchy'
@@ -13,7 +14,7 @@ import { THEME_COLOR_ROLES, T3_CODE_THEME, getThemeColorsForMode, type ThemeColo
 import { contrastRatio, parseThemeRgb } from '../../src/shared/themes/color'
 
 const enabled = process.platform === 'linux' && existsSync('/usr/share/omarchy/bin/omarchy-theme-set-templates') && process.env.SOTTO_OMARCHY_EVIDENCE === '1'
-const evidence = resolve('artifacts/omarchy-theme')
+const evidence = evidenceDirectory('artifacts/omarchy-theme')
 const proof: unknown[] = []
 
 async function renderTheme(home: string, slug: string): Promise<OmarchyTheme> {
@@ -120,6 +121,7 @@ async function size(launched: LaunchedSotto, width: number, height: number): Pro
 test('Omarchy switches repaint both windows, keep choices, and read at all review sizes', async () => {
   test.skip(!enabled, 'Run SOTTO_OMARCHY_EVIDENCE=1 in an owned nested Hyprland with TMPDIR inside the worktree')
   test.setTimeout(240_000)
+  await mkdir(evidence, { recursive: true })
   const profile = await ownedE2EProfile({prefix:'sotto-e2e-omarchy-theme-'})
   const home = join(profile.directory,'home')
   await mkdir(join(home,'.config/omarchy/themed'),{recursive:true})

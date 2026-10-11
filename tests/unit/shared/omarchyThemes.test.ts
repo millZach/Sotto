@@ -23,7 +23,7 @@ describe('Omarchy M3 and readability check', () => {
     expect(entries).toHaveLength(22)
     expect(createHash('sha256').update(readFileSync('apps/omarchy/sotto.json.tpl')).digest('hex')).toBe(fixtures.templateSha256)
   })
-  it.skipIf(!existsSync('/usr/share/omarchy/bin/omarchy-theme-set-templates'))('renders every installed stock theme with Omarchy itself in an isolated HOME', () => {
+  it.skipIf(process.platform !== 'linux' || !existsSync('/usr/share/omarchy/bin/omarchy-theme-set-templates'))('renders every installed stock theme with Omarchy itself in an isolated HOME', () => {
     expect(renderOmarchyStockThemes()).toEqual(fixtures)
   })
   it.each(entries)('%s reads on every role and painted text surface', (name, fixture) => {
