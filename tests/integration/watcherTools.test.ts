@@ -606,3 +606,27 @@ it.each(['manual-send', 'queue-followup'] as const)('keeps the Watcher request c
   expect(f.control.shell().activeThreadId).toBe(selected)
   expect(f.service.state().requests).toHaveLength(type === 'manual-send' ? 2 : 1)
 })
+
+
+it('keeps the newest messages in an oversized initial read and the oldest prefix in a forward read', async () => {
+  const f = await fixture(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  const historyEpoch = randomUUID(), createdAt = new Date().toISOString()
+  vi.spyOn(f.workspace.host, 'watcherRead').mockResolvedValue({ historyEpoch, hasMore: false, earlierAvailable: false, activities: [],
+    messages: Array.from({ length: 50 }, (_, position) => ({ position,
+      message: { id: randomUUID(), role: 'assistant', text: 'x'.repeat(2_000), createdAt } })) })
+  const initial = await f.call('read_thread', { target: first.target })
+  if (initial.status !== 'ok' || !('messages' in initial)) throw new Error('initial read refused')
+  expect(initial.lastPosition).toBe(49)
+  expect(initial.firstPosition).toBeGreaterThan(0)
+  expect(initial.messages.map(item => item.position)).toEqual(Array.from({ length: initial.messages.length }, (_, index) => initial.firstPosition! + index))
+  expect(initial).toMatchObject({ nextPosition: null, earlierAvailable: true, truncated: true })
+  expect(Buffer.byteLength(JSON.stringify(initial))).toBeLessThanOrEqual(64 * 1_024)
+  const forward = await f.call('read_thread', { target: first.target, position: { historyEpoch, afterPosition: -1 } })
+  if (forward.status !== 'ok' || !('messages' in forward)) throw new Error('forward read refused')
+  expect(forward.firstPosition).toBe(0)
+  expect(forward.lastPosition).toBeLessThan(49)
+  expect(forward.messages.map(item => item.position)).toEqual(Array.from({ length: forward.messages.length }, (_, index) => index))
+  expect(forward).toMatchObject({ nextPosition: forward.lastPosition, earlierAvailable: false, truncated: true })
+  expect(Buffer.byteLength(JSON.stringify(forward))).toBeLessThanOrEqual(64 * 1_024)
+})

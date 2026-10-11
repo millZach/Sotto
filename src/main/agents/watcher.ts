@@ -702,7 +702,10 @@ export class WatcherService implements WatcherControlHooks {
       historyEpoch: read.historyEpoch, firstPosition: messages[0]?.position ?? null, lastPosition: messages.at(-1)?.position ?? null,
       nextPosition: read.hasMore ? messages.at(-1)?.position ?? null : null, truncated: read.hasMore, earlierAvailable: read.earlierAvailable, observedAt: now() }
     while (Buffer.byteLength(JSON.stringify(result)) > WATCHER_READ_BYTES_MAX && result.messages.length > 1) {
-      result.messages.pop(); result = { ...result, lastPosition: result.messages.at(-1)?.position ?? null, nextPosition: result.messages.at(-1)?.position ?? null, truncated: true }
+      if (input.position) result.messages.pop()
+      else result.messages.shift()
+      result = { ...result, firstPosition: result.messages[0]?.position ?? null, lastPosition: result.messages.at(-1)?.position ?? null, truncated: true,
+        ...(input.position ? { nextPosition: result.messages.at(-1)?.position ?? null } : { earlierAvailable: true }) }
     }
     while (Buffer.byteLength(JSON.stringify(result)) > WATCHER_READ_BYTES_MAX && result.activities.length) { result.activities.shift(); result.truncated = true }
     if (Buffer.byteLength(JSON.stringify(result)) > WATCHER_READ_BYTES_MAX) {
