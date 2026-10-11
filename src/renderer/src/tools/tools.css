@@ -136,9 +136,8 @@
 .browser-go { flex: none; min-height: 32px; }
 .browser-problem { flex: none; margin: 0; padding: 6px 16px; color: var(--tt-error-text); font-size: 13px; }
 .browser-tabs__tab[data-status='unavailable'] .terminal-tabs__name { color: var(--tt-error-text); }
-/* On the selected tab the red steps a fifth toward the body ink, so the name keeps 4.5:1 on the selection. */
-.terminal-tabs__item[data-selected] { --terminal-tabs-selected-error: color-mix(in oklab, var(--tt-error-text) 80%, var(--tt-text)); }
-.terminal-tabs__item[data-selected] .browser-tabs__tab[data-status='unavailable'] .terminal-tabs__name { color: var(--terminal-tabs-selected-error); }
+/* The selected tab is a tint, so an unavailable page's name takes the on-tint red. */
+.terminal-tabs__item[data-selected] .browser-tabs__tab[data-status='unavailable'] .terminal-tabs__name { color: var(--tt-error-on-tint); }
 .browser-empty { flex: 1; }
 .browser-page { display: flex; flex: 1; flex-direction: column; min-height: 0; }
 .browser-viewport { position: relative; flex: 1; min-height: 0; background: var(--tt-code-bg); }

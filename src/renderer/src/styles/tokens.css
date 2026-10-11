@@ -207,6 +207,9 @@
   --tt-error-contrast: var(--theme-canvas);
   --tt-error-surface: var(--theme-error-surface);
   --tt-error-border: color-mix(in oklab, var(--theme-error) 38%, var(--theme-error-surface));
+  /* Status text on a tinted surface, the selection or the bubble, steps toward the body ink so it keeps 4.5:1. */
+  --tt-warning-on-tint: color-mix(in oklab, var(--tt-warning-text) 90%, var(--tt-text));
+  --tt-error-on-tint: color-mix(in oklab, var(--tt-error-text) 80%, var(--tt-text));
   --tt-update: var(--theme-update);
   --tt-update-text: color-mix(in oklab, color-mix(in oklab, var(--theme-update-foreground) var(--theme-contrast-base), var(--theme-update-surface)), var(--theme-contrast-target) var(--theme-contrast-boost));
   --tt-update-surface: var(--theme-update-surface);
