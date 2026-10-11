@@ -107,3 +107,32 @@ it('holds capacity for a lost native creation acknowledgement and never creates 
   expect((await f.native.driver.requests()).filter(item => item.method === 'thread/start')).toHaveLength(count)
   expect((await f.tools.call(f.id, 'start_thread', { ...input, retryKey: randomUUID() })).structuredContent).toMatchObject({ status: 'refused', code: 'IN_FLIGHT_LIMIT' })
 }, 60_000)
+
+it('fences a saved user queue at the native writer when machine Stop arrives during preparation', async () => {
+  const f = await fixture(), gate = heldOperation()
+  const threadId = randomUUID()
+  expect((await f.control.commandShell({ type: 'create-thread', threadId, projectId: f.project.id, title: 'Synthetic user worker', modelId: f.model.id })).error).toBeNull()
+  expect((await f.control.commandShell({ type: 'manual-send', threadId, draftId: randomUUID(), text: 'Synthetic user work' })).error).toBeNull()
+  const binding = f.threadRegistry!.byThread(threadId)!
+  const draftId = randomUUID()
+  await f.control.commandShell({ type: 'queue-followup', threadId, draftId, text: 'Synthetic held saved user prompt' })
+  const prepare = f.native.adapter.prepareSkillInput.bind(f.native.adapter)
+  vi.spyOn(f.native.adapter, 'prepareSkillInput').mockImplementation(async (...args) => {
+    const result = await prepare(...args)
+    if (args[1] === 'Synthetic held saved user prompt') await gate.wait()
+    return result
+  })
+  try {
+    await f.native.driver.completeTurn(binding.sessionId, 'Synthetic completed user work')
+    await gate.entered
+    const messageId = f.control.shell().followups!.find(item => item.draftId === draftId)!.messageId
+    expect(messageId).toBeTruthy()
+    expect((await f.tools.call(f.id, 'stop_thread', { requestId: f.requestId, retryKey: randomUUID(),
+      target: { hostId: f.control.hostId()!, threadId } })).structuredContent).toMatchObject({ status: 'ok' })
+    expect(f.control.watcherSnapshot().threads.find(item => item.id === threadId)?.lastTurn?.status).toBe('completed')
+    gate.release()
+    await expect.poll(() => f.control.shell().followups!.find(item => item.draftId === draftId)?.status).not.toBe('dispatching')
+    expect((await f.native.driver.requests()).some(item => item.method === 'turn/start' && item.params?.clientUserMessageId === messageId)).toBe(false)
+    expect(f.control.shell().followups!.find(item => item.draftId === draftId)).toMatchObject({ status: 'failed', text: 'Synthetic held saved user prompt' })
+  } finally { gate.release() }
+}, 60_000)

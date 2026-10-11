@@ -486,6 +486,52 @@ it('keeps preexisting user queues intact when machine Stop interrupts their thre
 })
 
 
+it.each(['persistence', 'queue cleanup'])('keeps saved user prompts waiting when a worker completes during machine Stop %s', async delay => {
+  const f = await fixture()
+  await f.control.commandShell({ type: 'create-thread', projectId: f.project.id, title: 'Synthetic user worker', modelId: f.model.id })
+  const threadId = f.control.shell().activeThreadId!
+  await f.control.commandShell({ type: 'manual-send', threadId, draftId: randomUUID(), text: 'Synthetic user work' })
+  await f.control.commandShell({ type: 'queue-followup', threadId, draftId: randomUUID(), text: 'Synthetic saved user prompt' })
+  const queued = f.control.shell().followups!.filter(item => item.threadId === threadId)
+  const entered = deferred<void>(), release = deferred<void>()
+  let held = false
+  const update = f.control.updateWatcher.bind(f.control), cancel = f.control.cancelWatcherQueue.bind(f.control)
+  const saving = vi.spyOn(f.control, 'updateWatcher').mockImplementation(async change => {
+    const pending = update(change)
+    if (delay === 'persistence' && !held && f.service.preserveUserQueue(threadId)) { held = true; entered.resolve(); await release.promise }
+    await pending
+  })
+  const cancelling = vi.spyOn(f.control, 'cancelWatcherQueue').mockImplementation(async ids => {
+    if (delay === 'queue cleanup' && !held && f.service.preserveUserQueue(threadId)) { held = true; entered.resolve(); await release.promise }
+    await cancel(ids)
+  })
+  const stop = f.call('stop_thread', { requestId: f.requestId, retryKey: randomUUID(), target: { hostId: f.control.hostId()!, threadId } })
+  try {
+    await entered.promise
+    expect(f.service.preserveUserQueue(threadId)).toBe(true)
+    await f.finish(threadId)
+  } finally { release.resolve() }
+  const result = await stop
+  saving.mockRestore(); cancelling.mockRestore()
+  expect(f.workspace.adapters.codex.commands.filter(item => item.type === 'send' && item.text === 'Synthetic saved user prompt')).toHaveLength(0)
+  expect(f.control.shell().followups!.filter(item => item.threadId === threadId)).toEqual(queued)
+  expect(result).toMatchObject({ status: 'ok' })
+  expect((await f.control.commandShell({ type: 'resume-followups', threadId })).error).toBeNull()
+  await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.filter(item => item.type === 'send' && item.text === 'Synthetic saved user prompt')).toHaveLength(1))
+  expect(f.service.state().watchedThreads.find(item => item.target.threadId === threadId)!.participation[0]!.state).toBe('taken-over')
+})
+
+it('automatically sends an ordinary user queue on completion while Watcher has never participated', async () => {
+  const f = await fixture()
+  await f.control.commandShell({ type: 'create-thread', projectId: f.project.id, title: 'Synthetic ordinary worker', modelId: f.model.id })
+  const threadId = f.control.shell().activeThreadId!
+  await f.control.commandShell({ type: 'manual-send', threadId, draftId: randomUUID(), text: 'Synthetic ordinary work' })
+  await f.control.commandShell({ type: 'queue-followup', threadId, draftId: randomUUID(), text: 'Synthetic ordinary queued prompt' })
+  expect(f.service.preserveUserQueue(threadId)).toBe(false)
+  await f.finish(threadId)
+  await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.filter(item => item.type === 'send' && item.text === 'Synthetic ordinary queued prompt')).toHaveLength(1))
+})
+
 it('refuses an explicit user Queue before the first actual Watcher Send', async () => {
   const f = await fixture(); await f.finish(f.id)
   await f.control.updateWatcher(record => { record.requests = [] })
