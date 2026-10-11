@@ -1,5 +1,7 @@
 # Monitoring creature verification
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 September 20, 2026. Approved C process perch for #125, isolated on feat/monitoring-creature from main at 865e9484. The original shared checkout contained unrelated work; none of that work is included in this feature branch.
 
 ## Behavior and provider boundary

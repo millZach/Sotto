@@ -1,3 +1,5 @@
+// @vitest-environment node
+import { hostStatus } from '../../fixtures/renderer/hostBridges'
 import { describe, expect, it } from 'vitest'
 import { lastReached, tailnetRowNote, tailnetStepNote } from '../../../src/renderer/src/features/settings/hostTailnetWords'
 import { tailnetStepView } from '../../../src/renderer/src/features/settings/HostSetupChecklist'
@@ -42,7 +44,7 @@ describe('the line under a row on SSH although the tailnet was chosen', () => {
 })
 
 describe('Add host’s tailnet step as the dialog shows it', () => {
-  const forge = (patch: Partial<HostStatus>): HostStatus => ({ id: 'a', name: 'forge', target: 'forge', identityFile: '', installPath: '/opt/sotto', dataDirectory: '/data', phase: 'connected', enabled: true, prefer: 'tailnet', ...patch })
+  const forge = (patch: Partial<HostStatus>): HostStatus => { const status = hostStatus({ id: 'a', name: 'forge', target: 'forge', identityFile: '', installPath: '/opt/sotto', dataDirectory: '/data', phase: 'connected', enabled: true, prefer: 'tailnet', ...patch }); delete status.hostId; return status }
 
   it('is main’s while the add runs, and still to come before it has begun', () => {
     expect(tailnetStepView(undefined, undefined, null)).toEqual({ state: 'todo' })

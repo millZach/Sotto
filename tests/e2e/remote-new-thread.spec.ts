@@ -1,9 +1,8 @@
-import { isBuiltin } from 'node:module'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { buildSshHost } from './support/sshHost'
+import { ownedE2EProfile } from './support/e2eProfile'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { build } from 'vite'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, launchSotto, openPage, type LaunchedSotto } from './support/sottoLaunch'
@@ -15,14 +14,12 @@ import { closeSotto, launchSotto, openPage, type LaunchedSotto } from './support
  */
 test('a thread created on a remote host stays open after leaving Threads and coming back', async () => {
   test.setTimeout(180_000)
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-remote-new-thread-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-remote-new-thread-' })).directory
   const root = join(profile, 'ssh-root')
   const folder = join(root, '~', 'code', 'Space Race')
   await mkdir(folder, { recursive: true })
   const install = join(root, '~', '.local', 'share', 'sotto-host', 'host')
-  await build({ configFile: false, logLevel: 'silent', define: { 'require.main': 'undefined' }, ssr: { noExternal: true },
-    build: { ssr: resolve('tests/fixtures/e2eSshHost.ts'), target: 'node24', outDir: install, emptyOutDir: false,
-      rollupOptions: { external: id => isBuiltin(id), output: { format: 'cjs', entryFileNames: 'index.js' } } } })
+  await buildSshHost(install)
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, localHostEnabled: true, reducedMotion: 'on' }))
   const modeFile = join(root, 'mode')
   await writeFile(modeFile, 'run')

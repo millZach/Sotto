@@ -14,7 +14,7 @@ let sequence = 0
 const record = (patch: Partial<AgentActivity> & Pick<AgentActivity, 'id'>): AgentActivity =>
   ({ turnId: 't1', sequence: sequence++, kind: 'tool', status: 'completed', title: 'Tool', ...patch })
 
-// Shapes as the Phase 3 Claude and Grok projectors write them (src/main/agents/claudeActivity.ts, grokActivity.ts).
+// Shapes as the native Claude and Grok projectors write them (src/main/agents/claudeActivity.ts, grokActivity.ts).
 const claudeRead = record({ id: 'claude-tool-read', title: 'Read', text: JSON.stringify({ file_path: 'D:\\repo\\src\\app.ts', limit: 40 }), output: 'export const ready = true' })
 const claudeTask = record({ id: 'claude-tool-task', kind: 'subagent', title: 'Task', status: 'completed', text: JSON.stringify({ description: 'Audit the tests', prompt: 'Look for flaky tests', subagent_type: 'general-purpose' }) })
 const claudeGrep = record({ id: 'claude-tool-grep', parentId: 'claude-tool-task', title: 'Grep', text: JSON.stringify({ pattern: 'it\\.skip', path: 'tests' }) })

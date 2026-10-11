@@ -4,8 +4,7 @@ import { resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 import { parse } from 'yaml'
-
-import { isPackagingExcluded } from '../../../scripts/release-provenance.mjs'
+import { stablePackagePlan } from '../../../scripts/stable-package.mjs'
 
 const root = process.cwd()
 const read = (path: string): string => readFileSync(resolve(root, path), 'utf8')
@@ -34,6 +33,7 @@ interface BuilderConfig {
   asarUnpack: string[]
   extraResources: BuilderResource[]
   win: { target: BuilderTarget[] }
+  linux: { target: BuilderTarget[]; executableName: string; icon: string; category: string; artifactName: string }
   mac: {
     identity: string | null
     target: BuilderTarget[]
@@ -48,59 +48,94 @@ interface BuilderConfig {
 
 const packageManifest = JSON.parse(read('package.json')) as PackageManifest
 const builderConfig = parse(read('electron-builder.yml')) as BuilderConfig
+const promotedVersion = '0.1.37'
+const stablePackager = read('scripts/package-stable.mjs')
 
 const releaseContracts = [
   {
     platform: 'Windows',
-    scripts: ['package:dir', 'package:win'],
+    scripts: ['package:dir'],
+    stablePlatform: 'win' as const,
     distributableScript: 'package:win',
     outDir: 'release/win-unpacked',
-    installer: `release/Sotto Setup ${packageManifest.version}.exe`,
+    installer: `release/Sotto Setup ${promotedVersion}.exe`,
   },
   {
     platform: 'macOS',
-    scripts: ['package:dir:mac', 'package:mac'],
+    scripts: ['package:dir:mac'],
+    stablePlatform: 'mac' as const,
     distributableScript: 'package:mac',
     outDir: 'release/mac-arm64',
-    installer: `release/Sotto-${packageManifest.version}-arm64.dmg`,
+    installer: `release/Sotto-${promotedVersion}-arm64.dmg`,
+  },
+  {
+    platform: 'Linux',
+    scripts: ['package:linux'],
+    stablePlatform: undefined,
+    distributableScript: 'package:linux',
+    outDir: 'release/linux-unpacked',
+    installer: `release/Sotto-${packageManifest.version}-linux-x64.tar.gz`,
   },
 ]
 
 describe.each(releaseContracts)(
   '$platform release contract',
-  ({ scripts, distributableScript, outDir, installer }) => {
-    it('verifies the runtime, builds, records provenance, and verifies the packaged output', () => {
+  ({ scripts, distributableScript, outDir, installer, stablePlatform }) => {
+    it('verifies release assets, builds, records provenance, and verifies the packaged output', () => {
       for (const script of scripts) {
         const command = packageManifest.scripts[script]
-        expect(command).toMatch(/^npm run runtime:verify && npm run build && /)
+        expect(command).toMatch(/^npm run assets:verify && npm run build && /)
         expect(command).toContain('node scripts/write-build-provenance.mjs')
         expect(command).toContain(`node scripts/verify-packaged-resources.mjs ${outDir}`)
+      }
+      if (stablePlatform) {
+        expect(packageManifest.scripts[distributableScript]).toBe(`npm run release:check && node scripts/package-stable.mjs ${stablePlatform}`)
+        expect(stablePackagePlan(stablePlatform, promotedVersion).unpacked).toBe(outDir)
+        const stages = ["['run', 'assets:verify']", "['run', 'build']", "'scripts/write-build-provenance.mjs'", 'await build(', "'scripts/verify-packaged-resources.mjs'"]
+        const positions = stages.map(stage => stablePackager.indexOf(stage))
+        expect(positions.every(position => position >= 0)).toBe(true)
+        expect(positions).toEqual([...positions].sort((a, b) => a - b))
       }
     })
 
     it('points the distributable verification at the artifact name electron-builder emits', () => {
-      expect(packageManifest.scripts[distributableScript]).toContain(`--installer "${installer}"`)
+      if (stablePlatform) {
+        expect(stablePackagePlan(stablePlatform, promotedVersion).installer).toBe(installer)
+        expect(stablePackager).toContain("'--installer', resolve(root, plan.installer)")
+      } else expect(packageManifest.scripts[distributableScript]).toContain(`--installer "${installer}"`)
     })
   },
 )
 
 describe('release contract', () => {
+  it('scopes Linux rebuilding and archive settings to the Linux command and block', () => {
+    expect(packageManifest.scripts['package:linux']).toContain('--linux tar.gz --x64 --config.npmRebuild=true --publish never')
+    expect(builderConfig.linux).toEqual({
+      executableName: 'sotto', icon: 'build/icon.png', category: 'Utility',
+      target: [{ target: 'tar.gz', arch: ['x64'] }], artifactName: '${productName}-${version}-linux-${arch}.${ext}',
+    })
+    expect(builderConfig.npmRebuild).toBe(false)
+    expect(packageManifest.scripts['package:win']).not.toContain('--config.npmRebuild=true')
+    expect(packageManifest.scripts['package:dir']).not.toContain('--config.npmRebuild=true')
+  })
   it('ships the Windows PTY prebuild and rebuilds native dependencies on macOS', () => {
     expect(builderConfig.npmRebuild).toBe(false)
     // Returning false from beforeBuild also disables dependency collection.
     expect(builderConfig.beforeBuild).toBeUndefined()
     expect(builderConfig.asarUnpack).toContain('node_modules/node-pty/**')
-    for (const script of ['package:dir:mac', 'package:mac']) {
-      expect(packageManifest.scripts[script]).toContain('--config.npmRebuild=true')
-    }
+    // The speech engine's addon and its per-platform native package load outside ASAR too (ADR-0071).
+    expect(builderConfig.asarUnpack).toEqual(expect.arrayContaining(['node_modules/sherpa-onnx-node/**', 'node_modules/sherpa-onnx-*/**']))
+    expect(packageManifest.scripts['package:dir:mac']).toContain('--config.npmRebuild=true')
+    expect(stablePackagePlan('mac', promotedVersion).config.npmRebuild).toBe(true)
+    expect(stablePackagePlan('win', promotedVersion).config.npmRebuild).toBeUndefined()
   })
 
   it('packages only runtime-external dependencies and verifies source and packaged resources', () => {
-    expect(packageManifest.dependencies).toEqual({ 'node-pty': '1.1.0', zod: '4.4.3' })
-    expect(builderConfig.extraResources).toContainEqual({ from: 'resources/runtime', to: 'runtime' })
+    expect(packageManifest.dependencies).toEqual({ 'node-pty': '1.1.0', 'sherpa-onnx-node': '1.13.8', zod: '4.4.3' })
+    expect(builderConfig.extraResources.some((resource) => resource.from === 'resources/runtime')).toBe(false)
     expect(builderConfig.extraResources.some((resource) => resource.from === 'resources/models')).toBe(false)
     expect(packageManifest.devDependencies['@electron/asar']).toBe('3.4.1')
-    for (const bundled of ['@huggingface/transformers', '@xterm/addon-webgl', 'lucide-react', 'react', 'react-dom']) {
+    for (const bundled of ['@xterm/addon-webgl', 'lucide-react', 'react', 'react-dom']) {
       expect(packageManifest.devDependencies[bundled]).toBeTypeOf('string')
     }
     expect(packageManifest.devDependencies['yaml']).toBeTypeOf('string')
@@ -122,20 +157,13 @@ describe('release contract', () => {
     expect(verifier).not.toContain('.matchAll(')
   })
 
-  it('ships the ONNX runtime only under resources/runtime and rejects a copy inside the archive', () => {
-    // The renderer build emits the WASM because onnxruntime-web refers to it; the speech
-    // worker reads it solely through sotto-runtime://, so the archived copy is never read.
-    expect(builderConfig.files).toContain('!out/renderer/**/ort-wasm-simd-threaded*')
-    expect(read('scripts/verify-packaged-resources.mjs')).toContain(
-      "fail('ONNX runtime must ship only under resources/runtime, not inside app.asar')",
-    )
-    // Provenance still records the emitted file but expects it absent from the archive, wherever
-    // under renderer the build puts it, and nothing else.
-    for (const path of ['renderer/assets/ort-wasm-simd-threaded.asyncify-DMmc6YqF.wasm', 'renderer/ort-wasm-simd-threaded.wasm']) {
-      expect(isPackagingExcluded(path)).toBe(true)
-    }
-    for (const path of ['main/index.js', 'renderer/assets/main-abc.js', 'renderer/assets/ort-wasm-simd-threaded/nested.txt', 'preload/index.js']) {
-      expect(isPackagingExcluded(path)).toBe(false)
+  it('refuses retired voice assets in the package', () => {
+    expect(builderConfig.files).not.toContain('!out/renderer/**/ort-wasm-simd-threaded*')
+    const verifier = read('scripts/verify-packaged-resources.mjs')
+    expect(verifier).toContain("fail('retired voice runtime must not be bundled')")
+    expect(verifier).toContain("fail('retired voice assets must not be bundled')")
+    for (const dependency of ['@huggingface/transformers', 'sherpa-onnx']) {
+      expect(packageManifest.devDependencies[dependency]).toBeUndefined()
     }
   })
 
@@ -159,9 +187,10 @@ describe('release contract', () => {
     ])
     // The feed exists so app-update.yml lands in the packaged resources. Uploading a
     // release is a deliberate manual act, never a side effect of building one.
-    for (const script of ['package:dir', 'package:win', 'package:dir:mac', 'package:mac']) {
+    for (const script of ['package:dir', 'package:dir:mac', 'package:linux']) {
       expect(packageManifest.scripts[script]).toContain('--publish never')
     }
+    expect(stablePackager).toContain("publish: 'never'")
   })
 
   it('compiles the updater into main rather than shipping it as a runtime dependency', () => {
@@ -265,6 +294,6 @@ describe('Windows installer contract', () => {
     const readme = read('README.md')
     expect(readme).toContain('At least 1 GB of free space during installation')
     expect(readme).toContain('The desktop shortcut is optional and unchecked by default')
-    expect(readme).toContain('automatically verifies the source runtime before packaging')
+    expect(readme).toContain('automatically verifies the source release assets before packaging')
   })
 })

@@ -1,22 +1,20 @@
-import { execFileSync } from 'node:child_process'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { initializeGitRepository, runFixtureGit } from '../fixtures/gitRepository'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { EMPTY_AGENT_HOST, defaultAgentConfiguration } from '../../src/shared/agents'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, launchSotto, openThreads, resizeWindow } from './support/sottoLaunch'
 
 test('keeps workspace choices and project actions reachable with many worktrees and a long name', async () => {
   test.setTimeout(120_000)
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-workspace-picker-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-workspace-picker-' })).directory
   const repository = join(profile, 'project')
   await mkdir(repository)
-  const git = (...args: string[]): void => { execFileSync('git', ['-c', 'user.name=Sotto E2E', '-c', 'user.email=e2e@sotto.invalid', '-c', 'commit.gpgSign=false', ...args], { cwd: repository, windowsHide: true, stdio: 'pipe' }) }
-  git('init', '-b', 'main')
-  git('commit', '--allow-empty', '-m', 'Initial fixture')
-  const title = 'Talk to Text Application with a very long project name'
+  const git = (...args: string[]): void => { runFixtureGit(repository, ...args) }
+  await initializeGitRepository(repository, { files: {}, message: 'Initial fixture', identity: { name: 'Sotto E2E', email: 'e2e@sotto.invalid' } })
+  const title = 'Sotto Workspace Projects with a very long project name'
   const threads = Array.from({ length: 12 }, (_, index) => {
     const path = join(profile, `worktree-${index}`)
     const branch = `fix/task-${index}-with-a-long-branch-name`
@@ -27,7 +25,7 @@ test('keeps workspace choices and project actions reachable with many worktrees 
   const current = { id: 'draft', projectId: 'project', title: 'New thread', modelId: '', status: 'idle', messages: [], requests: [], nativeSessionStarted: false,
     worktree: { mode: 'shared', status: 'ready', path: repository, repositoryRoot: repository, branch: 'main', git: { isRepository: true, branch: 'main', upstream: null, hasRemote: false, defaultBranch: 'main', isDefaultBranch: true, dirty: false, changedFiles: 0, insertions: 0, deletions: 0, ahead: 0, behind: 0, aheadOfDefault: null, pullRequest: null, fetchedAt: null, readAt: '2026-09-28T00:00:00Z' } } }
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true }))
-  await writeFile(join(profile, 'agents.json'), JSON.stringify({ configuration: { ...defaultAgentConfiguration(), enabled: true, speak: false }, activeProjectId: 'project', activeThreadId: 'draft' }))
+  await writeFile(join(profile, 'agents.json'), JSON.stringify({ configuration: { ...defaultAgentConfiguration(), enabled: true, }, activeProjectId: 'project', activeThreadId: 'draft' }))
   await writeFile(join(profile, 'workspace.json'), JSON.stringify({ snapshot: { ...EMPTY_AGENT_HOST, projects: [{ id: 'project', title, path: repository }], threads: [current, ...threads] }, creations: [{ threadId: 'draft', projectId: 'project', commandId: 'fixture-draft', phase: 'unstarted' }], projectAliases: [] }))
   const launched = await launchSotto('success', profile)
   try {
@@ -145,6 +143,6 @@ test('keeps workspace choices and project actions reachable with many worktrees 
     await expect(chip).toHaveText(/New worktree/)
   } finally {
     await closeSotto(launched)
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 })

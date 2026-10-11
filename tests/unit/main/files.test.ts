@@ -50,14 +50,16 @@ describe('thread-bound Files service', () => {
     }
   })
 
-  it.skipIf(process.platform === 'win32')('lists names outside the canonical path format as unavailable', async () => {
-    const names = ['2026-09-30T10:00.log', 'aux.txt', 'trailing.', 'trailing ']
-    for (const name of names) await writeFile(join(root, name), 'contents')
-    const listing = value(await service.list({ threadId: 'thread', path: '' }))
-    expect(listing.entries).toHaveLength(names.length)
-    for (const name of names) expect(listing.entries).toContainEqual({ name, path: name, kind: 'unavailable' })
-    expect(fileListingSchema.safeParse(listing).success).toBe(true)
-    for (const name of names) error(await service.preview(await request(name)), 'invalid-request')
+  describe("POSIX filenames; Windows cannot create these noncanonical names", () => {
+    it.skipIf(process.platform === 'win32')('lists names outside the canonical path format as unavailable', async () => {
+      const names = ['2026-09-30T10:00.log', 'aux.txt', 'trailing.', 'trailing ']
+      for (const name of names) await writeFile(join(root, name), 'contents')
+      const listing = value(await service.list({ threadId: 'thread', path: '' }))
+      expect(listing.entries).toHaveLength(names.length)
+      for (const name of names) expect(listing.entries).toContainEqual({ name, path: name, kind: 'unavailable' })
+      expect(fileListingSchema.safeParse(listing).success).toBe(true)
+      for (const name of names) error(await service.preview(await request(name)), 'invalid-request')
+    })
   })
 
   it('reports an asynchronous clipboard failure to the copy caller', async () => {

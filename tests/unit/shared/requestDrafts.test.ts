@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { EMPTY_AGENT_HOST, providerIdOfLabel, type AgentHostSnapshot, type AgentThread } from '../../../src/shared/agents'
 import { requestDraftProvider } from '../../../src/shared/requestDrafts'

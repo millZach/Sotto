@@ -1,19 +1,22 @@
+import { terminalWorkspaceBridgeFixture, workspaceTerminal } from '../../fixtures/renderer/terminalWorkspaceBridge'
+import { fakeTerminalViews } from '../../fixtures/renderer/terminalBridge'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AgentCommand, AgentState } from '../../../src/shared/agents'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
-import type { TerminalOpenRequest, TerminalWorkspaceBridge, WorkspaceTerminal, WorkspaceTerminalEvent, WorkspaceTerminalSnapshot } from '../../../src/shared/terminalWorkspace'
+import type { TerminalOpenRequest, WorkspaceTerminal, WorkspaceTerminalEvent, WorkspaceTerminalSnapshot } from '../../../src/shared/terminalWorkspace'
 import type { ToolsResult } from '../../../src/shared/tools'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { SIDEBAR_MODE_KEY } from '../../../src/renderer/src/agents/SidebarFrame'
 import { SplitLayoutStore } from '../../../src/renderer/src/agents/splitLayout'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { TerminalWorkspaceStore } from '../../../src/renderer/src/terminals/terminalWorkspaceStore'
-import type { TerminalViewFactory, TerminalViewHandlers } from '../../../src/renderer/src/tools/terminalStore'
-import { liveAgentState, threadsStateFixture } from './liveAgentState'
-import { paneMenuItem } from './paneMenu'
+import { TerminalPane } from '../../../src/renderer/src/terminals/TerminalPane'
+import { describeTerminals } from '../../../src/renderer/src/terminals/terminalFacts'
+import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
+import { paneMenuItem } from '../../fixtures/renderer/paneMenu'
 
 vi.mock('../../../src/renderer/src/tools/terminalView', () => { throw new Error('Chunk unavailable') })
 
@@ -24,6 +27,12 @@ const WIDE = 1400
 const ID_1 = '11111111-1111-4111-8111-111111111111'
 const ID_2 = '22222222-2222-4222-8222-222222222222'
 const ok = <T,>(value: T): ToolsResult<T> => ({ ok: true, value })
+
+it('names Command+C for copying and Ctrl+C for interrupting on macOS', () => {
+  const row = describeTerminals(threadsStateFixture(), [terminal(ID_1)], NOW)[0]!
+  render(<TerminalPane row={row} store={new TerminalWorkspaceStore()} bridge={undefined} viewFactory={null} viewFailed={false} focused={true} focusNext={{ current: null }} busy={false} platform="darwin" />)
+  expect(screen.getByText('⌘+C copies a selection · Ctrl+C interrupts · ⌘+V pastes text or an image')).toBeInTheDocument()
+})
 
 it('clears workspace copy feedback without erasing a newer input failure', async () => {
   const { bridge } = fakeBridge([terminal(ID_1)])
@@ -59,6 +68,64 @@ it('keeps terminal workspace paste chunks and later events ordered while another
   } finally { first.resolve(ok(undefined)) }
   await waitFor(() => expect(bridge.write).toHaveBeenCalledTimes(4))
   expect(vi.mocked(bridge.write).mock.calls.filter(([request]) => request.id === ID_1).map(([request]) => request.data)).toEqual(['a'.repeat(16_384), 'a'.repeat(3_616), 'later event'])
+})
+
+it('keeps workspace image conversion and staging ahead of Enter', async () => {
+  const { bridge } = fakeBridge([terminal(ID_1)])
+  const store = new TerminalWorkspaceStore()
+  await store.activate(bridge)
+  const conversion = Promise.withResolvers<string | null>(), staging = Promise.withResolvers<ToolsResult<{ path: string }>>()
+  vi.mocked(bridge.pasteImage).mockImplementationOnce(() => staging.promise)
+  const paste = store.pasteImage(bridge, ID_1, conversion.promise)
+  store.write(bridge, ID_1, '\r')
+  await Promise.resolve(); await Promise.resolve()
+  expect(bridge.pasteImage).not.toHaveBeenCalled()
+  expect(bridge.write).not.toHaveBeenCalled()
+  conversion.resolve('image')
+  await waitFor(() => expect(bridge.pasteImage).toHaveBeenCalledWith({ id: ID_1, dataUrl: 'image' }))
+  expect(bridge.write).not.toHaveBeenCalled()
+  staging.resolve(ok({ path: 'first.png' })); await paste
+  await waitFor(() => expect(bridge.write).toHaveBeenCalledWith({ id: ID_1, data: '\r' }))
+})
+
+it('reports oversized workspace images before preload validation can obscure the size failure', async () => {
+  const { bridge } = fakeBridge([terminal(ID_1)])
+  const store = new TerminalWorkspaceStore()
+  await store.activate(bridge)
+  await store.pasteImage(bridge, ID_1, 'data:image/png;base64,' + 'A'.repeat(Math.ceil(11 * 1024 * 1024 * 4 / 3)))
+  expect(bridge.pasteImage).not.toHaveBeenCalled()
+  expect(store.getSnapshot().notice).toContain('larger than 10 MiB. Paste a smaller image.')
+  expect(store.getSnapshot().notice).not.toContain('discarded')
+})
+
+it('explains when an image conversion failure discards later workspace input', async () => {
+  const { bridge } = fakeBridge([terminal(ID_1)])
+  const store = new TerminalWorkspaceStore()
+  await store.activate(bridge)
+  const conversion = Promise.withResolvers<string | null>()
+  const paste = store.pasteImage(bridge, ID_1, conversion.promise)
+  store.write(bridge, ID_1, '\r')
+  conversion.resolve(null); await paste
+  expect(bridge.write).not.toHaveBeenCalled()
+  expect(store.getSnapshot().notice).toContain('Later queued input was discarded.')
+})
+
+it('keeps the busy reason and discarded-input warning when workspace image staging is refused', async () => {
+  const { bridge } = fakeBridge([terminal(ID_1)])
+  const store = new TerminalWorkspaceStore()
+  await store.activate(bridge)
+  const staging = Promise.withResolvers<ToolsResult<{ path: string }>>()
+  vi.mocked(bridge.pasteImage).mockImplementationOnce(() => staging.promise)
+  const paste = store.pasteImage(bridge, ID_1, 'image')
+  await waitFor(() => expect(bridge.pasteImage).toHaveBeenCalledOnce())
+  store.write(bridge, ID_1, '\r')
+  staging.resolve({ ok: false, error: { code: 'busy', message: 'Too many operations are running. Try again shortly.' } })
+  await paste
+  expect(bridge.write).not.toHaveBeenCalled()
+  expect(store.getSnapshot().notice).toContain('Later queued input was discarded.')
+  expect(store.getSnapshot().notice).toContain('Too many operations are running. Try again shortly.')
+  store.write(bridge, ID_1, 'fresh')
+  await waitFor(() => expect(bridge.write).toHaveBeenCalledWith({ id: ID_1, data: 'fresh' }))
 })
 
 it('drops failed workspace input and its remainder, then accepts a fresh attempt', async () => {
@@ -107,20 +174,15 @@ it.each(['restart', 'close', 'stop'] as const)('does not carry queued workspace 
 })
 
 function terminal(id: string, patch: Partial<WorkspaceTerminal> = {}): WorkspaceTerminal {
-  return {
-    id, projectId: 'workshop', title: 'Build', launch: { provider: 'claude', modelId: 'claude:sonnet', reasoning: null, permission: 'ask' },
-    workingCopy: 'shared', workingDirectory: 'C:/workshop', branch: 'main', command: 'claude --model claude:sonnet', status: 'running', cols: 80, rows: 24,
-    exitCode: null, openedAt: NOW - 4 * 60_000, closedAt: null, ...patch,
-  }
+  return workspaceTerminal(id, { openedAt: NOW - 4 * 60_000, ...patch })
 }
 
 /** Main's terminal workspace as the renderer sees it: a listing, snapshots, and one event stream. */
 function fakeBridge(initial: WorkspaceTerminal[]) {
   let terminals = initial
   let next = 0
-  const listeners = new Set<(event: WorkspaceTerminalEvent) => void>()
   const find = (id: string): WorkspaceTerminal => terminals.find(item => item.id === id)!
-  const bridge: TerminalWorkspaceBridge = {
+  const published = terminalWorkspaceBridgeFixture({ commands: {
     list: vi.fn(async () => ok({ terminals, shell: 'pwsh' })),
     // Main answers as soon as the terminal exists: no process yet, no branch, nothing on screen.
     open: vi.fn(async (request: TerminalOpenRequest) => {
@@ -132,6 +194,7 @@ function fakeBridge(initial: WorkspaceTerminal[]) {
     read: vi.fn(async ({ id }) => ok({ terminal: find(id), output: '', sequence: 0 })),
     write: vi.fn(async () => ok(undefined)),
     resize: vi.fn(async () => ok(undefined)),
+    visibility: vi.fn(async () => ok(undefined)),
     interrupt: vi.fn(async () => ok(undefined)),
     stop: vi.fn(async () => ok(undefined)),
     restart: vi.fn(async ({ id }) => {
@@ -141,16 +204,19 @@ function fakeBridge(initial: WorkspaceTerminal[]) {
     }),
     close: vi.fn(async ({ id }) => {
       terminals = terminals.map(item => item.id === id ? { ...item, status: 'exited' as const, closedAt: NOW } : item)
-      for (const listener of [...listeners]) listener({ type: 'terminal', terminal: find(id) })
+      published.publish({ type: 'terminal', terminal: find(id) })
       return ok(undefined)
     }),
     pasteImage: vi.fn(async () => ok({ path: 'C:\\workshop\\.sotto\\clipboard\\20260916-101010-abcdef12.png' })),
-    onEvent: vi.fn(listener => { listeners.add(listener); return () => { listeners.delete(listener) } }),
+  } })
+  const bridge = published.bridge
+  const emit = (event: WorkspaceTerminalEvent): void => {
+    if (event.type === 'terminal') terminals = terminals.map(item => item.id === event.terminal.id ? event.terminal : item)
+    published.publish(event)
   }
-  const emit = (event: WorkspaceTerminalEvent): void => { for (const listener of [...listeners]) listener(event) }
   /** Main finishing a start: the process is up, the branch is known and the first line arrives. */
   const settle = (id: string): void => {
-    terminals = terminals.map(item => item.id === id ? { ...item, status: 'running' as const, branch: 'main' } : item)
+    terminals = terminals.map(item => item.id === id ? { ...item, status: 'running' as const, branch: 'main', ...(item.launch.provider === null ? {} : { agentState: 'idle' as const }) } : item)
     emit({ type: 'terminal', terminal: find(id) })
     emit({ type: 'output', id, data: 'Opened by Sotto at C:/workshop · claude\r\n', sequence: 1 })
   }
@@ -159,33 +225,17 @@ function fakeBridge(initial: WorkspaceTerminal[]) {
 
 /** A stand-in for xterm that records what it was asked to draw. */
 function fakeViews() {
-  const views: { handlers: TerminalViewHandlers; written: string[]; input: boolean[]; focused: number }[] = []
-  const factory: TerminalViewFactory = handlers => {
-    const record = { handlers, written: [] as string[], input: [] as boolean[], focused: 0 }
-    views.push(record)
-    return {
-      mount: container => { container.replaceChildren(Object.assign(document.createElement('textarea'), { className: 'fake-xterm' })) },
-      unmount: () => {},
-      write: (data, done) => { record.written.push(data); done?.() },
-      reset: () => { record.written.push('<reset>') },
-      setInputEnabled: enabled => { record.input.push(enabled) },
-      fit: () => ({ cols: 100, rows: 30 }),
-      focus: () => { record.focused += 1 },
-      dispose: () => {},
-    }
-  }
-  return { views, factory }
+  return fakeTerminalViews({ tag: 'textarea' })
 }
 
-function mount(initial: WorkspaceTerminal[] = [], options: { readonly mode?: 'threads' | 'terminals'; readonly bridge?: boolean; readonly lazy?: boolean; readonly devinDefault?: boolean } = {}) {
+function mount(initial: WorkspaceTerminal[] = [], options: { readonly mode?: 'threads' | 'terminals'; readonly bridge?: boolean; readonly lazy?: boolean; readonly devinDefault?: boolean; readonly paneAreaWidth?: number } = {}) {
   localStorage.setItem(SIDEBAR_MODE_KEY, options.mode ?? 'terminals')
   const state = threadsStateFixture()
   if (options.devinDefault) {
     state.host.models.unshift({ id: 'native:devin:model:swe-1-6-fast', provider: 'Devin', providerId: 'devin', name: 'SWE fast', ready: true })
     state.configuration.defaultModelId = 'native:devin:model:swe-1-6-fast'
   }
-  state.assignments = []
-  state.queue = []
+
   const live = liveAgentState(state)
   const command = vi.fn(async (request: AgentCommand): Promise<AgentState | null> => live.command(request))
   vi.mocked(useAgents).mockImplementation(() => ({ ...live.useLive(), command }))
@@ -193,7 +243,7 @@ function mount(initial: WorkspaceTerminal[] = [], options: { readonly mode?: 'th
   const { views, factory } = fakeViews()
   const store = new TerminalWorkspaceStore()
   const terminals = { store, bridge: options.bridge === false ? undefined : fake.bridge, ...(options.lazy ? {} : { viewFactory: factory }), layoutStore: new SplitLayoutStore(), platform: 'win32' }
-  render(<ThreadsView onOpenAgents={vi.fn()} now={NOW} layoutStore={new SplitLayoutStore()} paneAreaWidth={WIDE} terminals={terminals} />)
+  render(<ThreadsView now={NOW} layoutStore={new SplitLayoutStore()} paneAreaWidth={options.paneAreaWidth ?? WIDE} terminals={terminals} />)
   return { ...fake, views, store, command }
 }
 
@@ -206,6 +256,108 @@ beforeEach(() => { vi.mocked(useAgents).mockReset(); localStorage.clear() })
 afterEach(() => { cleanup(); localStorage.clear() })
 
 describe('Terminal mode', () => {
+  it.each(['Tests', 'Close Tests', 'Open Tests beside'])('preserves focus on %s through asynchronous sidebar regrouping', async action => {
+    const view = mount([terminal(ID_1, { title: 'Build', agentState: 'idle' }), terminal(ID_2, { title: 'Tests', agentState: 'working' })])
+    fireEvent.click(await within(sidebar()).findByRole('button', { name: 'Build' }))
+    await screen.findByRole('region', { name: 'Build' })
+    within(sidebar()).getByRole('button', { name: action }).focus()
+    for (const agentState of ['needs-you', 'idle', 'working'] as const) {
+      await act(async () => { view.emit({ type: 'terminal', terminal: terminal(ID_2, { title: 'Tests', agentState }) }) })
+      expect(within(sidebar()).getByRole('button', { name: action })).toHaveFocus()
+    }
+    search().focus()
+    await act(async () => { view.emit({ type: 'terminal', terminal: terminal(ID_2, { title: 'Tests', agentState: 'idle' }) }) })
+    expect(search()).toHaveFocus()
+  })
+  it('keeps the focused row reachable when it returns to a collapsed project', async () => {
+    const view = mount([terminal(ID_1, { title: 'Build', agentState: 'working' })])
+    const toggle = await within(sidebar()).findByRole('button', { name: /^workshop / })
+    fireEvent.click(toggle); expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    within(sidebar()).getByRole('button', { name: 'Close Build' }).focus()
+    await act(async () => { view.emit({ type: 'terminal', terminal: terminal(ID_1, { title: 'Build', agentState: 'idle' }) }) })
+    expect(within(sidebar()).getByRole('button', { name: 'Close Build' })).toHaveFocus()
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  })
+  it('shows main-owned agent states in Variant B order and leaves the pane header state free', async () => {
+    const otherProject = threadsStateFixture().host.projects.find(project => project.id !== 'workshop')!
+    const view = mount([
+      terminal(ID_1, { title: 'Needs approval', projectId: otherProject.id, agentState: 'needs-you' }),
+      terminal(ID_2, { title: 'Build', agentState: 'working' }),
+      terminal('33333333-3333-4333-8333-333333333333', { title: 'Finished tests', agentState: 'just-finished' }),
+    ])
+    const needs = await within(sidebar()).findByRole('region', { name: 'Needs you' })
+    const working = within(sidebar()).getByRole('region', { name: 'Working' })
+    expect(needs.compareDocumentPosition(working) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // A folder whose only terminal moved up says "other"; a project with no terminals does not.
+    expect(within(sidebar()).getByText('No other open terminals.')).toBeInTheDocument()
+    expect(within(sidebar()).getAllByText('No open terminals.').length).toBeGreaterThan(0)
+    expect(within(needs).getByRole('button', { name: 'Needs approval' })).toHaveTextContent(otherProject.title)
+    expect(within(working).getByRole('button', { name: 'Build' })).toHaveAccessibleDescription('Claude Code, workshop, Working')
+    const finished = within(sidebar()).getByRole('button', { name: 'Finished tests' })
+    expect(finished).toHaveTextContent('Just finished')
+    expect(finished.closest('li')).toHaveAttribute('data-unseen')
+    expect(finished.querySelector('.thread-nav__ring')).toHaveAttribute('data-unseen')
+
+    fireEvent.click(within(needs).getByRole('button', { name: 'Needs approval' }))
+    // The pane's name carries the state its edge shows.
+    const pane = await screen.findByRole('region', { name: 'Needs approval, needs you' })
+    expect(pane.querySelector('.terminal-pane')).toHaveAttribute('data-needs-you')
+    expect(pane.querySelector('header')).not.toHaveTextContent('Needs you')
+    expect(within(pane).queryByRole('button', { name: 'Yes' })).toBeNull()
+    expect(within(pane).queryByRole('button', { name: 'No' })).toBeNull()
+    // Output is presentation only. An animated native prompt cannot move a main-owned Needs you state.
+    await act(async () => { view.emit({ type: 'output', id: ID_1, data: 'More output\r\n', sequence: 1 }) })
+    expect(view.store.terminal(ID_1)?.agentState).toBe('needs-you')
+  })
+
+  it('reports every on-screen pane including an unfocused split, excludes zoomed panes, and withdraws on mode change', async () => {
+    const view = mount([terminal(ID_1, { title: 'Build', agentState: 'working' }), terminal(ID_2, { title: 'Tests', agentState: 'working' })])
+    fireEvent.click(await within(sidebar()).findByRole('button', { name: 'Build' }))
+    await waitFor(() => expect(view.bridge.visibility).toHaveBeenLastCalledWith({ ids: [ID_1] }))
+    fireEvent.click(within(sidebar()).getByRole('button', { name: 'Open Tests beside' }))
+    await waitFor(() => expect(view.bridge.visibility).toHaveBeenLastCalledWith({ ids: [ID_1, ID_2] }))
+    expect(screen.getByRole('region', { name: 'Tests' })).toHaveAttribute('data-focused')
+    const calls = vi.mocked(view.bridge.visibility).mock.calls.length
+    fireEvent.pointerDown(within(screen.getByRole('region', { name: 'Build' })).getByRole('heading', { name: 'Build' }))
+    expect(vi.mocked(view.bridge.visibility).mock.calls).toHaveLength(calls)
+    fireEvent.click(within(screen.getByRole('region', { name: 'Build' })).getByRole('button', { name: 'Zoom Build pane' }))
+    await waitFor(() => expect(view.bridge.visibility).toHaveBeenLastCalledWith({ ids: [ID_1] }))
+    fireEvent.click(modeSwitch().getByRole('radio', { name: 'Threads' }))
+    await waitFor(() => expect(view.bridge.visibility).toHaveBeenLastCalledWith({ ids: [] }))
+  })
+
+  it('excludes a retained pane hidden by the compact layout from the visibility observation', async () => {
+    const view = mount([terminal(ID_1, { title: 'Build', agentState: 'working' }), terminal(ID_2, { title: 'Tests', agentState: 'working' })], { paneAreaWidth: 650 })
+    fireEvent.click(await within(sidebar()).findByRole('button', { name: 'Build' }))
+    fireEvent.click(within(sidebar()).getByRole('button', { name: 'Open Tests beside' }))
+    await waitFor(() => expect(view.bridge.visibility).toHaveBeenLastCalledWith({ ids: [ID_2] }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Build' }))
+    await waitFor(() => expect(view.bridge.visibility).toHaveBeenLastCalledWith({ ids: [ID_1] }))
+    expect(document.querySelector(`[data-thread-id='${ID_2}']`)).toHaveAttribute('data-hidden')
+  })
+
+  it('says in the status line when the screen rules cannot read the CLI, and keeps agent Idle as Idle', async () => {
+    const view = mount([terminal(ID_1, { title: 'Build', agentState: 'idle', stateDetection: 'unavailable' })])
+    fireEvent.click(await within(sidebar()).findByRole('button', { name: 'Build' }))
+    const note = await screen.findByText("Sotto can't tell when this Claude Code version needs you")
+    // In the status line rather than above the screen, so it never resizes the terminal; and it announces nothing.
+    expect(note.closest('.terminal-status')).not.toBeNull()
+    expect(note.closest('[role="status"]')).toBeNull()
+    await act(async () => { view.emit({ type: 'output', id: ID_1, data: 'Would you like to allow an old example?\r\n', sequence: 1 }) })
+    expect(within(sidebar()).getByRole('button', { name: 'Build' })).toHaveAccessibleDescription('Claude Code, Idle')
+    expect(screen.getByRole('region', { name: 'Build' }).querySelector('.terminal-pane')).not.toHaveAttribute('data-needs-you')
+  })
+
+  it('asks main to observe a shown completion without clearing the mark locally', async () => {
+    const view = mount([terminal(ID_1, { title: 'Build', agentState: 'just-finished' })])
+    fireEvent.click(await within(sidebar()).findByRole('button', { name: 'Build' }))
+    await waitFor(() => expect(view.bridge.visibility).toHaveBeenLastCalledWith({ ids: [ID_1] }))
+    expect(within(sidebar()).getByRole('button', { name: 'Build' }).closest('li')).toHaveAttribute('data-unseen')
+    await act(async () => { view.emit({ type: 'terminal', terminal: terminal(ID_1, { title: 'Build', agentState: 'idle' }) }) })
+    expect(within(sidebar()).getByRole('button', { name: 'Build' }).closest('li')).not.toHaveAttribute('data-unseen')
+    expect(within(sidebar()).getByRole('button', { name: 'Build' })).toHaveAccessibleDescription('Claude Code, Idle')
+  })
+
   it('forgets closed output and ignores an old pending read after the same terminal reopens', async () => {
     const store = new TerminalWorkspaceStore()
     const fake = fakeBridge([terminal(ID_1)])
@@ -332,7 +484,7 @@ describe('Terminal mode', () => {
 
     await act(async () => { view.settle(ID_1) })
     expect(within(pane).getByText('main')).toBeInTheDocument()
-    expect(within(sidebar()).getByRole('button', { name: 'Build' })).toHaveTextContent('Running')
+    expect(within(sidebar()).getByRole('button', { name: 'Build' })).toHaveTextContent('Idle')
     await waitFor(() => expect(view.views[0]!.written).toEqual(['<reset>', 'Opened by Sotto at C:/workshop · claude\r\n']))
     expect(view.views[0]!.input.at(-1)).toBe(true)
     expect(view.views[0]!.focused).toBe(1)

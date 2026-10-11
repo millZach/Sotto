@@ -1,4 +1,8 @@
 import { join } from 'node:path'
+import { readFile } from 'node:fs/promises'
+import { z } from 'zod'
+import { watcherRecordSchema } from '../../shared/watcher'
+import { migrateWatcherRecord } from '../agents/watcherRecords'
 import { defaultAgentConfiguration, EMPTY_AGENT_HOST, type AgentState } from '../../shared/agents'
 import type { createAgentRuntime } from '../agents/runtime'
 import { loadHostIdentity } from '../agents/hostIdentity'
@@ -9,10 +13,9 @@ export function emptyDesktopState(hostId?: string): AgentState {
   return {
     ...(hostId ? { hostId } : {}), configuration: defaultAgentConfiguration(), connection: 'disconnected',
     host: { ...structuredClone(EMPTY_AGENT_HOST), ...(hostId ? { hostId } : {}) },
-    assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
-    draftRequestId: null, pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
-    speech: { id: 0, text: '' }, voice: { status: 'off', error: null, action: 'none', revision: 0 },
-    credentials: { reasoning: false, grokSpeech: false, secure: false }, reasoningAccounts: [],
+    activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
+    draftRequestId: null, globalLaneBusy: false, notice: '', error: null,
+    credentials: { reasoning: false, secure: false }, reasoningAccounts: [],
   }
 }
 
@@ -22,18 +25,40 @@ export function emptyDesktopState(hostId?: string): AgentState {
  */
 export async function inactiveLocalHost(directory: string): Promise<Awaited<ReturnType<typeof createAgentRuntime>>> {
   const state = emptyDesktopState(await loadHostIdentity(directory))
+  // Ownership remains readable while providers are off. No saved data is migrated or written here.
+  const retained = new Set<string>()
+  let retentionError: unknown
+  const read = async (name: string): Promise<unknown> => {
+    try { return JSON.parse(await readFile(join(directory, name), 'utf8')) }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {}; throw error }
+  }
+  try {
+    const [agents, workspace] = await Promise.all([read('agents.json'), read('workspace.json')])
+    const watcher = z.object({ watcher: z.preprocess(migrateWatcherRecord, watcherRecordSchema).optional() }).parse(agents).watcher
+    if (watcher) for (const identity of [watcher.current, watcher.creation?.identity, ...watcher.history]) {
+      if (identity) retained.add(identity.target.threadId)
+    }
+    const threads = z.object({ snapshot: z.object({ threads: z.array(z.object({ id: z.string(), kind: z.string().optional() })).optional() }).optional() }).parse(workspace).snapshot?.threads ?? []
+    for (const thread of threads) if (thread.kind === 'watcher' || thread.kind === 'watcher-history') retained.add(thread.id)
+  } catch (error) { retentionError = error }
+  const watcherThreadIds = (): readonly string[] => {
+    // Unreadable ownership blocks answer cleanup rather than treating a saved Watcher answer as ordinary.
+    if (retentionError) throw new Error('Saved thread ownership could not be read. Your saved answers have not changed.')
+    return [...retained]
+  }
   const unavailable = (): never => { throw new Error('The local host is off. Turn it on in Settings > Hosts and restart Sotto.') }
   const idle = () => undefined
   const unsubscribe = () => idle
   const shell = () => structuredClone(state)
   const control = {
-    get: shell, shell, configuration: () => state.configuration, command: async () => unavailable(),
+    get: shell, shell, hostId: () => state.hostId, configuration: () => state.configuration, command: async () => unavailable(),
     threadDetail: () => null, attachmentPreview: unavailable, stageAttachment: async () => unavailable(), attachmentContent: async () => null, gitRefs: async () => unavailable(), gitChangedFiles: async () => unavailable(), gitPullRequest: async () => unavailable(),
     subscribe: unsubscribe, subscribeThreadDetail: unsubscribe, dispose: idle, closed: async () => undefined,
     privacyChanged: async () => undefined, hasPendingThreadWork: () => false, useSottoRequests: idle,
     requestAnswerRecovery: () => ({ uncertainRequestIds: [], completed: [] }), refreshRequestDraft: async () => unavailable(),
   }
   const host = {
+    watcherThreadIds,
     workspaceSnapshot: () => structuredClone(state.host), snapshot: async () => structuredClone(state.host),
     subscribe: unsubscribe, subscribeSubagents: unsubscribe, setCheckpointHooks: idle,
     useBrowserTools: idle, useThreadTools: idle,

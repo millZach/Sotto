@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { verifyClaudeSdkAssets } from './claude-sdk-package.mjs'
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import process from 'node:process'
 import { pathToFileURL, URL } from 'node:url'
 
@@ -11,10 +11,10 @@ import { _electron as electron } from '@playwright/test'
 
 import { latestMigrationVersion } from '../src/main/memory/migrations.mjs'
 import { listAsarEntries, readAsarText } from './asar-entries.mjs'
-import { verifyPreparedAssets } from './verify-runtime.mjs'
 import { verifyThirdPartyNotices } from './verify-notices.mjs'
 import { verifyExternalDependencyInventories } from './release-external-dependencies.mjs'
 import { releasePlatformProfile } from './release-platform-profile.mjs'
+import { verifyLinuxArchiveContents } from './verify-linux-tarball.mjs'
 import {
   fileSha256,
   verifyBuildProvenance,
@@ -55,10 +55,12 @@ function requireReleaseFile(input) {
 export async function verifyInstallerAppAsar(installerInput, unpackedAsarPath) {
   const distributablePath = requireReleaseFile(installerInput)
   let embedded
+  let archiveContents
   try {
-    embedded = await profile.openDistributable(distributablePath, async (embeddedAsarPath) =>
-      existsSync(embeddedAsarPath) ? await fileSha256(embeddedAsarPath) : null,
-    )
+    embedded = await profile.openDistributable(distributablePath, async (embeddedAsarPath, extractedRoot) => {
+      if (profile.key === 'linux') archiveContents = await verifyLinuxArchiveContents(dirname(dirname(unpackedAsarPath)), extractedRoot)
+      return existsSync(embeddedAsarPath) ? await fileSha256(embeddedAsarPath) : null
+    })
   } catch (error) {
     fail(error instanceof Error ? error.message : String(error))
   }
@@ -67,7 +69,7 @@ export async function verifyInstallerAppAsar(installerInput, unpackedAsarPath) {
   if (JSON.stringify(embedded) !== JSON.stringify(unpacked)) {
     fail(`${profile.distributableLabel} embedded app.asar differs from verified ${profile.packagedDirName} app.asar`)
   }
-  return { name: basename(distributablePath), ...embedded }
+  return { name: basename(distributablePath), ...embedded, ...(archiveContents === undefined ? {} : archiveContents) }
 }
 
 function productionModuleRoots(entries) {
@@ -120,6 +122,16 @@ export async function verifyPackagedMemoryStore(target) {
         })
       })
     }, probeRoot)
+    // The speech engine's addon and the ONNX Runtime it loads must resolve from the unpacked
+    // package in the installed app (ADR-0071). The model downloads on first run, so this proves
+    // the native module loads rather than transcribing.
+    const speechEngine = await application.evaluate(({ app }) => {
+      const { createRequire } = process.getBuiltinModule('node:module')
+      const { join } = process.getBuiltinModule('node:path')
+      const sherpa = createRequire(join(app.getAppPath(), 'package.json'))('sherpa-onnx-node')
+      return { recognizer: typeof sherpa.OfflineRecognizer?.createAsync === 'function', onnxruntime: String(sherpa.onnxruntimeVersion ?? '') }
+    })
+    if (speechEngine?.recognizer !== true) throw new Error('packaged speech engine did not load')
     // Invoke the shipped main graph through the debugger; installed startup
     // never accepts a probe mode from the environment.
     const result = await Promise.race([application.evaluate(({ app }, root) => {
@@ -136,7 +148,7 @@ export async function verifyPackagedMemoryStore(target) {
         result.migrationVersion !== latestMigrationVersion || result.matchedId !== 'memory-probe' || result.fts5 !== true) {
       throw new Error('invalid store evidence')
     }
-    return { ...result, terminal }
+    return { ...result, terminal, speechEngine }
   } catch (error) {
     fail(`memory store probe failed: ${error.message}; stderr=${stderr}; stdout=${stdout.slice(-4000)}`)
   } finally {
@@ -188,16 +200,12 @@ async function verifyNormalPackagedLaunch(target) {
       if (globalThis.sotto === undefined) throw new Error('normal preload bridge is unavailable')
       if (globalThis.sottoE2E !== undefined) throw new Error('packaged build admitted the E2E bridge')
 
-      const [settings, runtimeResponse] = await Promise.all([
-        globalThis.sotto.getSettings(),
-        globalThis.fetch('sotto-runtime://runtime/ort-wasm-simd-threaded.wasm'),
-      ])
-      for (const method of ['transcribe', 'cancelTranscription', 'checkTranscriptionKey']) {
+      await globalThis.sotto.getSettings()
+      for (const method of ['transcribe', 'cancelTranscription', 'getSpeechModelStatus', 'downloadSpeechModel', 'onSpeechModelStatus', 'checkOpenRouterKey']) {
         if (typeof globalThis.sotto[method] !== 'function') throw new Error('transcription bridge is unavailable')
       }
-      if (!runtimeResponse.ok) throw new Error(`local runtime protocol failed (${runtimeResponse.status})`)
-      const runtimeHeader = new Uint8Array(await runtimeResponse.arrayBuffer(), 0, 4)
-      if (runtimeHeader.join(',') !== '0,97,115,109') throw new Error('local runtime protocol returned invalid WASM')
+      // A fresh profile has no model; reading where it stands proves the speech model channel answers.
+      const speechModel = await globalThis.sotto.getSpeechModelStatus()
 
       const context = new globalThis.AudioContext()
       const workletUrl = new globalThis.URL('audio-capture-worklet.js', globalThis.document.baseURI).href
@@ -207,7 +215,7 @@ async function verifyNormalPackagedLaunch(target) {
         await context.close()
       }
 
-      return { language: settings.language, workletUrl }
+      return { speechModel: speechModel.state, workletUrl }
       })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -230,7 +238,7 @@ export async function verifyPackagedResources(input, options = {}) {
   const resources = profile.resourcesPath(target)
   const asarPath = join(resources, 'app.asar')
   await verifyClaudeSdkAssets(join(resources, 'claude-sdk'))
-  if (existsSync(join(resources, 'runtime', 'kws'))) fail('unreviewed wake runtime must not be bundled; use an explicitly supplied local runtime')
+  if (existsSync(join(resources, 'runtime'))) fail('retired voice runtime must not be bundled')
   for (const required of [
     profile.executablePath(target),
     asarPath,
@@ -244,14 +252,10 @@ export async function verifyPackagedResources(input, options = {}) {
     if (!existsSync(required)) fail(`missing ${relative(target, required)}`)
   }
 
-  await verifyPreparedAssets({
-    runtimeRoot: join(resources, 'runtime'),
-  })
-
   const entries = listAsarEntries(asarPath)
   for (const required of [
     'out/main/index.js',
-    'out/main/wakeWorker.js',
+    'out/main/terminalAgentHook.js',
     'out/main/external-dependencies.json',
     'out/preload/index.js',
     'out/preload/visual.js',
@@ -263,8 +267,8 @@ export async function verifyPackagedResources(input, options = {}) {
   ]) {
     if (!entries.includes(required)) fail(`app.asar is missing ${required}`)
   }
-  if (entries.some((entry) => entry.includes('ort-wasm-simd-threaded'))) {
-    fail('ONNX runtime must ship only under resources/runtime, not inside app.asar')
+  if (entries.some((entry) => entry === 'out/main/wakeWorker.js' || /(?:naturalSpeechWorker|ort-wasm|speechModelManifest)/u.test(entry))) {
+    fail('retired voice assets must not be bundled')
   }
   let provenance
   try {
@@ -277,12 +281,14 @@ export async function verifyPackagedResources(input, options = {}) {
     fail(error instanceof Error ? error.message : String(error))
   }
   const roots = productionModuleRoots(entries)
-  if (JSON.stringify(roots) !== JSON.stringify(['node-addon-api', 'node-pty', 'zod'])) {
+  // sherpa-onnx-node keeps its native code in one package per platform; the build carries this platform's.
+  const speechPlatformPackage = `sherpa-onnx-${process.platform === 'win32' ? 'win' : process.platform}-${process.arch}`
+  if (JSON.stringify(roots) !== JSON.stringify(['node-addon-api', 'node-pty', 'sherpa-onnx-node', speechPlatformPackage, 'zod'].sort())) {
     fail(`unexpected production modules: ${roots.join(', ') || '(none)'}`)
   }
 
   const packagedJson = JSON.parse(readAsarText(asarPath, 'package.json'))
-  if (JSON.stringify(Object.keys(packagedJson.dependencies ?? {}).sort()) !== JSON.stringify(['node-pty', 'zod'])) {
+  if (JSON.stringify(Object.keys(packagedJson.dependencies ?? {}).sort()) !== JSON.stringify(['node-pty', 'sherpa-onnx-node', 'zod'])) {
     fail('packaged dependency manifest is not minimal')
   }
   const externalInventories = {

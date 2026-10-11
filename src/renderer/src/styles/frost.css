@@ -16,12 +16,17 @@
   background: var(--tt-frost-room);
 }
 
-:root[data-frost] :is(.app-shell, .agent-room) {
+:root[data-frost] .app-shell {
   background: transparent;
 }
 
 :root[data-frost] :is(.thread-nav) {
   background: var(--tt-frost-sidebar);
+}
+
+/* Sotto Owl's night band is the sidebar's own paint at the top, so it frosts at the sidebar's solidity. */
+:root[data-frost] .thread-nav[data-sky] {
+  background: linear-gradient(var(--tt-frost-owl-night) 76px, var(--tt-frost-sidebar) 92px);
 }
 
 /* The Tools panel docked beside the panes is part of the room. Floating over them it stays solid, or the

@@ -3,14 +3,16 @@ import { Archive, ArchiveRestore, Brain, CircleHelp, Clock, FolderPlus, Messages
 import type { LucideIcon } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
 import type { SottoPlatform } from '../../../shared/platform'
+import { releaseTrackName } from '../../../shared/releaseTrack'
 import { roomFor } from '../components/AppShell'
 import { Button } from '../components/Button'
 import { SottoMark } from '../components/SottoMark'
 import { useOptionalApp, type AppNavigation } from '../state/AppContext'
 import { useMemoryEnabled } from '../state/memoryFeature'
-import { useVoiceCoordinatorEnabled } from '../state/voiceCoordinator'
+import { useReleaseTrack } from '../state/useReleaseTrack'
 import type { AgentConnection } from './AgentContext'
 import { useAddProject } from './addProject'
+import { OwlSky } from './OwlSky'
 import { useSidebarSize } from './sidebarSize'
 
 /** What the sidebar lists: threads, or the terminals of Terminal mode. */
@@ -60,11 +62,15 @@ export function SidebarChromeProvider({ updateControl, children }: { readonly up
 /**
  * The sidebar's top row: the mark with the wordmark beside it, then whatever controls the column adds. It is the
  * frameless window's drag region, so every control in it is marked no-drag. On macOS the traffic lights take the
- * row's left end and the wordmark gives way to them.
+ * row's left end and the wordmark gives way to them. A Sotto Owl build shows the mark alone, as a larger tile in
+ * the wordmark's place, and names itself.
  */
 export function SidebarTop({ children }: { readonly children?: ReactNode }): ReactNode {
+  const owl = useReleaseTrack() === 'owl'
   return <div className="thread-nav__top">
-    <span className="thread-nav__brand" aria-label="Sotto application"><SottoMark className="thread-nav__glyph" /><span className="thread-nav__wordmark">Sotto</span></span>
+    {owl
+      ? <span className="thread-nav__brand" role="img" aria-label={releaseTrackName('owl')}><SottoMark className="thread-nav__tile" /></span>
+      : <span className="thread-nav__brand" aria-label="Sotto application"><SottoMark className="thread-nav__glyph" /><span className="thread-nav__wordmark">Sotto</span></span>}
     {children}
   </div>
 }
@@ -77,16 +83,12 @@ export function SidebarTop({ children }: { readonly children?: ReactNode }): Rea
 export function SidebarFoot(): ReactNode {
   const app = useOptionalApp()
   const { updateControl } = useContext(SidebarChromeContext)
-  const coordinator = useVoiceCoordinatorEnabled()
   const memory = useMemoryEnabled()
-  // With the coordinator off the Agents page is the Threads page (App.tsx), so the foot lights Threads for it.
-  const shown = app === null || app.navigation === 'onboarding' || (app.navigation === 'agents' && !coordinator) ? 'threads' : app.navigation
+  const shown = app === null || app.navigation === 'onboarding' ? 'threads' : app.navigation
   const room = roomFor(shown)
   const go = (destination: AppNavigation): void => { app?.actions.navigate(destination) }
-  // The same rooms the strip offers: Agents joins only while the voice coordinator is switched on.
   const rooms: ReadonlyArray<{ readonly id: string; readonly label: string; readonly destination: AppNavigation }> = [
     { id: 'dictate', label: 'Dictate', destination: 'home' },
-    ...(coordinator ? [{ id: 'agents', label: 'Agents', destination: 'agents' as const }] : []),
     { id: 'threads', label: 'Threads', destination: 'threads' },
   ]
   /** Arrow keys walk the switch, as they do in the strip: only the lit tab is in the Tab order, so this is how the others are reached. */
@@ -186,7 +188,8 @@ export interface SidebarFrameProps {
 /**
  * The sidebar both modes share: one top row carrying the mark, the Threads | Terminal switch and the two new
  * actions, then search, the scrolling list, and the foot. Only what the body lists changes with the mode. The
- * top row is the frameless window's drag region, which is why every control in it is marked no-drag.
+ * top row is the frameless window's drag region, which is why every control in it is marked no-drag. A Sotto Owl
+ * build paints its night sky behind the top row and the search field while the sidebar is open.
  */
 export function SidebarFrame({ state, command, mode, onMode, label, query, searchPlaceholder, onQuery, onNew, newLabel, NewIcon, newShortcut, platform, foot, title = 'Threads', children, collapsedContent, extraError, onDismissExtraError }: SidebarFrameProps): ReactNode {
   const app = useOptionalApp()
@@ -195,9 +198,11 @@ export function SidebarFrame({ state, command, mode, onMode, label, query, searc
   const size = useSidebarSize()
   const [resizing, setResizing] = useState(false)
   const toggle = useCollapseToggleFocus(size.collapsed)
+  const sky = useReleaseTrack() === 'owl' && !size.collapsed
   return <aside className={mac ? 'thread-nav thread-nav--mac' : 'thread-nav'} aria-label={label} data-mode={mode} data-collapsed={size.collapsed || undefined} data-resizing={resizing || undefined}
-    style={{ width: size.collapsed ? (mac ? 80 : 52) : size.width }}>
+    data-sky={sky || undefined} style={{ width: size.collapsed ? (mac ? 80 : 52) : size.width }}>
     <div className="thread-nav__expanded" hidden={size.collapsed}>
+    {sky ? <OwlSky /> : null}
     <SidebarTop>
       {title === null ? null : <h1 className="tt-visually-hidden">{title}</h1>}
       <div className="thread-nav__seg thread-nav__seg--icons" role="radiogroup" aria-label="Sidebar mode">

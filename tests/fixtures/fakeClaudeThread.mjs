@@ -12,7 +12,7 @@ const output = frame => process.stdout.write(JSON.stringify(frame) + '\n')
 const models = existsSync(join(root, 'models.json')) ? JSON.parse(readFileSync(join(root, 'models.json'), 'utf8'))
   : [{ value: 'fixture-model', displayName: 'Fixture Claude', supportsEffort: true, supportedEffortLevels: ['low', 'high'] }]
 if (args.includes('--help')) {
-  console.log('--safe-mode --tools --permission-prompts --no-session-persistence --input-format --output-format --system-prompt --model --effort --verbose'); process.exit(0)
+  console.log('--safe-mode --tools --permission-prompts --no-session-persistence --input-format --output-format --system-prompt --model --effort --verbose --strict-mcp-config --restricted --setting-sources --disable-slash-commands --no-chrome --managed-settings'); process.exit(0)
 }
 // version.txt: the client installed now. `--version` reads it as the real CLI reads its own build, and a session
 // names the one it was started from in its init frame. Without the file the fake keeps no version, as before.
@@ -33,7 +33,12 @@ if (args.includes('--no-session-persistence') && value('--output-format') === 'j
 }
 const metadata = args.includes('--no-session-persistence')
 const session = metadata ? 'metadata' : value(args.includes('--resume') ? '--resume' : '--session-id')
-if (!metadata && (args.includes('--tools') || args.includes('--safe-mode') || value('--permission-prompts') !== 'host' || !['default', 'acceptEdits', 'auto', 'bypassPermissions'].includes(value('--permission-mode')))) throw new Error('Coding threads must retain tools and host permission decisions')
+const watcher = args.includes('--append-system-prompt')
+const mcpConfig = args.includes('--mcp-config') ? JSON.parse(readFileSync(value('--mcp-config'), 'utf8')) : { mcpServers: {} }
+const position = args.indexOf('--allowedTools')
+const following = position < 0 ? [] : args.slice(position + 1)
+const allowance = following.slice(0, following.findIndex(argument => argument.startsWith('--')) < 0 ? following.length : following.findIndex(argument => argument.startsWith('--')))
+if (!metadata && (args.includes('--tools') || args.includes('--safe-mode') || value('--permission-prompts') !== 'host' || !['default', 'manual', 'acceptEdits', 'auto', 'bypassPermissions'].includes(value('--permission-mode')))) throw new Error('Coding threads must retain tools and host permission decisions')
 // Both permission flags or none of the surface: the real CLI treats --permission-prompts host as
 // permission to ask and --permission-prompt-tool stdio as the thing that makes this process the asker.
 // Dropping the second is silent there, so it is loud here.
@@ -41,6 +46,7 @@ if (!metadata && value('--permission-prompt-tool') !== 'stdio') throw new Error(
 // The native CLI refuses bypassPermissions unless bypassing was explicitly allowed at launch; never allow it for other modes.
 if (!metadata && (value('--permission-mode') === 'bypassPermissions') !== args.includes('--allow-dangerously-skip-permissions')) throw new Error('bypassPermissions requires --allow-dangerously-skip-permissions, and only that mode may carry it')
 record(args.includes('--resume') ? 'resume' : 'launch', { source: 'child-process-argv', args, executable: process.execPath, cwd: process.cwd(), compactionEnvironment: Object.fromEntries(['DISABLE_AUTO_COMPACT', 'DISABLE_COMPACT', 'CLAUDE_AUTOCOMPACT_PCT_OVERRIDE', 'CLAUDE_CODE_AUTO_COMPACT_WINDOW'].filter(key => process.env[key] !== undefined).map(key => [key, process.env[key]])) })
+if (watcher) record('watcher-launch', { serverNames: Object.keys(mcpConfig.mcpServers), allowedTools: allowance, nativeTools: ['Read', 'Grep', 'Glob', 'Edit', 'Bash'] })
 // The isolated Electron journey uses the adapter's normal ~/.claude discovery path.
 const folder = join(process.env.SOTTO_FAKE_CLAUDE_HOME ?? join(root, 'home'), 'projects', process.cwd().replace(/[^a-zA-Z0-9]/gu, '-'))
 const log = join(folder, session + '.jsonl')
@@ -68,7 +74,19 @@ if (!metadata) {
 const leave = () => { try { if (!metadata && readFileSync(alive, 'utf8') === String(process.pid)) unlinkSync(alive) } catch { /* already gone */ } }
 let lastAction = ''
 let initialized = false
+let deferredInit
 const released = name => new Promise(resolve => { const timer = setInterval(() => { if (existsSync(join(root, name))) { clearInterval(timer); resolve() } }, 10) })
+/**
+ * script.json `steering`: a prompt sent while a turn runs, as Claude Code 2.1.295 takes it. It goes into the CLI's own
+ * queue, said at once with a `queued` lifecycle frame, and is read into the running turn at its next model step (`say`):
+ * its echo, then `started`. One still queued when the turn ends runs as the next turn, and a stop leaves it queued
+ * (`still_queued`) to run next the same way.
+ */
+let turnOpen = false
+const steered = []
+const lifecycleOf = (uuid, state) => output({ type: 'command_lifecycle', command_uuid: uuid, state, uuid: randomUUID(), session_id: session })
+const readSteered = () => { for (const frame of steered.splice(0)) { output(persist(frame)); lifecycleOf(frame.uuid, 'started') } }
+const turnEnded = () => { turnOpen = steered.length > 0; readSteered() }
 /**
  * A finished reply. With `thinking` it opens on a thinking block, streamed the way Claude Code 2.1.289 streams one
  * (start, thinking deltas, a signature delta, stop), and written to the transcript as its own line with
@@ -109,6 +127,7 @@ async function complete(action) {
   if (agent) output({ type: 'system', subtype: 'task_started', session_id: session, uuid: randomUUID(), task_id: agent.task, tool_use_id: agent.tool,
     description: action.background.description, subagent_type: 'general-purpose', is_backgrounded: true, spawn_depth: 1, task_type: 'local_agent' })
   output(persist(frame)); output({ type: 'result', subtype: 'success', session_id: session, is_error: false, result: action.text })
+  turnEnded()
 }
 // The settings this process runs: what it was launched with, then whatever a settings request changed. Written to
 // settings-<session>.json on every change so a test reads what the running CLI would use for its next turn.
@@ -162,6 +181,7 @@ const act = () => {
   }
   // One API message of a turn that goes on, as Claude writes before a tool call: the next message has its own ID.
   if (action.type === 'say') {
+    readSteered()
     const id = randomUUID()
     output({ type: 'stream_event', session_id: session, event: { type: 'message_start', message: { id, role: 'assistant' } } })
     output({ type: 'stream_event', session_id: session, event: { type: 'content_block_delta', delta: { type: 'text_delta', text: action.text } } })
@@ -182,21 +202,36 @@ lines.on('line', line => {
       const scriptPath = join(root, 'initialize-script.json')
       const script = !metadata && existsSync(scriptPath) ? JSON.parse(readFileSync(scriptPath, 'utf8')) : {}
       const respond = () => {
+        if (script.silent) return
+        if (script.exit) { process.exit(0); return }
         initialized = !script.fail
         // Recorded so a test can count the CLIs started and not yet answered at any point.
         if (initialized && !metadata) record('initialize-answered', { session })
         output({ type: 'control_response', response: script.fail
           ? { subtype: 'error', request_id: frame.request_id, error: 'Synthetic initialization rejected' }
-          : { subtype: 'success', request_id: frame.request_id, response: { models, commands: existsSync(join(root, 'skills.json')) ? JSON.parse(readFileSync(join(root, 'skills.json'), 'utf8')) : [], session_state: 'idle' } } })
+          : { subtype: 'success', request_id: frame.request_id, response: { models, commands: existsSync(join(root, 'skills.json')) ? JSON.parse(readFileSync(join(root, 'skills.json'), 'utf8')) : [], agents: [], hooks_applied: true, session_state: 'idle', current_permission_mode: settings.mode, ...(installed !== undefined ? { claude_code_version: installed } : {}), ...script.initializeReport } } })
         // A started session announces its tools, and AskUserQuestion is in that list only where someone
         // can answer it. `approvalSurface: false` is the CLI that took the flag and offered no surface.
-        if (!script.fail && !metadata) output({ type: 'system', subtype: 'init', session_id: session, ...(installed !== undefined ? { claude_code_version: installed } : {}),
-          tools: ['Task', 'Bash', 'Edit', 'Glob', 'Grep', 'Read', 'Write', ...(script.approvalSurface === false ? [] : ['AskUserQuestion'])] })
+        if (!script.fail && !metadata && !script.omitInit) {
+          const init = { type: 'system', subtype: 'init', session_id: session, ...(installed !== undefined ? { claude_code_version: installed } : {}),
+            tools: ['Task', 'Bash', 'Edit', 'Glob', 'Grep', 'Read', 'Write', ...(script.approvalSurface === false ? [] : ['AskUserQuestion'])],
+            mcp_servers: Object.keys(mcpConfig.mcpServers).map(name => ({ name, status: 'connected' })),
+            permissionMode: settings.mode, model: settings.model, slash_commands: [], agents: [], skills: [], plugins: [], ...script.initReport }
+          if (script.initAtTurn) deferredInit = init
+          else output(init)
+        }
+        for (const startupFrame of script.startupFrames ?? []) output(startupFrame)
       }
       if (script.gate) {
         writeFileSync(join(root, 'initialize-waiting'), session)
         const gate = setInterval(() => { if (existsSync(join(root, 'initialize-release'))) { clearInterval(gate); respond() } }, 5)
       } else respond()
+    }
+    else if (frame.request.subtype === 'get_settings') {
+      const scriptPath = join(root, 'initialize-script.json')
+      const script = existsSync(scriptPath) ? JSON.parse(readFileSync(scriptPath, 'utf8')) : {}
+      output({ type: 'control_response', response: { subtype: 'success', request_id: frame.request_id,
+        response: { effective: {}, sources: [], applied: { model: settings.model, effort: settings.effort }, ...script.settingsReport } } })
     }
     else if (['set_model', 'apply_flag_settings', 'set_permission_mode'].includes(frame.request.subtype)) {
       // settings-script.json: `refuse` answers every settings request with an error, or those of the subtypes it
@@ -232,10 +267,17 @@ lines.on('line', line => {
     else if (frame.request.subtype === 'interrupt') {
       // interrupt-script.json `error`: close the stopped turn as Claude Code does, with an error result.
       const error = existsSync(join(root, 'interrupt-script.json')) && JSON.parse(readFileSync(join(root, 'interrupt-script.json'), 'utf8')).error === true
-      output({ type: 'control_response', response: { subtype: 'success', request_id: frame.request_id, response: {} } })
+      output({ type: 'control_response', response: { subtype: 'success', request_id: frame.request_id, response: steered.length ? { still_queued: steered.map(held => held.uuid) } : {} } })
       output(error ? { type: 'result', subtype: 'error_during_execution', session_id: session, is_error: true, result: '' } : { type: 'result', subtype: 'success', session_id: session, is_error: false, result: '' })
+      turnEnded()
     } else violation('Unknown control request')
   } else if (frame.type === 'user') {
+    const initScriptPath = join(root, 'initialize-script.json')
+    const initScript = existsSync(initScriptPath) ? JSON.parse(readFileSync(initScriptPath, 'utf8')) : {}
+    if (initScript.lifecycleBeforeInit) {
+      for (const state of ['queued', 'started']) output({ type: 'command_lifecycle', command_uuid: initScript.foreignLifecycle ? randomUUID() : frame.uuid, state, uuid: randomUUID(), session_id: session })
+    }
+    if (deferredInit) { output(deferredInit); deferredInit = undefined }
     if (!initialized) violation('User prompt arrived before successful initialization')
     if (!frame.uuid || frame.session_id !== session || frame.message?.role !== 'user' || frame.parent_tool_use_id !== null) violation('Malformed native user frame')
     const scriptPath = join(root, 'script.json')
@@ -257,6 +299,8 @@ lines.on('line', line => {
         ...(script.evidence === 'none' ? {} : { user_message_uuid: frame.uuid, user_message_uuids: [frame.uuid] }) })
       lifecycle('completed'); return
     }
+    if (script.steering && turnOpen) { steered.push(frame); lifecycleOf(frame.uuid, 'queued'); return }
+    turnOpen = true
     const reply = persist(frame)
     if (script.writeCwd) writeFileSync(join(process.cwd(), 'native-cwd-proof.txt'), typeof frame.message.content === 'string' ? frame.message.content : frame.message.content.find(item => item.type === 'text')?.text ?? '')
     if (script.delay) { writeFileSync(scriptPath, '{}'); setTimeout(() => output(reply), script.delay) } else output(reply)

@@ -6,7 +6,7 @@ import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
 import { FakeProviderHost } from './fakeProviderHost'
 
-export async function workspaceFixture(root?: string, options?: { worktreeRefreshDelayMs?: number; history?: boolean }) {
+export async function workspaceFixture(root?: string, options?: { worktreeRefreshDelayMs?: number; watcherEnabled?: boolean; history?: boolean }) {
   root ??= await mkdtemp(join(tmpdir(), 'sotto-workspace-'))
   const registry = new ThreadRegistry(root)
   const adapters = { codex: new FakeProviderHost(), claude: new FakeProviderHost(), grok: new FakeProviderHost() }
@@ -22,7 +22,7 @@ export async function workspaceFixture(root?: string, options?: { worktreeRefres
   const native = new ConfiguredProviderHost({ directory: root, provider: () => 'codex', enabledProviders: () => ['codex', 'claude', 'grok'],
     threadProvider: id => registry.byThread(id)?.provider,
     hosts: { codex: new SottoThreadHost('codex', adapters.codex, registry), claude: new SottoThreadHost('claude', adapters.claude, registry), grok: new SottoThreadHost('grok', adapters.grok, registry), devin: new FakeProviderHost() } })
-  const host = new WorkspaceHost(native, root, () => history, options?.worktreeRefreshDelayMs)
+  const host = new WorkspaceHost(native, root, () => history, options?.worktreeRefreshDelayMs, options?.watcherEnabled ?? true)
   await host.initialize()
   let stopping: Promise<void> | undefined
   return { root, registry, adapters, host, native, setHistory: (value: boolean) => { history = value },

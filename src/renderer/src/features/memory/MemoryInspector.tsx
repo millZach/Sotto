@@ -86,7 +86,7 @@ export function MemoryInspector({ controller, onQuestionnaire }: { controller: M
   if (replacement?.id === editor?.memory.id || replacement?.supersededBy || replacement?.state === 'superseded') replacement = undefined
   return <section className="memory-page" aria-label="Memory inspector">
     <h1>What Sotto remembers</h1>
-    <p className="memory-description">Preferences stay on this computer. Relevant preferences go to your selected reasoning provider with a request.</p>
+    <p className="memory-description">Preferences stay on this computer. Sotto does not send them to any provider.</p>
     {error && <div role="alert" className="memory-error">{error} <Button variant="ghost" onClick={() => void controller.refresh()}>Refresh memory</Button></div>}
     {!snapshot ? <p role="status">{error ? 'Memory has not loaded.' : 'Reading memory…'}</p> : !snapshot.available ? <p role="status">Memory is unavailable. Restart Sotto and try again.</p> : <>
       <div className="memory-toolbar">

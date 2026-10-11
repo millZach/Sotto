@@ -1,7 +1,7 @@
 // @vitest-environment node
 /**
  * The rules for a thread that finished while no client showed it (ADR-0046), on snapshots built by hand. The
- * coordinator around them, its persistence and the socket are in finishedUnreadControl.test.ts and socketHost.test.ts.
+ * coordinator around them, its persistence and the socket are in finishedUnreadControl.test.ts and tests/integration/socketClientIsolation.test.ts.
  */
 import { describe, expect, it } from 'vitest'
 import { FINISHED_UNREAD_MAX, FinishedUnread } from '../../../src/main/agents/finishedUnread'
@@ -151,4 +151,18 @@ describe('the saved record', () => {
     expect(marks.publish(thread('b'))).not.toHaveProperty('finishedUnread')
     expect(marks.publish({ ...thread('b'), finishedUnread: true })).not.toHaveProperty('finishedUnread')
   })
+})
+
+it('keeps dormant marks outside the ordinary bound through restore, observation and new finishes', () => {
+  const dormant = Array.from({ length: FINISHED_UNREAD_MAX }, (_, index) => `watcher-${index}`)
+  const ordinary = Array.from({ length: FINISHED_UNREAD_MAX }, (_, index) => `ordinary-${index}`)
+  const protectedIds = new Set(dormant), marks = new FinishedUnread([...dormant, ...ordinary], id => protectedIds.has(id))
+  expect(marks.saved()).toEqual([...dormant, ...ordinary])
+  expect(marks.show(dormant)).toBe(false)
+  marks.track(snapshot(dormant.map(id => running(id))))
+  marks.track(snapshot([running('new')]))
+  marks.track(snapshot([thread('new')]))
+  expect(marks.saved()).toEqual([...dormant, ...ordinary.slice(1), 'new'])
+  expect(new FinishedUnread(marks.saved(), id => protectedIds.has(id)).saved()).toEqual(marks.saved())
+  expect(new FinishedUnread(marks.saved()).saved()).toEqual([...ordinary.slice(1), 'new'])
 })

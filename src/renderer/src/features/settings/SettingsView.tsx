@@ -8,7 +8,7 @@ import {
   TRANSCRIPTION_PRIVACY_NOTICE,
   UPDATE_CHECK_PRIVACY_NOTICE,
   type HotkeyChangeResult,
-  type TranscriptionKeyCheck,
+  type OpenRouterKeyCheck,
   type StartupState,
   type UpdateStatus,
 } from '../../../../shared/contracts'
@@ -17,13 +17,14 @@ import type { SottoPlatform } from '../../../../shared/platform'
 import type {
   AppSettings,
   HistoryRetention,
-  LlmQuality,
   ReducedMotion,
   SettingsPatch,
   WorktreeCleanupDays,
 } from '../../../../shared/settings'
 import { WORKTREE_CLEANUP_DAYS } from '../../../../shared/settings'
 import { UPDATES_UNSUPPORTED_MESSAGE } from '../updates/updateControlLogic'
+import { releaseTrackName } from '../../../../shared/releaseTrack'
+import { releaseTrackOf } from '../../state/useReleaseTrack'
 import { Button } from '../../components/Button'
 import { OpenSystemSettingsButton } from '../../components/OpenSystemSettingsButton'
 import { Card } from '../../components/Card'
@@ -32,7 +33,8 @@ import { Field } from '../../components/Field'
 import { Select } from '../../components/Select'
 import { SegmentedControl } from '../../components/SegmentedControl'
 import { Toggle } from '../../components/Toggle'
-import { KNOWN_LANGUAGES } from '../../languages'
+import { SpeechModelStatus as SpeechModelStatusView } from '../../components/SpeechModelStatus'
+import { SPEECH_MODEL, type SpeechModelStatus } from '../../../../shared/speechModel'
 import { platformCopy } from '../../platformCopy'
 import { OpenRouterKeyField } from '../../components/OpenRouterKeyField'
 import { AgentSetupFields } from '../../agents/AgentAccountSettings'
@@ -49,6 +51,7 @@ import {
   type MediaDevicesAdapter,
 } from '../../audio/useAudioInputDevices'
 import {
+  MICROPHONE_HEARD_LEVEL,
   WorkletMicrophoneTest,
   type MicrophoneTestController,
   type MicrophoneTestState,
@@ -71,14 +74,15 @@ export interface SettingsViewProps {
   readonly onSetStartup: (enabled: boolean) => Promise<StartupState | null>
   readonly onResetSettings: () => Promise<boolean>
   readonly onClearHistory: () => Promise<boolean>
-  readonly onCheckTranscriptionKey: () => Promise<TranscriptionKeyCheck>
+  readonly onCheckOpenRouterKey: () => Promise<OpenRouterKeyCheck>
+  /** Where the speech model stands (ADR-0071); null until main answers. */
+  readonly speechModel: SpeechModelStatus | null
+  /** Starts the speech model download, or retries one that failed. */
+  readonly onDownloadSpeechModel: () => void
   readonly onCheckForUpdates: () => Promise<UpdateStatus | null>
   readonly onDownloadUpdate: () => Promise<boolean>
   readonly onInstallUpdate: () => Promise<boolean>
 }
-
-// VoiceWave reports a normalized 0..1 level. Ignore tiny background activity.
-const MICROPHONE_TEST_HEARD_THRESHOLD = 0.02
 
 const SETTINGS_SECTIONS = [
   { id: 'settings-capture', label: 'Dictation', icon: Mic },
@@ -150,11 +154,20 @@ export function SettingsView({
   onSetStartup,
   onResetSettings,
   onClearHistory,
-  onCheckTranscriptionKey,
+  onCheckOpenRouterKey,
+  speechModel,
+  onDownloadSpeechModel,
   onCheckForUpdates,
   onDownloadUpdate,
   onInstallUpdate,
 }: SettingsViewProps): ReactNode {
+  const [linuxStartupSupported, setLinuxStartupSupported] = useState(false)
+  useEffect(() => {
+    if (platform !== 'linux') return
+    let active = true
+    void window.sotto?.getStartup?.().then(state => { if (active) setLinuxStartupSupported(state.supported === true) }).catch(() => undefined)
+    return () => { active = false }
+  }, [platform])
   const [microphoneId, setMicrophoneId] = useState(settings.microphoneId)
   const [savedMicrophoneId, setSavedMicrophoneId] = useState(settings.microphoneId)
   if (settings.microphoneId !== savedMicrophoneId) {
@@ -341,7 +354,6 @@ export function SettingsView({
   }
 
   const copy = platformCopy(platform)
-  const languageKnown = KNOWN_LANGUAGES.some(({ value }) => value === settings.language)
   const scrollRef = useRef<HTMLDivElement>(null)
   const [activeSection, setActiveSection] = useState<SettingsSectionId>(SETTINGS_SECTIONS[0].id)
   // Panels stay mounted so account, key and theme drafts survive category changes.
@@ -458,7 +470,7 @@ export function SettingsView({
                       <VoiceWave stage={microphoneState === 'requesting' || microphoneState === 'ready' ? 'listening' : 'idle'} value={microphoneLevel} label="Microphone level" size="deck" holdSpeaking={microphoneState === 'ready'} />
                       <p role="status">
                         {microphoneState === 'ready' ? 'Listening. Say something.' : null}
-                        {microphoneState === 'closed' ? microphonePeakRef.current > MICROPHONE_TEST_HEARD_THRESHOLD ? 'Sotto heard you. The microphone is closed.' : 'Sotto did not hear anything. Check that the microphone is not muted.' : null}
+                        {microphoneState === 'closed' ? microphonePeakRef.current > MICROPHONE_HEARD_LEVEL ? 'Sotto heard you. The microphone is closed.' : 'Sotto did not hear anything. Check that the microphone is not muted.' : null}
                         {microphoneState === 'requesting' ? 'Waiting for microphone permission...' : null}
                         {microphoneState === 'idle' ? (settings.microphoneSkipped ? 'No microphone is set up. Run this test to set one up.' : 'Run a quick input-level test.') : null}
                         {microphoneState === 'denied' ? copy.settingsMicrophoneDenied : null}
@@ -489,19 +501,17 @@ export function SettingsView({
                   </div>
                   <Field label="Recording limit"><SegmentedControl label="Maximum recording time" value={String(settings.maxRecordingSeconds)} onChange={value => void save({ maxRecordingSeconds: Number(value) as AppSettings['maxRecordingSeconds'] })} options={[{ value: '30', label: '30 s' }, { value: '60', label: '1 min' }, { value: '120', label: '2 min' }, { value: '300', label: '5 min' }]} /></Field>
                   <Toggle label="Sound cues" checked={settings.soundCues} onCheckedChange={(checked) => void save({ soundCues: checked })} description="A short sound when recording starts and stops." />
-                  <Toggle label="Streaming transcription" checked={settings.streamingAsr} onCheckedChange={(checked) => void save({ streamingAsr: checked })} description="Transcribe as you speak for a faster finish." />
                 </div>
               </Card>
 
               <Card className="settings-section" id="settings-transcription" {...panelProps('settings-transcription')}>
-                <div className="settings-section__heading"><h2>Transcription</h2><p>Language & speech to text</p></div>
+                <div className="settings-section__heading"><h2>Transcription</h2><p>Speech to text, on this computer</p></div>
                 <div className="settings-rows">
                   <div className="settings-model-statement">
-                    <h3>MAI-Transcribe-2</h3>
-                    <p>Speech recognition by Microsoft.</p>
+                    <h3>{SPEECH_MODEL.name}</h3>
+                    <p>Speech recognition by {SPEECH_MODEL.maker}, on this computer. Understands {SPEECH_MODEL.languages} European languages and works out which one you speak.</p>
+                    <SpeechModelStatusView status={speechModel} onRetry={onDownloadSpeechModel} />
                   </div>
-                  <OpenRouterKeyField migrationFailed={openRouterKeyMigrationFailed} apiKey={settings.llmApiKey} onUpdateSettings={onUpdateSettings} onCheckTranscriptionKey={onCheckTranscriptionKey} />
-                  <Field label="Language"><Select value={settings.language} onChange={(event) => void save({ language: event.currentTarget.value })}>{!languageKnown ? <option value={settings.language}>Saved language ({settings.language})</option> : null}{KNOWN_LANGUAGES.map((language) => <option key={language.value} value={language.value}>{language.label}</option>)}</Select></Field>
                   <Toggle label="Whitespace formatting" checked={settings.formatWhitespace} onCheckedChange={(checked) => void save({ formatWhitespace: checked })} description="Trim and normalize repeated whitespace without changing words." />
                   <p className="settings-disclosure">{TRANSCRIPTION_PRIVACY_NOTICE}</p>
                 </div>
@@ -510,10 +520,10 @@ export function SettingsView({
               <Card className="settings-section" id="settings-formatting" {...panelProps('settings-formatting')}>
                 <div className="settings-section__heading"><h2>Cleanup</h2><p>Formatting, vocabulary & writing</p></div>
                 <div className="settings-rows">
-                  <Toggle label="AI formatting" checked={settings.llmFormatting} onCheckedChange={(checked) => void save({ llmFormatting: checked })} description="Send transcript text to OpenRouter for cleanup. Falls back to the raw transcript if the network is slow or offline." />
-                  <Field label="Formatting quality" description="Low is near-instant; higher tiers format better but add up to a couple seconds."><Select disabled={!settings.llmFormatting} value={settings.llmQuality} onChange={(event) => void save({ llmQuality: event.currentTarget.value as LlmQuality })}><option value="low">Low — fastest (Mercury 2)</option><option value="medium">Medium (Nova 2 Lite)</option><option value="value">Value — cheap, near-High (GLM-5.3 Flash)</option><option value="high">High — best formatting (Claude Haiku 4.5)</option></Select></Field>
+                  <Toggle label="AI formatting" checked={settings.llmFormatting} onCheckedChange={(checked) => void save({ llmFormatting: checked })} description="Send transcript text, never audio, to OpenRouter for cleanup. Falls back to the raw transcript if the network is slow or offline." />
+                  <OpenRouterKeyField migrationFailed={openRouterKeyMigrationFailed} apiKey={settings.llmApiKey} onUpdateSettings={onUpdateSettings} onCheckOpenRouterKey={onCheckOpenRouterKey} />
                   <div className="settings-input-action">
-                    <Field label="Personal dictionary" description={`One word or name per line. Sent as spelling hints with your audio and used during cleanup.${llmDictionaryDraft.value.length >= 4000 ? ' 4,000 characters maximum.' : ''}`}>
+                    <Field label="Personal dictionary" description={`One word or name per line. Used during AI cleanup to spell names and terms the way you do.${llmDictionaryDraft.value.length >= 4000 ? ' 4,000 characters maximum.' : ''}`}>
                       <textarea className="tt-input" rows={5} maxLength={4000} value={llmDictionaryDraft.value} onPaste={(event) => {
                         const input = event.currentTarget
                         const pasted = event.clipboardData.getData('text').replace(/\r\n?/gu, '\n')
@@ -544,7 +554,7 @@ export function SettingsView({
               <Card className="settings-section" id="settings-cloud-iphone" {...panelProps('settings-cloud-iphone')}><div className="settings-section__heading"><h2>Cloud iPhone</h2><p>Native iOS builds on a run.cloud simulator</p></div>
                 <CloudIphoneSettings settings={settings} onUpdateSettings={onUpdateSettings} /></Card>
 
-              <Card className="settings-section" id="settings-agents" {...panelProps('settings-agents')}><div className="settings-section__heading"><h2>Agents</h2><p>{settings.voiceCoordinatorEnabled ? 'Reasoning, voice, new threads & projects' : 'Reasoning, new threads & projects'}</p></div><AgentSetupFields /></Card>
+              <Card className="settings-section" id="settings-agents" {...panelProps('settings-agents')}><div className="settings-section__heading"><h2>Agents</h2><p>New threads & projects</p></div><AgentSetupFields /></Card>
 
               <Card className="settings-section" id="settings-output" {...panelProps('settings-output')}>
                 <div className="settings-section__heading"><h2>Output</h2><p>Clipboard & automatic paste</p></div>
@@ -581,8 +591,9 @@ export function SettingsView({
                   <ProjectThreadDefaults settings={settings} onSave={save} />
                   <Toggle label="Show floating widget when idle" checked={settings.showWidgetWhenIdle} onCheckedChange={(checked) => void save({ showWidgetWhenIdle: checked })} description="Keep the small dictation sliver on screen between sessions. Click it to dictate." />
                   <Toggle label={copy.settingsLaunchAtStartupLabel} checked={settings.launchAtStartup}
-                    {...(platform === 'linux' ? { disabled: true, description: 'Starting at sign-in comes with the installed package.' } : {})} onCheckedChange={async (checked) => {
+                    {...(platform === 'linux' && !linuxStartupSupported ? { disabled: true, description: 'Sotto cannot change sign-in startup here.' } : {})} onCheckedChange={async (checked) => {
                     const result = await onSetStartup(checked).catch(() => null)
+                    if (platform === 'linux') setLinuxStartupSupported(result?.supported === true)
                     setNotice(result?.enabled !== checked
                       ? { text: copy.settingsStartupFailureNotice, error: true }
                       : result.approvalRequired === true
@@ -597,7 +608,7 @@ export function SettingsView({
                   <div className="settings-section__heading"><h2>Updates</h2><p>Sotto looks for new releases on GitHub and installs them itself.</p></div>
                   <div className="settings-update-row">
                     <div>
-                      <p className="settings-update-version">{updateStatus === null ? 'Sotto' : `Sotto ${updateStatus.currentVersion}`}</p>
+                      <p className="settings-update-version">{updateStatus === null ? 'Sotto' : `${releaseTrackName(releaseTrackOf(updateStatus))} ${updateStatus.currentVersion}`}</p>
                       <p className="settings-update-status" aria-live="polite">{updateStatusCopy(updateStatus)}</p>
                     </div>
                     <div className="settings-update-actions">
@@ -616,7 +627,7 @@ export function SettingsView({
                   <Button variant="danger" onClick={() => { setClearFailure(null); setClearOpen(true) }}>Clear history</Button>
                 </div>
                 <div className="settings-danger-row">
-                  <div><h3>Reset settings</h3><p>Restore defaults and reopen setup. Your saved OpenRouter key, downloaded models and history remain in place.</p></div>
+                  <div><h3>Reset settings</h3><p>Restore defaults and reopen setup. Your saved OpenRouter key, the speech model and history remain in place.</p></div>
                   <Button variant="secondary" onClick={() => { setResetFailure(null); setResetOpen(true) }}>Reset settings</Button>
                 </div>
               </Card>

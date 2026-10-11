@@ -9,9 +9,10 @@ import { projectAtFolder } from './projectFolders'
  * Add project: choose the computer the project lives on when more than one is paired, then a folder there, and open
  * it as a Sotto project on that host, or open the project that already has it. The folder is made on the host when
  * it is new, by the same create-project that attaches an existing one. Only a listed folder is sent as existing, so one
- * that has gone since it was listed is refused rather than made again.
+ * that has gone since it was listed is refused rather than made again. `hostId` fixes the computer, as first-run setup
+ * does for this one, so the dialog asks only for a folder.
  */
-export function useAddProject(state: AgentState, command: AgentConnection['command']): {
+export function useAddProject(state: AgentState, command: AgentConnection['command'], options: { readonly hostId?: string | undefined } = {}): {
   readonly add: () => Promise<void>; readonly adding: boolean; readonly error: string | null; readonly clearError: () => void; readonly dialog: ReactNode
 } {
   const [open, setOpen] = useState(false)
@@ -65,7 +66,7 @@ export function useAddProject(state: AgentState, command: AgentConnection['comma
     finally { setAdding(false) }
   }
   const dialog = open ? React.createElement(FolderBrowserDialog, {
-    state, heading: 'Where should this project live?', busy: adding, error: dialogError,
+    state, hostId: options.hostId, heading: 'Where should this project live?', busy: adding, error: dialogError,
     onUse: choice => { void use(choice) }, onClose: () => { if (!adding) setOpen(false) },
   }) : null
   return { add, adding, error, clearError: () => setError(null), dialog }

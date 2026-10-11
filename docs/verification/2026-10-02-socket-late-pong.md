@@ -14,9 +14,9 @@ Windows worktree resumed from `5ab00c95`, branch `fix/bh-02-socketserver`. This 
 
 ## Reproduction
 
-`npx vitest run tests/unit/main/socketFrames.test.ts --maxWorkers=2` failed six new cases before the fix: host download and desktop upload connections closed at 50 seconds before the held pong could arrive at 60 seconds; drained writes did not protect the next round; both silent-peer cases closed after one round. The minimal Duplex seam uses the same SocketFrames class as the authenticated listener and desktop socket client, with synchronous write callbacks proving `writableLength === 0`. There are no real sleeps.
+`npx vitest run tests/unit/host/socketFrames.test.ts --maxWorkers=2` failed six new cases before the fix: host download and desktop upload connections closed at 50 seconds before the held pong could arrive at 60 seconds; drained writes did not protect the next round; both silent-peer cases closed after one round. The minimal Duplex seam uses the same SocketFrames class as the authenticated listener and desktop socket client, with synchronous write callbacks proving `writableLength === 0`. There are no real sleeps.
 
-After the fix, `npx vitest run tests/unit/main/socketFrames.test.ts tests/unit/main/socketServer.test.ts --maxWorkers=2` passed all 34 cases. Received partial frames stay alive across multiple rounds; heartbeat-owned pings do not renew activity and completely silent peers close at 75 seconds. Drained application writes prevent a silent round even when a tunnel hides the remaining transfer. Opted-in peers also count outgoing frames as progress.
+After the fix, `npx vitest run tests/unit/host/socketFrames.test.ts tests/integration/socketServer.test.ts --maxWorkers=2` passed all 34 cases. Received partial frames stay alive across multiple rounds; heartbeat-owned pings do not renew activity and completely silent peers close at 75 seconds. Drained application writes prevent a silent round even when a tunnel hides the remaining transfer. Opted-in peers also count outgoing frames as progress.
 
 ## Integrated Windows verification
 

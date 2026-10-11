@@ -1,27 +1,34 @@
+// @vitest-environment node
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { EFFORT_COLORS } from '../../../src/shared/settings'
-import { DEFAULT_THEME_ID, THEME_COLOR_ROLES } from '../../../src/shared/themes/library'
+import { rgbToOklch } from '../../../src/shared/themes/color'
+import { DEFAULT_THEME_ID, T3_CODE_THEME, THEME_COLOR_ROLES } from '../../../src/shared/themes/library'
 import { themeColorVariable } from '../../../src/renderer/src/state/appearance'
 import {
   MODES,
   THEME_IDS,
   contrast,
   over,
+  parseColorValue,
   parseTokenBlocks,
+  relativeLuminance,
   resolveColor,
   rootDeclarations,
   type Mode,
   type PaintOptions,
   type Rgba,
-} from './themeTokenResolver'
+} from '../../fixtures/renderer/themeTokenResolver'
+
+const tokensCss = readFileSync(join(process.cwd(), 'src/renderer/src/styles/tokens.css'), 'utf8')
+const tokenBlocks = parseTokenBlocks(tokensCss)
 
 const combinations = MODES.flatMap(mode => THEME_IDS.map(id => [mode, id] as const))
 
 function palette(mode: Mode, themeId: string, options: PaintOptions = {}): (name: string) => Rgba {
-  const declarations = rootDeclarations(mode, themeId, options)
+  const declarations = rootDeclarations(mode, themeId, options, tokenBlocks)
   const canvas = resolveColor('--tt-canvas', declarations)
   // Every token is judged as painted on the room: translucent fills sit on the canvas.
   return (name: string) => over(resolveColor(`--tt-${name}`, declarations), canvas)
@@ -95,6 +102,60 @@ describe('main-window theme tokens', () => {
     }
   })
 
+  it.each(combinations)('%s mode of %s keeps the Sotto Owl header as readable on its night as on the sidebar', (mode, id) => {
+    const color = palette(mode, id)
+    // What sits on the header, and the surface under it on stable and under the night sky on Owl.
+    const onHeader = [
+      ['text-faint', 'sidebar', 'owl-night', 'Add project and New thread'],
+      ['text-muted', 'sidebar', 'owl-night', 'Collapse sidebar'],
+      ['text-muted', 'surface-sunken', 'owl-night-control', 'the Threads | Terminal switch'],
+      ['text', 'surface-elevated', 'owl-night-control-on', 'the switch\'s lit side'],
+      ['text-faint', 'field', 'owl-night-field', 'the search placeholder'],
+      ['text-muted', 'field', 'owl-night-field', 'the search icon'],
+    ] as const
+    for (const [ink, stable, owl, what] of onHeader) {
+      const before = contrast(color(ink), color(stable))
+      const after = contrast(color(ink), color(owl))
+      expect(after, `${what} on the night`).toBeGreaterThanOrEqual(4.5)
+      // Sotto's own dark search field gives up the most, about 5%, for the night Zach picked; nothing gives up more.
+      expect(after / before, `${what}: ${before.toFixed(2)} on stable, ${after.toFixed(2)} on Owl`).toBeGreaterThanOrEqual(0.94)
+    }
+    // There is no night by day: the wash of the accent is never darker than the sidebar it replaces.
+    if (mode === 'light') expect(contrast(color('owl-night'), color('sidebar')), 'the wash beside the sidebar').toBeLessThan(1.05)
+    if (mode === 'light') expect(relativeLuminance(color('owl-night'))).toBeGreaterThanOrEqual(relativeLuminance(color('sidebar')))
+    // Every star and the glow come from the theme.
+    for (const token of ['owl-star', 'owl-star-accent', 'owl-glow']) expect(color(token).a, token).toBeGreaterThan(0)
+  })
+
+  it('keeps the Sotto Owl wash by day no darker than the sidebar on a theme of the user\'s own with a deep accent', () => {
+    const colors = { ...T3_CODE_THEME.colors, sidebar: 'oklch(0.97 0.01 85)', accent: 'oklch(0.4 0.1 30)' }
+    const declarations = rootDeclarations('light', 't3-code', { colors }, tokenBlocks)
+    expect(relativeLuminance(resolveColor('--tt-owl-night', declarations))).toBeGreaterThanOrEqual(relativeLuminance(resolveColor('--tt-sidebar', declarations)))
+  })
+
+  it('evaluates relative colours as Chromium does, and refuses a channel expression it cannot read', () => {
+    // Chromium 150 paints Sotto's dark night as oklch(0.224 0.028 265).
+    const night = rgbToOklch(resolveColor('--tt-owl-night', rootDeclarations('dark', 't3-code', {}, tokenBlocks)))
+    expect(night.L).toBeCloseTo(0.224, 2)
+    expect(night.C).toBeCloseTo(0.028, 2)
+    expect(() => parseColorValue('oklch(from oklch(0.5 0.1 200) calc(l - 5%) c h)', new Map())).toThrow(/Unsupported channel expression/u)
+    expect(() => parseColorValue('oklch(from oklch(0.5 0.1 200) l c hue)', new Map())).toThrow(/Unknown channel keyword/u)
+  })
+
+  it('takes the Sotto Owl night from the theme\'s own hue, and lends Sotto\'s night blue to a theme with none', () => {
+    const hue = (id: string): number => {
+      const declarations = rootDeclarations('dark', id, {}, tokenBlocks)
+      const { h, C } = rgbToOklch(resolveColor('--tt-owl-night', declarations))
+      expect(C, `${id} night chroma`).toBeGreaterThan(0.02)
+      return (h + 360) % 360
+    }
+    expect(hue('t3-code')).toBeCloseTo(265, -1)
+    expect(hue('citrine')).toBeCloseTo(265, -1)
+    // Tropic's night is green, Nocturne's blue.
+    expect(hue('tropic')).toBeCloseTo(158, -1)
+    expect(hue('nocturne')).toBeCloseTo(254, -1)
+  })
+
   it.each(MODES)('%s mode: the contrast slider strengthens and softens text and borders around 100', (mode) => {
     const at = (value: number) => palette(mode, 'nocturne', { contrast: value })
     const [soft, standard, strong] = [at(50), at(100), at(200)]
@@ -109,42 +170,43 @@ describe('main-window theme tokens', () => {
 
   it('paints glass as the overlay surface at the chosen opacity', () => {
     for (const glass of [40, 80, 100]) {
-      const declarations = rootDeclarations('dark', 'nocturne', { glass })
+      const declarations = rootDeclarations('dark', 'nocturne', { glass }, tokenBlocks)
       expect(resolveColor('--tt-glass', declarations).a).toBeCloseTo(glass / 100, 5)
     }
     // Text stays readable on the most transparent glass, painted over the room.
     for (const mode of MODES) {
-      const declarations = rootDeclarations(mode, 'nocturne', { glass: 40 })
+      const declarations = rootDeclarations(mode, 'nocturne', { glass: 40 }, tokenBlocks)
       const canvas = resolveColor('--tt-canvas', declarations)
       const text = over(resolveColor('--tt-text', declarations), canvas)
       for (const surface of ['--tt-glass', '--tt-glass-field']) {
         expect(contrast(text, over(resolveColor(surface, declarations), canvas)), `${mode} text on ${surface}`).toBeGreaterThanOrEqual(4.5)
       }
     }
-    const dark = rootDeclarations('dark', 'nocturne')
-    const light = rootDeclarations('light', 'nocturne')
+    const dark = rootDeclarations('dark', 'nocturne', {}, tokenBlocks)
+    const light = rootDeclarations('light', 'nocturne', {}, tokenBlocks)
     expect(dark.get('--tt-glass-filter')).toBe('blur(var(--tt-glass-blur)) saturate(var(--tt-glass-saturation))')
     expect([dark.get('--tt-glass-blur'), dark.get('--tt-glass-saturation')]).toEqual(['16px', '1.08'])
     expect([light.get('--tt-glass-blur'), light.get('--tt-glass-saturation')]).toEqual(['12px', '1.14'])
   })
 
   it('declares the default theme (Sotto) as the first-frame palette for both modes, with every role present', () => {
-    const blocks = parseTokenBlocks()
+    const blocks = tokenBlocks
     const base = blocks.find(block => block.selectors.length === 1 && block.selectors[0] === ':root' && block.declarations.has('--theme-canvas'))!
     const light = blocks.find(block => block.selectors.includes(":root[data-theme='light']") && block.declarations.has('--theme-canvas'))!
     for (const role of THEME_COLOR_ROLES) {
-      expect(base.declarations.get(themeColorVariable(role)), `dark ${role}`).toBe(rootDeclarations('dark', DEFAULT_THEME_ID).get(themeColorVariable(role)))
-      expect(light.declarations.get(themeColorVariable(role)), `light ${role}`).toBe(rootDeclarations('light', DEFAULT_THEME_ID).get(themeColorVariable(role)))
+      expect(base.declarations.get(themeColorVariable(role)), `dark ${role}`).toBe(rootDeclarations('dark', DEFAULT_THEME_ID, {}, tokenBlocks).get(themeColorVariable(role)))
+      expect(light.declarations.get(themeColorVariable(role)), `light ${role}`).toBe(rootDeclarations('light', DEFAULT_THEME_ID, {}, tokenBlocks).get(themeColorVariable(role)))
     }
   })
 
   it('derives every colour token from theme roles, never from an accent attribute', () => {
-    const css = readFileSync(join(process.cwd(), 'src/renderer/src/styles/tokens.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '')
+    const css = tokensCss.replace(/\/\*[\s\S]*?\*\//gu, '')
     expect(css).not.toMatch(/data-accent/u)
-    const derived = parseTokenBlocks().find(block => block.selectors.length === 1 && block.selectors[0] === ':root' && block.declarations.has('--tt-canvas'))!
+    const derived = tokenBlocks.find(block => block.selectors.length === 1 && block.selectors[0] === ':root' && block.declarations.has('--tt-canvas'))!
     const constants = new Set(['--tt-success', '--tt-provider-codex', '--tt-provider-claude', '--tt-provider-grok', '--tt-provider-devin', '--tt-provider-ink', '--tt-backdrop', '--tt-shadow-sm', '--tt-shadow-lg', '--tt-shadow-overlay', '--tt-shadow-color'])
     for (const [name, value] of derived.declarations) {
-      if (constants.has(name) || !/^(#|rgb\(|oklch\()/u.test(value)) continue
+      // A relative colour from a theme role (`oklch(from var(…) …)`) is derived, not a literal.
+      if (constants.has(name) || !/^(#|rgb\(|oklch\((?!from (var|color-mix)\())/u.test(value)) continue
       throw new Error(`${name} paints a literal colour (${value}) instead of a theme role`)
     }
   })
@@ -157,6 +219,8 @@ describe('main-window theme tokens', () => {
 
   it('keeps raw colours out of the main-window stylesheets', () => {
     const owned = [
+      'src/renderer/src/features/onboarding/onboarding.css',
+      'src/renderer/src/features/onboarding/threadsTour.css',
       'src/renderer/src/agents/threadsChrome.css',
       'src/renderer/src/features/settings/hosts.css',
       'src/renderer/src/features/settings/hostDevices.css',
@@ -175,8 +239,10 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/agents/agents.css',
       'src/renderer/src/agents/modelPicker.css',
       'src/renderer/src/agents/effortPicker.css',
+      'src/renderer/src/agents/skillPill.css',
       'src/renderer/src/agents/threadMonitor.css',
       'src/renderer/src/agents/threadChips.css',
+      'src/renderer/src/agents/owlSky.css',
       'src/renderer/src/agents/workingCopy.css',
       'src/renderer/src/agents/branchToolbar.css',
       'src/renderer/src/agents/gitActionButton.css',
@@ -186,7 +252,6 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/agents/providers.css',
       'src/renderer/src/agents/clientUpdates.css',
       'src/renderer/src/agents/hostUpdates.css',
-      'src/renderer/src/agents/room.css',
       'src/renderer/src/agents/screenshots.css',
       'src/renderer/src/agents/reviewComments.css',
       'src/renderer/src/agents/visualCard.css',

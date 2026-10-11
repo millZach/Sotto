@@ -4,7 +4,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { ThreadHostEvent } from '../../src/main/agents/host'
-import type { RecordedRpc } from '../fixtures/codexFixture'
+import type { RecordedRpc } from '../fixtures/adapterFixture'
 import { devinFixture } from '../fixtures/devinFixture'
 
 // What a send to Devin costs before Devin hears it, what shows Devin took it, and what it shows while Devin answers

@@ -1,5 +1,7 @@
 # The AGENT_STATE broadcast omits a model catalog a window already has
 
+October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-management.md) records the removal. The two-window agent-state broadcast below is historical: the widget no longer receives thread state, model catalogs or command receipts. Catalog revision handling remains for the main window and paired clients; the widget receives dictation state only.
+
 Accepted September 23, 2026. Issue #286: typing in the Threads composer lagged while a thread worked. The shell/detail split that keeps `sotto:agents:state` free of thread history is described in `docs/perf/state-pipeline.md`, but no ADR covers it; this one records the model-catalog change below and stands for that corner of the split until a broader one is written.
 
 ## Context
@@ -152,3 +154,7 @@ the catalog costs the listener about as much per publish as writing it out used 
 client that accepts the feature, so the saving is on the wire and on the phone, not in the listener. See
 [the measurement](../perf/2026-10-03-phone-model-catalog.md). It takes effect with an iPhone build that asks
 for the feature.
+
+## Amendment: the catalog keeps its identity (October 10, 2026, #917)
+
+`clientAgentState` no longer walks the catalog, which names no Sotto entity, and adapters now certify their catalogs (ADR-0016, October 10 amendment), so a shell carries the same frozen array from one publish to the next until a catalog actually changes. The identity check in `sameContent` then answers, and the content comparison with `isDeepStrictEqual` remains for a catalog that is not certified or whose identity changed.

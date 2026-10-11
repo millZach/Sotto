@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { hostThreadChanges } from '../../../../src/renderer/src/tools/hostThreadTools'
 import type { GitChangesBridge } from '../../../../src/shared/gitChanges'

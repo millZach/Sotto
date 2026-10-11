@@ -1,35 +1,34 @@
 // @vitest-environment node
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
-import { AgentCredentials, type CredentialEncryption } from '../../../src/main/agents/credentials'
+
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
+import { watcherRecordFixture } from '../../fixtures/watcher'
+import { emptyWatcherRecord } from '../../../src/shared/watcher'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
+import { deferred } from '../../fixtures/deferred'
 
 const roots: string[] = []
 const controls: AgentControl[] = []
 
-const encryption: CredentialEncryption = {
-  isEncryptionAvailable: () => false,
-  encryptString: value => Buffer.from(value),
-  decryptString: value => value.toString(),
-}
-
-async function fixture() {
+async function fixture(historyEnabled = true) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-persistence-'))
   roots.push(root)
-  const credentials = new AgentCredentials(root, encryption)
-  await credentials.load()
+  const credentials = await testCredentials(root, { mode: 'unavailable' })
+
   const host = new E2EAgentHost()
-  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
+  const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner, historyEnabled: () => historyEnabled,
   })
   controls.push(control)
   await control.start()
   if (!control.get().host.connected) await control.command({ type: 'connect' })
-  return { root, host, control }
+  return { root, host, control, credentials }
 }
 
 afterEach(async () => {
@@ -39,6 +38,51 @@ afterEach(async () => {
 })
 
 describe('coordinator persistence', () => {
+  it('migrates an older agents store without adopting a thread named Watcher or old management', async () => {
+    const f = await fixture()
+    f.control.dispose(); await f.control.closed()
+    const path = join(f.root, 'agents.json')
+    const saved = JSON.parse(await readFile(path, 'utf8'))
+    delete saved.watcher
+    saved.assignments = [{ threadId: 'workshop', instruction: 'Retired words', mode: 'managed' }]
+    await writeFile(path, JSON.stringify(saved), 'utf8')
+    const reopened = createAgentControl({ directory: f.root, host: f.host, credentials: f.credentials, reasoner: e2eAgentReasoner })
+    controls.push(reopened); await reopened.start(); reopened.dispose(); await reopened.closed()
+    const migrated = JSON.parse(await readFile(path, 'utf8'))
+    expect(migrated.watcher).toEqual(emptyWatcherRecord())
+    expect(migrated).not.toHaveProperty('assignments')
+    expect(migrated.configuration).toEqual(saved.configuration)
+    expect((await readdir(f.root)).some(name => name.includes('.corrupt-'))).toBe(false)
+  })
+
+  it('retains text-free watcher uncertainty, budgets and ownership across history-off restarts', async () => {
+    const f = await fixture(false)
+    f.control.dispose(); await f.control.closed()
+    const path = join(f.root, 'agents.json')
+    const saved = JSON.parse(await readFile(path, 'utf8'))
+    const record = watcherRecordFixture()
+    saved.watcher = record
+    await writeFile(path, JSON.stringify(saved), 'utf8')
+    const warnings = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    for (let restart = 0; restart < 2; restart++) {
+      const host = new E2EAgentHost()
+      const reopened = createAgentControl({ directory: f.root, host, credentials: f.credentials, reasoner: e2eAgentReasoner, historyEnabled: () => false })
+      controls.push(reopened); await reopened.start()
+      host.event({ type: 'manual', threadId: 'workshop', text: 'DISTINCT_PRIVATE_WATCHER_REQUEST' })
+      host.event({ type: 'stream', threadId: 'workshop', messageId: 'private-reply', text: 'DISTINCT_PRIVATE_FILE_CONTENT', status: 'idle' })
+      reopened.dispose(); await reopened.closed()
+      expect(JSON.parse(await readFile(path, 'utf8')).watcher).toEqual(record)
+      // No recovery writer may mistake a retained uncertain operation for new work.
+      expect((await host.snapshot()).threads.flatMap(thread => thread.messages).filter(message => message.commandId)).toEqual([])
+    }
+    for (const name of await readdir(f.root)) {
+      if (!name.endsWith('.json') && !name.includes('.tmp-') && !name.includes('.corrupt-')) continue
+      const text = await readFile(join(f.root, name), 'utf8')
+      expect(text).not.toContain('DISTINCT_PRIVATE_WATCHER_REQUEST')
+      expect(text).not.toContain('DISTINCT_PRIVATE_FILE_CONTENT')
+    }
+    expect(warnings.mock.calls.flat().join(' ')).not.toContain('DISTINCT_PRIVATE')
+  })
   function agentsWriteSpy() {
     const realWrite = AtomicJsonStore.prototype.write
     const spy = vi.spyOn(AtomicJsonStore.prototype, 'write')
@@ -81,12 +125,12 @@ describe('coordinator persistence', () => {
     await settle(writes)
     const file = join(f.root, 'agents.json')
     const beforeConfigure = writes.count()
-    await f.control.command({ type: 'configure', patch: { orbColor: 'amber' } })
+    await f.control.command({ type: 'configure', patch: { projectsDirectory: 'D:/Projects' } })
     expect(writes.count()).toBe(beforeConfigure + 1)
     await vi.waitFor(async () => {
-      expect((JSON.parse(await readFile(file, 'utf8')) as { configuration: { orbColor: string } }).configuration.orbColor).toBe('amber')
+      expect((JSON.parse(await readFile(file, 'utf8')) as { configuration: { projectsDirectory: string } }).configuration.projectsDirectory).toBe('D:/Projects')
     })
-    await f.control.command({ type: 'configure', patch: { orbColor: 'amber' } })
+    await f.control.command({ type: 'configure', patch: { projectsDirectory: 'D:/Projects' } })
     await settle(writes)
     expect(writes.count()).toBe(beforeConfigure + 1)
   })
@@ -104,26 +148,24 @@ describe('coordinator persistence', () => {
       }
       return real.call(this, value as never)
     })
-    const failed = await f.control.command({ type: 'configure', patch: { orbColor: 'violet' } })
-    expect(failed.error).toBe('Could not save agent state. Pause management until storage is available.')
+    const failed = await f.control.command({ type: 'configure', patch: { projectsDirectory: 'D:/Other Projects' } })
+    expect(failed.error).toBe('Could not save agent state. Your drafts are kept in this session. Restore access to local storage and retry.')
     const beforeRetry = writes.count()
-    const retried = await f.control.command({ type: 'configure', patch: { orbColor: 'violet' } })
+    const retried = await f.control.command({ type: 'configure', patch: { projectsDirectory: 'D:/Other Projects' } })
     expect(retried.error).toBeNull()
     expect(writes.count()).toBe(beforeRetry + 1)
     const file = join(f.root, 'agents.json')
     await vi.waitFor(async () => {
-      expect((JSON.parse(await readFile(file, 'utf8')) as { configuration: { orbColor: string } }).configuration.orbColor).toBe('violet')
+      expect((JSON.parse(await readFile(file, 'utf8')) as { configuration: { projectsDirectory: string } }).configuration.projectsDirectory).toBe('D:/Other Projects')
     })
   })
   it('keeps the newest save when it returns to the last completed state', async () => {
     const f = await fixture()
     const writes = agentsWriteSpy()
     await settle(writes)
-    const initial = f.control.get().configuration.speak
-    let started!: () => void
-    const writing = new Promise<void>(resolve => { started = resolve })
-    let release!: () => void
-    const held = new Promise<void>(resolve => { release = resolve })
+    const initial = f.control.get().configuration.checkClientUpdates
+    const { promise: writing, resolve: started } = deferred<void>()
+    const { promise: held, resolve: release } = deferred<void>()
     let blocked = false
     // Hold the physical write inside the real queue, so later writes retain their ordering.
     const prototype = AtomicJsonStore.prototype as unknown as { writeImmediately(value: unknown): Promise<void> }
@@ -136,10 +178,10 @@ describe('coordinator persistence', () => {
       }
       return realImmediate.call(this, value)
     })
-    const older = f.control.command({ type: 'configure', patch: { speak: !initial } })
+    const older = f.control.command({ type: 'configure', patch: { checkClientUpdates: !initial } })
     await writing
     let newerFinished = false
-    const newerCommand = f.control.command({ type: 'configure', patch: { speak: initial } })
+    const newerCommand = f.control.command({ type: 'configure', patch: { checkClientUpdates: initial } })
       .then(result => { newerFinished = true; return result })
     await new Promise(resolve => setImmediate(resolve))
     const finishedBeforeWrite = newerFinished
@@ -148,7 +190,7 @@ describe('coordinator persistence', () => {
     await settle(writes)
     expect(finishedBeforeWrite).toBe(false)
     expect(newer.error).toBeNull()
-    expect(f.control.get().configuration.speak).toBe(initial)
-    expect((JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')) as { configuration: { speak: boolean } }).configuration.speak).toBe(initial)
+    expect(f.control.get().configuration.checkClientUpdates).toBe(initial)
+    expect((JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')) as { configuration: { checkClientUpdates: boolean } }).configuration.checkClientUpdates).toBe(initial)
   })
 })

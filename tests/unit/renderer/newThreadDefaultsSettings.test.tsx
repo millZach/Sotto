@@ -1,3 +1,4 @@
+import { threadsStateFixture } from '../../fixtures/agentState'
 import React from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -11,8 +12,8 @@ vi.mock('../../../src/renderer/src/agents/AgentContext', async importOriginal =>
 const caps = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true }
 
 function fixture(configuration: Partial<AgentState['configuration']> = {}): AgentState {
-  return {
-    configuration: { ...defaultAgentConfiguration(), ...configuration }, connection: 'connected',
+  return threadsStateFixture({ cloneOverrides: false,
+    configuration: { ...defaultAgentConfiguration(), ...configuration },
     host: {
       connected: true, name: 'Agents', version: '', capabilities: caps, projects: [],
       models: [
@@ -21,10 +22,7 @@ function fixture(configuration: Partial<AgentState['configuration']> = {}): Agen
       ],
       threads: [],
     },
-    assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false,
-    pendingRequest: '', globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' }, voice: { status: 'off', error: null, action: 'none', revision: 0 },
-    credentials: { reasoning: false, grokSpeech: false, secure: true }, reasoningAccounts: [],
-  }
+    topLevel: { activeThreadId: null, activeProjectId: null } })
 }
 function provide(state: AgentState) {
   const command = vi.fn(async (): Promise<AgentState> => state)

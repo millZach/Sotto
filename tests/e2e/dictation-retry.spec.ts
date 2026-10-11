@@ -1,15 +1,12 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-
 import { expect, test, type Page } from '@playwright/test'
-
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { E2E_TRANSCRIPT } from '../../src/shared/e2e'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../src/shared/settings'
 import { closeSotto, launchSotto, openPage, type LaunchedSotto } from './support/sottoLaunch'
 
-// The first transcription is turned away, the way an Azure rate-limit burst does, and the next is accepted.
+// The speech model fails the first two transcriptions, and the next goes through.
 const evidenceRoot = resolve(process.cwd(), 'test-results/dictation-retry')
 
 async function widgetOf(launched: LaunchedSotto): Promise<Page> {
@@ -23,7 +20,7 @@ async function withTurnedAwayDictation(
   run: (launched: LaunchedSotto, widget: Page) => Promise<void>,
   settings: Partial<AppSettings> = {},
 ): Promise<void> {
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-dictation-retry-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-dictation-retry-' })).directory
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, ...settings }), 'utf8')
   let launched: LaunchedSotto | undefined
   try {
@@ -35,7 +32,7 @@ async function withTurnedAwayDictation(
     await run(launched, widget)
   } finally {
     if (launched !== undefined) await closeSotto(launched)
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 }
 
@@ -49,12 +46,12 @@ test('keeps a turned-away dictation and delivers it when the widget pill is pres
     await page.screenshot({ path: resolve(evidenceRoot, 'dictate-kept.png') })
     await widget.screenshot({ path: resolve(evidenceRoot, 'widget-kept.png'), animations: 'disabled' })
 
-    // The first Try again is turned away too, and the pill says so, whole.
+    // The first Try again fails too, and the pill says so, whole.
     await widget.locator('.widget-capsule').click({ position: { x: 60, y: 20 } })
-    const again = widget.locator('.widget-copy', { hasText: 'Still busy · retry' })
+    const again = widget.locator('.widget-copy', { hasText: 'Failed again · retry' })
     await expect(again).toBeVisible({ timeout: 15_000 })
     expect(await again.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
-    await expect(page.getByText('Try again did not get through.', { exact: false })).toBeVisible()
+    await expect(page.getByText('Try again failed too.', { exact: false })).toBeVisible()
     await widget.screenshot({ path: resolve(evidenceRoot, 'widget-kept-again.png'), animations: 'disabled' })
 
     await widget.locator('.widget-capsule').click({ position: { x: 60, y: 20 } })

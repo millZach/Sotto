@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 
-import { WAV_HEADER_BYTES, encodeWavPcm16 } from '../../../src/shared/wav'
+import { WAV_HEADER_BYTES, decodeWavPcm16, encodeWavPcm16 } from '../../../src/shared/wav'
 
 const SAMPLE_RATE = 16_000
 
@@ -90,5 +90,31 @@ describe('encodeWavPcm16', () => {
     expect(() => encodeWavPcm16(new Float32Array(1), 0)).toThrow(RangeError)
     expect(() => encodeWavPcm16(new Float32Array(1), -16_000)).toThrow(RangeError)
     expect(() => encodeWavPcm16(new Float32Array(1), 16_000.5)).toThrow(RangeError)
+  })
+})
+
+describe('decodeWavPcm16', () => {
+  it('reads back what encodeWavPcm16 wrote, to within one PCM16 step', () => {
+    const samples = new Float32Array([0, 0.5, -0.5, 0.999, -1])
+    const decoded = decodeWavPcm16(encodeWavPcm16(samples, SAMPLE_RATE).buffer as ArrayBuffer, SAMPLE_RATE)
+    expect(decoded).not.toBeNull()
+    expect(decoded!.length).toBe(samples.length)
+    samples.forEach((sample, index) => expect(Math.abs(decoded![index]! - sample)).toBeLessThan(1 / 32_000))
+  })
+
+  it('refuses anything but mono PCM16 at the expected rate behind the canonical header', () => {
+    const file = (): ArrayBuffer => encodeWavPcm16(new Float32Array(8), SAMPLE_RATE).buffer.slice(0) as ArrayBuffer
+    const changed = (write: (view: DataView) => void): ArrayBuffer => {
+      const bytes = file()
+      write(new DataView(bytes))
+      return bytes
+    }
+    expect(decodeWavPcm16(file(), 44_100)).toBeNull()
+    expect(decodeWavPcm16(changed((v) => v.setUint16(22, 2, true)), SAMPLE_RATE)).toBeNull()
+    expect(decodeWavPcm16(changed((v) => v.setUint16(34, 8, true)), SAMPLE_RATE)).toBeNull()
+    expect(decodeWavPcm16(changed((v) => v.setUint8(0, 0x58)), SAMPLE_RATE)).toBeNull()
+    expect(decodeWavPcm16(changed((v) => v.setUint32(40, 2, true)), SAMPLE_RATE)).toBeNull()
+    expect(decodeWavPcm16(new ArrayBuffer(WAV_HEADER_BYTES - 1), SAMPLE_RATE)).toBeNull()
+    expect(decodeWavPcm16(file().slice(0, WAV_HEADER_BYTES + 3), SAMPLE_RATE)).toBeNull()
   })
 })

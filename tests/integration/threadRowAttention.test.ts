@@ -1,9 +1,10 @@
 // @vitest-environment node
+import { createAgentControl } from '../fixtures/agentControlFixture'
+import { testCredentials } from '../fixtures/testCredentials'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
-import { AgentControl } from '../../src/main/agents/control'
-import { AgentCredentials } from '../../src/main/agents/credentials'
+
 import { e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { describeThreads } from '../../src/renderer/src/agents/threadFacts'
 import { agentShell, type AgentState } from '../../src/shared/agents'
@@ -18,9 +19,8 @@ import { immediatePublishScheduler } from '../fixtures/publishScheduler'
 for (const kind of ['question', 'permission'] as const) it(`says a Claude thread needs you while its ${kind} is pending, and stops once it is answered`, async () => {
   const f = await claudeFixture()
   const threadId = randomUUID()
-  const credentials = new AgentCredentials(join(f.root, 'vault'), { isEncryptionAvailable: () => true, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
-  await credentials.load()
-  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials, reasoner: e2eAgentReasoner,
+  const credentials = await testCredentials(join(f.root, 'vault'), { mode: 'plain' })
+  const control = createAgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials, reasoner: e2eAgentReasoner,
   })
   const row = (state: AgentState) => describeThreads(agentShell(state), Date.now()).find(entry => entry.thread.id === threadId)!
   try {
@@ -34,14 +34,13 @@ for (const kind of ['question', 'permission'] as const) it(`says a Claude thread
     await expect.poll(() => control.get().host.threads.find(thread => thread.id === threadId)?.requests.map(request => request.kind),
       { message: `the ${kind} never reached thread.requests, so the composer has nothing to show` }).toEqual([kind])
     const state = control.get()
-    expect(state.assignments.some(assignment => assignment.threadId === threadId), 'the thread is one you started, not one Sotto manages').toBe(false)
-    // The coordinator's queue is not where the row learns this: it stays empty for a thread Sotto does not manage.
-    expect(state.queue.filter(item => item.threadId === threadId)).toEqual([])
-    expect(row(state), `thread.requests holds the ${kind} and the composer answers it, but the sidebar row does not say so`).toMatchObject(kind === 'question'
-      ? { state: 'needs', waitingFor: 'question', stateLabel: 'Needs your answer', request: { kind, threadId } }
-      : { state: 'needs', waitingFor: 'approval', stateLabel: 'Needs your approval', request: { kind, threadId } })
-
     const request = state.host.threads.find(thread => thread.id === threadId)!.requests[0]!
+
+    // The row learns this from the host's requests, without a coordinator queue.
+    expect(row(state), `thread.requests holds the ${kind} and the composer answers it, but the sidebar row does not say so`).toMatchObject(kind === 'question'
+      ? { state: 'needs', waitingFor: 'question', stateLabel: 'Needs your answer', request: { kind, requestId: request.id, text: request.text } }
+      : { state: 'needs', waitingFor: 'approval', stateLabel: 'Needs your approval', request: { kind, requestId: request.id, text: request.text } })
+
     const choice = request.permissionChoices?.find(entry => entry.kind === 'allow-once')
     await control.command(kind === 'question'
       ? { type: 'answer', threadId, requestId: request.id, answer: '', questionAnswers: { '0': { optionIds: [], text: 'Blue' } } }

@@ -22,12 +22,12 @@ export class FinishedUnread {
   /** Marked thread IDs, oldest first: a set keeps the order things were added in. */
   private readonly marks = new Set<string>()
 
-  constructor(saved: readonly string[] = []) { this.restore(saved) }
+  constructor(saved: readonly string[] = [], private readonly dormant?: (threadId: string) => boolean) { this.restore(saved) }
 
   /** Takes the saved marks back at start, keeping what clients have said they show since. */
   restore(saved: readonly string[]): void {
     this.marks.clear()
-    for (const id of saved) if (!this.shown.has(id)) this.marks.add(id)
+    for (const id of saved) if (this.dormant?.(id) || !this.shown.has(id)) this.marks.add(id)
     this.trim()
   }
 
@@ -36,6 +36,7 @@ export class FinishedUnread {
     const live = new Set<string>()
     let changed = false
     for (const thread of snapshot.threads) {
+      if (this.dormant?.(thread.id)) continue
       // A disconnect neither finishes a thread nor clears what it finished; it only stops counting as work.
       if (!snapshot.connected || !isThreadProviderConnected(snapshot, thread)) continue
       if (busy(thread)) { live.add(thread.id); changed = this.marks.delete(thread.id) || changed; continue }
@@ -55,7 +56,7 @@ export class FinishedUnread {
   show(threadIds: readonly string[]): boolean {
     this.shown = new Set(threadIds)
     let changed = false
-    for (const id of this.shown) changed = this.marks.delete(id) || changed
+    for (const id of this.shown) if (!this.dormant?.(id)) changed = this.marks.delete(id) || changed
     return changed
   }
 
@@ -64,11 +65,12 @@ export class FinishedUnread {
   /** The marks as the coordinator saves them. */
   saved(): string[] { return [...this.marks] }
 
-  /** Drops the oldest marks past the limit. */
+  /** Drops the oldest ordinary marks past the limit; dormant Watcher marks stay whole. */
   private trim(): void {
+    let ordinary = this.dormant ? [...this.marks].filter(id => !this.dormant?.(id)).length : this.marks.size
     for (const id of this.marks) {
-      if (this.marks.size <= FINISHED_UNREAD_MAX) return
-      this.marks.delete(id)
+      if (ordinary <= FINISHED_UNREAD_MAX) return
+      if (!this.dormant?.(id)) { this.marks.delete(id); ordinary -= 1 }
     }
   }
 

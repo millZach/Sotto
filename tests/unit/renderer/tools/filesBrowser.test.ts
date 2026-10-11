@@ -1,7 +1,9 @@
+// @vitest-environment node
+import { deferred } from '../../../fixtures/deferred'
 import { describe, expect, it, vi } from 'vitest'
 import type { FilesBridge, FilesResult, FilePreview } from '../../../../src/shared/files'
 import { FilesBrowserStore, sortEntries, visibleRows } from '../../../../src/renderer/src/tools/filesBrowser'
-import { TOKEN_A, TOKEN_B, fakeFilesBridge, text, type FakeFolders } from './fakeFilesBridge'
+import { TOKEN_A, TOKEN_B, fakeFilesBridge, text, type FakeFolders } from '../../../fixtures/renderer/fakeFilesBridge'
 
 const settle = () => new Promise(resolve => setTimeout(resolve, 0))
 
@@ -21,7 +23,7 @@ describe('Files browsing model', () => {
     const list = bridge.list
     const releases: (() => void)[] = []
     bridge.list = vi.fn(async request => {
-      await new Promise<void>(resolve => { releases.push(resolve) })
+      await (() => { const pending = deferred<void>(); releases.push(pending.resolve); return pending.promise })()
       return list(request)
     })
     vi.useFakeTimers()
@@ -65,7 +67,7 @@ describe('Files browsing model', () => {
       if (active >= 4) { rejected++; return { ok: false, error: { code: 'busy', message: 'Files is busy.' } } }
       active++
       try {
-        await new Promise<void>(resolve => { pending.push(resolve) })
+        await (() => { const gate = deferred<void>(); pending.push(gate.resolve); return gate.promise })()
         return await request()
       } finally { active-- }
     }
@@ -88,7 +90,7 @@ describe('Files browsing model', () => {
     const list = bridge.list
     let release!: () => void
     bridge.list = vi.fn(async request => {
-      if (request.path === '') await new Promise<void>(resolve => { release = resolve })
+      if (request.path === '') await (() => { const pending = deferred<void>(); release = pending.resolve; return pending.promise })()
       return list(request)
     })
     const store = new FilesBrowserStore()
@@ -118,7 +120,7 @@ describe('Files browsing model', () => {
     const list = bridge.list
     let release!: () => void
     bridge.list = vi.fn(async request => {
-      if (request.path === '') await new Promise<void>(resolve => { release = resolve })
+      if (request.path === '') await (() => { const pending = deferred<void>(); release = pending.resolve; return pending.promise })()
       return list(request)
     })
     const store = new FilesBrowserStore()
@@ -214,7 +216,7 @@ describe('Files browsing model', () => {
   it('drops a late reply from before the folder changed', async () => {
     let releaseOld!: (value: FilesResult<FilePreview>) => void
     const base = fakeFilesBridge({ t1: workshop() })
-    const bridge: FilesBridge = { ...base, preview: vi.fn(() => new Promise<FilesResult<FilePreview>>(done => { releaseOld = done })) }
+    const bridge: FilesBridge = { ...base, preview: vi.fn(() => { const pending = deferred<FilesResult<FilePreview>>(); releaseOld = pending.resolve; return pending.promise }) }
     const store = new FilesBrowserStore()
     store.activate(bridge, 't1')
     await settle()

@@ -31,12 +31,14 @@ describe("node-pty's spawn-helper", () => {
   })
 
   // Windows has no execute bit to set or read back.
-  it.skipIf(process.platform === 'win32')('makes the macOS helpers executable once and leaves other platforms alone', async () => {
-    const root = await nodePty()
-    const helper = (folder: string): string => join(root, 'prebuilds', folder, 'spawn-helper')
-    expect(await restoreSpawnHelperMode(root, 'darwin')).toEqual([helper('darwin-arm64'), helper('darwin-x64')])
-    expect((await stat(helper('darwin-arm64'))).mode & 0o777).toBe(0o755)
-    expect((await stat(helper('win32-x64'))).mode & 0o777).toBe(0o644)
-    expect(await restoreSpawnHelperMode(root, 'darwin')).toEqual([])
+  describe("POSIX execute bits; Windows cannot validate executable permissions", () => {
+    it.skipIf(process.platform === 'win32')('makes the macOS helpers executable once and leaves other platforms alone', async () => {
+      const root = await nodePty()
+      const helper = (folder: string): string => join(root, 'prebuilds', folder, 'spawn-helper')
+      expect(await restoreSpawnHelperMode(root, 'darwin')).toEqual([helper('darwin-arm64'), helper('darwin-x64')])
+      expect((await stat(helper('darwin-arm64'))).mode & 0o777).toBe(0o755)
+      expect((await stat(helper('win32-x64'))).mode & 0o777).toBe(0o644)
+      expect(await restoreSpawnHelperMode(root, 'darwin')).toEqual([])
+    })
   })
 })

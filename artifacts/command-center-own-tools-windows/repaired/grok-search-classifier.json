@@ -1,0 +1,89 @@
+{
+  "provider": "grok",
+  "freeMemoryKB": 10474896,
+  "sandboxProbes": [],
+  "platform": "win32",
+  "date": "2026-10-10T06:47:45.243Z",
+  "resumedAt": null,
+  "version": "1.0.50",
+  "turnsSubmitted": 2,
+  "turnsCompleted": 2,
+  "metadataReconstructed": false,
+  "sameNativeSession": false,
+  "nativeCanary": {
+    "exitCode": -1,
+    "denialMarker": false,
+    "categoryPermissionDenied": false,
+    "unauthorizedException": false,
+    "ioException": false,
+    "accessDeniedHResult": false,
+    "innerAccessDeniedHResult": false
+  },
+  "cardsSeen": 0,
+  "answersSent": 0,
+  "checks": [
+    {
+      "name": "native-model-available",
+      "passed": true
+    },
+    {
+      "name": "turn-budget",
+      "passed": true
+    },
+    {
+      "name": "scoped-tool-accepted",
+      "passed": true
+    },
+    {
+      "name": "scoped-tool-no-card",
+      "passed": true
+    },
+    {
+      "name": "scoped-tool-completed",
+      "passed": true
+    },
+    {
+      "name": "scoped-tool-called",
+      "passed": true
+    },
+    {
+      "name": "turn-budget",
+      "passed": true
+    },
+    {
+      "name": "native-read-search-accepted",
+      "passed": true
+    },
+    {
+      "name": "native-read-search-no-card",
+      "passed": true
+    },
+    {
+      "name": "native-read-search-completed",
+      "passed": true
+    },
+    {
+      "name": "native-read-content",
+      "passed": true
+    },
+    {
+      "name": "native-read-tool-observed",
+      "passed": true
+    },
+    {
+      "name": "native-search-tool-observed",
+      "passed": false
+    },
+    {
+      "name": "sentinel-unchanged-at-cleanup",
+      "passed": true
+    },
+    {
+      "name": "no-native-permission-answers",
+      "passed": true
+    }
+  ],
+  "result": "failed",
+  "failedCheck": "native-read-search",
+  "failureReason": "provider-operation-failed"
+}

@@ -2,17 +2,18 @@ import React, { useLayoutEffect, useRef, useState, type KeyboardEvent, type Mous
 import { MessagesSquare } from 'lucide-react'
 
 import type { SottoPlatform } from '../../../shared/platform'
+import { releaseTrackName } from '../../../shared/releaseTrack'
 import type { AppNavigation } from '../state/AppContext'
 import { useMemoryEnabled } from '../state/memoryFeature'
-import { useVoiceCoordinatorEnabled } from '../state/voiceCoordinator'
+import { useReleaseTrack } from '../state/useReleaseTrack'
 import { SottoMark } from './SottoMark'
 import { VoiceWave } from './VoiceWave'
 import { WindowControls } from './WindowControls'
 
 type ManagementNavigation = Exclude<AppNavigation, 'onboarding'>
 
-/** The rooms the switch flips between; Agents only appears with the voice coordinator on. */
-export type AppRoom = 'dictate' | 'agents' | 'threads'
+/** The rooms the switch flips between. */
+export type AppRoom = 'dictate' | 'threads'
 export type AppLayout = 'strip' | 'page' | 'sidebar'
 
 export interface AppShellProps {
@@ -20,7 +21,7 @@ export interface AppShellProps {
   readonly navigation: ManagementNavigation | null
   readonly platform: SottoPlatform
   /**
-   * `strip` is the shell of the loading, onboarding and voice surfaces. `page`
+   * `strip` is the shell of the loading, onboarding and Memory surfaces. `page`
    * hands the whole window to a page that owns its own chrome (Threads,
    * Settings): its navigation, its window controls and the update
    * control live inside it. `sidebar` seats the Threads sidebar beside the
@@ -45,12 +46,9 @@ export interface AppShellProps {
 interface Room { readonly id: AppRoom; readonly label: string; readonly destination: ManagementNavigation }
 
 const dictate: Room = { id: 'dictate', label: 'Dictate', destination: 'home' }
-const agents: Room = { id: 'agents', label: 'Agents', destination: 'agents' }
 const threads: Room = { id: 'threads', label: 'Threads', destination: 'threads' }
 
-/** Dictate and Threads are the beta's two rooms; Agents joins them only when the voice coordinator is on. */
-const withCoordinator: ReadonlyArray<Room> = [dictate, agents, threads]
-const withoutCoordinator: ReadonlyArray<Room> = [dictate, threads]
+const rooms: ReadonlyArray<Room> = [dictate, threads]
 
 const footerLinks: ReadonlyArray<{ id: ManagementNavigation; label: string }> = [
   { id: 'threads', label: 'Threads' },
@@ -63,7 +61,6 @@ const footerLinks: ReadonlyArray<{ id: ManagementNavigation; label: string }> = 
 /** Which switch tab a page lights: Memory belongs to the Threads room. */
 export function roomFor(navigation: ManagementNavigation | null): AppRoom | null {
   if (navigation === 'home') return 'dictate'
-  if (navigation === 'agents') return 'agents'
   if (navigation === 'threads' || navigation === 'memory') return 'threads'
   return null
 }
@@ -71,7 +68,7 @@ export function roomFor(navigation: ManagementNavigation | null): AppRoom | null
 /**
  * Which layout a page takes. Threads and Settings own the window, their left column wearing the sidebar's
  * frame; Dictate, History and Help stand beside the Threads sidebar itself; the strip and footer remain for the
- * voice surfaces. `threadsPage` says whether the navigation lands on the Threads page, the beta gates included.
+ * Memory surface. `threadsPage` says whether the navigation lands on the Threads page, the beta gates included.
  */
 export function layoutFor(navigation: AppNavigation, threadsPage: boolean): AppLayout {
   if (threadsPage || navigation === 'settings') return 'page'
@@ -107,9 +104,10 @@ export function AppShell({
   children,
 }: AppShellProps): ReactNode {
   const nativeWindowControls = platform === 'darwin'
+  // A Sotto Owl build shows the mark alone in the strip, as the sidebar's top row does.
+  const owl = useReleaseTrack() === 'owl'
   const management = navigation !== null
   const room = roomFor(navigation)
-  const rooms = useVoiceCoordinatorEnabled() ? withCoordinator : withoutCoordinator
   // Memory is hidden for the beta: its link goes with it.
   const links = useMemoryEnabled() ? footerLinks : footerLinks.filter(({ id }) => id !== 'memory')
   const focusableRoom = rooms.some(({ id }) => id === room) ? room : rooms[0]!.id
@@ -146,10 +144,16 @@ export function AppShell({
     <div className={shellClass} data-platform={platform}>
       {page || beside ? null : (
         <header className={nativeWindowControls ? 'app-strip app-strip--mac' : 'app-strip'}>
-          <div className="app-mark" aria-label="Sotto application">
-            <SottoMark className="app-mark__glyph" />
-            <span>Sotto</span>
-          </div>
+          {owl ? (
+            <div className="app-mark" role="img" aria-label={releaseTrackName('owl')}>
+              <SottoMark className="app-mark__tile" />
+            </div>
+          ) : (
+            <div className="app-mark" aria-label="Sotto application">
+              <SottoMark className="app-mark__glyph" />
+              <span>Sotto</span>
+            </div>
+          )}
           {management ? (
             <div className="app-switch" role="tablist" aria-label="Mode">
               {rooms.map(({ id, label, destination }, index) => (
@@ -164,7 +168,6 @@ export function AppShell({
                   onKeyDown={(event) => onTabKey(event, index)}
                 >
                   {id === 'dictate' ? <VoiceWave stage="idle" value={0} label="" size="switch" /> : null}
-                  {id === 'agents' ? <span className="app-switch__orb" aria-hidden="true" /> : null}
                   {id === 'threads' ? <MessagesSquare size={16} aria-hidden="true" /> : null}
                   {label}
                 </button>

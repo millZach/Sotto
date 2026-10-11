@@ -43,8 +43,6 @@ export function hostClientBridge<T extends object>(bridge: T): T {
         if (routed && domain === 'agents') return arg
         if (typeof arg === 'string' && domain === 'agents' && (name === 'threadDetail' || name === 'workingCopyOptions')) return decode(arg)
         const request = mapHostReferences(arg, id => routed && (domain === 'requestDrafts' && parseHostEntityKey(id)?.hostId !== hostId || hostReads[domain]?.has(name) && elsewhere(id)) ? id : decode(id))
-        // Attention IDs, unlike follow-up IDs, are keyed globally by the client.
-        if (request && typeof request === 'object' && 'type' in request && request.type === 'select-attention' && 'itemId' in request && typeof request.itemId === 'string') return { ...request, itemId: decode(request.itemId) }
         return request
       })
       const result: unknown = Reflect.apply(member, object, outgoing)

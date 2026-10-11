@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { PROVIDER_SIGN_IN_SHAPES, isProviderSignInPage } from '../../../src/shared/hostProviders'
 

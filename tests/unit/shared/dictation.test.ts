@@ -196,9 +196,9 @@ describe('dictation reducer', () => {
   it('keeps a failed recording and returns only that kept session to processing on Try again', () => {
     const processing = reduceDictation(startListening(), { type: 'STOPPED', sessionId: 'current' })
     const kept = reduceDictation(processing, {
-      type: 'FAILED', sessionId: 'current', code: 'TRANSCRIPTION_RATE_LIMITED', message: 'Kept.', kept: true,
+      type: 'FAILED', sessionId: 'current', code: 'TRANSCRIPTION_FAILED', message: 'Kept.', kept: true,
     })
-    expect(kept).toEqual({ status: 'error', sessionId: 'current', code: 'TRANSCRIPTION_RATE_LIMITED', message: 'Kept.', kept: true })
+    expect(kept).toEqual({ status: 'error', sessionId: 'current', code: 'TRANSCRIPTION_FAILED', message: 'Kept.', kept: true })
 
     expect(reduceDictation(kept, { type: 'RETRIED', sessionId: 'current', startedAt: 1_000 }))
       .toEqual({ status: 'processing', sessionId: 'current', startedAt: 1_000 })

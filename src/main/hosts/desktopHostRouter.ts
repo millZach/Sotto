@@ -1,10 +1,12 @@
+import { visibleWatcherState } from '../../shared/watcherVisibility'
+import { WATCHER_DISABLED } from '../agents/watcherLaunchProfiles'
 import { randomUUID } from 'node:crypto'
 import { agentCommandSchema, MAX_DELIVERED_DRAFTS, HOST_CANNOT_STAGE_SCREENSHOTS, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import { clientAgentState, hostEntityKey, mapHostReferences, parseHostEntityKey } from '../../shared/clientIdentity'
 import { desktopWindowClient, type ClientIdentity, type HostService, type RequestAnswerRecovery } from '../agents/hostService'
 import { requestDraftProvider, requestDraftQuestions, type RequestDraftOwner, type RequestDraftTarget } from '../../shared/requestDrafts'
 import { requestQuestionsDigest, type BindRequestDraftDecision, type RequestDraftOwnerState, type RequestDraftService } from '../agents/requestDrafts'
-import type { HostAnswerTarget } from '../../shared/hostProtocol'
+import { LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, type HostAnswerTarget } from '../../shared/hostProtocol'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 import type { GitPullRequestRead, GitPullRequestRequest } from '../../shared/gitPullRequests'
@@ -21,7 +23,7 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   hostId: string
   name: string
   kind: 'local' | 'remote'
-  service: Pick<HostService, 'shell' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions'>
+  service: Pick<HostService, 'shell' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions'>
   refreshRequestAnswer?(decisionId: string, target: HostAnswerTarget): Promise<void>
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
@@ -41,12 +43,8 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   available?: () => boolean
 }
 
-/**
- * The commands whose point is to move the host's selection: Later and Next go to another queued thread, a new thread or
- * project opens, an attention item or a paused draft is taken up, a spoken request picks a thread. Selecting a thread
- * or a project is the window's own and is handled on its own.
- */
-const SELECTING_COMMANDS: ReadonlySet<AgentCommand['type']> = new Set(['later', 'next', 'create-thread', 'create-project', 'select-attention', 'resume-draft', 'utterance'])
+/** Creation opens its result unless the window selected something else while it ran. */
+const SELECTING_COMMANDS: ReadonlySet<AgentCommand['type']> = new Set(['create-thread', 'create-project'])
 
 /** A state without its client updates, which belong to the machine that runs those clients. */
 function withoutClientUpdates(state: AgentState): AgentState {
@@ -80,11 +78,16 @@ export function hostAbsolutePath(root: string, path: string): string {
 }
 
 type RouterNotice = { message: string; answer?: { hostId: string; decisionId: string; target: HostAnswerTarget }; unsupportedCompose?: DesktopHostConnection }
+type RequestDraftRecovery = Pick<RequestDraftService, 'heldThreadAnswers' | 'reconcile'>
+
+/** The shortest gap between two answer recovery passes that published states ask for. */
+export const REQUEST_DRAFT_PASS_INTERVAL_MS = 500
 
 /** Routing happens in main, before host-local IDs or privileged command schemas are decoded. */
 export class DesktopHostRouter {
   private readonly hosts = new Map<string, { connection: DesktopHostConnection; off: (() => void)[] }>()
   private readonly listeners = new Set<(state: AgentState) => void>()
+  private readonly changeListeners = new Set<() => void>()
   private readonly detailListeners = new Set<(detail: AgentThreadDetailUpdate) => void>()
   private selectedHostId: string | undefined
   private selectedThreadId: string | null | undefined
@@ -103,16 +106,56 @@ export class DesktopHostRouter {
     window: number
     reads: number
   }>()
+  /** The recovery pass published states ask for: whether one is running, the gap after it, and a request waiting on both. */
+  private readonly draftPass: { running: boolean; gap: ReturnType<typeof setTimeout> | undefined; wanted: RequestDraftRecovery | undefined; disposed: boolean } =
+    { running: false, gap: undefined, wanted: undefined, disposed: false }
 
-  constructor(private readonly empty: () => AgentState, private readonly options: { bindRequestDraftDecision?: BindRequestDraftDecision } = {}) {}
+  constructor(private readonly empty: () => AgentState, private readonly options: { bindRequestDraftDecision?: BindRequestDraftDecision; watcherEnabled?: boolean } = {}) {}
 
-  add(connection: DesktopHostConnection): void {
-    if (this.hosts.has(connection.hostId)) throw new Error('This host is already connected.')
-    const off = [connection.service.subscribe(() => this.emit())]
+  /** Asks the host for the thread's kind as it is now. Reading its shell for that copied the whole state, and this runs for
+   * every detail a streaming thread sends (#917); a host that cannot answer more cheaply is still read that way. */
+  private watcherAvailable(connection: DesktopHostConnection, id: string | undefined): boolean {
+    if (this.options.watcherEnabled === true || !id || id === '_') return true
+    const kind = connection.service.threadKind ? connection.service.threadKind(id) : connection.service.shell().host.threads.find(thread => thread.id === id)?.kind
+    return kind !== 'watcher' && kind !== 'watcher-history'
+  }
+  /** Saved owner classification stays available even when the public shell omits Watcher. */
+  preservesWatcherThread(threadId: string): boolean | undefined {
+    if (this.options.watcherEnabled === true) return false
+    const key = parseHostEntityKey(threadId)
+    if (!key) return false
+    const connection = this.hosts.get(key.hostId)?.connection
+    const thread = connection?.service.shell().host.threads.find(thread => thread.id === key.id)
+    return thread ? thread.kind === 'watcher' || thread.kind === 'watcher-history' : undefined
+  }
+  private visibleState(state: AgentState): AgentState {
+    return visibleWatcherState(state, this.options.watcherEnabled === true)
+  }
+
+  requiresManagementUpdate(hostId: string): boolean {
+    const connection = this.hosts.get(hostId)?.connection
+    if (connection?.kind !== 'remote') return false
+    const state = connection.service.shell()
+    return state.legacyManagement === true
+  }
+
+  /**
+   * Follows a connection's states and details. A publication this computer's coordinator set off is built from the shell
+   * it broadcast rather than from another copy of the same state (#917). A remote host's push carries the histories it
+   * has cached, so it is read afresh.
+   */
+  private watch(connection: DesktopHostConnection): (() => void)[] {
+    const off = [connection.service.subscribe(state => this.emit(connection.kind === 'local' ? { hostId: connection.hostId, state } : undefined))]
     if (connection.subscribeDetail) off.push(connection.subscribeDetail(detail => {
+      if (!this.watcherAvailable(connection, detail.threadId)) return
       const scoped = mapHostReferences(detail, id => hostEntityKey(connection.hostId, id))
       for (const listener of this.detailListeners) listener(scoped)
     }))
+    return off
+  }
+  add(connection: DesktopHostConnection): void {
+    if (this.hosts.has(connection.hostId)) throw new Error('This host is already connected.')
+    const off = this.watch(connection)
     this.hosts.set(connection.hostId, { connection, off })
     this.selectedHostId ??= connection.hostId
     this.emit()
@@ -125,11 +168,7 @@ export class DesktopHostRouter {
     const entry = this.hosts.get(connection.hostId)
     if (!entry) { this.add(connection); return }
     entry.off.forEach(off => off())
-    const off = [connection.service.subscribe(() => this.emit())]
-    if (connection.subscribeDetail) off.push(connection.subscribeDetail(detail => {
-      const scoped = mapHostReferences(detail, id => hostEntityKey(connection.hostId, id))
-      for (const listener of this.detailListeners) listener(scoped)
-    }))
+    const off = this.watch(connection)
     this.hosts.set(connection.hostId, { connection, off })
     this.reconnecting.delete(connection.hostId)
     this.emit()
@@ -160,17 +199,24 @@ export class DesktopHostRouter {
     this.emit()
   }
   subscribe(listener: (state: AgentState) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
+  /** Told of every change without a state built for it, for a listener that reads what it needs when it needs it (#917). */
+  subscribeChanges(listener: () => void): () => void { this.changeListeners.add(listener); return () => this.changeListeners.delete(listener) }
   subscribeThreadDetail(listener: (detail: AgentThreadDetailUpdate) => void): () => void { this.detailListeners.add(listener); return () => this.detailListeners.delete(listener) }
   get(): AgentState { return this.shell() }
-  shell(): AgentState {
+  /** An answer's delivery notice goes once the host has the exact acceptance it was waiting for. */
+  private settleAnswerNotice(): void {
     const answer = this.notice?.answer
-    if (answer) {
-      const proof = this.hosts.get(answer.hostId)?.connection.service.requestAnswerRecovery?.(answer.target.threadId, answer.target.providerId)
-      if (proof?.completed.some(item => item.decisionId === answer.decisionId && item.requestId === answer.target.requestId
-        && item.questionsDigest === answer.target.questionsDigest)) this.notice = undefined
-    }
+    if (!answer) return
+    const proof = this.hosts.get(answer.hostId)?.connection.service.requestAnswerRecovery?.(answer.target.threadId, answer.target.providerId)
+    if (proof?.completed.some(item => item.decisionId === answer.decisionId && item.requestId === answer.target.requestId
+      && item.questionsDigest === answer.target.questionsDigest)) this.notice = undefined
+  }
+  /** Every host's shell read afresh, for a command's reply and any caller that must see the state as it is now. */
+  shell(): AgentState { return this.build(connection => connection.service.shell()) }
+  private build(read: (connection: DesktopHostConnection) => AgentState): AgentState {
+    this.settleAnswerNotice()
     const entries = [...this.hosts.values()].map(({ connection }) => {
-      const original = connection.service.shell()
+      const original = this.visibleState(read(connection))
       return { connection, original, state: clientAgentState(original) }
     })
     const selected = entries.find(item => item.connection.hostId === this.selectedHostId)
@@ -203,7 +249,6 @@ export class DesktopHostRouter {
           ...(connection.offersBabysitting?.() ? { pullRequestBabysit: true as const } : {}),
         })),
       },
-      assignments: entries.flatMap(item => item.state.assignments), queue: entries.flatMap(item => item.state.queue),
       threadDrafts: entries.flatMap(item => item.state.threadDrafts ?? []),
       threadDraftPersistence: entries.flatMap(item => item.state.threadDraftPersistence ?? []),
       obsoleteDrafts: entries.flatMap(item => item.state.obsoleteDrafts ?? []).slice(-MAX_DELIVERED_DRAFTS),
@@ -221,7 +266,9 @@ export class DesktopHostRouter {
     const hostId = key?.hostId ?? this.selectedHostId
     const entry = hostId ? this.hosts.get(hostId) : undefined
     if (!entry) throw new Error('Connect a host in Settings > Hosts to continue.')
-    return { connection: entry.connection, id: key?.id ?? id }
+    const localId = key?.id ?? id
+    if (!this.watcherAvailable(entry.connection, localId)) throw new Error(WATCHER_DISABLED)
+    return { connection: entry.connection, id: localId }
   }
   async threadDetail(threadId: string): Promise<AgentThreadDetail | null> {
     const { connection, id } = this.target(threadId)
@@ -235,26 +282,56 @@ export class DesktopHostRouter {
   /** The same owning-host projection is used for remote draft saves and recovery. */
   requestDraftState(owner: RequestDraftOwner): RequestDraftOwnerState | undefined {
     const key = parseHostEntityKey(owner.ownerId)
-    if (!key || !this.hosts.has(key.hostId)) return undefined
+    if (!key || !this.hosts.has(key.hostId) || !this.watcherAvailable(this.hosts.get(key.hostId)!.connection, key.id)) return undefined
     const state = this.shell()
     const recovery = this.requestAnswerRecovery(owner.ownerId, owner.providerId)
     const thread = state.host.threads.find(item => item.id === owner.ownerId
       && requestDraftProvider(state.host, item, state.configuration.provider) === owner.providerId)
     return thread ? { connected: isThreadProviderConnected(state.host, thread),
-      ready: thread.historyStatus !== 'loading' && thread.historyStatus !== 'error', requests: thread.requests, ...recovery }
+      ready: thread.historyStatus !== 'loading' && thread.historyStatus !== 'error', requests: thread.requests,
+      ...(thread.kind === 'watcher' || thread.kind === 'watcher-history' ? { watcher: true } : {}), ...recovery }
       : recovery.completed.length ? { connected: false, ready: false, requests: [], ...recovery } : undefined
   }
-  async reconcileRequestDrafts(drafts: Pick<RequestDraftService, 'heldThreadAnswers' | 'reconcile'>): Promise<void> {
+  /**
+   * The recovery pass a published state asks for. A provider publishes dozens of times a second while it streams, and a pass
+   * looks up every held answer's thread, so passes run one at a time and start at least REQUEST_DRAFT_PASS_INTERVAL_MS apart.
+   * Asking while one runs, or before that interval since its start is up, gets one pass when both are over: a slow pass is
+   * followed at once. A pass is over once its receipt reads are issued; each read retires its own acceptance when it
+   * finishes, so a known acceptance never waits behind another pass's socket read.
+   */
+  scheduleRequestDraftReconcile(drafts: RequestDraftRecovery): void {
+    const pass = this.draftPass
+    if (pass.disposed) return
+    if (pass.running || pass.gap) { pass.wanted = drafts; return }
+    pass.running = true
+    const started = Date.now()
+    void this.issueRequestDraftChecks(drafts).catch(() => undefined).finally(() => {
+      pass.running = false
+      if (pass.disposed) return
+      pass.gap = setTimeout(() => {
+        pass.gap = undefined
+        const wanted = pass.wanted
+        pass.wanted = undefined
+        if (wanted) this.scheduleRequestDraftReconcile(wanted)
+      }, Math.max(0, REQUEST_DRAFT_PASS_INTERVAL_MS - (Date.now() - started)))
+    })
+  }
+  async reconcileRequestDrafts(drafts: RequestDraftRecovery): Promise<void> {
+    await Promise.all(await this.issueRequestDraftChecks(drafts))
+    await drafts.reconcile()
+  }
+  /** Retires what is already known, then starts or joins a receipt read for each held remote answer, returned unawaited. */
+  private async issueRequestDraftChecks(drafts: RequestDraftRecovery): Promise<Promise<void>[]> {
     // Already-known local, personal and remote acceptance must not wait for a socket read.
     await drafts.reconcile()
-    const state = this.shell()
+    let state: AgentState | undefined
     const pending: Promise<void>[] = []
     for (const draft of await drafts.heldThreadAnswers()) {
       const owner = draft.target
       const identity = parseHostEntityKey(owner.ownerId)
       const connection = identity ? this.hosts.get(identity.hostId)?.connection : undefined
       if (!identity || !connection || connection.kind !== 'remote' || connection.available?.() === false
-        || !connection.refreshRequestAnswer || !draft.decisionId) continue
+        || !connection.refreshRequestAnswer || !draft.decisionId || !this.watcherAvailable(connection, identity.id)) continue
       let recovery = this.answerRecovery.get(connection)
       if (!recovery) {
         recovery = { checks: new Map(), lane: Promise.resolve(), window: 0, reads: 0 }
@@ -266,6 +343,8 @@ export class DesktopHostRouter {
       const completed = connection.service.requestAnswerRecovery?.(identity.id, owner.providerId).completed
       if (completed?.some(item => item.decisionId === decisionId && item.requestId === owner.requestId
         && item.questionsDigest === questionsDigest)) continue
+      // Every host's threads, built once a held answer still needs its receipt and not before.
+      state ??= this.shell()
       const thread = state.host.threads.find(item => item.id === owner.ownerId)
       const request = thread?.requests.find(item => item.id === owner.requestId)
       // A negative receipt is checked again when its provider reconnects or the original request
@@ -285,7 +364,7 @@ export class DesktopHostRouter {
         const budget = recovery
         const entry = { promise: Promise.resolve(), pending: true }
         entry.promise = budget.lane.then(async () => {
-          if (this.hosts.get(connection.hostId)?.connection !== connection || connection.available?.() === false) {
+          if (this.hosts.get(connection.hostId)?.connection !== connection || connection.available?.() === false || !this.watcherAvailable(connection, identity.id)) {
             checks.delete(key)
             return
           }
@@ -302,6 +381,7 @@ export class DesktopHostRouter {
             await new Promise(resolve => setTimeout(resolve, Math.max(0, 1000 - elapsed)))
             budget.window = Date.now(); budget.reads = 0
           }
+          if (this.hosts.get(connection.hostId)?.connection !== connection || connection.available?.() === false || !this.watcherAvailable(connection, identity.id)) { checks.delete(key); return }
           budget.reads++
           await connection.refreshRequestAnswer!(decisionId, { threadId: identity.id,
             providerId: owner.providerId, requestId: owner.requestId, questionsDigest })
@@ -315,8 +395,7 @@ export class DesktopHostRouter {
       }
       pending.push(check.promise)
     }
-    await Promise.all(pending)
-    await drafts.reconcile()
+    return pending
   }
 
   async refreshRequestDraft(target: RequestDraftTarget, decisionId?: string): Promise<void> {
@@ -436,12 +515,16 @@ export class DesktopHostRouter {
       await Promise.all([...this.hosts.values()].map(async ({ connection }) => {
         if (connection.available?.() === false) return
         const ids = rawIds.filter(id => (parseHostEntityKey(id)?.hostId ?? this.selectedHostId) === connection.hostId).map(id => parseHostEntityKey(id)?.id ?? id)
-        if (connection.observe) await connection.observe(ids)
-        else await connection.service.command({ type: 'observe-threads', threadIds: ids }, client)
+        const visibleIds = ids.filter(id => this.watcherAvailable(connection, id))
+        if (connection.observe) await connection.observe(visibleIds)
+        else await connection.service.command({ type: 'observe-threads', threadIds: visibleIds }, client)
       }))
       return this.shell()
     }
     const { connection, command } = this.route(input)
+    if (this.requiresManagementUpdate(connection.hostId) && !LEGACY_MANAGEMENT_ALLOWED_COMMANDS.has(command.type)) {
+      return { ...this.shell(), error: LEGACY_MANAGEMENT_UPDATE }
+    }
     // Retained local edits publish before the refusal reply. Keep its visible banner stable while typing.
     if (command.type === 'compose' && command.threadId !== undefined && (connection.service.supportsAtomicSend === false || connection.service.supportsDraftRevisions === false)
       && priorNotice === this.publishedNotice && priorNotice?.unsupportedCompose === connection) this.notice = priorNotice
@@ -531,7 +614,11 @@ export class DesktopHostRouter {
     if (references.size > 1) throw new Error('This action includes items from different hosts. Select items from one host.')
     const hostId = [...references][0] ?? this.selectedHostId
     const { connection } = this.target(hostId ? hostEntityKey(hostId, '_') : undefined)
-    return { connection, command: agentCommandSchema.parse(mapHostReferences(input, id => parseHostEntityKey(id)?.id ?? id)) }
+    const command = agentCommandSchema.parse(mapHostReferences(input, id => parseHostEntityKey(id)?.id ?? id))
+    const threadId = 'threadId' in command ? command.threadId ?? undefined : command.type === 'send' ? command.draft?.threadId : undefined
+    const defaultThread = command.type === 'send' || command.type === 'compose' ? connection.service.shell().draftThreadId ?? connection.service.shell().activeThreadId ?? undefined : undefined
+    if (!this.watcherAvailable(connection, threadId ?? defaultThread)) throw new Error(WATCHER_DISABLED)
+    return { connection, command }
   }
   /**
    * Early start (#769) goes to the thread's own host and changes nothing here. It asks for nothing the user must know
@@ -540,6 +627,7 @@ export class DesktopHostRouter {
   private async startThreadSession(input: unknown, client: ClientIdentity): Promise<AgentState> {
     try {
       const { connection, command } = this.route(input)
+      if (this.requiresManagementUpdate(connection.hostId)) return { ...agentShell(this.shell()), error: LEGACY_MANAGEMENT_UPDATE }
       if (connection.available?.() !== false) await connection.service.command(command, client)
     } catch { /* The send that follows starts the session itself and reports what it finds. */ }
     return agentShell(this.shell())
@@ -560,7 +648,7 @@ export class DesktopHostRouter {
   /**
    * The window goes where one of its selecting commands took the host, so the thread it shows is the one the host
    * composes and sends to. It does not follow a move it did not ask for: another thread's turn ending, another
-   * client's selection, or the host presenting its next queued thread after an answer. A selection the user made
+   * client's selection. A selection the user made
    * while the command ran wins over the command.
    */
   private follow(connection: DesktopHostConnection, before: Pick<AgentState, 'activeThreadId' | 'activeProjectId'>): void {
@@ -581,6 +669,22 @@ export class DesktopHostRouter {
   private named(connection: DesktopHostConnection, state: AgentState): AgentState {
     return state.error ? { ...state, error: this.refusal(connection, state.error) } : state
   }
-  private emit(): void { const state = this.shell(); this.publishedNotice = this.notice; for (const listener of this.listeners) listener(state) }
-  dispose(): void { for (const hostId of [...this.hosts.keys()]) this.remove(hostId); this.listeners.clear(); this.detailListeners.clear() }
+  /**
+   * Built when it changed, so what a listener holds is the state of that moment, even if the window takes it later. Only
+   * the broadcast that set this publication off stands in for its host's shell: a command can change a coordinator's
+   * state without broadcasting, so every other host, and every publication a broadcast did not set off, is read afresh.
+   */
+  private emit(broadcast?: { hostId: string; state: AgentState }): void {
+    if (this.listeners.size) {
+      const state = this.build(connection => connection.hostId === broadcast?.hostId ? broadcast.state : connection.service.shell())
+      for (const listener of this.listeners) listener(state)
+    } else this.settleAnswerNotice()
+    this.publishedNotice = this.notice
+    for (const listener of this.changeListeners) listener()
+  }
+  dispose(): void {
+    for (const hostId of [...this.hosts.keys()]) this.remove(hostId)
+    this.listeners.clear(); this.changeListeners.clear(); this.detailListeners.clear()
+    this.draftPass.disposed = true; clearTimeout(this.draftPass.gap); this.draftPass.gap = undefined; this.draftPass.wanted = undefined
+  }
 }

@@ -1,20 +1,20 @@
 // @vitest-environment node
+import { testCredentials } from '../fixtures/testCredentials'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { afterEach, expect, it, vi } from 'vitest'
-import { startHeadlessHost } from '../../src/host'
+import { startFixtureHeadlessHost as startHeadlessHost, desktopHostStack } from '../fixtures/desktopHostStack'
 import { HostCredentialEncryption } from '../../src/host/credentials'
-import { AgentCredentials } from '../../src/main/agents/credentials'
+
 import { e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { ensureFixtureDesktopAnswers } from '../fixtures/sshDesktopAnswers'
-import { DesktopHosts } from '../../src/main/hosts/desktopHosts'
-import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
+
 import { HostProviderJobs } from '../../src/main/hosts/hostProviderJob'
 import type { HostSetupThreads } from '../../src/main/hosts/hostSetup'
 import { agentJobTools, HostSetupToolServer } from '../../src/main/hosts/hostSetupTools'
-import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
+
 import { SshHostLauncher, type SshCallbacks, type SshHostConfiguration, type SshHostConnection } from '../../src/main/hosts/sshLauncher'
 import type { ThreadMcpServer } from '../../src/main/agents/threadToolServer'
 import { signInProviders } from '../fixtures/signInProviders'
@@ -54,10 +54,10 @@ it('reads the host\'s provider, checks it again and ends the job once the host f
   await writeFile(join(marks, 'codex.signed-in'), '')
   const remote = await startHeadlessHost({ dataDirectory: join(root, 'remote'), port: 0, providers: signInProviders(marks), reasoner: e2eAgentReasoner })
   cleanup.push(() => remote.close())
-  const credentials = new AgentCredentials(join(root, 'desktop'), new HostCredentialEncryption('synthetic-desktop-credential-key')); await credentials.load()
-  const router = new DesktopHostRouter(emptyDesktopState); cleanup.push(async () => router.dispose())
-  const hosts = new DesktopHosts({ directory: join(root, 'desktop'), credentials, router, localHostRunning: true, localHostEnabled: () => true, restart: () => undefined,
+  const credentials = await testCredentials(join(root, 'desktop'), { encryption: new HostCredentialEncryption('synthetic-desktop-credential-key') });
+  const { router, manager: hosts } = desktopHostStack({ directory: join(root, 'desktop'), credentials, localHostRunning: true, localHostEnabled: () => true, restart: () => undefined,
     launcher: () => new LocalSsh(remote, join(root, 'remote')) })
+  cleanup.push(async () => router.dispose())
   await hosts.start(); cleanup.push(() => hosts.close())
   const forge = randomUUID()
   await hosts.command({ type: 'add', host: { id: forge, name: 'forge', target: 'zach@forge', identityFile: '', installPath: '/opt/sotto', dataDirectory: '/data/sotto' } })

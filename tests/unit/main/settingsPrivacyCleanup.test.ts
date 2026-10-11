@@ -1,11 +1,12 @@
 // @vitest-environment node
 import { expect, it, vi } from 'vitest'
 import { cleanSettingsHistory } from '../../../src/main/settings/privacyCleanup'
+import { deferred } from '../../fixtures/deferred'
 
 it('finishes settings notifications when thread privacy cleanup fails', async () => {
   const failure = new Error('Synthetic unavailable storage')
-  let finish!: () => void
-  const pending = new Promise<void>((_, reject) => { finish = () => reject(failure) })
+  const { promise: pending, reject } = deferred()
+  const finish = () => reject(failure)
   const agents = { privacyChanged: vi.fn(() => pending) }
   const notify = vi.fn(async () => undefined)
   const cleanup = cleanSettingsHistory(agents, notify)

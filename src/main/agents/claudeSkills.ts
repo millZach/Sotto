@@ -4,12 +4,19 @@ import { ClaudeProtocol } from './claudeProtocol'
 import { claudeDenial } from './claudeRequests'
 
 const commands = z.object({ commands: z.array(z.object({ name: z.string().min(1).max(512), description: z.string().default('') })).max(10000) })
+/** A Claude skill's catalog identity: the folder it was listed in and its command name, not a file. */
+export function claudeSkillPath(cwd: string, name: string): string { return `claude-command:${encodeURIComponent(cwd)}:${encodeURIComponent(name)}` }
+/** The folder a Claude skill identity was listed in, or undefined for any other provider's skill path. */
+export function claudeSkillFolder(path: string): string | undefined {
+  const match = /^claude-command:([^:]*):/u.exec(path)
+  return match ? decodeURIComponent(match[1]!) : undefined
+}
 /** The CLI resolves all configured roots/plugins, flags and precedence itself. Paths are opaque catalog identities. */
 export function claudeCatalog(threadId: string, cwd: string, value: unknown): AgentSkillCatalog {
   const result = commands.parse(value)
   return { threadId, providerId: 'claude', cwd, status: 'ready', errors: [], maxSkillsPerMessage: 1,
     invocationNotice: 'Claude expands one slash invocation per message. Other skill mentions are ordinary prompt text.',
-    skills: [...new Map(result.commands.map(command => [command.name, { name: command.name, path: `claude-command:${encodeURIComponent(cwd)}:${encodeURIComponent(command.name)}`, description: command.description,
+    skills: [...new Map(result.commands.map(command => [command.name, { name: command.name, path: claudeSkillPath(cwd, command.name), description: command.description,
       scope: /\(user\)$/u.test(command.description) ? 'user' as const : /\(project\)$/u.test(command.description) ? 'repo' as const : 'system' as const,
       enabled: true, userInvocable: true, invocation: `/${command.name}` }])).values()] }
 }

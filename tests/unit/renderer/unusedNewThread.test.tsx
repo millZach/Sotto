@@ -1,3 +1,5 @@
+import { deferred } from '../../fixtures/deferred'
+import { threadsStateFixture } from '../../fixtures/agentState'
 import { afterEach, describe, expect, it } from 'vitest'
 import { beginNewThread, unusedNewThread } from '../../../src/renderer/src/agents/newThread'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
@@ -7,9 +9,11 @@ import { pendingSettingsStore, settingValues } from '../../../src/renderer/src/a
 const project = { id: 'project', title: 'Project', path: 'C:/project' }
 const thread = (patch: Partial<AgentThread>): AgentThread => ({ id: 'thread', projectId: project.id, title: 'New thread', titleSource: 'default',
   modelId: 'codex:model', status: 'idle', requests: [], messages: [], ...patch })
-const state = (threads: AgentThread[]): AgentState => ({
-  configuration: defaultAgentConfiguration(), reasoningAccounts: [], host: { projects: [project], threads,
-    models: [{ id: 'codex:model', name: 'Model', provider: 'Codex', providerId: 'codex', ready: true }] } } as unknown as AgentState)
+const state = (threads: AgentThread[]): AgentState => (threadsStateFixture({ cloneOverrides: false,
+    configuration: defaultAgentConfiguration(),
+    host: { projects: [project], threads,
+    models: [{ id: 'codex:model', name: 'Model', provider: 'Codex', providerId: 'codex', ready: true }] },
+    topLevel: { activeThreadId: null, activeProjectId: null,  } }))
 
 /** Pressing New thread twice, or by accident, should not leave empty threads behind (#347). */
 afterEach(() => pendingSettingsStore.clear())
@@ -41,7 +45,7 @@ describe('an unused new thread', () => {
     const current = state([candidate])
     pendingSettingsStore.press(candidate.id, kind, kind === 'model' ? 'codex:other' : 'high',
       kind === 'model' ? { modelId: 'codex:other' } : { reasoningEffort: 'high' },
-      () => new Promise(() => undefined), settingValues(current, candidate))
+      () => deferred<AgentState | null>().promise, settingValues(current, candidate))
     expect(unusedNewThread(current, project)).toBeUndefined()
   })
 

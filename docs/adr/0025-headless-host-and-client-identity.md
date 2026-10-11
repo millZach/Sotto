@@ -1,5 +1,7 @@
 # A Node host on Forge, with clients that keep the host's identity
 
+October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-management.md) records the removal. The voice coordinator, supervision, attention queue and management configuration described below are retired. Protocol v1 keeps inert compatibility fields and refuses retired commands; create-thread accepts only manual creation, including the legacy managed:false spelling. Hosts with live legacy assignments require Update before ordinary work continues; history, drafts and Stop remain available. Client identity and permission policy are unchanged.
+
 ## October 5 amendment: a tailnet connection, and a host that starts at boot
 
 [ADR-0053](0053-a-desktop-reaches-a-host-over-its-tailnet-first.md) and [ADR-0054](0054-a-host-can-start-at-boot-on-linux.md), accepted October 5, 2026 under the owner's delegation, change several statements below. Where they disagree with this ADR, they win.
@@ -260,3 +262,7 @@ Protocol v1's envelopes and ordinary command result stay unchanged. Only a host 
 ## October 7 amendment: the phone gives up and asks
 
 The September 30 amendment's retry now runs for about a minute after a lost connection and then stops; a computer that has not been online since the app opened is tried once. A computer that gave up reads Can't reach it until the user presses Try again or Reconnect, and coming back to the app and pulling to refresh leave it alone. [ADR-0033's October 7 amendment](0033-the-desktop-lets-paired-phones-reach-its-threads.md#october-7-amendment-the-phone-asks-before-trying-a-computer-again) records the rules.
+
+## October 10 amendment: answer recovery runs at most twice a second
+
+The October 6 amendment's "already-known local thread acceptance reconciles immediately" meant without waiting for a socket read. Every published state used to start its own recovery pass, and a provider publishes dozens of times a second while it streams. With one answer held on a remote host and 195 threads, each pass copied every loaded history up to four times, about a quarter of a second each, and the passes queued behind each other until clicks and typing on the desktop lagged by seconds. Now the router runs one pass at a time, starting each at least half a second after the one before it started. Asking during a pass, or before that half second is up, gets one more pass when both are over, so a known acceptance is retired within half a second of the state that proves it, or as soon as a slower pass ahead of it ends. A pass ends once it has issued its receipt reads, so it never waits behind another pass's socket read, and an unavailable host still cannot stall another host's confirmation. Startup's pass and the user's Check are unchanged.

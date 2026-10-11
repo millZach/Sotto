@@ -1,7 +1,7 @@
 // @vitest-environment node
 import * as fsPromises from 'node:fs/promises'
-import { execFileSync } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
+
+import { mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -9,6 +9,7 @@ import * as worktrees from '../../../src/main/agents/threadWorktrees'
 import { FilesService } from '../../../src/main/files/service'
 import { CheckpointService } from '../../../src/main/tools/checkpoints'
 import type { CheckpointDependencies, CheckpointThread } from '../../../src/main/tools/checkpointTypes'
+import { initializeGitRepository } from '../../fixtures/gitRepository'
 
 vi.mock('node:fs/promises', async importOriginal => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
@@ -20,15 +21,13 @@ const realUnlink = fsPromises.unlink
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { vi.restoreAllMocks(); for (const dispose of cleanup.splice(0).reverse()) await dispose() })
 const unwrap = <T>(result: { ok: true; value: T } | { ok: false; error: unknown }): T => { if (!result.ok) throw new Error(JSON.stringify(result)); return result.value }
-const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, windowsHide: true, encoding: 'utf8' })
 
 async function fixture(files: Record<string, string | Buffer> = { 'app.txt': 'before\n', 'notes.txt': 'original notes\n' }) {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'sotto-checkpoint-send-')))
   cleanup.push(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
-  const repo = join(root, 'repo'); await mkdir(repo)
-  git(repo, 'init', '-q'); git(repo, 'config', 'core.autocrlf', 'false'); git(repo, 'config', 'user.name', 'Sotto checkpoint fixture'); git(repo, 'config', 'user.email', 'fixture@example.invalid')
-  for (const [path, contents] of Object.entries(files)) await writeFile(join(repo, path), contents)
-  git(repo, 'add', '.'); git(repo, '-c', 'commit.gpgSign=false', 'commit', '-qm', 'Fixture')
+  const repo = join(root, 'repo')
+  await initializeGitRepository(repo, { files, message: 'Fixture',
+    identity: { name: 'Sotto checkpoint fixture', email: 'fixture@example.invalid' } })
   const state: CheckpointThread = { threadId: 'thread-a', providerId: 'codex', bindingId: 'native-a', userMessageIds: [], busy: false, running: false, rollbackSupported: true }
   const filesService = new FilesService({ resolveBinding: threadId => ({ threadId, projectId: 'project', workingDirectory: repo }), copyPath: vi.fn(), reveal: vi.fn() })
   const dependencies: CheckpointDependencies = { files: filesService, directory: join(root, 'checkpoints'), report: vi.fn(),

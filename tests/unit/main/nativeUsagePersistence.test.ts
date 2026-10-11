@@ -6,6 +6,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { NativeUsage } from '../../../src/main/agents/nativeUsage'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import type { ThreadUsage } from '../../../src/shared/threadUsage'
+import { deferred } from '../../fixtures/deferred'
 
 type Archive = Record<string, { view: ThreadUsage; entries: Record<string, unknown> }>
 const roots: string[] = []
@@ -26,12 +27,6 @@ function frame(index: number, output = 100) {
       input_tokens: 1000, output_tokens: output, cache_read_input_tokens: 2000, cache_creation_input_tokens: 0,
     },
   } }
-}
-function deferred() {
-  let resolve!: () => void
-  let reject!: (error: Error) => void
-  const promise = new Promise<void>((yes, no) => { resolve = yes; reject = no })
-  return { promise, resolve, reject }
 }
 
 it('does no archive writes or total recomputation for 100 identical historical frames among 100 entries', async () => {

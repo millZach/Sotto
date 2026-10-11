@@ -1,30 +1,36 @@
 # Cutting a release
 
-Releases are cut by hand on two machines and published to the public `millZach/Sotto-releases` repository, not to the private source repository. First-time macOS setup is `macos-bringup.md`; the rationale for the unsigned Apple silicon build is ADR-0001. ADR-0001's "no auto-updater on any platform" is superseded on Windows by the in-app updater (#103); macOS still has none.
+Releases are cut by hand on three machines and published to the public `millZach/Sotto-releases` repository, not to the private source repository. First-time macOS setup is `macos-bringup.md`; the rationale for the unsigned Apple silicon build is ADR-0001. ADR-0001's "no auto-updater on any platform" is superseded on Windows by the in-app updater (#103); macOS and Linux still have none.
 
-## Steps
+## Promoting a Sotto Owl build to stable
 
-Before cutting the Windows release, run `npm ci` and `npm run test:desktop-smoke` on the release checkout in an interactive Windows desktop. Record the commit and passing result in the release evidence before packaging or publishing. The check builds that checkout once and runs isolated fake-provider recovery, Settings and daily-workspace journeys, including a real temporary shell, Git repository and local-only push. It makes no paid provider call and does not publish a release or regenerate design baselines. Run it without another Electron journey using the desktop; see [the desktop check](../ci.md#manual-windows-desktop-check) for scope and failure handling. Normal CI gates must also pass.
+Every change reaches Sotto Owl before Sotto (ADR-0072). Choose the Owl build Zach has run and wants to promote, normally the newest published Owl. Its release body names `Source commit: <full sha>`. Stable ships that exact source commit with the Owl version's base: `0.1.37-owl.20261011.1` ships as `0.1.37`. Commits merged to `main` after that Owl build wait for the next Owl.
 
-The first desktop release whose Add host turns on a host's tailnet connections (ADR-0053, October 6 amendment) waits for the iPhone build that reads a host's 403 `forbidden` as a reason to keep trying. Check that build is on TestFlight before step 4, or publish both together. An older iPhone paired with that host reads the refusal as unpaired while the host's phone access is off.
+`npm run release:check` reads only the public releases on `millZach/Sotto-releases`, without a token. It requires a clean checkout at the newest published Owl's full source commit; it never guesses from a tag target or falls back to an older named build. If the newest Owl names no source, publish a new clean Owl build with its source named first. If the desired build is older than the newest published Owl, publish a new Owl of the desired source commit before promoting it. The check records the checked source and versions in the ignored `release/stable-promotion.json`; packaging rechecks the checkout before consuming it.
 
-1. Bump the version: `npm version X.Y.Z --no-git-tag-version` updates `package.json` and `package-lock.json` together, then update the two `package:*` installer paths in `package.json` that carry the version. Commit on `main` as `Release X.Y.Z` with a body that says what the release is. The source repository carries no tag.
-2. On each machine, move that machine's previous installers, disk images and blockmaps from `release/` into `release/archive/`, so `release/` holds only the current version.
-3. Build: `npm run package:win` on the Windows PC, `npm run package:mac` on the Mac. Each run verifies the runtime, writes build provenance and checks the packaged resources. The ONNX runtime ships only under `resources/runtime`; the check rejects a copy inside `app.asar`.
-4. Create release `vX.Y.Z` titled `Sotto X.Y.Z (beta)` on `millZach/Sotto-releases` and attach every installer and disk image.
-5. Assemble `SHA256SUMS.txt` and upload it last, after every artifact is attached.
-6. Mark the superseded release as a pre-release so the newest release is the only "Latest".
+Before cutting the Windows release, run `npm ci` and `npm run test:desktop-smoke` on the promoted checkout in an interactive Windows desktop. Record the commit and passing result in release evidence before packaging or publishing. The check builds that checkout once and runs isolated fake-provider recovery, Settings, daily-workspace and widget dictation journeys, including a real temporary shell, Git repository and local-only push. It makes no paid provider call and does not publish a release or regenerate design baselines. Run it without another Electron journey using the desktop; see [the desktop check](../ci.md#manual-windows-desktop-check). Normal CI gates must also pass.
+
+The first desktop release whose Add host turns on a host's tailnet connections (ADR-0053, October 6 amendment) waits for the iPhone build that reads a host's 403 `forbidden` as a reason to keep trying. Check that build is on TestFlight before publication, or publish both together. An older iPhone paired with that host reads the refusal as unpaired while the host's phone access is off.
+
+First-run setup's **Get the iPhone beta** opens `IPHONE_BETA_URL` in `src/shared/phones.ts`, which is a placeholder until external TestFlight testing has a public link (ADR-0063). Set it to that link in an Owl-tested commit before a release.
+
+1. Read the chosen Owl release's source commit and base version. On each release machine, check out that exact source commit, keeping the tree clean. Do not bump `package.json` first. Run `npm ci`, the normal gates and the Windows desktop smoke check above. Mac stable ships the same promoted commit; macOS has no Owl stage yet.
+2. Move that machine's previous installers, disk images and blockmaps from `release/` into `release/archive/`, so `release/` holds only the current version.
+3. Run `npm run package:win` on Windows or `npm run package:mac` on the Mac. Build any host archive with `npm run package:host:release` on its release machine from this same promoted commit; it packages the same stable base version without changing the source manifest. Both run `release:check` first, then override the packaged manifest's version to the promoted Owl base without editing either source package manifest. Output names use that packaged version. Each verifies assets, builds, records provenance and checks packaged resources. Windows still packages NSIS, and Mac still packages an Apple silicon DMG. `package:dir`, `package:dir:mac`, `package:linux` and CI's Package (Windows) remain offline, unchecked verification commands. Linux packaging keeps its separate manual procedure below; `package:linux` is unchanged.
+4. Create `vX.Y.Z`, titled `Sotto X.Y.Z (beta)`, on public `millZach/Sotto-releases`, and attach the installers, disk image and available Linux artifacts as today. Assemble `SHA256SUMS.txt` across platforms and upload it last. Mark the superseded **stable** release as a prerelease so the newest stable is the only Latest. Owl tags contain `-owl.` and remain prereleases, never Latest; do not promote an Owl tag during stable cleanup.
+5. After publication, branch `release/X.Y.Z` from current `main`. Run `npm version X.Y.Z --no-git-tag-version`, updating `package.json` and `package-lock.json` together, and update any `package:*` paths that still carry a literal version (currently `package:linux`). Commit as `Release X.Y.Z`, with a body saying which Owl and source were promoted. Open the Release pull request and merge it like every other change, once Gates (Windows) and Package result are green and it is up to date with `main`. The source repository carries no release tag. This records the shipped version so the next Owl builds on the next patch; it does not add newer `main` commits to the release already published.
 
 ## Artifacts
 
 Each machine produces only its own platform's artifacts:
 
 - Windows PC: `Sotto Setup X.Y.Z.exe`, the dashed `Sotto-Setup-X.Y.Z.exe` copies for GitHub upload, blockmaps, `latest.yml`.
+- forge (x64 Linux): `Sotto-X.Y.Z-linux-x64.tar.gz`, plus the `sotto-bin-X.Y.Z-<pkgrel>-x86_64.pkg.tar.zst` built from it.
 - Apple silicon Mac: `Sotto-X.Y.Z-arm64.dmg` and its blockmap. There is no `latest-mac.yml`: the mac build has a dmg target only, no zip target, and no auto-updater.
 
 The local `release/` folder (gitignored) holds only the CURRENT version's artifacts for the machine it was built on.
 
-`SHA256SUMS.txt` spans both platforms: each machine appends its own hashes as `<hash>  <filename>` (two spaces, lower-case hex), and the assembled file is uploaded LAST, after every installer and disk image is attached. On the Mac that is `shasum -a 256 <file>`; on the Windows PC:
+`SHA256SUMS.txt` spans all three platforms: each machine appends its own hashes as `<hash>  <filename>` (two spaces, lower-case hex), and the assembled file is uploaded LAST, after every platform artifact is attached. On the Mac that is `shasum -a 256 <file>`; on the Windows PC:
 
 ```powershell
 Get-ChildItem release\Sotto-Setup-*.exe, release\*.blockmap, release\latest.yml |
@@ -37,11 +43,71 @@ macOS builds are ad-hoc signed (`identity: '-'`) and not notarized, so the relea
 
 ## Where the feeds point
 
-electron-builder's publish config and the Windows auto-update feed point at `millZach/Sotto-releases`. Windows installs are offered the new version by the in-app updater; macOS users download the disk image by hand.
+electron-builder's publish config and the Windows auto-update feed point at `millZach/Sotto-releases`. Windows installs are offered the new version by the in-app updater; macOS users download the disk image by hand. Linux users install the next pacman package; once `sotto-bin` is in the AUR, `omarchy update` brings it.
+
+## Cutting a Sotto Owl build (Windows)
+
+Sotto Owl is the Windows preview track, installed in place of Sotto. Watcher is available only in Owl builds. Build from `main` once a day when something has merged since the last Owl build, rather than after every merge. Fetch `origin/main` and compare its full SHA with the newest published Owl release's source commit. If they match, skip today's build. If they differ, build the clean `origin/main` commit. The first Owl, `v0.1.35-owl.20261010.1`, predates source lines; its verified source is `dee763ec8320a19ce43f070f8897710553abf35a` for this initial daily comparison only. `release:check` still refuses its missing source line.
+
+For example, inspect the public feed and current main without reading private release data:
+
+```powershell
+gh api repos/millZach/Sotto-releases/releases --paginate --slurp --jq '[.[][] | select(.draft == false and (.tag_name | contains("-owl.")))] | sort_by(.published_at) | last | {tag: .tag_name, body: .body}'
+git rev-parse origin/main
+```
+
+Run the normal gates and manual Windows desktop check before publishing. Publish only a reviewed clean-commit build; rebuild after committing local verification changes.
+
+The version is the next patch of `main`'s stable package version followed by `-owl.<UTC YYYYMMDD>.<n>`. The lead chooses the next positive number for that date, checking existing Owl tags first. `0.1.36` becomes `0.1.37-owl.20261011.1`, then `.2` for another build that day. Never reuse a published version or replace its assets.
+
+1. Archive previous output, then run `npm run package:owl -- --date 20261011 --number 1`. Omit `--date` to use today's UTC date. It verifies assets, builds, records `out/build-provenance.json`, builds x64 NSIS with `--publish never`, checks packaged resources and manifest agreement, and makes the dashed upload copies. It does not edit either source package manifest, install or publish.
+2. Review `release/win-unpacked`, `release/Sotto Owl Setup 0.1.37-owl.20261011.1.exe`, its blockmap and `release/owl.yml`. Upload `Sotto-Owl-Setup-0.1.37-owl.20261011.1.exe` and `.exe.blockmap`, the names `owl.yml` references. Keep any stable `latest.yml` out of the Owl release.
+3. Run `npm run release:owl -- --notes-file release/notes.md` (omit the argument for default preview notes). The helper checks the clean source checkout, build inputs and packaged provenance. It takes the full source SHA from `out/build-provenance.json`, writes `release/owl-notes.md` with `Source commit: <full sha>` and `release/SHA256SUMS.txt`, and **prints** the PowerShell `gh` commands for review. It never runs them. The title includes the first twelve SHA characters, for example `Sotto Owl 0.1.37-owl.20261011.1 (abc123def456)`.
+4. After review, run the printed create command: a prerelease on `millZach/Sotto-releases`, tagged `v0.1.37-owl.20261011.1`, explicitly `--latest=false`, with the dashed installer, blockmap and `owl.yml`, and `--notes-file release/owl-notes.md`. Run the printed checksum upload command last. Do not attach `latest.yml` or change which stable release is Latest.
+5. Inspect the published title, body, prerelease flag and four assets with the printed view command. Confirm the latest-release endpoint still names the stable tag. Download the published files and verify SHA256 sums. Packaging and preparing commands do not authorize publication.
+
+To switch from stable to Owl, close Sotto and run the Owl installer over the existing installation. App ID `com.sotto.desktop`, product name Sotto, installer identity, executable and data directory stay unchanged, keeping threads, settings, keys and the dictation shortcut. Never uninstall or delete the profile. Owl offers only newer Owl tags with matching `owl.yml`; stable retains its stable feed and `latest.yml`. Both ask before download and restart.
+
+To return, close Owl and install stable over it. Stable builds carrying the October 10 Watcher gate show and start none of Watcher and keep its saved record, thread kinds, settings and histories whole for a later return to Owl, even with Keep local history off in stable. A pane layout or selection pointing at Watcher does not survive the stable session; stable treats those views like missing threads rather than preserving or restoring hidden panes. The main records remain whole. To clear Watcher history, turn that setting off in Owl. The [gate verification](../verification/2026-10-10-watcher-owl-gate.md) exercises the real load/save paths. Older published stable builds, including 0.1.35 and 0.1.36, still drop Watcher's control record, thread kinds and capacity when saving; back up the closed profile before returning to one. The [October 9 note](../verification/2026-10-09-sotto-owl.md) records that older behavior.
+
+Owl packaging and updates are Windows only for now. Mac stable ships the same promoted source commit without a Mac Owl stage; it has no updater (ADR-0001). Linux is outside this preview track.
+## Speech model
+
+The speech model is not in any installer (ADR-0071). Its four files are release assets on `millZach/Sotto-releases` under their own tag, `speech-model-parakeet-tdt-0.6b-v3-int8-1`, and every Sotto downloads them on first run. Publish that release once, and again only when the model changes:
+
+- Create it as a **pre-release** and never mark it Latest. The updater reads only the release marked Latest, so an app release stays Latest and update checks are unaffected.
+- Upload `encoder.int8.onnx`, `decoder.int8.onnx`, `joiner.int8.onnx` and `tokens.txt` exactly as sherpa-onnx publishes them in its `asr-models` release (`sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8`). Their sizes and SHA-256 sums must match `SPEECH_MODEL` in `src/shared/speechModel.ts`, or every download is refused.
+- A new model version gets a new tag and new pins in the same change; never replace the assets under an existing tag, because installed copies would refuse them.
+
+## Linux desktop package
+
+Cut by hand on forge (Omarchy, x64), using Node 24.21.0 and a clean `npm ci`. Never change shared electron-builder keys for Linux: `package:linux` enables the native rebuild on its command line and the `linux:` block owns the target. Windows and macOS keep their release commands.
+
+```sh
+mise exec node@24.21.0 -- npm ci
+mise exec node@24.21.0 -- node node_modules/electron/install.js
+mise exec node@24.21.0 -- npm run package:linux
+```
+
+The command produces `release/linux-unpacked` and `release/Sotto-X.Y.Z-linux-x64.tar.gz`. It verifies provenance, release assets, notices, normal startup, SQLite and the native PTY. The tarball is extracted and every file compared with the verified unpacked build, including external dependencies and native resources. Smoke profiles use `--password-store=basic` and an isolated HOME/XDG configuration so the release machine's keyring is untouched.
+
+Run the four normal gates in [CI](../ci.md) and the external import allowlist check. For the real packaged launch, run `scripts/verify-linux-package.mjs` in the nested Hyprland wrapper described in its usage comment: verify `ready`, `gnome_libsecret`, tray registration and Settings writing/removing XDG autostart. Never send keys to forge's locked live desktop.
+
+Set `pkgver`, `pkgrel` and the archive SHA-256 in `apps/omarchy/PKGBUILD` from the verified archive. The recipe's initial checksum records the ticket's local verification build, which is not a published release. Recalculate package-source hashes if the launcher, desktop entry, bindings, install helper or icons changed. Run `makepkg --printsrcinfo > .SRCINFO` after updating the recipe, before submitting it to the AUR. Build with the local archive:
+
+```sh
+cd apps/omarchy
+SOTTO_TARBALL="$PWD/../../release/Sotto-X.Y.Z-linux-x64.tar.gz" makepkg --cleanbuild --force
+pacman -Qlp "$(makepkg --packagelist)"
+```
+
+No root is needed to build. Check `/opt/sotto`, `/usr/bin/sotto`, the desktop entry and hicolor icons. `bsdtar -tvf` must show `chrome-sandbox` owned by root:root with mode 4755. Extract into a temporary root and run that root's launcher and dictation client before installing with `sudo pacman -U`. The optional `install.sh` requires sudo and is not part of automated verification. A release pass on the installed app finishes onboarding, dictates into Chromium and a terminal, and opens a thread (ADR-0062).
+
+Hash the tarball and pacman package with `sha256sum`; append their lines to `SHA256SUMS.txt` with lower-case hex and two spaces before each filename. Publish both to `millZach/Sotto-releases` beside Windows and macOS artifacts, then upload the assembled checksum file last. Only reviewed clean-commit builds may be published. Confirm the downloaded artifacts against that file. Publishing and installation are manual owner actions, separate from verification; CI and package scripts never upload anything. The AUR publication follows once packaging is proven, under the owner's account.
 
 ## Linux host archive
 
-The host is a Node process, not a Linux desktop app. Build on Linux with Node 24 and a clean `npm ci`, then run `npm run test:socket` and `npm run package:host`. The CI job **Host archive and socket contract (Linux)** does the same work and retains its archive for review. CI never publishes a release.
+The host is a Node process, not a Linux desktop app. For a stable release, use the same clean source commit the promoted Owl carried, Node 24 and a clean `npm ci`, then run `npm run test:socket` and `npm run package:host:release`. That command runs `release:check` and packages the promoted stable base version in the archive, runtime manifest and bundled host. The desktop can then find the matching versioned archive. The ordinary `package:host` and the CI job **Host archive and socket contract (Linux)** stay offline and use the checkout manifest version for verification. CI retains its archive for review and never publishes a release.
 
 `package:host` builds only the headless entry. It produces `release/Sotto-host-X.Y.Z-linux-x64.tar.gz` and a matching `.tar.gz.sha256` sidecar on the x64 Linux runner. Local builds carry their actual platform and architecture in the filename; a Windows smoke build is not a Linux release. There is no cross-platform native-module copy or Electron packaging step.
 

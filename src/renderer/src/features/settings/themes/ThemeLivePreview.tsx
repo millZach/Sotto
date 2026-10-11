@@ -1,10 +1,11 @@
-import React, { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
+import React, { useEffect, useState, type ReactNode } from 'react'
 import { AudioLines, Eye } from 'lucide-react'
 
 import { themeBrand, widgetPaletteFor } from '../../../../../shared/themeBranding'
+import { OMARCHY_THEME_ID } from '../../../../../shared/themes/omarchy'
 import { SottoMark } from '../../../components/SottoMark'
-import { useThemeBrand } from '../../../components/useThemeBrand'
-import type { AppearanceChoice } from '../../../state/appearance'
+import { VoiceWave } from '../../../components/VoiceWave'
+import { resolveAppearance, type AppearanceChoice } from '../../../state/appearance'
 import { EffortColorSample } from './EffortColor'
 
 /** Whether the operating system asks for reduced motion, updated live; the app's own setting is passed in beside it. */
@@ -28,9 +29,10 @@ export function ThemeLivePreview({ shown, systemDark, system, still = false }: {
   /** The app's Reduced motion setting; the sample also follows the system's. */
   readonly still?: boolean
 }): ReactNode {
-  const brand = useThemeBrand()
   const systemStill = useSystemStill()
-  const widgetMode = systemDark ? 'dark' : 'light'
+  const widgetMode = resolveAppearance('system', systemDark, shown)
+  const followsOmarchy = system === 'Linux' && shown.omarchyTheme &&
+    (shown.omarchyTheme.appearance === 'dark' ? shown.darkTheme : shown.lightTheme) === OMARCHY_THEME_ID
   const widgetPalette = widgetPaletteFor(shown)
   const widgetColors = widgetPalette[widgetMode]
   const widgetBrand = themeBrand(widgetColors, widgetMode, { appIcon: widgetPalette.appIcon[widgetMode] })
@@ -40,7 +42,7 @@ export function ThemeLivePreview({ shown, systemDark, system, still = false }: {
       <div className="theme-live-preview__window">
         <div className="theme-live-preview__titlebar"><SottoMark /><strong>Sotto</strong><span>Dictate</span></div>
         <div className="theme-live-preview__body">
-          <div className="theme-live-preview__orb" style={{ '--preview-orb-light': brand.orb[0], '--preview-orb-dark': brand.orb[1] } as CSSProperties} aria-hidden="true" />
+          <VoiceWave stage="idle" value={0} label="" size="preview" />
           <strong>Ready when you are</strong>
           <div className="theme-live-preview__composer" aria-hidden="true"><AudioLines size={18} /><span /><span /></div>
         </div>
@@ -55,7 +57,7 @@ export function ThemeLivePreview({ shown, systemDark, system, still = false }: {
         </div>
       </div>
       <EffortColorSample effortColor={shown.effortColor} still={still || systemStill} />
-      <p>The widget follows {system} light or dark mode.</p>
+      <p>{followsOmarchy ? 'The widget follows the Omarchy theme’s mode.' : `The widget follows ${system} light or dark mode.`}</p>
     </aside>
   )
 }

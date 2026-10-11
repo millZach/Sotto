@@ -3,21 +3,18 @@ import { describe, expect, it, vi } from 'vitest'
 import { registerFilesIpc, type HostedThreadFiles } from '../../../src/main/files/ipc'
 import { FilesService } from '../../../src/main/files/service'
 import { FILES_LIST, FILES_PREVIEW, FILES_COPY_PATH, FILES_REVEAL } from '../../../src/shared/files'
-import type { IpcInvocationEvent, IpcMainAdapter, TrustedIpcSender } from '../../../src/main/ipc/registerIpc'
+import type { IpcInvocationEvent } from '../../../src/main/ipc/registerIpc'
+import { ipcRegistry } from '../../fixtures/ipcHarness'
 
 function fixture(hosted?: HostedThreadFiles) {
-  const handlers = new Map<string, (event: IpcInvocationEvent, ...args: unknown[]) => unknown>()
-  const ipc: IpcMainAdapter = { handle: (channel, handler) => { handlers.set(channel, handler) }, removeHandler: channel => { handlers.delete(channel) } }
-  const sender = (role: 'main' | 'widget'): TrustedIpcSender => {
-    const url = `file:///${role}.html`, mainFrame = { parent: null, url }
-    return { role, url, webContents: { mainFrame, getURL: () => url, isDestroyed: () => false } }
-  }
-  const main = sender('main'), widget = sender('widget')
+  const registry = ipcRegistry()
+  const { ipc, handlers } = registry
+  const { main, widget } = registry
   const resolveBinding = vi.fn().mockReturnValue(null), copyPath = vi.fn(), reveal = vi.fn()
   const files = new FilesService({ resolveBinding, copyPath, reveal })
   const dispose = registerFilesIpc(ipc, files, () => [main, widget], hosted)
   const event: IpcInvocationEvent = { sender: main.webContents, senderFrame: main.webContents.mainFrame }
-  const invoke = async (channel: string, source = event, ...args: unknown[]) => handlers.get(channel)!(source, ...args)
+  const invoke = async (channel: string, source = event, ...args: unknown[]) => registry.invoke(channel, args, source)
   return { handlers, main, widget, event, invoke, dispose, resolveBinding, copyPath, reveal }
 }
 const channels = [FILES_LIST, FILES_PREVIEW, FILES_COPY_PATH, FILES_REVEAL]

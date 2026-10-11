@@ -3,8 +3,9 @@ import { ChevronDown, ChevronUp } from 'lucide-react'
 import type { AgentRequest } from '../../../../shared/agents'
 import { requestDraftQuestions, type RequestDraftOwner } from '../../../../shared/requestDrafts'
 import { Button } from '../../components/Button'
+import { LinkedText } from './LinkedText'
 import {
-  answerProgress, blocksSending, EMPTY_SELECTION, hasNoSendableChoice, isRequired, isUnavailable, legacyPermissionAnswer, permissionAnswer,
+  answerProgress, blocksSending, EMPTY_SELECTION, isRequired, isUnavailable, legacyPermissionAnswer, permissionAnswer,
   permissionSummary, pickOption, pickOther, requestAnswerOwnerKey, requestAnswerStore, requestMode, structuredAnswer, textOnly, useRequestEntry,
   type RequestAnswer, type RequestAnswerStore, type StructuredQuestion, type SubmitOutcome,
 } from './requestAnswers'
@@ -24,7 +25,6 @@ export interface AgentRequestCardProps {
   /** A free-text question with no structure is answered in the composer. */
   readonly onWriteAnswer?: () => void
   /** A line under the choices, such as the voice phrases. */
-  readonly hint?: ReactNode
   readonly store?: RequestAnswerStore
   /** Thread questions sit above the composer; other hosts keep their existing placement. */
   readonly placement?: 'composer' | undefined
@@ -34,7 +34,7 @@ export interface AgentRequestCardProps {
  * One pending question or approval, answered here and nowhere else. It shows exactly the choices the provider
  * offered, sends one answer for this request's own ID, and holds instead of resending when delivery is unknown.
  */
-export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blocked, onSubmit, onCheck, onWriteAnswer, hint, placement, store = requestAnswerStore }: AgentRequestCardProps): ReactNode {
+export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blocked, onSubmit, onCheck, onWriteAnswer, placement, store = requestAnswerStore }: AgentRequestCardProps): ReactNode {
   const draftQuestions = requestDraftQuestions(request)
   const entryOwner = requestAnswerOwnerKey(ownerId, request, draftOwner)
   const entry = useRequestEntry(entryOwner, request.id, store, draftOwner && draftQuestions.length > 0
@@ -129,7 +129,7 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
         </div>
       </form> : <>
         <div className="agent-request__head"><strong id={titleId}>Question</strong></div>
-        <p className="agent-request__text">{request.text}</p>
+        <p className="agent-request__text"><LinkedText text={request.text} /></p>
         {mode === 'legacy-options' ? <>
           <fieldset className="agent-request__question" disabled={disabled}>
             <legend className="tt-visually-hidden">{request.text}</legend>
@@ -148,7 +148,6 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
         {!locked ? <Button variant="secondary" onClick={() => { void store.flush(entryOwner, request.id) }}>Save again</Button> : null}</div>
         : draftQuestions.length > 0 && !locked ? <span className="agent-request__status" role="status">{entry.save === 'loading' ? 'Loading saved answer…'
           : entry.save === 'saving' ? 'Saving answer…' : entry.revision > 0 ? 'Answer draft saved.' : ''}</span> : null}
-      {hint && !locked && !hasNoSendableChoice(request) ? <span className="agent-request__hint">{hint}</span> : null}
     </div>
   </section>
 }
@@ -170,7 +169,7 @@ function PermissionActions({ request, disabled, pressed, onChoose }: {
           aria-pressed={pressed === choice.id || undefined} data-choice-kind={choice.kind}
           onClick={() => onChoose(choice.id, permissionAnswer(choice))}>{choice.label}</Button>)}
       </div>
-      {described.length > 0 ? <dl className="agent-request__choices">{described.map(choice => <div key={choice.id}><dt>{choice.label}</dt><dd>{choice.description}</dd></div>)}</dl> : null}
+      {described.length > 0 ? <dl className="agent-request__choices">{described.map(choice => <div key={choice.id}><dt>{choice.label}</dt><dd><LinkedText text={choice.description!} /></dd></div>)}</dl> : null}
     </>
   }
   return <div className="agent-request__actions">
@@ -182,7 +181,7 @@ function PermissionActions({ request, disabled, pressed, onChoose }: {
 /** Only a recommendation present in the provider's label is called one. IDs and answers stay untouched. */
 function OptionLabel({ label }: { readonly label: string }): ReactNode {
   const recommendation = /\s*\(recommended\)\s*$/iu.exec(label)
-  return <span className="agent-request__label">{recommendation ? label.slice(0, recommendation.index) : label}
+  return <span className="agent-request__label"><LinkedText text={recommendation ? label.slice(0, recommendation.index) : label} />
     {recommendation ? <> <span className="agent-request__recommended">(recommended)</span></> : null}</span>
 }
 
@@ -202,7 +201,7 @@ function QuestionField({ name, question, selection, disabled, onChange }: {
   }
   const textId = `${name}-text`
   return <fieldset ref={field} className="agent-request__question" disabled={disabled}>
-    <legend>{question.header ? <span className="agent-request__tag">{question.header}</span> : null}<span className="agent-request__prompt">{question.question}</span>
+    <legend>{question.header ? <span className="agent-request__tag">{question.header}</span> : null}<span className="agent-request__prompt"><LinkedText text={question.question} /></span>
       {optional ? <span className="agent-request__optional">Optional</span> : null}</legend>
     {isUnavailable(question) ? <p className="agent-request__unavailable" data-required={!optional || undefined}>{question.unavailableReason}</p> : <>
       {question.multiSelect && !onlyText ? <span className="agent-request__note">Choose any that apply.</span> : null}
@@ -217,7 +216,7 @@ function QuestionField({ name, question, selection, disabled, onChange }: {
               <input type={type} name={name} value={option.id} checked={checked}
                 onChange={event => onChange(pickOption(question, selection, option.id, event.target.checked))} />
               <span><OptionLabel label={option.label} />
-                {option.description ? <small>{option.description}</small> : null}
+                {option.description ? <small><LinkedText text={option.description} /></small> : null}
                 {option.preview && checked ? <pre className="agent-request__preview">{option.preview}</pre> : null}</span>
             </label>
           })}
@@ -241,7 +240,7 @@ function FormContext({ request }: { readonly request: AgentRequest }): ReactNode
   // A native context that serialized to an empty object has nothing to read.
   const details = context?.details?.trim() && !/^\{\s*\}$/u.test(context.details.trim()) ? context.details : null
   return <>
-    {explanation ? <p className="agent-request__text">{explanation}</p> : null}
+    {explanation ? <p className="agent-request__text"><LinkedText text={explanation} /></p> : null}
     {context?.command ? <pre className="agent-request__command"><code>{context.command}</code></pre> : null}
     {context?.cwd ? <p className="agent-request__cwd">in <code>{context.cwd}</code></p> : null}
     {details ? <pre className="agent-request__details">{details}</pre> : null}

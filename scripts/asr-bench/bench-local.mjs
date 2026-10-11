@@ -1,10 +1,8 @@
-// Local baseline for the ASR benchmark: scores the four on-device tiers Sotto
-// ships (Moonshine + the Whisper sizes) on the same clips and the same WER
-// metric as bench-asr.mjs, so the hosted and local numbers are comparable.
-//
-// Delegates the actual inference to scripts/perf-bench/bench-inference.mjs,
-// which replicates the app's worker stack (transformers.js web build, ORT WASM,
-// q8 weights, 4 threads) rather than approximating it.
+// Historical local-ASR comparison for Moonshine and Whisper.
+// Current Sotto dictation uses hosted transcription. Set
+// SOTTO_INFERENCE_DEPENDENCIES to a standalone node_modules directory prepared
+// as described in scripts/perf-bench/bench-inference.mjs. Keep model weights
+// outside the application; SOTTO_ASR_MODELS selects their directory.
 //
 // Usage:
 //   node scripts/asr-bench/bench-local.mjs
@@ -23,13 +21,12 @@ const ROOT = resolve(HERE, '..', '..')
 const FIXTURE_DIR = join(HERE, 'fixtures')
 const RESULTS_DIR = join(HERE, 'results')
 
-// Where each preset's weights actually live: the bundled tier ships in the
-// repo, the rest are downloaded into the app's userData dir.
-const USER_MODELS = join(homedir(), 'AppData', 'Roaming', 'Sotto', 'models')
+// Historical caches remain readable; these weights are no longer shipped.
+const USER_MODELS = process.env.SOTTO_ASR_MODELS || join(homedir(), 'AppData', 'Roaming', 'Sotto', 'models')
 const TIERS = [
   { tier: 'instant', model: 'onnx-community/moonshine-base-ONNX', dir: USER_MODELS },
   { tier: 'fast', model: 'Xenova/whisper-tiny', dir: USER_MODELS },
-  { tier: 'balanced', model: 'Xenova/whisper-base', dir: join(ROOT, 'resources', 'models') },
+  { tier: 'balanced', model: 'Xenova/whisper-base', dir: USER_MODELS },
   { tier: 'accurate', model: 'Xenova/whisper-small', dir: USER_MODELS },
 ]
 

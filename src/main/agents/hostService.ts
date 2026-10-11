@@ -1,6 +1,6 @@
 import { userInfo } from 'node:os'
 
-import { HOST_CANNOT_STAGE_SCREENSHOTS, type ProviderId, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
+import { HOST_CANNOT_STAGE_SCREENSHOTS, type ProviderId, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThread, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import type { StoredThreadEvent } from '../../shared/threadEvents'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
@@ -67,6 +67,8 @@ export interface HostService {
   /** Everything in the log after this sequence number, for a client catching up after a reconnection. */
   events(afterSeq: number, threadId?: string, limit?: number): StoredThreadEvent[]
   subscribe(listener: (state: AgentState) => void): () => void
+  /** One thread's kind as the host holds it now, read without copying any state (#917). Undefined for an unknown thread. */
+  threadKind?(threadId: string): AgentThread['kind']
   /** The whole published state, history included. */
   state(): AgentState
   /** The published state without any thread's history: what every client needs on every frame. */
@@ -117,8 +119,6 @@ export interface ThreadEventSource {
 }
 
 export const DESKTOP_WINDOW_CLIENT_ID = 'desktop-window'
-/** Sotto's own supervision, so a record shows an answer that came from Sotto rather than the user. */
-export const SUPERVISION_CLIENT_ID = 'sotto-supervision'
 
 /** The account Sotto is running as. Recorded locally; never logged, never sent. */
 export function localUser(): string {
@@ -129,18 +129,11 @@ export function desktopWindowClient(user: string = localUser()): ClientIdentity 
   return { clientId: DESKTOP_WINDOW_CLIENT_ID, user, transport: 'ipc' }
 }
 
-/**
- * Supervision answers nothing on the user's behalf (ADR-0004); when it sends a follow-up the record
- * needs to say that Sotto sent it, which is bookkeeping and not a grant.
- */
-export function supervisionClient(user: string = localUser()): ClientIdentity {
-  return { clientId: SUPERVISION_CLIENT_ID, user, transport: 'ipc' }
-}
-
 /** What `LocalHostService` needs of the coordinator: the client-facing half of `AgentControl`. */
 export interface LocalHostControl {
   get(): AgentState
   shell(): AgentState
+  threadKind?(threadId: string): AgentThread['kind']
   threadDetail(threadId: string): AgentThreadDetail | null
   subscribe(listener: (state: AgentState) => void): () => void
   /** Runs one client's command and answers with the shell, without copying any history. */
@@ -196,6 +189,9 @@ export class LocalHostService implements HostService {
   subscribe(listener: (state: AgentState) => void): () => void { return this.control.subscribe(listener) }
   state(): AgentState { return this.control.get() }
   shell(): AgentState { return this.control.shell() }
+  threadKind(threadId: string): AgentThread['kind'] {
+    return this.control.threadKind ? this.control.threadKind(threadId) : this.control.shell().host.threads.find(thread => thread.id === threadId)?.kind
+  }
   threadDetail(threadId: string): AgentThreadDetail | null { return this.control.threadDetail(threadId) }
   async checkRequestAnswer(target: HostAnswerTarget, client: ClientIdentity): Promise<void> {
     if (!this.control.checkRequestAnswer) throw new RequestAnswerCheckRefusal('unsupported')

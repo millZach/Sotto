@@ -87,6 +87,13 @@ export const phonesCommandSchema = z.discriminatedUnion('type', [
 ])
 export type PhonesCommand = z.infer<typeof phonesCommandSchema>
 
+/**
+ * The iPhone app's public TestFlight link, which first-run setup's Get the iPhone beta opens in the browser. The app
+ * is still in internal testing, so this is a placeholder until external testing has a public link: set it before a
+ * release (docs/release/releasing.md).
+ */
+export const IPHONE_BETA_URL = 'https://testflight.apple.com/join/PLACEHOLDER'
+
 export interface PhonesBridge {
   get(): Promise<PhonesState>
   command(command: PhonesCommand): Promise<PhonesState>

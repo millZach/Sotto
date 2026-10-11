@@ -25,4 +25,4 @@ function run(args) {
 
 run([npm, 'run', 'test:recovery'])
 run([join(root, 'node_modules/@playwright/test/cli.js'), 'test',
-  'tests/e2e/daily-workspace.spec.ts', 'tests/e2e/settings-index.spec.ts', '--workers=1'])
+  'tests/e2e/daily-workspace.spec.ts', 'tests/e2e/settings-index.spec.ts', 'tests/e2e/widget-dictation.spec.ts', '--workers=1'])

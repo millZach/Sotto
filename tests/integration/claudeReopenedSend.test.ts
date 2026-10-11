@@ -1,10 +1,11 @@
 // @vitest-environment node
+import { createAgentControl } from '../fixtures/agentControlFixture'
+import { testCredentials } from '../fixtures/testCredentials'
 import { randomUUID } from 'node:crypto'
 import { afterEach, expect, it } from 'vitest'
 import { claudeFixture } from '../fixtures/claudeFixture'
 import { immediatePublishScheduler } from '../fixtures/publishScheduler'
-import { AgentControl } from '../../src/main/agents/control'
-import { AgentCredentials } from '../../src/main/agents/credentials'
+
 import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
 import { e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 
@@ -72,10 +73,9 @@ it('still refuses a send when the user typed in Claude Code after the thread was
 
 it('sends from the composer to a thread whose session ended while another thread was open', async () => {
   const f = await fixture()
-  const credentials = new AgentCredentials(f.root, { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
-  await credentials.load()
+  const credentials = await testCredentials(f.root, { mode: 'unavailable' })
   const registry = new ThreadRegistry(f.root)
-  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: new SottoThreadHost('claude', f.adapter, registry), credentials, reasoner: e2eAgentReasoner,
+  const control = createAgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: new SottoThreadHost('claude', f.adapter, registry), credentials, reasoner: e2eAgentReasoner,
   })
   cleanups.push(async () => { control.dispose(); await control.privacyChanged(); await f.adapter.closed(); await registry.flush() })
   await control.start(); await control.command({ type: 'connect' })

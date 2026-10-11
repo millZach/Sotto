@@ -2,6 +2,7 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { ADMIN_IDLE_MS, AdminConnection, SignInStopped, type PressConnection } from '../../../src/main/hosts/adminConnection'
 import type { SshHostConnection } from '../../../src/main/hosts/sshLauncher'
+import { deferred } from '../../fixtures/deferred'
 
 afterEach(() => { vi.useRealTimers() })
 
@@ -10,7 +11,7 @@ function fixture() {
   let opened = 0, closed = 0
   const held: (() => void)[] = []
   const drops: (() => void)[] = []
-  const wait = <T>(value: T) => () => new Promise<T>(resolve => { held.push(() => resolve(value)) })
+  const wait = <T>(value: T) => () => { const pending = deferred<T>(); held.push(() => pending.resolve(value)); return pending.promise }
   const open = vi.fn(async (dropped: () => void): Promise<SshHostConnection> => {
     opened++
     drops.push(dropped)
@@ -49,7 +50,7 @@ it('stays open while a press is still running, request and all, however long it 
   const { admin, held, closed } = fixture()
   const revoking = admin.run(connection => connection.revokeClient('client'))
   // A request sent through the forward after the press's own call is part of the press.
-  const request = Promise.withResolvers<void>()
+  const request = deferred<void>()
   const reading = admin.run(async connection => { await connection.hostAdminToken(); await request.promise })
   await vi.advanceTimersByTimeAsync(3 * ADMIN_IDLE_MS)
   expect(closed()).toBe(0)
@@ -107,7 +108,7 @@ it('closes the connection that replaced a dropped one once it is idle, whatever 
 
 it('stops a sign-in the user stopped before anything is sent, and opens again on the next press', async () => {
   const { admin, open, url } = fixture()
-  const signedIn = Promise.withResolvers<void>()
+  const signedIn = deferred<void>()
   open.mockImplementationOnce(async () => { await signedIn.promise; throw new Error('The connection was cancelled.') })
   const press = vi.fn(url)
   const stopping = admin.run(press)

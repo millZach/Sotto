@@ -1,15 +1,15 @@
-import { mkdir, mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { mkdir } from 'node:fs/promises'
+import { join } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import type { AgentMessage } from '../../src/shared/agents'
 import { closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
 import { quietShot, scrollToCard, slowMotion, textContrasts, visualize, type ToolReply } from './support/visualCards'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 // A visual an agent draws in its thread (ADR-0056, #792), in the running app: the visualize tool is called as the
 // thread's agent would call it, and the card lands in the open thread between the words before and after the call.
-const SHOTS = resolve('artifacts/visual-in-thread')
+const SHOTS = evidenceDirectory('artifacts/visual-in-thread')
 // A minute ago, so the folded turn's "Worked for" line reads as the short turn it was.
 const START = Date.now() - 60_000
 const at = (second: number): string => new Date(START + second * 1000).toISOString()
@@ -40,7 +40,7 @@ async function openWorkshop(launched: LaunchedSotto, first: boolean): Promise<Lo
   if (first) {
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload()
@@ -58,7 +58,7 @@ async function openWorkshop(launched: LaunchedSotto, first: boolean): Promise<Lo
 test('an agent draws a visual in its thread, live, and it stays with the thread', async () => {
   test.setTimeout(240_000)
   await mkdir(SHOTS, { recursive: true })
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-visuals-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-visuals-' })).directory
   try {
     let launched = await launchSotto('success', profile)
     try {
@@ -214,5 +214,5 @@ test('an agent draws a visual in its thread, live, and it stays with the thread'
       await scrollToCard(card)
       await quietShot(page, join(SHOTS, 'restarted-1280x800-dark.png'))
     } finally { await closeSotto(launched) }
-  } finally { await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true }) }
+  } finally { await removeOwnedE2EProfile(profile) }
 })

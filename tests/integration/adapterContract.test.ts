@@ -3,11 +3,38 @@ import { randomUUID } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { FakeProviderHost } from '../fixtures/fakeProviderHost'
-import { codexFixture, type RecordedRpc } from '../fixtures/codexFixture'
-import { describeAdapterContract, type AdapterFixture } from './adapterContract'
+import { expect, it } from 'vitest'
+import type { AdapterContractSkips, AdapterFixture, RecordedRpc } from '../fixtures/adapterFixture'
+import { codexFixture, codexFixtureSkips } from '../fixtures/codexFixture'
+import { createContractThread } from './adapterContract'
 
-describeAdapterContract('Codex App Server', session => codexFixture(undefined, false, undefined, session))
+it('settles delayed thread creation before the lazy contract sends, without creating twice', async () => {
+  const f = await codexFixture()
+  try {
+    await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+    await f.driver.delayNextAck('thread/start')
+    const threadId = await createContractThread(f, 'Delayed creation')
+    await expect(f.host.execute({ type: 'send', threadId, commandId: randomUUID(), messageId: randomUUID(), text: 'Synthetic prompt' }))
+      .resolves.toMatchObject({ accepted: true })
+    expect((await f.driver.requests()).filter(record => record.method === 'thread/start')).toHaveLength(1)
+  } finally { await f.cleanup() }
+})
+
+import { FakeProviderHost } from '../fixtures/fakeProviderHost'
+import { describeAdapterContract } from './adapterContract'
+
+describeAdapterContract('Codex App Server', session => codexFixture(undefined, false, undefined, session), codexFixtureSkips)
+const fakeSkips: AdapterContractSkips = { uncertain: 'FakeProviderHost has no transport acknowledgement seam.', restart: 'FakeProviderHost has no persisted process state.',
+  lazy: 'FakeProviderHost has no provider session to start or stop.', sendStages: 'FakeProviderHost writes no prompt to a client.',
+  activitySnapshots: 'The adapter must publish activity snapshots and thread events.',
+  refreshThread: 'The adapter must refresh threads and publish thread events.',
+  threadEvents: 'The adapter must publish thread events.',
+  backgroundWork: 'The fixture has no background-work driver.',
+  liveSettings: 'The fixture must apply settings to a live provider session.',
+  settingsConfirmation: 'The fixture cannot lose a settings-change confirmation.',
+  clientUpdate: 'The fixture must install a client update and the adapter must accept it.',
+}
 describeAdapterContract('Fake provider', async (): Promise<AdapterFixture> => {
   const root = await mkdtemp(join(tmpdir(), 'sotto-contract-'))
   const host = new FakeProviderHost()
@@ -25,8 +52,7 @@ describeAdapterContract('Fake provider', async (): Promise<AdapterFixture> => {
   }
   const get = (id: string) => host.state.threads.find(t => t.id === id)!
   return { root, host, projectId: 'contract-project', modelId: 'fake:model',
-    skips: { uncertain: 'FakeProviderHost has no transport acknowledgement seam.', restart: 'FakeProviderHost has no persisted process state.',
-      lazy: 'FakeProviderHost has no provider session to start or stop.', sendStages: 'FakeProviderHost writes no prompt to a client.' },
+    skips: fakeSkips,
     driver: {
       typeInProvider: async (id, text) => { get(id).messages.push({ id: randomUUID(), role: 'user', text, createdAt: new Date().toISOString() }); host.emit() },
       completeTurn: async (id, text) => { const thread = get(id); thread.status = 'idle'; thread.messages.push({ id: randomUUID(), role: 'assistant', text, createdAt: new Date().toISOString() }); host.emit() },
@@ -40,4 +66,4 @@ describeAdapterContract('Fake provider', async (): Promise<AdapterFixture> => {
       await rm(root, { recursive: true, force: true })
     },
   }
-})
+}, fakeSkips)

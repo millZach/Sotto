@@ -1,0 +1,163 @@
+{
+  "surface": "built Electron on Windows, synthetic providers",
+  "version": "43.1.0",
+  "builtAt": "2026-10-10T00:24:22.746Z",
+  "verifiedAt": "2026-10-10T00:28:43.489Z",
+  "evidence": [
+    {
+      "threadId": "grok-previews",
+      "token": "/review",
+      "picked": true,
+      "hover": true,
+      "atomicDelete": true,
+      "handTypedTokenStayedPlain": true,
+      "adjacentTextKeptPillAndReference": true,
+      "deletingPillDroppedReferenceDespiteTypedToken": true
+    },
+    {
+      "threadId": "release-notes",
+      "token": "$review",
+      "picked": true,
+      "hover": true,
+      "atomicDelete": true,
+      "handTypedTokenStayedPlain": true,
+      "adjacentTextKeptPillAndReference": true,
+      "deletingPillDroppedReferenceDespiteTypedToken": true
+    },
+    {
+      "threadId": "benchmark",
+      "token": "/review",
+      "picked": true,
+      "hover": true,
+      "atomicDelete": true,
+      "handTypedTokenStayedPlain": true,
+      "adjacentTextKeptPillAndReference": true,
+      "deletingPillDroppedReferenceDespiteTypedToken": true
+    },
+    {
+      "appearance": "dark",
+      "width": 1600,
+      "height": 1000,
+      "geometry": {
+        "left": 597,
+        "right": 1323,
+        "bottom": 933,
+        "top": 859,
+        "minHeight": "74px",
+        "maxHeight": "220px",
+        "resize": "vertical",
+        "fontSize": "15px",
+        "overflow": "auto"
+      }
+    },
+    {
+      "appearance": "dark",
+      "width": 1280,
+      "height": 800,
+      "geometry": {
+        "left": 437,
+        "right": 1163,
+        "bottom": 733,
+        "top": 659,
+        "minHeight": "74px",
+        "maxHeight": "220px",
+        "resize": "vertical",
+        "fontSize": "15px",
+        "overflow": "auto"
+      }
+    },
+    {
+      "appearance": "dark",
+      "width": 820,
+      "height": 560,
+      "geometry": {
+        "left": 351,
+        "right": 789,
+        "bottom": 505,
+        "top": 437.5,
+        "minHeight": "50px",
+        "maxHeight": "120px",
+        "resize": "vertical",
+        "fontSize": "15px",
+        "overflow": "auto"
+      }
+    },
+    {
+      "appearance": "light",
+      "width": 1600,
+      "height": 1000,
+      "geometry": {
+        "left": 597,
+        "right": 1323,
+        "bottom": 933,
+        "top": 859,
+        "minHeight": "74px",
+        "maxHeight": "220px",
+        "resize": "vertical",
+        "fontSize": "15px",
+        "overflow": "auto"
+      }
+    },
+    {
+      "appearance": "light",
+      "width": 1280,
+      "height": 800,
+      "geometry": {
+        "left": 437,
+        "right": 1163,
+        "bottom": 733,
+        "top": 659,
+        "minHeight": "74px",
+        "maxHeight": "220px",
+        "resize": "vertical",
+        "fontSize": "15px",
+        "overflow": "auto"
+      }
+    },
+    {
+      "appearance": "light",
+      "width": 820,
+      "height": 560,
+      "geometry": {
+        "left": 351,
+        "right": 789,
+        "bottom": 505,
+        "top": 437.5,
+        "minHeight": "50px",
+        "maxHeight": "120px",
+        "resize": "vertical",
+        "fontSize": "15px",
+        "overflow": "auto"
+      }
+    },
+    {
+      "queuedPill": true,
+      "queueSavedNativeText": true,
+      "reducedMotion": true
+    },
+    {
+      "compactGrid": [
+        {
+          "focused": false,
+          "min": "25px",
+          "max": "50px"
+        },
+        {
+          "focused": false,
+          "min": "25px",
+          "max": "50px"
+        },
+        {
+          "focused": true,
+          "min": "50px",
+          "max": "120px"
+        }
+      ],
+      "compactQuestion": {
+        "min": "32px",
+        "max": "32px"
+      }
+    }
+  ],
+  "errors": []
+}

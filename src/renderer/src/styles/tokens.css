@@ -235,7 +235,7 @@
   --tt-field-border-focus: color-mix(in srgb, var(--tt-accent) 55%, var(--tt-field-border));
   --tt-selected: var(--theme-sidebar-row-selected);
   --tt-selected-border: color-mix(in srgb, var(--tt-accent) 30%, var(--tt-field-border));
-  /* Outline for colour swatches whose fill is not a theme colour (orb presets). */
+  /* Outline for colour swatches whose fill is not a theme colour. */
   --tt-swatch-edge: color-mix(in srgb, var(--theme-text) 22%, transparent);
   --tt-table-stripe: color-mix(in srgb, var(--tt-text) 3%, transparent);
 
@@ -276,6 +276,29 @@
   --tt-frost-sidebar: color-mix(in oklab, var(--theme-sidebar) min(100%, calc(var(--theme-frost-solid) + 8%)), transparent);
   --tt-frost-terminal: color-mix(in oklab, var(--theme-terminal-background) min(100%, calc(var(--theme-frost-solid) + 18%)), transparent);
 
+  /* Sotto Owl's night sky behind the sidebar header (agents/owlSky.css). The stars are the sidebar's own text at
+     four low strengths, three of them in the accent, and the accent glows faintly behind the tile. The night is the
+     sidebar a hair darker with its chroma lifted, on the sidebar's own hue; a sidebar with no hue (Citrine) borrows
+     Sotto's night blue, 265. The search field is a deeper pool of that night, so its placeholder reads within a
+     twentieth of how it reads on the theme's own field, and the Threads | Terminal switch takes the night at its
+     own lightness.
+     --owl-night-hue is a channel expression, so it is only valid inside a relative oklch(). */
+  --owl-night-hue: calc(h * clamp(0, (c - .001) * 100000, 1) + 265 * (1 - clamp(0, (c - .001) * 100000, 1)));
+  --tt-owl-star: var(--tt-sidebar-text);
+  --tt-owl-star-accent: var(--tt-accent);
+  --tt-owl-star-o1: .62;
+  --tt-owl-star-o2: .38;
+  --tt-owl-star-o3: .22;
+  --tt-owl-star-o4: .13;
+  --tt-owl-faintest-stars: block;
+  --tt-owl-star-scale: 1;
+  --tt-owl-glow: color-mix(in srgb, var(--tt-accent) 11%, transparent);
+  --tt-owl-night: oklch(from var(--tt-sidebar) calc(l - .011) min(calc(c + .025), .05) var(--owl-night-hue));
+  --tt-owl-night-field: oklch(from var(--tt-sidebar) calc(l - .05) min(calc(c + .023), .045) var(--owl-night-hue));
+  --tt-owl-night-control: oklch(from var(--tt-surface-sunken) l min(calc(c + .02), .045) var(--owl-night-hue));
+  --tt-owl-night-control-on: oklch(from var(--tt-surface-elevated) l min(calc(c + .02), .045) var(--owl-night-hue));
+  --tt-frost-owl-night: color-mix(in oklab, var(--tt-owl-night) min(100%, calc(var(--theme-frost-solid) + 8%)), transparent);
+
   --tt-success: oklch(0.79 0.13 165);
   --tt-provider-codex: #d7dbe1;
   --tt-provider-claude: #e3b58e;
@@ -306,8 +329,6 @@
   --tt-shadow-lg: 0 24px 60px rgb(0 0 0 / 55%);
   --tt-shadow-overlay: 0 24px 72px -20px rgb(0 0 0 / 90%);
   --tt-shadow-color: rgb(0 0 0 / 73%);
-  /* The orb draws additive light, which only reads on a dark field. */
-  --tt-orb-filter: none;
 
   --tt-radius-sm: 6px;
   --tt-radius-md: 10px;
@@ -337,9 +358,6 @@
   --tt-shadow-lg: 0 24px 60px rgb(20 24 22 / 18%);
   --tt-shadow-overlay: 0 24px 64px -24px rgb(0 0 0 / 45%);
   --tt-shadow-color: rgb(20 24 22 / 18%);
-  /* Inverting luminance and turning the hue back keeps the orb's colour
-     while its additive glow becomes ink on paper. */
-  --tt-orb-filter: invert(1) hue-rotate(180deg);
   /* Light: the effort fill tints toward white so it stays a light surface, the thumb is paper with an edge,
      and the tinted word mixes toward the ink so it reads at 4.5:1. */
   --tt-effort-fill-cool: color-mix(in srgb, var(--tt-text-muted) 40%, var(--tt-surface-elevated));
@@ -347,6 +365,22 @@
   --tt-effort-thumb: var(--tt-surface);
   --tt-effort-thumb-edge: var(--tt-border);
   --tt-effort-text: var(--effort-ink-light);
+  /* Sotto Owl's sky by day: grey dots on a light surface read as dust, so the stars take the accent, a little
+     larger, and the faintest drop out. There is no night by day. The band is a faint wash of the accent's hue: the
+     accent is mixed in at full lightness, so the wash is never darker than the sidebar whatever the theme. The field
+     and the switch keep their own colours. */
+  --tt-owl-star: var(--tt-accent);
+  --tt-owl-star-o1: .58;
+  --tt-owl-star-o2: .44;
+  --tt-owl-star-o3: .32;
+  --tt-owl-star-o4: 0;
+  --tt-owl-faintest-stars: none;
+  --tt-owl-star-scale: 1.2;
+  --tt-owl-glow: color-mix(in srgb, var(--tt-accent) 8%, transparent);
+  --tt-owl-night: color-mix(in oklab, var(--tt-sidebar) 90%, oklch(from var(--tt-accent) 1 c h));
+  --tt-owl-night-field: var(--tt-field);
+  --tt-owl-night-control: var(--tt-surface-sunken);
+  --tt-owl-night-control-on: var(--tt-surface-elevated);
 }
 
 /* The effort colourways (ADR-0019). Ember and Theme accent come from theme roles; Cyberpunk, Rainbow, Aurora

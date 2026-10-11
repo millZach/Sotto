@@ -1,5 +1,7 @@
 # Archive startup reads
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 Issue #390. Windows, Node 24.14.1. Baseline `d6db0dac`; the candidate changes only how `WorkspaceHost` restores message windows for an event-sourced provider. It reads each thread's summary at startup and uses the existing observation path to load a pane's messages. Pending requests, activity recovery and legacy provider restoration keep their existing paths.
 
 ## Controlled workload
@@ -24,6 +26,8 @@ Activities dominate the remaining cost: both versions return 20,000 activity row
 
 The activity path also validates message-reset generations, recovers subagent classification and supplies historical activity to resumed provider cursors. Deferring it would require a separate summary and recovery design. This patch takes the measured message-window reduction without changing those semantics or adding a speculative cache. Activity loading remains eager and startup still grows with the number of saved threads.
 
+October 10, 2026: #918 made that design. A start now reads each thread's activity marker and count, and the records wait in the store until a window or a provider needs them ([`stored-activity.md`](stored-activity.md)).
+
 ## Verification
 
 The new regression fails on the baseline with eight unexpected message-window reads. With the change, startup reads none; observing one thread reads exactly one ten-turn window. It checks pending permissions, last-user/assistant excerpts, counts, activity epochs and retained activity, earlier-history paging, and closing the observed pane. Eighty focused workspace, event-store, activity-window and subagent tests pass.
@@ -36,4 +40,4 @@ Main `dcd5db86` integrated cleanly at `221e9f36`; the production delta remains t
 
 The composed PR #447 Windows suite at `5867ad97` later reported 5,954 passing tests, 140 skipped and one failure in the Codex activity restart contract: the restored workspace returned no messages where the test expected two. That fixture observed the inner adapter directly, bypassing `WorkspaceHost.observeThreads`, which owns loading the deferred message window. The actual pane path observes the workspace and forwards observation to the adapter.
 
-An unchanged targeted run at archive integration `c6dca422` reproduced the exact empty-message failure in 2.55 seconds. The fixture now checks that startup has no message window and observes through the restored workspace before connecting. Every existing activity, subagent, message identity, final-answer and no-replay assertion remains intact; no deadline, polling or production behavior changed. All 55 checks in `codexActivity.test.ts`, `workspaceThreadStore.test.ts` and `workspace.test.ts` then passed in 17.56 seconds with two workers, an absent benchmark-data path and live-provider flags cleared. The original red full result is retained; a corrected full gate remains required before merge.
+An unchanged targeted run at archive integration `c6dca422` reproduced the exact empty-message failure in 2.55 seconds. The fixture now checks that startup has no message window and observes through the restored workspace before connecting. Every existing activity, subagent, message identity, final-answer and no-replay assertion remains intact; no deadline, polling or production behavior changed. All 55 checks in `codexActivity.test.ts`, `workspaceThreadStore.test.ts` and `tests/unit/main/workspaceOrganization.test.ts`, `tests/unit/main/workspaceThreadCreation.test.ts`, `tests/integration/workspaceBranchNaming.test.ts`, `tests/unit/main/workspaceGitRefresh.test.ts`, `tests/unit/main/workspaceGitActions.test.ts`, `tests/unit/main/workspaceWorktreeRecovery.test.ts` then passed in 17.56 seconds with two workers, an absent benchmark-data path and live-provider flags cleared. The original red full result is retained; a corrected full gate remains required before merge.

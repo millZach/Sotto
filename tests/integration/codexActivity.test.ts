@@ -96,14 +96,17 @@ describe('Codex activity through native transport and workspace persistence', ()
     const restored = new WorkspaceHost(restarted.host, f.root)
     cleanup.push(async () => { restored.disconnect(); await restarted.adapter.closed(); await restored.privacyChanged(); restored.dispose() })
     await restored.initialize()
-    expect(restored.workspaceSnapshot().threads[0]?.activities?.filter(record => record.kind !== 'subagent' && !record.agents?.length)).toEqual(before.activities?.filter(record => record.kind !== 'subagent' && !record.agents?.length))
-    expect(restored.workspaceSnapshot().threads[0]?.activities?.find(record => record.kind === 'subagent')).toMatchObject({ title: 'Subagent' })
+    // A thread no window has looked at keeps its records in the store, and its count in hand (#918).
+    expect(restored.workspaceSnapshot().threads[0]?.activities).toBeUndefined()
+    expect(restored.workspaceSnapshot().threads[0]?.summary?.activityCount).toBe(before.activities!.length)
     const child = before.activities!.find(record => record.kind === 'subagent')!.agents![0]!
     expect((await restored.subagentPage({ threadId: 'thread' })).rows).toEqual(expect.arrayContaining([expect.objectContaining({ id: child.id, status: 'completed' })]))
-    expect((await restored.subagentAssignments({ threadId: 'thread', agentId: child.id })).assignments[0]?.prompt).toBe('Review the fixture')
+
     expect(restored.workspaceSnapshot().threads[0]?.messages).toEqual([])
-    // A pane observes the workspace, which loads its window and forwards observation to Codex.
+    // A pane observes the workspace, which loads its window and records and forwards observation to Codex.
     restored.observeThreads(['thread'])
+    expect(restored.workspaceSnapshot().threads[0]?.activities?.filter(record => record.kind !== 'subagent' && !record.agents?.length)).toEqual(before.activities?.filter(record => record.kind !== 'subagent' && !record.agents?.length))
+    expect(restored.workspaceSnapshot().threads[0]?.activities?.find(record => record.kind === 'subagent')).toMatchObject({ title: 'Subagent' })
     await restored.connect()
     const after = (await restored.snapshot()).threads[0]!
     expect(after.activities?.map(record => record.id)).toEqual(before.activities?.map(record => record.id))

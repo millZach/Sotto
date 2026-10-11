@@ -23,19 +23,18 @@ const reviewedInventories = Object.freeze({
       'node:fs/promises',
       'node:http',
       'node:https',
-      'node:module',
       // The SSH launcher listens on a loopback port it picks and validates host addresses (#181).
       'node:net',
       'node:os',
       'node:path',
       'node:sqlite',
+      // The speech model download streams each file to disk and hashes it as it goes (ADR-0071).
       'node:stream',
       'node:stream/promises',
       'node:string_decoder',
       'node:timers/promises',
       'node:url',
       'node:util',
-      'node:worker_threads',
       // Open VSX imports inflate VSIX entries with a bounded output size.
       'node:zlib',
       'os',
@@ -47,8 +46,9 @@ const reviewedInventories = Object.freeze({
       'zlib',
       'zod',
     ]),
-    // The terminal loads node-pty on demand (ADR-0018). The headless host removed the dynamic Electron import (#181).
-    dynamicImports: Object.freeze(['node-pty']),
+    // The terminal loads node-pty and dictation loads sherpa-onnx-node on demand (ADR-0018, ADR-0071).
+    // The headless host removed the dynamic Electron import (#181).
+    dynamicImports: Object.freeze(['node-pty', 'sherpa-onnx-node']),
   }),
   preload: Object.freeze({
     version: 1,

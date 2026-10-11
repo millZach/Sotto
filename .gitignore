@@ -1,4 +1,81 @@
 node_modules/
+artifacts/watcher-live/
+artifacts/sotto-owl-release/*
+!artifacts/sotto-owl-release/runtime.png
+!artifacts/sotto-owl-release/update-status.json
+!artifacts/sotto-owl-release/stable-profile.json
+artifacts/sotto-owl-branding/*
+!artifacts/sotto-owl-branding/branding.json
+!artifacts/sotto-owl-branding/first-run-owl-dark-1280x800.png
+!artifacts/sotto-owl-branding/header-owl-dark.png
+!artifacts/sotto-owl-branding/header-owl-light.png
+!artifacts/sotto-owl-branding/header-owl-dark-reduced-motion.png
+!artifacts/sotto-owl-branding/header-stable-dark.png
+!artifacts/sotto-owl-branding/header-stable-light.png
+!artifacts/sotto-owl-branding/help-about-owl-dark.png
+!artifacts/sotto-owl-branding/help-about-owl-light.png
+!artifacts/sotto-owl-branding/help-about-stable-dark.png
+!artifacts/sotto-owl-branding/threads-owl-dark-1280x800.png
+!artifacts/sotto-owl-branding/threads-owl-dark-820x560.png
+!artifacts/sotto-owl-branding/threads-owl-light-1280x800.png
+!artifacts/sotto-owl-branding/threads-owl-light-820x560.png
+!artifacts/sotto-owl-branding/threads-stable-dark-1280x800.png
+!artifacts/sotto-owl-branding/threads-stable-dark-820x560.png
+!artifacts/sotto-owl-branding/threads-stable-light-1280x800.png
+!artifacts/sotto-owl-branding/threads-stable-light-820x560.png
+!artifacts/sotto-owl-branding/settings-owl-dark-1280x800.png
+!artifacts/sotto-owl-branding/settings-owl-dark-820x560.png
+!artifacts/sotto-owl-branding/settings-owl-light-1280x800.png
+!artifacts/sotto-owl-branding/settings-owl-light-820x560.png
+!artifacts/sotto-owl-branding/settings-stable-dark-1280x800.png
+!artifacts/sotto-owl-branding/settings-stable-dark-820x560.png
+!artifacts/sotto-owl-branding/settings-stable-light-1280x800.png
+!artifacts/sotto-owl-branding/settings-stable-light-820x560.png
+artifacts/sotto-owl-night-sky/*
+!artifacts/sotto-owl-night-sky/night-sky.json
+!artifacts/sotto-owl-night-sky/threads-owl-sotto-dark-1600x1000.png
+!artifacts/sotto-owl-night-sky/threads-owl-sotto-dark-1280x800.png
+!artifacts/sotto-owl-night-sky/threads-owl-sotto-dark-820x560.png
+!artifacts/sotto-owl-night-sky/threads-owl-sotto-light-1600x1000.png
+!artifacts/sotto-owl-night-sky/threads-owl-sotto-light-1280x800.png
+!artifacts/sotto-owl-night-sky/threads-owl-sotto-light-820x560.png
+!artifacts/sotto-owl-night-sky/threads-owl-tropic-dark-1280x800.png
+!artifacts/sotto-owl-night-sky/threads-owl-tropic-light-1280x800.png
+!artifacts/sotto-owl-night-sky/threads-owl-citrine-dark-1280x800.png
+!artifacts/sotto-owl-night-sky/threads-owl-citrine-light-1280x800.png
+!artifacts/sotto-owl-night-sky/header-owl-sotto-dark-150.png
+!artifacts/sotto-owl-night-sky/header-owl-sotto-light-150.png
+!artifacts/sotto-owl-night-sky/header-owl-tropic-dark-150.png
+!artifacts/sotto-owl-night-sky/header-owl-citrine-dark-150.png
+!artifacts/sotto-owl-night-sky/header-owl-sotto-dark-sidebar-260.png
+!artifacts/sotto-owl-night-sky/header-owl-sotto-dark-sidebar-480.png
+!artifacts/sotto-owl-night-sky/header-owl-sotto-dark-reduced-motion-system.png
+!artifacts/sotto-owl-night-sky/header-owl-sotto-dark-reduced-motion-setting.png
+!artifacts/sotto-owl-night-sky/header-owl-sotto-dark-mac-320.png
+!artifacts/sotto-owl-night-sky/header-owl-sotto-dark-mac-260.png
+!artifacts/sotto-owl-night-sky/header-stable-sotto-dark.png
+!artifacts/sotto-owl-night-sky/header-stable-sotto-light.png
+artifacts/terminal-search-links-zoom/
+artifacts/skill-pill-composer/*
+!artifacts/skill-pill-composer/proof.json
+!artifacts/skill-pill-composer/dark-1600x1000.png
+!artifacts/skill-pill-composer/dark-1280x800.png
+!artifacts/skill-pill-composer/dark-820x560.png
+!artifacts/skill-pill-composer/light-1600x1000.png
+!artifacts/skill-pill-composer/light-1280x800.png
+!artifacts/skill-pill-composer/light-820x560.png
+!artifacts/skill-pill-composer/reduced-motion.png
+!artifacts/skill-pill-composer/queued-editor.png
+!artifacts/skill-pill-composer/compact-grid.png
+!artifacts/skill-pill-composer/compact-question.png
+!artifacts/skill-pill-composer/permission-recovery-dark-820.png
+!artifacts/skill-pill-composer/permission-recovery-light-820.png
+!artifacts/skill-pill-composer/review-proof.json
+!artifacts/skill-pill-composer/review-claude-boundary.png
+!artifacts/skill-pill-composer/review-codex-boundary.png
+!artifacts/skill-pill-composer/review-grok-boundary.png
+!artifacts/skill-pill-composer/review-dark-820x560.png
+!artifacts/skill-pill-composer/review-light-820x560.png
 artifacts/linux-no-window-controls/*
 !artifacts/linux-no-window-controls/checks.json
 !artifacts/linux-no-window-controls/threads-1600x1000-dark.png
@@ -10,6 +87,14 @@ artifacts/remove-personal-chats/*
 !artifacts/remove-personal-chats/settings-820x560-light-reduced-motion.png
 !artifacts/remove-personal-chats/question-820x560-light-reduced-motion.png
 !artifacts/remove-personal-chats/privacy-cleanup-notice-820x560.png
+artifacts/first-run-setup-fit/*
+!artifacts/first-run-setup-fit/checks.json
+!artifacts/first-run-setup-fit/agents-real-clients-1080x720.png
+!artifacts/first-run-setup-fit/step-1-820x560-dark.png
+!artifacts/first-run-setup-fit/step-2-820x560-light.png
+!artifacts/first-run-setup-fit/step-3-1080x720-dark.png
+!artifacts/first-run-setup-fit/step-6-1080x720-dark.png
+!artifacts/first-run-setup-fit/step-9-1080x720-light.png
 out/
 dist/
 dist-electron/
@@ -19,6 +104,7 @@ artifacts/babysitting-surfaces-run/
 coverage/
 playwright-report/
 test-results/
+artifacts/e2e-runs/
 .vite/
 .cache/
 *.log
@@ -34,10 +120,6 @@ artifacts/visuals-live/
 artifacts/provider-recovery/
 artifacts/native-providers/
 artifacts/voice-journey/
-
-# Generated local inference payloads (locks remain versioned).
-resources/runtime/*.wasm
-!resources/runtime/manifest.lock.json
 
 # LLM formatting benchmark — never commit the key or raw results
 scripts/llm-bench/.openrouter-key
@@ -77,6 +159,8 @@ artifacts/thread-sidebar/
 artifacts/frosted-window/
 
 artifacts/terminal-loading/
+artifacts/terminal-agent-states/
+artifacts/phone-terminals/
 
 artifacts/activity-performance/
 artifacts/process-creature/
@@ -151,6 +235,11 @@ artifacts/computer-use-guidance/
 # Hidden-player verification; retain only the capture cited by the note.
 artifacts/hidden-player-typing/
 
+# Terminal truth verification; keep only evidence cited by its note.
+artifacts/terminal-truths/*
+!artifacts/terminal-truths/provider-exit-820-dark.png
+!artifacts/terminal-truths/interrupted-820-light.png
+
 # Disabled-coordinator verification; retain only the capture cited by the note.
 artifacts/disabled-coordinator-voice/
 
@@ -159,6 +248,20 @@ artifacts/forge-question-ack/
 artifacts/show-thinking/
 
 # Hyprland clipboard proof and Linux copy captures; retain only cited evidence.
+artifacts/linux-package/*
+!artifacts/linux-package/proof.json
+!artifacts/linux-package/settings-dark.png
+!artifacts/linux-package/settings-light.png
+!artifacts/linux-package/settings-unavailable-dark.png
+!artifacts/linux-package/settings-unavailable-light.png
+!artifacts/linux-package/gates.txt
+!artifacts/linux-package/package-verification.json
+!artifacts/linux-package/package-list.txt
+!artifacts/linux-package/proof.txt
+apps/omarchy/src/
+apps/omarchy/pkg/
+apps/omarchy/*.tar.gz
+apps/omarchy/*.pkg.tar.zst
 artifacts/linux-hyprland-paste/*
 !artifacts/linux-hyprland-paste/clipboard-proof.txt
 !artifacts/linux-hyprland-paste/hyprctl-arguments.jsonl
@@ -171,3 +274,96 @@ artifacts/linux-hyprland-paste/*
 !artifacts/linux-hyprland-paste/clipboard-failure-widget.png
 !artifacts/linux-hyprland-paste/clipboard-recovery-820x560-light.png
 !artifacts/linux-hyprland-paste/clipboard-recovery-820x560-dark.png
+
+# Captures from the removal merge?s first-run verification tool.
+artifacts/voice-control-removal/merged-setup/
+# Raw benchmark measures; no replies or protocol bodies.
+artifacts/watcher-benchmark/
+artifacts/omarchy-shell-plugin/*
+!artifacts/omarchy-shell-plugin/bar-on-the-left.png
+!artifacts/omarchy-shell-plugin/desktop-catppuccin-latte.png
+!artifacts/omarchy-shell-plugin/desktop-tokyo-night.png
+!artifacts/omarchy-shell-plugin/drag-and-snap.png
+!artifacts/omarchy-shell-plugin/drag-ghost-left.png
+!artifacts/omarchy-shell-plugin/failed-stop-keeps-pill.png
+!artifacts/omarchy-shell-plugin/late-stop-after-quit.png
+!artifacts/omarchy-shell-plugin/late-stop-before-fix.png
+!artifacts/omarchy-shell-plugin/nested-proof.txt
+!artifacts/omarchy-shell-plugin/notices.png
+!artifacts/omarchy-shell-plugin/read-failure-keeps-pill.png
+!artifacts/omarchy-shell-plugin/rule-a-after-copied.png
+!artifacts/omarchy-shell-plugin/rule-a-coalesced.png
+!artifacts/omarchy-shell-plugin/rule-a-two-displays.png
+!artifacts/omarchy-shell-plugin/sotto-quit.png
+!artifacts/omarchy-shell-plugin/states-catppuccin-latte.png
+!artifacts/omarchy-shell-plugin/states-tokyo-night.png
+!artifacts/omarchy-shell-plugin/upright-left.png
+!artifacts/omarchy-shell-plugin/upright-small-displays.png
+!artifacts/omarchy-shell-plugin/verbs-received.png
+!artifacts/omarchy-shell-plugin/without-motion.png
+# Linux shell plumbing proof; retain only the evidence cited in its verification note.
+artifacts/linux-shell-plumbing/*
+!artifacts/linux-shell-plumbing/real-check.txt
+!artifacts/linux-shell-plumbing/plugin-present.png
+!artifacts/linux-shell-plumbing/plugin-socket-held.png
+!artifacts/linux-shell-plumbing/widget-returned.png
+
+# Real Sotto and Omarchy shell proof; retain the note's curated evidence only.
+artifacts/omarchy-shell-integration/*
+!artifacts/omarchy-shell-integration/proof.txt
+!artifacts/omarchy-shell-integration/a-idle.png
+!artifacts/omarchy-shell-integration/b-listening.png
+!artifacts/omarchy-shell-integration/c-copied-expired.png
+!artifacts/omarchy-shell-integration/d-retry-discard.png
+!artifacts/omarchy-shell-integration/e-drag-restart.png
+!artifacts/omarchy-shell-integration/f-sotto-quit.png
+!artifacts/omarchy-shell-integration/g-two-outputs.png
+!artifacts/omarchy-shell-integration/h-widget-returned.png
+# Omarchy theme proof; keep only the captures and measurements cited in its note.
+artifacts/omarchy-theme/*
+!artifacts/omarchy-theme/proof.json
+!artifacts/omarchy-theme/threads-tokyo-night-1600x1000.png
+!artifacts/omarchy-theme/appearance-tokyo-night-1600x1000.png
+!artifacts/omarchy-theme/threads-tokyo-night-1280x800.png
+!artifacts/omarchy-theme/appearance-tokyo-night-1280x800.png
+!artifacts/omarchy-theme/threads-tokyo-night-820x560.png
+!artifacts/omarchy-theme/appearance-tokyo-night-820x560.png
+!artifacts/omarchy-theme/widget-tokyo-night.png
+!artifacts/omarchy-theme/threads-catppuccin-latte-1600x1000.png
+!artifacts/omarchy-theme/appearance-catppuccin-latte-1600x1000.png
+!artifacts/omarchy-theme/threads-catppuccin-latte-1280x800.png
+!artifacts/omarchy-theme/appearance-catppuccin-latte-1280x800.png
+!artifacts/omarchy-theme/threads-catppuccin-latte-820x560.png
+!artifacts/omarchy-theme/appearance-catppuccin-latte-820x560.png
+!artifacts/omarchy-theme/widget-catppuccin-latte.png
+!artifacts/omarchy-theme/threads-rose-pine-1600x1000.png
+!artifacts/omarchy-theme/appearance-rose-pine-1600x1000.png
+!artifacts/omarchy-theme/threads-rose-pine-1280x800.png
+!artifacts/omarchy-theme/appearance-rose-pine-1280x800.png
+!artifacts/omarchy-theme/threads-rose-pine-820x560.png
+!artifacts/omarchy-theme/appearance-rose-pine-820x560.png
+!artifacts/omarchy-theme/widget-rose-pine.png
+!artifacts/omarchy-theme/threads-hackerman-1600x1000.png
+!artifacts/omarchy-theme/appearance-hackerman-1600x1000.png
+!artifacts/omarchy-theme/threads-hackerman-1280x800.png
+!artifacts/omarchy-theme/appearance-hackerman-1280x800.png
+!artifacts/omarchy-theme/threads-hackerman-820x560.png
+!artifacts/omarchy-theme/appearance-hackerman-820x560.png
+!artifacts/omarchy-theme/widget-hackerman.png
+
+/.t/
+
+artifacts/watcher-own-tools-live/
+artifacts/watcher-own-tools-windows/
+
+# Preserve ignored dated evidence from before the Watcher name.
+artifacts/*-center-*/
+
+# Watcher rename proof; keep only the cited built-app capture.
+artifacts/watcher-rename/*
+!artifacts/watcher-rename/agents-settings-1280x800.png
+
+# Watcher gate proof; retain only curated evidence.
+artifacts/watcher-gate/*
+!artifacts/watcher-gate/*.png
+!artifacts/watcher-gate/profile.json

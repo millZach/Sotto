@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { serialize } from 'node:v8'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentControl, DRAFT_IMAGE_NOT_SAVED } from '../../../src/main/agents/control'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
+
 import { LOST_IMAGES } from '../../../src/main/agents/followups'
 import { MISSING_ATTACHMENT, UNOWNED_ATTACHMENT_GRACE_MS } from '../../../src/main/agents/attachmentStore'
 import type { AgentHost, AgentHostCommand, AgentHostResult } from '../../../src/main/agents/host'
@@ -14,6 +14,8 @@ import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffec
 import type { AgentAttachmentHandle, AgentHostSnapshot, AgentState, AgentThread } from '../../../src/shared/agents'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 import { handleOf, pngOfSize } from '../../fixtures/stagedImages'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
 
 const roots: string[] = []; const controls: AgentControl[] = []
 afterEach(async () => {
@@ -59,10 +61,10 @@ class Host implements AgentHost {
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'sotto-staged-')); roots.push(root)
   const host = new Host(); let history = true
-  const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: bytes => bytes.toString() })
-  await credentials.load()
+  const credentials = await testCredentials(root, { mode: 'unavailable' })
+
   const create = () => {
-    const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner, historyEnabled: () => history,
+    const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner, historyEnabled: () => history,
     })
     controls.push(control); return control
   }

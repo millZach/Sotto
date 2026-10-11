@@ -59,7 +59,7 @@ describe('the built Node host process', () => {
     const { defaultAgentConfiguration } = await import('../../src/shared/agents')
     await writeFile(join(data, 'agents.json'), JSON.stringify({
       configuration: { ...defaultAgentConfiguration(), enabled: false, enabledProviders: [], disconnectedProviders: ['codex', 'claude', 'grok', 'devin'] },
-      assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null,
+      activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null,
       composing: false, outbox: [],
     }))
     const child = spawn(process.execPath, ['--import', pathToFileURL(resolve('tests/fixtures/headlessSignal.mjs')).href, join(root, 'host.cjs'), '--data', data], {

@@ -1,3 +1,4 @@
+import { deferred } from '../../fixtures/deferred'
 import React, { useState, type ReactNode } from 'react'
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -121,7 +122,7 @@ describe('HistoryView', () => {
   it('blocks duplicate destructive submissions and clears only after confirmation', async () => {
     const user = userEvent.setup()
     let resolve!: (value: boolean) => void
-    const clear = vi.fn(() => new Promise<boolean>((done) => { resolve = done }))
+    const clear = vi.fn(() => { const pending = deferred<boolean>(); resolve = pending.resolve; return pending.promise })
     render(<HistoryView {...baseProps} onClear={clear} />)
     await user.click(screen.getByRole('button', { name: /clear history/i }))
     const confirm = screen.getByRole('button', { name: /clear all transcripts/i })

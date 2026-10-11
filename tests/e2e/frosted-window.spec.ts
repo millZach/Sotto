@@ -1,33 +1,29 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-
 import { expect, test } from '@playwright/test'
 
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
-import { designThreadsFixture } from '../../src/shared/e2e'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../src/shared/settings'
 import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 /**
  * The Frosted window setting (ADR-0048): the native window and the room agree. Where the system draws a frosted
  * material the window is clear over it and the room's canvas lets it through; where it cannot (Windows before
  * 11 22H2, the CI runner among them) the switch says so and nothing changes.
  *
- * SOTTO_FROST_EVIDENCE=1 also captures the window from the screen, so the desktop behind it shows, into
- * artifacts/frosted-window, which git ignores: the captures show the desktop behind the window, which is the owner's.
+ * SOTTO_FROST_EVIDENCE=1 also captures the window from the screen, so the desktop behind it shows. Publication uses
+ * artifacts/frosted-window, which git ignores; ordinary runs use disposable evidence. The desktop shown is the owner's.
  */
 const evidence = process.env.SOTTO_FROST_EVIDENCE === '1'
-const evidenceRoot = resolve(process.cwd(), 'artifacts/frosted-window')
+const evidenceRoot = evidenceDirectory('artifacts/frosted-window')
 
 async function withProfile(settings: Partial<AppSettings>, run: (launched: LaunchedSotto) => Promise<void>): Promise<void> {
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-frost-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-frost-' })).directory
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, ...settings }), 'utf8')
-  const fixture = designThreadsFixture()
   await writeFile(join(profile, 'agents.json'), JSON.stringify({
-    configuration: { provider: 'codex', enabled: true, projectsDirectory: '', defaultModelId: 'claude:sonnet', followupLimit: 5, speak: false, speechProvider: 'system', speechVoice: 'F1', grokSpeechVoice: 'ara', wakeModelDirectory: '', wakeRuntimeDirectory: '', reasoning: 'none', reasoningModel: '', reasoningEffort: '', membershipEndpoint: '' },
-    assignments: fixture.assignments.map(assignment => ({ ...assignment, contextUpdatedAt: Date.now() })),
-    queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', contextSavedAt: Date.now(), outbox: [],
+    configuration: { provider: 'codex', enabled: true, projectsDirectory: '', defaultModelId: 'claude:sonnet', reasoning: 'none', reasoningModel: '', reasoningEffort: '', membershipEndpoint: '' },
+    activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false, contextSavedAt: Date.now(), outbox: [],
   }), 'utf8')
   let launched: LaunchedSotto | undefined
   try {
@@ -36,7 +32,7 @@ async function withProfile(settings: Partial<AppSettings>, run: (launched: Launc
     await run(launched)
   } finally {
     if (launched !== undefined) await closeSotto(launched)
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 }
 

@@ -1,0 +1,1674 @@
+{
+  "main": "9d6eff099a46a9d1dbd1a8570e90f385719b50cb",
+  "channelNoiseFloor": 6,
+  "pixelLimits": "changedPixels <= max(100, floor(pixelCount * 0.0005)); totalChannelDelta <= max(1000, floor(pixelCount * 0.005))",
+  "baselines": [
+    {
+      "name": "accent-amber-dark.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "accent-amber-light.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "accent-blue-dark.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "accent-blue-light.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "accent-green-dark.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "accent-green-light.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "accent-rose-dark.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "accent-rose-light.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "accent-violet-dark.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "accent-violet-light.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "agents-attention.png",
+      "decision": "deleted",
+      "reason": "retired voice capture or obsolete setup position"
+    },
+    {
+      "name": "agents-listening.png",
+      "decision": "deleted",
+      "reason": "retired voice capture or obsolete setup position"
+    },
+    {
+      "name": "agents-room-light.png",
+      "decision": "deleted",
+      "reason": "retired voice capture or obsolete setup position"
+    },
+    {
+      "name": "agents-room.png",
+      "decision": "deleted",
+      "reason": "retired voice capture or obsolete setup position"
+    },
+    {
+      "name": "agents-session.png",
+      "decision": "deleted",
+      "reason": "retired voice capture or obsolete setup position"
+    },
+    {
+      "name": "agents-wake.png",
+      "decision": "deleted",
+      "reason": "retired voice capture or obsolete setup position"
+    },
+    {
+      "name": "appearance-system-dark.png",
+      "difference": {
+        "changedPixels": 6728,
+        "totalChannelDelta": 1536653,
+        "pixelCount": 953155
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          791,
+          1205
+        ],
+        "main": [
+          791,
+          1205
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        582,
+        220,
+        669,
+        310
+      ],
+      "reason": "Replace retired orb preview with main owl mark."
+    },
+    {
+      "name": "appearance-system-light.png",
+      "difference": {
+        "changedPixels": 7317,
+        "totalChannelDelta": 1217010,
+        "pixelCount": 953155
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          791,
+          1205
+        ],
+        "main": [
+          791,
+          1205
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        579,
+        220,
+        672,
+        313
+      ],
+      "reason": "Replace retired orb preview with main owl mark."
+    },
+    {
+      "name": "dictate-error-light.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "dictate-error.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "dictate-listening-light.png",
+      "difference": {
+        "changedPixels": 1323,
+        "totalChannelDelta": 249001,
+        "pixelCount": 777600
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          1080,
+          720
+        ],
+        "main": [
+          1080,
+          720
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        38,
+        642,
+        282,
+        673
+      ],
+      "reason": "Remove Agents from the Dictate/Threads switch and focus order."
+    },
+    {
+      "name": "dictate-listening.png",
+      "difference": {
+        "changedPixels": 2611,
+        "totalChannelDelta": 344087,
+        "pixelCount": 777600
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          1080,
+          720
+        ],
+        "main": [
+          1080,
+          720
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        38,
+        642,
+        282,
+        672
+      ],
+      "reason": "Remove Agents from the Dictate/Threads switch and focus order."
+    },
+    {
+      "name": "dictate-pasted-light.png",
+      "difference": {
+        "changedPixels": 1323,
+        "totalChannelDelta": 249001,
+        "pixelCount": 777600
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          1080,
+          720
+        ],
+        "main": [
+          1080,
+          720
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        38,
+        642,
+        282,
+        673
+      ],
+      "reason": "Remove Agents from the Dictate/Threads switch and focus order."
+    },
+    {
+      "name": "dictate-pasted.png",
+      "difference": {
+        "changedPixels": 2611,
+        "totalChannelDelta": 344087,
+        "pixelCount": 777600
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          1080,
+          720
+        ],
+        "main": [
+          1080,
+          720
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        38,
+        642,
+        282,
+        672
+      ],
+      "reason": "Remove Agents from the Dictate/Threads switch and focus order."
+    },
+    {
+      "name": "dictate-processing.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "dictate-ready-light.png",
+      "difference": {
+        "changedPixels": 1323,
+        "totalChannelDelta": 249001,
+        "pixelCount": 777600
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          1080,
+          720
+        ],
+        "main": [
+          1080,
+          720
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        38,
+        642,
+        282,
+        673
+      ],
+      "reason": "Remove Agents from the Dictate/Threads switch and focus order."
+    },
+    {
+      "name": "dictate-ready.png",
+      "difference": {
+        "changedPixels": 2611,
+        "totalChannelDelta": 344087,
+        "pixelCount": 777600
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          1080,
+          720
+        ],
+        "main": [
+          1080,
+          720
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        38,
+        642,
+        282,
+        672
+      ],
+      "reason": "Remove Agents from the Dictate/Threads switch and focus order."
+    },
+    {
+      "name": "dictate-reduced-motion-light.png",
+      "difference": {
+        "changedPixels": 0,
+        "totalChannelDelta": 0,
+        "pixelCount": 777600
+      },
+      "material": false,
+      "geometry": {
+        "actual": [
+          1080,
+          720
+        ],
+        "main": [
+          1080,
+          720
+        ]
+      },
+      "decision": "restore-main",
+      "reason": "Below the capture spec pixel limits; raster noise."
+    },
+    {
+      "name": "dictate-reduced-motion.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "focus-destructive-light.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "focus-destructive.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "focus-input-light.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "focus-input.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "focus-navigation-light.png",
+      "difference": {
+        "changedPixels": 1323,
+        "totalChannelDelta": 249001,
+        "pixelCount": 777600
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          1080,
+          720
+        ],
+        "main": [
+          1080,
+          720
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        38,
+        642,
+        282,
+        673
+      ],
+      "reason": "Remove Agents from the Dictate/Threads switch and focus order."
+    },
+    {
+      "name": "focus-navigation.png",
+      "difference": {
+        "changedPixels": 2611,
+        "totalChannelDelta": 344087,
+        "pixelCount": 777600
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          1080,
+          720
+        ],
+        "main": [
+          1080,
+          720
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        38,
+        642,
+        282,
+        672
+      ],
+      "reason": "Remove Agents from the Dictate/Threads switch and focus order."
+    },
+    {
+      "name": "focus-switch-light.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "focus-switch-tab-light.png",
+      "difference": {
+        "changedPixels": 2754,
+        "totalChannelDelta": 884380,
+        "pixelCount": 777600
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          1080,
+          720
+        ],
+        "main": [
+          1080,
+          720
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        38,
+        637,
+        315,
+        676
+      ],
+      "reason": "Remove Agents from the Dictate/Threads switch and focus order."
+    },
+    {
+      "name": "focus-switch-tab.png",
+      "difference": {
+        "changedPixels": 3983,
+        "totalChannelDelta": 804437,
+        "pixelCount": 777600
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          1080,
+          720
+        ],
+        "main": [
+          1080,
+          720
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        38,
+        637,
+        315,
+        676
+      ],
+      "reason": "Remove Agents from the Dictate/Threads switch and focus order."
+    },
+    {
+      "name": "focus-switch.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "help-light.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "help.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "history-empty.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "history-off.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "history-populated-light.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "history-populated.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "history-search.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "onboarding-step-1-welcome.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "onboarding-step-2-look.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "onboarding-step-3-microphone-ready.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "onboarding-step-4-openrouter-light.png",
+      "difference": {
+        "changedPixels": 25823,
+        "totalChannelDelta": 2574017,
+        "pixelCount": 706200
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          1070,
+          660
+        ],
+        "main": [
+          1070,
+          660
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        238,
+        379,
+        831,
+        496
+      ],
+      "reason": "Remove Kokoro from OpenRouter key wording."
+    },
+    {
+      "name": "onboarding-step-4-openrouter.png",
+      "difference": {
+        "changedPixels": 10170,
+        "totalChannelDelta": 2125460,
+        "pixelCount": 706200
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          1070,
+          660
+        ],
+        "main": [
+          1070,
+          660
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        238,
+        379,
+        831,
+        496
+      ],
+      "reason": "Remove Kokoro from OpenRouter key wording."
+    },
+    {
+      "name": "onboarding-step-5-shortcut.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "onboarding-step-6-agents.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "onboarding-step-7-project.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "onboarding-step-8-computers.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "onboarding-step-9-phone.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "scale-100-dictate-light.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "scale-100-dictate.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "scale-100-help.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "scale-100-history.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "scale-100-onboarding.png",
+      "difference": {
+        "changedPixels": 10170,
+        "totalChannelDelta": 2125460,
+        "pixelCount": 706200
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          1070,
+          660
+        ],
+        "main": [
+          1070,
+          660
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        238,
+        379,
+        831,
+        496
+      ],
+      "reason": "Remove Kokoro from OpenRouter key wording."
+    },
+    {
+      "name": "scale-100-settings-light.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "scale-100-settings.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "scale-100-widget-dark.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "scale-100-widget-light.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "scale-125-dictate-light.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "scale-125-dictate.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "scale-125-help.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "scale-125-history.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "scale-125-onboarding.png",
+      "difference": {
+        "changedPixels": 14439,
+        "totalChannelDelta": 3173353,
+        "pixelCount": 1109520
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          1340,
+          828
+        ],
+        "main": [
+          1340,
+          828
+        ]
+      },
+      "decision": "restore-main",
+      "bounds": [
+        298,
+        473,
+        1041,
+        619
+      ],
+      "reason": "Keep main at 125% and 150% as instructed; laptop scale artefact excluded."
+    },
+    {
+      "name": "scale-125-settings-light.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "scale-125-settings.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "scale-125-widget-dark.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "scale-125-widget-light.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "scale-150-dictate-light.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "scale-150-dictate.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "scale-150-help.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "scale-150-history.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "scale-150-onboarding.png",
+      "difference": {
+        "changedPixels": 66908,
+        "totalChannelDelta": 23169720,
+        "pixelCount": 1511910
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          1605,
+          942
+        ],
+        "main": [
+          1605,
+          942
+        ]
+      },
+      "decision": "restore-main",
+      "bounds": [
+        356,
+        168,
+        1307,
+        743
+      ],
+      "reason": "Keep main at 125% and 150% as instructed; laptop scale artefact excluded."
+    },
+    {
+      "name": "scale-150-settings-light.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "scale-150-settings.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "scale-150-widget-dark.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "scale-150-widget-light.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "scale-200-dictate-light.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "scale-200-dictate.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "scale-200-help.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "scale-200-history.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "scale-200-onboarding.png",
+      "difference": {
+        "changedPixels": 32847,
+        "totalChannelDelta": 8123549,
+        "pixelCount": 2822160
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          2138,
+          1320
+        ],
+        "main": [
+          2138,
+          1320
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        475,
+        757,
+        1662,
+        992
+      ],
+      "reason": "Remove Kokoro from OpenRouter key wording."
+    },
+    {
+      "name": "scale-200-settings-light.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "scale-200-settings.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "scale-200-widget-dark.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "scale-200-widget-light.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "settings-agents.png",
+      "difference": {
+        "changedPixels": 26909,
+        "totalChannelDelta": 3120464,
+        "pixelCount": 777600
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          1080,
+          720
+        ],
+        "main": [
+          1080,
+          720
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        247,
+        125,
+        1037,
+        611
+      ],
+      "reason": "Remove reasoning account and automatic follow-up limit."
+    },
+    {
+      "name": "settings-appearance-light.png",
+      "difference": {
+        "changedPixels": 7318,
+        "totalChannelDelta": 1217451,
+        "pixelCount": 953946
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          791,
+          1206
+        ],
+        "main": [
+          791,
+          1206
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        579,
+        220,
+        672,
+        313
+      ],
+      "reason": "Replace retired orb preview with main owl mark."
+    },
+    {
+      "name": "settings-appearance.png",
+      "difference": {
+        "changedPixels": 6730,
+        "totalChannelDelta": 1537105,
+        "pixelCount": 953946
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          791,
+          1206
+        ],
+        "main": [
+          791,
+          1206
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        582,
+        220,
+        669,
+        310
+      ],
+      "reason": "Replace retired orb preview with main owl mark."
+    },
+    {
+      "name": "settings-application-privacy-light.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "settings-application-privacy.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "settings-capture-light.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "settings-capture.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "settings-cleanup.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "settings-feedback-light.png",
+      "difference": {
+        "changedPixels": 0,
+        "totalChannelDelta": 0,
+        "pixelCount": 777600
+      },
+      "material": false,
+      "geometry": {
+        "actual": [
+          1080,
+          720
+        ],
+        "main": [
+          1080,
+          720
+        ]
+      },
+      "decision": "restore-main",
+      "reason": "Below the capture spec pixel limits; raster noise."
+    },
+    {
+      "name": "settings-feedback.png",
+      "difference": {
+        "changedPixels": 2,
+        "totalChannelDelta": 68,
+        "pixelCount": 777600
+      },
+      "material": false,
+      "geometry": {
+        "actual": [
+          1080,
+          720
+        ],
+        "main": [
+          1080,
+          720
+        ]
+      },
+      "decision": "restore-main",
+      "reason": "Below the capture spec pixel limits; raster noise."
+    },
+    {
+      "name": "settings-git-light.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "settings-git.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "settings-key-verified.png",
+      "difference": {
+        "changedPixels": 3222,
+        "totalChannelDelta": 766572,
+        "pixelCount": 777600
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          1080,
+          720
+        ],
+        "main": [
+          1080,
+          720
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        242,
+        300,
+        547,
+        331
+      ],
+      "reason": "Remove Kokoro from OpenRouter key wording."
+    },
+    {
+      "name": "settings-output.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "settings-providers-light.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "settings-providers.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "settings-transcription.png",
+      "difference": {
+        "changedPixels": 3222,
+        "totalChannelDelta": 766572,
+        "pixelCount": 474600
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          791,
+          600
+        ],
+        "main": [
+          791,
+          600
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        0,
+        224,
+        305,
+        255
+      ],
+      "reason": "Remove Kokoro from OpenRouter key wording."
+    },
+    {
+      "name": "settings-validation-error-light.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "settings-validation-error.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "theme-citrine-dark.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "theme-citrine-light.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "theme-hush-dark.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "theme-hush-light.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "theme-linen-dark.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "theme-linen-light.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "theme-nocturne-dark.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "theme-nocturne-light.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "theme-tropic-dark.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "theme-tropic-light.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "threads-empty-light.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "threads-empty.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "threads-files-unavailable-dark.png",
+      "difference": {
+        "changedPixels": 0,
+        "totalChannelDelta": 0,
+        "pixelCount": 656000
+      },
+      "material": false,
+      "geometry": {
+        "actual": [
+          820,
+          800
+        ],
+        "main": [
+          820,
+          800
+        ]
+      },
+      "decision": "restore-main",
+      "reason": "Below the capture spec pixel limits; raster noise."
+    },
+    {
+      "name": "threads-files-unavailable-light.png",
+      "difference": {
+        "changedPixels": 0,
+        "totalChannelDelta": 0,
+        "pixelCount": 656000
+      },
+      "material": false,
+      "geometry": {
+        "actual": [
+          820,
+          800
+        ],
+        "main": [
+          820,
+          800
+        ]
+      },
+      "decision": "restore-main",
+      "reason": "Below the capture spec pixel limits; raster noise."
+    },
+    {
+      "name": "threads-new-thread-chooser-dark.png",
+      "difference": {
+        "changedPixels": 321,
+        "totalChannelDelta": 8741,
+        "pixelCount": 656000
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          820,
+          800
+        ],
+        "main": [
+          820,
+          800
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        10,
+        256,
+        30,
+        275
+      ],
+      "reason": "Streaming WAV stall fixture is failed, not stopped by Sotto; retain failed status dot and label."
+    },
+    {
+      "name": "threads-new-thread-chooser-light.png",
+      "difference": {
+        "changedPixels": 378,
+        "totalChannelDelta": 12048,
+        "pixelCount": 656000
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          820,
+          800
+        ],
+        "main": [
+          820,
+          800
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        9,
+        255,
+        30,
+        276
+      ],
+      "reason": "Streaming WAV stall fixture is failed, not stopped by Sotto; retain failed status dot and label."
+    },
+    {
+      "name": "threads-open-running-light.png",
+      "difference": {
+        "changedPixels": 606,
+        "totalChannelDelta": 118707,
+        "pixelCount": 777600
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          1080,
+          720
+        ],
+        "main": [
+          1080,
+          720
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        15,
+        261,
+        303,
+        294
+      ],
+      "reason": "Streaming WAV stall fixture is failed, not stopped by Sotto; retain failed status dot and label."
+    },
+    {
+      "name": "threads-open-running.png",
+      "difference": {
+        "changedPixels": 591,
+        "totalChannelDelta": 135184,
+        "pixelCount": 777600
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          1080,
+          720
+        ],
+        "main": [
+          1080,
+          720
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        15,
+        261,
+        303,
+        294
+      ],
+      "reason": "Streaming WAV stall fixture is failed, not stopped by Sotto; retain failed status dot and label."
+    },
+    {
+      "name": "threads-populated-light.png",
+      "difference": {
+        "changedPixels": 606,
+        "totalChannelDelta": 118707,
+        "pixelCount": 777600
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          1080,
+          720
+        ],
+        "main": [
+          1080,
+          720
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        15,
+        261,
+        303,
+        294
+      ],
+      "reason": "Streaming WAV stall fixture is failed, not stopped by Sotto; retain failed status dot and label."
+    },
+    {
+      "name": "threads-populated.png",
+      "difference": {
+        "changedPixels": 591,
+        "totalChannelDelta": 135184,
+        "pixelCount": 777600
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          1080,
+          720
+        ],
+        "main": [
+          1080,
+          720
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        15,
+        261,
+        303,
+        294
+      ],
+      "reason": "Streaming WAV stall fixture is failed, not stopped by Sotto; retain failed status dot and label."
+    },
+    {
+      "name": "threads-search-light.png",
+      "difference": {
+        "changedPixels": 585,
+        "totalChannelDelta": 99254,
+        "pixelCount": 777600
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          1080,
+          720
+        ],
+        "main": [
+          1080,
+          720
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        15,
+        197,
+        303,
+        230
+      ],
+      "reason": "Streaming WAV stall fixture is failed, not stopped by Sotto; retain failed status dot and label."
+    },
+    {
+      "name": "threads-search.png",
+      "difference": {
+        "changedPixels": 606,
+        "totalChannelDelta": 123788,
+        "pixelCount": 777600
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          1080,
+          720
+        ],
+        "main": [
+          1080,
+          720
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        15,
+        197,
+        303,
+        230
+      ],
+      "reason": "Streaming WAV stall fixture is failed, not stopped by Sotto; retain failed status dot and label."
+    },
+    {
+      "name": "threads-split-focus-820-dark.png",
+      "difference": {
+        "changedPixels": 591,
+        "totalChannelDelta": 135184,
+        "pixelCount": 656000
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          820,
+          800
+        ],
+        "main": [
+          820,
+          800
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        15,
+        261,
+        303,
+        294
+      ],
+      "reason": "Streaming WAV stall fixture is failed, not stopped by Sotto; retain failed status dot and label."
+    },
+    {
+      "name": "threads-split-focus-820-light.png",
+      "difference": {
+        "changedPixels": 606,
+        "totalChannelDelta": 118707,
+        "pixelCount": 656000
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          820,
+          800
+        ],
+        "main": [
+          820,
+          800
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        15,
+        261,
+        303,
+        294
+      ],
+      "reason": "Streaming WAV stall fixture is failed, not stopped by Sotto; retain failed status dot and label."
+    },
+    {
+      "name": "threads-split-workspace-dark.png",
+      "difference": {
+        "changedPixels": 591,
+        "totalChannelDelta": 135184,
+        "pixelCount": 1280000
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          1600,
+          800
+        ],
+        "main": [
+          1600,
+          800
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        15,
+        261,
+        303,
+        294
+      ],
+      "reason": "Streaming WAV stall fixture is failed, not stopped by Sotto; retain failed status dot and label."
+    },
+    {
+      "name": "threads-split-workspace-light.png",
+      "difference": {
+        "changedPixels": 606,
+        "totalChannelDelta": 118707,
+        "pixelCount": 1280000
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          1600,
+          800
+        ],
+        "main": [
+          1600,
+          800
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        15,
+        261,
+        303,
+        294
+      ],
+      "reason": "Streaming WAV stall fixture is failed, not stopped by Sotto; retain failed status dot and label."
+    },
+    {
+      "name": "threads-stopped-light.png",
+      "difference": {
+        "changedPixels": 72,
+        "totalChannelDelta": 18042,
+        "pixelCount": 777600
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          1080,
+          720
+        ],
+        "main": [
+          1080,
+          720
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        15,
+        261,
+        24,
+        270
+      ],
+      "reason": "Streaming WAV stall fixture is failed, not stopped by Sotto; retain failed status dot and label."
+    },
+    {
+      "name": "threads-stopped.png",
+      "difference": {
+        "changedPixels": 72,
+        "totalChannelDelta": 19275,
+        "pixelCount": 777600
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          1080,
+          720
+        ],
+        "main": [
+          1080,
+          720
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        15,
+        261,
+        24,
+        270
+      ],
+      "reason": "Streaming WAV stall fixture is failed, not stopped by Sotto; retain failed status dot and label."
+    },
+    {
+      "name": "threads-tour-projects.png",
+      "difference": {
+        "changedPixels": 11882,
+        "totalChannelDelta": 3492881,
+        "pixelCount": 777600
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          1080,
+          720
+        ],
+        "main": [
+          1080,
+          720
+        ]
+      },
+      "decision": "restore-main",
+      "bounds": [
+        529,
+        265,
+        870,
+        457
+      ],
+      "reason": "Transient Codex connected recovery notice; unrelated capture timing."
+    },
+    {
+      "name": "widget-cancelled-dark.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "widget-cancelled-light.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "widget-idle-dark.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "widget-idle-light.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "widget-permission-dark.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "widget-permission-light.png",
+      "decision": "unchanged"
+    },
+    {
+      "name": "width-760-agents-dark.png",
+      "decision": "deleted",
+      "reason": "retired voice capture or obsolete setup position"
+    },
+    {
+      "name": "width-760-agents-light.png",
+      "decision": "deleted",
+      "reason": "retired voice capture or obsolete setup position"
+    },
+    {
+      "name": "width-760-dictate-dark.png",
+      "difference": {
+        "changedPixels": 2402,
+        "totalChannelDelta": 333260,
+        "pixelCount": 547200
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          760,
+          720
+        ],
+        "main": [
+          760,
+          720
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        33,
+        642,
+        257,
+        672
+      ],
+      "reason": "Remove Agents from the Dictate/Threads switch and focus order."
+    },
+    {
+      "name": "width-760-dictate-light.png",
+      "difference": {
+        "changedPixels": 1269,
+        "totalChannelDelta": 242776,
+        "pixelCount": 547200
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          760,
+          720
+        ],
+        "main": [
+          760,
+          720
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        33,
+        642,
+        257,
+        673
+      ],
+      "reason": "Remove Agents from the Dictate/Threads switch and focus order."
+    },
+    {
+      "name": "width-760-settings-dark.png",
+      "difference": {
+        "changedPixels": 948,
+        "totalChannelDelta": 211625,
+        "pixelCount": 624750
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          750,
+          833
+        ],
+        "main": [
+          750,
+          833
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        21,
+        714,
+        157,
+        725
+      ],
+      "reason": "Remove Agents from the Dictate/Threads switch and focus order."
+    },
+    {
+      "name": "width-760-settings-light.png",
+      "difference": {
+        "changedPixels": 920,
+        "totalChannelDelta": 165394,
+        "pixelCount": 624750
+      },
+      "material": true,
+      "geometry": {
+        "actual": [
+          750,
+          833
+        ],
+        "main": [
+          750,
+          833
+        ]
+      },
+      "decision": "keep-removal",
+      "bounds": [
+        21,
+        714,
+        157,
+        725
+      ],
+      "reason": "Remove Agents from the Dictate/Threads switch and focus order."
+    }
+  ]
+}

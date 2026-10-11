@@ -197,13 +197,15 @@ describe('the mise binary', () => {
     expect(await miseBinary(other)).toBeUndefined()
   })
 
-  it.skipIf(process.platform === 'win32')('follows a link to the binary, and names the binary rather than the link', async () => {
-    const folder = await root()
-    const real = join(folder, 'mise')
-    await writeFile(real, '\u007fELF', { mode: 0o755 })
-    await mkdir(join(folder, 'bin'))
-    await symlink(real, join(folder, 'bin', 'mise'))
-    expect(await miseBinary(join(folder, 'bin', 'mise'))).toBe(real)
+  describe("POSIX file symlinks; Windows may require additional privileges", () => {
+    it.skipIf(process.platform === 'win32')('follows a link to the binary, and names the binary rather than the link', async () => {
+      const folder = await root()
+      const real = join(folder, 'mise')
+      await writeFile(real, '\u007fELF', { mode: 0o755 })
+      await mkdir(join(folder, 'bin'))
+      await symlink(real, join(folder, 'bin', 'mise'))
+      expect(await miseBinary(join(folder, 'bin', 'mise'))).toBe(real)
+    })
   })
 })
 

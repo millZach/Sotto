@@ -1,7 +1,9 @@
+import { hostsBridgeFixture, hostsState } from '../../fixtures/renderer/hostBridges'
 import React from 'react'
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it } from 'vitest'
+import { HostDialog } from '../../../src/renderer/src/features/settings/HostDialog'
 import { HostsSettings } from '../../../src/renderer/src/features/settings/HostsSettings'
 import { HostQuestionDialog } from '../../../src/renderer/src/features/settings/HostQuestionDialog'
 import type { HostSetupChoice, HostSetupState, HostsBridge, HostsCommand, HostsState, HostStatus } from '../../../src/shared/hosts'
@@ -18,14 +20,17 @@ const CHOICE: HostSetupChoice = { models: [
 /** The one device Add host lists: an alias from the SSH configuration. */
 const DEVICES: HostDevice[] = [{ target: 'forge', name: 'forge', names: ['forge'], sshConfiguration: true }]
 function fixture(choice: HostSetupChoice | undefined = CHOICE, answer?: (command: HostsCommand, state: HostsState) => HostsState) {
-  let state: HostsState = { localHostEnabled: true, localHostRunning: true, localHostId: LOCAL, activeHostId: LOCAL, hosts: [], ...(choice ? { setupChoice: choice } : {}) }
-  const listeners = new Set<(value: HostsState) => void>()
-  const push = (next: Partial<HostsState>): void => { state = { ...state, ...next }; act(() => { for (const listener of listeners) listener(state) }) }
-  // Main broadcasts every change it makes, as well as answering the command with it.
-  const command = vi.fn<HostsBridge['command']>(async input => { if (answer) { state = answer(input, state); for (const listener of listeners) listener(state) } return state })
-  const bridge: HostsBridge = { get: async () => state, command, onChanged: listener => { listeners.add(listener); return () => listeners.delete(listener) }, devices: async () => ({ tailscale: { state: 'missing' as const }, devices: DEVICES }), tailscale: async () => ({ state: 'missing' as const }),
-    connectTailscale: async () => 'failed' as const, openTailscaleDownload: async () => undefined, providerAction: async () => ({}), updateClients: async () => ({}), signIn: async () => null }
-  return { bridge, command, push }
+  const made = hostsBridgeFixture({ initial: hostsState({ localHostId: LOCAL, activeHostId: LOCAL, hosts: [], ...(choice ? { setupChoice: choice } : {}) }),
+    // Main broadcasts every change it makes, as well as answering the command with it.
+    answer: (input, state) => {
+      if (!answer) return state
+      const next = answer(input, state)
+      made.publish(next)
+      return next
+    },
+    commands: { devices: async () => ({ tailscale: { state: 'missing' }, devices: DEVICES }), connectTailscale: async () => 'failed' } })
+  const push = (next: Partial<HostsState>): void => { act(() => made.publish(next)) }
+  return { bridge: made.bridge, command: made.command, push }
 }
 const setupState = (patch: Partial<HostSetupState> = {}): HostSetupState => ({ id: 'setup', name: 'forge', target: 'zach@forge', threadId: `host:${LOCAL}:thread`, threadTitle: 'Set up forge',
   modelName: 'GPT-6', phase: 'running', byAgent: [], ...patch })
@@ -104,6 +109,16 @@ it('keeps Add it as the one choice when no agent can set up a host, and says why
   expect(within(dialog).getByRole('radio', { name: 'Add it' })).toHaveProperty('checked', true)
   expect(within(dialog).getByText(/needs the local host/)).toBeTruthy()
   expect(within(dialog).queryByRole('combobox', { name: 'Model' })).toBeNull()
+  expect(within(dialog).getByRole('button', { name: 'Add host' })).toBeTruthy()
+})
+
+it('offers only Add it where Threads cannot be reached to answer a setup thread, as in first-run setup', async () => {
+  const { bridge } = fixture()
+  render(<HostDialog mode={{ kind: 'add' }} bridge={bridge} state={await bridge.get()} agentSetup={false} onClose={() => undefined} />)
+  const dialog = await screen.findByRole('dialog', { name: 'Add host' })
+  expect(within(dialog).queryByRole('radiogroup', { name: 'How to add the host' })).toBeNull()
+  expect(within(dialog).queryByText('Have my agent set this up')).toBeNull()
+  expect(within(dialog).queryByRole('button', { name: 'Start setup' })).toBeNull()
   expect(within(dialog).getByRole('button', { name: 'Add host' })).toBeTruthy()
 })
 

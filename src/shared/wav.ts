@@ -1,9 +1,8 @@
 /**
- * In-memory WAV writer for the remote transcription upload. OpenAI-compatible
- * `/v1/audio/transcriptions` endpoints take an audio container rather than raw
- * samples, and a canonical 44-byte RIFF header in front of PCM16 is the one
- * encoding every such server accepts. Kept dependency-free so the renderer can
- * encode a segment without pulling anything into production `dependencies`.
+ * In-memory WAV for a dictation segment on its way from the renderer to the
+ * transcriber in main: a canonical 44-byte RIFF header in front of mono PCM16.
+ * The renderer encodes, main decodes back to float samples for the speech model.
+ * Kept dependency-free so neither side pulls anything into production `dependencies`.
  */
 
 /** Canonical RIFF/`fmt `/`data` header, written before the sample bytes. */
@@ -74,6 +73,29 @@ export function encodeWavPcm16(samples: Float32Array, sampleRate: number): Uint8
   }
 
   return bytes
+}
+
+/**
+ * Reads back the samples of a file `encodeWavPcm16` wrote, as floats in [-1, 1]. Only that exact
+ * shape is accepted, mono PCM16 at `sampleRate` behind the canonical header, because nothing else
+ * should reach the transcriber; anything else returns null.
+ */
+export function decodeWavPcm16(bytes: ArrayBuffer, sampleRate: number): Float32Array | null {
+  if (bytes.byteLength < WAV_HEADER_BYTES || (bytes.byteLength - WAV_HEADER_BYTES) % BYTES_PER_SAMPLE !== 0) return null
+  const view = new DataView(bytes)
+  const ascii = (offset: number): string => String.fromCharCode(...new Uint8Array(bytes, offset, 4))
+  if (ascii(0) !== 'RIFF' || ascii(8) !== 'WAVE' || ascii(12) !== 'fmt ' || ascii(36) !== 'data') return null
+  if (view.getUint16(20, true) !== PCM_FORMAT_TAG || view.getUint16(22, true) !== MONO_CHANNELS) return null
+  if (view.getUint32(24, true) !== sampleRate || view.getUint16(34, true) !== BITS_PER_SAMPLE) return null
+  if (view.getUint32(40, true) !== bytes.byteLength - WAV_HEADER_BYTES) return null
+  const count = (bytes.byteLength - WAV_HEADER_BYTES) / BYTES_PER_SAMPLE
+  const samples = new Float32Array(count)
+  for (let index = 0; index < count; index += 1) {
+    const value = view.getInt16(WAV_HEADER_BYTES + index * BYTES_PER_SAMPLE, true)
+    // The inverse of toPcm16's symmetric clip: negatives over 32768, positives over 32767.
+    samples[index] = value < 0 ? value / -INT16_MIN : value / INT16_MAX
+  }
+  return samples
 }
 
 /** How long the audio in an `encodeWavPcm16` file lasts at `sampleRate`, from its size alone. */

@@ -1,21 +1,20 @@
+import { promptText } from './helpers/promptEditor'
+import { threadsStateFixture } from '../../fixtures/agentState'
 import React, { useSyncExternalStore } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { defaultAgentConfiguration, type AgentAttachmentHandle, type AgentCommand, type AgentState } from '../../../src/shared/agents'
-import { designThreadsFixture, E2E_THREADS_NOW } from '../../../src/shared/e2e'
+import { type AgentAttachmentHandle, type AgentCommand, type AgentState } from '../../../src/shared/agents'
+import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
 import { draftThreads } from '../../../src/renderer/src/agents/draftThreads'
 import { SplitLayoutStore } from '../../../src/renderer/src/agents/splitLayout'
-import { openSidebarFolders } from './liveAgentState'
+import { openSidebarFolders } from '../../fixtures/renderer/liveAgentState'
 import { agentContextFixture } from '../../fixtures/agentContext'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
-// Voice is off unless a test turns it on, as in the beta (ADR-0012): the saved draft is shown and handled either way.
-const voice = vi.hoisted(() => ({ enabled: false }))
-vi.mock('../../../src/renderer/src/state/voiceCoordinator', () => ({ useVoiceCoordinatorEnabled: () => voice.enabled }))
 
 const NOW = E2E_THREADS_NOW
 const LEFTOVER = 'Change every link in docs/release to the new releases repository, then run the link check and list what it could not reach.'
@@ -23,23 +22,8 @@ const SHOT: AgentAttachmentHandle = { id: 'release-page', name: 'release-page.pn
 
 /** The design fixture with no pane open, and the coordinator holding a draft written for `draftThreadId`. */
 function withDraft(draftThreadId: string | null, connection: AgentState['connection'] = 'connected'): AgentState {
-  const fixture = designThreadsFixture()
-  return {
-    configuration: { ...defaultAgentConfiguration(), enabled: true, defaultModelId: 'claude:sonnet' },
-    connection,
-    host: {
-      connected: connection === 'connected', name: 'Codex', version: 'test',
-      capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true },
-      models: [...fixture.models], projects: [...fixture.projects], threads: structuredClone(fixture.threads) as AgentState['host']['threads'],
-    },
-    assignments: [], queue: [],
-    activeThreadId: null, activeProjectId: 'workshop',
-    draft: LEFTOVER, draftThreadId, draftRequestId: null, composing: false,
-    pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
-    speech: { id: 0, text: '' }, voice: { status: 'off', error: null, action: 'none', revision: 0 },
-    credentials: { reasoning: false, grokSpeech: false, secure: true },
-    reasoningAccounts: [],
-  }
+  return threadsStateFixture({ host: { connected: connection === 'connected' },
+    topLevel: { connection, activeThreadId: null, activeProjectId: 'workshop', draft: LEFTOVER, draftThreadId } })
 }
 
 type Command = (request: AgentCommand) => Promise<AgentState | null>
@@ -67,7 +51,7 @@ function renderEmpty(initial: AgentState, respond?: Respond) {
     const state = useSyncExternalStore(subscribe, () => current)
     return { ...agentContextFixture(state, command), threadDrafts }
   })
-  render(<ThreadsView onOpenAgents={vi.fn()} now={NOW} layoutStore={new SplitLayoutStore()} />)
+  render(<ThreadsView now={NOW} layoutStore={new SplitLayoutStore()} />)
   return command
 }
 const sent = <T extends AgentCommand['type']>(command: { mock: { calls: [AgentCommand][] } }, type: T): Extract<AgentCommand, { type: T }>[] =>
@@ -79,7 +63,7 @@ const savedComposer: Respond = (request, current) => request.type === 'save-thre
 const selected: Respond = (request, current) => request.type === 'select-thread' ? { ...current, activeThreadId: request.threadId } : undefined
 const cleared = (current: AgentState): AgentState => ({ ...current, draft: '', draftAttachments: [], draftThreadId: null, draftRequestId: null })
 
-beforeEach(() => { vi.mocked(useAgents).mockReset(); voice.enabled = false })
+beforeEach(() => { vi.mocked(useAgents).mockReset() })
 afterEach(() => { cleanup(); draftThreads.reset() })
 
 describe('a saved draft on the empty Threads page (issue #736)', () => {
@@ -102,13 +86,11 @@ describe('a saved draft on the empty Threads page (issue #736)', () => {
     expect(screen.getByRole('button', { name: 'Discard draft' })).toBeEnabled()
   })
 
-  it.each([['off', false], ['on', true]] as const)('offers the draft with voice %s, and Open Agents only with voice on', (_label, on) => {
-    voice.enabled = on
+  it('offers the saved draft without Open Agents', () => {
     renderEmpty(withDraft('gone-thread'))
     expect(screen.getByRole('heading', { name: 'A draft from an earlier thread is saved.' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'New thread with this draft' })).toBeEnabled()
-    if (on) expect(screen.getByRole('button', { name: 'Open Agents' })).toBeVisible()
-    else expect(screen.queryByRole('button', { name: 'Open Agents' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Open Agents' })).not.toBeInTheDocument()
   })
 
   it('says when the leftover draft answered a question in its old thread', () => {
@@ -120,9 +102,9 @@ describe('a saved draft on the empty Threads page (issue #736)', () => {
   it('starts a new thread with the leftover draft in its composer, and lets the old copy go once that is saved', async () => {
     const command = renderEmpty(withDraft('gone-thread'), savedComposer)
     fireEvent.click(screen.getByRole('button', { name: 'New thread with this draft' }))
-    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue(LEFTOVER))
+    await waitFor(() => expect(promptText(screen.getByRole('textbox', { name: 'Prompt' }))).toBe(LEFTOVER))
     const [created] = sent(command, 'create-thread')
-    expect(created).toMatchObject({ projectId: 'workshop', managed: false })
+    expect(created).toMatchObject({ projectId: 'workshop' })
     await waitFor(() => expect(sent(command, 'cancel-draft')).toHaveLength(1))
     // The new thread's composer was saved with the draft before the coordinator's copy was let go.
     expect(sent(command, 'save-thread-draft').at(-1)).toMatchObject({ threadId: created!.threadId, text: LEFTOVER })
@@ -144,7 +126,7 @@ describe('a saved draft on the empty Threads page (issue #736)', () => {
   it('keeps the leftover draft when the new thread’s composer could not be saved', async () => {
     const command = renderEmpty(withDraft('gone-thread'), request => request.type === 'save-thread-draft' ? null : undefined)
     fireEvent.click(screen.getByRole('button', { name: 'New thread with this draft' }))
-    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue(LEFTOVER))
+    await waitFor(() => expect(promptText(screen.getByRole('textbox', { name: 'Prompt' }))).toBe(LEFTOVER))
     await waitFor(() => expect(sent(command, 'save-thread-draft').length).toBeGreaterThan(0))
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
     expect(sent(command, 'cancel-draft')).toHaveLength(0)
@@ -165,7 +147,7 @@ describe('a saved draft on the empty Threads page (issue #736)', () => {
       threadDrafts: [{ threadId: unused.id, draftId: sent(first, 'save-thread-draft').at(-1)!.draftId, text: LEFTOVER, attachments: [], requestId: null, updatedAt: new Date(NOW).toISOString() }] },
     (request, current) => savedComposer(request, current) ?? selected(request, current))
     fireEvent.click(screen.getByRole('button', { name: 'New thread with this draft' }))
-    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue(LEFTOVER))
+    await waitFor(() => expect(promptText(screen.getByRole('textbox', { name: 'Prompt' }))).toBe(LEFTOVER))
     expect(sent(again, 'create-thread')).toHaveLength(0)
     await waitFor(() => expect(sent(again, 'cancel-draft')).toHaveLength(1))
     for (const save of sent(again, 'save-thread-draft')) expect(save.text).toBe(LEFTOVER)
@@ -182,7 +164,7 @@ describe('a saved draft on the empty Threads page (issue #736)', () => {
     expect(sent(command, 'cancel-draft')).toHaveLength(0)
     fireEvent.click(screen.getByRole('button', { name: 'New thread with this draft' }))
     await waitFor(() => expect(sent(command, 'create-thread')).toHaveLength(2))
-    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue(LEFTOVER))
+    await waitFor(() => expect(promptText(screen.getByRole('textbox', { name: 'Prompt' }))).toBe(LEFTOVER))
     await waitFor(() => expect(sent(command, 'cancel-draft')).toHaveLength(1))
     expect(sent(command, 'save-thread-draft').at(-1)).toMatchObject({ threadId: sent(command, 'create-thread')[1]!.threadId, text: LEFTOVER })
   })

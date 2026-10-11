@@ -1,15 +1,15 @@
-import { mkdir, mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { mkdir } from 'node:fs/promises'
+import { join } from 'node:path'
 import { expect, test, type Locator } from '@playwright/test'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import type { AgentMessage } from '../../src/shared/agents'
 import { closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
 import { quietShot, scrollToCard, slowMotion, textContrasts, visualize } from './support/visualCards'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 // A visual's walkthrough (#793), in the running app: each kind of diagram the visualize tool draws is stepped through,
 // and the parts each step names are lit in the picture the real renderer made, with the rest dimmed.
-const SHOTS = resolve('artifacts/visual-walkthrough')
+const SHOTS = evidenceDirectory('artifacts/visual-walkthrough')
 const START = Date.now() - 60_000
 const at = (second: number): string => new Date(START + second * 1000).toISOString()
 const HISTORY: AgentMessage[] = [
@@ -55,12 +55,11 @@ const ENTITIES = {
   steps: [{ text: 'A thread has visuals.', highlight: ['THREAD', 'VISUAL'] }, { text: 'And messages.', highlight: ['MESSAGE'] }],
 }
 
-
 async function openWorkshop(launched: LaunchedSotto): Promise<Locator> {
   const { page } = launched
   await page.evaluate(async () => {
     await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
-    await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+    await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
     await window.sotto!.agents!.command({ type: 'connect' })
   })
   await page.reload()
@@ -98,7 +97,7 @@ const dimmed = (image: Locator): Promise<number> => image.evaluate(element => {
 test('a visual walks through its steps, lighting each step\'s part of the diagram', async () => {
   test.setTimeout(300_000)
   await mkdir(SHOTS, { recursive: true })
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-walkthrough-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-walkthrough-' })).directory
   const launched = await launchSotto('success', profile)
   try {
     const { page } = launched
@@ -268,6 +267,6 @@ test('a visual walks through its steps, lighting each step\'s part of the diagra
     expect(errors).toEqual([])
   } finally {
     await closeSotto(launched)
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 })

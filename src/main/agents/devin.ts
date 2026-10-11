@@ -10,7 +10,7 @@ import { ProviderUnavailable } from './providerProblem'
 import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose } from './host'
 import { ThreadMessageLog } from './threadMessageLog'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
-import { ActivitySubscribers, cloneActivitySnapshot, immutableActivities, isImmutableActivities } from './activitySnapshots'
+import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from './activitySnapshots'
 import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
 import { SessionReaper } from './sessionReaper'
 import { existingWorkingDirectory } from './threadWorktrees'
@@ -21,6 +21,8 @@ import { DEVIN_THINKING_ID_PREFIX, devinActivities } from './devinActivity'
 import { settledThinking, thinkingSettledAs } from './thinkingActivity'
 import { devinPending, devinAnswer, devinDecline, type DevinPending } from './devinRequests'
 import { markSendStage } from './sendStages'
+import type { ThreadLaunchProfiles } from './host'
+import { WatcherProfileRefusal } from './watcherProfile'
 import { prepareDevinPolicy, verifyDevinPolicy, assertDevinNoIntegrations, settleInOrder, type DevinAllowance, type DevinProfile } from './devinPolicy'
 import { compareClientVersions } from './clientVersions'
 import { DevinRpc, DevinRejected, DevinUncertain, DEVIN_CLI_VERSION, DEVIN_ACP_VERSION, devinEnvironment, findDevinExecutable, readDevinVersion, type DevinFrame } from './devinRpc'
@@ -179,6 +181,50 @@ export interface DevinAcpOptions {
 
 /** Devin owns its account and tools. Sotto saves only session/dispatch identities in this adapter. */
 export class DevinAcpHost implements AgentHost {
+  private launchProfiles: ThreadLaunchProfiles | undefined
+  useLaunchProfiles(profiles: ThreadLaunchProfiles): void { this.launchProfiles = profiles }
+  profileRefusalHandler(id: string) {
+    const generation = this.generation, connection = this.connections.get(id)
+    if (!connection) return undefined
+    return (reason: string) => {
+      if (generation !== this.generation || this.connections.get(id) !== connection) return
+      return this.stopProfileSession(id, reason)
+    }
+  }
+  private async refuseWatcher(id: string, origin?: Connection, observer = false): Promise<void> {
+    const generation = this.generation
+    const current = (): boolean => generation === this.generation && (!origin || !origin.intentionalClose
+      && (observer ? this.allProcesses.has(origin.rpc) : this.connections.get(id) === origin))
+    let profile
+    try { profile = await this.launchProfiles?.profileFor(id) }
+    catch (error) {
+      if (!current()) throw new DevinUncertain('Devin connection changed.')
+      const refusal = error instanceof WatcherProfileRefusal ? error : new WatcherProfileRefusal('Watcher’s saved profile could not be verified. Nothing was sent.')
+      await this.stopProfileSession(id, refusal.message, origin, observer)
+      throw refusal
+    }
+    if (!current()) throw new DevinUncertain('Devin connection changed.')
+    if (!profile) return
+    const reason = 'Devin cannot host Watcher. Nothing was sent. Use an ordinary thread, or choose an admitted Codex, Claude Code or Grok Build version.'
+    try { profile.revoke(reason) } catch { /* Refusal still closes the provider process. */ }
+    await this.stopProfileSession(id, reason, origin, observer)
+    throw new WatcherProfileRefusal(reason)
+  }
+  /** A receive callback cannot await the close barrier that drains that same callback. */
+  private stopProfileSession(id: string, reason: string, origin?: Connection, observer = false): Promise<void> {
+    if (!observer) {
+      this.finishUnsettledTurn(id, 'failed'); this.clearRequests(id)
+      const thread = this.threads.get(id)
+      if (thread) { thread.status = 'error'; thread.requestNotice = reason }
+      this.state.error = reason; this.emit()
+    }
+    if (!origin) return this.stopSession(id)
+    let stopped: Promise<void>
+    if (observer) { origin.intentionalClose = true; origin.rpc.close(); stopped = origin.rpc.closed }
+    else stopped = this.stopSession(id)
+    this.shutdown = Promise.all([this.shutdown, stopped.catch(() => undefined)]).then(() => undefined)
+    return Promise.resolve()
+  }
   private readonly aliasStore: AtomicJsonStore<Record<string, Alias>>
   private readonly projectStore: AtomicJsonStore<AgentHostSnapshot['projects']>
   private aliases: Record<string, Alias> = {}
@@ -261,9 +307,7 @@ export class DevinAcpHost implements AgentHost {
   /** What activity subscribers are handed. One that keeps history from this adapter's events gets each
    * thread's summary and no messages: those already left as events (#322). */
   private activitySnapshot(historyFromEvents: boolean): AgentHostSnapshot {
-    for (const thread of this.threads.values()) if (thread.activities && !isImmutableActivities(thread.activities)) {
-      thread.activities = immutableActivities(thread.activities)
-    }
+    certifyActivityView(this.state, this.threads.values())
     return { ...this.state, threads: [...this.threads.values()].map(thread => this.withSession(this.log.activityThread(thread, historyFromEvents))) }
   }
   private emit(streaming = false): void { this.publisher.publish(streaming) }
@@ -278,6 +322,8 @@ export class DevinAcpHost implements AgentHost {
 
   private async start(cwd: string, allows: DevinAllowance, id?: string, observer = false): Promise<Connection> {
     const generation = this.generation
+    if (id) await this.refuseWatcher(id)
+    if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
     const check = ++this.checksStarted
     const profile = await prepareDevinPolicy(this.userDataDirectory, allows, cwd, this.options.nativeConfigDirectory)
     // Before the process exists: an integration it would load is refused before it can start.
@@ -458,11 +504,17 @@ export class DevinAcpHost implements AgentHost {
    * send has not happened gets nothing: Devin's process opens on a session, and making one is the send's to do.
    */
   async startThreadSession(id: string): Promise<void> {
+    const generation = this.generation
+    await this.refuseWatcher(id)
+    if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
     if (!this.state.connected || !this.aliases[id]?.devinSessionId) return
     await this.open(id)
     this.reaper.touch(id)
   }
-  private open(id: string): Promise<Connection> {
+  private async open(id: string): Promise<Connection> {
+    const generation = this.generation
+    await this.refuseWatcher(id)
+    if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
     const stopping = this.stopping.get(id)
     if (stopping) return stopping.then(() => this.open(id))
     // A connection still loading has not had its mode set, so a caller waits for the load rather than using it.
@@ -726,6 +778,11 @@ export class DevinAcpHost implements AgentHost {
       this.emit(true); return
     }
     if (frame.method && frame.id !== undefined) {
+      const generation = this.generation
+      // Every Devin connection launched without a Watcher profile: start refuses it.
+      // Ordinary requests stay on the synchronous path; lifecycle checks still refuse promotion.
+      if (generation !== this.generation || connection.intentionalClose
+        || !observer && this.connections.get(id) !== connection) return
       if (observer || !params || params.sessionId !== alias.devinSessionId) { this.unsupported(connection.rpc, frame); return }
       try {
         const toolId = record(params.toolCall)?.toolCallId
@@ -755,6 +812,9 @@ export class DevinAcpHost implements AgentHost {
     }
   }
   async execute(command: AgentHostCommand): Promise<AgentHostResult> {
+    const generation = this.generation
+    if ('threadId' in command && command.type !== 'interrupt') await this.refuseWatcher(command.threadId)
+    if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
     if (command.type !== 'send' && command.type !== 'create-thread') return this.executeNative(command)
     if (this.dispatching.has(command.threadId)) throw new Error('Devin is already receiving work for this thread. Wait for its delivery result.')
     this.dispatching.add(command.threadId)

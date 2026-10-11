@@ -1,5 +1,7 @@
 # Saved answers whose native question closed
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 Verified September 13, 2026 in `phase3-draft-recovery-ui`, on backend source commits `a8e3a93` and `81d0c8a` (cherry-picked locally as `01b73b8` and `85c3e23`).
 
 A native client can close a pending question while it shuts down. The structured answer draft survives on disk (see [structured answer draft durability](phase-3-answer-drafts.md)), but before this change it loaded only into a live request card, so a question that never came back left the answer unreachable.
@@ -26,10 +28,10 @@ UI commits, in order: `1eb91e4`, `820957a`, `0e04d4d`, `2bda6e5` (source and uni
 ## Checks
 
 - `npm run typecheck`: node and web pass ([log](../../artifacts/phase-three-draft-recovery/typecheck.log)). ESLint passes on every changed file.
-- `npx vitest run tests/unit/renderer/requests tests/unit/renderer/personalChatsView.test.tsx tests/unit/renderer/threadRequestSurroundings.test.tsx tests/unit/renderer/threadsView.test.tsx tests/unit/main/requestDrafts.test.ts tests/unit/main/requestDraftIpc.test.ts tests/unit/preload/requestDrafts.test.ts --maxWorkers=1`: 113 passed in 11 files ([log](../../artifacts/phase-three-draft-recovery/vitest.log)). Removing the acknowledgement phase from the re-list trigger fails the absence-before-acknowledgement test.
+- `npx vitest run tests/unit/renderer/requests tests/unit/renderer/personalChatsView.test.tsx tests/unit/renderer/threadRequestSurroundings.test.tsx tests/unit/renderer/agents/threadFacts.test.tsx tests/unit/renderer/agents/threadCreationRecovery.test.tsx tests/unit/renderer/agents/threadsView.test.tsx tests/unit/main/requestDraftPersistence.test.ts tests/unit/main/requestDraftDelivery.test.ts tests/unit/main/requestDraftLegacyPrivacy.test.ts tests/unit/main/requestDraftRetirement.test.ts tests/unit/main/requestDraftIpc.test.ts tests/unit/preload/requestDrafts.test.ts --maxWorkers=1`: 113 passed in 11 files ([log](../../artifacts/phase-three-draft-recovery/vitest.log)). Removing the acknowledgement phase from the re-list trigger fails the absence-before-acknowledgement test.
 - `npm run build` in this worktree's own `out/` ([log](../../artifacts/phase-three-draft-recovery/build.log)).
 - `npx playwright test tests/e2e/request-draft-recovery.spec.ts tests/e2e/request-draft-restart.spec.ts --workers=1`: 9 passed ([log](../../artifacts/phase-three-draft-recovery/e2e-recovery.log)).
-- `npx playwright test tests/e2e/phase-three-requests.spec.ts tests/e2e/phase-three-personal-requests.spec.ts --workers=1`: 3 passed, so live request cards are unchanged ([log](../../artifacts/phase-three-draft-recovery/e2e-neighbours.log)).
+- `npx playwright test tests/e2e/native-request-forms.spec.ts tests/e2e/phase-three-personal-requests.spec.ts --workers=1`: 3 passed, so live request cards are unchanged ([log](../../artifacts/phase-three-draft-recovery/e2e-neighbours.log)).
 
 ## Electron journey
 

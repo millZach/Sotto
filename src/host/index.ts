@@ -3,13 +3,13 @@ import { AtomicJsonStore } from '../main/storage/atomicJsonStore'
 import { resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { createAgentRuntime, type AgentRuntimeOptions } from '../main/agents/runtime'
+import { removeRetiredVoiceCache } from '../main/agents/retiredVoiceCache'
 import { loadHostIdentity } from '../main/agents/hostIdentity'
 import { MISSING_REMOTE_ATTACHMENT } from '../main/agents/attachmentStore'
 import { SecureSettings } from '../main/agents/secureSettings'
 import { createStorageRepositories } from '../main/storage/repositories'
 import { RecoveryNoticeCenter } from '../main/storage/recoveryNoticeCenter'
 import { openRuntimeMemory } from '../main/memory/runtime'
-import { MemoryProfile } from '../main/memory/profile'
 import { PolicyStore } from '../main/memory/policies'
 import { join } from 'node:path'
 import { openHostCredentials } from './credentials'
@@ -22,6 +22,8 @@ import { startHostPhoneAccess, type HostPhoneAccess } from './phones'
 import { DesktopClients } from './desktopClients'
 import { CommandReceipts } from './commandReceipts'
 import type { PhoneAccessTailscale } from '../main/phones/phoneAccess'
+import { version as packageVersion } from '../../package.json'
+import { getReleaseTrack, isWatcherEnabled } from '../shared/releaseTrack'
 import { startedBySotto, type HostStartedBy } from '../shared/hostConnection'
 
 export interface HeadlessHostOptions {
@@ -83,7 +85,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   await mkdir(directory, { recursive: true, mode: 0o700 })
   const credentials = await openHostCredentials(directory, options.keyFile)
   const recovery = new RecoveryNoticeCenter()
-  const repositories = createStorageRepositories(directory, recovery)
+  const watcherEnabled = isWatcherEnabled(getReleaseTrack(options.sottoVersion ?? packageVersion))
+  const repositories = createStorageRepositories(directory, recovery, Date.now, undefined, undefined, watcherEnabled)
   const settings = new SecureSettings(repositories.settings, credentials)
   if ((await repositories.settings.get()).llmApiKey && !credentials.available()) {
     throw new HostKeyMigrationError('A key saved by an older version of Sotto needs secure storage. Pass --key-file <file> and start the host again. The saved key has not been changed.')
@@ -92,6 +95,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     throw new HostKeyMigrationError('The OpenRouter key could not be stored securely and was removed from settings. Enter it again on the host machine after restoring storage access. Start the host with --key-file <file>.')
   })
   await repositories.settings.migrateProjectWorkingCopyDefaults(await loadHostIdentity(directory))
+  await repositories.settings.save(await repositories.settings.get()).catch(() => console.warn('retired-voice-settings-save-failed'))
+  await removeRetiredVoiceCache(directory)
   const startup = await settings.get()
   const memory = openRuntimeMemory(join(directory, 'memory.sqlite'), event => options.log?.(event))
   try {
@@ -99,11 +104,10 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     // A paired client with an open socket is the host's window in front: while none is connected, no remote is fetched.
     let peersConnected = (): boolean => false
     const runtime = await createAgentRuntime({
-      observeActiveThread: false, directory, credentials, settings: () => startup, writingSettings: () => settings.get(),
-      historyEnabled: () => startup.historyEnabled, coordinatorEnabled: () => startup.voiceCoordinatorEnabled,
+      observeActiveThread: false, directory, credentials, watcherEnabled, settings: () => startup, writingSettings: () => settings.get(),
+      historyEnabled: () => startup.historyEnabled,
       gitStatus: { fetchIntervalMs: () => startup.gitFetchIntervalSeconds * 1000, foreground: () => peersConnected(), log: event => options.log?.(event) },
       ...(policy ? { authority: policy } : {}),
-      ...(memory && startup.memoryEnabled ? { preferences: new MemoryProfile(memory) } : {}),
       ...(options.providers ? { providers: options.providers } : {}),
       ...(options.reasoner ? { reasoner: options.reasoner } : {}),
       ...(options.clients ? { clients: options.clients } : {}),
@@ -162,7 +166,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         // listener, which carries desktops the launch script recorded as well as phones (ADR-0053). This one, with the
         // administrative routes, stays reachable only from this machine and through the desktop's SSH (ADR-0050).
         phones = startHostPhoneAccess({ directory, service: runtime.hostService, pairing, policy, settings, startup,
-          desktops: new DesktopClients(directory, options.log), listener: { signIns, clientUpdates: true, receipts, about },
+          desktops: new DesktopClients(directory, options.log), listener: { signIns, clientUpdates: true, receipts, about, ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}) },
           ...(options.tailscale ? { tailscale: options.tailscale } : {}), ...(options.log ? { log: options.log } : {}) })
         const tailnet = phones
         listener = await startSocketServer({ service: runtime.hostService, pairing, port: options.port, signIns, clientUpdates: true, phones: tailnet.administration,

@@ -1,5 +1,7 @@
 # A prompt sent at once is saved by its outbox write
 
+October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-management.md) records the removal. Assignment growth described below is historical; assignments are removed from live coordinator state. Drafts, deliveries, user follow-up queues and the compact outbox write remain.
+
 ## Status
 
 Accepted October 6, 2026, issue #767, part of #762. The issue asked to merge the coordinator's admission write into the outbox write or prove admission needs its own, and to stop the window saving a draft in the middle of a send. This records what was decided and what it costs. The adapter half of the same issue, the origin journal and the Codex frame saves, is the October 6 amendment to [ADR-0005](0005-codex-app-server-adapter.md).

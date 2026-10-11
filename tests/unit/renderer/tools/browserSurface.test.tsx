@@ -1,8 +1,10 @@
+import { deferred } from '../../../fixtures/deferred'
+import { browserBridgeFixture, browserPage } from '../../../fixtures/renderer/browserBridge'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { BrowserBridge, BrowserEvent, BrowserPage } from '../../../../src/shared/browser'
+import type { BrowserPage } from '../../../../src/shared/browser'
 import type { ToolsResult } from '../../../../src/shared/tools'
 import { MessageContent } from '../../../../src/renderer/src/agents/MessageContent'
 import { ToolsPanel } from '../../../../src/renderer/src/tools/ToolsPanel'
@@ -10,20 +12,19 @@ import { BrowserPlayerStore } from '../../../../src/renderer/src/tools/browserPl
 import { BrowserStore, normalizeAddress } from '../../../../src/renderer/src/tools/browserStore'
 import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
 import { ThreadWebLinks } from '../../../../src/renderer/src/tools/webLinks'
-import { threadsStateFixture } from '../liveAgentState'
-import { TOKEN_A, fakeFilesBridge, text } from './fakeFilesBridge'
+import { threadsStateFixture } from '../../../fixtures/renderer/liveAgentState'
+import { TOKEN_A, fakeFilesBridge, text } from '../../../fixtures/renderer/fakeFilesBridge'
 
 const workspace = { threadId: 'visual-gate', projectId: 'workshop', workingDirectory: 'D:\\work\\workshop', workspaceId: TOKEN_A }
 const PAGE_1 = '11111111-1111-4111-8111-111111111111'
 const PAGE_2 = '22222222-2222-4222-8222-222222222222'
 const page = (id: string, patch: Partial<BrowserPage> = {}): BrowserPage =>
-  ({ id, workspace, url: 'http://localhost:5173/', title: 'Vite App', status: 'ready', error: null, canGoBack: false, canGoForward: false, ...patch })
+  browserPage(workspace, { id, ...patch })
 const ok = <T,>(value: T): ToolsResult<T> => ({ ok: true, value })
 
 function fakeBrowser(initial: BrowserPage[] = []) {
   let pages = initial
-  const listeners = new Set<(event: BrowserEvent) => void>()
-  const bridge: BrowserBridge = {
+  const published = browserBridgeFixture({ workspace, commands: {
     tasks: vi.fn(async () => ok([])),
     share: vi.fn(async ({ pageId, enabled }) => ok(page(pageId, { sharedOrigin: enabled ? 'http://localhost:5173' : null }))),
     viewport: vi.fn(async request => ok(page(request.pageId, { viewport: 'reset' in request ? null : { width: request.width, height: request.height } }))),
@@ -39,9 +40,8 @@ function fakeBrowser(initial: BrowserPage[] = []) {
     mount: vi.fn(async () => ok(undefined)),
     openLink: vi.fn(async ({ url, destination }) => destination === 'external'
       ? ok({ destination: 'external' as const }) : ok({ destination: 'embedded' as const, page: page(PAGE_2, { url, title: 'Docs' }) })),
-    onEvent: vi.fn(listener => { listeners.add(listener); return () => { listeners.delete(listener) } }),
-  }
-  return { bridge, emit: (event: BrowserEvent) => { for (const listener of [...listeners]) listener(event) } }
+  } })
+  return { ...published, emit: published.publish }
 }
 
 beforeEach(() => {
@@ -310,7 +310,7 @@ describe('Browser page placement', () => {
     const browser = fakeBrowser([page(PAGE_1), page(PAGE_2, { title: 'Docs' })])
     let refuse!: (result: ToolsResult<void>) => void
     vi.mocked(browser.bridge.mount).mockImplementation(async ({ pageId, bounds }) => pageId === PAGE_2 && bounds !== null
-      ? new Promise<ToolsResult<void>>(resolve => { refuse = resolve }) : ok(undefined))
+      ? (() => { const pending = deferred<ToolsResult<void>>(); refuse = pending.resolve; return pending.promise })() : ok(undefined))
     setup(browser)
     await waitFor(() => expect(browser.bridge.mount).toHaveBeenCalledWith({ ...target, pageId: PAGE_2, bounds: shownAt }))
     await userEvent.click(within(panel()).getByRole('tab', { name: 'Vite App' }))
@@ -331,7 +331,7 @@ describe('Browser page placement', () => {
     let refuse!: (result: ToolsResult<void>) => void
     let calls = 0
     vi.mocked(browser.bridge.mount).mockImplementation(async ({ bounds }) => bounds !== null && ++calls === 1
-      ? new Promise<ToolsResult<void>>(resolve => { refuse = resolve }) : ok(undefined))
+      ? (() => { const pending = deferred<ToolsResult<void>>(); refuse = pending.resolve; return pending.promise })() : ok(undefined))
     setup(browser)
     await waitFor(() => expect(calls).toBe(1))
     vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockImplementation(function (this: HTMLElement) {
@@ -468,7 +468,7 @@ describe('browser placement admission', () => {
     const store = new BrowserStore()
     store.adopt(page(PAGE_1))
     let finish!: (result: ToolsResult<void>) => void
-    vi.mocked(browser.bridge.mount).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    vi.mocked(browser.bridge.mount).mockImplementationOnce(() => { const pending = deferred<ToolsResult<void>>(); finish = pending.resolve; return pending.promise })
     store.mount(browser.bridge, workspace.threadId, PAGE_1, shownAt)
     store.mount(browser.bridge, workspace.threadId, PAGE_1, { ...shownAt, x: 900 })
     store.mount(browser.bridge, workspace.threadId, PAGE_1, { ...shownAt, x: 800 })
@@ -483,7 +483,7 @@ describe('browser placement admission', () => {
     const store = new BrowserStore()
     store.adopt(page(PAGE_1))
     let finish!: (result: ToolsResult<void>) => void
-    vi.mocked(browser.bridge.mount).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    vi.mocked(browser.bridge.mount).mockImplementationOnce(() => { const pending = deferred<ToolsResult<void>>(); finish = pending.resolve; return pending.promise })
     store.mount(browser.bridge, workspace.threadId, PAGE_1, shownAt)
     store.mount(browser.bridge, workspace.threadId, PAGE_1, { ...shownAt, x: 900 })
     store.mount(browser.bridge, workspace.threadId, PAGE_1, shownAt)
@@ -499,7 +499,7 @@ describe('browser placement admission', () => {
     store.adopt(page(PAGE_1))
     store.adopt(page(PAGE_2))
     let finish!: (result: ToolsResult<void>) => void
-    vi.mocked(browser.bridge.mount).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    vi.mocked(browser.bridge.mount).mockImplementationOnce(() => { const pending = deferred<ToolsResult<void>>(); finish = pending.resolve; return pending.promise })
     store.mount(browser.bridge, workspace.threadId, PAGE_1, shownAt)
     store.mount(browser.bridge, workspace.threadId, PAGE_1, null)
     store.mount(browser.bridge, workspace.threadId, PAGE_2, shownAt)
@@ -526,7 +526,7 @@ describe('browser placement admission', () => {
         return ok(undefined)
       }
       desired = pageId
-      await new Promise<void>(resolve => { finish = resolve })
+      await (() => { const pending = deferred<void>(); finish = pending.resolve; return pending.promise })()
       if (desired === pageId) mounted = pageId
       return ok(undefined)
     })
@@ -544,7 +544,7 @@ describe('browser placement admission', () => {
     const store = new BrowserStore()
     store.adopt(page(PAGE_1))
     let finish!: (result: ToolsResult<void>) => void
-    vi.mocked(browser.bridge.mount).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    vi.mocked(browser.bridge.mount).mockImplementationOnce(() => { const pending = deferred<ToolsResult<void>>(); finish = pending.resolve; return pending.promise })
     store.mount(browser.bridge, workspace.threadId, PAGE_1, shownAt)
     store.mount(browser.bridge, workspace.threadId, PAGE_1, { ...shownAt, x: 900 })
     store.mount(browser.bridge, workspace.threadId, PAGE_1, null)

@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { deferred } from '../fixtures/deferred'
 import { afterEach, expect, it, vi } from 'vitest'
 import { draftHandoffFixture } from '../fixtures/draftHandoffFixture'
 import { RequestDraftService, requestQuestionsDigest } from '../../src/main/agents/requestDrafts'
@@ -15,7 +16,7 @@ it.each(['before', 'after'] as const)('settles an answer completed %s the comman
   const f = await fixture()
   f.host.event({ type: 'question', threadId: 'workshop', text: '', request })
   let complete!: (delivered: boolean) => void
-  const completion = order === 'before' ? Promise.resolve(true) : new Promise<boolean>(resolve => { complete = resolve })
+  const completion = order === 'before' ? Promise.resolve(true) : (() => { const pending = deferred<boolean>(); complete = pending.resolve; return pending.promise })()
   const events: string[] = []
   void completion.then(() => { events.push('completed') })
   vi.spyOn(f.host, 'execute').mockResolvedValueOnce({ accepted: false, uncertain: true, answerCompletion: completion })
@@ -32,7 +33,7 @@ it.each(['before', 'after'] as const)('keeps a newer error when an answer comple
   const f = await fixture()
   f.host.event({ type: 'question', threadId: 'workshop', text: '', request })
   let complete!: (delivered: boolean) => void
-  const completion = order === 'before' ? Promise.resolve(true) : new Promise<boolean>(resolve => { complete = resolve })
+  const completion = order === 'before' ? Promise.resolve(true) : (() => { const pending = deferred<boolean>(); complete = pending.resolve; return pending.promise })()
   const events: string[] = []
   void completion.then(() => { events.push('completed') })
   vi.spyOn(f.host, 'execute').mockResolvedValueOnce({ accepted: false, uncertain: true, answerCompletion: completion })

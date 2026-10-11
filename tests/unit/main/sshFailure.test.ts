@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { HOST_SETUP_STEPS } from '../../../src/shared/hosts'
 import { LAUNCH_REASONS, classifySshExit, failureFix, failureStep, type SshFailureCode } from '../../../src/main/hosts/sshFailure'

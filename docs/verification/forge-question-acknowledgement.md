@@ -1,5 +1,7 @@
 # Forge question acknowledgement
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 Verified on Windows with an Electron desktop and a paired, loopback headless host. Providers are scripted fixtures; the socket, host coordinator, client router, durable saved answers, IPC, preload and rendered question panel are real. The fixture bypasses SSH discovery and launch. This is not a live Forge or paid-provider run.
 
 ## Cause and repair

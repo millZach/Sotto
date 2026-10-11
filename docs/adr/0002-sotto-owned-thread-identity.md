@@ -1,5 +1,7 @@
 # 2. Sotto owns thread identity
 
+October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-management.md) records the removal. Assignment and attention-queue references below are historical. Sotto thread identities, bindings and manual draft recovery remain unchanged.
+
 ## Status
 
 Accepted — 2026-09-10.
