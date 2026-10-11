@@ -10,6 +10,7 @@
  */
 
 import { z } from 'zod'
+import { OMARCHY_THEME_ID, type OmarchyTheme } from './omarchy'
 
 import { isCanonicalThemeColor, toCanonicalThemeColor } from './color'
 import { getDefaultThemeColors } from './engine'
@@ -234,9 +235,15 @@ export interface ThemeSelection {
   readonly lightTheme: string
   readonly darkTheme: string
   readonly customThemes: readonly ThemeDefinition[]
+  readonly omarchyTheme?: OmarchyTheme | null | undefined
 }
 
 export function resolveThemeFor(selection: ThemeSelection, appearance: ThemeAppearance): { theme: ThemeDefinition; colors: ThemeColors } {
+  if (selection.omarchyTheme !== undefined && (appearance === 'dark' ? selection.darkTheme : selection.lightTheme) === OMARCHY_THEME_ID) {
+    return selection.omarchyTheme?.appearance === appearance
+      ? { theme: selection.omarchyTheme, colors: selection.omarchyTheme.colors }
+      : { theme: T3_CODE_THEME, colors: getThemeColorsForMode(T3_CODE_THEME, appearance)! }
+  }
   const id = resolveThemeHalfId(appearance === 'dark' ? selection.darkTheme : selection.lightTheme, appearance, selection.customThemes)
   const theme = findTheme(id, selection.customThemes) ?? T3_CODE_THEME
   return { theme, colors: getThemeColorsForMode(theme, appearance) ?? getThemeColorsForMode(T3_CODE_THEME, appearance)! }

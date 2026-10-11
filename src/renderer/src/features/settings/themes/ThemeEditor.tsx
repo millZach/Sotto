@@ -22,10 +22,12 @@ import { ChevronDown, ChevronUp, MousePointer2, Paintbrush, Plus, X } from 'luci
 import type { AppSettings, SettingsPatch } from '../../../../../shared/settings'
 import { toCanonicalThemeColor } from '../../../../../shared/themes/color'
 import { createVividThemeColors, updateThemeColorFamily } from '../../../../../shared/themes/engine'
+import { OMARCHY_THEME_ID } from '../../../../../shared/themes/omarchy'
 import {
   T3_CODE_THEME,
   THEME_COLOR_ROLES,
   findTheme,
+  resolveThemeFor,
   getThemeColorsForMode,
   getThemeModes,
   type ThemeAppearance,
@@ -200,7 +202,11 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
   const writer = useMemo(() => new ThemeLibraryWriter(onSave, getSettings), [onSave, getSettings])
 
   const [seeded] = useState(() => {
-    const source = editingTheme ?? (session.seedThemeId === null ? null : findTheme(session.seedThemeId, library.customThemes))
+    const source = editingTheme ?? (session.seedThemeId === null ? null : (
+      session.seedThemeId === OMARCHY_THEME_ID && library.omarchyTheme !== undefined
+        ? resolveThemeFor(library, session.initialAppearance).theme
+        : findTheme(session.seedThemeId, library.customThemes)
+    ))
     const colors: ColorsByAppearance = { light: editorDefaults('light'), dark: editorDefaults('dark') }
     if (source) {
       for (const mode of getThemeModes(source)) colors[mode] = { ...getThemeColorsForMode(source, mode)! }
