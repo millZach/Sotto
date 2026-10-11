@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { _electron as electron, expect, test, type Locator } from '@playwright/test'
 import fixtures from '../fixtures/omarchy-themes.json'
+import legacyCache from '../fixtures/omarchy-theme-cache-v0070.json'
 import { ownedE2EProfile } from './support/e2eProfile'
 import { launchSotto, closeSotto, firstSottoWindow, openThreads, openPage } from './support/sottoLaunch'
 import { promptField, fillPrompt } from './support/prompt'
@@ -77,6 +78,15 @@ test('Omarchy muted text reads on real selected rows, hover rows, bubbles and la
   const errors: string[] = [], measurements: unknown[] = []
   page.on('pageerror', error => errors.push(error.message))
   try {
+    // Upgrade with a real palette produced by the base guard. main.tsx paints
+    // this cache before React or fresh settings can repair a startup exception.
+    await page.evaluate(legacy => {
+      const key = 'sotto.appearance'
+      const cached = JSON.parse(localStorage.getItem(key) ?? '{}') as Record<string, unknown>
+      localStorage.setItem(key, JSON.stringify({ ...cached, appearance: 'dark', lightTheme: '__omarchy', darkTheme: '__omarchy', omarchyTheme: legacy }))
+    }, legacyCache.themes.everforest)
+    await page.reload()
+    await expect(page.locator('.app-shell')).toBeVisible()
     const folder = await page.evaluate(async () => {
       await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true } })
       const state = await window.sotto!.agents!.command({ type: 'connect' })
@@ -91,7 +101,9 @@ test('Omarchy muted text reads on real selected rows, hover rows, bubbles and la
     git(['-c', 'user.name=Sotto verification', '-c', 'user.email=verification@example.invalid', '-c', 'commit.gpgSign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '--quiet', '-m', 'Keep the original lines'])
     await writeFile(join(folder, 'colours.txt'), 'First line\nNew line\nLast line\n')
     await page.reload()
-    await resizeContentWindow(launched, 1600, 1000)
+    // Fit inside the nested output: an oversized Wayland content request can
+    // leave measurable DOM outside the compositor's captured rectangle.
+    await resizeContentWindow(launched, 880, 980)
     await openThreads(page)
     await page.getByRole('button', { name: 'Workshop', exact: true }).first().click()
     await fillPrompt(promptField(page), 'Check the text colours')
@@ -108,6 +120,7 @@ test('Omarchy muted text reads on real selected rows, hover rows, bubbles and la
     await panel.getByRole('button', { name: 'Expand colours.txt', exact: true }).click()
     const lines = panel.getByRole('grid', { name: 'Lines of colours.txt' })
     const record = async (theme: string, group: string, surface: string, element: Locator) => {
+      await expect(element).toBeInViewport()
       const pair = await measure(element)
       const ratio = contrastRatio(pair.foreground, pair.background)
       measurements.push({ theme, group, surface, ...pair, ratio })
