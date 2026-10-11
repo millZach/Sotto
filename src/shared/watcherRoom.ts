@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { watcherIdentitySchema, watcherOperationSchema, watcherParticipantSchema, watcherRefusalSchema,
-  watcherRequestSchema, watcherProviderSchema, watcherThreadTargetSchema } from './watcher'
+  watcherRequestSchema, watcherProviderSchema, watcherThreadTargetSchema, watcherEvidenceSchema } from './watcher'
+import { watcherEventSchema } from './watcherNews'
 
 /** Private desktop channels. A host may project the same state later without acquiring command authority. */
 export const WATCHER_GET = 'sotto:watcher:get'
@@ -23,9 +24,11 @@ export const watcherRoomStateSchema = z.object({
   watchedThreads: z.array(z.object({ target: watcherThreadTargetSchema, title: z.string(),
     status: z.enum(['idle', 'running', 'error', 'unavailable']), connected: z.boolean(),
     settled: z.boolean(), backgroundWorkCount: z.number().int().nonnegative(),
-    waitsOn: z.array(pending), participation: z.array(watcherParticipantSchema) }).strict()),
+    waitsOn: z.array(pending), participation: z.array(watcherParticipantSchema),
+    evidence: z.array(watcherEvidenceSchema).max(100).optional(),
+    observation: z.object({ observedAt: timestamp, fresh: z.boolean(), connectedAt: timestamp.optional(), lastProgressAt: timestamp.optional() }).strict().optional() }).strict()),
   inFlight: z.number().int().nonnegative(), inFlightLimit: z.number().int().min(1).max(8),
-  receipts: z.array(watcherOperationSchema),
+  receipts: z.array(watcherOperationSchema), news: z.array(watcherEventSchema).max(400).optional(),
   recoveryNotice: z.string().nullable(), observedAt: timestamp,
 }).strict()
 export const watcherOpenRequestSchema = z.object({ provider: watcherProviderSchema,
