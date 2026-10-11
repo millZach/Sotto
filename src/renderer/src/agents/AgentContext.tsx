@@ -10,6 +10,8 @@ import { createStateSharing } from './stateSharing'
 import { ThreadDraftStore } from './threadDraftStore'
 import { approximateDetailBytes } from './detailCacheSize'
 import { requestAnswerStore } from './requests/requestAnswers'
+import { useWatcherEnabled } from '../state/watcherFeature'
+import { visibleWatcherState, watcherThreadVisible } from './watcherVisibility'
 
 export interface AgentConnection {
   readonly state: AgentState | null
@@ -24,6 +26,9 @@ const DETAIL_CACHE_LIMIT = 16
 const SHELL_CACHE_INTERVAL_MS = 2_000
 
 export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnection {
+  const watcherEnabled = useWatcherEnabled()
+  const watcherEnabledRef = useRef(watcherEnabled)
+  watcherEnabledRef.current = watcherEnabled
   // A connection owns its command lane and draft durability knowledge. Neither page
   // navigation nor outstanding writes create a new store; a different bridge does.
   const session = useMemo(() => ({ current: false, observed: 0, tail: Promise.resolve() as Promise<unknown>, share: createStateSharing(), requestOwners: new Set<string>() }), [bridge])
@@ -153,6 +158,8 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
    */
   const requestDetail = useCallback((threadId: string, options: { stale?: boolean; onScreen?: boolean } = {}): void => {
     if (bridge?.threadDetail === undefined) return
+    const thread = detail.shell?.host.threads.find(candidate => candidate.id === threadId)
+    if (thread !== undefined && !watcherThreadVisible(thread, watcherEnabledRef.current)) return
     if (options.stale !== true) {
       detail.used.set(threadId, ++detail.clock)
       if (options.onScreen !== true) { if (detail.held.has(threadId)) detail.hits++; else detail.misses++ }
@@ -171,6 +178,12 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
   ask.current = threadId => requestDetail(threadId, { onScreen: true })
   resync.current = threadId => requestDetail(threadId, { stale: true })
   const command = useCallback((request: AgentCommand): Promise<AgentState | null> => {
+    const visible = (threadId: string): boolean => {
+      const thread = detail.shell?.host.threads.find(candidate => candidate.id === threadId)
+      return thread === undefined || watcherThreadVisible(thread, watcherEnabledRef.current)
+    }
+    if ('threadId' in request && typeof request.threadId === 'string' && !visible(request.threadId)) return Promise.resolve(null)
+    if (request.type === 'observe-threads') request = { ...request, threadIds: request.threadIds.filter(visible) }
     // Telling main which panes are open is also this window's own record of whose history it needs.
     if (request.type === 'observe-threads') {
       detail.viewed = new Set(request.threadIds)
@@ -189,7 +202,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
           // the sync command reply paint before the older pending shell it must follow.
           if (request.type !== 'preview-reclaim-thread-worktree' && version === session.observed) { commitPendingShell({ urgent: true }); receiveState(next, { urgent: true }) }
         }
-        return next
+        return visibleWatcherState(next, watcherEnabledRef.current)
       } catch {
         if (session.current) setFailure({ session, error: 'The action could not be confirmed. Your draft is retained; check the connection before retrying.' })
         return null
@@ -217,6 +230,11 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
   const threadDrafts = useMemo(() => new ThreadDraftStore(command), [command])
   const state = snapshot?.session === session ? snapshot.state : null
   const error = failure?.session === session ? failure.error : null
+  const shownState = useMemo(() => visibleWatcherState(state, watcherEnabled), [state, watcherEnabled])
+  useEffect(() => {
+    const thread = state?.host.threads.find(candidate => candidate.id === state.activeThreadId)
+    if (watcherEnabled && thread !== undefined && !watcherThreadVisible(thread, false)) requestDetail(thread.id, { onScreen: true })
+  }, [watcherEnabled, state, requestDetail])
   useEffect(() => {
     session.current = true
     let active = true
@@ -281,7 +299,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
   // including while the Threads page is absent.
   // The cached shell carries no draft evidence and must not be read as any: what a previous run saw
   // says nothing about what is on disk now.
-  useLayoutEffect(() => { if (state !== null && state.stale !== true) threadDrafts.receive(state) }, [state, threadDrafts])
+  useLayoutEffect(() => { if (shownState !== null && shownState.stale !== true) threadDrafts.receive(shownState) }, [shownState, threadDrafts])
   // What one state update costs this window, from the moment it arrived to the commit that shows it, in the
   // dev console at most once a second — the figure now includes whatever time a transition spent waiting
   // behind a higher-priority input. Development only: the production bundle drops the whole effect body.
@@ -299,7 +317,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     const kilobytes = Math.round(approximateDetailBytes(detail.held.values()) / 1024)
     console.info(`sotto: ${detail.held.size} thread details held, about ${kilobytes} KB, ${detail.hits} hits, ${detail.misses} misses`)
   }, [state, detail])
-  return { state, error, command, threadDrafts }
+  return { state: shownState, error, command, threadDrafts }
 }
 
 interface AgentContextValue extends AgentConnection {

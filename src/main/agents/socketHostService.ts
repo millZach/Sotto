@@ -42,6 +42,7 @@ export class WrongHostError extends HostConnectionError {
 }
 export interface SocketHostServiceOptions {
   url: string; token: string; expectedHostId?: string
+  watcherEnabled?: boolean
   retainedDrafts?: RetainedDraftStore
   retainedRegistrationId?: string
   /**
@@ -124,9 +125,21 @@ export class SocketHostService implements HostService {
   private retainedRefreshRequested = false
   private wireAdmission: Promise<void> | undefined
   constructor(private readonly options: SocketHostServiceOptions) {
-    this.endpoint('/v1/health'); this.retainedDrafts = options.retainedDrafts ?? new RetainedDraftStore()
+    this.endpoint('/v1/health'); this.retainedDrafts = options.retainedDrafts ?? new RetainedDraftStore({ watcherEnabled: options.watcherEnabled === true })
     this.retainedRegistrationId = options.retainedRegistrationId
       ?? (options.expectedHostId ? this.retainedDrafts.registrationForHost(options.expectedHostId) : undefined)
+  }
+  private threadAvailable(threadId: string | null | undefined): boolean {
+    if (this.options.watcherEnabled === true || !threadId) return true
+    const kind = this.cached?.host.threads.find(thread => thread.id === threadId)?.kind
+    return kind !== 'watcher' && kind !== 'watcher-history'
+  }
+  private commandThreadId(command: { type: string }): string | null | undefined {
+    if ('threadId' in command && typeof command.threadId === 'string') return command.threadId
+    if (command.type === 'send' && 'draft' in command && command.draft && typeof command.draft === 'object'
+      && 'threadId' in command.draft && typeof command.draft.threadId === 'string') return command.draft.threadId
+    return command.type === 'send' || command.type === 'compose' || command.type === 'cancel-draft'
+      ? this.cached?.draftThreadId ?? this.cached?.activeThreadId : undefined
   }
   private get catchesUp(): boolean { return this.options.catchUpEvents !== false }
   /**
@@ -218,7 +231,7 @@ export class SocketHostService implements HostService {
       }
       await this.observe(this.observed)
       const pickedThreadId = this.options.getSelectedThreadId ? this.options.getSelectedThreadId() : selectedThreadId
-      if (pickedThreadId && hello.shell.host.threads.some(thread => thread.id === pickedThreadId)) {
+      if (this.threadAvailable(pickedThreadId) && pickedThreadId && hello.shell.host.threads.some(thread => thread.id === pickedThreadId)) {
         const selected = this.read(protocolAgentStateSchema, await this.call({ op: 'command', command: { type: 'select-thread', threadId: pickedThreadId } }))
         this.sameGeneration(generation)
         this.publish(selected)
@@ -301,6 +314,7 @@ export class SocketHostService implements HostService {
    */
   private applyDelta(threadId: string, delta: AgentThreadDetailDelta): void {
     if (delta.threadId !== threadId) throw new HostConnectionError('The host returned a different thread. Refresh before continuing.', 'invalid_request')
+    if (!this.threadAvailable(threadId)) return
     const held = this.details.get(threadId)
     if (held && delta.revision <= held.revision) return
     const applied = held ? applyAgentThreadDetailDelta(held, delta) : null
@@ -311,7 +325,7 @@ export class SocketHostService implements HostService {
   }
   /** Reads a thread whole after a delta could not follow it. A thread too large to send is reported, not asked for again. */
   private resync(threadId: string): void {
-    if (this.resyncing.has(threadId) || this.tooLarge.has(threadId)) return
+    if (!this.threadAvailable(threadId) || this.resyncing.has(threadId) || this.tooLarge.has(threadId)) return
     this.resyncing.add(threadId)
     void this.readThreadDetail(threadId).catch((error: unknown) => { this.reportedTooLarge(threadId, error) })
       .finally(() => { this.resyncing.delete(threadId) })
@@ -332,6 +346,9 @@ export class SocketHostService implements HostService {
     void task.finally(() => { if (this.catchup === task) this.catchup = undefined }).catch(() => undefined)
   }
   private call(operation: HostOperation, id: string = randomUUID(), onPlacement?: () => void): Promise<unknown> {
+    const threadId = 'threadId' in operation ? operation.threadId : 'request' in operation && 'threadId' in operation.request ? operation.request.threadId
+      : 'answer' in operation ? operation.answer?.threadId : operation.op === 'command' ? this.commandThreadId(operation.command) : undefined
+    if (!this.threadAvailable(threadId)) return Promise.reject(new Error('Watcher is available in Sotto Owl. Nothing was sent.'))
     const frames = this.frames, session = this.session
     if (!frames || !session) return Promise.reject(new HostConnectionError('The host is disconnected. Connect again before sending.', 'disconnected'))
     if (this.pending.has(id) || this.pending.size >= 32) return Promise.reject(new HostConnectionError('Wait for the pending host request to finish.', 'busy'))
@@ -382,7 +399,10 @@ export class SocketHostService implements HostService {
         if (!exists || revision !== edit.hostDraftId) this.retainedDrafts.remove(edit.hostId, edit.draft.threadId, edit.draft.draftId)
       }
     }
-    this.cached = state; this.notifyState()
+    this.cached = state
+    for (const id of this.details.keys()) if (!this.threadAvailable(id)) this.details.delete(id)
+    for (const [seq, event] of this.storedEvents) if (!this.threadAvailable(event.threadId)) this.storedEvents.delete(seq)
+    this.notifyState()
     if (this.pushErrorThread === null) this.clearPushError()
   }
   /** New acceptance evidence changes recovery, but does not mean an unreadable shell has arrived. */
@@ -390,6 +410,7 @@ export class SocketHostService implements HostService {
   private clearPushError(): void { this.pushErrorThread = undefined; this.options.onPushErrorCleared?.() }
   private cacheDetail(threadId: string, detail: AgentThreadDetail | null): void {
     if (detail && detail.threadId !== threadId) throw new HostConnectionError('The host returned a different thread. Refresh before continuing.', 'invalid_request')
+    if (!this.threadAvailable(threadId)) return
     const current = this.details.get(threadId)
     if (detail && current && detail.revision < current.revision) return
     this.details.set(threadId, detail); this.tooLarge.delete(threadId)
@@ -398,7 +419,7 @@ export class SocketHostService implements HostService {
   }
   private sameGeneration(generation: number): void { if (generation !== this.generation) throw new HostConnectionError('This result belongs to an earlier connection. Refresh the host.', 'disconnected') }
   private cacheEvents(page: HostEventPage, advance = true): void {
-    for (const event of page.events) this.storedEvents.set(event.seq, event)
+    for (const event of page.events) if (this.threadAvailable(event.threadId)) this.storedEvents.set(event.seq, event)
     if (advance) this.latestSeq = Math.max(this.latestSeq, page.latestSeq)
     while (this.storedEvents.size > 10000) this.storedEvents.delete(this.storedEvents.keys().next().value!)
   }
@@ -428,8 +449,8 @@ export class SocketHostService implements HostService {
     if (!state.error && this.retainedDrafts.list(this.retainedHostId()).some(edit => edit.sendAttempt)) state.error = REMOTE_SEND_UNCERTAIN
     return state
   }
-  threadDetail(threadId: string): AgentThreadDetail | null { return structuredClone(this.details.get(threadId) ?? null) }
-  events(afterSeq: number, threadId?: string): StoredThreadEvent[] { return structuredClone([...this.storedEvents.values()].filter(event => event.seq > afterSeq && (!threadId || event.threadId === threadId)).sort((a, b) => a.seq - b.seq)) }
+  threadDetail(threadId: string): AgentThreadDetail | null { if (!this.threadAvailable(threadId)) return null; return structuredClone(this.details.get(threadId) ?? null) }
+  events(afterSeq: number, threadId?: string): StoredThreadEvent[] { return structuredClone([...this.storedEvents.values()].filter(event => this.threadAvailable(event.threadId) && event.seq > afterSeq && (!threadId || event.threadId === threadId)).sort((a, b) => a.seq - b.seq)) }
   subscribe(listener: (state: AgentState) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
   subscribeThreadDetail(listener: (detail: AgentThreadDetailUpdate) => void): () => void { this.detailListeners.add(listener); return () => this.detailListeners.delete(listener) }
   async readShell(): Promise<AgentState> { const generation = this.generation, epoch = this.snapshotEpoch; const state = this.read(protocolAgentStateSchema, await this.call({ op: 'shell' })); this.sameGeneration(generation); if (epoch === this.snapshotEpoch) this.publish(state, true); return this.shell() }
@@ -449,21 +470,24 @@ export class SocketHostService implements HostService {
   }
   async checkRequestAnswer(answer: HostAnswerTarget, _client?: ClientIdentity): Promise<void> {
     void _client // The socket's authenticated pairing supplies authority on the host.
+    if (!this.threadAvailable(answer.threadId)) throw new Error('Watcher is available in Sotto Owl. Nothing was sent.')
     if (!this.features.includes('answer-check')) throw new Error('Update the host before checking this unconfirmed answer. Your saved answer is kept.')
     this.flushCompose()
     const generation = this.generation
     const state = this.read(protocolAgentStateSchema, await this.call({ op: 'check-answer', answer }))
     this.sameGeneration(generation); this.publish(state)
   }
-  async readThreadDetail(threadId: string): Promise<AgentThreadDetail | null> { const generation = this.generation; const detail = this.read(agentThreadDetailResultSchema, await this.call({ op: 'detail', threadId })); this.sameGeneration(generation); this.cacheDetail(threadId, detail); return this.threadDetail(threadId) }
-  async readEvents(afterSeq: number, threadId?: string): Promise<HostEventPage> { const page = this.read(hostEventPageSchema, await this.call({ op: 'events', afterSeq, ...(threadId ? { threadId } : {}) })); this.cacheEvents(page, threadId === undefined); return page }
+  async readThreadDetail(threadId: string): Promise<AgentThreadDetail | null> { if (!this.threadAvailable(threadId)) return null; const generation = this.generation; const detail = this.read(agentThreadDetailResultSchema, await this.call({ op: 'detail', threadId })); this.sameGeneration(generation); this.cacheDetail(threadId, detail); return this.threadDetail(threadId) }
+  async readEvents(afterSeq: number, threadId?: string): Promise<HostEventPage> { if (!this.threadAvailable(threadId)) return { events: [], latestSeq: this.latestSeq, hasMore: false }; const page = this.read(hostEventPageSchema, await this.call({ op: 'events', afterSeq, ...(threadId ? { threadId } : {}) })); this.cacheEvents(page, threadId === undefined); return page }
   /** Observing a thread again lets one the host found too large be tried again: the host sends whole each observed thread this client does not hold. */
-  async observe(threadIds: string[]): Promise<void> { this.observed = [...threadIds]; for (const id of threadIds) this.tooLarge.delete(id); await this.call({ op: 'observe', threadIds }) }
+  async observe(threadIds: string[]): Promise<void> { threadIds = threadIds.filter(id => this.threadAvailable(id)); this.observed = [...threadIds]; for (const id of threadIds) this.tooLarge.delete(id); await this.call({ op: 'observe', threadIds }) }
   get supportsAtomicSend(): boolean { return this.features.includes('atomic-send') }
   get supportsDraftRevisions(): boolean { return this.features.includes('draft-revisions') }
   /** The host lists `pull-request-babysit`: it babysits and takes the user's Babysit pull request (ADR-0061 decision 11). */
   get supportsBabysitting(): boolean { return this.features.includes('pull-request-babysit') }
   async command(command: AgentCommand, _client?: ClientIdentity, commandId?: string): Promise<AgentState> {
+    const threadId = this.commandThreadId(command)
+    if (!this.threadAvailable(threadId)) throw new Error('Watcher is available in Sotto Owl. Nothing was sent.')
     const refusal = managementCommandRefusal(command)
     if (refusal) throw new HostConnectionError(refusal, 'forbidden')
     if (this.shell().legacyManagement && !LEGACY_MANAGEMENT_ALLOWED_COMMANDS.has(command.type)) {
@@ -633,7 +657,8 @@ export class SocketHostService implements HostService {
         ? previous.draft.draftId : previous.baseDraftId ?? previous.hostDraftId ?? null
       : saved?.draftId ?? this.cached?.threadDraftPersistence?.find(item => item.threadId === command.threadId)?.draftId ?? null
     const registrationId = this.retainedRegistrationId
-    const edit: RetainedDraft = { hostId: this.retainedHostId(), ...(registrationId ? { registrationId } : {}), draft: { threadId: command.threadId, draftId: command.draftId ?? randomUUID(),
+    const edit: RetainedDraft = { hostId: this.retainedHostId(), ...(registrationId ? { registrationId } : {}),
+      ...(thread?.kind === 'watcher' || thread?.kind === 'watcher-history' ? { threadKind: thread.kind } : {}), draft: { threadId: command.threadId, draftId: command.draftId ?? randomUUID(),
       text: command.text, attachments: command.attachments ?? previous?.draft.attachments ?? saved?.attachments
         ?? (state.draftThreadId === command.threadId ? state.draftAttachments : undefined) ?? [],
       skills: previous?.draft.skills ?? saved?.skills, files: previous?.draft.files ?? saved?.files,
@@ -678,7 +703,7 @@ export class SocketHostService implements HostService {
   private recoverDrafts(): void {
     if (!this.frames || !this.cached || !this.supportsDraftRevisions || !this.retainedDrafts.storageAvailable || this.composeBudget.active >= COMPOSE_WIRE_LIMIT) return
     const edit = this.retainedDrafts.list(this.retainedHostId()).find(item => {
-      if (!item.recovery || item.saved || item.sendAttempt || this.recovering.has(item.draft.threadId) || this.delivering.has(item.draft.threadId)
+      if (!this.threadAvailable(item.draft.threadId) || !item.recovery || item.saved || item.sendAttempt || this.recovering.has(item.draft.threadId) || this.delivering.has(item.draft.threadId)
         || this.recoveryAttempts.get(item.draft.threadId) === item.draft.draftId || this.activeComposeDrafts.has(item.draft.draftId)
         || this.composeBudget.queued?.draftId === item.draft.draftId) return false
       const thread = this.cached!.host.threads.find(thread => thread.id === item.draft.threadId)
@@ -711,6 +736,7 @@ export class SocketHostService implements HostService {
     this.recoverDrafts()
   }
   private async commandNow(command: AgentCommand, _client?: ClientIdentity, commandId?: string, retainedId?: string, admission: Promise<void> | null | undefined = this.wireAdmission, onPlacement?: () => void): Promise<AgentState> {
+    if (!this.threadAvailable(this.commandThreadId(command))) throw new Error('Watcher is available in Sotto Owl. Nothing was sent.')
     const admittedGeneration = this.generation
     if (admission) await admission
     this.sameGeneration(admittedGeneration)
@@ -808,7 +834,7 @@ export class SocketHostService implements HostService {
   }
   /** Reads an existing attempt's receipt; this never sends the answer again. */
   async refreshRequestAnswer(commandId: string, answer: HostAnswerTarget): Promise<void> {
-    if (!this.features.includes('answer-receipts')) return
+    if (!this.threadAvailable(answer.threadId) || !this.features.includes('answer-receipts')) return
     const previous = this.answerTargets.get(commandId)
     if (previous && (previous.threadId !== answer.threadId || previous.providerId !== answer.providerId
       || previous.requestId !== answer.requestId || previous.questionsDigest !== answer.questionsDigest)) return
@@ -831,6 +857,7 @@ export class SocketHostService implements HostService {
     return true
   }
   requestAnswerRecovery(threadId: string, providerId: ProviderId): RequestAnswerRecovery {
+    if (!this.threadAvailable(threadId)) return { uncertainRequestIds: [], completed: [] }
     return { uncertainRequestIds: this.cached?.host.threads.find(thread => thread.id === threadId)?.requests
       .filter(request => request.delivery === 'uncertain').map(request => request.id) ?? [],
     completed: [...this.acceptedAnswers.values()].filter(item => item.threadId === threadId && item.providerId === providerId)

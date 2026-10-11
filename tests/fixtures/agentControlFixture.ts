@@ -18,7 +18,7 @@ export function stubAgentReasoner(overrides: Partial<AgentReasoner> = {}): Agent
 /** Unstarted control; also usable for restart tests with already loaded credentials. */
 export function createAgentControl(options: Pick<AgentControlOptions, 'directory' | 'host' | 'credentials'> &
   TestControlOptions & { reasoner?: AgentReasoner }): AgentControl {
-  return new AgentControl({ schedule: immediatePublishScheduler, reasoner: stubAgentReasoner(), ...options })
+  return new AgentControl({ schedule: immediatePublishScheduler, reasoner: stubAgentReasoner(), watcherEnabled: true, ...options })
 }
 
 export type AgentControlFixtureOptions<H extends AgentHost> = {

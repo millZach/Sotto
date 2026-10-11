@@ -40,7 +40,7 @@ import { babysitRecordSchema, publishedBabysitting, type BabysitRecord } from '.
 import type { BabysitStore, BabysitThread } from './babysitting'
 import { BABYSITTING_PER_THREAD_MAX, type BabysitEndedReason } from '../../shared/babysitting'
 import { migrateWorkspaceThreadKinds } from './watcherRecords'
-import { WatcherLaunchProfiles } from './watcherLaunchProfiles'
+import { WatcherLaunchProfiles, WATCHER_DISABLED } from './watcherLaunchProfiles'
 import { WatcherProfileRefusal } from './watcherProfile'
 import { assertWatcherPermission } from './watcherProviderTools'
 import type { WatcherProfileTools } from './host'
@@ -197,9 +197,20 @@ const WRITE_WINDOW_MS = 250
  * Only an unstarted local thread can change provider. Native bindings are never rewritten. */
 export class WorkspaceHost implements AgentHost, BabysitStore {
   private readonly launchProfiles: WatcherLaunchProfiles
+  /** Disabled records are carried through saves exactly as read, outside the active projection. */
+  private readonly preservedWatcherThreads = new Map<string, AgentThread>()
+  private readonly retainedWatcherIds = new Set<string>()
+  private visible(thread: AgentThread): boolean { return this.watcherEnabled || !this.retainedWatcherIds.has(thread.id) && thread.kind !== 'watcher' && thread.kind !== 'watcher-history' }
+  private threadVisible(id: string): boolean {
+    const thread = this.state.snapshot.threads.find(item => item.id === id)
+    return this.watcherEnabled || !this.retainedWatcherIds.has(id) && (!thread || this.visible(thread))
+  }
+  private visibleSnapshot(snapshot: AgentHostSnapshot): AgentHostSnapshot {
+    return this.watcherEnabled ? snapshot : { ...snapshot, threads: snapshot.threads.filter(thread => this.visible(thread)) }
+  }
   useWatcherTools(tools: WatcherProfileTools): void { this.launchProfiles.useTools(tools) }
   useBrowserTools(tools: BrowserAgentTools): void { this.inner.useBrowserTools?.(tools) }
-  useThreadTools(tools: readonly ScopedThreadTools[]): void { this.inner.useThreadTools?.(tools) }
+  useThreadTools(tools: readonly ScopedThreadTools[]): void { this.inner.useThreadTools?.(this.watcherEnabled ? tools : tools.filter(tool => tool.name !== 'sotto_threads')) }
   readonly concurrentProviders: boolean
   private state: Workspace = { snapshot: structuredClone(EMPTY_AGENT_HOST), creations: [], projectAliases: [] }
   /**
@@ -1043,9 +1054,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
 
   setCheckpointHooks(hooks: { privacyChanged?(): Promise<void>; beforeTurn(threadId: string): Promise<void>; isBlocked(threadId: string): boolean | Promise<boolean> }): void { this.checkpointHooks = hooks }
-  rollbackCapability(threadId: string) { return this.inner.rollbackCapability?.(threadId) ?? { supported: false, reason: 'This provider does not expose verified conversation rewind.' } }
+  rollbackCapability(threadId: string) { if (!this.threadVisible(threadId)) return { supported: false, reason: WATCHER_DISABLED }; return this.inner.rollbackCapability?.(threadId) ?? { supported: false, reason: 'This provider does not expose verified conversation rewind.' } }
   rollbackThread(threadId: string, removedUserMessages: number, expectedUserMessageIds: readonly string[]): Promise<AgentHostResult> {
     return this.onLane(threadId, async () => {
+      await this.initialize()
+      this.thread(threadId)
       if (!this.inner.rollbackThread) throw new Error('Native conversation rewind is unavailable.')
       const result = await this.withProfileRefusal(threadId, () => this.inner.rollbackThread!(threadId, removedUserMessages, expectedUserMessageIds))
       // A confirmed rewind takes its turns back, and the visuals drawn in them go with them (ADR-0056). An uncertain one
@@ -1069,6 +1082,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * that was not kept; with Keep local history off the store is in memory, so the visual lasts this run alone.
    */
   async addVisual(threadId: string, input: VisualInput): Promise<VisualAddition> {
+    if (!this.threadVisible(threadId)) return { added: false, reason: 'unknown-thread' }
     await this.initialize()
     if (!this.ready || this.stopping || !this.state.snapshot.threads.some(thread => thread.id === threadId)) return { added: false, reason: 'unknown-thread' }
     this.writeEvents()
@@ -1090,7 +1104,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /** Whether a thread may draw a visual: one this host holds, on a provider that offers Sotto's tools (Devin does not). */
   admitsVisuals(threadId: string): boolean {
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
-    return thread !== undefined && thread.providerId !== 'devin'
+    return thread !== undefined && this.visible(thread) && thread.providerId !== 'devin'
   }
   /**
    * Whether an agent in this thread is offered Sotto's pull request tools (ADR-0061 decision 2): a thread this host holds,
@@ -1099,15 +1113,17 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    */
   admitsBabysitting(threadId: string): boolean {
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
-    return thread !== undefined && (thread.providerId === 'claude' || thread.providerId === 'codex' || thread.providerId === 'grok')
+    return thread !== undefined && this.visible(thread) && (thread.providerId === 'claude' || thread.providerId === 'codex' || thread.providerId === 'grok')
   }
   /** The thread's branch's own pull request as the host last read it, and its linked ones, by URL (ADR-0061 decision 5). */
   threadPullRequests(threadId: string): { branch: string | undefined; linked: string[] } {
+    if (!this.threadVisible(threadId)) return { branch: undefined, linked: [] }
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
     return { branch: thread ? branchPullRequestUrl(thread) : undefined, linked: (thread?.pullRequests ?? []).map(link => link.url) }
   }
   /** One visual this thread holds, as the store keeps it: what an interactive visual's page is served from (ADR-0060). */
   visual(threadId: string, visualId: string): AgentVisual | undefined {
+    if (!this.threadVisible(threadId)) return undefined
     if (this.storeUnavailable) return undefined
     try { return this.threadStore.readVisuals(threadId).find(stored => stored.visual.id === visualId)?.visual } catch { return undefined }
   }
@@ -1145,7 +1161,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    */
   private seedWakeUps(): void {
     if (this.storeUnavailable || this.threadStore.ephemeral) return
-    for (const thread of this.state.snapshot.threads) {
+    for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) {
       const ids = this.wakeUpRecords.get(thread.id)
       if (ids?.length) try { this.threadStore.addWakeUps(thread.id, ids) } catch { /* The record still marks its own. */ }
     }
@@ -1168,15 +1184,22 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
 
   constructor(private readonly inner: AgentHost, private readonly directory: string, private readonly historyEnabled: () => boolean = () => true,
-    private readonly worktreeRefreshDelayMs: number = WORKTREE_REFRESH_DELAY_MS) {
+    private readonly worktreeRefreshDelayMs: number = WORKTREE_REFRESH_DELAY_MS, private readonly watcherEnabled = false) {
     this.concurrentProviders = inner.concurrentProviders === true
     this.launchProfiles = new WatcherLaunchProfiles(directory, () => this.hostId,
-      id => this.state.snapshot.threads.find(thread => thread.id === id))
+      id => this.state.snapshot.threads.find(thread => thread.id === id), watcherEnabled)
     inner.useLaunchProfiles?.({ profileFor: async id => { await this.initialize(); return this.launchProfiles.profileFor(id) } })
     this.worktrees = new ThreadWorktrees(directory)
-    this.threadStore = new ThreadStore(join(directory, 'threads.sqlite'))
-    this.subagentStore = new SubagentStore(join(directory, 'subagents.sqlite'))
-    this.store = new AtomicJsonStore(join(directory, 'workspace.json'), input => { this.babysitRecords = savedBabysitting(input); this.wakeUpRecords = savedWakeUps(input); return workspaceSchema.parse(input) }, () => this.state)
+    const preserveThread = watcherEnabled ? undefined : (id: string): boolean => !this.threadVisible(id)
+    this.threadStore = new ThreadStore(join(directory, 'threads.sqlite'), preserveThread)
+    this.subagentStore = new SubagentStore(join(directory, 'subagents.sqlite'), preserveThread)
+    this.store = new AtomicJsonStore(join(directory, 'workspace.json'), input => { this.babysitRecords = savedBabysitting(input); this.wakeUpRecords = savedWakeUps(input); const parsed = workspaceSchema.parse(input);
+      if (!this.watcherEnabled) {
+        const original = input as { snapshot: AgentHostSnapshot }
+        this.preservedWatcherThreads.clear()
+        for (const thread of original.snapshot.threads) if (!this.visible(thread)) this.preservedWatcherThreads.set(thread.id, structuredClone(thread))
+      }
+      return parsed }, () => this.state)
     // A host that says what changed is believed: its events are this thread's history, and the array
     // comparison below is left for a host that publishes whole histories and nothing else. Such a host
     // is asked to leave the messages out of its snapshots, since none would be read (#322).
@@ -1204,6 +1227,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         // write, unreadable file or valid workspace belonging to another host still stops startup.
         if (this.historyEnabled() || !(error instanceof SyntaxError || error instanceof z.ZodError)) throw error
       }
+      if (!this.watcherEnabled) for (const id of await this.launchProfiles.retainedThreadIds()) this.retainedWatcherIds.add(id)
       // Native history is recoverable from the providers. Never create independent
       // private transcript backups, and remove this cache's abandoned write copies.
       const names = await readdir(this.directory).catch((error: NodeJS.ErrnoException) => {
@@ -1213,15 +1237,16 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       for (const name of names) if (/^workspace\.json\.(?:tmp|corrupt)-\d+-[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/u.test(name)) {
         await unlink(join(this.directory, name)).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error })
       }
+      // Read the release-gated kinds before either store applies an offline privacy change.
+      this.state = await this.store.peek()
+      this.state.snapshot = stampHostSnapshot(this.state.snapshot, this.hostId)
       try { this.threadStore.open({ ephemeral: !this.historyEnabled() }) }
       catch { this.storeUnavailable = true; this.saveError = HISTORY_OPEN_ERROR }
       try { this.subagentStore.open({ ephemeral: !this.historyEnabled() }) }
       catch { this.subagentUnavailable = true; this.saveError = 'Agent history could not be opened. Restore access to local storage and restart Sotto.' }
-      this.state = await this.store.peek()
-      this.state.snapshot = stampHostSnapshot(this.state.snapshot, this.hostId)
       const snapshot = this.state.snapshot
       // Babysitting is Sotto's own record, so it is restored with the thread (decision 10); the thread shows only what clients see.
-      for (const thread of snapshot.threads) {
+      for (const thread of snapshot.threads.filter(thread => this.visible(thread))) {
         const records = this.babysitRecords.get(thread.id)
         if (records?.length) thread.babysitting = babysittingSummary(records); else delete thread.babysitting
         const wakeUps = this.wakeUpRecords.get(thread.id)
@@ -1230,16 +1255,16 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       this.seedWakeUps()
       snapshot.connected = false
       // A Git action that was running when the host stopped did not finish here; the folder says what it did.
-      for (const thread of snapshot.threads) if (thread.gitAction?.status === 'running') thread.gitAction = { ...thread.gitAction, status: 'failed', phase: null, stage: null, hook: null, finishedAt: new Date().toISOString(), error: 'Sotto stopped while this action ran. Check the folder before running it again.' }
+      for (const thread of snapshot.threads.filter(thread => this.visible(thread))) if (thread.gitAction?.status === 'running') thread.gitAction = { ...thread.gitAction, status: 'failed', phase: null, stage: null, hook: null, finishedAt: new Date().toISOString(), error: 'Sotto stopped while this action ran. Check the folder before running it again.' }
       // A Claude Code model saved before the adapter named it carries the provider's id as its label, and a model that
       // has left the catalog is never refreshed, so it takes the name here.
       snapshot.models.forEach(model => { model.ready = false; if (model.provider === 'claude') model.provider = PROVIDER_LABELS.claude })
       snapshot.providers?.forEach(provider => { provider.connection = 'disconnected'; delete provider.error })
       delete snapshot.error
-      for (const thread of snapshot.threads) dropLiveThreadState(thread)
+      for (const thread of snapshot.threads.filter(thread => this.visible(thread))) dropLiveThreadState(thread)
       if (!this.historyEnabled()) {
         this.activityJsonFallbackAllowed = false
-        for (const thread of snapshot.threads) {
+        for (const thread of snapshot.threads.filter(thread => this.visible(thread))) {
           if (!this.storeUnavailable) {
             try { this.threadStore.redactActivityIdentities(thread.id, (thread.activities ?? []).map(activity => activity.id)) }
             catch { this.activityStoreUnavailable = true; this.saveError = HISTORY_OPEN_ERROR }
@@ -1251,8 +1276,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       // Cached running activity is evidence of an unfinished observation, not a live process.
       // Disk reads are private mutable copies. Certify them only when live activity is merged, so
       // reopening a large archive does not pay for an ownership transfer it may never need.
-      for (const thread of snapshot.threads) if (thread.activities) thread.activities = thread.activities.map(activity => activity.status === 'running' ? { ...activity, status: 'unknown' } : activity)
-      for (const thread of snapshot.threads) {
+      for (const thread of snapshot.threads.filter(thread => this.visible(thread))) if (thread.activities) thread.activities = thread.activities.map(activity => activity.status === 'running' ? { ...activity, status: 'unknown' } : activity)
+      for (const thread of snapshot.threads.filter(thread => this.visible(thread))) {
         this.trackSubagents(thread, false)
         thread.subagentSummary = this.subagentSummaries.get(thread.id) ?? EMPTY_SUBAGENT_SUMMARY
       }
@@ -1263,7 +1288,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       // Handing it back before the first connection is what lets an adapter resume where it stopped.
       // A host that publishes events asks the store itself, one thread at a time, rather than being
       // handed every thread's whole history before it has read anything.
-      if (!this.eventSourced) await this.inner.restoreThreadHistory?.(this.storeUnavailable ? [] : snapshot.threads.flatMap(thread => {
+      if (!this.eventSourced) await this.inner.restoreThreadHistory?.(this.storeUnavailable ? [] : snapshot.threads.filter(thread => this.visible(thread)).flatMap(thread => {
         const messages = this.readWindow(thread.id)?.messages ?? []
         return messages.length ? [{ threadId: thread.id, messages, ...(thread.activities ? { activities: thread.activities.slice(-MAX_AGENT_ACTIVITIES) } : {}), ...(thread.historyEpoch ? { historyEpoch: thread.historyEpoch } : {}) }] : []
       }))
@@ -1280,7 +1305,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    */
   private adoptSavedMessages(snapshot: AgentHostSnapshot): void {
     if (this.storeUnavailable) return
-    const carrying = snapshot.threads.filter(thread => thread.messages.length)
+    const carrying = snapshot.threads.filter(thread => this.visible(thread) && thread.messages.length)
     if (carrying.length) {
       try { for (const thread of carrying) { this.threadStore.replaceThreadMessages(thread.id, thread.messages, thread.historyEpoch); this.storedAnchors.delete(thread.id) } }
       catch { this.saveError = HISTORY_SAVE_ERROR; return }
@@ -1288,7 +1313,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     }
     // Startup needs the sidebar's facts, not a message window for every saved thread. Observation loads
     // the windows a pane wants. Legacy hosts still need message marks to compare their next arrays.
-    for (const thread of snapshot.threads) {
+    for (const thread of snapshot.threads.filter(thread => this.visible(thread))) {
       if (!this.eventSourced) this.known.set(thread.id, { epoch: thread.historyEpoch, messages: this.readWindow(thread.id)?.messages.map(markOf) ?? [] })
       thread.messages = []
       delete thread.earlierAvailable
@@ -1299,7 +1324,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private adoptSavedActivities(snapshot: AgentHostSnapshot): void {
     if (this.storeUnavailable) { this.activityStoreUnavailable = true; return }
     try {
-      for (const thread of snapshot.threads) {
+      for (const thread of snapshot.threads.filter(thread => this.visible(thread))) {
         let messageGeneration = this.threadStore.readMessageEpoch(thread.id)
         if (messageGeneration) {
           // A committed reset, including an unversioned or empty reset, outranks legacy JSON.
@@ -1348,7 +1373,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   private saveActivities(): void {
     if (!this.historyWritable() || this.activityStoreUnavailable) return
-    for (const thread of this.state.snapshot.threads) {
+    for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) {
       if (thread.activities !== undefined) this.threadStore.syncActivities(thread.id, retainedActivities(thread.activities), thread.historyEpoch)
     }
   }
@@ -1409,6 +1434,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * at the next publish rather than per event, which keeps a streamed reply at one publish per window.
    */
   private recordEvent(threadId: string, event: ThreadEvent): void {
+    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    if (thread && !this.visible(thread)) return
     if (!this.historyEnabled()) this.pendingEventsPrivate = true
     const waiting = this.pendingEvents.get(threadId)
     if (waiting) waiting.push(event)
@@ -1488,12 +1515,14 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   /** Every message the store holds for a thread, for an adapter about to read its provider's history. */
   messageIdentities(threadId: string): readonly StoredMessageIdentity[] {
+    if (!this.threadVisible(threadId)) return []
     if (this.storeUnavailable) return []
     this.writeEvents()
     try { return this.threadStore.messageIdentities(threadId) }
     catch { return [] }
   }
   message(threadId: string, messageId: string): AgentMessage | undefined {
+    if (!this.threadVisible(threadId)) return undefined
     if (this.storeUnavailable) return undefined
     this.writeEvents()
     if (this.pendingEvents.has(threadId)) return undefined
@@ -1502,12 +1531,14 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   /** Indexed historical task classification, never live monitoring or task/result text. */
   activity(threadId: string, activityId: string, historyEpoch?: string): AgentActivity | undefined {
+    if (!this.threadVisible(threadId)) return undefined
     if (this.subagentUnavailable) return undefined
     try { return this.subagentStore.activity(threadId, activityId, historyEpoch) }
     catch { return undefined }
   }
   /** Historical classification only; live monitoring is never handed back to an adapter. */
   activities(threadId: string, historyEpoch?: string): readonly AgentActivity[] | undefined {
+    if (!this.threadVisible(threadId)) return undefined
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
     if (!thread?.activities || thread.historyEpoch !== historyEpoch) return undefined
     return structuredClone(thread.activities.slice(-MAX_AGENT_ACTIVITIES))
@@ -1549,7 +1580,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /** Puts this thread's current window into memory: what the pane draws, and how much sits before it. */
   private loadWindow(threadId: string): void {
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
-    if (!thread) return
+    if (!thread || !this.visible(thread)) return
     const window = this.readWindow(threadId, this.watched.get(threadId) ?? FIRST_WINDOW_TURNS)
     if (!window) return
     this.hidden.set(threadId, Math.max(0, window.firstPosition))
@@ -1572,6 +1603,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    */
   async loadEarlierMessages(threadId: string): Promise<AgentHostSnapshot> {
     await this.initialize()
+    this.thread(threadId)
     this.watched.set(threadId, (this.watched.get(threadId) ?? FIRST_WINDOW_TURNS) + LATER_WINDOW_TURNS)
     this.loadWindow(threadId)
     this.publish()
@@ -1589,6 +1621,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * The records themselves are untouched: the store, the summary and the adapters read them whole.
    */
   paneActivities(threadId: string, activities: readonly AgentActivity[]): readonly AgentActivity[] {
+    if (!this.threadVisible(threadId)) return []
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
     if (this.storeUnavailable || !thread || !activities.length) return activities
     const watched = !this.declared || this.watched.has(threadId)
@@ -1653,6 +1686,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   /** One thread's whole history, whatever window is loaded: the store is the record, not the pane. */
   threadMessages(threadId: string): readonly AgentMessage[] {
+    if (!this.threadVisible(threadId)) return []
     this.writeEvents()
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
     if (this.storeUnavailable) return thread?.messages ?? []
@@ -1665,6 +1699,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * rather than what was said. Nothing is projected from it, so a failed write costs the record alone.
    */
   recordAnswer(threadId: string, event: AnswerGivenEvent): void {
+    if (!this.threadVisible(threadId)) return
     if (this.storeUnavailable) return
     try { this.threadStore.append(threadId, event) }
     catch { this.saveError = HISTORY_SAVE_ERROR }
@@ -1673,7 +1708,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   eventsAfter(seq: number, threadId?: string, limit?: number): StoredThreadEvent[] {
     if (this.storeUnavailable) return []
     this.writeEvents()
-    return this.threadStore.eventsAfter(seq, threadId, limit)
+    return this.threadStore.eventsAfter(seq, threadId, limit).filter(event => this.threadVisible(event.threadId))
   }
   private stopDelivery(): void {
     this.stopping = true
@@ -1782,7 +1817,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   async listThreadSkills(threadId: string, forceReload = false) {
     await this.initialize()
     const thread = this.state.snapshot.threads.find(thread => thread.id === threadId)
-    if (!thread || !this.inner.listThreadSkills) throw new Error('Skills are unavailable for this thread.')
+    if (!thread || !this.visible(thread) || !this.inner.listThreadSkills) throw new Error('Skills are unavailable for this thread.')
     const workingDirectory = thread.nativeSessionStarted === false && thread.worktree?.status === 'pending' && !thread.worktree.path
       ? await existingWorkingDirectory(this.state.snapshot.projects.find(item => item.id === thread.projectId)!.path)
       : await this.threadWorkingDirectory(threadId)
@@ -1794,16 +1829,20 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     }
     return this.withProfileRefusal(threadId, () => this.inner.listThreadSkills!(threadId, forceReload))
   }
+  preservesWatcherThread(threadId: string): boolean { return !this.watcherEnabled && !this.threadVisible(threadId) }
+  watcherThreadIds(): readonly string[] {
+    return [...new Set([...this.retainedWatcherIds, ...this.state.snapshot.threads.filter(thread => thread.kind === 'watcher' || thread.kind === 'watcher-history').map(thread => thread.id)])]
+  }
   workspaceSnapshot(): AgentHostSnapshot {
     this.applyEvents()
-    const snapshot = cloneHostSnapshot(this.state.snapshot)
+    const snapshot = cloneHostSnapshot(this.visibleSnapshot(this.state.snapshot))
     this.historyNotices(snapshot)
     if (this.failedEventThreads.size) snapshot.error = HISTORY_SAVE_ERROR
     else if (this.saveError) snapshot.error = this.saveError
     return snapshot
   }
   private historyNotices(snapshot: AgentHostSnapshot): void {
-    for (const thread of snapshot.threads) {
+    for (const thread of snapshot.threads.filter(thread => this.visible(thread))) {
       if (this.invalidEventThreads.has(thread.id)) thread.historySaveNotice = 'Part of this thread’s history could not be saved. Other messages were kept. Copy any missing text before closing Sotto.'
     }
   }
@@ -1817,7 +1856,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (this.activityListeners.size) {
       this.applyEvents()
       for (const listener of this.activityListeners) {
-        const snapshot = cloneActivitySnapshot(this.state.snapshot)
+        const snapshot = cloneActivitySnapshot(this.visibleSnapshot(this.state.snapshot))
         this.historyNotices(snapshot)
         if (this.failedEventThreads.size) snapshot.error = HISTORY_SAVE_ERROR
         else if (this.saveError) snapshot.error = this.saveError
@@ -1885,7 +1924,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * there can say so. A record in a thread nobody is looking at has nothing to paint and rides the window. */
   private watchedRecordCount(): number {
     let count = 0
-    for (const thread of this.state.snapshot.threads) if (this.inView(thread.id)) count += thread.activities?.length ?? 0
+    for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) if (this.inView(thread.id)) count += thread.activities?.length ?? 0
     return count
   }
   /** A cache write the providers asked for: never more than one waiting, and the state it finds
@@ -1914,9 +1953,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       }
       if (!this.state.projectAliases.some(alias => alias.providerProjectId === project.id)) projects.set(project.id, { ...project, workspaceSettledAt: projects.get(project.id)?.workspaceSettledAt ?? null })
     }
-    const threads = new Map(previous.threads.map(thread => [thread.id, { ...thread, ...NO_LIVE_THREAD_STATE } as AgentThread]))
-    for (const thread of snapshot.threads) {
+    const threads = new Map(previous.threads.map(thread => [thread.id, this.visible(thread) ? { ...thread, ...NO_LIVE_THREAD_STATE } as AgentThread : thread]))
+    for (const thread of snapshot.threads.filter(thread => this.visible(thread))) {
       const old = threads.get(thread.id)
+      if (old && !this.visible(old)) continue
       const connected = isThreadProviderConnected(snapshot, thread)
       if (connected && !thread.archivedAt) connectedInputs.add(thread.id)
       this.trackSubagents(thread, connected)
@@ -1965,9 +2005,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const models = new Map(previous.models.map(model => [model.id, { ...model, ready: false }]))
     for (const model of snapshot.models) models.set(model.id, model)
     this.state.snapshot = stampHostSnapshot({ ...snapshot, models: [...models.values()], projects: [...projects.values()], threads: [...threads.values()] }, this.hostId!)
-    for (const thread of this.state.snapshot.threads) if (!isThreadProviderConnected(snapshot, thread)) dropLiveThreadState(thread)
+    for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) if (!isThreadProviderConnected(snapshot, thread)) dropLiveThreadState(thread)
     // An agent that switched branches mid-turn moved HEAD without a send, so finished work asks for a re-read.
-    for (const thread of this.state.snapshot.threads) {
+    for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) {
       const old = previousThreads.get(thread.id)
       if (!old) continue
       let moved = old.status === 'running' && thread.status !== 'running'
@@ -2058,8 +2098,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
           try { this.saveActivities() }
           catch (error) { this.dirty = true; throw error }
           const saved = structuredClone({ ...this.state,
-            snapshot: { ...this.state.snapshot, threads: this.state.snapshot.threads.map(thread => this.withBabysitting(organizationOnly(thread, this.activityJsonFallbackAllowed && (this.storeUnavailable || this.activityStoreUnavailable)))) } })
-          if (!this.historyEnabled()) for (const thread of saved.snapshot.threads) {
+            snapshot: { ...this.state.snapshot, threads: this.state.snapshot.threads.map(thread => this.preservedWatcherThreads.get(thread.id) ?? this.withBabysitting(organizationOnly(thread, this.activityJsonFallbackAllowed && (this.storeUnavailable || this.activityStoreUnavailable)))) } })
+          if (!this.historyEnabled()) for (const thread of saved.snapshot.threads.filter(thread => this.visible(thread))) {
             thread.requests = []
             delete thread.activities
             if (thread.nativeSessionStarted) {
@@ -2100,7 +2140,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       this.pendingEventsPrivate = true
       this.historyRedactionPending ||= !this.threadStore.ephemeral
       if (!this.eventSourced) {
-        for (const thread of this.state.snapshot.threads) {
+        for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) {
           this.legacyMessages(thread, thread.messages)
           const known = this.known.get(thread.id)
           const privateMessages = this.privateLegacyMessages.get(thread.id)!
@@ -2118,13 +2158,13 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     }
     if (!this.subagentUnavailable && this.subagentStore.ephemeral === this.historyEnabled()) {
       try {
-        const unsettled = new Map(this.state.snapshot.threads.map(thread => {
+        const unsettled = new Map(this.state.snapshot.threads.filter(thread => this.visible(thread)).map(thread => {
           const observations = this.subagentStore.unsettled(thread.id)
           return [thread.id, { observations, activities: this.subagentStore.unsettledActivities(thread.id, observations) }]
         }))
         this.subagentStore.privacyChanged(this.historyEnabled())
         this.subagentChanges.clear()
-        for (const thread of this.state.snapshot.threads) {
+        for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) {
           // Retention changes do not end native work. Restore only text-free live/uncertain metadata,
           // including children whose original activity already left the bounded provider window.
           const retained = unsettled.get(thread.id)
@@ -2151,7 +2191,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
             if (this.storeUnavailable) this.threadStore.open()
             // Identity suppression needs no output validation. Even if it fails, erase the durable text.
             try {
-              for (const thread of this.state.snapshot.threads) this.threadStore.redactActivityIdentities(thread.id, (thread.activities ?? []).map(activity => activity.id))
+              for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) this.threadStore.redactActivityIdentities(thread.id, (thread.activities ?? []).map(activity => activity.id))
             } finally { this.threadStore.becomeEphemeral() }
             this.historyRedactionPending = false
             this.storeUnavailable = false
@@ -2179,7 +2219,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         this.hidden.clear()
         this.storedAnchors.clear()
         // A visual has no copy but the store's (ADR-0056), so the windows stop showing the ones it no longer holds.
-        for (const thread of this.state.snapshot.threads) {
+        for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) {
           delete thread.earlierAvailable
           if (thread.messages.some(isVisualMessage)) thread.messages = thread.messages.filter(message => !isVisualMessage(message))
         }
@@ -2253,6 +2293,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       } finally { release() }
     })
     await this.initialize()
+    if (kind === 'thread' && !this.threadVisible(id)) throw new WatcherProfileRefusal(WATCHER_DISABLED)
     const projectId = kind === 'project' ? id : this.state.snapshot.threads.find(thread => thread.id === id)?.projectId
     if (!projectId) throw new Error('That thread is unavailable.')
     return this.onLane(projectId, async () => {
@@ -2297,6 +2338,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private thread(id: string): AgentThread {
     const thread = this.state.snapshot.threads.find(thread => thread.id === id)
     if (!thread) throw new Error('This thread is not known to Sotto. Refresh and select it again.')
+    if (!this.visible(thread)) throw new WatcherProfileRefusal(WATCHER_DISABLED)
     return thread
   }
   /** Starts working-copy setup, or returns the setup already running for this thread.
@@ -2738,7 +2780,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    */
   async writeShortText(threadId: string, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
-    if (!thread || thread.nativeSessionStarted === false || !this.inner.writeShortText) return null
+    if (!thread || !this.visible(thread) || thread.nativeSessionStarted === false || !this.inner.writeShortText) return null
     return this.withProfileRefusal(threadId, () => this.inner.writeShortText!(threadId, prompt, signal))
   }
   /**
@@ -2746,6 +2788,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * set drops to its summary, one joining it is given the first window of its history from the store.
    */
   observeThreads(ids: readonly string[]): void {
+    if (!this.watcherEnabled && !this.ready) { void this.initialize().then(() => this.observeThreads(ids)).catch(() => undefined); return }
+    ids = ids.filter(id => { const thread = this.state.snapshot.threads.find(thread => thread.id === id); return !thread || this.visible(thread) })
     this.inner.observeThreads?.(ids.filter(id => this.state.snapshot.threads.find(thread => thread.id === id)?.nativeSessionStarted !== false))
     if (!this.ready) return
     const wanted = new Set(ids)
@@ -2753,7 +2797,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (!this.declared) {
       this.declared = true
       // Everything held only because nobody had said otherwise goes back to its summary now.
-      for (const thread of this.state.snapshot.threads) if (!wanted.has(thread.id)) {
+      for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) if (!wanted.has(thread.id)) {
         this.storedAnchors.delete(thread.id)
         if (thread.messages.length) this.unloadWindow(thread.id)
       }
@@ -2790,6 +2834,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       await this.initialize()
       const thread = this.state.snapshot.threads.find(item => item.id === threadId)
       if (!thread || thread.archivedAt || thread.providerSessionOpen) return
+      if (!this.visible(thread)) throw new WatcherProfileRefusal(WATCHER_DISABLED)
       if (thread.nativeSessionStarted !== false) return start.call(this.inner, threadId)
       const creation = this.state.creations.find(item => item.threadId === threadId)
       if (creation?.phase !== 'unstarted') return
@@ -2809,7 +2854,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     snapshot.providers?.filter(item => !provider || item.id === provider).forEach(item => { item.connection = 'disconnected' })
     snapshot.models.filter(model => !provider || model.providerId === provider).forEach(model => { model.ready = false })
     snapshot.connected = snapshot.providers?.some(item => item.connection === 'connected') ?? false
-    for (const thread of snapshot.threads) if (!provider || thread.providerId === provider) {
+    for (const thread of snapshot.threads.filter(thread => this.visible(thread))) if (!provider || thread.providerId === provider) {
       dropLiveThreadState(thread)
       this.trackSubagents(thread, false)
       thread.subagentSummary = this.subagentSummaries.get(thread.id) ?? EMPTY_SUBAGENT_SUMMARY
@@ -2838,7 +2883,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /** One thread as babysitting sees it (`BabysitStore`), or null when it is not known here. */
   babysitThread(threadId: string): BabysitThread | null {
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
-    return thread ? this.babysitView(thread) : null
+    return thread && this.visible(thread) ? this.babysitView(thread) : null
   }
   /** Calls `listener` after the user unlinks a pull request from a thread (`BabysitStore`). */
   onPullRequestUnlinked(listener: (threadId: string, url: string) => Promise<void>): () => void {
@@ -2854,13 +2899,13 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private babysatThreadClosed(): boolean {
     for (const threadId of this.babysitRecords.keys()) {
       const thread = this.state.snapshot.threads.find(item => item.id === threadId)
-      if (thread && this.babysitView(thread).closed) return true
+      if (thread && this.visible(thread) && this.babysitView(thread).closed) return true
     }
     return false
   }
   /** Every thread here that babysits a pull request. A thread that is gone took its records with it. */
   babysatThreads(): BabysitThread[] {
-    return this.state.snapshot.threads.filter(thread => this.babysitRecords.get(thread.id)?.length).map(thread => this.babysitView(thread))
+    return this.state.snapshot.threads.filter(thread => this.visible(thread) && this.babysitRecords.get(thread.id)?.length).map(thread => this.babysitView(thread))
   }
   /**
    * Changes what a thread babysits, then saves and publishes it. The change applies at once to the records as they
@@ -2869,7 +2914,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   async changeBabysitting(threadId: string, change: (records: readonly BabysitRecord[]) => readonly BabysitRecord[]): Promise<void> {
     await this.initialize()
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
-    if (!thread) return
+    if (!thread || !this.visible(thread)) return
     const current = this.babysitRecords.get(threadId) ?? []
     const next = change(current)
     if (next === current) return
@@ -2890,7 +2935,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     await this.initialize()
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
     const number = pullRequestAddress(url)?.number
-    if (!thread || number === undefined) return
+    if (!thread || !this.visible(thread) || number === undefined) return
     const key = pullRequestKey(url)
     const kept = (thread.babysitEnded ?? []).filter(item => pullRequestKey(item.url) !== key)
     thread.babysitEnded = [...kept, { url, number, reason, endedAt: new Date().toISOString() }].slice(-BABYSITTING_PER_THREAD_MAX)
@@ -2899,7 +2944,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   private settledThreadIds(): readonly string[] {
     const projects = new Map(this.state.snapshot.projects.map(project => [project.id, project]))
-    return this.state.snapshot.threads.filter(thread => isWorkspaceThreadSettled(thread, projects.get(thread.projectId))).map(thread => thread.id)
+    return this.state.snapshot.threads.filter(thread => this.visible(thread) && isWorkspaceThreadSettled(thread, projects.get(thread.projectId))).map(thread => thread.id)
   }
   /** Settlement metadata, immediately and on publication, without materializing thread histories. */
   subscribeSettledThreads(listener: (ids: readonly string[]) => void): () => void {

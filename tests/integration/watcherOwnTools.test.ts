@@ -40,7 +40,7 @@ async function attach(host: AgentHost, root: string, threadId: string, projectId
   await writeFile(join(root, 'agents.json'), JSON.stringify({ watcher: record }))
   const source = new WatcherLaunchProfiles(root, () => hostId, id => id === threadId ? {
     id, hostId, projectId, providerId: provider, kind: 'watcher', title: 'Center', modelId: 'fixture-model', status: 'idle', messages: [], requests: [],
-  } as AgentThread : undefined)
+  } as AgentThread : undefined, true)
   const tools: WatcherProfileTools = { ...scoped('sotto_threads'), definitions: [{ name: 'list_threads', description: 'Synthetic', inputSchema: {} }], revoke: vi.fn() }
   source.useTools(tools); host.useLaunchProfiles!(source)
   host.useThreadTools!(['sotto_visual', 'sotto_pull_requests', 'sotto_host_setup', 'sotto_browser'].map(scoped))

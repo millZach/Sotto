@@ -355,7 +355,7 @@ describe('WindowManager construction', () => {
   // Main names the window from app.getVersion() exactly this way; the page's own <title> says Sotto on every build.
   it.each([
     ['0.1.34', 'Sotto'],
-    ['0.1.35-owl.20261009.1', 'Sotto Owl'],
+    ['0.1.37-owl.20261011.1', 'Sotto Owl'],
   ])('titles the main window for the build it is (%s) and keeps that title against the page', async (version, title) => {
     const { manager, options, windows } = createHarness({ title: releaseTrackName(getReleaseTrack(version)) })
 

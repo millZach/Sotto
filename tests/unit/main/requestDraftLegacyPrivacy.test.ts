@@ -106,7 +106,7 @@ it('cleans legacy submitted personal words without losing v2 thread acceptance m
   expect(lookup).not.toHaveBeenCalled()
   await service.privacyChanged(false)
   const cleaned = await readFile(join(directory, 'request-drafts.json'), 'utf8')
-  expect(JSON.parse(cleaned)).toEqual({ version: 2, drafts: [], retirements: [retirement] })
+  expect(JSON.parse(cleaned)).toEqual({ version: 2, watcherOwners: [], drafts: [], retirements: [retirement] })
   expect(cleaned).not.toContain('Retired submitted private words')
   expect(await service.status(target)).toEqual({ status: 'accepted', decisionId: retirement.decisionId, revision: retirement.revision })
   await expect(service.check({ ...personal.target })).rejects.toThrow('Standalone chats')

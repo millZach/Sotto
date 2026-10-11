@@ -40,6 +40,16 @@ async function directory() {
   const root = await mkdtemp(join(tmpdir(), 'sotto-previews-')); roots.push(root); return root
 }
 async function saved(root: string) { return JSON.parse(await readFile(join(root, 'attachment-previews.json'), 'utf8')) }
+it('cleans ordinary temporary copies at startup without adding cleanup to ordinary preview upkeep', async () => {
+  const root = await directory(), store = await previews(root)
+  const path = join(root, 'attachment-previews.json.tmp-123-12345678-1234-1234-1234-123456789abc')
+  const text = JSON.stringify({ version: 2, entries: [] })
+  await writeFile(path, text)
+  await store.maintain()
+  expect(await readFile(path, 'utf8')).toBe(text)
+  await store.load()
+  await expect(readFile(path)).rejects.toMatchObject({ code: 'ENOENT' })
+})
 async function snapshot() {
   const state = await new E2EAgentHost().snapshot()
   state.threads[0]!.messages = [{ id: 'message', commandId: 'command', role: 'user', text: '', createdAt: new Date().toISOString() }]

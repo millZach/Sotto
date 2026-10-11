@@ -191,6 +191,8 @@ export interface AgentHost {
   restoreThreadHistory?(threads: readonly RestoredThreadHistory[]): Promise<void>
   /** Local organization/history; available without a provider connection. */
   workspaceSnapshot?(): AgentHostSnapshot
+  /** Main-only saved Watcher identities and special kinds, including threads omitted by the release gate. */
+  watcherThreadIds?(): readonly string[]
   setWorkspaceSettled?(kind: 'project' | 'thread', id: string, settled: boolean): Promise<AgentHostSnapshot>
   /** Rename a thread in Sotto's own workspace and record where the name came from; a hand rename is
    * `user` and outranks everything later. The provider is not told. */

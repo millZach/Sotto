@@ -6,6 +6,7 @@ export default tseslint.config(
     ignores: [
       'artifacts/watcher-benchmark/**',
       'artifacts/watcher-rename/**',
+      'artifacts/watcher-gate/**',
       'artifacts/*-center-*/**',
       'artifacts/watcher-live/**',
       'artifacts/watcher-own-tools-live/**',

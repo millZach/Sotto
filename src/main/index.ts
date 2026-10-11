@@ -153,7 +153,7 @@ import {
 } from '../shared/channels'
 import { APP_ID, APP_NAME } from '../shared/constants'
 import { getReleaseTrack, releaseTrackName } from '../shared/releaseTrack'
-import { runningVersion } from './runningVersion'
+import { runningVersion, watcherEnabledForRun } from './runningVersion'
 import type { DictationCommand } from '../shared/contracts'
 import type { WidgetSnapshot } from '../shared/dictation'
 import { widgetPresentationFor } from '../shared/themeBranding'
@@ -565,6 +565,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const unpackagedIconPath = app.isPackaged
     ? null
     : join(__dirname, platform === 'linux' ? '../../build/icon.png' : '../../build/icon.ico')
+  // Packaging can override the version without editing the source manifest, so it is read from the app (ADR-0072).
+  const appRunningVersion = runningVersion(app.getVersion(), process.versions.electron, appVersion)
+  const watcherEnabled = watcherEnabledForRun({ version: appRunningVersion, isPackaged: app.isPackaged, override: process.env.SOTTO_WATCHER_ENABLED })
   const recoveryNotices = new RecoveryNoticeCenter()
   const { settings: plainSettings, history } = createStorageRepositories(
     userDataPath,
@@ -572,6 +575,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     Date.now,
     platformDefaults,
     logOperational,
+    watcherEnabled,
   )
   await history.initialize()
   const credentials = new AgentCredentials(userDataPath, safeStorage, notice => recoveryNotices.publish(notice))
@@ -603,8 +607,6 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // current theme halves, so a theme change repaints the widget mid-session.
   let widgetPresentation = widgetPresentationFor(await settings.get())
   let handleRendererProcessGone: (kind: 'main' | 'widget') => void = () => undefined
-  // Packaging can override the version without editing the source manifest, so it is read from the app (ADR-0072).
-  const appRunningVersion = runningVersion(app.getVersion(), process.versions.electron, appVersion)
   // What this build calls itself in words: the main window's title and the tray's tooltip, "Sotto Owl" on that track.
   const buildName = releaseTrackName(getReleaseTrack(appRunningVersion))
   const windows = new WindowManager({
@@ -663,7 +665,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const windowInFront = (): boolean => BrowserWindow.getAllWindows().some(window => window.getTitle() === buildName && window.isVisible() && !window.isMinimized()
     && (window.isFocused() || (windowBlurredAt !== 0 && Date.now() - windowBlurredAt < 45_000)))
   const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
-    directory: userDataPath, credentials,
+    directory: userDataPath, credentials, watcherEnabled,
     ...(app.isPackaged ? { claudeHistoryModulePath: join(process.resourcesPath, 'claude-sdk', 'sdk.mjs') } : {}),
     settings: () => workingCopySettings, writingSettings: () => settings.get(),
     historyEnabled: () => agentHistoryEnabled,
@@ -717,7 +719,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // The runtime builds the worktree cleanup (ADR-0041). Only the local host has worktrees on this
   // computer; with it off the inactive host's cleanup does nothing, and no terminal check is wired.
   const worktreeCleanup = startupSettings.localHostEnabled ? localRuntime.worktreeCleanup : null
-  const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.get().hostId), {
+  const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.get().hostId), { watcherEnabled,
     bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
   })
   quitHandles.hostRouter = hostRouter
@@ -740,10 +742,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const tailnetStandIn = e2eConfiguration !== null && !app.isPackaged ? e2eTailnetMap(process.env['SOTTO_E2E_TAILNET_MAP']) : undefined
   /** The last page an end-to-end run asked the browser to open, which it never opens. */
   let openedExternalLink: string | null = null
-  const retainedDrafts = new RetainedDraftStore({ directory: userDataPath, historyEnabled: () => agentHistoryEnabled,
+  const retainedDrafts = new RetainedDraftStore({ directory: userDataPath, watcherEnabled, historyEnabled: () => agentHistoryEnabled,
     onRecovery: () => recoveryNotices.publish({ code: 'REMOTE_DRAFTS_UNREADABLE' }),
     onWriteFailure: () => recoveryNotices.publish({ code: 'REMOTE_DRAFT_STORAGE_NOT_UPDATED' }) })
-  const desktopHosts = new DesktopHosts({ directory: userDataPath, credentials, router: hostRouter, retainedDrafts,
+  const desktopHosts = new DesktopHosts({ directory: userDataPath, credentials, router: hostRouter, retainedDrafts, watcherEnabled,
     localHostRunning: startupSettings.localHostEnabled, localHostEnabled: () => workingCopySettings.localHostEnabled,
     restart: () => { app.relaunch(); app.quit() },
     ...(sshStandIn ? { launcher: () => new SshHostLauncher({ spawn: sshStandIn }) } : {}),
@@ -864,12 +866,17 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       && requestDraftProvider(state.host, item, state.configuration.provider) === owner.providerId)
     const recovery = agentControl.requestAnswerRecovery(id, owner.providerId)
     return thread ? { connected: isThreadProviderConnected(state.host, thread), ready: thread.historyStatus !== 'loading' && thread.historyStatus !== 'error',
-      requests: thread.requests, ...recovery } : recovery.completed.length ? { connected: false, ready: false, requests: [], ...recovery } : undefined
+      requests: thread.requests, ...(thread.kind === 'watcher' || thread.kind === 'watcher-history' ? { watcher: true } : {}), ...recovery } : recovery.completed.length ? { connected: false, ready: false, requests: [], ...recovery } : undefined
   }, async (target, decisionId) => {
     if (target.kind !== 'thread') throw new Error('Standalone chats are no longer available.')
     const key = parseHostEntityKey(target.ownerId)
     if (key && key.hostId !== agentControl.get().hostId) await hostRouter.refreshRequestDraft(target, decisionId)
     else await agentControl.refreshRequestDraft(key?.id ?? target.ownerId, target.requestId)
+  }, undefined, watcherEnabled ? undefined : owner => {
+    if (owner.kind !== 'thread') return false
+    const key = parseHostEntityKey(owner.ownerId)
+    if (key && key.hostId !== agentControl.get().hostId) return hostRouter.preservesWatcherThread(owner.ownerId)
+    return localRuntime?.agentHost.watcherThreadIds?.().includes(key?.id ?? owner.ownerId) ?? false
   })
   await requestDrafts.start()
   const unsubscribeRequestDrafts = requestDrafts.onChanged(owner => windows.sendToMain(REQUEST_DRAFT_CHANGED, owner))
@@ -1057,7 +1064,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // 'unsupported' phase without constructing electron-updater at all.
   const updatesSupported = app.isPackaged && e2eConfiguration === null && profile.inAppUpdates
   const updates = new UpdateService({
-    currentVersion: appRunningVersion,
+    currentVersion: appRunningVersion, watcherEnabled,
     getSettings: () => settings.get(),
     ...(updatesSupported ? { createUpdater: createElectronUpdaterAdapter } : {}),
     onStatusChanged: (status) => {

@@ -297,3 +297,8 @@ artifacts/*-center-*/
 # Watcher rename proof; keep only the cited built-app capture.
 artifacts/watcher-rename/*
 !artifacts/watcher-rename/agents-settings-1280x800.png
+
+# Watcher gate proof; retain only curated evidence.
+artifacts/watcher-gate/*
+!artifacts/watcher-gate/*.png
+!artifacts/watcher-gate/profile.json

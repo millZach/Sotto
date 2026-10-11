@@ -17,7 +17,7 @@ import { resizeContentWindow } from './support/sottoWindow'
  * titles, and the version lines in Help and Settings. Run after `npm run build`. Captures go to disposable run
  * evidence; `SOTTO_E2E_EVIDENCE=publish` writes artifacts/sotto-owl-branding.
  */
-const OWL_VERSION = '0.1.35-owl.20261010.1'
+const OWL_VERSION = '0.1.37-owl.20261012.1'
 const evidenceRoot = evidenceDirectory('artifacts/sotto-owl-branding')
 const SIZES = [[1280, 800], [820, 560]] as const
 const APPEARANCES = ['dark', 'light'] as const
