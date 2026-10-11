@@ -226,6 +226,20 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private visibleSnapshot(snapshot: AgentHostSnapshot): AgentHostSnapshot {
     return this.watcherEnabled ? snapshot : { ...snapshot, threads: snapshot.threads.filter(thread => this.visible(thread)) }
   }
+  async watcherRead(threadId: string, afterPosition?: number, limit = 50) {
+    if (!this.watcherEnabled) throw new Error(WATCHER_DISABLED)
+    await this.refreshThread(threadId)
+    const thread = this.thread(threadId)
+    this.applyEvents()
+    if (this.storeUnavailable || thread.historyStatus === 'error' || thread.historyStatus === 'loading') return undefined
+    const epoch = this.threadStore.readMessageEpoch(threadId)
+    return { historyEpoch: epoch?.epoch ?? String(epoch?.sequence ?? 0), ...this.threadStore.readForwardMessages(threadId, afterPosition, limit) }
+  }
+  async setWatcherKind(threadId: string, kind: 'watcher' | 'watcher-history'): Promise<void> {
+    if (!this.watcherEnabled) throw new Error(WATCHER_DISABLED)
+    await this.initialize(); const thread = this.thread(threadId); thread.kind = kind
+    this.dirty = true; await this.flush(); this.publish()
+  }
   useWatcherTools(tools: WatcherProfileTools): void { this.launchProfiles.useTools(tools) }
   useBrowserTools(tools: BrowserAgentTools): void { this.inner.useBrowserTools?.(tools) }
   useThreadTools(tools: readonly ScopedThreadTools[]): void { this.inner.useThreadTools?.(this.watcherEnabled ? tools : tools.filter(tool => tool.name !== 'sotto_threads')) }
@@ -2501,7 +2515,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (this.eventSourced) return { ...purpose, historyFromEvents: true } as T
     return purpose?.historyFromEvents ? { ...purpose, historyFromEvents: false } : purpose
   }
-  async setWorkspaceSettled(kind: 'project' | 'thread', id: string, settled: boolean, options?: { expectedMergedTip: string; expectedMergedBranch: string }): Promise<AgentHostSnapshot> {
+  async setWorkspaceSettled(kind: 'project' | 'thread', id: string, settled: boolean, options?: { expectedMergedTip: string; expectedMergedBranch: string }, watcherGuard?: () => void): Promise<AgentHostSnapshot> {
     if (kind === 'thread' && settled && options) return this.onLane(id, async () => {
       const thread = this.thread(id)
       const work = this.checkoutWorkHolder(thread, 'settle')
@@ -2522,6 +2536,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const projectId = kind === 'project' ? id : this.state.snapshot.threads.find(thread => thread.id === id)?.projectId
     if (!projectId) throw new Error('That thread is unavailable.')
     return this.onLane(projectId, async () => {
+      watcherGuard?.()
       const entity = (kind === 'project' ? this.state.snapshot.projects : this.state.snapshot.threads).find(item => item.id === id)
       if (!entity) throw new Error(`That ${kind} is unavailable.`)
       const previous = entity.workspaceSettledAt ?? null
@@ -2741,6 +2756,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     }
     return { folder: await this.threadWorkingDirectory(threadId), inspectAfter: false }
   }
+  private readonly watcherDispatchGuards = new WeakMap<object, () => void>()
+  executeFromWatcher(command: AgentHostCommand, guard: () => void): Promise<AgentHostResult> {
+    if (!this.watcherEnabled) throw new Error(WATCHER_DISABLED)
+    this.watcherDispatchGuards.set(command, guard); guard(); return this.execute(command)
+  }
   execute(command: AgentHostCommand): Promise<AgentHostResult> {
     // Cancellation passes a held prompt, but remains tracked so shutdown drains its final publication.
     if (command.type === 'interrupt') return this.onLane(command.threadId, () => this.executeOne(command), this.interruptLanes)
@@ -2780,7 +2800,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     return this.withProfileRefusal('threadId' in command ? command.threadId : undefined, () => this.executeWithProfile(command, checkoutHeld))
   }
   private async executeWithProfile(command: AgentHostCommand, checkoutHeld: boolean): Promise<AgentHostResult> {
-    await this.initialize()
+    const watcherGuard = this.watcherDispatchGuards.get(command)
+    await this.initialize(); watcherGuard?.()
     const commandProfile = 'threadId' in command ? await this.launchProfiles.profileFor(command.threadId) : undefined
     if ('threadId' in command) {
       if (commandProfile) {
@@ -2936,6 +2957,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         }
         let result: AgentHostResult
         try {
+          watcherGuard?.()
           result = await this.inner.execute({ type: 'create-thread', commandId: creation.commandId, threadId: thread.id,
             projectId: thread.projectId, project, title: thread.title, modelId: thread.modelId,
             workingDirectory,
@@ -2976,6 +2998,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       const dispatched = command.type === 'send' ? withoutWakeUp(preparedSkills ? { ...command, skills: preparedSkills } : command)
         : command.type === 'configure-thread' ? this.hostRead(command) : command
       if (command.type === 'send') markSendStage(command.commandId, 'prepared')
+      watcherGuard?.()
       const result = await this.inner.execute(dispatched)
       if (command.type === 'send' && firstSend && result.accepted) this.nameBranch(thread.id, command.text)
       if (command.type === 'configure-thread') {

@@ -1,4 +1,6 @@
 import { z } from 'zod'
+import { WATCHER_GET, WATCHER_OPEN, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, WATCHER_SET_LIMIT,
+  watcherOpenRequestSchema, watcherStopAllRequestSchema, watcherSetLimitRequestSchema, type WatcherBridge } from '../../shared/watcherRoom'
 import { externalLinkSchema } from '../../shared/externalLinks'
 import { systemSettingsPaneSchema, type SystemSettingsPane } from '../../shared/systemSettings'
 
@@ -304,6 +306,8 @@ export interface RecoveryNoticeIpcService {
 }
 
 export interface RegisterIpcDependencies {
+  /** Supplied only when the immutable Watcher release gate is on. Never served over socket IPC. */
+  readonly watcher?: Omit<WatcherBridge, 'onChanged'>
   readonly settings: SettingsIpcService
   readonly history: HistoryIpcService
   readonly startup: StartupIpcService
@@ -476,6 +480,14 @@ export function registerIpc(
   }
 
   try {
+    if (dependencies.watcher) {
+      const watcher = dependencies.watcher
+      register(WATCHER_GET, noPayloadSchema, 0, () => watcher.get())
+      register(WATCHER_OPEN, watcherOpenRequestSchema, 1, request => watcher.open(request))
+      register(WATCHER_PREPARE_STOP_ALL, noPayloadSchema, 0, () => watcher.prepareStopAll())
+      register(WATCHER_STOP_ALL, watcherStopAllRequestSchema, 1, request => watcher.stopAll(request))
+      register(WATCHER_SET_LIMIT, watcherSetLimitRequestSchema, 1, request => watcher.setLimit(request))
+    }
     register(RECOVERY_NOTICE_LIST, noPayloadSchema, 0, () =>
       dependencies.recoveryNotices?.list() ?? [],
     )

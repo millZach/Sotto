@@ -18,7 +18,7 @@ Sotto is a desktop dictation app with manual coding threads across native provid
 
 **Overview.** The sidebar list of all other threads in Watcher’s room, grouped by what the user must do, with source and read times. It is a projection, not a work queue or attention store; its groups are Needs you, Ready for review, Working, Landing, Quiet and Idle.
 
-**Watcher request.** A particular user instruction to Watcher, with main's identity, root user-message reference and budgets. Qualify it to distinguish it from an agent's pending question or permission request; retries and wake-ups keep its identity and budgets.
+**Watcher request.** A particular user instruction to Watcher, with main's identity, root user-message reference and budgets. Qualify it to distinguish it from an agent's pending question or permission request; retries and wake-ups keep its identity and budgets. A direct instruction to a worker ends Watcher's participation in that worker across later requests; another instruction to Watcher alone does not restore it.
 
 **Thread card.** A main-backed reference or receipt in Watcher's transcript opening a real thread pane. It is distinct from a request card, where the user answers the owning thread, and from a visual; it answers and approves nothing.
 

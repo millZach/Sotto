@@ -168,6 +168,8 @@ export interface ActivitySubscriptionOptions {
  * prompt = execute send; cancel = execute interrupt; status = snapshot; events = subscribe.
  */
 export interface AgentHost {
+  /** Private main capability; never a serialized AgentCommand field. */
+  executeFromWatcher?(command: AgentHostCommand, guard: () => void): Promise<AgentHostResult>
   /** Main-only launch capabilities. Wrappers translate identity before handing them to an adapter. */
   useLaunchProfiles?(profiles: ThreadLaunchProfiles): void
   useWatcherTools?(tools: WatcherProfileTools): void
@@ -198,7 +200,7 @@ export interface AgentHost {
   workspaceSnapshot?(): AgentHostSnapshot
   /** Main-only saved Watcher identities and special kinds, including threads omitted by the release gate. */
   watcherThreadIds?(): readonly string[]
-  setWorkspaceSettled?(kind: 'project' | 'thread', id: string, settled: boolean): Promise<AgentHostSnapshot>
+  setWorkspaceSettled?(kind: 'project' | 'thread', id: string, settled: boolean, options?: { expectedMergedTip: string; expectedMergedBranch: string }, watcherGuard?: () => void): Promise<AgentHostSnapshot>
   /** Rename a thread in Sotto's own workspace and record where the name came from; a hand rename is
    * `user` and outranks everything later. The provider is not told. */
   renameThread?(threadId: string, title: string, source?: ThreadRenameSource): Promise<AgentHostSnapshot>

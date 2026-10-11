@@ -22,7 +22,7 @@ const receiptsSchema = z.array(agentDeliveryReceiptsSchema.element.extend({ dige
  * A queued item as the store keeps it. A wake-up keeps the news it was worded from, one part per pull request, so news
  * that comes later folds into it and a stop takes back its pull request's part; the window is sent the words alone.
  */
-const queuedSchema = agentFollowupSchema.extend({ news: z.array(babysitNewsSchema).max(WAKE_UP_NEWS_MAX).optional() })
+const queuedSchema = agentFollowupSchema.extend({ watcherOperationId: z.uuid().optional(), news: z.array(babysitNewsSchema).max(WAKE_UP_NEWS_MAX).optional() })
 export type QueuedFollowup = z.infer<typeof queuedSchema>
 type State = { items: QueuedFollowup[]; receipts: z.infer<typeof receiptsSchema> }
 /**
@@ -52,7 +52,7 @@ export class FollowupStore {
   private active: (threadId: string) => boolean = () => true
   private tail: Promise<unknown> = Promise.resolve()
   private readonly store: AtomicJsonStore<Stored>
-  constructor(directory: string) {
+  constructor(directory: string, private readonly historyEnabled: () => boolean = () => true, private readonly isWatcherThread: (id: string) => boolean = () => false) {
     this.store = new AtomicJsonStore<Stored>(join(directory, 'followups.json'), storedSchema.parse, () => ({ items: [], receipts: [] }))
   }
   /**
@@ -66,6 +66,7 @@ export class FollowupStore {
     const items: State['items'] = []
     const lost = new Set<string>()
     for (const item of stored.items) {
+      if (!this.historyEnabled() && active(item.threadId) && (item.watcherOperationId || this.isWatcherThread(item.threadId))) continue
       if (!active(item.threadId)) {
         this.dormant.set(item.id, structuredClone(item))
         items.push(queuedSchema.parse({ ...item, attachments: item.attachments.filter(attachment => !('dataUrl' in attachment)) }))
@@ -107,12 +108,12 @@ export class FollowupStore {
     const task = this.tail.catch(() => undefined).then(async () => {
       const next = this.get()
       if (update(next) === false) return
-      await this.store.write({ ...next, items: next.items.map(item => this.dormant.get(item.id) ?? item) }); this.state = next
+      await this.store.write({ ...next, items: next.items.filter(item => this.historyEnabled() || !item.watcherOperationId && !this.isWatcherThread(item.threadId)).map(item => this.dormant.get(item.id) ?? item) }); this.state = next
     })
     this.tail = task
     return task
   }
-  enqueue(input: Pick<AgentFollowup, 'threadId' | 'draftId' | 'text' | 'attachments' | 'skills' | 'files' | 'resumeAfterTurnId'>): Promise<void> {
+  enqueue(input: Pick<AgentFollowup, 'threadId' | 'draftId' | 'text' | 'attachments' | 'skills' | 'files' | 'resumeAfterTurnId'> & { watcherOperationId?: string }): Promise<void> {
     return this.change(state => {
       const receipt = state.receipts.find(r => r.threadId === input.threadId && r.draftId === input.draftId)
       const item = state.items.find(r => r.threadId === input.threadId && r.draftId === input.draftId)
@@ -130,6 +131,11 @@ export class FollowupStore {
       const ordinary = new Set(receipts.filter(receipt => this.active(receipt.threadId)).slice(-MAX_DELIVERED_DRAFTS))
       state.receipts = receipts.filter(receipt => !this.active(receipt.threadId) || ordinary.has(receipt))
     })
+  }
+  privacyChanged(): Promise<void> { return this.change(() => undefined) }
+  cancelWatcher(operationIds: ReadonlySet<string>): Promise<void> {
+    return this.change(state => { state.items = state.items.filter(item => !item.watcherOperationId || !operationIds.has(item.watcherOperationId)
+      || item.status === 'dispatching' || item.status === 'uncertain') })
   }
   edit(threadId: string, itemId: string, update?: Pick<AgentFollowup, 'text' | 'attachments' | 'skills' | 'files'>): Promise<void> {
     return this.change(state => {

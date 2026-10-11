@@ -158,6 +158,7 @@ import {
 import { APP_ID, APP_NAME } from '../shared/constants'
 import { getReleaseTrack, releaseTrackName } from '../shared/releaseTrack'
 import { hostReleaseVersion } from './hosts/hostReleaseVersion'
+import { WATCHER_CHANGED, WATCHER_RENDERER_ARGUMENT } from '../shared/watcherRoom'
 import { runningVersion, watcherEnabledForRun } from './runningVersion'
 import type { DictationCommand } from '../shared/contracts'
 import type { WidgetSnapshot } from '../shared/dictation'
@@ -616,7 +617,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const windows = new WindowManager({
     title: buildName,
     createWindow: options => {
-      const window = new BrowserWindow(options)
+      const window = new BrowserWindow(watcherEnabled && options.webPreferences?.additionalArguments?.includes('--sotto-renderer-role=main')
+        ? { ...options, webPreferences: { ...options.webPreferences, additionalArguments: [...options.webPreferences.additionalArguments, WATCHER_RENDERER_ARGUMENT] } } : options)
       window.webContents.on('before-input-event', (_event, input) => {
         window.webContents.setIgnoreMenuShortcuts(terminalTakesMenuShortcut(input, terminalFocus.has(window.webContents), platform))
       })
@@ -1379,7 +1381,15 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const cleanupAgents = registerAgentIpc(ipcMain, hostRouter, hostRouter, () => windows.getTrustedRenderers(), { encodeReceipt: agentStateBroadcaster.encodeReceipt, workingCopyOptions: projectId => { const key = parseHostEntityKey(projectId); if (key && key.hostId !== agentControl.hostId()) throw new Error('Working-copy choices are on the host machine. Use the existing project folder or create its worktree there.'); return agentHost.workingCopyOptions(key?.id ?? projectId) } })
       // An E2E run never leaves the app for System Settings.
       const systemSettingsOpener = e2eConfiguration === null ? createSystemSettingsOpener(platform, url => shell.openExternal(url)) : null
+      const cleanupWatcher = localRuntime?.watcher?.subscribe(state => windows.sendToMain(WATCHER_CHANGED, state))
       const cleanup = registerIpc(ipcMain, {
+        ...(localRuntime?.watcher ? { watcher: {
+          get: async () => localRuntime.watcher!.get(),
+          open: request => localRuntime.watcher!.open(request),
+          prepareStopAll: async () => localRuntime.watcher!.prepareStopAll(),
+          stopAll: request => localRuntime.watcher!.stopAll(request.confirmationId),
+          setLimit: async request => { await settings.update({ watcherInFlightLimit: request.limit }); return localRuntime.watcher!.get() },
+        } satisfies Omit<import('../shared/watcherRoom').WatcherBridge, 'onChanged'> } : {}),
         settings: {
           get: () => settingsCoordinator.getSettings(),
           update: (patch) => { requireLocalHistoryCleanup(startupSettings.localHostEnabled, agentHistoryEnabled, patch.historyEnabled); return settingsCoordinator.updateSettings(patch) },
@@ -1483,6 +1493,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         transcription.dispose()
         speechModelStore?.dispose()
         updates.dispose()
+        cleanupWatcher?.()
         cleanup()
       }
       if (e2eState === null) return cleanupNativeIpc

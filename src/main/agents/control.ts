@@ -45,6 +45,8 @@ import type { FilesBinding } from '../files/service'
 import { isSottoRequest, withSottoRequests, type SottoThreadRequests } from './sottoRequests'
 import { FinishedUnread } from './finishedUnread'
 import { withoutLegacyManagement, type HostAnswerTarget } from '../../shared/hostProtocol'
+import { agentCommandSchema } from '../../shared/agents'
+import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from './watcherCommands'
 import { watcherRecordSchema, emptyWatcherRecord, type WatcherRecord } from '../../shared/watcher'
 import { migrateWatcherRecord } from './watcherRecords'
 
@@ -249,6 +251,35 @@ export class AgentControl {
   private state: AgentState
   private outbox: Saved['outbox'] = []
   private watcher: WatcherRecord = emptyWatcherRecord()
+  private watcherHooks: WatcherControlHooks | undefined
+  private readonly watcherOrigins = new WeakMap<object, WatcherCommandOrigin>()
+  watcherRecord(): WatcherRecord { return structuredClone(this.watcher) }
+  updateWatcher(update: (record: WatcherRecord) => void): Promise<void> {
+    if (this.dependencies.watcherEnabled !== true) throw new Error('Watcher is available in Sotto Owl.')
+    this.mutateWatcher(update)
+    return this.persist()
+  }
+  mutateWatcher(update: (record: WatcherRecord) => void): void {
+    const next = this.watcherRecord(); update(next); this.watcher = watcherRecordSchema.parse(next)
+  }
+  useWatcher(hooks: WatcherControlHooks): void { if (this.dependencies.watcherEnabled === true) this.watcherHooks = hooks }
+  commandFromWatcher(command: WatcherCommand, origin: WatcherCommandOrigin): Promise<AgentState> {
+    if (!this.watcherHooks || !['create-thread', 'manual-send', 'queue-followup', 'steer', 'interrupt', 'settle-thread'].includes(command.type)) {
+      throw new Error('Watcher cannot answer requests or change permissions.')
+    }
+    const parsed = agentCommandSchema.parse(command); origin.guard(); this.watcherOrigins.set(parsed, origin)
+    return this.admitCommandShell(parsed)
+  }
+  /** User-requested setup only, never exposed as a tool. */
+  commandForWatcherRoom(command: Extract<AgentCommand, { type: 'create-project' | 'create-thread' | 'configure-thread' }>): Promise<AgentState> {
+    if (!this.watcherHooks) throw new Error('Watcher is unavailable.')
+    const parsed = agentCommandSchema.parse(command)
+    this.watcherOrigins.set(parsed, { guard: () => { if (this.disposed) throw new Error('Sotto is stopping.') } })
+    return this.admitCommandShell(parsed)
+  }
+  async cancelWatcherQueue(operationIds: ReadonlySet<string>): Promise<void> {
+    await this.followupStore.cancelWatcher(operationIds); this.syncFollowups(); this.observe(); await this.persist(); this.publish()
+  }
   private readonly disabledWatcherIds = new Set<string>()
   private readonly dormantThreadDrafts = new Map<string, Saved['threadDrafts'][number]>()
   private dormantLegacyDraft: Saved['dormantLegacyDraft']
@@ -393,7 +424,7 @@ export class AgentControl {
     /** Native CLIs present on this machine. Absent in tests that script the host themselves. */
     installedProviders?: () => Promise<readonly ProviderId[]>
   }) {
-    this.followupStore = new FollowupStore(dependencies.directory)
+    this.followupStore = new FollowupStore(dependencies.directory, () => dependencies.historyEnabled?.() !== false, id => this.dependencies.watcherEnabled === true && [this.watcher.current, this.watcher.creation?.identity, ...this.watcher.history].some(item => item?.target.threadId === id))
     this.finishedUnread = new FinishedUnread([], dependencies.watcherEnabled === true ? undefined : id => !this.watcherAvailable(id))
     this.clients = dependencies.clients ?? new ProviderClients()
     this.state = {
@@ -642,7 +673,11 @@ export class AgentControl {
     return this.outbox.flatMap(item => item.type === 'configure-thread' && item.threadId && item.options && !this.settingsDispatching.has(item.id)
       ? [{ ...item.options, threadId: item.threadId }] : [])
   }
+  /** Internal state is available only to main's Watcher service; public project choices omit its folder. */
+  watcherSnapshot(): AgentHostSnapshot { return this.state.host }
   private hideWatcher(state: AgentState): void {
+    const folder = resolve(join(this.dependencies.directory, 'watcher', 'workspace'))
+    state.host.projects = state.host.projects.filter(project => resolve(project.path) !== folder)
     if (!this.watcherAvailable(state.activeThreadId)) { state.activeThreadId = null; state.activeProjectId = null }
     if (!this.watcherAvailable(state.draftThreadId)) {
       state.draft = ''; state.draftThreadId = null; state.draftRequestId = null; state.draftAttachments = []; state.composing = false
@@ -902,7 +937,7 @@ export class AgentControl {
   private savedOverLiveState(): Saved {
     this.syncLegacyDraft()
     const { configuration, activeThreadId, activeProjectId, draft, draftThreadId, draftRequestId, composing } = this.state
-    return { configuration, watcher: this.watcher, providerUpgrade: this.state.providerUpgrade ?? null,
+    const saved = { configuration, watcher: this.watcher, providerUpgrade: this.state.providerUpgrade ?? null,
       activeThreadId, activeProjectId, draft, draftThreadId, draftRequestId,
       draftAttachments: this.dormantLegacyDraft?.draftThreadId === draftThreadId ? this.dormantLegacyDraft.draftAttachments : this.state.draftAttachments ?? [], composing,
       ...(this.dormantLegacyDraft && this.dormantLegacyDraft.draftThreadId !== draftThreadId ? { dormantLegacyDraft: this.dormantLegacyDraft } : {}),
@@ -912,6 +947,13 @@ export class AgentControl {
       deliveredPromptDigests: this.deliveredPromptDigests,
       answeredRequests: this.answeredRequests,
       threadDrafts: (this.state.threadDrafts ?? []).map(item => this.dormantThreadDrafts.get(item.threadId) ?? item), deliveries: this.state.deliveries ?? [] }
+    if (this.dependencies.watcherEnabled === true && this.dependencies.historyEnabled?.() === false) {
+      const privateIds = new Set([this.watcher.current, this.watcher.creation?.identity, ...this.watcher.history].flatMap(item => item ? [item.target.threadId] : []))
+      const machineDrafts = new Set(this.watcher.operations.flatMap(item => item.draftId ? [item.draftId] : []))
+      saved.threadDrafts = saved.threadDrafts.filter(item => !privateIds.has(item.threadId) && !machineDrafts.has(item.draftId))
+      if (saved.draftThreadId && privateIds.has(saved.draftThreadId)) { saved.draft = ''; saved.draftAttachments = [] }
+    }
+    return saved
   }
   private parseSaved(input: unknown): Saved {
     const saved = savedSchema.parse(withoutLegacyManagement(input))
@@ -940,6 +982,7 @@ export class AgentControl {
       () => this.maintainAttachments(this.dependencies.historyEnabled?.() === false),
       () => maintainProviderRecovery(this.dependencies.directory),
       () => this.dependencies.host.privacyChanged?.(),
+      () => this.followupStore.privacyChanged(),
       () => this.persist(),
     ]
     const results = await Promise.allSettled(cleanup.map(operation => Promise.resolve().then(operation)))
@@ -2033,6 +2076,9 @@ export class AgentControl {
     const validateDraftOwner = sendsDraft ? () => {
       if (draftOwner() !== answerThreadId) throw new Error('The draft now belongs to a different thread. Review it and send again. Your draft is kept.')
     } : undefined
+    if (!this.watcherOrigins.has(command)) this.watcherHooks?.userCommand(command,
+      explicitThreadId ?? implicitThreadId ?? undefined, command.type === 'answer' || Boolean(composer?.composition.requestId
+        ?? (command.type === 'send' ? this.state.draftRequestId : null)))
     // Reserve before the command waits for its lane. This token is distinct from the native dispatch token.
     const releaseAnswer = answerThreadId ? this.holdAnswer(answerThreadId) : () => undefined
     let pending: Promise<AgentState>
@@ -2046,6 +2092,8 @@ export class AgentControl {
   private commandWhileRunning(command: AgentCommand, client: ClientIdentity, answerDecisionId?: string, validateDraftOwner?: () => void, composer?: ComposerContext): Promise<AgentState> {
     if (command.type !== 'manual-send' && command.type !== 'steer' && command.type !== 'queue-followup') return this.commandUnreserved(command, client, answerDecisionId, validateDraftOwner, composer)
     const prompt = structuredClone({ ...command, draftId: command.draftId ?? randomUUID() })
+    const origin = this.watcherOrigins.get(command)
+    if (origin) this.watcherOrigins.set(prompt, origin)
     const { threadId, draftId } = prompt
     const key = JSON.stringify([threadId, draftId])
     const digest = followupDigest(prompt)
@@ -2076,6 +2124,7 @@ export class AgentControl {
     return task
   }
   private commandUnreserved(command: AgentCommand, client: ClientIdentity = this.localClient, answerDecisionId?: string, validateDraftOwner?: () => void, composer?: ComposerContext): Promise<AgentState> {
+    const origin = this.watcherOrigins.get(command)
     const privateDraftReply = client.transport === 'socket' && (command.type === 'save-thread-draft' || command.type === 'compose' && command.threadId !== undefined)
     if (this.retirementFailure) {
       if (privateDraftReply) return Promise.resolve({ ...this.shell(), error: this.retirementFailure })
@@ -2131,7 +2180,7 @@ export class AgentControl {
     const actionDraftId = 'draftId' in command ? command.draftId : undefined
     const reconcilingDraft = command.type === 'manual-send' && this.outbox.some(item => item.threadId === actionThreadId && item.draftId === actionDraftId)
     // A Send joins the follow-ups the user already queued; a waiting wake-up is not one of them, so it changes nothing here.
-    if (command.type === 'manual-send' && !reconcilingDraft && (this.threadPrompts.has(actionThreadId) || this.pumping.has(actionThreadId) || this.state.host.threads.find(t => t.id === actionThreadId)?.status === 'running' || this.followupStore.peek().items.some(item => item.threadId === actionThreadId && !isWaitingWakeUp(item)))) {
+    if (!origin && command.type === 'manual-send' && !reconcilingDraft && (this.threadPrompts.has(actionThreadId) || this.pumping.has(actionThreadId) || this.state.host.threads.find(t => t.id === actionThreadId)?.status === 'running' || this.followupStore.peek().items.some(item => item.threadId === actionThreadId && !isWaitingWakeUp(item)))) {
       return this.followupCommand({ ...command, type: 'queue-followup', draftId: command.draftId ?? randomUUID() })
     }
     if (command.type === 'interrupt') return this.interruptThread(command)
@@ -2139,11 +2188,12 @@ export class AgentControl {
     let admission: Promise<Error | undefined> | undefined
     if ((command.type === 'manual-send' || command.type === 'steer')) {
       command = { ...command, draftId: command.draftId ?? randomUUID() }
+      if (origin) this.watcherOrigins.set(command, origin)
       const { threadId } = command
       if (!this.outbox.some(item => item.threadId === threadId)) {
         const current = this.state.threadDrafts?.find(item => item.threadId === threadId)
         // An explicit answer retains its owner and request; manual prompt validation will reject it.
-        if (!current?.requestId) {
+        if (!origin && !current?.requestId) {
           this.putThreadDraft({ threadId: command.threadId, draftId: command.draftId!, text: command.text,
             attachments: command.attachments ?? [], skills: command.skills, files: command.files, requestId: null, updatedAt: new Date().toISOString() })
           if (this.state.draftThreadId === command.threadId && !this.state.draftRequestId) {
@@ -2186,14 +2236,15 @@ export class AgentControl {
         if (admissionError instanceof Error) throw admissionError
         validateDraftOwner?.()
         const composition = privateDraftReply && composer ? { ...composer, feedback: (error: string | null) => { failure = error ?? undefined } } : composer
+        origin?.guard()
         await this.execute(command, turn, manualRetryId, selectionRevision, client, answerDecisionId, composition)
       } catch (error) {
         if (error instanceof AnswerDeliveryUnconfirmed) unconfirmedAnswer = error
         failure = error instanceof AnswerDeliveryUnconfirmed && error.delivered ? undefined
           : error instanceof CheckoutSendRefusal && (command.type === 'manual-send' || command.type === 'steer' || command.type === 'send') ? error.draftMessage()
           : error instanceof Error ? error.message : 'Sotto could not complete this action.'
-        if (!privateDraftReply && !(error instanceof AnswerDeliveryUnconfirmed)) this.setCommandError(error, failure!)
-        if (!privateDraftReply && failure !== undefined && !(error instanceof AnswerDeliveryUnconfirmed && client.transport === 'socket')) this.say(failure)
+        if (!origin && !privateDraftReply && !(error instanceof AnswerDeliveryUnconfirmed)) this.setCommandError(error, failure!)
+        if (!origin && !privateDraftReply && failure !== undefined && !(error instanceof AnswerDeliveryUnconfirmed && client.transport === 'socket')) this.say(failure)
       }
       if ((command.type === 'manual-send' || command.type === 'steer') && command.draftId) {
         const delivery = this.state.deliveries?.find(item => item.threadId === command.threadId && item.draftId === command.draftId)
@@ -2221,7 +2272,7 @@ export class AgentControl {
       if (unconfirmedAnswer?.delivered) failure = undefined
       // Socket replies and receipts keep the command's outcome, including Send answering a question draft.
       // Keep the published shell and desktop response as they are.
-      return privateDraftReply || (command.type === 'answer' || command.type === 'send') && client.transport === 'socket'
+      return origin || privateDraftReply || (command.type === 'answer' || command.type === 'send') && client.transport === 'socket'
         ? { ...this.shell(), error: failure ?? null } : this.shell()
     })
     if (independent) {
@@ -2251,6 +2302,7 @@ export class AgentControl {
   private async followupCommand(command: Extract<AgentCommand, { type: 'queue-followup' | 'edit-followup' | 'remove-followup' | 'reorder-followups' | 'resume-followups' }>): Promise<AgentState> {
     try {
       const thread = this.thread(command.threadId)
+      const origin = this.watcherOrigins.get(command); origin?.guard()
       this.state.error = null
       if (command.type === 'queue-followup' || command.type === 'edit-followup') {
         const existing = command.type === 'edit-followup' ? this.followupStore.get().items.find(item => item.threadId === thread.id && item.id === command.itemId) : undefined
@@ -2262,6 +2314,7 @@ export class AgentControl {
           this.setDelivery(thread.id, command.draftId, 'queued')
           this.publish({ receivedAt, threadId: thread.id, draftId: command.draftId })
           await this.followupStore.enqueue({ threadId: thread.id, draftId: command.draftId, text: command.text,
+            ...(origin?.operationId ? { watcherOperationId: origin.operationId } : {}),
             attachments: command.attachments ?? [], skills: command.skills, files: command.files, ...(thread.status === 'idle' && !thread.requests.length ? { resumeAfterTurnId: thread.lastTurn?.id ?? 'unknown' } : {}) })
         } else {
           await this.followupStore.edit(thread.id, command.itemId, { text: command.text, attachments: command.attachments ?? existing?.attachments ?? [], skills: command.skills ?? existing?.skills, files: command.files ?? existing?.files })
@@ -2338,6 +2391,7 @@ export class AgentControl {
         let failure: string | undefined
         try {
           this.canAct(threadId)
+          if (first.watcherOperationId) this.watcherHooks?.guardOperation(first.watcherOperationId)
           await this.followupStore.claim(first.id); claimed = true
           this.syncFollowups(); this.publish()
           const item = this.followupStore.get().items.find(item => item.id === first.id)!
@@ -2348,6 +2402,7 @@ export class AgentControl {
           const readMs = performance.now() - readStartedAt
           this.acceptSnapshot(read)
           const validate = (): void => {
+            if (item.watcherOperationId) { if (!this.watcherHooks) throw new Error('Watcher is unavailable.'); this.watcherHooks.guardOperation(item.watcherOperationId) }
             if (this.disposed || !this.followupReady(threadId, item.commandId)) throw new Error('The thread is no longer ready. Review it and resume its queue when ready.')
             const latest = this.thread(threadId)
             if (latest.status === 'running' || latest.requests.length || isThreadClosed(latest)
@@ -2411,6 +2466,7 @@ export class AgentControl {
     if (!queued) return // Already delivered or removed; a repeated click never creates another prompt.
     if (queued.wakeUp) throw new Error('A wake-up goes when the thread is ready for it, never into a running turn. It is still queued.')
     const validate = (): void => {
+      this.watcherOrigins.get(command)?.guard()
       this.canAct(command.threadId)
       const thread = this.thread(command.threadId)
       if (!capabilitiesForThread(this.state.host, thread).steer) throw new Error('This provider does not support native steering. Leave the message queued instead.')
@@ -2460,7 +2516,7 @@ export class AgentControl {
     }
     validate()
     if (turn) { turn.threadId = command.threadId; turn.projectId = this.thread(command.threadId).projectId }
-    await this.dispatch({ type: 'steer', threadId: command.threadId, commandId: randomUUID(), messageId: randomUUID(), text: command.text.trim(),
+    await this.dispatch({ type: 'steer', threadId: command.threadId, commandId: randomUUID(), messageId: this.watcher.operations.find(item => item.draftId === command.draftId)?.messageId ?? randomUUID(), text: command.text.trim(),
       ...(command.attachments ? { attachments: command.attachments } : {}), ...(command.skills ? { skills: command.skills } : {}), ...(command.files ? { files: command.files } : {}),
       expectedLastUserMessageId: lastUserMessageIdOf(this.thread(command.threadId)) }, turn, validate, command.draftId)
     this.say(`Steered ${this.thread(command.threadId).title}.`)
@@ -2519,6 +2575,7 @@ export class AgentControl {
   }
   private async execute(command: AgentCommand, turn?: ActiveTurn, manualRetryId?: string, selectionRevision = this.selectionRevision,
     client: ClientIdentity = this.localClient, answerDecisionId?: string, composer?: ComposerContext, sentDraft?: AgentThreadDraft): Promise<void> {
+    const origin = this.watcherOrigins.get(command); origin?.guard()
     if (this.disposed) throw new Error('Sotto is stopping. Your draft is saved.')
     if (command.type === 'send' && command.draft) {
       // One user Send owns staging and dispatch. A Check can never reopen an old reservation between them.
@@ -2693,7 +2750,7 @@ export class AgentControl {
         return
       }
       case 'send': await this.sendDraft(turn, manualRetryId, selectionRevision, client); return
-      case 'manual-send': await this.sendManual(command.threadId, command.text, turn, manualRetryId, command.attachments, command.draftId, command.skills, command.files); return
+      case 'manual-send': await this.sendManual(command.threadId, command.text, turn, manualRetryId, command.attachments, command.draftId, command.skills, command.files, origin); return
       case 'steer-followup': await this.steerFollowup(command, turn); return
       case 'steer': await this.steer(command, turn); return
       case 'create-project': {
@@ -2717,7 +2774,7 @@ export class AgentControl {
         const folderKey = (value: string): string => process.platform === 'win32' ? resolve(value).toLowerCase() : resolve(value)
         const known = command.useExisting ? this.state.host.projects.find(project => folderKey(project.path) === folderKey(path) && (!project.providerId || project.providerId === provider)) : undefined
         if (known) {
-          if (selectionRevision === this.selectionRevision) {
+          if (!origin && selectionRevision === this.selectionRevision) {
             this.state.activeProjectId = known.id; this.state.activeThreadId = null
           }
           this.observe(); this.say(`Opened ${known.title}.`)
@@ -2727,7 +2784,7 @@ export class AgentControl {
         const projectId = this.dependencies.host.createProjectId?.(provider) ?? randomUUID()
         if (turn) { turn.threadId = null; turn.projectId = projectId }
         await this.dispatch({ type: 'create-project', commandId: randomUUID(), projectId, title: command.title, path, ...(this.state.host.providers ? { provider } : {}) }, turn)
-        if (selectionRevision === this.selectionRevision) {
+        if (!origin && selectionRevision === this.selectionRevision) {
           this.state.activeProjectId = projectId; this.state.activeThreadId = null
         }
         this.observe()
@@ -2741,7 +2798,8 @@ export class AgentControl {
         const host = this.dependencies.host
         if (!host.setWorkspaceSettled) throw new Error('Workspace organization is unavailable.')
         const project = 'projectId' in command
-        this.acceptSnapshot(await host.setWorkspaceSettled(project ? 'project' : 'thread', project ? command.projectId : command.threadId, command.type.startsWith('settle-')))
+        origin?.guard()
+        this.acceptSnapshot(await host.setWorkspaceSettled(project ? 'project' : 'thread', project ? command.projectId : command.threadId, command.type.startsWith('settle-'), undefined, origin?.guard))
         this.state.notice = command.type.startsWith('settle-') ? 'Moved to Settled.' : 'Restored.'
         return
       }
@@ -2794,7 +2852,7 @@ export class AgentControl {
         // a caller's explicit choice still wins.
         const defaults = this.newThreadOptionDefaults(command, model)
         validateThreadOptions(this.state.host, { modelId: command.modelId, ...defaults })
-        const validatePermission = (): void => this.guardThreadPermission(client, defaults, model)
+        const validatePermission = (): void => { origin?.guard(); if (!origin?.operationId) this.guardThreadPermission(client, defaults, model) }
         validatePermission()
         // The window may already be showing this thread under an ID it minted; main adopts it so nothing has to move.
         if (command.threadId !== undefined && this.state.host.threads.some(thread => thread.id === command.threadId)) {
@@ -2808,12 +2866,12 @@ export class AgentControl {
           ...(command.baseBranch ? { baseBranch: command.baseBranch } : {}),
           ...(command.startFromOrigin !== undefined ? { startFromOrigin: command.startFromOrigin } : {}),
           ...(command.existingWorktreePath ? { existingWorktreePath: command.existingWorktreePath } : {}),
-          ...defaults }, turn, validatePermission)
-        if (selectionRevision === this.selectionRevision) {
+          ...defaults }, turn, validatePermission, undefined, client, undefined, origin)
+        if (!origin && selectionRevision === this.selectionRevision) {
           this.state.activeThreadId = threadId; this.state.activeProjectId = command.projectId
         }
         this.observe(); this.acceptSnapshot(await this.readThread(threadId))
-        if (selectionRevision === this.selectionRevision) this.state.activeProjectId = this.thread(threadId).projectId
+        if (!origin && selectionRevision === this.selectionRevision) this.state.activeProjectId = this.thread(threadId).projectId
         this.say(`Opened ${command.title}.`)
         return
       }
@@ -2851,9 +2909,9 @@ export class AgentControl {
         return
       }
       case 'interrupt': {
-        const validate = (): void => this.validateInterrupt(command.threadId)
+        const validate = (): void => { origin?.guard(); this.validateInterrupt(command.threadId) }
         validate()
-        await this.dispatch({ type: 'interrupt', commandId: randomUUID(), threadId: command.threadId }, turn, validate)
+        await this.dispatch({ type: 'interrupt', commandId: randomUUID(), threadId: command.threadId }, turn, validate, undefined, client, undefined, origin)
         return
       }
       case 'compact-thread': {
@@ -3032,13 +3090,13 @@ export class AgentControl {
     return () => { activity.active.delete(token) }
   }
   private async dispatch(command: DispatchCommand, turn?: ActiveTurn, validate?: () => void, draftId?: string,
-    client: ClientIdentity = this.localClient, atomicDigest?: string): Promise<void> {
+    client: ClientIdentity = this.localClient, atomicDigest?: string, machineOrigin?: WatcherCommandOrigin): Promise<void> {
     const releaseAnswer = command.type === 'answer' ? this.holdAnswer(command.threadId, command.commandId) : () => undefined
-    try { await this.dispatchPending(command, turn, validate, draftId, client, atomicDigest) }
+    try { await this.dispatchPending(command, turn, validate, draftId, client, atomicDigest, machineOrigin) }
     finally { releaseAnswer(); this.settingsDispatching.delete(command.commandId) }
   }
   private async dispatchPending(command: DispatchCommand, turn?: ActiveTurn, validate?: () => void, draftId?: string,
-    client: ClientIdentity = this.localClient, atomicDigest?: string): Promise<void> {
+    client: ClientIdentity = this.localClient, atomicDigest?: string, machineOrigin?: WatcherCommandOrigin): Promise<void> {
     // A prompt or an answer stays as a draft when this refuses; a create, a setting or a stop has none.
     const draftKept = promptOf(command) !== null || command.type === 'answer'
     this.canAct(undefined, draftKept)
@@ -3046,6 +3104,9 @@ export class AgentControl {
     if (command.type === 'answer') this.guardClientGrant(client)
     const threadId = 'threadId' in command ? command.threadId : undefined
     const prompt = promptOf(command)
+    const operation = draftId ? this.watcher.operations.find(item => item.draftId === draftId) : undefined
+    const origin = machineOrigin ?? (operation ? { operationId: operation.id, guard: () => this.watcherHooks!.guardOperation(operation.id) } : undefined)
+    origin?.guard()
     const provider = command.type === 'create-project' ? command.provider ?? this.state.configuration.provider
       : command.type === 'create-thread' || (command.type === 'configure-thread' && command.modelId && this.thread(command.threadId).nativeSessionStarted === false)
         ? resolveModel(this.state.host.models, command.modelId)?.providerId : command.type === 'answer'
@@ -3056,7 +3117,8 @@ export class AgentControl {
       const thread = this.thread(toThread.threadId); const capabilities = capabilitiesForThread(this.state.host, thread)
       if (prompt && (!capabilities.submit || !capabilities.reconcile)) throw new Error('This connection cannot safely send and reconcile a prompt.')
       if (command.type === 'answer') {
-        const request = thread.requests.find(request => request.id === command.requestId)
+        const answerId = command.requestId
+        const request = thread.requests.find(request => request.id === answerId)
         if (request && !(request.kind === 'permission' ? capabilities.permissions : capabilities.questions)) throw new Error('This provider does not support answering this request.')
       }
     }
@@ -3066,11 +3128,13 @@ export class AgentControl {
     else if (prompt) draftId ??= randomUUID()
     // Stop has its own intent and may pass an unresolved prompt; it cannot settle or replay that prompt.
     if (command.type !== 'interrupt' && this.outbox.some(item => threadId ? item.threadId === threadId : item.threadId === undefined && (item.provider ?? this.state.configuration.provider) === provider)) throw new Error('An earlier action has an unknown result. Reconnect and inspect the provider before retrying; Sotto will not send it twice.')
-    const answerRequest = command.type === 'answer' ? this.thread(command.threadId).requests.find(item => item.id === command.requestId) : undefined
+    const answerId = command.type === 'answer' ? command.requestId : undefined
+    const answerRequest = command.type === 'answer' ? this.thread(command.threadId).requests.find(item => item.id === answerId) : undefined
     const answerQuestions = answerRequest ? requestDraftQuestions(answerRequest) : []
     // A model change that names no effort is saved with the new model's default, as the provider will start it on.
     const startingEffort = command.type === 'configure-thread' && command.modelId !== undefined && command.reasoningEffort === undefined
       ? resolveModel(this.state.host.models, command.modelId)?.defaultReasoningEffort : undefined
+    command = (this.watcherHooks?.beforeDispatch(command as AgentHostCommand, draftId, origin) ?? command) as DispatchCommand
     this.outbox.push({ id: command.commandId, type: command.type, ...(provider ? { provider } : {}), ...(threadId ? { threadId } : {}),
       ...('messageId' in command ? { messageId: command.messageId } : {}),
       ...('requestId' in command ? { requestId: command.requestId } : {}),
@@ -3131,7 +3195,9 @@ export class AgentControl {
           this.firstOutputs.watch(prompt.threadId, stages, this.state.host.threads.find(item => item.id === prompt.threadId))
           endLoan = lendSendStages(command.commandId, stages)
         }
-        result = await this.dependencies.host.execute(hostCommand).catch(error => {
+        origin?.guard()
+        result = await (origin && this.dependencies.host.executeFromWatcher
+          ? this.dependencies.host.executeFromWatcher(hostCommand, origin.guard) : this.dependencies.host.execute(hostCommand)).catch(error => {
           if (turn) turn.failureCode = 'provider-failed'
           throw error
         })
@@ -3248,7 +3314,7 @@ export class AgentControl {
       this.publishedDetail.delete(threadId); this.detailSnapshots.delete(threadId); this.publish()
     }
   }
-  private async sendManual(threadId: string, text: string, turn?: ActiveTurn, retryId?: string, attachments: AgentAttachmentHandle[] = [], draftId?: string, skills?: AgentSkillReference[], files?: AgentFileReference[]): Promise<void> {
+  private async sendManual(threadId: string, text: string, turn?: ActiveTurn, retryId?: string, attachments: AgentAttachmentHandle[] = [], draftId?: string, skills?: AgentSkillReference[], files?: AgentFileReference[], origin?: WatcherCommandOrigin): Promise<void> {
     if (draftId && this.state.deliveredDrafts?.some(receipt => receipt.threadId === threadId && receipt.draftId === draftId)) return
     const pendingId = retryId ?? this.outbox.find(item => item.threadId === threadId)?.id
     if (pendingId) {
@@ -3262,7 +3328,7 @@ export class AgentControl {
       this.observe()
       return
     }
-    const preserveDraft = this.hasDraft() && this.state.draftThreadId !== threadId
+    const preserveDraft = Boolean(origin) || this.hasDraft() && this.state.draftThreadId !== threadId
     if (this.hasDraft() && !preserveDraft && this.state.draftRequestId) throw new Error('Send or clear the existing answer before prompting this thread.')
     if (this.state.threadDrafts?.find(item => item.threadId === threadId)?.requestId) throw new Error('Send or clear the existing answer before prompting this thread.')
     this.thread(threadId)
@@ -3278,13 +3344,14 @@ export class AgentControl {
     }
     this.canAct()
     this.observe(threadId)
-    const messageId = randomUUID()
+    const messageId = this.watcher.operations.find(item => item.draftId === draftId)?.messageId ?? randomUUID()
     const readStartedAt = performance.now()
     const read = await this.readThread(threadId, undefined, readBeforeSend(messageId))
     this.sendStages(turn)?.addRead(performance.now() - readStartedAt)
     this.acceptSnapshot(read)
     const validate = (): void => {
       this.canAct()
+      origin?.guard()
       const latest = this.thread(threadId)
       if (!text.trim() && !attachments.length) throw new Error('There is no prompt to send.')
       validatePromptAttachments(this.state.host, latest.modelId, attachments)
@@ -3389,6 +3456,8 @@ export class AgentControl {
     // Sotto's own requests join the provider's before anything below reads the threads (ADR-0035).
     const snapshot = this.withSottoRequests(incoming)
     this.state.host = snapshot
+    this.watcherHooks?.observe(snapshot, new Set([...this.outbox.flatMap(item => item.messageId ? [item.messageId] : []),
+      ...(this.state.deliveries ?? []).flatMap(item => item.messageId ? [item.messageId] : [])]))
     if (snapshot.connected && this.state.activeThreadId && this.watcherAvailable(this.state.activeThreadId) && !snapshot.threads.some(thread => thread.id === this.state.activeThreadId)) {
       const selected = snapshot.threads.find(thread => thread.id === this.state.draftThreadId) ?? snapshot.threads.find(thread => !isThreadClosed(thread))
       this.state.activeThreadId = selected?.id ?? null

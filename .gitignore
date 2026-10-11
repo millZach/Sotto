@@ -320,6 +320,9 @@ artifacts/omarchy-shell-integration/*
 !artifacts/omarchy-shell-integration/g-two-outputs.png
 !artifacts/omarchy-shell-integration/h-widget-returned.png
 
+artifacts/watcher-thread-tools-live/
+artifacts/watcher-thread-tools-review/
+artifacts/watcher-thread-tools-gates/
 artifacts/watcher-own-tools-live/
 artifacts/watcher-own-tools-windows/
 

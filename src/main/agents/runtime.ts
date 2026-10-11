@@ -12,6 +12,8 @@ import { DevinAcpHost } from './devin'
 import { ConfiguredProviderHost } from './providerSwitch'
 import { SottoThreadHost, ThreadRegistry } from './threads'
 import { WorkspaceHost } from './workspace'
+import { WatcherService } from './watcher'
+import { WatcherToolServer } from './watcherTools'
 import { AgentControl } from './control'
 import { TurnRecorder } from './turns'
 import { ConfiguredAgentReasoner } from './reasoning'
@@ -164,6 +166,11 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     writeFirstMessageTitle: firstMessageTitleWriter(options.writingSettings),
     reasoner,
   })
+  let watcherTools: WatcherToolServer | undefined
+  const watcher = options.watcherEnabled === true && options.runsAs !== 'headless-host'
+    ? new WatcherService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled,
+      limit: () => options.settings().watcherInFlightLimit, revoke: id => watcherTools?.revoke(id) }) : undefined
+  if (watcher) { watcherTools = new WatcherToolServer(watcher); agentHost.useWatcherTools(watcherTools) }
   agentHost.setPendingThreadWork(threadId => agentControl.hasPendingThreadWork(threadId), threadId => agentControl.pendingThreadWorkReason(threadId))
   // Reclaims worktrees only under the rules the user turned on (ADR-0041); every rule starts off. The desktop's
   // local host and a headless host both own worktrees, so both get it. Its owner starts it once the owner's own
@@ -205,6 +212,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     closing ??= (async () => {
       // A sweep in progress finishes its current worktree, and takes no other, before the host it asks is closed.
       // A babysitting pass finishes the pull request it is on, and records what it told, the same way.
+      watcher?.close(); await watcherTools?.close()
       await worktreeCleanup.close()
       if (babysitter) await babysitter.close()
       toolReads.dispose()
@@ -231,13 +239,15 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   try {
     await agentControl.start(switchedOff ? { beforeConnect: async () => { await switchedOff.stop({ startedBy: 'agent' }, 'switch').catch(() => 0) } } : {})
   } catch (error) {
+    watcher?.close(); await watcherTools?.close()
     void babysitter?.close()
     agentControl.dispose()
     await Promise.allSettled([reasoner.close?.(), shortTextWriter.close(), ...Object.values(providers).map(provider => provider.closed?.())])
     agentHost.dispose()
     throw error
   }
+  if (watcher) await watcher.recover()
   const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined })
   babysitter?.begin()
-  return { agentHost, agentControl, threadRegistry, turns, hostService, shortTextWriter, worktreeCleanup, babysitter, close }
+  return { agentHost, agentControl, threadRegistry, turns, hostService, shortTextWriter, worktreeCleanup, babysitter, watcher, watcherTools, close }
 }
