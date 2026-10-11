@@ -732,11 +732,13 @@ export class WatcherService implements WatcherControlHooks {
       signature: digest(ownership.map(item => [key(item.target), item.requestId, key(item.watcher)])) }
   }
   prepareStopAll(): WatcherPrepareStopAllResult {
+    if (this.closed) return watcherRefusal('NOT_CURRENT_WATCHER', 'Watcher is stopping. Nothing was stopped. Reopen Sotto.')
     const { targets, signature } = this.stopAllScope(), id = randomUUID(), expires = Date.now() + 60_000
     this.confirmations.set(id, { targets, expires, signature })
     return { status: 'ok', confirmationId: id, targets, expiresAt: new Date(expires).toISOString() }
   }
   async stopAll(confirmationId: string): Promise<WatcherStopAllResult> {
+    if (this.closed) return watcherRefusal('NOT_CURRENT_WATCHER', 'Watcher is stopping. Nothing was stopped. Reopen Sotto.')
     const confirmation = this.confirmations.get(confirmationId); this.confirmations.delete(confirmationId)
     if (!confirmation || confirmation.expires < Date.now() || confirmation.signature !== this.stopAllScope().signature) {
       return watcherRefusal('TARGET_CHANGED', 'The threads to stop changed or the confirmation expired. Review Stop all again.')
@@ -752,6 +754,7 @@ export class WatcherService implements WatcherControlHooks {
     const results: Extract<WatcherStopAllResult, { status: 'ok' }>['results'] = []
     for (const target of targets) {
       const guard = () => {
+        if (this.closed) refuse('NOT_CURRENT_WATCHER', 'Watcher is stopping. Nothing was stopped.')
         const participant = this.record().requests.flatMap(request => request.participants).find(item => key(item.target) === key(target) && item.startedBy === 'watcher' && item.state === 'participating')
         if (!participant) refuse('THREAD_TAKEN_OVER', 'This thread was taken over and was not stopped.')
         this.protect(this.thread(target))

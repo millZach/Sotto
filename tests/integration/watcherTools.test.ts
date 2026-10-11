@@ -188,6 +188,26 @@ it('requires a main preview for Stop all, stops only started participants and re
   expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'queue', text: 'Synthetic stopped request' })).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
 })
 
+it('refuses Stop all preview and confirmation after closing without coordinator effects', async () => {
+  const f = await fixture(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  const preview = f.service.prepareStopAll()
+  if (preview.status !== 'ok') throw new Error('preview refused')
+  f.service.close()
+  const record = f.control.watcherRecord(), commands = f.workspace.adapters.codex.commands.length
+  const update = vi.spyOn(f.control, 'updateWatcher'), cancel = vi.spyOn(f.control, 'cancelWatcherQueue'), command = vi.spyOn(f.control, 'commandFromWatcher')
+  const latePreview = f.service.prepareStopAll()
+  const result = await f.service.stopAll(latePreview.status === 'ok' ? latePreview.confirmationId : preview.confirmationId)
+  expect(result).toMatchObject({ status: 'refused', code: 'NOT_CURRENT_WATCHER' })
+  expect(latePreview).toMatchObject({ status: 'refused', code: 'NOT_CURRENT_WATCHER' })
+  expect(f.control.watcherRecord()).toEqual(record)
+  expect(f.workspace.adapters.codex.commands).toHaveLength(commands)
+  expect(update).not.toHaveBeenCalled()
+  expect(cancel).not.toHaveBeenCalled()
+  expect(command).not.toHaveBeenCalled()
+  update.mockRestore(); cancel.mockRestore(); command.mockRestore()
+})
+
 it('keeps Stop all confirmation valid when a previewed worker receives another Watcher prompt', async () => {
   const f = await fixture(), first = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
