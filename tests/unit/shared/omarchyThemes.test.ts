@@ -160,7 +160,8 @@ describe('Omarchy M3 and readability check', () => {
     // Pin all twelve shipped halves and their token projection; this Linux repair
     // must never change Windows/macOS palettes or require new design baselines.
     expect(createHash('sha256').update(JSON.stringify(BUILT_IN_THEMES)).digest('hex')).toBe('985239fe0784442b1a8ef03112c39d38aef7929d38ca18c345114be56d0a8c85')
-    expect(createHash('sha256').update(readFileSync('src/renderer/src/styles/tokens.css')).digest('hex')).toBe('4eadc2de5ea36409889828d695ca79f6b66111de9b83b20f0bad9b772af5f667')
+    const tokenText = readFileSync('src/renderer/src/styles/tokens.css', 'utf8').replace(/\r\n/gu, '\n')
+    expect(createHash('sha256').update(tokenText).digest('hex')).toBe('4eadc2de5ea36409889828d695ca79f6b66111de9b83b20f0bad9b772af5f667')
     // Existing Windows and macOS imports named Omarchy remain user themes.
     expect(parseCustomThemes([{ ...parseOmarchyTheme(fixtures.themes.hackerman.rendered), id: 'omarchy' }])[0]?.id).toBe('omarchy')
   })

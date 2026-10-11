@@ -81,7 +81,7 @@ The separate `--tt-text-faint` role is measured on the 17 surfaces in the existi
 
 ## Each built-in half
 
-The built-ins and `tokens.css` are unchanged, pinned by SHA-256 assertions in the Windows and macOS cases. No Windows design capture was regenerated.
+The built-ins and `tokens.css` are unchanged, pinned by SHA-256 assertions in the Windows and macOS cases; the stylesheet pin normalizes CRLF to LF. A follow-up checked both line endings against the expected hash without changing the stylesheet. No Windows design capture was regenerated.
 
 | Palette | Mode | Selected sidebar row | Hovered sidebar row | Bubble |
 | --- | --- | ---: | ---: | ---: |
