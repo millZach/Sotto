@@ -756,25 +756,44 @@ describe('what the router builds for the window (#917)', () => {
 })
 
 describe('Watcher threads on a streaming detail (#917)', () => {
-  it('tells a Watcher thread from the last state it built rather than reading the host for every detail', () => {
+  function watching() {
     const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: false })
     const host = fixture(LOCAL, 'local')
     host.state.host.threads.push({ ...host.state.host.threads[0]!, id: 'watcher', kind: 'watcher' })
-    let push: ((state: AgentState) => void) | undefined
+    let pushState: ((state: AgentState) => void) | undefined
     let pushDetail: ((detail: AgentThreadDetailUpdate) => void) | undefined
     const shell = vi.fn(() => structuredClone(host.state))
-    host.connection.service = { ...host.connection.service, shell, subscribe: listener => { push = listener; return () => { push = undefined } } }
+    const threadKind = vi.fn((id: string) => host.state.host.threads.find(thread => thread.id === id)?.kind)
+    host.connection.service = { ...host.connection.service, shell, threadKind, subscribe: listener => { pushState = listener; return () => { pushState = undefined } } }
     host.connection.subscribeDetail = listener => { pushDetail = listener; return () => { pushDetail = undefined } }
     router.add(host.connection)
-    router.subscribe(() => undefined)
-    push!(structuredClone(host.state))
-    const forwarded: AgentThreadDetailUpdate[] = []
-    router.subscribeThreadDetail(detail => forwarded.push(detail))
+    const forwarded: string[] = []
+    router.subscribeThreadDetail(detail => forwarded.push(detail.threadId))
     shell.mockClear()
-    for (let chunk = 0; chunk < 20; chunk++) pushDetail!({ threadId: 'thread', revision: chunk + 1, messages: [] })
-    pushDetail!({ threadId: 'watcher', revision: 1, messages: [] })
+    return { router, host, shell, threadKind, forwarded, push: (threadId: string, revision: number) => pushDetail!({ threadId, revision, messages: [] }),
+      pushState: () => pushState!(structuredClone(host.state)) }
+  }
+
+  // Reading the host's shell copied the coordinator's whole state again for every detail a streaming thread sent.
+  it('asks the host for a detail\'s thread kind instead of copying its state', () => {
+    const { router, shell, threadKind, forwarded, push } = watching()
+    for (let chunk = 0; chunk < 20; chunk++) push('thread', chunk + 1)
+    push('watcher', 1)
     expect(shell).not.toHaveBeenCalled()
-    expect(forwarded.map(detail => detail.threadId)).toEqual(Array.from({ length: 20 }, () => hostEntityKey(LOCAL, 'thread')))
+    expect(threadKind).toHaveBeenCalledTimes(21)
+    expect(forwarded).toEqual(Array.from({ length: 20 }, () => hostEntityKey(LOCAL, 'thread')))
+    router.dispose()
+  })
+
+  it('hides a thread that became a Watcher thread from its very next detail, before any state arrives', () => {
+    const { router, host, forwarded, push, pushState } = watching()
+    // The window is listening and has been sent the thread as an ordinary one.
+    router.subscribe(() => undefined)
+    pushState()
+    push('thread', 1)
+    host.state.host.threads[0]!.kind = 'watcher-history'
+    push('thread', 2)
+    expect(forwarded).toEqual([hostEntityKey(LOCAL, 'thread')])
     router.dispose()
   })
 })

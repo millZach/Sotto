@@ -591,6 +591,8 @@ export class AgentControl {
    * through `get()` copied every loaded history each time, 200 to 430 ms on a desktop with 195 threads.
    */
   hostId(): string | undefined { return this.state.host.hostId }
+  /** One thread's kind as it is now, for the router's Watcher check on every detail; `shell()` would copy the whole state. */
+  threadKind(threadId: string): AgentThread['kind'] { return this.state.host.threads.find(thread => thread.id === threadId)?.kind }
   /**
    * The whole state, every loaded thread's history included, with attachment preview markers placed.
    * It copies every history and walks every message, so it is for a caller that reads histories;

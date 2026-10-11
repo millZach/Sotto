@@ -1,7 +1,7 @@
 import { visibleWatcherState } from '../../shared/watcherVisibility'
 import { WATCHER_DISABLED } from '../agents/watcherLaunchProfiles'
 import { randomUUID } from 'node:crypto'
-import { agentCommandSchema, MAX_DELIVERED_DRAFTS, HOST_CANNOT_STAGE_SCREENSHOTS, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThread, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
+import { agentCommandSchema, MAX_DELIVERED_DRAFTS, HOST_CANNOT_STAGE_SCREENSHOTS, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import { clientAgentState, hostEntityKey, mapHostReferences, parseHostEntityKey } from '../../shared/clientIdentity'
 import { desktopWindowClient, type ClientIdentity, type HostService, type RequestAnswerRecovery } from '../agents/hostService'
 import { requestDraftProvider, requestDraftQuestions, type RequestDraftOwner, type RequestDraftTarget } from '../../shared/requestDrafts'
@@ -23,7 +23,7 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   hostId: string
   name: string
   kind: 'local' | 'remote'
-  service: Pick<HostService, 'shell' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions'>
+  service: Pick<HostService, 'shell' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions'>
   refreshRequestAnswer?(decisionId: string, target: HostAnswerTarget): Promise<void>
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
@@ -93,8 +93,6 @@ export class DesktopHostRouter {
    * another copy of the same state (#917). A remote host's push carries the histories it has cached, so it is read afresh.
    */
   private readonly broadcasts = new Map<string, AgentState>()
-  /** Each host's threads by ID, with their kind, as the state published from its last push had them. */
-  private readonly threadKinds = new Map<string, Map<string, AgentThread['kind']>>()
   private readonly detailListeners = new Set<(detail: AgentThreadDetailUpdate) => void>()
   private selectedHostId: string | undefined
   private selectedThreadId: string | null | undefined
@@ -119,15 +117,11 @@ export class DesktopHostRouter {
 
   constructor(private readonly empty: () => AgentState, private readonly options: { bindRequestDraftDecision?: BindRequestDraftDecision; watcherEnabled?: boolean } = {}) {}
 
-  /**
-   * `published` is for a detail being forwarded: it is judged on what the state published from its host's last push said
-   * of its thread, and the host's shell is read only for a thread that state did not have. Reading the shell for every
-   * detail a streaming thread sent copied the whole state again each time (#917). Everything else reads the host as it is.
-   */
-  private watcherAvailable(connection: DesktopHostConnection, id: string | undefined, published = false): boolean {
+  /** Asks the host for the thread's kind as it is now. Reading its shell for that copied the whole state, and this runs for
+   * every detail a streaming thread sends (#917); a host that cannot answer more cheaply is still read that way. */
+  private watcherAvailable(connection: DesktopHostConnection, id: string | undefined): boolean {
     if (this.options.watcherEnabled === true || !id || id === '_') return true
-    const known = published ? this.threadKinds.get(connection.hostId) : undefined
-    const kind = known?.has(id) ? known.get(id) : connection.service.shell().host.threads.find(thread => thread.id === id)?.kind
+    const kind = connection.service.threadKind ? connection.service.threadKind(id) : connection.service.shell().host.threads.find(thread => thread.id === id)?.kind
     return kind !== 'watcher' && kind !== 'watcher-history'
   }
   /** Saved owner classification stays available even when the public shell omits Watcher. */
@@ -152,15 +146,13 @@ export class DesktopHostRouter {
 
   /** Follows a connection's states and details, keeping a local host's broadcast shell for the next publication. */
   private watch(connection: DesktopHostConnection): (() => void)[] {
-    this.broadcasts.delete(connection.hostId); this.threadKinds.delete(connection.hostId)
+    this.broadcasts.delete(connection.hostId)
     const off = [connection.service.subscribe(state => {
       if (connection.kind === 'local') this.broadcasts.set(connection.hostId, state)
-      // What the last publication said of this host's threads is out of date now; the publication below says it again.
-      this.threadKinds.delete(connection.hostId)
       this.emit()
     })]
     if (connection.subscribeDetail) off.push(connection.subscribeDetail(detail => {
-      if (!this.watcherAvailable(connection, detail.threadId, true)) return
+      if (!this.watcherAvailable(connection, detail.threadId)) return
       const scoped = mapHostReferences(detail, id => hostEntityKey(connection.hostId, id))
       for (const listener of this.detailListeners) listener(scoped)
     }))
@@ -195,7 +187,7 @@ export class DesktopHostRouter {
   remove(hostId: string): void {
     this.hosts.get(hostId)?.off.forEach(off => off())
     this.hosts.delete(hostId)
-    this.broadcasts.delete(hostId); this.threadKinds.delete(hostId)
+    this.broadcasts.delete(hostId)
     this.reconnecting.delete(hostId)
     if (this.selectedHostId === hostId) this.selectedHostId = this.hosts.keys().next().value
     if (this.selectedThreadId && parseHostEntityKey(this.selectedThreadId)?.hostId === hostId) this.selectedThreadId = null
@@ -227,12 +219,10 @@ export class DesktopHostRouter {
   }
   /** Every host's shell read afresh, for a command's reply and any caller that must see the state as it is now. */
   shell(): AgentState { return this.build(connection => connection.service.shell()) }
-  private build(read: (connection: DesktopHostConnection) => AgentState, publishing = false): AgentState {
+  private build(read: (connection: DesktopHostConnection) => AgentState): AgentState {
     this.settleAnswerNotice()
     const entries = [...this.hosts.values()].map(({ connection }) => {
-      const hostState = read(connection)
-      if (publishing) this.threadKinds.set(connection.hostId, new Map(hostState.host.threads.map(thread => [thread.id, thread.kind])))
-      const original = this.visibleState(hostState)
+      const original = this.visibleState(read(connection))
       return { connection, original, state: clientAgentState(original) }
     })
     const selected = entries.find(item => item.connection.hostId === this.selectedHostId)
@@ -688,7 +678,7 @@ export class DesktopHostRouter {
   /** Built when it changed, so what a listener holds is the state of that moment, even if the window takes it later. */
   private emit(): void {
     if (this.listeners.size) {
-      const state = this.build(connection => this.broadcasts.get(connection.hostId) ?? connection.service.shell(), true)
+      const state = this.build(connection => this.broadcasts.get(connection.hostId) ?? connection.service.shell())
       for (const listener of this.listeners) listener(state)
     } else this.settleAnswerNotice()
     this.publishedNotice = this.notice
@@ -696,7 +686,7 @@ export class DesktopHostRouter {
   }
   dispose(): void {
     for (const hostId of [...this.hosts.keys()]) this.remove(hostId)
-    this.listeners.clear(); this.changeListeners.clear(); this.detailListeners.clear(); this.broadcasts.clear(); this.threadKinds.clear()
+    this.listeners.clear(); this.changeListeners.clear(); this.detailListeners.clear(); this.broadcasts.clear()
     this.draftPass.disposed = true; clearTimeout(this.draftPass.gap); this.draftPass.gap = undefined; this.draftPass.wanted = undefined
   }
 }
