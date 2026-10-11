@@ -115,6 +115,14 @@ interface ActivityState {
   input?: { activities: readonly AgentActivity[]; redactionRevision: number } | undefined
 }
 
+/** What is known of a thread's stored activity without its records: its marker and how many records it holds (#918). */
+interface ActivityMeta {
+  known: boolean
+  epoch: string | undefined
+  resetSequence: number | undefined
+  count: number
+}
+
 function activityIdentityHash(threadId: string, activityId: string): string {
   return createHash('sha256').update(`${threadId.length}:`).update(threadId).update(activityId).digest('hex')
 }
@@ -164,6 +172,8 @@ export class ThreadStore {
   private readonly statements = new Map<string, StatementSync>()
   /** Independent successful values: providers may mutate their records after a publish. */
   private readonly activityStates = new Map<string, ActivityState>()
+  /** Markers and counts for threads whose records are not held in `activityStates`. */
+  private readonly activityMetas = new Map<string, ActivityMeta>()
   private readonly activityRedactions = new Set<string>()
   private redactionRevision = 0
   private readonly redactionChecks = new Map<string, Map<string, boolean>>()
@@ -241,6 +251,7 @@ export class ThreadStore {
     this.durableRedactions = undefined
     this.statements.clear()
     this.activityStates.clear()
+    this.activityMetas.clear()
     this.activityRedactions.clear()
     this.redactionChecks.clear()
     this.visualCache.clear()
@@ -319,19 +330,67 @@ export class ThreadStore {
       const rows = this.statement('SELECT activity_id, position, payload FROM activities WHERE thread_id = ? ORDER BY position').all(threadId)
       const records: ActivityState['records'] = new Map()
       for (const row of rows) {
-        const activity = agentActivitySchema.parse(JSON.parse(String(row.payload)))
-        if (activity.id !== row.activity_id) throw new Error('Stored activity identity does not match its record')
+        const activity = storedActivity(row)
         records.set(activity.id, { position: Number(row.position), activity })
       }
       state = { known: epochRow !== undefined, epoch: epoch === undefined || epoch === null ? undefined : String(epoch), resetSequence: epochRow?.message_reset_seq === null || epochRow?.message_reset_seq === undefined ? undefined : Number(epochRow.message_reset_seq), records }
       this.activityStates.set(threadId, state)
+      this.activityMetas.delete(threadId)
     }
     return state
   }
 
+  /**
+   * A thread's activity marker and record count. Read from the records this store holds for the thread, or else from one
+   * marker row and a count, so asking about every thread at start reads no record (#918).
+   */
+  private activityMeta(threadId: string): ActivityMeta {
+    const state = this.activityStates.get(threadId)
+    if (state !== undefined) return { known: state.known, epoch: state.epoch, resetSequence: state.resetSequence, count: state.records.size }
+    let meta = this.activityMetas.get(threadId)
+    if (meta === undefined) {
+      const epochRow = this.statement('SELECT epoch, message_reset_seq FROM activity_epochs WHERE thread_id = ?').get(threadId)
+      const countRow = this.statement('SELECT COUNT(*) AS count FROM activities WHERE thread_id = ?').get(threadId)
+      meta = { known: epochRow !== undefined,
+        epoch: epochRow?.epoch === undefined || epochRow.epoch === null ? undefined : String(epochRow.epoch),
+        resetSequence: epochRow?.message_reset_seq === null || epochRow?.message_reset_seq === undefined ? undefined : Number(epochRow.message_reset_seq),
+        count: Number(countRow?.count ?? 0) }
+      this.activityMetas.set(threadId, meta)
+    }
+    return meta
+  }
+
+  /**
+   * Whether the records here have been read whole once since subagent task words moved to the agent roster, so none of
+   * them still carries words the roster lacks (#918). Until then a start reads every record, as each start used to.
+   */
+  subagentWordsMoved(): boolean {
+    return readMeta(this.requireOpen(), 'subagentWordsMoved') === '1'
+  }
+
+  markSubagentWordsMoved(): void {
+    writeMeta(this.requireOpen(), 'subagentWordsMoved', '1')
+  }
+
   /** True once an authoritative list has been stored, even when that list is empty. */
   hasActivities(threadId: string): boolean {
-    return this.activityState(threadId).known
+    return this.activityMeta(threadId).known
+  }
+
+  /** How many records the stored list holds, read without them. */
+  activityCount(threadId: string): number {
+    return this.activityMeta(threadId).count
+  }
+
+  /**
+   * Lets the records go while keeping what is known of them. The next read or save loads them again; a thread nobody
+   * looks at then costs its marker and count, not every record (#918).
+   */
+  releaseActivities(threadId: string): void {
+    const state = this.activityStates.get(threadId)
+    if (state === undefined) return
+    this.activityMetas.set(threadId, { known: state.known, epoch: state.epoch, resetSequence: state.resetSequence, count: state.records.size })
+    this.activityStates.delete(threadId)
   }
 
   /** Latest committed message reset; a present unversioned reset differs from no reset at all. */
@@ -344,16 +403,30 @@ export class ThreadStore {
   }
   /** Reset sequence committed beside activity; undefined identifies a pre-marker activity snapshot. */
   readActivityResetSequence(threadId: string): number | undefined {
-    return this.activityState(threadId).resetSequence
+    return this.activityMeta(threadId).resetSequence
   }
   /** The epoch committed with the list; hasActivities distinguishes unknown from unversioned. */
   readActivityEpoch(threadId: string): string | undefined {
-    return this.activityState(threadId).epoch
+    return this.activityMeta(threadId).epoch
   }
 
-  /** A caller owns its returned records, including nested plan steps and file changes. */
-  readActivities(threadId: string): AgentActivity[] {
-    return [...this.activityState(threadId).records.values()].map(({ activity }) => agentActivitySchema.parse(activity))
+  /**
+   * A caller owns its returned records, including nested plan steps and file changes. With `keep: false` a read of records
+   * this store does not hold leaves them unheld, for a caller that only looks (#918).
+   */
+  readActivities(threadId: string, options: { keep?: boolean } = {}): AgentActivity[] {
+    const held = this.activityStates.get(threadId)
+    if (held === undefined && options.keep === false) {
+      return this.statement('SELECT activity_id, payload FROM activities WHERE thread_id = ? ORDER BY position').all(threadId).map(storedActivity)
+    }
+    return [...(held ?? this.activityState(threadId)).records.values()].map(({ activity }) => agentActivitySchema.parse(activity))
+  }
+
+  /** The identities of a thread's stored records, read without the records. */
+  activityIds(threadId: string): string[] {
+    const held = this.activityStates.get(threadId)
+    if (held !== undefined) return [...held.records.keys()]
+    return this.statement('SELECT activity_id FROM activities WHERE thread_id = ? ORDER BY position').all(threadId).map(row => String(row.activity_id))
   }
 
   /** Persists the bounded authoritative list, encoding only records whose values changed. */
@@ -411,6 +484,7 @@ export class ThreadStore {
     // Only a committed revision can suppress the next save. A failed transaction keeps its retry.
     if (immutable) next.input = { activities, redactionRevision: this.redactionRevision }
     this.activityStates.set(threadId, next)
+    this.activityMetas.delete(threadId)
   }
 
   /** Writes one event and applies it to the projection in a single transaction. */
@@ -535,6 +609,7 @@ export class ThreadStore {
       throw error
     }
     this.activityStates.delete(threadId)
+    this.activityMetas.delete(threadId)
     this.visualCache.delete(threadId)
     this.wakeUpCache.delete(threadId)
     for (const hash of hashes) this.activityRedactions.add(hash)
@@ -568,6 +643,7 @@ export class ThreadStore {
       throw error
     }
     this.activityStates.clear()
+    this.activityMetas.clear()
     this.visualCache.clear()
     for (const hash of hashes) this.activityRedactions.add(hash)
     this.redactionRevision++
@@ -772,6 +848,13 @@ function rebuildProjection(db: DatabaseSync): void {
     db.exec('ROLLBACK')
     throw error
   }
+}
+
+/** One activity row as a record, checked against the identity it was stored under. */
+function storedActivity(row: Record<string, unknown>): AgentActivity {
+  const activity = agentActivitySchema.parse(JSON.parse(String(row.payload)))
+  if (activity.id !== row.activity_id) throw new Error('Stored activity identity does not match its record')
+  return activity
 }
 
 function readMeta(db: DatabaseSync, key: string): string | undefined {

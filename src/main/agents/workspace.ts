@@ -103,6 +103,7 @@ const BRANCH_SAVE_ERROR = 'The branch name could not be saved. Restore local sto
 const HISTORY_SAVE_ERROR = 'Thread messages could not be saved. Restore access to local storage and refresh.'
 /** Said when the thread history database could not be opened at all. This run keeps its messages in memory. */
 const HISTORY_OPEN_ERROR = 'Thread messages could not be opened. Restore access to local storage and restart Sotto.'
+const ACTIVITY_READ_ERROR = 'Thread activity could not be read. Saved activity remains available. Restore local storage and restart Sotto.'
 
 /**
  * What became of a visual an agent asked to draw (ADR-0056): kept and shown, with where it went, or why nothing was drawn.
@@ -118,6 +119,11 @@ interface MessageMark { readonly id: string; readonly length: number; readonly a
 const TAIL = 24
 const markOf = (message: AgentMessage): MessageMark =>
   ({ id: message.id, length: message.text.length, attachments: message.attachments?.length ?? 0, tail: message.text.slice(-TAIL) })
+
+/** A record read back from disk: one still running there was an unfinished observation, not a live process. */
+function savedRecord(activity: AgentActivity): AgentActivity {
+  return activity.status === 'running' ? { ...activity, status: 'unknown' } : activity
+}
 
 /**
  * One thread as `workspace.json` keeps it: no messages, and no summary either, because the summary
@@ -264,6 +270,18 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private readonly activityInputs = new Map<string, { input: AgentActivity[]; output: AgentActivity[]; epoch: string | undefined; records: Map<string, AgentActivity> }>()
   /** The catalog a snapshot last brought and the one accepting it made. */
   private modelInputs: { incoming: AgentModel[]; output: AgentModel[] } | undefined
+  /**
+   * Threads whose activity records are in the store and not in memory: none is in view, none is working, and the store
+   * holds exactly their list. Each costs its marker and count; a window, a phone or new provider input reads the records
+   * back (#918). Such a thread carries no `activities`, and nothing syncs it, so its stored list is never overwritten.
+   */
+  private readonly storedActivity = new Set<string>()
+  /** Whether this start read every record because the store had not yet said the roster holds their words. */
+  private subagentWordsPending = false
+  /** The certified list a stored thread's provider last published, so publishing it again reads nothing back. */
+  private readonly storedInputs = new Map<string, AgentActivity[]>()
+  /** Stored lists read back during the accept now running, as the base a Git refresh compares new records with. */
+  private readonly heldForInput = new Map<string, AgentActivity[] | undefined>()
   private publishTimer: ReturnType<typeof setTimeout> | undefined
   private publishPending = false
   /** Whether the open publish window lets no opening change cut it short: one already did, or it carries a flood. */
@@ -1318,7 +1336,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       // Disk reads are private mutable copies. Certify them only when a provider's snapshot reaches the
       // thread, with activity or without, so reopening a large archive does not pay for an ownership transfer
       // it may never need.
-      for (const thread of snapshot.threads.filter(thread => this.visible(thread))) if (thread.activities) thread.activities = thread.activities.map(activity => activity.status === 'running' ? { ...activity, status: 'unknown' } : activity)
+      for (const thread of snapshot.threads.filter(thread => this.visible(thread))) if (thread.activities) thread.activities = thread.activities.map(savedRecord)
       for (const thread of snapshot.threads.filter(thread => this.visible(thread))) {
         this.trackSubagents(thread, false)
         thread.subagentSummary = this.subagentSummaries.get(thread.id) ?? EMPTY_SUBAGENT_SUMMARY
@@ -1332,7 +1350,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       // handed every thread's whole history before it has read anything.
       if (!this.eventSourced) await this.inner.restoreThreadHistory?.(this.storeUnavailable ? [] : snapshot.threads.filter(thread => this.visible(thread)).flatMap(thread => {
         const messages = this.readWindow(thread.id)?.messages ?? []
-        return messages.length ? [{ threadId: thread.id, messages, ...(thread.activities ? { activities: thread.activities.slice(-MAX_AGENT_ACTIVITIES) } : {}), ...(thread.historyEpoch ? { historyEpoch: thread.historyEpoch } : {}) }] : []
+        if (!messages.length) return []
+        const activities = this.storedActivity.has(thread.id) ? this.storedActivities(thread.id) : thread.activities?.slice(-MAX_AGENT_ACTIVITIES)
+        return [{ threadId: thread.id, messages, ...(activities ? { activities } : {}), ...(thread.historyEpoch ? { historyEpoch: thread.historyEpoch } : {}) }]
       }))
       this.ready = true
       await this.applyHistoryPrivacy(false)
@@ -1366,6 +1386,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private adoptSavedActivities(snapshot: AgentHostSnapshot): void {
     if (this.storeUnavailable) { this.activityStoreUnavailable = true; return }
     try {
+      // Until a start has read every record once and saved them back, a record may still carry subagent task words
+      // the roster lacks; reading them in is what moves the words (`trackSubagents`) and saving strips them (#918).
+      this.subagentWordsPending = !this.threadStore.subagentWordsMoved()
       for (const thread of snapshot.threads.filter(thread => this.visible(thread))) {
         let messageGeneration = this.threadStore.readMessageEpoch(thread.id)
         if (messageGeneration) {
@@ -1400,7 +1423,13 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
             if (thread.historyEpoch !== epoch) thread.messages = []
             if (epoch === undefined) delete thread.historyEpoch
             else thread.historyEpoch = epoch
-            thread.activities = this.threadStore.readActivities(thread.id)
+            if (this.subagentWordsPending) thread.activities = this.threadStore.readActivities(thread.id)
+            else {
+              // Startup reads the marker and count alone; the records wait until someone looks at the thread (#918).
+              delete thread.activities
+              this.threadStore.releaseActivities(thread.id)
+              this.storedActivity.add(thread.id)
+            }
           }
         }
       }
@@ -1419,6 +1448,78 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (thread.activities !== undefined) this.threadStore.syncActivities(thread.id, retainedActivities(thread.activities), thread.historyEpoch)
     }
   }
+  /** Once the records a start read whole are saved back without their words, later starts need not read them (#918). */
+  private noteSubagentWordsMoved(): void {
+    if (!this.subagentWordsPending || !this.historyWritable() || this.activityStoreUnavailable || this.subagentUnavailable) return
+    this.threadStore.markSubagentWordsMoved()
+    this.subagentWordsPending = false
+  }
+  /**
+   * Reads a stored thread's records back into memory, mapped as the startup read was: a record still running in the
+   * store was not live (#918). A read that fails turns saving off, as a failed startup read does, so the store keeps
+   * the records for the next start while this run shows only what the provider brings.
+   */
+  private holdActivities(thread: AgentThread): AgentActivity[] | undefined {
+    if (!this.storedActivity.has(thread.id)) return thread.activities
+    this.storedActivity.delete(thread.id)
+    this.storedInputs.delete(thread.id)
+    try {
+      thread.activities = this.threadStore.readActivities(thread.id).map(savedRecord)
+    } catch {
+      this.activityStoreUnavailable = true
+      this.saveError = ACTIVITY_READ_ERROR
+    }
+    if (thread.activities) this.moveSubagentWords(thread, thread.activities)
+    return thread.activities
+  }
+  /**
+   * A record read back may still carry subagent task words from before the roster held them, when the start that moved
+   * every thread's words did not reach this one, such as a Watcher thread hidden then. They go to the roster now, the way
+   * that start moved them, before anything saves the list back without them (#918).
+   */
+  private moveSubagentWords(thread: AgentThread, activities: readonly AgentActivity[]): void {
+    const unmoved = activities.filter(activity => (activity.kind === 'subagent' || activity.agents?.length || activity.taskUpdatesExcluded !== undefined)
+      && !isDeepStrictEqual(subagentActivityClassification(activity), activity))
+    if (!unmoved.length || this.subagentUnavailable) return
+    // Read back from the store, an agent marked working there is history, not a live one.
+    const observations = unmoved.flatMap(activity => activity.agents ?? []).map(agent => observedSubagentStatus(agent.status) === 'running' ? { ...agent, status: 'unknown' as const } : agent)
+    try { this.subagentsChanged(this.subagentStore.ingest(thread.id, observations, thread.historyEpoch, unmoved)) }
+    catch { this.saveError = 'Agent history could not be saved. Restore access to local storage and refresh.' }
+  }
+  /**
+   * Once a save has put every held list in the store, a thread nobody is looking at and nothing is running in lets its
+   * records go: the store holds exactly them, and the thread keeps its marker and count (#918). Before a window says
+   * what it shows, every thread counts as in view, so nothing goes.
+   */
+  private releaseIdleActivities(): boolean {
+    if (!this.historyWritable() || this.activityStoreUnavailable || this.storeUnavailable || !this.declared) return false
+    let released = false
+    for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) {
+      if (!thread.activities || this.inView(thread.id) || thread.status === 'running' || thread.activities.some(activity => activity.status === 'running')) continue
+      if (!this.storesWhole(thread.id, thread.activities)) continue
+      const input = this.activityInputs.get(thread.id)?.input
+      if (input) this.storedInputs.set(thread.id, input)
+      this.activityInputs.delete(thread.id)
+      // The subagent tracker compares by the list it walked last; that may be this one, as the first start's read is.
+      const tracked = this.subagentInputs.get(thread.id)
+      if (tracked?.activities === thread.activities) tracked.activities = undefined
+      this.threadStore.releaseActivities(thread.id)
+      delete thread.activities
+      this.storedActivity.add(thread.id)
+      released = true
+    }
+    return released
+  }
+  /**
+   * Whether the store holds this list as this run shows it, so letting it go loses nothing: every record is there, and a
+   * subagent record the store keeps only the classification of (`retainedActivities`) had nothing more in it. A live one
+   * still carrying its task's words keeps the thread in memory, as does a record a redacted identity kept out.
+   */
+  private storesWhole(threadId: string, activities: AgentActivity[]): boolean {
+    const retained = retainedActivities(activities)
+    if (this.threadStore.activityCount(threadId) !== retained.length) return false
+    return retained.every((record, index) => record === activities[index] || isDeepStrictEqual(record, activities[index]))
+  }
   /** One window of a thread's messages, or nothing when the store cannot answer. */
   private readWindow(threadId: string, turns?: number) {
     if (this.storeUnavailable) return undefined
@@ -1431,13 +1532,19 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * from the store's projection, with the activity counted from the records the thread still carries.
    */
   private threadSummary(thread: AgentThread, messages?: readonly AgentMessage[]): AgentThreadSummary {
-    const beside = summarizeThread({ messages: [], activities: thread.activities })
-    if (messages !== undefined) return summarizeThread({ messages: [...messages], activities: thread.activities })
+    const beside = this.withStoredCount(thread, summarizeThread({ messages: [], activities: thread.activities }))
+    if (messages !== undefined) return this.withStoredCount(thread, summarizeThread({ messages: [...messages], activities: thread.activities }))
     if (this.storeUnavailable) return beside
     this.writeEvents()
     try { return { ...this.threadStore.summary(thread.id), activityCount: beside.activityCount,
       ...(beside.runningTurnStartedAt === undefined ? {} : { runningTurnStartedAt: beside.runningTurnStartedAt }) } }
     catch { return beside }
+  }
+  /** A stored thread's records are counted where they are kept (#918). None of them is running. */
+  private withStoredCount(thread: AgentThread, summary: AgentThreadSummary): AgentThreadSummary {
+    if (!this.storedActivity.has(thread.id)) return summary
+    try { return { ...summary, activityCount: this.threadStore.activityCount(thread.id) } }
+    catch { return summary }
   }
   /**
    * What changed between the history the store holds for a thread and the one its provider just published.
@@ -1582,8 +1689,30 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   activities(threadId: string, historyEpoch?: string): readonly AgentActivity[] | undefined {
     if (!this.threadVisible(threadId)) return undefined
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
-    if (!thread?.activities || thread.historyEpoch !== historyEpoch) return undefined
+    if (!thread || thread.historyEpoch !== historyEpoch) return undefined
+    if (this.storedActivity.has(threadId)) return this.storedActivities(threadId)
+    if (!thread.activities) return undefined
     return structuredClone(thread.activities.slice(-MAX_AGENT_ACTIVITIES))
+  }
+  /** Whether `activities` would answer for this epoch, asked without reading a record (#918). */
+  hasActivities(threadId: string, historyEpoch?: string): boolean {
+    if (!this.threadVisible(threadId) || this.storeUnavailable || this.activityStoreUnavailable) return false
+    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    return thread !== undefined && thread.historyEpoch === historyEpoch && (this.storedActivity.has(threadId) || thread.activities !== undefined)
+  }
+  /** A stored thread's records as an adapter is handed them: read for it and not kept, mapped as the startup read was (#918). */
+  private storedActivities(threadId: string): AgentActivity[] | undefined {
+    try {
+      const activities = this.threadStore.readActivities(threadId, { keep: false }).slice(-MAX_AGENT_ACTIVITIES).map(savedRecord)
+      const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+      if (thread) this.moveSubagentWords(thread, activities)
+      return activities
+    } catch {
+      // As a failed read back does: saving stops, so the store keeps the records for the next start, and the user is told.
+      this.activityStoreUnavailable = true
+      this.saveError = ACTIVITY_READ_ERROR
+      return undefined
+    }
   }
   /**
    * Records what a provider published and answers with the messages this thread keeps in memory: the
@@ -1910,8 +2039,22 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /** Native snapshots upsert records. Reused input records have already been merged, so only changed
    * records need that work again. An epoch, mutable input or replacement of the held output reconciles
    * the complete list; array identity is never evidence for legacy mutable snapshots. */
-  private mergeActivities(thread: AgentThread, old: AgentThread | undefined): AgentActivity[] {
+  private mergeActivities(thread: AgentThread, old: AgentThread | undefined): AgentActivity[] | undefined {
     const input = thread.activities
+    // A stored thread (#918) keeps its list in the store while input brings nothing to it: none, an empty list, or the
+    // same certified array as last time. Merging with an empty list never removes a record, so that is what merging gave.
+    // A new history epoch replaces the list, as below. Anything else reads the stored list back first and merges onto
+    // it, so sequence, anchors and finished states are kept; merging onto nothing would renumber every record.
+    if (old && this.storedActivity.has(thread.id)) {
+      if (old.historyEpoch !== thread.historyEpoch) this.storedActivity.delete(thread.id)
+      else if (input !== undefined && input.length > 0 && this.storedInputs.get(thread.id) !== input) this.heldForInput.set(thread.id, this.holdActivities(old))
+      else {
+        // The array kept for this comparison is only ever the one the provider is still publishing, which it holds anyway.
+        if (this.storedInputs.get(thread.id) !== input) this.storedInputs.delete(thread.id)
+        return undefined
+      }
+      this.storedInputs.delete(thread.id)
+    }
     // A thread its provider has not read this run, as Codex before one is opened, comes with no activity, so what the
     // workspace holds is the whole list. Merging it with nothing gives the same records, so it is certified once and then
     // kept as it is, rather than rebuilt on every accept and copied whole into every publish and save (#917).
@@ -2025,6 +2168,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       this.trackSubagents(thread, connected)
       const creation = this.state.creations.find(item => item.threadId === thread.id)
       if (creation) creation.phase = 'started'
+      const activities = old?.activities || thread.activities || this.storedActivity.has(thread.id) ? this.mergeActivities(thread, old) : undefined
       // A new provider registration may have a different project ID. The original Sotto
       // project remains the workspace/memory scope for a thread created beneath it.
       const merged: AgentThread = { ...thread,
@@ -2041,9 +2185,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         ...(old?.babysitEnded ? { babysitEnded: old.babysitEnded } : {}),
         ...(old?.wakeUpMessageIds ? { wakeUpMessageIds: old.wakeUpMessageIds } : {}),
         messages: [],
-        ...(old?.activities || thread.activities ? { activities: this.mergeActivities(thread, old) } : {}),
+        ...(activities ? { activities } : {}),
         projectId: creation?.projectId ?? old?.projectId ?? this.state.projectAliases.find(alias => alias.providerProjectId === thread.projectId)?.projectId ?? thread.projectId,
         workspaceSettledAt: old?.workspaceSettledAt ?? null, nativeSessionStarted: true }
+      // A stored thread keeps no list, not the provider's: an empty one saved over the store would remove every record.
+      if (!activities) delete merged.activities
       // A provider that is still loading a thread's history has published no history yet, so the
       // store keeps what it already holds and the pane keeps the window it was given.
       if (this.eventSourced) {
@@ -2065,6 +2211,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     }
     // Retained workspace history is not a live provider input. Reconnect reconciles it afresh.
     for (const id of this.activityInputs.keys()) if (!connectedInputs.has(id)) this.activityInputs.delete(id)
+    for (const id of this.storedInputs.keys()) if (!connectedInputs.has(id)) this.storedInputs.delete(id)
     this.state.snapshot = stampHostSnapshot({ ...snapshot, models: this.acceptedModels(previous.models, snapshot.models), projects: [...projects.values()], threads: [...threads.values()] }, this.hostId!)
     for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) if (!isThreadProviderConnected(snapshot, thread)) dropLiveThreadState(thread)
     // An agent that switched branches mid-turn moved HEAD without a send, so finished work asks for a re-read.
@@ -2072,12 +2219,15 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       const old = previousThreads.get(thread.id)
       if (!old) continue
       let moved = old.status === 'running' && thread.status !== 'running'
-      if (!moved && old.activities !== thread.activities) {
-        const before = settledHeadMovers(old.activities)
+      // A stored list read back in this accept is what the thread held before it, not nothing (#918).
+      const base = this.heldForInput.has(thread.id) ? this.heldForInput.get(thread.id) : old.activities
+      if (!moved && base !== thread.activities) {
+        const before = settledHeadMovers(base)
         moved = [...settledHeadMovers(thread.activities)].some(id => !before.has(id))
       }
       if (moved) this.scheduleWorktreeRefresh(thread.id)
     }
+    this.heldForInput.clear()
     this.dirty = true
   }
   /** Queues one trailing re-read of this thread's worktree; a burst of records still reads the folder once. */
@@ -2156,8 +2306,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
           this.dirty = false
           // Messages live in the thread store, never here: `workspace.json` keeps organization alone,
           // so what it costs to write follows the number of threads rather than what they said (#119).
-          try { this.saveActivities() }
-          catch (error) { this.dirty = true; throw error }
+          try {
+            this.saveActivities(); this.noteSubagentWordsMoved()
+            // The coordinator holds the lists it was last handed, so a release is published for it to let them go too.
+            if (this.releaseIdleActivities()) this.publishSoon()
+          } catch (error) { this.dirty = true; throw error }
           const saved = structuredClone({ ...this.state,
             snapshot: { ...this.state.snapshot, threads: this.state.snapshot.threads.map(thread => this.preservedWatcherThreads.get(thread.id) ?? this.withBabysitting(organizationOnly(thread, this.activityJsonFallbackAllowed && (this.storeUnavailable || this.activityStoreUnavailable)))) } })
           if (!this.historyEnabled()) for (const thread of saved.snapshot.threads.filter(thread => this.visible(thread))) {
@@ -2196,6 +2349,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   private async changeHistoryPrivacy(retryUnavailable: boolean): Promise<void> {
     this.activityInputs.clear()
+    /** Whether stored threads lost their records with the file, which the coordinator must be told. */
+    let dropped = false
     if (!this.historyEnabled()) {
       this.activityJsonFallbackAllowed = false
       this.pendingEventsPrivate = true
@@ -2252,7 +2407,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
             if (this.storeUnavailable) this.threadStore.open()
             // Identity suppression needs no output validation. Even if it fails, erase the durable text.
             try {
-              for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) this.threadStore.redactActivityIdentities(thread.id, (thread.activities ?? []).map(activity => activity.id))
+              for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) {
+                const ids = this.storedActivity.has(thread.id) ? this.threadStore.activityIds(thread.id) : (thread.activities ?? []).map(activity => activity.id)
+                this.threadStore.redactActivityIdentities(thread.id, ids)
+              }
             } finally { this.threadStore.becomeEphemeral() }
             this.historyRedactionPending = false
             this.storeUnavailable = false
@@ -2279,6 +2437,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         this.known.clear()
         this.hidden.clear()
         this.storedAnchors.clear()
+        // A thread whose records were left in the store has none now, as a thread out of view has no messages (#918).
+        for (const thread of this.state.snapshot.threads) if (this.storedActivity.has(thread.id) && thread.summary) thread.summary = { ...thread.summary, activityCount: 0 }
+        dropped = this.storedActivity.size > 0
+        this.storedActivity.clear()
+        this.storedInputs.clear()
         // A visual has no copy but the store's (ADR-0056), so the windows stop showing the ones it no longer holds.
         for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) {
           delete thread.earlierAvailable
@@ -2288,6 +2451,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     }
     this.dirty = true
     await this.flush()
+    if (dropped) this.publish()
     if (retryUnavailable && this.storeUnavailable) {
       this.saveError = HISTORY_OPEN_ERROR
       throw new Error(HISTORY_OPEN_ERROR)
@@ -2851,10 +3015,19 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   observeThreads(ids: readonly string[]): void {
     if (!this.watcherEnabled && !this.ready) { void this.initialize().then(() => this.observeThreads(ids)).catch(() => undefined); return }
     ids = ids.filter(id => { const thread = this.state.snapshot.threads.find(thread => thread.id === id); return !thread || this.visible(thread) })
+    // A thread coming into view reads its stored records back before its provider hears of it, so the pane's first
+    // publish has them and a provider reading the thread's history merges onto them (#918).
+    for (const id of ids) {
+      const thread = this.storedActivity.has(id) ? this.state.snapshot.threads.find(thread => thread.id === id) : undefined
+      if (thread) this.holdActivities(thread)
+    }
     this.inner.observeThreads?.(ids.filter(id => this.state.snapshot.threads.find(thread => thread.id === id)?.nativeSessionStarted !== false))
     if (!this.ready) return
     const wanted = new Set(ids)
     let changed = !this.declared
+    // A thread that leaves view, or every thread nobody asked for when a window first says what it shows, lets its records
+    // go at the next save, so one is asked for even when nothing else changed (#918).
+    let left = !this.declared
     if (!this.declared) {
       this.declared = true
       // Everything held only because nobody had said otherwise goes back to its summary now.
@@ -2869,7 +3042,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       this.storedAnchors.delete(id)
       this.unloadWindow(id)
       changed = true
+      left = true
     }
+    if (left) { this.dirty = true; this.writeSoon() }
     for (const id of wanted) if (!this.watched.has(id) && this.state.snapshot.threads.some(thread => thread.id === id)) {
       this.watched.set(id, FIRST_WINDOW_TURNS)
       this.loadWindow(id)

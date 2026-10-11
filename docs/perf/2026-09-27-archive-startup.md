@@ -26,6 +26,8 @@ Activities dominate the remaining cost: both versions return 20,000 activity row
 
 The activity path also validates message-reset generations, recovers subagent classification and supplies historical activity to resumed provider cursors. Deferring it would require a separate summary and recovery design. This patch takes the measured message-window reduction without changing those semantics or adding a speculative cache. Activity loading remains eager and startup still grows with the number of saved threads.
 
+October 10, 2026: #918 made that design. A start now reads each thread's activity marker and count, and the records wait in the store until a window or a provider needs them ([`stored-activity.md`](stored-activity.md)).
+
 ## Verification
 
 The new regression fails on the baseline with eight unexpected message-window reads. With the change, startup reads none; observing one thread reads exactly one ten-turn window. It checks pending permissions, last-user/assistant excerpts, counts, activity epochs and retained activity, earlier-history paging, and closing the observed pane. Eighty focused workspace, event-store, activity-window and subagent tests pass.
