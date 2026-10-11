@@ -290,6 +290,7 @@
   --tt-owl-star-o2: .38;
   --tt-owl-star-o3: .22;
   --tt-owl-star-o4: .13;
+  --tt-owl-faintest-stars: block;
   --tt-owl-star-scale: 1;
   --tt-owl-glow: color-mix(in srgb, var(--tt-accent) 11%, transparent);
   --tt-owl-night: oklch(from var(--tt-sidebar) calc(l - .011) min(calc(c + .025), .05) var(--owl-night-hue));
@@ -373,6 +374,7 @@
   --tt-owl-star-o2: .44;
   --tt-owl-star-o3: .32;
   --tt-owl-star-o4: 0;
+  --tt-owl-faintest-stars: none;
   --tt-owl-star-scale: 1.2;
   --tt-owl-glow: color-mix(in srgb, var(--tt-accent) 8%, transparent);
   --tt-owl-night: color-mix(in oklab, var(--tt-sidebar) 90%, oklch(from var(--tt-accent) 1 c h));

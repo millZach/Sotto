@@ -229,8 +229,10 @@ test.describe('Sotto Owl night sky on the built app', () => {
           // Dark shows all eleven; light drops the faintest four.
           expectClear(reading, appearance === 'dark' ? 11 : 7)
           expect(reading.stars.filter(star => star.shown && star.accent)).toHaveLength(3)
-          // Four stars twinkle, each on its own slow cycle.
-          expect(reading.twinkles.filter(twinkle => twinkle.running).map(twinkle => twinkle.duration).sort((a, b) => a - b)).toEqual([9000, 11000, 13000, 15000])
+          // Four stars twinkle by night, each on its own slow cycle. By day the fourth goes with the faintest stars,
+          // so it runs no animation at all.
+          expect(reading.twinkles.filter(twinkle => twinkle.running).map(twinkle => twinkle.duration).sort((a, b) => a - b))
+            .toEqual(appearance === 'dark' ? [9000, 11000, 13000, 15000] : [9000, 11000, 15000])
           const onScreen = await starsOnScreen(launched.page)
           expectOnScreen(onScreen)
           result[`${width}x${height}`] = { band: reading.band, contrast: contrasts(reading), stars: reading.stars.filter(star => star.shown).length, pixelChange: onScreen.map(star => star.change) }

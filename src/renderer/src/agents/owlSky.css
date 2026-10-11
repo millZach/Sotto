@@ -20,7 +20,8 @@
 .thread-nav__star[data-tier='1'] { --owl-star-strength: var(--tt-owl-star-o1); }
 .thread-nav__star[data-tier='2'] { --owl-star-strength: var(--tt-owl-star-o2); }
 .thread-nav__star[data-tier='3'] { --owl-star-strength: var(--tt-owl-star-o3); }
-.thread-nav__star[data-tier='4'] { --owl-star-strength: var(--tt-owl-star-o4); }
+/* Light mode drops the faintest stars outright, so none of them sits there invisible, twinkling. */
+.thread-nav__star[data-tier='4'] { --owl-star-strength: var(--tt-owl-star-o4); display: var(--tt-owl-faintest-stars); }
 
 /* The search field and the Threads | Terminal switch take the night, as in Zach's screenshot. */
 .thread-nav[data-sky] .threads-search .tt-input { background: var(--tt-owl-night-field); }
