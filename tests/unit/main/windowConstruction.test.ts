@@ -36,6 +36,33 @@ describe('WindowManager construction', () => {
     ])
   })
 
+  it('clears Linux decoration insets while keeping the main room opaque and its minimum unchanged', async () => {
+    const { manager, options } = createHarness({ platform: 'linux', chrome: platformProfile('linux') })
+
+    await manager.createMainWindow()
+
+    expect(options).toStrictEqual([{
+      width: 1_080,
+      height: 720,
+      minWidth: 820,
+      minHeight: 560,
+      transparent: true,
+      show: false,
+      title: 'Sotto',
+      backgroundColor: '#000000',
+      autoHideMenuBar: true,
+      frame: false,
+      webPreferences: {
+        preload: 'C:/Sotto/out/preload/index.js',
+        additionalArguments: ['--sotto-renderer-role=main', '--sotto-platform=linux'],
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+        webviewTag: true,
+      },
+    }])
+  })
+
   it('opens a frosted main window clear over acrylic and tells only its renderer that it can frost', async () => {
     const { manager, options } = createHarness({ windowFrost: 'acrylic', frostedWindow: () => true })
 

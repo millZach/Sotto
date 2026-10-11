@@ -651,6 +651,8 @@ Linux updates come from the package manager. Before the AUR publication, install
 
 ### Linux development builds
 
+The main window resizes down to 820×560.
+
 Install the [Omarchy theme template](../apps/omarchy/README.md#follow-the-omarchy-theme) with `apps/omarchy/install-theme.sh` from the source checkout. It needs no sudo. Omarchy renders `~/.config/omarchy/themed/sotto.json.tpl` into its current theme folder at installation and on every switch. Sotto watches that rendered palette, so the main window and floating widget repaint live.
 
 On first start with a valid palette, both theme halves choose **Omarchy** and the colour scheme is **Match Linux**. Existing settings stay as you chose them. In **Settings → Appearance**, choose Omarchy separately for Light and Dark. The current half names the Omarchy theme; the other says “Waits for a light/dark Omarchy theme” and uses Sotto until a matching theme arrives. Match Linux follows Omarchy’s mode when that half uses Omarchy; an explicit Light or Dark mode keeps your choice. Any other palette switches away as usual. **Create theme** copies the current palette into an editable theme.
