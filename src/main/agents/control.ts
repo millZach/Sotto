@@ -3,7 +3,7 @@ import type { ShortTextPurpose, ShortTextFailureReason } from '../llm/shortTextW
 import type { AgentSkillReference } from '../../shared/agentSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
 import type { AgentActivity } from '../../shared/agentActivity'
-import { isImmutableActivities, subscribeActivitySnapshots } from './activitySnapshots'
+import { isImmutableActivities, isImmutableModels, subscribeActivitySnapshots } from './activitySnapshots'
 import { FollowupStore, followupDigest, isWaitingWakeUp, type QueuedFollowup } from './followups'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, stat } from 'node:fs/promises'
@@ -56,6 +56,8 @@ class AnswerDeliveryUnconfirmed extends Error {
   delivered = false
 }
 const EMPTY_ACTIVITIES: AgentActivity[] = []
+/** Stands in for a certified catalog while the shell is cloned; the catalog itself goes in afterwards, shared. */
+const EMPTY_MODELS: AgentModel[] = []
 const RECORDED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set([
   'connect', 'refresh', 'send', 'steer', 'steer-followup', 'manual-send', 'answer', 'create-thread', 'create-project', 'select-project',
   'select-thread', 'interrupt',
@@ -655,13 +657,17 @@ export class AgentControl {
     if (state.unconfirmedSettings) state.unconfirmedSettings = state.unconfirmedSettings.filter(item => this.watcherAvailable(item.threadId))
   }
   shell(): AgentState {
-    const threads = this.state.host.threads
-    const bare = { ...this.state, error: this.migrationSaveFailure ?? this.state.error, host: { ...this.state.host, threads: threads.map(thread => this.finishedUnread.publish({
+    const { threads, models } = this.state.host
+    // A certified catalog is frozen and shared by every layer from the adapter on, so the shell carries it as it is rather
+    // than clone every model on each broadcast (#917). One that is not certified is copied, as everything else is.
+    const shared = isImmutableModels(models)
+    const bare = { ...this.state, error: this.migrationSaveFailure ?? this.state.error, host: { ...this.state.host, ...(shared ? { models: EMPTY_MODELS } : {}), threads: threads.map(thread => this.finishedUnread.publish({
       ...thread, messages: EMPTY_MESSAGES,
       ...(thread.activities === undefined ? {} : { activities: EMPTY_ACTIVITIES }),
       summary: threadSummaryOf(thread),
     })) } }
     const state = structuredClone(bare)
+    if (shared) state.host.models = models
     state.obsoleteDrafts = structuredClone(this.persistedObsoleteDrafts)
     state.hostId = state.host.hostId
     state.threadDraftPersistence = this.draftPersistence()

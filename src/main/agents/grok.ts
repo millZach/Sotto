@@ -20,7 +20,7 @@ import { SIDE_WRITING_TIMEOUT_MS } from './sideWriting'
 import { GrokSubscriptionClient, sweepLeftoverSessions } from './subscriptionGrok'
 import { ThreadMessageLog } from './threadMessageLog'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
-import { ActivitySubscribers, cloneActivitySnapshot, immutableActivities, isImmutableActivities } from './activitySnapshots'
+import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from './activitySnapshots'
 import type { AgentSkillCatalog } from '../../shared/agentSkills'
 import { discoverGrokSkills, grokSkillPrompt } from './grokSkills'
 import { verifyFileMentions } from './promptFiles'
@@ -554,9 +554,7 @@ export class GrokAcpHost implements AgentHost {
   /** What activity subscribers are handed. One that keeps history from this adapter's events gets each
    * thread's summary and no messages: those already left as events (#322). */
   private activitySnapshot(historyFromEvents: boolean): AgentHostSnapshot {
-    for (const thread of this.threads.values()) if (thread.activities && !isImmutableActivities(thread.activities)) {
-      thread.activities = immutableActivities(thread.activities)
-    }
+    certifyActivityView(this.state, this.threads.values())
     return { ...this.state, threads: [...this.threads.values()]
       .filter((thread): thread is AgentThread => 'projectId' in thread).map(thread => this.log.activityThread(thread, historyFromEvents)) }
   }

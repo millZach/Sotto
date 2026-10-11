@@ -87,6 +87,12 @@ export const REQUEST_DRAFT_PASS_INTERVAL_MS = 500
 export class DesktopHostRouter {
   private readonly hosts = new Map<string, { connection: DesktopHostConnection; off: (() => void)[] }>()
   private readonly listeners = new Set<(state: AgentState) => void>()
+  private readonly changeListeners = new Set<() => void>()
+  /**
+   * The shell this computer's coordinator last broadcast. A publication it set off is built from it rather than from
+   * another copy of the same state (#917). A remote host's push carries the histories it has cached, so it is read afresh.
+   */
+  private readonly broadcasts = new Map<string, AgentState>()
   private readonly detailListeners = new Set<(detail: AgentThreadDetailUpdate) => void>()
   private selectedHostId: string | undefined
   private selectedThreadId: string | null | undefined
@@ -136,14 +142,23 @@ export class DesktopHostRouter {
     return state.legacyManagement === true
   }
 
-  add(connection: DesktopHostConnection): void {
-    if (this.hosts.has(connection.hostId)) throw new Error('This host is already connected.')
-    const off = [connection.service.subscribe(() => this.emit())]
+  /** Follows a connection's states and details, keeping a local host's broadcast shell for the next publication. */
+  private watch(connection: DesktopHostConnection): (() => void)[] {
+    this.broadcasts.delete(connection.hostId)
+    const off = [connection.service.subscribe(state => {
+      if (connection.kind === 'local') this.broadcasts.set(connection.hostId, state)
+      this.emit()
+    })]
     if (connection.subscribeDetail) off.push(connection.subscribeDetail(detail => {
       if (!this.watcherAvailable(connection, detail.threadId)) return
       const scoped = mapHostReferences(detail, id => hostEntityKey(connection.hostId, id))
       for (const listener of this.detailListeners) listener(scoped)
     }))
+    return off
+  }
+  add(connection: DesktopHostConnection): void {
+    if (this.hosts.has(connection.hostId)) throw new Error('This host is already connected.')
+    const off = this.watch(connection)
     this.hosts.set(connection.hostId, { connection, off })
     this.selectedHostId ??= connection.hostId
     this.emit()
@@ -156,12 +171,7 @@ export class DesktopHostRouter {
     const entry = this.hosts.get(connection.hostId)
     if (!entry) { this.add(connection); return }
     entry.off.forEach(off => off())
-    const off = [connection.service.subscribe(() => this.emit())]
-    if (connection.subscribeDetail) off.push(connection.subscribeDetail(detail => {
-      if (!this.watcherAvailable(connection, detail.threadId)) return
-      const scoped = mapHostReferences(detail, id => hostEntityKey(connection.hostId, id))
-      for (const listener of this.detailListeners) listener(scoped)
-    }))
+    const off = this.watch(connection)
     this.hosts.set(connection.hostId, { connection, off })
     this.reconnecting.delete(connection.hostId)
     this.emit()
@@ -175,6 +185,7 @@ export class DesktopHostRouter {
   remove(hostId: string): void {
     this.hosts.get(hostId)?.off.forEach(off => off())
     this.hosts.delete(hostId)
+    this.broadcasts.delete(hostId)
     this.reconnecting.delete(hostId)
     if (this.selectedHostId === hostId) this.selectedHostId = this.hosts.keys().next().value
     if (this.selectedThreadId && parseHostEntityKey(this.selectedThreadId)?.hostId === hostId) this.selectedThreadId = null
@@ -192,17 +203,24 @@ export class DesktopHostRouter {
     this.emit()
   }
   subscribe(listener: (state: AgentState) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
+  /** Told of every change without a state built for it, for a listener that reads what it needs when it needs it (#917). */
+  subscribeChanges(listener: () => void): () => void { this.changeListeners.add(listener); return () => this.changeListeners.delete(listener) }
   subscribeThreadDetail(listener: (detail: AgentThreadDetailUpdate) => void): () => void { this.detailListeners.add(listener); return () => this.detailListeners.delete(listener) }
   get(): AgentState { return this.shell() }
-  shell(): AgentState {
+  /** An answer's delivery notice goes once the host has the exact acceptance it was waiting for. */
+  private settleAnswerNotice(): void {
     const answer = this.notice?.answer
-    if (answer) {
-      const proof = this.hosts.get(answer.hostId)?.connection.service.requestAnswerRecovery?.(answer.target.threadId, answer.target.providerId)
-      if (proof?.completed.some(item => item.decisionId === answer.decisionId && item.requestId === answer.target.requestId
-        && item.questionsDigest === answer.target.questionsDigest)) this.notice = undefined
-    }
+    if (!answer) return
+    const proof = this.hosts.get(answer.hostId)?.connection.service.requestAnswerRecovery?.(answer.target.threadId, answer.target.providerId)
+    if (proof?.completed.some(item => item.decisionId === answer.decisionId && item.requestId === answer.target.requestId
+      && item.questionsDigest === answer.target.questionsDigest)) this.notice = undefined
+  }
+  /** Every host's shell read afresh, for a command's reply and any caller that must see the state as it is now. */
+  shell(): AgentState { return this.build(connection => connection.service.shell()) }
+  private build(read: (connection: DesktopHostConnection) => AgentState): AgentState {
+    this.settleAnswerNotice()
     const entries = [...this.hosts.values()].map(({ connection }) => {
-      const original = this.visibleState(connection.service.shell())
+      const original = this.visibleState(read(connection))
       return { connection, original, state: clientAgentState(original) }
     })
     const selected = entries.find(item => item.connection.hostId === this.selectedHostId)
@@ -655,10 +673,18 @@ export class DesktopHostRouter {
   private named(connection: DesktopHostConnection, state: AgentState): AgentState {
     return state.error ? { ...state, error: this.refusal(connection, state.error) } : state
   }
-  private emit(): void { const state = this.shell(); this.publishedNotice = this.notice; for (const listener of this.listeners) listener(state) }
+  /** Built when it changed, so what a listener holds is the state of that moment, even if the window takes it later. */
+  private emit(): void {
+    if (this.listeners.size) {
+      const state = this.build(connection => this.broadcasts.get(connection.hostId) ?? connection.service.shell())
+      for (const listener of this.listeners) listener(state)
+    } else this.settleAnswerNotice()
+    this.publishedNotice = this.notice
+    for (const listener of this.changeListeners) listener()
+  }
   dispose(): void {
     for (const hostId of [...this.hosts.keys()]) this.remove(hostId)
-    this.listeners.clear(); this.detailListeners.clear()
+    this.listeners.clear(); this.changeListeners.clear(); this.detailListeners.clear(); this.broadcasts.clear()
     this.draftPass.disposed = true; clearTimeout(this.draftPass.gap); this.draftPass.gap = undefined; this.draftPass.wanted = undefined
   }
 }

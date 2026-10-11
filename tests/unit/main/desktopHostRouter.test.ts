@@ -709,3 +709,48 @@ describe('Watcher release gate at the aggregate desktop boundary', () => {
     router.dispose()
   })
 })
+
+describe('what the router builds for the window (#917)', () => {
+  /** A host whose pushes the test makes, and which counts every time it is asked for its shell. */
+  function pushing(hostId: string, kind: 'local' | 'remote') {
+    const host = fixture(hostId, kind)
+    let push: ((state: AgentState) => void) | undefined
+    const shell = vi.fn(() => structuredClone(host.state))
+    host.connection.service = { ...host.connection.service, shell, subscribe: listener => { push = listener; return () => { push = undefined } } }
+    return { ...host, shell, push: (state: AgentState) => push!(state) }
+  }
+
+  it('builds no state for a change it is only told of', () => {
+    const router = new DesktopHostRouter(emptyDesktopState)
+    const local = pushing(LOCAL, 'local')
+    router.add(local.connection)
+    const changes = vi.fn()
+    router.subscribeChanges(changes)
+    local.shell.mockClear()
+    for (let index = 0; index < 10; index++) local.push(structuredClone(local.state))
+    expect(changes).toHaveBeenCalledTimes(10)
+    expect(local.shell).not.toHaveBeenCalled()
+    router.dispose()
+  })
+
+  // While a thread streams the coordinator broadcasts its shell about sixty times a second; asking it for that shell
+  // again on each one copied the whole state a second time.
+  it('publishes from the shell this computer broadcast, and reads a remote host afresh', () => {
+    const router = new DesktopHostRouter(emptyDesktopState)
+    const local = pushing(LOCAL, 'local'), remote = pushing(REMOTE, 'remote')
+    router.add(local.connection); router.add(remote.connection)
+    const published: AgentState[] = []
+    router.subscribe(state => published.push(state))
+    local.shell.mockClear(); remote.shell.mockClear()
+    const broadcast = structuredClone(local.state)
+    broadcast.host.threads[0]!.title = 'As broadcast'
+    local.push(broadcast)
+    expect(local.shell).not.toHaveBeenCalled()
+    expect(remote.shell).toHaveBeenCalledOnce()
+    expect(published.at(-1)!.host.threads.find(thread => thread.id === hostEntityKey(LOCAL, 'thread'))?.title).toBe('As broadcast')
+    // A command's reply still reads every host as it is now.
+    expect(router.shell().host.threads.find(thread => thread.id === hostEntityKey(LOCAL, 'thread'))?.title).toBe('Task')
+    expect(local.shell).toHaveBeenCalledOnce()
+    router.dispose()
+  })
+})

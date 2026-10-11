@@ -269,8 +269,8 @@ export interface AgentHost {
   resolveProjectId?(id: string): string
   resolveModelId?(id: string): string
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void
-  /** Internal readers may share deeply immutable activity trees. All other containers remain
-   * isolated for the consumer. Callers needing writable activities use subscribe/snapshot instead.
+  /** Internal readers may share deeply immutable activity trees and a certified model catalog (#917). All other
+   * containers remain isolated for the consumer. Callers needing writable activities use subscribe/snapshot instead.
    * Absence means mutable legacy data: never infer unchanged activity from array identity alone.
    * A subscriber that keeps history from `subscribeEvents` says so in `options`, and then a host that
    * publishes events carries every thread with its summary and no messages, held or not (ADR-0016, #322). */
