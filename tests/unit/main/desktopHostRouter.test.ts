@@ -753,6 +753,25 @@ describe('what the router builds for the window (#917)', () => {
     expect(local.shell).toHaveBeenCalledOnce()
     router.dispose()
   })
+
+  // A command can change the coordinator's state without a broadcast, as a draft save answered with its shell does, and
+  // an idle coordinator may send none after it. What the window is sent then, or when a remote host pushes, is read
+  // afresh: a broadcast is used only for the publication it sets off.
+  it('publishes the state as it is after a command, and never an older broadcast', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState)
+    const local = pushing(LOCAL, 'local'), remote = pushing(REMOTE, 'remote')
+    router.add(local.connection); router.add(remote.connection)
+    const published: AgentState[] = []
+    router.subscribe(state => published.push(state))
+    const title = () => published.at(-1)!.host.threads.find(thread => thread.id === hostEntityKey(LOCAL, 'thread'))?.title
+    local.push(structuredClone(local.state))
+    local.command.mockImplementationOnce(async () => { local.state.host.threads[0]!.title = 'Renamed'; return local.state })
+    await router.command({ type: 'rename-thread', threadId: hostEntityKey(LOCAL, 'thread'), title: 'Renamed' }, desktopWindowClient())
+    expect(title()).toBe('Renamed')
+    remote.push(structuredClone(remote.state))
+    expect(title()).toBe('Renamed')
+    router.dispose()
+  })
 })
 
 describe('Watcher threads on a streaming detail (#917)', () => {
