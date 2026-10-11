@@ -368,6 +368,13 @@ artifacts/watcher-gate/*
 !artifacts/watcher-gate/*.png
 !artifacts/watcher-gate/profile.json
 
+# Omarchy muted-text proof; retain only the cited captures and measurements.
+artifacts/omarchy-muted/*
+!artifacts/omarchy-muted/changes-tokyo-night.png
+!artifacts/omarchy-muted/changes-catppuccin-latte.png
+!artifacts/omarchy-muted/browser-measurements.json
+!artifacts/omarchy-muted/measurements.json
+
 # Linux native minimum proof; retain only the cited frames and observations.
 artifacts/linux-window-minimum/*
 !artifacts/linux-window-minimum/minimum-light.png
