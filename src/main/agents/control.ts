@@ -262,7 +262,10 @@ export class AgentControl {
   mutateWatcher(update: (record: WatcherRecord) => void): void {
     const next = this.watcherRecord(); update(next); this.watcher = watcherRecordSchema.parse(next)
   }
-  useWatcher(hooks: WatcherControlHooks): void { if (this.dependencies.watcherEnabled === true) this.watcherHooks = hooks }
+  useWatcher(hooks: WatcherControlHooks): () => void {
+    if (this.dependencies.watcherEnabled === true) this.watcherHooks = hooks
+    return () => { if (this.watcherHooks === hooks) this.watcherHooks = undefined }
+  }
   commandFromWatcher(command: WatcherCommand, origin: WatcherCommandOrigin): Promise<AgentState> {
     if (!this.watcherHooks || !['create-thread', 'manual-send', 'queue-followup', 'steer', 'interrupt', 'settle-thread'].includes(command.type)) {
       throw new Error('Watcher cannot answer requests or change permissions.')
@@ -2076,9 +2079,11 @@ export class AgentControl {
     const validateDraftOwner = sendsDraft ? () => {
       if (draftOwner() !== answerThreadId) throw new Error('The draft now belongs to a different thread. Review it and send again. Your draft is kept.')
     } : undefined
-    if (!this.watcherOrigins.has(command)) this.watcherHooks?.userCommand(command,
-      explicitThreadId ?? implicitThreadId ?? undefined, command.type === 'answer' || Boolean(composer?.composition.requestId
-        ?? (command.type === 'send' ? this.state.draftRequestId : null)))
+    try {
+      if (!this.watcherOrigins.has(command)) this.watcherHooks?.userCommand(command,
+        explicitThreadId ?? implicitThreadId ?? undefined, command.type === 'answer' || Boolean(composer?.composition.requestId
+          ?? (command.type === 'send' ? this.state.draftRequestId : null)))
+    } catch (error) { return Promise.resolve({ ...this.shell(), error: error instanceof Error ? error.message : 'Watcher could not accept this instruction. Nothing was sent.' }) }
     // Reserve before the command waits for its lane. This token is distinct from the native dispatch token.
     const releaseAnswer = answerThreadId ? this.holdAnswer(answerThreadId) : () => undefined
     let pending: Promise<AgentState>
@@ -2361,6 +2366,8 @@ export class AgentControl {
       const terminalBlocked = thread && thread.status !== 'running' && thread.lastTurn?.status !== 'running'
         && (thread.lastTurn ? thread.lastTurn.status !== 'completed' && first.resumeAfterTurnId !== thread.lastTurn.id : first.resumeAfterTurnId !== 'unknown')
       if (first.status === 'queued' && terminalBlocked) {
+        // A machine Stop fences its own sends. A user's queue remains intact and waits for explicit review.
+        if (!first.watcherOperationId && this.watcherHooks?.preserveUserQueue(threadId)) continue
         this.pumping.add(threadId)
         let paused = false
         void this.followupStore.pause(threadId, 'The last turn did not confirm completion. Review the thread and resume its queue when ready.')
@@ -2440,9 +2447,10 @@ export class AgentControl {
     try {
       this.setCommandError(undefined, null)
       this.publish()
+      const origin = this.watcherOrigins.get(command); origin?.guard()
       this.validateInterrupt(command.threadId)
       let pauseFailure: string | undefined
-      try { await this.followupStore.pause(command.threadId, 'The turn was interrupted. Review the thread and resume its queue when ready.') }
+      try { if (!origin) await this.followupStore.pause(command.threadId, 'The turn was interrupted. Review the thread and resume its queue when ready.') }
       catch { pauseFailure = 'Stop was sent, but the queue pause could not be saved. Your queued messages are still saved. Check them before sending another message.' }
       this.syncFollowups(); await this.execute(command, turn); await this.persist()
       if (pauseFailure) this.setCommandError(undefined, pauseFailure)

@@ -36,6 +36,7 @@ export class WatcherService implements WatcherControlHooks {
   private readonly listeners = new Set<(state: WatcherRoomState) => void>()
   private readonly active = new Map<string, Promise<unknown>>()
   private invocations = 0
+  private changing = false
   private readonly dispatchRefusals = new Map<string, Refusal>()
   private readonly nativeHeads = new Map<string, string | null>()
   private readonly confirmations = new Map<string, { targets: WatcherThreadTarget[]; signature: string; expires: number }>()
@@ -45,8 +46,8 @@ export class WatcherService implements WatcherControlHooks {
   private readonly unsubscribe: () => void
   constructor(private readonly options: { directory: string; control: AgentControl; host: WorkspaceHost;
     limit: () => number; historyEnabled: () => boolean; revoke?: (id: string) => void }) {
-    options.control.useWatcher(this)
-    this.unsubscribe = options.control.subscribe(() => this.publish())
+    const unhook = options.control.useWatcher(this), unsubscribe = options.control.subscribe(() => this.publish())
+    this.unsubscribe = () => { unhook(); unsubscribe() }
   }
   private record(): WatcherRecord { return this.options.control.watcherRecord() }
   private hostId(): string { const id = this.options.control.hostId(); if (!id) refuse('HOST_DISCONNECTED', 'This computer is not ready. Reconnect its provider.', true); return id }
@@ -191,6 +192,7 @@ export class WatcherService implements WatcherControlHooks {
           || record.operations.some(operation => ['queued', 'dispatching', 'uncertain'].includes(operation.deliveryState))) {
           refuse('THREAD_BUSY', 'Wait for Watcher and its pending deliveries before changing its provider, model or effort.', true)
         }
+        this.changing = true
         if (previous.provider === input.provider) {
           if (thread.modelId !== input.modelId || input.reasoningEffort && thread.reasoningEffort !== input.reasoningEffort) {
             const result = await this.options.control.commandForWatcherRoom({ type: 'configure-thread', threadId: thread.id,
@@ -221,6 +223,7 @@ export class WatcherService implements WatcherControlHooks {
       await this.finishCreation(identity, input)
       this.publish(); return this.get()
     } catch (error) { return error instanceof Refusal ? error.result : watcherRefusal('PROVIDER_UNAVAILABLE', 'Watcher could not be opened. Nothing was sent. Check its provider and reopen Watcher.', true) }
+    finally { this.changing = false }
   }
   private async finishCreation(identity: WatcherIdentity, input?: WatcherOpenRequest): Promise<void> {
     let thread = this.options.control.watcherSnapshot().threads.find(item => item.id === identity.target.threadId)
@@ -243,9 +246,13 @@ export class WatcherService implements WatcherControlHooks {
 
   userCommand(command: AgentCommand, threadId: string | undefined, answersQuestion: boolean): void {
     if (!threadId || answersQuestion) return
+    if (threadId === this.record().current?.target.threadId && this.changing) refuse('THREAD_BUSY', 'Wait for Watcher’s provider change before sending an instruction.', true)
     if (threadId === this.record().current?.target.threadId && command.type === 'queue-followup' && command.draftId) {
+      const latest = this.record().requests.findLast(item => item.watcher.threadId === threadId)
+      if (!latest) refuse('REQUEST_NOT_ACTIVE', 'Send an instruction to Watcher before queuing a continuation.')
+      if ((latest.userFollowups?.length ?? 0) >= 1_000) refuse('REQUEST_NOT_ACTIVE', 'This request has too many queued continuations. Send a new instruction instead.')
       this.options.control.mutateWatcher(record => {
-        const request = record.requests.findLast(item => item.watcher.threadId === threadId && item.state === 'active')
+        const request = record.requests.findLast(item => item.watcher.threadId === threadId)
         if (request && (request.userFollowups?.length ?? 0) < 1_000) {
           request.userFollowups ??= []
           if (!request.userFollowups.some(item => item.draftId === command.draftId)) request.userFollowups.push({ draftId: command.draftId! })
@@ -254,7 +261,7 @@ export class WatcherService implements WatcherControlHooks {
     }
     const reason = ['send', 'manual-send', 'queue-followup', 'steer', 'steer-followup'].includes(command.type) ? 'user-send'
       : command.type === 'interrupt' ? 'user-stop' : command.type === 'settle-thread' ? 'user-settle'
-      : ['configure-thread', 'configure-thread-working-copy', 'edit-followup', 'resume-followups', 'reorder-followups', 'compact-thread'].includes(command.type) ? 'user-reconfigure' : undefined
+      : ['configure-thread', 'configure-thread-working-copy', 'edit-followup', 'remove-followup', 'resume-followups', 'reorder-followups', 'compact-thread', 'git-switch-branch', 'git-checkout-pull-request', 'git-pull', 'git-pull-request-action', 'git-action'].includes(command.type) ? 'user-reconfigure' : undefined
     if (reason) this.takeover(threadId, reason)
     if (command.type === 'interrupt' && this.record().current?.target.threadId === threadId) {
       const stopped = new Set(this.record().requests.filter(item => item.state === 'active').map(item => item.id))
@@ -278,9 +285,14 @@ export class WatcherService implements WatcherControlHooks {
           if (operation.deliveryState === 'queued') { operation.deliveryState = 'failed'; operation.refusalCode = 'THREAD_TAKEN_OVER'; operation.updatedAt = now() }
         }
       }
-      record.reservations = record.reservations.filter(item => item.target.threadId !== threadId)
+      record.reservations = record.reservations.filter(item => item.target.threadId !== threadId
+        || record.operations.some(operation => key(operation.target) === key(item.target) && ['dispatching', 'uncertain'].includes(operation.deliveryState)))
     })
     void this.options.control.cancelWatcherQueue(operations).catch(() => { this.recoveryNotice = 'A taken-over thread’s queued Watcher message could not be removed. It is fenced and will not be sent.'; this.publish() })
+  }
+  preserveUserQueue(threadId: string): boolean {
+    return this.record().requests.some(request => request.participants.some(participant => participant.target.threadId === threadId
+      && participant.state === 'participating' && (participant.automationStopped || request.state === 'stopped' && participant.startedBy === 'watcher')))
   }
   beforeDispatch(command: AgentHostCommand, _draftId: string | undefined, origin?: WatcherCommandOrigin): AgentHostCommand {
     if (origin?.operationId) {
@@ -312,11 +324,18 @@ export class WatcherService implements WatcherControlHooks {
   observe(snapshot: AgentHostSnapshot, knownUserMessages: ReadonlySet<string>): void {
     const record = this.record()
     for (const thread of snapshot.threads) {
-      const head = lastUserMessageIdOf(thread)
-      const previous = this.nativeHeads.get(thread.id)
+      const head = lastUserMessageIdOf(thread), previous = this.nativeHeads.get(thread.id)
       this.nativeHeads.set(thread.id, head)
-      if (previous !== undefined && head && head !== previous && !knownUserMessages.has(head)
-        && !record.operations.some(item => item.target.threadId === thread.id && item.messageId === head)) this.takeover(thread.id, 'native-user-send')
+      const participants = record.requests.flatMap(request => request.participants).filter(item => item.target.threadId === thread.id && item.state === 'participating')
+      const machineHead = record.operations.some(item => item.target.threadId === thread.id && item.messageId === head)
+      if (head && !machineHead && participants.some(participant => {
+        const durableHead = record.operations.findLast(item => item.target.threadId === thread.id && item.messageId)?.messageId
+        const baseline = participant.lastUserMessageId !== undefined ? participant.lastUserMessageId : previous ?? durableHead
+        return baseline !== undefined && head !== baseline && (participant.lastUserMessageId !== undefined || durableHead !== undefined || !knownUserMessages.has(head))
+      })) this.takeover(thread.id, 'native-user-send')
+      if (participants.length && this.connected(thread)) this.options.control.mutateWatcher(next => {
+        for (const request of next.requests) for (const participant of request.participants) if (participant.target.threadId === thread.id && participant.state === 'participating') participant.lastUserMessageId = head
+      })
     }
     this.options.control.mutateWatcher(next => {
       for (const operation of next.operations) {
@@ -325,17 +344,21 @@ export class WatcherService implements WatcherControlHooks {
         if (delivery?.status === 'accepted' || operation.messageId && thread?.messages.some(item => item.role === 'user' && item.id === operation.messageId)) operation.deliveryState = 'accepted'
         else if (delivery?.status === 'uncertain' && !this.active.has(operation.id)) operation.deliveryState = 'uncertain'
         else if (this.options.control.shell().followups?.some(item => item.draftId === operation.draftId && item.status === 'failed')) {
-          operation.deliveryState = 'failed'; operation.refusalCode = this.dispatchRefusals.get(operation.id)?.result.code ?? 'PROVIDER_UNAVAILABLE'
+          const refusal = this.dispatchRefusals.get(operation.id)?.result.code
+          if (operation.deliveryState !== 'failed' && refusal) this.refundPrompt(next, operation, refusal)
+          operation.deliveryState = 'failed'; operation.refusalCode = refusal ?? operation.refusalCode ?? 'PROVIDER_UNAVAILABLE'
           this.dispatchRefusals.delete(operation.id)
         }
       }
       next.reservations = next.reservations.filter(reservation => {
         const request = next.requests.find(item => item.id === reservation.requestId)
         const participant = request?.participants.find(item => key(item.target) === key(reservation.target))
-        if (participant?.state !== 'participating') return false
         const thread = snapshot.threads.find(item => item.id === reservation.target.threadId)
         const operations = next.operations.filter(item => key(item.target) === key(reservation.target))
-        if (operations.some(item => ['queued', 'dispatching', 'uncertain'].includes(item.deliveryState))) return true
+        if (operations.some(item => ['dispatching', 'uncertain'].includes(item.deliveryState))) return true
+        if (participant?.state !== 'participating') return false
+        if (operations.some(item => item.deliveryState === 'queued')) return true
+        if (!thread && operations.every(item => item.deliveryState === 'failed')) return false
         if (!thread || !isThreadProviderConnected(snapshot, thread) || thread.clientConnected === false) return true
         return thread.status === 'running' || thread.lastTurn?.status === 'running' || Boolean(thread.requests.length || thread.backgroundWork?.length || thread.monitoring?.length)
       })
@@ -391,6 +414,7 @@ export class WatcherService implements WatcherControlHooks {
     this.invocations++
     try {
       this.checkCaller(threadId)
+      if (this.changing) refuse('THREAD_BUSY', 'Wait for Watcher’s provider change before using its tools.', true)
       const parsed = watcherToolSchemas[name].input.safeParse(args)
       if (!parsed.success) refuse('INVALID_INPUT', 'This call has invalid or oversized arguments. Use the offered tool schema.')
       if (name === 'list_threads') return this.listThreads(parsed.data as WatcherToolInput<'list_threads'>)
@@ -465,7 +489,7 @@ export class WatcherService implements WatcherControlHooks {
       await this.options.control.updateWatcher(next => {
         const owned = next.requests.find(item => item.id === request.id)!
         let participant = owned.participants.find(item => key(item.target) === key(target))
-        if (!participant) { participant = { requestId: request.id, target, startedBy: start || next.requests.some(item => item.participants.some(worker => key(worker.target) === key(target) && worker.startedBy === 'watcher')) ? 'watcher' : 'user', generation: 0, state: 'participating', promptCount: 0 }; owned.participants.push(participant) }
+        if (!participant) { participant = { requestId: request.id, target, startedBy: start || next.requests.some(item => item.participants.some(worker => key(worker.target) === key(target) && worker.startedBy === 'watcher')) ? 'watcher' : 'user', generation: 0, state: 'participating', promptCount: 0, lastUserMessageId: thread ? lastUserMessageIdOf(thread) : null }; owned.participants.push(participant) }
         if (start || send) participant.promptCount++
         next.operations.push(operation)
         if ((start || send) && !next.reservations.some(item => key(item.target) === key(target))) next.reservations.push({ target, requestId: request.id, operationId: id, generation: participant.generation, reason: start ? 'creation' : operation.delivery === 'queue' ? 'queued' : 'dispatching' })
@@ -531,18 +555,22 @@ export class WatcherService implements WatcherControlHooks {
         saved.updatedAt = now()
       })
     } catch (error) {
-      await this.options.control.updateWatcher(record => { const saved = record.operations.find(item => item.id === operation.id)!;
-        if (saved.deliveryState !== 'accepted' && saved.deliveryState !== 'uncertain') saved.deliveryState = 'failed'
+      await this.options.control.updateWatcher(record => { const saved = record.operations.find(item => item.id === operation.id)!, wasFailed = saved.deliveryState === 'failed';
+        if (saved.deliveryState !== 'accepted' && saved.deliveryState !== 'uncertain') saved.deliveryState = saved.action === 'start' && this.options.control.hasPendingThreadWork(saved.target.threadId) ? 'uncertain' : 'failed'
         saved.refusalCode = error instanceof Refusal ? error.result.code : 'PROVIDER_UNAVAILABLE'; saved.updatedAt = now()
-        if (saved.deliveryState === 'failed' && (saved.action === 'start' || saved.action === 'send') && error instanceof Refusal
-          && ['PENDING_USER_REQUEST', 'PERMISSION_TOO_WIDE', 'PERMISSION_NOT_COMPARABLE', 'TURN_CHANGED', 'TARGET_CHANGED'].includes(error.result.code)) {
-          const participant = record.requests.find(item => item.id === saved.requestId)!.participants.find(item => key(item.target) === key(saved.target))!
-          participant.promptCount = Math.max(0, participant.promptCount - 1)
+        if (!wasFailed && saved.deliveryState === 'failed') {
+          if (error instanceof Refusal) this.refundPrompt(record, saved, error.result.code)
+          else if (saved.action === 'start' && !this.options.control.watcherSnapshot().threads.some(item => item.id === saved.target.threadId)) this.refundPrompt(record, saved, 'PROVIDER_UNAVAILABLE')
         }
       })
     }
     this.observe(this.options.control.watcherSnapshot(), new Set())
     return this.operationResult(name, this.record().operations.find(item => item.id === operation.id)!, input)
+  }
+  private refundPrompt(record: WatcherRecord, operation: WatcherOperation, code: WatcherRefusal['code']): void {
+    if ((operation.action !== 'start' && operation.action !== 'send') || ['THREAD_TAKEN_OVER', 'REQUEST_NOT_ACTIVE', 'NOT_CURRENT_WATCHER'].includes(code)) return
+    const participant = record.requests.find(item => item.id === operation.requestId)!.participants.find(item => key(item.target) === key(operation.target))!
+    participant.promptCount = Math.max(0, participant.promptCount - 1)
   }
   private operationResult(name: WatcherToolName, operation: WatcherOperation, input: WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>): unknown {
     const base = { receipt: this.receipt(operation), limits: this.limits(operation) }
@@ -585,7 +613,7 @@ export class WatcherService implements WatcherControlHooks {
           pullRequests: (thread.pullRequests ?? []).map(item => ({ number: item.number, url: item.url, title: item.title ?? '', state: item.state, draft: item.draft ?? false })),
           evidence: [], lastActivityAt: thread.messages.at(-1)?.createdAt ?? null, observedAt: null, connected: row.available,
           freshness: row.freshness, userReadAt: null, watcherReadAt: record.reads.find(item => key(item.target) === key(target))?.readAt ?? null,
-          participation: record.requests.flatMap(request => request.participants.filter(item => key(item.target) === key(target)).map(({ target: _target, promptCount: _count, ...participant }) => { void _target; void _count; return participant })),
+          participation: record.requests.flatMap(request => request.participants.filter(item => key(item.target) === key(target)).map(({ target: _target, promptCount: _count, lastUserMessageId: _head, ...participant }) => { void _target; void _count; void _head; return participant })),
           protected: this.protectedThread(thread) } })
     const page = this.page(`threads:${digest([input.hostId, input.project, input.group, input.includeSettled])}`, rows, input.cursor, input.limit)
     return { status: 'ok', rows: page.rows, snapshotRevision: page.revision, nextCursor: page.nextCursor, observedAt: now(), staleHosts: [],

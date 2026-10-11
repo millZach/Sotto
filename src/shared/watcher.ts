@@ -151,6 +151,7 @@ export type WatcherToolOutput<N extends WatcherToolName> = z.infer<(typeof watch
 export const watcherIdentitySchema = z.object({ target: watcherThreadTargetSchema, projectId: entityId,
   provider: watcherProviderSchema, creationOperationId: z.uuid(), createdAt: time }).strict()
 export const watcherParticipantSchema = participation.extend({ target: watcherThreadTargetSchema,
+  lastUserMessageId: id.nullable().optional(),
   promptCount: z.number().int().min(0).max(WATCHER_PROMPTS_PER_THREAD) }).strict()
 export const watcherRequestSchema = z.object({ id: z.uuid(), watcher: watcherThreadTargetSchema, rootUserMessageId: id,
   state: z.enum(['active', 'stopped', 'closed']), createdAt: time, closedAt: time.nullable(),

@@ -12,4 +12,5 @@ export interface WatcherControlHooks {
   beforeDispatch(command: AgentHostCommand, draftId: string | undefined, origin?: WatcherCommandOrigin): AgentHostCommand
   observe(snapshot: AgentHostSnapshot, knownUserMessages: ReadonlySet<string>): void
   guardOperation(operationId: string): void
+  preserveUserQueue(threadId: string): boolean
 }
