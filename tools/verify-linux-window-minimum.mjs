@@ -77,6 +77,7 @@ async function orchestrate() {
       assert.notEqual(signature, live.HYPRLAND_INSTANCE_SIGNATURE)
       assert.ok(!before.has(signature))
       const folder = join(directory, signature)
+      if (!existsSync(folder)) continue
       const lock = join(folder, 'hyprland.lock')
       if (existsSync(lock)) assert.equal(Number(readFileSync(lock, 'utf8').split('\n')[0]), record.child.pid)
       if (record.identity) assert.equal(statSync(folder).ino, record.identity.ino)
@@ -176,6 +177,9 @@ async function journey() {
           const sizes = await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows().find(w => w.webContents.getURL().endsWith('/index.html')); return { minimum: w.getMinimumSize(), content: w.getContentSize(), bounds: w.getBounds() } })
           const renderer = await page.evaluate(() => ({ size: [globalThis.innerWidth, globalThis.innerHeight], scroll: [globalThis.document.documentElement.scrollWidth, globalThis.document.documentElement.scrollHeight] }))
           assert.deepEqual(renderer.scroll, target)
+          assert.deepEqual(sizes.minimum, [820, 560])
+          assert.deepEqual(sizes.content, target)
+          assert.deepEqual(client.size, target)
           observations.push({ mode, requested: [width, height], clientSize: client.size, ...sizes, renderer })
           if (width === 820) {
             const path = join(destination, `minimum-settings-${mode}.png`)

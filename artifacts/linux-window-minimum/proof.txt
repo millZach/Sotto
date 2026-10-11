@@ -1,20 +1,20 @@
-Started sizing PID 1073445 in sotto-proof-4ace1cb614aa48f0a6e538ddc2f9189e-0.scope
-Owned sizing: PID 1073445, efb50993780079460b0cbed1363e2166a2de1d9f_1791750387_911228949, wayland-2
-Started session PID 1073460 in sotto-proof-4ace1cb614aa48f0a6e538ddc2f9189e-1.scope
-Owned session: PID 1073460, efb50993780079460b0cbed1363e2166a2de1d9f_1791750387_1876153311, wayland-3
-Started isolated GUI check PID 1073482 in sotto-proof-4ace1cb614aa48f0a6e538ddc2f9189e-2.scope
+Started sizing PID 1079959 in sotto-proof-e5bb607979fb43108789aa4fa90f99cd-0.scope
+Owned sizing: PID 1079959, efb50993780079460b0cbed1363e2166a2de1d9f_1791751145_1909763427, wayland-2
+Started session PID 1079973 in sotto-proof-e5bb607979fb43108789aa4fa90f99cd-1.scope
+Owned session: PID 1079973, efb50993780079460b0cbed1363e2166a2de1d9f_1791751145_819969261, wayland-3
+Started isolated GUI check PID 1079994 in sotto-proof-e5bb607979fb43108789aa4fa90f99cd-2.scope
 PASS: isolated GUI check
-Stopped sizing PID 1073445
-Stopped session PID 1073460
-Stopped isolated GUI check PID 1073482
-Stopped proof slice app-sottoproof4ace1cb614aa48f0a6e538ddc2f9189e.slice
+Stopped sizing PID 1079959
+Stopped session PID 1079973
+Stopped isolated GUI check PID 1079994
+Stopped proof slice app-sottoproofe5bb607979fb43108789aa4fa90f99cd.slice
 Recorded PIDs still running: []
 Proof cgroup processes after cleanup: []
 Owned processes still running: []
-Removed owned instance efb50993780079460b0cbed1363e2166a2de1d9f_1791750387_911228949
-Removed owned instance efb50993780079460b0cbed1363e2166a2de1d9f_1791750387_1876153311
+Removed owned instance efb50993780079460b0cbed1363e2166a2de1d9f_1791751145_1909763427
+Removed owned instance efb50993780079460b0cbed1363e2166a2de1d9f_1791751145_819969261
 Live /home/zach/.config/omarchy unchanged
 Live /home/zach/.config/hypr unchanged
 Live /home/zach/.local/state/omarchy unchanged
 Live /home/zach/.sotto unchanged
-Removed private root /tmp/slm-NNhDI5; prior Hyprland instances preserved
+Removed private root /tmp/slm-Gx19zJ; prior Hyprland instances preserved

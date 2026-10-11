@@ -1,6 +1,6 @@
 # Linux main-window minimum
 
-October 11, 2026. Follow-up to [#833](https://github.com/millZach/Sotto/issues/833), based on `2bcc127a`, on `fix/linux-window-minimum`.
+October 11, 2026. Follow-up to [#833](https://github.com/millZach/Sotto/issues/833), on `fix/linux-window-minimum`, initially based on `2bcc127a` and merged with main `73e4f8c8` after its guide edit overlapped this change.
 
 ## Cause and correction
 
@@ -10,7 +10,7 @@ Linux alone now requests the transparent native surface. The main window keeps i
 
 ## Native proof
 
-**VERIFIED on forge:** the built, unpackaged Sotto 0.1.37, Electron 43.1.0 and Hyprland 0.56.2 on native Wayland. The main build's SHA-256 is `5dae6149ab107bd2d5160f8eb9065bdfbe926b2d5151570f3c0d7672a0d2988b`; the base commit in the observations is `2bcc127a`, with the Linux option change in the working tree.
+**VERIFIED on forge:** the built, unpackaged Sotto 0.1.37, Electron 43.1.0 and Hyprland 0.56.2 on native Wayland. The main build's SHA-256 is `986dea929097b7588f7225ee0bd0b502b96beb7f7a117cd61e694ef0d978006e`; the source commit in the final observations is `15e8408e`, with the harness review fixes in the working tree. This build includes the merged Omarchy theme work.
 
 The isolated Electron probe produced these actual renderer/content floors after a 100×100 compositor resize, with minimum constraints of 820×560 in every case:
 
@@ -23,7 +23,7 @@ The isolated Electron probe produced these actual renderer/content floors after 
 
 [probe.json](../../artifacts/linux-window-minimum/probe.json) records the constructor options, compositor size, window bounds, Electron content/minimum and renderer size.
 
-All eight built-app measurements passed: 1600×1000, 1280×800, 820×560 and a 100×100 request in both Light and Dark. The last clamps to exactly 820×560. Electron's reported minimum stayed 820×560 throughout; no minimum override, viewport emulation or setContentSize was used. [sizes.json](../../artifacts/linux-window-minimum/sizes.json) records all observations. Root scroll dimensions equal the viewport; there is no horizontal page overflow.
+All eight built-app measurements passed: 1600×1000, 1280×800, 820×560 and a 100×100 request in both Light and Dark. The last clamps to exactly 820×560. Electron's reported minimum stayed 820×560 throughout; no minimum override, viewport emulation or setContentSize was used. [sizes.json](../../artifacts/linux-window-minimum/sizes.json) records all observations. The final harness asserts that compositor size, Electron content and renderer size all agree, and that Electron’s minimum stays 820×560. Root scroll dimensions equal the viewport; there is no horizontal page overflow.
 
 The four 820×560 frames were captured with grim on the owned nested output and opened for inspection. Threads' sidebar, search, empty room, mode tabs and footer controls fit. Settings' fixed column, mode controls and two theme columns fit; its long content and category list scroll vertically, with no inaccessible clipped control. The room stays opaque in both modes.
 
@@ -32,9 +32,9 @@ The four 820×560 frames were captured with grim on the owned nested output and 
 - [Light Settings](../../artifacts/linux-window-minimum/minimum-settings-light.png)
 - [Dark Settings](../../artifacts/linux-window-minimum/minimum-settings-dark.png)
 
-[proof.txt](../../artifacts/linux-window-minimum/proof.txt) records the passing native run and cleanup: sizing PID 1073445, session PID 1073460 and private journey PID 1073482 were stopped with the proof slice; all recorded PIDs/cgroups were empty. Both owned instance folders and `/tmp/slm-NNhDI5` were removed. Prior instances and all four protected live trees, including `.sotto`, were unchanged.
+[proof.txt](../../artifacts/linux-window-minimum/proof.txt) records the passing native run and cleanup: sizing PID 1079959, session PID 1079973 and private journey PID 1079994 were stopped with the proof slice; all recorded PIDs/cgroups were empty. Both owned instance folders and `/tmp/slm-Gx19zJ` were removed. Prior instances and all four protected live trees, including `.sotto`, were unchanged.
 
- The [repeatable harness](../../tools/verify-linux-window-minimum.mjs) compares Electron options with `--probe`, then drives the built app without changing its minimum. It floats and resizes only the owned main window through the nested Hyprland instance and reads content size from both Electron and the renderer. It checks 1600×1000, 1280×800, 820×560 and a below-minimum request in Light and Dark, with reduced motion enabled. It captures with grim, never the desktop portal.
+The [repeatable harness](../../tools/verify-linux-window-minimum.mjs) compares Electron options with `--probe`, then drives the built app without changing its minimum. It floats and resizes only the owned main window through the nested Hyprland instance and reads content size from both Electron and the renderer. It checks 1600×1000, 1280×800, 820×560 and a below-minimum request in Light and Dark, with reduced motion enabled. It captures with grim, never the desktop portal.
 
 ## Reproduce
 
@@ -50,9 +50,9 @@ The harness requires the installed Hyprland/hyprctl, D-Bus, user systemd and gri
 
 ## Gates and review
 
-The selected `linux-dictation-command.spec.ts` and `linux-shell-plumbing.spec.ts` run under the private-bus harness had 3 passes and 1 failure. The failing “publishes private shell state, retries and discards, remembers placement and steps aside for the plugin” case reached its final raw Electron `app.exit()` launch, then received no state file (line 331, expected idle, read `{}`). Its earlier dictation, retry, discard, placement, cancellation and restart observations passed. An untouched detached base/main `2bcc127a`, using its unchanged build, reproduced the same 3 passes and 1 failure in the identical isolated environment. That raw-launch fixture fails in this private-bus sandbox as it does on main; no live bus was used, and no test deadline or assertion was weakened. The direct native minimum proof above passed and cleaned up independently.
+Both the initial and post-merge runs of the selected `linux-dictation-command.spec.ts` and `linux-shell-plumbing.spec.ts` run under the private-bus harness had 3 passes and 1 failure. The failing “publishes private shell state, retries and discards, remembers placement and steps aside for the plugin” case reached its final raw Electron `app.exit()` launch, then received no state file (line 331, expected idle, read `{}`). Its earlier dictation, retry, discard, placement, cancellation and restart observations passed. An untouched detached base/main `2bcc127a`, using its unchanged build, reproduced the same 3 passes and 1 failure in the identical isolated environment. That raw-launch fixture fails in this private-bus sandbox as it does on main; no live bus was used, and no test deadline or assertion was weakened. The direct native minimum proof above passed and cleaned up independently.
 
-The four gates ran sequentially under `mise exec node@24.21.0`, with two test workers:
+The initial four gates ran sequentially under `mise exec node@24.21.0`, with two test workers:
 
 | Gate | Result |
 | --- | --- |
@@ -65,10 +65,10 @@ The four gates ran sequentially under `mise exec node@24.21.0`, with two test wo
 
 The 11 unit failures are the same `owlUpdates.test.ts` fixture cases [named in the integration rerun](https://github.com/millZach/Sotto/blob/454f9fbde4aa4564ced3578ac667551397261ee0/docs/verification/omarchy-shell-integration.md#gates-and-review): stable/latest selection, newer Owl selection, same-version/downgrade checks for four tags, next-patch Owl selection, stable-manifest rejection with fallback off/on, mismatched Owl tag and manifest overwriting the selected Atom tag. The untouched base/main `2bcc127a` reproduced all 11 (1 pass). The Windows-only manifest fixture rejects Linux's `latest-linux.yml` request. No tests, deadlines or skips were weakened.
 
-The current four-name main/preload dependency allowlist must pass before pushing. Standards and request reviews checked the platform isolation, unchanged Windows/macOS options, exact native clamp, opaque rendering, private input/capture and owned cleanup. The review tightened owned cleanup when a compositor dies during startup and made later cleanup tasks run even if a preservation check fails; the native proof passed again with this final harness. No findings remain. No capture baselines are regenerated: this corrects the documented minimum and follows ADR-0062's Linux verification-note gate.
+The current four-name main/preload dependency allowlist must pass before pushing. Standards and request reviews checked the platform isolation, unchanged Windows/macOS options, exact native clamp, opaque rendering, private input/capture and owned cleanup. The review tightened owned cleanup when a compositor dies during startup and made later cleanup tasks run even if a preservation check fails. Greptile’s two harness findings were also fixed: assert every native size, and treat an already removed compositor folder as cleaned up rather than skipping cleanup of later records. The native proof passed again with these final checks. No findings remain. No capture baselines are regenerated: this corrects the documented minimum and follows ADR-0062's Linux verification-note gate.
 
 ## After main advanced
 
 Main `73e4f8c8` landed the Omarchy theme during this run. Its guide edit conflicted with the minimum sentence; merge `02920367` retains both. The branch is rebuilt and its gates and native proof rerun after that merge. Main also pins the NSIS updater fixture's Windows platform, correcting the 11 baseline Linux unit failures recorded above.
 
-Both Linux follow-up PRs carry the isolated Watcher fixture publication repair found by #932's first Windows gate: save `agents.json` through the same AtomicJsonStore path production uses, so a fast same-size write changes file identity and cannot reuse a cached old host. The changed-host rejection and production cache stay intact. A controlled unchanged-timestamp reproduction fails with the former in-place writer and passes with atomic replacement; all 12 permanent profile cases pass in the focused run. Final merged-branch counts and proof follow the rerun below.
+Both Linux follow-up PRs carry the isolated Watcher fixture publication repair found by #932's first Windows gate: save `agents.json` through the same AtomicJsonStore path production uses, so a fast same-size write changes file identity and cannot reuse a cached old host. The changed-host rejection and production cache stay intact. A controlled unchanged-timestamp reproduction fails with the former in-place writer and passes with atomic replacement; all 12 permanent profile cases pass in the focused run. The final native proof above was repeated after the merge and both harness review fixes. The four refreshed captures were opened and inspected; Settings now includes the Omarchy entries from main, falling back to Sotto because the isolated HOME has no Omarchy palette. The selected extra E2E run still has the same 3 passes and 1 raw-launch failure; its private root and all owned processes were removed, and all four protected live trees remained unchanged. Post-merge typecheck and lint passed. The full two-worker suite is being rerun sequentially with notices; its final counts and the latest-head Windows CI results are recorded in [PR #934](https://github.com/millZach/Sotto/pull/934).
