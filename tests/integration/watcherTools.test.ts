@@ -436,3 +436,29 @@ it('waits for active worker slots before replacing the master provider', async (
   expect(f.service.state().inFlight).toBe(0)
   expect(await f.service.open({ provider: 'claude', modelId: model.id })).toMatchObject({ status: 'ok' })
 })
+
+
+it('refunds a coordinator preparation refusal returned as a failed result', async () => {
+  const f = await fixture(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  await f.finish(first.target.threadId)
+  const native = f.workspace.adapters.codex.execute.bind(f.workspace.adapters.codex)
+  vi.spyOn(f.workspace.adapters.codex, 'execute').mockImplementation(async command => { if (command.type === 'send' && command.text === 'Synthetic preparation refused') throw new Error('Synthetic preparation failure'); return native(command) })
+  expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'now', text: 'Synthetic preparation refused' }))
+    .toMatchObject({ status: 'refused', code: 'PROVIDER_UNAVAILABLE', receipt: { deliveryState: 'failed' } })
+  expect(f.service.state().requests[0]!.participants[0]!.promptCount).toBe(1)
+})
+
+it('keeps an unacknowledged native Stop uncertain in its original receipt', async () => {
+  const f = await fixture(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  const native = f.workspace.adapters.codex.execute.bind(f.workspace.adapters.codex)
+  vi.spyOn(f.workspace.adapters.codex, 'execute').mockImplementation(async command => command.type === 'interrupt' ? { accepted: false, uncertain: true } : native(command))
+  expect(await f.call('stop_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target }))
+    .toMatchObject({ status: 'ok', receipt: { deliveryState: 'uncertain' }, stopRequested: true })
+  expect(f.service.state().inFlight).toBe(1)
+  await f.finish(first.target.threadId)
+  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect(f.service.state().receipts.at(-1)!.deliveryState).toBe('accepted')
+  expect(f.service.state().inFlight).toBe(0)
+})

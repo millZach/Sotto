@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createAgentRuntime } from '../../src/main/agents/runtime'
@@ -12,8 +12,8 @@ import { heldOperation } from '../fixtures/deferred'
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { vi.restoreAllMocks(); for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
-async function fixture() {
-  const native = await codexFixture(undefined, false, 10_000)
+async function fixture(requestTimeout = 10_000) {
+  const native = await codexFixture(undefined, false, requestTimeout)
   cleanups.push(native.cleanup)
   const directory = join(native.root, 'sotto'), projectPath = join(native.root, 'worker-project')
   await mkdir(projectPath)
@@ -35,7 +35,7 @@ async function fixture() {
     modelId: model.id, title: 'Synthetic worker', workingCopy: { kind: 'shared' }, firstPrompt: 'Synthetic first prompt' })).structuredContent!
   expect(result.status).toBe('ok')
   const target = result.target as { hostId: string; threadId: string }, binding = runtime.threadRegistry!.byThread(target.threadId)!
-  return { ...runtime, native, control, service, tools, id, requestId, target, binding }
+  return { ...runtime, native, control, service, tools, id, requestId, target, binding, settings, project, model }
 }
 
 it('rechecks takeover after native Codex preparation, before turn/start', async () => {
@@ -68,4 +68,42 @@ it('a machine stop cancels a native turn without answering its pending question'
   const after = await f.native.driver.requests()
   expect(after.filter(item => item.method === 'turn/interrupt').length).toBeGreaterThan(before.filter(item => item.method === 'turn/interrupt').length)
   expect(after.filter(item => item.method === 'request/answer')).toEqual(before.filter(item => item.method === 'request/answer'))
+}, 60_000)
+
+
+it('refunds a native question appearing during preparation before any writer dispatch', async () => {
+  const f = await fixture(), gate = heldOperation()
+  await f.native.driver.completeTurn(f.binding.sessionId, 'Synthetic completion')
+  await expect.poll(() => f.control.watcherSnapshot().threads.find(item => item.id === f.target.threadId)?.status).toBe('idle')
+  const prepare = f.native.adapter.prepareSkillInput.bind(f.native.adapter)
+  vi.spyOn(f.native.adapter, 'prepareSkillInput').mockImplementation(async (...args) => {
+    const result = await prepare(...args)
+    if (args[1] === 'Synthetic pending preparation') await gate.wait()
+    return result
+  })
+  const machine = f.tools.call(f.id, 'send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: f.target, delivery: 'now', text: 'Synthetic pending preparation' })
+  try {
+    await gate.entered
+    const messageId = f.service.state().receipts.at(-1)!.messageId
+    await f.native.driver.raiseQuestion(f.binding.sessionId, 'Synthetic late question')
+    await expect.poll(() => f.control.watcherSnapshot().threads.find(item => item.id === f.target.threadId)?.requests.length).toBe(1)
+    gate.release()
+    expect((await machine).structuredContent).toMatchObject({ status: 'refused', code: 'PENDING_USER_REQUEST' })
+    expect(f.service.state().requests[0]!.participants[0]!.promptCount).toBe(1)
+    expect((await f.native.driver.requests()).some(item => item.method === 'turn/start' && item.params?.clientUserMessageId === messageId)).toBe(false)
+  } finally { gate.release(); await machine }
+}, 60_000)
+
+it('holds capacity for a lost native creation acknowledgement and never creates it twice', async () => {
+  const f = await fixture(2_000); f.settings.watcherInFlightLimit = 2
+  await writeFile(join(f.native.root, 'script.json'), JSON.stringify({ delay: { method: 'thread/start', ms: 3000 }, suppressNotifications: true }))
+  const input = { requestId: f.requestId, retryKey: randomUUID(), project: { hostId: f.control.hostId()!, projectId: f.project.id },
+    modelId: f.model.id, title: 'Synthetic uncertain creation', workingCopy: { kind: 'shared' }, firstPrompt: 'Synthetic unsent first prompt' }
+  const result = (await f.tools.call(f.id, 'start_thread', input)).structuredContent!
+  expect(result).toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN', receipt: { deliveryState: 'uncertain' } })
+  expect(f.service.state().inFlight).toBe(2)
+  const count = (await f.native.driver.requests()).filter(item => item.method === 'thread/start').length
+  expect((await f.tools.call(f.id, 'start_thread', input)).structuredContent).toEqual(result)
+  expect((await f.native.driver.requests()).filter(item => item.method === 'thread/start')).toHaveLength(count)
+  expect((await f.tools.call(f.id, 'start_thread', { ...input, retryKey: randomUUID() })).structuredContent).toMatchObject({ status: 'refused', code: 'IN_FLIGHT_LIMIT' })
 }, 60_000)

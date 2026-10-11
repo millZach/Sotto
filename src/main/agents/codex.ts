@@ -1508,6 +1508,7 @@ export class CodexAppServerHost implements AgentHost {
             // Runtime requests arrive on the subscribed native stream. Re-read authored
             // input after persistence, before registering this prompt as our own input.
             await this.watcher?.pollThread(alias.codexThreadId)
+            watcherGuard?.()
             if (generation !== this.generation || !this.state.connected) throw new Error('Codex connection changed before sending the prompt.')
             if (command.skills?.length && skillsRevision !== this.skillsRevision) throw new Error('Codex skills changed before sending. Refresh skills and review the selection.')
             if (command.expectedLastUserMessageId !== undefined && command.expectedLastUserMessageId !== (this.log.lastUserMessageId(id) ?? null)) throw new Error('The thread changed in Codex before Sotto could reply. Review its manual control state.')

@@ -678,6 +678,7 @@ export class AgentControl {
   }
   /** Internal state is available only to main's Watcher service; public project choices omit its folder. */
   watcherSnapshot(): AgentHostSnapshot { return this.state.host }
+  watcherCommandOutstanding(commandId: string | undefined): boolean { return Boolean(commandId && this.outbox.some(item => item.id === commandId)) }
   private hideWatcher(state: AgentState): void {
     const folder = resolve(join(this.dependencies.directory, 'watcher', 'workspace'))
     state.host.projects = state.host.projects.filter(project => resolve(project.path) !== folder)

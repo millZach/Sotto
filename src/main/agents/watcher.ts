@@ -105,6 +105,11 @@ export class WatcherService implements WatcherControlHooks {
       : { kind: 'runtime' as const, mode: thread.runtimeMode ?? 'approval-required' as const }
     this.permission(model, permission)
   }
+  private checkSettlement(thread: AgentThread): void {
+    this.pending(thread)
+    if (thread.status === 'running') refuse('THREAD_BUSY', 'Wait for this thread to finish before settling it.')
+    if (thread.backgroundWork?.length || thread.monitoring?.length) refuse('BACKGROUND_WORK_RUNNING', 'This thread still has background work. Stop it explicitly before settling.')
+  }
   private inFlight(record = this.record()): number { return new Set(record.reservations.map(item => key(item.target))).size }
   private limits(operation: WatcherOperation) {
     const record = this.record()
@@ -341,6 +346,12 @@ export class WatcherService implements WatcherControlHooks {
       for (const operation of next.operations) {
         const thread = snapshot.threads.find(item => item.id === operation.target.threadId)
         const delivery = this.options.control.shell().deliveries?.find(item => item.draftId === operation.draftId && item.threadId === operation.target.threadId)
+        if (operation.action === 'stop' && operation.deliveryState === 'uncertain' && operation.commandId && !this.active.has(operation.id)
+          && !this.options.control.watcherCommandOutstanding(operation.commandId) && thread && this.connected(thread) && thread.status === 'idle') operation.deliveryState = 'accepted'
+        if (operation.creationUncertain && thread && this.connected(thread) && this.options.host.watcherCreationPhase(thread.id) !== 'starting') {
+          operation.deliveryState = 'failed'; operation.refusalCode = 'PROVIDER_UNAVAILABLE'; delete operation.creationUncertain
+          this.refundPrompt(next, operation, 'PROVIDER_UNAVAILABLE')
+        }
         if (delivery?.status === 'accepted' || operation.messageId && thread?.messages.some(item => item.role === 'user' && item.id === operation.messageId)) operation.deliveryState = 'accepted'
         else if (delivery?.status === 'uncertain' && !this.active.has(operation.id)) operation.deliveryState = 'uncertain'
         else if (this.options.control.shell().followups?.some(item => item.draftId === operation.draftId && item.status === 'failed')) {
@@ -403,9 +414,7 @@ export class WatcherService implements WatcherControlHooks {
       if (operation.delivery !== 'queue' && operation.delivery !== 'steer' && thread.status === 'running') refuse('THREAD_BUSY', 'This thread is working. Choose queue explicitly.', true)
     }
     if (operation.action === 'settle') {
-      this.pending(thread)
-      if (thread.status === 'running') refuse('THREAD_BUSY', 'Wait for this thread to finish before settling it.')
-      if (thread.backgroundWork?.length || thread.monitoring?.length) refuse('BACKGROUND_WORK_RUNNING', 'This thread still has background work. Stop it explicitly before settling.')
+      this.checkSettlement(thread)
       if (record.operations.some(item => item.id !== operation.id && key(item.target) === key(operation.target) && ['queued', 'dispatching', 'uncertain'].includes(item.deliveryState))) refuse('DELIVERY_UNCERTAIN', 'This thread still has an outstanding delivery. Reconcile it before settling.')
     }
   }
@@ -468,8 +477,7 @@ export class WatcherService implements WatcherControlHooks {
         if (sent.delivery === 'steer' && (!capabilitiesForThread(this.options.control.watcherSnapshot(), thread).steer || !sent.expectedTurnId || sent.expectedTurnId !== thread.lastTurn?.id || thread.status !== 'running')) refuse('STEER_UNAVAILABLE', 'Steer needs a supported, confirmed running turn. Read the thread and its turn first.')
       }
       if (thread && name === 'settle_thread') {
-        if (thread.status === 'running') refuse('THREAD_BUSY', 'Wait for this thread to finish before settling it.')
-        if (thread.backgroundWork?.length || thread.monitoring?.length) refuse('BACKGROUND_WORK_RUNNING', 'This thread still has background work.')
+        this.checkSettlement(thread)
         if (this.options.control.hasPendingThreadWork(thread.id)) refuse('DELIVERY_UNCERTAIN', 'Reconcile this thread’s pending delivery before settling.')
       }
       const previous = request.participants.find(item => key(item.target) === key(target))
@@ -545,19 +553,25 @@ export class WatcherService implements WatcherControlHooks {
       if (result.error && guardedRefusal) throw guardedRefusal
       const delivery = result.deliveries?.find(item => item.draftId === operation.draftId && item.threadId === operation.target.threadId)
       await this.options.control.updateWatcher(record => {
-        const saved = record.operations.find(item => item.id === operation.id)!
+        const saved = record.operations.find(item => item.id === operation.id)!, wasFailed = saved.deliveryState === 'failed'
+        const creationUncertain = saved.action === 'start' && this.options.host.watcherCreationPhase(saved.target.threadId) === 'starting'
+        const unresolved = creationUncertain || this.options.control.watcherCommandOutstanding(saved.commandId)
         const queue = result.followups?.find(item => item.draftId === operation.draftId && item.threadId === operation.target.threadId)
         saved.deliveryState = saved.deliveryState === 'accepted' || delivery?.status === 'accepted' ? 'accepted'
-          : delivery?.status === 'uncertain' || delivery?.status === 'submitting' ? 'uncertain' : queue ? 'queued' : result.error ? 'failed' : 'accepted'
-        if (saved.deliveryState === 'failed') saved.refusalCode = 'PROVIDER_UNAVAILABLE'
+          : delivery?.status === 'uncertain' || delivery?.status === 'submitting' ? 'uncertain' : queue ? 'queued' : result.error && unresolved ? 'uncertain' : result.error ? 'failed' : 'accepted'
+        if (creationUncertain) saved.creationUncertain = true
+        if (saved.deliveryState === 'failed') { saved.refusalCode = 'PROVIDER_UNAVAILABLE'; if (!wasFailed) this.refundPrompt(record, saved, saved.refusalCode) }
+        if (creationUncertain) saved.refusalCode = 'DELIVERY_UNCERTAIN'
         if (queue) saved.itemId = queue.id
         if (saved.action === 'settle' && saved.deliveryState === 'accepted') record.requests.find(item => item.id === saved.requestId)!.participants.find(item => key(item.target) === key(saved.target))!.state = 'relinquished'
         saved.updatedAt = now()
       })
     } catch (error) {
       await this.options.control.updateWatcher(record => { const saved = record.operations.find(item => item.id === operation.id)!, wasFailed = saved.deliveryState === 'failed';
-        if (saved.deliveryState !== 'accepted' && saved.deliveryState !== 'uncertain') saved.deliveryState = saved.action === 'start' && this.options.control.hasPendingThreadWork(saved.target.threadId) ? 'uncertain' : 'failed'
-        saved.refusalCode = error instanceof Refusal ? error.result.code : 'PROVIDER_UNAVAILABLE'; saved.updatedAt = now()
+        const creationUncertain = saved.action === 'start' && this.options.host.watcherCreationPhase(saved.target.threadId) === 'starting'
+        if (creationUncertain) saved.creationUncertain = true
+        if (saved.deliveryState !== 'accepted' && saved.deliveryState !== 'uncertain') saved.deliveryState = creationUncertain || this.options.control.watcherCommandOutstanding(saved.commandId) ? 'uncertain' : 'failed'
+        saved.refusalCode = saved.deliveryState === 'uncertain' ? 'DELIVERY_UNCERTAIN' : error instanceof Refusal ? error.result.code : 'PROVIDER_UNAVAILABLE'; saved.updatedAt = now()
         if (!wasFailed && saved.deliveryState === 'failed') {
           if (error instanceof Refusal) this.refundPrompt(record, saved, error.result.code)
           else if (saved.action === 'start' && !this.options.control.watcherSnapshot().threads.some(item => item.id === saved.target.threadId)) this.refundPrompt(record, saved, 'PROVIDER_UNAVAILABLE')

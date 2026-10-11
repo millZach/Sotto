@@ -226,6 +226,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private visibleSnapshot(snapshot: AgentHostSnapshot): AgentHostSnapshot {
     return this.watcherEnabled ? snapshot : { ...snapshot, threads: snapshot.threads.filter(thread => this.visible(thread)) }
   }
+  watcherCreationPhase(threadId: string): 'unstarted' | 'starting' | 'retryable' | 'started' | undefined { return this.state.creations.find(item => item.threadId === threadId)?.phase }
   async watcherRead(threadId: string, afterPosition?: number, limit = 50) {
     if (!this.watcherEnabled) throw new Error(WATCHER_DISABLED)
     await this.refreshThread(threadId)

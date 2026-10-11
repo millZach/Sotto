@@ -1183,12 +1183,13 @@ export class GrokAcpHost implements AgentHost {
           try { await pending.rpc.reply(pending.wireId, result); this.removeRequest(pending) }
           catch { pending.request.delivery = 'uncertain'; this.emit(); return { accepted: false, uncertain: true } }
         } else if (command.type === 'interrupt') {
-          this.activePrompts.delete(command.threadId)
+          if (!watcherGuard) this.activePrompts.delete(command.threadId)
           if (!watcherGuard) await this.decline(command.threadId)
           this.assertGeneration(generation)
           const entry = await this.threadProcess(command.threadId)
           this.assertGeneration(generation)
           watcherGuard?.()
+          if (watcherGuard) this.activePrompts.delete(command.threadId)
           entry.rpc.write({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId: alias.grokSessionId } })
         }
       }
