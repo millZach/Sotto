@@ -10,7 +10,7 @@ import { ProviderUnavailable } from './providerProblem'
 import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose } from './host'
 import { ThreadMessageLog } from './threadMessageLog'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
-import { ActivitySubscribers, cloneActivitySnapshot, immutableActivities, isImmutableActivities } from './activitySnapshots'
+import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from './activitySnapshots'
 import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
 import { SessionReaper } from './sessionReaper'
 import { existingWorkingDirectory } from './threadWorktrees'
@@ -307,9 +307,7 @@ export class DevinAcpHost implements AgentHost {
   /** What activity subscribers are handed. One that keeps history from this adapter's events gets each
    * thread's summary and no messages: those already left as events (#322). */
   private activitySnapshot(historyFromEvents: boolean): AgentHostSnapshot {
-    for (const thread of this.threads.values()) if (thread.activities && !isImmutableActivities(thread.activities)) {
-      thread.activities = immutableActivities(thread.activities)
-    }
+    certifyActivityView(this.state, this.threads.values())
     return { ...this.state, threads: [...this.threads.values()].map(thread => this.withSession(this.log.activityThread(thread, historyFromEvents))) }
   }
   private emit(streaming = false): void { this.publisher.publish(streaming) }

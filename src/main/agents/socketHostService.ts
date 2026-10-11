@@ -15,7 +15,7 @@ import { gitListingSchema, gitReviewSchema, type GitChangeListing, type GitRevie
 import { subagentAssignmentsPageSchema, subagentPageSchema, type SubagentAssignmentsPage, type SubagentAssignmentsRequest, type SubagentPage, type SubagentPageRequest } from '../../shared/subagents'
 import { toolsResultSchema, type ToolListRequest, type ToolsResult } from '../../shared/tools'
 import { hostSignInSchema, type HostSignIn } from '../../shared/hostProviders'
-import type { ProviderId } from '../../shared/agents'
+import type { AgentThread, ProviderId } from '../../shared/agents'
 import { protocolAgentStateSchema, managementCommandRefusal, LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, HOST_BUSY, hostAttachmentContentSchema, hostIsNewer, hostVersionMismatch, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema } from '../../shared/hostProtocol'
 import type { HostFeature, HostAnswerTarget, HostHello, HostOperation, HostPairing, HostSession, HostResponse, HostPush, HostEventPage, HostReceipt, HostErrorCode } from '../../shared/hostProtocol'
 import type { HostService, ClientIdentity, RequestAnswerRecovery } from './hostService'
@@ -429,6 +429,11 @@ export class SocketHostService implements HostService {
   state(): AgentState {
     const shell = this.shell()
     return { ...shell, host: { ...shell.host, threads: shell.host.threads.map(thread => { const detail = this.details.get(thread.id); return detail ? { ...thread, messages: detail.messages, activities: detail.activities } : thread }) } }
+  }
+  /** A thread's kind from the cached shell, without copying it; before a shell arrives it refuses as `shell()` does (#917). */
+  threadKind(threadId: string): AgentThread['kind'] {
+    if (!this.cached) throw new Error('Connect to the host before reading its state.')
+    return this.cached.host.threads.find(thread => thread.id === threadId)?.kind
   }
   shell(): AgentState {
     if (!this.cached) throw new Error('Connect to the host before reading its state.')

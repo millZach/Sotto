@@ -7,11 +7,11 @@ import { createHash, randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
 import { sameSnapshot } from './sameSnapshot'
-import { cloneActivitySnapshot, immutableActivities, isImmutableActivities, subscribeActivitySnapshots } from './activitySnapshots'
+import { cloneActivitySnapshot, immutableActivities, immutableModels, isImmutableActivities, isImmutableModels, subscribeActivitySnapshots } from './activitySnapshots'
 import { readdir, unlink } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { z } from 'zod'
-import { agentHostSnapshotSchema, dropLiveThreadState, EMPTY_AGENT_HOST, NO_LIVE_THREAD_STATE, isThreadProviderConnected, PROVIDER_LABELS, isVisualMessage, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, WAKE_UP_MESSAGE_IDS_MAX, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
+import { agentHostSnapshotSchema, dropLiveThreadState, EMPTY_AGENT_HOST, NO_LIVE_THREAD_STATE, isThreadProviderConnected, PROVIDER_LABELS, isVisualMessage, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, WAKE_UP_MESSAGE_IDS_MAX, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentModel, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
 import type { AgentSkillReference } from '../../shared/agentSkills'
 import { threadEventSchema, type AnswerGivenEvent, type StoredThreadEvent, type ThreadEvent } from '../../shared/threadEvents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
@@ -262,6 +262,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private readonly activityListeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   /** Only certified immutable inputs can be a revision. Legacy hosts may edit their arrays in place. */
   private readonly activityInputs = new Map<string, { input: AgentActivity[]; output: AgentActivity[]; epoch: string | undefined; records: Map<string, AgentActivity> }>()
+  /** The catalog a snapshot last brought and the one accepting it made. */
+  private modelInputs: { incoming: AgentModel[]; output: AgentModel[] } | undefined
   private publishTimer: ReturnType<typeof setTimeout> | undefined
   private publishPending = false
   /** Whether the open publish window lets no opening change cut it short: one already did, or it carries a flood. */
@@ -1313,8 +1315,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       }
       this.adoptSavedActivities(snapshot)
       // Cached running activity is evidence of an unfinished observation, not a live process.
-      // Disk reads are private mutable copies. Certify them only when live activity is merged, so
-      // reopening a large archive does not pay for an ownership transfer it may never need.
+      // Disk reads are private mutable copies. Certify them only when a provider's snapshot reaches the
+      // thread, with activity or without, so reopening a large archive does not pay for an ownership transfer
+      // it may never need.
       for (const thread of snapshot.threads.filter(thread => this.visible(thread))) if (thread.activities) thread.activities = thread.activities.map(activity => activity.status === 'running' ? { ...activity, status: 'unknown' } : activity)
       for (const thread of snapshot.threads.filter(thread => this.visible(thread))) {
         this.trackSubagents(thread, false)
@@ -1909,6 +1912,12 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * the complete list; array identity is never evidence for legacy mutable snapshots. */
   private mergeActivities(thread: AgentThread, old: AgentThread | undefined): AgentActivity[] {
     const input = thread.activities
+    // A thread its provider has not read this run, as Codex before one is opened, comes with no activity, so what the
+    // workspace holds is the whole list. Merging it with nothing gives the same records, so it is certified once and then
+    // kept as it is, rather than rebuilt on every accept and copied whole into every publish and save (#917).
+    if (input === undefined && old?.activities && old.historyEpoch === thread.historyEpoch) {
+      return isImmutableActivities(old.activities) ? old.activities : immutableActivities(mergeAgentActivities(old.activities, []))
+    }
     const previous = this.activityInputs.get(thread.id)
     const stable = isImmutableActivities(input)
     const reusable = stable && previous && old && previous.epoch === thread.historyEpoch
@@ -1976,6 +1985,21 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     }, WRITE_WINDOW_MS)
     this.writeTimer.unref?.()
   }
+  /**
+   * The catalog after a snapshot: every model the providers name now, and those they no longer name kept, not ready, so a
+   * thread's model still resolves. The same certified catalog onto the catalog this made last time gives the same
+   * catalog, so it is kept as it is and stays shared with the layers either side (#917). A catalog that is not certified
+   * may have been edited in place, so it is merged afresh each time, as before.
+   */
+  private acceptedModels(previous: AgentModel[], incoming: AgentModel[]): AgentModel[] {
+    const held = this.modelInputs
+    if (held && held.incoming === incoming && held.output === previous && isImmutableModels(incoming)) return previous
+    const models = new Map(previous.map(model => [model.id, model.ready ? { ...model, ready: false } : model]))
+    for (const model of incoming) models.set(model.id, model)
+    const output = isImmutableModels(incoming) ? immutableModels([...models.values()]) : [...models.values()]
+    this.modelInputs = { incoming, output }
+    return output
+  }
   private accept(snapshot: AgentHostSnapshot): void {
     const previous = this.state.snapshot
     const previousThreads = new Map(previous.threads.map(thread => [thread.id, thread]))
@@ -2041,9 +2065,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     }
     // Retained workspace history is not a live provider input. Reconnect reconciles it afresh.
     for (const id of this.activityInputs.keys()) if (!connectedInputs.has(id)) this.activityInputs.delete(id)
-    const models = new Map(previous.models.map(model => [model.id, { ...model, ready: false }]))
-    for (const model of snapshot.models) models.set(model.id, model)
-    this.state.snapshot = stampHostSnapshot({ ...snapshot, models: [...models.values()], projects: [...projects.values()], threads: [...threads.values()] }, this.hostId!)
+    this.state.snapshot = stampHostSnapshot({ ...snapshot, models: this.acceptedModels(previous.models, snapshot.models), projects: [...projects.values()], threads: [...threads.values()] }, this.hostId!)
     for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) if (!isThreadProviderConnected(snapshot, thread)) dropLiveThreadState(thread)
     // An agent that switched branches mid-turn moved HEAD without a send, so finished work asks for a re-read.
     for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) {
@@ -2891,7 +2913,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (!this.ready) return
     const snapshot = this.state.snapshot
     snapshot.providers?.filter(item => !provider || item.id === provider).forEach(item => { item.connection = 'disconnected' })
-    snapshot.models.filter(model => !provider || model.providerId === provider).forEach(model => { model.ready = false })
+    // The catalog is shared with the layers either side and never edited in place.
+    snapshot.models = snapshot.models.map(model => model.ready && (!provider || model.providerId === provider) ? { ...model, ready: false } : model)
     snapshot.connected = snapshot.providers?.some(item => item.connection === 'connected') ?? false
     for (const thread of snapshot.threads.filter(thread => this.visible(thread))) if (!provider || thread.providerId === provider) {
       dropLiveThreadState(thread)

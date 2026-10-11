@@ -775,7 +775,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const providerJobs: HostProviderJobs = new HostProviderJobs({ threads: agentJobThreads,
     hosts: { host: id => desktopHosts.jobHost(id), provider: (id, provider) => desktopHosts.providerStatus(id, provider),
       refresh: (id, provider) => desktopHosts.refreshProvider(id, provider),
-      subscribe: listener => { const off = [hostRouter.subscribe(() => listener()), desktopHosts.subscribe(() => listener())]; return () => { for (const item of off) item() } } },
+      subscribe: listener => { const off = [hostRouter.subscribeChanges(listener), desktopHosts.subscribe(() => listener())]; return () => { for (const item of off) item() } } },
     busy: (): string | undefined => { const setup = hostSetup.state(); return setup && (setup.phase === 'starting' || setup.phase === 'running') ? `An agent is setting up ${setup.name} now. Stop that setup first. Nothing was started.` : undefined } })
   const hostSetup: HostSetup = new HostSetup({ version: hostVersion,
     hosts: { check: connection => desktopHosts.check(connection), add: connection => desktopHosts.setupAdd(connection), forget: id => desktopHosts.forgetSaved(id),
@@ -825,7 +825,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const busyThreads: BusyHostThreads = {
     working: hostId => hostRouter.shell().host.threads.filter(thread => thread.hostId === hostId && threadKeepsHostBusy(thread)).map(thread => thread.id),
     interrupt: async threadId => { await hostRouter.command({ type: 'interrupt', threadId }, desktopWindowClient()) },
-    subscribe: listener => hostRouter.subscribe(() => listener()),
+    subscribe: listener => hostRouter.subscribeChanges(listener),
   }
   // Hosts that run an older Sotto than this computer, and their updates from the Threads page (ADR-0040). A development
   // end-to-end run serves its own releases.

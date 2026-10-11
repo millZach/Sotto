@@ -43,14 +43,19 @@ export function mapHostReferences<T>(value: T, map: (id: string) => string): T {
   return visit(value) as T
 }
 
-/** Project one host's state before combining it with other hosts or putting it in client stores. */
+/**
+ * Project one host's state before combining it with other hosts or putting it in client stores. Threads are keyed from
+ * the host's own list and models name no Sotto entity, so neither is walked: the router projects every host's state at
+ * its broadcast rate, and the catalog keeps its identity for the revision check at the IPC boundary (#917).
+ */
 export function clientAgentState(state: AgentState): AgentState {
   const hostId = state.hostId ?? state.host.hostId
   if (hostId === undefined) return state
   const key = (id: string): string => hostEntityKey(hostId, id)
-  const mapped = mapHostReferences(state, key)
+  const { threads, models, ...host } = state.host
+  const mapped = mapHostReferences({ ...state, host }, key)
   return { ...mapped, hostId,
-    host: { ...mapped.host,
+    host: { ...mapped.host, models,
       projects: mapped.host.projects.map(project => ({ ...project, id: hostEntityKey(project.hostId ?? hostId, project.id) })),
-      threads: state.host.threads.map(thread => ({ ...thread, id: hostEntityKey(thread.hostId ?? hostId, thread.id), projectId: hostEntityKey(thread.hostId ?? hostId, thread.projectId) })) } }
+      threads: threads.map(thread => ({ ...thread, id: hostEntityKey(thread.hostId ?? hostId, thread.id), projectId: hostEntityKey(thread.hostId ?? hostId, thread.projectId) })) } }
 }
