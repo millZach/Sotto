@@ -1404,7 +1404,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           open: request => localRuntime?.watcher?.open(request) ?? Promise.resolve(unavailableWatcher()),
           prepareStopAll: async () => localRuntime?.watcher?.prepareStopAll() ?? unavailableWatcher(),
           stopAll: request => localRuntime?.watcher?.stopAll(request.confirmationId) ?? Promise.resolve(unavailableWatcher()),
-          setLimit: async request => { if (!localRuntime?.watcher) return unavailableWatcher(); await settings.update({ watcherInFlightLimit: request.limit }); return localRuntime.watcher.get() },
+          setLimit: async request => { if (!localRuntime?.watcher) return unavailableWatcher(); await settingsCoordinator.updateSettings({ watcherInFlightLimit: request.limit }); return localRuntime.watcher.get() },
         } satisfies Omit<import('../shared/watcherRoom').WatcherBridge, 'onChanged'> } : {}),
         settings: {
           get: () => settingsCoordinator.getSettings(),
