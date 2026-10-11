@@ -614,7 +614,7 @@ export class WatcherService implements WatcherControlHooks {
   private page(kind: string, rows: unknown[], cursor: string | undefined, limit: number): { rows: unknown[]; revision: string; nextCursor: string | null } {
     this.prunePages()
     let revision: string, position = 0
-    if (cursor) {
+    if (cursor && cursor !== 'restart') {
       const match = /^([a-f0-9-]{36}):(\d+)$/u.exec(cursor), page = match && this.pages.get(match[1]!)
       if (!page || page.kind !== kind) refuse('CURSOR_EXPIRED', 'This list changed or its cursor expired. Read its first page again.', true)
       revision = match![1]!; position = Number(match![2]); rows = page.rows

@@ -630,3 +630,24 @@ it('keeps the newest messages in an oversized initial read and the oldest prefix
   expect(forward).toMatchObject({ nextPosition: forward.lastPosition, earlierAvailable: false, truncated: true })
   expect(Buffer.byteLength(JSON.stringify(forward))).toBeLessThanOrEqual(64 * 1_024)
 })
+
+
+it.each(['list_threads', 'list_projects', 'list_working_copies'] as const)('restarts an expired %s page using the returned restart cursor', async name => {
+  const f = await fixture()
+  if (name === 'list_projects') {
+    const path = join(f.root, 'other-project')
+    expect((await f.control.commandShell({ type: 'create-project', path, title: 'Other synthetic project', provider: 'codex' })).error).toBeNull()
+  }
+  if (name === 'list_working_copies') vi.spyOn(f.workspace.host, 'workingCopyOptions').mockResolvedValue({ isGit: true, currentBranch: 'main', branches: ['main'], worktrees: [] })
+  const input = { limit: 1, ...(name === 'list_working_copies' ? { project: f.start().project } : name === 'list_threads' ? { includeSettled: true } : {}) }
+  const first = await f.call(name, input)
+  if (first.status !== 'ok' || !('nextCursor' in first) || !first.nextCursor) throw new Error('missing list page')
+  const selected = f.control.shell().activeThreadId, clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 60_001)
+  try {
+    const expired = await f.call(name, { ...input, cursor: first.nextCursor })
+    expect(expired).toMatchObject({ status: 'refused', code: 'CURSOR_EXPIRED', restartCursor: expect.any(String) })
+    if (expired.status !== 'refused' || !expired.restartCursor) throw new Error('missing restart cursor')
+    expect(await f.call(name, { ...input, cursor: expired.restartCursor })).toMatchObject({ status: 'ok' })
+    expect(f.control.shell().activeThreadId).toBe(selected)
+  } finally { clock.mockRestore() }
+})
