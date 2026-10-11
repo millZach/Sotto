@@ -981,7 +981,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   configureThreadWorkingCopy(threadId: string, selection: AgentWorkingCopySelection): Promise<AgentHostSnapshot> {
     return this.onLane(threadId, () => this.withProfileRefusal(threadId, async () => {
       await this.initialize()
-      if (await this.launchProfiles.profileFor(threadId)) throw new WatcherProfileRefusal('Watcher’s working folder cannot be changed.')
+      if (await this.launchProfiles.profileFor(threadId)) throw new Error('Watcher’s working folder cannot be changed.')
       const thread = this.thread(threadId)
       const creation = this.state.creations.find(item => item.threadId === threadId)
       if (thread.nativeSessionStarted !== false || creation?.phase !== 'unstarted' || thread.worktree?.mode === 'independent' && thread.worktree.path) {
@@ -2602,12 +2602,12 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         if (command.type === 'create-thread') command = { ...command, runtimeMode: 'approval-required' }
       }
       if (commandProfile && (command.type === 'create-thread' && (command.workingCopy === 'independent' || command.existingWorktreePath !== undefined))) {
-        throw new WatcherProfileRefusal('Watcher’s asking mode and working folder cannot be changed. Choose only its model and effort.')
+        throw new Error('Watcher’s asking mode and working folder cannot be changed. Choose only its model and effort.')
       }
       if (commandProfile && command.type === 'configure-thread') {
         const thread = this.thread(command.threadId)
         const model = resolveModel(this.state.snapshot.models, command.modelId ?? thread.modelId)
-        if (model?.providerId !== thread.providerId) throw new WatcherProfileRefusal('Changing Watcher’s provider needs a new watcher conversation. This conversation was kept.')
+        if (model?.providerId !== thread.providerId) throw new Error('Changing Watcher’s provider needs a new watcher conversation. This conversation was kept.')
       }
     }
     let preparedSkills: AgentSkillReference[] | undefined
