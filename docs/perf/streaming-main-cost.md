@@ -40,6 +40,17 @@ f3e5e2041, while two of the owner's threads streamed in the installed app beside
 per chunk before and 2.6 and 2.2 ms after. Heap growth within a round says little here: the benchmark's heap is
 mostly the generated archive.
 
+#922, merged while this was under review, had the router check whether a thread is a Watcher thread before forwarding
+each detail, by reading the host's shell: another structured clone of the coordinator's state per streamed detail. The
+router now answers that for a detail from its last publication (see below). Against main at ccd21ff67, with #922, on a busier
+machine (the owner's app running beside it), two alternating runs each:
+
+| | Before (two runs) | After (two runs) |
+| --- | ---: | ---: |
+| Main CPU per chunk | 8.80, 10.36 ms | 3.02, 2.50 ms |
+| Garbage collection per round | 58, 65 ms | 10.5, 8.7 ms |
+| Coordinator shells per state sent | 4.46, 3.92 | 1.60, 1.65 |
+
 What changed:
 
 - **Router.** The router answered every coordinator broadcast, about 60 a second while a thread streams, by asking the
@@ -54,6 +65,9 @@ What changed:
 - **Shared catalog.** Adapters certify their catalog; the switch, the workspace and the coordinator's shell share it
   until it changes (ADR-0016 and ADR-0028, October 10 amendments). A catalog no adapter certified is copied and merged
   as before.
+- **Watcher check.** A detail being forwarded is judged on what the router's publication from its host's last push said
+  of the thread; the host is read only for a thread that publication did not have. Commands, observation and receipt
+  recovery still read the host as it is, since a thread can become a Watcher thread.
 
 Building the window's state when the window takes it, rather than when something changes, measured a little lower
 still, but a router-only change made between the two, such as a command clearing its notice, could then replace what

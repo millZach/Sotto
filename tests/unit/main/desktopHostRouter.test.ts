@@ -12,7 +12,7 @@ import { requestQuestionsDigest } from '../../../src/main/agents/requestDrafts'
 import { desktopWindowClient } from '../../../src/main/agents/hostService'
 import { HostConnectionError, SocketHostService } from '../../../src/main/agents/socketHostService'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
-import { agentStateSchema, MAX_DELIVERED_DRAFTS, hostForThread, capabilitiesForThread, noProviderRefusal, type AgentCommand, type AgentState } from '../../../src/shared/agents'
+import { agentStateSchema, MAX_DELIVERED_DRAFTS, hostForThread, capabilitiesForThread, noProviderRefusal, type AgentCommand, type AgentState, type AgentThreadDetailUpdate } from '../../../src/shared/agents'
 import { deferred } from '../../fixtures/deferred'
 
 const LOCAL = '11111111-1111-4111-8111-111111111111'
@@ -751,6 +751,30 @@ describe('what the router builds for the window (#917)', () => {
     // A command's reply still reads every host as it is now.
     expect(router.shell().host.threads.find(thread => thread.id === hostEntityKey(LOCAL, 'thread'))?.title).toBe('Task')
     expect(local.shell).toHaveBeenCalledOnce()
+    router.dispose()
+  })
+})
+
+describe('Watcher threads on a streaming detail (#917)', () => {
+  it('tells a Watcher thread from the last state it built rather than reading the host for every detail', () => {
+    const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: false })
+    const host = fixture(LOCAL, 'local')
+    host.state.host.threads.push({ ...host.state.host.threads[0]!, id: 'watcher', kind: 'watcher' })
+    let push: ((state: AgentState) => void) | undefined
+    let pushDetail: ((detail: AgentThreadDetailUpdate) => void) | undefined
+    const shell = vi.fn(() => structuredClone(host.state))
+    host.connection.service = { ...host.connection.service, shell, subscribe: listener => { push = listener; return () => { push = undefined } } }
+    host.connection.subscribeDetail = listener => { pushDetail = listener; return () => { pushDetail = undefined } }
+    router.add(host.connection)
+    router.subscribe(() => undefined)
+    push!(structuredClone(host.state))
+    const forwarded: AgentThreadDetailUpdate[] = []
+    router.subscribeThreadDetail(detail => forwarded.push(detail))
+    shell.mockClear()
+    for (let chunk = 0; chunk < 20; chunk++) pushDetail!({ threadId: 'thread', revision: chunk + 1, messages: [] })
+    pushDetail!({ threadId: 'watcher', revision: 1, messages: [] })
+    expect(shell).not.toHaveBeenCalled()
+    expect(forwarded.map(detail => detail.threadId)).toEqual(Array.from({ length: 20 }, () => hostEntityKey(LOCAL, 'thread')))
     router.dispose()
   })
 })
