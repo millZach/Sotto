@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 
 import { expect, test, type Page } from '@playwright/test'
 
+import { hostEntityKey } from '../../src/shared/clientIdentity'
 import { E2E_THREADS_NOW } from '../../src/shared/e2e'
 import { contrastRatio, parseThemeRgb } from '../../src/shared/themes/color'
 import { WATCHER_STAND_IN_KEY, type WatcherStandInSeed } from '../../src/renderer/src/e2e/watcherStandIn'
@@ -27,7 +28,7 @@ const evidenceRoot = evidenceDirectory('artifacts/watcher-room')
 const SIZES = [[1600, 1000], [1280, 800], [820, 560]] as const
 const THEMES = [['t3-code', 'sotto'], ['tropic', 'tropic']] as const
 const BLACK = { r: 0, g: 0, b: 0 }
-const MASTER = 'release-notes'
+const CURRENT = 'release-notes'
 const WATCHED = ['visual-gate', 'footer-links'] as const
 const recorded = new Map<string, unknown>()
 
@@ -45,12 +46,12 @@ function launchOptions(theme: string, appearance: 'dark' | 'light', motion: 'nor
  * Watcher conversation), Watcher started and watches Visual gate flake and Footer links, and two threads are in flight.
  * With `current: false`, the room opens on its first entry and `open` names that same thread as the one created.
  */
-async function seedRoom(page: Page, options: { readonly current: boolean }): Promise<void> {
+async function seedRoom(page: Page, options: { readonly current: boolean; readonly history?: boolean }): Promise<void> {
   const hostId = await page.evaluate(async () => (await window.sotto!.agents!.get()).hostId)
   expect(hostId, 'the window names its host').toBeTruthy()
   const target = (threadId: string) => ({ hostId: hostId!, threadId })
   const requestId = randomUUID()
-  const identity = { target: target(MASTER), projectId: 'workshop', provider: 'codex' as const, creationOperationId: randomUUID(), createdAt: at(12) }
+  const identity = { target: target(CURRENT), projectId: 'workshop', provider: 'codex' as const, creationOperationId: randomUUID(), createdAt: at(12) }
   const participants = WATCHED.map(threadId => ({ requestId, startedBy: 'watcher' as const, generation: 0, state: 'participating' as const, target: target(threadId), promptCount: 1 }))
   const seed: WatcherStandInSeed = {
     state: {
@@ -64,13 +65,13 @@ async function seedRoom(page: Page, options: { readonly current: boolean }): Pro
     },
     created: identity,
   }
-  await page.evaluate(async ({ key, seed, master }) => {
+  await page.evaluate(async ({ key, seed, master, history }) => {
     localStorage.setItem(key, JSON.stringify(seed))
-    await window.sottoE2E!.agentEvent!({ type: 'history', threadId: master, text: '', messages: [
+    if (history) await window.sottoE2E!.agentEvent!({ type: 'history', threadId: master, text: '', messages: [
       { id: 'watcher-ask', role: 'user', text: 'Find why the visual gate flakes and fix the footer links. Keep an eye on both.', createdAt: new Date(Date.UTC(2026, 6, 12, 19, 29)).toISOString() },
       { id: 'watcher-reply', role: 'assistant', text: 'Started Visual gate flake on Claude Code and Footer links on Codex, and I am watching both. Visual gate flake is asking to run the unit suite. Only you can allow that, in its own pane.', createdAt: new Date(Date.UTC(2026, 6, 12, 19, 33)).toISOString() },
     ] })
-  }, { key: WATCHER_STAND_IN_KEY, seed, master: MASTER })
+  }, { key: WATCHER_STAND_IN_KEY, seed, master: CURRENT, history: options.history !== false })
   await page.reload()
   await openThreads(page)
 }
@@ -304,6 +305,45 @@ test.describe("Watcher's room on the built app", () => {
         await expect(working).toBeVisible()
         expect(await working.evaluate(node => node.getAnimations().length)).toBe(0)
         await capture(launched, `room-sotto-dark-1280x800-reduced-motion-${motion === 'normal' ? 'system' : 'setting'}.png`)
+      })
+    })
+  })
+
+  test('a long title, a disconnected host and an empty Overview stay inside the room', async () => {
+    await onReleaseTrack('owl', async () => {
+      await withSotto(launchOptions('t3-code', 'dark'), async (launched) => {
+        const { page } = launched
+        await openThreads(page)
+        await seedRoom(page, { current: true })
+        const hostId = await page.evaluate(async () => (await window.sotto!.agents!.get()).hostId)
+        const long = 'Find why the visual gate flakes on the widget listening capture at the smallest window, in every theme and both modes'
+        await page.evaluate(async ({ threadId, title }) => { await window.sotto!.agents!.command({ type: 'rename-thread', threadId, title }) },
+          { threadId: hostEntityKey(hostId, 'visual-gate'), title: long })
+        await openRoom(page)
+        await resizeContentWindow(launched, 820, 560)
+        await settle(page)
+        const title = page.locator('.watcher-row__title').filter({ hasText: long })
+        await expect(title).toBeVisible()
+        // The title gives way with an ellipsis, inside its row, and keeps its whole text as its tooltip.
+        expect(await title.evaluate(node => node.scrollWidth > node.clientWidth)).toBe(true)
+        await expect(title).toHaveAttribute('title', long)
+        expect(await pageBoundProblems(page)).toEqual([])
+        await capture(launched, 'room-long-title-sotto-dark-820x560.png')
+        await page.evaluate(async () => { await window.sottoE2E!.agentEvent!({ type: 'disconnect', threadId: '', text: '' }) })
+        await expect(page.locator('.watcher-row__status').filter({ hasText: 'Disconnected' }).first()).toBeVisible()
+        expect(await pageBoundProblems(page)).toEqual([])
+        await capture(launched, 'room-disconnected-sotto-dark-820x560.png')
+      })
+      await withSotto({ ...launchOptions('t3-code', 'dark'), scenario: 'design-threads-empty', agents: 'design-threads-empty' }, async (launched) => {
+        const { page } = launched
+        await openThreads(page)
+        await seedRoom(page, { current: false, history: false })
+        await resizeContentWindow(launched, 1280, 800)
+        await openRoom(page)
+        await expect(page.getByRole('complementary', { name: 'Overview' }).getByText('No other threads yet.', { exact: false })).toBeVisible()
+        await expect(page.getByRole('heading', { level: 2, name: 'Start Watcher' })).toBeVisible()
+        expect(await pageBoundProblems(page)).toEqual([])
+        await capture(launched, 'room-empty-sotto-dark-1280x800.png')
       })
     })
   })
