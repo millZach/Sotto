@@ -9,7 +9,7 @@ import { appendFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync
 import { dirname, join, resolve } from 'node:path'
 import { setTimeout as wait } from 'node:timers/promises'
 import { promisify } from 'node:util'
-import { snapshotTree } from './omarchy-shell-sandbox.mjs'
+import { prepareSandboxBus, snapshotTree } from './omarchy-shell-sandbox.mjs'
 import { assertProofInstancesPreserved, createOwnedProofProcesses, installProofCleanup, snapshotProofInstances, terminateThenCleanup } from './owned-proof-processes.mjs'
 
 const checkout = resolve(import.meta.dirname, '..')
@@ -122,7 +122,8 @@ async function orchestrate() {
     writeFileSync(details, JSON.stringify({ root, destination, home, signature: b.instance, liveSignature: live.HYPRLAND_INSTANCE_SIGNATURE }))
     const command = process.argv[2] === '--exec' ? process.argv[3] : process.execPath
     const args = process.argv[2] === '--exec' ? process.argv.slice(4) : [join(import.meta.dirname, 'verify-linux-window-minimum.mjs'), '--journey', details, ...(process.argv[2] === '--probe' ? ['--probe'] : [])]
-    const child = start('isolated GUI check', 'dbus-run-session', ['--', command, ...args], env, 'inherit')
+    const busConfig = prepareSandboxBus(root)
+    const child = start('isolated GUI check', 'dbus-run-session', [`--config-file=${busConfig}`, '--', command, ...args], env, 'inherit')
     const code = await new Promise((resolveExit, reject) => { child.once('error', reject); child.once('exit', resolveExit) })
     assert.equal(code, 0, 'GUI check must pass')
     say('PASS: isolated GUI check')

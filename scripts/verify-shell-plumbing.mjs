@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, wri
 import { join, resolve } from 'node:path'
 import { setTimeout as wait } from 'node:timers/promises'
 import { assertProofInstancesPreserved, createOwnedProofProcesses, installProofCleanup, snapshotProofInstances, terminateThenCleanup } from './owned-proof-processes.mjs'
-import { snapshotTree } from './omarchy-shell-sandbox.mjs'
+import { prepareSandboxBus, snapshotTree } from './omarchy-shell-sandbox.mjs'
 
 const checkout = process.cwd()
 const captures = resolve(checkout, 'artifacts/linux-shell-plumbing')
@@ -86,7 +86,8 @@ try {
   const env = { ...process.env, ...temporaryEnvironment, XDG_RUNTIME_DIR: runtime, WAYLAND_DISPLAY: display, HYPRLAND_INSTANCE_SIGNATURE: signature, XDG_CURRENT_DESKTOP: 'Hyprland', XDG_SESSION_TYPE: 'wayland', ELECTRON_OZONE_PLATFORM_HINT: 'wayland', SOTTO_PROOF_CAPTURE_DIR: captures, SOTTO_PROOF_LIVE_SIGNATURE: live.HYPRLAND_INSTANCE_SIGNATURE }
   delete env.ELECTRON_RUN_AS_NODE
   const specs = process.argv.slice(2)
-  const child = owned.start('Linux Playwright proof', 'dbus-run-session', ['--', process.execPath, join(checkout, 'node_modules/@playwright/test/cli.js'), 'test', ...(specs.length ? specs : ['tests/e2e/linux-shell-plumbing.spec.ts']), '--workers=1', `--output=${join(temporaryRoot, 'test-results')}`], { env, stdio: 'inherit' })
+  const busConfig = prepareSandboxBus(temporaryRoot)
+  const child = owned.start('Linux Playwright proof', 'dbus-run-session', [`--config-file=${busConfig}`, '--', process.execPath, join(checkout, 'node_modules/@playwright/test/cli.js'), 'test', ...(specs.length ? specs : ['tests/e2e/linux-shell-plumbing.spec.ts']), '--workers=1', `--output=${join(temporaryRoot, 'test-results')}`], { env, stdio: 'inherit' })
   const code = await new Promise((resolve, reject) => { child.once('error', reject); child.once('exit', resolve) })
   assert.equal(code, 0, 'Linux built-app proof must pass')
 } finally { await lifecycle.cleanup() }

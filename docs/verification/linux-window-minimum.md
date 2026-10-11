@@ -91,3 +91,11 @@ mise exec node@24.21.0 -- node scripts/verify-shell-plumbing.mjs tests/e2e/linux
 ```
 
 **VERIFIED: 3 tests passed in 13.4 seconds.** The raw app (PID 1455103) published idle, accepted dictation and removed `dictation-state.json` when Electron's real exit event fired. The other two cases also passed. [The curated proof](../../artifacts/linux-window-minimum/shell-plumbing-proof.txt) records the result and cleanup. Owned compositor PID 1453906 and proof PID 1453965 stopped; all recorded PIDs and cgroups were empty, the prior compositor instances survived and `/tmp/sp-rTswvh` was removed. All four protected live trees were unchanged. No assertion, deadline or skip was weakened.
+
+## Make the repeated shell proof independent of the desktop
+
+A repeat after the final build passed forced-exit cleanup but exposed another fixture assumption: the legacy point `(0, 500)` migrated to Bottom on that nested output, while the test expected Left. The parent compositor can change a nested output's actual geometry despite its requested mode. The fixture now seeds the middle of the actual monitor's left edge, read from the owned Hyprland instance, and retains every Left, version-3 persistence and widget-suppression assertion. The failed repeat also detected concurrent changes under the live `.sotto` tree, including another thread's screenshot files; cleanup stopped the proof and removed its private root without restoring or writing to that tree.
+
+Both proof runners now use a private D-Bus configuration with no service directories or included session configuration. A fresh session bus alone can still activate installed portal services; this configuration removes that activation path as well as keeping the live bus out of the app. No production option changes.
+
+The complete shell spec passed again with those final checks: **3 passed in 15.2 seconds**. No portal service was activated. Raw PID 1613562 published idle, accepted dictation and removed state on exit. Owned compositor PID 1610601 and proof PID 1610659 stopped, all process/cgroup checks were empty, `/tmp/sp-dPvZSd` was removed and all four protected live trees were unchanged. The curated shell proof is refreshed to this run. The initial 13.4-second run above records the password-store repair separately.

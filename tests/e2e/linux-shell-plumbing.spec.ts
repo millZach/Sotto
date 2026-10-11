@@ -82,7 +82,13 @@ test('publishes the migrated legacy edge while the Electron widget is suppressed
   try {
     await mkdir(plugin, { recursive: true })
     await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true }))
-    await writeFile(join(profile, 'widget-placement.json'), JSON.stringify({ version: 1, placement: { x: 0, y: 500 } }))
+    // The parent compositor can resize a nested output despite its requested mode.
+    // Seed the middle of its actual left edge, rather than a fixed desktop point.
+    const { stdout } = await run('hyprctl', ['monitors', '-j'])
+    const [monitor] = JSON.parse(stdout) as Array<{ x: number; y: number; height: number; scale: number }>
+    expect(monitor).toBeDefined()
+    const legacyPoint = { x: monitor!.x, y: monitor!.y + Math.floor(monitor!.height / monitor!.scale / 2) }
+    await writeFile(join(profile, 'widget-placement.json'), JSON.stringify({ version: 1, placement: legacyPoint }))
     launched = await launchSotto('success', profile, {
       createProfile: async () => { throw new Error('Use the owned profile') },
       launch: options => electron.launch({ ...options, env: { ...options?.env, HOME: home } }),
@@ -102,7 +108,7 @@ test('publishes the migrated legacy edge while the Electron widget is suppressed
     const widgetVisible = () => launched!.app.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows().find(w => w.webContents.getURL().endsWith('/widget.html'))?.isVisible() ?? false)
     expect(await widgetVisible()).toBe(false)
-    console.log(`legacy point (0, 500), plugin present; built app PID ${launched.app.process().pid}: edge=left; Electron widget visible=false; placement migrated to v3`)
+    console.log(`legacy point (${legacyPoint.x}, ${legacyPoint.y}), plugin present; built app PID ${launched.app.process().pid}: edge=left; Electron widget visible=false; placement migrated to v3`)
     await rm(plugin, { recursive: true })
     await expect.poll(widgetVisible).toBe(true)
     expect(JSON.parse(await readFile(statePath, 'utf8')).edge).toBe('left')
