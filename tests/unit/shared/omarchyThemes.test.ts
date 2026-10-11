@@ -12,6 +12,7 @@ import { BUILT_IN_THEMES, DEFAULT_THEME_ID, resolveThemeFor, parseCustomThemes }
 import { OMARCHY_THEME_ID, OMARCHY_TEXT_PAIRS, guardOmarchyColors, omarchySuccessText, parseOmarchyTheme, readableOmarchyMix } from '../../../src/shared/themes/omarchy'
 import { OMARCHY_CSS_TEXT_PAIRS, OMARCHY_GRAPHIC_COLOR_TOKENS } from '../../fixtures/renderer/omarchyTextSurfaces'
 import { parseTokenBlocks, rootDeclarations, resolveColor, contrast, over } from '../../fixtures/renderer/themeTokenResolver'
+import { PAINTED_TEXT_PAIRS, paintedContrast, withPaintedLayers } from '../../fixtures/renderer/paintedTextPairs'
 
 const entries = Object.entries(fixtures.themes)
 const blocks = parseTokenBlocks(readFileSync('src/renderer/src/styles/tokens.css', 'utf8'))
@@ -71,6 +72,12 @@ describe('Omarchy M3 and readability check', () => {
       }
     }
     expect(contrast(color('focus-ring'), color('canvas'))).toBeGreaterThanOrEqual(3)
+    // The pairs the window really paints, which every built-in half meets too (themeTokens.test.ts).
+    const painted = withPaintedLayers(rootDeclarations(theme.appearance, DEFAULT_THEME_ID, { colors: theme.colors }, blocks))
+    painted.set('--tt-success', omarchySuccessText(theme.colors, theme.appearance))
+    for (const pair of PAINTED_TEXT_PAIRS) {
+      expect(paintedContrast(painted, pair), `${name}: ${pair.ink} on ${pair.surface.join(' + ')} (${pair.where})`).toBeGreaterThanOrEqual(4.5)
+    }
   })
   it.each(entries)('%s keeps widget status text readable through the widget token projection', (name, fixture) => {
     const theme = parseOmarchyTheme(fixture.rendered, name)
@@ -157,11 +164,12 @@ describe('Omarchy M3 and readability check', () => {
     expect(settings.appearance).toBe('dark')
     expect(settings).not.toHaveProperty('omarchyTheme')
     expect(BUILT_IN_THEMES).toHaveLength(6)
-    // Pin all twelve shipped halves and their token projection; this Linux repair
-    // must never change Windows/macOS palettes or require new design baselines.
-    expect(createHash('sha256').update(JSON.stringify(BUILT_IN_THEMES)).digest('hex')).toBe('985239fe0784442b1a8ef03112c39d38aef7929d38ca18c345114be56d0a8c85')
+    // Pin all twelve shipped halves and their token projection; the Linux repair
+    // must never change Windows/macOS palettes. They last changed on purpose for
+    // #936, which needed new design baselines on Windows.
+    expect(createHash('sha256').update(JSON.stringify(BUILT_IN_THEMES)).digest('hex')).toBe('18defa9e80c06093d4ffb6fbc1f5f3984bc3bd437e06b9aa9d5028548c5c4e08')
     const tokenText = readFileSync('src/renderer/src/styles/tokens.css', 'utf8').replace(/\r\n/gu, '\n')
-    expect(createHash('sha256').update(tokenText).digest('hex')).toBe('4eadc2de5ea36409889828d695ca79f6b66111de9b83b20f0bad9b772af5f667')
+    expect(createHash('sha256').update(tokenText).digest('hex')).toBe('e7bd850b7346f98dab1a86ae4783de2c4e4ada7493367823ff2d9f3ca57248f5')
     // Existing Windows and macOS imports named Omarchy remain user themes.
     expect(parseCustomThemes([{ ...parseOmarchyTheme(fixtures.themes.hackerman.rendered), id: 'omarchy' }])[0]?.id).toBe('omarchy')
   })

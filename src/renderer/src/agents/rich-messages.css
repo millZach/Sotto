@@ -15,7 +15,8 @@
   --rich-link: var(--tt-link, var(--tt-primary));
   --rich-link-hover: var(--tt-primary-hover);
   --rich-caret: var(--tt-activity);
-  --rich-code-keyword: var(--tt-primary);
+  /* Keywords borrow the primary action's fill, which is tuned for its button, not for text: a little body ink keeps 4.5:1. */
+  --rich-code-keyword: color-mix(in oklab, var(--tt-primary) 85%, var(--tt-text));
   --rich-code-string: var(--tt-warning);
   --rich-code-number: var(--tt-error);
   --rich-code-title: var(--tt-text);

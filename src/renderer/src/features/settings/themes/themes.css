@@ -672,6 +672,9 @@
   background: var(--tt-warning-surface);
 }
 
+/* Faint ink would fall below 4.5:1 on the warning card, so Back and Cancel read in the muted tier there. */
+.theme-import__conflicts .tt-button--ghost { color: var(--tt-text-muted); }
+
 .theme-search { display: grid; gap: 10px; }
 .theme-search h3 { margin: 0; font-size: 14px; font-weight: 600; }
 

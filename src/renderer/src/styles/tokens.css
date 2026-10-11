@@ -115,14 +115,14 @@
   --theme-secondary-foreground: oklch(0.235 0.014 75);
   --theme-muted: oklch(0.945 0.008 85);
   --theme-muted-foreground: oklch(0.5 0.014 75);
-  --theme-placeholder: oklch(0.535 0.015 78);
+  --theme-placeholder: oklch(0.525 0.015 78);
   --theme-secondary-label: oklch(0.5 0.014 75);
   --theme-icon-muted: oklch(0.5 0.014 75);
   --theme-error: oklch(0.637823 0.237287 25.436);
   --theme-error-foreground: oklch(0.509494 0.208583 28.513);
   --theme-error-surface: oklch(0.94 0.02 25);
   --theme-warning: oklch(0.772406 0.172798 65.367);
-  --theme-warning-foreground: oklch(0.546927 0.155556 45.359);
+  --theme-warning-foreground: oklch(0.530927 0.155556 45.359);
   --theme-warning-surface: oklch(0.955 0.018 80);
   --theme-update: oklch(0.53 0.095 186);
   --theme-update-foreground: oklch(0.43 0.08 186);
@@ -346,7 +346,7 @@
   --theme-contrast-target: black;
   --tt-glass-blur: 12px;
   --tt-glass-saturation: 1.14;
-  --tt-success: oklch(0.5 0.11 158);
+  --tt-success: oklch(0.45 0.11 158);
   --tt-provider-codex: #c9ced6;
   --tt-provider-claude: #e2ad80;
   --tt-provider-grok: #bfaefc;

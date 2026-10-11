@@ -158,13 +158,22 @@ button.changes-file__name:hover .changes-file__base { text-decoration: underline
 }
 
 /* Review comments (#270): lines are picked like T3's, a comment is written under them and stays marked there until
-   the message goes. Picked lines take an accent wash over their own add or remove wash, with the accent's edge. */
-.changes-diff__rows { --changes-picked: color-mix(in srgb, var(--tt-accent) 22%, transparent); }
+   the message goes. Picked lines take an accent wash over their own add or remove wash, with the accent's edge. The
+   wash would sink the muted gutter below 4.5:1, so a picked line's numbers take the body ink, as a pointed-at number
+   does, and its signs keep as much of their status colour as still reads, mixed toward that ink. */
+.changes-diff__rows {
+  --changes-picked: color-mix(in srgb, var(--tt-accent) 22%, transparent);
+  --changes-picked-add: color-mix(in oklab, var(--tt-success) 70%, var(--tt-text));
+  --changes-picked-remove: color-mix(in oklab, var(--tt-error-text) 40%, var(--tt-text));
+}
 .changes-line[data-position], .changes-split__row[data-position] { cursor: pointer; scroll-margin-top: 40px; scroll-margin-bottom: 8px; }
 .changes-line[data-position]:hover, .changes-split__row[data-position]:hover > .changes-split__cell { background-image: linear-gradient(var(--tt-hover), var(--tt-hover)); }
 .changes-line[aria-selected='true'], .changes-split__row[aria-selected='true'] > .changes-split__cell { background-image: linear-gradient(var(--changes-picked), var(--changes-picked)); }
 .changes-line[aria-selected='true'], .changes-line[data-noted],
 .changes-split__row[aria-selected='true'] > .changes-split__cell:first-child, .changes-split__row[data-noted] > .changes-split__cell:first-child { box-shadow: inset 3px 0 0 var(--tt-accent); }
+.changes-line[aria-selected='true'] .changes-line__number, .changes-split__row[aria-selected='true'] .changes-line__number { color: var(--tt-text); }
+.changes-line[aria-selected='true'][data-kind='add'] .changes-line__sign, .changes-split__row[aria-selected='true'] > .changes-split__cell[data-kind='add'] .changes-line__sign { color: var(--changes-picked-add); }
+.changes-line[aria-selected='true'][data-kind='remove'] .changes-line__sign, .changes-split__row[aria-selected='true'] > .changes-split__cell[data-kind='remove'] .changes-line__sign { color: var(--changes-picked-remove); }
 .changes-line[data-position]:focus-visible, .changes-split__row[data-position]:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
 .changes-line[data-position] .changes-line__number:not(:empty):hover, .changes-split__row[data-position] .changes-line__number:not(:empty):hover { background: var(--tt-hover-strong); color: var(--tt-text); }
 
