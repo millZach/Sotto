@@ -155,7 +155,8 @@ export function AppShell({
   })
 
   const go = (destination: ManagementNavigation): void => { onNavigate?.(destination) }
-  const enter = (target: Room): void => { handRoomFocus(target.id); go(target.destination) }
+  // Only a press that opens another room hands focus on; the lit tab already has it.
+  const enter = (target: Room): void => { if (target.id !== room) handRoomFocus(target.id); go(target.destination) }
 
   const followLink = (event: MouseEvent<HTMLAnchorElement>, destination: ManagementNavigation): void => {
     event.preventDefault()

@@ -95,7 +95,8 @@ export function SidebarFoot(): ReactNode {
     if (claimRoomFocus(room)) tablist.current?.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')?.focus()
   })
   const go = (destination: AppNavigation): void => { app?.actions.navigate(destination) }
-  const enter = (target: Room): void => { handRoomFocus(target.id); go(target.destination) }
+  // Only a press that opens another room hands focus on; the lit tab already has it.
+  const enter = (target: Room): void => { if (target.id !== room) handRoomFocus(target.id); go(target.destination) }
   /** Arrow keys walk the switch, as they do in the strip: only the lit tab is in the Tab order, so this is how the others are reached. */
   const onTabKey = (event: KeyboardEvent<HTMLButtonElement>, index: number): void => {
     const next = roomKeyTarget(event.key, index, rooms.length)
