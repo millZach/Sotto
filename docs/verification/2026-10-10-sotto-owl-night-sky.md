@@ -25,7 +25,7 @@ Stable is unchanged: no sky, no band, no change to the field or the switch. The 
 
 ## How it was run
 
-`tests/e2e/sotto-owl-night-sky.spec.ts` runs the output of `npm run build`. Each launch has its own owned e2e profile and the `design-threads` fixture, never Zach's data. Owl launches start Electron on a temporary folder whose `package.json` declares `0.1.35-owl.20261010.1`, the same mechanism the branding note describes (now shared as `tests/e2e/support/sottoOwl.ts`). The run published with `SOTTO_E2E_EVIDENCE=publish`, and every measured value is in [night-sky.json](../../artifacts/sotto-owl-night-sky/night-sky.json).
+`tests/e2e/sotto-owl-night-sky.spec.ts` runs the output of `npm run build`. Each launch has its own owned e2e profile and the `design-threads` fixture, never Zach's data. Owl launches start Electron on a temporary folder whose `package.json` declares an Owl version, the same mechanism the branding note describes: `0.1.35-owl.20261010.1` when this evidence was published, and since #922 the shared `tests/e2e/support/releaseTrack.ts` fixture's `0.1.37-owl.20261012.1`. `tests/e2e/support/sottoOwl.ts` now only holds and releases the twinkle. The run published with `SOTTO_E2E_EVIDENCE=publish`, and every measured value is in [night-sky.json](../../artifacts/sotto-owl-night-sky/night-sky.json).
 
 Checked on Owl in the Sotto, Tropic and Citrine themes, dark and light, at 1600x1000, 1280x800 and 820x560:
 
@@ -99,3 +99,5 @@ Run on the Windows laptop in this order, after the last code change. Free physic
 The design gate fails on its six Help captures (`help`, `help-light` and `scale-100/125/150/200-help`). In each, the only changed pixels are the About line's version: the committed baselines read "Sotto 0.1.34", and this branch's `package.json` has read 0.1.35 since the 0.1.35 release merged into it. Help shows stable's sidebar, which has no sky. The gate stops each spec at its first mismatch, so I checked the rest this way. I gave those six baselines their version-only captures for one run, and every capture in all nine specs then matched. The manifest step failed only on those six files' digests. Then I put the six files and the manifest back byte for byte; `git status` shows `artifacts/design` unchanged. The Threads captures, stable's sidebar header included, pass against the committed baselines as they stand.
 
 `terminal-loading.spec.ts`'s workspace case fails before its terminal opens. The agent state it reads has no thread with the id `workshop`. Its tools case passes. This change touches no agent state, scenario, fixture or main-process code, and that spec runs stable, which has no sky.
+
+After `main` (with #920's design baselines, regenerated at 0.1.36) merged into this branch, both gaps closed on their own: `npm run design:verify` passed all nine specs, 144 deterministic captures, against the committed baselines with none regenerated, and `terminal-loading.spec.ts` passed both cases.
