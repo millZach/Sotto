@@ -651,6 +651,8 @@ Linux updates come from the package manager. Before the AUR publication, install
 
 ### Linux development builds
 
+The main window resizes down to 820×560.
+
 The unpackaged desktop app starts on Omarchy (Arch Linux and Hyprland on Wayland). Prepare a source checkout with Node 24:
 
 ```sh

@@ -334,3 +334,13 @@ artifacts/watcher-rename/*
 artifacts/watcher-gate/*
 !artifacts/watcher-gate/*.png
 !artifacts/watcher-gate/profile.json
+
+# Linux native minimum proof; retain only the cited frames and observations.
+artifacts/linux-window-minimum/*
+!artifacts/linux-window-minimum/minimum-light.png
+!artifacts/linux-window-minimum/minimum-dark.png
+!artifacts/linux-window-minimum/minimum-settings-light.png
+!artifacts/linux-window-minimum/minimum-settings-dark.png
+!artifacts/linux-window-minimum/sizes.json
+!artifacts/linux-window-minimum/probe.json
+!artifacts/linux-window-minimum/proof.txt
