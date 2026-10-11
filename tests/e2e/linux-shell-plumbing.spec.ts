@@ -317,8 +317,10 @@ const timer = setInterval(() => {
   if (existsSync(${JSON.stringify(exitSignal)})) { clearInterval(timer); app.exit() }
 }, 25)
 `)
-    rawApp = spawn(join(process.cwd(), 'node_modules/electron/dist/electron'), [exitHook], {
-      env: { ...e2eEnvironment('success', profile), HOME: home, XDG_CONFIG_HOME: config }, stdio: 'ignore',
+    // Match Playwright's isolated password store; a fresh bus has no unlocked keyring.
+    rawApp = spawn(join(process.cwd(), 'node_modules/electron/dist/electron'), ['--password-store=basic', exitHook], {
+      env: { ...e2eEnvironment('success', profile), HOME: home, XDG_CONFIG_HOME: config },
+      stdio: ['ignore', 'ignore', 'inherit'],
     })
     const forcedPid = rawApp.pid
     mainPid = forcedPid

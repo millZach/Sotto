@@ -1,0 +1,25 @@
+Temporary root /tmp/sp-rTswvh: mode 700
+Started nested Hyprland PID 1453906 in sotto-proof-7a676fc914f4427ea98fd530f230ff6d-0.scope
+nested Hyprland PID 1453906: efb50993780079460b0cbed1363e2166a2de1d9f_1791754794_59968589 on wayland-2; live instance untouched
+Started Linux Playwright proof PID 1453965 in sotto-proof-7a676fc914f4427ea98fd530f230ff6d-1.scope
+  ✓  1 tests/e2e/linux-shell-plumbing.spec.ts:16:5 › keeps the Electron widget with the plugin installed when another listener holds the dictation socket (1.3s)
+  ✓  2 tests/e2e/linux-shell-plumbing.spec.ts:75:5 › publishes the migrated legacy edge while the Electron widget is suppressed (1.1s)
+Built app PID 1455103; isolated profile; no main-process debugger
+launch before forced exit: {"version":1,"pid":1455103,"pidStart":196098033,"dictation":null,"state":"idle","since":1791754808325,"updatedAt":1791754808325,"detail":null,"kept":false,"edge":"left"}
+start before forced exit: {"version":1,"pid":1455103,"pidStart":196098033,"dictation":"4caab17a67da51dd1ecc63a621dba97b94cd906378038d3ae99fa7fe15c4640a","state":"listening","since":1791754808464,"updatedAt":1791754808464,"detail":null,"kept":false,"edge":"left"}
+forced exit PID 1455103: Electron exit event observed; dictation-state.json absent
+Stopped forced-exit app PID 1455103
+  ✓  3 tests/e2e/linux-shell-plumbing.spec.ts:116:5 › publishes private shell state, retries and discards, remembers placement and steps aside for the plugin (10.0s)
+  3 passed (13.4s)
+Stopped nested Hyprland PID 1453906
+Stopped Linux Playwright proof PID 1453965
+Stopped proof slice app-sottoproof7a676fc914f4427ea98fd530f230ff6d.slice
+Recorded PIDs still running: []
+Proof cgroup processes after cleanup: []
+Owned processes still running: []
+cleanup: owned PIDs stopped; prior Hyprland instances preserved
+Live /home/zach/.config/omarchy unchanged
+Live /home/zach/.config/hypr unchanged
+Live /home/zach/.local/state/omarchy unchanged
+Live /home/zach/.sotto unchanged
+Temporary root removed: /tmp/sp-rTswvh

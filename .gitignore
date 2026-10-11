@@ -377,3 +377,5 @@ artifacts/linux-window-minimum/*
 !artifacts/linux-window-minimum/sizes.json
 !artifacts/linux-window-minimum/probe.json
 !artifacts/linux-window-minimum/proof.txt
+
+!artifacts/linux-window-minimum/shell-plumbing-proof.txt

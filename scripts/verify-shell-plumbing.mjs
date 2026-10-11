@@ -1,5 +1,5 @@
 // Usage after build: mise exec node@24.21.0 -- node scripts/verify-shell-plumbing.mjs [Playwright spec ...]
-// An owned nested Hyprland and systemd scopes keep all input and descendants away from the locked live session.
+// Private HOME, TMPDIR and D-Bus, plus owned nested Hyprland scopes, isolate the locked live session.
 import assert from 'node:assert/strict'
 import console from 'node:console'
 import process from 'node:process'
@@ -8,6 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, wri
 import { join, resolve } from 'node:path'
 import { setTimeout as wait } from 'node:timers/promises'
 import { assertProofInstancesPreserved, createOwnedProofProcesses, installProofCleanup, snapshotProofInstances, terminateThenCleanup } from './owned-proof-processes.mjs'
+import { snapshotTree } from './omarchy-shell-sandbox.mjs'
 
 const checkout = process.cwd()
 const captures = resolve(checkout, 'artifacts/linux-shell-plumbing')
@@ -21,16 +22,21 @@ const runtime = live.XDG_RUNTIME_DIR
 assert.ok(runtime && live.HYPRLAND_INSTANCE_SIGNATURE && live.WAYLAND_DISPLAY)
 const instanceRoot = join(runtime, 'hypr')
 const before = snapshotProofInstances(instanceRoot)
+const protectedPaths = ['.config/omarchy', '.config/hypr', '.local/state/omarchy', '.sotto'].map(path => join(live.HOME, path)).filter(existsSync)
+const stamps = protectedPaths.map(snapshotTree)
 const owned = createOwnedProofProcesses(console.log)
 // mkdtemp creates a private 0700 folder. Keep Unix socket paths short even in a deep checkout.
 const temporaryRoot = mkdtempSync('/tmp/sp-')
 assert.equal(statSync(temporaryRoot).mode & 0o777, 0o700)
 console.log(`Temporary root ${temporaryRoot}: mode 700`)
 const temporaryEnvironment = {
+  HOME: join(temporaryRoot, 'home'),
   TMPDIR: temporaryRoot, TMP: temporaryRoot, TEMP: temporaryRoot,
   XDG_CONFIG_HOME: join(temporaryRoot, 'config'), XDG_CACHE_HOME: join(temporaryRoot, 'cache'),
+  XDG_STATE_HOME: join(temporaryRoot, 'state'), XDG_DATA_HOME: join(temporaryRoot, 'data'),
   PWTEST_CACHE_DIR: join(temporaryRoot, 'playwright-cache'),
 }
+mkdirSync(temporaryEnvironment.HOME, { mode: 0o700 })
 let compositor, signature, display, folderIdentity
 const lifecycle = installProofCleanup(() => terminateThenCleanup(() => owned.stop(), [() => {
   if (signature && !before.has(signature) && signature !== live.HYPRLAND_INSTANCE_SIGNATURE) {
@@ -44,6 +50,11 @@ const lifecycle = installProofCleanup(() => terminateThenCleanup(() => owned.sto
   }
   assertProofInstancesPreserved(instanceRoot, before, signature)
   console.log('cleanup: owned PIDs stopped; prior Hyprland instances preserved')
+}, () => {
+  protectedPaths.forEach((path, index) => {
+    assert.deepEqual(snapshotTree(path), stamps[index])
+    console.log(`Live ${path} unchanged`)
+  })
 }, () => {
   rmSync(temporaryRoot, { recursive: true, force: true })
   assert.ok(!existsSync(temporaryRoot))
@@ -75,7 +86,7 @@ try {
   const env = { ...process.env, ...temporaryEnvironment, XDG_RUNTIME_DIR: runtime, WAYLAND_DISPLAY: display, HYPRLAND_INSTANCE_SIGNATURE: signature, XDG_CURRENT_DESKTOP: 'Hyprland', XDG_SESSION_TYPE: 'wayland', ELECTRON_OZONE_PLATFORM_HINT: 'wayland', SOTTO_PROOF_CAPTURE_DIR: captures, SOTTO_PROOF_LIVE_SIGNATURE: live.HYPRLAND_INSTANCE_SIGNATURE }
   delete env.ELECTRON_RUN_AS_NODE
   const specs = process.argv.slice(2)
-  const child = owned.start('Linux Playwright proof', process.execPath, [join(checkout, 'node_modules/@playwright/test/cli.js'), 'test', ...(specs.length ? specs : ['tests/e2e/linux-shell-plumbing.spec.ts']), '--workers=1', `--output=${join(temporaryRoot, 'test-results')}`], { env, stdio: 'inherit' })
+  const child = owned.start('Linux Playwright proof', 'dbus-run-session', ['--', process.execPath, join(checkout, 'node_modules/@playwright/test/cli.js'), 'test', ...(specs.length ? specs : ['tests/e2e/linux-shell-plumbing.spec.ts']), '--workers=1', `--output=${join(temporaryRoot, 'test-results')}`], { env, stdio: 'inherit' })
   const code = await new Promise((resolve, reject) => { child.once('error', reject); child.once('exit', resolve) })
   assert.equal(code, 0, 'Linux built-app proof must pass')
 } finally { await lifecycle.cleanup() }
