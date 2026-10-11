@@ -442,13 +442,14 @@ export class WatcherService implements WatcherControlHooks {
     const admitted = await this.transaction(async () => {
       this.checkCaller(threadId)
       const record = this.record(), request = record.requests.find(item => item.id === input.requestId)
-      if (!request || request.watcher.threadId !== threadId || request.state !== 'active') refuse('REQUEST_NOT_ACTIVE', 'This request is not active. Only a user Send to Watcher can start a request.')
+      if (!request || request.watcher.threadId !== threadId) refuse('REQUEST_NOT_ACTIVE', 'This request is not active. Only a user Send to Watcher can start a request.')
       const fingerprint = digest([name, input])
       const existing = record.operations.find(item => item.requestId === input.requestId && item.retryKey === input.retryKey)
       if (existing) {
         if (existing.digest !== fingerprint) refuse('RETRY_KEY_CONFLICT', 'This retry key already belongs to a different call. Use the original receipt.')
         return { operation: existing, retry: true }
       }
+      if (request.state !== 'active') refuse('REQUEST_NOT_ACTIVE', 'This request is not active. Only a user Send to Watcher can start a request.')
       const start = name === 'start_thread', send = name === 'send_to_thread'
       const target = start ? this.target(randomUUID()) : (input as WatcherToolInput<'send_to_thread'>).target
       const thread = start ? undefined : this.thread(target)

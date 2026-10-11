@@ -529,3 +529,22 @@ it('keeps the roster readable after more than one hundred requests address a wor
   expect(row.participation.at(-1)).toMatchObject({ requestId: latestRequestId, state: 'taken-over', takeover: { reason: 'user-send' } })
   expect(f.control.watcherRecord().requests).toHaveLength(101)
 })
+
+
+it('returns a settle receipt on retry after its request closes without reviving it', async () => {
+  const f = await fixture(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  await f.finish(first.target.threadId)
+  await f.finish(f.id)
+  const input = { requestId: f.requestId, retryKey: randomUUID(), target: first.target }
+  const result = await f.call('settle_thread', input)
+  expect(result).toMatchObject({ status: 'ok', receipt: { deliveryState: 'accepted' } })
+  expect(f.service.state().requests[0]!.state).toBe('closed')
+  const commands = f.workspace.adapters.codex.commands.length
+  const record = f.control.watcherRecord()
+  expect(await f.call('settle_thread', input)).toMatchObject({ status: 'ok', receipt: 'receipt' in result ? result.receipt : undefined, state: { settled: true } })
+  expect(await f.call('stop_thread', input)).toMatchObject({ status: 'refused', code: 'RETRY_KEY_CONFLICT' })
+  expect(await f.call('settle_thread', { ...input, retryKey: randomUUID() })).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
+  expect(f.workspace.adapters.codex.commands).toHaveLength(commands)
+  expect(f.control.watcherRecord()).toEqual(record)
+})
