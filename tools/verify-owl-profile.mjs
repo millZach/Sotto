@@ -1,4 +1,4 @@
-// node scripts/verify-owl-profile.mjs: Owl to stable (gate off) to Owl through this checkout's real stores.
+// node tools/verify-owl-profile.mjs: Owl to stable (gate off) to Owl through this checkout's real stores.
 import { randomUUID } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -10,7 +10,7 @@ import { build } from 'vite'
 const root = resolve(import.meta.dirname, '..')
 const temporary = await mkdtemp(join(tmpdir(), 'sotto-owl-profile-'))
 if (dirname(temporary) !== resolve(tmpdir()) || !basename(temporary).startsWith('sotto-owl-profile-')) throw new Error('Unexpected probe directory.')
-const entry = join(root, 'scripts', `.owl-profile-${randomUUID()}.ts`)
+const entry = join(root, 'tools', `.owl-profile-${randomUUID()}.ts`)
 try {
   await writeFile(entry, `import { owlProfileRoundTrip } from '../tests/fixtures/owlProfileRoundTrip'\nprocess.stdout.write(JSON.stringify(await owlProfileRoundTrip(process.argv[2])))\n`)
   await build({ root, configFile: false, logLevel: 'error', ssr: { noExternal: true }, build: { ssr: entry, target: 'node24', outDir: join(temporary, 'out'), minify: false,

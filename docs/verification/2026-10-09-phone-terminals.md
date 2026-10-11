@@ -6,7 +6,7 @@ Issue [#884](https://github.com/millZach/Sotto/issues/884), branch `feat/phone-t
 
 ## Reference inspected
 
-The existing prototype was opened at `?variant=B` and its iPhone frame inspected. [Approved variant B](../../artifacts/phone-terminals/approved-variant-b.png) is a reference capture only. Its persistent native choices are historical illustration; ADR-0066 governs the actual one-time hook answers. The prototype source was preserved unchanged. Reproduce its capture with `node scripts/capture-phone-terminal-prototype.mjs`.
+The existing prototype was opened at `?variant=B` and its iPhone frame inspected. [Approved variant B](../../artifacts/phone-terminals/approved-variant-b.png) is a reference capture only. Its persistent native choices are historical illustration; ADR-0066 governs the actual one-time hook answers. The prototype source was preserved unchanged. Reproduce its capture with `node tools/capture-phone-terminal-prototype.mjs`.
 
 ## Built desktop and wire: VERIFIED
 

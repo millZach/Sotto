@@ -1,4 +1,4 @@
-// Usage: node scripts/capture-phone-terminal-prototype.mjs [output-folder]; captures the approved reference, not SwiftUI.
+// Usage: node tools/capture-phone-terminal-prototype.mjs [output-folder]; captures the approved reference, not SwiftUI.
 import { mkdir } from 'node:fs/promises'
 import process from 'node:process'
 import { resolve } from 'node:path'

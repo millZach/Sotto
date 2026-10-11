@@ -14,7 +14,7 @@ The lead's October 10 scope decision excludes renderer view state from Watcher's
 
 ## Real profile round trip
 
-`node scripts/verify-owl-profile.mjs` mirrors the October 9 probe against this branch with the gate off. It uses the real `WorkspaceHost`, `AgentControl` startup/privacy/save/shutdown, `ThreadRegistry`, SQLite `ThreadStore`, `SettingsRepository` and `AgentCredentials`. An Owl profile is written, opened and saved by stable, and reopened by Owl. Providers and keys are synthetic; no native session or paid call is made.
+`node tools/verify-owl-profile.mjs` mirrors the October 9 probe against this branch with the gate off. It uses the real `WorkspaceHost`, `AgentControl` startup/privacy/save/shutdown, `ThreadRegistry`, SQLite `ThreadStore`, `SettingsRepository` and `AgentCredentials`. An Owl profile is written, opened and saved by stable, and reopened by Owl. Providers and keys are synthetic; no native session or paid call is made.
 
 Real output:
 
@@ -37,7 +37,7 @@ Both tracks were captured in dark and light with reduced motion, at 1600x1000, 1
 
 Captures: [stable dark, 1600](../../artifacts/watcher-gate/stable-dark-1600x1000.png), [1280](../../artifacts/watcher-gate/stable-dark-1280x800.png), [820](../../artifacts/watcher-gate/stable-dark-820x560.png); [stable light, 1600](../../artifacts/watcher-gate/stable-light-1600x1000.png), [1280](../../artifacts/watcher-gate/stable-light-1280x800.png), [820](../../artifacts/watcher-gate/stable-light-820x560.png). [Owl dark, 1600](../../artifacts/watcher-gate/owl-dark-1600x1000.png), [1280](../../artifacts/watcher-gate/owl-dark-1280x800.png), [820](../../artifacts/watcher-gate/owl-dark-820x560.png); [Owl light, 1600](../../artifacts/watcher-gate/owl-light-1600x1000.png), [1280](../../artifacts/watcher-gate/owl-light-1280x800.png), [820](../../artifacts/watcher-gate/owl-light-820x560.png).
 
-`node scripts/verify-watcher-package.mjs` passed against the actual unpacked stable executable with an isolated profile, automatic update checks and the local host off, and no e2e mode. Real output: `version=0.1.35, name=sotto, packaged=true, override=1, releaseTrack=stable, watcherEnabled=false, phase=idle`. The packaged build ignores the development override. Its [first-run capture](../../artifacts/watcher-gate/packaged-stable.png) was opened and inspected; the existing welcome screen and Get started control render fully.
+`node tools/verify-watcher-package.mjs` passed against the actual unpacked stable executable with an isolated profile, automatic update checks and the local host off, and no e2e mode. Real output: `version=0.1.35, name=sotto, packaged=true, override=1, releaseTrack=stable, watcherEnabled=false, phase=idle`. The packaged build ignores the development override. Its [first-run capture](../../artifacts/watcher-gate/packaged-stable.png) was opened and inspected; the existing welcome screen and Get started control render fully.
 
 ## Promotion
 

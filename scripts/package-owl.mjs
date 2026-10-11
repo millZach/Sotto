@@ -50,5 +50,5 @@ if (manifest.version !== version || manifest.files?.[0]?.url !== basename(safeIn
   throw new Error('The Owl update manifest does not match the verified installer.')
 }
 if (!(await readFile(packagePath)).equals(originalManifest)) throw new Error('The source package manifest changed during packaging.')
-run(resolve(root, 'scripts/verify-owl-package.mjs'), [version])
+run(resolve(root, 'tools/verify-owl-package.mjs'), [version])
 process.stdout.write(`${JSON.stringify({ version, track: 'owl', installer, uploadInstaller: safeInstaller, manifest: resolve(root, 'release/owl.yml'), blockmap: `${safeInstaller}.blockmap` }, null, 2)}\n`)

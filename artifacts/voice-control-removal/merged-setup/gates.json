@@ -49,7 +49,7 @@
     "output": "9 passed (2.3m); Verified 144 exact deterministic design-review tuples."
   },
   "setupLever": {
-    "command": "node scripts/verify-removal-setup.mjs",
+    "command": "node tools/verify-removal-setup.mjs",
     "exitCode": 0,
     "variants": 3,
     "stepsEach": 9,
