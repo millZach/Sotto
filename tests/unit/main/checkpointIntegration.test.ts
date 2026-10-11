@@ -1,7 +1,8 @@
 // @vitest-environment node
 import * as worktrees from '../../../src/main/agents/threadWorktrees'
 import { join } from 'node:path'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { expect, it, vi } from 'vitest'
 import { workspaceFixture } from '../../fixtures/workspaceFixture'
 import { connectCheckpoints } from '../../../src/main/tools/checkpointIntegration'
@@ -10,6 +11,7 @@ import { resolveFilesBinding } from '../../../src/main/files/binding'
 import type { GitActions } from '../../../src/main/agents/gitActions'
 import type { AgentControl } from '../../../src/main/agents/control'
 import { deferred } from '../../fixtures/deferred'
+import { inactiveLocalHost } from '../../../src/main/hosts/inactiveLocalHost'
 
 it('excludes an unallocated worktree from shared-folder checkpoint guards while retaining active shared-thread protection', async () => {
   const f = await workspaceFixture()
@@ -125,4 +127,22 @@ it('takes a send\'s checkpoint from the thread the coordinator just read, settli
     // Taking the checkpoint asks for the thread's history, not whether other work is pending.
     expect(pending).not.toHaveBeenCalled()
   } finally { vi.restoreAllMocks(); integration?.dispose(); await f.stop(); await f.remove() }
+})
+
+
+it('connects checkpoints while the local host is off without creating Watcher observers', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'sotto-checkpoints-inactive-'))
+  let integration: ReturnType<typeof connectCheckpoints> | undefined
+  try {
+    const runtime = await inactiveLocalHost(root)
+    const files = new FilesService({ resolveBinding: id => resolveFilesBinding(runtime.agentHost.workspaceSnapshot(), id), copyPath: vi.fn(), reveal: vi.fn() })
+    const report = vi.fn()
+    integration = connectCheckpoints({ files, directory: root, host: runtime.agentHost, control: runtime.agentControl, registry: null, report })
+    await integration.checkpoints.initialize()
+    expect(runtime.agentControl.watcherObservationsEnabled()).toBe(false)
+    expect(runtime.watcher).toBeUndefined()
+    expect(runtime.agentControl.shell().host.threads).toEqual([])
+    expect(report).not.toHaveBeenCalled()
+    await runtime.close()
+  } finally { integration?.dispose(); await rm(root, { recursive: true, force: true }) }
 })
