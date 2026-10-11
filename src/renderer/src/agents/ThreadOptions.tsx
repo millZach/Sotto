@@ -8,6 +8,7 @@ import { moveListboxFocus } from './listboxKeys'
 import { ModelPicker } from './ModelPicker'
 import { EffortPicker, effortLabel } from './EffortPicker'
 import { OPTION_CHIP_NAMES } from './optionChipNames'
+import { providerKey } from './threadFacts'
 import { pendingSettingsStore, permissionPatch, settingValues, settingValuesFor, unconfirmedKinds, usePendingSettings, usesProviderModes, type SettingKind, type SettingsPatch } from './pendingSettings'
 import './threadChips.css'
 
@@ -109,13 +110,16 @@ function canCreateWith(state: AgentState, model: AgentModel): boolean {
 /**
  * The models a thread may use. Before its first send (`nativeSessionStarted === false`) any ready model
  * from a connected provider that can create threads is a choice; once a native session exists (or its
- * start is unknown) the thread stays with its own provider.
+ * start is unknown) the thread stays with its own provider. `sameProvider` keeps it there from the start:
+ * Watcher's provider is chosen when it is created, and changing it is another Watcher (ADR-0073).
  */
-function threadModelChoices(state: AgentState, thread: AgentThread): { readonly models: AgentModel[]; readonly locked: boolean } {
+function threadModelChoices(state: AgentState, thread: AgentThread, sameProvider = false): { readonly models: AgentModel[]; readonly locked: boolean } {
   state = { ...state, host: hostForThread(state.host, thread) }
   if (thread.nativeSessionStarted === false) {
     const own = catalogEntry(state.host.models, thread.modelId)
+    const provider = thread.providerId ?? (own ? own.providerId ?? providerKey(own.provider) : undefined)
     const models = state.host.models.filter(model => model === own || canCreateWith(state, model))
+      .filter(model => !sameProvider || provider === undefined || (model.providerId ?? providerKey(model.provider)) === provider)
     return { models, locked: false }
   }
   return { models: state.host.models.filter(model => !thread.providerId || model.providerId === thread.providerId), locked: true }
@@ -237,7 +241,10 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   readonly onDraftText?: (text: string) => void
   /** Where the composer wants the lines about a refused or unconfirmed change, under its whole footer row. */
   readonly noticeSlot?: HTMLElement | null | undefined
-  /** A permission mode that cannot be changed here, said in words where the choice would be: Watcher's (ADR-0073). */
+  /**
+   * A permission mode that cannot be changed here, said in words where the choice would be: Watcher's (ADR-0073).
+   * Its thread also keeps its provider, offering only that provider's models.
+   */
   readonly pinnedPermission?: string | undefined
 }): ReactNode {
   const settings = usePendingSettings(thread.id)
@@ -245,7 +252,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   const refocus = useRef<HTMLButtonElement | null>(null)
   const captionId = useId()
   const unconfirmedId = useId()
-  const { models, locked } = threadModelChoices(state, thread)
+  const { models, locked } = threadModelChoices(state, thread, pinnedPermission !== undefined)
   /** What the window has drawn from main's published state: the confirmed values a press is measured against. */
   const drawn = settingValues(state, thread)
   const unconfirmed = unconfirmedKinds(state, thread.id)

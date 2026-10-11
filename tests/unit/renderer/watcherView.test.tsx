@@ -147,6 +147,17 @@ describe("Watcher's room", () => {
     expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'select-thread' }))
   })
 
+  it('keeps Watcher on its own provider before its first send, since another provider is another Watcher', async () => {
+    const state = stateWithWatcher()
+    state.host.threads.find(thread => thread.id === 'watcher')!.nativeSessionStarted = false
+    renderRoom(state, roomState())
+    const pane = await screen.findByRole('region', { name: 'Watcher' })
+    fireEvent.click(within(pane).getByRole('combobox', { name: 'Thread model' }))
+    const picker = screen.getByRole('dialog', { name: 'Choose model' })
+    expect(within(picker).getAllByRole('option').map(option => option.textContent)).toEqual([expect.stringContaining('GPT-5.4')])
+    expect(within(pane).getByText('Ask before changes')).toBeInTheDocument()
+  })
+
   it('lists every other thread in the Overview in the decided order, with the owl on the one Watcher watches', async () => {
     renderRoom(stateWithWatcher(), roomState())
     const overview = within(await screen.findByRole('complementary', { name: 'Overview' }))
