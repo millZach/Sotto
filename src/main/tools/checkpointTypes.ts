@@ -17,6 +17,8 @@ export interface CheckpointThread {
 export interface CheckpointDependencies {
   report?: (message: string) => void
   historyEnabled?: () => boolean
+  /** Dormant release-gated threads are carried through saves and excluded from cleanup and work. */
+  preserveThread?: (threadId: string) => boolean
   now?: () => number
   maxBytes?: number
   files: FilesService

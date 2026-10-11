@@ -154,3 +154,7 @@ the catalog costs the listener about as much per publish as writing it out used 
 client that accepts the feature, so the saving is on the wire and on the phone, not in the listener. See
 [the measurement](../perf/2026-10-03-phone-model-catalog.md). It takes effect with an iPhone build that asks
 for the feature.
+
+## Amendment: the catalog keeps its identity (October 10, 2026, #917)
+
+`clientAgentState` no longer walks the catalog, which names no Sotto entity, and adapters now certify their catalogs (ADR-0016, October 10 amendment), so a shell carries the same frozen array from one publish to the next until a catalog actually changes. The identity check in `sameContent` then answers, and the content comparison with `isDeepStrictEqual` remains for a catalog that is not certified or whose identity changed.

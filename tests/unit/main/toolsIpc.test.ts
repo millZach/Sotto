@@ -10,20 +10,20 @@ describe('tools IPC and preload boundary', () => {
   it('requires exact trusted main WebContents, exact mainFrame, URL and one argument for every method', () => {
     const operation = vi.fn().mockResolvedValue({ ok: true, value: undefined })
     const make = (methods: string[]) => Object.fromEntries([...methods.map(method => [method, operation]), ['dispose', vi.fn()]])
-    const services = { terminal: make(['list', 'create', 'read', 'write', 'resize', 'interrupt', 'close', 'reopen']), browser: make(['list', 'create', 'navigate', 'back', 'forward', 'reload', 'close', 'mount', 'openLink', 'tasks', 'share', 'controlTask', 'answerAction', 'stopGrant', 'viewport', 'capture']), gitChanges: make(['list', 'review', 'copyPath', 'reveal', 'watch', 'checkpoints', 'inspectCheckpoint', 'revertCheckpoint', 'recoverCheckpoint']) } as unknown as Parameters<typeof registerToolsIpc>[1]
+    const services = { terminal: make(['list', 'create', 'read', 'write', 'resize', 'interrupt', 'close', 'reopen', 'pasteImage']), browser: make(['list', 'create', 'navigate', 'back', 'forward', 'reload', 'close', 'mount', 'openLink', 'tasks', 'share', 'controlTask', 'answerAction', 'stopGrant', 'viewport', 'capture']), gitChanges: make(['list', 'review', 'copyPath', 'reveal', 'watch', 'checkpoints', 'inspectCheckpoint', 'revertCheckpoint', 'recoverCheckpoint']) } as unknown as Parameters<typeof registerToolsIpc>[1]
     const registry = ipcRegistry()
     const { ipc, handlers } = registry
     const { main } = registry
     const { url, webContents: sender } = main
     const { mainFrame } = sender
     const cleanup = registerToolsIpc(ipc, services, () => [{ role: 'main', url, webContents: sender }])
-    expect(handlers.size).toBe(33)
-    for (const handler of handlers.values()) {
+    expect(handlers.size).toBe(35)
+    for (const [channel, handler] of handlers) {
       for (const event of [{ sender: { ...sender }, senderFrame: mainFrame }, { sender, senderFrame: { ...mainFrame } }, { sender, senderFrame: { parent: {}, url } }, { sender, senderFrame: null }]) expect(() => handler(event, {})).toThrow('TOOLS_MAIN_WINDOW_REQUIRED')
       expect(() => handler({ sender, senderFrame: mainFrame }, {}, {})).toThrow()
-      handler({ sender, senderFrame: mainFrame }, {})
+      handler({ sender, senderFrame: mainFrame }, channel === 'sotto:terminal:focus' ? false : {})
     }
-    expect(operation).toHaveBeenCalledTimes(33)
+    expect(operation).toHaveBeenCalledTimes(34)
     sender.getURL = () => 'https://example.invalid'
     for (const handler of handlers.values()) expect(() => handler({ sender, senderFrame: mainFrame }, {})).toThrow('TOOLS_MAIN_WINDOW_REQUIRED')
     cleanup(); expect(handlers.size).toBe(0)
@@ -49,6 +49,18 @@ describe('tools IPC and preload boundary', () => {
     invoke.mockResolvedValue({ ok: true, value: undefined })
     await browser.stopGrant({ threadId: 'thread', workspaceId: page.workspaceId })
     expect(invoke).toHaveBeenLastCalledWith('sotto:browser:stopGrant', { threadId: 'thread', workspaceId: page.workspaceId })
+  })
+  it('validates terminal focus and image paste before invoking main', async () => {
+    const invoke = vi.fn(async () => ({ ok: true, value: undefined }))
+    const { terminal } = createToolsBridges({ invoke, on: vi.fn(), removeListener: vi.fn() })
+    const target = { threadId: 'thread', workspaceId: 'a'.repeat(64), sessionId: 'f6a804fd-77c9-497c-bc16-ce0d0a7b7a59' }
+    await expect(terminal.setFocused!('yes' as never)).rejects.toThrow()
+    await expect(terminal.pasteImage({ ...target, dataUrl: 'x'.repeat(14_000_001) })).rejects.toThrow()
+    expect(invoke).not.toHaveBeenCalled()
+    await terminal.setFocused!(true)
+    expect(invoke).toHaveBeenLastCalledWith('sotto:terminal:focus', true)
+    await terminal.pasteImage({ ...target, dataUrl: 'data:image/png;base64,AAAA' })
+    expect(invoke).toHaveBeenLastCalledWith('sotto:terminal:pasteImage', { ...target, dataUrl: 'data:image/png;base64,AAAA' })
   })
   it('validates comparisons and explicit checkpoint confirmation before crossing IPC, and offers no staging, commit or branch call', async () => {
     const rejected = { ok: false as const, error: { code: 'blocked' as const, message: 'A native operation is pending.' } }
@@ -98,7 +110,7 @@ describe('tools IPC and preload boundary', () => {
     const make = (methods: string[]) => Object.fromEntries([...methods.map(method => [method, local]), ['dispose', vi.fn()]])
     const answer = { ok: true as const, value: { from: 'host' } }
     const hostedGitChanges = { list: vi.fn().mockResolvedValue(answer), review: vi.fn().mockResolvedValue(answer), copyPath: vi.fn().mockResolvedValue(answer) }
-    const services = { terminal: make(['list', 'create', 'read', 'write', 'resize', 'interrupt', 'close', 'reopen']), browser: make(['list', 'create', 'navigate', 'back', 'forward', 'reload', 'close', 'mount', 'openLink', 'tasks', 'share', 'controlTask', 'answerAction', 'stopGrant', 'viewport', 'capture']),
+    const services = { terminal: make(['list', 'create', 'read', 'write', 'resize', 'interrupt', 'close', 'reopen', 'pasteImage']), browser: make(['list', 'create', 'navigate', 'back', 'forward', 'reload', 'close', 'mount', 'openLink', 'tasks', 'share', 'controlTask', 'answerAction', 'stopGrant', 'viewport', 'capture']),
       gitChanges: make(['list', 'review', 'copyPath', 'reveal', 'watch', 'checkpoints', 'inspectCheckpoint', 'revertCheckpoint', 'recoverCheckpoint']), hostedGitChanges } as unknown as Parameters<typeof registerToolsIpc>[1]
     const registry = ipcRegistry()
     const { ipc, handlers } = registry

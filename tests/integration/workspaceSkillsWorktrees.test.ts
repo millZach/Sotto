@@ -4,7 +4,8 @@ import { expect, it, vi } from 'vitest'
 import { mkdir, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { AgentSkillScope } from '../../src/main/agents/host'
-import { runWorktreeGit } from '../../src/main/agents/threadWorktrees'
+import { claudeSkillPath } from '../../src/main/agents/claudeSkills'
+import { existingWorkingDirectory, runWorktreeGit } from '../../src/main/agents/threadWorktrees'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { fixtures } from '../fixtures/workspaceSkillsFixture'
 
@@ -84,4 +85,37 @@ it('maps a project skill preview into the new checkout and validates it before n
   const thread = f.host.workspaceSnapshot().threads.find(thread => thread.id === 'skills')!
   expect(f.adapters.codex.commands.at(-1)).toMatchObject({ type: 'send', skills: [{ name: 'review', path: join(thread.workingDirectory!, relativeSkill) }] })
   expect(list.mock.calls.some(call => call[2]?.workingDirectory === thread.workingDirectory)).toBe(true)
+})
+
+it('names a Claude skill picked from the project by the new checkout it is sent from', async () => {
+  const f = await workspaceFixture(); fixtures.push(f)
+  const repository = f.adapters.claude.state.projects[0]!.path
+  await initializeGitRepository(repository, { files: {}, message: "Fixture", identity: { name: "Sotto Fixture", email: "fixture@example.invalid" } })
+  // Claude names a skill by the folder it listed it in, not by a file (claudeSkills.ts).
+  const list = vi.fn(async (threadId: string, _reload?: boolean, scope?: AgentSkillScope) => {
+    const cwd = await existingWorkingDirectory(scope?.workingDirectory ?? f.host.workspaceSnapshot().threads.find(thread => thread.id === threadId)!.workingDirectory!)
+    return { threadId, cwd, providerId: 'claude' as const, status: 'ready' as const, errors: [],
+      skills: [{ name: 'setup-zstack', path: claudeSkillPath(cwd, 'setup-zstack'), description: 'Set up', scope: 'user' as const }] }
+  })
+  Object.assign(f.adapters.claude, { listThreadSkills: list })
+  f.adapters.claude.state.capabilities.skills = true
+  const snapshot = await f.host.connect()
+  const project = snapshot.projects.find(project => project.providerId === 'claude')!
+  const model = snapshot.models.find(model => model.providerId === 'claude')!
+  await f.host.execute({ type: 'create-thread', commandId: 'create', threadId: 'claude-skills', projectId: project.id, title: 'Skills', modelId: model.id, workingCopy: 'independent' })
+  const preview = await f.host.listThreadSkills('claude-skills')
+  await f.host.execute({ type: 'send', commandId: 'send', threadId: 'claude-skills', messageId: 'send', text: '/setup-zstack', skills: [{ name: 'setup-zstack', path: preview.skills[0]!.path }] })
+  const thread = f.host.workspaceSnapshot().threads.find(thread => thread.id === 'claude-skills')!
+  expect(thread.worktree?.status).toBe('ready')
+  expect(f.adapters.claude.commands.at(-1)).toMatchObject({ type: 'send',
+    skills: [{ name: 'setup-zstack', path: claudeSkillPath(await existingWorkingDirectory(thread.workingDirectory!), 'setup-zstack') }] })
+})
+
+it('tells the user a provider without skills takes none, and sends nothing', async () => {
+  const f = await workspaceFixture(); fixtures.push(f)
+  const snapshot = await f.host.connect()
+  const thread = snapshot.threads.find(thread => thread.providerId === 'grok')!
+  await expect(f.host.execute({ type: 'send', commandId: 'none', threadId: thread.id, messageId: 'none', text: '/review', skills: [{ name: 'review', path: 'review' }] }))
+    .rejects.toThrow('Grok Build does not take skills. Your prompt has not been sent')
+  expect(f.adapters.grok.commands).toHaveLength(0)
 })

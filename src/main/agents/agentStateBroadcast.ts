@@ -54,9 +54,9 @@ export class ModelCatalogRevisions {
 /**
  * Turns a shell into what actually crosses `sotto:agents:state` for the main window, omitting a
  * model catalog that window was already sent and nothing has changed since (issue #286): `models` is
- * rebuilt into new arrays and objects on every publish even when its content is unchanged (`clientAgentState`
- * deep-clones for its ID projection), so identity cannot tell a repeat from a change — content, compared
- * with `isDeepStrictEqual`, can. A catalog's revision is a counter bumped only when its content actually
+ * a new array of new objects on every publish when no adapter certified it (the coordinator's shell is a structured
+ * clone), so identity cannot always tell a repeat from a change — content, compared with `isDeepStrictEqual`, can. A
+ * certified catalog keeps its identity until it changes, which the comparison checks first (#917). A catalog's revision is a counter bumped only when its content actually
  * changes. What the window has already been sent is tracked only once delivery of it is confirmed,
  * so a window that never actually received a revision is not skipped
  * on the next attempt.

@@ -20,7 +20,7 @@ const ok = <T,>(value: T): ToolsResult<T> => ({ ok: true, value })
 
 function fakeTerminal(initial: TerminalSession[] = []) {
   const published: ReturnType<typeof terminalBridgeFixture> = terminalBridgeFixture({ workspace, sessions: initial, commands: {
-    list: vi.fn(async ({ threadId }) => ok({ workspace, sessions: published.sessions().filter(item => item.workspace.threadId === threadId) })),
+    list: vi.fn(async ({ threadId }) => ok({ workspace, sessions: published.sessions().filter(item => item.workspace.threadId === threadId), capacity: { count: published.sessions().length, version: 0 } })),
     create: vi.fn(async ({ threadId }) => {
       const created = session(threadId === workspace.threadId ? ID_1 : ID_2, { workspace: { ...workspace, threadId } })
       published.setSessions([...published.sessions(), created])
@@ -35,16 +35,18 @@ function fakeViews() {
   return fakeTerminalViews({ fit: { cols: 80, rows: 24 }, className: '' })
 }
 
-const thread = { id: 'thread-a', nativeSessionStarted: true as const, workingDirectory: 'D:\\work\\workshop', worktree: { status: 'ready' as const, mode: 'independent' as const, branch: 'feature/drawer', path: 'D:\\work\\workshop', repositoryRoot: 'D:\\work', dirty: false } }
+const thread = { id: 'thread-a', nativeSessionStarted: true as const, workingDirectory: 'D:\\work\\workshop', worktree: { status: 'ready' as const, mode: 'shared' as const, branch: 'feature/drawer', path: 'D:\\work\\workshop', repositoryRoot: 'D:\\work', dirty: false } }
 
-function setup(terminal: ReturnType<typeof fakeTerminal>) {
+type DrawerThread = Omit<typeof thread, 'worktree'> & { worktree: Omit<typeof thread.worktree, 'mode'> & { mode: 'shared' | 'independent' } }
+
+function setup(terminal: ReturnType<typeof fakeTerminal>, drawerThread: DrawerThread = thread, projectPath = 'D:\\work\\workshop') {
   const chromeStore = new PaneTerminalChromeStore(null)
   const store = new TerminalStore('drawer')
   const { views, factory } = fakeViews()
   render(<div className="thread-pane" id="thread-pane-thread-a" data-thread-id="thread-a">
     <PaneTerminalToggle threadId="thread-a" store={chromeStore} />
     <div className="thread-workspace__compose"><textarea aria-label="Prompt" /></div>
-    <PaneTerminalDrawer threadId="thread-a" thread={thread} project={undefined} bridge={terminal.bridge} viewFactory={factory} store={store} chromeStore={chromeStore} />
+    <PaneTerminalDrawer threadId="thread-a" thread={drawerThread} project={{ path: projectPath }} bridge={terminal.bridge} viewFactory={factory} store={store} chromeStore={chromeStore} />
   </div>)
   return { chromeStore, store, views }
 }
@@ -54,6 +56,19 @@ beforeEach(() => { vi.stubGlobal('ResizeObserver', class { observe() {} disconne
 afterEach(() => { vi.unstubAllGlobals() })
 
 describe('the pane terminal drawer', () => {
+  it('temporarily raises a short drawer minimum for search and restores its saved height on close', async () => {
+    const terminal = fakeTerminal([session(ID_1)])
+    const { chromeStore, views } = setup(terminal)
+    act(() => { chromeStore.setHeight('thread-a', 120); chromeStore.setOpen('thread-a', true) })
+    await waitFor(() => expect(views).toHaveLength(1))
+    const divider = screen.getByRole('separator', { name: 'Resize terminal' })
+    expect(divider).toHaveAttribute('aria-valuenow', '120')
+    act(() => views[0]!.handlers.onSearchVisibilityChange!(true))
+    expect(divider).toHaveAttribute('aria-valuemin', '184')
+    expect(divider).toHaveAttribute('aria-valuenow', '184')
+    act(() => views[0]!.handlers.onSearchVisibilityChange!(false))
+    expect(divider).toHaveAttribute('aria-valuenow', '120')
+  })
   it('toggles open and starts a shell on its own, with no empty "Start terminal" step', async () => {
     const terminal = fakeTerminal()
     setup(terminal)
@@ -81,7 +96,7 @@ describe('the pane terminal drawer', () => {
     }
   })
 
-  it('shows the thread’s branch and keeps the shell running when Hide is pressed', async () => {
+  it('shows a shared-folder thread’s branch and keeps the shell running when Hide is pressed', async () => {
     const terminal = fakeTerminal([session(ID_1)])
     setup(terminal)
     await userEvent.click(screen.getByRole('button', { name: 'Terminal drawer' }))
@@ -93,6 +108,22 @@ describe('the pane terminal drawer', () => {
     expect(screen.getByRole('button', { name: 'Terminal drawer' })).toHaveAttribute('aria-pressed', 'false')
     // The pressed button left the page with the drawer; focus goes back to the composer.
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveFocus())
+  })
+
+  it('leaves out a worktree thread’s branch, because its shells start in the project folder', async () => {
+    const terminal = fakeTerminal([session(ID_1)])
+    setup(terminal, { ...thread, worktree: { ...thread.worktree, mode: 'independent' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Terminal drawer' }))
+    await screen.findByRole('tab', { name: 'PowerShell', selected: true })
+    expect(screen.queryByText('feature/drawer')).toBeNull()
+  })
+
+  it('leaves out the branch of a shared thread in another checkout than the project folder', async () => {
+    const terminal = fakeTerminal([session(ID_1)])
+    setup(terminal, { ...thread, workingDirectory: 'D:\\elsewhere\\workshop', worktree: { ...thread.worktree, path: 'D:\\elsewhere\\workshop', repositoryRoot: 'D:\\elsewhere' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Terminal drawer' }))
+    await screen.findByRole('tab', { name: 'PowerShell', selected: true })
+    expect(screen.queryByText('feature/drawer')).toBeNull()
   })
 
   it('gives a drawer’s terminal the chord to pass to the page, and makes it follow the frosted room', async () => {

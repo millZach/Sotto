@@ -494,3 +494,13 @@ describe('bounded targeted autosaves', () => {
     } finally { await f.client.close(); await settled; await latestSettled }
   })
 })
+
+it('records the owning thread kind when Owl keeps a remote Watcher draft', async () => {
+  const retainedDrafts = new RetainedDraftStore({ watcherEnabled: true })
+  const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token', expectedHostId: hostId, retainedDrafts, watcherEnabled: true })
+  const state = emptyDesktopState(hostId)
+  state.host.threads = [{ id: 'watcher', kind: 'watcher', title: 'Watcher', projectId: 'project', modelId: 'model', status: 'idle', messages: [], requests: [] }]
+  Object.assign(client, { features: [], cached: state })
+  await client.command({ type: 'compose', threadId: 'watcher', text: 'Synthetic Watcher edit', attachments: [] })
+  expect(retainedDrafts.get(hostId, 'watcher')?.threadKind).toBe('watcher')
+})

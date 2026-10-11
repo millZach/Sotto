@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { type DictationOutputResult } from '../../../../../src/renderer/src/features/dictation/dictationController'
-import type { TranscriptionProgress } from '../../../../../src/renderer/src/transcription/openRouterTranscriber'
+import type { TranscriptionProgress } from '../../../../../src/renderer/src/transcription/localTranscriber'
 import { widgetSnapshotSchema } from '../../../../../src/shared/contracts'
 import { createHarness, deferred, recorderOptions, settings, snapshots } from '../../../../fixtures/renderer/dictationControllerHarness'
 
@@ -42,7 +42,7 @@ describe('DictationController', () => {
       createdAt: 1_000,
       durationMs: 500,
       language: 'en',
-      modelPreset: 'mai',
+      modelPreset: 'parakeet',
     })
     expect(harness.controller.getState()).toEqual({
       status: 'success',
@@ -388,7 +388,6 @@ describe('pipeline prewarm', () => {
   it('transcribes streamed segments in order and joins them with the tail', async () => {
     let call = 0
     const harness = createHarness({
-      currentSettings: settings({ streamingAsr: true }),
       transcribe: async (options) => {
         const index = call++
         return { text: options.audio.length === 1 ? 'tail' : `segment-${index}`, language: 'en' }
@@ -416,19 +415,8 @@ describe('pipeline prewarm', () => {
     )
   })
 
-  it('does not request segment transcription when streaming is disabled', async () => {
-    const harness = createHarness({
-      currentSettings: settings({ streamingAsr: false }),
-    })
-    await harness.controller.start()
-    expect(recorderOptions(harness).onSegment).toBeUndefined()
-    await harness.controller.stop()
-    expect(harness.transcriber.transcribe).toHaveBeenCalledTimes(1)
-  })
-
   it('succeeds when segments exist but the tail recording is empty', async () => {
     const harness = createHarness({
-      currentSettings: settings({ streamingAsr: true }),
       recorder: {
         stop: vi.fn(async () => ({
           samples: new Float32Array(0),

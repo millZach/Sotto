@@ -15,11 +15,13 @@ const root = resolve(import.meta.dirname, '..')
 export async function packageHost({
   outDir = resolve(root, process.env.SOTTO_HOST_OUT_DIR || 'out/host'),
   releaseDir = resolve(root, process.env.SOTTO_HOST_RELEASE_DIR || 'release'),
+  version,
 } = {}) {
   if (Number(process.versions.node.split('.')[0]) !== 24) throw new Error('Build and verify the host archive with Node 24')
   const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
-  if (JSON.stringify(Object.keys(pkg.dependencies).sort()) !== '["node-pty","zod"]') throw new Error('Production dependency policy changed')
-  await buildHost(outDir)
+  const packagedVersion = version ?? pkg.version
+  if (JSON.stringify(Object.keys(pkg.dependencies).sort()) !== '["node-pty","sherpa-onnx-node","zod"]') throw new Error('Production dependency policy changed')
+  await buildHost(outDir, { version })
   const dependencies = { zod: pkg.dependencies.zod }
   verifyHostExternalDependencies(JSON.parse(await readFile(join(outDir, 'external-dependencies.json'), 'utf8')), dependencies)
   await verifyThirdPartyNotices({ hostOutDir: outDir })
@@ -31,8 +33,8 @@ export async function packageHost({
     await cp(join(root, 'node_modules/zod'), join(stage, 'node_modules/zod'), { recursive: true, dereference: false })
     for (const name of ['LICENSE.md', 'THIRD_PARTY_NOTICES.md']) await copyFile(join(root, name), join(stage, name))
     const writeJson = (file, value) => writeFile(join(stage, file), JSON.stringify(value, null, 2) + '\n')
-    await writeJson('package.json', { name: 'sotto-host', private: true, version: pkg.version, type: 'commonjs', main: 'host/index.js', engines: { node: '>=24 <25' }, dependencies })
-    await writeJson('runtime-manifest.json', { version: 1, kind: 'sotto-host', sottoVersion: pkg.version, node: '>=24 <25', platform: process.platform, arch: process.arch, dependencies, bundledNode: false, nativeModules: [] })
+    await writeJson('package.json', { name: 'sotto-host', private: true, version: packagedVersion, type: 'commonjs', main: 'host/index.js', engines: { node: '>=24 <25' }, dependencies })
+    await writeJson('runtime-manifest.json', { version: 1, kind: 'sotto-host', sottoVersion: packagedVersion, node: '>=24 <25', platform: process.platform, arch: process.arch, dependencies, bundledNode: false, nativeModules: [] })
     const inputs = []
     for (const dir of ['src', 'scripts']) for (const entry of await inventoryFiles(join(root, dir))) inputs.push({ ...entry, path: dir + '/' + entry.path })
     for (const file of ['package.json', 'package-lock.json', 'THIRD_PARTY_NOTICES.md', 'LICENSE.md']) {
@@ -43,7 +45,7 @@ export async function packageHost({
     await writeJson('build-provenance.json', { version: 1, sourceCommit: git(['rev-parse', 'HEAD']), sourceDirty: git(['status', '--porcelain', '--untracked-files=normal']) !== '', buildInputsRevision: sha256(JSON.stringify(inputs.sort((a, b) => a.path.localeCompare(b.path, 'en')))), builtAt: new Date().toISOString(), builder: { node: process.versions.node, platform: process.platform, arch: process.arch }, artifacts, buildSha256: sha256(JSON.stringify(artifacts)) })
     await verifyHostArchive(stage)
     await mkdir(releaseDir, { recursive: true })
-    const name = `Sotto-host-${pkg.version}-${process.platform}-${process.arch}.tar.gz`
+    const name = `Sotto-host-${packagedVersion}-${process.platform}-${process.arch}.tar.gz`
     const archive = join(releaseDir, name)
     // GNU tar treats a drive-letter archive path as a remote host. Use a local name from release instead.
     execFileSync('tar', ['-czf', name, '-C', stage, '.'], { cwd: releaseDir, windowsHide: true })

@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, type Keyb
 import { GitBranch, PanelBottomClose } from 'lucide-react'
 import type { AgentProject } from '../../../shared/agents'
 import type { TerminalBridge } from '../../../shared/terminal'
+import { folderKey } from '../agents/projectFolders'
 import { focusInPane } from '../agents/ThreadPanes'
 import { describeWorkingCopy, type WorkingCopyThread } from '../agents/ThreadWorkingCopy'
 import { isDrawerShortcut, setDrawerShortcut } from './paneTerminalShortcut'
@@ -11,6 +12,12 @@ import { TerminalSurface } from './TerminalSurface'
 import { useThreadTerminals, windowTerminalBridge, type TerminalStore, type TerminalViewFactory } from './terminalStore'
 import { useTerminalViewFactory } from './terminalViewLoader'
 import './paneTerminal.css'
+
+/** Whether two folders are the same, or one holds the other. */
+function nested(first: string, second: string): boolean {
+  const [a, b] = [folderKey(first), folderKey(second)]
+  return a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`)
+}
 
 /** Shorter than this, a terminal has nowhere useful to put a cursor. */
 const MIN_DRAWER_HEIGHT = 120
@@ -57,12 +64,14 @@ export function PaneTerminalDrawer({ threadId, thread, project, bridge, viewFact
   const chrome = usePaneTerminalChrome(threadId, chromeStore)
   const { factory: baseFactory, failed } = useTerminalViewFactory(viewFactory, chrome.open)
   const shortcut = usePaneTerminalShortcut()
+  const [searchOpen, setSearchOpen] = useState(false)
   useLayoutEffect(() => { setDrawerShortcut(shortcut) }, [shortcut])
   // A drawer's terminal leaves the drawer's chord to the page, and turns see-through with the frosted room.
   const factory = useMemo<TerminalViewFactory | null>(() => baseFactory && (handlers => baseFactory({
     ...handlers,
     isPageShortcut: isDrawerShortcut,
     followsFrost: true,
+    onSearchVisibilityChange: visible => { setSearchOpen(visible); handlers.onSearchVisibilityChange?.(visible) },
   })), [baseFactory])
   const root = useRef<HTMLDivElement>(null)
   const drag = useRef<{ readonly pointerId: number; readonly startY: number; readonly startHeight: number } | null>(null)
@@ -116,7 +125,8 @@ export function PaneTerminalDrawer({ threadId, thread, project, bridge, viewFact
 
   if (!chrome.open) return null
 
-  const min = MIN_DRAWER_HEIGHT
+  // The search row takes 48px; another 16px keeps one output row readable even at the largest text size.
+  const min = MIN_DRAWER_HEIGHT + (searchOpen ? 64 : 0)
   const max = paneAreaHeight > 0 ? Math.max(min, paneAreaHeight - MIN_CONVERSATION_AREA) : Math.max(min, chrome.height ?? min)
   const clamp = (value: number): number => Math.min(max, Math.max(min, value))
   const defaultHeight = clamp(paneAreaHeight > 0 ? Math.round(paneAreaHeight / 3) : 200)
@@ -159,7 +169,9 @@ export function PaneTerminalDrawer({ threadId, thread, project, bridge, viewFact
   }
 
   const facts = describeWorkingCopy(thread, project)
-  const branch = facts.branch
+  // The drawer's shells start in the project folder, so the branch is named only when the thread's own folder is that
+  // folder or one inside it, or holds it: a worktree's branch, or another checkout's, would name a checkout the shell is not in.
+  const branch = facts.mode === 'shared' && facts.directory && project && nested(facts.directory, project.path) ? facts.branch : undefined
 
   return <div className="pane-terminal" ref={root} style={{ '--pane-terminal-height': `${Math.round(height)}px` } as React.CSSProperties}>
     <div role="separator" aria-orientation="horizontal" aria-label="Resize terminal" tabIndex={0}

@@ -30,9 +30,12 @@ function createBridge(overrides: Partial<SottoBridge> = {}): SottoBridge {
     onDictationCommand: vi.fn(() => () => undefined),
     onSettingsChanged: vi.fn(() => () => undefined),
     publishWidgetState: vi.fn(async () => OK),
-    transcribe: vi.fn(async () => ({ ok: false as const, reason: 'unconfigured' as const })),
+    transcribe: vi.fn(async () => ({ ok: false as const, reason: 'model-not-ready' as const })),
     cancelTranscription: vi.fn(async () => OK),
-    checkTranscriptionKey: vi.fn(async () => ({ ok: false as const, reason: 'unconfigured' as const })),
+    checkOpenRouterKey: vi.fn(async () => ({ ok: false as const, reason: 'unconfigured' as const })),
+    getSpeechModelStatus: vi.fn(async () => ({ state: 'ready' as const })),
+    downloadSpeechModel: vi.fn(async () => OK),
+    onSpeechModelStatus: vi.fn(() => () => undefined),
     ensureMicrophoneAccess: vi.fn(async () => true),
     polishTranscript: vi.fn(async (request) => ({ text: request.text, applied: false })),
     deliverOutput: vi.fn(async () => 'copied' as const),
@@ -132,7 +135,7 @@ async function completeReadySetup(user: ReturnType<typeof userEvent.setup>): Pro
   await user.click(screen.getByRole('button', { name: /test microphone/i }))
   await waitFor(() => expect(screen.getByText(/Sotto heard you/i)).toBeVisible())
   await user.click(screen.getByRole('button', { name: /continue/i }))
-  await waitFor(() => expect(screen.getByText(/connect your openrouter key/i)).toBeVisible())
+  await waitFor(() => expect(screen.getByText(/download the speech model/i)).toBeVisible())
   await finishRemainingSteps(user)
   await user.click(screen.getByRole('button', { name: /finish setup/i }))
 }

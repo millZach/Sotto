@@ -43,7 +43,7 @@ final class StreamingTests: XCTestCase {
         guard case .delta(let threadID, let update) = delta else { return XCTFail("Expected delta") }
         XCTAssertEqual(threadID, "t"); XCTAssertEqual(snapshot?.applying(update)?.revision, 3)
         XCTAssertEqual(Wire.snapshotHello["afterSeq"], .number(9_007_199_254_740_991))
-        XCTAssertEqual(Wire.snapshotHello["accepts"], .array([.string("detail-delta"), .string("client-liveness"), .string("activity-summaries"), .string("model-catalog-revision")]))
+        XCTAssertEqual(Wire.snapshotHello["accepts"], .array([.string("detail-delta"), .string("client-liveness"), .string("activity-summaries"), .string("model-catalog-revision"), .string("terminals")]))
     }
     func testInvalidFramesAndUnrequestedPushesAreRefused() async {
         for json in [#"{"v":2,"event":"detail","threadId":"t","detail":null}"#,

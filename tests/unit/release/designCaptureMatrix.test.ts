@@ -43,7 +43,7 @@ describe('design capture matrix', () => {
   it('repeats each surface family, focus target, reduced motion and the Appearance section in the light room', () => {
     const keys = new Set(DESIGN_CAPTURE_REQUIREMENTS.map(designCaptureTupleKey))
     for (const [category, state] of [
-      ['onboarding', 'openrouter-key'], ['dictate', 'ready'], ['dictate', 'listening'], ['dictate', 'error'],
+      ['onboarding', 'speech-model'], ['dictate', 'ready'], ['dictate', 'listening'], ['dictate', 'error'],
       ['history', 'populated-feedback'], ['settings', 'providers'], ['settings', 'capture'], ['settings', 'validation-error'],
       ['settings', 'appearance'], ['help', 'overview'],
       ['threads', 'populated'], ['threads', 'open-running'], ['threads', 'stopped-open'], ['threads', 'search'], ['threads', 'empty'],

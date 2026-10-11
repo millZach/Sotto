@@ -12,9 +12,12 @@ files:
 
 asar: true
 
-# PTY native modules, ConPTY DLLs/agent and Unix spawn-helper execute outside ASAR.
+# PTY native modules, ConPTY DLLs/agent and Unix spawn-helper execute outside ASAR,
+# and so do the speech engine's addon and the ONNX Runtime it loads (ADR-0071).
 asarUnpack:
   - node_modules/node-pty/**
+  - node_modules/sherpa-onnx-node/**
+  - node_modules/sherpa-onnx-*/**
 # Windows uses node-pty's Node-API prebuild (source rebuild fails in spaced paths).
 # The macOS package scripts explicitly enable rebuilding native dependencies.
 npmRebuild: false
@@ -92,7 +95,7 @@ mac:
   extendInfo:
     NSMicrophoneUsageDescription: >-
       Sotto records your microphone while you dictate.
-      Audio is sent to OpenRouter for transcription and is never saved to disk.
+      Audio is transcribed on this Mac, never leaves it and is never saved to disk.
     NSAppleEventsUsageDescription: >-
       Sotto asks System Events to press Command-V so your dictation lands in the app you were
       typing in. Declining leaves the text on your clipboard to paste yourself.

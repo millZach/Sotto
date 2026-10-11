@@ -12,7 +12,7 @@ import { requestQuestionsDigest } from '../../../src/main/agents/requestDrafts'
 import { desktopWindowClient } from '../../../src/main/agents/hostService'
 import { HostConnectionError, SocketHostService } from '../../../src/main/agents/socketHostService'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
-import { agentStateSchema, MAX_DELIVERED_DRAFTS, hostForThread, capabilitiesForThread, noProviderRefusal, type AgentCommand, type AgentState } from '../../../src/shared/agents'
+import { agentStateSchema, MAX_DELIVERED_DRAFTS, hostForThread, capabilitiesForThread, noProviderRefusal, type AgentCommand, type AgentState, type AgentThreadDetailUpdate } from '../../../src/shared/agents'
 import { deferred } from '../../fixtures/deferred'
 
 const LOCAL = '11111111-1111-4111-8111-111111111111'
@@ -663,5 +663,156 @@ describe('explicit native answer checks', () => {
     await expect(router.refreshRequestDraft({ kind: 'thread', ownerId: hostEntityKey(REMOTE, 'thread'), providerId: 'claude', requestId: 'question',
       questions: [{ id: '0', question: 'Question', options: [], multiSelect: false, allowFreeText: true }] })).rejects.toThrow('Update')
     expect(remote.detail).not.toHaveBeenCalled(); router.dispose()
+  })
+})
+
+
+describe('Watcher release gate at the aggregate desktop boundary', () => {
+  it.each(['watcher', 'watcher-history'] as const)('hides and refuses remote %s reads, commands and observation on stable without editing the remote record', async kind => {
+    const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: false })
+    const remote = fixture(REMOTE, 'remote')
+    remote.state.host.threads[0]!.kind = kind
+    remote.state.activeThreadId = 'thread'
+    remote.state.draftThreadId = 'thread'
+    remote.state.draft = 'Synthetic retained draft'
+    remote.state.threadDrafts = [{ threadId: 'thread', draftId: randomUUID(), requestId: null, text: 'Synthetic retained draft', attachments: [], updatedAt: new Date().toISOString() }]
+    const before = structuredClone(remote.state)
+    router.add(remote.connection)
+    const key = hostEntityKey(REMOTE, 'thread')
+    expect(router.shell().host.threads).toEqual([])
+    expect(router.shell().activeThreadId).toBeNull()
+    expect(router.shell().draft).toBe('')
+    expect(router.shell().threadDrafts).toEqual([])
+    await expect(router.threadDetail(key)).rejects.toThrow('Sotto Owl')
+    await expect(router.command({ type: 'select-thread', threadId: key }, desktopWindowClient())).rejects.toThrow('Sotto Owl')
+    await expect(router.command({ type: 'manual-send', threadId: key, text: 'Synthetic refused turn' }, desktopWindowClient())).rejects.toThrow('Sotto Owl')
+    await expect(router.command({ type: 'send', draft: { threadId: key, text: 'Synthetic refused turn', attachments: [] } }, desktopWindowClient())).rejects.toThrow('Sotto Owl')
+    await router.command({ type: 'start-thread-session', threadId: key }, desktopWindowClient())
+    await router.command({ type: 'observe-threads', threadIds: [key] }, desktopWindowClient())
+    expect(remote.observe).toHaveBeenCalledWith([])
+    expect(remote.command).not.toHaveBeenCalled()
+    expect(remote.detail).not.toHaveBeenCalled()
+    expect(remote.state).toEqual(before)
+    router.dispose()
+  })
+  it('preserves Owl aggregate behavior', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: true })
+    const remote = fixture(REMOTE, 'remote')
+    remote.state.host.threads[0]!.kind = 'watcher'
+    router.add(remote.connection)
+    const key = hostEntityKey(REMOTE, 'thread')
+    expect(router.shell().host.threads).toHaveLength(1)
+    await router.threadDetail(key)
+    await router.command({ type: 'observe-threads', threadIds: [key] }, desktopWindowClient())
+    expect(remote.detail).toHaveBeenCalledWith('thread')
+    expect(remote.observe).toHaveBeenCalledWith(['thread'])
+    router.dispose()
+  })
+})
+
+describe('what the router builds for the window (#917)', () => {
+  /** A host whose pushes the test makes, and which counts every time it is asked for its shell. */
+  function pushing(hostId: string, kind: 'local' | 'remote') {
+    const host = fixture(hostId, kind)
+    let push: ((state: AgentState) => void) | undefined
+    const shell = vi.fn(() => structuredClone(host.state))
+    host.connection.service = { ...host.connection.service, shell, subscribe: listener => { push = listener; return () => { push = undefined } } }
+    return { ...host, shell, push: (state: AgentState) => push!(state) }
+  }
+
+  it('builds no state for a change it is only told of', () => {
+    const router = new DesktopHostRouter(emptyDesktopState)
+    const local = pushing(LOCAL, 'local')
+    router.add(local.connection)
+    const changes = vi.fn()
+    router.subscribeChanges(changes)
+    local.shell.mockClear()
+    for (let index = 0; index < 10; index++) local.push(structuredClone(local.state))
+    expect(changes).toHaveBeenCalledTimes(10)
+    expect(local.shell).not.toHaveBeenCalled()
+    router.dispose()
+  })
+
+  // While a thread streams the coordinator broadcasts its shell about sixty times a second; asking it for that shell
+  // again on each one copied the whole state a second time.
+  it('publishes from the shell this computer broadcast, and reads a remote host afresh', () => {
+    const router = new DesktopHostRouter(emptyDesktopState)
+    const local = pushing(LOCAL, 'local'), remote = pushing(REMOTE, 'remote')
+    router.add(local.connection); router.add(remote.connection)
+    const published: AgentState[] = []
+    router.subscribe(state => published.push(state))
+    local.shell.mockClear(); remote.shell.mockClear()
+    const broadcast = structuredClone(local.state)
+    broadcast.host.threads[0]!.title = 'As broadcast'
+    local.push(broadcast)
+    expect(local.shell).not.toHaveBeenCalled()
+    expect(remote.shell).toHaveBeenCalledOnce()
+    expect(published.at(-1)!.host.threads.find(thread => thread.id === hostEntityKey(LOCAL, 'thread'))?.title).toBe('As broadcast')
+    // A command's reply still reads every host as it is now.
+    expect(router.shell().host.threads.find(thread => thread.id === hostEntityKey(LOCAL, 'thread'))?.title).toBe('Task')
+    expect(local.shell).toHaveBeenCalledOnce()
+    router.dispose()
+  })
+
+  // A command can change the coordinator's state without a broadcast, as a draft save answered with its shell does, and
+  // an idle coordinator may send none after it. What the window is sent then, or when a remote host pushes, is read
+  // afresh: a broadcast is used only for the publication it sets off.
+  it('publishes the state as it is after a command, and never an older broadcast', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState)
+    const local = pushing(LOCAL, 'local'), remote = pushing(REMOTE, 'remote')
+    router.add(local.connection); router.add(remote.connection)
+    const published: AgentState[] = []
+    router.subscribe(state => published.push(state))
+    const title = () => published.at(-1)!.host.threads.find(thread => thread.id === hostEntityKey(LOCAL, 'thread'))?.title
+    local.push(structuredClone(local.state))
+    local.command.mockImplementationOnce(async () => { local.state.host.threads[0]!.title = 'Renamed'; return local.state })
+    await router.command({ type: 'rename-thread', threadId: hostEntityKey(LOCAL, 'thread'), title: 'Renamed' }, desktopWindowClient())
+    expect(title()).toBe('Renamed')
+    remote.push(structuredClone(remote.state))
+    expect(title()).toBe('Renamed')
+    router.dispose()
+  })
+})
+
+describe('Watcher threads on a streaming detail (#917)', () => {
+  function watching() {
+    const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: false })
+    const host = fixture(LOCAL, 'local')
+    host.state.host.threads.push({ ...host.state.host.threads[0]!, id: 'watcher', kind: 'watcher' })
+    let pushState: ((state: AgentState) => void) | undefined
+    let pushDetail: ((detail: AgentThreadDetailUpdate) => void) | undefined
+    const shell = vi.fn(() => structuredClone(host.state))
+    const threadKind = vi.fn((id: string) => host.state.host.threads.find(thread => thread.id === id)?.kind)
+    host.connection.service = { ...host.connection.service, shell, threadKind, subscribe: listener => { pushState = listener; return () => { pushState = undefined } } }
+    host.connection.subscribeDetail = listener => { pushDetail = listener; return () => { pushDetail = undefined } }
+    router.add(host.connection)
+    const forwarded: string[] = []
+    router.subscribeThreadDetail(detail => forwarded.push(detail.threadId))
+    shell.mockClear()
+    return { router, host, shell, threadKind, forwarded, push: (threadId: string, revision: number) => pushDetail!({ threadId, revision, messages: [] }),
+      pushState: () => pushState!(structuredClone(host.state)) }
+  }
+
+  // Reading the host's shell copied the coordinator's whole state again for every detail a streaming thread sent.
+  it('asks the host for a detail\'s thread kind instead of copying its state', () => {
+    const { router, shell, threadKind, forwarded, push } = watching()
+    for (let chunk = 0; chunk < 20; chunk++) push('thread', chunk + 1)
+    push('watcher', 1)
+    expect(shell).not.toHaveBeenCalled()
+    expect(threadKind).toHaveBeenCalledTimes(21)
+    expect(forwarded).toEqual(Array.from({ length: 20 }, () => hostEntityKey(LOCAL, 'thread')))
+    router.dispose()
+  })
+
+  it('hides a thread that became a Watcher thread from its very next detail, before any state arrives', () => {
+    const { router, host, forwarded, push, pushState } = watching()
+    // The window is listening and has been sent the thread as an ordinary one.
+    router.subscribe(() => undefined)
+    pushState()
+    push('thread', 1)
+    host.state.host.threads[0]!.kind = 'watcher-history'
+    push('thread', 2)
+    expect(forwarded).toEqual([hostEntityKey(LOCAL, 'thread')])
+    router.dispose()
   })
 })

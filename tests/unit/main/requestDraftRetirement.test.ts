@@ -23,7 +23,7 @@ it('migrates original v1 only on a successful v2 commit and preserves a failed f
   expect(await service.status(target)).toEqual({ status: 'draft', draft: draft() })
   await service.save(draft({ revision: 2 }))
   expect(JSON.parse(await readFile(join(directory, 'request-drafts.json'), 'utf8'))).toEqual({
-    version: 2, drafts: [draft({ revision: 2 })], retirements: [],
+    version: 2, watcherOwners: [], drafts: [draft({ revision: 2 })], retirements: [],
   })
   const restarted = new RequestDraftService(directory, () => undefined, async () => {})
   await restarted.start()
@@ -42,7 +42,7 @@ it.each([1, 2])('preserves strictly validated retirement records from version %s
   expect(await readFile(join(directory, 'request-drafts.json'), 'utf8')).toBe(contents)
   await service.save(draft({ revision: 2 }))
   expect(JSON.parse(await readFile(join(directory, 'request-drafts.json'), 'utf8'))).toEqual({
-    version: 2, drafts: [draft({ revision: 2 })], retirements: [retirement],
+    version: 2, watcherOwners: [], drafts: [draft({ revision: 2 })], retirements: [retirement],
   })
   const restarted = new RequestDraftService(directory, () => undefined, async () => {})
   await restarted.start()

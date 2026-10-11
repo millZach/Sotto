@@ -1,5 +1,6 @@
 import type { CommandResult, UpdatePhase, UpdateStatus } from '../../shared/contracts'
 import type { AppSettings } from '../../shared/settings'
+import { getReleaseTrack, isWatcherEnabled } from '../../shared/releaseTrack'
 
 /**
  * The first check waits until the window has settled and the launch's own
@@ -45,6 +46,7 @@ export type UpdateCheckTrigger = 'automatic' | 'manual'
 
 export interface UpdateServiceDependencies {
   readonly currentVersion: string
+  readonly watcherEnabled?: boolean
   readonly getSettings: () => AppSettings | Promise<AppSettings>
   /**
    * Absent in development, in E2E runs, and on builds with no release feed.
@@ -135,6 +137,7 @@ function samePhase(left: UpdatePhase, right: UpdatePhase): boolean {
  */
 export class UpdateService {
   private readonly now: () => number
+  private readonly watcherEnabled: boolean
   private readonly startupDelayMs: number
   private readonly intervalMs: number
   private readonly scheduleTimeout: (callback: () => void, delayMs: number) => () => void
@@ -155,6 +158,7 @@ export class UpdateService {
 
   constructor(private readonly dependencies: UpdateServiceDependencies) {
     this.now = dependencies.now ?? Date.now
+    this.watcherEnabled = dependencies.watcherEnabled ?? isWatcherEnabled(getReleaseTrack(dependencies.currentVersion))
     this.startupDelayMs = dependencies.startupDelayMs ?? UPDATE_STARTUP_DELAY_MS
     this.intervalMs = dependencies.intervalMs ?? UPDATE_CHECK_INTERVAL_MS
     this.scheduleTimeout = dependencies.scheduleTimeout ?? defaultScheduleTimeout
@@ -175,7 +179,7 @@ export class UpdateService {
   }
 
   status(): UpdateStatus {
-    return { currentVersion: this.dependencies.currentVersion, phase: this.phase, checkedAt: this.checkedAt }
+    return { currentVersion: this.dependencies.currentVersion, releaseTrack: getReleaseTrack(this.dependencies.currentVersion), watcherEnabled: this.watcherEnabled, phase: this.phase, checkedAt: this.checkedAt }
   }
 
   /**

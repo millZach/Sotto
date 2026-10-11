@@ -7,14 +7,14 @@ import React, {
   type RefObject,
 } from 'react'
 
-import type { TranscriptionKeyCheck } from '../../../../shared/contracts'
+import { SPEECH_MODEL, SPEECH_MODEL_SIZE, type SpeechModelStatus } from '../../../../shared/speechModel'
 import type { HostsBridge } from '../../../../shared/hosts'
 import type { PhonesBridge } from '../../../../shared/phones'
 import type { SottoPlatform } from '../../../../shared/platform'
 import type { AppSettings, SettingsPatch } from '../../../../shared/settings'
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { useAudioInputDevices, type MediaDevicesAdapter } from '../../audio/useAudioInputDevices'
-import { OpenRouterKeyField } from '../../components/OpenRouterKeyField'
+import { SpeechModelStatus as SpeechModelStatusView } from '../../components/SpeechModelStatus'
 import { Button } from '../../components/Button'
 import { OpenSystemSettingsButton } from '../../components/OpenSystemSettingsButton'
 import { Card } from '../../components/Card'
@@ -36,7 +36,10 @@ import './onboarding.css'
 export interface OnboardingProps {
   readonly settings: AppSettings
   readonly onUpdateSettings: (patch: SettingsPatch) => Promise<boolean>
-  readonly onCheckTranscriptionKey: () => Promise<TranscriptionKeyCheck>
+  /** Where the speech model stands (ADR-0071); null until main answers. */
+  readonly speechModel: SpeechModelStatus | null
+  /** Starts the speech model download, or retries one that failed. */
+  readonly onDownloadSpeechModel: () => void
   readonly microphoneState: MicrophoneTestState
   readonly microphoneLevel?: number
   readonly shortcut: string
@@ -55,7 +58,7 @@ export interface OnboardingProps {
   ) => boolean | void | Promise<boolean | void>
 }
 
-type StepId = 'welcome' | 'look' | 'microphone' | 'key' | 'shortcut' | 'agents' | 'project' | 'computers' | 'phone'
+type StepId = 'welcome' | 'look' | 'microphone' | 'speech-model' | 'shortcut' | 'agents' | 'project' | 'computers' | 'phone'
 
 interface SetupStep {
   readonly id: StepId
@@ -68,7 +71,7 @@ const STEPS: readonly SetupStep[] = [
   { id: 'welcome', group: 'Start', title: 'Welcome' },
   { id: 'look', group: 'Start', title: 'Look' },
   { id: 'microphone', group: 'Dictation', title: 'Microphone' },
-  { id: 'key', group: 'Dictation', title: 'OpenRouter key' },
+  { id: 'speech-model', group: 'Dictation', title: 'Speech model' },
   { id: 'shortcut', group: 'Dictation', title: 'Shortcut' },
   { id: 'agents', group: 'Agents', title: 'Coding agents' },
   { id: 'project', group: 'Agents', title: 'First project' },
@@ -108,7 +111,8 @@ function StepHeading({ title, lead, headingRef }: {
 export function Onboarding({
   settings,
   onUpdateSettings,
-  onCheckTranscriptionKey,
+  speechModel,
+  onDownloadSpeechModel,
   microphoneState,
   microphoneLevel = 0,
   shortcut,
@@ -124,6 +128,12 @@ export function Onboarding({
 }: OnboardingProps): ReactNode {
   const [index, setIndex] = useState(0)
   const step = STEPS[index]!
+
+  // Main starts the download when Sotto opens; this step starts it too if nothing has yet.
+  const speechModelMissing = speechModel?.state === 'missing'
+  useEffect(() => {
+    if (step.id === 'speech-model' && speechModelMissing) onDownloadSpeechModel()
+  }, [onDownloadSpeechModel, speechModelMissing, step.id])
   const [microphoneId, setMicrophoneId] = useState(settings.microphoneId)
   const [savedMicrophoneId, setSavedMicrophoneId] = useState(settings.microphoneId)
   if (settings.microphoneId !== savedMicrophoneId) {
@@ -226,7 +236,8 @@ export function Onboarding({
   const stepDone = (id: StepId): boolean => {
     switch (id) {
       case 'microphone': return microphoneHeard
-      case 'key': return settings.llmApiKey.length > 0
+      // Once the download is under way setup can go on; dictation works as soon as it finishes.
+      case 'speech-model': return speechModel !== null && speechModel.state !== 'missing' && speechModel.state !== 'failed'
       case 'agents': return agentState !== null && localProviders(agentState).some(provider => provider.connection === 'connected')
       case 'project': return agentState !== null && localProjects(agentState).length > 0
       case 'computers': return hostCount > 0
@@ -314,8 +325,8 @@ export function Onboarding({
                 ? 'Hold F9 to talk after installing Sotto’s compositor bindings in Hyprland, and Sotto copies your words, then pastes them into the focused app or terminal. Sotto also runs Codex, Claude Code, Grok Build and Devin threads in one window, on this computer or another.'
                 : 'Press a shortcut and speak, and your words arrive as text wherever you were typing. Sotto also runs Codex, Claude Code, Grok Build and Devin threads in one window, on this computer or another.')}
               <div className="onboarding-assurances">
-                <p><Check aria-hidden="true" size={18} /> Transcribed by Microsoft MAI-Transcribe-2 through OpenRouter</p>
-                <p><Check aria-hidden="true" size={18} /> Audio leaves this computer only while you dictate</p>
+                <p><Check aria-hidden="true" size={18} /> Transcribed on this computer by {SPEECH_MODEL.name}</p>
+                <p><Check aria-hidden="true" size={18} /> Your audio never leaves this computer</p>
                 <p><Check aria-hidden="true" size={18} /> Your threads go only to each agent's own provider</p>
                 <p><Check aria-hidden="true" size={18} /> No Sotto account, no telemetry</p>
               </div>
@@ -381,11 +392,15 @@ export function Onboarding({
             </section>
           ) : null}
 
-          {step.id === 'key' ? (
+          {step.id === 'speech-model' ? (
             <section aria-labelledby="onboarding-heading">
-              {heading('Connect your OpenRouter key', 'Sotto transcribes with Microsoft MAI-Transcribe-2 through OpenRouter, on your own key. Paste one from openrouter.ai/keys, then verify it.')}
-              <OpenRouterKeyField apiKey={settings.llmApiKey} onUpdateSettings={onUpdateSettings} onCheckTranscriptionKey={onCheckTranscriptionKey} />
-              <p className="onboarding-aside">You can skip this step and add a key in Settings later.</p>
+              {heading('Download the speech model', 'Sotto turns your voice into text on this computer. Your audio never leaves it.')}
+              <div className="tt-field onboarding-speech-model">
+                <span className="tt-field__label">{SPEECH_MODEL.name}, by {SPEECH_MODEL.maker}</span>
+                <p className="tt-field__description">{SPEECH_MODEL_SIZE}, downloaded once from Sotto's releases on GitHub.</p>
+                <SpeechModelStatusView status={speechModel} onRetry={onDownloadSpeechModel} />
+              </div>
+              <p className="onboarding-aside">{speechModel?.state === 'ready' ? '' : 'You can continue while it downloads. Dictation works as soon as it finishes. '}AI cleanup is optional; turn it on in Settings → Cleanup.</p>
             </section>
           ) : null}
 

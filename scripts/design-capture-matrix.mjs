@@ -32,12 +32,12 @@ function add(requirement) {
 }
 
 for (const [id, category, state] of [
-  // First-run setup's nine steps: Welcome, Look, Microphone, OpenRouter key, Shortcut, Coding agents, First
+  // First-run setup's nine steps: Welcome, Look, Microphone, Speech model, Shortcut, Coding agents, First
   // project, Other computers, iPhone. Each id's number is that step's own position.
   ['onboarding-step-1-welcome', 'onboarding', 'welcome'],
   ['onboarding-step-2-look', 'onboarding', 'look'],
   ['onboarding-step-3-microphone-ready', 'onboarding', 'microphone-ready'],
-  ['onboarding-step-4-openrouter', 'onboarding', 'openrouter-key'],
+  ['onboarding-step-4-speech-model', 'onboarding', 'speech-model'],
   ['onboarding-step-5-shortcut', 'onboarding', 'shortcut-paste'],
   ['onboarding-step-6-agents', 'onboarding', 'coding-agents'],
   ['onboarding-step-7-project', 'onboarding', 'first-project'],
@@ -86,7 +86,7 @@ for (const [id, category, state, focusTarget] of [
 // The light room repeats every surface family, its feedback and error states,
 // native selects and provider controls.
 for (const [id, category, state] of [
-  ['onboarding-step-4-openrouter-light', 'onboarding', 'openrouter-key'],
+  ['onboarding-step-4-speech-model-light', 'onboarding', 'speech-model'],
   ['dictate-ready-light', 'dictate', 'ready'],
   ['dictate-listening-light', 'dictate', 'listening'],
   ['dictate-pasted-light', 'dictate', 'success-pasted'],
