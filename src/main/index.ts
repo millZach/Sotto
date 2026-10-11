@@ -193,6 +193,7 @@ import { registerFilesIpc } from './files/ipc'
 import { FilesService } from './files/service'
 import { registerToolsIpc } from './tools/ipc'
 import { registerThemesIpc } from './themes/ipc'
+import { OmarchyThemeMonitor, initializeOmarchySelection } from './themes/omarchy'
 import { OpenVsxClient } from './themes/openVsx'
 import { createOpenVsxFixtureFetch } from './themes/openVsxFixture'
 import { TerminalService } from './tools/terminal'
@@ -246,6 +247,10 @@ const profile = platformProfile(platform)
 const platformDefaults = defaultSettings(profile.defaultHotkey)
 
 type NativeDiagnostic =
+  | 'omarchy-theme-missing'
+  | 'omarchy-theme-invalid'
+  | 'omarchy-theme-watch-failed'
+  | 'omarchy-theme-refresh-failed'
   | LinuxAutostartEvent
   | BootstrapDiagnostic
   | NativeRuntimeDiagnostic
@@ -571,6 +576,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const appRunningVersion = runningVersion(app.getVersion(), process.versions.electron, appVersion)
   const hostVersion = hostReleaseVersion(appRunningVersion, appVersion)
   const watcherEnabled = watcherEnabledForRun({ version: appRunningVersion, isPackaged: app.isPackaged, override: process.env.SOTTO_WATCHER_ENABLED })
+  let repaintOmarchy: () => void = () => undefined
+  const omarchyTheme = new OmarchyThemeMonitor(platform, homedir(),
+    () => repaintOmarchy(), logOperational)
+  omarchyTheme.load()
+  app.on('will-quit', () => omarchyTheme.dispose())
   const recoveryNotices = new RecoveryNoticeCenter()
   const { settings: plainSettings, history } = createStorageRepositories(
     userDataPath,
@@ -579,7 +589,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     platformDefaults,
     logOperational,
     watcherEnabled,
+    platform === 'linux' ? { omarchyTheme: () => omarchyTheme.get() } : {},
   )
+  await initializeOmarchySelection(platform, omarchyTheme.get(), plainSettings)
   await history.initialize()
   const credentials = new AgentCredentials(userDataPath, safeStorage, notice => recoveryNotices.publish(notice))
   await credentials.load()
@@ -1355,6 +1367,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           copyPath: async request => copyHostPath(await hostRouter.gitChangesPath(request)),
         },
       }, () => windows.getTrustedRenderers())
+      repaintOmarchy = () => { void settingsCoordinator.refreshAppearance().catch(() => logOperational('omarchy-theme-refresh-failed')) }
+      omarchyTheme.start()
       // Theme export and Open VSX (ADR-0011). End-to-end runs use an offline Open VSX and a fixed export folder.
       const cleanupThemes = registerThemesIpc(ipcMain, {
         openVsx: new OpenVsxClient(e2eConfiguration === null ? undefined : createOpenVsxFixtureFetch()),

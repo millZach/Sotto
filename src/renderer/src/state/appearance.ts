@@ -2,6 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from 'react'
 
 import { DEFAULT_SETTINGS, EFFORT_COLORS, type AppSettings, type Appearance, type EffortColor } from '../../../shared/settings'
 import { APP_ICON_BRAND_ATTRIBUTE, wearsAppIcon } from '../../../shared/themeBranding'
+import { OMARCHY_THEME_ID, omarchySuccessText, omarchyThemeSchema, type OmarchyTheme } from '../../../shared/themes/omarchy'
 import { isCanonicalThemeColor } from '../../../shared/themes/color'
 import {
   APPEARANCE_CONTRAST,
@@ -23,6 +24,7 @@ export type ResolvedAppearance = ThemeAppearance
 /** Everything that decides the main window's look. */
 export type AppearanceChoice = Pick<AppSettings, 'appearance' | 'lightTheme' | 'darkTheme' | 'appearanceContrast' | 'glassOpacity' | 'frostedWindow' | 'frostSeeThrough' | 'effortColor'> & {
   readonly customThemes: readonly ThemeDefinition[]
+  readonly omarchyTheme?: OmarchyTheme | null | undefined
 }
 
 type ChoiceKey = keyof AppearanceChoice
@@ -73,8 +75,12 @@ const SYSTEM_DARK_QUERY = '(prefers-color-scheme: dark)'
  */
 export const APPEARANCE_CACHE_KEY = 'sotto.appearance'
 
-export function resolveAppearance(appearance: Appearance, systemDark: boolean): ResolvedAppearance {
-  if (appearance === 'system') return systemDark ? 'dark' : 'light'
+export function resolveAppearance(appearance: Appearance, systemDark: boolean, choice?: AppearanceChoice): ResolvedAppearance {
+  if (appearance === 'system') {
+    const theme = choice?.omarchyTheme
+    if (theme && (theme.appearance === 'dark' ? choice.darkTheme : choice.lightTheme) === OMARCHY_THEME_ID) return theme.appearance
+    return systemDark ? 'dark' : 'light'
+  }
   return appearance
 }
 
@@ -109,7 +115,7 @@ export function applyAppearance(
   draft: ThemeDraft | null = null,
   canFrost: boolean = frostAvailable(),
 ): ResolvedAppearance {
-  const resolved = draft?.appearance ?? resolveAppearance(choice.appearance, systemDark)
+  const resolved = draft?.appearance ?? resolveAppearance(choice.appearance, systemDark, choice)
   const { theme, colors } = resolveThemeFor(choice, resolved)
   const themeId = draft === null ? theme.id : THEME_PREVIEW_ID
   const changed = root.dataset.theme !== undefined && (root.dataset.theme !== resolved || root.dataset.themeId !== themeId)
@@ -126,6 +132,10 @@ export function applyAppearance(
     const value = painted[role]
     if (isCanonicalThemeColor(value)) root.style.setProperty(themeColorVariable(role), value)
   }
+  // Only the runtime palette needs the derived green repaired against its own surfaces.
+  // Remove the override when leaving it, so stock and user themes retain their tokens.
+  if (draft === null && theme.id === OMARCHY_THEME_ID) root.style.setProperty('--tt-success', omarchySuccessText(colors, resolved))
+  else root.style.removeProperty('--tt-success')
   const contrast = clampStep(choice.appearanceContrast, APPEARANCE_CONTRAST)
   root.style.setProperty('--theme-contrast-base', `${Math.min(contrast, 100)}%`)
   root.style.setProperty('--theme-contrast-boost', `${Math.max(contrast - 100, 0)}%`)
@@ -185,18 +195,23 @@ export function readCachedAppearance(storage: Pick<Storage, 'getItem'> | undefin
     if (typeof parsed !== 'object' || parsed === null) return fallback
     const record = parsed as Record<string, unknown>
     const customThemes = parseCustomThemes(record.customThemes)
+    const onLinux = typeof window !== 'undefined' && window.sotto?.platform === 'linux'
+    const runtimeTheme = onLinux ? omarchyThemeSchema.nullable().safeParse(record.omarchyTheme) : null
+    const omarchyTheme = runtimeTheme?.success ? runtimeTheme.data : null
+    const half = (id: string, mode: ThemeAppearance): string => onLinux && id === OMARCHY_THEME_ID ? id : resolveThemeHalfId(id, mode, customThemes)
     const text = (value: unknown, otherwise: string): string => (typeof value === 'string' ? value : otherwise)
     const number = (value: unknown, otherwise: number): number => (typeof value === 'number' ? value : otherwise)
     return {
       appearance: record.appearance === 'system' || record.appearance === 'light' || record.appearance === 'dark' ? record.appearance : fallback.appearance,
-      lightTheme: resolveThemeHalfId(text(record.lightTheme, fallback.lightTheme), 'light', customThemes),
-      darkTheme: resolveThemeHalfId(text(record.darkTheme, fallback.darkTheme), 'dark', customThemes),
+      lightTheme: half(text(record.lightTheme, fallback.lightTheme), 'light'),
+      darkTheme: half(text(record.darkTheme, fallback.darkTheme), 'dark'),
       appearanceContrast: clampStep(number(record.appearanceContrast, fallback.appearanceContrast), APPEARANCE_CONTRAST),
       glassOpacity: clampStep(number(record.glassOpacity, fallback.glassOpacity), GLASS_OPACITY),
       frostedWindow: typeof record.frostedWindow === 'boolean' ? record.frostedWindow : fallback.frostedWindow,
       frostSeeThrough: clampStep(number(record.frostSeeThrough, fallback.frostSeeThrough), FROST_SEE_THROUGH),
       effortColor: isEffortColor(record.effortColor) ? record.effortColor : fallback.effortColor,
       customThemes,
+      ...(onLinux ? { omarchyTheme } : {}),
     }
   } catch {
     return fallback
@@ -219,6 +234,7 @@ function writeCachedAppearance(choice: AppearanceChoice, storage: Pick<Storage, 
       frostSeeThrough: choice.frostSeeThrough,
       effortColor: choice.effortColor,
       customThemes: selected,
+      ...(choice.omarchyTheme === undefined ? {} : { omarchyTheme: choice.omarchyTheme }),
     }))
   } catch {
     // Storage can be unavailable; the settings file still carries the choice.
@@ -315,6 +331,7 @@ export class AppearancePreview {
       frostSeeThrough: fields.frostSeeThrough?.value ?? persisted.frostSeeThrough,
       effortColor: fields.effortColor?.value ?? persisted.effortColor,
       customThemes,
+      ...(persisted.omarchyTheme === undefined ? {} : { omarchyTheme: persisted.omarchyTheme }),
     }
   }
 

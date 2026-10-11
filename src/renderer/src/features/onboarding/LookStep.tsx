@@ -36,7 +36,7 @@ export function LookStep({ settings, platform, onUpdateSettings, heading }: Look
   useAppearancePreviewVersion()
   const systemDark = useSystemPrefersDark()
   const shown = appearancePreview.effective(settings)
-  const resolved = resolveAppearance(shown.appearance, systemDark)
+  const resolved = resolveAppearance(shown.appearance, systemDark, shown)
   const settingsRef = useRef(settings)
   settingsRef.current = settings
   const [saveFailed, setSaveFailed] = useState(false)
