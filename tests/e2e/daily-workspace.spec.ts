@@ -131,13 +131,21 @@ test('daily mixed-provider workspace joins independent work, tools, reviewed com
     await expect(panel.getByRole('button', { name: 'Unpin from Daily implementation', exact: true })).toBeVisible()
     await panel.getByRole('tab', { name: 'Terminal', exact: true }).click()
     await panel.getByRole('button', { name: 'Start terminal' }).click()
-    await panel.locator('.xterm').click()
+    // A running PTY and mounted xterm do not mean PowerShell has started accepting commands.
+    await expect.poll(() => terminalOutput(page, first), {
+      message: 'PowerShell must print its initial prompt before the daily command is typed',
+    }).toMatch(/PS [\s\S]*> /u)
+    await expect(panel.locator('.terminal-view')).not.toHaveAttribute('data-replaying', 'true')
+    const terminalInput = panel.locator('.xterm-helper-textarea')
+    await terminalInput.focus()
+    await expect(terminalInput).toBeFocused()
     // The completed marker is absent from echoed input: only PowerShell execution can produce it.
-    await page.keyboard.type("Set-Content -LiteralPath greeting.txt -Value 'Hello, daily workspace' -Encoding utf8; Write-Output ('SOTTO_DAILY_' + 'TERMINAL')")
-    await page.keyboard.press('Enter')
+    await terminalInput.pressSequentially("Set-Content -LiteralPath greeting.txt -Value 'Hello, daily workspace' -Encoding utf8; Write-Output ('SOTTO_DAILY_' + 'TERMINAL')")
+    await terminalInput.press('Enter')
     await expect.poll(() => terminalOutput(page, first)).toContain('SOTTO_DAILY_TERMINAL')
     await expect.poll(() => readFile(join(working, 'greeting.txt'), 'utf8')).toContain('Hello, daily workspace')
     expect(await readFile(join(other, 'greeting.txt'), 'utf8')).toBe('Hello\n')
+    await capture(page, 'terminal-command-completed')
     await panel.getByRole('tab', { name: 'Files', exact: true }).click()
     await panel.getByRole('treeitem', { name: 'greeting.txt', exact: true }).click()
     await expect(panel.locator('.files-preview__text')).toContainText('Hello, daily workspace')
@@ -159,9 +167,17 @@ test('daily mixed-provider workspace joins independent work, tools, reviewed com
     await panel.getByRole('button', { name: 'Expand greeting.txt', exact: true }).click()
     await expect(panel.getByRole('group', { name: 'greeting.txt' })).toContainText('Hello, daily workspace')
     await expect(panel.getByRole('button', { name: 'Stage file', exact: true })).toHaveCount(0)
+    // Changes reads the file directly; the pane's Git status is a separate, periodically refreshed record.
+    // Use the working-copy Refresh control so this journey does not depend on the background poll's phase.
+    const workingCopy = pane(first).getByRole('button', { name: /^Working copy:/u })
+    await workingCopy.click()
+    await pane(first).getByRole('group', { name: 'Working copy details' }).getByRole('button', { name: 'Refresh', exact: true }).click()
+    await workingCopy.click()
     // The commit is the pane header's Git action (ADR-0027): Commit from its menu, the message typed in the dialog.
     await pane(first).getByRole('button', { name: 'More Git actions', exact: true }).click()
-    await page.getByRole('menuitem', { name: 'Commit', exact: true }).click()
+    const commitAction = page.getByRole('menuitem', { name: /^Commit(?:\.|$)/u })
+    await expect(commitAction).toBeEnabled()
+    await commitAction.click()
     const commitDialog = page.getByRole('dialog', { name: 'Commit changes' })
     await commitDialog.getByRole('textbox', { name: 'Commit message (optional)' }).fill('Make the daily greeting friendlier')
     await commitDialog.getByRole('button', { name: 'Commit', exact: true }).click()
@@ -173,7 +189,9 @@ test('daily mixed-provider workspace joins independent work, tools, reviewed com
     // the scripted gh, the badge under the composer opens it in Tools, and it merges only after its confirmation.
     expect(git(repository, '--git-dir', remote, 'for-each-ref', '--format=%(refname)', 'refs/heads')).toBe('')
     await pane(first).getByRole('button', { name: 'More Git actions', exact: true }).click()
-    await page.getByRole('menuitem', { name: 'Create PR', exact: true }).click()
+    const createPullRequest = page.getByRole('menuitem', { name: /^Create PR(?:\.|$)/u })
+    await expect(createPullRequest).toBeEnabled()
+    await createPullRequest.click()
     await expect(pane(first).locator('.git-action-notice')).toContainText('Created PR #74', { timeout: 90_000 })
     const branch = git(working, 'branch', '--show-current')
     expect(git(repository, '--git-dir', remote, 'rev-parse', `refs/heads/${branch}`)).toBe(committed)
