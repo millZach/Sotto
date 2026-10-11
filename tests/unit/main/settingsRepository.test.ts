@@ -26,6 +26,15 @@ afterEach(async () => {
 })
 
 describe('SettingsRepository', () => {
+  it('canonically removes the voice gate without changing dictation or memory settings', async () => {
+    const { filePath, repository } = await createRepository()
+    const legacy = { ...DEFAULT_SETTINGS, voiceCoordinatorEnabled: true, memoryEnabled: true, hotkey: 'Alt+F8', autoPaste: false, soundCues: false }
+    await writeFile(filePath, JSON.stringify(legacy), 'utf8')
+    expect(await repository.get()).toEqual({ ...DEFAULT_SETTINGS, memoryEnabled: true, hotkey: 'Alt+F8', autoPaste: false, soundCues: false })
+    await repository.save(await repository.get())
+    expect(JSON.parse(await readFile(filePath, 'utf8'))).not.toHaveProperty('voiceCoordinatorEnabled')
+    expect(await repository.get()).toEqual({ ...DEFAULT_SETTINGS, memoryEnabled: true, hotkey: 'Alt+F8', autoPaste: false, soundCues: false })
+  })
   it('migrates only local host project defaults durably and preserves existing raw overrides', async () => {
     const local = '11111111-1111-4111-8111-111111111111'
     const remote = '22222222-2222-4222-8222-222222222222'
@@ -137,16 +146,16 @@ describe('SettingsRepository', () => {
 
   it('merges and normalizes updates without discarding untouched settings', async () => {
     const { repository } = await createRepository()
-    await repository.save({ theme: 'dark', language: 'fr', autoPaste: true })
+    await repository.save({ theme: 'dark', maxRecordingSeconds: 120, autoPaste: true })
 
     const updated = await repository.update({
-      language: 'es',
+      maxRecordingSeconds: 300,
       autoPaste: false,
       pasteDelayMs: 1_000,
     })
 
     expect(updated.theme).toBe('dark')
-    expect(updated.language).toBe('es')
+    expect(updated.maxRecordingSeconds).toBe(300)
     expect(updated.autoPaste).toBe(false)
     expect(updated.pasteDelayMs).toBe(1_000)
     expect(await repository.get()).toEqual(updated)
@@ -177,20 +186,20 @@ describe('SettingsRepository', () => {
 
   it('normalizes invalid runtime values supplied through update', async () => {
     const { repository } = await createRepository()
-    await repository.save({ theme: 'dark', language: 'fr' })
+    await repository.save({ theme: 'dark', maxRecordingSeconds: 120 })
 
     const updated = await repository.update({
       theme: 'invalid-theme',
-      language: '',
+      maxRecordingSeconds: 45,
     } as unknown as Partial<AppSettings>)
 
     expect(updated.theme).toBe(DEFAULT_SETTINGS.theme)
-    expect(updated.language).toBe(DEFAULT_SETTINGS.language)
+    expect(updated.maxRecordingSeconds).toBe(DEFAULT_SETTINGS.maxRecordingSeconds)
   })
 
   it('resets persisted settings to a fresh default value', async () => {
     const { repository } = await createRepository()
-    await repository.save({ theme: 'dark', language: 'de', onboardingComplete: true })
+    await repository.save({ theme: 'dark', soundCues: false, onboardingComplete: true })
 
     const reset = await repository.reset()
 

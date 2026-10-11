@@ -1,5 +1,7 @@
 # Open a new thread straight away, on defaults from Settings (#347)
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 Starting a thread in an existing project opens the **New thread** dialog every time: folder, then a collapsed **Thread options** (name, model, reasoning, permissions), then **Create thread**. Zach asked for it to open straight away on defaults kept in Settings → Agents, with permissions added to them, and for a shortcut.
 
 ## Today (read on `main`, September 26, 2026)

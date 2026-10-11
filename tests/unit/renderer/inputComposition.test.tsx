@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useProjectChooser } from '../../../src/renderer/src/agents/ProjectChooser'
 import { ThreadNameField } from '../../../src/renderer/src/agents/ThreadName'
-import { threadsStateFixture } from './liveAgentState'
+import { threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 afterEach(cleanup)
 

@@ -1,9 +1,13 @@
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { fillPrompt, promptField } from './support/prompt'
+import { ownedE2EProfile } from './support/e2eProfile'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { captureWindow, firstSottoWindow, openThreads } from './support/sottoLaunch'
 import type { ProviderId } from '../../src/shared/agents'
+import { evidenceDirectory } from '../fixtures/evidence'
+
+const evidenceRoot = evidenceDirectory('artifacts/visuals-live')
 
 // A real Claude Code, Codex or Grok Build thread asked to draw a visual through `visualize`, in the production app
 // over an isolated profile (tests/fixtures/nativeThreadsMain.cjs). Each run sends real subscription turns, so it is
@@ -28,13 +32,13 @@ const ask = (title: string) => [
 for (const provider of ['claude', 'codex', 'grok'] as const) {
   test(`${provider}: a real thread draws a visual between its words`, async () => {
     test.skip(!enabled || (!!selected && selected !== provider), 'Explicit live visuals opt-in required.')
-    const root = await mkdtemp(join(tmpdir(), 'sotto-e2e-native-'))
+    const root = (await ownedE2EProfile({ prefix: 'sotto-e2e-native-' })).directory
     const profile = join(root, 'profile')
     const project = join(root, 'project')
     await mkdir(profile); await mkdir(project)
     await writeFile(join(profile, 'settings.json'), JSON.stringify({ onboardingComplete: true }))
     // Outside test-results, which Playwright clears at every run, so each provider's run keeps its captures.
-    const artifacts = resolve('artifacts/visuals-live', provider)
+    const artifacts = join(evidenceRoot, provider)
     await mkdir(artifacts, { recursive: true })
     let app: ElectronApplication | undefined
     let current: Page | undefined
@@ -58,7 +62,7 @@ for (const provider of ['claude', 'codex', 'grok'] as const) {
     })
     const idle = (page: Page) => expect.poll(async () => (await state(page)).status, { timeout: 240_000 }).toBe('idle')
     const send = async (page: Page, prompt: string) => {
-      await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill(prompt)
+      await fillPrompt(promptField(page), prompt)
       await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
       await expect(page.getByLabel('Thread transcript')).toContainText(prompt.slice(0, 40), { timeout: 15_000 })
     }
@@ -67,7 +71,7 @@ for (const provider of ['claude', 'codex', 'grok'] as const) {
       const model = await page.evaluate(async (chosen: ProviderId) => {
         await window.sotto!.updateSettings({ onboardingComplete: true, visualsInThreads: true })
         const configured = await window.sotto!.agents!.command({ type: 'configure', patch: {
-          provider: chosen, enabled: true, enabledProviders: [chosen], speak: false, reasoning: 'none', followupLimit: 0 } })
+          provider: chosen, enabled: true, enabledProviders: [chosen], reasoning: 'none', } })
         if (configured.error) throw new Error(configured.error)
         const connected = await window.sotto!.agents!.command({ type: 'connect', provider: chosen })
         if (connected.error) throw new Error(connected.error)
@@ -85,7 +89,7 @@ for (const provider of ['claude', 'codex', 'grok'] as const) {
       await dialog.getByRole('button', { name: /Local folder/ }).click()
       await page.getByRole('dialog', { name: /Choose a folder for the new thread/ }).getByRole('button', { name: 'Browse with File Explorer' }).click()
       // Choosing the folder creates the thread at once, in the provider's default permissions.
-      await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toBeVisible({ timeout: 45_000 })
+      await expect(promptField(page)).toBeVisible({ timeout: 45_000 })
       const notNow = page.getByRole('button', { name: 'Not now', exact: true })
       if (await notNow.isVisible().catch(() => false)) await notNow.click()
 

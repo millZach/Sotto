@@ -30,7 +30,9 @@ function listening(): WidgetSnapshot {
 
 function createHarness(showWidgetWhenIdle = true) {
   const sendToWidget = vi.fn(async () => true)
+  const publishShellState = vi.fn()
   const lifecycle = new NativeDictationLifecycle({
+    publishShellState,
     delivery: { sendToWidget },
     getTrayState: () => ({ dictating: false, autoPaste: true }),
     updateTray: vi.fn(),
@@ -38,7 +40,7 @@ function createHarness(showWidgetWhenIdle = true) {
     showWidgetWhenIdle: () => showWidgetWhenIdle,
     log: vi.fn(),
   })
-  return { lifecycle, sendToWidget }
+  return { lifecycle, sendToWidget, publishShellState }
 }
 
 describe('NativeDictationLifecycle widget presence', () => {
@@ -211,4 +213,15 @@ describe('NativeDictationLifecycle theme presentation', () => {
     harness.lifecycle.rendererProcessGone('main')
     await vi.waitFor(() => expect(harness.delivered().at(-1)).toMatchObject({ status: 'idle', palette: citrine }))
   })
+})
+
+it('publishes shell state even if widget delivery fails and clears it on renderer loss', async () => {
+  const { lifecycle, sendToWidget, publishShellState } = createHarness()
+  sendToWidget.mockResolvedValue(false)
+  await lifecycle.publish(listening())
+  expect(publishShellState).toHaveBeenLastCalledWith(listening())
+  lifecycle.rendererProcessGone('widget')
+  expect(publishShellState).toHaveBeenCalledTimes(1)
+  lifecycle.rendererProcessGone('main')
+  expect(publishShellState).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'idle' }))
 })

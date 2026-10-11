@@ -1,3 +1,4 @@
+import { hostsBridgeFixture, hostStatus } from '../../fixtures/renderer/hostBridges'
 import React from 'react'
 import { act, cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -11,7 +12,7 @@ import type { HostsBridge, HostStatus } from '../../../src/shared/hosts'
 /** #480, variant D: a host's client updates on its provider tiles, and the chip beside Show providers that opens Update all. */
 afterEach(() => { cleanup(); resetAcknowledgedClientUpdates() })
 const HOST = '22222222-2222-4222-8222-222222222222'
-const forge: HostStatus = { id: HOST, hostId: HOST, name: 'forge', target: 'forge', identityFile: '', installPath: '/opt/sotto', dataDirectory: '/data', phase: 'connected', enabled: true }
+const forge: HostStatus = hostStatus({ id: HOST, hostId: HOST, name: 'forge', target: 'forge', identityFile: '', installPath: '/opt/sotto', dataDirectory: '/data', phase: 'connected', enabled: true })
 const capabilities = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true }
 const connected = (id: ProviderId, version: string): AgentProviderStatus => ({ id, name: id, version, connection: 'connected', account: 'Subscription', capabilities })
 /** forge on September 29: every client a mise install, all three behind. Devin is not on forge. */
@@ -26,7 +27,8 @@ const BEHIND = [reading('claude'), reading('codex'), reading('grok')]
 
 function hosts() {
   const updateClients = vi.fn<HostsBridge['updateClients']>(async () => ({}))
-  return { bridge: { providerAction: vi.fn(async () => ({})), signIn: vi.fn(async () => null), updateClients } as unknown as HostsBridge, updateClients }
+  const { bridge } = hostsBridgeFixture({ commands: { updateClients } })
+  return { bridge, updateClients }
 }
 function show(updates: readonly ProviderClientUpdate[] | undefined, bridge: HostsBridge, run?: ClientUpdateRun) {
   return render(<div className="hosts-settings"><HostProviders host={forge} providers={PROVIDERS} bridge={bridge} updates={updates} run={run} /></div>)

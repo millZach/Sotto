@@ -1,6 +1,6 @@
 # Phase 3 final visual fixes: verification
 
-These are fixes for the four findings in `artifacts/phase-three-final-review/visual-review-result.md`. The target is the Windows Electron app at 1600, 1280 and 820×560, in dark and light. It was verified in the built app (`out/main/index.js` from this worktree) with owned `sotto-e2e-*` profiles and fixture providers. The spec is `tests/e2e/phase-three-final-visual-fixes.spec.ts` and the captures are in `artifacts/phase-three-final-visual-fixes/`.
+These are fixes for the four findings in `artifacts/phase-three-final-review/visual-review-result.md`. The target is the Windows Electron app at 1600, 1280 and 820×560, in dark and light. It was verified in the built app (`out/main/index.js` from this worktree) with owned `sotto-e2e-*` profiles and fixture providers. The spec is `tests/e2e/theme-editor-and-request-layout.spec.ts` and the captures are in `artifacts/phase-three-final-visual-fixes/`.
 
 | # | Finding | Change | Rendered check |
 |---|---|---|---|
@@ -13,8 +13,8 @@ These are fixes for the four findings in `artifacts/phase-three-final-review/vis
 
 - `tsc -p tsconfig.web.json`: clean. eslint on the changed files: clean.
 - `vitest run tests/unit/renderer`: 70 files, 988 tests passed. The dock reserve expectations are in `themeInspector.test.tsx` and the single instruction in `threadRequestSurroundings.test.tsx`.
-- `playwright test tests/e2e/phase-three-final-visual-fixes.spec.ts`: 3 passed.
-- Neighbouring specs on the final build: `phase-three-themes.spec.ts` (`SOTTO_THEMES_E2E=1`) 3 passed, `phase-three-visual-fixes.spec.ts` 2 passed, `phase-three-review-ui-fixes.spec.ts` 2 passed. The themes journey needed one test-only change: it scrolls the Appearance heading into view before hovering it. The taller cards had pushed the heading off screen, and the inspector drops its hover label on the scroll that `hover()` does after pointing. The same step passed on base `3d79a6c`.
+- `playwright test tests/e2e/theme-editor-and-request-layout.spec.ts`: 3 passed.
+- Neighbouring specs on the final build: `theme-library-evidence.spec.ts` (`SOTTO_THEMES_E2E=1`) 3 passed, `browser-theme-editor-layout.spec.ts` 2 passed, `compact-pane-and-request-layout.spec.ts` 2 passed. The themes journey needed one test-only change: it scrolls the Appearance heading into view before hovering it. The taller cards had pushed the heading off screen, and the inspector drops its hover label on the scroll that `hover()` does after pointing. The same step passed on base `3d79a6c`.
 
 ## Limits
 

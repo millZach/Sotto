@@ -8,16 +8,16 @@ directories:
 
 files:
   - out/**/*
-  # The renderer build emits ONNX Runtime's WASM because onnxruntime-web refers to it, but the
-  # speech worker loads it only through sotto-runtime:// from resources/runtime — this copy is never read.
-  - '!out/renderer/**/ort-wasm-simd-threaded*'
   - package.json
 
 asar: true
 
-# PTY native modules, ConPTY DLLs/agent and Unix spawn-helper execute outside ASAR.
+# PTY native modules, ConPTY DLLs/agent and Unix spawn-helper execute outside ASAR,
+# and so do the speech engine's addon and the ONNX Runtime it loads (ADR-0071).
 asarUnpack:
   - node_modules/node-pty/**
+  - node_modules/sherpa-onnx-node/**
+  - node_modules/sherpa-onnx-*/**
 # Windows uses node-pty's Node-API prebuild (source rebuild fails in spaced paths).
 # The macOS package scripts explicitly enable rebuilding native dependencies.
 npmRebuild: false
@@ -40,8 +40,6 @@ extraResources:
       - LICENSE.md
       - README.md
       - package.json
-  - from: resources/runtime
-    to: runtime
   - from: LICENSE.md
     to: LICENSE.md
   - from: THIRD_PARTY_NOTICES.md
@@ -96,8 +94,8 @@ mac:
   # icon while it runs, so only the widget joins other apps' full-screen desktops (ADR-0052).
   extendInfo:
     NSMicrophoneUsageDescription: >-
-      Sotto records your microphone while dictating or when you enable agent voice control.
-      Audio is sent to OpenRouter for transcription only while you dictate. Background audio is discarded.
+      Sotto records your microphone while you dictate.
+      Audio is transcribed on this Mac, never leaves it and is never saved to disk.
     NSAppleEventsUsageDescription: >-
       Sotto asks System Events to press Command-V so your dictation lands in the app you were
       typing in. Declining leaves the text on your clipboard to paste yourself.
@@ -115,3 +113,13 @@ mac:
 dmg:
   artifactName: '${productName}-${version}-${arch}.${ext}'
   title: '${productName} ${version}'
+
+linux:
+  executableName: sotto
+  icon: build/icon.png
+  category: Utility
+  target:
+    - target: tar.gz
+      arch:
+        - x64
+  artifactName: '${productName}-${version}-linux-${arch}.${ext}'

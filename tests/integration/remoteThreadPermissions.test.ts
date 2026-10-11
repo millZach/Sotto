@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { deferred } from '../fixtures/deferred'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -66,7 +67,7 @@ async function fixture(profiles = false) {
   }
   const state = client.shell()
   const create = { type: 'create-thread', projectId: state.host.projects[0]!.id, modelId: state.host.models[0]!.id,
-    title: 'Permission fixture', managed: false } as const
+    title: 'Permission fixture' } as const
   return { client, pair, allowAnswers, create, service: host.service, identity: { clientId, user: 'Permission fixture', transport: 'socket' as const } }
 }
 
@@ -138,10 +139,9 @@ describe('resolved thread permissions through the real socket and coordinator', 
     const safe = await client.command({ ...create, runtimeMode: 'approval-required' })
     const thread = safe.host.threads.find(item => item.title === create.title)!
     await allowAnswers(true)
-    let held!: () => void
-    let release!: () => void
-    const waiting = new Promise<void>(resolve => { held = resolve })
-    const gate = new Promise<void>(resolve => { release = resolve })
+
+    const { promise: waiting, resolve: held } = deferred<void>()
+    const { promise: gate, resolve: release } = deferred<void>()
     const write = AtomicJsonStore.prototype.write
     const spy = vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(function (this: AtomicJsonStore<unknown>, value: unknown) {
       const written = write.call(this, value)

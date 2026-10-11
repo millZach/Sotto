@@ -27,7 +27,6 @@ export type EffortColor = 'ember' | 'cyberpunk' | 'rainbow' | 'aurora' | 'plasma
 export const EFFORT_COLORS = ['ember', 'cyberpunk', 'rainbow', 'aurora', 'plasma', 'accent'] as const satisfies readonly EffortColor[]
 export const EFFORT_COLOR_LABELS: Record<EffortColor, string> = { ember: 'Ember', cyberpunk: 'Cyberpunk', rainbow: 'Rainbow', aurora: 'Aurora', plasma: 'Plasma', accent: 'Theme accent' }
 export type HistoryRetention = 25 | 100 | 500 | 'unlimited'
-export type LlmQuality = 'low' | 'medium' | 'value' | 'high'
 
 /**
  * The rules under which Sotto reclaims a thread's worktree on its own (ADR-0041), the same four
@@ -178,9 +177,15 @@ export interface AppSettings {
   reducedMotion: ReducedMotion
   microphoneId: string | null
   hotkey: string
+  /** Text size in every terminal, in pixels; changed from the focused terminal's zoom chords. */
+  terminalFontSize: number
+  /**
+   * Dictation is always cut at pauses and transcribed on this computer, by a model that works out
+   * the language itself (ADR-0071), so the `language` and `streamingAsr` settings are gone; a
+   * settings file that still carries either parses and drops it.
+   */
   maxRecordingSeconds: MaxRecordingSeconds
   soundCues: boolean
-  language: string
   formatWhitespace: boolean
   autoCopy: true
   autoPaste: boolean
@@ -198,11 +203,14 @@ export interface AppSettings {
    * clears it. Older settings files have no such field and load as `false`.
    */
   microphoneSkipped: boolean
+  /**
+   * AI cleanup on or off. One model does every cleanup (ADR-0069); the `llmQuality` tier
+   * picker is gone, and a settings file that still carries the key parses and drops it.
+   */
   llmFormatting: boolean
   /** OpenRouter key shared by transcription and AI cleanup; stored in the formatting credential slot. */
   llmApiKey: string
   llmDictionary: string
-  llmQuality: LlmQuality
   llmTimeoutMs: number
   llmMinWords: number
   /**
@@ -215,7 +223,6 @@ export interface AppSettings {
   pullRequestText: boolean
   /** Off stops every generated commit message; a commit whose dialog message was left empty takes the stand-in subject. */
   commitMessages: boolean
-  streamingAsr: boolean
   autoUpdateCheck: boolean
   /**
    * Whether the agent runtime runs on this computer at all. Read once at
@@ -237,12 +244,6 @@ export interface AppSettings {
    * a desktop does, so it is not on the settings allow-list.
    */
   tailnetConnections: boolean
-  /**
-   * The voice coordinator (the wake phrase, the Agents room, spoken hints, the
-   * widget's voice controls and assignment) is hidden for the beta. Off keeps
-   * every one of those surfaces out of the window; dictation is unaffected.
-   */
-  voiceCoordinatorEnabled: boolean
   /**
    * Whether memory (the Memory page, the questionnaire that greets the Agents
    * room and the preferences retrieved for a turn) is shown at all. Off for
@@ -289,9 +290,9 @@ const fieldSchemas = {
   reducedMotion: z.enum(['system', 'on']),
   microphoneId: z.string().min(1).nullable(),
   hotkey: z.string().min(1),
+  terminalFontSize: z.number().int().min(8).max(32),
   maxRecordingSeconds: z.union([z.literal(30), z.literal(60), z.literal(120), z.literal(300)]),
   soundCues: z.boolean(),
-  language: z.string().min(1),
   formatWhitespace: z.boolean(),
   autoCopy: z.literal(true),
   autoPaste: z.boolean(),
@@ -312,7 +313,6 @@ const fieldSchemas = {
   llmFormatting: z.boolean(),
   llmApiKey: z.string().max(256),
   llmDictionary: z.string().max(4_000),
-  llmQuality: z.enum(['low', 'medium', 'value', 'high']),
   llmTimeoutMs: z.number().int().min(500).max(10_000),
   llmMinWords: z.number().int().min(0).max(50),
   threadTitles: z.boolean(),
@@ -333,13 +333,11 @@ const fieldSchemas = {
   proactivePanels: z.boolean(),
   pullRequestText: z.boolean(),
   commitMessages: z.boolean(),
-  streamingAsr: z.boolean(),
   autoUpdateCheck: z.boolean(),
   localHostEnabled: z.boolean(),
   phoneAccess: z.boolean(),
   phoneAccessName: z.string().trim().max(63),
   tailnetConnections: z.boolean(),
-  voiceCoordinatorEnabled: z.boolean(),
   memoryEnabled: z.boolean(),
   cloudIphoneMonthlyMinutes: z.number().int().min(10).max(100_000),
   cloudIphoneIdleMinutes: z.number().int().min(1).max(60),
@@ -373,9 +371,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   reducedMotion: 'system',
   microphoneId: null,
   hotkey: DEFAULT_HOTKEY,
+  terminalFontSize: 13,
   maxRecordingSeconds: 60,
   soundCues: true,
-  language: 'auto',
   formatWhitespace: true,
   autoCopy: true,
   autoPaste: true,
@@ -391,7 +389,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   llmFormatting: false,
   llmApiKey: '',
   llmDictionary: '',
-  llmQuality: 'low',
   llmTimeoutMs: 2_500,
   llmMinWords: 5,
   // On by default: the thread's own provider names it, on the account the thread
@@ -423,7 +420,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // On by default: when a thread's provider writes nothing, the Git action commits
   // under the stand-in subject "Update project files" rather than waiting.
   commitMessages: true,
-  streamingAsr: true,
   // On by default: an install that never opens Settings still learns about a
   // fix. The check asks GitHub for a version number and sends nothing else,
   // and turning it off stops the request entirely.
@@ -436,9 +432,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   phoneAccessName: '',
   // Off until a desktop turns it on over SSH, at Add host or in Edit connection (ADR-0053).
   tailnetConnections: false,
-  // Off for the beta: the voice coordinator is not ready to ship, so nothing
-  // voice-shaped is shown until it is turned on here.
-  voiceCoordinatorEnabled: false,
   // Off for the beta: memory does not ship in the first one.
   memoryEnabled: false,
   // About run.cloud's free $15 a month at its $0.02-a-minute price (ADR-0047).
@@ -499,9 +492,9 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),
     microphoneId: parseField(persisted, 'microphoneId', defaults),
     hotkey: parseField(persisted, 'hotkey', defaults),
+    terminalFontSize: parseField(persisted, 'terminalFontSize', defaults),
     maxRecordingSeconds: parseField(persisted, 'maxRecordingSeconds', defaults),
     soundCues: parseField(persisted, 'soundCues', defaults),
-    language: parseField(persisted, 'language', defaults),
     formatWhitespace: parseField(persisted, 'formatWhitespace', defaults),
     autoCopy: parseField(persisted, 'autoCopy', defaults),
     autoPaste: parseField(persisted, 'autoPaste', defaults),
@@ -517,7 +510,6 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     llmFormatting: parseField(persisted, 'llmFormatting', defaults),
     llmApiKey: parseField(persisted, 'llmApiKey', defaults),
     llmDictionary: parseField(persisted, 'llmDictionary', defaults),
-    llmQuality: parseField(persisted, 'llmQuality', defaults),
     llmTimeoutMs: parseField(persisted, 'llmTimeoutMs', defaults),
     llmMinWords: parseField(persisted, 'llmMinWords', defaults),
     threadTitles: parseField(persisted, 'threadTitles', defaults),
@@ -538,13 +530,11 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     proactivePanels: parseField(persisted, 'proactivePanels', defaults),
     pullRequestText: parseField(persisted, 'pullRequestText', defaults),
     commitMessages: parseField(persisted, 'commitMessages', defaults),
-    streamingAsr: parseField(persisted, 'streamingAsr', defaults),
     autoUpdateCheck: parseField(persisted, 'autoUpdateCheck', defaults),
     localHostEnabled: parseField(persisted, 'localHostEnabled', defaults),
     phoneAccess: parseField(persisted, 'phoneAccess', defaults),
     phoneAccessName: parseField(persisted, 'phoneAccessName', defaults),
     tailnetConnections: parseField(persisted, 'tailnetConnections', defaults),
-    voiceCoordinatorEnabled: parseField(persisted, 'voiceCoordinatorEnabled', defaults),
     memoryEnabled: parseField(persisted, 'memoryEnabled', defaults),
     cloudIphoneMonthlyMinutes: parseField(persisted, 'cloudIphoneMonthlyMinutes', defaults),
     cloudIphoneIdleMinutes: parseField(persisted, 'cloudIphoneIdleMinutes', defaults),

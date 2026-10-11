@@ -1,5 +1,7 @@
 # A leftover draft on the empty Threads page
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 October 5, 2026, on Windows 11 with Electron 43, from `tests/e2e/empty-page-saved-draft.spec.ts` against the built app (issue #736). The profile starts disconnected, with the coordinator's saved state holding a 197-character prompt written for a thread that is not listed, the way the owner's 565-character prompt sat on their machine, beside the design fixture's other threads. A second run starts with the same prompt written for **Footer links**, which is listed. Voice is off, as in the beta.
 
 The page is variant A (In the page) of `docs/prototypes/empty-page-saved-draft-prototype.html`. The owner delegated the pick on October 5, 2026, and A was chosen because it changes the page least and keeps the draft as the one thing to deal with.

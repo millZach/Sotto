@@ -23,7 +23,7 @@ import { round } from '../fixtures/perfBench'
 const LIVE = process.env.SOTTO_CLAUDE_LIVE === '1'
 type Runtimes = { runtimes: Map<string, { protocol: ClaudeProtocol }>; stopSession(id: string): Promise<void>; frame(id: string, frame: ClaudeFrame): void }
 
-describe.skipIf(!LIVE)('Claude settings on a running session (live)', () => {
+describe.skipIf(!LIVE)("Claude settings on a running session (live) (requires SOTTO_CLAUDE_LIVE=1)", () => {
   it('applies a model, an effort level and a permission mode to the running CLI without starting another', async () => {
     const root = await mkdtemp(join(tmpdir(), 'sotto-claude-settings-live-')); const cwd = join(root, 'project'); await mkdir(cwd)
     const events: ClaudeAdapterEvent[] = []

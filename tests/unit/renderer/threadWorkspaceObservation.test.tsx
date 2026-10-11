@@ -28,12 +28,12 @@ const observe = (threadIds: string[]): AgentCommand => ({ type: 'observe-threads
 
 describe('thread workspace observation', () => {
   it('keeps the pinned thread when the command function changes without pane changes', () => {
-    const { rerender, unmount } = render(<ThreadWorkspace onOpenAgents={() => undefined} />)
+    const { rerender, unmount } = render(<ThreadWorkspace />)
     expect(connection.command).toHaveBeenLastCalledWith(observe(['visible', 'pinned']))
     const previous = connection.command
     previous.mockClear()
     connection.command = vi.fn<(command: AgentCommand) => Promise<null>>(async () => null)
-    rerender(<ThreadWorkspace onOpenAgents={() => undefined} />)
+    rerender(<ThreadWorkspace />)
     expect(connection.command).toHaveBeenLastCalledWith(observe(['visible', 'pinned']))
     expect(connection.command.mock.calls).not.toContainEqual([observe([])])
     expect(previous).not.toHaveBeenCalled()
@@ -42,25 +42,25 @@ describe('thread workspace observation', () => {
   })
 
   it('restores both visible and pinned observations after StrictMode setup and cleanup', () => {
-    const { rerender, unmount } = render(<StrictMode><ThreadWorkspace onOpenAgents={() => undefined} /></StrictMode>)
+    const { rerender, unmount } = render(<StrictMode><ThreadWorkspace /></StrictMode>)
     expect(connection.command).toHaveBeenLastCalledWith(observe(['visible', 'pinned']))
     connection.command = vi.fn<(command: AgentCommand) => Promise<null>>(async () => null)
-    rerender(<StrictMode><ThreadWorkspace onOpenAgents={() => undefined} /></StrictMode>)
+    rerender(<StrictMode><ThreadWorkspace /></StrictMode>)
     expect(connection.command).toHaveBeenLastCalledWith(observe(['visible', 'pinned']))
     unmount()
     expect(connection.command).toHaveBeenLastCalledWith(observe([]))
   })
 
   it('updates the pin without changing visible panes or observing duplicate thread IDs', () => {
-    const { rerender } = render(<ThreadWorkspace onOpenAgents={() => undefined} />)
+    const { rerender } = render(<ThreadWorkspace />)
     connection.pin = 'other'
-    rerender(<ThreadWorkspace onOpenAgents={() => undefined} />)
+    rerender(<ThreadWorkspace />)
     expect(connection.command).toHaveBeenLastCalledWith(observe(['visible', 'other']))
     connection.pin = 'visible'
-    rerender(<ThreadWorkspace onOpenAgents={() => undefined} />)
+    rerender(<ThreadWorkspace />)
     expect(connection.command).toHaveBeenLastCalledWith(observe(['visible']))
     connection.pin = null
-    rerender(<ThreadWorkspace onOpenAgents={() => undefined} />)
+    rerender(<ThreadWorkspace />)
     expect(connection.command).toHaveBeenLastCalledWith(observe(['visible']))
   })
 })

@@ -40,10 +40,10 @@ const customSettings = {
   babysitPullRequests: false,
   reducedMotion: 'on',
   microphoneId: 'microphone-1',
+  terminalFontSize: 17,
   hotkey: 'Alt+D',
   maxRecordingSeconds: 300,
   soundCues: false,
-  language: 'fr',
   formatWhitespace: false,
   autoCopy: true,
   autoPaste: false,
@@ -59,7 +59,6 @@ const customSettings = {
   llmFormatting: true,
   llmApiKey: '',
   llmDictionary: 'Sotto\nMoonshine',
-  llmQuality: 'high',
   llmTimeoutMs: 3_000,
   llmMinWords: 4,
   threadTitles: false,
@@ -80,13 +79,11 @@ const customSettings = {
   proactivePanels: true,
   pullRequestText: false,
   commitMessages: false,
-  streamingAsr: false,
   autoUpdateCheck: false,
   localHostEnabled: false,
   phoneAccess: true,
   phoneAccessName: 'Studio',
   tailnetConnections: true,
-  voiceCoordinatorEnabled: true,
   memoryEnabled: true,
   cloudIphoneMonthlyMinutes: 1_000,
   cloudIphoneIdleMinutes: 10,
@@ -160,10 +157,15 @@ describe('settings', () => {
     expect(mergeMethodChosenPatch({ defaultMergeMethod: 'merge', lastMergeMethod: 'merge' }, 'squash')).toBeNull()
   })
   it('drops retired transcription settings while preserving valid settings', () => {
-    const legacy = { ...customSettings, modelPreset: 'fast', inferencePreference: 'wasm', remoteAsr: true, remoteAsrUrl: 'http://retired.invalid' }
+    // The speech model detects the language and every dictation is segmented (ADR-0071), so
+    // language and streamingAsr went with the earlier local and hosted settings.
+    const legacy = {
+      ...customSettings, modelPreset: 'fast', inferencePreference: 'wasm', remoteAsr: true, remoteAsrUrl: 'http://retired.invalid',
+      language: 'fr', streamingAsr: false,
+    }
     expect(parseSettings(legacy)).toEqual(customSettings)
     expect(settingsSchema.parse(legacy)).toEqual(customSettings)
-    for (const field of ['modelPreset', 'inferencePreference', 'remoteAsr', 'remoteAsrUrl']) {
+    for (const field of ['modelPreset', 'inferencePreference', 'remoteAsr', 'remoteAsrUrl', 'language', 'streamingAsr']) {
       expect(parseSettings(legacy)).not.toHaveProperty(field)
     }
   })
@@ -176,6 +178,16 @@ describe('settings', () => {
       expect(parseSettings(legacy)).not.toHaveProperty('writingModel')
     }
     expect(DEFAULT_SETTINGS).not.toHaveProperty('writingModel')
+  })
+
+  it('drops the retired cleanup quality tier and keeps every other choice, whichever tier was saved', () => {
+    // One model does every cleanup (ADR-0069); an older settings file still names a tier.
+    for (const llmQuality of ['low', 'medium', 'value', 'high', 'ultra']) {
+      const legacy = { ...customSettings, llmQuality }
+      expect(parseSettings(legacy)).toEqual(customSettings)
+      expect(parseSettings(legacy)).not.toHaveProperty('llmQuality')
+    }
+    expect(DEFAULT_SETTINGS).not.toHaveProperty('llmQuality')
   })
 
   it('tolerates persisted theme values and defaults an unknown value', () => {
@@ -266,7 +278,7 @@ describe('settings', () => {
   it('defines the complete versioned defaults', () => {
     expect(SETTINGS_VERSION).toBe(1)
     expect(DEFAULT_SETTINGS).toEqual({
-      voiceCoordinatorEnabled: false,
+      terminalFontSize: 13,
       memoryEnabled: false,
       webLinkDestination: 'external',
       responseStreaming: 'live',
@@ -290,7 +302,6 @@ describe('settings', () => {
       hotkey: 'CommandOrControl+Shift+Space',
       maxRecordingSeconds: 60,
       soundCues: true,
-      language: 'auto',
       formatWhitespace: true,
       autoCopy: true,
       autoPaste: true,
@@ -306,7 +317,6 @@ describe('settings', () => {
       llmFormatting: false,
       llmApiKey: '',
       llmDictionary: '',
-      llmQuality: 'low',
       llmTimeoutMs: 2_500,
       llmMinWords: 5,
       threadTitles: true,
@@ -327,7 +337,6 @@ describe('settings', () => {
       proactivePanels: false,
       pullRequestText: true,
       commitMessages: true,
-      streamingAsr: true,
       autoUpdateCheck: true,
       localHostEnabled: true,
       phoneAccess: false,
@@ -390,10 +399,6 @@ describe('settings', () => {
     expect(parseSettings({}).llmFormatting).toBe(false)
     expect(parseSettings({ llmFormatting: 'yes' }).llmFormatting).toBe(false)
     expect(parseSettings({ llmTimeoutMs: 100 }).llmTimeoutMs).toBe(2_500)
-    expect(parseSettings({ llmQuality: 'high' }).llmQuality).toBe('high')
-    expect(parseSettings({ llmQuality: 'value' }).llmQuality).toBe('value')
-    expect(parseSettings({ llmQuality: 'ultra' }).llmQuality).toBe('low')
-    expect(parseSettings({ streamingAsr: false }).streamingAsr).toBe(false)
   })
 
 
@@ -467,9 +472,7 @@ describe('settings', () => {
     },
   )
 
-  it('requires a non-empty language and a literal true autoCopy value', () => {
-    expect(parseSettings({ language: '' }).language).toBe(DEFAULT_SETTINGS.language)
-    expect(parseSettings({ language: 'es' }).language).toBe('es')
+  it('requires a literal true autoCopy value', () => {
     expect(parseSettings({ autoCopy: false }).autoCopy).toBe(true)
     expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, autoCopy: false }).success).toBe(false)
   })

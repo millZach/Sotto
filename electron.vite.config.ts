@@ -37,12 +37,6 @@ function externalDependencyInventory(scope: 'main' | 'preload'): Plugin {
   }
 }
 
-/**
- * Vite builds workers in their own rollup pass, so a library reachable only
- * from a worker never appears in the renderer's own inventory. The natural
- * speech worker is the only importer of transformers now, and app.asar still
- * redistributes it, so the worker pass writes an inventory of its own.
- */
 function bundledDependencyInventory(fileName = 'bundled-dependencies.json'): Plugin {
   return {
     name: `sotto-bundled-dependency-inventory-${fileName}`,
@@ -93,18 +87,17 @@ function headlessHostBuild(): Plugin {
 
 export default defineConfig({
   main: {
-    // Runtime assets keep their verified resource path; emit the tray PNG under out/ with ?asset.
-    publicDir: 'resources/runtime',
-    build: { rollupOptions: { external: ['node-pty'], input: {
+    // No public folder: nothing is copied into out/ wholesale; the Linux tray icon is emitted there with ?asset.
+    publicDir: false,
+    build: { rollupOptions: { external: ['node-pty', 'sherpa-onnx-node'], input: {
       index: resolve(__dirname, 'src/main/index.ts'),
-      wakeWorker: resolve(__dirname, 'src/main/agents/wakeWorker.ts'),
       dictationClient: resolve(__dirname, 'src/main/hotkeys/dictationClient.ts'),
       terminalAgentHook: resolve(__dirname, 'src/main/terminals/helper.ts'),
     } } },
     // electron-updater is a devDependency that is compiled into the main chunk,
     // exactly like zod is compiled into the sandboxed preload: production
-    // Native node-pty stays external explicitly; its relative prebuild/helper
-    // lookup requires its package layout. Claude SDK history ships as a reviewed
+    // Native node-pty and sherpa-onnx-node stay external explicitly; each finds its
+    // prebuilt binaries relative to its package layout (ADR-0018, ADR-0071). Claude SDK history ships as a reviewed
     // self-contained resource, so SDK peers are not production dependencies.
     plugins: [
       externalizeDepsPlugin({ exclude: ['electron-updater'] }),
@@ -127,9 +120,6 @@ export default defineConfig({
   },
   renderer: {
     plugins: [bundledDependencyInventory()],
-    worker: {
-      plugins: () => [bundledDependencyInventory('bundled-dependencies.worker.json')],
-    },
     define: {
       'import.meta.env.SOTTO_VISUAL_PREVIEW': JSON.stringify(visualPreviewEnvironment),
     },

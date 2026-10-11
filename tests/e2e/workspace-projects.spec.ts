@@ -1,18 +1,22 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
+import { agentState } from './support/agentAccess'
+import { resizeWindow } from './support/sottoWindow'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { _electron as electron, expect, test, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { defaultAgentConfiguration } from '../../src/shared/agents'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { bareEntityId, closeSotto, firstSottoWindow, launchSotto, openThreads, type LaunchedSotto, userMessageTexts } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
-const ARTIFACTS = 'artifacts/phase1-workspace'
+const ARTIFACTS = evidenceDirectory('artifacts/phase1-workspace')
 // A 1x1 PNG: enough for the real attachment validation path.
 const PIXEL = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
 
 async function ownedProfile(prefix: string): Promise<string> {
-  const profile = await mkdtemp(join(tmpdir(), prefix))
+  const profile = (await ownedE2EProfile({ prefix: prefix })).directory
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true }))
   return profile
 }
@@ -20,7 +24,7 @@ async function ownedProfile(prefix: string): Promise<string> {
 async function connectAndOpenThreads(page: Page): Promise<void> {
   await page.evaluate(async () => {
     await window.sotto!.updateSettings({ onboardingComplete: true })
-    await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+    await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
     await window.sotto!.agents!.command({ type: 'connect' })
   })
   await page.reload()
@@ -28,12 +32,11 @@ async function connectAndOpenThreads(page: Page): Promise<void> {
 }
 
 async function resize(launched: LaunchedSotto, width: number, height: number): Promise<void> {
-  await launched.app.evaluate(({ BrowserWindow }, size) => {
+  await launched.app.evaluate(({ BrowserWindow }) => {
     const window = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().endsWith('/index.html'))!
-    window.setMinimumSize(760, 600); window.setSize(size.width, size.height)
-  }, { width, height })
-  // Fractional display scaling rounds the CSS viewport by a pixel or two.
-  await expect.poll(async () => Math.abs(await launched.page.evaluate(() => innerWidth) - width)).toBeLessThanOrEqual(2)
+    window.setMinimumSize(760, 600)
+  })
+  await resizeWindow(launched, width, height)
 }
 
 /** Nothing on the Threads page scrolls sideways or clips its status line at this width. */
@@ -54,7 +57,7 @@ test('Enter shows the local pending message within 100 ms, measured apart from p
   try {
     await connectAndOpenThreads(page)
     await page.getByRole('button', { name: 'Workshop', exact: true }).click()
-    const prompt = page.getByRole('textbox', { name: 'Prompt', exact: true })
+    const prompt = promptField(page)
     await page.evaluate(() => {
       const samples: { typing: number[]; send: { dom: number; frame: number }[] } = { typing: [], send: [] }
       ;(window as unknown as { __workspaceTiming: typeof samples }).__workspaceTiming = samples
@@ -64,8 +67,8 @@ test('Enter shows the local pending message within 100 ms, measured apart from p
         if (target.id !== 'thread-workspace-prompt') return
         const started = performance.now()
         if (event.key !== 'Enter' || event.shiftKey) {
-          const before = (target as HTMLTextAreaElement).value
-          requestAnimationFrame(() => { if ((target as HTMLTextAreaElement).value !== before) samples.typing.push(performance.now() - started) })
+          const before = target.dataset.promptText
+          requestAnimationFrame(() => { if (target.dataset.promptText !== before) samples.typing.push(performance.now() - started) })
           return
         }
         const existing = document.querySelectorAll('[aria-label="Pending message"]').length
@@ -85,7 +88,7 @@ test('Enter shows the local pending message within 100 ms, measured apart from p
       await page.keyboard.type(`Round ${round} check`, { delay: 15 })
       await page.keyboard.press('Enter')
       await expect(page.getByLabel('Thread transcript')).toContainText(`Round ${round} check`)
-      await expect(prompt).toHaveValue('')
+      await expectPromptText(prompt, '')
       // The press is the feedback; the provider holds the prompt a moment later, and a reply before that would answer nothing.
       await expect.poll(() => userMessageTexts(page, 'workshop')).toContain(`Round ${round} check`)
       await page.evaluate(async index => window.sottoE2E!.agentEvent!({ type: 'ready', threadId: 'workshop', text: `Done with round ${index}.` }), round)
@@ -155,11 +158,11 @@ test('project folders hold several threads, settle and restore threads and proje
     expect(unstarted.nativeSessionStarted).toBe(false)
     // An unstarted thread can still change its model from the composer's model chip.
     await expect(page.getByRole('combobox', { name: 'Thread model' })).toBeEnabled()
-    await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Outline the release steps.')
+    await fillPrompt(promptField(page), 'Outline the release steps.')
     await page.keyboard.press('Enter')
     await expect(page.getByLabel('Thread transcript')).toContainText('Outline the release steps.')
     await expect.poll(async () => (await page.evaluate(async () => (await window.sotto!.agents!.get()).host.threads.find(thread => thread.title === 'Plan the release')!)).nativeSessionStarted).toBe(true)
-    expect(await page.evaluate(async () => (await window.sotto!.agents!.get()).assignments)).toHaveLength(0)
+
     await mkdir(ARTIFACTS, { recursive: true })
     await page.screenshot({ animations: 'disabled', path: join(ARTIFACTS, 'projects-desktop.png') })
 
@@ -188,17 +191,17 @@ test('project folders hold several threads, settle and restore threads and proje
     // Text and screenshot drafts belong to their threads and survive navigation and a restart.
     await sidebar.getByRole('button', { name: 'Docs', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Docs', exact: true })).toBeVisible()
-    const prompt = page.getByRole('textbox', { name: 'Prompt', exact: true })
-    await prompt.fill('Docs draft kept across a restart.')
+    const prompt = promptField(page)
+    await fillPrompt(prompt, 'Docs draft kept across a restart.')
     await page.getByLabel('Screenshot files').setInputFiles({ name: 'docs-shot.png', mimeType: 'image/png', buffer: PIXEL })
     await expect(page.getByRole('img', { name: 'docs-shot.png' })).toBeVisible()
     await sidebar.getByRole('button', { name: 'Workshop', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Workshop', exact: true })).toBeVisible()
-    await expect(prompt).toHaveValue('')
-    await prompt.fill('Workshop line one')
+    await expectPromptText(prompt, '')
+    await fillPrompt(prompt, 'Workshop line one')
     await page.keyboard.press('Shift+Enter')
     await page.keyboard.type('line two')
-    await expect(prompt).toHaveValue('Workshop line one\nline two')
+    await expectPromptText(prompt, 'Workshop line one\nline two')
     await expect.poll(async () => (await page.evaluate(async () => (await window.sotto!.agents!.get()).threadDrafts ?? []))
       .map(draft => [bareEntityId(draft.threadId), draft.text, draft.attachments.map(image => image.name)]).sort()).toEqual([
       ['docs', 'Docs draft kept across a restart.', ['docs-shot.png']],
@@ -212,10 +215,10 @@ test('project folders hold several threads, settle and restore threads and proje
     await openThreads(page)
     const reopened = page.getByRole('complementary', { name: 'Thread sidebar' })
     await reopened.getByRole('button', { name: 'Docs', exact: true }).click()
-    await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('Docs draft kept across a restart.')
+    await expectPromptText(promptField(page), 'Docs draft kept across a restart.')
     await expect(page.getByRole('img', { name: 'docs-shot.png' })).toBeVisible()
     await reopened.getByRole('button', { name: 'Workshop', exact: true }).click()
-    await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('Workshop line one\nline two')
+    await expectPromptText(promptField(page), 'Workshop line one\nline two')
     await expect(reopened.getByRole('button', { name: new RegExp(`^${title}`) })).toBeVisible()
 
     // The 760 px minimum recomposes the same page without shrinking type or clipping status and navigation.
@@ -240,7 +243,7 @@ test('project folders hold several threads, settle and restore threads and proje
     await page.screenshot({ animations: 'disabled', path: join(ARTIFACTS, 'projects-760.png') })
   } finally {
     await closeSotto(launched)
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
     await rm(folder, { recursive: true, force: true })
   }
 })
@@ -251,32 +254,32 @@ test('delivery states stay truthful: an unconfirmed send is never repeated and a
   try {
     await connectAndOpenThreads(page)
     await page.getByRole('button', { name: 'Docs', exact: true }).click()
-    const prompt = page.getByRole('textbox', { name: 'Prompt', exact: true })
-    await prompt.fill('First, delivered.')
+    const prompt = promptField(page)
+    await fillPrompt(prompt, 'First, delivered.')
     await page.keyboard.press('Enter')
-    await expect(prompt).toHaveValue('')
+    await expectPromptText(prompt, '')
     // The composer empties on the press; the provider holds the prompt a moment later, and the reply has to follow it.
     await expect.poll(() => userMessageTexts(page, 'docs')).toContain('First, delivered.')
     await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'ready', threadId: 'docs', text: 'Delivered reply.' }))
     // The reply has to reach the window before the next prompt, or Enter queues it behind the turn instead of sending.
     await expect(page.getByRole('button', { name: 'Send prompt', exact: true })).toBeVisible()
     await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'uncertain', threadId: 'docs', text: '' }))
-    await prompt.fill('Maybe delivered.')
+    await fillPrompt(prompt, 'Maybe delivered.')
     await page.keyboard.press('Enter')
     const pending = page.getByLabel('Pending message')
     await expect(pending).toContainText('Unconfirmed')
     await expect(pending.getByRole('button', { name: 'Check again' })).toBeVisible()
     // The prompt left the composer on the press and is read in its own message while it is unconfirmed.
     await expect(pending).toContainText('Maybe delivered.')
-    await expect(prompt).toHaveValue('')
-    await prompt.fill('Edited while unconfirmed.')
+    await expectPromptText(prompt, '')
+    await fillPrompt(prompt, 'Edited while unconfirmed.')
     // Sending or queuing: nothing new leaves while the earlier prompt is unconfirmed.
     await expect(page.getByRole('button', { name: /^(Send|Queue) prompt$/ })).toBeDisabled()
     await page.keyboard.press('Enter')
     await mkdir(ARTIFACTS, { recursive: true })
     await page.screenshot({ animations: 'disabled', path: join(ARTIFACTS, 'delivery-unconfirmed.png') })
     // Enter on newer text does not start a second send while the first is unconfirmed.
-    const afterEnter = await page.evaluate(async () => window.sotto!.agents!.get())
+    const afterEnter = await agentState(page)
     expect(afterEnter.deliveries!.filter(delivery => bareEntityId(delivery.threadId) === 'docs').map(delivery => delivery.status).sort()).toEqual(['accepted', 'uncertain'])
     expect(afterEnter.followups ?? []).toEqual([])
     expect(await userMessageTexts(page, 'docs')).toEqual(['First, delivered.'])
@@ -289,17 +292,17 @@ test('delivery states stay truthful: an unconfirmed send is never repeated and a
     await expect(page.getByLabel('Pending message')).toContainText('Unconfirmed')
     await expect(page.getByText(/disconnected/).first()).toBeVisible()
     await expect(prompt).toBeEnabled()
-    await expect(prompt).toHaveValue('Edited while unconfirmed.')
+    await expectPromptText(prompt, 'Edited while unconfirmed.')
     await page.screenshot({ animations: 'disabled', path: join(ARTIFACTS, 'disconnected.png') })
   } finally { await closeSotto(launched) }
 })
 
 async function designProfile(prefix: string, settings: Record<string, unknown> = {}): Promise<string> {
-  const profile = await mkdtemp(join(tmpdir(), prefix))
+  const profile = (await ownedE2EProfile({ prefix: prefix })).directory
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, ...settings }))
   await writeFile(join(profile, 'agents.json'), JSON.stringify({
-    configuration: { ...defaultAgentConfiguration(), enabled: true, speak: false }, assignments: [], queue: [],
-    activeThreadId: 'visual-gate', activeProjectId: 'workshop', draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', outbox: [],
+    configuration: { ...defaultAgentConfiguration(), enabled: true, },
+    activeThreadId: 'visual-gate', activeProjectId: 'workshop', draft: '', draftThreadId: null, draftRequestId: null, composing: false, outbox: [],
   }))
   return profile
 }
@@ -364,7 +367,7 @@ test('status rings stay recognizable at 3:1 or more on the dark and light sideba
     await page.screenshot({ animations: 'disabled', path: join(ARTIFACTS, 'provider-marks-light-probe.png') })
   } finally {
     await closeSotto(launched)
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 })
 
@@ -394,7 +397,7 @@ for (const scale of [125, 150]) {
       await page.screenshot({ animations: 'disabled', path: join(ARTIFACTS, `design-threads-760-${scale}.png`) })
     } finally {
       await closeSotto(launched)
-      await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+      await removeOwnedE2EProfile(profile)
     }
   })
 }

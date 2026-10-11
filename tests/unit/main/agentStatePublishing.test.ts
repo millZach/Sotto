@@ -4,19 +4,18 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AGENT_STATE_BROADCAST_INTERVAL_MS, AGENT_STATE_PUBLISH_INTERVAL_MS, AgentControl, coalesceAgentStatePublishes, type PublishScheduler } from '../../../src/main/agents/control'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
+
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { defaultAgentConfiguration, EMPTY_AGENT_HOST, type AgentState } from '../../../src/shared/agents'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
+import { threadsStateFixture } from '../../fixtures/agentState'
 
 /** A streamed frame only changes the notice here; identity is all these tests compare. */
-const state = (notice: string): AgentState => ({
-  configuration: defaultAgentConfiguration(), connection: 'connected', host: structuredClone(EMPTY_AGENT_HOST),
-  assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
-  draftRequestId: null, draftAttachments: [], deliveredDrafts: [], threadDrafts: [], deliveries: [], pendingRequest: '',
-  globalLaneBusy: false, notice, error: null, speech: { id: 0, text: '' },
-  voice: { status: 'off', error: null, action: 'none', revision: 0 },
-  credentials: { reasoning: false, grokSpeech: false, secure: false },
-  reasoningAccounts: [],
+const state = (notice: string): AgentState => threadsStateFixture({
+  configuration: defaultAgentConfiguration(), host: structuredClone(EMPTY_AGENT_HOST),
+  topLevel: { activeThreadId: null, activeProjectId: null, draftAttachments: [], notice,
+    credentials: { reasoning: false, secure: false } },
 })
 class TestClock {
   private armed: { run: () => void } | null = null
@@ -35,7 +34,6 @@ class TestClock {
     entry?.run()
   }
 }
-afterEach(() => { vi.useRealTimers() })
 
 describe('coalesced agent state publishing', () => {
   it('sends the first state at once and collapses the rest of a burst into one trailing send', () => {
@@ -116,9 +114,9 @@ describe('coalesced coordinator broadcasts', () => {
   async function control(clock: TestClock): Promise<AgentControl> {
     const root = await mkdtemp(join(tmpdir(), 'sotto-broadcast-'))
     roots.push(root)
-    const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: value => value.toString() })
-    await credentials.load()
-    const created = new AgentControl({ schedule: clock.schedule, directory: root, host: new E2EAgentHost(), credentials, reasoner: e2eAgentReasoner,
+    const credentials = await testCredentials(root, { mode: 'unavailable' })
+
+    const created = createAgentControl({ schedule: clock.schedule, directory: root, host: new E2EAgentHost(), credentials, reasoner: e2eAgentReasoner,
     })
     controls.push(created)
     await created.start()
@@ -130,31 +128,31 @@ describe('coalesced coordinator broadcasts', () => {
     const clock = new TestClock()
     const coordinator = await control(clock)
     const broadcasts: string[] = []
-    coordinator.subscribe(state => broadcasts.push(state.configuration.orbColor))
-    for (const orbColor of ['teal', 'ice', 'amber', 'violet'] as const) {
+    coordinator.subscribe(state => broadcasts.push(state.configuration.projectsDirectory))
+    for (const projectsDirectory of ['', 'C:/One', 'C:/Two', 'C:/Last'] as const) {
       // Every command response is the state its own command produced, coalescing or not.
-      const response = await coordinator.command({ type: 'configure', patch: { orbColor } })
-      expect(response.configuration.orbColor).toBe(orbColor)
+      const response = await coordinator.command({ type: 'configure', patch: { projectsDirectory } })
+      expect(response.configuration.projectsDirectory).toBe(projectsDirectory)
     }
-    expect(broadcasts).toEqual(['teal'])
+    expect(broadcasts).toEqual([''])
     clock.tick()
-    expect(broadcasts).toEqual(['teal', 'violet'])
+    expect(broadcasts).toEqual(['', 'C:/Last'])
     expect(clock.intervals.every(ms => ms === AGENT_STATE_BROADCAST_INTERVAL_MS)).toBe(true)
     // A quiet window closes without inventing a broadcast.
     clock.tick()
-    expect(broadcasts).toEqual(['teal', 'violet'])
+    expect(broadcasts).toEqual(['', 'C:/Last'])
   })
   it('drops a held broadcast on dispose', async () => {
     const clock = new TestClock()
     const coordinator = await control(clock)
     const broadcasts: string[] = []
-    coordinator.subscribe(state => broadcasts.push(state.configuration.orbColor))
-    await coordinator.command({ type: 'configure', patch: { orbColor: 'teal' } })
-    await coordinator.command({ type: 'configure', patch: { orbColor: 'ice' } })
-    expect(broadcasts).toEqual(['teal'])
+    coordinator.subscribe(state => broadcasts.push(state.configuration.projectsDirectory))
+    await coordinator.command({ type: 'configure', patch: { projectsDirectory: '' } })
+    await coordinator.command({ type: 'configure', patch: { projectsDirectory: 'C:/One' } })
+    expect(broadcasts).toEqual([''])
     coordinator.dispose()
     expect(clock.pending).toBe(false)
     clock.tick()
-    expect(broadcasts).toEqual(['teal'])
+    expect(broadcasts).toEqual([''])
   })
 })

@@ -16,6 +16,9 @@ export type MicrophoneTestState =
 
 export type MicrophoneTestOutcome = Exclude<MicrophoneTestState, 'idle' | 'requesting'>
 
+/** A test level above this is a voice rather than background activity: twice what dictation counts as silence. */
+export const MICROPHONE_HEARD_LEVEL = 0.02
+
 interface MediaTrackLike {
   stop(): void
   addEventListener?(type: 'ended', listener: () => void): void

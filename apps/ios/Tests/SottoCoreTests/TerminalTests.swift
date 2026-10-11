@@ -40,6 +40,15 @@ final class TerminalTests: XCTestCase {
         XCTAssertThrowsError(try terminal(state: "future-state"))
         XCTAssertEqual(try terminal(state: "just-finished").state.words, "Just finished")
     }
+    func testTerminalRowsAndFollowupQueuesDecodeTogether() throws {
+        let text = #"{"hostId":"\#(hostID)","host":{"hostId":"\#(hostID)","name":"Laptop","threads":[],"projects":[],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true}},"terminals":[{"id":"\#(terminalID)","projectId":"p","title":"Retained shell","providerId":"claude","state":"exited","stateDetection":"available","openedAt":1800000000000}],"followups":[{"id":"44444444-4444-4444-8444-444444444444","threadId":"t","draftId":"55555555-5555-4555-8555-555555555555","text":"Check the shell","attachments":[],"createdAt":"2026-10-09T10:00:00.000Z","updatedAt":"2026-10-09T10:00:00.000Z","status":"queued"}],"followupReceipts":[{"draftId":"55555555-5555-4555-8555-555555555555"}]}"#
+        let shell = try JSONDecoder().decode(Shell.self, from: Data(text.utf8))
+        try shell.validate(hostID: hostID)
+        XCTAssertEqual(shell.terminals?.first?.state, .exited)
+        XCTAssertTrue(shell.terminalsComplete)
+        XCTAssertEqual(shell.followups?.first?.threadId, "t")
+        XCTAssertEqual(shell.followupReceipts?.first?.draftId, "55555555-5555-4555-8555-555555555555")
+    }
     func testOnlyCurrentSupportedClaudeHookHasAnAnswerChannel() throws {
         XCTAssertTrue(try terminal().hasAnswerChannel)
         for provider in ["codex", "grok", "future"] { XCTAssertFalse(try terminal(provider: provider).hasAnswerChannel) }

@@ -1,4 +1,7 @@
 // @vitest-environment node
+import { deferred } from '../fixtures/deferred'
+import { createAgentControl } from '../fixtures/agentControlFixture'
+import { testCredentials } from '../fixtures/testCredentials'
 import { randomUUID } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -11,8 +14,7 @@ import { ClaudeProtocol } from '../../src/main/agents/claudeProtocol'
 import { ClaudeOriginJournal } from '../../src/main/agents/claudeOriginJournal'
 import { AtomicJsonStore } from '../../src/main/storage/atomicJsonStore'
 import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
-import { AgentControl } from '../../src/main/agents/control'
-import { AgentCredentials } from '../../src/main/agents/credentials'
+
 import { e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { immediatePublishScheduler } from '../fixtures/publishScheduler'
 import { handleOf, PIXEL_DATA_URL, PIXEL_PNG, promptImageOf, stageInto } from '../fixtures/stagedImages'
@@ -93,9 +95,11 @@ describe('Claude recovery and safety', () => {
     } else expect(outcome).toEqual({ result: { accepted: true } })
   })
   it('rejects takeover during origin persistence and durably removes the undispatched origin', async () => {
-    let release!: () => void; let entered!: () => void
-    const blocked = new Promise<void>(resolve => { release = resolve })
-    const reached = new Promise<void>(resolve => { entered = resolve })
+
+    const { promise: blocked, resolve: release } = deferred<void>()
+
+    const { promise: reached, resolve: entered } = deferred<void>()
+
     // The origin is made durable as one synced line of the origin journal (#767).
     const append = ClaudeOriginJournal.prototype.append
     vi.spyOn(ClaudeOriginJournal.prototype, 'append').mockImplementation(async function (this: ClaudeOriginJournal<unknown>, entry) {
@@ -246,11 +250,10 @@ describe('Claude recovery and safety', () => {
   })
   it('restores submitted image previews through control after native restart under the same Sotto thread and message', async () => {
     const image = handleOf(PIXEL_PNG, 'preview', 'Screenshot.png')
-    const credentials = new AgentCredentials(f.root, { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
-    await credentials.load()
+    const credentials = await testCredentials(f.root, { mode: 'unavailable' })
     let registry = new ThreadRegistry(f.root)
     let wrapped = new SottoThreadHost('claude', f.adapter, registry)
-    const create = () => new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: wrapped, credentials, reasoner: e2eAgentReasoner,
+    const create = () => createAgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: wrapped, credentials, reasoner: e2eAgentReasoner,
     })
     let control = create()
     try {
@@ -351,11 +354,13 @@ describe('Claude recovery and safety', () => {
     clearInterval((f.adapter as unknown as { pollTimer: NodeJS.Timeout }).pollTimer)
     await f.adapter.pollSessionLogs()
     const calls = vi.spyOn(f.adapter, 'pollSessionLogs')
-    let release!: () => void
-    const gate = new Promise<void>(resolve => { release = resolve })
+
+    const { promise: gate, resolve: release } = deferred<void>()
+
     const original = ClaudeSessionLog.prototype.poll
-    let reached!: () => void
-    const read = new Promise<void>(resolve => { reached = resolve })
+
+    const { promise: read, resolve: reached } = deferred<void>()
+
     const poll = vi.spyOn(ClaudeSessionLog.prototype, 'poll').mockImplementationOnce(async function (this: ClaudeSessionLog) {
       await original.call(this); reached(); await gate
     })
@@ -386,8 +391,9 @@ describe('Claude recovery and safety', () => {
   it('runs a queued read after the preceding read fails', async () => {
     clearInterval((f.adapter as unknown as { pollTimer: NodeJS.Timeout }).pollTimer)
     await f.adapter.pollSessionLogs()
-    let fail!: (error: Error) => void
-    const gate = new Promise<void>((_, reject) => { fail = reject })
+
+    const { promise: gate, reject: fail } = deferred<void>()
+
     const poll = vi.spyOn(ClaudeSessionLog.prototype, 'poll').mockImplementationOnce(() => gate).mockResolvedValueOnce(undefined)
     const first = f.adapter.pollSessionLogs().catch((error: Error) => error)
     const queued = f.adapter.pollSessionLogs().then(() => 'read', (error: Error) => error.message)
@@ -401,7 +407,7 @@ describe('Claude recovery and safety', () => {
     // Stopping the timer leaves its active read in flight. Drain it before holding our own passes.
     await f.adapter.pollSessionLogs()
     const releases: (() => void)[] = []
-    const gates = Array.from({ length: 3 }, () => new Promise<void>(resolve => { releases.push(resolve) }))
+    const gates = Array.from({ length: 3 }, () => { const gate = deferred(); releases.push(gate.resolve); return gate.promise })
     let index = 0
     const poll = vi.spyOn(ClaudeSessionLog.prototype, 'poll').mockImplementation(() => gates[index++] ?? Promise.resolve())
     const first = f.adapter.pollSessionLogs()
@@ -445,8 +451,9 @@ describe('Claude recovery and safety', () => {
     expect((await thread()).requests[0]!.delivery).toBe('uncertain')
     expect((await f.driver.requests()).filter(record => f.protocol!.permissionDecision(record) !== undefined)).toHaveLength(0)
     await expect(f.host.execute({ type: 'send', commandId: 'blocked', messageId: 'blocked', threadId: id, text: 'Continue' })).rejects.toThrow('pending Claude request')
-    let release!: () => void
-    const gate = new Promise<void>(resolve => { release = resolve })
+
+    const { promise: gate, resolve: release } = deferred<void>()
+
     const retryWrite = vi.spyOn(ClaudeProtocol.prototype, 'write').mockImplementationOnce(async function (this: ClaudeProtocol, frame) { await gate; await write.call(this, frame) })
     const retry = f.host.execute({ ...command, commandId: 'retry', approved: true })
     try {
@@ -475,12 +482,11 @@ describe('Claude recovery and safety', () => {
     } finally { delayed.release(); delayed.restore() }
   })
   it.each(['none', 'draft', 'error'] as const)('settles the original project answer after a newer %s', async later => {
-    const credentials = new AgentCredentials(f.root, { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
-    await credentials.load()
+    const credentials = await testCredentials(f.root, { mode: 'unavailable' })
     const registry = new ThreadRegistry(f.root), wrapped = new SottoThreadHost('claude', f.adapter, registry)
     const recordAnswer = vi.fn()
     Object.assign(wrapped, { recordAnswer })
-    const control = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: wrapped, credentials, reasoner: e2eAgentReasoner,
+    const control = createAgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: wrapped, credentials, reasoner: e2eAgentReasoner,
     })
     let delayed: ReturnType<typeof delayStdin> | undefined
     try {
@@ -515,10 +521,9 @@ describe('Claude recovery and safety', () => {
     } finally { delayed?.release(); delayed?.restore(); control.dispose(); await registry.flush() }
   })
   it('reopens a project answer through the coordinator Check again path', async () => {
-    const credentials = new AgentCredentials(f.root, { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
-    await credentials.load()
+    const credentials = await testCredentials(f.root, { mode: 'unavailable' })
     const registry = new ThreadRegistry(f.root), wrapped = new SottoThreadHost('claude', f.adapter, registry)
-    const control = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: wrapped, credentials, reasoner: e2eAgentReasoner,
+    const control = createAgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: wrapped, credentials, reasoner: e2eAgentReasoner,
     })
     try {
       await control.start(); await control.command({ type: 'connect' })
@@ -540,9 +545,11 @@ describe('Claude recovery and safety', () => {
     } finally { control.dispose(); await registry.flush() }
   })
   it.each(['browser', 'setup'] as const)('cancels a launch superseded during %s tool setup without blocking its next send', async tools => {
-    let entered!: () => void, release!: () => void
-    const waiting = new Promise<void>(resolve => { entered = resolve })
-    const ready = new Promise<void>(resolve => { release = resolve })
+
+    const { promise: waiting, resolve: entered } = deferred<void>()
+
+    const { promise: ready, resolve: release } = deferred<void>()
+
     const mcpServer = async () => {
       entered(); await ready
       return { name: 'sotto_browser' as const, type: 'http' as const, url: 'http://127.0.0.1:1234/mcp', headers: [] }

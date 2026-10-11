@@ -2,6 +2,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { GitHubHosts } from '../../../src/main/agents/github'
 import { GitStatusReader, type RunGitCommand } from '../../../src/main/agents/gitStatus'
+import { deferred } from '../../fixtures/deferred'
 
 /**
  * What the status reader asks GitHub (#820), over a scripted Git and a scripted gh: every folder is a line in a table,
@@ -275,7 +276,8 @@ describe('an action refreshes only its own repository', () => {
   it('lets an answer asked before an action in its own repository not stand, and one asked before an action elsewhere stand', async () => {
     let release: (() => void) | undefined
     const f = harness(two(), async args => {
-      if (release === undefined && args.some(arg => arg === 'h0=feature/a')) await new Promise<void>(go => { release = go })
+      const pending1 = deferred<void>();
+      if (release === undefined && args.some(arg => arg === 'h0=feature/a')) { release = pending1.resolve; await pending1.promise }
       return headsAnswer(args, [{ head: 'feature/a', number: 1 }])
     })
     await f.reader.read('C:/a', { remote: false })
@@ -308,7 +310,8 @@ describe('an answer asked before an action in another clone', () => {
     let release: (() => void) | undefined
     const folders: Record<string, Folder> = { 'C:/one': { common: 'C:/one/.git', branch: 'feature/shared' }, 'C:/two': { common: 'C:/two/.git', branch: 'feature/shared' } }
     const f = harness(folders, async args => {
-      if (release === undefined) await new Promise<void>(go => { release = go })
+      const pending2 = deferred<void>();
+      if (release === undefined) { release = pending2.resolve; await pending2.promise }
       return headsAnswer(args, [{ head: 'feature/shared', number: 7 }])
     })
     await f.reader.read('C:/one', { remote: false })

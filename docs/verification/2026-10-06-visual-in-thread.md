@@ -1,5 +1,7 @@
 # A visual in its thread: verification
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 October 6, 2026. Issue #792, on `feat/visualize-tool`. The decision is ADR-0056; the glossary term is **Visual**. The
 layout is variant C of `prototype/visualize-layout`, without its stepper, which is #793.
 
@@ -76,5 +78,5 @@ between two fixed sentences.
 ## Not verified here
 
 - The iPhone app was not run. The socket strips the `visual` field for every client, which
-  `tests/integration/socketHost.test.ts` checks for a whole detail, a delta and a read.
+  `tests/integration/socketThreadDetail.test.ts` checks for a whole detail, a delta and a read.
 - The packaged app was not run; the live runs used the built app from this branch.

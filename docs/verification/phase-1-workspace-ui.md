@@ -1,5 +1,9 @@
 # Phase 1 workspace UI verification (#44 drafts and delivery, #45 projects and settlement)
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 Status: complete on `work/phase1-workspace-ui` (base 0598d48). Implemented by Opus 5 as the authorized fallback while Fable was unavailable.
 
 Commits: b27b3e7 (cherry-pick of parent bf5388b), 2acf2ff, 01e384c, 15d5350, e3ec9ae.
@@ -96,7 +100,7 @@ Real provider latency is not measured here; no paid provider calls were made.
 - **Unit** (Vitest, maxWorkers=2):
   - `threadDraftStore.test.ts`: 12 tests, including a published draft with a save error followed by an explicit retry, a failed IPC save, newer edits during failed and successful saves, and a flush on unmount or leaving the page.
   - `threadWorkspace.test.tsx`: 19 tests covering Enter/IME/menu, save-before-send, pending edits, Retry and Dismiss, Unconfirmed with Check again or Reconnect, a history-echoed unconfirmed send, navigation and new window, answer drafts, disconnected state, folders and counts, thread and project settlement, add project, new thread here, provider unlock and lock, and scroll anchoring.
-  - `threadsView.test.tsx`: 24 tests.
+  - `tests/unit/renderer/agents/threadFacts.test.tsx`, `tests/unit/renderer/agents/threadCreationRecovery.test.tsx`, `tests/unit/renderer/agents/threadsView.test.tsx`: 24 tests in the original combined suite.
   - Related suites: threadNavigationConnection, newThreadProjectCreation, threadFactsMetadata and agentView. **100 tests passed.**
   - Earlier: modelPicker, screenshotInput, app, appShell, agentQueue, providersSettings and widgetApp passed.
   - Mutation checks: removing the observed-revision guard or the Retry `holdsRevision` check makes tests fail.

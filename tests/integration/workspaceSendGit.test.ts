@@ -6,6 +6,7 @@
  * starts them, by `spawn` and `execFile` alike. The checkpoint taken before a turn is not in this host's fixture;
  * it is #764's.
  */
+import { deferred } from '../fixtures/deferred'
 import { realpath, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -17,11 +18,6 @@ vi.mock('node:child_process', async importOriginal => (await import('../fixtures
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { vi.restoreAllMocks(); for (const close of cleanup.splice(0).reverse()) await close() })
-
-function deferred() {
-  let release!: () => void
-  return { promise: new Promise<void>(resolve => { release = resolve }), release }
-}
 
 async function repository(): Promise<SendGitFixture> {
   const f = await repositoryWithOrigin()
@@ -73,7 +69,7 @@ describe('a send and Git', () => {
     let startedIn: string | undefined
     const run: RunGitCommand = async (cwd, command, args, options) => {
       const call = command === 'gh' ? 'GitHub lookup' : command === 'git' && args[0] === 'fetch' ? 'fetch' : undefined
-      if (call === held) { startedIn = cwd; started.release(); await done.promise; return command === 'gh' ? '{"data":{"repository":{}}}' : '' }
+      if (call === held) { startedIn = cwd; started.resolve(); await done.promise; return command === 'gh' ? '{"data":{"repository":{}}}' : '' }
       // Nothing else asks GitHub; a lookup the test does not hold fails quietly, as it does signed out.
       if (command === 'gh') throw new Error('gh is not used here.')
       return runGitStatusCommand(cwd, command, args, options)
@@ -98,7 +94,7 @@ describe('a send and Git', () => {
     expect(record(f).worktree).toMatchObject({ branch: 'feat/terminal', sentBranch: 'feat/terminal' })
     // Once the remote call is done, the read that takes what it brought lands in the thread's lane after the send and
     // the inspection the send owes, and finds the branch the send went to.
-    done.release()
+    done.resolve()
     await vi.waitFor(() => expect(record(f).worktree?.git?.branch).toBe('feat/terminal'))
     expect(record(f).worktree).toMatchObject({ branch: 'feat/terminal', sentBranch: 'feat/terminal' })
   })

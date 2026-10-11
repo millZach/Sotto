@@ -33,7 +33,7 @@ async function saved(data: string, configuration: Partial<AgentConfiguration>): 
   await mkdir(data, { recursive: true })
   await writeFile(join(data, 'agents.json'), JSON.stringify({
     configuration: { ...defaultAgentConfiguration(), ...configuration },
-    assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false, outbox: [],
+    activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false, outbox: [],
   }))
 }
 const connection = (state: AgentState, provider: ProviderId) => state.host.providers?.find(status => status.id === provider)?.connection
@@ -123,7 +123,7 @@ describe('a headless host and its providers', () => {
  * `/usr/local/bin:/usr/bin:/bin`, and every provider CLI comes from mise. This runs the real Claude Code adapter
  * against the scripted CLI, installed the way mise installs one, with its `#!/usr/bin/env node` needing mise's Node.
  */
-describe.skipIf(process.platform === 'win32')('a headless host on a machine whose CLIs come from mise', () => {
+describe.skipIf(process.platform === 'win32')("a headless host on a machine whose CLIs come from mise (POSIX mise executable and symlink layout)", () => {
   // The runner's own manager folders must not stand in for the fake home's.
   const keys = ['PATH', 'HOME', 'SHELL', 'XDG_DATA_HOME', 'MISE_DATA_DIR', 'ASDF_DATA_DIR', 'NVM_DIR', 'FNM_DIR', 'VOLTA_HOME', 'HOMEBREW_PREFIX', 'npm_config_prefix', 'NPM_CONFIG_PREFIX'] as const
   const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]))

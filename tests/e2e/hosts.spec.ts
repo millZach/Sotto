@@ -1,17 +1,17 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { agentState } from './support/agentAccess'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { DETERMINISTIC_TRANSCRIPT } from '../fixtures/fakeTranscription'
 import { TAILSCALE_RUNNING } from '../fixtures/tailscaleStatus'
 import type { SottoE2EBridge } from '../../src/shared/e2e'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, launchSotto, openPage } from './support/sottoLaunch'
 
 test('client-only desktop keeps local history, renders Hosts, and retains dictation settings', async () => {
   test.setTimeout(180_000)
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-hosts-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-hosts-' })).directory
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, localHostEnabled: false, reducedMotion: 'on' }))
   const saved = '{"existing":"untouched workspace"}'
   await writeFile(join(profile, 'workspace.json'), saved)
@@ -29,7 +29,7 @@ test('client-only desktop keeps local history, renders Hosts, and retains dictat
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   try {
-    const state = await page.evaluate(() => window.sotto!.agents!.get())
+    const state = await agentState(page)
     expect(state.host.threads).toEqual([])
     expect(state.connections).toEqual([])
     expect(await readFile(join(profile, 'workspace.json'), 'utf8')).toBe(saved)
@@ -167,6 +167,6 @@ test('client-only desktop keeps local history, renders Hosts, and retains dictat
     expect(errors).toEqual([])
   } finally {
     await closeSotto(launched)
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 })

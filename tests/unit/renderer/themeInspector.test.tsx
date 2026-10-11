@@ -13,7 +13,7 @@ import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings
 import { THEME_COLOR_ROLES } from '../../../src/shared/themes/library'
 
 // jsdom cannot resolve custom properties into painted colours, so the probes
-// are stood in for here; tests/e2e/phase-three-themes.spec.ts runs them for real.
+// are stood in for here; tests/e2e/theme-library-evidence.spec.ts runs them for real.
 const probe = vi.hoisted(() => ({ role: 'sidebarRowHover' as string | null, uses: 3, real: false }))
 vi.mock('../../../src/renderer/src/features/settings/themes/themeInspector', async (original) => {
   const actual = await original<typeof import('../../../src/renderer/src/features/settings/themes/themeInspector')>()

@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 
+import { speechModelSummary } from './components/SpeechModelStatus'
+import type { SpeechModelStatus } from '../../shared/speechModel'
 import type { AppSettings } from '../../shared/settings'
 import { AppShell, layoutFor } from './components/AppShell'
 import { Card } from './components/Card'
@@ -19,8 +21,8 @@ import {
   type MicrophoneTestState,
 } from './features/onboarding/microphoneTest'
 import { useApp, type AppNavigation } from './state/AppContext'
+import { setTerminalPreferences } from './tools/terminalPreferences'
 import { useMemoryEnabled } from './state/memoryFeature'
-import { useVoiceCoordinatorEnabled } from './state/voiceCoordinator'
 import { SettingsView } from './features/settings/SettingsView'
 import { HostQuestionDialog } from './features/settings/HostQuestionDialog'
 import { ToastRegion, type ToastMessage } from './components/ToastRegion'
@@ -33,7 +35,6 @@ import { AgentProvider } from './agents/AgentContext'
 import { ClientUpdateCard } from './agents/ClientUpdateCard'
 import { PageSidebar } from './agents/PageSidebar'
 import { SidebarChromeProvider } from './agents/SidebarFrame'
-import { AgentAppearance, AgentRoom } from './agents/AgentRoom'
 import { ThreadWorkspace } from './agents/ThreadWorkspace'
 import { E2E_THREADS_NOW } from '../../shared/e2e'
 import { MemorySurface } from './features/memory/MemorySurface'
@@ -46,7 +47,7 @@ const recoveryMessages = {
   ANSWER_HISTORY_NOT_CLEARED: 'Saved answer cleanup could not finish. The original file was preserved. Repair local storage, then restart Sotto to try again.',
   REMOTE_DRAFT_STORAGE_NOT_UPDATED: 'Unsent remote draft storage could not be updated. Draft text may not be saved, and older disk copies may remain. Keep a copy before quitting. Repair local storage, then save Settings or restart Sotto to try again.',
   REMOTE_DRAFTS_UNREADABLE: 'Unsent remote drafts could not be read. The original file was preserved. Repair local storage, then restart Sotto to try again.',
-  OPENROUTER_KEY_MIGRATION_FAILED: 'The OpenRouter key could not be stored securely. Enter it again in Settings → Transcription.',
+  OPENROUTER_KEY_MIGRATION_FAILED: 'The OpenRouter key could not be stored securely. Enter it again in Settings → Cleanup.',
   SETTINGS_RECOVERED: 'Sotto restored default settings after a local settings file could not be read. The original file was preserved.',
   CREDENTIALS_RECOVERED: 'Sotto could not read its saved keys. The encrypted file was preserved. Add your keys again in Settings.',
   HISTORY_RECOVERED: 'Sotto started with an empty history after its local history file could not be read. The original file was preserved.',
@@ -99,33 +100,30 @@ export function applyDocumentPreferences(
  * beside the sidebar, or the corner of a page that owns its window): what this
  * page keeps. Threads has no foot line, so it says nothing here.
  */
-function FooterStatus({ navigation, settings, historyKept }: {
+function FooterStatus({ navigation, settings, historyKept, speechModel }: {
   readonly navigation: Exclude<AppNavigation, 'onboarding'>
   readonly settings: AppSettings
+  readonly speechModel: SpeechModelStatus | null
   /** Whether History still holds transcripts the user could clear. */
   readonly historyKept: boolean
 }): ReactNode {
   switch (navigation) {
-    case 'agents': return <AgentAppearance />
     case 'history': return settings.historyEnabled ? 'Kept on this computer only.' : historyKept ? 'History is off. Older transcripts are still here.' : 'History is off.'
     case 'memory': return 'Your preferences, with their history.'
     case 'settings': return 'Changes save as you make them.'
     case 'help': return 'Shortcuts, privacy, and troubleshooting.'
-    default: return settings.llmApiKey.length > 0
-      ? 'MAI-Transcribe-2 via OpenRouter'
-      : 'Add your OpenRouter API key in Settings'
+    default: return speechModelSummary(speechModel)
   }
 }
 
 export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }: AppProps): ReactNode {
   const app = useApp()
-  const voiceCoordinator = useVoiceCoordinatorEnabled()
+  const downloadSpeechModel = useCallback((): void => { void app.actions.downloadSpeechModel() }, [app.actions])
   const memoryEnabled = useMemoryEnabled()
   const [microphoneState, setMicrophoneState] = useState<MicrophoneTestState>('idle')
   const [microphoneLevel, setMicrophoneLevel] = useState(0)
   const [historyQuery, setHistoryQuery] = useState('')
   const [historyClearOpen, setHistoryClearOpen] = useState(false)
-  const [agentSheet, setAgentSheet] = useState<'session' | 'new' | 'settings' | null>(null)
   // Set when first-run setup finishes, so the Threads tour runs once, on the Threads page it opens.
   const [threadsTour, setThreadsTour] = useState(false)
   const [historySearchRequest, setHistorySearchRequest] = useState(0)
@@ -193,7 +191,8 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
   // the render that selected it, so the choice and the room never disagree.
   useLayoutEffect(() => {
     applyDocumentPreferences(app.settings, document.documentElement, systemDark, window.sotto?.canFrostWindow === true && !reducesTransparency)
-  }, [app.settings, systemDark, reducesTransparency, appearanceEdits])
+    if (app.settings) setTerminalPreferences(app.settings, app.actions.updateSettings)
+  }, [app.settings, app.actions, systemDark, reducesTransparency, appearanceEdits])
 
   useEffect(() => {
     const search = (event: KeyboardEvent): void => {
@@ -340,7 +339,8 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
           microphoneLevel={microphoneLevel}
           settings={app.settings}
           onUpdateSettings={app.actions.updateSettings}
-          onCheckTranscriptionKey={app.actions.checkTranscriptionKey}
+          speechModel={app.speechModel}
+          onDownloadSpeechModel={downloadSpeechModel}
           shortcut={app.settings.hotkey}
           platform={app.platform}
           onRequestMicrophone={requestMicrophone}
@@ -364,20 +364,13 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
   } else {
     const navigation = app.navigation
     const updateControl = <UpdateControl status={app.update} busy={updateFlow.busy} onActivate={updateFlow.activate} />
-    // With the voice coordinator off there is no Agents room to open, so the
-    // page that would have shown it shows Threads, and the controls that led
-    // into its settings lead to Settings instead.
-    // The same goes for Memory while memory is hidden.
-    const threadsPage = navigation === 'threads' || (navigation === 'agents' && !voiceCoordinator) || (navigation === 'memory' && !memoryEnabled)
+    const threadsPage = navigation === 'threads' || (navigation === 'memory' && !memoryEnabled)
     const layout = layoutFor(navigation, threadsPage)
     // A capture run holds the sidebar's clocks still.
     const captureNow = window.sottoE2E?.scenario === 'design-threads' ? E2E_THREADS_NOW : undefined
-    const statusText = <FooterStatus navigation={navigation} settings={app.settings} historyKept={app.historyStatus === 'ready' && app.history.length > 0} />
+    const statusText = <FooterStatus navigation={navigation} settings={app.settings} speechModel={app.speechModel} historyKept={app.historyStatus === 'ready' && app.history.length > 0} />
     const threadWorkspace = (
       <ThreadWorkspace
-        onOpenAgents={voiceCoordinator
-          ? () => { setAgentSheet('session'); app.actions.navigate('agents') }
-          : () => app.actions.navigate('settings')}
         updateControl={updateControl}
         now={captureNow}
       />
@@ -387,11 +380,6 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
     switch (navigation) {
       case 'memory':
         view = memoryEnabled ? null : threadWorkspace
-        break
-      case 'agents':
-        view = voiceCoordinator
-          ? <AgentRoom initialSheet={agentSheet} onOpenThreads={() => app.actions.navigate('threads')} />
-          : threadWorkspace
         break
       case 'threads':
         view = threadWorkspace
@@ -425,7 +413,9 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
           onSetStartup={app.actions.setStartup}
           onResetSettings={app.actions.resetSettings}
           onClearHistory={app.actions.clearHistory}
-          onCheckTranscriptionKey={app.actions.checkTranscriptionKey}
+          onCheckOpenRouterKey={app.actions.checkOpenRouterKey}
+          speechModel={app.speechModel}
+          onDownloadSpeechModel={downloadSpeechModel}
           onCheckForUpdates={updateFlow.check}
           onDownloadUpdate={updateFlow.download}
           // The press opens the same confirmation the footer control uses; the
@@ -439,6 +429,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
       default:
         view = <DictateRoom
           settings={app.settings}
+          speechModel={app.speechModel}
           platform={app.platform}
           dictation={app.dictation}
           entries={app.history}
@@ -467,15 +458,13 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
             sidebar={layout === 'sidebar' ? <PageSidebar now={captureNow} /> : undefined}
             statusText={statusText}
             updateControl={updateControl}
-            onNavigate={destination => { if (destination === 'agents') setAgentSheet(null); app.actions.navigate(destination) }}
+            onNavigate={app.actions.navigate}
             onMinimize={app.actions.minimizeApp}
             onMaximize={app.actions.toggleMaximizeApp}
             maximized={app.windowMaximized}
             onClose={app.actions.hideApp}
           >
-            {/* The memory questionnaire greets you in the Agents room. With the coordinator off that
-                page is the Threads page, which must not be replaced by a questionnaire; Memory still
-                offers it on request. */}
+            {/* Threads stays the working page; Memory offers its questionnaire on request. */}
             {memoryEnabled ? <MemorySurface navigation={threadsPage ? 'threads' : navigation}>{view}</MemorySurface> : view}
           </AppShell>
         </SidebarChromeProvider>
@@ -516,7 +505,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
     && app.settings.onboardingComplete && app.navigation !== 'onboarding'
 
   return (
-    <AgentProvider settings={app.settings} dictation={app.dictation}>
+    <AgentProvider settings={app.settings}>
       {management ? content : (
         <AppShell
           navigation={null}

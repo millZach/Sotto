@@ -4,6 +4,7 @@ import { createBrowserAgentServer, browserToolDefinitions } from '../../../src/m
 import type { BrowserService } from '../../../src/main/tools/browser'
 import type { BrowserTask } from '../../../src/shared/browser'
 import type { BrowserToolResult } from '../../../src/main/agents/browserAgentServer'
+import { deferred } from '../../fixtures/deferred'
 
 const pageId = 'f6a804fd-77c9-497c-bc16-ce0d0a7b7a59'
 const taskId = '506e4ebf-949e-4115-b206-80997241ef09'
@@ -59,7 +60,7 @@ describe('thread browser tool dispatcher', () => {
     const pending = { ...task, pendingAction: { id: actionId, action: { type: 'click' as const, x: 20, y: 30 }, description: 'Click save', expiresAt: Date.now() + 1000 } }
     service.action.mockResolvedValueOnce({ ok: true, value: { task: pending, approvalRequired: true, output: '', image: '' } })
     let answer!: (value: BrowserTask) => void
-    service.waitForAction.mockImplementationOnce(() => new Promise<BrowserTask>(resolve => { answer = resolve }))
+    service.waitForAction.mockImplementationOnce(() => { const pending = deferred<BrowserTask>(); answer = pending.resolve; return pending.promise })
     let finished = false
     const calling = server.call('owner', 'browser_action', { pageId, taskId, action: { type: 'click', x: 20, y: 30 } }).then(result => { finished = true; return result })
     await vi.waitFor(() => expect(service.waitForAction).toHaveBeenCalledWith(taskId, actionId))

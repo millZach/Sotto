@@ -264,7 +264,7 @@ describe('the PATH a found client runs with', () => {
   })
 })
 
-describe.skipIf(process.platform === 'win32')('the login shell\'s PATH', () => {
+describe.skipIf(process.platform === 'win32')("the login shell's PATH (POSIX login shells; Windows has no login-shell profile)", () => {
   it('is read past anything the profile prints, and a missing shell answers nothing', async () => {
     await writeFile(join(home, '.profile'), 'echo "Welcome to forge"\nPATH="$HOME/from-profile:$PATH"\nexport PATH\n')
     const path = await loginShellPath({ SHELL: '/bin/sh', HOME: home, PATH: '/usr/bin:/bin' })

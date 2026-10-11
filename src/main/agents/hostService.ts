@@ -117,8 +117,6 @@ export interface ThreadEventSource {
 }
 
 export const DESKTOP_WINDOW_CLIENT_ID = 'desktop-window'
-/** Sotto's own supervision, so a record shows an answer that came from Sotto rather than the user. */
-export const SUPERVISION_CLIENT_ID = 'sotto-supervision'
 
 /** The account Sotto is running as. Recorded locally; never logged, never sent. */
 export function localUser(): string {
@@ -127,14 +125,6 @@ export function localUser(): string {
 
 export function desktopWindowClient(user: string = localUser()): ClientIdentity {
   return { clientId: DESKTOP_WINDOW_CLIENT_ID, user, transport: 'ipc' }
-}
-
-/**
- * Supervision answers nothing on the user's behalf (ADR-0004); when it sends a follow-up the record
- * needs to say that Sotto sent it, which is bookkeeping and not a grant.
- */
-export function supervisionClient(user: string = localUser()): ClientIdentity {
-  return { clientId: SUPERVISION_CLIENT_ID, user, transport: 'ipc' }
 }
 
 /** What `LocalHostService` needs of the coordinator: the client-facing half of `AgentControl`. */

@@ -69,7 +69,7 @@ export async function pasteDrawnScreenshot(target: Locator, screenshot: DrawnScr
 export async function openWorkshopComposer(page: Page): Promise<Locator> {
   await page.evaluate(async () => {
     await window.sotto!.updateSettings({ onboardingComplete: true })
-    await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+    await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
     await window.sotto!.agents!.command({ type: 'connect' })
   })
   await page.reload(); await openThreads(page)

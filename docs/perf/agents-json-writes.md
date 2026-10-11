@@ -1,5 +1,7 @@
 # Coordinator saves while a reply streams
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 What `agents.json` costs while a provider writes. The coordinator persists after every host snapshot
 (`AgentControl.acceptSnapshot`), and `WorkspaceHost` publishes a snapshot at the end of every 16 ms
 window while a reply streams. Each persist is an `AtomicJsonStore.write`: a fresh temporary file,

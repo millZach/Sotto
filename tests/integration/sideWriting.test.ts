@@ -5,6 +5,7 @@
  * rejection or a null rather than anything the thread's own session sees. The contract case in
  * `adapterContract.ts` covers the success path and the thread's silence for every adapter.
  */
+import { parseProviderRecords } from '../fixtures/providerRecords'
 import { randomUUID } from 'node:crypto'
 import { mkdir, readdir, readFile, utimes, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -32,7 +33,7 @@ async function opened<F extends { host: AgentHost; root: string; projectId: stri
 }
 
 const recorded = async (root: string): Promise<Record<string, unknown>[]> =>
-  (await readFile(join(root, 'oneshot.jsonl'), 'utf8').catch(() => '')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line) as Record<string, unknown>)
+  parseProviderRecords<Record<string, unknown>>(await readFile(join(root, 'oneshot.jsonl'), 'utf8').catch(() => ''))
 
 describe('Claude Code side writing', () => {
   it('runs one print with no tools, no session file, the lowest effort and the material on stdin alone', async () => {

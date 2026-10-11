@@ -1,3 +1,5 @@
+import { setPromptText, promptText } from './helpers/promptEditor'
+import { deferred } from '../../fixtures/deferred'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -6,15 +8,15 @@ import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { ThreadComposer } from '../../../src/renderer/src/agents/ThreadComposer'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
 import { describeThreads } from '../../../src/renderer/src/agents/threadFacts'
-import { threadsStateFixture } from './liveAgentState'
+import { threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 afterEach(cleanup)
 
 function fixture() {
   const state = threadsStateFixture()
-  state.assignments = []
+
   state.host.threads.forEach(thread => { thread.requests = [] })
-  state.queue = []
+
   const command = vi.fn<(request: AgentCommand) => Promise<AgentState | null>>(async () => state)
   const store = new ThreadDraftStore(command)
   const composer = (threadId = 'grok-previews') => <ThreadComposer
@@ -27,7 +29,7 @@ function questionFixture() {
   const f = fixture()
   const thread = f.state.host.threads.find(thread => thread.id === 'visual-gate')!
   thread.requests = [{ id: 'direction', kind: 'question', text: 'Which direction?', options: [] }]
-  f.state.queue = [{ id: 'direction', threadId: thread.id, kind: 'question', text: 'Which direction?', requestId: 'direction', createdAt: new Date(E2E_THREADS_NOW).toISOString(), deferred: false }]
+
   return { ...f, thread }
 }
 
@@ -36,25 +38,27 @@ describe('thread composer recovery', () => {
     const f = fixture()
     const view = render(f.composer())
     const prompt = screen.getByRole('textbox', { name: 'Prompt' })
-    fireEvent.change(prompt, { target: { value: 'Keep this draft' } })
+    setPromptText(prompt, 'Keep this draft')
     prompt.focus()
     const thread = f.state.host.threads.find(thread => thread.id === 'grok-previews')!
     thread.requests = [{ id: 'permission', kind: 'permission', text: 'Allow this command?', options: [] }]
     view.rerender(f.composer())
     expect(prompt).not.toBeDisabled()
-    expect(prompt).toHaveAttribute('readonly')
+    expect(prompt).toHaveAttribute('contenteditable', 'false')
+    expect(prompt).toHaveAttribute('aria-disabled', 'true')
     expect(prompt).toHaveFocus()
-    expect(prompt).toHaveValue('Keep this draft')
-    fireEvent.change(prompt, { target: { value: 'Blocked edit' } })
+    expect(promptText(prompt)).toBe('Keep this draft')
+    setPromptText(prompt, 'Blocked edit')
     fireEvent.keyDown(prompt, { key: 'Enter' })
     expect(f.store.draft(thread.id).text).toBe('Keep this draft')
     expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
     expect(f.command.mock.calls.some(([request]) => request.type === 'manual-send' || request.type === 'answer')).toBe(false)
     thread.requests = []
     view.rerender(f.composer())
-    expect(prompt).not.toHaveAttribute('readonly')
+    expect(prompt).toHaveAttribute('contenteditable', 'true')
+    expect(prompt).not.toHaveAttribute('aria-disabled')
     expect(prompt).toHaveFocus()
-    fireEvent.change(prompt, { target: { value: 'Continue typing' } })
+    setPromptText(prompt, 'Continue typing')
     expect(f.store.draft(thread.id).text).toBe('Continue typing')
     f.store.flushAll()
   })
@@ -63,10 +67,10 @@ describe('thread composer recovery', () => {
     const f = questionFixture()
     const { thread } = f
     let finish!: (result: AgentState | null) => void
-    f.command.mockImplementation(async request => request.type === 'answer' ? new Promise(done => { finish = done }) : f.state)
+    f.command.mockImplementation(async request => request.type === 'answer' ? (() => { const pending = deferred<AgentState | null>(); finish = pending.resolve; return pending.promise })() : f.state)
     const view = render(f.composer(thread.id))
     const answer = screen.getByRole('textbox', { name: 'Your answer' })
-    fireEvent.change(answer, { target: { value: 'Go left' } })
+    setPromptText(answer, 'Go left')
     fireEvent.keyDown(answer, { key: 'Enter' })
     const fail = async () => { await act(async () => { finish({ ...f.state, error: 'The answer was refused.' }) }) }
     if (timing === 'before leaving') await fail()
@@ -79,8 +83,8 @@ describe('thread composer recovery', () => {
     other.unmount()
     render(f.composer(thread.id))
     expect(screen.getByRole('alert')).toHaveTextContent('The answer was refused. It is back in the composer.')
-    expect(screen.getByRole('textbox', { name: 'Your answer' })).toHaveValue('Go left')
-    fireEvent.change(screen.getByRole('textbox', { name: 'Your answer' }), { target: { value: 'Go right' } })
+    expect(promptText(screen.getByRole('textbox', { name: 'Your answer' }))).toBe('Go left')
+    setPromptText(screen.getByRole('textbox', { name: 'Your answer' }), 'Go right')
     expect(screen.queryByText(/The answer was refused/)).not.toBeInTheDocument()
     f.store.flushAll()
   })
@@ -89,20 +93,20 @@ describe('thread composer recovery', () => {
     const f = questionFixture()
     const { thread } = f
     let finish!: (result: AgentState | null) => void
-    f.command.mockImplementation(async request => request.type === 'answer' ? new Promise(done => { finish = done }) : f.state)
+    f.command.mockImplementation(async request => request.type === 'answer' ? (() => { const pending = deferred<AgentState | null>(); finish = pending.resolve; return pending.promise })() : f.state)
     const view = render(f.composer(thread.id))
-    fireEvent.change(screen.getByRole('textbox', { name: 'Your answer' }), { target: { value: 'Go left' } })
+    setPromptText(screen.getByRole('textbox', { name: 'Your answer' }), 'Go left')
     fireEvent.keyDown(screen.getByRole('textbox', { name: 'Your answer' }), { key: 'Enter' })
     view.rerender(f.composer())
-    fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Another thread draft' } })
+    setPromptText(screen.getByRole('textbox', { name: 'Prompt' }), 'Another thread draft')
     expect(screen.getByRole('button', { name: 'Send prompt' })).toBeEnabled()
     view.rerender(f.composer(thread.id))
     expect(screen.getByText('Sending answer…')).toBeVisible()
-    fireEvent.change(screen.getByRole('textbox', { name: 'Your answer' }), { target: { value: 'Go right' } })
+    setPromptText(screen.getByRole('textbox', { name: 'Your answer' }), 'Go right')
     expect(screen.getByRole('button', { name: 'Send answer' })).toBeDisabled()
     await act(async () => { finish(null) })
     expect(screen.getByRole('alert')).toHaveTextContent('Sotto could not confirm this answer. Your newer draft is in the composer.')
-    expect(screen.getByRole('textbox', { name: 'Your answer' })).toHaveValue('Go right')
+    expect(promptText(screen.getByRole('textbox', { name: 'Your answer' }))).toBe('Go right')
     f.store.flushAll()
   })
 })

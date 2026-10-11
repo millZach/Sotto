@@ -100,7 +100,7 @@ describe('Codex activity through native transport and workspace persistence', ()
     expect(restored.workspaceSnapshot().threads[0]?.activities?.find(record => record.kind === 'subagent')).toMatchObject({ title: 'Subagent' })
     const child = before.activities!.find(record => record.kind === 'subagent')!.agents![0]!
     expect((await restored.subagentPage({ threadId: 'thread' })).rows).toEqual(expect.arrayContaining([expect.objectContaining({ id: child.id, status: 'completed' })]))
-    expect((await restored.subagentAssignments({ threadId: 'thread', agentId: child.id })).assignments[0]?.prompt).toBe('Review the fixture')
+
     expect(restored.workspaceSnapshot().threads[0]?.messages).toEqual([])
     // A pane observes the workspace, which loads its window and forwards observation to Codex.
     restored.observeThreads(['thread'])

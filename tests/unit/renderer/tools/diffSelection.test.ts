@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { composeReviewMessage } from '../../../../src/renderer/src/agents/reviewComments'
 import { parseUnifiedDiff } from '../../../../src/renderer/src/tools/changesStore'

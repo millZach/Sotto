@@ -13,6 +13,7 @@ import { pullRequestTextWriter } from '../../../src/main/llm/pullRequestText'
 import { COMMIT_DIFF_MAX_CHARACTERS, COMMIT_SUBJECT_MAX_CHARACTERS, commitMessageRequest, commitMessageWriter } from '../../../src/main/llm/commitMessage'
 import { diffExcerpt } from '../../../src/main/llm/diffExcerpt'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings'
+import { deferred } from '../../fixtures/deferred'
 
 const SETTINGS: AppSettings = { ...DEFAULT_SETTINGS }
 
@@ -31,8 +32,8 @@ const exchange = { prompt: 'The palette is unreadable in dark mode.', reply: 'I 
 
 describe('the short-text writing path', () => {
   it('stops a side call in flight, waits for it, and refuses new writing after shutdown', async () => {
-    let entered!: () => void
-    const started = new Promise<void>(resolve => { entered = resolve })
+
+    const { promise: started, resolve: entered } = deferred<void>()
     let signal: AbortSignal | undefined
     const { writer, side, failures } = createWriter((_threadId, _prompt, received) => {
       signal = received
@@ -53,7 +54,7 @@ describe('the short-text writing path', () => {
 
   it('discards a title that arrives after shutdown has started', async () => {
     let finish!: (value: string) => void
-    const { writer } = createWriter(() => new Promise<string>(resolve => { finish = resolve }))
+    const { writer } = createWriter(() => { const pending = deferred<string>(); finish = pending.resolve; return pending.promise })
     const pending = writer.write('thread-a', threadTitleRequest(exchange))
     await Promise.resolve()
     const closed = vi.fn()

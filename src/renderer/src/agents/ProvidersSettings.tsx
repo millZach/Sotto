@@ -66,7 +66,7 @@ export function ProvidersSettings(): ReactNode {
     setPending(previous => ({ ...previous, [provider]: type }))
     setErrors(previous => ({ ...previous, [provider]: undefined }))
     try {
-      const result = await command({ type, provider })
+      const result = await command({ type, provider, ...(type === 'connect' ? { notice: false as const } : {}) })
       if (!result || result.error) setErrors(previous => ({ ...previous, [provider]: result?.error ?? 'Could not update this provider. Try again.' }))
     } catch { setErrors(previous => ({ ...previous, [provider]: 'Could not update this provider. Try again.' })) }
     finally { inFlight.current.delete(provider); setPending(previous => ({ ...previous, [provider]: undefined })) }

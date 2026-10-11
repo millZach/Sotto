@@ -11,14 +11,14 @@
  *
  *   SOTTO_PERF_BENCH=1 npx vitest run tests/perf/attachmentHandles.perf.test.ts --maxWorkers=1 --disable-console-intercept
  */
+import { createAgentControl } from '../fixtures/agentControlFixture'
+import { testCredentials } from '../fixtures/testCredentials'
 import { randomUUID } from 'node:crypto'
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { serialize } from 'node:v8'
 import { afterAll, describe, expect, it } from 'vitest'
-import { AgentControl } from '../../src/main/agents/control'
-import { AgentCredentials } from '../../src/main/agents/credentials'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import type { AgentCommand } from '../../src/shared/agents'
 import { median, PERF_BENCH, round } from '../fixtures/perfBench'
@@ -34,10 +34,8 @@ afterAll(async () => { for (const root of roots) await rm(root, { recursive: tru
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'sotto-perf-handles-')); roots.push(root)
-  const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
-  await credentials.load()
-  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host: new E2EAgentHost(), credentials, reasoner: e2eAgentReasoner,
-  })
+  const credentials = await testCredentials(root, { mode: 'unavailable' })
+  const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host: new E2EAgentHost(), credentials, reasoner: e2eAgentReasoner })
   let broadcastBytes = 0
   control.subscribe(state => { broadcastBytes = Math.max(broadcastBytes, serialize(state).length) })
   await control.start(); await control.command({ type: 'connect' })
@@ -73,7 +71,7 @@ describe('an 8 MiB screenshot in a draft', () => {
   }, 120_000)
 })
 
-describe.skipIf(!PERF_BENCH)('an 8 MiB screenshot in a draft, timed', () => {
+describe.skipIf(!PERF_BENCH)("an 8 MiB screenshot in a draft, timed (timing benchmark; requires SOTTO_PERF_BENCH=1)", () => {
   it('reports a draft save, a shell and a persist', async () => {
     const f = await fixture()
     try {

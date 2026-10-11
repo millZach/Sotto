@@ -20,6 +20,7 @@ final class MarkdownTests: XCTestCase {
             switch block {
             case .heading(_, let text), .paragraph(let text), .quote(let text): return [text]
             case .list(let items): return items.map(\.text)
+            case .table(let table): return table.header + table.rows.flatMap { $0 }
             case .code, .rule: return []
             }
         }
@@ -174,6 +175,94 @@ final class MarkdownTests: XCTestCase {
             .rule,
             .paragraph(MarkdownInline("#not a heading\n**Bold:** then words"))
         ])
+    }
+
+    private func cells(_ texts: [String]) -> [MarkdownInline] { texts.map { MarkdownInline($0) } }
+
+    /// The table from the bug report: it showed on the iPhone as rows of pipes.
+    func testATableReadsAsOneBlockWithItsAlignments() {
+        let text = """
+        Most of it came from waits inside subagents:
+
+        | Cause of the waste | laptop | forge |
+        |---|---:|---:|
+        | Sleep and wait loops | 50% | 70% |
+        | Messaging a subagent after it finished (his case) | 18% | 1% |
+        | Watching CI inside a subagent | 10% | 0% |
+
+        The forge waits were mostly studio workflow agents.
+        """
+        XCTAssertEqual(Markdown.blocks(text), [
+            .paragraph(MarkdownInline("Most of it came from waits inside subagents:")),
+            .table(MarkdownTable(
+                header: cells(["Cause of the waste", "laptop", "forge"]),
+                alignments: [.leading, .trailing, .trailing],
+                rows: [cells(["Sleep and wait loops", "50%", "70%"]),
+                       cells(["Messaging a subagent after it finished (his case)", "18%", "1%"]),
+                       cells(["Watching CI inside a subagent", "10%", "0%"])])),
+            .paragraph(MarkdownInline("The forge waits were mostly studio workflow agents."))
+        ])
+    }
+
+    func testATableWithoutOuterPipesAndEveryAlignment() {
+        let blocks = Markdown.blocks("Name | Kind | Size\n:--- | :---: | ---:\nicon.png | image | 2 KB")
+        XCTAssertEqual(blocks, [.table(MarkdownTable(
+            header: cells(["Name", "Kind", "Size"]),
+            alignments: [.leading, .center, .trailing],
+            rows: [cells(["icon.png", "image", "2 KB"])]))])
+    }
+
+    func testATableStraightAfterAParagraphOrAListEndsThem() {
+        let blocks = Markdown.blocks("Open threads:\n| Thread | State |\n|---|---|\n| One | Working |\n- after")
+        XCTAssertEqual(blocks, [
+            .paragraph(MarkdownInline("Open threads:")),
+            .table(MarkdownTable(header: cells(["Thread", "State"]), alignments: [.leading, .leading],
+                                 rows: [cells(["One", "Working"])])),
+            .list([MarkdownListItem(marker: .bullet, depth: 0, text: MarkdownInline("after"))])
+        ])
+        let afterList = Markdown.blocks("- one\n| A | B |\n| - | - |\n| 1 | 2 |")
+        XCTAssertEqual(afterList.count, 2)
+        guard case .table(let table) = afterList.last else { return XCTFail("Expected the table after the list") }
+        XCTAssertEqual(table.rows, [cells(["1", "2"])])
+    }
+
+    func testRowsAreFittedToTheHeader() {
+        let blocks = Markdown.blocks("| A | B | C |\n|---|---|---|\n| 1 |\n| 1 | 2 | 3 | 4 |\nno pipes at all")
+        guard case .table(let table) = blocks.first, blocks.count == 1 else { return XCTFail("Expected one table") }
+        XCTAssertEqual(table.rows, [cells(["1", "", ""]), cells(["1", "2", "3"]), cells(["no pipes at all", "", ""])])
+    }
+
+    func testAnEscapedPipeStaysInItsCellAndInlineMarkdownReads() {
+        let text = #"""
+        | Command | Meaning |
+        |---|---|
+        | `a \| b` | **pipe** it, then Ctrl+` |
+        """#
+        guard case .table(let table) = Markdown.blocks(text).first else { return XCTFail("Expected a table") }
+        XCTAssertEqual(table.rows[0].map(\.text), ["`a | b`", "**pipe** it, then Ctrl+`"])
+        let code = table.rows[0][0].attributed()
+        XCTAssertEqual(String(code.characters), "a | b")
+        XCTAssertTrue(hasCodeSpan(code))
+        let words = table.rows[0][1].attributed()
+        XCTAssertEqual(String(words.characters), "pipe it, then Ctrl+`")
+        XCTAssertEqual(keyRuns(words).map { $0.text }, ["Ctrl+`"])
+    }
+
+    func testATableStillBeingWrittenHasNoRowsYet() {
+        XCTAssertEqual(Markdown.blocks("| Thread | State |\n|---|---|"), [
+            .table(MarkdownTable(header: cells(["Thread", "State"]), alignments: [.leading, .leading], rows: []))
+        ])
+        // Until its separator row is whole, the header reads as the paragraph it might still be.
+        XCTAssertEqual(Markdown.blocks("| Thread | State |\n|--"), [.paragraph(MarkdownInline("| Thread | State |\n|--"))])
+    }
+
+    func testPipesThatAreNotATableStayAsWritten() {
+        XCTAssertEqual(Markdown.blocks("Run a | b to pipe it."), [.paragraph(MarkdownInline("Run a | b to pipe it."))])
+        // A separator with a different number of cells, and a paragraph over a rule, are not tables.
+        XCTAssertEqual(Markdown.blocks("| A | B |\n|---|"), [.paragraph(MarkdownInline("| A | B |\n|---|"))])
+        XCTAssertEqual(Markdown.blocks("Words\n---"), [.paragraph(MarkdownInline("Words")), .rule])
+        // Inside a fence a table is code.
+        XCTAssertEqual(Markdown.blocks("```\n| A |\n|---|\n```"), [.code(language: nil, text: "| A |\n|---|")])
     }
 
     func testEmptyInputHasNoBlocks() {

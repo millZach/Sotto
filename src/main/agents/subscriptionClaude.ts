@@ -3,7 +3,6 @@ import { randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
 import { z } from 'zod'
-import { resolveModel } from '../../shared/modelCatalog'
 import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
 import type { SubscriptionAccount, SubscriptionClient } from './subscriptionTypes'
 import { executableFile, findCli, withCliPath, type CliLookupOptions } from './cliLookup'
@@ -99,31 +98,6 @@ export class ClaudeSubscriptionClient implements SubscriptionClient {
 
   async status(signal?: AbortSignal): Promise<SubscriptionAccount> { return (await this.inspect(signal)).account }
 
-  async complete(system: string, input: unknown, model: string, effort?: string, signal?: AbortSignal): Promise<unknown> {
-    signal?.throwIfAborted()
-    if (model && !MODEL_ID.safeParse(model).success) throw new Error('Choose a valid Claude model before starting reasoning.')
-    let prompt: string
-    try { prompt = JSON.stringify(input) } catch { throw new Error('Claude reasoning needs a JSON-compatible request.') }
-    if (!prompt || Buffer.byteLength(prompt) > 1_000_000 || system.length > 30_000) throw new Error('The Claude reasoning request is too large or invalid.')
-    const { account, executable } = await this.inspect(signal)
-    if (!account.ready || !executable) throw new Error(account.detail)
-    const selectedModel = model || account.defaultModelId
-    if (effort && !resolveModel(account.models, selectedModel)?.reasoningEfforts?.includes(effort)) {
-      throw new Error('Claude Code does not report that reasoning effort for this model. Choose a supported effort or use the native default.')
-    }
-    const output = await this.run(executable, [
-      '--print', '--safe-mode', '--tools', '', '--permission-prompts', 'none', '--no-session-persistence',
-      '--output-format', 'json', ...(selectedModel ? ['--model', selectedModel] : []), ...(effort ? ['--effort', effort] : []), '--system-prompt',
-      `${system}\nReturn exactly one JSON object. Do not include Markdown or commentary outside that object.`,
-    ], prompt, this.options.completionTimeoutMs ?? 180_000, signal)
-    try {
-      const envelope = RESULT.parse(JSON.parse(output))
-      if (envelope.is_error) throw new Error('Provider reported failure')
-      const result: unknown = JSON.parse(envelope.result)
-      if (result === null || typeof result !== 'object' || Array.isArray(result)) throw new Error('Expected an object')
-      return result
-    } catch { throw new Error('Claude Code did not return a valid JSON decision. Check the selected model and subscription in Claude Code.') }
-  }
 
   /**
    * Short text written by the user's own Claude Code on the thread's model, for Sotto's side writing

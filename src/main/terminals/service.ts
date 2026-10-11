@@ -1,17 +1,19 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { access, mkdir, writeFile } from 'node:fs/promises'
-import { basename, join, win32 as win32Path } from 'node:path'
+import { basename, win32 as win32Path } from 'node:path'
 import type { IPty, IPtyForkOptions } from 'node-pty'
 import type { AgentProject, AgentWorktree } from '../../shared/agents'
+import type { ToolsResult } from '../../shared/tools'
 import { TERMINAL_MAX_OUTPUT } from '../../shared/terminal'
 import { commandLine, nativeModelName, providerCommand } from '../../shared/terminalCommands'
 import {
-  TERMINAL_IMAGE_MAX_BYTES, TERMINALS_MAX, terminalOpenSchema, workspaceTerminalImageSchema, workspaceTerminalRequestSchema, workspaceTerminalResizeSchema, workspaceTerminalVisibilitySchema, workspaceTerminalWriteSchema,
+  TERMINALS_MAX, terminalOpenSchema, workspaceTerminalImageSchema, workspaceTerminalRequestSchema, workspaceTerminalResizeSchema, workspaceTerminalVisibilitySchema, workspaceTerminalWriteSchema,
   type TerminalLaunch, type WorkspaceTerminal, type WorkspaceTerminalEvent, type WorkspaceTerminalSnapshot,
 } from '../../shared/terminalWorkspace'
-import type { RunGit, ThreadWorktrees } from '../agents/threadWorktrees'
+import { checkoutIdentity, type RunGit, type ThreadWorktrees } from '../agents/threadWorktrees'
 import { ToolFailure, ToolOperations, fail, parse } from '../tools/common'
-import type { ToolsResult } from '../../shared/tools'
+import { saveTerminalImage, terminalImageInput } from './clipboard'
+import { TerminalShell } from './shell'
+import { TerminalAgentExitSignal } from './exitSignal'
 import { prepareTerminalAgentHooks, type PreparedTerminalAgentHooks } from './hooks'
 import { TerminalAgentStateMachine } from './state'
 import type { PhoneTerminal, PhoneTerminalAnswer, PhoneTerminalApproval, PhoneTerminals } from '../../shared/phoneTerminals'
@@ -19,7 +21,7 @@ import type { TerminalAgentHookEvent, TerminalHookAnswer } from './hooks'
 
 export interface TerminalWorkspaceDependencies {
   projects: () => readonly AgentProject[]
-  worktrees: Pick<ThreadWorktrees, 'allocate' | 'ensure' | 'workingDirectory'>
+  worktrees: Pick<ThreadWorktrees, 'allocate' | 'ensure' | 'workingDirectory' | 'reclaim'>
   emit(event: WorkspaceTerminalEvent): void
   /** Best-effort Git for the branch shown under a terminal; failures leave it blank. */
   git?: RunGit
@@ -27,6 +29,8 @@ export interface TerminalWorkspaceDependencies {
   platform?: NodeJS.Platform
   env?: NodeJS.ProcessEnv
   executableExists?: (path: string) => Promise<boolean>
+  /** Holds the desktop's checkout while proving that no thread or Tools/drawer shell still uses it. */
+  acquireReclaim?: (directory: string) => Promise<() => void>
   now?: () => number
   /** Injection for state/lifecycle tests; production uses the packaged run-only helper. */
   prepareHooks?: typeof prepareTerminalAgentHooks
@@ -42,11 +46,14 @@ interface LiveTerminal {
   ready?: Promise<void> | undefined
   /** Folder preparation belongs to the terminal, so Reopen can await work begun by an earlier process lifecycle. */
   folder?: Promise<{ worktree: AgentWorktree; workingDirectory: string }> | undefined
+  /** Restart waits for removal, then ensures the checkout again on its retained branch. */
+  reclaiming?: Promise<void> | undefined
   output: string
   sequence: number
   subscriptions: { dispose(): void }[]
   agent?: TerminalAgentStateMachine | undefined
   hooks?: PreparedTerminalAgentHooks | undefined
+  exitSignal?: TerminalAgentExitSignal | undefined
   activityTimer?: ReturnType<typeof setTimeout> | undefined
   plainActive?: boolean
   phonePreviewId?: string | undefined
@@ -56,12 +63,9 @@ interface LiveTerminal {
   answers?: Map<string, { answer: TerminalHookAnswer; settle(delivered: boolean): void }>
 }
 
-interface Launcher { readonly file: string; readonly args: string[]; readonly command: string }
+interface Launcher { readonly file: string; readonly args: string[]; readonly command: string; readonly exitSignal?: TerminalAgentExitSignal }
 type SpawnProcess = (file: string, args: string[], options: IPtyForkOptions) => IPty
-/** `discovered` marks a shell found by scanning PATH: only that one can disappear under the cache. */
-interface ResolvedShell { readonly path: string; readonly discovered: boolean }
 
-const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 
 const shellName = (path: string, platform: NodeJS.Platform): string =>
   (platform === 'win32' ? win32Path.basename(path) : basename(path)).replace(/\.exe$/iu, '')
@@ -75,19 +79,21 @@ const powerShellQuote = (token: string): string => `'${token.replace(/['\u2018-\
  */
 export class TerminalWorkspaceService extends ToolOperations implements PhoneTerminals {
   private readonly terminals = new Map<string, LiveTerminal>()
-  private cachedShell: ResolvedShell | null = null
-  private shellLookup: Promise<ResolvedShell> | null = null
+  private readonly reclaimingCheckouts = new Set<string>()
+  private readonly shell: TerminalShell
   private spawnLoad: Promise<SpawnProcess> | null = null
   private readonly visibleClients = new Map<object, { ids: ReadonlySet<string>; active: () => boolean }>()
   private readonly defaultVisibilityClient = {}
   private readonly phoneListeners = new Set<() => void>()
+  private readonly inputLanes = new Map<string, Promise<unknown>>()
   constructor(private readonly dependencies: TerminalWorkspaceDependencies) {
     super()
+    this.shell = new TerminalShell(dependencies)
     this.warm()
   }
   /** Pays for the shell lookup and for loading node-pty once, before the first terminal is asked for. */
   private warm(): void {
-    void this.shellFor().catch(() => { /* Reported when a terminal actually starts. */ })
+    void this.shell.resolve().catch(() => { /* Reported when a terminal actually starts. */ })
     void this.spawner().catch(() => { /* Reported when a terminal actually starts. */ })
   }
   private now(): number { return this.dependencies.now?.() ?? Date.now() }
@@ -180,7 +186,7 @@ export class TerminalWorkspaceService extends ToolOperations implements PhoneTer
   }
 
   list() { return this.run(async () => {
-    return { terminals: [...this.terminals.values()].map(record => ({ ...record.terminal })), shell: shellName(await this.shellFor(), this.dependencies.platform ?? process.platform) }
+    return { terminals: [...this.terminals.values()].map(record => ({ ...record.terminal })), shell: shellName(await this.shell.resolve(), this.dependencies.platform ?? process.platform) }
   }) }
 
   open(payload: unknown) { return this.run(async () => {
@@ -236,6 +242,7 @@ export class TerminalWorkspaceService extends ToolOperations implements PhoneTer
   }
 
   private async prepareFolder(record: LiveTerminal, generation: number): Promise<void> {
+    if (this.disposed || generation !== record.generation) return fail('session-unavailable', 'This terminal was closed before it could start.')
     const worktree = record.terminal.worktree
     if (!worktree) return
     record.folder ??= (async () => {
@@ -259,37 +266,6 @@ export class TerminalWorkspaceService extends ToolOperations implements PhoneTer
   private async branch(directory: string): Promise<string | null> {
     if (!this.dependencies.git) return null
     try { return (await this.dependencies.git(directory, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim() || null } catch { return null }
-  }
-
-  /**
-   * The shell, resolved once for the session: PATH is scanned for the first terminal and not again, unless the shell
-   * it found has since disappeared.
-   */
-  private async shellFor(): Promise<string> {
-    const cached = this.cachedShell
-    if (cached && (!cached.discovered || await this.exists(cached.path))) return cached.path
-    this.cachedShell = null
-    const lookup = this.shellLookup ??= this.shell().finally(() => { this.shellLookup = null })
-    const found = await lookup
-    this.cachedShell = found
-    return found.path
-  }
-
-  private exists(path: string): Promise<boolean> {
-    const check = this.dependencies.executableExists ?? (async (target: string) => { try { await access(target); return true } catch { return false } })
-    return check(path)
-  }
-
-  /** The shell for this platform: pwsh when installed, else Windows PowerShell; the login shell elsewhere. */
-  private async shell(): Promise<ResolvedShell> {
-    const platform = this.dependencies.platform ?? process.platform
-    const env = this.environment(platform)
-    if (platform !== 'win32') return { path: env.SHELL || (platform === 'darwin' ? '/bin/zsh' : '/bin/sh'), discovered: false }
-    for (const entry of (env.PATH ?? env.Path ?? '').split(win32Path.delimiter).filter(Boolean)) {
-      const candidate = win32Path.join(entry, 'pwsh.exe')
-      if (await this.exists(candidate)) return { path: candidate, discovered: true }
-    }
-    return { path: win32Path.join(env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'), discovered: false }
   }
 
   /** node-pty, imported once for the session; the injected spawn stands in for it under test. */
@@ -318,13 +294,21 @@ export class TerminalWorkspaceService extends ToolOperations implements PhoneTer
   /** What to spawn: the shell alone, or the shell running the provider's CLI so the user's PATH and profile apply. */
   private async launcher(launch: TerminalLaunch, hookArgs: string[] = []): Promise<Launcher> {
     const platform = this.dependencies.platform ?? process.platform
-    const shell = await this.shellFor()
+    const shell = await this.shell.resolve()
     const argv = providerCommand({ provider: launch.provider, model: launch.modelId === null ? null : nativeModelName(launch.modelId), reasoning: launch.reasoning, permission: launch.permission })
     if (argv.length === 0) return { file: shell, args: platform === 'win32' ? ['-NoLogo'] : ['-l'], command: shellName(shell, platform) }
     const command = commandLine(argv)
     argv.push(...hookArgs)
-    if (platform === 'win32') return { file: shell, args: ['-NoLogo', '-Command', `& ${argv.map(powerShellQuote).join(' ')}`], command }
-    return { file: shell, args: ['-l', '-i', '-c', `exec ${argv.map(posixQuote).join(' ')}`], command }
+    const exitSignal = new TerminalAgentExitSignal()
+    const exitMessage = `${launch.provider} exited with code`
+    if (platform === 'win32') return { file: shell, args: ['-NoLogo', '-NoExit', '-Command',
+      `$global:LASTEXITCODE = 0; & ${argv.map(powerShellQuote).join(' ')}; if ($?) { $sottoExitCode = 0 } else { $sottoExitCode = $LASTEXITCODE; if (!$sottoExitCode) { $sottoExitCode = 1 } }; Write-Host ("\`n${exitMessage} {0}." -f $sottoExitCode); [Console]::Write([char]27 + '${exitSignal.body}' + [char]7)`,
+    ], command, exitSignal }
+    const run = argv.map(posixQuote).join(' ')
+    const report = shellName(shell, platform) === 'fish'
+      ? `set sotto_exit $status; printf '\\n${exitMessage} %s.\\n' $sotto_exit`
+      : `sotto_exit=$?; printf '\\n${exitMessage} %s.\\n' "$sotto_exit"`
+    return { file: shell, args: ['-l', '-i', '-c', `${run}; ${report}; printf '\\033${exitSignal.body}\\007'; exec ${posixQuote(shell)} -l`], command, exitSignal }
   }
 
   private async start(record: LiveTerminal, launcher: Launcher, generation: number): Promise<void> {
@@ -336,6 +320,8 @@ export class TerminalWorkspaceService extends ToolOperations implements PhoneTer
       const spawn = await this.spawner()
       if (this.disposed) return fail('unavailable', 'Terminal is shutting down.')
       if (generation !== record.generation) return fail('session-unavailable', 'This terminal was closed before it could start.')
+      if (this.reclaimingCheckouts.size && this.reclaimingCheckouts.has(await checkoutIdentity(record.terminal.workingDirectory))) return fail('workspace-unavailable', 'This folder is being reclaimed. Wait for Close to finish before opening a terminal here.')
+      if (this.disposed || generation !== record.generation) return fail('session-unavailable', 'This terminal was closed before it could start.')
       // A closed row rejoins the active set only here, without an await between the check and the change.
       if (record.terminal.closedAt !== null) this.requireCapacity()
       if (record.terminal.launch.provider) {
@@ -344,7 +330,7 @@ export class TerminalWorkspaceService extends ToolOperations implements PhoneTer
           const hooks = await (this.dependencies.prepareHooks ?? prepareTerminalAgentHooks)({
             terminalId: record.terminal.id, provider,
             onEvent: event => {
-              if (this.disposed || generation !== record.generation || !record.agent || record.agent.state === 'exited') return
+              if (this.disposed || generation !== record.generation || !record.agent || record.agent.state === 'exited' || event.runId !== record.agent.runId) return
               record.agent.setVisible(this.isVisible(record.terminal.id)); record.agent.hook(event)
               if (event.kind === 'permission' && event.requestId && event.approvalId) {
                 record.approvals ??= new Map(); record.approvals.set(event.requestId, event)
@@ -382,6 +368,7 @@ export class TerminalWorkspaceService extends ToolOperations implements PhoneTer
       if (record.terminal.closedAt !== null) this.requireCapacity()
       record.output = ''
       record.sequence = 0
+      record.exitSignal = launcher.exitSignal
       // The size is read here, not before the await: a pane that measured itself while the terminal started already said so.
       const { cols, rows } = record.terminal
       record.terminal = { ...record.terminal, status: 'running', exitCode: null, closedAt: null }
@@ -391,10 +378,13 @@ export class TerminalWorkspaceService extends ToolOperations implements PhoneTer
       this.append(record, `\x1b[2mOpened by Sotto at ${record.terminal.workingDirectory} · ${launcher.command}\x1b[0m\r\n`)
       record.subscriptions.push(pty.onData(data => {
         if (record.pty !== pty || this.disposed) return
+        const signal = record.exitSignal?.write(data)
+        if (signal?.exited) this.releaseAgentRun(record)
+        data = signal?.output ?? data
         record.agent?.setVisible(this.isVisible(record.terminal.id))
         record.agent?.output(data)
         this.syncAgent(record)
-        if (record.agent) {
+        if (record.agent && record.agent.state !== 'exited') {
           clearTimeout(record.activityTimer)
           record.activityTimer = setTimeout(() => { if (record.pty !== pty || this.disposed) return; record.agent?.quiet(); this.syncAgent(record) }, 4000)
           record.activityTimer.unref()
@@ -412,6 +402,8 @@ export class TerminalWorkspaceService extends ToolOperations implements PhoneTer
         }
       }), pty.onExit(({ exitCode }) => {
         if (record.pty !== pty) return
+        const pending = record.exitSignal?.flush()
+        if (pending) this.append(record, pending)
         record.pty = undefined
         this.releaseAgentRun(record)
         record.terminal = { ...record.terminal, status: 'exited', exitCode }
@@ -419,7 +411,7 @@ export class TerminalWorkspaceService extends ToolOperations implements PhoneTer
         this.publish(record)
       }))
       if (record.agent) record.terminal = { ...record.terminal, agentState: record.agent.state, stateDetection: record.agent.compatibility }
-      this.publish(record)
+      if (!this.disposed) this.publish(record)
     } catch (error) {
       if (this.disposed || generation !== record.generation) throw error
       if (record.terminal.closedAt !== null && error instanceof Error && 'code' in error && error.code === 'busy') {
@@ -442,13 +434,24 @@ export class TerminalWorkspaceService extends ToolOperations implements PhoneTer
   }
 
   read(payload: unknown) { return this.run(async () => this.snapshot(await this.owned(parse(workspaceTerminalRequestSchema, payload).id))) }
-  write(payload: unknown) { return this.run(async () => {
-    const request = parse(workspaceTerminalWriteSchema, payload)
+  private input<T>(id: string, action: () => Promise<T>): Promise<ToolsResult<T>> {
+    const previous = this.inputLanes.get(id) ?? Promise.resolve()
+    const pending = previous.then(() => this.run(action))
+    this.inputLanes.set(id, pending)
+    void pending.then(() => { if (this.inputLanes.get(id) === pending) this.inputLanes.delete(id) })
+    return pending
+  }
+  write(payload: unknown) {
+    const parsed = workspaceTerminalWriteSchema.safeParse(payload)
+    if (!parsed.success) return this.run(async () => { parse(workspaceTerminalWriteSchema, payload) })
+    const request = parsed.data
+    return this.input(request.id, async () => {
     const record = await this.owned(request.id)
     if (!record.pty) return fail('not-running', 'This terminal has exited. Restart it to run the command again.')
     record.agent?.input(request.data); this.syncAgent(record)
     record.pty.write(request.data)
-  }) }
+    })
+  }
   resize(payload: unknown) { return this.run(async () => {
     const request = parse(workspaceTerminalResizeSchema, payload)
     // A size never waits for the process: a terminal still starting spawns at the size its pane already measured.
@@ -475,6 +478,7 @@ export class TerminalWorkspaceService extends ToolOperations implements PhoneTer
   restart(payload: unknown) { return this.run(async () => {
     const record = await this.owned(parse(workspaceTerminalRequestSchema, payload).id, false)
     if (record.starting || record.terminal.status === 'starting') return fail('busy', 'This terminal is already starting.')
+    const preparation = record.ready
     record.starting = true
     const previousTerminal = record.terminal
     const generation = ++record.generation
@@ -483,10 +487,13 @@ export class TerminalWorkspaceService extends ToolOperations implements PhoneTer
     record.terminal = { ...record.terminal, ...(record.terminal.launch.provider ? { agentState: 'starting' as const, stateDetection: 'available' as const } : {}) }
     const restarting = (async () => {
       try {
+        await record.reclaiming
+        // A running shell may still owe its first branch read; retain that debt across Restart.
+        await preparation
         const launcher = await this.launcher(record.terminal.launch)
         await this.prepareFolder(record, generation)
         await this.start(record, launcher, generation)
-        void this.track(record, generation)
+        await this.track(record, generation)
         return this.snapshot(record)
       } catch (error) {
         if (record.terminal.closedAt !== null && error instanceof Error && 'code' in error && error.code === 'busy') { record.terminal = previousTerminal; throw error }
@@ -504,6 +511,7 @@ export class TerminalWorkspaceService extends ToolOperations implements PhoneTer
   }) }
   close(payload: unknown) { return this.run(async () => {
     const record = await this.owned(parse(workspaceTerminalRequestSchema, payload).id, false)
+    const preparation = record.ready
     ++record.generation
     record.starting = false
     record.ready = undefined
@@ -511,30 +519,54 @@ export class TerminalWorkspaceService extends ToolOperations implements PhoneTer
     record.terminal = { ...record.terminal, closedAt: this.now(), status: record.terminal.status === 'starting' ? 'exited' : record.terminal.status, ...(record.terminal.launch.provider ? { agentState: 'exited' as const } : {}) }
     record.output = ''
     this.publish(record)
+    // Close remains immediate while a checkout still starts; removal waits for that owned preparation.
+    record.reclaiming ??= this.reclaim(record, preparation).finally(() => { record.reclaiming = undefined })
   }) }
-  pasteImage(payload: unknown) { return this.run(async () => {
-    const request = parse(workspaceTerminalImageSchema, payload)
+
+  private async reclaim(record: LiveTerminal, preparation: Promise<void> | undefined): Promise<void> {
+    const metadata = record.terminal.worktree
+    if (!metadata || metadata.mode !== 'independent' || metadata.reused) return
+    try {
+      await preparation
+      const prepared = await record.folder
+      // A Reopen that overtook preparation owns the folder again. Never remove it under a new process.
+      if (record.terminal.closedAt === null || record.pty || this.disposed) return
+      const owner = prepared?.worktree ?? record.terminal.worktree
+      if (!owner || owner.mode !== 'independent' || owner.reused || owner.reclaimedAt) return
+      const release = await this.dependencies.acquireReclaim?.(owner.path!)
+      let identity: string | undefined
+      let reserved = false
+      try {
+        identity = await checkoutIdentity(owner.path!)
+        if (this.reclaimingCheckouts.has(identity)) return
+        this.reclaimingCheckouts.add(identity)
+        reserved = true
+        for (const other of this.terminals.values()) {
+          if (other === record || other.terminal.closedAt !== null && !other.starting) continue
+          if (await checkoutIdentity(other.terminal.workingDirectory) === identity) return
+        }
+        const worktree = await this.dependencies.worktrees.reclaim(owner, { automatic: true })
+        record.terminal = { ...record.terminal, worktree }
+        if (!this.disposed) this.publish(record)
+      } finally { if (identity && reserved) this.reclaimingCheckouts.delete(identity); release?.() }
+    } catch { /* Dirty, ignored, reused, locked or replaced folders stay; Close approves no loss. */ }
+    finally { record.folder = undefined }
+  }
+  pasteImage(payload: unknown) {
+    const parsed = workspaceTerminalImageSchema.safeParse(payload)
+    if (!parsed.success) return this.run(async () => { parse(workspaceTerminalImageSchema, payload); return { path: '' } })
+    const request = parsed.data
+    return this.input(request.id, async () => {
     const record = await this.owned(request.id)
     if (!record.pty) return fail('not-running', 'This terminal has exited.')
-    const match = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/u.exec(request.dataUrl)
-    const bytes = match ? Buffer.from(match[1]!, 'base64') : null
-    if (!bytes || bytes.length > TERMINAL_IMAGE_MAX_BYTES || !bytes.subarray(0, 8).equals(PNG_SIGNATURE)) return fail('invalid-request', 'Only a PNG image up to 10 MiB can be pasted into a terminal.')
-    const folder = join(record.terminal.workingDirectory, '.sotto', 'clipboard')
-    // <timestamp>.png, to the millisecond; a second paste in the same millisecond counts up.
-    const stamp = new Date(this.now()).toISOString().replace(/[-:]/gu, '').replace('T', '-').replace('.', '-').replace(/Z$/u, '')
-    let path = join(folder, `${stamp}.png`)
-    try {
-      await mkdir(folder, { recursive: true })
-      // The images are for pasting, not for committing.
-      await writeFile(join(folder, '.gitignore'), '*\n', { flag: 'wx' }).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'EEXIST') throw error })
-      for (let attempt = 2; ; attempt += 1) {
-        try { await writeFile(path, bytes, { flag: 'wx' }); break }
-        catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST' || attempt > 100) throw error; path = join(folder, `${stamp}-${attempt}.png`) }
-      }
-    } catch { return fail('path-unavailable', 'The image could not be saved under this folder.') }
-    record.pty.write(/\s/u.test(path) ? `"${path}"` : path)
+    const pty = record.pty
+    const path = await saveTerminalImage(record.terminal.workingDirectory, request.dataUrl, this.now())
+    await this.owned(request.id)
+    if (record.pty !== pty) return fail('not-running', 'The image was saved, but this terminal has exited. Paste it again in the restarted terminal.')
+    record.pty.write(terminalImageInput(path, this.dependencies.platform ?? process.platform))
     return { path }
-  }) }
+    })
+  }
 
   /** Ends the process; the record and its output stay. A process ended here has no exit code of its own. */
   private end(record: LiveTerminal): void {
@@ -544,6 +576,9 @@ export class TerminalWorkspaceService extends ToolOperations implements PhoneTer
   }
   private kill(record: LiveTerminal): void {
     const pty = record.pty; record.pty = undefined
+    const pending = record.exitSignal?.flush()
+    if (pending) this.append(record, pending)
+    record.exitSignal = undefined
     this.releaseAgentRun(record)
     for (const subscription of record.subscriptions.splice(0)) subscription.dispose()
     try { pty?.kill() } catch { /* Already exited. */ }

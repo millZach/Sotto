@@ -1,5 +1,7 @@
 # Phase 3 #54: multi-pane thread layouts
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0068](../adr/0068-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 Verified on Windows 11, September 13, 2026, on `work/phase3-layout` from baseline `bf500b4`. The production Electron build ran through `tests/e2e/support/sottoLaunch.ts` with the `design-threads` fixture providers and owned temporary E2E profiles. No native provider turns were used, and no user profile was opened.
 
 Scope is the renderer only: `splitLayout.ts` (model, persistence, store), `ThreadPanes.tsx` (placement, dividers, drag targets, tabs, zoom, pane controls), `splitWorkspace.css`, and the layout wiring in `ThreadsView.tsx`. No main, preload, IPC, shared schema or dependency changed. The cross-worker contract is `.worktrees/phase3-orchestration/layout-contract.md`.

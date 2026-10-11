@@ -42,7 +42,7 @@ An agent waiting for a place to start is sent as `state: "start"` with `queuedAt
 
 ## In the running app
 
-`tests/e2e/workflow-agent-rows.spec.ts` reports a workflow of six agents and one ordinary agent to the built app, then moves them on. Every capture goes to the ignored `artifacts/workflow-agent-rows-run/`, and the ones below are copied to `artifacts/workflow-agent-rows/`.
+`tests/e2e/workflow-agent-rows.spec.ts` reports a workflow of six agents and one ordinary agent to the built app, then moves them on. Every capture goes to ignored `artifacts/e2e-runs/workflow-agent-rows-run/` by default, or `artifacts/workflow-agent-rows-run/` with `SOTTO_E2E_EVIDENCE=publish`. The ones below are copied to `artifacts/workflow-agent-rows/`. See [E2e evidence](../ci.md#e2e-evidence) for the root override.
 
 - `roster-strip-1600-dark.png`: the roster with the workflow as one row. The strip shows one failed, three finished and two working, and the count reads "3 of 6 finished · 1 failed". The line of chrome reads "7 agents · 2 working".
 - `workflow-page-1600-dark.png`, `workflow-page-1280-light.png`, `workflow-page-820-dark.png` and `workflow-page-820-light.png`: the workflow page at each size.

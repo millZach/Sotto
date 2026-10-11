@@ -1,10 +1,11 @@
+import { initializeGitRepository, initializeBareGitRepository } from './gitRepository'
 /**
  * A send and Git (issue #766), shared by the test that gates it and the benchmark that measures it so both count a
  * send the same way: the fake provider's project as a real repository with an origin, a thread on it, and a send
  * timed and counted up to the moment the provider hears the prompt. A test that counts installs
  * `gitSpawnCounter.ts` in its own `vi.mock`.
  */
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, vi } from 'vitest'
 import { runWorktreeGit as git } from '../../src/main/agents/threadWorktrees'
@@ -24,11 +25,8 @@ export async function repositoryWithOrigin(): Promise<SendGitFixture> {
   const f = await workspaceFixture(undefined, { worktreeRefreshDelayMs: NO_REFRESH_AFTER_TURN_MS })
   const project = f.adapters.codex.state.projects[0]!.path
   const origin = join(f.root, 'origin.git'); await mkdir(origin)
-  await git(origin, ['init', '--bare'])
-  await git(project, ['init', '-b', 'main'])
-  await writeFile(join(project, 'tracked.txt'), 'baseline')
-  await git(project, ['add', '.'])
-  await git(project, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Baseline'])
+  await initializeBareGitRepository(origin)
+  await initializeGitRepository(project)
   await git(project, ['remote', 'add', 'origin', origin])
   await git(project, ['push', '-u', 'origin', 'main'])
   return { ...f, project }

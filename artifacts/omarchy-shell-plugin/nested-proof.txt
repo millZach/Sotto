@@ -1,0 +1,146 @@
+live: efb50993780079460b0cbed1363e2166a2de1d9f_1789793874_889692923 on wayland-1 (untouched)
+live shell: PID 3044, 6 long-running processes recorded
+nested A: efb50993780079460b0cbed1363e2166a2de1d9f_1791585047_1675037923 on wayland-2, PID 2610678; nested B: efb50993780079460b0cbed1363e2166a2de1d9f_1791585048_754986384 on wayland-3, PID 2610750
+PASS: B has two displays, 1600x1000 and 1280x800
+sandbox config validated: version 1; only Sotto, bar and empty indicators; 35 plugins excluded
+disabled plugins: omarchy.active-window, omarchy.agents, omarchy.audio, omarchy.background, omarchy.battery, omarchy.bluetooth, omarchy.clipboard, omarchy.clock, omarchy.dev-gallery, omarchy.disk-speedtest, omarchy.dropbox, omarchy.emojis, omarchy.idle, omarchy.image-picker, omarchy.keyboard-layout, omarchy.lock, omarchy.media, omarchy.menu, omarchy.microphone, omarchy.monitor, omarchy.network, omarchy.nightlight, omarchy.notifications, omarchy.osd, omarchy.polkit, omarchy.power, omarchy.reminders, omarchy.spacer, omarchy.speedtest, omarchy.system-update, omarchy.tailscale, omarchy.tray, omarchy.weather, omarchy.wifiqr, omarchy.workspaces
+private TMPDIR: /tmp/sotto-shell-proof.DDn3NU/tmp; copied output paths removed
+PASS: the nested shell's IPC lives in the isolated runtime folder
+--- install
+  install: Copied the plugin to /tmp/sotto-shell-proof.DDn3NU/home/.config/omarchy/plugins/sotto.dictation.
+  install: There is another copy of the plugin in /tmp/sotto-shell-proof.DDn3NU/home/xdg-elsewhere/omarchy/plugins/sotto.dictation. Omarchy's shell does not load it, since it reads plugins only from /tmp/sotto-shell-proof.DDn3NU/home/.config/omarchy/plugins, so you can delete that copy.
+  install: sotto.dictation is on the bar
+  install: Sotto's glyph runs /tmp/sotto-shell-proof.DDn3NU/checkout/apps/omarchy/sotto.
+PASS: the plugin was copied to $HOME/.config/omarchy/plugins whatever XDG_CONFIG_HOME says, without the tests' types
+PASS: the script says a copy under XDG_CONFIG_HOME is not loaded
+PASS: no staging folder was left behind
+PASS: the glyph sits right after Omarchy's indicators
+PASS: the command setting names the checkout launcher
+PASS: the shell lists sotto.dictation as enabled
+--- states, Tokyo Night
+PASS: starting: the pill is centred under the bar (284x44 at 658,31)
+PASS: listening: the pill is centred under the bar (284x44 at 658,31)
+PASS: transcribing: the pill is centred under the bar (384x44 at 608,31)
+PASS: copied: the pill is centred under the bar (263x44 at 669,31)
+PASS: failed-kept: the pill is centred under the bar (618x44 at 491,31)
+PASS: failed-plain: the pill is centred under the bar (416x44 at 592,31)
+PASS: delivered: the pill shows Pasted
+PASS: delivered: the pill is gone after its hold
+--- the bar glyph
+idle glyph hit box: 27x26 at 786,0; click 799,13
+PASS: a click on the bar glyph runs: /tmp/sotto-shell-proof.DDn3NU/checkout/apps/omarchy/sotto dictation toggle
+--- the pill's buttons
+PASS: Cancel runs: sotto dictation cancel
+PASS: Stop runs: sotto dictation stop
+PASS: the focused terminal keeps keyboard focus after the pill's buttons are pressed
+PASS: the pill is a layer-shell surface on the overlay layer
+PASS: Discard runs: sotto dictation discard
+PASS: Try again runs: sotto dictation retry
+PASS: Dismiss puts a failure away in the plugin and runs nothing
+--- drag and snap
+PASS: drag to the left: the pill snaps centred on that edge and runs: sotto dictation place left
+PASS: drag to the bottom: the pill snaps centred on that edge and runs: sotto dictation place bottom
+PASS: drag to the right: the pill snaps centred on that edge and runs: sotto dictation place right
+PASS: drag to the top: the pill snaps centred on that edge and runs: sotto dictation place top
+--- upright buttons
+PASS: Sotto's saved edge (left) places a new dictation's pill
+PASS: upright Cancel runs: sotto dictation cancel
+PASS: upright Stop runs: sotto dictation stop
+--- notices
+PASS: a command that cannot run shows a notice while idle
+PASS: a new dictation replaces the notice at once
+--- a Stop that does not get through
+PASS: the failing stand-in received: dictation stop
+PASS: a Stop that does not get through says so in the pill, on two lines (633x52 at 484,31)
+PASS: six seconds later the pill, its words and its buttons are still there
+PASS: its Cancel can still be pressed, and a Cancel that does not get through keeps the pill too
+PASS: once the command works again, Stop reaches Sotto
+--- Sotto quits
+PASS: a dictation shows while the Sotto it names runs (PID 2613866)
+PASS: within a few seconds of Sotto quitting, the pill says the dictation was lost (424x52)
+PASS: its Dismiss puts the notice away and runs nothing
+PASS: a kept recording whose Sotto has quit is shown as lost, with Dismiss rather than Discard (455x52)
+PASS: a file whose PID now belongs to a process started at another time says Sotto quit, from its first read (424x52)
+PASS: the process with that PID is still running
+PASS: a state file with pid and no pidStart is checked by its PID alone
+PASS: a state file without pid, from an older Sotto, is taken at its word
+--- a state file that cannot be read
+PASS: a state file that cannot be read keeps the pill and its buttons, and says so (602x44 at 499,31)
+PASS: its Stop still runs: sotto dictation stop
+PASS: five seconds later the pill and its notice are still there
+PASS: once the file can be read again, the notice goes and the dictation shows as before (284x44)
+PASS: when Sotto quits while its file cannot be read, the pill says the dictation was lost (424x52)
+PASS: after Dismiss no pill shows, and the glyph still says the file cannot be read
+PASS: once the file is gone, the glyph is back at rest
+PASS: a file that cannot be read from the first shows no pill, only the glyph in the urgent colour
+--- a Stop that fails after Sotto quit
+PASS: readable: Stop runs the slow launcher, which holds
+PASS: readable: the pill says Sotto quit while that Stop still runs (424x52 at 588,31)
+PASS: readable: the Stop failing after it leaves Sotto quit and its Dismiss as they were
+PASS: readable: six and a half seconds later the notice is still there
+PASS: readable: its Dismiss puts it away and runs nothing
+PASS: unreadable: Stop runs the slow launcher, which holds
+PASS: unreadable: the pill says Sotto quit while that Stop still runs (424x52 at 588,31)
+PASS: unreadable: the Stop failing after it leaves Sotto quit and its Dismiss as they were
+PASS: unreadable: six and a half seconds later the notice is still there
+PASS: unreadable: its Dismiss puts it away and runs nothing
+PASS: dismissed: Stop runs the slow launcher, which holds
+PASS: dismissed: the pill says Sotto quit while that Stop still runs (424x52 at 588,31)
+PASS: dismissed: once Sotto quit is dismissed, the Stop failing after it brings no notice back
+--- rule A: the display focused when dictation starts
+PASS: the pointer on the second display focuses it
+PASS: the pill opens on the focused second display only
+PASS: the pointer moves focus back to the first display mid-dictation
+PASS: the pill stays on the display it opened on until dictation ends
+PASS: the next dictation opens on the newly focused first display
+--- rule A: a new dictation while the last one's result shows
+PASS: copied: the result shows on the first display, where its dictation started, with the pointer on the second
+PASS: copied: a new dictation started meanwhile opens on the focused second display
+PASS: kept: the result shows on the first display, where its dictation started, with the pointer on the second
+PASS: kept: a new dictation started meanwhile opens on the focused second display
+PASS: when Sotto quits, its notice stays on the display the dictation was on (424x52)
+--- rule A: two dictations' states written as one
+PASS: named: A's starting shows on the first display, with the pointer now on the second
+PASS: B's listening, under its own identifier, opens on the focused second display
+PASS: unnamed: A's starting shows on the first display, with the pointer now on the second
+PASS: without identifiers, as from an older Sotto, the pair reads as one dictation and stays on the first display
+--- an upright failure on a small display, then a scaled one
+PASS: small: the pointer focuses the 820x560 display at 1x
+PASS: small: the upright failure pill fits the display beside the bar, buttons and all (52x447 at 4,71 of 820x560)
+PASS: small: its Discard is on screen and runs: sotto dictation discard
+PASS: scaled: the pointer focuses the 1920x1080 display at 2x
+PASS: scaled: the upright failure pill fits the display beside the bar, buttons and all (104x894 at 9,121 of 1920x1080)
+PASS: scaled: its Discard is on screen and runs: sotto dictation discard
+--- a bar on the left edge
+PASS: with the bar on the left, the top pill sits 5 px from the top, centred beside the bar (284x44 at 672,5)
+PASS: with the bar on the left, a left-edge pill keeps clear of the bar (44x284 at 33,358)
+--- without motion
+PASS: with Hyprland's animations off, the transcribing pill drops its travelling track
+--- Catppuccin Latte
+PASS: light listening: the pill shows in the Latte palette
+PASS: light transcribing: the pill shows in the Latte palette
+PASS: light failed: the pill shows in the Latte palette
+PASS: light: a drag to the left snaps upright
+--- uninstall
+  uninstall-without-shell: install-shell-plugin.sh: Sotto's glyph is on the bar, and only a running Omarchy shell can take it off. Nothing was removed. Run this again in your desktop session.
+PASS: without a running shell --uninstall fails and removes nothing
+  uninstall-unreadable: install-shell-plugin.sh: Could not read /tmp/sotto-shell-proof.DDn3NU/unreadable-home/.config/omarchy/shell.json to see whether Sotto's glyph is on the bar: Could not open file /tmp/sotto-shell-proof.DDn3NU/unreadable-home/.config/omarchy/shell.json: Permission denied. Nothing was removed. Fix or restore that file, then run this again.
+PASS: with shell.json unreadable, --uninstall keeps the plugin folder and says why
+PASS: the glyph is still on the bar after that
+  uninstall: Took Sotto's glyph off the bar.
+  uninstall: Removed Sotto's shell plugin from /tmp/sotto-shell-proof.DDn3NU/home/.config/omarchy/plugins.
+PASS: --uninstall takes the glyph off the bar, then removes the plugin folder
+PASS: an orphaned glyph is on the bar with no plugin folder
+  uninstall-orphan: Took Sotto's glyph off the bar.
+  uninstall-orphan: Its plugin folder had already gone from /tmp/sotto-shell-proof.DDn3NU/home/.config/omarchy/plugins.
+PASS: --uninstall takes the orphaned glyph off the bar
+  uninstall-again: Sotto's shell plugin is not installed in /tmp/sotto-shell-proof.DDn3NU/home/.config/omarchy/plugins, and its glyph is not on the bar.
+PASS: a second --uninstall finds nothing left to remove
+--- composites
+PASS: 101 checks
+no process outlived the proof
+instance folders after cleanup: efb50993780079460b0cbed1363e2166a2de1d9f_1789793874_889692923 
+live shell.json unchanged
+live plugins folder unchanged
+all three live configuration/state trees unchanged (identities, timestamps and file bytes)
+the live shell's 6 long-running processes are the ones it had at the start

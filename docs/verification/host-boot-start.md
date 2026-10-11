@@ -1,5 +1,7 @@
 # Start at boot in Settings > Hosts
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 October 6, 2026. Issue #778, item 7 of `docs/plans/host-tailnet-connection.md`, on `feat/host-boot-start-ui` from
 `feat/host-boot-start` at 9ee0c750 (#760, since merged). The design is variant C with A's controls in
 `docs/prototypes/host-tailnet-prototype.html`; the decision is ADR-0054 and its October 6 amendment.
@@ -63,7 +65,7 @@ the review's fixes in, the spec passed again beside `host-forget.spec.ts`.
 
 ## Not shown here
 
-These have jsdom tests in `tests/unit/renderer/hostBootStart.test.tsx` and `tests/integration/desktopHosts.test.ts`
+These have jsdom tests in `tests/unit/renderer/hostBootStart.test.tsx` and `tests/integration/desktopHostBoot.test.ts`
 and were not captured. Each is drawn with the same notice, check list and button components as a captured state. The
 modal ones are shorter than the linger consent checked at 820×560, and the notices on the page wrap their commands
 rather than run off it, as the captured Forget notice of `host-forget` does.

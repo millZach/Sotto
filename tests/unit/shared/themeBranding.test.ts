@@ -70,15 +70,10 @@ describe('widget palette projection', () => {
   it('projects presentation from settings without leaking unrelated fields', () => {
     const settings: AppSettings = { ...DEFAULT_SETTINGS, theme: 'light', reducedMotion: 'on', lightTheme: 'tropic', llmApiKey: 'secret' }
     const presentation = widgetPresentationFor(settings)
-    expect(Object.keys(presentation).sort()).toEqual(['palette', 'reducedMotion', 'theme', 'voiceCoordinator'])
+    expect(Object.keys(presentation).sort()).toEqual(['palette', 'reducedMotion', 'theme'])
     expect(presentation.theme).toBe('light')
     expect(presentation.reducedMotion).toBe('on')
     expect(JSON.stringify(presentation)).not.toContain('secret')
-  })
-
-  it('tells the widget whether the voice coordinator is shown, since the widget cannot read settings', () => {
-    expect(widgetPresentationFor({ ...DEFAULT_SETTINGS }).voiceCoordinator).toBe(false)
-    expect(widgetPresentationFor({ ...DEFAULT_SETTINGS, voiceCoordinatorEnabled: true }).voiceCoordinator).toBe(true)
   })
 
   it('rejects palettes with extra roles, missing halves or app icon flags, or colours that are not canonical literals', () => {
@@ -100,8 +95,7 @@ describe('widget palette projection', () => {
     const withoutPalette: Partial<typeof idle> = { ...idle }
     delete withoutPalette.palette
     expect(() => widgetSnapshotSchema.parse(withoutPalette)).toThrow()
-    // The widget only hides its voice controls if the flag survives the boundary.
-    expect(widgetSnapshotSchema.parse({ ...idle, voiceCoordinator: true })).toMatchObject({ voiceCoordinator: true })
+    expect(() => widgetSnapshotSchema.parse({ ...idle, voiceCoordinator: true })).toThrow()
   })
 })
 
@@ -115,11 +109,6 @@ describe('theme brand', () => {
       expect(contrastRatio(tile, parseThemeRgb(brand.glyph, BLACK))).toBeGreaterThanOrEqual(MARK_GLYPH_CONTRAST)
       const accent = rgbToOklch(parseThemeRgb(colors.accent, BLACK))
       expect(hueDistance(hueOf(brand.tile), accent.h)).toBeLessThan(2)
-      // The orb keeps the accent's hue in both colours.
-      if (accent.C > 0.05) {
-        expect(hueDistance(hueOf(brand.orb[0]), accent.h)).toBeLessThan(12)
-        expect(hueDistance(hueOf(brand.orb[1]), accent.h)).toBeLessThan(12)
-      }
     },
   )
 
@@ -129,24 +118,12 @@ describe('theme brand', () => {
       expect(brand.tile, accent).toBe(APP_ICON_BRAND.tile)
       expect(brand.glyph, accent).toBe(APP_ICON_BRAND.glyph)
     }
-    // The orb follows the tile, so the icon's teal reaches it too.
-    const sotto = getThemeColorsForMode(BUILT_IN_THEMES.find(theme => theme.id === DEFAULT_THEME_ID)!, 'dark')!
-    expect(themeBrand(sotto, 'dark', { appIcon: true }).orb).toEqual(themeBrand({ ...sotto, accent: APP_ICON_BRAND.tile }, 'dark').orb)
   })
 
   it('distinguishes contrasting themes', () => {
     const nocturne = themeBrand(getThemeColorsForMode(BUILT_IN_THEMES.find(theme => theme.id === 'nocturne')!, 'dark')!, 'dark')
     const tropic = themeBrand(getThemeColorsForMode(BUILT_IN_THEMES.find(theme => theme.id === 'tropic')!, 'dark')!, 'dark')
     expect(nocturne.tile).not.toBe(tropic.tile)
-    expect(nocturne.orb).not.toEqual(tropic.orb)
-  })
-
-  it('runs a pale tint into a deep tone on dark, and ink into a softer tone on light', () => {
-    const colors = getThemeColorsForMode(BUILT_IN_THEMES.find(theme => theme.id === 'citrine')!, 'dark')!
-    const dark = themeBrand(colors, 'dark').orb.map(hex => rgbToOklch(parseThemeRgb(hex, BLACK)).L)
-    const light = themeBrand(colors, 'light').orb.map(hex => rgbToOklch(parseThemeRgb(hex, BLACK)).L)
-    expect(dark[0]!).toBeGreaterThan(dark[1]!)
-    expect(light[0]!).toBeLessThan(light[1]!)
   })
 
   it('replaces an unreadable accent foreground rather than painting an invisible glyph', () => {
@@ -158,6 +135,6 @@ describe('theme brand', () => {
     expect(themeBrand({ canvas: '', accent: '', accentForeground: '' }, 'dark').tile)
       .toBe(themeBrand(DEFAULT_WIDGET_PALETTE.dark, 'dark').tile)
     const grey = themeBrand({ canvas: 'oklch(0.2 0 0)', accent: 'oklch(0.6 0 0)', accentForeground: 'oklch(1 0 0)' }, 'dark')
-    for (const hex of grey.orb) expect(rgbToOklch(parseThemeRgb(hex, BLACK)).C).toBeLessThan(0.01)
+    for (const hex of [grey.tile, grey.glyph]) expect(rgbToOklch(parseThemeRgb(hex, BLACK)).C).toBeLessThan(0.01)
   })
 })

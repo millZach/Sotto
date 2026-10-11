@@ -5,12 +5,14 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
+
 import type { AgentHost, AgentHostCommand, AgentHostResult } from '../../../src/main/agents/host'
 import type { BabysitNews } from '../../../src/main/agents/babysitNews'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import type { AgentHostSnapshot, AgentThread } from '../../../src/shared/agents'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
 
 /**
  * A wake-up through the thread's own send path (ADR-0061 decisions 8 and 14): sent at once to a ready thread, and
@@ -50,8 +52,8 @@ class Host implements AgentHost {
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'sotto-wake-up-')); roots.push(root)
   const host = new Host()
-  const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: t => Buffer.from(t), decryptString: t => t.toString() }); await credentials.load()
-  const create = () => { const c = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner }); controls.push(c); return c }
+  const credentials = await testCredentials(root, { mode: 'unavailable' });
+  const create = () => { const c = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner }); controls.push(c); return c }
   const control = create(); await control.start(); await control.command({ type: 'connect' })
   return { root, host, control, create }
 }

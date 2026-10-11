@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { connect, createServer, Server } from 'node:net'
 import { networkInterfaces, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { afterEach, expect, it, vi } from 'vitest'
+import { describe, afterEach, expect, it, vi } from 'vitest'
 import { parseHostArguments, startHeadlessHost, type HostStartedBy } from '../../src/host'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { standInTailscale } from '../fixtures/standInTailscale'
@@ -41,15 +41,17 @@ it('listens on the loopback address only', async () => {
   const listener = servers.find(server => { const address = server.address(); return typeof address === 'object' && address?.port === host!.descriptor!.port })
   expect(listener?.address()).toEqual({ address: '127.0.0.1', family: 'IPv4', port: host!.descriptor!.port })
 })
-it.skipIf(external.length === 0)('cannot be reached by a client bound to any other interface', async () => {
-  // The probe itself works: a listener on every interface is reached the same way.
-  const open = createServer(socket => socket.destroy())
-  await new Promise<void>(resolve => open.listen(0, resolve))
-  const port = (open.address() as { port: number }).port
-  try { expect(await reach(external[0]!, port)).toBe('connected') } finally { open.close() }
-  const running = await start()
-  const results = await Promise.all(external.map(async address => [address, await reach(address, running.descriptor!.port)]))
-  expect(results).toEqual(external.map(address => [address, 'unreachable']))
+describe("requires a non-loopback network interface", () => {
+  it.skipIf(external.length === 0)('cannot be reached by a client bound to any other interface', async () => {
+    // The probe itself works: a listener on every interface is reached the same way.
+    const open = createServer(socket => socket.destroy())
+    await new Promise<void>(resolve => open.listen(0, resolve))
+    const port = (open.address() as { port: number }).port
+    try { expect(await reach(external[0]!, port)).toBe('connected') } finally { open.close() }
+    const running = await start()
+    const results = await Promise.all(external.map(async address => [address, await reach(address, running.descriptor!.port)]))
+    expect(results).toEqual(external.map(address => [address, 'unreachable']))
+  })
 })
 it('records in its descriptor that the launch script started it, and only then', async () => {
   await start({ startedBy: 'launch-script' })

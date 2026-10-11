@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { hostIsOlder } from '../../shared/hostProtocol'
+import { hostIsNewer, hostIsOlder, LEGACY_MANAGEMENT_UPDATE } from '../../shared/hostProtocol'
 import { HOST_ARCHIVE_PATTERN, HOST_RELEASES_URL, hostArchiveName, type HostUpdateAction, type HostUpdateFailure, type HostUpdatePhase, type HostUpdateRoute, type HostUpdateState, type HostUpdateStep } from '../../shared/hostUpdates'
 import { HOST_ARCHIVE_LIMIT_BYTES, HOST_DOWNLOAD_TIMEOUT_MS } from './launchScript'
 import { SshFailure } from './sshFailure'
@@ -36,6 +36,7 @@ export interface HostUpdateHosts {
 /** What an update needs of the threads: the busy-host question's (`busyHost.ts`). */
 export type HostUpdateThreads = BusyHostThreads
 export interface HostUpdatesOptions {
+  readonly requiresManagementUpdate?: (hostId: string) => boolean
   readonly hosts: HostUpdateHosts
   readonly threads: HostUpdateThreads
   /** This computer's Sotto version: what every update installs. */
@@ -147,7 +148,7 @@ export class HostUpdates {
     const candidate = this.options.hosts.candidates().find(item => item.id === entry.id)
     if (!candidate) { entry.error = `${entry.name} is not connected, so nothing was updated. Switch it on in Settings > Hosts, then try again.`; return }
     this.refresh(entry, candidate)
-    if (!hostIsOlder(candidate.version, this.options.version)) { this.entries.delete(entry.id); return }
+    if (!this.needsUpdate(candidate)) { this.entries.delete(entry.id); return }
     if (this.working(entry).length) { entry.phase = 'confirm'; delete entry.failure; return }
     this.begin(entry)
   }
@@ -294,15 +295,20 @@ export class HostUpdates {
         : `# Then stop the host on ${entry.name}, and connect to it again from Settings > Hosts.`].join('\n')
   }
   private view(entry: Entry): HostUpdateState {
+    const error = entry.error ?? (this.options.requiresManagementUpdate?.(entry.hostId) ? LEGACY_MANAGEMENT_UPDATE : undefined)
     return { id: entry.id, name: entry.name, from: entry.from, to: this.options.version, phase: entry.phase, owned: entry.owned,
       working: this.working(entry).length, commands: this.commands(entry), ...(entry.boot ? { boot: true } : {}),
       ...(entry.step ? { step: entry.step } : {}), ...(entry.route ? { route: entry.route } : {}),
-      ...(entry.failure ? { failure: entry.failure } : {}), ...(entry.error ? { error: entry.error } : {}) }
+      ...(entry.failure ? { failure: entry.failure } : {}), ...(error ? { error } : {}) }
   }
   private working(entry: Entry): readonly string[] { return this.options.threads.working(entry.hostId) }
   private refresh(entry: Entry, candidate: HostUpdateCandidate): void {
     Object.assign(entry, { name: candidate.name, hostId: candidate.hostId, owned: candidate.owned, installPath: candidate.installPath, dataDirectory: candidate.dataDirectory, boot: candidate.boot === true })
     if (entry.phase !== 'done') entry.from = candidate.version
+  }
+  private needsUpdate(candidate: HostUpdateCandidate): boolean {
+    return hostIsOlder(candidate.version, this.options.version)
+      || !hostIsNewer(candidate.version, this.options.version) && this.options.requiresManagementUpdate?.(candidate.hostId) === true
   }
   /**
    * Follows the saved hosts and their threads: a host that answers with an older Sotto needs an update, one that no
@@ -314,7 +320,7 @@ export class HostUpdates {
     const seen = new Set<string>()
     for (const candidate of candidates) {
       seen.add(candidate.id)
-      const older = hostIsOlder(candidate.version, this.options.version)
+      const older = this.needsUpdate(candidate)
       const entry = this.entries.get(candidate.id)
       if (!entry) {
         if (older) this.entries.set(candidate.id, { ...candidate, from: candidate.version, phase: 'needs' })

@@ -1,8 +1,8 @@
+import { ownedGitRepository, initializeBareGitRepository } from '../../fixtures/gitRepository'
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { execFileSync } from 'node:child_process'
-import { mkdtemp, mkdir, writeFile, rm, rename, symlink } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdir, writeFile, rm, rename, symlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { FilesService } from '../../../src/main/files/service'
 import { GitChangesService } from '../../../src/main/tools/gitChanges'
@@ -18,13 +18,11 @@ const commit = (cwd: string, message: string) => { git(cwd, 'add', '-A'); git(cw
 const file = (review: GitReview, path: string) => review.files.find(item => item.path === path)
 const patchOf = (review: GitReview, path: string): string => { const content = file(review, path)?.content; return content?.kind === 'text' ? content.patch : '' }
 async function fixture() {
-  const root = await mkdtemp(join(tmpdir(), 'sotto-git-unit-'))
+  const repository = await ownedGitRepository({ files: { 'changed.txt': 'before\n', 'deleted.txt': 'delete me\n' },
+    identity: { name: 'Sotto owned test', email: 'test@example.invalid' }, message: 'fixture' })
+  const { root, repo } = repository
   // dispose() kills an in-flight Git poll, but Windows releases its cwd handle after process exit.
-  cleanup.push(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
-  const repo = join(root, 'repo'); await mkdir(repo)
-  git(repo, 'init', '-q', '-b', 'main'); git(repo, 'config', 'user.email', 'test@example.invalid'); git(repo, 'config', 'user.name', 'Sotto owned test'); git(repo, 'config', 'core.autocrlf', 'false')
-  await writeFile(join(repo, 'changed.txt'), 'before\n'); await writeFile(join(repo, 'deleted.txt'), 'delete me\n')
-  commit(repo, 'fixture')
+  cleanup.push(repository.dispose)
   const other = join(root, 'other'); git(repo, 'worktree', 'add', '-q', '-b', 'other', other)
   const bindings: Record<string, string> = { a: repo, b: other, shared: repo }
   const files = new FilesService({ resolveBinding: threadId => bindings[threadId] ? { threadId, projectId: 'project', workingDirectory: bindings[threadId]! } : null, copyPath: vi.fn(), reveal: vi.fn() })
@@ -157,7 +155,7 @@ describe('Branch changes: base...HEAD', () => {
     expect(chosen.files.map(item => item.path)).toEqual(['trail.txt'])
     expect(await f.service.review({ ...f.target, scope: { kind: 'branch', base: 'no-such-branch' } })).toMatchObject({ ok: false, error: { message: expect.stringContaining('no-such-branch is not a branch') } })
 
-    const remote = join(f.root, 'remote.git'); git(f.root, 'init', '-q', '--bare', remote)
+    const remote = join(f.root, 'remote.git'); await initializeBareGitRepository(remote)
     git(f.repo, 'remote', 'add', 'origin', remote); git(f.repo, 'push', '-q', 'origin', 'main')
     git(f.repo, 'remote', 'set-head', 'origin', 'main')
     expect(unwrap(await f.service.review({ ...f.target, scope: { kind: 'branch', base: null } })).scope).toMatchObject({ base: 'origin/main', automatic: true })

@@ -28,6 +28,7 @@ let allowed: boolean
 let hooks: PrepareTerminalAgentHooksOptions
 let runId: string
 let data: (value: string) => void
+let exitMarker: string
 let hookWrite: ReturnType<typeof vi.fn<(answer: TerminalHookAnswer) => boolean>>
 let prepareHookGate: Promise<void> | undefined
 const writes = vi.fn()
@@ -45,10 +46,13 @@ beforeEach(async () => {
   allowed = true; writes.mockClear(); runId = randomUUID()
   hookWrite = vi.fn(() => true)
   terminals = new TerminalWorkspaceService({ projects: () => [{ id: 'p', title: 'Project', path: root }],
-    worktrees: { allocate: vi.fn(), ensure: vi.fn(), workingDirectory: vi.fn() }, platform: 'darwin', env: { SHELL: '/bin/zsh' }, emit: () => {},
-    spawn: () => ({ write: writes, resize: () => {}, kill: () => {},
+    worktrees: { allocate: vi.fn(), ensure: vi.fn(), workingDirectory: vi.fn(), reclaim: vi.fn() }, platform: 'darwin', env: { SHELL: '/bin/zsh' }, emit: () => {},
+    spawn: (_file, args) => {
+      exitMarker = `\x1b${args.at(-1)!.match(/\]777;sotto-agent-exited;[a-f0-9-]+/u)![0]}\x07`
+      return { write: writes, resize: () => {}, kill: () => {},
       onData: (callback: typeof data) => { data = callback; return { dispose() {} } }, onExit: () => ({ dispose() {} }),
-    }) as unknown as IPty,
+      } as unknown as IPty
+    },
     prepareHooks: async options => { await prepareHookGate; hooks = options; return { runId, args: [], env: {}, answer: answer => hookWrite(answer), dispose: () => {} } },
   })
   const result = await terminals.open({ projectId: 'p', title: 'Claude terminal', workingCopy: 'shared',
@@ -132,6 +136,31 @@ it('requires this paired client to review and rechecks revoked Can answer before
     expect(await call({ op: 'answer-terminal', answer })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
     expect(hookWrite).not.toHaveBeenCalled()
   } finally { other.frames.close() }
+})
+
+it.each([false, true])('settles a phone answer when its provider exits into a retained shell (acknowledged %s)', async acknowledged => {
+  await hello(); request(); const answer = await preview(), commandId = randomUUID()
+  const pending = call({ op: 'answer-terminal', answer }, phone, commandId)
+  await expect.poll(() => hookWrite.mock.calls.length).toBe(1)
+  if (acknowledged) hooks.onAnswerDelivered!(hookWrite.mock.calls[0]![0])
+  data(exitMarker.slice(0, 9)); data(exitMarker.slice(9))
+  expect(await pending).toMatchObject(acknowledged
+    ? { ok: true, result: { answerDelivered: true } }
+    : { ok: false, error: { code: 'unavailable' } })
+  expect(terminals.phoneRows()).toEqual([expect.objectContaining({ id: terminalId, state: 'exited' })])
+  expect(terminals.phoneRows()[0]).not.toHaveProperty('approval')
+  expect(await call({ op: 'terminal-approval', terminalId })).toMatchObject({ ok: true, result: null })
+  expect(await call({ op: 'answer-terminal', answer })).toMatchObject({ ok: false, error: { code: 'stale_request' } })
+  expect(await terminals.write({ id: terminalId, data: 'echo retained shell\r' })).toMatchObject({ ok: true })
+  data('retained shell output\r\n')
+  // Neither stale hooks nor shell activity may resurrect the provider or its permission.
+  hooks.onEvent({ terminalId, runId, eventId: randomUUID(), kind: 'working', state: 'working' })
+  expect(terminals.phoneRows()[0]!.state).toBe('exited')
+  const snapshot = await terminals.read({ id: terminalId })
+  expect(snapshot).toMatchObject({ ok: true, value: { terminal: { status: 'running', agentState: 'exited' } } })
+  if (snapshot.ok) { expect(snapshot.value.output).toContain('retained shell output'); expect(snapshot.value.output).not.toContain(exitMarker) }
+  expect(hookWrite).toHaveBeenCalledOnce()
+  expect(writes).toHaveBeenCalledExactlyOnceWith('echo retained shell\r')
 })
 
 it('refuses altered bindings, competing answers and expired hooks without typing into the PTY', async () => {

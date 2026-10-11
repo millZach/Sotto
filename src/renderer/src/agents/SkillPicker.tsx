@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { RotateCw } from 'lucide-react'
+import { RotateCw, WandSparkles } from 'lucide-react'
+import type { PromptSelection } from './promptSelection'
 import type { AgentSkillCatalog, AgentSkillReference } from '../../../shared/agentSkills'
 import type { AgentState } from '../../../shared/agents'
 import type { AgentConnection } from './AgentContext'
@@ -22,8 +23,8 @@ export interface SkillPickerModel {
   readonly highlight: (index: number) => void
   readonly close: () => void
   readonly refresh: (forceReload: boolean) => void
-  /** The caret or selection moved in the textarea. */
-  readonly track: (element: HTMLTextAreaElement) => void
+  /** The caret or selection moved, in serialised draft-text offsets. */
+  readonly track: (element: PromptSelection) => void
   /** Focus left the composer's text and the picker. */
   readonly leave: () => void
 }
@@ -145,7 +146,7 @@ export function SkillPicker({ model, listId, provider, selected = [], emptyMessa
         return <li key={`${skill.path}\n${skill.name}\n${index}`} id={skillOptionId(listId, index)} role="option" aria-selected={index === activeIndex} aria-disabled={over || undefined}
           className="composer-picker__option" data-active={index === activeIndex || undefined}
           onMouseDown={event => event.preventDefault()} onMouseMove={() => { if (index !== activeIndex) model.highlight(index) }} onClick={() => { if (!over) onSelect(skill) }}>
-          <span className="composer-picker__name">{skillToken(skill)}</span>
+          <span className="composer-picker__name"><WandSparkles size={14} aria-hidden="true" />{skill.name}</span>
           <span className="composer-picker__description">{skill.description}</span>
           <span className="composer-picker__scope">{skillScopeLabel(skill.scope)}</span>
         </li>

@@ -4,9 +4,10 @@ import { join, resolve } from 'node:path'
 import { _electron as electron, expect, test, type Page } from '@playwright/test'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, firstSottoWindow, launchSotto, openThreads, resizeWindow } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 // Usage: npm run build && npx playwright test tests/e2e/terminal-agent-states.spec.ts
-const SHOTS = resolve('artifacts/terminal-agent-states')
+const SHOTS = evidenceDirectory('artifacts/terminal-agent-states')
 const fixture = resolve('tests/fixtures/fakeTerminalAgent.mjs')
 
 async function state(page: Page, id: string): Promise<string | undefined> {
@@ -45,7 +46,7 @@ test('native fake agents report state and only unseen successful turns earn Just
     await mkdir(SHOTS, { recursive: true })
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', reducedMotion: 'on' })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload(); await openThreads(page)
@@ -74,6 +75,15 @@ test('native fake agents report state and only unseen successful turns earn Just
     // The edge belongs to the whole pane, under its layout controls too, and the pane's name says what it shows.
     await expect(page.getByRole('region', { name: 'Claude approval, needs you', exact: true })).toHaveCSS('box-shadow', /inset/)
     await expect(sidebar.locator('.terminal-nav__row[data-terminal-state="needs-you"]')).toHaveCount(1)
+    // Search and its Escape key belong to the terminal controls, never to the waiting native approval.
+    await input.press('Control+f')
+    const terminalSearch = page.getByRole('search', { name: 'Search terminal output' })
+    const find = terminalSearch.getByRole('textbox', { name: 'Find in terminal' })
+    await expect(find).toBeFocused(); await find.fill('marker.txt')
+    await expect(terminalSearch.locator('output')).toHaveText('1 of 1')
+    expect(await state(page, initial)).toBe('needs-you')
+    await find.press('Escape'); await expect(terminalSearch).toBeHidden(); await expect(input).toBeFocused()
+    expect(await state(page, initial)).toBe('needs-you')
     // Cancellation cannot look like a successful completion.
     await input.pressSequentially('i'); await input.press('Enter')
     await expect.poll(() => state(page, initial)).toBe('idle')
@@ -208,6 +218,21 @@ test('native fake agents report state and only unseen successful turns earn Just
     await command(page, others.finished, 'f'); await expect.poll(() => state(page, others.finished)).toBe('just-finished')
     await launched.app.evaluate(({ BrowserWindow }) => { const host = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().endsWith('/index.html'))!; host.restore(); host.show() })
     await expect.poll(() => state(page, others.finished)).toBe('idle')
+    // Every provider's actual exit leaves searchable output and a writable shell, with Exited final for its agent.
+    for (const id of [others.finished, others.codex, others.grok]) {
+      await command(page, id, 'q')
+      await expect.poll(() => page.evaluate(async id => {
+        const result = await window.sotto!.terminals!.read({ id })
+        if (!result.ok) throw new Error(result.error.message)
+        return { status: result.value.terminal.status, agentState: result.value.terminal.agentState }
+      }, id)).toEqual({ status: 'running', agentState: 'exited' })
+      await command(page, id, "Write-Output ('SOTTO_RETAINED_' + 'SHELL')")
+      await expect.poll(() => page.evaluate(async id => {
+        const result = await window.sotto!.terminals!.read({ id })
+        return result.ok ? result.value.output : ''
+      }, id)).toContain('SOTTO_RETAINED_SHELL')
+    }
+    await page.screenshot({ path: join(SHOTS, 'provider-exit-shell.png'), animations: 'disabled' })
     expect(errors).toEqual([])
   } finally { await closeSotto(launched); await rm(bin, { recursive: true, force: true }) }
 })

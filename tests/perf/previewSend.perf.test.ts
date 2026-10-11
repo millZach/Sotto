@@ -8,13 +8,13 @@
  *
  *   SOTTO_PERF_BENCH=1 npx vitest run tests/perf/previewSend.perf.test.ts --maxWorkers=1 --disable-console-intercept
  */
+import { createAgentControl } from '../fixtures/agentControlFixture'
+import { testCredentials } from '../fixtures/testCredentials'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import type { AttachmentPreviews } from '../../src/main/agents/attachmentPreviews'
-import { AgentControl } from '../../src/main/agents/control'
-import { AgentCredentials } from '../../src/main/agents/credentials'
 import type { AgentHostCommand, AgentHostResult } from '../../src/main/agents/host'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import type { AgentAttachment } from '../../src/shared/agents'
@@ -46,18 +46,16 @@ class TimedHost extends E2EAgentHost {
 const roots: string[] = []
 afterAll(async () => { for (const root of roots) await rm(root, { recursive: true, force: true }) })
 
-describe.skipIf(!PERF_BENCH)('send with an image', () => {
+describe.skipIf(!PERF_BENCH)("send with an image (timing benchmark; requires SOTTO_PERF_BENCH=1)", () => {
   it.each([0, 10, 50])('reports admission to provider acknowledgement with %i MiB of previews already stored', async stored => {
     const root = await mkdtemp(join(tmpdir(), 'sotto-perf-preview-send-')); roots.push(root)
     // Earlier sends, dated now so retention keeps them, one 1 MiB screenshot each.
     const entries = Array.from({ length: stored }, (_, index) => ({ threadId: 'workshop', messageId: `earlier-${index}`,
       commandId: `earlier-${index}`, storedAt: Date.now() - 1000, attachments: [png(MiB, `earlier-${index}`)] }))
     await writeFile(join(root, 'attachment-previews.json'), JSON.stringify({ version: 1, entries }))
-    const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
-    await credentials.load()
+    const credentials = await testCredentials(root, { mode: 'unavailable' })
     const host = new TimedHost()
-    const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
-    })
+    const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner })
     try {
       await control.start(); await control.command({ type: 'connect' })
       // Queued behind any preview write still running, so it resolves once the store is idle.

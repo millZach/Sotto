@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 // Mounts the real DictationController and widget shell, which read document.hasFocus() and the DOM.
+import { deferred } from '../fixtures/deferred'
 import { act, render, waitFor } from '@testing-library/react'
 import { createElement, type ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
@@ -22,16 +23,6 @@ import {
   type AppControllerFactory,
   type AppControllerFactoryBindings,
 } from '../../src/renderer/src/state/AppContext'
-
-function deferred<Value>() {
-  let resolve!: (value: Value) => void
-  let reject!: (reason?: unknown) => void
-  const promise = new Promise<Value>((res, rej) => {
-    resolve = res
-    reject = rej
-  })
-  return { promise, reject, resolve }
-}
 
 const OK = Object.freeze({ ok: true as const })
 
@@ -59,9 +50,12 @@ function createBridge(overrides: Partial<SottoBridge> = {}): SottoBridge {
       text: request.text,
       applied: false,
     })),
-    transcribe: vi.fn(async () => ({ ok: false as const, reason: 'unconfigured' as const })),
+    transcribe: vi.fn(async () => ({ ok: false as const, reason: 'model-not-ready' as const })),
     cancelTranscription: vi.fn(async () => OK),
-    checkTranscriptionKey: vi.fn(async () => ({ ok: false as const, reason: 'unconfigured' as const })),
+    getSpeechModelStatus: vi.fn(async () => ({ state: 'ready' as const })),
+    downloadSpeechModel: vi.fn(async () => OK),
+    onSpeechModelStatus: vi.fn(() => () => undefined),
+    checkOpenRouterKey: vi.fn(async () => ({ ok: false as const, reason: 'unconfigured' as const })),
     ensureMicrophoneAccess: vi.fn(async () => true),
     getUpdateStatus: vi.fn(async () => ({ ok: false as const, reason: 'unavailable' as const })),
     checkForUpdates: vi.fn(async () => ({ ok: false as const, reason: 'unavailable' as const })),
@@ -137,7 +131,6 @@ function mountProvider(bridge: SottoBridge, createController: AppControllerFacto
 }
 
 describe('AppProvider dictation integration', () => {
-
 
   it('loads settings and history in parallel, then replays every buffered command exactly once', async () => {
     const settings = deferred<AppSettings>()
@@ -465,7 +458,7 @@ describe('AppProvider dictation integration', () => {
 })
 
 describe('production controller seam', () => {
-  it('constructs the recorder, hosted transcriber, and sound cue player through injectable factories', async () => {
+  it('constructs the recorder, local transcriber, and sound cue player through injectable factories', async () => {
     const recorder = { start: vi.fn(async () => undefined), stop: vi.fn(async () => null), cancel: vi.fn(async () => undefined) }
     const transcriber = { transcribe: vi.fn(), cancel: vi.fn(), dispose: vi.fn() }
     const cuePlayer = { playStart: vi.fn(), playStop: vi.fn() }

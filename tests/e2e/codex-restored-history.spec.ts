@@ -1,13 +1,12 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
 
 test('Codex replies stay visible when saved user receipts replay after reconnect', async () => {
   test.setTimeout(90_000)
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-codex-history-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-codex-history-' })).directory
   const root = join(profile, 'native-fixture')
   for (const folder of ['claude', 'codex', 'project']) await mkdir(join(root, folder), { recursive: true })
   await writeFile(join(root, 'codex', 'script.json'), JSON.stringify({ reply: 'The saved Codex reply is still here.' }))
@@ -21,12 +20,12 @@ test('Codex replies stay visible when saved user receipts replay after reconnect
     await page.evaluate(async project => {
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
       const agents = window.sotto!.agents!
-      await agents.command({ type: 'configure', patch: { provider: 'codex', enabled: true, enabledProviders: ['codex'], speak: false, checkClientUpdates: false } })
+      await agents.command({ type: 'configure', patch: { provider: 'codex', enabled: true, enabledProviders: ['codex'], checkClientUpdates: false } })
       await agents.command({ type: 'connect', provider: 'codex' })
       const created = await agents.command({ type: 'create-project', provider: 'codex', title: 'History recovery', path: project, useExisting: true })
       const projectId = created.host.projects.find(p => p.title === 'History recovery')!.id
       const modelId = (await agents.get()).host.models.find(m => m.providerId === 'codex' && m.ready)!.id
-      const thread = await agents.command({ type: 'create-thread', projectId, title: 'Saved conversation', titleSource: 'user', modelId, workingCopy: 'shared', managed: false })
+      const thread = await agents.command({ type: 'create-thread', projectId, title: 'Saved conversation', titleSource: 'user', modelId, workingCopy: 'shared' })
       if (thread.error || !thread.activeThreadId) throw new Error(thread.error ?? 'Missing thread')
       await agents.command({ type: 'manual-send', threadId: thread.activeThreadId, text: 'Please keep this conversation.' })
     }, join(root, 'project'))
@@ -63,6 +62,6 @@ test('Codex replies stay visible when saved user receipts replay after reconnect
     else process.env.SOTTO_E2E_NATIVE_FIXTURE_ROOT = previous.root
     if (previous.executable === undefined) delete process.env.SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE
     else process.env.SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE = previous.executable
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 })
