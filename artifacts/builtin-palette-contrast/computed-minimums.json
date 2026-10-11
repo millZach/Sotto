@@ -119,11 +119,18 @@
     "afterAt": "Sotto light"
   },
   {
-    "row": "Amber branch problem on the current row",
+    "row": "Amber on the current row: needs you, branch problem",
     "before": 3.5189530041609007,
     "beforeAt": "Tropic light",
     "after": 4.674606210391973,
     "afterAt": "Sotto light"
+  },
+  {
+    "row": "Amber status of a failed send, in the bubble",
+    "before": 3.5189530041609007,
+    "beforeAt": "Tropic light",
+    "after": 4.710475329906482,
+    "afterAt": "Tropic light"
   },
   {
     "row": "Red text on a hovered menu row",
@@ -138,6 +145,13 @@
     "beforeAt": "Hush dark",
     "after": 4.757215463516296,
     "afterAt": "Sotto dark"
+  },
+  {
+    "row": "Red “could not open” under a link in the bubble",
+    "before": 3.4337755951907076,
+    "beforeAt": "Hush dark",
+    "after": 4.993510822434027,
+    "afterAt": "Hush dark"
   },
   {
     "row": "Link hover and code types",

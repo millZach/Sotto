@@ -14,12 +14,12 @@ Following every `color:` that paints text back to the background behind it, stat
 - a hovered link in the bubble and on the selection;
 - code keywords, which use the primary action's fill as ink;
 - faint ghost buttons on menus, sunken cards and glass, and on two tinted cards (the bubble's Dismiss and the theme-import warning);
-- the current row's branch problem;
-- the name of a selected browser tab whose page is unavailable.
+- amber on the current row (needs you, disconnected, a branch problem) and on a failed send's status in the bubble;
+- red on a selected browser tab whose page is unavailable, and on a link that would not open, in the bubble.
 
-Icons need 3:1, and disabled controls are exempt.
+Icons need 3:1, and disabled controls are exempt. The two-axis review found the needs-you status, the failed send and the failed link. Those three reach their ink through local aliases (`--threads-warning-text`) or the raw `--tt-error` token, which the first audit's search for `color:` reading a `--tt-*` token did not follow. A second sweep followed every alias.
 
-`tests/fixtures/renderer/paintedTextPairs.ts` lists the pairs: 165 of them, each an ink, a surface and the translucent layers over it. The Changes tints, the selection wash and the stylesheets' own mixes are read from the stylesheets that declare them. `themeTokens.test.ts` holds every built-in half to the list, and `omarchyThemes.test.ts` holds all 22 stock Omarchy palettes to it as well. Contrast is computed the way the Omarchy audit models it: each wash is composited fractionally over the tint beneath, and the lower of that and the rounded sRGB pixel counts. Against `main`'s palettes, the new test fails 11 of the 12 halves.
+`tests/fixtures/renderer/paintedTextPairs.ts` lists the pairs: 170 of them, each an ink, a surface and the translucent layers over it. The Changes tints (now `--changes-added` and `--changes-removed`), the selection wash, the follow-ups surface and the stylesheets' own mixes are read from the stylesheets that declare them. `themeTokens.test.ts` holds every built-in half to the list, and `omarchyThemes.test.ts` holds all 22 stock Omarchy palettes to it as well. Contrast is computed the way the Omarchy audit models it: each wash is composited fractionally over the tint beneath, and the lower of that and the rounded sRGB pixel counts. Against `main`'s palettes, the new test fails 11 of the 12 halves.
 
 ## How each pair was fixed
 
@@ -28,8 +28,9 @@ Each palette fix moves one role's OKLCH lightness and nothing else, only in a ha
 - **Muted text, dark halves:** `mutedForeground` rises. That alone would have taken Hush to Sotto's own 0.72, so it rises only as far as the current row, a highlighted choice and hovered Changes lines need.
 - **The bubble, dark halves:** `messageSurface` drops 0.018 to 0.027 so its time reads at 4.5:1. The bubble still sits a clear step above the room.
 - **Faint text:** `placeholder` moves about 0.01 to 0.02 so ghost buttons and placeholders read on menus, sunken cards and glass. On the bubble and the theme-import warning card, the ghost buttons take muted ink instead, as the Changes comment's and New thread's already do. Faint ink could only reach 4.5:1 there by becoming as strong as muted text.
-- **Amber, light halves:** `warningForeground` darkens 0.016 to 0.041. On the current row's selection the branch problem mixes a tenth toward the body ink (`threadSidebar.css`), rather than darkening every amber a further 0.02.
-- **Red:** `errorForeground` darkens in five light halves and lifts in four dark ones, by 0.007 to 0.029. A selected unavailable browser tab mixes its red a fifth toward the body ink (`tools.css`) rather than turning every dark red pink.
+- **Amber, light halves:** `warningForeground` darkens 0.016 to 0.041.
+- **Red:** `errorForeground` darkens in five light halves and lifts in four dark ones, by 0.007 to 0.029.
+- **Status on a tint:** the selection and the bubble are tints, and status text on them would have pulled amber a further 0.02 darker and dark red toward pink. Two tokens in `tokens.css` take it instead. `--tt-warning-on-tint` mixes amber a tenth toward the body ink, for needs you, disconnected and a branch problem on the current row and for a failed send's status in the bubble. `--tt-error-on-tint` mixes red a fifth toward it, for a selected unavailable browser tab and for a link that would not open, in the bubble.
 - **Link hover:** `messageActionHover` darkens in four light halves and lifts a hair in Tropic dark. It is also the primary button's hover fill, which only gains contrast.
 - **Green, light mode:** the `--tt-success` constant in `tokens.css` darkens from L 0.50 to 0.45. The plain + sign then reads on added lines, and the finished ring only gains. Omarchy sets its own green at load and is unaffected.
 - **Picked Changes lines:** the 22% selection wash stays, because a lighter wash made a picked line almost indistinguishable from a hovered one (1.01:1 between them in Tropic dark at 16%). A picked line's numbers take the body ink instead, as a pointed-at number already does. Its signs keep 70% green and 40% red, mixed toward that ink in OKLab. An sRGB mix of green and white can be darker than both, which is how Tokyo Night fell short of 4.5:1.
@@ -118,8 +119,8 @@ Sotto dark needs no palette change. Sotto light changes only `placeholder`, `war
 | Picked line numbers (`changes.css`) | `--tt-text-muted` | `--tt-text` |
 | Picked + sign (`--changes-picked-add`) | `--tt-success` | `color-mix(in oklab, var(--tt-success) 70%, var(--tt-text))` |
 | Picked − sign (`--changes-picked-remove`) | `--tt-error-text` | `color-mix(in oklab, var(--tt-error-text) 40%, var(--tt-text))` |
-| Branch problem, current row (`--thread-nav-current-warning`) | `--tt-warning-text` | `color-mix(in oklab, var(--tt-warning-text) 90%, var(--tt-text))` |
-| Unavailable tab, selected (`--terminal-tabs-selected-error`) | `--tt-error-text` | `color-mix(in oklab, var(--tt-error-text) 80%, var(--tt-text))` |
+| Amber on a tint (`--tt-warning-on-tint`): the current row's needs you, disconnected and branch problem; a failed send in the bubble | `--tt-warning-text` | `color-mix(in oklab, var(--tt-warning-text) 90%, var(--tt-text))` |
+| Red on a tint (`--tt-error-on-tint`): a selected unavailable tab; a link that would not open, in the bubble | `--tt-error-text`, `--tt-error` | `color-mix(in oklab, var(--tt-error-text) 80%, var(--tt-text))` |
 | Code keywords (`--rich-code-keyword`) | `--tt-primary` | `color-mix(in oklab, var(--tt-primary) 85%, var(--tt-text))` |
 | Ghost buttons on the bubble and the theme-import warning | `--tt-text-faint` | `--tt-text-muted` |
 
@@ -146,9 +147,11 @@ Computed from the tokens, at the default Contrast 100% and Glass 80%, without fr
 | Changes, removed line: − sign | 4.10:1 (Linen light) | 4.60:1 (Sotto light) |
 | Green text: file badge, done, updated | 3.95:1 (Linen light) | 4.94:1 (Linen light) |
 | Amber text: badges, notes, code strings | 3.90:1 (Tropic light) | 4.60:1 (Sotto light) |
-| Amber branch problem on the current row | 3.52:1 (Tropic light) | 4.67:1 (Sotto light) |
+| Amber on the current row: needs you, branch problem | 3.52:1 (Tropic light) | 4.67:1 (Sotto light) |
+| Amber status of a failed send, in the bubble | 3.52:1 (Tropic light) | 4.71:1 (Tropic light) |
 | Red text on a hovered menu row | 4.15:1 (Hush dark) | 4.60:1 (Tropic dark) |
 | Red name of a selected unavailable tab | 3.72:1 (Hush dark) | 4.76:1 (Sotto dark) |
+| Red “could not open” under a link in the bubble | 3.43:1 (Hush dark) | 4.99:1 (Hush dark) |
 | Link hover and code types | 3.29:1 (Citrine light) | 4.60:1 (Tropic light) |
 | Code keywords | 4.01:1 (Citrine light) | 5.02:1 (Citrine light) |
 | Faint ghost buttons on menus, cards, glass | 4.22:1 (Linen dark) | 4.60:1 (Tropic light) |
@@ -184,7 +187,9 @@ Under each capture it reads the painted ink against the composited background: t
 | Picked removed line: number | 2.91:1 (Citrine dark) | 7.20:1 (Linen dark) |
 | Picked removed line: − sign | 2.91:1 (Linen dark) | 5.25:1 (Citrine dark) |
 
-Neither run had a page error. Build SHA-256: `out/main/index.js` `b70deb369a82f532dd35f7f1bfd5c41a61e4c47514e2c5ef947dc75a8a7d1fb3`; the renderer chunk carrying the palettes, `out/renderer/assets/accelerator-1tEXzmO2.js`, `3233f30ab47394a1922a8a446a2403424afc33952a48b3e5416f58c3cd34c40a`; `out/renderer/assets/main--pyxHjsu.css` `321e10a4ffdd4764d0c0784507a4e8e88465306d1c5cc2840debd6265aed92e6`.
+Neither run had a page error. Build SHA-256: `out/main/index.js` `b70deb369a82f532dd35f7f1bfd5c41a61e4c47514e2c5ef947dc75a8a7d1fb3`; the renderer chunk carrying the palettes, `out/renderer/assets/accelerator-1tEXzmO2.js`, `3233f30ab47394a1922a8a446a2403424afc33952a48b3e5416f58c3cd34c40a`; `out/renderer/assets/main--gqofUuj.css` `02a9133de657db61cf0768b9b90f5f914401623b33f6ddf02d6fae685ca80696`.
+
+On the same inner display and build, `tests/e2e/omarchy-muted-surfaces.spec.ts`, which now shares its measuring step with the new spec (`tests/e2e/support/paintedPair.ts`), passed in 45 seconds. All 198 Omarchy samples read at 4.5:1 or better, the lowest 4.5163:1 on a picked added line in Kanagawa. All 108 built-in samples now do too, the lowest 4.5493:1 on Hush dark's current row; on `main`, the issue's sample put that at 3.99:1.
 
 Retained in `artifacts/builtin-palette-contrast/` (the page embeds all 96 captures):
 
@@ -193,6 +198,12 @@ Retained in `artifacts/builtin-palette-contrast/` (the page embeds all 96 captur
 - [Citrine dark, picked lines](../../artifacts/builtin-palette-contrast/citrine-dark-changes-before.png) and [after](../../artifacts/builtin-palette-contrast/citrine-dark-changes-after.png)
 - [Tropic light, picked lines](../../artifacts/builtin-palette-contrast/tropic-light-changes-before.png) and [after](../../artifacts/builtin-palette-contrast/tropic-light-changes-after.png)
 - [Browser readings before](../../artifacts/builtin-palette-contrast/browser-before.json), [after](../../artifacts/builtin-palette-contrast/browser-after.json) and the [computed minimums](../../artifacts/builtin-palette-contrast/computed-minimums.json)
+
+## Not covered
+
+The picked line's accent edge, against its own 22% accent wash, reads as low as 2.56:1 on a removed line in Citrine light, against 2.57:1 before: the edge and the wash are both the accent, which did not move, and only the removed line's tint darkened a hair with the light red. The edge marks the selection against the unpicked lines beside it, and the focus ring keeps its 3:1 checks on the room and the surface. Holding the edge to 3:1 against its own wash would mean a darker edge or a lighter wash, a look change this issue did not ask for.
+
+No layout changed. Every new rule sets `color` alone, so the 1600×1000, 1280×800 and 820×560 checks are unchanged. The owner's Windows design capture run covers those sizes.
 
 ## Design baselines
 
@@ -203,7 +214,7 @@ The Windows design captures were not regenerated. They are taken on the owner's 
 ```sh
 mise exec node@24.21.0 -- npx vitest run tests/unit/renderer/themeTokens.test.ts tests/unit/shared/omarchyThemes.test.ts tests/unit/shared/iosPalettes.test.ts
 mise exec node@24.21.0 -- npm run build
-mise exec node@24.21.0 -- node tools/capture-builtin-palette-contrast.mjs /tmp/palette-after
+mise exec node@24.21.0 -- node tools/capture-builtin-palette-contrast.mjs /tmp/palette-after   # writes /tmp/palette-after/builtin-palette-contrast/
 # Before: build main, copy its out/ into this checkout as out-before/ (so node_modules resolves),
 # pass out-before/main/index.js as the second argument, then remove out-before/.
 ```
