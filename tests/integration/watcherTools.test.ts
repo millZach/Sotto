@@ -10,6 +10,7 @@ import { watcherToolSchemas } from '../../src/shared/watcher'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
 import { deferred } from '../fixtures/deferred'
+import { PIXEL_PNG } from '../fixtures/stagedImages'
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
@@ -580,4 +581,28 @@ it.each(['expiry', 'eviction'])('refuses obsolete working-copy choices after sna
     expect(f.control.watcherRecord()).toEqual(record)
     expect(f.control.shell().activeThreadId).toBe(selected)
   } finally { clock?.mockRestore() }
+})
+
+
+it.each(['manual-send', 'queue-followup'] as const)('keeps the Watcher request context on an image %s at the provider boundary', async type => {
+  const f = await fixture()
+  f.workspace.adapters.codex.state.models[0]!.supportsImages = true
+  f.workspace.adapters.codex.emit()
+  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  const image = await f.control.stageAttachment({ name: 'Synthetic.png', mimeType: 'image/png', bytes: PIXEL_PNG })
+  const selected = f.control.shell().activeThreadId
+  if (type === 'manual-send') await f.finish(f.id)
+  const result = await f.control.commandShell({ type, threadId: f.id, draftId: randomUUID(), text: 'Synthetic image instruction', attachments: [image] })
+  expect(result.error).toBeNull()
+  if (type === 'queue-followup') await f.finish(f.id)
+  await vi.waitFor(() => expect(f.workspace.adapters.codex.images).toHaveLength(1))
+  const sent = f.workspace.adapters.codex.commands.findLast(command => command.type === 'send' && command.attachments?.length)
+  if (!sent || sent.type !== 'send') throw new Error('image not sent')
+  expect(sent.text).toContain(`Sotto Watcher request: ${f.service.state().requests.at(-1)!.id}`)
+  expect(sent.text).toContain(`Local host: ${f.control.hostId()}`)
+  expect(sent.text).toContain(f.project.id)
+  expect(sent.attachments?.[0]?.id).toBe(image.id)
+  expect(Buffer.from(f.workspace.adapters.codex.images[0]!)).toEqual(PIXEL_PNG)
+  expect(f.control.shell().activeThreadId).toBe(selected)
+  expect(f.service.state().requests).toHaveLength(type === 'manual-send' ? 2 : 1)
 })
