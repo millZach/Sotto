@@ -1,7 +1,7 @@
 {
   "name": "sotto",
   "version": "0.1.36",
-  "description": "Hosted dictation through OpenRouter",
+  "description": "Dictation on this computer and a coordinator for coding agent threads",
   "author": "Sotto",
   "private": true,
   "main": "./out/main/index.js",
@@ -37,6 +37,7 @@
   "type": "commonjs",
   "dependencies": {
     "node-pty": "1.1.0",
+    "sherpa-onnx-node": "1.13.8",
     "zod": "4.4.3"
   },
   "devDependencies": {

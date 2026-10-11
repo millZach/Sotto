@@ -2,6 +2,7 @@ import {
   initialDictationState,
   isTranscriptionErrorCode,
   MICROPHONE_NOT_SET_UP_DETAIL,
+  SPEECH_MODEL_NOT_READY_DETAIL,
   reduceDictation,
   TRANSCRIPTION_ERROR_DETAIL,
   TRANSCRIPTION_KEPT_DETAIL,
@@ -34,8 +35,8 @@ import type {
   TranscribeOptions,
   TranscriptionProgress,
   TranscriptionResult,
-} from '../../transcription/openRouterTranscriber'
-import { TranscriptionError } from '../../transcription/openRouterTranscriber'
+} from '../../transcription/localTranscriber'
+import { TranscriptionError } from '../../transcription/localTranscriber'
 
 export interface DictationRecorder {
   start(): Promise<void>
@@ -65,6 +66,11 @@ export type DictationOutputResult =
 export interface DictationControllerDependencies {
   readonly createRecorder: (options: AudioRecorderOptions) => DictationRecorder
   readonly transcriber: DictationTranscriber
+  /**
+   * Whether the speech model on this computer can transcribe now (ADR-0071). Until it can, a
+   * dictation records nothing and says so; unset in tests that do not exercise the model.
+   */
+  readonly speechModelReady?: () => boolean
   readonly getSettings: () => AppSettings
   readonly deliverOutput: (
     request: OutputDeliveryRequest,
@@ -147,6 +153,7 @@ const ERROR_MESSAGES = Object.freeze({
   MIC_DEVICE_NOT_FOUND: 'The selected microphone is unavailable.',
   MIC_START_FAILED: 'The microphone could not be started.',
   MIC_NOT_SET_UP: MICROPHONE_NOT_SET_UP_DETAIL,
+  SPEECH_MODEL_NOT_READY: SPEECH_MODEL_NOT_READY_DETAIL,
   RECORDING_FAILED: 'The recording could not be completed.',
   NO_SPEECH: 'No speech was detected.',
   ...TRANSCRIPTION_ERROR_DETAIL,
@@ -198,17 +205,7 @@ function isTerminal(state: DictationState): boolean {
 }
 
 function transcriptionFailureCode(error: unknown): WidgetErrorCode {
-  if (error instanceof TranscriptionError) {
-    switch (error.reason) {
-      case 'unconfigured': return 'TRANSCRIPTION_UNCONFIGURED'
-      case 'unauthorized': return 'TRANSCRIPTION_UNAUTHORIZED'
-      case 'network':
-      case 'timeout': return 'TRANSCRIPTION_OFFLINE'
-      case 'billing': return 'TRANSCRIPTION_BILLING'
-      case 'rate-limited': return 'TRANSCRIPTION_RATE_LIMITED'
-      case 'http': return 'TRANSCRIPTION_SERVICE_ERROR'
-    }
-  }
+  if (error instanceof TranscriptionError && error.reason === 'model-not-ready') return 'TRANSCRIPTION_MODEL_NOT_READY'
   return 'TRANSCRIPTION_FAILED'
 }
 
@@ -343,6 +340,12 @@ export class DictationController {
       this.fail(session, 'MIC_NOT_SET_UP')
       return Promise.resolve()
     }
+    // The speech model is still downloading or did not start: record nothing rather than keep
+    // audio for a model that may be minutes away (ADR-0071).
+    if (this.dependencies.speechModelReady?.() === false) {
+      this.fail(session, 'SPEECH_MODEL_NOT_READY')
+      return Promise.resolve()
+    }
 
     try {
       session.recorder = this.dependencies.createRecorder({
@@ -351,9 +354,8 @@ export class DictationController {
         onLevel: (level) => this.handleLevel(session, level),
         onDurationLimit: (result) => this.handleDurationLimit(session, result),
         onDeviceUnavailable: () => this.handleDeviceUnavailable(session),
-        ...(settings.streamingAsr
-          ? { onSegment: (segment: AudioRecordingResult) => this.handleSegment(session, segment) }
-          : {}),
+        // Always cut at pauses: the speech model's memory grows with one segment's length (ADR-0071).
+        onSegment: (segment: AudioRecordingResult) => this.handleSegment(session, segment),
       })
     } catch (error: unknown) {
       this.fail(session, classifyStartFailure(error))
@@ -588,7 +590,6 @@ export class DictationController {
     const result = this.dependencies.transcriber.transcribe({
       sessionId: session.id,
       audio,
-      language: session.settings.language,
       ...(reportsProgress
         ? { onProgress: (progress: TranscriptionProgress) => this.handleProgress(session, progress) }
         : {}),
@@ -657,7 +658,7 @@ export class DictationController {
               .map((partial) => partial.text.trim())
               .filter((partial) => partial.length > 0)
               .join(' '),
-            language: results.at(-1)?.language ?? session.settings.language,
+            language: results.at(-1)?.language ?? 'auto',
           }
     session.acceptProgress = false
 
@@ -726,7 +727,7 @@ export class DictationController {
       createdAt: Math.round(finiteTimestamp(this.now())),
       durationMs: historyDuration(session.durationMs),
       language: result.language,
-      modelPreset: 'mai',
+      modelPreset: 'parakeet',
     }
     let output: DictationOutputResult = 'empty'
     let outputFailure: 'OUTPUT_FAILED' | 'OUTPUT_UNAVAILABLE' | 'DESKTOP_CLIPBOARD_UNAVAILABLE' | undefined

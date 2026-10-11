@@ -18,7 +18,7 @@ export async function packageHost({
 } = {}) {
   if (Number(process.versions.node.split('.')[0]) !== 24) throw new Error('Build and verify the host archive with Node 24')
   const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
-  if (JSON.stringify(Object.keys(pkg.dependencies).sort()) !== '["node-pty","zod"]') throw new Error('Production dependency policy changed')
+  if (JSON.stringify(Object.keys(pkg.dependencies).sort()) !== '["node-pty","sherpa-onnx-node","zod"]') throw new Error('Production dependency policy changed')
   await buildHost(outDir)
   const dependencies = { zod: pkg.dependencies.zod }
   verifyHostExternalDependencies(JSON.parse(await readFile(join(outDir, 'external-dependencies.json'), 'utf8')), dependencies)

@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-Sotto sends dictated audio to Microsoft MAI-Transcribe-2 through OpenRouter using the user's API key. This inventory covers code included in the Electron distribution, JavaScript bundled into the renderer, the Windows updater tree compiled into the main-process bundle, and the external Node runtime dependencies retained in app.asar and its unpacked native terminal helpers. Versions are pinned by package-lock.json.
+Sotto transcribes dictated audio on the computer with NVIDIA's Parakeet speech model, which it downloads on first run, through sherpa-onnx. This inventory covers code included in the Electron distribution, JavaScript bundled into the renderer, the Windows updater tree compiled into the main-process bundle, and the external Node runtime dependencies retained in app.asar and its unpacked native terminal and speech engine helpers. Versions are pinned by package-lock.json.
 
 Electron additionally ships its exact upstream `LICENSE.electron.txt` and comprehensive `LICENSES.chromium.html` beside `Sotto.exe` in the Windows installation, and inside `Sotto.app/Contents/Resources` on macOS. The latter contains Chromium's component-by-component notices and license texts and is the authoritative inventory for Chromium's own bundled third-party code.
 
@@ -49,6 +49,10 @@ Electron additionally ships its exact upstream `LICENSE.electron.txt` and compre
 | `@xterm/addon-unicode11` | `0.9.0` | MIT | The xterm.js authors |
 | `node-pty` | `1.1.0` | MIT | Christopher Jeffrey; Daniel Imms; Microsoft Corporation |
 | `node-addon-api` | `7.1.1` | MIT | Node.js API collaborators |
+| `sherpa-onnx-node` | `1.13.8` | Apache-2.0 | Xiaomi Corporation and the k2-fsa sherpa-onnx contributors |
+| `sherpa-onnx` (native package for this platform: win-x64, darwin-arm64 or linux-x64) | `1.13.8` | Apache-2.0 | Xiaomi Corporation and the k2-fsa sherpa-onnx contributors |
+| `ONNX Runtime` (inside the sherpa-onnx native package) | `1.28.2` | MIT | Microsoft Corporation |
+| `Parakeet TDT 0.6B v3` (speech model, 8-bit; downloaded on first run, not in the installer) | `sherpa-onnx int8 export` | CC-BY-4.0 | NVIDIA Corporation |
 | `electron-updater` | `6.8.9` | MIT | Loopline Systems and electron-builder contributors |
 | `builder-util-runtime` | `9.7.0` | MIT | Loopline Systems and electron-builder contributors |
 | `fs-extra` | `10.1.0` | MIT | JP Richardson |
@@ -1268,6 +1272,42 @@ Permission is hereby granted, free of charge, to any person obtaining a copy of 
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+```
+
+## Speech engine licenses
+
+```text
+sherpa-onnx-node and its native packages (Apache License 2.0; the full text is under "Apache License 2.0" below)
+Copyright (c) Xiaomi Corporation and the k2-fsa sherpa-onnx contributors.
+https://github.com/k2-fsa/sherpa-onnx
+
+ONNX Runtime (MIT License)
+Copyright (c) Microsoft Corporation
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Parakeet TDT 0.6B v3 (Creative Commons Attribution 4.0 International)
+The speech model Sotto downloads on first run is NVIDIA's Parakeet TDT 0.6B v3,
+by NVIDIA Corporation, licensed under CC BY 4.0
+(https://creativecommons.org/licenses/by/4.0/). Sotto uses the 8-bit ONNX export
+published by the sherpa-onnx project, unmodified.
+https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3
 ```
 
 ## Windows updater dependency MIT licenses

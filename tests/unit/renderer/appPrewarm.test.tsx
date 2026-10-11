@@ -83,7 +83,7 @@ describe('transcription pipeline prewarm', () => {
         ...DEFAULT_SETTINGS,
         onboardingComplete: true,
         theme: 'dark',
-        language: 'es',
+        formatWhitespace: false,
       })
     })
     await waitFor(() => expect(prewarm).toHaveBeenCalledTimes(1))

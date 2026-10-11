@@ -32,8 +32,8 @@ test.describe('authoritative design-review captures', () => {
       await captureSection(page, onboarding, 'onboarding-step-3-microphone-ready.png', { category: 'onboarding', state: 'microphone-ready' })
 
       await forward.click()
-      await expect(page.getByText(/connect your openrouter key/i)).toBeVisible()
-      await captureSection(page, onboarding, 'onboarding-step-4-openrouter.png', { category: 'onboarding', state: 'openrouter-key' })
+      await expect(page.getByRole('heading', { name: 'Download the speech model' })).toBeVisible()
+      await captureSection(page, onboarding, 'onboarding-step-4-speech-model.png', { category: 'onboarding', state: 'speech-model' })
 
       await forward.click()
       await expect(page.getByRole('heading', { name: /one shortcut/i })).toBeVisible()
@@ -177,7 +177,7 @@ test.describe('authoritative design-review captures', () => {
         await captureSection(page, section, `settings-${state}.png`, { category: 'settings', state })
       }
 
-      await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Transcription', exact: true }).click()
+      await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Cleanup', exact: true }).click()
       await page.getByRole('button', { name: 'Verify key', exact: true }).click()
       await expect(page.getByText('Key verified.')).toBeVisible()
       await capturePage(page, 'settings-key-verified.png')
