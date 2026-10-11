@@ -12,6 +12,7 @@ import { useMemoryEnabled } from '../state/memoryFeature'
 import { useReleaseTrack } from '../state/useReleaseTrack'
 import type { AgentConnection } from './AgentContext'
 import { useAddProject } from './addProject'
+import { OwlSky } from './OwlSky'
 import { useSidebarSize } from './sidebarSize'
 
 /** What the sidebar lists: threads, or the terminals of Terminal mode. */
@@ -187,7 +188,8 @@ export interface SidebarFrameProps {
 /**
  * The sidebar both modes share: one top row carrying the mark, the Threads | Terminal switch and the two new
  * actions, then search, the scrolling list, and the foot. Only what the body lists changes with the mode. The
- * top row is the frameless window's drag region, which is why every control in it is marked no-drag.
+ * top row is the frameless window's drag region, which is why every control in it is marked no-drag. A Sotto Owl
+ * build paints its night sky behind the top row and the search field while the sidebar is open.
  */
 export function SidebarFrame({ state, command, mode, onMode, label, query, searchPlaceholder, onQuery, onNew, newLabel, NewIcon, newShortcut, platform, foot, title = 'Threads', children, collapsedContent, extraError, onDismissExtraError }: SidebarFrameProps): ReactNode {
   const app = useOptionalApp()
@@ -196,9 +198,11 @@ export function SidebarFrame({ state, command, mode, onMode, label, query, searc
   const size = useSidebarSize()
   const [resizing, setResizing] = useState(false)
   const toggle = useCollapseToggleFocus(size.collapsed)
+  const sky = useReleaseTrack() === 'owl' && !size.collapsed
   return <aside className={mac ? 'thread-nav thread-nav--mac' : 'thread-nav'} aria-label={label} data-mode={mode} data-collapsed={size.collapsed || undefined} data-resizing={resizing || undefined}
-    style={{ width: size.collapsed ? (mac ? 80 : 52) : size.width }}>
+    data-sky={sky || undefined} style={{ width: size.collapsed ? (mac ? 80 : 52) : size.width }}>
     <div className="thread-nav__expanded" hidden={size.collapsed}>
+    {sky ? <OwlSky /> : null}
     <SidebarTop>
       {title === null ? null : <h1 className="tt-visually-hidden">{title}</h1>}
       <div className="thread-nav__seg thread-nav__seg--icons" role="radiogroup" aria-label="Sidebar mode">
