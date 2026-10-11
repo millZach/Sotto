@@ -8,11 +8,11 @@ The audit found a real omission in Changes: its 22% selection image sits over th
 
 The search covered 597 `color:` rules using `--tt-text-muted`, `--tt-text-2`, `--tt-text-faint` or `--tt-sidebar-text-muted` across the renderer stylesheets. Thread timestamps and message timestamps use `--tt-text-muted`, the 85% muted-foreground / 15% body-text mix in `tokens.css`. `--tt-sidebar-text-muted` is defined but has no `color:` use in these stylesheets. The actual hovered thread row is `--tt-hover` composited over `--tt-sidebar`; the opaque `sidebarRowHover` role alone is not its background.
 
-The 35 measured background cases include the room, sidebar, selection, hover, bubbles, cards, fields, menus, code, every Changes state, glass, status notices and the Owl header. Main and widget role/token coverage remains in `omarchyThemes.test.ts`; the added assertions explicitly cover visible timestamps, body/code text and line numbers/signs on the layered Changes rows.
+The 36 measured background cases include the room, sidebar, selection, hover, bubbles, cards, fields, menus, code, every Changes state, glass, status notices and the Owl header. Main and widget role/token coverage remains in `omarchyThemes.test.ts`; the added assertions explicitly cover visible timestamps, body/code text and line numbers/signs on the layered Changes rows.
 
 Computed CSS measurements use default Contrast 100%, Glass 80%, and no frost. They resolve the real token stylesheet, retain alpha through compositing and use WCAG relative luminance. The 22 stock Omarchy outputs are Omarchy-rendered fixtures. All twelve built-in halves are measured as shipped. These are default-setting measurements, not a guarantee after the user lowers Contrast.
 
-## Minimum contrast for muted text
+## Minimum contrast for muted and secondary text
 
 | Surface | Omarchy, after this guard | Built-in minimum | Built-in half |
 | --- | ---: | ---: | --- |
@@ -29,6 +29,7 @@ Computed CSS measurements use default Contrast 100%, Glass 80%, and no frost. Th
 | Sidebar controls | 6.1048:1 | 4.7262:1 | Linen dark |
 | Strong hover | 6.2100:1 | 4.2152:1 | Linen dark |
 | Code | 6.9919:1 | 5.6650:1 | Nocturne light |
+| Changes hunk (secondary text) | 5.9347:1 | 6.7142:1 | Linen dark |
 | Changes added | 5.8653:1 | 4.6093:1 | Linen dark |
 | Changes removed | 5.7001:1 | 4.5647:1 | Nocturne light |
 | Changes context hovered | 6.4729:1 | 4.6994:1 | Linen dark |
@@ -52,7 +53,7 @@ Computed CSS measurements use default Contrast 100%, Glass 80%, and no frost. Th
 | Success notice | 6.2272:1 | 4.6276:1 | Hush dark |
 | Table stripe | 7.1742:1 | 5.9200:1 | Nocturne light |
 
-Of 2,380 computed muted and secondary pairs (35 surfaces × 34 palettes × two text tokens), all 1,540 Omarchy pairs pass. The full values and limiting themes are in [measurements.json](../../artifacts/omarchy-muted/measurements.json).
+Of 2,414 computed muted and secondary pairs (35 surfaces × 34 palettes × two text tokens, plus 34 hunk secondary-text pairs), all 1,562 Omarchy pairs pass. Hunk headers use `--tt-text-2` on the 14% accent wash over the code background; their existing unit assertion already passes for all 22 stock themes. The full values and limiting themes are in [measurements.json](../../artifacts/omarchy-muted/measurements.json).
 
 ## Faint labels and placeholders
 

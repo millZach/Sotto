@@ -28,6 +28,7 @@ try {
     ['Cards and fields', 'surface'], ['Raised cards', 'surface-elevated'], ['Overlay', 'surface-overlay'],
     ['Sunken cards', 'surface-sunken'], ['Secondary controls', 'secondary'], ['Sidebar controls', 'sidebar-control'],
     ['Strong hover', 'hover-strong'], ['Code', 'code-bg'],
+    ['Changes hunk', 'code-bg', 'accent-wash'],
     ['Changes added', 'diff-add'], ['Changes removed', 'diff-remove'],
     ['Changes context hovered', 'code-bg', 'hover'], ['Changes added hovered', 'diff-add', 'hover'],
     ['Changes removed hovered', 'diff-remove', 'hover'],
@@ -61,7 +62,7 @@ try {
     for (const [surface, base, ...layers] of surfaces) {
       let background = over(resolveColor(`--tt-${base}`, declarations), canvas)
       for (const layer of layers) background = over(resolveColor(`--tt-${layer}`, declarations), background)
-      for (const ink of ['text-muted', 'text-2']) {
+      for (const ink of surface === 'Changes hunk' ? ['text-2'] : ['text-muted', 'text-2']) {
         const foreground = over(resolveColor(`--tt-${ink}`, declarations), background)
         measurements.push({ group: theme.group, theme: theme.sourceName ?? theme.label, mode: theme.appearance,
           ink, surface, ratio: contrast(foreground, background) })
@@ -77,7 +78,7 @@ try {
         ink: 'text-faint', surface, ratio: contrast(foreground, background) })
     }
   }
-  const minimum = (group, surface) => measurements.filter(row => row.group === group && row.surface === surface && row.ink === 'text-muted').sort((a, b) => a.ratio - b.ratio)[0]
+  const minimum = (group, surface) => measurements.filter(row => row.group === group && row.surface === surface && row.ink === (surface === 'Changes hunk' ? 'text-2' : 'text-muted')).sort((a, b) => a.ratio - b.ratio)[0]
   const minima = surfaces.map(([surface]) => ({ surface, omarchy: minimum('Omarchy', surface), builtin: minimum('Built-in', surface) }))
   for (const row of minima) console.log(`${row.surface}: Omarchy ${row.omarchy.ratio.toFixed(4)} (${row.omarchy.theme} ${row.omarchy.mode}); built-in ${row.builtin.ratio.toFixed(4)} (${row.builtin.theme} ${row.builtin.mode})`)
   const failures = [...measurements, ...faintMeasurements].filter(row => row.group === 'Omarchy' && row.ratio < 4.5)

@@ -56,6 +56,11 @@
       "code-bg"
     ],
     [
+      "Changes hunk",
+      "code-bg",
+      "accent-wash"
+    ],
+    [
       "Changes added",
       "diff-add"
     ],
@@ -404,6 +409,25 @@
         "ink": "text-muted",
         "surface": "Code",
         "ratio": 5.665003829889285
+      }
+    },
+    {
+      "surface": "Changes hunk",
+      "omarchy": {
+        "group": "Omarchy",
+        "theme": "rose-pine",
+        "mode": "light",
+        "ink": "text-2",
+        "surface": "Changes hunk",
+        "ratio": 5.934666693617814
+      },
+      "builtin": {
+        "group": "Built-in",
+        "theme": "Linen",
+        "mode": "dark",
+        "ink": "text-2",
+        "surface": "Changes hunk",
+        "ratio": 6.714177243319287
       }
     },
     {
@@ -1038,6 +1062,14 @@
       "group": "Omarchy",
       "theme": "catppuccin",
       "mode": "dark",
+      "ink": "text-2",
+      "surface": "Changes hunk",
+      "ratio": 7.285956921294783
+    },
+    {
+      "group": "Omarchy",
+      "theme": "catppuccin",
+      "mode": "dark",
       "ink": "text-muted",
       "surface": "Changes added",
       "ratio": 6.9490868643875086
@@ -1593,6 +1625,14 @@
       "ink": "text-2",
       "surface": "Code",
       "ratio": 7.121417674868802
+    },
+    {
+      "group": "Omarchy",
+      "theme": "catppuccin-latte",
+      "mode": "light",
+      "ink": "text-2",
+      "surface": "Changes hunk",
+      "ratio": 5.945784345025178
     },
     {
       "group": "Omarchy",
@@ -2158,6 +2198,14 @@
       "group": "Omarchy",
       "theme": "ethereal",
       "mode": "dark",
+      "ink": "text-2",
+      "surface": "Changes hunk",
+      "ratio": 8.523703478755328
+    },
+    {
+      "group": "Omarchy",
+      "theme": "ethereal",
+      "mode": "dark",
       "ink": "text-muted",
       "surface": "Changes added",
       "ratio": 6.612626609285412
@@ -2713,6 +2761,14 @@
       "ink": "text-2",
       "surface": "Code",
       "ratio": 8.522105151706583
+    },
+    {
+      "group": "Omarchy",
+      "theme": "everforest",
+      "mode": "dark",
+      "ink": "text-2",
+      "surface": "Changes hunk",
+      "ratio": 6.61061758482113
     },
     {
       "group": "Omarchy",
@@ -3278,6 +3334,14 @@
       "group": "Omarchy",
       "theme": "flexoki-light",
       "mode": "light",
+      "ink": "text-2",
+      "surface": "Changes hunk",
+      "ratio": 10.388949064121565
+    },
+    {
+      "group": "Omarchy",
+      "theme": "flexoki-light",
+      "mode": "light",
       "ink": "text-muted",
       "surface": "Changes added",
       "ratio": 7.163175725020727
@@ -3833,6 +3897,14 @@
       "ink": "text-2",
       "surface": "Code",
       "ratio": 8.364238214366935
+    },
+    {
+      "group": "Omarchy",
+      "theme": "gruvbox",
+      "mode": "dark",
+      "ink": "text-2",
+      "surface": "Changes hunk",
+      "ratio": 6.5590886406917575
     },
     {
       "group": "Omarchy",
@@ -4398,6 +4470,14 @@
       "group": "Omarchy",
       "theme": "hackerman",
       "mode": "dark",
+      "ink": "text-2",
+      "surface": "Changes hunk",
+      "ratio": 9.337668865171075
+    },
+    {
+      "group": "Omarchy",
+      "theme": "hackerman",
+      "mode": "dark",
       "ink": "text-muted",
       "surface": "Changes added",
       "ratio": 8.760758785509838
@@ -4953,6 +5033,14 @@
       "ink": "text-2",
       "surface": "Code",
       "ratio": 10.375614291024103
+    },
+    {
+      "group": "Omarchy",
+      "theme": "kanagawa",
+      "mode": "dark",
+      "ink": "text-2",
+      "surface": "Changes hunk",
+      "ratio": 7.259805519061517
     },
     {
       "group": "Omarchy",
@@ -5518,6 +5606,14 @@
       "group": "Omarchy",
       "theme": "last-horizon",
       "mode": "dark",
+      "ink": "text-2",
+      "surface": "Changes hunk",
+      "ratio": 10.332831051713056
+    },
+    {
+      "group": "Omarchy",
+      "theme": "last-horizon",
+      "mode": "dark",
       "ink": "text-muted",
       "surface": "Changes added",
       "ratio": 7.670682392750184
@@ -6073,6 +6169,14 @@
       "ink": "text-2",
       "surface": "Code",
       "ratio": 10.10380739338692
+    },
+    {
+      "group": "Omarchy",
+      "theme": "lumon",
+      "mode": "dark",
+      "ink": "text-2",
+      "surface": "Changes hunk",
+      "ratio": 7.404800985740057
     },
     {
       "group": "Omarchy",
@@ -6638,6 +6742,14 @@
       "group": "Omarchy",
       "theme": "lupine",
       "mode": "light",
+      "ink": "text-2",
+      "surface": "Changes hunk",
+      "ratio": 9.037446152243087
+    },
+    {
+      "group": "Omarchy",
+      "theme": "lupine",
+      "mode": "light",
       "ink": "text-muted",
       "surface": "Changes added",
       "ratio": 6.830733569436149
@@ -7193,6 +7305,14 @@
       "ink": "text-2",
       "surface": "Code",
       "ratio": 8.778692828116572
+    },
+    {
+      "group": "Omarchy",
+      "theme": "matte-black",
+      "mode": "dark",
+      "ink": "text-2",
+      "surface": "Changes hunk",
+      "ratio": 7.014191749955305
     },
     {
       "group": "Omarchy",
@@ -7758,6 +7878,14 @@
       "group": "Omarchy",
       "theme": "miasma",
       "mode": "dark",
+      "ink": "text-2",
+      "surface": "Changes hunk",
+      "ratio": 6.44782590877856
+    },
+    {
+      "group": "Omarchy",
+      "theme": "miasma",
+      "mode": "dark",
       "ink": "text-muted",
       "surface": "Changes added",
       "ratio": 5.988751458676033
@@ -8313,6 +8441,14 @@
       "ink": "text-2",
       "surface": "Code",
       "ratio": 8.004724573885321
+    },
+    {
+      "group": "Omarchy",
+      "theme": "nord",
+      "mode": "dark",
+      "ink": "text-2",
+      "surface": "Changes hunk",
+      "ratio": 6.475652188875023
     },
     {
       "group": "Omarchy",
@@ -8878,6 +9014,14 @@
       "group": "Omarchy",
       "theme": "osaka-jade",
       "mode": "dark",
+      "ink": "text-2",
+      "surface": "Changes hunk",
+      "ratio": 6.869671333869252
+    },
+    {
+      "group": "Omarchy",
+      "theme": "osaka-jade",
+      "mode": "dark",
       "ink": "text-muted",
       "surface": "Changes added",
       "ratio": 6.081206614811507
@@ -9433,6 +9577,14 @@
       "ink": "text-2",
       "surface": "Code",
       "ratio": 10.611472685525115
+    },
+    {
+      "group": "Omarchy",
+      "theme": "retro-82",
+      "mode": "dark",
+      "ink": "text-2",
+      "surface": "Changes hunk",
+      "ratio": 8.105443825223036
     },
     {
       "group": "Omarchy",
@@ -9998,6 +10150,14 @@
       "group": "Omarchy",
       "theme": "ristretto",
       "mode": "dark",
+      "ink": "text-2",
+      "surface": "Changes hunk",
+      "ratio": 7.134727049111525
+    },
+    {
+      "group": "Omarchy",
+      "theme": "ristretto",
+      "mode": "dark",
       "ink": "text-muted",
       "surface": "Changes added",
       "ratio": 6.523739791893465
@@ -10553,6 +10713,14 @@
       "ink": "text-2",
       "surface": "Code",
       "ratio": 6.991904864064356
+    },
+    {
+      "group": "Omarchy",
+      "theme": "rose-pine",
+      "mode": "light",
+      "ink": "text-2",
+      "surface": "Changes hunk",
+      "ratio": 5.934666693617814
     },
     {
       "group": "Omarchy",
@@ -11118,6 +11286,14 @@
       "group": "Omarchy",
       "theme": "solitude",
       "mode": "dark",
+      "ink": "text-2",
+      "surface": "Changes hunk",
+      "ratio": 7.732742835574
+    },
+    {
+      "group": "Omarchy",
+      "theme": "solitude",
+      "mode": "dark",
       "ink": "text-muted",
       "surface": "Changes added",
       "ratio": 6.3039313108107695
@@ -11673,6 +11849,14 @@
       "ink": "text-2",
       "surface": "Code",
       "ratio": 8.504062025029272
+    },
+    {
+      "group": "Omarchy",
+      "theme": "tokyo-night",
+      "mode": "dark",
+      "ink": "text-2",
+      "surface": "Changes hunk",
+      "ratio": 6.6535570658278145
     },
     {
       "group": "Omarchy",
@@ -12238,6 +12422,14 @@
       "group": "Omarchy",
       "theme": "vantablack",
       "mode": "dark",
+      "ink": "text-2",
+      "surface": "Changes hunk",
+      "ratio": 12.030934537068575
+    },
+    {
+      "group": "Omarchy",
+      "theme": "vantablack",
+      "mode": "dark",
       "ink": "text-muted",
       "surface": "Changes added",
       "ratio": 8.5628785705169
@@ -12793,6 +12985,14 @@
       "ink": "text-2",
       "surface": "Code",
       "ratio": 16.456116638169725
+    },
+    {
+      "group": "Omarchy",
+      "theme": "white",
+      "mode": "light",
+      "ink": "text-2",
+      "surface": "Changes hunk",
+      "ratio": 13.892376073412617
     },
     {
       "group": "Omarchy",
@@ -13358,6 +13558,14 @@
       "group": "Built-in",
       "theme": "Sotto",
       "mode": "light",
+      "ink": "text-2",
+      "surface": "Changes hunk",
+      "ratio": 8.324922345912436
+    },
+    {
+      "group": "Built-in",
+      "theme": "Sotto",
+      "mode": "light",
       "ink": "text-muted",
       "surface": "Changes added",
       "ratio": 5.414624990014285
@@ -13913,6 +14121,14 @@
       "ink": "text-2",
       "surface": "Code",
       "ratio": 13.033260691631337
+    },
+    {
+      "group": "Built-in",
+      "theme": "Sotto",
+      "mode": "dark",
+      "ink": "text-2",
+      "surface": "Changes hunk",
+      "ratio": 10.695894785793953
     },
     {
       "group": "Built-in",
@@ -14478,6 +14694,14 @@
       "group": "Built-in",
       "theme": "Hush",
       "mode": "light",
+      "ink": "text-2",
+      "surface": "Changes hunk",
+      "ratio": 8.000883546622624
+    },
+    {
+      "group": "Built-in",
+      "theme": "Hush",
+      "mode": "light",
       "ink": "text-muted",
       "surface": "Changes added",
       "ratio": 4.873643150797067
@@ -15033,6 +15257,14 @@
       "ink": "text-2",
       "surface": "Code",
       "ratio": 9.02046480986455
+    },
+    {
+      "group": "Built-in",
+      "theme": "Hush",
+      "mode": "dark",
+      "ink": "text-2",
+      "surface": "Changes hunk",
+      "ratio": 6.8830549731349935
     },
     {
       "group": "Built-in",
@@ -15598,6 +15830,14 @@
       "group": "Built-in",
       "theme": "Linen",
       "mode": "light",
+      "ink": "text-2",
+      "surface": "Changes hunk",
+      "ratio": 7.948951030964627
+    },
+    {
+      "group": "Built-in",
+      "theme": "Linen",
+      "mode": "light",
       "ink": "text-muted",
       "surface": "Changes added",
       "ratio": 4.896035374003075
@@ -16153,6 +16393,14 @@
       "ink": "text-2",
       "surface": "Code",
       "ratio": 8.979835505814453
+    },
+    {
+      "group": "Built-in",
+      "theme": "Linen",
+      "mode": "dark",
+      "ink": "text-2",
+      "surface": "Changes hunk",
+      "ratio": 6.714177243319287
     },
     {
       "group": "Built-in",
@@ -16718,6 +16966,14 @@
       "group": "Built-in",
       "theme": "Nocturne",
       "mode": "light",
+      "ink": "text-2",
+      "surface": "Changes hunk",
+      "ratio": 7.78532623760504
+    },
+    {
+      "group": "Built-in",
+      "theme": "Nocturne",
+      "mode": "light",
       "ink": "text-muted",
       "surface": "Changes added",
       "ratio": 4.85696716615987
@@ -17273,6 +17529,14 @@
       "ink": "text-2",
       "surface": "Code",
       "ratio": 9.235067400334891
+    },
+    {
+      "group": "Built-in",
+      "theme": "Nocturne",
+      "mode": "dark",
+      "ink": "text-2",
+      "surface": "Changes hunk",
+      "ratio": 7.225822801688274
     },
     {
       "group": "Built-in",
@@ -17838,6 +18102,14 @@
       "group": "Built-in",
       "theme": "Tropic",
       "mode": "light",
+      "ink": "text-2",
+      "surface": "Changes hunk",
+      "ratio": 7.834863941595064
+    },
+    {
+      "group": "Built-in",
+      "theme": "Tropic",
+      "mode": "light",
       "ink": "text-muted",
       "surface": "Changes added",
       "ratio": 5.059766930194946
@@ -18393,6 +18665,14 @@
       "ink": "text-2",
       "surface": "Code",
       "ratio": 9.23583104377913
+    },
+    {
+      "group": "Built-in",
+      "theme": "Tropic",
+      "mode": "dark",
+      "ink": "text-2",
+      "surface": "Changes hunk",
+      "ratio": 7.650078056093523
     },
     {
       "group": "Built-in",
@@ -18958,6 +19238,14 @@
       "group": "Built-in",
       "theme": "Citrine",
       "mode": "light",
+      "ink": "text-2",
+      "surface": "Changes hunk",
+      "ratio": 8.235632988951922
+    },
+    {
+      "group": "Built-in",
+      "theme": "Citrine",
+      "mode": "light",
       "ink": "text-muted",
       "surface": "Changes added",
       "ratio": 4.892912399322291
@@ -19513,6 +19801,14 @@
       "ink": "text-2",
       "surface": "Code",
       "ratio": 9.439395509567388
+    },
+    {
+      "group": "Built-in",
+      "theme": "Citrine",
+      "mode": "dark",
+      "ink": "text-2",
+      "surface": "Changes hunk",
+      "ratio": 6.829492605195397
     },
     {
       "group": "Built-in",
