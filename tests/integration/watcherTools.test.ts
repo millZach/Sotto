@@ -462,3 +462,48 @@ it('keeps an unacknowledged native Stop uncertain in its original receipt', asyn
   expect(f.service.state().receipts.at(-1)!.deliveryState).toBe('accepted')
   expect(f.service.state().inFlight).toBe(0)
 })
+
+
+it.each(['preparation', 'native'])('refunds a queued prompt after a definite %s failure exactly once', async failure => {
+  const f = await fixture(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  const input = { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'queue', text: 'Synthetic queued failure' }
+  expect(await f.call('send_to_thread', input)).toMatchObject({ status: 'ok', limits: { promptCount: 2 } })
+  const refresh = f.workspace.host.refreshThread.bind(f.workspace.host)
+  const execute = f.workspace.adapters.codex.execute.bind(f.workspace.adapters.codex)
+  const spy = failure === 'preparation'
+    ? vi.spyOn(f.workspace.host, 'refreshThread').mockImplementation(async (id, purpose) => {
+      if (id === first.target.threadId && purpose?.beforeSend) throw new Error('Synthetic preparation failure')
+      return refresh(id, purpose)
+    })
+    : vi.spyOn(f.workspace.adapters.codex, 'execute').mockImplementation(async command => {
+      if (command.type === 'send' && command.text === input.text) throw new Error('Synthetic native pre-write failure')
+      return execute(command)
+    })
+  await f.finish(first.target.threadId)
+  await vi.waitFor(() => expect(f.control.shell().followups?.find(item => item.text === input.text)?.status).toBe('failed'))
+  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect(f.service.state().receipts.at(-1)?.deliveryState).toBe('failed')
+  expect(f.service.state().requests[0]!.participants[0]!.promptCount).toBe(1)
+  expect(f.workspace.adapters.codex.commands.some(command => command.type === 'send' && command.text === input.text)).toBe(false)
+  spy.mockRestore()
+  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect(await f.call('send_to_thread', input)).toMatchObject({ status: 'refused', code: 'PROVIDER_UNAVAILABLE' })
+  expect(f.service.state().requests[0]!.participants[0]!.promptCount).toBe(1)
+  for (let count = 2; count <= 4; count++) {
+    expect(await f.call('send_to_thread', { ...input, retryKey: randomUUID() })).toMatchObject({ status: 'ok', limits: { promptCount: count } })
+    await f.finish(first.target.threadId)
+  }
+  expect(await f.call('send_to_thread', { ...input, retryKey: randomUUID() })).toMatchObject({ status: 'refused', code: 'PROMPT_LIMIT' })
+})
+
+it('refunds a definite thrown command failure after the worker exists', async () => {
+  const f = await fixture(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  await f.finish(first.target.threadId)
+  vi.spyOn(f.control, 'commandFromWatcher').mockRejectedValueOnce(new Error('Synthetic pre-dispatch failure'))
+  expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'now', text: 'Synthetic failed dispatch' }))
+    .toMatchObject({ status: 'refused', code: 'PROVIDER_UNAVAILABLE', receipt: { deliveryState: 'failed' } })
+  expect(f.service.state().requests[0]!.participants[0]!.promptCount).toBe(1)
+})
+

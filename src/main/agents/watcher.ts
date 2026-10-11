@@ -356,8 +356,7 @@ export class WatcherService implements WatcherControlHooks {
         else if (delivery?.status === 'uncertain' && !this.active.has(operation.id)) operation.deliveryState = 'uncertain'
         else if (this.options.control.shell().followups?.some(item => item.draftId === operation.draftId && item.status === 'failed')) {
           const refusal = this.dispatchRefusals.get(operation.id)?.result.code
-          if (operation.deliveryState !== 'failed' && refusal) this.refundPrompt(next, operation, refusal)
-          operation.deliveryState = 'failed'; operation.refusalCode = refusal ?? operation.refusalCode ?? 'PROVIDER_UNAVAILABLE'
+          this.recordOutcome(next, operation, 'failed', refusal ?? operation.refusalCode ?? 'PROVIDER_UNAVAILABLE')
           this.dispatchRefusals.delete(operation.id)
         }
       }
@@ -553,33 +552,35 @@ export class WatcherService implements WatcherControlHooks {
       if (result.error && guardedRefusal) throw guardedRefusal
       const delivery = result.deliveries?.find(item => item.draftId === operation.draftId && item.threadId === operation.target.threadId)
       await this.options.control.updateWatcher(record => {
-        const saved = record.operations.find(item => item.id === operation.id)!, wasFailed = saved.deliveryState === 'failed'
-        const creationUncertain = saved.action === 'start' && this.options.host.watcherCreationPhase(saved.target.threadId) === 'starting'
-        const unresolved = creationUncertain || this.options.control.watcherCommandOutstanding(saved.commandId)
+        const saved = record.operations.find(item => item.id === operation.id)!
         const queue = result.followups?.find(item => item.draftId === operation.draftId && item.threadId === operation.target.threadId)
-        saved.deliveryState = saved.deliveryState === 'accepted' || delivery?.status === 'accepted' ? 'accepted'
-          : delivery?.status === 'uncertain' || delivery?.status === 'submitting' ? 'uncertain' : queue ? 'queued' : result.error && unresolved ? 'uncertain' : result.error ? 'failed' : 'accepted'
-        if (creationUncertain) saved.creationUncertain = true
-        if (saved.deliveryState === 'failed') { saved.refusalCode = 'PROVIDER_UNAVAILABLE'; if (!wasFailed) this.refundPrompt(record, saved, saved.refusalCode) }
-        if (creationUncertain) saved.refusalCode = 'DELIVERY_UNCERTAIN'
+        const state = delivery?.status === 'accepted' ? 'accepted'
+          : delivery?.status === 'uncertain' || delivery?.status === 'submitting' ? 'uncertain' : queue ? 'queued' : result.error ? 'failed' : 'accepted'
+        this.recordOutcome(record, saved, state)
         if (queue) saved.itemId = queue.id
-        if (saved.action === 'settle' && saved.deliveryState === 'accepted') record.requests.find(item => item.id === saved.requestId)!.participants.find(item => key(item.target) === key(saved.target))!.state = 'relinquished'
-        saved.updatedAt = now()
       })
     } catch (error) {
-      await this.options.control.updateWatcher(record => { const saved = record.operations.find(item => item.id === operation.id)!, wasFailed = saved.deliveryState === 'failed';
-        const creationUncertain = saved.action === 'start' && this.options.host.watcherCreationPhase(saved.target.threadId) === 'starting'
-        if (creationUncertain) saved.creationUncertain = true
-        if (saved.deliveryState !== 'accepted' && saved.deliveryState !== 'uncertain') saved.deliveryState = creationUncertain || this.options.control.watcherCommandOutstanding(saved.commandId) ? 'uncertain' : 'failed'
-        saved.refusalCode = saved.deliveryState === 'uncertain' ? 'DELIVERY_UNCERTAIN' : error instanceof Refusal ? error.result.code : 'PROVIDER_UNAVAILABLE'; saved.updatedAt = now()
-        if (!wasFailed && saved.deliveryState === 'failed') {
-          if (error instanceof Refusal) this.refundPrompt(record, saved, error.result.code)
-          else if (saved.action === 'start' && !this.options.control.watcherSnapshot().threads.some(item => item.id === saved.target.threadId)) this.refundPrompt(record, saved, 'PROVIDER_UNAVAILABLE')
-        }
+      await this.options.control.updateWatcher(record => {
+        const saved = record.operations.find(item => item.id === operation.id)!
+        this.recordOutcome(record, saved, 'failed', error instanceof Refusal ? error.result.code : 'PROVIDER_UNAVAILABLE')
       })
     }
     this.observe(this.options.control.watcherSnapshot(), new Set())
     return this.operationResult(name, this.record().operations.find(item => item.id === operation.id)!, input)
+  }
+  private recordOutcome(record: WatcherRecord, operation: WatcherOperation, state: WatcherOperation['deliveryState'], code?: WatcherRefusal['code']): void {
+    const wasFailed = operation.deliveryState === 'failed'
+    const creationUncertain = operation.action === 'start' && this.options.host.watcherCreationPhase(operation.target.threadId) === 'starting'
+    const unresolved = creationUncertain || this.options.control.watcherCommandOutstanding(operation.commandId)
+    if (operation.deliveryState !== 'accepted') operation.deliveryState = state === 'failed' && (unresolved || operation.deliveryState === 'uncertain') ? 'uncertain' : state
+    if (creationUncertain) operation.creationUncertain = true
+    if (creationUncertain || code !== undefined && state === 'failed' && operation.deliveryState === 'uncertain') operation.refusalCode = 'DELIVERY_UNCERTAIN'
+    else if (operation.deliveryState === 'failed') {
+      operation.refusalCode = code ?? 'PROVIDER_UNAVAILABLE'
+      if (!wasFailed) this.refundPrompt(record, operation, operation.refusalCode)
+    }
+    if (operation.action === 'settle' && operation.deliveryState === 'accepted') record.requests.find(item => item.id === operation.requestId)!.participants.find(item => key(item.target) === key(operation.target))!.state = 'relinquished'
+    operation.updatedAt = now()
   }
   private refundPrompt(record: WatcherRecord, operation: WatcherOperation, code: WatcherRefusal['code']): void {
     if ((operation.action !== 'start' && operation.action !== 'send') || ['THREAD_TAKEN_OVER', 'REQUEST_NOT_ACTIVE', 'NOT_CURRENT_WATCHER'].includes(code)) return
