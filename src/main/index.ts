@@ -841,7 +841,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // Tailscale checks can take seconds, so they run beside startup rather than in front of the window.
   const files = new FilesService({
     resolveBinding: threadId => agentControl.filesBinding(threadId),
-    copyPath: copyOutput,
+    copyPath: path => copyOutput(path),
     reveal: path => shell.showItemInFolder(path),
   })
   // A pane drawer starts in the project folder, even for a thread with its own worktree.
