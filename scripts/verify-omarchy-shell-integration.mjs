@@ -258,7 +258,8 @@ async function orchestrate() {
     const details = { root, home, runtime, evidence, proof, liveSignature: live.HYPRLAND_INSTANCE_SIGNATURE, liveDisplay: live.WAYLAND_DISPLAY, signature: b.instance, display: b.wl_socket }
     const configPath = join(root, 'journey.json')
     writeFileSync(configPath, JSON.stringify(details))
-    const worker = startIsolated('real app integration journey', process.execPath, [script, '--journey', configPath], { stdio: 'inherit' })
+    // Electron must not reach the live session's desktop portal, even in nested Wayland.
+    const worker = startIsolated('real app integration journey', 'dbus-run-session', ['--', process.execPath, script, '--journey', configPath], { stdio: 'inherit' })
     const code = await new Promise((resolve, reject) => { worker.once('error', reject); worker.once('exit', resolve) })
     assert.equal(code, 0, 'The real app integration journey must pass')
     await curate(evidence)
@@ -419,7 +420,9 @@ async function journey(configPath) {
     await begin('d-start-for-retry')
     await capture('d-listening')
     await button('d-listening', 'Stop', 103)
-    await state('d-failed-kept', 'failed', { kept: true, detail: 'The transcription service is busy. Recording kept.' })
+    // The local TranscriptionError('failed') maps to keptFailureDetail.TRANSCRIPTION_FAILED
+    // in src/main/hotkeys/dictationStateFile.ts.
+    await state('d-failed-kept', 'failed', { kept: true, detail: 'Could not transcribe. Recording kept.' })
     await wait(350); await move(1599, 999); await capture('d-failed-kept')
     await button('d-failed-kept', 'Try again (real retry)', 126)
     await state('d-retry-copied', 'copied', { kept: false })
