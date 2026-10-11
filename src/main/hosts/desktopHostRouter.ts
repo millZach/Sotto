@@ -88,11 +88,6 @@ export class DesktopHostRouter {
   private readonly hosts = new Map<string, { connection: DesktopHostConnection; off: (() => void)[] }>()
   private readonly listeners = new Set<(state: AgentState) => void>()
   private readonly changeListeners = new Set<() => void>()
-  /**
-   * The shell this computer's coordinator last broadcast. A publication it set off is built from it rather than from
-   * another copy of the same state (#917). A remote host's push carries the histories it has cached, so it is read afresh.
-   */
-  private readonly broadcasts = new Map<string, AgentState>()
   private readonly detailListeners = new Set<(detail: AgentThreadDetailUpdate) => void>()
   private selectedHostId: string | undefined
   private selectedThreadId: string | null | undefined
@@ -144,13 +139,13 @@ export class DesktopHostRouter {
     return state.legacyManagement === true
   }
 
-  /** Follows a connection's states and details, keeping a local host's broadcast shell for the next publication. */
+  /**
+   * Follows a connection's states and details. A publication this computer's coordinator set off is built from the shell
+   * it broadcast rather than from another copy of the same state (#917). A remote host's push carries the histories it
+   * has cached, so it is read afresh.
+   */
   private watch(connection: DesktopHostConnection): (() => void)[] {
-    this.broadcasts.delete(connection.hostId)
-    const off = [connection.service.subscribe(state => {
-      if (connection.kind === 'local') this.broadcasts.set(connection.hostId, state)
-      this.emit()
-    })]
+    const off = [connection.service.subscribe(state => this.emit(connection.kind === 'local' ? { hostId: connection.hostId, state } : undefined))]
     if (connection.subscribeDetail) off.push(connection.subscribeDetail(detail => {
       if (!this.watcherAvailable(connection, detail.threadId)) return
       const scoped = mapHostReferences(detail, id => hostEntityKey(connection.hostId, id))
@@ -187,7 +182,6 @@ export class DesktopHostRouter {
   remove(hostId: string): void {
     this.hosts.get(hostId)?.off.forEach(off => off())
     this.hosts.delete(hostId)
-    this.broadcasts.delete(hostId)
     this.reconnecting.delete(hostId)
     if (this.selectedHostId === hostId) this.selectedHostId = this.hosts.keys().next().value
     if (this.selectedThreadId && parseHostEntityKey(this.selectedThreadId)?.hostId === hostId) this.selectedThreadId = null
@@ -675,10 +669,14 @@ export class DesktopHostRouter {
   private named(connection: DesktopHostConnection, state: AgentState): AgentState {
     return state.error ? { ...state, error: this.refusal(connection, state.error) } : state
   }
-  /** Built when it changed, so what a listener holds is the state of that moment, even if the window takes it later. */
-  private emit(): void {
+  /**
+   * Built when it changed, so what a listener holds is the state of that moment, even if the window takes it later. Only
+   * the broadcast that set this publication off stands in for its host's shell: a command can change a coordinator's
+   * state without broadcasting, so every other host, and every publication a broadcast did not set off, is read afresh.
+   */
+  private emit(broadcast?: { hostId: string; state: AgentState }): void {
     if (this.listeners.size) {
-      const state = this.build(connection => this.broadcasts.get(connection.hostId) ?? connection.service.shell())
+      const state = this.build(connection => connection.hostId === broadcast?.hostId ? broadcast.state : connection.service.shell())
       for (const listener of this.listeners) listener(state)
     } else this.settleAnswerNotice()
     this.publishedNotice = this.notice
@@ -686,7 +684,7 @@ export class DesktopHostRouter {
   }
   dispose(): void {
     for (const hostId of [...this.hosts.keys()]) this.remove(hostId)
-    this.listeners.clear(); this.changeListeners.clear(); this.detailListeners.clear(); this.broadcasts.clear()
+    this.listeners.clear(); this.changeListeners.clear(); this.detailListeners.clear()
     this.draftPass.disposed = true; clearTimeout(this.draftPass.gap); this.draftPass.gap = undefined; this.draftPass.wanted = undefined
   }
 }

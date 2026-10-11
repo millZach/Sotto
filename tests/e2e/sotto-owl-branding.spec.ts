@@ -10,6 +10,7 @@ import { evidenceDirectory } from '../fixtures/evidence'
 import { onReleaseTrack, OWL_E2E_VERSION } from './support/releaseTrack'
 import { captureWindow } from './support/sottoCapture'
 import { openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { holdOwlSky } from './support/sottoOwl'
 import { resizeContentWindow } from './support/sottoWindow'
 
 /**
@@ -149,6 +150,8 @@ test.describe('Sotto Owl branding on the built app', () => {
           const key = `${appearance}-${width}x${height}`, where = await rowGeometry(page, row)
           if (track === 'stable') geometry.set(key, where)
           else if (geometry.has(key)) { expect(where).toEqual(geometry.get(key)); result[`controls-${width}x${height}`] = 'same as stable' }
+          // An Owl window's night sky twinkles; held at its start, the capture repeats.
+          await holdOwlSky(page)
           await captureWindow(launched.app, resolve(evidenceRoot, `threads-${track}-${appearance}-${width}x${height}.png`))
           if (width === 1280) await row.screenshot({ path: resolve(evidenceRoot, `header-${track}-${appearance}.png`), animations: 'disabled' })
         }

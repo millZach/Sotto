@@ -9,6 +9,7 @@ import { PairedClients } from '../agents/pairing'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { PHONE_ACCESS_SERVE_PORTS, type PhoneAccessServePort, type PhonesCommand, type PhonesState, type ServeCheck, type TailscaleCheck } from '../../shared/phones'
 import { servePortOwner, TailscaleAccessDenied, type ServeConfig, type ServeResult, type TailscaleStatus } from './tailscale'
+import type { PhoneTerminals } from '../../shared/phoneTerminals'
 
 /**
  * Phone access (ADR-0033): while the `phoneAccess` setting is on and the local host runs, the desktop
@@ -68,6 +69,7 @@ export interface PhoneAccessOptions {
    */
   readonly settings: () => { readonly phoneAccess: boolean; readonly phoneAccessName: string; readonly tailnetConnections?: boolean | undefined }
   readonly policy?: PhoneAccessPolicy | undefined
+  readonly terminals?: PhoneTerminals
   readonly openExternal: (url: string) => Promise<void>
   readonly hostname?: () => string
   /** Stable event names only; nothing a phone or the owner typed. */
@@ -542,6 +544,7 @@ export class PhoneAccess {
       ...listener,
       ...(desktops ? { tailnet: { desktops, phonesAdmitted: () => this.phonesWanted() } } : {}),
       service: this.options.service!, pairing: this.pairing, admin: false,
+      ...(this.options.terminals ? { terminals: this.options.terminals } : {}),
       // Its own key: on a headless host the listener with the administrative routes observes threads over the same service.
       observationKey: 'tailnet-observations',
       name: () => this.computerName(),

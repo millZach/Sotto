@@ -23,13 +23,16 @@ beforeAll(async () => {
     ssr: resolve('src/main/terminals/helper.ts'), target: 'node24', outDir: root, emptyOutDir: false, minify: false,
     rollupOptions: { external: id => isBuiltin(id), output: { format: 'cjs', entryFileNames: 'helper.cjs' } },
   } })
-  // A freshly downloaded Electron, as on a CI runner, takes several seconds over its first launches. Pay that here
-  // so the hook waits below time the hook rather than the runner's first start.
-  await new Promise<void>((resolveWarm, rejectWarm) => {
-    const warm = spawn(electronRunner, ['-e', ''], { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, windowsHide: true, stdio: 'ignore' })
-    warm.once('error', rejectWarm)
-    warm.once('exit', code => code === 0 ? resolveWarm() : rejectWarm(new Error(`Electron runner exited with ${code}`)))
-  })
+  // On a fresh CI runner the first hooks are slow: Electron's binary has just been downloaded, and on Windows each hook
+  // also starts PowerShell cold. Deliver one real hook through the whole chain here, so the waits below time the hooks
+  // rather than the first start of the shell and the runner.
+  const warm = await prepared()
+  const warmHook = await hook(warm.run, 'SessionStart')
+  expect(await warmHook.exited).toBe(0)
+  for (const deadline = Date.now() + 100_000; warm.events.length === 0 && Date.now() < deadline;) await new Promise(resolveWait => setTimeout(resolveWait, 50))
+  expect(warm.events.length).toBeGreaterThan(0)
+  for (const run of runs.splice(0)) run.dispose()
+  children.splice(0)
 }, 120_000)
 afterEach(() => { for (const run of runs.splice(0)) run.dispose(); for (const child of children.splice(0)) child.kill() })
 afterAll(async () => { await rm(root, { recursive: true, force: true }) })
@@ -77,7 +80,9 @@ describe('run-scoped terminal agent hooks', () => {
   it('launches the fake Claude CLI with real packaged-runner hooks across its lifecycle', async () => {
     const { run, events, closed } = await prepared()
     const { child, output, errors } = fixture(run)
-    await expect.poll(() => events.some(event => event.kind === 'session-start')).toBe(true)
+    // Cold PowerShell and the packaged Electron runner start before the first hook connects.
+    // Assert the event and launch errors, with a startup budget rather than a latency claim.
+    await expect.poll(() => { expect(errors()).toBe(''); return events.some(event => event.kind === 'session-start') }, { timeout: 12_000 }).toBe(true)
     await expect.poll(output).toContain('? for shortcuts')
     child.stdin.write('w\n')
     await expect.poll(() => events.some(event => event.kind === 'working')).toBe(true)
@@ -91,7 +96,7 @@ describe('run-scoped terminal agent hooks', () => {
     await expect.poll(() => events.some(event => event.kind === 'completed')).toBe(true)
     expect(JSON.stringify(events)).not.toMatch(/PRIVATE_|secret|tool_input|transcript|cwd/u)
     expect(errors()).toBe('')
-  })
+  }, 30_000)
   it('admits Codex completion and IDs through notify, never its content or approval answers', async () => {
     const { run, events } = await prepared('codex')
     const { child, output, errors } = fixture(run, 'codex')

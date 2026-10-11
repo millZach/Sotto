@@ -54,10 +54,11 @@ machine (the owner's app running beside it), two alternating runs each:
 What changed:
 
 - **Router.** The router answered every coordinator broadcast, about 60 a second while a thread streams, by asking the
-  coordinator for its shell again, a second structured clone of the whole state. A publication the local host set off
-  is now built from the shell it broadcast. A remote host's push carries the histories it has cached, so it is still
-  read afresh, and a command's reply still reads every host as it is now. Listeners that only need to know something
-  changed (`subscribeChanges`) have no state built for them.
+  coordinator for its shell again, a second structured clone of the whole state. A publication the local host's
+  broadcast set off is now built from that shell. Every other host in it, and every publication a broadcast did not set
+  off, such as the one after a command, is read afresh, since a command can change the coordinator's state without a
+  broadcast. A remote host's push carries the histories it has cached, so it is still read afresh. Listeners that only
+  need to know something changed (`subscribeChanges`) have no state built for them.
 - **Unread activity.** A thread its provider published with no activity (Codex before a thread is opened) had the
   workspace's whole list rebuilt on every accept and copied whole into every publish; it is now certified once.
 - **Projection.** `clientAgentState` no longer walks the threads it rebuilds anyway, or the catalog, which names no
