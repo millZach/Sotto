@@ -1,0 +1,300 @@
+import React from 'react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import type { AgentCommand, AgentState, AgentThread } from '../../../src/shared/agents'
+import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
+import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
+import type { WatcherIdentity } from '../../../src/shared/watcher'
+import type { WatcherBridge, WatcherRoomResult, WatcherRoomState } from '../../../src/shared/watcherRoom'
+import type { AppContextValue, AppNavigation } from '../../../src/renderer/src/state/AppContext'
+import { useOptionalApp } from '../../../src/renderer/src/state/AppContext'
+import { useAgents, useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext'
+import { SidebarChromeProvider, SidebarFoot } from '../../../src/renderer/src/agents/SidebarFrame'
+import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
+import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
+import { withoutRoomWatcher } from '../../../src/renderer/src/agents/watcherVisibility'
+import { WatcherRoomProvider, threadForTarget } from '../../../src/renderer/src/watcher/watcherRoom'
+import { WatcherView } from '../../../src/renderer/src/watcher/WatcherView'
+import { agentContextFixture } from '../../fixtures/agentContext'
+import { threadsStateFixture } from '../../fixtures/agentState'
+import { openSidebarFolders } from '../../fixtures/renderer/liveAgentState'
+
+vi.mock('../../../src/renderer/src/state/AppContext', async importOriginal => ({
+  ...await importOriginal<typeof import('../../../src/renderer/src/state/AppContext')>(),
+  useOptionalApp: vi.fn(),
+}))
+vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn(), useOptionalAgents: vi.fn() }))
+
+const NOW = E2E_THREADS_NOW
+const HOST = '6c0f8f0e-7b1e-4d5a-9a43-1f4f0f3b2a10'
+const REQUEST = '2b8f3c1d-5e6f-4a7b-8c9d-0e1f2a3b4c5d'
+const target = (threadId: string) => ({ hostId: HOST, threadId })
+const at = new Date(NOW).toISOString()
+const identity: WatcherIdentity = { target: target('watcher'), projectId: 'workshop', provider: 'codex', creationOperationId: '7a4c2e1f-0b3d-4e5f-8a9b-1c2d3e4f5a6b', createdAt: at }
+
+function watcherThread(): AgentThread {
+  return { id: 'watcher', kind: 'watcher', title: 'Watcher', projectId: 'workshop', modelId: 'codex:gpt', providerId: 'codex', status: 'idle', requests: [],
+    messages: [{ id: 'watcher-1', role: 'user', text: 'Keep an eye on the footer links.', createdAt: at }, { id: 'watcher-2', role: 'assistant', text: 'Watching Footer links.', createdAt: at }] }
+}
+
+function stateWithWatcher(): AgentState {
+  const state = threadsStateFixture()
+  state.host.models.push({ id: 'devin:agent', provider: 'Devin', name: 'Devin', ready: true })
+  state.host.threads.push(watcherThread())
+  openSidebarFolders(state)
+  return state
+}
+
+/** Watcher watches Footer links, a thread it started, and counts it among two in flight. */
+function roomState(patch: Partial<WatcherRoomState> = {}): WatcherRoomState {
+  const participant = { requestId: REQUEST, startedBy: 'watcher' as const, generation: 0, state: 'participating' as const, target: target('footer-links'), promptCount: 1 }
+  return {
+    current: identity, currentOptions: { modelId: 'codex:gpt', reasoningEffort: null, status: 'idle', connected: true }, history: [],
+    requests: [{ id: REQUEST, watcher: identity.target, rootUserMessageId: 'watcher-1', state: 'active', createdAt: at, closedAt: null, participants: [participant] }],
+    watchedThreads: [{ target: target('footer-links'), title: 'Footer links', status: 'running', connected: true, settled: false, backgroundWorkCount: 0, waitsOn: [], participation: [participant] }],
+    inFlight: 2, inFlightLimit: 4, receipts: [], recoveryNotice: null, observedAt: at, ...patch,
+  }
+}
+
+function fakeBridge(state: WatcherRoomState) {
+  const listeners = new Set<(next: WatcherRoomState) => void>()
+  const ok = (next: WatcherRoomState): WatcherRoomResult => ({ status: 'ok', state: next })
+  const bridge = {
+    get: vi.fn(async () => ok(state)),
+    open: vi.fn(async () => ok({ ...state, current: identity })),
+    setLimit: vi.fn(async ({ limit }: { limit: number }) => ok({ ...state, inFlightLimit: limit })),
+    prepareStopAll: vi.fn(),
+    stopAll: vi.fn(),
+    onChanged: vi.fn((listener: (next: WatcherRoomState) => void) => { listeners.add(listener); return () => { listeners.delete(listener) } }),
+  }
+  return { bridge: bridge as unknown as WatcherBridge & typeof bridge, publish: (next: WatcherRoomState) => { for (const listener of listeners) listener(next) } }
+}
+
+function mockApp(navigation: AppNavigation, watcherEnabled = true) {
+  const navigate = vi.fn()
+  vi.mocked(useOptionalApp).mockReturnValue({
+    navigation, platform: 'win32', windowMaximized: false, settings: DEFAULT_SETTINGS,
+    update: { watcherEnabled }, actions: { navigate, minimizeApp: vi.fn(), toggleMaximizeApp: vi.fn(), hideApp: vi.fn(), updateSettings: vi.fn() },
+  } as unknown as AppContextValue)
+  return navigate
+}
+
+function mockAgents(state: AgentState) {
+  const command = vi.fn<(request: AgentCommand) => Promise<AgentState | null>>(async () => state)
+  const connection = agentContextFixture(state, command, { threadDrafts: new ThreadDraftStore(command) })
+  vi.mocked(useAgents).mockReturnValue(connection)
+  vi.mocked(useOptionalAgents).mockReturnValue(connection)
+  return command
+}
+
+function renderRoom(state: AgentState, room: WatcherRoomState, watcherEnabled = true) {
+  const navigate = mockApp('watcher', watcherEnabled)
+  const command = mockAgents(state)
+  const { bridge, publish } = fakeBridge(room)
+  const view = render(<WatcherRoomProvider bridge={bridge}><SidebarChromeProvider updateControl={null}><WatcherView now={NOW} /></SidebarChromeProvider></WatcherRoomProvider>)
+  return { ...view, bridge, publish, command, navigate }
+}
+
+beforeEach(() => { vi.mocked(useAgents).mockReset(); vi.mocked(useOptionalAgents).mockReset(); vi.mocked(useOptionalApp).mockReset(); localStorage.clear() })
+afterEach(() => { cleanup(); localStorage.clear(); sessionStorage.clear() })
+
+describe("Watcher's room", () => {
+  it('offers Watcher on the user’s own Codex, Claude Code or Grok Build models the first time, and starts it without selecting anything', async () => {
+    const { bridge, command } = renderRoom(stateWithWatcher(), roomState({ current: null, currentOptions: null, watchedThreads: [], requests: [], inFlight: 0 }))
+    expect(await screen.findByRole('heading', { level: 2, name: 'Start Watcher' })).toBeInTheDocument()
+    expect(screen.getByText(/only you answer a thread’s questions and permissions/)).toBeInTheDocument()
+    const chosen = screen.getByRole('group', { name: 'Watcher’s model' })
+    expect(within(chosen).getByRole('combobox', { name: 'Thread model' })).toHaveTextContent('Sonnet 4.5')
+    fireEvent.click(screen.getByRole('button', { name: 'Start Watcher' }))
+    await waitFor(() => expect(bridge.open).toHaveBeenCalledWith({ provider: 'claude', modelId: 'claude:sonnet' }))
+    expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'select-thread' }))
+    // Once main names the new Watcher, its own pane takes the first entry's place.
+    expect(await screen.findByRole('region', { name: 'Watcher' })).toBeInTheDocument()
+  })
+
+  it('says main’s refusal in its own words and leaves the choice in place', async () => {
+    const { bridge } = renderRoom(stateWithWatcher(), roomState({ current: null, currentOptions: null }))
+    bridge.open.mockResolvedValueOnce({ status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: 'Claude Code is not connected. Nothing was started.', retryable: true })
+    fireEvent.click(await screen.findByRole('button', { name: 'Start Watcher' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Claude Code is not connected. Nothing was started.')
+    expect(screen.getByRole('button', { name: 'Start Watcher' })).toBeEnabled()
+  })
+
+  it('never offers Devin for Watcher, and says where to connect a provider when none can host it', async () => {
+    const state = stateWithWatcher()
+    state.host.models = [{ id: 'devin:agent', provider: 'Devin', name: 'Devin', ready: true }]
+    renderRoom(state, roomState({ current: null, currentOptions: null }))
+    expect(await screen.findByText(/Connect Codex, Claude Code or Grok Build in Settings/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Start Watcher' })).toBeNull()
+  })
+
+  it('shows Watcher’s own pane with its meter and pinned asking mode, and none of a thread’s Git, menu or permissions controls', async () => {
+    const { command } = renderRoom(stateWithWatcher(), roomState())
+    const pane = await screen.findByRole('region', { name: 'Watcher' })
+    expect(within(pane).getByRole('heading', { level: 2, name: 'Watcher' })).toBeInTheDocument()
+    expect(within(pane).getByRole('meter', { name: 'Watched threads' })).toHaveAttribute('aria-valuetext', '2 of 4 watched')
+    expect(within(pane).getByText('Watching Footer links.')).toBeInTheDocument()
+    // Watcher's replies are signed Watcher, whatever provider it runs on.
+    expect(within(pane).getByText('Watcher', { selector: '.thread-message__who' })).toBeInTheDocument()
+    expect(within(pane).queryByText('Codex', { selector: '.thread-message__who' })).toBeNull()
+    expect(within(pane).getByRole('textbox', { name: 'Watcher message' })).toBeInTheDocument()
+    expect(within(pane).getByText('Ask before changes')).toBeInTheDocument()
+    expect(within(pane).queryByRole('combobox', { name: 'Thread permissions' })).toBeNull()
+    expect(within(pane).queryByRole('button', { name: 'More actions' })).toBeNull()
+    // Watcher's history is read while the room shows it; nothing selects it on the Threads page.
+    expect(command).toHaveBeenCalledWith({ type: 'observe-threads', threadIds: ['watcher'] })
+    expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'select-thread' }))
+  })
+
+  it('lists every other thread in the Overview in the decided order, with the owl on the one Watcher watches', async () => {
+    renderRoom(stateWithWatcher(), roomState())
+    const overview = within(await screen.findByRole('complementary', { name: 'Overview' }))
+    expect(overview.getByRole('heading', { level: 1, name: 'Watcher' })).toBeInTheDocument()
+    expect(overview.getAllByRole('button', { expanded: true }).map(button => button.getAttribute('aria-label')))
+      .toEqual(['Needs you, 2 threads', 'Working, 2 threads', 'Idle, 5 threads'])
+    expect(overview.getByText('Run a command in workshop')).toBeInTheDocument()
+    // Watcher is not among its own threads.
+    expect(overview.queryByText('Watcher', { selector: '.watcher-row__title' })).toBeNull()
+    const footer = overview.getByText('Footer links').closest('li')!
+    expect(within(footer).getByRole('img', { name: 'Watched by Watcher' })).toHaveAttribute('title', 'Watched by Watcher')
+    expect(within(overview.getByText('Weekly note').closest('li')!).queryByRole('img', { name: 'Watched by Watcher' })).toBeNull()
+    // Settled threads stay reachable at the end of Idle, folded away until asked for.
+    expect(overview.queryByText('Benchmark rerun')).toBeNull()
+    fireEvent.click(overview.getByRole('button', { name: 'Settled, 4 threads' }))
+    expect(overview.getByText('Benchmark rerun')).toBeInTheDocument()
+    fireEvent.click(overview.getByRole('button', { name: 'Needs you, 2 threads' }))
+    expect(overview.queryByText('Visual gate flake')).toBeNull()
+  })
+
+  it('keeps Threads in flight under More Watcher actions, saves it through main and returns focus on Escape', async () => {
+    const { bridge, publish } = renderRoom(stateWithWatcher(), roomState())
+    const more = await screen.findByRole('button', { name: 'More Watcher actions' })
+    fireEvent.click(more)
+    const panel = screen.getByRole('dialog', { name: 'Watcher settings' })
+    const limit = within(panel).getByRole('combobox', { name: 'Threads in flight' })
+    expect(limit).toHaveFocus()
+    expect(limit).toHaveValue('4')
+    expect(limit).toHaveAccessibleDescription(/Lowering it stops nothing/)
+    fireEvent.change(limit, { target: { value: '3' } })
+    await waitFor(() => expect(bridge.setLimit).toHaveBeenCalledWith({ limit: 3 }))
+    await waitFor(() => expect(screen.getByRole('meter', { name: 'Watched threads' })).toHaveAttribute('aria-valuetext', '2 of 3 watched'))
+    fireEvent.keyDown(limit, { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: 'Watcher settings' })).toBeNull()
+    expect(more).toHaveFocus()
+    // A lower limit than the threads in flight stops nothing; the meter says so.
+    act(() => publish(roomState({ inFlightLimit: 1, observedAt: new Date(NOW + 1_000).toISOString() })))
+    expect(screen.getByRole('meter', { name: 'Watched threads' })).toHaveAttribute('aria-valuetext', '2 of 1 watched')
+  })
+
+  it('says a refused limit change and keeps the old limit', async () => {
+    const { bridge } = renderRoom(stateWithWatcher(), roomState())
+    bridge.setLimit.mockResolvedValueOnce({ status: 'refused', code: 'INVALID_INPUT', message: 'The limit was not saved. It is still 4.', retryable: true })
+    fireEvent.click(await screen.findByRole('button', { name: 'More Watcher actions' }))
+    fireEvent.change(screen.getByRole('combobox', { name: 'Threads in flight' }), { target: { value: '7' } })
+    expect(await screen.findByRole('alert')).toHaveTextContent('The limit was not saved. It is still 4.')
+    expect(screen.getByRole('meter', { name: 'Watched threads' })).toHaveAttribute('aria-valuetext', '2 of 4 watched')
+  })
+})
+
+describe('the room switch', () => {
+  function foot(navigation: AppNavigation, watcherEnabled = true) {
+    const navigate = mockApp(navigation, watcherEnabled)
+    const view = render(<SidebarFoot />)
+    return { navigate, view, tabs: () => within(screen.getByRole('tablist', { name: 'Page' })).getAllByRole('tab') }
+  }
+
+  it('puts the owl alone between Dictate and Threads, named Watcher, with one tab stop', () => {
+    const { tabs } = foot('home')
+    expect(tabs().map(tab => tab.getAttribute('aria-label') ?? tab.textContent)).toEqual(['Dictate', 'Watcher', 'Threads'])
+    expect(tabs()[1]).toHaveAttribute('title', 'Watcher')
+    expect(tabs()[1]).toHaveTextContent('')
+    expect(tabs().map(tab => tab.tabIndex)).toEqual([0, -1, -1])
+  })
+
+  for (const from of ['home', 'threads', 'settings', 'help', 'history', 'memory'] as const) it(`reaches all three rooms from the keyboard on ${from}`, () => {
+    const { navigate, tabs } = foot(from)
+    const start = tabs().find(tab => tab.tabIndex === 0)!
+    start.focus()
+    const index = tabs().indexOf(start)
+    fireEvent.keyDown(start, { key: 'End' })
+    expect(navigate).toHaveBeenLastCalledWith('threads')
+    fireEvent.keyDown(tabs()[2]!, { key: 'Home' })
+    expect(navigate).toHaveBeenLastCalledWith('home')
+    fireEvent.keyDown(tabs()[0]!, { key: 'ArrowRight' })
+    expect(navigate).toHaveBeenLastCalledWith('watcher')
+    expect(tabs()[1]).toHaveFocus()
+    expect(index).toBeGreaterThanOrEqual(0)
+  })
+
+  it('hands focus to the lit tab of the room it opens, whose page draws its own switch', () => {
+    const { tabs, view } = foot('home')
+    tabs()[0]!.focus()
+    fireEvent.keyDown(tabs()[0]!, { key: 'ArrowRight' })
+    view.unmount()
+    // The room's page mounts a new foot; the press's focus lands on its lit owl.
+    foot('watcher')
+    expect(tabs()[1]).toHaveAttribute('aria-selected', 'true')
+    expect(tabs()[1]).toHaveFocus()
+  })
+
+  it('is Dictate | Threads alone with the gate off', () => {
+    const { tabs } = foot('threads', false)
+    expect(tabs().map(tab => tab.textContent)).toEqual(['Dictate', 'Threads'])
+  })
+})
+
+describe('a watched thread', () => {
+  function renderThreadsPage(watcherEnabled: boolean) {
+    const state = stateWithWatcher()
+    state.activeThreadId = 'footer-links'
+    mockApp('threads', watcherEnabled)
+    mockAgents(state)
+    const { bridge } = fakeBridge(roomState())
+    render(<WatcherRoomProvider bridge={bridge}><ThreadsView now={NOW} /></WatcherRoomProvider>)
+    return bridge
+  }
+
+  it('shows the owl after its provider logo in its row and its pane, and says what a send does', async () => {
+    renderThreadsPage(true)
+    const sidebar = within(screen.getByRole('complementary', { name: 'Thread sidebar' }))
+    const row = await sidebar.findByRole('button', { name: 'Footer links' })
+    await waitFor(() => expect(within(row).getByRole('img', { name: 'Watched by Watcher' })).toBeInTheDocument())
+    expect(row).toHaveAccessibleDescription(/Watched by Watcher/)
+    const pane = screen.getByRole('region', { name: 'Footer links' })
+    expect(within(pane).getByRole('img', { name: 'Watched by Watcher' })).toBeInTheDocument()
+    expect(within(pane).queryByRole('button', { name: 'Watched by Watcher' })).toBeNull()
+    expect(within(pane).getByText('Watched by Watcher. If you send here, Watcher stops sending to it.')).toBeInTheDocument()
+    // Watcher itself lives in its room, not in the Threads list.
+    expect(sidebar.queryByRole('button', { name: 'Watcher' })).toBeNull()
+    expect(within(sidebar.getByRole('button', { name: 'Weekly note' })).queryByRole('img', { name: 'Watched by Watcher' })).toBeNull()
+  })
+
+  it('shows nothing of Watcher with the gate off, and never asks main', () => {
+    const bridge = renderThreadsPage(false)
+    expect(screen.queryAllByRole('img', { name: 'Watched by Watcher' })).toEqual([])
+    expect(screen.queryByText(/If you send here, Watcher stops sending to it/)).toBeNull()
+    expect(bridge.get).not.toHaveBeenCalled()
+    expect(bridge.onChanged).not.toHaveBeenCalled()
+  })
+})
+
+describe('Watcher’s thread in the window', () => {
+  it('finds a host’s thread under either key the window may use', () => {
+    const state = stateWithWatcher()
+    expect(threadForTarget(state, target('watcher'))?.id).toBe('watcher')
+    const scoped = { ...state, hostId: HOST, host: { ...state.host, threads: state.host.threads.map(thread => ({ ...thread, id: `host:${HOST}:${thread.id}` })) } }
+    expect(threadForTarget(scoped, target('watcher'))?.id).toBe(`host:${HOST}:watcher`)
+    expect(threadForTarget(scoped, { hostId: '0f0e0d0c-0b0a-4908-8706-050403020100', threadId: 'watcher' })).toBeUndefined()
+  })
+
+  it('leaves the current Watcher out of the Threads page and clears a selection of it', () => {
+    const state = stateWithWatcher()
+    state.activeThreadId = 'watcher'
+    const shown = withoutRoomWatcher(state, true, null)
+    expect(shown.host.threads.map(thread => thread.id)).not.toContain('watcher')
+    expect(shown.activeThreadId).toBeNull()
+    expect(withoutRoomWatcher(state, true, 'footer-links').host.threads.map(thread => thread.id)).not.toContain('footer-links')
+    expect(withoutRoomWatcher(state, false, 'footer-links')).toBe(state)
+  })
+})

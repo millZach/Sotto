@@ -16,6 +16,7 @@ import { ActivityGroupView, CompactionLine, LiveActivity, TurnChangedFiles } fro
 import { isDrawableVisual, VisualCard } from './VisualCard'
 import { isWakeUpFollowup, isWakeUpMessage, wakeUpMarkdown } from './babysitting'
 import { SottoMark } from '../components/SottoMark'
+import { WatcherOwl } from '../watcher/WatcherOwl'
 import { compactionOf, liveTurnId, nestActivities, placeActivities, splitTurns, turnChanges, workHeadline, type ActivityGroup, type ActivityPlacement, type TranscriptTurn, type TurnChange } from './threadActivityView'
 
 type Command = AgentConnection['command']
@@ -145,9 +146,11 @@ function WakeUpWho(): ReactNode {
  * structure of the one before it, so a message the update did not touch is the same object and is not redrawn
  * while the agent streams into the message below it. `threadId` is how a submitted attachment finds its preview.
  */
-const MessageArticle = memo(function MessageArticle({ message, provider, writing, streamText, threadId }: {
+const MessageArticle = memo(function MessageArticle({ message, provider, writing, streamText, threadId, speaker }: {
   readonly message: AgentMessage; readonly provider: string; readonly writing: boolean; readonly streamText: boolean
   readonly threadId: string | undefined
+  /** Watcher's conversation names its replies Watcher, with the owl, whatever provider it runs on. */
+  readonly speaker?: 'watcher' | undefined
 }): ReactNode {
   const article = useRef<HTMLElement>(null)
   // A wake-up babysitting sent is Sotto's, told by the host's mark and never by its text, and shows every word the
@@ -156,7 +159,7 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
   const markdown = useMemo(() => wakeUp ? wakeUpMarkdown(message.text) : message.text, [wakeUp, message.text])
   return <article className="thread-message" data-role={message.role} data-from={wakeUp ? 'sotto' : undefined} ref={article}>
     <header>{wakeUp ? <WakeUpWho />
-      : <span className="thread-message__who">{message.role === 'user' ? 'You' : message.role === 'assistant' ? provider : 'System'}</span>}
+      : <span className="thread-message__who">{message.role === 'user' ? 'You' : message.role === 'assistant' ? speaker === 'watcher' ? <><WatcherOwl size={13} />Watcher</> : provider : 'System'}</span>}
       <time dateTime={message.createdAt}>{clockLabel(Date.parse(message.createdAt))}</time>
       {!writing && message.text.length > 0 && (message.role === 'user' || message.role === 'assistant') ? <MessageCopy message={message} article={article} /> : null}</header>
     {writing && !streamText
@@ -171,15 +174,16 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
  * being written leaves every earlier turn in the transcript untouched. `last` is what the running turn needs
  * to know about its place; everything else it reads is shared across updates.
  */
-const TurnView = memo(function TurnView({ turn, provider, running, last, writing, placement, context, streamText, threadId }: {
+const TurnView = memo(function TurnView({ turn, provider, running, last, writing, placement, context, streamText, threadId, speaker }: {
   readonly turn: TranscriptTurn; readonly provider: string; readonly running: boolean; readonly last: boolean
   readonly writing: string | undefined
+  readonly speaker?: 'watcher' | undefined
   readonly placement: ActivityPlacement; readonly context: ActivityContext; readonly streamText: boolean
   readonly threadId: string | undefined
 }): ReactNode {
   // A visual an agent drew is its card; one this window cannot draw is its text, which says what it showed (ADR-0056).
   const article = (message: AgentMessage): ReactNode => isDrawableVisual(message) ? <VisualCard visual={message.visual} threadId={threadId} />
-    : drawn(message) && <MessageArticle message={message} provider={provider} writing={message.id === writing} streamText={streamText} threadId={threadId} />
+    : drawn(message) && <MessageArticle message={message} provider={provider} writing={message.id === writing} streamText={streamText} threadId={threadId} speaker={speaker} />
   const plain = (message: AgentMessage): ReactNode => <React.Fragment key={message.id}>
     {article(message)}
     <ActivityGroups groups={placement.after.get(message.id)} context={context} />
@@ -225,11 +229,13 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   </>
 })
 
-export const MessageList = memo(function MessageList({ messages, provider, running, placement, context, streamText = true, threadId }: {
+export const MessageList = memo(function MessageList({ messages, provider, running, placement, context, streamText = true, threadId, speaker }: {
   readonly messages: readonly AgentMessage[]; readonly provider: string; readonly running: boolean
   readonly placement: ActivityPlacement; readonly context: ActivityContext; readonly streamText?: boolean
   /** The thread these messages belong to, which is how a submitted attachment finds its preview. */
   readonly threadId?: string
+  /** Who the replies are from when it is not the provider: Watcher's own conversation. */
+  readonly speaker?: 'watcher' | undefined
 }): ReactNode {
   const last = messages.findLast(drawn)
   // A visual after the reply means the reply is no longer being written.
@@ -239,7 +245,7 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
   const turns = useShared(useMemo(() => splitTurns(messages), [messages]))
   return <><ActivityGroups groups={placement.leading} context={context} />
   {turns.map((turn, index) => <TurnView key={turn.key} turn={turn} provider={provider} running={running}
-    last={index === turns.length - 1} writing={writing} placement={placement} context={context} streamText={streamText} threadId={threadId} />)}
+    last={index === turns.length - 1} writing={writing} placement={placement} context={context} streamText={streamText} threadId={threadId} speaker={speaker} />)}
   <ActivityGroups groups={placement.trailing} context={context} />
   </>
 })
@@ -334,8 +340,10 @@ export function reachesJumpBand(scroller: HTMLElement): boolean {
  * reading older messages keeps its place and offers Jump to latest. Showing earlier messages keeps
  * the message under the reader where it was.
  */
-export function ThreadTranscript({ row, state, command, store, followSignal, children }: {
+export function ThreadTranscript({ row, state, command, store, followSignal, children, watcher = false }: {
   readonly row: ThreadRow
+  /** Watcher's own conversation: its replies are Watcher's. */
+  readonly watcher?: boolean
   readonly state: AgentState
   readonly command: Command
   readonly store: ThreadDraftStore
@@ -499,7 +507,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
           : thread.earlierAvailable
             ? <div className="thread-transcript__earlier"><Button variant="ghost" onClick={loadEarlier}>Show earlier messages</Button></div>
             : null}
-        {thread.messages.length || showsActivity ? <MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} placement={placement} context={activity} streamText={streamText} threadId={thread.id} />
+        {thread.messages.length || showsActivity ? <MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} placement={placement} context={activity} streamText={streamText} threadId={thread.id} speaker={watcher ? 'watcher' : undefined} />
           : thread.historyStatus === 'loading' ? <div className="thread-history-skeleton" aria-hidden="true"><i /><i /><i /></div>
             : thread.historyStatus === 'error' || !empty ? null
               : <div className="thread-workspace__empty"><MessageSquare size={26} strokeWidth={1.3} aria-hidden="true" /><h3>{thread.compaction?.status === 'running' ? 'Compacting the context.' : thread.status === 'running' ? 'The agent is working.' : 'What is next for this thread?'}</h3><p>{thread.status === 'running' ? 'New messages will appear here.' : 'Write a prompt below to continue.'}</p></div>}

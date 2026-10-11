@@ -1,0 +1,102 @@
+/* Watcher, in Sotto Owl builds only (ADR-0072, ADR-0073): the owl in the room switch, the badge on a watched thread,
+   and Watcher's room with its Overview. Every colour is a theme role. The owl is quiet everywhere: a watched thread's
+   badge takes its row's muted text colour, and the accent is left to the Sotto Owl tile and to the switch's owl
+   while Watcher's room is open (Zach's pick from the approved mock-up). */
+
+.watcher-owl { display: block; flex: none; fill: currentColor; }
+
+/* ---------- The room switch: Dictate | owl | Threads ---------- */
+/* Dictate and Threads keep equal shares; the owl takes a fixed part between them. */
+.thread-nav__foot .thread-nav__seg[data-rooms='3'] { display: grid; grid-template-columns: minmax(0, 1fr) 46px minmax(0, 1fr); }
+.thread-nav__foot .thread-nav__seg[data-rooms='3'] button { min-width: 0; }
+.thread-nav__seg button[data-room='watcher'] { padding: 0; }
+.thread-nav__seg button[data-room='watcher'][aria-selected='true'],
+.app-switch__tab[data-room='watcher'][aria-selected='true'] { color: var(--tt-accent-text); }
+
+/* ---------- A watched thread ---------- */
+/* The owl right after the provider logo, the logo's own size, in the muted text colour of whatever row holds it. */
+.watched-badge { display: inline-grid; flex: none; place-items: center; color: var(--tt-text-muted); }
+/* In a pane header the logo and the owl sit as one pair, closer than the title's own gap. */
+.thread-workspace__title > .watched-badge { margin-left: -4px; }
+/* Under a watched thread's composer, before anything is sent. */
+.watched-note { display: flex; align-items: center; gap: 6px; margin: 0; padding: 7px 6px 0; color: var(--tt-text-muted); font-size: 12px; line-height: 1.5; }
+.watched-note > .watcher-owl { flex: none; }
+.watched-note > span { min-width: 0; }
+
+/* Watcher's asking mode, said where a thread's permissions choice would be. It is a fact, not a control. */
+.thread-options__pinned { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 28px; padding: 0 9px; color: var(--tt-text-muted); font-size: 13px; white-space: nowrap; }
+.thread-options__pinned > svg { flex: none; }
+
+/* ---------- The Overview ---------- */
+/* The status colours are tuned against the canvas; on a theme's sidebar the warning and success hues can fall under
+   4.5:1, so the Overview leans them a fifth of the way toward the text colour, which raises contrast in either mode. */
+.watcher-overview {
+  --watcher-needs-ink: color-mix(in oklab, var(--threads-warning-text) 80%, var(--tt-text));
+  --watcher-ready-ink: color-mix(in oklab, var(--tt-success) 80%, var(--tt-text));
+}
+.watcher-overview__head { display: flex; align-items: baseline; gap: 6px; padding: 6px 10px 8px; }
+.watcher-overview__heading { margin: 0; color: var(--tt-text-muted); font-size: 12px; font-weight: 500; letter-spacing: .02em; }
+.watcher-overview__total { margin-left: auto; color: var(--tt-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.watcher-group { margin: 0 0 12px; }
+.watcher-group__heading { margin: 0; font: inherit; }
+.watcher-group__toggle, .watcher-group__settled { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 30px; padding: 0 10px 0 6px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 14px; font-weight: 500; text-align: left; cursor: pointer; }
+.watcher-group__settled { width: calc(100% - 12px); margin: 2px 6px 0; font-size: 12.5px; font-weight: 400; }
+.watcher-group__toggle:hover, .watcher-group__settled:hover { background: var(--threads-hover); color: var(--tt-text); }
+.watcher-group[data-tone='needs'] .watcher-group__toggle { color: var(--watcher-needs-ink); }
+.watcher-group__chevron { flex: none; color: var(--tt-text-muted); transition: transform 120ms ease; }
+:is(.watcher-group__toggle, .watcher-group__settled)[aria-expanded='true'] > .watcher-group__chevron { transform: rotate(90deg); }
+.watcher-group__count { margin-left: auto; color: var(--tt-text-muted); font-size: 12px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.watcher-group__rows { margin: 0; padding: 0; list-style: none; }
+
+/* A row, as the Threads sidebar draws one: the ring, the title and the time; then the provider, the project and the status. */
+.watcher-row { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; column-gap: 9px; row-gap: 3px; margin: 1px 0; padding: 8px 10px; border-radius: 7px; }
+.watcher-row__title { min-width: 0; overflow: hidden; color: var(--tt-text-2); font-size: 13px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.watcher-row__meta { grid-column: 2 / -1; display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 18px; color: var(--tt-text-muted); font-size: 12px; }
+.watcher-row__marks { display: flex; flex: none; align-items: center; gap: 6px; }
+.watcher-row__marks .thread-nav__mark { width: 14px; height: 14px; }
+.watcher-row__where { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.watcher-row__status { flex-shrink: 0; max-width: 70%; margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.watcher-row__status[data-tone='needs'] { color: var(--watcher-needs-ink); }
+.watcher-row__status[data-tone='working'] { color: var(--tt-activity); }
+.watcher-row__status:is([data-tone='ready'], [data-tone='landing']) { color: var(--watcher-ready-ink); }
+.watcher-row[data-unavailable] .watcher-row__status { color: var(--tt-text-muted); }
+.watcher-row__asks { grid-column: 2 / -1; display: -webkit-box; margin: 2px 0 0; overflow: hidden; color: var(--tt-text-2); font-size: 12.5px; line-height: 1.45; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+
+/* Rings, after the sidebar's: the Overview adds failed, ready, landing and quiet. */
+.watcher-row__ring { display: block; width: 10px; height: 10px; justify-self: center; border: 1.5px solid var(--tt-hairline); border-radius: 50%; }
+.watcher-row__ring[data-tone='needs'] { border: 2px solid var(--threads-attention); }
+.watcher-row__ring[data-tone='failed'] { border: 2px solid var(--tt-error); }
+.watcher-row__ring:is([data-tone='ready'], [data-tone='landing']) { border: 0; background: var(--tt-success); }
+.watcher-row__ring[data-tone='working'] { border: 0; background: conic-gradient(var(--tt-activity) 0 32%, color-mix(in srgb, var(--tt-activity) 22%, transparent) 32% 100%); mask: radial-gradient(circle, transparent 38%, currentcolor 42%); }
+.watcher-row__ring[data-tone='quiet'] { border: 1.5px dashed var(--tt-text-muted); }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .watcher-row:not([data-unavailable]) .watcher-row__ring[data-tone='working'] { animation: thread-ring 1.5s linear infinite; }
+}
+@media (prefers-reduced-motion: reduce) { .watcher-group__chevron { transition: none; } }
+:root[data-reduced-motion='on'] .watcher-group__chevron { transition: none; }
+
+/* ---------- The room ---------- */
+.watcher-room__status { margin: auto; padding: 30px; color: var(--tt-text-muted); font-size: 13px; text-align: center; }
+.watcher-head__owl { color: var(--tt-text-muted); }
+/* Watcher's replies are signed with the owl, in the name's own colour. */
+.thread-message__who:has(> .watcher-owl) { display: inline-flex; align-items: center; gap: 6px; }
+
+/* "3 of 4 watched": one cell per thread Watcher may work with. */
+.watcher-meter { display: inline-flex; flex: none; align-items: center; gap: 8px; margin-right: 6px; color: var(--tt-text-2); font-size: 12.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.watcher-meter__cells { display: inline-flex; gap: 3px; }
+.watcher-meter__cells > i { width: 6px; height: 14px; border: 1px solid var(--tt-border); border-radius: 2px; }
+.watcher-meter__cells > i[data-on] { border-color: transparent; background: var(--tt-accent); }
+@container thread-pane (width < 520px) { .watcher-meter__more { display: none; } }
+
+.watcher-actions { position: relative; display: flex; }
+.watcher-actions__panel { position: absolute; top: calc(100% + 4px); right: 0; z-index: 30; width: min(300px, calc(100vw - 24px)); padding: 14px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); color: var(--tt-text); }
+.watcher-actions__panel .tt-field { margin: 0; }
+.watcher-actions__error { margin: 10px 0 0; color: var(--tt-error-text); font-size: 12.5px; }
+
+/* The first time: what Watcher is and which of the user's own providers it runs on. */
+.watcher-first > p { max-width: 460px; line-height: 1.55; }
+.watcher-first__owl { color: var(--tt-text-muted); }
+.watcher-first__choices { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: 8px 0 4px; }
+.watcher-first__missing { color: var(--tt-text-2); }
+.watcher-first__error { max-width: 460px; }

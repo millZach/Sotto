@@ -21,6 +21,8 @@ import { ThreadWebLinks } from '../tools/webLinks'
 import { ThreadBabysitting, ThreadMonitor, ThreadHeld, ThreadWaitingCommand, ThreadWorking, useHeldAction } from './ThreadMonitor'
 import { ornamentPose } from './threadActivityView'
 import { compactionBusy, compactionOffered, ThreadCompaction } from './ThreadCompaction'
+import { useWatchedThread } from '../watcher/watcherRoom'
+import { WatchedBadge, WatcherOwl } from '../watcher/WatcherOwl'
 
 type Command = AgentConnection['command']
 
@@ -68,13 +70,18 @@ export interface ThreadPaneProps {
   readonly onOpenBeside?: (() => void) | undefined
   /** A fixed clock where the page holds one still (a capture run); the held ornament reads from it. */
   readonly now?: number | undefined
+  /**
+   * Watcher's own pane (ADR-0073): its header stands in for the thread's, and its composer keeps asking before
+   * changes, with no skills, branch toolbar, Git action or thread menu, since Watcher coordinates rather than works.
+   */
+  readonly watcherHeader?: ReactNode
 }
 
 /**
  * One thread's view: header and controls, its own transcript position and its own composer.
  * Everything here acts on `row.thread.id`; a split workspace mounts one per open thread.
  */
-export function ThreadPane({ row, state, command, store, focused, promptId, error, onClose, onOpenBeside, workingCopy, actions, notice, drawer, now }: ThreadPaneProps): ReactNode {
+export function ThreadPane({ row, state, command, store, focused, promptId, error, onClose, onOpenBeside, workingCopy, actions, notice, drawer, now, watcherHeader }: ThreadPaneProps): ReactNode {
   const [followSignal, setFollowSignal] = useState(0)
   const [renaming, setRenaming] = useState(false)
   const renameReturn = useRef<HTMLElement | null>(null)
@@ -93,6 +100,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   // re-renders the transcript and header synchronously on every keystroke.
   const paneHasDraft = useSyncExternalStore(store.subscribe, () => hasDraftContent(store.draft(row.thread.id)))
   const thread = row.thread
+  const master = watcherHeader !== undefined
+  const watched = useWatchedThread(thread.id) && !master
   const closed = isThreadClosed(thread)
   const rowConnected = row.connected
   const ornamentAllowed = rowConnected && !closed && thread.status !== 'error' && thread.requests.length === 0
@@ -170,9 +179,10 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   ]
   const focusAnswerComposer = (): void => { document.getElementById(promptId)?.focus() }
   return <>
-    <header className="thread-workspace__head">
+    {master ? watcherHeader : <header className="thread-workspace__head">
       <div className="thread-workspace__title">
         <ProviderMark provider={row.providerId} name={row.provider} size={16} />
+        {watched ? <WatchedBadge size={16} /> : null}
         {renaming
           ? <h2><ThreadNameField title={thread.title} label={`Rename ${thread.title}`} className="thread-workspace__rename tt-focusable"
             onRename={next => void command({ type: 'rename-thread', threadId: thread.id, title: next })} onDone={restore => { restoreRenameFocus.current = restore; setRenaming(false) }} /></h2>
@@ -189,12 +199,12 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         <PaneMenu groups={[naming, context, shelf, recovery]} />
       </div>
       {onClose ? <button type="button" className="pane-action thread-pane__close tt-focusable" data-pane-close aria-label={`Close ${thread.title} pane`} title="Close pane" onClick={onClose}><X size={16} aria-hidden="true" /></button> : null}
-    </header>
+    </header>}
     {settleDialog}
     {thread.historySaveNotice ? <p className="agent-error thread-workspace__error" role="alert">{thread.historySaveNotice}</p> : null}
     {thread.requestNotice ? <p className="agent-error thread-workspace__error" role="alert">{thread.requestNotice}</p> : null}
     {error && error !== thread.requestNotice && !deliveryExplains && !answerExplains && !settingsExplains && error !== toolbarExplained && error !== gitExplained ? <p className="agent-error thread-workspace__error" role="alert">{error}</p> : null}
-    <ThreadWebLinks threadId={thread.id} threadTitle={thread.title} focused={focused}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal}>
+    <ThreadWebLinks threadId={thread.id} threadTitle={thread.title} focused={focused}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal} watcher={master}>
       <ThreadRequests kind="permission" row={row} state={state} command={command} blocked={threadBusy ? 'Waiting for Sotto…' : !rowConnected ? `Reconnect ${row.provider} to answer.` : null}
         onAnswer={focusAnswerComposer} />
       {!isThreadClosed(thread) && !thread.remoteHost ? <CloudIphoneRequest threadId={thread.id} threadTitle={thread.title} onAnswer={focusAnswerComposer} /> : null}
@@ -211,10 +221,13 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
       <ThreadBranchNotice thread={thread} project={row.project} command={command} composing={composing} />
       <ThreadRequests kind="question" row={row} state={state} command={command} blocked={threadBusy ? 'Waiting for Sotto…' : !rowConnected ? `Reconnect ${row.provider} to answer.` : null}
         onAnswer={focusAnswerComposer} />
-      <ThreadComposer key={thread.id} ornament={ornament} row={row} state={state} command={command} store={store} composerId={promptId} focused={focused} onExplainedError={setToolbarExplained} onSend={() => setFollowSignal(signal => signal + 1)} />
+      <ThreadComposer key={thread.id} ornament={ornament} row={row} state={state} command={command} store={store} composerId={promptId} focused={focused} onExplainedError={setToolbarExplained} onSend={() => setFollowSignal(signal => signal + 1)}
+        watcher={master} />
       {/* The row under the composer is compaction's alone. Side by side it keeps one line even when compaction has
           nothing to say, so panes keep their composers at the same height whether or not one has been compacted. */}
       <div className="thread-pane__meta">
+        {/* Said before a send, not after: a direct instruction here ends Watcher's part in this thread (ADR-0073). */}
+        {watched ? <p className="watched-note"><WatcherOwl size={13} /><span>Watched by Watcher. If you send here, Watcher stops sending to it.</span></p> : null}
         <ThreadCompaction thread={thread} supported={compactionOffered(capabilities, thread)}
           connected={rowConnected && !closed} blocked={threadBusy} command={command} />
       </div>

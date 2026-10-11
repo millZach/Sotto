@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { Check, ChevronDown } from 'lucide-react'
+import { Check, ChevronDown, Lock } from 'lucide-react'
 import { hostForThread, capabilitiesForThread, isThreadProviderConnected, PROVIDER_LABELS, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, THREAD_SETTINGS_UNRECONCILED, type AgentModel, type AgentRuntimeMode, type AgentState, type AgentThread } from '../../../shared/agents'
 import { catalogEntry, chosenModelId, resolveModel } from '../../../shared/modelCatalog'
 import type { AgentConnection } from './AgentContext'
@@ -25,6 +25,12 @@ export function threadOptionsSummary(model: AgentModel | undefined, effort: stri
   const own = model?.providerModes?.find(candidate => candidate.id === startingProviderMode(model, providerMode))
   const permissions = own ? own.name : mode ? RUNTIME_LABELS[mode] : 'Provider default'
   return [model?.name ?? 'Choose model', reasoning ? capitalise(reasoning) : null, permissions].filter(Boolean).join(' · ')
+}
+
+/** A permission mode that is a fact rather than a choice: Watcher's, which always asks before changes (ADR-0073). */
+export function PinnedPermission({ label }: { readonly label: string }): ReactNode {
+  return <span className="thread-options__pinned" title="Watcher always asks before it changes anything. Its own edits and commands wait for your answer.">
+    <Lock size={13} aria-hidden="true" /><span className="tt-visually-hidden">Permissions: </span>{label}</span>
 }
 
 export interface ChoiceOption { readonly id: string; readonly label: string; readonly description?: string; readonly disabled?: boolean }
@@ -222,7 +228,7 @@ const sending = (state: AgentState, threadId: string): boolean =>
  * they never move the row; otherwise under the chips. Focus stays on the chip a choice was made from. New thread
  * and New terminal show the same three controls laid out in full.
  */
-export function ThreadOptions({ thread, state, command, turnNote = true, getDraftText, onDraftText, noticeSlot }: {
+export function ThreadOptions({ thread, state, command, turnNote = true, getDraftText, onDraftText, noticeSlot, pinnedPermission }: {
   readonly thread: AgentThread; readonly state: AgentState; readonly command: AgentConnection['command']
   /** Explain options locked by a running turn; off where the composer already says it cannot send. */
   readonly turnNote?: boolean
@@ -231,6 +237,8 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   readonly onDraftText?: (text: string) => void
   /** Where the composer wants the lines about a refused or unconfirmed change, under its whole footer row. */
   readonly noticeSlot?: HTMLElement | null | undefined
+  /** A permission mode that cannot be changed here, said in words where the choice would be: Watcher's (ADR-0073). */
+  readonly pinnedPermission?: string | undefined
 }): ReactNode {
   const settings = usePendingSettings(thread.id)
   const bar = useRef<HTMLDivElement>(null)
@@ -270,7 +278,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
     pendingSettingsStore.press(thread.id, kind, value, patch, command, drawn, showing)
   }
   const capabilities = capabilitiesForThread(state.host, thread)
-  if (locked && !capabilities.configureThread) return null
+  if (locked && !capabilities.configureThread) return pinnedPermission !== undefined ? <PinnedPermission label={pinnedPermission} /> : null
   const modelDisabled = locked && capabilities.configureThreadModel === false
   // The model shown is the one pressed; effort and permissions are read for it, as they will be once it lands.
   const confirmedModel = resolveModel(models, thread.modelId)
@@ -330,7 +338,9 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
         disabled={fixed || modelDisabled} onChange={reasoningEffort => press('effort', reasoningEffort, { reasoningEffort }, unpressed.effort)}
         defaultValue={model?.defaultReasoningEffort} modelName={model?.name}
         hasUltrathink={hasUltrathink} {...(addUltrathink ? { onUltrathink: addUltrathink } : {})} />}
-      {modes.length > 0 && <ChoiceChip label={OPTION_CHIP_NAMES.permissions} placeholder="Provider default" value={permission} options={modes} disabled={fixed}
+      {pinnedPermission !== undefined
+        ? <PinnedPermission label={pinnedPermission} />
+        : modes.length > 0 && <ChoiceChip label={OPTION_CHIP_NAMES.permissions} placeholder="Provider default" value={permission} options={modes} disabled={fixed}
         pending={pendingPermission !== null} describedBy={permissionUnconfirmed ? unconfirmedId : captionId}
         onChange={mode => press('permissions', mode, permissionPatch(model, mode), unpressed.permissions)} />}
     </div>

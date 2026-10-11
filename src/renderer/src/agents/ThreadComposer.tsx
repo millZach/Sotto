@@ -16,7 +16,7 @@ import { SkillPicker, skillOptionId, useSkillPicker } from './SkillPicker'
 import { deliveryFor, deliveryPending, hasDraftContent, queueAdmissionOpen, queuedRevision, submissionStatus, UNCONFIRMED_SUBMISSION, useScreenshotReadPort, useScreenshotReads, useSubmissions, useThreadComposer, type ComposerDraft, type ThreadComposerSnapshot, type SubmissionMode, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
 import type { ThreadRow } from './threadFacts'
 import { followupsFor, ThreadFollowups } from './ThreadFollowups'
-import { ThreadOptions } from './ThreadOptions'
+import { PinnedPermission, ThreadOptions } from './ThreadOptions'
 import { listedHosts } from './HostBadge'
 import { BranchToolbar } from './BranchToolbar'
 import { sessionSeenOpen, startOnTyping } from './earlyStart'
@@ -81,6 +81,8 @@ export async function sendThreadRevision(store: ThreadDraftStore, row: ThreadRow
 }
 
 const PERMISSION_INSTRUCTION = 'Allow or deny the request above to continue.'
+/** Watcher's asking mode is pinned; the composer says so where the permissions choice would be (ADR-0073). */
+export const WATCHER_PERMISSION = 'Ask before changes'
 
 /** Every pending permission offers no choice Sotto can send (`permissionChoices: []`): only the provider's app can answer. */
 function permissionsOnlyInProvider(row: ThreadRow): boolean {
@@ -113,7 +115,7 @@ function blockedReason(row: ThreadRow, state: AgentState, answering: boolean, in
  * offers it back if the provider refused it. While a turn runs, Enter queues; Steer now is the separate,
  * explicit way into the running turn, and Stop takes the send button's place until there is something to queue.
  */
-export function ThreadComposer({ row, state, command, store, onSend, composerId = THREAD_PROMPT_ID, ornament, focused = true, onExplainedError, reviewComments = reviewCommentStore }: {
+export function ThreadComposer({ row, state, command, store, onSend, composerId = THREAD_PROMPT_ID, ornament, focused = true, onExplainedError, reviewComments = reviewCommentStore, watcher = false }: {
   readonly row: ThreadRow
   readonly state: AgentState
   readonly command: Command
@@ -130,6 +132,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   readonly onExplainedError?: ((error: string | null) => void) | undefined
   /** Review comments written in Changes that go with this thread's next prompt; the window's own unless a test passes one. */
   readonly reviewComments?: ReviewCommentStore
+  /** Watcher's own composer: its asking mode is pinned, and it offers no skills or branch toolbar (ADR-0073). */
+  readonly watcher?: boolean
 }): ReactNode {
   const threadId = row.thread.id
   const { draft, save, saveError, answerState, hasContent } = useComposerControls(store, threadId)
@@ -163,7 +167,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const reason = blockedReason(row, state, answering, queueing ? queueBlocked : sendInFlight) ?? (staleAnswer ? 'This answer’s question is no longer pending.' : null)
   const editable = !row.thread.archivedAt && !permission
   const working = row.thread.status === 'running' && !isThreadClosed(row.thread)
-  const placeholder = row.thread.archivedAt ? 'This thread is archived.' : permission ? permissionsOnlyInProvider(row) ? 'Waiting on the request above.' : PERMISSION_INSTRUCTION : answering ? 'Write your answer…' : working ? (row.thread.compaction?.status === 'running' ? 'Compacting the context. Write a follow-up to queue it.' : `${row.provider} is working. Write a follow-up to queue it.`) : 'What would you like to do next?'
+  const placeholder = row.thread.archivedAt ? 'This thread is archived.' : permission ? permissionsOnlyInProvider(row) ? 'Waiting on the request above.' : PERMISSION_INSTRUCTION : answering ? 'Write your answer…' : working ? (row.thread.compaction?.status === 'running' ? 'Compacting the context. Write a follow-up to queue it.' : `${watcher ? 'Watcher' : row.provider} is working. Write a follow-up to queue it.`) : watcher ? 'Ask about your threads, or say what to start or send' : 'What would you like to do next?'
   // Review comments ride with the next prompt, not with an answer to a question.
   const carried = answering ? [] : comments
   const content = hasContent || carried.length > 0
@@ -241,7 +245,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
       {staleAnswer ? <div className="thread-prompt__notice" role="status"><span>This answer was for a question that is no longer pending.</span>
         <Button variant="secondary" onClick={() => store.edit(threadId, { text: '', attachments: [], skills: [], files: [], requestId: null })}>Discard answer</Button></div> : null}
       <ThreadComposerEditor key={threadId} row={row} state={state} command={command} store={store} composerId={composerId}
-        editable={editable} answering={answering} placeholder={placeholder} supported={row.model?.supportsImages === true && !answering && !permission}
+        editable={editable} answering={answering} placeholder={placeholder} supported={row.model?.supportsImages === true && !answering && !permission} watcher={watcher}
         field={field} caretAfterInsert={caretAfterInsert} leavePickers={leavePickers} onMenuChange={setMenuOpen}
         edit={edit} onSend={() => send(performance.now())}>
         {comments.length > 0 ? <ul className="review-chips" aria-label="Review comments">
@@ -256,7 +260,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
           })}
         </ul> : null}
         {comments.length > 0 && answering ? <p className="review-chips__note">These comments go with your next prompt, not this answer.</p> : null}
-        <label className="tt-visually-hidden" htmlFor={composerId} onClick={() => field.current?.focus()}>{answering ? 'Your answer' : 'Prompt'}</label>
+        <label className="tt-visually-hidden" htmlFor={composerId} onClick={() => field.current?.focus()}>{answering ? 'Your answer' : watcher ? 'Watcher message' : 'Prompt'}</label>
       </ThreadComposerEditor>
       <div className="thread-prompt__footer">
         <div className="thread-prompt__meta" id={statusId}>
@@ -264,9 +268,10 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
           {threadHost ? <span className="thread-host-chip" title={`This thread runs on ${threadHost.kind === 'local' ? 'this computer' : threadHost.name}. New thread chooses the host for new work.`}>
             {threadHost.kind === 'local' ? <Laptop size={14} aria-hidden="true" /> : <Server size={14} aria-hidden="true" />}Runs on {threadHost.kind === 'local' ? 'this computer' : threadHost.name}</span> : null}
           {row.thread.nativeSessionStarted === false || capabilities.configureThread
-            ? <ThreadOptions key={threadId} thread={row.thread} state={state} command={command} turnNote={false} noticeSlot={settingsNotices}
+            ? <ThreadOptions key={threadId} thread={row.thread} state={state} command={command} turnNote={false} noticeSlot={settingsNotices} pinnedPermission={watcher ? WATCHER_PERMISSION : undefined}
               {...(editable && !answering && !permission ? { getDraftText: () => store.draft(threadId).text, onDraftText: (text: string) => { caretAfterInsert.current = text.length; edit({ text }); field.current?.focus() } } : {})} />
-            : <span className="thread-prompt__model"><ProviderMark provider={row.providerId} name={row.provider} />{row.model?.name ?? row.provider}<small>{answering ? 'Answer this question' : 'Manual prompt'}</small></span>}
+            : <><span className="thread-prompt__model"><ProviderMark provider={row.providerId} name={row.provider} />{row.model?.name ?? row.provider}<small>{answering ? 'Answer this question' : 'Manual prompt'}</small></span>
+              {watcher ? <PinnedPermission label={WATCHER_PERMISSION} /> : null}</>}
           {status}
         </div>
         <div className="thread-prompt__actions">
@@ -284,7 +289,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     </form>
     {/* T3's branch toolbar: where the thread runs and works, its pull request and its branch, for a Git repository (ADR-0027).
         Its own row of buttons under the card, not a strip inside it (#325). */}
-    <BranchToolbar row={row} state={state} command={command} focused={focused} onExplainedError={onExplainedError} />
+    {watcher ? null : <BranchToolbar row={row} state={state} command={command} focused={focused} onExplainedError={onExplainedError} />}
   </>
 }
 
@@ -317,7 +322,7 @@ function useComposerControls(store: ThreadDraftStore, threadId: string): Compose
 }
 
 /** The small, immediate typing path, including the menus that follow its caret. */
-function ThreadComposerEditor({ row, state, command, store, composerId, editable, answering, placeholder, supported,
+function ThreadComposerEditor({ row, state, command, store, composerId, editable, answering, placeholder, supported, watcher,
   field, caretAfterInsert, leavePickers, onMenuChange, edit, onSend, children }: {
   readonly row: ThreadRow
   readonly state: AgentState
@@ -328,6 +333,8 @@ function ThreadComposerEditor({ row, state, command, store, composerId, editable
   readonly answering: boolean
   readonly placeholder: string
   readonly supported: boolean
+  /** Watcher's composer offers no native skills. */
+  readonly watcher: boolean
   readonly field: RefObject<PromptEditorElement | null>
   readonly caretAfterInsert: RefObject<number | null>
   readonly leavePickers: RefObject<() => void>
@@ -340,16 +347,17 @@ function ThreadComposerEditor({ row, state, command, store, composerId, editable
   const { draft } = useThreadComposer(store, threadId)
   const screenshotReads = useScreenshotReadPort(store, threadId, row.model?.supportsImages === true)
   const capabilities = capabilitiesForThread(state.host, row.thread)
-  const picker = useSkillPicker({ threadId, state, command, enabled: editable && !answering && capabilities.skills === true, text: draft.text })
+  const skills = capabilities.skills === true && !watcher
+  const picker = useSkillPicker({ threadId, state, command, enabled: editable && !answering && skills, text: draft.text })
   // Restored selections still explain themselves before the user opens a picker.
-  useEffect(() => { if (draft.skills.length && capabilities.skills === true && picker.catalog === undefined) picker.refresh(false) }, [draft.skills.length, capabilities.skills, picker.catalog, picker.refresh])
+  useEffect(() => { if (draft.skills.length && skills && picker.catalog === undefined) picker.refresh(false) }, [draft.skills.length, skills, picker.catalog, picker.refresh])
   const sigils = skillSigils(picker.catalog?.providerId ?? row.providerId)
   // `@` browses the thread's working copy. A thread still waiting for its folder has nothing to list.
   const files = useFilePicker({ threadId, bridge: composerFilesBridge(), text: draft.text,
     enabled: editable && !answering && row.thread.worktree?.status !== 'pending' && row.thread.worktree?.status !== 'error' })
   const menuOpen = picker.open || files.open
   // A composer with neither menu leaves Enter and the combobox attributes exactly as they were.
-  const menus = (capabilities.skills === true || files.enabled) && !answering
+  const menus = (skills || files.enabled) && !answering
   const listId = `${composerId}-skills`
   const fileListId = `${composerId}-files`
   const statusId = `${composerId}-status`
@@ -403,7 +411,7 @@ function ThreadComposerEditor({ row, state, command, store, composerId, editable
     <ScreenshotInput key={threadId} target={threadId} attachments={draft.attachments} disabled={!editable} supported={supported}
       reads={screenshotReads} onChange={attachments => edit({ attachments })}>
       <PromptEditor fieldRef={field} caretAfterInsert={caretAfterInsert} id={composerId} text={draft.text} skills={draft.skills} sigils={sigils} catalog={picker.catalog}
-        label={answering ? 'Your answer' : 'Prompt'} editable={editable}
+        label={answering ? 'Your answer' : watcher ? 'Watcher message' : 'Prompt'} editable={editable}
         aria-describedby={statusId}
         aria-autocomplete={menus ? 'list' : undefined}
         aria-controls={picker.open && picker.options.length ? listId : files.open && files.options.length ? fileListId : undefined}

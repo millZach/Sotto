@@ -4,12 +4,14 @@ import type { LucideIcon } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
 import type { SottoPlatform } from '../../../shared/platform'
 import { releaseTrackName } from '../../../shared/releaseTrack'
-import { roomFor } from '../components/AppShell'
+import { appRooms, claimRoomFocus, handRoomFocus, roomFor, roomKeyTarget, type Room } from '../components/AppShell'
 import { Button } from '../components/Button'
 import { SottoMark } from '../components/SottoMark'
 import { useOptionalApp, type AppNavigation } from '../state/AppContext'
 import { useMemoryEnabled } from '../state/memoryFeature'
 import { useReleaseTrack } from '../state/useReleaseTrack'
+import { useWatcherEnabled } from '../state/watcherFeature'
+import { WatcherOwl } from '../watcher/WatcherOwl'
 import type { AgentConnection } from './AgentContext'
 import { useAddProject } from './addProject'
 import { OwlSky } from './OwlSky'
@@ -76,9 +78,10 @@ export function SidebarTop({ children }: { readonly children?: ReactNode }): Rea
 }
 
 /**
- * The sidebar's foot: the Dictate | Threads room switch, the other pages as icon links, and the update control.
- * A page that carries the sidebar, or a column that wears its frame, has no app footer under it, so this is the
- * only way off the page. The switch lights the room of the open page, the way the strip's did.
+ * The sidebar's foot: the room switch (Dictate | Threads, with Watcher's owl between them while its gate is on),
+ * the other pages as icon links, and the update control. A page that carries the sidebar, or a column that wears
+ * its frame, has no app footer under it, so this is the only way off the page. The switch lights the room of the
+ * open page, the way the strip's did, and a press that opens another room hands focus to that room's switch.
  */
 export function SidebarFoot(): ReactNode {
   const app = useOptionalApp()
@@ -86,30 +89,31 @@ export function SidebarFoot(): ReactNode {
   const memory = useMemoryEnabled()
   const shown = app === null || app.navigation === 'onboarding' ? 'threads' : app.navigation
   const room = roomFor(shown)
+  const rooms = appRooms(useWatcherEnabled())
+  const tablist = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    if (claimRoomFocus(room)) tablist.current?.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')?.focus()
+  })
   const go = (destination: AppNavigation): void => { app?.actions.navigate(destination) }
-  const rooms: ReadonlyArray<{ readonly id: string; readonly label: string; readonly destination: AppNavigation }> = [
-    { id: 'dictate', label: 'Dictate', destination: 'home' },
-    { id: 'threads', label: 'Threads', destination: 'threads' },
-  ]
+  const enter = (target: Room): void => { handRoomFocus(target.id); go(target.destination) }
   /** Arrow keys walk the switch, as they do in the strip: only the lit tab is in the Tab order, so this is how the others are reached. */
   const onTabKey = (event: KeyboardEvent<HTMLButtonElement>, index: number): void => {
-    let next: number | null = null
-    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') next = (index + 1) % rooms.length
-    else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') next = (index - 1 + rooms.length) % rooms.length
-    else if (event.key === 'Home') next = 0
-    else if (event.key === 'End') next = rooms.length - 1
+    const next = roomKeyTarget(event.key, index, rooms.length)
     if (next === null) return
     event.preventDefault()
     event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus()
-    go(rooms[next]!.destination)
+    enter(rooms[next]!)
   }
   const pages = memory ? PAGES : PAGES.filter(page => page.id !== 'memory')
   // Only one tab is in the Tab order: the lit one, or the first when the open page lights none (Settings, History, Help).
   const focusable = rooms.some(({ id }) => id === room) ? room : rooms[0]!.id
   return <div className="thread-nav__foot">
-    <div className="thread-nav__seg" role="tablist" aria-label="Page">
-      {rooms.map(({ id, label, destination }, index) => <button key={id} type="button" role="tab" className="tt-focusable" aria-selected={id === room}
-        tabIndex={id === focusable ? 0 : -1} onClick={() => go(destination)} onKeyDown={event => onTabKey(event, index)}>{label}</button>)}
+    <div ref={tablist} className="thread-nav__seg" role="tablist" aria-label="Page" data-rooms={rooms.length === 3 ? 3 : undefined}>
+      {rooms.map((target, index) => <button key={target.id} type="button" role="tab" className="tt-focusable" aria-selected={target.id === room} data-room={target.id}
+        // Watcher's owl stands alone, so its name is its tooltip and what a screen reader says.
+        aria-label={target.id === 'watcher' ? target.label : undefined} title={target.id === 'watcher' ? target.label : undefined}
+        tabIndex={target.id === focusable ? 0 : -1} onClick={() => enter(target)} onKeyDown={event => onTabKey(event, index)}>
+        {target.id === 'watcher' ? <WatcherOwl size={16} /> : target.label}</button>)}
     </div>
     <nav className="thread-nav__pages" aria-label="Pages">
       {pages.map(({ id, label, Icon }) => <a key={id} href={`#${id}`} className="thread-nav__page tt-focusable" title={label}
@@ -192,18 +196,9 @@ export interface SidebarFrameProps {
  * build paints its night sky behind the top row and the search field while the sidebar is open.
  */
 export function SidebarFrame({ state, command, mode, onMode, label, query, searchPlaceholder, onQuery, onNew, newLabel, NewIcon, newShortcut, platform, foot, title = 'Threads', children, collapsedContent, extraError, onDismissExtraError }: SidebarFrameProps): ReactNode {
-  const app = useOptionalApp()
   const addProject = useAddProject(state, command)
-  const mac = (platform ?? app?.platform) === 'darwin'
-  const size = useSidebarSize()
-  const [resizing, setResizing] = useState(false)
-  const toggle = useCollapseToggleFocus(size.collapsed)
-  const sky = useReleaseTrack() === 'owl' && !size.collapsed
-  return <aside className={mac ? 'thread-nav thread-nav--mac' : 'thread-nav'} aria-label={label} data-mode={mode} data-collapsed={size.collapsed || undefined} data-resizing={resizing || undefined}
-    data-sky={sky || undefined} style={{ width: size.collapsed ? (mac ? 80 : 52) : size.width }}>
-    <div className="thread-nav__expanded" hidden={size.collapsed}>
-    {sky ? <OwlSky /> : null}
-    <SidebarTop>
+  return <SidebarShell label={label} mode={mode} platform={platform} foot={foot}
+    top={<>
       {title === null ? null : <h1 className="tt-visually-hidden">{title}</h1>}
       <div className="thread-nav__seg thread-nav__seg--icons" role="radiogroup" aria-label="Sidebar mode">
         {MODES.map(({ id, label: modeLabel, Icon }) => <button key={id} type="button" role="radio" className="tt-focusable" title={modeLabel}
@@ -219,23 +214,72 @@ export function SidebarFrame({ state, command, mode, onMode, label, query, searc
       </div>
       <Button variant="ghost" iconOnly aria-label="Add project" title="Add project" disabled={addProject.adding} onClick={() => void addProject.add()}><FolderPlus size={16} /></Button>
       <Button variant="ghost" iconOnly aria-label={newLabel} title={newShortcut ? newShortcut.title : newLabel} aria-keyshortcuts={newShortcut?.keys} onClick={onNew}><NewIcon size={16} /></Button>
+    </>}
+    header={<>
+      <label className="threads-search"><span className="tt-visually-hidden">{searchPlaceholder}</span><Search size={15} aria-hidden="true" />
+        <input className="tt-input tt-focusable" type="search" value={query} placeholder={searchPlaceholder} onChange={event => onQuery(event.currentTarget.value)}
+          onKeyDown={event => { if (event.key === 'Escape' && query) { event.preventDefault(); onQuery('') } }} />
+        {query ? <button type="button" className="threads-search__clear tt-focusable" aria-label="Clear search" title="Clear search" onClick={() => onQuery('')}><X size={14} /></button> : null}
+      </label>
+      {addProject.dialog}
+      {addProject.error ? <p className="thread-nav__error" role="alert">{addProject.error}<button type="button" className="thread-nav__action tt-focusable" aria-label="Dismiss" onClick={addProject.clearError}><X size={14} aria-hidden="true" /></button></p> : null}
+      {extraError ? <p className="thread-nav__error" role="alert">{extraError}{onDismissExtraError ? <button type="button" className="thread-nav__action tt-focusable" aria-label="Dismiss" onClick={onDismissExtraError}><X size={14} aria-hidden="true" /></button> : null}</p> : null}
+    </>}
+    collapsedContent={collapsedContent ?? <button type="button" className="thread-nav__action tt-focusable" aria-label={newLabel} title={newLabel} onClick={onNew}><NewIcon size={16} aria-hidden="true" /></button>}>
+    {children}
+  </SidebarShell>
+}
+
+/**
+ * Watcher's Overview in the sidebar's frame: the same top row, foot, night sky, collapsing and resizing, with no
+ * Threads | Terminal switch, no search and no New thread, since this room lists what is happening rather than
+ * where to start. Its list is a projection of every other thread; it holds no work of its own.
+ */
+export function OverviewSidebarFrame({ label, platform, title, children }: {
+  readonly label: string
+  readonly platform?: SottoPlatform | undefined
+  /** The room's hidden heading. */
+  readonly title: string
+  readonly children: ReactNode
+}): ReactNode {
+  return <SidebarShell label={label} mode="overview" platform={platform} top={<h1 className="tt-visually-hidden">{title}</h1>}>{children}</SidebarShell>
+}
+
+/** What both frames share: the aside, its top row with Collapse sidebar at the end, the list, the foot, the rail and the resize handle. */
+function SidebarShell({ label, mode, platform, foot, top, header, collapsedContent, children }: {
+  readonly label: string
+  readonly mode: SidebarMode | 'overview'
+  readonly platform?: SottoPlatform | undefined
+  readonly foot?: ReactNode
+  /** The top row's own controls, before Collapse sidebar. */
+  readonly top: ReactNode
+  /** Between the top row and the list. */
+  readonly header?: ReactNode
+  readonly collapsedContent?: ReactNode
+  readonly children: ReactNode
+}): ReactNode {
+  const app = useOptionalApp()
+  const mac = (platform ?? app?.platform) === 'darwin'
+  const size = useSidebarSize()
+  const [resizing, setResizing] = useState(false)
+  const toggle = useCollapseToggleFocus(size.collapsed)
+  const sky = useReleaseTrack() === 'owl' && !size.collapsed
+  return <aside className={mac ? 'thread-nav thread-nav--mac' : 'thread-nav'} aria-label={label} data-mode={mode} data-collapsed={size.collapsed || undefined} data-resizing={resizing || undefined}
+    data-sky={sky || undefined} style={{ width: size.collapsed ? (mac ? 80 : 52) : size.width }}>
+    <div className="thread-nav__expanded" hidden={size.collapsed}>
+    {sky ? <OwlSky /> : null}
+    <SidebarTop>
+      {top}
       <button ref={size.collapsed ? undefined : toggle} type="button" className="thread-nav__action tt-focusable thread-nav__collapse" aria-label="Collapse sidebar" title="Collapse sidebar" onClick={() => size.collapse(true)}><PanelLeftClose size={16} aria-hidden="true" /></button>
     </SidebarTop>
-    <label className="threads-search"><span className="tt-visually-hidden">{searchPlaceholder}</span><Search size={15} aria-hidden="true" />
-      <input className="tt-input tt-focusable" type="search" value={query} placeholder={searchPlaceholder} onChange={event => onQuery(event.currentTarget.value)}
-        onKeyDown={event => { if (event.key === 'Escape' && query) { event.preventDefault(); onQuery('') } }} />
-      {query ? <button type="button" className="threads-search__clear tt-focusable" aria-label="Clear search" title="Clear search" onClick={() => onQuery('')}><X size={14} /></button> : null}
-    </label>
-    {addProject.dialog}
-    {addProject.error ? <p className="thread-nav__error" role="alert">{addProject.error}<button type="button" className="thread-nav__action tt-focusable" aria-label="Dismiss" onClick={addProject.clearError}><X size={14} aria-hidden="true" /></button></p> : null}
-    {extraError ? <p className="thread-nav__error" role="alert">{extraError}{onDismissExtraError ? <button type="button" className="thread-nav__action tt-focusable" aria-label="Dismiss" onClick={onDismissExtraError}><X size={14} aria-hidden="true" /></button> : null}</p> : null}
+    {header}
     <div className="thread-nav__scroll">{children}</div>
     {size.collapsed ? null : foot ?? <SidebarFoot />}
     </div>
     {size.collapsed ? <div className="thread-nav__rail">
       <SottoMark className="thread-nav__glyph" />
       <button ref={toggle} type="button" className="thread-nav__action tt-focusable" aria-label="Expand sidebar" title="Expand sidebar" onClick={() => size.collapse(false)}><PanelLeftOpen size={16} aria-hidden="true" /></button>
-      <div className="thread-nav__rail-list">{collapsedContent ?? <button type="button" className="thread-nav__action tt-focusable" aria-label={newLabel} title={newLabel} onClick={onNew}><NewIcon size={16} aria-hidden="true" /></button>}</div>
+      <div className="thread-nav__rail-list">{collapsedContent}</div>
       {foot ?? <SidebarFoot />}
     </div> : <SidebarResize size={size} onResizing={setResizing} />}
   </aside>

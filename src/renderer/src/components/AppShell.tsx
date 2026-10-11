@@ -6,14 +6,16 @@ import { releaseTrackName } from '../../../shared/releaseTrack'
 import type { AppNavigation } from '../state/AppContext'
 import { useMemoryEnabled } from '../state/memoryFeature'
 import { useReleaseTrack } from '../state/useReleaseTrack'
+import { useWatcherEnabled } from '../state/watcherFeature'
+import { WatcherOwl } from '../watcher/WatcherOwl'
 import { SottoMark } from './SottoMark'
 import { VoiceWave } from './VoiceWave'
 import { WindowControls } from './WindowControls'
 
 type ManagementNavigation = Exclude<AppNavigation, 'onboarding'>
 
-/** The rooms the switch flips between. */
-export type AppRoom = 'dictate' | 'threads'
+/** The rooms the switch flips between; Watcher's only while its gate is on. */
+export type AppRoom = 'dictate' | 'watcher' | 'threads'
 export type AppLayout = 'strip' | 'page' | 'sidebar'
 
 export interface AppShellProps {
@@ -43,12 +45,43 @@ export interface AppShellProps {
   readonly children: ReactNode
 }
 
-interface Room { readonly id: AppRoom; readonly label: string; readonly destination: ManagementNavigation }
+export interface Room { readonly id: AppRoom; readonly label: string; readonly destination: ManagementNavigation }
 
 const dictate: Room = { id: 'dictate', label: 'Dictate', destination: 'home' }
+const watcher: Room = { id: 'watcher', label: 'Watcher', destination: 'watcher' }
 const threads: Room = { id: 'threads', label: 'Threads', destination: 'threads' }
 
-const rooms: ReadonlyArray<Room> = [dictate, threads]
+/**
+ * The room switch, the one definition every switch draws: Dictate | Threads, with Watcher's owl between them
+ * while the Watcher gate is on (ADR-0072, ADR-0073).
+ */
+export function appRooms(watcherEnabled: boolean): ReadonlyArray<Room> {
+  return watcherEnabled ? [dictate, watcher, threads] : [dictate, threads]
+}
+
+/**
+ * The room a switch press opened, so the switch in the page that opens can take focus back: each page draws its
+ * own switch, and the one that was pressed is gone. Claimed once, by the switch whose lit room it names.
+ */
+let handedFocus: { readonly room: AppRoom; readonly at: number } | null = null
+export function handRoomFocus(room: AppRoom): void { handedFocus = { room, at: Date.now() } }
+export function claimRoomFocus(room: AppRoom | null): boolean {
+  if (handedFocus === null || room === null) return false
+  // A press the new page never answered is forgotten rather than stealing focus later.
+  if (Date.now() - handedFocus.at > 2_000) { handedFocus = null; return false }
+  if (handedFocus.room !== room) return false
+  handedFocus = null
+  return true
+}
+
+/** The next tab an arrow, Home or End key reaches in a switch of `count` tabs, or null for any other key. */
+export function roomKeyTarget(key: string, index: number, count: number): number | null {
+  if (key === 'ArrowRight' || key === 'ArrowDown') return (index + 1) % count
+  if (key === 'ArrowLeft' || key === 'ArrowUp') return (index - 1 + count) % count
+  if (key === 'Home') return 0
+  if (key === 'End') return count - 1
+  return null
+}
 
 const footerLinks: ReadonlyArray<{ id: ManagementNavigation; label: string }> = [
   { id: 'threads', label: 'Threads' },
@@ -61,17 +94,19 @@ const footerLinks: ReadonlyArray<{ id: ManagementNavigation; label: string }> = 
 /** Which switch tab a page lights: Memory belongs to the Threads room. */
 export function roomFor(navigation: ManagementNavigation | null): AppRoom | null {
   if (navigation === 'home') return 'dictate'
+  if (navigation === 'watcher') return 'watcher'
   if (navigation === 'threads' || navigation === 'memory') return 'threads'
   return null
 }
 
 /**
- * Which layout a page takes. Threads and Settings own the window, their left column wearing the sidebar's
- * frame; Dictate, History and Help stand beside the Threads sidebar itself; the strip and footer remain for the
- * Memory surface. `threadsPage` says whether the navigation lands on the Threads page, the beta gates included.
+ * Which layout a page takes. Threads, Watcher's room and Settings own the window, their left column wearing the
+ * sidebar's frame; Dictate, History and Help stand beside the Threads sidebar itself; the strip and footer remain
+ * for the Memory surface. `threadsPage` says whether the navigation lands on the Threads page, the beta gates
+ * included; Watcher's room is the Threads page while its gate is off.
  */
 export function layoutFor(navigation: AppNavigation, threadsPage: boolean): AppLayout {
-  if (threadsPage || navigation === 'settings') return 'page'
+  if (threadsPage || navigation === 'settings' || navigation === 'watcher') return 'page'
   if (navigation === 'home' || navigation === 'history' || navigation === 'help') return 'sidebar'
   return 'strip'
 }
@@ -108,11 +143,19 @@ export function AppShell({
   const owl = useReleaseTrack() === 'owl'
   const management = navigation !== null
   const room = roomFor(navigation)
+  const rooms = appRooms(useWatcherEnabled())
   // Memory is hidden for the beta: its link goes with it.
   const links = useMemoryEnabled() ? footerLinks : footerLinks.filter(({ id }) => id !== 'memory')
   const focusableRoom = rooms.some(({ id }) => id === room) ? room : rooms[0]!.id
+  const switchRef = useRef<HTMLDivElement>(null)
+  const stripShown = layout === 'strip' && management
+  // A switch press that opened this page's room hands focus to the strip's lit tab, when the strip is what shows.
+  useLayoutEffect(() => {
+    if (stripShown && claimRoomFocus(room)) switchRef.current?.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')?.focus()
+  })
 
   const go = (destination: ManagementNavigation): void => { onNavigate?.(destination) }
+  const enter = (target: Room): void => { handRoomFocus(target.id); go(target.destination) }
 
   const followLink = (event: MouseEvent<HTMLAnchorElement>, destination: ManagementNavigation): void => {
     event.preventDefault()
@@ -120,17 +163,12 @@ export function AppShell({
   }
 
   const onTabKey = (event: KeyboardEvent<HTMLButtonElement>, index: number): void => {
-    let next: number | null = null
-    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') next = (index + 1) % rooms.length
-    else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') next = (index - 1 + rooms.length) % rooms.length
-    else if (event.key === 'Home') next = 0
-    else if (event.key === 'End') next = rooms.length - 1
+    const next = roomKeyTarget(event.key, index, rooms.length)
     if (next === null) return
     event.preventDefault()
-    const target = rooms[next]!
     const tabs = event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')
     tabs?.[next]?.focus()
-    go(target.destination)
+    enter(rooms[next]!)
   }
 
   // One tree for all three layouts, with the strip, the sidebar, the room's edges and the footer as empty
@@ -155,21 +193,25 @@ export function AppShell({
             </div>
           )}
           {management ? (
-            <div className="app-switch" role="tablist" aria-label="Mode">
-              {rooms.map(({ id, label, destination }, index) => (
+            <div ref={switchRef} className="app-switch" role="tablist" aria-label="Mode">
+              {rooms.map((target, index) => (
                 <button
-                  key={id}
+                  key={target.id}
                   type="button"
                   role="tab"
                   className="app-switch__tab tt-focusable"
-                  aria-selected={room === id}
-                  tabIndex={focusableRoom === id ? 0 : -1}
-                  onClick={() => go(destination)}
+                  data-room={target.id}
+                  aria-selected={room === target.id}
+                  // Watcher's owl stands alone, so its name is its tooltip and what a screen reader says.
+                  aria-label={target.id === 'watcher' ? target.label : undefined}
+                  title={target.id === 'watcher' ? target.label : undefined}
+                  tabIndex={focusableRoom === target.id ? 0 : -1}
+                  onClick={() => enter(target)}
                   onKeyDown={(event) => onTabKey(event, index)}
                 >
-                  {id === 'dictate' ? <VoiceWave stage="idle" value={0} label="" size="switch" /> : null}
-                  {id === 'threads' ? <MessagesSquare size={16} aria-hidden="true" /> : null}
-                  {label}
+                  {target.id === 'dictate' ? <VoiceWave stage="idle" value={0} label="" size="switch" /> : null}
+                  {target.id === 'threads' ? <MessagesSquare size={16} aria-hidden="true" /> : null}
+                  {target.id === 'watcher' ? <WatcherOwl size={16} /> : target.label}
                 </button>
               ))}
             </div>

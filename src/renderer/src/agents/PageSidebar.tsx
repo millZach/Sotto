@@ -1,7 +1,8 @@
 import React, { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { useOptionalApp } from '../state/AppContext'
 import { useWatcherEnabled } from '../state/watcherFeature'
-import { visibleWatcherState } from './watcherVisibility'
+import { visibleWatcherState, withoutRoomWatcher } from './watcherVisibility'
+import { useRoomWatcherThreadId } from '../watcher/watcherRoom'
 import { useAgents } from './AgentContext'
 import { overlayDraftThreads, useDraftThreads } from './draftThreads'
 import { useClock } from './paneGrid'
@@ -33,7 +34,10 @@ export function PageSidebar({ now: fixedNow }: {
   const [query, setQuery] = useState('')
   const drafts = useDraftThreads()
   const published = agents.state
-  const state = useMemo(() => visibleWatcherState(overlayDraftThreads(published, drafts), watcherEnabled), [published, drafts, watcherEnabled])
+  // Watcher's room keeps the current Watcher; this page lists and selects only the other threads.
+  const roomWatcher = useRoomWatcherThreadId()
+  const state = useMemo(() => withoutRoomWatcher(visibleWatcherState(overlayDraftThreads(published, drafts), watcherEnabled), watcherEnabled, roomWatcher),
+    [published, drafts, watcherEnabled, roomWatcher])
   const rows = useShared(useMemo(() => state === null ? [] : describeThreads(state, now), [state, now]))
   const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], matching: 0 } : organizeWorkspace(state, rows, query, state.activeProjectId), [state, rows, query]))
   const navigate = app?.actions.navigate

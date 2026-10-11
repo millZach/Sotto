@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { App } from './App'
 import { AppProvider } from './state/AppContext'
 import { createE2EControllerFactory, createE2EMicrophoneTest, createE2ESettingsBridge } from './e2e/deterministicAdapters'
+import { createE2EWatcherBridge } from './e2e/watcherStandIn'
 import './styles/global.css'
 import './agents/threads.css'
 import './agents/threadSidebar.css'
@@ -25,11 +26,13 @@ if (!rootElement) {
 const e2e = window.sottoE2E
 const settingsBridge = window.sotto === undefined ? undefined : createE2ESettingsBridge(window.sotto, e2e !== undefined)
 const controllerFactory = e2e === undefined ? undefined : createE2EControllerFactory(e2e.scenario)
+// An end-to-end run can seed Watcher's projection; otherwise the room reads main's own bridge.
+const watcherBridge = e2e === undefined ? undefined : createE2EWatcherBridge(window.sotto)
 
 createRoot(rootElement).render(
   <StrictMode>
     <AppProvider {...(settingsBridge === undefined ? {} : { bridge: settingsBridge })} {...(controllerFactory === undefined ? {} : { createController: controllerFactory })}>
-      <App {...(e2e === undefined ? {} : { createMicrophoneTest: () => createE2EMicrophoneTest(e2e.scenario) })} />
+      <App {...(e2e === undefined ? {} : { createMicrophoneTest: () => createE2EMicrophoneTest(e2e.scenario) })} {...(watcherBridge === undefined ? {} : { watcherBridge })} />
     </AppProvider>
   </StrictMode>,
 )
