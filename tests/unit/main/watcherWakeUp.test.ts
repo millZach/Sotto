@@ -5,6 +5,8 @@ import { WATCHER_QUIET_MS } from '../../../src/shared/watcherOverview'
 import type { WatcherNews } from '../../../src/shared/watcherNews'
 import { WatcherWakeUp } from '../../../src/main/agents/watcherWakeUp'
 import { foldWatcherNews, watcherNewsText } from '../../../src/main/agents/watcherNews'
+import { queuedWakeUpText, wakeUpText } from '../../../src/main/agents/wakeUp'
+import type { BabysitNews } from '../../../src/main/agents/babysitNews'
 import { centerTarget, watcherRecordFixture } from '../../fixtures/watcher'
 
 const cleanups: (() => void)[] = []
@@ -133,4 +135,18 @@ it('bounds targets, UTF-8 news and omitted counts without copying worker prose',
   expect(news.omitted).toBe(50)
   expect(Buffer.byteLength(watcherNewsText(news))).toBeLessThanOrEqual(16 * 1_024)
   expect(watcherNewsText(news)).toContain('omitted')
+})
+
+it('fits combined sources within the provider message limit and preserves babysitting-only wording', () => {
+  const f = fixture(); f.thread.requests = [{ id: 'card', kind: 'question', text: 'secret', options: [] }]; f.wakes.observe()
+  const news: WatcherNews = { source: 'watcher', watcher: f.record.current!.target, omitted: 0,
+    events: Array.from({ length: 100 }, (_, n) => ({ ...f.wakes.news()[0]!, id: String(n) })) }
+  const prs: BabysitNews[] = Array.from({ length: 50 }, (_, n) => ({ pullRequest: { number: n + 1, title: 't'.repeat(500),
+    url: `https://github.com/o/r/pull/${n + 1}/${'x'.repeat(1_800)}` }, startedBy: 'user', head: null, ended: null,
+    changes: [{ kind: 'checks-failed', checks: Array.from({ length: 25 }, () => ({ name: 'n'.repeat(500), status: 'failure', url: `https://github.com/${'x'.repeat(1_800)}` })) }] }))
+  expect(queuedWakeUpText(prs, { tool: true })).toBe(wakeUpText(prs, { tool: true }))
+  const mixed = queuedWakeUpText([...prs, news], { tool: true })
+  expect(mixed.length).toBeLessThanOrEqual(100_000)
+  expect(mixed).toContain('Sotto saw changes')
+  expect(mixed).toContain('Pull request #1')
 })

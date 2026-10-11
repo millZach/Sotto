@@ -57,7 +57,8 @@ export function foldWakeUpNews(earlier: readonly WakeUpNews[], later: WakeUpNews
 }
 export function queuedWakeUpText(news: readonly WakeUpNews[], options: WakeUpOptions): string {
   const prs = news.filter((item): item is BabysitNews => !isWatcherNews(item))
-  return [...prs.length ? [wakeUpText(prs, options)] : [], ...news.filter(isWatcherNews).map(watcherNewsText)].join('\n\n')
+  const watcher = news.filter(isWatcherNews).map(watcherNewsText).join('\n\n')
+  return [...prs.length ? [wakeUpText(prs, options, AGENT_TEXT_MAX - watcher.length - (watcher ? 2 : 0))] : [], ...watcher ? [watcher] : []].join('\n\n')
 }
 
 const sameAddress = (left: string, right: string): boolean => (pullRequestKey(left) ?? left) === (pullRequestKey(right) ?? right)
@@ -166,7 +167,7 @@ function pullRequestPart(news: BabysitNews, options: WakeUpOptions, linesMax: nu
  * do. It ends by telling the agent to look into each item and act as its task requires, that Sotto keeps babysitting
  * and will wake it again, and how to stop; a pull request that ended says instead that Sotto stopped, and why.
  */
-export function wakeUpText(news: readonly BabysitNews[], options: WakeUpOptions): string {
+export function wakeUpText(news: readonly BabysitNews[], options: WakeUpOptions, maxChars = AGENT_TEXT_MAX): string {
   const going = news.filter(item => item.ended === null)
   const ended = news.filter(item => item.ended !== null)
   const opening = news.length > 1 ? `Sotto has news of ${news.length} pull requests this thread babysits.`
@@ -180,7 +181,7 @@ export function wakeUpText(news: readonly BabysitNews[], options: WakeUpOptions)
         : 'The user can stop it from the Pull request surface.',
     ] : [],
   ]
-  return fitted(opening, news, options, closing.join(' '))
+  return fitted(opening, news, options, closing.join(' '), maxChars)
 }
 
 /**
@@ -188,7 +189,7 @@ export function wakeUpText(news: readonly BabysitNews[], options: WakeUpOptions)
  * none listed, fewer pull requests, the ones left out counted for the agent to read with gh.
  */
 const LINES_TRIED = [WAKE_UP_LINES_MAX, 10, 3, 0]
-function fitted(opening: string, news: readonly BabysitNews[], options: WakeUpOptions, closing: string): string {
+function fitted(opening: string, news: readonly BabysitNews[], options: WakeUpOptions, closing: string, maxChars: number): string {
   let text = ''
   for (const linesMax of LINES_TRIED) {
     const parts = news.map(item => pullRequestPart(item, options, linesMax))
@@ -196,9 +197,9 @@ function fitted(opening: string, news: readonly BabysitNews[], options: WakeUpOp
       const rest = parts.length - count
       const left = rest === 0 ? [] : [`And news of ${rest} more ${rest === 1 ? 'pull request; read it' : 'pull requests; read them'} with gh.`]
       text = [opening, ...parts.slice(0, count), ...left, closing].join('\n\n')
-      if (text.length <= AGENT_TEXT_MAX) return text
+      if (text.length <= maxChars) return text
       if (linesMax !== 0) break
     }
   }
-  return text.slice(0, AGENT_TEXT_MAX)
+  return text.slice(0, maxChars)
 }
