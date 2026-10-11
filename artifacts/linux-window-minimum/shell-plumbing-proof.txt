@@ -1,20 +1,79 @@
-Temporary root /tmp/sp-dPvZSd: mode 700
-Started nested Hyprland PID 1610601 in sotto-proof-ffe08ec91c2b4faca1badd8c0b07c589-0.scope
-nested Hyprland PID 1610601: efb50993780079460b0cbed1363e2166a2de1d9f_1791755770_426299932 on wayland-2; live instance untouched
-Started Linux Playwright proof PID 1610659 in sotto-proof-ffe08ec91c2b4faca1badd8c0b07c589-1.scope
-  ✓  1 tests/e2e/linux-shell-plumbing.spec.ts:16:5 › keeps the Electron widget with the plugin installed when another listener holds the dictation socket (1.6s)
-legacy point (0, 515), plugin present; built app PID 1611479: edge=left; Electron widget visible=false; placement migrated to v3
+Temporary root /tmp/sp-IPVybA: mode 700
+Started nested Hyprland PID 1679036 in sotto-proof-2cbb8e8af3cc4fe4a77921f016d25b54-0.scope
+nested Hyprland PID 1679036: efb50993780079460b0cbed1363e2166a2de1d9f_1791758764_1045867206 on wayland-2; live instance untouched
+Started Linux Playwright proof PID 1679053 in sotto-proof-2cbb8e8af3cc4fe4a77921f016d25b54-1.scope
+
+Running 4 tests using 1 worker
+
+(node:1679106) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+plugin present, socket held; built app PID 1679118: dictation-state.json absent; Electron widget visible=true, mapped=true
+socket held: main-button dictation kept its failed recording; widget Try again and Discard recording visible
+  ✓  1 tests/e2e/linux-shell-plumbing.spec.ts:16:5 › keeps the Electron widget with the plugin installed when another listener holds the dictation socket (1.5s)
+legacy point (0, 515), plugin present; built app PID 1679236: edge=left; Electron widget visible=false; placement migrated to v3
+legacy placement after plugin removal: edge=left; Electron widget visible=true
   ✓  2 tests/e2e/linux-shell-plumbing.spec.ts:75:5 › publishes the migrated legacy edge while the Electron widget is suppressed (1.2s)
-Built app PID 1613562; isolated profile; no main-process debugger
-launch before forced exit: {"version":1,"pid":1613562,"pidStart":196195746,"dictation":null,"state":"idle","since":1791755785517,"updatedAt":1791755785517,"detail":null,"kept":false,"edge":"left"}
-start before forced exit: {"version":1,"pid":1613562,"pidStart":196195746,"dictation":"1571c6c09c57f68f057a331e4e216d1fbad2468870566c47d53633f435c43199","state":"listening","since":1791755786593,"updatedAt":1791755786593,"detail":null,"kept":false,"edge":"left"}
-forced exit PID 1613562: Electron exit event observed; dictation-state.json absent
-Stopped forced-exit app PID 1613562
-  ✓  3 tests/e2e/linux-shell-plumbing.spec.ts:122:5 › publishes private shell state, retries and discards, remembers placement and steps aside for the plugin (11.4s)
-  3 passed (15.2s)
-Stopped nested Hyprland PID 1610601
-Stopped Linux Playwright proof PID 1610659
-Stopped proof slice app-sottoproofffe08ec91c2b4faca1badd8c0b07c589.slice
+Built app PID 1679347; isolated profile; scripted microphone and transcription
+launch: {"version":1,"pid":1679347,"pidStart":196494188,"dictation":null,"state":"idle","since":1791758769953,"updatedAt":1791758769953,"detail":null,"kept":false,"edge":"top"}
+modes: sotto=700 state=600
+start: {"version":1,"pid":1679347,"pidStart":196494188,"dictation":"bbf8aff396179848832fb929d83089e09afa93a5dbcaaea6ed59d5e8c2f2c3c8","state":"listening","since":1791758770256,"updatedAt":1791758770256,"detail":null,"kept":false,"edge":"top"}
+stop failed: {"version":1,"pid":1679347,"pidStart":196494188,"dictation":"bbf8aff396179848832fb929d83089e09afa93a5dbcaaea6ed59d5e8c2f2c3c8","state":"failed","since":1791758770446,"updatedAt":1791758770446,"detail":"Could not transcribe. Recording kept.","kept":true,"edge":"top"}
+retry failed: {"version":1,"pid":1679347,"pidStart":196494188,"dictation":"bbf8aff396179848832fb929d83089e09afa93a5dbcaaea6ed59d5e8c2f2c3c8","state":"failed","since":1791758770637,"updatedAt":1791758770637,"detail":"Could not transcribe. Recording kept.","kept":true,"edge":"top"}
+retry copied: {"version":1,"pid":1679347,"pidStart":196494188,"dictation":"bbf8aff396179848832fb929d83089e09afa93a5dbcaaea6ed59d5e8c2f2c3c8","state":"copied","since":1791758770841,"updatedAt":1791758770841,"detail":"Copied — paste with Super+V","kept":false,"edge":"top"}
+start again: {"version":1,"pid":1679347,"pidStart":196494188,"dictation":"57fd555c27ffba45fd6c067c2ca8524f79fcf17cd22999a6d5b06ca9ba467f17","state":"listening","since":1791758771026,"updatedAt":1791758771026,"detail":null,"kept":false,"edge":"top"}
+cancel: {"version":1,"pid":1679347,"pidStart":196494188,"dictation":null,"state":"idle","since":1791758771216,"updatedAt":1791758771216,"detail":null,"kept":false,"edge":"top"}
+start for delivery: {"version":1,"pid":1679347,"pidStart":196494188,"dictation":"023209f3180f54e1e785110f6301e87bcb4f5eba2cebcacd6e6b5ca402cd73d2","state":"listening","since":1791758771320,"updatedAt":1791758771320,"detail":null,"kept":false,"edge":"top"}
+stop delivered: {"version":1,"pid":1679347,"pidStart":196494188,"dictation":"023209f3180f54e1e785110f6301e87bcb4f5eba2cebcacd6e6b5ca402cd73d2","state":"delivered","since":1791758771814,"updatedAt":1791758771814,"detail":null,"kept":false,"edge":"top"}
+place left: {"version":1,"pid":1679347,"pidStart":196494188,"dictation":"023209f3180f54e1e785110f6301e87bcb4f5eba2cebcacd6e6b5ca402cd73d2","state":"delivered","since":1791758771814,"updatedAt":1791758771949,"detail":null,"kept":false,"edge":"left"}
+place right: {"version":1,"pid":1679347,"pidStart":196494188,"dictation":"023209f3180f54e1e785110f6301e87bcb4f5eba2cebcacd6e6b5ca402cd73d2","state":"delivered","since":1791758771814,"updatedAt":1791758772037,"detail":null,"kept":false,"edge":"right"}
+place bottom: {"version":1,"pid":1679347,"pidStart":196494188,"dictation":"023209f3180f54e1e785110f6301e87bcb4f5eba2cebcacd6e6b5ca402cd73d2","state":"delivered","since":1791758771814,"updatedAt":1791758772127,"detail":null,"kept":false,"edge":"bottom"}
+place top: {"version":1,"pid":1679347,"pidStart":196494188,"dictation":"023209f3180f54e1e785110f6301e87bcb4f5eba2cebcacd6e6b5ca402cd73d2","state":"delivered","since":1791758771814,"updatedAt":1791758772216,"detail":null,"kept":false,"edge":"top"}
+unsafe edge and unknown verb: refused
+compositor widget-before-plugin.png: Electron widget mapped=true
+plugin under alternate XDG_CONFIG_HOME: Electron widget visible=true
+plugin created under isolated HOME/.config (/tmp/sp-IPVybA/sotto-e2e-Ed7MjZ/home/.config/omarchy/plugins/sotto.dictation): Electron widget visible=false
+compositor plugin-present.png: Electron widget mapped=false
+start with plugin: {"version":1,"pid":1679347,"pidStart":196494188,"dictation":"df178f397c4da47446242abd06a26640c603eba23503b4a79abb415a313b079c","state":"listening","since":1791758772610,"updatedAt":1791758772610,"detail":null,"kept":false,"edge":"top"}
+plugin removed during dictation: Electron widget visible=true
+compositor widget-returned.png: Electron widget mapped=true
+cancel after plugin removal: {"version":1,"pid":1679347,"pidStart":196494188,"dictation":null,"state":"idle","since":1791758772880,"updatedAt":1791758772880,"detail":null,"kept":false,"edge":"top"}
+place before restart: {"version":1,"pid":1679347,"pidStart":196494188,"dictation":null,"state":"idle","since":1791758772880,"updatedAt":1791758772975,"detail":null,"kept":false,"edge":"left"}
+quit PID 1679347: dictation-state.json absent
+Built app PID 1679666; isolated profile; scripted microphone and transcription
+restart saved edge: {"version":1,"pid":1679666,"pidStart":196494590,"dictation":null,"state":"idle","since":1791758773977,"updatedAt":1791758773977,"detail":null,"kept":false,"edge":"left"}
+plugin present at startup: Electron widget visible=false
+start to discard: {"version":1,"pid":1679666,"pidStart":196494590,"dictation":"9ae5f699ef91fc3717e51f040b97b841a1a259510155111afcafb19ed757304f","state":"listening","since":1791758774285,"updatedAt":1791758774285,"detail":null,"kept":false,"edge":"left"}
+stop to discard: {"version":1,"pid":1679666,"pidStart":196494590,"dictation":"9ae5f699ef91fc3717e51f040b97b841a1a259510155111afcafb19ed757304f","state":"failed","since":1791758774474,"updatedAt":1791758774474,"detail":"Could not transcribe. Recording kept.","kept":true,"edge":"left"}
+retry before discard: {"version":1,"pid":1679666,"pidStart":196494590,"dictation":"9ae5f699ef91fc3717e51f040b97b841a1a259510155111afcafb19ed757304f","state":"failed","since":1791758774661,"updatedAt":1791758774661,"detail":"Could not transcribe. Recording kept.","kept":true,"edge":"left"}
+discard: {"version":1,"pid":1679666,"pidStart":196494590,"dictation":null,"state":"idle","since":1791758774853,"updatedAt":1791758774853,"detail":null,"kept":false,"edge":"left"}
+retry without recording: {"version":1,"pid":1679666,"pidStart":196494590,"dictation":null,"state":"idle","since":1791758774853,"updatedAt":1791758774853,"detail":null,"kept":false,"edge":"left"}
+plugin removed after discard: Electron widget visible=true
+quit PID 1679666: dictation-state.json absent
+Built app PID 1679842; isolated profile; scripted microphone and transcription
+start before processing cancel: {"version":1,"pid":1679842,"pidStart":196494786,"dictation":"cc67508287e88cd8ffe969715fcca4e94a135bc5a418a8d1b9acc90175975af2","state":"listening","since":1791758775990,"updatedAt":1791758775990,"detail":null,"kept":false,"edge":"left"}
+stop transcribing: {"version":1,"pid":1679842,"pidStart":196494786,"dictation":"cc67508287e88cd8ffe969715fcca4e94a135bc5a418a8d1b9acc90175975af2","state":"transcribing","since":1791758776178,"updatedAt":1791758776178,"detail":null,"kept":false,"edge":"left"}
+cancel transcribing: {"version":1,"pid":1679842,"pidStart":196494786,"dictation":null,"state":"idle","since":1791758776262,"updatedAt":1791758776262,"detail":null,"kept":false,"edge":"left"}
+quit PID 1679842: dictation-state.json absent
+Built app PID 1679987; isolated profile; scripted microphone and transcription
+start connecting: {"version":1,"pid":1679987,"pidStart":196494919,"dictation":"29a01344b1e442c8a96b8f63507cd85c545f14a4721d514d43174d120bd0d960","state":"starting","since":1791758777606,"updatedAt":1791758777606,"detail":null,"kept":false,"edge":"left"}
+cancel connecting: {"version":1,"pid":1679987,"pidStart":196494919,"dictation":null,"state":"idle","since":1791758777689,"updatedAt":1791758777689,"detail":null,"kept":false,"edge":"left"}
+quit PID 1679987: dictation-state.json absent
+Built app PID 1680151; isolated profile; no main-process debugger
+(node:1680151) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `electron --trace-warnings ...` to show where the warning was created)
+[Sotto] omarchy-theme-missing
+[1680188:1011/154618.298822:ERROR:ui/ozone/platform/wayland/gpu/wayland_surface_factory.cc:249] '--ozone-platform=wayland' is not compatible with Vulkan. Consider switching to '--ozone-platform=x11' or disabling Vulkan
+launch before forced exit: {"version":1,"pid":1680151,"pidStart":196495062,"dictation":null,"state":"idle","since":1791758778467,"updatedAt":1791758778467,"detail":null,"kept":false,"edge":"left"}
+start before forced exit: {"version":1,"pid":1680151,"pidStart":196495062,"dictation":"7994befba1015ced91c16fe3502e1d4881f9bd64d59c3db8e6b5ec70d6ba27d7","state":"listening","since":1791758778742,"updatedAt":1791758778742,"detail":null,"kept":false,"edge":"left"}
+forced exit PID 1680151: Electron exit event observed; dictation-state.json absent
+Stopped forced-exit app PID 1680151
+  ✓  3 tests/e2e/linux-shell-plumbing.spec.ts:122:5 › publishes private shell state, retries and discards, remembers placement and steps aside for the plugin (9.9s)
+  ✓  4 tests/e2e/queued-steering.spec.ts:11:5 › steers a queued message from the keyboard without consuming the newer draft (3.0s)
+
+  4 passed (16.6s)
+Stopped nested Hyprland PID 1679036
+Stopped Linux Playwright proof PID 1679053
+Stopped proof slice app-sottoproof2cbb8e8af3cc4fe4a77921f016d25b54.slice
 Recorded PIDs still running: []
 Proof cgroup processes after cleanup: []
 Owned processes still running: []
@@ -22,5 +81,5 @@ cleanup: owned PIDs stopped; prior Hyprland instances preserved
 Live /home/zach/.config/omarchy unchanged
 Live /home/zach/.config/hypr unchanged
 Live /home/zach/.local/state/omarchy unchanged
-Live /home/zach/.sotto unchanged
-Temporary root removed: /tmp/sp-dPvZSd
+Temporary root removed: /tmp/sp-IPVybA
+FAIL: live .sotto preservation guard detected concurrent host-state updates; all four Playwright tests passed and owned cleanup completed.

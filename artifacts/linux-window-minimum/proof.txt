@@ -1,20 +1,20 @@
-Started sizing PID 1618118 in sotto-proof-c2eb376a527a458982e8916e03e33e17-0.scope
-Owned sizing: PID 1618118, efb50993780079460b0cbed1363e2166a2de1d9f_1791755825_709699647, wayland-2
-Started session PID 1618139 in sotto-proof-c2eb376a527a458982e8916e03e33e17-1.scope
-Owned session: PID 1618139, efb50993780079460b0cbed1363e2166a2de1d9f_1791755825_1104693030, wayland-3
-Started isolated GUI check PID 1618187 in sotto-proof-c2eb376a527a458982e8916e03e33e17-2.scope
+Started sizing PID 1682125 in sotto-proof-6580cd07377c446697e11f48620b3223-0.scope
+Owned sizing: PID 1682125, efb50993780079460b0cbed1363e2166a2de1d9f_1791758825_1587515690, wayland-2
+Started session PID 1682142 in sotto-proof-6580cd07377c446697e11f48620b3223-1.scope
+Owned session: PID 1682142, efb50993780079460b0cbed1363e2166a2de1d9f_1791758825_722429744, wayland-3
+Started isolated GUI check PID 1682161 in sotto-proof-6580cd07377c446697e11f48620b3223-2.scope
 PASS: isolated GUI check
-Stopped sizing PID 1618118
-Stopped session PID 1618139
-Stopped isolated GUI check PID 1618187
-Stopped proof slice app-sottoproofc2eb376a527a458982e8916e03e33e17.slice
+Stopped sizing PID 1682125
+Stopped session PID 1682142
+Stopped isolated GUI check PID 1682161
+Stopped proof slice app-sottoproof6580cd07377c446697e11f48620b3223.slice
 Recorded PIDs still running: []
 Proof cgroup processes after cleanup: []
 Owned processes still running: []
-Removed owned instance efb50993780079460b0cbed1363e2166a2de1d9f_1791755825_709699647
-Removed owned instance efb50993780079460b0cbed1363e2166a2de1d9f_1791755825_1104693030
+Removed owned instance efb50993780079460b0cbed1363e2166a2de1d9f_1791758825_1587515690
+Removed owned instance efb50993780079460b0cbed1363e2166a2de1d9f_1791758825_722429744
 Live /home/zach/.config/omarchy unchanged
 Live /home/zach/.config/hypr unchanged
 Live /home/zach/.local/state/omarchy unchanged
-Live /home/zach/.sotto unchanged
-Removed private root /tmp/slm-ssjrqJ; prior Hyprland instances preserved
+Removed private root /tmp/slm-W4Bs2m; prior Hyprland instances preserved
+FAIL: live .sotto preservation guard detected concurrent host-state updates; native measurements passed and owned cleanup completed.
