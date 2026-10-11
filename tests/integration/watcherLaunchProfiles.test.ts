@@ -24,7 +24,10 @@ async function setup() {
   const thread: AgentThread = { id: threadId, hostId, kind: 'watcher', providerId: 'codex', projectId: 'special', title: 'Any title', modelId: 'model', status: 'idle', messages: [], requests: [] }
   const record = emptyWatcherRecord()
   record.current = { target: { hostId, threadId }, projectId: 'special', provider: 'codex', creationOperationId: randomUUID(), createdAt: new Date().toISOString() }
-  const save = () => writeFile(join(root, 'agents.json'), JSON.stringify({ watcher: record }))
+  // Match production publication: a same-size in-place write can leave all
+  // signature fields unchanged on Windows, so it cannot invalidate the cache.
+  const store = AtomicJsonStore.compact(join(root, 'agents.json'), value => value, () => ({}))
+  const save = () => store.write({ watcher: record })
   await save()
   const source = new WatcherLaunchProfiles(root, () => hostId, id => id === threadId ? thread : undefined, true)
   const tools: WatcherProfileTools = { name: 'sotto_threads', definitions: [{ name: 'list_threads', description: 'Stand in', inputSchema: {} }],
