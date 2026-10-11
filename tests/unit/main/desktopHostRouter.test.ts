@@ -665,3 +665,47 @@ describe('explicit native answer checks', () => {
     expect(remote.detail).not.toHaveBeenCalled(); router.dispose()
   })
 })
+
+
+describe('Watcher release gate at the aggregate desktop boundary', () => {
+  it.each(['watcher', 'watcher-history'] as const)('hides and refuses remote %s reads, commands and observation on stable without editing the remote record', async kind => {
+    const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: false })
+    const remote = fixture(REMOTE, 'remote')
+    remote.state.host.threads[0]!.kind = kind
+    remote.state.activeThreadId = 'thread'
+    remote.state.draftThreadId = 'thread'
+    remote.state.draft = 'Synthetic retained draft'
+    remote.state.threadDrafts = [{ threadId: 'thread', draftId: randomUUID(), requestId: null, text: 'Synthetic retained draft', attachments: [], updatedAt: new Date().toISOString() }]
+    const before = structuredClone(remote.state)
+    router.add(remote.connection)
+    const key = hostEntityKey(REMOTE, 'thread')
+    expect(router.shell().host.threads).toEqual([])
+    expect(router.shell().activeThreadId).toBeNull()
+    expect(router.shell().draft).toBe('')
+    expect(router.shell().threadDrafts).toEqual([])
+    await expect(router.threadDetail(key)).rejects.toThrow('Sotto Owl')
+    await expect(router.command({ type: 'select-thread', threadId: key }, desktopWindowClient())).rejects.toThrow('Sotto Owl')
+    await expect(router.command({ type: 'manual-send', threadId: key, text: 'Synthetic refused turn' }, desktopWindowClient())).rejects.toThrow('Sotto Owl')
+    await expect(router.command({ type: 'send', draft: { threadId: key, text: 'Synthetic refused turn', attachments: [] } }, desktopWindowClient())).rejects.toThrow('Sotto Owl')
+    await router.command({ type: 'start-thread-session', threadId: key }, desktopWindowClient())
+    await router.command({ type: 'observe-threads', threadIds: [key] }, desktopWindowClient())
+    expect(remote.observe).toHaveBeenCalledWith([])
+    expect(remote.command).not.toHaveBeenCalled()
+    expect(remote.detail).not.toHaveBeenCalled()
+    expect(remote.state).toEqual(before)
+    router.dispose()
+  })
+  it('preserves Owl aggregate behavior', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: true })
+    const remote = fixture(REMOTE, 'remote')
+    remote.state.host.threads[0]!.kind = 'watcher'
+    router.add(remote.connection)
+    const key = hostEntityKey(REMOTE, 'thread')
+    expect(router.shell().host.threads).toHaveLength(1)
+    await router.threadDetail(key)
+    await router.command({ type: 'observe-threads', threadIds: [key] }, desktopWindowClient())
+    expect(remote.detail).toHaveBeenCalledWith('thread')
+    expect(remote.observe).toHaveBeenCalledWith(['thread'])
+    router.dispose()
+  })
+})

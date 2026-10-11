@@ -190,3 +190,81 @@ describe('retained remote draft storage', () => {
     expect(JSON.parse(await readFile(path, 'utf8'))).toEqual([])
   })
 })
+
+it('keeps dormant remote Watcher records whole across real Owl/stable saves and ordinary privacy cleanup', async () => {
+  const owl = new RetainedDraftStore({ directory, watcherEnabled: true })
+  const ordinary = edit('Ordinary remote draft')
+  const watcher: RetainedDraft = { ...edit('Dormant Watcher draft'), threadKind: 'watcher', saved: true,
+    draft: { ...edit().draft, threadId: 'watcher' } }
+  const history: RetainedDraft = { ...watcher, threadKind: 'watcher-history', draft: { ...watcher.draft, threadId: 'history', draftId: randomUUID() } }
+  owl.put(ordinary); owl.put(watcher); owl.put(history); await owl.close()
+  let historyEnabled = true
+  const stable = new RetainedDraftStore({ directory, watcherEnabled: false, historyEnabled: () => historyEnabled })
+  await stable.load()
+  expect(stable.list(hostId).map(item => item.draft.threadId)).toEqual(['thread'])
+  stable.recover(hostId); await stable.close()
+  expect(JSON.parse(await readFile(join(directory, 'remote-drafts.json'), 'utf8')).filter((item: RetainedDraft) => item.threadKind)).toEqual([watcher, history])
+  historyEnabled = false; await stable.privacyChanged()
+  expect(JSON.parse(await readFile(join(directory, 'remote-drafts.json'), 'utf8'))).toEqual([watcher, history])
+  const coldStable = new RetainedDraftStore({ directory, watcherEnabled: false, historyEnabled: () => false })
+  await coldStable.load(); await coldStable.privacyChanged()
+  expect(coldStable.list(hostId)).toEqual([])
+  expect(JSON.parse(await readFile(join(directory, 'remote-drafts.json'), 'utf8'))).toEqual([watcher, history])
+  const reopened = new RetainedDraftStore({ directory, watcherEnabled: true }); await reopened.load()
+  expect(reopened.get(hostId, 'watcher')).toEqual(watcher)
+  expect(reopened.get(hostId, 'history')).toEqual(history)
+})
+
+it('keeps valid dormant drafts when an unrelated ordinary entry is malformed', async () => {
+  const watcher: RetainedDraft = { ...edit(), threadKind: 'watcher', saved: true, draft: { ...edit().draft, threadId: 'watcher' } }
+  const path = join(directory, 'remote-drafts.json')
+  await writeFile(path, JSON.stringify([{ ...edit(), saved: 'invalid' }, watcher]), 'utf8')
+  const stable = new RetainedDraftStore({ directory, watcherEnabled: false, historyEnabled: () => false })
+  await stable.load(); await stable.close()
+  expect(JSON.parse(await readFile(path, 'utf8'))).toEqual([watcher])
+})
+
+it('round trips 512 dormant and 512 ordinary drafts without reducing ordinary capacity', async () => {
+  const path = join(directory, 'remote-drafts.json')
+  const watchers = Array.from({ length: 512 }, (_, index): RetainedDraft => ({ ...edit(), threadKind: 'watcher-history', saved: true,
+    draft: { ...edit().draft, threadId: 'history-' + index } }))
+  await writeFile(path, JSON.stringify(watchers), 'utf8')
+  const stable = new RetainedDraftStore({ directory, watcherEnabled: false }); await stable.load()
+  const ordinary = Array.from({ length: 512 }, (_, index) => ({ ...edit(), saved: true, draft: { ...edit().draft, threadId: 'ordinary-' + index } }))
+  for (const draft of ordinary) stable.put(draft)
+  expect(() => stable.put({ ...edit(), draft: { ...edit().draft, threadId: 'overflow' } })).toThrow('too many unsent remote drafts')
+  await stable.close()
+  const owl = new RetainedDraftStore({ directory, watcherEnabled: true }); await owl.load()
+  expect(owl.storageAvailable).toBe(true)
+  expect(owl.list(hostId)).toEqual([...watchers, ...ordinary])
+})
+
+it('clears ordinary recovery copies while preserving Watcher recovery records and unreadable Watcher copies', async () => {
+  const path = join(directory, 'remote-drafts.json')
+  const watcher: RetainedDraft = { ...edit(), threadKind: 'watcher', draft: { ...edit().draft, threadId: 'watcher' } }
+  const mixed = path + '.corrupt-mixed', broken = path + '.tmp-broken'
+  const brokenText = '[{"threadKind":"watcher-history","unfinished":'
+  await writeFile(path, JSON.stringify([watcher]), 'utf8')
+  await writeFile(mixed, JSON.stringify([edit(), watcher]), 'utf8')
+  await writeFile(broken, brokenText, 'utf8')
+  const stable = new RetainedDraftStore({ directory, watcherEnabled: false, historyEnabled: () => false })
+  await stable.load(); await stable.close()
+  expect(JSON.parse(await readFile(mixed, 'utf8'))).toEqual([watcher])
+  expect(await readFile(broken, 'utf8')).toBe(brokenText)
+})
+
+it('leaves unreadable Watcher primary bytes untouched with history off and retries after repair', async () => {
+  const path = join(directory, 'remote-drafts.json'), onRecovery = vi.fn()
+  const broken = '[{"threadKind":"watcher","draft":'
+  await writeFile(path, broken, 'utf8')
+  const stable = new RetainedDraftStore({ directory, watcherEnabled: false, historyEnabled: () => false, onRecovery })
+  await stable.load(); expect(stable.storageAvailable).toBe(false)
+  await expect(stable.privacyChanged()).rejects.toThrow('original file was preserved')
+  expect(await readFile(path, 'utf8')).toBe(broken)
+  expect(onRecovery).toHaveBeenCalled()
+  const watcher: RetainedDraft = { ...edit(), threadKind: 'watcher', saved: true }
+  await writeFile(path, JSON.stringify([watcher]), 'utf8')
+  await stable.load(); await stable.privacyChanged()
+  expect(stable.storageAvailable).toBe(true)
+  expect(JSON.parse(await readFile(path, 'utf8'))).toEqual([watcher])
+})

@@ -2,7 +2,25 @@
 
 Sotto is a desktop dictation app with manual coding threads across native providers. This file is the glossary for that domain. Use these terms in issues, tests and code; do not drift to the synonyms each entry lists as avoided.
 
+**Sotto Owl.** Sotto's preview release track and its builds, installed in place of Sotto with the same local data. An Owl build calls itself Sotto Owl where the running build is named (its window title, the tray's tooltip and the version lines in Help and Settings) and shows the Sotto mark alone, as a larger tile, where stable shows the mark beside the wordmark. Sentences in which Sotto is the app or the speaker keep "Sotto". Watcher is the coordinating thread's name, a different thing. Avoid: "Owl app" for a separate installation, "Owl" for the coordinating thread.
+
+**Promoting an Owl build.** Shipping the exact source commit of the newest published Sotto Owl build as stable, with the Owl version's base set during packaging. The release body names its source commit; `release:check` requires that clean checkout. Newer commits on `main` wait for the next Owl. The `Release X.Y.Z` pull request records the shipped version afterward (ADR-0072).
+
 ## Threads
+
+**Watcher gate.** Whether Watcher is available in the running build: on for Sotto Owl, off for stable (ADR-0072). Stable shows and starts none of Watcher, including Watcher history, while keeping its saved records in main and settings whole for a return to Owl. Pane layout, focused pane and selected thread are renderer view state; stable treats a hidden Watcher as a missing thread and does not preserve or restore that view.
+
+**Watcher.** The one current native agent thread on a computer, using its provider's own tools and settings, with Sotto's bounded thread tools and a pinned asking permission mode (ADR-0073). It reads and searches natively; its own changes ask on normal request cards. Its system prompt guides coordination but grants no authority. Earlier conversations become Watcher history when its provider changes. Avoid: "command center", the old "Coordinator", "assignment", "Agents room".
+
+**Watcher history.** An earlier Watcher conversation retained for reading when its provider changes. It cannot be resumed as Watcher.
+
+**Watched thread.** A thread participating in a Watcher request. It is labelled "Watched by Watcher"; sending a direct instruction to it ends Watcher’s participation, while opening it or answering its request card does not. Distinct from the host’s **watched set**, which keeps provider sessions for panes and queued user follow-ups.
+
+**Overview.** The sidebar list of all other threads in Watcher’s room, grouped by what the user must do, with source and read times. It is a projection, not a work queue or attention store; its groups are Needs you, Ready for review, Working, Landing, Quiet and Idle.
+
+**Watcher request.** A particular user instruction to Watcher, with main's identity, root user-message reference and budgets. Qualify it to distinguish it from an agent's pending question or permission request; retries and wake-ups keep its identity and budgets.
+
+**Thread card.** A main-backed reference or receipt in Watcher's transcript opening a real thread pane. It is distinct from a request card, where the user answers the owning thread, and from a visual; it answers and approves nothing.
 
 **Thread.** A conversation with one coding agent about one project, owned by Sotto. A thread has a Sotto thread ID, a title, a project, a model, a status (idle, running, error), messages and pending requests. In a project, a thread opens at once on its new-thread defaults; a model chosen afterward for that thread overrides its starting choice without changing the setting. Threads are a core Sotto function: memory, drafts, follow-up queues and delivery evidence refer to threads by Sotto thread ID and never by a provider's own identifier. Avoid: "T3 thread", "conversation", "chat" when referring to a project-bound thread.
 
@@ -473,7 +491,7 @@ On Linux the title areas stay, with no minimise, maximise or close buttons and n
 
 **Sidebar width.** The remembered space the user gives the Threads sidebar, shared with Terminal mode and with the same sidebar beside Dictate, History and Help. Collapsing it leaves a narrow rail for threads and page links; expanding it restores the chosen width, while Settings keeps its own column.
 
-**Sidebar top row.** The first row of the Threads sidebar, and of the Settings column: the Sotto mark with the wordmark "Sotto" beside it, then, in the Threads sidebar only, the Threads | Terminal control, Add project and New thread. The Threads sidebar ends it with Collapse sidebar. It is a drag region. On macOS it is inset and drops the wordmark, to leave the traffic lights their place.
+**Sidebar top row.** The first row of the Threads sidebar, and of the Settings column: the Sotto mark with the wordmark "Sotto" beside it, then, in the Threads sidebar only, the Threads | Terminal control, Add project and New thread. The Threads sidebar ends it with Collapse sidebar. It is a drag region. On macOS it is inset and drops the wordmark, to leave the traffic lights their place. A Sotto Owl build shows the mark alone at 24 pixels in place of both, here and in the strip, named "Sotto Owl" for assistive technology.
 
 **First-run setup.** What a new install opens on until it is finished: nine steps in four groups (Start, Dictation, Agents, Elsewhere) on a card under the strip, from the welcome through the look, the microphone, the speech model download and the shortcut to the coding agents, a first project, other computers and the iPhone beta (ADR-0063). Each step uses the surface that owns it, and every step after the welcome can be skipped: its button reads Continue once the step's task is done and Skip for now until then. Finishing sets `onboardingComplete` and opens Threads with the **Threads tour**; Reset settings opens it again. `src/renderer/src/features/onboarding/`. Avoid: "wizard", and "host setup", which is a different thing.
 

@@ -16,6 +16,9 @@
    the wordmark beside the mode switch and actions: the mark stands alone. */
 .thread-nav__brand { display: inline-flex; flex: 0 1 auto; align-items: center; gap: 8px; min-width: 18px; margin-right: auto; color: var(--tt-text); font-size: 14px; font-weight: 600; letter-spacing: -0.1px; }
 .thread-nav__glyph { flex: none; width: 18px; height: 18px; }
+/* Sotto Owl: the mark alone as the brand, larger, in the room the wordmark leaves. */
+.thread-nav__tile { flex: none; width: 24px; height: 24px; }
+.thread-nav__brand:has(.thread-nav__tile) { min-width: 24px; }
 .thread-nav__wordmark { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .thread-nav--mac .thread-nav__wordmark { display: none; }
 .thread-nav__top .tt-button { width: 28px; min-height: 28px; padding: 0; border-radius: 7px; -webkit-app-region: no-drag; }

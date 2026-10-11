@@ -7,6 +7,12 @@ import { join } from 'node:path'
 const root = process.argv[2]
 const path = name => join(root, name)
 const read = (name, fallback) => { try { return JSON.parse(readFileSync(path(name), 'utf8')) } catch { return fallback } }
+// The native --version output includes the build ACP does not send. No account session starts here.
+if (process.argv.includes('--version')) {
+ const version = read('script.json', {})
+ process.stdout.write(version.versionOutput ?? `${version.cliVersion ?? '1.0.5'} (${version.cliBuild ?? '5115b46bc9'})\n`)
+ process.exit(0)
+}
 if (process.argv.includes('inspect')) { process.stdout.write(JSON.stringify(read('skills.json', { skills: [] }))); process.exit(0) }
 // Sotto's side writing (ADR-0026): its own tool-free `agent --no-leader stdio` process on a throwaway home,
 // never a thread's process. It records each frame it was sent in oneshot.jsonl as it arrives (the client
@@ -95,10 +101,18 @@ const send = frame => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...f
 const record = frame => appendFileSync(path('requests.jsonl'), JSON.stringify({ ...frame, process: process.pid }) + '\n')
 // A process is one binary: the version it reports is the one it started as, whatever script.json says later.
 const startup = read('script.json', {})
-record({ method: 'fixture/process', params: { pid: process.pid, version: startup.cliVersion ?? '1.0.5' } })
+record({ method: 'fixture/process', params: { pid: process.pid, version: startup.cliVersion ?? '1.0.5', args: process.argv.slice(3),
+ environment: Object.fromEntries(Object.entries(process.env).filter(([key]) => ['GROK_HOME', 'GROK_AUTH_PATH', 'GROK_MEMORY', 'GROK_SUBAGENTS', 'GROK_MANAGED_MCPS_ENABLED', 'GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED'].includes(key))) } })
 const defaultCatalog = { currentModelId: 'fixture-model', availableModels: [{ modelId: 'fixture-model', name: 'Fixture Grok', _meta: { supportsReasoningEffort: true, reasoningEffort: 'high', reasoningEfforts: [{ id: 'high' }] } }] }
 // script.json may carry a whole catalog, so a case can reproduce Grok's own highest-first level list.
 const catalogOf = script => script.catalog ?? defaultCatalog
+// Watcher model changes report the session's confirmed selection on load; ordinary fixture behavior stays intact.
+function sessionCatalog(script, session) {
+ const catalog = catalogOf(script)
+ if (!session?.systemPromptOverride || !session.modelId || script.unconfirmedModel) return catalog
+ return { ...catalog, currentModelId: session.modelId, availableModels: catalog.availableModels.map(model => model.modelId === session.modelId
+  ? { ...model, _meta: { ...model._meta, reasoningEffort: session.reasoningEffort ?? model._meta?.reasoningEffort } } : model) }
+}
 const pending = new Map(); let serial = 5000
 /** A `session/new` answer held back by `holdCreate`. */
 let heldCreate
@@ -156,11 +170,12 @@ createInterface({input:process.stdin}).on('line', line => {
   pending.delete(frame.id); return
  }
  const p = frame.params ?? {}; const script = read('script.json', {})
- if (frame.method === 'initialize') send({id:frame.id,result:{protocolVersion:script.protocolVersion ?? 1,agentCapabilities:{loadSession:true,mcpCapabilities:{http:script.browserHttp ?? true},promptCapabilities:{image:false,audio:false,embeddedContext:true}},authMethods:script.authMethods ?? [{id:'cached_token'}],_meta:{agentVersion:startup.cliVersion ?? '1.0.5',modelState:catalogOf(script)}}})
+ if (frame.method === 'initialize') send({id:frame.id,result:{protocolVersion:script.protocolVersion ?? 1,agentCapabilities:{loadSession:true,mcpCapabilities:{http:script.browserHttp ?? true},promptCapabilities:{image:false,audio:false,embeddedContext:true}},authMethods:script.authMethods ?? [{id:'cached_token'}],_meta:{agentVersion:startup.acpVersion ?? startup.cliVersion ?? '1.0.5',modelState:catalogOf(script)}}})
  else if (frame.method === 'authenticate') { if (!script.ignoreAuthenticate) send({id:frame.id,result:{}}) }
  else if (frame.method === 'session/new') {
-  checkPolicy(p._meta)
-  const sessionId = randomUUID(); sessions[sessionId] = {cwd:p.cwd,updates:[],permissionMode:nativeMode(p._meta)}; resident.add(sessionId); holding(sessionId, true); save()
+  checkPolicy(p._meta, p.mcpServers)
+  const sessionId = randomUUID(); sessions[sessionId] = {cwd:p.cwd,updates:[],permissionMode:nativeMode(p._meta),
+   mcpServers:p.mcpServers,systemPromptOverride:p._meta?.systemPromptOverride}; resident.add(sessionId); holding(sessionId, true); save()
   record({method:'fixture/session-resident',params:{sessionId,resident:true}})
   const reply = () => send({id:frame.id,result:{sessionId,models:catalogOf(script)}})
   // `holdCreate` keeps the answer until a `release-create` command, so a test can act while a create is open.
@@ -168,7 +183,7 @@ createInterface({input:process.stdin}).on('line', line => {
   else if (script.delayCreate) setTimeout(reply,script.delayCreate); else reply()
  }
  else if (frame.method === 'session/load') {
-  checkPolicy(p._meta)
+  checkPolicy(p._meta, p.mcpServers)
   if (!hold(p.sessionId)) send({id:frame.id,error:{code:-32602,message:'Missing session'}})
   else if (script.rejectLoad) { letGo(p.sessionId); send({id:frame.id,error:{code:-32603,message:'Rejected load'}}) }
   else {
@@ -177,7 +192,7 @@ createInterface({input:process.stdin}).on('line', line => {
    else if (p._meta?.yoloMode) session.permissionMode = 'bypassPermissions'
    resident.add(p.sessionId); holding(p.sessionId, true); save()
    record({method:'fixture/session-resident',params:{sessionId:p.sessionId,resident:true}})
-   send({id:frame.id,result:{models:catalogOf(script),_meta:{sessionId:p.sessionId}}})
+   send({id:frame.id,result:{models:sessionCatalog(script,session),_meta:{sessionId:p.sessionId}}})
   }
  }
  else if (frame.method === '_x.ai/session/close') {
@@ -190,6 +205,7 @@ createInterface({input:process.stdin}).on('line', line => {
  else if (frame.method === 'session/set_model') {
   if (script.rejectModel) send({id:frame.id,error:{code:-32602,message:'Rejected model'}})
   else {
+   if (hold(p.sessionId)?.systemPromptOverride) { sessions[p.sessionId].modelId=p.modelId; sessions[p.sessionId].reasoningEffort=p._meta?.reasoningEffort; save() }
    if (!script.modelNotificationAfterResponse) send({method:'_x.ai/session_notification',params:{sessionId:p.sessionId,update:{sessionUpdate:'model_changed',model_id:p.modelId,reasoning_effort:p._meta?.reasoningEffort ?? 'high'}}})
    send({id:frame.id,result:{_meta:{model:{Ok:p.modelId}}}})
   }
@@ -219,12 +235,14 @@ createInterface({input:process.stdin}).on('line', line => {
  for (const sessionId of resident) { holding(sessionId, false); record({method:'fixture/session-resident',params:{sessionId,resident:false}}) }
  process.exit(0)
 })
-// Several processes read control.json. A command for a session another running process holds is that process's
-// alone; one for a session nobody holds, or with no session, goes to whichever process claims it first. A command
-// is carried out once: its claim is a file only one process can create.
+// Several processes read control.json. A native permission or question comes only from the process holding
+// its session resident, so it waits for that process instead of being claimed by a connection probe. External
+// history controls for a session nobody holds still go to whichever process claims them first. A command is
+// carried out once: its claim is a file only one process can create.
 let last
 function claim(command) {
  if (command.type === 'release-create' && !heldCreate) return false
+ if (command.sessionId && ['permission','question','unreadable'].includes(command.type) && !resident.has(command.sessionId)) return false
  if (command.sessionId && !resident.has(command.sessionId)) { const holder = holderOf(command.sessionId); if (holder && holder !== process.pid) return false }
  try { mkdirSync(path('control-claims'), {recursive:true}); writeFileSync(path(`control-claims/${command.id}`), String(process.pid), {flag:'wx'}); return true }
  catch { return 'taken' }
@@ -234,6 +252,7 @@ function check() {
  const command = read('control.json', {}); if (!command.id || command.id === last) return
  const claimed = claim(command); if (!claimed) return
  last = command.id; if (claimed === 'taken') return
+ record({method:'fixture/control-claimed',params:{type:command.type,resident:resident.has(command.sessionId)}})
  if (command.sessionId && !hold(command.sessionId)) return
  try { run(command) } finally { if (command.sessionId) letGo(command.sessionId) }
 }
@@ -257,7 +276,7 @@ function run(command) {
  if (command.type === 'inherited-exit') {spawn(process.execPath,['-e','setTimeout(()=>{},1000)'],{stdio:['ignore',process.stdout,process.stderr],windowsHide:true});process.exit(0)}
  if (command.type === 'permission' || command.type === 'question') {
   const id = ++serial; pending.set(id,{kind:command.type,text:command.text})
-  if (command.type === 'permission') send({id,method:'session/request_permission',params:{sessionId:command.sessionId,toolCall:{toolCallId:String(id),title:command.text,...(command.rawInput===undefined?{}:{rawInput:command.rawInput})},options:[{optionId:'yes',name:'Allow once',kind:'allow_once'},{optionId:'no',name:'Deny',kind:'reject_once'}]}})
+  if (command.type === 'permission') send({id,method:'session/request_permission',params:{sessionId:command.sessionId,toolCall:{toolCallId:String(id),title:command.text,...(command.rawInput===undefined?{}:{rawInput:command.rawInput})},options:command.options ?? [{optionId:'yes',name:'Allow once',kind:'allow_once'},{optionId:'no',name:'Deny',kind:'reject_once'}]}})
   // 1.0.40 puts a question's own parameters straight under the underscored method; earlier clients
   // wrapped them in an envelope naming the method again. Both are the same request.
   else {

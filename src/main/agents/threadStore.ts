@@ -175,7 +175,7 @@ export class ThreadStore {
   private readonly wakeUpCache = new Map<string, ReadonlySet<string>>()
 
   /** The main runtime supplies a path under `app.getPath('userData')`. */
-  constructor(private readonly path: string) {}
+  constructor(private readonly path: string, private readonly preserveThread?: (threadId: string) => boolean) {}
 
   /** Opens the database. `ephemeral` keeps this run's history in memory, for Keep local history off. */
   open(options: { ephemeral?: boolean } = {}): void {
@@ -501,10 +501,13 @@ export class ThreadStore {
   }
 
   /** Everything after `seq`, in the order it was written. */
-  eventsAfter(seq: number, threadId?: string, limit = -1): StoredThreadEvent[] {
+  eventsAfter(seq: number, threadId?: string, limit = -1, excludedThreadIds: readonly string[] = []): StoredThreadEvent[] {
+    // Visibility belongs before LIMIT so hidden history cannot exhaust a client's catch-up page.
+    const exclusion = excludedThreadIds.length ? ' AND thread_id NOT IN (SELECT value FROM json_each(?))' : ''
+    const excluded = excludedThreadIds.length ? [JSON.stringify(excludedThreadIds)] : []
     const rows = threadId === undefined
-      ? this.statement('SELECT seq, thread_id, payload FROM events WHERE seq > ? ORDER BY seq LIMIT ?').all(seq, limit)
-      : this.statement('SELECT seq, thread_id, payload FROM events WHERE seq > ? AND thread_id = ? ORDER BY seq LIMIT ?').all(seq, threadId, limit)
+      ? this.statement(`SELECT seq, thread_id, payload FROM events WHERE seq > ?${exclusion} ORDER BY seq LIMIT ?`).all(seq, ...excluded, limit)
+      : this.statement(`SELECT seq, thread_id, payload FROM events WHERE seq > ? AND thread_id = ?${exclusion} ORDER BY seq LIMIT ?`).all(seq, threadId, ...excluded, limit)
     return rows.map(row => ({ seq: Number(row.seq), threadId: String(row.thread_id), event: JSON.parse(String(row.payload)) as ThreadEvent }))
   }
 
@@ -543,15 +546,22 @@ export class ThreadStore {
   /** The same for every thread: what Keep local history turning off asks of the file. */
   redactAll(): void {
     const db = this.requireOpen()
-    const hashes = this.activityIdentityHashes()
+    // A release gate can keep dormant threads outside this runtime's privacy ownership.
+    const threadIds = this.preserveThread ? this.statement('SELECT thread_id FROM events UNION SELECT thread_id FROM messages UNION SELECT thread_id FROM activities UNION SELECT thread_id FROM activity_epochs UNION SELECT thread_id FROM visuals').all().map(row => String(row.thread_id)) : undefined
+    const selected = threadIds?.some(id => this.preserveThread!(id)) ? threadIds.filter(id => !this.preserveThread!(id)) : undefined
+    const hashes = selected ? selected.flatMap(id => this.activityIdentityHashes(id)) : this.activityIdentityHashes()
     db.exec('BEGIN IMMEDIATE')
     try {
-      db.exec('DELETE FROM messages')
       for (const hash of hashes) this.statement('INSERT OR IGNORE INTO activity_redactions (identity_hash) VALUES (?)').run(hash)
-      db.exec('DELETE FROM activities')
-      db.exec('DELETE FROM activity_epochs')
-      db.exec('DELETE FROM visuals')
-      redactEvents(db)
+      if (selected) {
+        for (const id of selected) {
+          for (const table of ['messages', 'activities', 'activity_epochs', 'visuals']) this.statement('DELETE FROM ' + table + ' WHERE thread_id = ?').run(id)
+          redactEvents(db, id)
+        }
+      } else {
+        db.exec('DELETE FROM messages; DELETE FROM activities; DELETE FROM activity_epochs; DELETE FROM visuals;')
+        redactEvents(db)
+      }
       db.exec('COMMIT')
     } catch (error) {
       db.exec('ROLLBACK')

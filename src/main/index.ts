@@ -145,6 +145,7 @@ import {
   type Rectangle,
   type RendererDiagnostic,
   type WebContentsLike,
+  type WindowEventName,
 } from './windows/windowManager'
 import {
   DICTATION_COMMAND,
@@ -155,6 +156,9 @@ import {
   SPEECH_MODEL_STATUS,
 } from '../shared/channels'
 import { APP_ID, APP_NAME } from '../shared/constants'
+import { getReleaseTrack, releaseTrackName } from '../shared/releaseTrack'
+import { hostReleaseVersion } from './hosts/hostReleaseVersion'
+import { runningVersion, watcherEnabledForRun } from './runningVersion'
 import type { DictationCommand } from '../shared/contracts'
 import type { WidgetSnapshot } from '../shared/dictation'
 import { widgetPresentationFor } from '../shared/themeBranding'
@@ -331,13 +335,19 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
   }
 
   on(
-    event: 'close' | 'closed' | 'moved' | 'maximize' | 'unmaximize' | 'hide' | 'minimize',
+    event: WindowEventName,
     listener: (event: { preventDefault(): void }) => void,
   ): void {
     if (event === 'close') {
       const wrapped = (nativeEvent: { preventDefault(): void }): void => listener(nativeEvent)
       this.window.on('close', wrapped)
       this.windowListenerCleanups.set(listener, () => this.window.removeListener('close', wrapped))
+      return
+    }
+    if (event === 'page-title-updated') {
+      const wrapped = (nativeEvent: { preventDefault(): void }): void => listener(nativeEvent)
+      this.window.on('page-title-updated', wrapped)
+      this.windowListenerCleanups.set(listener, () => this.window.removeListener('page-title-updated', wrapped))
       return
     }
     if (event === 'hide' || event === 'minimize') {
@@ -372,7 +382,7 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
   }
 
   removeListener(
-    _event: 'close' | 'closed' | 'moved' | 'maximize' | 'unmaximize' | 'hide' | 'minimize',
+    _event: WindowEventName,
     listener: (event: { preventDefault(): void }) => void,
   ): void {
     this.windowListenerCleanups.get(listener)?.()
@@ -557,6 +567,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const unpackagedIconPath = app.isPackaged
     ? null
     : join(__dirname, platform === 'linux' ? '../../build/icon.png' : '../../build/icon.ico')
+  // Packaging can override the version without editing the source manifest, so it is read from the app (ADR-0072).
+  const appRunningVersion = runningVersion(app.getVersion(), process.versions.electron, appVersion)
+  const hostVersion = hostReleaseVersion(appRunningVersion, appVersion)
+  const watcherEnabled = watcherEnabledForRun({ version: appRunningVersion, isPackaged: app.isPackaged, override: process.env.SOTTO_WATCHER_ENABLED })
   const recoveryNotices = new RecoveryNoticeCenter()
   const { settings: plainSettings, history } = createStorageRepositories(
     userDataPath,
@@ -564,6 +578,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     Date.now,
     platformDefaults,
     logOperational,
+    watcherEnabled,
   )
   await history.initialize()
   const credentials = new AgentCredentials(userDataPath, safeStorage, notice => recoveryNotices.publish(notice))
@@ -595,8 +610,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // current theme halves, so a theme change repaints the widget mid-session.
   let widgetPresentation = widgetPresentationFor(await settings.get())
   let handleRendererProcessGone: (kind: 'main' | 'widget') => void = () => undefined
+  // What this build calls itself in words: the main window's title and the tray's tooltip, "Sotto Owl" on that track.
+  const buildName = releaseTrackName(getReleaseTrack(appRunningVersion))
   const terminalFocus = new WeakSet<Electron.WebContents>()
   const windows = new WindowManager({
+    title: buildName,
     createWindow: options => {
       const window = new BrowserWindow(options)
       window.webContents.on('before-input-event', (_event, input) => {
@@ -655,10 +673,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   let windowBlurredAt = 0
   app.on('browser-window-focus', () => { windowBlurredAt = 0 })
   app.on('browser-window-blur', () => { windowBlurredAt = Date.now() })
-  const windowInFront = (): boolean => BrowserWindow.getAllWindows().some(window => window.getTitle() === APP_NAME && window.isVisible() && !window.isMinimized()
+  const windowInFront = (): boolean => BrowserWindow.getAllWindows().some(window => window.getTitle() === buildName && window.isVisible() && !window.isMinimized()
     && (window.isFocused() || (windowBlurredAt !== 0 && Date.now() - windowBlurredAt < 45_000)))
   const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
-    directory: userDataPath, credentials,
+    directory: userDataPath, credentials, watcherEnabled,
     ...(app.isPackaged ? { claudeHistoryModulePath: join(process.resourcesPath, 'claude-sdk', 'sdk.mjs') } : {}),
     settings: () => workingCopySettings, writingSettings: () => settings.get(),
     historyEnabled: () => agentHistoryEnabled,
@@ -712,7 +730,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // The runtime builds the worktree cleanup (ADR-0041). Only the local host has worktrees on this
   // computer; with it off the inactive host's cleanup does nothing, and no terminal check is wired.
   const worktreeCleanup = startupSettings.localHostEnabled ? localRuntime.worktreeCleanup : null
-  const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.hostId()), {
+  const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.hostId()), { watcherEnabled,
     bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
   })
   quitHandles.hostRouter = hostRouter
@@ -735,10 +753,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const tailnetStandIn = e2eConfiguration !== null && !app.isPackaged ? e2eTailnetMap(process.env['SOTTO_E2E_TAILNET_MAP']) : undefined
   /** The last page an end-to-end run asked the browser to open, which it never opens. */
   let openedExternalLink: string | null = null
-  const retainedDrafts = new RetainedDraftStore({ directory: userDataPath, historyEnabled: () => agentHistoryEnabled,
+  const retainedDrafts = new RetainedDraftStore({ directory: userDataPath, watcherEnabled, historyEnabled: () => agentHistoryEnabled,
     onRecovery: () => recoveryNotices.publish({ code: 'REMOTE_DRAFTS_UNREADABLE' }),
     onWriteFailure: () => recoveryNotices.publish({ code: 'REMOTE_DRAFT_STORAGE_NOT_UPDATED' }) })
-  const desktopHosts = new DesktopHosts({ directory: userDataPath, credentials, router: hostRouter, retainedDrafts,
+  const desktopHosts = new DesktopHosts({ directory: userDataPath, credentials, router: hostRouter, retainedDrafts, watcherEnabled, clientVersion: hostVersion,
     localHostRunning: startupSettings.localHostEnabled, localHostEnabled: () => workingCopySettings.localHostEnabled,
     restart: () => { app.relaunch(); app.quit() },
     ...(sshStandIn ? { launcher: () => new SshHostLauncher({ spawn: sshStandIn }) } : {}),
@@ -759,7 +777,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       refresh: (id, provider) => desktopHosts.refreshProvider(id, provider),
       subscribe: listener => { const off = [hostRouter.subscribe(() => listener()), desktopHosts.subscribe(() => listener())]; return () => { for (const item of off) item() } } },
     busy: (): string | undefined => { const setup = hostSetup.state(); return setup && (setup.phase === 'starting' || setup.phase === 'running') ? `An agent is setting up ${setup.name} now. Stop that setup first. Nothing was started.` : undefined } })
-  const hostSetup: HostSetup = new HostSetup({ version: appVersion,
+  const hostSetup: HostSetup = new HostSetup({ version: hostVersion,
     hosts: { check: connection => desktopHosts.check(connection), add: connection => desktopHosts.setupAdd(connection), forget: id => desktopHosts.forgetSaved(id),
       attempt: id => desktopHosts.attempt(id), cancelAttempt: id => desktopHosts.cancelAttempt(id), savedAs: (target, port) => desktopHosts.savedAs(target, port) },
     threads: agentJobThreads, busy: (): string | undefined => providerJobs.busySentence() })
@@ -812,7 +830,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // Hosts that run an older Sotto than this computer, and their updates from the Threads page (ADR-0040). A development
   // end-to-end run serves its own releases.
   const releasesStandIn = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_HOST_RELEASES_URL'] : undefined
-  const hostUpdates = new HostUpdates({ version: appVersion, ...(releasesStandIn ? { releasesUrl: releasesStandIn } : {}),
+  const hostUpdates = new HostUpdates({ version: hostVersion, ...(releasesStandIn ? { releasesUrl: releasesStandIn } : {}),
     requiresManagementUpdate: hostId => hostRouter.requiresManagementUpdate(hostId),
     hosts: { candidates: () => desktopHosts.updateCandidates(), run: (id, operation, options) => desktopHosts.runUpdate(id, operation, options),
       restart: (id, version, options) => desktopHosts.restartForUpdate(id, version, options), subscribe: listener => desktopHosts.subscribe(() => listener()) },
@@ -839,7 +857,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   } }
   // Phone access serves the local host's own threads to paired phones over the tailnet (ADR-0033). Its
   // Tailscale checks can take seconds, so they run beside startup rather than in front of the window.
-  const phoneAccess = new PhoneAccess({ directory: userDataPath,
+  const phoneAccess = new PhoneAccess({ directory: userDataPath, listener: { sottoVersion: hostVersion },
     service: startupSettings.localHostEnabled ? hostService : undefined,
     tailscale: e2eConfiguration === null ? new TailscaleCli() : e2eTailscale(userDataPath),
     settings: () => workingCopySettings, policy: authority,
@@ -853,6 +871,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     const key = parseHostEntityKey(target.ownerId)
     if (key && key.hostId !== agentControl.hostId()) await hostRouter.refreshRequestDraft(target, decisionId)
     else await agentControl.refreshRequestDraft(key?.id ?? target.ownerId, target.requestId)
+  }, undefined, watcherEnabled ? undefined : owner => {
+    if (owner.kind !== 'thread') return false
+    const key = parseHostEntityKey(owner.ownerId)
+    if (key && key.hostId !== agentControl.hostId()) return hostRouter.preservesWatcherThread(owner.ownerId)
+    return localRuntime?.agentHost.watcherThreadIds?.().includes(key?.id ?? owner.ownerId) ?? false
   })
   await requestDrafts.start()
   const unsubscribeRequestDrafts = requestDrafts.onChanged(owner => windows.sendToMain(REQUEST_DRAFT_CHANGED, owner))
@@ -962,7 +985,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           : createSpawnProcessAdapter((executable, args, options) => spawn(executable, args, options)))
     : createE2EPasteProcess(e2eState!, e2eConfiguration.scenario, (text) => {
         const mainWindow = BrowserWindow.getAllWindows().find(
-          (candidate) => candidate.getTitle() === APP_NAME,
+          (candidate) => candidate.getTitle() === buildName,
         )
         mainWindow?.webContents.insertText(text)
       })
@@ -1047,7 +1070,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // 'unsupported' phase without constructing electron-updater at all.
   const updatesSupported = app.isPackaged && e2eConfiguration === null && profile.inAppUpdates
   const updates = new UpdateService({
-    currentVersion: appVersion,
+    currentVersion: appRunningVersion, watcherEnabled,
     getSettings: () => settings.get(),
     ...(updatesSupported ? { createUpdater: createElectronUpdaterAdapter } : {}),
     onStatusChanged: (status) => {
@@ -1101,7 +1124,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         },
         markTemplate: (icon) => { if (platform === 'darwin') icon.setTemplateImage(true) },
         createTray: (icon) => new Tray(icon),
-        configure: (tray) => tray.setToolTip(APP_NAME),
+        tooltip: buildName,
       })
     : { setContextMenu: () => undefined, destroy: () => undefined }
   try {
@@ -1488,7 +1511,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         }
         return { ...snapshotE2EState(
           e2eState,
-          BrowserWindow.getAllWindows().some((candidate) => candidate.getTitle() === APP_NAME && candidate.isVisible()),
+          BrowserWindow.getAllWindows().some((candidate) => candidate.getTitle() === buildName && candidate.isVisible()),
         ), openedThreadFolder, openedExternalLink }
       })
       ipcMain.handle(E2E_TRIGGER_SHORTCUT_CHANNEL, (event) => {

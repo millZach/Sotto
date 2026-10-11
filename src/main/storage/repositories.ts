@@ -11,6 +11,7 @@ export function createStorageRepositories(
   now: () => number = Date.now,
   defaults: AppSettings = DEFAULT_SETTINGS,
   log?: (event: 'history-temp-cleanup-failed') => void,
+  watcherEnabled = true,
 ): Readonly<{
   settings: SettingsRepository
   history: HistoryRepository
@@ -18,7 +19,7 @@ export function createStorageRepositories(
   return Object.freeze({
     settings: new SettingsRepository(join(userDataPath, 'settings.json'), {
       now,
-      defaults,
+      defaults, watcherEnabled,
       onRecovery: (notice) => recoveryNotices.publish(notice),
     }),
     history: new HistoryRepository(join(userDataPath, 'history.json'), {

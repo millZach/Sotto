@@ -280,6 +280,10 @@ export const updatePhaseSchema = z.discriminatedUnion('phase', [
 export const updateStatusSchema = z
   .object({
     currentVersion: updateVersionSchema,
+    /** Main supplies this even when updating is unsupported. Older fixtures may omit it. */
+    releaseTrack: z.enum(['stable', 'owl']).optional(),
+    /** Immutable startup gate, including the unpackaged test override. */
+    watcherEnabled: z.boolean().optional(),
     phase: updatePhaseSchema,
     /** When the last check started, as epoch milliseconds; null before the first. */
     checkedAt: z.number().int().nonnegative().nullable(),
