@@ -103,6 +103,7 @@ const BRANCH_SAVE_ERROR = 'The branch name could not be saved. Restore local sto
 const HISTORY_SAVE_ERROR = 'Thread messages could not be saved. Restore access to local storage and refresh.'
 /** Said when the thread history database could not be opened at all. This run keeps its messages in memory. */
 const HISTORY_OPEN_ERROR = 'Thread messages could not be opened. Restore access to local storage and restart Sotto.'
+const ACTIVITY_READ_ERROR = 'Thread activity could not be read. Saved activity remains available. Restore local storage and restart Sotto.'
 
 /**
  * What became of a visual an agent asked to draw (ADR-0056): kept and shown, with where it went, or why nothing was drawn.
@@ -1466,9 +1467,24 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       thread.activities = this.threadStore.readActivities(thread.id).map(savedRecord)
     } catch {
       this.activityStoreUnavailable = true
-      this.saveError = 'Thread activity could not be read. Saved activity remains available. Restore local storage and restart Sotto.'
+      this.saveError = ACTIVITY_READ_ERROR
     }
+    if (thread.activities) this.moveSubagentWords(thread, thread.activities)
     return thread.activities
+  }
+  /**
+   * A record read back may still carry subagent task words from before the roster held them, when the start that moved
+   * every thread's words did not reach this one, such as a Watcher thread hidden then. They go to the roster now, the way
+   * that start moved them, before anything saves the list back without them (#918).
+   */
+  private moveSubagentWords(thread: AgentThread, activities: readonly AgentActivity[]): void {
+    const unmoved = activities.filter(activity => (activity.kind === 'subagent' || activity.agents?.length || activity.taskUpdatesExcluded !== undefined)
+      && !isDeepStrictEqual(subagentActivityClassification(activity), activity))
+    if (!unmoved.length || this.subagentUnavailable) return
+    // Read back from the store, an agent marked working there is history, not a live one.
+    const observations = unmoved.flatMap(activity => activity.agents ?? []).map(agent => observedSubagentStatus(agent.status) === 'running' ? { ...agent, status: 'unknown' as const } : agent)
+    try { this.subagentsChanged(this.subagentStore.ingest(thread.id, observations, thread.historyEpoch, unmoved)) }
+    catch { this.saveError = 'Agent history could not be saved. Restore access to local storage and refresh.' }
   }
   /**
    * Once a save has put every held list in the store, a thread nobody is looking at and nothing is running in lets its
@@ -1484,6 +1500,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       const input = this.activityInputs.get(thread.id)?.input
       if (input) this.storedInputs.set(thread.id, input)
       this.activityInputs.delete(thread.id)
+      // The subagent tracker compares by the list it walked last; that may be this one, as the first start's read is.
+      const tracked = this.subagentInputs.get(thread.id)
+      if (tracked?.activities === thread.activities) tracked.activities = undefined
       this.threadStore.releaseActivities(thread.id)
       delete thread.activities
       this.storedActivity.add(thread.id)
@@ -1677,14 +1696,23 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   /** Whether `activities` would answer for this epoch, asked without reading a record (#918). */
   hasActivities(threadId: string, historyEpoch?: string): boolean {
-    if (!this.threadVisible(threadId)) return false
+    if (!this.threadVisible(threadId) || this.storeUnavailable || this.activityStoreUnavailable) return false
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
     return thread !== undefined && thread.historyEpoch === historyEpoch && (this.storedActivity.has(threadId) || thread.activities !== undefined)
   }
   /** A stored thread's records as an adapter is handed them: read for it and not kept, mapped as the startup read was (#918). */
   private storedActivities(threadId: string): AgentActivity[] | undefined {
-    try { return this.threadStore.readActivities(threadId, { keep: false }).slice(-MAX_AGENT_ACTIVITIES).map(savedRecord) }
-    catch { return undefined }
+    try {
+      const activities = this.threadStore.readActivities(threadId, { keep: false }).slice(-MAX_AGENT_ACTIVITIES).map(savedRecord)
+      const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+      if (thread) this.moveSubagentWords(thread, activities)
+      return activities
+    } catch {
+      // As a failed read back does: saving stops, so the store keeps the records for the next start, and the user is told.
+      this.activityStoreUnavailable = true
+      this.saveError = ACTIVITY_READ_ERROR
+      return undefined
+    }
   }
   /**
    * Records what a provider published and answers with the messages this thread keeps in memory: the

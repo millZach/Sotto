@@ -87,6 +87,35 @@ it('reads every record once on a profile whose store has not said subagent words
   expect(workshop(second).activities).toBeUndefined()
 })
 
+// The start that moved every thread's subagent words to the roster reads only the threads it shows, so a Watcher thread
+// hidden then still has its words in its rows when it is first read back.
+it('moves subagent words still in a thread\'s rows to the roster when it reads them back, before saving them away', async () => {
+  const f = await stored([record('a', 0)])
+  const spawn: AgentActivity = { id: 'spawn', turnId: 'turn', sequence: 1, kind: 'subagent', status: 'completed', title: 'Private task title',
+    agents: [{ id: 'child', assignmentId: 'task', status: 'completed', title: 'Private task title', prompt: 'Private moved task', message: 'Private moved result' }] }
+  const store = new ThreadStore(join(f.directory, 'threads.sqlite'))
+  store.open()
+  try { store.syncActivities(THREAD, [record('a', 0), spawn]) } finally { store.close() }
+  const host = await f.open()
+  await host.connect()
+  host.observeThreads([THREAD])
+  expect((await host.subagentAssignments({ threadId: THREAD, agentId: 'child' })).assignments[0]).toMatchObject({ prompt: 'Private moved task', result: 'Private moved result' })
+  await f.close(host)
+  expect(f.disk().find(item => item.id === 'spawn')).toMatchObject({ title: 'Subagent' })
+  expect(JSON.stringify(f.disk())).not.toContain('Private')
+})
+
+it('says it holds nothing once a read of the store fails, and says why', async () => {
+  const f = await stored([record('a', 0)])
+  const host = await f.open()
+  await host.connect()
+  expect(host.hasActivities(THREAD, undefined)).toBe(true)
+  vi.spyOn(ThreadStore.prototype, 'readActivities').mockImplementationOnce(() => { throw new Error('Synthetic unreadable store') })
+  expect(host.activities(THREAD, undefined)).toBeUndefined()
+  expect(host.hasActivities(THREAD, undefined)).toBe(false)
+  expect(host.workspaceSnapshot().error).toBe('Thread activity could not be read. Saved activity remains available. Restore local storage and restart Sotto.')
+})
+
 it('reads a thread\'s records back when a window looks at it, a saved running record no longer live', async () => {
   const f = await stored([record('a', 0), record('b', 1, { status: 'running' })])
   const host = await f.open()
