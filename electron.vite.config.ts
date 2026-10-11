@@ -89,14 +89,14 @@ export default defineConfig({
   main: {
     // No public folder: nothing is copied into out/ wholesale; the Linux tray icon is emitted there with ?asset.
     publicDir: false,
-    build: { rollupOptions: { external: ['node-pty'], input: {
+    build: { rollupOptions: { external: ['node-pty', 'sherpa-onnx-node'], input: {
       index: resolve(__dirname, 'src/main/index.ts'),
       dictationClient: resolve(__dirname, 'src/main/hotkeys/dictationClient.ts'),
     } } },
     // electron-updater is a devDependency that is compiled into the main chunk,
     // exactly like zod is compiled into the sandboxed preload: production
-    // Native node-pty stays external explicitly; its relative prebuild/helper
-    // lookup requires its package layout. Claude SDK history ships as a reviewed
+    // Native node-pty and sherpa-onnx-node stay external explicitly; each finds its
+    // prebuilt binaries relative to its package layout (ADR-0018, ADR-0071). Claude SDK history ships as a reviewed
     // self-contained resource, so SDK peers are not production dependencies.
     plugins: [
       externalizeDepsPlugin({ exclude: ['electron-updater'] }),

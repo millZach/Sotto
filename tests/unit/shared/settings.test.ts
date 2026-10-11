@@ -45,7 +45,6 @@ const customSettings = {
   hotkey: 'Alt+D',
   maxRecordingSeconds: 300,
   soundCues: false,
-  language: 'fr',
   formatWhitespace: false,
   autoCopy: true,
   autoPaste: false,
@@ -81,7 +80,6 @@ const customSettings = {
   proactivePanels: true,
   pullRequestText: false,
   commitMessages: false,
-  streamingAsr: false,
   autoUpdateCheck: false,
   localHostEnabled: false,
   phoneAccess: true,
@@ -171,10 +169,15 @@ describe('settings', () => {
     expect(mergeMethodChosenPatch({ defaultMergeMethod: 'merge', lastMergeMethod: 'merge' }, 'squash')).toBeNull()
   })
   it('drops retired transcription settings while preserving valid settings', () => {
-    const legacy = { ...customSettings, modelPreset: 'fast', inferencePreference: 'wasm', remoteAsr: true, remoteAsrUrl: 'http://retired.invalid' }
+    // The speech model detects the language and every dictation is segmented (ADR-0071), so
+    // language and streamingAsr went with the earlier local and hosted settings.
+    const legacy = {
+      ...customSettings, modelPreset: 'fast', inferencePreference: 'wasm', remoteAsr: true, remoteAsrUrl: 'http://retired.invalid',
+      language: 'fr', streamingAsr: false,
+    }
     expect(parseSettings(legacy)).toEqual(customSettings)
     expect(settingsSchema.parse(legacy)).toEqual(customSettings)
-    for (const field of ['modelPreset', 'inferencePreference', 'remoteAsr', 'remoteAsrUrl']) {
+    for (const field of ['modelPreset', 'inferencePreference', 'remoteAsr', 'remoteAsrUrl', 'language', 'streamingAsr']) {
       expect(parseSettings(legacy)).not.toHaveProperty(field)
     }
   })
@@ -312,7 +315,6 @@ describe('settings', () => {
       hotkey: 'CommandOrControl+Shift+Space',
       maxRecordingSeconds: 60,
       soundCues: true,
-      language: 'auto',
       formatWhitespace: true,
       autoCopy: true,
       autoPaste: true,
@@ -348,7 +350,6 @@ describe('settings', () => {
       proactivePanels: false,
       pullRequestText: true,
       commitMessages: true,
-      streamingAsr: true,
       autoUpdateCheck: true,
       localHostEnabled: true,
       phoneAccess: false,
@@ -411,7 +412,6 @@ describe('settings', () => {
     expect(parseSettings({}).llmFormatting).toBe(false)
     expect(parseSettings({ llmFormatting: 'yes' }).llmFormatting).toBe(false)
     expect(parseSettings({ llmTimeoutMs: 100 }).llmTimeoutMs).toBe(2_500)
-    expect(parseSettings({ streamingAsr: false }).streamingAsr).toBe(false)
   })
 
 
@@ -485,9 +485,7 @@ describe('settings', () => {
     },
   )
 
-  it('requires a non-empty language and a literal true autoCopy value', () => {
-    expect(parseSettings({ language: '' }).language).toBe(DEFAULT_SETTINGS.language)
-    expect(parseSettings({ language: 'es' }).language).toBe('es')
+  it('requires a literal true autoCopy value', () => {
     expect(parseSettings({ autoCopy: false }).autoCopy).toBe(true)
     expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, autoCopy: false }).success).toBe(false)
   })

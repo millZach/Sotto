@@ -109,7 +109,11 @@ import { createWarmPasteAdapter } from './output/pasteHelper'
 import { createOsascriptPasteAdapter, type OsascriptPasteEvent } from './output/pasteOsascript'
 import { createSystemSettingsOpener } from './app/systemSettings'
 import { TranscriptPolishService } from './llm/transcriptPolishService'
-import { OpenRouterTranscriptionService } from './asr/openRouterTranscriptionService'
+import { LocalTranscriptionService } from './asr/localTranscriptionService'
+import { loadParakeetEngine } from './asr/speechEngine'
+import { SpeechModelStore } from './asr/speechModelStore'
+import { checkOpenRouterKey } from './llm/openRouterKeyCheck'
+import type { SpeechModelStatus } from '../shared/speechModel'
 import { createElectronUpdaterAdapter } from './updates/electronUpdaterAdapter'
 import { UpdateService } from './updates/updateService'
 import { platformProfile, windowFrostFor, type WidgetAlwaysOnTopLevel } from './platformProfile'
@@ -149,6 +153,7 @@ import {
   SETTINGS_CHANGED,
   UPDATE_CHECK_REQUESTED,
   UPDATE_STATUS,
+  SPEECH_MODEL_STATUS,
 } from '../shared/channels'
 import { APP_ID, APP_NAME } from '../shared/constants'
 import { getReleaseTrack, releaseTrackName } from '../shared/releaseTrack'
@@ -1037,19 +1042,26 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
   })
 
-  // Hosted transcription stays offline in E2E runs; the renderer uses its fake transcriber.
-  // Each failed request records its reason and HTTP status, so a lost dictation can be
-  // told apart afterwards: out of credit, rate limited, or a service error. A rate limit
-  // also records whether the provider or OpenRouter set it, and a request that was rate
-  // limited and then went through is recorded too, so the retries can be seen working.
+  // Dictation transcribes on this computer (ADR-0071). The speech model downloads once from Sotto's
+  // releases, starts loading when Sotto does and stays loaded. E2E runs never download it: they
+  // report it ready, and the renderer uses its fake transcriber. Each failed segment records why and
+  // how long it was in the transcription diagnostics, never what was said.
   const transcriptionDiagnostics = diagnosticsAppender('transcription-diagnostics.jsonl')
-  const transcription = new OpenRouterTranscriptionService({
-    getSettings: () => settings.forFormatting(),
+  const speechModelStore = e2eConfiguration === null
+    ? new SpeechModelStore({
+      directory: join(userDataPath, 'speech-models'),
+      loadEngine: loadParakeetEngine,
+      onStatus: (status) => { windows.sendToMain(SPEECH_MODEL_STATUS, status) },
+    })
+    : null
+  const speechModel = {
+    status: (): SpeechModelStatus => speechModelStore?.get() ?? { state: 'ready' },
+    download: (): void => { void speechModelStore?.ensure() },
+  }
+  speechModel.download()
+  const transcription = new LocalTranscriptionService({
+    engine: () => speechModelStore?.currentEngine() ?? null,
     onFailure: transcriptionDiagnostics,
-    onRecovered: transcriptionDiagnostics,
-    ...(e2eConfiguration === null
-      ? {}
-      : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
   })
 
   // GitHub Releases is only a real feed for the packaged Windows build: the
@@ -1414,7 +1426,14 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         transcription: {
           transcribe: (request) => transcription.transcribe(request),
           cancel: (requestId) => transcription.cancel(requestId),
-          checkKey: () => transcription.checkKey(),
+        },
+        speechModel,
+        openRouterKey: {
+          // Verify key stays offline in E2E runs, like the cleanup pass.
+          check: () => checkOpenRouterKey({
+            getSettings: () => settings.forFormatting(),
+            ...(e2eConfiguration === null ? {} : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
+          }),
         },
         updates: {
           status: () => updates.status(),
@@ -1458,8 +1477,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         cleanupThemes()
         cleanupMemory()
         unsubscribeRecoveryNotices()
-        // No renderer is left to receive them, so abandon in-flight uploads.
+        // No renderer is left to receive them, so drop what is still being transcribed.
         transcription.dispose()
+        speechModelStore?.dispose()
         updates.dispose()
         cleanup()
       }

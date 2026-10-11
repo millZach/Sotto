@@ -181,9 +181,13 @@ export interface AppSettings {
   hotkey: string
   /** Text size in every terminal, in pixels; changed from the focused terminal's zoom chords. */
   terminalFontSize: number
+  /**
+   * Dictation is always cut at pauses and transcribed on this computer, by a model that works out
+   * the language itself (ADR-0071), so the `language` and `streamingAsr` settings are gone; a
+   * settings file that still carries either parses and drops it.
+   */
   maxRecordingSeconds: MaxRecordingSeconds
   soundCues: boolean
-  language: string
   formatWhitespace: boolean
   autoCopy: true
   autoPaste: boolean
@@ -221,7 +225,6 @@ export interface AppSettings {
   pullRequestText: boolean
   /** Off stops every generated commit message; a commit whose dialog message was left empty takes the stand-in subject. */
   commitMessages: boolean
-  streamingAsr: boolean
   autoUpdateCheck: boolean
   /**
    * Whether the agent runtime runs on this computer at all. Read once at
@@ -293,7 +296,6 @@ const fieldSchemas = {
   terminalFontSize: z.number().int().min(8).max(32),
   maxRecordingSeconds: z.union([z.literal(30), z.literal(60), z.literal(120), z.literal(300)]),
   soundCues: z.boolean(),
-  language: z.string().min(1),
   formatWhitespace: z.boolean(),
   autoCopy: z.literal(true),
   autoPaste: z.boolean(),
@@ -334,7 +336,6 @@ const fieldSchemas = {
   proactivePanels: z.boolean(),
   pullRequestText: z.boolean(),
   commitMessages: z.boolean(),
-  streamingAsr: z.boolean(),
   autoUpdateCheck: z.boolean(),
   localHostEnabled: z.boolean(),
   phoneAccess: z.boolean(),
@@ -377,7 +378,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   terminalFontSize: 13,
   maxRecordingSeconds: 60,
   soundCues: true,
-  language: 'auto',
   formatWhitespace: true,
   autoCopy: true,
   autoPaste: true,
@@ -424,7 +424,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // On by default: when a thread's provider writes nothing, the Git action commits
   // under the stand-in subject "Update project files" rather than waiting.
   commitMessages: true,
-  streamingAsr: true,
   // On by default: an install that never opens Settings still learns about a
   // fix. The check asks GitHub for a version number and sends nothing else,
   // and turning it off stops the request entirely.
@@ -501,7 +500,6 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     terminalFontSize: parseField(persisted, 'terminalFontSize', defaults),
     maxRecordingSeconds: parseField(persisted, 'maxRecordingSeconds', defaults),
     soundCues: parseField(persisted, 'soundCues', defaults),
-    language: parseField(persisted, 'language', defaults),
     formatWhitespace: parseField(persisted, 'formatWhitespace', defaults),
     autoCopy: parseField(persisted, 'autoCopy', defaults),
     autoPaste: parseField(persisted, 'autoPaste', defaults),
@@ -537,7 +535,6 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     proactivePanels: parseField(persisted, 'proactivePanels', defaults),
     pullRequestText: parseField(persisted, 'pullRequestText', defaults),
     commitMessages: parseField(persisted, 'commitMessages', defaults),
-    streamingAsr: parseField(persisted, 'streamingAsr', defaults),
     autoUpdateCheck: parseField(persisted, 'autoUpdateCheck', defaults),
     localHostEnabled: parseField(persisted, 'localHostEnabled', defaults),
     phoneAccess: parseField(persisted, 'phoneAccess', defaults),

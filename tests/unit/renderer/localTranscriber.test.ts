@@ -1,13 +1,13 @@
 // @vitest-environment node
 import { deferred } from '../../fixtures/deferred'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { OpenRouterTranscriber, TranscriptionError, type TranscribeOptions, type TranscriptionBridge } from '../../../src/renderer/src/transcription/openRouterTranscriber'
+import { LocalTranscriber, type TranscribeOptions, type TranscriptionBridge } from '../../../src/renderer/src/transcription/localTranscriber'
 import { transcriptionTimeoutMs, type TranscriptionFailureReason } from '../../../src/shared/contracts'
 import { TRANSCRIPTION_SAMPLE_RATE } from '../../../src/shared/audio'
 import { encodeWavPcm16 } from '../../../src/shared/wav'
 
 function options(seconds = 2): TranscribeOptions {
-  return { sessionId: 'session', audio: new Float32Array(Math.round(seconds * TRANSCRIPTION_SAMPLE_RATE)).fill(0.25), language: 'auto' }
+  return { sessionId: 'session', audio: new Float32Array(Math.round(seconds * TRANSCRIPTION_SAMPLE_RATE)).fill(0.25) }
 }
 function harness(overrides: Partial<TranscriptionBridge> = {}) {
   const bridge: TranscriptionBridge = {
@@ -15,12 +15,12 @@ function harness(overrides: Partial<TranscriptionBridge> = {}) {
     cancelTranscription: vi.fn(async () => undefined),
     ...overrides,
   }
-  const client = new OpenRouterTranscriber({ bridge, createRequestId: () => 'request' })
+  const client = new LocalTranscriber({ bridge, createRequestId: () => 'request' })
   return { client, bridge }
 }
 afterEach(() => vi.useRealTimers())
 
-describe('OpenRouterTranscriber', () => {
+describe('LocalTranscriber', () => {
   it.each([2, 4.4, 0.0000625, 100])('encodes WAV and uses a bounded integer timeout for %s seconds', async (seconds) => {
     const { client, bridge } = harness()
     const request = options(seconds)
@@ -33,7 +33,7 @@ describe('OpenRouterTranscriber', () => {
     client.dispose()
   })
 
-  it.each<TranscriptionFailureReason>(['unconfigured', 'unauthorized', 'billing', 'rate-limited', 'timeout', 'http', 'network', 'cancelled', 'malformed'])('retains the %s failure reason', async (reason) => {
+  it.each<TranscriptionFailureReason>(['model-not-ready', 'failed', 'timeout', 'cancelled', 'malformed'])('retains the %s failure reason', async (reason) => {
     const { client } = harness({ transcribe: vi.fn(async () => ({ ok: false as const, reason })) })
     await expect(client.transcribe(options())).rejects.toMatchObject({ name: 'TranscriptionError', reason })
     client.dispose()
@@ -53,7 +53,7 @@ describe('OpenRouterTranscriber', () => {
     client.dispose()
   })
 
-  it('does not send an upload cancelled before the bridge is called', async () => {
+  it('does not send a request cancelled before the bridge is called', async () => {
     const { client, bridge } = harness()
     const pending = client.transcribe(options())
     const rejection = expect(pending).rejects.toMatchObject({ reason: 'cancelled' })
@@ -79,7 +79,7 @@ describe('OpenRouterTranscriber', () => {
   it('settles synchronous bridge errors without leaking pending timers', async () => {
     vi.useFakeTimers()
     const { client, bridge } = harness({ transcribe() { throw new Error('IPC unavailable') } })
-    await expect(client.transcribe(options())).rejects.toBeInstanceOf(TranscriptionError)
+    await expect(client.transcribe(options())).rejects.toMatchObject({ name: 'TranscriptionError', reason: 'failed' })
     expect(vi.getTimerCount()).toBe(0)
     client.dispose()
     expect(bridge.cancelTranscription).not.toHaveBeenCalled()

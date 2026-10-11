@@ -223,7 +223,7 @@ test('publishes private shell state, retries and discards, remembers placement a
     await showState('stop failed', 'failed', { kept: true })
     const firstFailure = (await read()).since as number
     await command('retry')
-    await expect(launched.page.getByText('Try again did not get through.', { exact: false })).toBeVisible()
+    await expect(launched.page.getByText('Try again failed too.', { exact: false })).toBeVisible()
     await expect.poll(async () => (await read()).since as number).toBeGreaterThan(firstFailure)
     await showState('retry failed', 'failed', { kept: true })
     await command('retry')
@@ -279,7 +279,7 @@ test('publishes private shell state, retries and discards, remembers placement a
     await showState('stop to discard', 'failed', { kept: true })
     const beforeDiscardRetry = (await read()).since as number
     await command('retry')
-    await expect(launched.page.getByText('Try again did not get through.', { exact: false })).toBeVisible()
+    await expect(launched.page.getByText('Try again failed too.', { exact: false })).toBeVisible()
     await expect.poll(async () => (await read()).since as number).toBeGreaterThan(beforeDiscardRetry)
     await showState('retry before discard', 'failed', { kept: true })
     await command('discard')

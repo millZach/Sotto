@@ -6,20 +6,26 @@ import {
 import {
   MICROPHONE_ENSURE_ACCESS,
   TRANSCRIPTION_CANCEL,
-  TRANSCRIPTION_CHECK_KEY,
+  OPENROUTER_CHECK_KEY,
+  SPEECH_MODEL_DOWNLOAD,
+  SPEECH_MODEL_GET_STATUS,
   TRANSCRIPTION_TRANSCRIBE
 } from '../../src/shared/channels'
 import { createIpcHarness } from '../fixtures/ipcHarness'
 
 describe('IPC validation and lifecycle', () => {
-  it('forwards hosted transcription over dedicated channels and rejects oversized or malformed audio', async () => {
+  it('forwards transcription, the speech model and the key check over dedicated channels and rejects oversized or malformed audio', async () => {
       const harness = createIpcHarness()
       harness.cleanup()
       const transcription = {
-        transcribe: vi.fn(async () => ({ ok: true as const, text: 'hosted text' })),
+        transcribe: vi.fn(async () => ({ ok: true as const, text: 'local text' })),
         cancel: vi.fn(),
-        checkKey: vi.fn(async () => ({ ok: true as const })),
       }
+      const speechModel = {
+        status: vi.fn(() => ({ state: 'downloading' as const, receivedBytes: 1_000, totalBytes: 2_000 })),
+        download: vi.fn(),
+      }
+      const openRouterKey = { check: vi.fn(async () => ({ ok: true as const })) }
       registerIpc(harness.ipc, {
         settings: harness.settings,
         history: harness.history,
@@ -28,16 +34,26 @@ describe('IPC validation and lifecycle', () => {
         app: harness.app,
         trustedSenders: () => [{ role: 'main', webContents: harness.trustedContents, url: harness.trustedUrl }],
         transcription,
+        speechModel,
+        openRouterKey,
       })
 
       const wav = new ArrayBuffer(1_024)
       await expect(harness.ipc.invoke(TRANSCRIPTION_TRANSCRIBE, { requestId: 'r1', wav, timeoutMs: 4_000 }))
-        .resolves.toEqual({ ok: true, text: 'hosted text' })
+        .resolves.toEqual({ ok: true, text: 'local text' })
       expect(transcription.transcribe).toHaveBeenCalledWith({ requestId: 'r1', wav, timeoutMs: 4_000 })
 
       await expect(harness.ipc.invoke(TRANSCRIPTION_CANCEL, 'r1')).resolves.toEqual({ ok: true })
       expect(transcription.cancel).toHaveBeenCalledWith('r1')
-      await expect(harness.ipc.invokeArgs(TRANSCRIPTION_CHECK_KEY, [])).resolves.toEqual({ ok: true })
+      await expect(harness.ipc.invokeArgs(OPENROUTER_CHECK_KEY, [])).resolves.toEqual({ ok: true })
+      expect(openRouterKey.check).toHaveBeenCalledOnce()
+      await expect(harness.ipc.invokeArgs(SPEECH_MODEL_GET_STATUS, [])).resolves.toEqual({
+        state: 'downloading',
+        receivedBytes: 1_000,
+        totalBytes: 2_000,
+      })
+      await expect(harness.ipc.invokeArgs(SPEECH_MODEL_DOWNLOAD, [])).resolves.toEqual({ ok: true })
+      expect(speechModel.download).toHaveBeenCalledOnce()
       await expect(harness.ipc.invokeArgs(MICROPHONE_ENSURE_ACCESS, [])).resolves.toBe(true)
 
       // A header-only buffer, an unbounded one, and a non-buffer payload are all
@@ -55,7 +71,7 @@ describe('IPC validation and lifecycle', () => {
       expect(transcription.transcribe).toHaveBeenCalledOnce()
     })
 
-  it('reports transcription as unconfigured when no service is wired', async () => {
+  it('reports the speech model as not ready when no service is wired', async () => {
       const harness = createIpcHarness()
 
       await expect(
@@ -64,8 +80,13 @@ describe('IPC validation and lifecycle', () => {
           wav: new ArrayBuffer(1_024),
           timeoutMs: 4_000,
         }),
-      ).resolves.toEqual({ ok: false, reason: 'unconfigured' })
-      await expect(harness.ipc.invokeArgs(TRANSCRIPTION_CHECK_KEY, [])).resolves.toEqual({
+      ).resolves.toEqual({ ok: false, reason: 'model-not-ready' })
+      await expect(harness.ipc.invokeArgs(SPEECH_MODEL_GET_STATUS, [])).resolves.toEqual({ state: 'missing' })
+      await expect(harness.ipc.invokeArgs(SPEECH_MODEL_DOWNLOAD, [])).resolves.toEqual({
+        ok: false,
+        reason: 'unavailable',
+      })
+      await expect(harness.ipc.invokeArgs(OPENROUTER_CHECK_KEY, [])).resolves.toEqual({
         ok: false,
         reason: 'unconfigured',
       })

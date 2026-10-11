@@ -48,7 +48,7 @@ export async function owlProfileRoundTrip(profile: string) {
   agents.threadDrafts.push({ threadId: 'retired', draftId: '99999999-9999-4999-8999-999999999999', text: 'Synthetic parked Watcher history draft',
     attachments: [], requestId: null, updatedAt: centerTime })
   await writeFile(join(profile, 'agents.json'), JSON.stringify(agents))
-  await settings.update({ hotkey: 'Control+Alt+O', language: 'fr', watcherInFlightLimit: 6, historyEnabled: true })
+  await settings.update({ hotkey: 'Control+Alt+O', autoPaste: false, watcherInFlightLimit: 6, historyEnabled: true })
   await credentials.set('formatting', 'synthetic-profile-key')
 
   async function loadAndSave(watcherEnabled: boolean) {

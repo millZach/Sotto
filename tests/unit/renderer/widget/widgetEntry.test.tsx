@@ -472,7 +472,7 @@ describe('WidgetEntry', () => {
 
     emit(snapshot({ status: 'error', sessionId: 'announce', code: 'TRANSCRIPTION_FAILED' }))
     expect(polite).toBeEmptyDOMElement()
-    expect(assertive).toHaveTextContent('Couldn’t transcribe. Sotto did not get usable text back. The recording was not kept. Dictate again.')
+    expect(assertive).toHaveTextContent('Couldn’t transcribe. The speech model could not transcribe this recording. The recording was not kept. Dictate again.')
     expect(assertive.querySelector('[role="meter"], time, [role="progressbar"]')).toBeNull()
 
     emit(snapshot({ status: 'idle' }))

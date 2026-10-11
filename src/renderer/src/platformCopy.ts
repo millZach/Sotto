@@ -38,7 +38,7 @@ const PLATFORM_COPY: Readonly<Record<SottoPlatform, PlatformCopy>> = Object.free
       'Sotto is clipboard first: successful text is always copied. Automatic paste may be blocked in elevated, protected, or password fields and applications with custom input handling. When that happens, paste manually with Ctrl+V.',
     accessibilityHelp: null,
     openRouterKeyUnreadable:
-      'Sotto could not read the saved OpenRouter key. Nothing was deleted. Enter the key again in Settings → Transcription.',
+      'Sotto could not read the saved OpenRouter key. Nothing was deleted. Enter the key again in Settings → Cleanup.',
     homeMicrophonePermissionDenied:
       'Microphone access is off. Check Windows privacy settings, then try again.',
     homeRequestingPermissionDetail: 'Windows may ask for access.',
@@ -57,7 +57,7 @@ const PLATFORM_COPY: Readonly<Record<SottoPlatform, PlatformCopy>> = Object.free
     settingsStartMinimizedDescription: 'Open directly in the tray when Sotto launches.',
     widgetMicrophoneBlockedDetail: 'Allow microphone access in Windows Settings.',
     widgetPermissionPromptDetail: 'Approve access in Windows',
-    widgetProcessingDetail: 'Sent to OpenRouter, never saved',
+    widgetProcessingDetail: 'Transcribed on this computer, never saved',
   }),
   linux: Object.freeze({
     platform: 'linux',
@@ -67,7 +67,7 @@ const PLATFORM_COPY: Readonly<Record<SottoPlatform, PlatformCopy>> = Object.free
       'Sotto copies your text, then pastes into the focused window on Hyprland, terminals included. If paste does not get through, use Super+V, Omarchy’s universal paste for apps and terminals. Release any held keys first.',
     accessibilityHelp: null,
     openRouterKeyUnreadable:
-      'Sotto could not read the saved OpenRouter key. Nothing was deleted. Unlock your keyring and reopen Sotto, or enter the key again in Settings → Transcription.',
+      'Sotto could not read the saved OpenRouter key. Nothing was deleted. Unlock your keyring and reopen Sotto, or enter the key again in Settings → Cleanup.',
     homeMicrophonePermissionDenied:
       'Microphone access is off. Check your microphone access, then try again.',
     homeRequestingPermissionDetail: 'Allow microphone access if asked.',
@@ -86,7 +86,7 @@ const PLATFORM_COPY: Readonly<Record<SottoPlatform, PlatformCopy>> = Object.free
     settingsStartMinimizedDescription: 'Open directly in the tray when Sotto launches.',
     widgetMicrophoneBlockedDetail: 'Allow microphone access if asked.',
     widgetPermissionPromptDetail: 'Allow microphone access if asked',
-    widgetProcessingDetail: 'Sent to OpenRouter, never saved',
+    widgetProcessingDetail: 'Transcribed on this computer, never saved',
   }),
   darwin: Object.freeze({
     platform: 'darwin',
@@ -97,7 +97,7 @@ const PLATFORM_COPY: Readonly<Record<SottoPlatform, PlatformCopy>> = Object.free
     accessibilityHelp:
       'Automatic paste needs two macOS permissions: System Settings > Privacy & Security > Accessibility, and System Settings > Privacy & Security > Automation, where Sotto must be allowed to control System Events. Until both are granted, transcripts are copied to the clipboard instead and you can paste them manually with ⌘V. After an update, if paste still fails, remove Sotto from the Accessibility list and add it again.',
     openRouterKeyUnreadable:
-      'Sotto could not read the saved OpenRouter key. Nothing was deleted. Quit and reopen Sotto, then allow Keychain access when macOS asks, or enter the key again in Settings → Transcription.',
+      'Sotto could not read the saved OpenRouter key. Nothing was deleted. Quit and reopen Sotto, then allow Keychain access when macOS asks, or enter the key again in Settings → Cleanup.',
     homeMicrophonePermissionDenied:
       'Microphone access is off. Check System Settings > Privacy & Security > Microphone, then try again.',
     homeRequestingPermissionDetail: 'macOS may ask for access.',
@@ -118,7 +118,7 @@ const PLATFORM_COPY: Readonly<Record<SottoPlatform, PlatformCopy>> = Object.free
     settingsStartMinimizedDescription: 'Open directly in the menu bar when Sotto launches.',
     widgetMicrophoneBlockedDetail: 'Allow microphone access in System Settings.',
     widgetPermissionPromptDetail: 'Approve access in macOS',
-    widgetProcessingDetail: 'Sent to OpenRouter, never saved',
+    widgetProcessingDetail: 'Transcribed on this computer, never saved',
   }),
 })
 
