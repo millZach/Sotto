@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
+import { readdir, readFile, unlink } from 'node:fs/promises'
 import { z } from 'zod'
 import { agentAttachmentHandleSchema, agentAttachmentSchema, agentFollowupSchema, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS,
   type AgentAttachmentHandle, type AgentFollowup } from '../../shared/agents'
@@ -53,7 +54,7 @@ export class FollowupStore {
   private active: (threadId: string) => boolean = () => true
   private tail: Promise<unknown> = Promise.resolve()
   private readonly store: AtomicJsonStore<Stored>
-  constructor(directory: string, private readonly historyEnabled: () => boolean = () => true, private readonly isWatcherThread: (id: string) => boolean = () => false, private readonly watcherEnabled: () => boolean = () => true) {
+  constructor(private readonly directory: string, private readonly historyEnabled: () => boolean = () => true, private readonly isWatcherThread: (id: string) => boolean = () => false, private readonly watcherEnabled: () => boolean = () => true) {
     this.store = new AtomicJsonStore<Stored>(join(directory, 'followups.json'), storedSchema.parse, () => ({ items: [], receipts: [] }))
   }
   /**
@@ -63,7 +64,10 @@ export class FollowupStore {
    */
   async load(stage?: StageInline, kept: (handle: AgentAttachmentHandle) => boolean = () => true, active: (threadId: string) => boolean = () => true): Promise<void> {
     this.active = active
-    const stored = await this.store.read()
+    await this.cleanPrivateCopies()
+    const privateCorruption = !this.historyEnabled() && this.watcherEnabled()
+      && this.hasPrivateWords(await this.readCopy(join(this.directory, 'followups.json')))
+    const stored = await (privateCorruption ? this.store.peek() : this.store.read())
     const items: State['items'] = []
     const lost = new Set<string>()
     for (const item of stored.items) {
@@ -134,7 +138,40 @@ export class FollowupStore {
       state.receipts = receipts.filter(receipt => !this.active(receipt.threadId) || ordinary.has(receipt))
     })
   }
-  privacyChanged(): Promise<void> { return this.change(() => undefined) }
+  async privacyChanged(): Promise<void> { await this.change(() => undefined); await this.cleanPrivateCopies() }
+  private async readCopy(path: string): Promise<string> {
+    try { return await readFile(path, 'utf8') } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return ''; throw error }
+  }
+  private privateItem(item: unknown): boolean {
+    if (!item || typeof item !== 'object') return false
+    const value = item as { watcherOperationId?: unknown; threadId?: unknown }
+    return value.watcherOperationId !== undefined || typeof value.threadId === 'string' && this.isWatcherThread(value.threadId) && this.active(value.threadId)
+  }
+  private hasPrivateWords(contents: string): boolean {
+    try { const value = JSON.parse(contents) as { items?: unknown }; if (Array.isArray(value.items)) return value.items.some(item => this.privateItem(item)) }
+    catch { /* Damaged JSON can still name a private item before its broken boundary. */ }
+    if (/(?<!\\)"watcherOperationId"\s*:/u.test(contents)) return true
+    for (const match of contents.matchAll(/(?<!\\)"threadId"\s*:\s*("(?:[^"\\]|\\.)*")/gu)) {
+      const threadId: unknown = JSON.parse(match[1]!)
+      if (typeof threadId === 'string' && this.isWatcherThread(threadId) && this.active(threadId)) return true
+    }
+    return false
+  }
+  private async cleanPrivateCopies(): Promise<void> {
+    if (this.historyEnabled() || !this.watcherEnabled()) return
+    const names = await readdir(this.directory).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return []; throw error })
+    for (const name of names) if (/^followups\.json\.(?:tmp|corrupt)-\d+-[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/u.test(name)) {
+      const path = join(this.directory, name), contents = await this.readCopy(path)
+      if (!this.hasPrivateWords(contents)) continue
+      let value: { items: unknown[]; [key: string]: unknown }
+      try { value = JSON.parse(contents) as typeof value }
+      catch { await unlink(path).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error }); continue }
+      if (!Array.isArray(value.items)) { await unlink(path).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error }); continue }
+      // Keep ordinary saved queue items, even when another part of this backup fails its schema.
+      value.items = value.items.filter(item => !this.privateItem(item))
+      await new AtomicJsonStore(path, input => input, () => ({})).write(value)
+    }
+  }
   cancelWatcher(operationIds: ReadonlySet<string>): Promise<void> {
     return this.change(state => { state.items = state.items.filter(item => !item.watcherOperationId || !operationIds.has(item.watcherOperationId)
       || item.status === 'dispatching' || item.status === 'uncertain') })
