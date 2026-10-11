@@ -1,6 +1,6 @@
 # Linux main-window minimum
 
-October 11, 2026. Follow-up to [#833](https://github.com/millZach/Sotto/issues/833), on `fix/linux-window-minimum`, initially based on `2bcc127a` and merged with main `73e4f8c8` after its guide edit overlapped this change.
+October 11, 2026. Follow-up to [#833](https://github.com/millZach/Sotto/issues/833), on `fix/linux-window-minimum`, initially based on `2bcc127a` and merged with main `73e4f8c8` after its guide edit overlapped this change. Merge `fa48a2e6` then brought in main `e1785ce2` after #932 changed the same Watcher fixture.
 
 ## Cause and correction
 
@@ -10,7 +10,7 @@ Linux alone now requests the transparent native surface. The main window keeps i
 
 ## Native proof
 
-**VERIFIED on forge:** the built, unpackaged Sotto 0.1.37, Electron 43.1.0 and Hyprland 0.56.2 on native Wayland. The main build's SHA-256 is `986dea929097b7588f7225ee0bd0b502b96beb7f7a117cd61e694ef0d978006e`; the source commit in the final observations is `15e8408e`, with the harness review fixes in the working tree. This build includes the merged Omarchy theme work.
+**VERIFIED on forge:** the built, unpackaged Sotto 0.1.37, Electron 43.1.0 and Hyprland 0.56.2 on native Wayland. The main build's SHA-256 is `986dea929097b7588f7225ee0bd0b502b96beb7f7a117cd61e694ef0d978006e`; the source commit in the final observations is `91e228e9`, including the harness review fixes and private bus configuration. This build includes the merged Omarchy theme work.
 
 The isolated Electron probe produced these actual renderer/content floors after a 100×100 compositor resize, with minimum constraints of 820×560 in every case:
 
@@ -32,7 +32,7 @@ The four 820×560 frames were captured with grim on the owned nested output and 
 - [Light Settings](../../artifacts/linux-window-minimum/minimum-settings-light.png)
 - [Dark Settings](../../artifacts/linux-window-minimum/minimum-settings-dark.png)
 
-[proof.txt](../../artifacts/linux-window-minimum/proof.txt) records the passing native run and cleanup: sizing PID 1079959, session PID 1079973 and private journey PID 1079994 were stopped with the proof slice; all recorded PIDs/cgroups were empty. Both owned instance folders and `/tmp/slm-Gx19zJ` were removed. Prior instances and all four protected live trees, including `.sotto`, were unchanged.
+[proof.txt](../../artifacts/linux-window-minimum/proof.txt) records the passing native run and cleanup: sizing PID 1618118, session PID 1618139 and private journey PID 1618187 were stopped with the proof slice; all recorded PIDs/cgroups were empty. Both owned instance folders and `/tmp/slm-ssjrqJ` were removed. Prior instances and all four protected live trees, including `.sotto`, were unchanged.
 
 The [repeatable harness](../../scripts/verify-linux-window-minimum.mjs) compares Electron options with `--probe`, then drives the built app without changing its minimum. It floats and resizes only the owned main window through the nested Hyprland instance and reads content size from both Electron and the renderer. It checks 1600×1000, 1280×800, 820×560 and a below-minimum request in Light and Dark, with reduced motion enabled. It captures with grim, never the desktop portal.
 
@@ -71,13 +71,13 @@ The current four-name main/preload dependency allowlist must pass before pushing
 
 Main `73e4f8c8` landed the Omarchy theme during this run. Its guide edit conflicted with the minimum sentence; merge `02920367` retains both. The branch is rebuilt and its gates and native proof rerun after that merge. Main also pins the NSIS updater fixture's Windows platform, correcting the 11 baseline Linux unit failures recorded above.
 
-Both Linux follow-up PRs carry the isolated Watcher fixture publication repair found by #932's first Windows gate: save `agents.json` through the same AtomicJsonStore path production uses, so a fast same-size write changes file identity and cannot reuse a cached old host. The changed-host rejection and production cache stay intact. A controlled unchanged-timestamp reproduction fails with the former in-place writer and passes with atomic replacement; all 12 permanent profile cases pass in the focused run. The final native proof above was repeated after the merge and both harness review fixes. The four refreshed captures were opened and inspected; Settings now includes the Omarchy entries from main, falling back to Sotto because the isolated HOME has no Omarchy palette. The selected extra E2E run at that stage still had the same 3 passes and 1 raw-launch failure, corrected below; its private root and all owned processes were removed, and all four protected live trees remained unchanged. Post-merge typecheck and lint passed. The full two-worker suite is being rerun sequentially with notices; its final counts and the latest-head Windows CI results are recorded in [PR #934](https://github.com/millZach/Sotto/pull/934).
+Both Linux follow-up PRs carry the isolated Watcher fixture publication repair found by #932's first Windows gate: save `agents.json` through the same AtomicJsonStore path production uses, so a fast same-size write changes file identity and cannot reuse a cached old host. The changed-host rejection and production cache stay intact. A controlled unchanged-timestamp reproduction fails with the former in-place writer and passes with atomic replacement; all 12 permanent profile cases pass in the focused run. The final native proof above was repeated after the merge and both harness review fixes. The four refreshed captures were opened and inspected; Settings now includes the Omarchy entries from main, falling back to Sotto because the isolated HOME has no Omarchy palette. The selected extra E2E run at that stage still had the same 3 passes and 1 raw-launch failure, corrected below; its private root and all owned processes were removed, and all four protected live trees remained unchanged. Post-merge typecheck and lint passed. The full two-worker suite was rerun sequentially with notices; its final counts and the latest-head Windows CI results are recorded in [PR #934](https://github.com/millZach/Sotto/pull/934).
 
 ## Finish editor teardown inside the fixture
 
 The first complete post-merge suite had 773 files pass and 54 skip (827 total), with all 9,661 tests passing and 192 skipping. Vitest nevertheless exited red because a delayed Tiptap destruction callback ran after jsdom removed `document`, attributed to `threadBranchNotice.test.tsx`. The unchanged isolated file passed its nine cases; the library schedules destruction one tick after unmount, so that isolated pass does not clear the full gate.
 
-The fixture now records both mounted prompt editors and destroys them synchronously after React cleanup, matching the existing queue, skill and file-mention fixtures. The delayed callback sees an already destroyed editor. No production code, test assertion, timer deadline or skip changes. All nine focused cases pass after the repair. The complete two-worker gate is repeated; its final counts and latest-head CI remain in PR #934. The built app and native minimum proof are unaffected by this fixture-only change.
+The fixture now records both mounted prompt editors and destroys them synchronously after React cleanup, matching the existing queue, skill and file-mention fixtures. The delayed callback sees an already destroyed editor. No production code, test assertion, timer deadline or skip changes. All nine focused cases pass after the repair. The complete two-worker gate was repeated; its final counts and latest-head CI remain in PR #934. The built app and native minimum proof are unaffected by this fixture-only change.
 
 ## Isolate the forced-exit fixture
 
@@ -90,7 +90,7 @@ mise exec node@24.21.0 -- npm run build
 mise exec node@24.21.0 -- node scripts/verify-shell-plumbing.mjs tests/e2e/linux-shell-plumbing.spec.ts
 ```
 
-**VERIFIED: 3 tests passed in 13.4 seconds.** The raw app (PID 1455103) published idle, accepted dictation and removed `dictation-state.json` when Electron's real exit event fired. The other two cases also passed. [The curated proof](../../artifacts/linux-window-minimum/shell-plumbing-proof.txt) records the result and cleanup. Owned compositor PID 1453906 and proof PID 1453965 stopped; all recorded PIDs and cgroups were empty, the prior compositor instances survived and `/tmp/sp-rTswvh` was removed. All four protected live trees were unchanged. No assertion, deadline or skip was weakened.
+**VERIFIED: 3 tests passed in 13.4 seconds.** The raw app (PID 1455103) published idle, accepted dictation and removed `dictation-state.json` when Electron's real exit event fired. The other two cases also passed. The refreshed [curated proof](../../artifacts/linux-window-minimum/shell-plumbing-proof.txt) records the final repeat below. Owned compositor PID 1453906 and proof PID 1453965 stopped; all recorded PIDs and cgroups were empty, the prior compositor instances survived and `/tmp/sp-rTswvh` was removed. All four protected live trees were unchanged. No assertion, deadline or skip was weakened.
 
 ## Make the repeated shell proof independent of the desktop
 
@@ -99,3 +99,9 @@ A repeat after the final build passed forced-exit cleanup but exposed another fi
 Both proof runners now use a private D-Bus configuration with no service directories or included session configuration. A fresh session bus alone can still activate installed portal services; this configuration removes that activation path as well as keeping the live bus out of the app. No production option changes.
 
 The complete shell spec passed again with those final checks: **3 passed in 15.2 seconds**. No portal service was activated. Raw PID 1613562 published idle, accepted dictation and removed state on exit. Owned compositor PID 1610601 and proof PID 1610659 stopped, all process/cgroup checks were empty, `/tmp/sp-dPvZSd` was removed and all four protected live trees were unchanged. The curated shell proof is refreshed to this run. The initial 13.4-second run above records the password-store repair separately.
+
+## Final post-merge checks
+
+At merge `fa48a2e6`, under `mise exec node@24.21.0`, the sequential typecheck, lint, full two-worker Linux suite, notices and build all passed. The suite had **9,661 tests passed, 192 skipped; 773 files passed, 54 skipped (827 total)** in **546.55 seconds**, with no failures or unhandled errors. Notices verified **189 components**. The later refinements change only standalone proof runners and the E2E spec excluded from that suite; typecheck, lint, notices and build were repeated after them and all passed.
+
+The moved minimum harness passed on the final proof code at `91e228e9`, with all eight measurements and the below-minimum clamp unchanged. Its private bus activated no portal services. The four existing grim captures are byte-for-byte unchanged and were opened and inspected. The current proof and sizes record the final source, build hash and complete cleanup. The complete shell spec also passes with the final private bus, as recorded above. Every review finding is corrected; no top-level `tools/` folder remains. The final build-output dependency allowlist passed before push. Final-head Windows CI results are recorded in [PR #934](https://github.com/millZach/Sotto/pull/934); the pull request stays open and unmerged.
