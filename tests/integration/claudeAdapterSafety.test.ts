@@ -297,6 +297,10 @@ describe('Claude recovery and safety', () => {
     { evidence: undefined, order: ['user', 'assistant'] },
     { evidence: 'result', order: ['assistant', 'user'] },
   ])('takes a slash command Claude Code answers itself without an echo (evidence: $evidence)', async ({ evidence, order }) => {
+    // These cases assert live-frame order. The transcript is written before the frames, so its
+    // automatic tail could otherwise recover the prompt first. The next case covers that recovery.
+    vi.spyOn(ClaudeSessionLog.prototype, 'poll').mockResolvedValue()
+    await f.adapter.pollSessionLogs()
     await writeFile(join(f.root, 'script.json'), JSON.stringify({ localCommand: chromeReply, evidence }))
     expect(await f.host.execute({ type: 'send', commandId: 'chrome', messageId: 'chrome', threadId: id, text: '/chrome' })).toEqual({ accepted: true })
     const messages = (await thread()).messages
