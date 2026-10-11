@@ -100,8 +100,9 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   // re-renders the transcript and header synchronously on every keystroke.
   const paneHasDraft = useSyncExternalStore(store.subscribe, () => hasDraftContent(store.draft(row.thread.id)))
   const thread = row.thread
-  const master = watcherHeader !== undefined
-  const watched = useWatchedThread(thread.id) && !master
+  // Watcher's own pane carries its own header and composer; it is never itself a watched thread.
+  const ownPane = watcherHeader !== undefined
+  const watched = useWatchedThread(thread.id) && !ownPane
   const closed = isThreadClosed(thread)
   const rowConnected = row.connected
   const ornamentAllowed = rowConnected && !closed && thread.status !== 'error' && thread.requests.length === 0
@@ -179,7 +180,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   ]
   const focusAnswerComposer = (): void => { document.getElementById(promptId)?.focus() }
   return <>
-    {master ? watcherHeader : <header className="thread-workspace__head">
+    {ownPane ? watcherHeader : <header className="thread-workspace__head">
       <div className="thread-workspace__title">
         <ProviderMark provider={row.providerId} name={row.provider} size={16} />
         {watched ? <WatchedBadge size={16} /> : null}
@@ -204,10 +205,10 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     {thread.historySaveNotice ? <p className="agent-error thread-workspace__error" role="alert">{thread.historySaveNotice}</p> : null}
     {thread.requestNotice ? <p className="agent-error thread-workspace__error" role="alert">{thread.requestNotice}</p> : null}
     {error && error !== thread.requestNotice && !deliveryExplains && !answerExplains && !settingsExplains && error !== toolbarExplained && error !== gitExplained ? <p className="agent-error thread-workspace__error" role="alert">{error}</p> : null}
-    <ThreadWebLinks threadId={thread.id} threadTitle={thread.title} focused={focused}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal} watcher={master}>
+    <ThreadWebLinks threadId={thread.id} threadTitle={thread.title} focused={focused}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal} watcher={ownPane}>
       <ThreadRequests kind="permission" row={row} state={state} command={command} blocked={threadBusy ? 'Waiting for Sotto…' : !rowConnected ? `Reconnect ${row.provider} to answer.` : null}
         onAnswer={focusAnswerComposer} />
-      {!isThreadClosed(thread) && !thread.remoteHost ? <CloudIphoneRequest threadId={thread.id} threadTitle={thread.title} onAnswer={focusAnswerComposer} /> : null}
+      {!isThreadClosed(thread) && !thread.remoteHost && !ownPane ? <CloudIphoneRequest threadId={thread.id} threadTitle={thread.title} onAnswer={focusAnswerComposer} /> : null}
       {/* Answers saved for questions no live card shows, such as ones the provider closed while Sotto was shut. */}
       <RequestDraftRecovery owner={{ kind: 'thread', ownerId: thread.id, providerId: row.providerId ?? state.configuration.provider }}
         live={closed ? [] : thread.requests} provider={row.provider}
@@ -218,11 +219,12 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
       {notice}
       <div className="git-action-notice-slot" ref={setGitNoticeSlot} />
       {/* The branch under this thread moved since its last send. Nothing is refused; the notice waits for a draft to continue. */}
-      <ThreadBranchNotice thread={thread} project={row.project} command={command} composing={composing} />
+      {/* Watcher keeps to its own folder; it switches no working copy (ADR-0073). */}
+      {ownPane ? null : <ThreadBranchNotice thread={thread} project={row.project} command={command} composing={composing} />}
       <ThreadRequests kind="question" row={row} state={state} command={command} blocked={threadBusy ? 'Waiting for Sotto…' : !rowConnected ? `Reconnect ${row.provider} to answer.` : null}
         onAnswer={focusAnswerComposer} />
       <ThreadComposer key={thread.id} ornament={ornament} row={row} state={state} command={command} store={store} composerId={promptId} focused={focused} onExplainedError={setToolbarExplained} onSend={() => setFollowSignal(signal => signal + 1)}
-        watcher={master} />
+        watcher={ownPane} />
       {/* The row under the composer is compaction's alone. Side by side it keeps one line even when compaction has
           nothing to say, so panes keep their composers at the same height whether or not one has been compacted. */}
       <div className="thread-pane__meta">

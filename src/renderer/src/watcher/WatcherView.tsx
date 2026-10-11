@@ -45,7 +45,8 @@ function WatcherMeter({ inFlight, limit }: { readonly inFlight: number; readonly
 
 /**
  * More Watcher actions: a small panel under its button, holding Threads in flight, the one setting Watcher has.
- * It saves as it changes, like Settings. Escape or a press outside closes it and returns focus to the button.
+ * It saves as it changes, like Settings. Escape closes it and returns focus to the button; a press outside closes it
+ * and leaves focus where that press put it.
  */
 function WatcherActions({ room, limit }: { readonly room: WatcherRoom; readonly limit: number }): ReactNode {
   const [open, setOpen] = useState(false)
@@ -117,7 +118,6 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
   const efforts = effortChoices(model, reasoning)
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const heading = useRef<HTMLHeadingElement>(null)
   const start = async (): Promise<void> => {
     const provider = model === undefined ? null : watcherProviderOf(model)
     if (model === undefined || provider === null || room.open === null) return
@@ -132,7 +132,7 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
   }
   return <div className="thread-workspace__empty thread-workspace__empty--page watcher-first">
     <WatcherOwl size={30} className="watcher-first__owl" />
-    <h2 ref={heading} tabIndex={-1}>Start Watcher</h2>
+    <h2>Start Watcher</h2>
     <p>Watcher is a thread that starts and briefs your other threads, and keeps an eye on them while they work.</p>
     <p>It runs on your own Codex, Claude Code or Grok Build account, with that provider’s own tools. It asks before it changes anything, and only you answer a thread’s questions and permissions.</p>
     {model === undefined ? <>
@@ -153,7 +153,7 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
 }
 
 /** The current Watcher's real thread pane: its transcript, its request cards and its composer, under Watcher's header. */
-function WatcherMaster({ state, room, threadId, now }: { readonly state: AgentState; readonly room: WatcherRoom; readonly threadId: string; readonly now: number | undefined }): ReactNode {
+function WatcherPane({ state, room, threadId, now }: { readonly state: AgentState; readonly room: WatcherRoom; readonly threadId: string; readonly now: number | undefined }): ReactNode {
   const agents = useAgents()
   const app = useOptionalApp()
   const command = agents.command
@@ -195,12 +195,12 @@ export function WatcherView({ now: fixedNow, updateControl }: {
   const mac = app?.platform === 'darwin'
   const current = room?.state?.current ?? null
   let main: ReactNode
-  if (room === null || room.status === 'unavailable') main = <p className="watcher-room__status" role="status">Watcher is not available in this build. Nothing was started.</p>
+  if (room === null || room.status === 'unavailable') main = <p className="watcher-room__status" role="status">This build cannot reach Watcher yet. Nothing was started. A later Sotto Owl build adds it.</p>
   else if (state === null || room.status === 'loading') main = <p className="watcher-room__status" role="status">{agents.error ?? 'Opening Watcher…'}</p>
   else if (room.error !== null && room.state === null) main = <p className="agent-error watcher-room__status" role="alert">{room.error}</p>
   else if (current === null) main = <WatcherFirstEntry state={state} room={room} />
   else if (room.currentThreadId === null) main = <p className="watcher-room__status" role="status">Opening Watcher…</p>
-  else main = <WatcherMaster state={state} room={room} threadId={room.currentThreadId} now={fixedNow} />
+  else main = <WatcherPane state={state} room={room} threadId={room.currentThreadId} now={fixedNow} />
   return <SidebarChromeProvider updateControl={updateControl}><div className={`management-view threads-view watcher-room${mac ? ' threads-view--mac' : ''}`}>
     <OverviewSidebarFrame label="Overview" title="Watcher">
       {state === null ? <p className="thread-nav__empty">{agents.error ?? 'Preparing agent controls…'}</p>

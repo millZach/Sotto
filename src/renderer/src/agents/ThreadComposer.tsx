@@ -16,7 +16,7 @@ import { SkillPicker, skillOptionId, useSkillPicker } from './SkillPicker'
 import { deliveryFor, deliveryPending, hasDraftContent, queueAdmissionOpen, queuedRevision, submissionStatus, UNCONFIRMED_SUBMISSION, useScreenshotReadPort, useScreenshotReads, useSubmissions, useThreadComposer, type ComposerDraft, type ThreadComposerSnapshot, type SubmissionMode, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
 import type { ThreadRow } from './threadFacts'
 import { followupsFor, ThreadFollowups } from './ThreadFollowups'
-import { PinnedPermission, ThreadOptions } from './ThreadOptions'
+import { ThreadOptions, WatcherPermission } from './ThreadOptions'
 import { listedHosts } from './HostBadge'
 import { BranchToolbar } from './BranchToolbar'
 import { sessionSeenOpen, startOnTyping } from './earlyStart'
@@ -81,8 +81,6 @@ export async function sendThreadRevision(store: ThreadDraftStore, row: ThreadRow
 }
 
 const PERMISSION_INSTRUCTION = 'Allow or deny the request above to continue.'
-/** Watcher's asking mode is pinned; the composer says so where the permissions choice would be (ADR-0073). */
-export const WATCHER_PERMISSION = 'Ask before changes'
 
 /** Every pending permission offers no choice Sotto can send (`permissionChoices: []`): only the provider's app can answer. */
 function permissionsOnlyInProvider(row: ThreadRow): boolean {
@@ -268,10 +266,10 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
           {threadHost ? <span className="thread-host-chip" title={`This thread runs on ${threadHost.kind === 'local' ? 'this computer' : threadHost.name}. New thread chooses the host for new work.`}>
             {threadHost.kind === 'local' ? <Laptop size={14} aria-hidden="true" /> : <Server size={14} aria-hidden="true" />}Runs on {threadHost.kind === 'local' ? 'this computer' : threadHost.name}</span> : null}
           {row.thread.nativeSessionStarted === false || capabilities.configureThread
-            ? <ThreadOptions key={threadId} thread={row.thread} state={state} command={command} turnNote={false} noticeSlot={settingsNotices} pinnedPermission={watcher ? WATCHER_PERMISSION : undefined}
+            ? <ThreadOptions key={threadId} thread={row.thread} state={state} command={command} turnNote={false} noticeSlot={settingsNotices} watcher={watcher}
               {...(editable && !answering && !permission ? { getDraftText: () => store.draft(threadId).text, onDraftText: (text: string) => { caretAfterInsert.current = text.length; edit({ text }); field.current?.focus() } } : {})} />
             : <><span className="thread-prompt__model"><ProviderMark provider={row.providerId} name={row.provider} />{row.model?.name ?? row.provider}<small>{answering ? 'Answer this question' : 'Manual prompt'}</small></span>
-              {watcher ? <PinnedPermission label={WATCHER_PERMISSION} /> : null}</>}
+              {watcher ? <WatcherPermission /> : null}</>}
           {status}
         </div>
         <div className="thread-prompt__actions">
