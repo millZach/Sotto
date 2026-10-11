@@ -195,7 +195,7 @@ const act = () => {
 }
 const timer = setInterval(act, 10)
 const lines = createInterface({ input: process.stdin })
-lines.on('line', line => {
+lines.on('line', async line => {
   const frame = JSON.parse(line); record(frame.request?.subtype ?? frame.type, frame)
   if (frame.type === 'control_request') {
     if (frame.request.subtype === 'initialize') {
@@ -266,8 +266,11 @@ lines.on('line', line => {
     }
     else if (frame.request.subtype === 'interrupt') {
       // interrupt-script.json `error`: close the stopped turn as Claude Code does, with an error result.
-      const error = existsSync(join(root, 'interrupt-script.json')) && JSON.parse(readFileSync(join(root, 'interrupt-script.json'), 'utf8')).error === true
+      const script = existsSync(join(root, 'interrupt-script.json')) ? JSON.parse(readFileSync(join(root, 'interrupt-script.json'), 'utf8')) : {}
+      const error = script.error === true
       output({ type: 'control_response', response: { subtype: 'success', request_id: frame.request_id, response: steered.length ? { still_queued: steered.map(held => held.uuid) } : {} } })
+      // Acknowledging Stop and delivering the turn result are distinct native events.
+      if (script.holdResult) await released(script.holdResult)
       output(error ? { type: 'result', subtype: 'error_during_execution', session_id: session, is_error: true, result: '' } : { type: 'result', subtype: 'success', session_id: session, is_error: false, result: '' })
       turnEnded()
     } else violation('Unknown control request')
