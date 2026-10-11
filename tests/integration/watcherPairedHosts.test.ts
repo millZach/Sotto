@@ -95,7 +95,7 @@ it('starts, reads positions, sends, stops and settles through the owning host wi
   // A stale master projection must not revive participation on the owning host.
   await f.control.updateWatcher(record => {
     const participant = record.requests.find(item => item.id === f.requestId)!.participants[0]!
-    participant.state = 'participating'; participant.automationStopped = false
+    participant.state = 'participating'; delete participant.automationStopped
   })
   const writes = vi.spyOn(f.socket, 'watcherControl')
   expect(await f.call('send_to_thread', afterSettlement)).toMatchObject({ code: 'REQUEST_NOT_ACTIVE' })
