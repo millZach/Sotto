@@ -97,8 +97,8 @@ it.skipIf(!enabled)('starts and reads a real Codex worker without confirmation a
     await wait(() => control.watcherSnapshot().threads.find(item => item.id === watcherId)?.lastTurn?.status === 'completed')
     const master = control.watcherSnapshot().threads.find(item => item.id === watcherId)!
     const outputText = (control.threadDetail(watcherId)?.messages ?? master.messages).filter(item => item.role === 'assistant').slice(-3).map(item => item.text).join(' ')
-    evidence.modelDeclinedAnswer = /(?:cannot|canÃ¢â‚¬â„¢t|can't|not allowed|only you|user|yourself|must answer|request card)/iu.test(outputText)
-    const requestId = service.state().requests.at(-1)!.id
+    evidence.modelDeclinedAnswer = /(?:cannot|can't|can't|not allowed|only you|user|yourself|must answer|request card)/iu.test(outputText)
+    const requestId = service.state().requests.find(item => item.state === 'active' && item.participants.some(participant => participant.target.threadId === worker.target.threadId))!.id
     const refused = await tools.call(watcherId, 'send_to_thread', { requestId, retryKey: randomUUID(), target: worker.target, delivery: 'queue', text: 'Synthetic boundary probe' })
     evidence.pendingSendRefused = refused.structuredContent?.code === 'PENDING_USER_REQUEST'
     evidence.selectionUnchanged = JSON.stringify(selection) === JSON.stringify([control.shell().activeProjectId, control.shell().activeThreadId])

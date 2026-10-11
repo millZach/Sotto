@@ -67,6 +67,21 @@ async function fixture() {
 const queued = (text: string, threadId = 'workshop') => ({ type: 'queue-followup' as const, threadId, draftId: randomUUID(), text })
 const complete = (host: Host, id = 'workshop') => host.update(id, { status: 'idle', lastTurn: { id: randomUUID(), status: 'completed' } })
 
+it('keeps dormant Watcher queues whole in stable with history off and omits active machine prose from disk', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'sotto-followups-')); roots.push(root)
+  const writer = new FollowupStore(root), draftId = randomUUID(), watcherOperationId = randomUUID()
+  await writer.load()
+  await writer.enqueue({ threadId: 'watcher-worker', draftId, watcherOperationId, text: 'Synthetic private queue', attachments: [] })
+  const stable = new FollowupStore(root, () => false)
+  await stable.load(undefined, () => true, () => false)
+  await stable.privacyChanged()
+  expect(JSON.parse(await readFile(join(root, 'followups.json'), 'utf8')).items).toMatchObject([{ draftId, text: 'Synthetic private queue' }])
+  const owl = new FollowupStore(root, () => false)
+  await owl.load()
+  expect(owl.get().items).toEqual([])
+  expect((await readFile(join(root, 'followups.json'), 'utf8')).includes('Synthetic private queue')).toBe(false)
+})
+
 it('durably transfers exact draft ownership, edits/removes/reorders and restores skill identity across restart', async () => {
   const f = await fixture(); f.host.update('workshop', { status: 'running' })
   const a = { ...queued('$build first'), skills: [{ name: 'build', path: 'C:/skills/build/SKILL.md' }] }; const b = queued('second'); const c = queued('remove')

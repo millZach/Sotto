@@ -154,6 +154,7 @@ export const watcherParticipantSchema = participation.extend({ target: watcherTh
   promptCount: z.number().int().min(0).max(WATCHER_PROMPTS_PER_THREAD) }).strict()
 export const watcherRequestSchema = z.object({ id: z.uuid(), watcher: watcherThreadTargetSchema, rootUserMessageId: id,
   state: z.enum(['active', 'stopped', 'closed']), createdAt: time, closedAt: time.nullable(),
+  userFollowups: z.array(z.object({ draftId: z.uuid(), messageId: id.optional() }).strict()).max(1_000).optional(),
   participants: z.array(watcherParticipantSchema).max(1_000) }).strict()
 export const watcherOperationSchema = z.object({ id: z.uuid(), requestId: z.uuid(), retryKey: z.uuid(), digest: z.string().regex(/^[a-f0-9]{64}$/u),
   action: z.enum(['start', 'send', 'stop', 'settle']), target: watcherThreadTargetSchema, generation: counter,

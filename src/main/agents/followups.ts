@@ -108,7 +108,7 @@ export class FollowupStore {
     const task = this.tail.catch(() => undefined).then(async () => {
       const next = this.get()
       if (update(next) === false) return
-      await this.store.write({ ...next, items: next.items.filter(item => this.historyEnabled() || !item.watcherOperationId && !this.isWatcherThread(item.threadId)).map(item => this.dormant.get(item.id) ?? item) }); this.state = next
+      await this.store.write({ ...next, items: next.items.filter(item => !this.active(item.threadId) || this.historyEnabled() || !item.watcherOperationId && !this.isWatcherThread(item.threadId)).map(item => this.dormant.get(item.id) ?? item) }); this.state = next
     })
     this.tail = task
     return task
