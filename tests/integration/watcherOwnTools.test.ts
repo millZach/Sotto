@@ -99,6 +99,35 @@ function assertConfiguration(provider: keyof typeof factories, records: Recorded
 }
 
 for (const provider of Object.keys(factories) as (keyof typeof factories)[]) describe(`${provider} watcher own tools`, () => {
+  it('discovers and sends selected native skills while retaining the launch profile', async () => {
+    const f = await factories[provider](); cleanups.push(f.cleanup)
+    const id = randomUUID(), tools = await attach(f.host, f.root, id, f.projectId, provider)
+    const path = join(f.root, 'SKILL.md')
+    if (provider === 'codex') await writeFile(join(f.root, 'script.json'), JSON.stringify({
+      skills: [{ name: 'check', description: 'Synthetic', path, scope: 'repo', enabled: true }],
+    }))
+    else await writeFile(join(f.root, 'skills.json'), JSON.stringify(provider === 'claude'
+      ? [{ name: 'check', description: 'Synthetic (project)' }]
+      : { skills: [{ name: 'check', description: 'Synthetic', source: { path, type: 'project' }, userInvocable: true }] }))
+    await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Synthetic', path: f.root })
+    await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Watcher', modelId: f.modelId })
+    const catalog = await f.host.listThreadSkills!(id, true)
+    expect(catalog).toMatchObject({ threadId: id, providerId: provider, status: 'ready' })
+    const skill = catalog.skills[0]!
+    expect(skill.name).toBe('check')
+    expect((await f.host.execute({ type: 'send', commandId: randomUUID(), threadId: id, messageId: randomUUID(),
+      text: '$check verify', skills: [{ name: skill.name, path: skill.path }] })).accepted).toBe(true)
+    const records = await f.driver.requests()
+    const prompt = records.find(record => record.method === (provider === 'codex' ? 'turn/start' : provider === 'claude' ? 'user' : 'session/prompt'))!
+    if (provider === 'codex') expect(prompt.params!.input).toContainEqual({ type: 'skill', name: 'check', path })
+    else expect(JSON.stringify(prompt.params)).toContain('/check verify')
+    expect(tools.revoke).not.toHaveBeenCalled()
+    await writeFile(join(f.root, 'agents.json'), '{')
+    await expect(f.host.listThreadSkills!(id, true)).rejects.toThrow('saved identity')
+    expect(tools.revoke).toHaveBeenCalledWith(id)
+  })
+
   it('keeps tools, asking mode and instructions through early start, send, settings, replacement and cold resume', async () => {
     const f = await factories[provider](); cleanups.push(f.cleanup)
     const id = randomUUID(), tools = await attach(f.host, f.root, id, f.projectId, provider)
