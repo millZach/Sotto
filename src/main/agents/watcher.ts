@@ -467,8 +467,8 @@ export class WatcherService implements WatcherControlHooks {
         if (create.reasoningEffort && !model.reasoningEfforts?.includes(create.reasoningEffort)) refuse('INVALID_INPUT', 'Choose an effort this worker model offers.')
         this.permission(model, create.permission)
         this.prunePages()
-        if (create.workingCopy.kind === 'existing-worktree' && !this.copyChoices.has(create.workingCopy.choiceId)
-          || create.baseRefChoiceId && !this.copyChoices.has(create.baseRefChoiceId)) refuse('WORKING_COPY_CHANGED', 'Read the working-copy choices again before starting this thread.')
+        if (create.workingCopy.kind === 'existing-worktree' && !this.copyChoices.get(create.workingCopy.choiceId)?.path
+          || create.baseRefChoiceId && !this.copyChoices.get(create.baseRefChoiceId)?.branch) refuse('WORKING_COPY_CHANGED', 'Read the working-copy choices again before starting this thread.')
       }
       const previous = request.participants.find(item => key(item.target) === key(target))
       if (send && previous?.state === 'relinquished') refuse('REQUEST_NOT_ACTIVE', 'Watcher settled this participation. It will not send another prompt for this request.')
@@ -686,8 +686,8 @@ export class WatcherService implements WatcherControlHooks {
     const copy = input.workingCopy.kind === 'existing-worktree' ? this.copyChoices.get(input.workingCopy.choiceId) : undefined
     const base = input.baseRefChoiceId ? this.copyChoices.get(input.baseRefChoiceId) : undefined
     if (copy && (copy.projectId !== input.project.projectId || copy.revision !== revision || !options.worktrees.some(item => item.path === copy.path))
-      || base && (base.projectId !== input.project.projectId || base.revision !== revision) || input.workingCopy.kind === 'existing-worktree' && !copy
-      || input.baseRefChoiceId && !base || !options.isGit && input.workingCopy.kind !== 'shared') refuse('WORKING_COPY_CHANGED', 'The working-copy choices changed. Read them again. Nothing was started.')
+      || base && (base.projectId !== input.project.projectId || base.revision !== revision) || input.workingCopy.kind === 'existing-worktree' && !copy?.path
+      || input.baseRefChoiceId && !base?.branch || !options.isGit && input.workingCopy.kind !== 'shared') refuse('WORKING_COPY_CHANGED', 'The working-copy choices changed. Read them again. Nothing was started.')
     if (copy && this.options.control.watcherSnapshot().threads.some(thread => thread.worktree?.path === copy.path)) refuse('WORKING_COPY_UNAVAILABLE', 'That working copy is already used by a thread.')
     return { workingCopy: input.workingCopy.kind === 'shared' ? 'shared' as const : 'independent' as const,
       ...(copy?.path ? { existingWorktreePath: copy.path } : {}), ...(base?.branch ? { baseBranch: base.branch } : {}) }

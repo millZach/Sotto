@@ -11,6 +11,7 @@ import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
 import { deferred } from '../fixtures/deferred'
 import { PIXEL_PNG } from '../fixtures/stagedImages'
+import { initializeGitRepository } from '../fixtures/gitRepository'
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
@@ -717,6 +718,36 @@ it('keeps working-copy choices and base refs in the same snapshot across pages',
   const second = await f.call('list_working_copies', { ...input, cursor: first.nextCursor })
   expect(second).toMatchObject({ status: 'ok', revision: first.revision, baseRefs: first.baseRefs })
   expect(options).toHaveBeenCalledTimes(1)
+})
+
+it.each(['working-copy-as-base', 'base-as-working-copy'])('refuses a %s choice before admission or creation', async role => {
+  const f = await fixture()
+  vi.spyOn(f.workspace.host, 'workingCopyOptions').mockResolvedValue({ isGit: true, currentBranch: 'main', branches: ['main'],
+    worktrees: [{ path: f.project.path, branch: 'main' }] })
+  const choices = await f.call('list_working_copies', { project: f.start().project })
+  if (choices.status !== 'ok' || !('choices' in choices)) throw new Error('copy read refused')
+  const copy = choices.choices.find(item => item.kind === 'existing-worktree')!, base = choices.baseRefs[0]!
+  const record = f.control.watcherRecord(), commands = f.workspace.adapters.codex.commands.length
+  const selection = [f.control.shell().activeProjectId, f.control.shell().activeThreadId]
+  const input = role === 'working-copy-as-base' ? { ...f.start(), baseRefChoiceId: copy.choiceId }
+    : { ...f.start(), workingCopy: { kind: 'existing-worktree', choiceId: base.choiceId } }
+  expect(await f.call('start_thread', input)).toMatchObject({ status: 'refused', code: 'WORKING_COPY_CHANGED' })
+  expect(f.control.watcherRecord()).toEqual(record)
+  expect(f.workspace.adapters.codex.commands).toHaveLength(commands)
+  expect([f.control.shell().activeProjectId, f.control.shell().activeThreadId]).toEqual(selection)
+})
+
+it('passes a valid branch choice to creation and retains it in the receipt', async () => {
+  const f = await fixture()
+  await initializeGitRepository(f.project.path)
+  const choices = await f.call('list_working_copies', { project: f.start().project })
+  if (choices.status !== 'ok' || !('baseRefs' in choices)) throw new Error('copy read refused')
+  const base = choices.baseRefs.find(item => item.name === 'main')!
+  const create = vi.spyOn(f.control, 'commandFromWatcher')
+  expect(await f.call('start_thread', { ...f.start(), baseRefChoiceId: base.choiceId }))
+    .toMatchObject({ status: 'ok', effectiveChoices: { baseRefChoiceId: base.choiceId } })
+  expect(create).toHaveBeenCalledWith(expect.objectContaining({ type: 'create-thread', baseBranch: 'main' }), expect.anything())
+  create.mockRestore()
 })
 
 it.each(['expiry', 'eviction'])('refuses obsolete working-copy choices after snapshot %s before admission', async expiry => {
