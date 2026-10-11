@@ -42,6 +42,12 @@ export const NOTICE_COMPONENTS = Object.freeze([
   packageComponent('@xterm/addon-unicode11', '0.9.0', 'MIT', 'The xterm.js authors'),
   packageComponent('node-pty', '1.1.0', 'MIT', 'Christopher Jeffrey; Daniel Imms; Microsoft Corporation'),
   packageComponent('node-addon-api', '7.1.1', 'MIT', 'Node.js API collaborators'),
+  // Dictation's speech engine (ADR-0071). The native code is one package per platform, so it and the
+  // ONNX Runtime inside it are listed without a package path; the model downloads on first run.
+  packageComponent('sherpa-onnx-node', '1.13.8', 'Apache-2.0', 'Xiaomi Corporation and the k2-fsa sherpa-onnx contributors'),
+  Object.freeze({ name: 'sherpa-onnx', nameSuffix: ' (native package for this platform: win-x64, darwin-arm64 or linux-x64)', version: '1.13.8', license: 'Apache-2.0', attribution: 'Xiaomi Corporation and the k2-fsa sherpa-onnx contributors' }),
+  Object.freeze({ name: 'ONNX Runtime', nameSuffix: ' (inside the sherpa-onnx native package)', version: '1.28.2', license: 'MIT', attribution: 'Microsoft Corporation' }),
+  Object.freeze({ name: 'Parakeet TDT 0.6B v3', nameSuffix: ' (speech model, 8-bit; downloaded on first run, not in the installer)', version: 'sherpa-onnx int8 export', license: 'CC-BY-4.0', attribution: 'NVIDIA Corporation' }),
   // Compiled into the main-process bundle, so their code ships inside app.asar
   // even though npm records them as development dependencies.
   packageComponent('electron-updater', '6.8.9', 'MIT', 'Loopline Systems and electron-builder contributors'),

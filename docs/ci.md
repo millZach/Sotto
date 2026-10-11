@@ -17,7 +17,7 @@ Gates (Windows) runs for every push to `main` and every pull request. Main's rul
 
   Changed areas also runs it when a document the package carries changes: the root `README.md`, `LICENSE.md` and `THIRD_PARTY_NOTICES.md`. The file list is read with rename detection off, so a file moved into a skipped area still counts its old path.
 
-  Before packaging, the job verifies the installed Claude SDK history helper and terminal assets. Voice workers and ONNX runtime assets are retired (ADR-0068); the packaged-resource check refuses them.
+  Before packaging, the job verifies the installed Claude SDK history helper and terminal assets. Voice workers and their WebAssembly ONNX Runtime are retired (ADR-0068); the packaged-resource check refuses them. Since ADR-0071 the check requires exactly `zod`, `node-pty`, `sherpa-onnx-node` and this platform's `sherpa-onnx-*` package among the production modules, and loads `sherpa-onnx-node`, the speech model's native module with its own ONNX Runtime, from the packaged app, the way it spawns a terminal for `node-pty`. The installer carries no model, so the check proves the module loads, not that it transcribes.
 
   **Package result** is a short Linux job that always runs after it. It fails if Changed areas did not finish, or if Package (Windows) was needed and did not pass. A skipped job counts as passing for a required check, so a ruleset that requires packaging names Package result, not Package (Windows).
 - **Native iOS client (macOS)** runs only when `apps/ios/`, `src/shared/hostProtocol.ts` (which the client's wire types mirror) or this workflow changed. Its Swift tests and simulator build read nothing outside `apps/ios/`.

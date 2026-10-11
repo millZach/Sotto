@@ -176,9 +176,9 @@ describe('Sotto application onboarding integration', () => {
     })
     renderApp(bridge)
     await openPage('home')
-    expect(await screen.findByText('The OpenRouter key could not be stored securely. Enter it again in Settings → Transcription.')).toBeVisible()
+    expect(await screen.findByText('The OpenRouter key could not be stored securely. Enter it again in Settings → Cleanup.')).toBeVisible()
     act(() => shell.navigate('settings'))
-    await userEvent.setup().click(screen.getByRole('tab', { name: 'Transcription' }))
+    await userEvent.setup().click(screen.getByRole('tab', { name: 'Cleanup' }))
     expect(await screen.findByText('The OpenRouter key could not be stored securely. Enter it again.')).toBeVisible()
   })
 
@@ -237,8 +237,8 @@ describe('Sotto application onboarding integration', () => {
   })
 
   it.each([
-    ['darwin', /allow Keychain access when macOS asks, or enter the key again in Settings → Transcription/],
-    ['win32', /Nothing was deleted. Enter the key again in Settings → Transcription/],
+    ['darwin', /allow Keychain access when macOS asks, or enter the key again in Settings → Cleanup/],
+    ['win32', /Nothing was deleted. Enter the key again in Settings → Cleanup/],
   ] as const)('explains an unreadable saved OpenRouter key on %s', async (platform, text) => {
     const bridge = createBridge({
       platform,

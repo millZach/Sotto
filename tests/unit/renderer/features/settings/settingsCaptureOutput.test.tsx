@@ -7,7 +7,6 @@ import { describe, expect, it, vi } from 'vitest'
 import { SettingsView } from '../../../../../src/renderer/src/features/settings/SettingsView'
 import { platformCopy } from '../../../../../src/renderer/src/platformCopy'
 import { type HotkeyChangeResult } from '../../../../../src/shared/contracts'
-import { DEFAULT_SETTINGS } from '../../../../../src/shared/settings'
 
 describe('SettingsView', () => {
   it('does not save or announce unchanged shortcut and numeric fields on blur', async () => {
@@ -223,14 +222,6 @@ describe('SettingsView', () => {
     expect(duration).toHaveValue('2200')
     rendered.rerender(<SettingsView {...props} settings={{ ...props.settings, successDisplayMs: 3100 }} />)
     expect(duration).toHaveValue('3100')
-  })
-
-  it('preserves an unknown persisted language and labels auto honestly', async () => {
-    render(<SettingsView {...baseProps({ settings: { ...DEFAULT_SETTINGS, language: 'cy' } })} />)
-    await selectCategory('Transcription')
-    expect(screen.getByRole('option', { name: 'Saved language (cy)' })).toBeVisible()
-    expect(screen.getByRole('option', { name: 'Automatic (detect language)' })).toBeVisible()
-    expect(screen.queryByText(/auto-detect/i)).not.toBeInTheDocument()
   })
 
   it('says where to allow the login item when macOS waits for approval', async () => {

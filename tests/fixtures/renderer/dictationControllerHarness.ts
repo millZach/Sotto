@@ -10,7 +10,7 @@ import {
 import type {
   TranscribeOptions,
   TranscriptionResult
-} from '../../../src/renderer/src/transcription/openRouterTranscriber'
+} from '../../../src/renderer/src/transcription/localTranscriber'
 import { type WidgetSnapshot } from '../../../src/shared/dictation'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings'
 
@@ -33,6 +33,8 @@ export type HarnessOptions = {
   readonly getSettings?: () => AppSettings
   readonly polishTranscript?: NonNullable<DictationControllerDependencies['polishTranscript']>
   readonly platform?: NonNullable<DictationControllerDependencies['platform']>
+  /** Whether the speech model on this computer can transcribe now (ADR-0071); unset counts as ready. */
+  readonly speechModelReady?: NonNullable<DictationControllerDependencies['speechModelReady']>
 }
 
 export function createHarness(options: HarnessOptions = {}) {
@@ -90,6 +92,7 @@ export function createHarness(options: HarnessOptions = {}) {
     ...(polishTranscript === undefined ? {} : { polishTranscript }),
     ...(options.cuePlayer === undefined ? {} : { cuePlayer: options.cuePlayer }),
     ...(options.platform === undefined ? {} : { platform: options.platform }),
+    ...(options.speechModelReady === undefined ? {} : { speechModelReady: options.speechModelReady }),
     now: options.now ?? (() => 1_000),
     createId: () => ids.shift() ?? 'later-session',
     setTimer,

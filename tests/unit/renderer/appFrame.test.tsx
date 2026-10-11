@@ -57,7 +57,7 @@ describe('shared main-window frame', () => {
     expect(within(sidebar).getByRole('tab', { name: 'Dictate' })).toHaveAttribute('aria-selected', 'true')
     expect(container.querySelector('.app-room__top')).toContainElement(screen.getByRole('button', { name: 'Minimize Sotto' }))
     expect(screen.getByRole('button', { name: 'Close Sotto to tray' })).toBeVisible()
-    expect(screen.getByRole('contentinfo')).toHaveTextContent('Add your OpenRouter API key in Settings')
+    expect(screen.getByRole('contentinfo')).toHaveTextContent('Parakeet v3 on this computer')
   })
 
   it('opens on Threads, which owns the whole window and carries the window controls once', async () => {
@@ -130,7 +130,7 @@ describe('transcription pipeline prewarm', () => {
     await openPage('home')
 
     await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: /ready when you are/i })).toBeInTheDocument())
-    expect(screen.getByRole('contentinfo')).toHaveTextContent('Add your OpenRouter API key in Settings')
+    expect(screen.getByRole('contentinfo')).toHaveTextContent('Parakeet v3 on this computer')
     expect(screen.queryByRole('button', { name: /minimize sotto/i })).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('link', { name: /help/i }))
