@@ -15,10 +15,13 @@ import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
 import { withoutRoomWatcher } from '../../../src/renderer/src/agents/watcherVisibility'
 import { WatcherRoomProvider, threadForTarget } from '../../../src/renderer/src/watcher/watcherRoom'
+import { roomView } from '../../../src/renderer/src/watcher/WatcherBeside'
+import { WatcherDock } from '../../../src/renderer/src/watcher/WatcherDock'
 import { WatcherView } from '../../../src/renderer/src/watcher/WatcherView'
 import { agentContextFixture } from '../../fixtures/agentContext'
 import { threadsStateFixture } from '../../fixtures/agentState'
 import { openSidebarFolders } from '../../fixtures/renderer/liveAgentState'
+import { promptText, setPromptText } from './helpers/promptEditor'
 
 vi.mock('../../../src/renderer/src/state/AppContext', async importOriginal => ({
   ...await importOriginal<typeof import('../../../src/renderer/src/state/AppContext')>(),
@@ -96,29 +99,47 @@ function renderRoom(state: AgentState, room: WatcherRoomState, watcherEnabled = 
   return { ...view, bridge, publish, command, navigate }
 }
 
-beforeEach(() => { vi.mocked(useAgents).mockReset(); vi.mocked(useOptionalAgents).mockReset(); vi.mocked(useOptionalApp).mockReset(); localStorage.clear() })
+/** Waits for Watcher's own pane: until then the room shows its header over a status line, which the pane's header replaces. */
+async function paneReady(): Promise<void> {
+  await screen.findByRole('meter', { name: 'Watched threads' })
+}
+
+beforeEach(() => { vi.mocked(useAgents).mockReset(); vi.mocked(useOptionalAgents).mockReset(); vi.mocked(useOptionalApp).mockReset(); localStorage.clear(); roomView.set({ besideId: null, share: 0.5 }) })
 afterEach(() => { cleanup(); localStorage.clear(); sessionStorage.clear() })
 
 describe("Watcher's room", () => {
-  it('offers Watcher on the user’s own Codex, Claude Code or Grok Build models the first time, and starts it without selecting anything', async () => {
+  it('starts on Watcher’s own composer the first time, and the first message starts Watcher and goes to it without selecting anything', async () => {
     const { bridge, command } = renderRoom(stateWithWatcher(), roomState({ current: null, currentOptions: null, watchedThreads: [], requests: [], inFlight: 0 }))
     expect(await screen.findByRole('heading', { level: 2, name: 'Start Watcher' })).toBeInTheDocument()
     expect(screen.getByText(/only you answer a thread’s questions and permissions/)).toBeInTheDocument()
+    // No meter or actions before Watcher runs.
+    expect(screen.queryByRole('meter', { name: 'Watched threads' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'More Watcher actions' })).toBeNull()
     const chosen = screen.getByRole('group', { name: 'Watcher’s model' })
     expect(within(chosen).getByRole('combobox', { name: 'Thread model' })).toHaveTextContent('Sonnet 4.5')
-    fireEvent.click(screen.getByRole('button', { name: 'Start Watcher' }))
+    expect(within(chosen).getByText('Ask before changes')).toBeInTheDocument()
+    expect(screen.getByText('Your first message starts Watcher on Sonnet 4.5, with your own Claude Code account.')).toBeInTheDocument()
+    const send = screen.getByRole('button', { name: 'Start Watcher and send' })
+    expect(send).toBeDisabled()
+    setPromptText(screen.getByRole('textbox', { name: 'Watcher message' }), 'Keep an eye on the footer links.')
+    expect(send).toBeEnabled()
+    fireEvent.click(send)
     await waitFor(() => expect(bridge.open).toHaveBeenCalledWith({ provider: 'claude', modelId: 'claude:sonnet' }))
-    expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'select-thread' }))
-    // Once main names the new Watcher, its own pane takes the first entry's place.
+    // Once main names the new Watcher, its own pane takes the first entry's place and the message goes to it.
     expect(await screen.findByRole('region', { name: 'Watcher' })).toBeInTheDocument()
+    await waitFor(() => expect(command).toHaveBeenCalledWith(expect.objectContaining({ type: 'manual-send', threadId: 'watcher', text: 'Keep an eye on the footer links.' })))
+    expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'select-thread' }))
   })
 
-  it('says main’s refusal in its own words and leaves the choice in place', async () => {
-    const { bridge } = renderRoom(stateWithWatcher(), roomState({ current: null, currentOptions: null }))
+  it('says main’s refusal in its own words and keeps the message in the composer', async () => {
+    const { bridge, command } = renderRoom(stateWithWatcher(), roomState({ current: null, currentOptions: null }))
     bridge.open.mockResolvedValueOnce({ status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: 'Claude Code is not connected. Nothing was started.', retryable: true })
-    fireEvent.click(await screen.findByRole('button', { name: 'Start Watcher' }))
+    setPromptText(await screen.findByRole('textbox', { name: 'Watcher message' }), 'Start the release checks.')
+    fireEvent.click(screen.getByRole('button', { name: 'Start Watcher and send' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Claude Code is not connected. Nothing was started.')
-    expect(screen.getByRole('button', { name: 'Start Watcher' })).toBeEnabled()
+    expect(promptText(screen.getByRole('textbox', { name: 'Watcher message' }))).toBe('Start the release checks.')
+    expect(screen.getByRole('button', { name: 'Start Watcher and send' })).toBeEnabled()
+    expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'manual-send' }))
   })
 
   it('never offers Devin for Watcher, and says where to connect a provider when none can host it', async () => {
@@ -126,13 +147,17 @@ describe("Watcher's room", () => {
     state.host.models = [{ id: 'devin:agent', provider: 'Devin', name: 'Devin', ready: true }]
     renderRoom(state, roomState({ current: null, currentOptions: null }))
     expect(await screen.findByText(/Connect Codex, Claude Code or Grok Build in Settings/)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Start Watcher' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Start Watcher and send' })).toBeNull()
   })
 
-  it('shows Watcher’s own pane with its meter and pinned asking mode, and none of a thread’s Git, menu or permissions controls', async () => {
+  it('shows Watcher’s own pane under the Sotto Owl tile, with its meter and pinned asking mode and none of a thread’s Git, menu or permissions controls', async () => {
     const { command } = renderRoom(stateWithWatcher(), roomState())
     const pane = await screen.findByRole('region', { name: 'Watcher' })
-    expect(within(pane).getByRole('heading', { level: 2, name: 'Watcher' })).toBeInTheDocument()
+    expect(within(pane).getByRole('heading', { level: 1, name: 'Watcher' })).toBeInTheDocument()
+    expect(within(pane).getByRole('img', { name: 'Sotto Owl' })).toBeInTheDocument()
+    // The tile is the owl in the corner; the small owl that sat before Watcher's name is gone, and so is the sidebar.
+    expect(pane.querySelector('.watcher-head .watcher-owl')).toBeNull()
+    expect(screen.queryByRole('complementary')).toBeNull()
     expect(within(pane).getByRole('meter', { name: 'Watched threads' })).toHaveAttribute('aria-valuetext', '2 of 4 watched')
     expect(within(pane).getByText('Watching Footer links.')).toBeInTheDocument()
     // Watcher's replies are signed Watcher, whatever provider it runs on.
@@ -158,24 +183,78 @@ describe("Watcher's room", () => {
     expect(within(pane).getByText('Ask before changes')).toBeInTheDocument()
   })
 
-  it('lists every other thread in the Overview in the decided order, with the owl on the one Watcher watches', async () => {
+  it('names each thread that needs the user and why, under the header', async () => {
     renderRoom(stateWithWatcher(), roomState())
-    const overview = within(await screen.findByRole('complementary', { name: 'Overview' }))
-    expect(overview.getByRole('heading', { level: 1, name: 'Watcher' })).toBeInTheDocument()
-    expect(overview.getAllByRole('button', { expanded: true }).map(button => button.getAttribute('aria-label')))
+    await paneReady()
+    const line = screen.getByRole('heading', { level: 2, name: '2 need you' }).closest('section')!
+    expect(within(line).getAllByRole('button').map(button => button.getAttribute('aria-label')))
+      .toEqual(['Open Visual gate flake to answer its permission', 'Open Streaming WAV stall at its failed turn'])
+    expect(line).toHaveTextContent('permission')
+    expect(line).toHaveTextContent('last turn failed')
+  })
+
+  it('opens the Overview over the room from All threads, in the decided order, and Escape returns focus to All threads', async () => {
+    renderRoom(stateWithWatcher(), roomState())
+    await paneReady()
+    const button = screen.getByRole('button', { name: 'All threads, 9. Show the list' })
+    fireEvent.click(button)
+    const list = within(screen.getByRole('dialog', { name: 'All threads' }))
+    await waitFor(() => expect(list.getByRole('searchbox', { name: 'Filter threads' })).toHaveFocus())
+    expect(button).toHaveAttribute('aria-expanded', 'true')
+    expect(list.getAllByRole('heading', { level: 3 }).map(heading => heading.getAttribute('aria-label')))
       .toEqual(['Needs you, 2 threads', 'Working, 2 threads', 'Idle, 5 threads'])
-    expect(overview.getByText('Run a command in workshop')).toBeInTheDocument()
+    expect(list.getByText('Run a command in workshop')).toBeInTheDocument()
+    expect(list.getByRole('button', { name: 'Open Visual gate flake to answer its permission' })).toHaveTextContent('Open to answer')
     // Watcher is not among its own threads.
-    expect(overview.queryByText('Watcher', { selector: '.watcher-row__title' })).toBeNull()
-    const footer = overview.getByText('Footer links').closest('li')!
-    expect(within(footer).getByRole('img', { name: 'Watched by Watcher' })).toHaveAttribute('title', 'Watched by Watcher')
-    expect(within(overview.getByText('Weekly note').closest('li')!).queryByRole('img', { name: 'Watched by Watcher' })).toBeNull()
+    expect(list.queryByRole('button', { name: 'Open Watcher beside Watcher' })).toBeNull()
+    const footer = list.getByRole('button', { name: 'Open Footer links beside Watcher' })
+    expect(footer).toHaveAccessibleDescription(/Watched by Watcher/)
+    expect(footer.closest('li')!.querySelector('.watched-badge')).not.toBeNull()
+    expect(list.getByRole('button', { name: 'Open Weekly note beside Watcher' })).not.toHaveAccessibleDescription(/Watched by Watcher/)
     // Settled threads stay reachable at the end of Idle, folded away until asked for.
-    expect(overview.queryByText('Benchmark rerun')).toBeNull()
-    fireEvent.click(overview.getByRole('button', { name: 'Settled, 4 threads' }))
-    expect(overview.getByText('Benchmark rerun')).toBeInTheDocument()
-    fireEvent.click(overview.getByRole('button', { name: 'Needs you, 2 threads' }))
-    expect(overview.queryByText('Visual gate flake')).toBeNull()
+    expect(list.queryByText('Benchmark rerun')).toBeNull()
+    fireEvent.click(list.getByRole('button', { name: 'Settled, 4 threads' }))
+    expect(list.getByText('Benchmark rerun')).toBeInTheDocument()
+    // The filter narrows the list.
+    fireEvent.change(list.getByRole('searchbox', { name: 'Filter threads' }), { target: { value: 'weekly' } })
+    expect(list.getAllByRole('button', { name: /beside Watcher$/ }).map(item => item.getAttribute('aria-label'))).toEqual(['Open Weekly note beside Watcher'])
+    fireEvent.keyDown(list.getByRole('searchbox', { name: 'Filter threads' }), { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: 'All threads' })).toBeNull()
+    expect(button).toHaveFocus()
+  })
+
+  it('opens a thread beside Watcher at what it waits on, reads it while it shows, and Escape closes it back to its opener', async () => {
+    const { command } = renderRoom(stateWithWatcher(), roomState())
+    await paneReady()
+    const name = screen.getByRole('button', { name: 'Open Visual gate flake to answer its permission' })
+    name.focus()
+    fireEvent.click(name)
+    const beside = await screen.findByRole('region', { name: 'Visual gate flake' })
+    expect(beside).toHaveAttribute('id', 'watcher-beside-pane')
+    await waitFor(() => expect(beside.querySelector('.agent-request[data-kind="permission"]')).toHaveFocus())
+    expect(within(beside).getByRole('button', { name: 'Open Visual gate flake in Threads' })).toBeInTheDocument()
+    expect(within(beside).getByRole('button', { name: 'Close Visual gate flake pane' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Watcher' })).toBeInTheDocument()
+    expect(screen.getByRole('separator', { name: 'Resize panes' })).toBeInTheDocument()
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'observe-threads', threadIds: ['watcher', 'visual-gate'] }))
+    expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'select-thread' }))
+    fireEvent.keyDown(beside.querySelector('.agent-request[data-kind="permission"]')!, { key: 'Escape' })
+    expect(screen.queryByRole('region', { name: 'Visual gate flake' })).toBeNull()
+    await waitFor(() => expect(name).toHaveFocus())
+  })
+
+  it('opens a thread in the Threads room, selected, with Shift or Open in Threads', async () => {
+    const { command, navigate } = renderRoom(stateWithWatcher(), roomState())
+    await paneReady()
+    fireEvent.click(screen.getByRole('button', { name: 'All threads, 9. Show the list' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open Footer links beside Watcher' }), { shiftKey: true })
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith('threads'))
+    expect(command).toHaveBeenCalledWith({ type: 'select-thread', threadId: 'footer-links' })
+    expect(screen.queryByRole('region', { name: 'Footer links' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Open Streaming WAV stall at its failed turn' }))
+    const beside = await screen.findByRole('region', { name: 'Streaming WAV stall' })
+    fireEvent.click(within(beside).getByRole('button', { name: 'Open Streaming WAV stall in Threads' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'select-thread', threadId: 'wav-stall' }))
   })
 
   it('keeps Threads in flight under More Watcher actions, saves it through main and returns focus on Escape', async () => {
@@ -247,6 +326,15 @@ describe('the room switch', () => {
     foot('watcher')
     expect(tabs()[1]).toHaveAttribute('aria-selected', 'true')
     expect(tabs()[1]).toHaveFocus()
+  })
+
+  it('floats in Watcher’s room with the page links before it and the update control after, in the order the eye reads them', () => {
+    mockApp('watcher')
+    render(<WatcherDock updateControl={<button type="button" aria-label="Check for updates" />} />)
+    const dock = document.querySelector('.watcher-dock__pill')!
+    const stops = [...dock.querySelectorAll('a, [role="tab"][tabindex="0"], button[aria-label="Check for updates"]')].map(node => node.getAttribute('aria-label') ?? node.textContent)
+    expect(stops).toEqual(['History', 'Settings', 'Help', 'Watcher', 'Check for updates'])
+    expect(screen.getByRole('tab', { name: 'Watcher' })).toHaveAttribute('aria-selected', 'true')
   })
 
   it('is Dictate | Threads alone with the gate off', () => {

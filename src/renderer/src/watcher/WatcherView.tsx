@@ -1,23 +1,31 @@
-import React, { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
-import { MoreHorizontal } from 'lucide-react'
-import type { AgentModel, AgentState } from '../../../shared/agents'
+import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { ArrowUp, ChevronDown, List, MoreHorizontal } from 'lucide-react'
+import { PROVIDER_LABELS, type AgentModel, type AgentState } from '../../../shared/agents'
+import { releaseTrackName } from '../../../shared/releaseTrack'
 import type { WatcherOpenRequest } from '../../../shared/watcherRoom'
 import { Button } from '../components/Button'
 import { Field } from '../components/Field'
 import { Select } from '../components/Select'
+import { SottoMark } from '../components/SottoMark'
 import { PageWindowControls } from '../components/WindowControls'
+import { claimRoomFocus } from '../components/AppShell'
 import { useOptionalApp } from '../state/AppContext'
 import { useAgents } from '../agents/AgentContext'
 import { EffortPicker } from '../agents/EffortPicker'
 import { ModelPicker } from '../agents/ModelPicker'
+import { OwlRoomSky } from '../agents/OwlSky'
 import { useClock } from '../agents/paneGrid'
-import { OverviewSidebarFrame, SidebarChromeProvider } from '../agents/SidebarFrame'
+import { PromptEditor, type PromptEditorElement } from '../agents/PromptEditor'
 import { useShared } from '../agents/stateSharing'
-import { describeThreads, providerKey } from '../agents/threadFacts'
-import { effortChoices } from '../agents/ThreadOptions'
+import { sendThreadRevision } from '../agents/ThreadComposer'
+import { describeThreads, providerKey, type ThreadRow } from '../agents/threadFacts'
+import { effortChoices, WatcherPermission } from '../agents/ThreadOptions'
 import { ThreadPane } from '../agents/ThreadPane'
 import { useWatcherRoom, type WatcherRoom } from './watcherRoom'
-import { WatcherOverview } from './WatcherOverview'
+import { BESIDE_PANE_ID, BesideDivider, BesidePane, roomView, shownShare, useRoomView } from './WatcherBeside'
+import { WatcherDock } from './WatcherDock'
+import { WatcherGlance } from './WatcherGlance'
+import { overviewCount, useOverview, WatcherOverviewList, type OpenThread, type OverviewEntry } from './WatcherOverview'
 import { WatcherOwl } from './WatcherOwl'
 
 const WATCHER_PROMPT_ID = 'watcher-prompt'
@@ -90,25 +98,52 @@ function WatcherActions({ room, limit }: { readonly room: WatcherRoom; readonly 
   </div>
 }
 
-/** Watcher's header in place of a thread's: the owl and its name, how many threads it is working with, and its actions. */
-function WatcherHeader({ room, limit }: { readonly room: WatcherRoom; readonly limit: number }): ReactNode {
+/** What Watcher's header holds besides its name: All threads and its count, and, once Watcher runs, the meter and its actions. */
+interface HeaderParts {
+  readonly room: WatcherRoom | null
+  readonly limit: number
+  readonly count: number
+  readonly listOpen: boolean
+  readonly listButton: React.RefObject<HTMLButtonElement | null>
+  readonly onToggleList: () => void
+}
+
+/**
+ * Watcher's header: the Sotto Owl tile in the window's corner, as on every other Owl page, then Watcher's name and
+ * All threads, which opens the Overview over the room; at its end, once Watcher runs, how many threads it is working
+ * with and More Watcher actions. The night sky spreads behind the corner. The row is the window's drag strip.
+ */
+function WatcherHeader({ room, limit, count, listOpen, listButton, onToggleList }: HeaderParts): ReactNode {
+  const started = room?.state?.current != null
   return <header className="thread-workspace__head watcher-head">
+    <span className="watcher-head__tile" role="img" aria-label={releaseTrackName('owl')}><SottoMark className="thread-nav__tile" /></span>
     <div className="thread-workspace__title">
-      <WatcherOwl size={16} className="watcher-head__owl" />
-      <h2>Watcher</h2>
+      <h1>Watcher</h1>
+      <button ref={listButton} type="button" className="watcher-head__list tt-focusable" aria-haspopup="dialog" aria-expanded={listOpen}
+        aria-label={`All threads, ${count}. Show the list`} title="All threads" onClick={onToggleList}>
+        <List size={15} aria-hidden="true" /><span className="watcher-head__list-text">All threads</span>
+        <span className="watcher-head__count" aria-hidden="true">{count}</span><ChevronDown size={13} aria-hidden="true" />
+      </button>
     </div>
-    <div className="thread-workspace__actions">
+    {started && room !== null ? <div className="thread-workspace__actions">
       <WatcherMeter inFlight={room.state?.inFlight ?? 0} limit={limit} />
       <WatcherActions room={room} limit={limit} />
-    </div>
+    </div> : null}
   </header>
 }
 
 /**
- * The first time the room opens: what Watcher is, and which of the user's own providers it runs on. Starting it
- * creates one durable Watcher thread in main and selects nothing anywhere.
+ * The first time: the room as it will be, with Watcher's composer ready (Zach's pick on October 11, 2026). The user
+ * picks one of their own Codex, Claude Code or Grok Build models in the composer and sends what they want done first;
+ * that send asks main to create Watcher, selecting nothing anywhere, and the message then goes to it as its first. A
+ * refusal is said in main's own words and the message stays in the composer.
  */
-function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readonly room: WatcherRoom }): ReactNode {
+function WatcherFirstEntry({ state, room, onStarted }: {
+  readonly state: AgentState
+  readonly room: WatcherRoom
+  /** Main created Watcher: the message to send it as soon as its thread is in the window. */
+  readonly onStarted: (message: string) => void
+}): ReactNode {
   const app = useOptionalApp()
   const models = useMemo(() => state.host.models.filter(model => model.ready !== false && watcherProviderOf(model) !== null), [state.host.models])
   const [modelId, setModelId] = useState('')
@@ -116,71 +151,127 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
   const [effort, setEffort] = useState<string | null>(null)
   const reasoning = effort ?? model?.defaultReasoningEffort ?? ''
   const efforts = effortChoices(model, reasoning)
+  const [text, setText] = useState('')
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const field = useRef<PromptEditorElement | null>(null)
+  const provider = model === undefined ? null : watcherProviderOf(model)
+  const ready = model !== undefined && provider !== null && room.open !== null && !starting
+  const canSend = ready && text.trim() !== ''
   const start = async (): Promise<void> => {
-    const provider = model === undefined ? null : watcherProviderOf(model)
-    if (model === undefined || provider === null || room.open === null) return
+    if (!canSend || model === undefined || provider === null || room.open === null) return
     setStarting(true); setError(null)
     try {
       const refusal = room.settle(await room.open({ provider, modelId: model.id, ...(reasoning ? { reasoningEffort: reasoning } : {}) }))
-      if (refusal !== null) { setError(refusal); setStarting(false) }
+      if (refusal !== null) { setError(refusal); setStarting(false); return }
+      onStarted(text.trim())
     } catch {
-      setError('Sotto could not start Watcher. Nothing was started. Try again.')
+      setError('Sotto could not start Watcher. Nothing was started, and your message is still here. Try again.')
       setStarting(false)
     }
   }
-  return <div className="thread-workspace__empty thread-workspace__empty--page watcher-first">
-    <WatcherOwl size={30} className="watcher-first__owl" />
-    <h2>Start Watcher</h2>
-    <p>Watcher is a thread that starts and briefs your other threads, and keeps an eye on them while they work.</p>
-    <p>It runs on your own Codex, Claude Code or Grok Build account, with that provider’s own tools. It asks before it changes anything, and only you answer a thread’s questions and permissions.</p>
-    {model === undefined ? <>
-      <p className="watcher-first__missing">Connect Codex, Claude Code or Grok Build in Settings, under Providers, to start Watcher.</p>
-      {app ? <div className="thread-workspace__empty-actions"><Button variant="secondary" onClick={() => app.actions.navigate('settings')}>Open Settings</Button></div> : null}
-    </> : <>
-      <div className="watcher-first__choices thread-options thread-options--chips" role="group" aria-label="Watcher’s model">
-        <ModelPicker models={models} modelId={model.id} disabled={starting} onChange={id => { setModelId(id); setEffort(null) }} />
-        {efforts.length > 0 ? <EffortPicker key={model.id} value={reasoning} options={efforts} disabled={starting} onChange={setEffort}
-          defaultValue={model.defaultReasoningEffort} modelName={model.name} /> : null}
+  const providerName = provider === null ? null : PROVIDER_LABELS[provider]
+  return <>
+    <div className="thread-transcript">
+      <div className="thread-workspace__transcript watcher-first">
+        <div className="watcher-first__intro">
+          <WatcherOwl size={28} className="watcher-first__owl" />
+          <h2>Start Watcher</h2>
+          <p>Watcher is a thread that starts and briefs your other threads, and keeps an eye on them while they work.</p>
+          <p>It runs on your own Codex, Claude Code or Grok Build account, with that provider’s own tools. It asks before it changes anything, and only you answer a thread’s questions and permissions.</p>
+          {model === undefined ? <>
+            <p className="watcher-first__missing">Connect Codex, Claude Code or Grok Build in Settings, under Providers, to start Watcher.</p>
+            {app ? <div className="thread-workspace__empty-actions"><Button variant="secondary" onClick={() => app.actions.navigate('settings')}>Open Settings</Button></div> : null}
+          </> : <p>Pick its model below, then send what you want done first. That message starts it.</p>}
+        </div>
       </div>
-      <div className="thread-workspace__empty-actions">
-        <Button disabled={starting || room.open === null} onClick={() => void start()}>{starting ? 'Starting Watcher…' : 'Start Watcher'}</Button>
-      </div>
-    </>}
-    {error ? <p className="agent-error watcher-first__error" role="alert">{error}</p> : null}
-  </div>
-}
-
-/** The current Watcher's real thread pane: its transcript, its request cards and its composer, under Watcher's header. */
-function WatcherPane({ state, room, threadId, now }: { readonly state: AgentState; readonly room: WatcherRoom; readonly threadId: string; readonly now: number | undefined }): ReactNode {
-  const agents = useAgents()
-  const app = useOptionalApp()
-  const command = agents.command
-  const clock = useClock(now)
-  const rows = useShared(useMemo(() => describeThreads(state, clock), [state, clock]))
-  const row = rows.find(item => item.thread.id === threadId)
-  // The room reads Watcher's history while it is on screen, as Threads does for its panes, and lets it go after.
-  useEffect(() => {
-    void command({ type: 'observe-threads', threadIds: [threadId] })
-    return () => { void command({ type: 'observe-threads', threadIds: [] }) }
-  }, [command, threadId])
-  if (row === undefined) return <p className="watcher-room__status" role="status">Opening Watcher…</p>
-  const limit = room.state?.inFlightLimit ?? app?.settings?.watcherInFlightLimit ?? 4
-  return <div className="thread-panes">
-    <div className="thread-panes__area">
-      <section className="thread-pane watcher-pane" data-thread-id={threadId} data-focused data-under-controls role="region" aria-label="Watcher">
-        <ThreadPane row={row} state={state} command={command} store={agents.threadDrafts} focused promptId={WATCHER_PROMPT_ID}
-          error={state.error ?? agents.error} now={now} watcherHeader={<WatcherHeader room={room} limit={limit} />} />
-      </section>
     </div>
-  </div>
+    {model !== undefined ? <div className="thread-workspace__compose">
+      {error ? <p className="agent-error watcher-first__error" role="alert">{error}</p> : null}
+      <form className="thread-prompt" onSubmit={event => { event.preventDefault(); void start() }}>
+        <PromptEditor fieldRef={field} id={WATCHER_PROMPT_ID} text={text} skills={[]} sigils={[]} label="Watcher message" editable={!starting}
+          placeholder="Say what to start or check. Sending starts Watcher."
+          onChange={next => setText(next)}
+          onKeyDown={event => {
+            if (event.key !== 'Enter' || event.shiftKey || event.altKey || event.nativeEvent.isComposing) return
+            event.preventDefault()
+            void start()
+          }} />
+        <label className="tt-visually-hidden" htmlFor={WATCHER_PROMPT_ID} onClick={() => field.current?.focus()}>Watcher message</label>
+        <div className="thread-prompt__footer">
+          <div className="thread-prompt__meta">
+            <div className="thread-options-bar">
+              <div className="thread-options thread-options--chips" role="group" aria-label="Watcher’s model">
+                <ModelPicker models={models} modelId={model.id} disabled={starting} onChange={id => { setModelId(id); setEffort(null) }} />
+                {efforts.length > 0 ? <EffortPicker key={model.id} value={reasoning} options={efforts} disabled={starting} onChange={setEffort}
+                  defaultValue={model.defaultReasoningEffort} modelName={model.name} /> : null}
+                <WatcherPermission />
+              </div>
+            </div>
+            {starting ? <span className="thread-prompt__status" role="status">Starting Watcher…</span> : null}
+          </div>
+          <div className="thread-prompt__actions">
+            <Button iconOnly className="thread-prompt__send" type="submit" aria-label="Start Watcher and send" title={canSend ? 'Start Watcher and send' : 'Write what Watcher should do first'} disabled={!canSend}>
+              <ArrowUp size={15} strokeWidth={2.25} aria-hidden="true" />
+            </Button>
+          </div>
+        </div>
+      </form>
+      <div className="thread-pane__meta">
+        <p className="watched-note"><WatcherOwl size={13} /><span>Your first message starts Watcher on {model.name}, with your own {providerName ?? model.provider} account.</span></p>
+      </div>
+    </div> : null}
+  </>
 }
 
 /**
- * Watcher's room (ADR-0073): the Overview in the sidebar's frame, and Watcher's own conversation beside it. The
- * room keeps its own view: it never selects a thread or a project on the Threads page, and Watcher itself is
- * listed in neither the Overview nor Threads.
+ * The current Watcher's real thread pane: its transcript, its request cards and its composer, under Watcher's header
+ * and the needs-you line. A message written before Watcher existed goes to it through the composer's own send, once
+ * its thread is in the window.
+ */
+function WatcherPane({ state, row, header, error, focused, now, firstMessage, onFirstSent }: {
+  readonly state: AgentState
+  readonly row: ThreadRow
+  readonly header: ReactNode
+  readonly error: string | null
+  readonly focused: boolean
+  readonly now: number | undefined
+  readonly firstMessage: string | null
+  readonly onFirstSent: () => void
+}): ReactNode {
+  const agents = useAgents()
+  const sent = useRef<string | null>(null)
+  useEffect(() => {
+    if (firstMessage === null || sent.current === row.thread.id) return
+    sent.current = row.thread.id
+    onFirstSent()
+    agents.threadDrafts.edit(row.thread.id, { text: firstMessage })
+    void sendThreadRevision(agents.threadDrafts, row, agents.command, performance.now())
+    // The first-entry composer had focus and is gone; Watcher's own composer takes it.
+    window.setTimeout(() => { if (document.activeElement === null || document.activeElement === document.body) document.getElementById(WATCHER_PROMPT_ID)?.focus() }, 0)
+  }, [firstMessage, row, agents.threadDrafts, agents.command, onFirstSent])
+  return <ThreadPane row={row} state={state} command={agents.command} store={agents.threadDrafts} focused={focused} promptId={WATCHER_PROMPT_ID}
+    error={error} now={now} watcherHeader={header} />
+}
+
+/** Puts focus where a thread opened beside Watcher should take it: its request card when opened at what it waits on, otherwise its title. */
+function focusBeside(atRequest: boolean): void {
+  const pane = document.getElementById(BESIDE_PANE_ID)
+  if (pane === null) return
+  const card = atRequest ? pane.querySelector<HTMLElement>('.agent-request[data-kind]') : null
+  const target = card ?? pane.querySelector<HTMLElement>('.thread-workspace__head h2')
+  if (target === null) return
+  if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1')
+  target.focus({ preventScroll: card === null })
+  card?.scrollIntoView?.({ block: 'nearest' })
+}
+
+/**
+ * Watcher's room (ADR-0073), with no sidebar (Zach's picks on October 11, 2026): the Sotto Owl tile and its night sky
+ * in the corner, Watcher's conversation centred under its header and the needs-you line, a thread opened beside it in
+ * its own real pane, the Overview over the room on All threads, and the switch and page links floating at the bottom.
+ * The room keeps its own view: it never selects a thread or a project on the Threads page, except through Open in
+ * Threads or Shift with a press, which go there on purpose; Watcher itself is in neither the Overview nor Threads.
  */
 export function WatcherView({ now: fixedNow, updateControl }: {
   /** A fixed clock for captures; the rows' times then hold still. */
@@ -192,23 +283,130 @@ export function WatcherView({ now: fixedNow, updateControl }: {
   const room = useWatcherRoom()
   const now = useClock(fixedNow)
   const state = agents.state
+  const command = agents.command
   const mac = app?.platform === 'darwin'
   const current = room?.state?.current ?? null
-  let main: ReactNode
-  if (room === null || room.status === 'unavailable') main = <p className="watcher-room__status" role="status">This build cannot reach Watcher yet. Nothing was started. A later Sotto Owl build adds it.</p>
-  else if (state === null || room.status === 'loading') main = <p className="watcher-room__status" role="status">{agents.error ?? 'Opening Watcher…'}</p>
-  else if (room.error !== null && room.state === null) main = <p className="agent-error watcher-room__status" role="alert">{room.error}</p>
-  else if (current === null) main = <WatcherFirstEntry state={state} room={room} />
-  else if (room.currentThreadId === null) main = <p className="watcher-room__status" role="status">Opening Watcher…</p>
-  else main = <WatcherPane state={state} room={room} threadId={room.currentThreadId} now={fixedNow} />
-  return <SidebarChromeProvider updateControl={updateControl}><div className={`management-view threads-view watcher-room${mac ? ' threads-view--mac' : ''}`}>
-    <OverviewSidebarFrame label="Overview" title="Watcher">
-      {state === null ? <p className="thread-nav__empty">{agents.error ?? 'Preparing agent controls…'}</p>
-        : <WatcherOverview state={state} now={now} liveClock={fixedNow === undefined} watched={room?.watchedThreadIds ?? new Set()} exclude={room?.currentThreadId ?? null} />}
-    </OverviewSidebarFrame>
+  const watcherId = room?.currentThreadId ?? null
+  const groups = useOverview(state, now, watcherId)
+  const needs = useMemo<readonly OverviewEntry[]>(() => groups.find(group => group.group === 'Needs you')?.entries ?? [], [groups])
+  const rows = useShared(useMemo(() => state === null ? [] : describeThreads(state, now), [state, now]))
+  const rowsById = useMemo(() => new Map(rows.map(row => [row.thread.id, row] as const)), [rows])
+  const view = useRoomView()
+  const besideRow = view.besideId !== null && view.besideId !== watcherId ? rowsById.get(view.besideId) : undefined
+  const watcherRow = watcherId === null ? undefined : rowsById.get(watcherId)
+  const [listOpen, setListOpen] = useState(false)
+  const listButton = useRef<HTMLButtonElement>(null)
+  const opener = useRef<HTMLElement | null>(null)
+  const pendingFocus = useRef<{ readonly threadId: string; readonly atRequest: boolean } | null>(null)
+  const [focusedPane, setFocusedPane] = useState<'watcher' | 'beside'>('watcher')
+  const [firstMessage, setFirstMessage] = useState<string | null>(null)
+  const area = useRef<HTMLDivElement>(null)
+  const [width, setWidth] = useState(0)
+
+  // The room reads Watcher's history and the thread beside it while they are on screen, as Threads does for its
+  // panes, and lets them go after.
+  const observed = JSON.stringify([watcherId, besideRow?.thread.id ?? null].filter(Boolean))
+  useEffect(() => {
+    const threadIds = JSON.parse(observed) as string[]
+    if (threadIds.length) void command({ type: 'observe-threads', threadIds })
+  }, [command, observed])
+  useEffect(() => () => { void command({ type: 'observe-threads', threadIds: [] }) }, [command])
+
+  useLayoutEffect(() => {
+    const element = area.current
+    if (element === null || typeof ResizeObserver === 'undefined') return
+    const measure = (): void => setWidth(Math.round(element.clientWidth))
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
+
+  // A switch press hands focus to the floating switch's lit owl. Arriving any other way, focus goes to Watcher's composer.
+  useLayoutEffect(() => {
+    if (claimRoomFocus('watcher')) return
+    if (document.activeElement === null || document.activeElement === document.body) document.getElementById(WATCHER_PROMPT_ID)?.focus()
+    // Only on arrival; later renders leave focus where the user put it.
+  }, [])
+
+  // A thread just opened beside Watcher takes focus once its pane is drawn.
+  useEffect(() => {
+    const wanted = pendingFocus.current
+    if (wanted === null || besideRow?.thread.id !== wanted.threadId) return
+    pendingFocus.current = null
+    focusBeside(wanted.atRequest)
+  })
+
+  const openThread = useCallback<OpenThread>((threadId, how) => {
+    setListOpen(false)
+    if (how.inThreads) {
+      // Shift with a press, or Open in Threads: the Threads room with that thread selected, on purpose.
+      void command({ type: 'select-thread', threadId }).finally(() => app?.actions.navigate('threads'))
+      return
+    }
+    opener.current = how.from ?? null
+    pendingFocus.current = { threadId, atRequest: how.atRequest === true }
+    setFocusedPane('beside')
+    if (roomView.get().besideId === threadId) { pendingFocus.current = null; focusBeside(how.atRequest === true); return }
+    roomView.set({ besideId: threadId })
+  }, [command, app])
+
+  const closeBeside = useCallback((): void => {
+    roomView.set({ besideId: null })
+    setFocusedPane('watcher')
+    const back = opener.current
+    opener.current = null
+    // Focus returns to what opened the thread, or to Watcher's composer when that is gone.
+    window.setTimeout(() => { if (back?.isConnected) back.focus(); else document.getElementById(WATCHER_PROMPT_ID)?.focus() }, 0)
+  }, [])
+
+  const closeList = useCallback((refocus: boolean): void => {
+    setListOpen(false)
+    if (refocus) listButton.current?.focus()
+  }, [])
+
+  const error = state?.error ?? agents.error ?? null
+  const limit = room?.state?.inFlightLimit ?? app?.settings?.watcherInFlightLimit ?? 4
+  const header = <>
+    <WatcherHeader room={room} limit={limit} count={overviewCount(groups)} listOpen={listOpen} listButton={listButton} onToggleList={() => setListOpen(value => !value)} />
+    <WatcherGlance entries={needs} onOpen={openThread} onShowAll={() => setListOpen(true)} />
+  </>
+  let watcherContent: ReactNode
+  const status = (text: string, alert = false): ReactNode => <>{header}<p className={alert ? 'agent-error watcher-room__status' : 'watcher-room__status'} role={alert ? 'alert' : 'status'}>{text}</p></>
+  if (room === null || room.status === 'unavailable') watcherContent = status('This build cannot reach Watcher yet. Nothing was started. A later Sotto Owl build adds it.')
+  else if (state === null || room.status === 'loading') watcherContent = status(agents.error ?? 'Opening Watcher…')
+  else if (room.error !== null && room.state === null) watcherContent = status(room.error, true)
+  else if (current === null) watcherContent = <>{header}<WatcherFirstEntry state={state} room={room} onStarted={setFirstMessage} /></>
+  else if (watcherRow === undefined) watcherContent = status('Opening Watcher…')
+  else watcherContent = <WatcherPane state={state} row={watcherRow} header={header} error={focusedPane === 'watcher' || besideRow === undefined ? error : null}
+    focused={focusedPane === 'watcher' || besideRow === undefined} now={fixedNow} firstMessage={firstMessage} onFirstSent={() => setFirstMessage(null)} />
+
+  const beside = besideRow !== undefined && state !== null
+  const share = shownShare(width, view.share)
+  return <div className={`management-view threads-view watcher-room${mac ? ' threads-view--mac' : ''}`} data-beside={beside || undefined}>
     <section className="thread-workspace" aria-label="Watcher’s room">
-      <div className="thread-workspace__body">{main}</div>
+      <div className="thread-workspace__body">
+        <div className="thread-panes">
+          <div ref={area} className="thread-panes__area" style={{ '--watcher-share': share } as CSSProperties}>
+            <section className="thread-pane watcher-pane" data-thread-id={watcherId ?? undefined} data-focused={focusedPane === 'watcher' || !beside || undefined}
+              data-under-controls={!beside || undefined} role="region" aria-label="Watcher"
+              onFocusCapture={() => setFocusedPane('watcher')} onPointerDownCapture={() => setFocusedPane('watcher')}>
+              <OwlRoomSky />
+              {watcherContent}
+            </section>
+            {beside ? <>
+              <BesideDivider width={width} share={view.share} controls={BESIDE_PANE_ID} />
+              <BesidePane key={besideRow.thread.id} row={besideRow} state={state} command={command} store={agents.threadDrafts} focused={focusedPane === 'beside'} underControls
+                error={focusedPane === 'beside' ? error : null} now={fixedNow} onFocus={() => setFocusedPane('beside')} onClose={closeBeside}
+                onOpenInThreads={() => openThread(besideRow.thread.id, { inThreads: true })} />
+            </> : null}
+          </div>
+        </div>
+      </div>
     </section>
+    <WatcherDock updateControl={updateControl} />
     <PageWindowControls />
-  </div></SidebarChromeProvider>
+    {listOpen ? <WatcherOverviewList groups={groups} watched={room?.watchedThreadIds ?? new Set()} besideId={besideRow?.thread.id ?? null}
+      liveClock={fixedNow === undefined} anchor={listButton} onOpen={openThread} onClose={closeList} /> : null}
+  </div>
 }
