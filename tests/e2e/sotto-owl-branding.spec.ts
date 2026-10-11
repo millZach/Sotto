@@ -10,7 +10,7 @@ import { evidenceDirectory } from '../fixtures/evidence'
 import { onReleaseTrack, OWL_E2E_VERSION } from './support/releaseTrack'
 import { captureWindow } from './support/sottoCapture'
 import { openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
-import { OWL_VERSION, holdOwlSky, onTrack } from './support/sottoOwl'
+import { holdOwlSky } from './support/sottoOwl'
 import { resizeContentWindow } from './support/sottoWindow'
 
 /**

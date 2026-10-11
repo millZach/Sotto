@@ -9,7 +9,8 @@ import { withSotto } from '../fixtures/designCaptureProfile'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { captureWindow } from './support/sottoCapture'
 import { openThreads, type LaunchedSotto } from './support/sottoLaunch'
-import { holdOwlSky, onTrack, releaseOwlSky } from './support/sottoOwl'
+import { onReleaseTrack } from './support/releaseTrack'
+import { holdOwlSky, releaseOwlSky } from './support/sottoOwl'
 import { resizeContentWindow } from './support/sottoWindow'
 
 /**
@@ -218,7 +219,7 @@ test.describe('Sotto Owl night sky on the built app', () => {
 
   for (const [theme, label] of THEMES) for (const appearance of APPEARANCES) {
     test(`owl build, ${label}, ${appearance}`, async () => {
-      await onTrack('owl', () => withSotto(launchOptions(theme, appearance), async (launched) => {
+      await onReleaseTrack('owl', () => withSotto(launchOptions(theme, appearance), async (launched) => {
         await onThreads(launched)
         const result: Record<string, unknown> = {}
         for (const [width, height] of SIZES) {
@@ -258,7 +259,7 @@ test.describe('Sotto Owl night sky on the built app', () => {
   // Zach's own screen runs at 150%, where his screenshots of the look were taken: the stars at the size he sees them.
   for (const [theme, label, appearance] of [['t3-code', 'sotto', 'dark'], ['t3-code', 'sotto', 'light'], ['tropic', 'tropic', 'dark'], ['citrine', 'citrine', 'dark']] as const) {
     test(`owl build at 150%, ${label}, ${appearance}`, async () => {
-      await onTrack('owl', () => withSotto({ ...launchOptions(theme, appearance), scalePercent: 150 }, async (launched) => {
+      await onReleaseTrack('owl', () => withSotto({ ...launchOptions(theme, appearance), scalePercent: 150 }, async (launched) => {
         await onThreads(launched)
         await resizeContentWindow(launched, 1280, 800)
         await settle(launched.page)
@@ -273,7 +274,7 @@ test.describe('Sotto Owl night sky on the built app', () => {
   }
 
   test('owl build with reduced motion from the system, then from Sotto\'s own setting', async () => {
-    await onTrack('owl', async () => {
+    await onReleaseTrack('owl', async () => {
       // The system asks for reduced motion; Sotto's setting is left to follow it.
       await withSotto(launchOptions('t3-code', 'dark'), async (launched) => {
         await onThreads(launched)
@@ -320,7 +321,7 @@ test.describe('Sotto Owl night sky on the built app', () => {
   })
 
   test('owl build in the macOS header layout', async () => {
-    await onTrack('owl', () => withSotto(launchOptions('t3-code', 'dark'), async (launched) => {
+    await onReleaseTrack('owl', () => withSotto(launchOptions('t3-code', 'dark'), async (launched) => {
       await onThreads(launched)
       await resizeContentWindow(launched, 1280, 800)
       // A Windows run has no traffic lights; the sidebar's own macOS layout is what moves the tile and the sky.
