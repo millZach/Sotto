@@ -1382,13 +1382,15 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       // An E2E run never leaves the app for System Settings.
       const systemSettingsOpener = e2eConfiguration === null ? createSystemSettingsOpener(platform, url => shell.openExternal(url)) : null
       const cleanupWatcher = localRuntime?.watcher?.subscribe(state => windows.sendToMain(WATCHER_CHANGED, state))
+      const unavailableWatcher = () => ({ status: 'refused', code: 'HOST_FEATURE_UNAVAILABLE',
+        message: 'Turn on Run the local host in Settings and restart Sotto to use Watcher.', retryable: true } as const)
       const cleanup = registerIpc(ipcMain, {
-        ...(localRuntime?.watcher ? { watcher: {
-          get: async () => localRuntime.watcher!.get(),
-          open: request => localRuntime.watcher!.open(request),
-          prepareStopAll: async () => localRuntime.watcher!.prepareStopAll(),
-          stopAll: request => localRuntime.watcher!.stopAll(request.confirmationId),
-          setLimit: async request => { await settings.update({ watcherInFlightLimit: request.limit }); return localRuntime.watcher!.get() },
+        ...(watcherEnabled ? { watcher: {
+          get: async () => localRuntime?.watcher?.get() ?? unavailableWatcher(),
+          open: request => localRuntime?.watcher?.open(request) ?? Promise.resolve(unavailableWatcher()),
+          prepareStopAll: async () => localRuntime?.watcher?.prepareStopAll() ?? unavailableWatcher(),
+          stopAll: request => localRuntime?.watcher?.stopAll(request.confirmationId) ?? Promise.resolve(unavailableWatcher()),
+          setLimit: async request => { if (!localRuntime?.watcher) return unavailableWatcher(); await settings.update({ watcherInFlightLimit: request.limit }); return localRuntime.watcher.get() },
         } satisfies Omit<import('../shared/watcherRoom').WatcherBridge, 'onChanged'> } : {}),
         settings: {
           get: () => settingsCoordinator.getSettings(),

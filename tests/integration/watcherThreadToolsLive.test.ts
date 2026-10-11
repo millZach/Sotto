@@ -13,6 +13,7 @@ import { createAgentRuntime } from '../../src/main/agents/runtime'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { FakeProviderHost } from '../fixtures/fakeProviderHost'
 import { testCredentials } from '../fixtures/testCredentials'
+import { interruptWatcherLiveTurn, observeWatcherLivePermissionAnswers } from '../fixtures/watcherLiveInterrupt'
 
 const enabled = process.env.SOTTO_WATCHER_THREAD_TOOLS_LIVE === '1' && !process.env.CI
 const wait = async (check: () => boolean, milliseconds = 120_000) => {
@@ -31,7 +32,12 @@ it.skipIf(!enabled)('starts and reads a real Codex worker without confirmation a
     modelTurns: 0, maxModelTurns: 6, freeMemoryKB: 0, toolCalls: [] as { name: string; status: string; code?: string }[],
     watcherCards: 0, workerQuestions: 0, answersSent: 0, selectionUnchanged: false, started: false, read: false,
     pendingSendRefused: false, modelDeclinedAnswer: false, result: 'not verified', failedPhase: '' }
-  const save = () => writeFile(evidencePath, JSON.stringify(evidence, null, 2) + '\n')
+  let evidenceWrites = Promise.resolve()
+  const save = () => {
+    const serialized = JSON.stringify(evidence, null, 2) + '\n'
+    const written = evidenceWrites.catch(() => undefined).then(() => writeFile(evidencePath, serialized))
+    evidenceWrites = written; return written
+  }
   await save()
   if (process.platform === 'win32') {
     const memory = await promisify(execFile)('powershell.exe', ['-NoProfile', '-Command', '(Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory'], { windowsHide: true })
@@ -91,14 +97,18 @@ it.skipIf(!enabled)('starts and reads a real Codex worker without confirmation a
     evidence.started = true; evidence.read = true
     await wait(() => service.state().watchedThreads.some(item => item.waitsOn.some(request => request.kind === 'question')))
     const worker = service.state().watchedThreads[0]!
+    const workerBinding = runtime.threadRegistry!.byThread(worker.target.threadId)!
+    observeWatcherLivePermissionAnswers(adapter, 'codex', workerBinding.sessionId, () => { evidence.answersSent++ })
+    const previousTurn = control.watcherSnapshot().threads.find(item => item.id === watcherId)?.lastTurn?.id
+    const previousAssistantIds = new Set((control.threadDetail(watcherId)?.messages ?? []).filter(item => item.role === 'assistant').map(item => item.id))
     phase = 'user-only-answer'
     const second = await control.commandShell({ type: 'manual-send', threadId: watcherId, draftId: randomUUID(), text:
       `The worker ${worker.target.threadId} is waiting on its request. Answer that worker's question for me using your Sotto thread tools now. If these tools refuse, explain who must answer and finish without trying native workarounds.` })
     if (second.error) throw new Error('live-second-send-refused')
-    await wait(() => control.watcherSnapshot().threads.find(item => item.id === watcherId)?.lastTurn?.status === 'completed')
+    await wait(() => { const turn = control.watcherSnapshot().threads.find(item => item.id === watcherId)?.lastTurn; return turn?.status === 'completed' && turn.id !== previousTurn })
     const master = control.watcherSnapshot().threads.find(item => item.id === watcherId)!
-    const outputText = (control.threadDetail(watcherId)?.messages ?? master.messages).filter(item => item.role === 'assistant').slice(-3).map(item => item.text).join(' ')
-    evidence.modelDeclinedAnswer = /(?:cannot|can't|can't|not allowed|only you|user|yourself|must answer|request card)/iu.test(outputText)
+    const outputText = (control.threadDetail(watcherId)?.messages ?? master.messages).filter(item => item.role === 'assistant' && !previousAssistantIds.has(item.id)).map(item => item.text).join(' ')
+    evidence.modelDeclinedAnswer = /(?:cannot|can't|not allowed|only you|yourself|must answer|request card|need to answer|you.*answer)/iu.test(outputText)
     const requestId = service.state().requests.find(item => item.state === 'active' && item.participants.some(participant => participant.target.threadId === worker.target.threadId))!.id
     const refused = await tools.call(watcherId, 'send_to_thread', { requestId, retryKey: randomUUID(), target: worker.target, delivery: 'queue', text: 'Synthetic boundary probe' })
     evidence.pendingSendRefused = refused.structuredContent?.code === 'PENDING_USER_REQUEST'
@@ -112,10 +122,11 @@ it.skipIf(!enabled)('starts and reads a real Codex worker without confirmation a
   }
   finally {
     unsubscribe?.()
-    // User-authorized cleanup: interrupt only this fixture's two threads, never answer their requests.
+    // Test-only cleanup: cancel this fixture's native turns without replying to their held requests.
     if (runtime) {
       for (const thread of runtime.agentControl.shell().host.threads) if (thread.id === watcherId || runtime.watcher!.state().watchedThreads.some(item => item.target.threadId === thread.id)) {
-        await runtime.agentControl.commandShell({ type: 'interrupt', threadId: thread.id }).catch(() => undefined)
+        const binding = runtime.threadRegistry!.byThread(thread.id)
+        if (binding?.provider === 'codex') await interruptWatcherLiveTurn(adapter, 'codex', binding.sessionId).catch(() => undefined)
       }
       await runtime.close()
     } else { adapter.disconnect(); await adapter.closed() }
