@@ -694,6 +694,8 @@ export class WatcherService implements WatcherControlHooks {
   }
   private async readThread(input: WatcherToolInput<'read_thread'>) {
     const thread = this.thread(input.target)
+    // docs/plans/2026-10-08-command-center.md section 2: other special jobs are readable but protected.
+    // Their mutation guards still refuse reserved projects; current and retired masters are excluded here.
     if (thread.kind === 'watcher' || thread.kind === 'watcher-history') refuse('RESERVED_THREAD', 'Watcher tools read workers. Open Watcher history in its own pane.')
     const read = await this.options.host.watcherRead(thread.id, input.position?.afterPosition, input.limit)
     if (!read) refuse('HISTORY_UNAVAILABLE', 'This thread’s history is unavailable. Reconnect its provider and read again.', true)

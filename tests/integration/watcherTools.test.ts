@@ -75,6 +75,34 @@ it('creates one current master, attaches exact tools only there, starts and read
   expect((await f.tools.call(f.id, 'answer', { approved: true })).structuredContent).toMatchObject({ status: 'refused' })
 })
 
+it('lists host-setup jobs as protected and readable while refusing their mutations and master reads', async () => {
+  const f = await fixture(), path = join(f.root, 'host-setup')
+  expect((await f.control.commandForWatcherRoom({ type: 'create-project', provider: 'codex', title: 'Synthetic host setup', path })).error).toBeNull()
+  const project = f.control.watcherSnapshot().projects.find(item => item.path === path)!
+  const target = { hostId: f.control.hostId()!, threadId: randomUUID() }
+  expect((await f.control.commandForWatcherRoom({ type: 'create-thread', threadId: target.threadId, projectId: project.id,
+    title: 'Synthetic setup job', modelId: f.model.id })).error).toBeNull()
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: target.threadId, draftId: randomUUID(),
+    text: 'Synthetic host setup progress' })).error).toBeNull()
+  const selection = [f.control.shell().activeProjectId, f.control.shell().activeThreadId]
+  const unread = f.control.watcherSnapshot().threads.find(item => item.id === target.threadId)!.finishedUnread
+  expect(await f.call('list_threads', {})).toMatchObject({ status: 'ok', rows: expect.arrayContaining([expect.objectContaining({ target, protected: true })]) })
+  expect(await f.call('read_thread', { target })).toMatchObject({ status: 'ok', messages: [{ text: 'Synthetic host setup progress' }] })
+  const record = f.control.watcherRecord(), commands = f.workspace.adapters.codex.commands.length
+  for (const name of ['send_to_thread', 'stop_thread', 'settle_thread'] as const) {
+    expect(await f.call(name, { requestId: f.requestId, retryKey: randomUUID(), target,
+      ...(name === 'send_to_thread' ? { delivery: 'now', text: 'Synthetic forbidden setup instruction' } : {}) }))
+      .toMatchObject({ status: 'refused', code: 'RESERVED_THREAD' })
+  }
+  expect(await f.call('start_thread', { ...f.start(), project: { hostId: target.hostId, projectId: project.id } }))
+    .toMatchObject({ status: 'refused', code: 'RESERVED_THREAD' })
+  expect(await f.call('read_thread', { target: f.service.state().current!.target })).toMatchObject({ status: 'refused', code: 'RESERVED_THREAD' })
+  expect(f.control.watcherRecord()).toEqual(record)
+  expect(f.workspace.adapters.codex.commands).toHaveLength(commands)
+  expect([f.control.shell().activeProjectId, f.control.shell().activeThreadId]).toEqual(selection)
+  expect(f.control.watcherSnapshot().threads.find(item => item.id === target.threadId)!.finishedUnread).toBe(unread)
+})
+
 it('enforces distinct target capacity from the current main setting and four prompts per target without replenishing retries', async () => {
   const f = await fixture(); f.setLimit(1)
   const first = await f.call('start_thread', f.start())
