@@ -2,9 +2,10 @@ import React, { useEffect, useState, type ReactNode } from 'react'
 import { AudioLines, Eye } from 'lucide-react'
 
 import { themeBrand, widgetPaletteFor } from '../../../../../shared/themeBranding'
+import { OMARCHY_THEME_ID } from '../../../../../shared/themes/omarchy'
 import { SottoMark } from '../../../components/SottoMark'
 import { VoiceWave } from '../../../components/VoiceWave'
-import type { AppearanceChoice } from '../../../state/appearance'
+import { resolveAppearance, type AppearanceChoice } from '../../../state/appearance'
 import { EffortColorSample } from './EffortColor'
 
 /** Whether the operating system asks for reduced motion, updated live; the app's own setting is passed in beside it. */
@@ -29,7 +30,9 @@ export function ThemeLivePreview({ shown, systemDark, system, still = false }: {
   readonly still?: boolean
 }): ReactNode {
   const systemStill = useSystemStill()
-  const widgetMode = systemDark ? 'dark' : 'light'
+  const widgetMode = resolveAppearance('system', systemDark, shown)
+  const followsOmarchy = system === 'Linux' && shown.omarchyTheme &&
+    (shown.omarchyTheme.appearance === 'dark' ? shown.darkTheme : shown.lightTheme) === OMARCHY_THEME_ID
   const widgetPalette = widgetPaletteFor(shown)
   const widgetColors = widgetPalette[widgetMode]
   const widgetBrand = themeBrand(widgetColors, widgetMode, { appIcon: widgetPalette.appIcon[widgetMode] })
@@ -54,7 +57,7 @@ export function ThemeLivePreview({ shown, systemDark, system, still = false }: {
         </div>
       </div>
       <EffortColorSample effortColor={shown.effortColor} still={still || systemStill} />
-      <p>The widget follows {system} light or dark mode.</p>
+      <p>{followsOmarchy ? 'The widget follows the Omarchy theme’s mode.' : `The widget follows ${system} light or dark mode.`}</p>
     </aside>
   )
 }

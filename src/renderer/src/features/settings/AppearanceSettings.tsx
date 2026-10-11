@@ -36,7 +36,7 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings }: 
   const systemDark = useSystemPrefersDark()
   const system = platform === 'darwin' ? 'macOS' : platform === 'linux' ? 'Linux' : 'Windows'
   const shown = appearancePreview.effective(settings)
-  const resolved = resolveAppearance(shown.appearance, systemDark)
+  const resolved = resolveAppearance(shown.appearance, systemDark, shown)
   const canFrost = window.sotto?.canFrostWindow === true
   const [importing, setImporting] = useState(false)
   const [status, setStatus] = useState<{ text: string; error: boolean } | null>(null)
