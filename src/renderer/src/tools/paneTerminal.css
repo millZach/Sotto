@@ -11,6 +11,7 @@
    focus from dragging the pane along while the grid catches up with a resize. */
 .pane-terminal__body :is(.terminal-surface, .terminal-screen, .terminal-view) { min-width: 0; }
 .pane-terminal__body .terminal-surface { flex: 1; min-height: 0; }
+.pane-terminal .terminal-empty { min-height: 0; overflow: auto; }
 .pane-terminal .terminal-view { overflow: clip; }
 .pane-terminal .terminal-bar { min-height: 36px; }
 /* The drawer's icon buttons look the way the Tools panel's do, a little smaller for its shorter bar. */

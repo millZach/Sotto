@@ -18,7 +18,7 @@ export function terminalBridgeFixture(options: { workspace: FileWorkspace; sessi
   const pendingRead: { release: (() => void) | null } = { release: null }
   const reads = new Set<() => void>()
   const bridge: TerminalBridge = {
-    list: vi.fn<TerminalBridge['list']>(async () => ({ ok: true, value: { workspace: options.workspace, sessions } })),
+    list: vi.fn<TerminalBridge['list']>(async () => ({ ok: true, value: { workspace: options.workspace, sessions, capacity: { count: sessions.length, version: 0 } } })),
     create: vi.fn<TerminalBridge['create']>(),
     read: vi.fn<TerminalBridge['read']>(async ({ sessionId }) => {
       if (hold.read) {
@@ -31,6 +31,7 @@ export function terminalBridgeFixture(options: { workspace: FileWorkspace; sessi
     }),
     write: vi.fn<TerminalBridge['write']>(async () => ({ ok: true, value: undefined })), resize: vi.fn<TerminalBridge['resize']>(async () => ({ ok: true, value: undefined })),
     interrupt: vi.fn<TerminalBridge['interrupt']>(async () => ({ ok: true, value: undefined })),
+    pasteImage: vi.fn<TerminalBridge['pasteImage']>(async () => ({ ok: true, value: undefined })),
     close: vi.fn<TerminalBridge['close']>(async ({ sessionId }) => { sessions = sessions.filter(item => item.id !== sessionId); return { ok: true, value: undefined } }),
     reopen: vi.fn<TerminalBridge['reopen']>(), onEvent: events.subscribe, ...options.commands,
   }

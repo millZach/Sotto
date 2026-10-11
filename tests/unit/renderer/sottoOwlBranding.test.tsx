@@ -9,7 +9,7 @@ import { createBridge, openPage, renderApp, shell } from '../../fixtures/rendere
 import type { AppNavigation } from '../../../src/renderer/src/state/AppContext'
 import { threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
-const VERSIONS = { stable: '0.1.34', owl: '0.1.35-owl.20261009.1' } as const satisfies Record<ReleaseTrack, string>
+const VERSIONS = { stable: '0.1.34', owl: '0.1.37-owl.20261011.1' } as const satisfies Record<ReleaseTrack, string>
 const NAMES = { stable: 'Sotto', owl: 'Sotto Owl' } as const satisfies Record<ReleaseTrack, string>
 
 function trackBridge(track: ReleaseTrack, onboardingComplete: boolean) {
@@ -75,7 +75,7 @@ describe.each(['stable', 'owl'] as const)('the %s build names itself', (track) =
     const about = document.querySelector('.help-about')!
     expect(about.textContent).toMatch(new RegExp(`^${NAMES[track]} ${VERSIONS[track].replaceAll('.', '\\.')}, Windows\\. No account with Sotto`))
     // An Owl version is one word on the line, never broken at its hyphen; stable keeps the line as it was.
-    if (track === 'owl') expect(about.querySelector('.help-about__version')).toHaveTextContent(/^0\.1\.35-owl\.20261009\.1$/)
+    if (track === 'owl') expect(about.querySelector('.help-about__version')).toHaveTextContent(/^0\.1\.37-owl\.20261011\.1$/)
     else expect(about.querySelector('.help-about__version')).toBeNull()
 
     go('settings')

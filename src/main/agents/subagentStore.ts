@@ -41,7 +41,7 @@ export class SubagentStore {
   private db: DatabaseSync | undefined
   private memory = false
   private counts = blankWork()
-  constructor(private readonly path: string) {}
+  constructor(private readonly path: string, private readonly preserveThread?: (threadId: string) => boolean) {}
   get ephemeral(): boolean { return this.memory }
   /** Structural work counters for archive-size regression measurements. */
   get work(): Readonly<SubagentStoreWork> { return { ...this.counts } }
@@ -71,7 +71,7 @@ export class SubagentStore {
       }
       this.db = db; this.memory = ephemeral
       // Startup touches live metadata only, never the task/result archive.
-      for (const thread of db.prepare("SELECT DISTINCT thread_id FROM subagent_rows WHERE status = 'running'").all()) this.markUnknown(String(thread.thread_id))
+      for (const thread of db.prepare("SELECT DISTINCT thread_id FROM subagent_rows WHERE status = 'running'").all()) if (!this.preserveThread?.(String(thread.thread_id))) this.markUnknown(String(thread.thread_id))
     } catch (error) { db.close(); this.db = undefined; throw error }
   }
   close(): void { this.db?.close(); this.db = undefined; this.memory = false }
@@ -90,13 +90,18 @@ export class SubagentStore {
   }
   private erase(): void {
     const db = this.requireOpen()
+    const threadIds = this.preserveThread ? db.prepare('SELECT thread_id FROM subagent_threads UNION SELECT thread_id FROM subagent_rows UNION SELECT thread_id FROM subagent_assignments UNION SELECT thread_id FROM subagent_classifications').all().map(row => String(row.thread_id)) : undefined
+    const selected = threadIds?.some(id => this.preserveThread!(id)) ? threadIds.filter(id => !this.preserveThread!(id)) : undefined
     db.exec('BEGIN IMMEDIATE')
     try {
       // The explicit privacy action scans identities once; progress and startup never do.
       for (const row of db.prepare('SELECT thread_id, agent_id, assignment_id FROM subagent_assignments').iterate()) {
-        this.rememberErased(String(row.thread_id), String(row.agent_id), String(row.assignment_id))
+        if (!this.preserveThread?.(String(row.thread_id))) this.rememberErased(String(row.thread_id), String(row.agent_id), String(row.assignment_id))
       }
-      db.exec('DELETE FROM subagent_assignments; DELETE FROM subagent_classifications; DELETE FROM subagent_rows; DELETE FROM subagent_threads; COMMIT;')
+      if (selected) {
+        for (const id of selected) for (const table of ['subagent_assignments', 'subagent_classifications', 'subagent_rows', 'subagent_threads']) db.prepare('DELETE FROM ' + table + ' WHERE thread_id = ?').run(id)
+      } else db.exec('DELETE FROM subagent_assignments; DELETE FROM subagent_classifications; DELETE FROM subagent_rows; DELETE FROM subagent_threads;')
+      db.exec('COMMIT')
     } catch (error) { db.exec('ROLLBACK'); throw error }
     db.exec('PRAGMA wal_checkpoint(TRUNCATE); VACUUM; PRAGMA wal_checkpoint(TRUNCATE);')
   }

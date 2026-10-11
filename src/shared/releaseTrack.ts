@@ -2,6 +2,9 @@ import { APP_NAME } from './constants'
 
 export type ReleaseTrack = 'stable' | 'owl'
 
+/** Watcher is preview-only until it is explicitly promoted to both tracks (ADR-0072). */
+export function isWatcherEnabled(track: ReleaseTrack): boolean { return track === 'owl' }
+
 /** Owl is a versioned preview track, independent of the app's identity. */
 export function getReleaseTrack(version: string): ReleaseTrack {
   return /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)-owl\.[1-9]\d{7}\.[1-9]\d*$/u.test(version) ? 'owl' : 'stable'

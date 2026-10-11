@@ -119,7 +119,7 @@ it.skipIf(!enabled)('checks four watcher turns with native tools and user-only p
   const attach = () => {
     const profiles = new WatcherLaunchProfiles(data, () => hostId, threadId => threadId === id ? {
       id, hostId, projectId, providerId: provider, kind: 'watcher', modelId: current()?.modelId ?? '', title: 'Synthetic center', status: 'idle', messages: [], requests: [],
-    } as AgentThread : undefined)
+    } as AgentThread : undefined, true)
     profiles.useTools({ name: 'sotto_threads', definitions: tools.definitions, mcpServer: threadId => tools.mcpServer(threadId), revoke: threadId => tools.revoke(threadId) })
     host.useLaunchProfiles!(profiles)
     unsubscribe = host.subscribe(value => {

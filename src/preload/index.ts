@@ -13,6 +13,7 @@ import { createToolsBridges } from './tools'
 import { createCloudIphoneBridge } from './cloudIphone'
 import { createTerminalWorkspaceBridge } from './terminals'
 import { createThemesBridge } from './themes'
+import { speechModelStatusSchema } from '../shared/speechModel'
 import { FILES_LIST, FILES_PREVIEW, FILES_COPY_PATH, FILES_REVEAL, fileListRequestSchema, fileRequestSchema, fileListingSchema, filePreviewSchema, filePathSchema, filesResultSchema, type FilesBridge } from '../shared/files'
 import { AGENT_CHOOSE_PROJECT_DIRECTORY, AGENT_WORKING_COPY_OPTIONS, agentWorkingCopyOptionsSchema, agentWorkingCopyOptionsRequestSchema } from '../shared/agents'
 import { AGENT_GIT_REFS, gitRefsPageSchema, gitRefsRequestSchema } from '../shared/gitRefs'
@@ -49,7 +50,10 @@ import {
   RECOVERY_NOTICE,
   RECOVERY_NOTICE_LIST,
   TRANSCRIPTION_CANCEL,
-  TRANSCRIPTION_CHECK_KEY,
+  OPENROUTER_CHECK_KEY,
+  SPEECH_MODEL_DOWNLOAD,
+  SPEECH_MODEL_GET_STATUS,
+  SPEECH_MODEL_STATUS,
   TRANSCRIPTION_TRANSCRIBE,
   MICROPHONE_ENSURE_ACCESS,
   SETTINGS_GET,
@@ -73,7 +77,7 @@ import {
 } from '../shared/channels'
 import {
   dictationCommandSchema,
-  transcriptionKeyCheckSchema,
+  openRouterKeyCheckSchema,
   transcriptionResultSchema,
   widgetDragSchema,
   widgetPresentationPayloadSchema,
@@ -298,6 +302,12 @@ export function createSottoBridge(
     recoveryNoticeSchema,
     2,
   )
+  const onSpeechModelStatus = createBufferedSubscription(
+    renderer,
+    SPEECH_MODEL_STATUS,
+    speechModelStatusSchema,
+    1,
+  )
   const onUpdateStatus = createBufferedSubscription(
     renderer,
     UPDATE_STATUS,
@@ -384,7 +394,10 @@ export function createSottoBridge(
       invokeParsed(renderer, TRANSCRIPTION_TRANSCRIBE, transcriptionResultSchema, request),
     cancelTranscription: (requestId) =>
       invokeParsed(renderer, TRANSCRIPTION_CANCEL, commandResultSchema, requestId),
-    checkTranscriptionKey: () => invokeParsed(renderer, TRANSCRIPTION_CHECK_KEY, transcriptionKeyCheckSchema),
+    getSpeechModelStatus: () => invokeParsed(renderer, SPEECH_MODEL_GET_STATUS, speechModelStatusSchema),
+    downloadSpeechModel: () => invokeParsed(renderer, SPEECH_MODEL_DOWNLOAD, commandResultSchema),
+    onSpeechModelStatus,
+    checkOpenRouterKey: () => invokeParsed(renderer, OPENROUTER_CHECK_KEY, openRouterKeyCheckSchema),
     ensureMicrophoneAccess: () => invokeParsed(renderer, MICROPHONE_ENSURE_ACCESS, z.boolean()),
 
     getUpdateStatus: () => invokeParsed(renderer, UPDATE_GET_STATUS, updateResponseSchema),

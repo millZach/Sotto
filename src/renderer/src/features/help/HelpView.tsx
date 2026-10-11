@@ -49,10 +49,10 @@ export function HelpView({ shortcut, platform, version, releaseTrack = 'stable' 
     linux
       ? { title: 'Global shortcut', body: <p>{copy.settingsGlobalShortcutDescription}</p> }
       : { title: 'Shortcut conflicts', body: <p>If another application owns a shortcut, Sotto keeps your previous working shortcut active. Choose a different combination in Settings. It saves when you leave the shortcut field.</p> },
-    { title: 'Transcription', body: <p>Microsoft MAI-Transcribe-2 transcribes your speech through OpenRouter. Add your OpenRouter API key in Settings and use Verify key to check the connection.</p> },
+    { title: 'Transcription', body: <p>Parakeet v3, by NVIDIA, transcribes your speech on this computer. It downloads once, 670 MB, and understands 25 European languages. Settings → Transcription shows whether it is ready.</p> },
   ]
   const privacy: Topic[] = [
-    { title: 'Privacy', body: <p>Audio you dictate is sent to OpenRouter for transcription. AI cleanup sends transcript text to OpenRouter. Agent prompts go to the connected coding provider. History stays on this computer.</p> },
+    { title: 'Privacy', body: <p>Audio you dictate never leaves this computer. AI cleanup, when it is on, sends the transcript text to OpenRouter on your key. Agent prompts go to the connected coding provider. History stays on this computer.</p> },
   ]
   const troubleshooting: Topic[] = [
     { title: 'Microphone access', body: <p>{copy.helpMicrophoneAccess}</p> },
@@ -88,7 +88,7 @@ export function HelpView({ shortcut, platform, version, releaseTrack = 'stable' 
             <p className="help-about">
               {about}, {mac ? 'macOS' : linux ? 'Linux' : 'Windows'}. No account with Sotto and no telemetry.
               <br />
-              Transcription uses your OpenRouter account.
+              Transcription runs on this computer; AI cleanup uses your OpenRouter account.
             </p>
           </section>
         </div>

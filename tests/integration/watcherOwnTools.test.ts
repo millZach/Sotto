@@ -4,6 +4,9 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WatcherLaunchProfiles } from '../../src/main/agents/watcherLaunchProfiles'
+import { WorkspaceHost } from '../../src/main/agents/workspace'
+import { ConfiguredProviderHost } from '../../src/main/agents/providerSwitch'
+import { FakeProviderHost } from '../fixtures/fakeProviderHost'
 import { WATCHER_SYSTEM_PROMPT } from '../../src/main/agents/watcherPrompt'
 import type { AgentHost, WatcherProfileTools } from '../../src/main/agents/host'
 import type { ScopedThreadTools } from '../../src/main/agents/threadToolServer'
@@ -34,13 +37,13 @@ async function seedModels(root: string, provider: keyof typeof factories, update
     models: ids.map(model => ({ id: model, model, displayName: model, isDefault: model === ids[0], defaultReasoningEffort: 'low', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }] })),
   } : { ...(updated ? { cliVersion: '1.0.41' } : {}), catalog: { currentModelId: ids[0], availableModels: ids.map(modelId => ({ modelId, name: modelId, _meta: { reasoningEffort: 'high', supportsReasoningEffort: true, reasoningEfforts: [{ id: 'high' }] } })) } }))
 }
-async function attach(host: AgentHost, root: string, threadId: string, projectId: string, provider: 'codex' | 'claude' | 'grok') {
-  const record = emptyWatcherRecord(), hostId = randomUUID()
+async function attach(host: AgentHost, root: string, threadId: string, projectId: string, provider: 'codex' | 'claude' | 'grok', hostId: string = randomUUID()) {
+  const record = emptyWatcherRecord()
   record.current = { target: { hostId, threadId }, projectId, provider, creationOperationId: randomUUID(), createdAt: new Date().toISOString() }
   await writeFile(join(root, 'agents.json'), JSON.stringify({ watcher: record }))
   const source = new WatcherLaunchProfiles(root, () => hostId, id => id === threadId ? {
     id, hostId, projectId, providerId: provider, kind: 'watcher', title: 'Center', modelId: 'fixture-model', status: 'idle', messages: [], requests: [],
-  } as AgentThread : undefined)
+  } as AgentThread : undefined, true)
   const tools: WatcherProfileTools = { ...scoped('sotto_threads'), definitions: [{ name: 'list_threads', description: 'Synthetic', inputSchema: {} }], revoke: vi.fn() }
   source.useTools(tools); host.useLaunchProfiles!(source)
   host.useThreadTools!(['sotto_visual', 'sotto_pull_requests', 'sotto_host_setup', 'sotto_browser'].map(scoped))
@@ -96,6 +99,35 @@ function assertConfiguration(provider: keyof typeof factories, records: Recorded
 }
 
 for (const provider of Object.keys(factories) as (keyof typeof factories)[]) describe(`${provider} watcher own tools`, () => {
+  it('discovers and sends selected native skills while retaining the launch profile', async () => {
+    const f = await factories[provider](); cleanups.push(f.cleanup)
+    const id = randomUUID(), tools = await attach(f.host, f.root, id, f.projectId, provider)
+    const path = join(f.root, 'SKILL.md')
+    if (provider === 'codex') await writeFile(join(f.root, 'script.json'), JSON.stringify({
+      skills: [{ name: 'check', description: 'Synthetic', path, scope: 'repo', enabled: true }],
+    }))
+    else await writeFile(join(f.root, 'skills.json'), JSON.stringify(provider === 'claude'
+      ? [{ name: 'check', description: 'Synthetic (project)' }]
+      : { skills: [{ name: 'check', description: 'Synthetic', source: { path, type: 'project' }, userInvocable: true }] }))
+    await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Synthetic', path: f.root })
+    await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Watcher', modelId: f.modelId })
+    const catalog = await f.host.listThreadSkills!(id, true)
+    expect(catalog).toMatchObject({ threadId: id, providerId: provider, status: 'ready' })
+    const skill = catalog.skills[0]!
+    expect(skill.name).toBe('check')
+    expect((await f.host.execute({ type: 'send', commandId: randomUUID(), threadId: id, messageId: randomUUID(),
+      text: '$check verify', skills: [{ name: skill.name, path: skill.path }] })).accepted).toBe(true)
+    const records = await f.driver.requests()
+    const prompt = records.find(record => record.method === (provider === 'codex' ? 'turn/start' : provider === 'claude' ? 'user' : 'session/prompt'))!
+    if (provider === 'codex') expect(prompt.params!.input).toContainEqual({ type: 'skill', name: 'check', path })
+    else expect(JSON.stringify(prompt.params)).toContain('/check verify')
+    expect(tools.revoke).not.toHaveBeenCalled()
+    await writeFile(join(f.root, 'agents.json'), '{')
+    await expect(f.host.listThreadSkills!(id, true)).rejects.toThrow('saved identity')
+    expect(tools.revoke).toHaveBeenCalledWith(id)
+  })
+
   it('keeps tools, asking mode and instructions through early start, send, settings, replacement and cold resume', async () => {
     const f = await factories[provider](); cleanups.push(f.cleanup)
     const id = randomUUID(), tools = await attach(f.host, f.root, id, f.projectId, provider)
@@ -189,6 +221,42 @@ for (const provider of ['codex', 'grok'] as const) it(`${provider} refuses remem
   await expect(f.host.execute({ ...answer, permissionChoice: provider === 'codex' ? 'acceptForSession' : 'always' })).rejects.toThrow('cannot be widened')
   expect((await f.host.snapshot()).threads.find(thread => thread.id === id)!.requests).toHaveLength(1)
   expect((await f.host.execute({ ...answer, commandId: randomUUID(), permissionChoice: provider === 'codex' ? 'accept' : 'yes' })).accepted).toBe(true)
+})
+
+for (const provider of ['codex', 'grok'] as const) it(`${provider} keeps the workspace session and card after refusing a remembered grant`, async () => {
+  const f = await factories[provider](); cleanups.push(f.cleanup)
+  const native = new ConfiguredProviderHost({ directory: f.root, provider: () => provider, enabledProviders: () => [provider],
+    threadProvider: () => provider, hosts: { codex: new FakeProviderHost(), claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), [provider]: f.host } })
+  const workspace = new WorkspaceHost(native, f.root, () => true, undefined, true)
+  cleanups.push(() => workspace.close())
+  await workspace.initialize()
+  await workspace.connect()
+  await workspace.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Synthetic', path: f.root })
+  const id = randomUUID(), hostId = workspace.workspaceSnapshot().hostId!
+  const tools = await attach(f.host, f.root, id, f.projectId, provider, hostId)
+  workspace.useWatcherTools(tools)
+  const modelId = workspace.workspaceSnapshot().models.find(model => model.providerId === provider)!.id
+  await workspace.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Watcher', modelId })
+  await workspace.execute({ type: 'send', commandId: randomUUID(), threadId: id, messageId: randomUUID(), text: 'Synthetic first turn' })
+  await f.driver.completeTurn(id, 'Synthetic complete')
+  await expect.poll(async () => (await workspace.snapshot()).threads.find(thread => thread.id === id)?.status).toBe('idle')
+  await f.action(id, provider === 'codex' ? { type: 'permission', text: 'Synthetic write', params: { availableDecisions: ['accept', 'acceptForSession', 'decline'] } }
+    : { type: 'permission', text: 'Synthetic write', options: [{ optionId: 'yes', name: 'Allow once', kind: 'allow_once' }, { optionId: 'always', name: 'Always', kind: 'allow_always' }, { optionId: 'no', name: 'Deny', kind: 'reject_once' }] })
+  await expect.poll(async () => (await workspace.snapshot()).threads.find(thread => thread.id === id)?.requests[0]?.kind).toBe('permission')
+  const request = (await workspace.snapshot()).threads.find(thread => thread.id === id)!.requests[0]!
+  await expect(workspace.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, runtimeMode: 'full-access' })).rejects.toThrow('cannot be widened')
+  await expect(workspace.configureThreadWorkingCopy(id, { workingCopy: 'independent' })).rejects.toThrow('working folder cannot be changed')
+  const answer = { type: 'answer' as const, commandId: randomUUID(), threadId: id, requestId: request.id, answer: '', approved: true }
+  await expect(workspace.execute({ ...answer, permissionChoice: provider === 'codex' ? 'acceptForSession' : 'always' })).rejects.toThrow('Allow this request once')
+  expect(tools.revoke).not.toHaveBeenCalled()
+  expect((await workspace.snapshot()).threads.find(thread => thread.id === id)!.requests).toEqual([request])
+  expect((await workspace.execute({ ...answer, commandId: randomUUID(), permissionChoice: provider === 'codex' ? 'accept' : 'yes' })).accepted).toBe(true)
+  await expect.poll(async () => (await workspace.snapshot()).threads.find(thread => thread.id === id)?.requests).toEqual([])
+  expect((await workspace.execute({ type: 'send', commandId: randomUUID(), threadId: id, messageId: randomUUID(), text: 'Synthetic retry turn' })).accepted).toBe(true)
+  expect(tools.revoke).not.toHaveBeenCalled()
+  await writeFile(join(f.root, 'agents.json'), '{')
+  await expect(workspace.execute({ ...answer, commandId: randomUUID() })).rejects.toThrow('saved identity')
+  expect(tools.revoke).toHaveBeenCalledWith(id)
 })
 
 it('pins every Codex uncertain-settings resume, including a resident recovery read', async () => {

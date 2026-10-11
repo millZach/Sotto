@@ -1,5 +1,5 @@
 // Launch the unpacked Owl app with an isolated profile and check its real preload status.
-// node tools/verify-owl-package.mjs 0.1.35-owl.20261009.1
+// node tools/verify-owl-package.mjs 0.1.37-owl.20261011.1
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'

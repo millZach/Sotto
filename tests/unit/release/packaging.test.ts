@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 import { parse } from 'yaml'
+import { stablePackagePlan } from '../../../scripts/stable-package.mjs'
 
 const root = process.cwd()
 const read = (path: string): string => readFileSync(resolve(root, path), 'utf8')
@@ -47,25 +48,30 @@ interface BuilderConfig {
 
 const packageManifest = JSON.parse(read('package.json')) as PackageManifest
 const builderConfig = parse(read('electron-builder.yml')) as BuilderConfig
+const promotedVersion = '0.1.37'
+const stablePackager = read('scripts/package-stable.mjs')
 
 const releaseContracts = [
   {
     platform: 'Windows',
-    scripts: ['package:dir', 'package:win'],
+    scripts: ['package:dir'],
+    stablePlatform: 'win' as const,
     distributableScript: 'package:win',
     outDir: 'release/win-unpacked',
-    installer: `release/Sotto Setup ${packageManifest.version}.exe`,
+    installer: `release/Sotto Setup ${promotedVersion}.exe`,
   },
   {
     platform: 'macOS',
-    scripts: ['package:dir:mac', 'package:mac'],
+    scripts: ['package:dir:mac'],
+    stablePlatform: 'mac' as const,
     distributableScript: 'package:mac',
     outDir: 'release/mac-arm64',
-    installer: `release/Sotto-${packageManifest.version}-arm64.dmg`,
+    installer: `release/Sotto-${promotedVersion}-arm64.dmg`,
   },
   {
     platform: 'Linux',
     scripts: ['package:linux'],
+    stablePlatform: undefined,
     distributableScript: 'package:linux',
     outDir: 'release/linux-unpacked',
     installer: `release/Sotto-${packageManifest.version}-linux-x64.tar.gz`,
@@ -74,7 +80,7 @@ const releaseContracts = [
 
 describe.each(releaseContracts)(
   '$platform release contract',
-  ({ scripts, distributableScript, outDir, installer }) => {
+  ({ scripts, distributableScript, outDir, installer, stablePlatform }) => {
     it('verifies release assets, builds, records provenance, and verifies the packaged output', () => {
       for (const script of scripts) {
         const command = packageManifest.scripts[script]
@@ -82,10 +88,21 @@ describe.each(releaseContracts)(
         expect(command).toContain('node scripts/write-build-provenance.mjs')
         expect(command).toContain(`node scripts/verify-packaged-resources.mjs ${outDir}`)
       }
+      if (stablePlatform) {
+        expect(packageManifest.scripts[distributableScript]).toBe(`npm run release:check && node scripts/package-stable.mjs ${stablePlatform}`)
+        expect(stablePackagePlan(stablePlatform, promotedVersion).unpacked).toBe(outDir)
+        const stages = ["['run', 'assets:verify']", "['run', 'build']", "'scripts/write-build-provenance.mjs'", 'await build(', "'scripts/verify-packaged-resources.mjs'"]
+        const positions = stages.map(stage => stablePackager.indexOf(stage))
+        expect(positions.every(position => position >= 0)).toBe(true)
+        expect(positions).toEqual([...positions].sort((a, b) => a - b))
+      }
     })
 
     it('points the distributable verification at the artifact name electron-builder emits', () => {
-      expect(packageManifest.scripts[distributableScript]).toContain(`--installer "${installer}"`)
+      if (stablePlatform) {
+        expect(stablePackagePlan(stablePlatform, promotedVersion).installer).toBe(installer)
+        expect(stablePackager).toContain("'--installer', resolve(root, plan.installer)")
+      } else expect(packageManifest.scripts[distributableScript]).toContain(`--installer "${installer}"`)
     })
   },
 )
@@ -106,13 +123,15 @@ describe('release contract', () => {
     // Returning false from beforeBuild also disables dependency collection.
     expect(builderConfig.beforeBuild).toBeUndefined()
     expect(builderConfig.asarUnpack).toContain('node_modules/node-pty/**')
-    for (const script of ['package:dir:mac', 'package:mac']) {
-      expect(packageManifest.scripts[script]).toContain('--config.npmRebuild=true')
-    }
+    // The speech engine's addon and its per-platform native package load outside ASAR too (ADR-0071).
+    expect(builderConfig.asarUnpack).toEqual(expect.arrayContaining(['node_modules/sherpa-onnx-node/**', 'node_modules/sherpa-onnx-*/**']))
+    expect(packageManifest.scripts['package:dir:mac']).toContain('--config.npmRebuild=true')
+    expect(stablePackagePlan('mac', promotedVersion).config.npmRebuild).toBe(true)
+    expect(stablePackagePlan('win', promotedVersion).config.npmRebuild).toBeUndefined()
   })
 
   it('packages only runtime-external dependencies and verifies source and packaged resources', () => {
-    expect(packageManifest.dependencies).toEqual({ 'node-pty': '1.1.0', zod: '4.4.3' })
+    expect(packageManifest.dependencies).toEqual({ 'node-pty': '1.1.0', 'sherpa-onnx-node': '1.13.8', zod: '4.4.3' })
     expect(builderConfig.extraResources.some((resource) => resource.from === 'resources/runtime')).toBe(false)
     expect(builderConfig.extraResources.some((resource) => resource.from === 'resources/models')).toBe(false)
     expect(packageManifest.devDependencies['@electron/asar']).toBe('3.4.1')
@@ -168,9 +187,10 @@ describe('release contract', () => {
     ])
     // The feed exists so app-update.yml lands in the packaged resources. Uploading a
     // release is a deliberate manual act, never a side effect of building one.
-    for (const script of ['package:dir', 'package:win', 'package:dir:mac', 'package:mac']) {
+    for (const script of ['package:dir', 'package:dir:mac', 'package:linux']) {
       expect(packageManifest.scripts[script]).toContain('--publish never')
     }
+    expect(stablePackager).toContain("publish: 'never'")
   })
 
   it('compiles the updater into main rather than shipping it as a runtime dependency', () => {

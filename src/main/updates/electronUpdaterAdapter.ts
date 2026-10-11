@@ -6,8 +6,8 @@ import type { UpdaterAdapter, UpdaterEvent } from './updateService'
 
 /**
  * The only module in Sotto that knows electron-updater exists. It is bundled
- * into the main chunk rather than shipped as a runtime dependency, so the
- * packaged `dependencies` manifest stays exactly `zod` and `node-pty`.
+ * into the main chunk rather than shipped as a runtime dependency, so it never
+ * joins the packaged `dependencies` manifest.
  *
  * Everything the app decides about updating is set here, once:
  *

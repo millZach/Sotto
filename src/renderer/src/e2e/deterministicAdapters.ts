@@ -2,7 +2,7 @@ import type { SottoBridge } from '../../../shared/contracts'
 import { STORED_CREDENTIAL_PLACEHOLDER, type AppSettings } from '../../../shared/settings'
 import { E2E_TRANSCRIPT, type E2EScenario } from '../../../shared/e2e'
 import type { AudioRecorderOptions, AudioRecordingResult } from '../audio/audioRecorder'
-import { TranscriptionError } from '../transcription/openRouterTranscriber'
+import { TranscriptionError } from '../transcription/localTranscriber'
 import { BrowserMicrophoneTest, type MicrophoneTestController } from '../features/onboarding/microphoneTest'
 import {
   createProductionDictationController,
@@ -53,18 +53,18 @@ function createE2EFactories(scenario: E2EScenario): ProductionControllerFactorie
       return {
         async transcribe(options) {
           if (scenario === 'transcription-failure') throw new Error('DETERMINISTIC_TRANSCRIPTION_FAILURE')
-          // A rate-limit burst, followed by a successful retry of the kept recording.
+          // A segment the speech model could not transcribe, followed by a successful retry of the kept recording.
           const refusals = scenario === 'transcription-turned-away-once' ? 1 : scenario === 'transcription-turned-away-twice' ? 2 : 0
           if (turnedAway < refusals) {
             turnedAway += 1
-            throw new TranscriptionError('rate-limited')
+            throw new TranscriptionError('failed')
           }
           options.onProgress?.({ stage: 'loading-model', progress: 1 })
           if (scenario === 'design-processing') {
             await new Promise<never>(() => undefined)
           }
           options.onProgress?.({ stage: 'transcribing', progress: 1 })
-          return { text: E2E_TRANSCRIPT, language: 'en' }
+          return { text: E2E_TRANSCRIPT, language: 'auto' }
         },
         cancel(): void {},
         dispose(): void {},
@@ -98,6 +98,6 @@ export function createE2ESettingsBridge(bridge: SottoBridge, enabled: boolean): 
     },
     resetSettings: async () => configured(await bridge.resetSettings()),
     onSettingsChanged: (listener) => bridge.onSettingsChanged((settings) => listener(configured(settings))),
-    checkTranscriptionKey: async () => ({ ok: true }),
+    checkOpenRouterKey: async () => ({ ok: true }),
   }
 }

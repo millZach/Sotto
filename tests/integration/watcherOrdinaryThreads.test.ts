@@ -39,7 +39,7 @@ for (const provider of ['claude', 'codex', 'grok', 'devin'] as const) describe(`
     const directory = join(f.root, 'workspace')
     await fs.mkdir(directory); await fs.writeFile(join(directory, 'agents.json'), '{}')
     const reads = vi.spyOn(fs, 'readFile')
-    const host = new WorkspaceHost(f.host, directory)
+    const host = new WorkspaceHost(f.host, directory, undefined, undefined, true)
     cleanups.push(() => host.close())
     const snapshot = await host.connect(provider)
     const modelId = snapshot.models[0]!.id
@@ -66,7 +66,7 @@ for (const provider of ['claude', 'codex', 'grok', 'devin'] as const) describe(`
     const hostId = randomUUID(), threadId = randomUUID(), master = randomUUID()
     const source = new WatcherLaunchProfiles(f.root, () => hostId, id => ({ id, hostId,
       kind: id === master ? 'watcher' : 'project', providerId: provider, projectId: f.projectId,
-      title: 'Fixture', modelId: f.modelId, status: 'idle', messages: [], requests: [] } as AgentThread))
+      title: 'Fixture', modelId: f.modelId, status: 'idle', messages: [], requests: [] } as AgentThread), true)
     f.host.useLaunchProfiles!(source)
     await f.host.connect()
     await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Fixture', path: f.root })
@@ -107,7 +107,7 @@ for (const provider of ['claude', 'codex', 'grok', 'devin'] as const) describe(`
     const native = new ConfiguredProviderHost({ directory, provider: () => provider, enabledProviders: () => [provider],
       threadProvider: id => registry.byThread(id)?.provider,
       hosts: { ...hosts, [provider]: new SottoThreadHost(provider, f.host, registry) } })
-    const host = new WorkspaceHost(native, directory)
+    const host = new WorkspaceHost(native, directory, undefined, undefined, true)
     cleanups.push(async () => { await host.close(); await registry.flush() })
     const snapshot = await host.connect(provider)
     const modelId = snapshot.models.find(model => model.providerId === provider)!.id
@@ -171,7 +171,7 @@ it.each(['send', 'refresh', 'skills', 'short text', 'rollback'] as const)('stops
     threadProvider: id => registry.byThread(id)?.provider,
     hosts: { claude: new SottoThreadHost('claude', claude.host, registry), codex: new SottoThreadHost('codex', codex.host, registry),
       grok: new FakeProviderHost(), devin: new FakeProviderHost() } })
-  const host = new WorkspaceHost(native, directory)
+  const host = new WorkspaceHost(native, directory, undefined, undefined, true)
   cleanups.push(async () => { await host.close(); await registry.flush() })
   await host.connect('claude')
   const snapshot = await host.connect('codex')
@@ -218,7 +218,7 @@ it('cancels a Claude early launch refused while its tool server is still startin
   await fs.writeFile(path, '{}')
   f.host.useLaunchProfiles!(new WatcherLaunchProfiles(f.root, () => hostId, id => ({ id, hostId,
     kind: 'project', providerId: 'claude', projectId: f.projectId, title: 'Fixture', modelId: f.modelId,
-    status: 'idle', messages: [], requests: [] } as AgentThread)))
+    status: 'idle', messages: [], requests: [] } as AgentThread), true))
   const launches = (await f.driver.requests()).filter(request => ['launch', 'resume'].includes(request.method ?? ''))
   const { promise: waiting, resolve: entered } = deferred<void>(), { promise: gate, resolve: release } = deferred<void>()
   f.host.useThreadTools!([{ name: 'fixture_tools', definitions: [], mcpServer: async () => { entered(); await gate; return undefined } }])

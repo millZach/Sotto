@@ -117,8 +117,9 @@ test('Index settings: focused categories, real saves, failure feedback, themes a
     await page.getByRole('textbox', { name: 'Personal dictionary' }).fill('Sotto\nZach\nOregon')
     await category(page, 'Transcription')
     await expect.poll(async () => (await settings()).llmDictionary).toBe('Sotto\nZach\nOregon')
+    // The key is AI cleanup's alone, under its switch; the E2E bridge answers Verify key itself.
+    await category(page, 'Cleanup')
     await page.getByRole('button', { name: 'Verify key', exact: true }).click()
-    // The E2E profile supplies a local transcription service and its own fixture key.
     await expect(page.getByText('Key verified.', { exact: true })).toBeVisible()
     await shot(page, 'transcription-key-feedback')
 

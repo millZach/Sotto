@@ -55,6 +55,7 @@ artifacts/sotto-owl-night-sky/*
 !artifacts/sotto-owl-night-sky/header-owl-sotto-dark-mac-260.png
 !artifacts/sotto-owl-night-sky/header-stable-sotto-dark.png
 !artifacts/sotto-owl-night-sky/header-stable-sotto-light.png
+artifacts/terminal-search-links-zoom/
 artifacts/skill-pill-composer/*
 !artifacts/skill-pill-composer/proof.json
 !artifacts/skill-pill-composer/dark-1600x1000.png
@@ -158,6 +159,7 @@ artifacts/thread-sidebar/
 artifacts/frosted-window/
 
 artifacts/terminal-loading/
+artifacts/terminal-agent-states/
 
 artifacts/activity-performance/
 artifacts/process-creature/
@@ -231,6 +233,11 @@ artifacts/computer-use-guidance/
 
 # Hidden-player verification; retain only the capture cited by the note.
 artifacts/hidden-player-typing/
+
+# Terminal truth verification; keep only evidence cited by its note.
+artifacts/terminal-truths/*
+!artifacts/terminal-truths/provider-exit-820-dark.png
+!artifacts/terminal-truths/interrupted-820-light.png
 
 # Disabled-coordinator verification; retain only the capture cited by the note.
 artifacts/disabled-coordinator-voice/
@@ -321,3 +328,8 @@ artifacts/*-center-*/
 # Watcher rename proof; keep only the cited built-app capture.
 artifacts/watcher-rename/*
 !artifacts/watcher-rename/agents-settings-1280x800.png
+
+# Watcher gate proof; retain only curated evidence.
+artifacts/watcher-gate/*
+!artifacts/watcher-gate/*.png
+!artifacts/watcher-gate/profile.json

@@ -9,7 +9,7 @@ import {
 import type {
   TranscribeOptions,
   TranscriptionResult
-} from '../../../../../src/renderer/src/transcription/openRouterTranscriber'
+} from '../../../../../src/renderer/src/transcription/localTranscriber'
 import { shellDictationFields } from '../../../../../src/main/hotkeys/dictationStateFile'
 import { widgetSnapshotSchema } from '../../../../../src/shared/contracts'
 import { widgetPaletteFor } from '../../../../../src/shared/themeBranding'
@@ -127,7 +127,6 @@ describe('DictationController', () => {
     const starting = deferred<void>()
     const cuePlayer = { playStart: vi.fn(), playStop: vi.fn() }
     const harness = createHarness({
-      currentSettings: settings({ streamingAsr: true }),
       recorder: { start: vi.fn(() => starting.promise) },
       cuePlayer,
     })
@@ -321,7 +320,6 @@ describe('DictationController', () => {
   it('uses one immutable settings snapshot for the whole session', async () => {
     const current = settings({
       microphoneId: 'mic-original',
-      language: 'es',
       formatWhitespace: true,
       autoPaste: false,
       pasteDelayMs: 320,
@@ -335,7 +333,6 @@ describe('DictationController', () => {
 
     Object.assign(current, {
       microphoneId: 'mic-mutated',
-      language: 'de',
       formatWhitespace: false,
       autoPaste: true,
       pasteDelayMs: 900,
@@ -349,15 +346,12 @@ describe('DictationController', () => {
     await stop
 
     expect(recorderOptions(harness)).toMatchObject({ selectedDeviceId: 'mic-original' })
-    expect(harness.transcriber.transcribe).toHaveBeenCalledWith(expect.objectContaining({
-      language: 'es',
-    }))
     expect(harness.deliverOutput).toHaveBeenCalledWith({
       text: 'hello world',
       autoPaste: false,
       pasteDelayMs: 320,
     })
-    expect(harness.addHistory).toHaveBeenCalledWith(expect.objectContaining({ modelPreset: 'mai' }))
+    expect(harness.addHistory).toHaveBeenCalledWith(expect.objectContaining({ modelPreset: 'parakeet' }))
   })
 
   it('resets only the terminal session whose timer is still current', async () => {

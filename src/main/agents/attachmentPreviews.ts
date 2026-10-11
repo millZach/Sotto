@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { readdir, unlink } from 'node:fs/promises'
+import { readFile, readdir, unlink } from 'node:fs/promises'
 import { z } from 'zod'
 import { agentAttachmentHandlesSchema, agentAttachmentsSchema, hasRasterImageSignature,
   type AgentAttachmentHandle, type AgentHostSnapshot } from '../../shared/agents'
@@ -26,12 +26,18 @@ type Cached = Entry & { retain: boolean }
  */
 export class AttachmentPreviews {
   private entries: Cached[] = []
+  private dormant: unknown[] = []
+  private savedVersion: Read['version'] = 2
+  private readonly diskOrder = new Map<string, number>()
+  private readonly recoveryDigests = new Set<string>()
+  private unreadRecovery = false
   private serial: Promise<unknown> = Promise.resolve()
   private enabled: boolean
   private dirty = false
   private readonly store: AtomicJsonStore<Read>
   constructor(private readonly directory: string, private readonly content: Pick<AttachmentStore, 'read'>,
-    private readonly historyEnabled: () => boolean = () => true, private readonly now: () => number = Date.now) {
+    private readonly historyEnabled: () => boolean = () => true, private readonly now: () => number = Date.now,
+    private readonly dormantThreadIds?: ReadonlySet<string>) {
     this.enabled = historyEnabled()
     this.store = new AtomicJsonStore<Read>(join(directory, 'attachment-previews.json'), value => {
       const saved = z.object({ version: z.union([z.literal(1), z.literal(2)]), entries: z.array(z.unknown()) }).parse(value)
@@ -43,26 +49,60 @@ export class AttachmentPreviews {
     this.serial = pending.catch(() => undefined)
     return pending
   }
+  private preserveThread(threadId: string): boolean { return this.dormantThreadIds?.has(threadId) === true }
+  private async maintainRecoveryCopies(): Promise<void> {
+    this.recoveryDigests.clear()
+    this.unreadRecovery = false
+    const names = await readdir(this.directory).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return []; throw error })
+    for (const name of names) if (/^attachment-previews\.json\.tmp-\d+-[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/u.test(name)) {
+      const path = join(this.directory, name)
+      if (!this.dormantThreadIds?.size) { await unlink(path).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error }); continue }
+      const text = await readFile(path, 'utf8').catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') this.unreadRecovery = true; return undefined })
+      if (text === undefined) continue
+      let kept: string | undefined
+      try {
+        const saved = z.object({ version: z.union([z.literal(1), z.literal(2)]), entries: z.array(z.unknown()) }).parse(JSON.parse(text))
+        const entries = saved.entries.filter(item => { const owner = z.object({ threadId: z.string() }).safeParse(item); return owner.success && this.preserveThread(owner.data.threadId) })
+        if (entries.length) {
+          kept = entries.length === saved.entries.length ? text : JSON.stringify({ ...saved, entries })
+          if (entries.length !== saved.entries.length) await new AtomicJsonStore<unknown>(path, value => value, () => undefined).writeSerialized(kept)
+        }
+      } catch (error) {
+        // A failed rewrite must not be mistaken for a malformed copy and deleted.
+        if (!(error instanceof SyntaxError || error instanceof z.ZodError)) throw error
+        const mentionsDormant = [...text.matchAll(/"threadId"\s*:\s*("(?:[^"\\]|\\.)*")/g)].some(match => { try { return this.preserveThread(JSON.parse(match[1]!)) } catch { return false } })
+        if (mentionsDormant) kept = text
+      }
+      if (kept === undefined) { await unlink(path).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error }); continue }
+      for (const match of kept.matchAll(/"digest"\s*:\s*"([a-f0-9]{64})"/g)) this.recoveryDigests.add(match[1]!)
+    }
+  }
+  /** An unread recovery copy may own any staged content; cleanup waits until it can be read. */
+  contentCleanupBlocked(): boolean { return this.unreadRecovery }
   /** `stage` takes in the images a version 1 file kept inline; without it, such entries are dropped. */
   async load(stage?: StageInline): Promise<void> {
     await this.enqueue(async () => {
       // AtomicJsonStore removes failed writes; a process crash can leave its private temporary file.
       // Only this store's generated basenames qualify, and initialization precedes any writes.
-      const names = await readdir(this.directory).catch((error: NodeJS.ErrnoException) => {
-        if (error.code === 'ENOENT') return []
-        throw error
-      })
-      for (const name of names) if (/^attachment-previews\.json\.tmp-\d+-[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/u.test(name)) {
-        await unlink(join(this.directory, name)).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error })
-      }
+      await this.maintainRecoveryCopies()
       // Cache corruption must not create an untracked copy of private image content.
       const saved = await this.store.peek()
+      this.savedVersion = saved.version
+      this.dormant = []
+      this.diskOrder.clear()
       this.enabled = this.historyEnabled()
       const entries: Entry[] = []
-      if (this.enabled) for (const item of saved.entries) {
-        if (saved.version === 2) { const parsed = entrySchema.safeParse(item); if (parsed.success) entries.push(parsed.data); continue }
+      for (const [index, item] of saved.entries.entries()) {
+        const owner = z.object({ threadId: z.string(), messageId: z.string() }).safeParse(item)
+        if (owner.success) {
+          this.diskOrder.set(JSON.stringify([owner.data.threadId, owner.data.messageId]), index)
+          if (this.preserveThread?.(owner.data.threadId)) { this.dormant.push(item); continue }
+        }
+        // A stable save may carry dormant inline entries beside ordinary migrated handles.
+        const parsed = entrySchema.safeParse(item)
+        if (parsed.success) { if (this.enabled) entries.push(parsed.data); continue }
         const inline = inlineEntrySchema.safeParse(item)
-        if (!inline.success || !stage) continue
+        if (!inline.success || !stage || !this.enabled) continue
         const handles: AgentAttachmentHandle[] = []
         for (const attachment of inline.data.attachments) {
           const handle = await stage(attachment)
@@ -85,13 +125,17 @@ export class AttachmentPreviews {
     const before = this.entries.length
     const enabled = this.historyEnabled()
     if (enabled !== this.enabled) this.dirty = true
-    if (!enabled && this.enabled) this.entries = []
+    if (!enabled && this.enabled) this.entries = this.entries.filter(entry => this.preserveThread?.(entry.threadId))
     this.enabled = enabled
     const now = this.now()
-    this.entries = this.entries.filter(entry => entry.storedAt > now - ATTACHMENT_PREVIEW_RETENTION_MS && entry.storedAt <= now)
+    this.entries = this.entries.filter(entry => this.preserveThread?.(entry.threadId) || entry.storedAt > now - ATTACHMENT_PREVIEW_RETENTION_MS && entry.storedAt <= now)
     this.entries.sort((a, b) => a.storedAt - b.storedAt)
-    let bytes = this.entries.reduce((sum, entry) => sum + this.size(entry), 0)
-    while (bytes > MAX_ATTACHMENT_PREVIEW_BYTES) bytes -= this.size(this.entries.shift()!)
+    let bytes = this.entries.filter(entry => !this.preserveThread?.(entry.threadId)).reduce((sum, entry) => sum + this.size(entry), 0)
+    while (bytes > MAX_ATTACHMENT_PREVIEW_BYTES) {
+      const index = this.entries.findIndex(entry => !this.preserveThread?.(entry.threadId))
+      if (index < 0) break
+      bytes -= this.size(this.entries.splice(index, 1)[0]!)
+    }
     this.dirty ||= before !== this.entries.length
     return this.dirty
   }
@@ -99,17 +143,25 @@ export class AttachmentPreviews {
     return entry.attachments.reduce((sum, attachment) => sum + attachment.sizeBytes, 0)
   }
   private async write(): Promise<void> {
-    await this.store.write({ version: 2, entries: this.enabled
-      ? this.entries.filter(entry => entry.retain).map(entry => ({ threadId: entry.threadId, messageId: entry.messageId,
-        commandId: entry.commandId, storedAt: entry.storedAt, attachments: entry.attachments })) : [] })
+    const entries = [...this.dormant, ...this.entries.filter(entry => this.enabled && entry.retain)
+      .map(entry => ({ threadId: entry.threadId, messageId: entry.messageId, commandId: entry.commandId, storedAt: entry.storedAt, attachments: entry.attachments }))]
+    if (this.dormant.length) {
+      const order = (entry: unknown): number => {
+        const owner = z.object({ threadId: z.string(), messageId: z.string() }).safeParse(entry)
+        return owner.success ? this.diskOrder.get(JSON.stringify([owner.data.threadId, owner.data.messageId])) ?? Infinity : Infinity
+      }
+      entries.sort((a, b) => order(a) - order(b))
+    }
+    await this.store.write({ version: this.dormant.length ? this.savedVersion : 2, entries })
     this.dirty = false
   }
   maintain(): Promise<void> {
-    return this.enqueue(async () => { if (this.prune()) await this.write() })
+    return this.enqueue(async () => { if (this.dormantThreadIds?.size) await this.maintainRecoveryCopies(); if (this.prune()) await this.write() })
   }
   /** Every content a live entry names, retained on disk or held for this run alone: what the attachment store keeps for previews. */
   digests(): Set<string> {
-    return new Set([...this.live().values()].flatMap(entry => entry.attachments.map(attachment => attachment.digest)))
+    const dormant = this.dormant.flatMap(item => { const parsed = entrySchema.safeParse(item); return parsed.success ? [parsed.data] : [] })
+    return new Set([...this.recoveryDigests, ...[...this.live().values(), ...dormant].flatMap(entry => entry.attachments.map(attachment => attachment.digest))])
   }
   /**
    * Every content any entry still names, live or not, with when its latest entry was stored: what a privacy change
@@ -117,7 +169,8 @@ export class AttachmentPreviews {
    */
   named(): Map<string, number> {
     const named = new Map<string, number>()
-    for (const entry of this.entries) for (const { digest } of entry.attachments) named.set(digest, Math.max(named.get(digest) ?? entry.storedAt, entry.storedAt))
+    const dormant = this.dormant.flatMap(item => { const parsed = entrySchema.safeParse(item); return parsed.success ? [parsed.data] : [] })
+    for (const entry of [...this.entries, ...dormant]) for (const { digest } of entry.attachments) named.set(digest, Math.max(named.get(digest) ?? entry.storedAt, entry.storedAt))
     return named
   }
   /**
@@ -156,7 +209,7 @@ export class AttachmentPreviews {
   /** Entries retention and the privacy setting still allow, keyed by thread and message. */
   private live(): Map<string, Entry> {
     const now = this.now()
-    return new Map(this.entries.filter(entry => entry.storedAt > now - ATTACHMENT_PREVIEW_RETENTION_MS
+    return new Map(this.entries.filter(entry => !this.preserveThread?.(entry.threadId) && entry.storedAt > now - ATTACHMENT_PREVIEW_RETENTION_MS
       && entry.storedAt <= now && (this.historyEnabled() || !entry.retain))
       .map(entry => [JSON.stringify([entry.threadId, entry.messageId]), entry]))
   }

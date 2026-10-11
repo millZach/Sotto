@@ -7,6 +7,7 @@ import { getReleaseTrack, releaseTrackName, type ReleaseTrack } from '../../src/
 import { contrastRatio, parseThemeRgb } from '../../src/shared/themes/color'
 import { withSotto } from '../fixtures/designCaptureProfile'
 import { evidenceDirectory } from '../fixtures/evidence'
+import { onReleaseTrack, OWL_E2E_VERSION } from './support/releaseTrack'
 import { captureWindow } from './support/sottoCapture'
 import { openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 import { OWL_VERSION, holdOwlSky, onTrack } from './support/sottoOwl'
@@ -121,8 +122,8 @@ test.describe('Sotto Owl branding on the built app', () => {
   for (const track of ['stable', 'owl'] as const) for (const appearance of APPEARANCES) {
     test(`${track} build, ${appearance}`, async () => {
       const name = releaseTrackName(track)
-      const version = track === 'owl' ? OWL_VERSION : null
-      await onTrack(track, () => withSotto({ onboardingComplete: true, appearance, scenario: 'design-threads', agents: 'design-threads' }, async (launched) => {
+      const version = track === 'owl' ? OWL_E2E_VERSION : null
+      await onReleaseTrack(track, () => withSotto({ onboardingComplete: true, appearance, scenario: 'design-threads', agents: 'design-threads' }, async (launched) => {
         const { page } = launched
         const reported = await page.evaluate(async () => {
           const status = await window.sotto!.getUpdateStatus()
@@ -188,7 +189,7 @@ test.describe('Sotto Owl branding on the built app', () => {
   }
 
   test('owl build with reduced motion', async () => {
-    await onTrack('owl', () => withSotto({ onboardingComplete: true, appearance: 'dark', motion: 'reduced', scenario: 'design-threads', agents: 'design-threads' }, async (launched) => {
+    await onReleaseTrack('owl', () => withSotto({ onboardingComplete: true, appearance: 'dark', motion: 'reduced', scenario: 'design-threads', agents: 'design-threads' }, async (launched) => {
       await openThreads(launched.page)
       const row = launched.page.getByRole('complementary', { name: 'Thread sidebar' }).locator('.thread-nav__top')
       await resizeContentWindow(launched, 1280, 800)
@@ -202,7 +203,7 @@ test.describe('Sotto Owl branding on the built app', () => {
   })
 
   test('owl build in the strip over first-run setup', async () => {
-    await onTrack('owl', () => withSotto({ onboardingComplete: false, appearance: 'dark' }, async (launched) => {
+    await onReleaseTrack('owl', () => withSotto({ onboardingComplete: false, appearance: 'dark' }, async (launched) => {
       const { page } = launched
       await expect(page.getByRole('button', { name: 'Get started', exact: true })).toBeVisible()
       await resizeContentWindow(launched, 1280, 800)

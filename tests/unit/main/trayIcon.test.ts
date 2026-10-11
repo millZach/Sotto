@@ -254,7 +254,7 @@ describe('createTrayResource', () => {
   // Main names the tray from app.getVersion() exactly this way.
   it.each([
     ['0.1.34', 'Sotto'],
-    ['0.1.35-owl.20261009.1', 'Sotto Owl'],
+    ['0.1.37-owl.20261011.1', 'Sotto Owl'],
   ])('names the tray for the build it is (%s)', async (version, tooltip) => {
     const harness = createHarness()
 

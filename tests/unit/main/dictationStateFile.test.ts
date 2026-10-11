@@ -21,8 +21,8 @@ function snapshot(fields: object): WidgetSnapshot {
 }
 
 describe('shell dictation copy', () => {
-  const nothingRecorded = ['MIC_PERMISSION_DENIED', 'MIC_START_FAILED', 'MIC_NOT_SET_UP', 'NO_SPEECH', 'SETTINGS_UNAVAILABLE'] as const
-  const captured = ['RECORDING_FAILED', 'TRANSCRIPTION_UNCONFIGURED', 'TRANSCRIPTION_UNAUTHORIZED', 'TRANSCRIPTION_OFFLINE', 'TRANSCRIPTION_BILLING', 'TRANSCRIPTION_RATE_LIMITED', 'TRANSCRIPTION_SERVICE_ERROR', 'TRANSCRIPTION_FAILED', 'OUTPUT_UNAVAILABLE', 'OUTPUT_FAILED', 'DESKTOP_CLIPBOARD_UNAVAILABLE', 'HISTORY_FAILED'] as const
+  const nothingRecorded = ['MIC_PERMISSION_DENIED', 'MIC_START_FAILED', 'MIC_NOT_SET_UP', 'SPEECH_MODEL_NOT_READY', 'NO_SPEECH', 'SETTINGS_UNAVAILABLE'] as const
+  const captured = ['RECORDING_FAILED', 'TRANSCRIPTION_MODEL_NOT_READY', 'TRANSCRIPTION_FAILED', 'OUTPUT_UNAVAILABLE', 'OUTPUT_FAILED', 'DESKTOP_CLIPBOARD_UNAVAILABLE', 'HISTORY_FAILED'] as const
   const captureDependent = ['MIC_DEVICE_NOT_FOUND'] as const
 
   it('puts every known failure in exactly one recording group, including capture-dependent errors', () => {
@@ -65,22 +65,22 @@ describe('shell dictation copy', () => {
       .toBe(kept ? 'Dictation failed. Recording kept.' : 'Dictation failed. Recording lost. Dictate again.')
   })
 
-  it('keeps the key and credit next steps and the copied instruction short', () => {
-    for (const [code, nextStep] of [
-      ['TRANSCRIPTION_UNCONFIGURED', 'Add it in Settings.'],
-      ['TRANSCRIPTION_UNAUTHORIZED', 'Check Settings.'],
-      ['TRANSCRIPTION_BILLING', 'Add credit.'],
-    ]) {
-      expect(shellDictationFields(snapshot({ status: 'error', code, kept: true })).detail).toContain(nextStep)
+  it('keeps the speech model next step and the copied instruction short', () => {
+    for (const code of ['SPEECH_MODEL_NOT_READY', 'TRANSCRIPTION_MODEL_NOT_READY']) {
+      for (const kept of [false, true]) {
+        expect(shellDictationFields(snapshot({ status: 'error', code, kept })).detail).toContain('See Settings.')
+      }
     }
     const copied = shellDictationFields(snapshot({ status: 'success', output: 'copied' }))
     expect(copied.detail).toBe('Copied — paste with Super+V')
     expect(copied.detail!.length).toBeLessThan(60)
   })
 
-  it('names the rejected OpenRouter key and pins the kept-recording next step', () => {
-    expect(shellDictationFields(snapshot({ status: 'error', code: 'TRANSCRIPTION_UNAUTHORIZED', kept: true })).detail)
-      .toBe('OpenRouter key rejected. Recording kept. Check Settings.')
+  it('says a dictation started before the speech model was ready recorded nothing', () => {
+    expect(shellDictationFields(snapshot({ status: 'error', code: 'SPEECH_MODEL_NOT_READY', kept: false })).detail)
+      .toBe('Speech model not ready. Nothing recorded. See Settings.')
+    expect(shellDictationFields(snapshot({ status: 'error', code: 'TRANSCRIPTION_FAILED', kept: true })).detail)
+      .toBe('Could not transcribe. Recording kept.')
   })
 })
 
@@ -102,7 +102,7 @@ describe.skipIf(process.platform !== 'linux')("private shell dictation state (Li
     ['idle', {}, 'idle'], ['cancelled', {}, 'idle'], ['requesting-permission', {}, 'starting'],
     ['listening', { startedAt: 1, level: 1 }, 'listening'], ['processing', { stage: 'transcribing', progress: 0.5, startedAt: 1 }, 'transcribing'],
     ['success', { output: 'pasted' }, 'delivered'], ['success', { output: 'copied' }, 'copied'],
-    ['error', { code: 'TRANSCRIPTION_RATE_LIMITED', kept: true }, 'failed'],
+    ['error', { code: 'TRANSCRIPTION_FAILED', kept: true }, 'failed'],
   ])('maps %s to %s without taking extra text', (status, extra, state) => {
     const fields = shellDictationFields(snapshot({ status, ...extra, text: 'PRIVATE TRANSCRIPT', message: 'PRIVATE PROVIDER BODY' }))
     expect(fields.state).toBe(state)
@@ -164,7 +164,7 @@ describe.skipIf(process.platform !== 'linux')("private shell dictation state (Li
   })
   it.each([
     { status: 'success', output: 'pasted' }, { status: 'success', output: 'copied' },
-    { status: 'error', code: 'TRANSCRIPTION_RATE_LIMITED', kept: true },
+    { status: 'error', code: 'TRANSCRIPTION_FAILED', kept: true },
     { status: 'error', code: 'RECORDING_FAILED', kept: false },
   ])('keeps one opaque identifier from starting through terminal $status $output $code', terminal => {
     file = new DictationStateFile(runtime, 'top', failure)

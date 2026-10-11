@@ -719,9 +719,8 @@ export class GrokAcpHost implements AgentHost {
   async snapshot(): Promise<AgentHostSnapshot> { if (this.state.connected) await this.pollHistory(); return this.current() }
   async listThreadSkills(threadId: string, _forceReload = false, scope?: AgentSkillScope): Promise<AgentSkillCatalog> {
     const generation = this.generation
-    const profile = await this.checkLaunchProfile(threadId)
+    await this.checkLaunchProfile(threadId)
     this.assertGeneration(generation)
-    if (profile) throw new Error('Watcher uses Sotto’s thread tools. Native skills are unavailable. Nothing was sent. Use an ordinary thread for a native skill.')
     if (this.aliases[threadId]?.kind === 'personal') throw new Error('That thread is unavailable.')
     void _forceReload // inspect is a fresh native read for this directory on every request.
     const cwd = this.aliases[threadId]?.cwd ?? (scope?.providerId === 'grok' ? scope.workingDirectory : undefined)

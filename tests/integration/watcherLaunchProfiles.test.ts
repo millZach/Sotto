@@ -26,7 +26,7 @@ async function setup() {
   record.current = { target: { hostId, threadId }, projectId: 'special', provider: 'codex', creationOperationId: randomUUID(), createdAt: new Date().toISOString() }
   const save = () => writeFile(join(root, 'agents.json'), JSON.stringify({ watcher: record }))
   await save()
-  const source = new WatcherLaunchProfiles(root, () => hostId, id => id === threadId ? thread : undefined)
+  const source = new WatcherLaunchProfiles(root, () => hostId, id => id === threadId ? thread : undefined, true)
   const tools: WatcherProfileTools = { name: 'sotto_threads', definitions: [{ name: 'list_threads', description: 'Stand in', inputSchema: {} }],
     mcpServer: vi.fn(async () => ({ name: 'sotto_threads', type: 'http' as const, url: 'http://127.0.0.1:12345/mcp', headers: [{ name: 'Authorization', value: 'Bearer fixture' }] })), revoke: vi.fn() }
   source.useTools(tools)
@@ -121,7 +121,7 @@ it('refuses forged kinds, history, absent servers and revoked admission with a r
   f.record.history = []; await f.save()
   await expect(f.source.profileFor(f.threadId)).rejects.toThrow('saved identity')
   const noServer = await setup()
-  const unadmitted = new WatcherLaunchProfiles(noServer.root, () => noServer.hostId, () => noServer.thread)
+  const unadmitted = new WatcherLaunchProfiles(noServer.root, () => noServer.hostId, () => noServer.thread, true)
   await expect(unadmitted.profileFor(noServer.threadId)).rejects.toThrow('tool server is unavailable')
 })
 it('maps profile lookups through Sotto bindings and unbound early-start identities', async () => {

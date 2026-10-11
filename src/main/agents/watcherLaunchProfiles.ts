@@ -10,6 +10,7 @@ import { migrateWatcherRecord } from './watcherRecords'
 
 const savedIdentity = z.object({ watcher: z.preprocess(migrateWatcherRecord, watcherRecordSchema) })
 type Identity = Pick<WatcherRecord, 'current' | 'creation' | 'history'>
+export const WATCHER_DISABLED = 'Watcher is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.'
 const IDENTITY_FAILURE = 'Watcher’s saved identity could not be verified. Nothing was sent. Restart Sotto to recover.'
 
 /** Reads only durable main-owned identity. Thread kind corroborates it and can never grant it. */
@@ -21,7 +22,7 @@ export class WatcherLaunchProfiles implements ThreadLaunchProfiles {
   private lastKnown: Identity | undefined
   private readTail: Promise<void> = Promise.resolve()
   constructor(private readonly directory: string, private readonly hostId: () => string | undefined,
-    private readonly thread: (id: string) => AgentThread | undefined) {}
+    private readonly thread: (id: string) => AgentThread | undefined, private readonly enabled = false) {}
 
   private async signature(): Promise<string> {
     const file = await stat(join(this.directory, 'agents.json'), { bigint: true })
@@ -63,12 +64,20 @@ export class WatcherLaunchProfiles implements ThreadLaunchProfiles {
       || this.lastKnown?.history.some(identity => identity.target.threadId === threadId) === true
   }
 
+  /** Saved identity is retention evidence even while the release gate grants no launch profile. */
+  async retainedThreadIds(): Promise<readonly string[]> {
+    let identity: Identity | undefined
+    try { identity = await this.identity() } catch { identity = this.lastKnown }
+    return identity ? [identity.current, identity.creation?.identity, ...identity.history].flatMap(item => item ? [item.target.threadId] : []) : []
+  }
   useTools(tools: WatcherProfileTools): void {
+    if (!this.enabled) return
     if (tools.name !== 'sotto_threads') throw new WatcherProfileRefusal('Watcher needs its own Sotto tool server.')
     this.tools = tools
   }
   /** Recovery can recreate only the binding named by the durable identity. */
   async assertCreationBinding(threadId: string, projectId: string, provider: ProviderId | undefined): Promise<void> {
+    if (!this.enabled) throw new WatcherProfileRefusal(WATCHER_DISABLED)
     try {
       const current = (await this.identity()).current
       if (!current || current.target.threadId !== threadId || current.target.hostId !== this.hostId()
@@ -85,11 +94,17 @@ export class WatcherLaunchProfiles implements ThreadLaunchProfiles {
   }
   private async resolveProfile(threadId: string): Promise<WatcherLaunchProfile | undefined> {
     const thread = this.thread(threadId)
+    if (!this.enabled && (thread?.kind === 'watcher' || thread?.kind === 'watcher-history')) throw new WatcherProfileRefusal(WATCHER_DISABLED)
     let record: Identity
     try { record = await this.identity() }
     catch {
       if ((!thread?.kind || thread.kind === 'project') && !this.namedByLastIdentity(threadId)) return undefined
       throw new WatcherProfileRefusal(IDENTITY_FAILURE)
+    }
+    if (!this.enabled) {
+      if (record.current?.target.threadId === threadId || record.creation?.identity.target.threadId === threadId
+        || record.history.some(identity => identity.target.threadId === threadId)) throw new WatcherProfileRefusal(WATCHER_DISABLED)
+      return undefined
     }
     const current = record?.current
     if (record?.history.some(identity => identity.target.threadId === threadId) || thread?.kind === 'watcher-history') {
