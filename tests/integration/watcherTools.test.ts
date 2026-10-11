@@ -575,6 +575,25 @@ it('keeps the roster readable after more than one hundred requests address a wor
 })
 
 
+it.each([
+  { delivery: 'now', limit: 4 }, { delivery: 'queue', limit: 4 }, { delivery: 'steer', limit: 4 }, { delivery: 'now', limit: 1 },
+])('refuses $delivery to a settled participant before admission with capacity $limit', async ({ delivery, limit }) => {
+  const f = await fixture(), first = await f.call('start_thread', f.start()), second = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first) || second.status !== 'ok') throw new Error('start refused')
+  await f.finish(first.target.threadId)
+  expect(await f.call('settle_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target })).toMatchObject({ status: 'ok' })
+  expect(f.service.state().requests[0]).toMatchObject({ state: 'active', participants: [
+    { target: first.target, state: 'relinquished', promptCount: 1 }, { state: 'participating', promptCount: 1 },
+  ] })
+  f.setLimit(limit)
+  const record = f.control.watcherRecord(), commands = f.workspace.adapters.codex.commands.length
+  expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target,
+    delivery, text: 'Synthetic send after settle' })).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE',
+    message: 'Watcher settled this participation. It will not send another prompt for this request.' })
+  expect(f.control.watcherRecord()).toEqual(record)
+  expect(f.workspace.adapters.codex.commands).toHaveLength(commands)
+})
+
 it('returns a settle receipt on retry after its request closes without reviving it', async () => {
   const f = await fixture(), first = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')

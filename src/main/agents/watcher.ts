@@ -401,6 +401,7 @@ export class WatcherService implements WatcherControlHooks {
     if (operation.deliveryState === 'failed') refuse(operation.refusalCode ?? 'REQUEST_NOT_ACTIVE', 'This operation was cancelled before dispatch. Nothing was sent.')
     if (request.state !== 'active') refuse('REQUEST_NOT_ACTIVE', 'This Watcher request has stopped. Nothing was sent.')
     const participant = request.participants.find(item => key(item.target) === key(operation.target))
+    if (participant?.state === 'relinquished' && (operation.action === 'start' || operation.action === 'send')) refuse('REQUEST_NOT_ACTIVE', 'Watcher settled this participation. Nothing was sent.')
     if (!participant || participant.state !== 'participating' || participant.generation !== operation.generation) refuse('THREAD_TAKEN_OVER', 'You took over this thread. Watcher stopped sending to it.')
     if (participant.automationStopped && (operation.action === 'start' || operation.action === 'send')) refuse('REQUEST_NOT_ACTIVE', 'Watcher stopped this participation. It will not send another prompt for this request.')
     if (operation.action === 'start' && !this.options.control.watcherSnapshot().threads.some(item => item.id === operation.target.threadId)) return
@@ -469,6 +470,9 @@ export class WatcherService implements WatcherControlHooks {
         if (create.workingCopy.kind === 'existing-worktree' && !this.copyChoices.has(create.workingCopy.choiceId)
           || create.baseRefChoiceId && !this.copyChoices.has(create.baseRefChoiceId)) refuse('WORKING_COPY_CHANGED', 'Read the working-copy choices again before starting this thread.')
       }
+      const previous = request.participants.find(item => key(item.target) === key(target))
+      if (send && previous?.state === 'relinquished') refuse('REQUEST_NOT_ACTIVE', 'Watcher settled this participation. It will not send another prompt for this request.')
+      if (send && previous?.automationStopped) refuse('REQUEST_NOT_ACTIVE', 'Watcher stopped this participation. It will not send another prompt for this request.')
       if (thread && (send || name === 'settle_thread')) this.pending(thread)
       if (thread && send) {
         this.checkPermission(thread)
@@ -481,8 +485,6 @@ export class WatcherService implements WatcherControlHooks {
         this.checkSettlement(thread)
         if (this.options.control.hasPendingThreadWork(thread.id)) refuse('DELIVERY_UNCERTAIN', 'Reconcile this thread’s pending delivery before settling.')
       }
-      const previous = request.participants.find(item => key(item.target) === key(target))
-      if (send && previous?.automationStopped) refuse('REQUEST_NOT_ACTIVE', 'Watcher stopped this participation. It will not send another prompt for this request.')
       if (start || send) {
         if (this.inFlight(record) > this.options.limit() || !record.reservations.some(item => key(item.target) === key(target)) && this.inFlight(record) >= this.options.limit()) refuse('IN_FLIGHT_LIMIT', 'Watcher’s threads in flight limit is reached. Wait for a thread to finish.', true)
         if ((previous?.promptCount ?? 0) >= WATCHER_PROMPTS_PER_THREAD) refuse('PROMPT_LIMIT', 'This thread has received four prompts for this Watcher request. The limit cannot be renewed by a retry.')
