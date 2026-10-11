@@ -31,6 +31,30 @@ artifacts/sotto-owl-branding/*
 !artifacts/sotto-owl-branding/settings-stable-dark-820x560.png
 !artifacts/sotto-owl-branding/settings-stable-light-1280x800.png
 !artifacts/sotto-owl-branding/settings-stable-light-820x560.png
+artifacts/sotto-owl-night-sky/*
+!artifacts/sotto-owl-night-sky/night-sky.json
+!artifacts/sotto-owl-night-sky/threads-owl-sotto-dark-1600x1000.png
+!artifacts/sotto-owl-night-sky/threads-owl-sotto-dark-1280x800.png
+!artifacts/sotto-owl-night-sky/threads-owl-sotto-dark-820x560.png
+!artifacts/sotto-owl-night-sky/threads-owl-sotto-light-1600x1000.png
+!artifacts/sotto-owl-night-sky/threads-owl-sotto-light-1280x800.png
+!artifacts/sotto-owl-night-sky/threads-owl-sotto-light-820x560.png
+!artifacts/sotto-owl-night-sky/threads-owl-tropic-dark-1280x800.png
+!artifacts/sotto-owl-night-sky/threads-owl-tropic-light-1280x800.png
+!artifacts/sotto-owl-night-sky/threads-owl-citrine-dark-1280x800.png
+!artifacts/sotto-owl-night-sky/threads-owl-citrine-light-1280x800.png
+!artifacts/sotto-owl-night-sky/header-owl-sotto-dark-150.png
+!artifacts/sotto-owl-night-sky/header-owl-sotto-light-150.png
+!artifacts/sotto-owl-night-sky/header-owl-tropic-dark-150.png
+!artifacts/sotto-owl-night-sky/header-owl-citrine-dark-150.png
+!artifacts/sotto-owl-night-sky/header-owl-sotto-dark-sidebar-260.png
+!artifacts/sotto-owl-night-sky/header-owl-sotto-dark-sidebar-480.png
+!artifacts/sotto-owl-night-sky/header-owl-sotto-dark-reduced-motion-system.png
+!artifacts/sotto-owl-night-sky/header-owl-sotto-dark-reduced-motion-setting.png
+!artifacts/sotto-owl-night-sky/header-owl-sotto-dark-mac-320.png
+!artifacts/sotto-owl-night-sky/header-owl-sotto-dark-mac-260.png
+!artifacts/sotto-owl-night-sky/header-stable-sotto-dark.png
+!artifacts/sotto-owl-night-sky/header-stable-sotto-light.png
 artifacts/terminal-search-links-zoom/
 artifacts/skill-pill-composer/*
 !artifacts/skill-pill-composer/proof.json
@@ -136,6 +160,7 @@ artifacts/frosted-window/
 
 artifacts/terminal-loading/
 artifacts/terminal-agent-states/
+artifacts/phone-terminals/
 
 artifacts/activity-performance/
 artifacts/process-creature/

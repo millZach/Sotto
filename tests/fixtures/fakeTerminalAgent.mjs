@@ -41,7 +41,7 @@ function claudeHook(event, extra = {}, hold = false) {
   const command = settings.hooks?.[event]?.[0]?.hooks?.[0]?.command
   if (!command) return Promise.resolve()
   // The fixture exercises native fallback promptly; a real run uses the ADR's 110-second bound.
-  const env = hold ? { ...process.env, SOTTO_TERMINAL_HOOK_TIMEOUT_MS: '1000' } : process.env
+  const env = hold ? { ...process.env, SOTTO_TERMINAL_HOOK_TIMEOUT_MS: process.env.SOTTO_FAKE_PERMISSION_WAIT_MS ?? '1000' } : process.env
   const child = spawn(command, { shell: true, windowsHide: true, detached: process.platform !== 'win32', env, stdio: ['pipe', 'pipe', 'pipe'] })
   hookChildren.add(child)
   child.once('exit', () => hookChildren.delete(child))
