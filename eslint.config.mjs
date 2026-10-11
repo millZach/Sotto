@@ -12,6 +12,7 @@ export default tseslint.config(
       'artifacts/watcher-own-tools-windows/**',
       'artifacts/sotto-owl-release/**',
       'artifacts/sotto-owl-branding/**',
+      'artifacts/sotto-owl-night-sky/**',
       'artifacts/voice-control-removal/merged-setup/**',
       'artifacts/skill-pill-composer/**',
       'artifacts/omarchy-shell-plugin/**',

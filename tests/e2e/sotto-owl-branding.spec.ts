@@ -1,6 +1,5 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
 
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
@@ -10,6 +9,7 @@ import { withSotto } from '../fixtures/designCaptureProfile'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { captureWindow } from './support/sottoCapture'
 import { openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { OWL_VERSION, holdOwlSky, onTrack } from './support/sottoOwl'
 import { resizeContentWindow } from './support/sottoWindow'
 
 /**
@@ -17,7 +17,6 @@ import { resizeContentWindow } from './support/sottoWindow'
  * titles, and the version lines in Help and Settings. Run after `npm run build`. Captures go to disposable run
  * evidence; `SOTTO_E2E_EVIDENCE=publish` writes artifacts/sotto-owl-branding.
  */
-const OWL_VERSION = '0.1.35-owl.20261010.1'
 const evidenceRoot = evidenceDirectory('artifacts/sotto-owl-branding')
 const SIZES = [[1280, 800], [820, 560]] as const
 const APPEARANCES = ['dark', 'light'] as const
@@ -26,31 +25,6 @@ const BLACK = { r: 0, g: 0, b: 0 }
 interface Geometry { readonly name: string; readonly x: number; readonly y: number; readonly width: number; readonly height: number }
 const recorded = new Map<string, unknown>()
 const geometry = new Map<string, readonly Geometry[]>()
-
-/**
- * Electron takes an app's version from the package.json in the folder it starts, which is all packaging changes
- * for Owl; this folder points that manifest at the same built main entry with an Owl version. Its name keeps any
- * default path Electron derives from it away from Sotto's own data folder; the run's profile is the owned one.
- */
-async function owlEntry(): Promise<string> {
-  const directory = await mkdtemp(join(tmpdir(), 'sotto-owl-entry-'))
-  await writeFile(join(directory, 'package.json'), `${JSON.stringify({
-    name: 'sotto-owl-branding-e2e', version: OWL_VERSION, main: resolve('out/main/index.js'),
-  }, null, 2)}\n`, 'utf8')
-  return directory
-}
-
-async function onTrack(track: ReleaseTrack, run: () => Promise<void>): Promise<void> {
-  if (track === 'stable') { await run(); return }
-  const previous = process.env.SOTTO_E2E_MAIN_ENTRY
-  const entry = await owlEntry()
-  process.env.SOTTO_E2E_MAIN_ENTRY = entry
-  try { await run() } finally {
-    if (previous === undefined) delete process.env.SOTTO_E2E_MAIN_ENTRY
-    else process.env.SOTTO_E2E_MAIN_ENTRY = previous
-    await rm(entry, { recursive: true, force: true })
-  }
-}
 
 async function settle(page: Page): Promise<void> {
   await page.mouse.move(0, 0)
@@ -175,6 +149,8 @@ test.describe('Sotto Owl branding on the built app', () => {
           const key = `${appearance}-${width}x${height}`, where = await rowGeometry(page, row)
           if (track === 'stable') geometry.set(key, where)
           else if (geometry.has(key)) { expect(where).toEqual(geometry.get(key)); result[`controls-${width}x${height}`] = 'same as stable' }
+          // An Owl window's night sky twinkles; held at its start, the capture repeats.
+          await holdOwlSky(page)
           await captureWindow(launched.app, resolve(evidenceRoot, `threads-${track}-${appearance}-${width}x${height}.png`))
           if (width === 1280) await row.screenshot({ path: resolve(evidenceRoot, `header-${track}-${appearance}.png`), animations: 'disabled' })
         }
