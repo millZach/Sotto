@@ -229,6 +229,17 @@ await pending1.promise; return connect() })
     await expect(f.host.execute({ type: 'interrupt', commandId: 'unsupported', threadId: thread.id })).rejects.toThrow('does not support')
     expect(f.adapters.claude.commands).toHaveLength(0)
   })
+  it('sends a selected skill to the provider that owns the thread and refuses it where that provider has no skills', async () => {
+    const f = await fixture(); f.adapters.claude.state.capabilities.skills = true
+    const snapshot = await f.host.connect()
+    const claude = snapshot.threads.find(thread => thread.providerId === 'claude')!
+    const skills = [{ name: 'setup-zstack', path: 'claude-command:project:setup-zstack' }]
+    expect(await f.host.execute({ type: 'send', commandId: 'skill', messageId: 'skill', threadId: claude.id, text: '/setup-zstack', skills })).toEqual({ accepted: true })
+    expect(f.adapters.claude.commands.at(-1)).toMatchObject({ type: 'send', threadId: 'session-workshop', skills })
+    const grok = snapshot.threads.find(thread => thread.providerId === 'grok')!
+    await expect(f.host.execute({ type: 'send', commandId: 'none', messageId: 'none', threadId: grok.id, text: '/setup-zstack', skills })).rejects.toThrow('Grok Build does not take skills')
+    expect(f.adapters.grok.commands).toHaveLength(0)
+  })
   it('persists enabled-but-failed connections without blocking another provider or losing a saved draft', async () => {
     const f = await fixture(); const control = await coordinator(f)
     await control.command({ type: 'connect', provider: 'codex' })

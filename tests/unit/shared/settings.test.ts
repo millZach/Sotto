@@ -41,6 +41,7 @@ const customSettings = {
   watcherInFlightLimit: 6,
   reducedMotion: 'on',
   microphoneId: 'microphone-1',
+  terminalFontSize: 17,
   hotkey: 'Alt+D',
   maxRecordingSeconds: 300,
   soundCues: false,
@@ -287,6 +288,7 @@ describe('settings', () => {
     expect(SETTINGS_VERSION).toBe(1)
     expect(DEFAULT_SETTINGS).toEqual({
       watcherInFlightLimit: 4,
+      terminalFontSize: 13,
       memoryEnabled: false,
       webLinkDestination: 'external',
       responseStreaming: 'live',

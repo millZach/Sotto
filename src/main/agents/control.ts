@@ -585,6 +585,11 @@ export class AgentControl {
   /** The projects alone, as a copy, for callers that need nothing else from the state. */
   projects(): AgentProject[] { return structuredClone(this.state.host.projects) }
   /**
+   * This computer's host ID. Answer recovery asks it for every held answer on every published state; reading it
+   * through `get()` copied every loaded history each time, 200 to 430 ms on a desktop with 195 threads.
+   */
+  hostId(): string | undefined { return this.state.host.hostId }
+  /**
    * The whole state, every loaded thread's history included, with attachment preview markers placed.
    * It copies every history and walks every message, so it is for a caller that reads histories;
    * a client's command is answered with `shell()` instead (issue #313).

@@ -13,6 +13,8 @@ import { SIDEBAR_MODE_KEY } from '../../../src/renderer/src/agents/SidebarFrame'
 import { SplitLayoutStore } from '../../../src/renderer/src/agents/splitLayout'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { TerminalWorkspaceStore } from '../../../src/renderer/src/terminals/terminalWorkspaceStore'
+import { TerminalPane } from '../../../src/renderer/src/terminals/TerminalPane'
+import { describeTerminals } from '../../../src/renderer/src/terminals/terminalFacts'
 import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 import { paneMenuItem } from '../../fixtures/renderer/paneMenu'
 
@@ -25,6 +27,12 @@ const WIDE = 1400
 const ID_1 = '11111111-1111-4111-8111-111111111111'
 const ID_2 = '22222222-2222-4222-8222-222222222222'
 const ok = <T,>(value: T): ToolsResult<T> => ({ ok: true, value })
+
+it('names Command+C for copying and Ctrl+C for interrupting on macOS', () => {
+  const row = describeTerminals(threadsStateFixture(), [terminal(ID_1)], NOW)[0]!
+  render(<TerminalPane row={row} store={new TerminalWorkspaceStore()} bridge={undefined} viewFactory={null} viewFailed={false} focused={true} focusNext={{ current: null }} busy={false} platform="darwin" />)
+  expect(screen.getByText('⌘+C copies a selection · Ctrl+C interrupts · ⌘+V pastes text or an image')).toBeInTheDocument()
+})
 
 it('clears workspace copy feedback without erasing a newer input failure', async () => {
   const { bridge } = fakeBridge([terminal(ID_1)])
@@ -60,6 +68,64 @@ it('keeps terminal workspace paste chunks and later events ordered while another
   } finally { first.resolve(ok(undefined)) }
   await waitFor(() => expect(bridge.write).toHaveBeenCalledTimes(4))
   expect(vi.mocked(bridge.write).mock.calls.filter(([request]) => request.id === ID_1).map(([request]) => request.data)).toEqual(['a'.repeat(16_384), 'a'.repeat(3_616), 'later event'])
+})
+
+it('keeps workspace image conversion and staging ahead of Enter', async () => {
+  const { bridge } = fakeBridge([terminal(ID_1)])
+  const store = new TerminalWorkspaceStore()
+  await store.activate(bridge)
+  const conversion = Promise.withResolvers<string | null>(), staging = Promise.withResolvers<ToolsResult<{ path: string }>>()
+  vi.mocked(bridge.pasteImage).mockImplementationOnce(() => staging.promise)
+  const paste = store.pasteImage(bridge, ID_1, conversion.promise)
+  store.write(bridge, ID_1, '\r')
+  await Promise.resolve(); await Promise.resolve()
+  expect(bridge.pasteImage).not.toHaveBeenCalled()
+  expect(bridge.write).not.toHaveBeenCalled()
+  conversion.resolve('image')
+  await waitFor(() => expect(bridge.pasteImage).toHaveBeenCalledWith({ id: ID_1, dataUrl: 'image' }))
+  expect(bridge.write).not.toHaveBeenCalled()
+  staging.resolve(ok({ path: 'first.png' })); await paste
+  await waitFor(() => expect(bridge.write).toHaveBeenCalledWith({ id: ID_1, data: '\r' }))
+})
+
+it('reports oversized workspace images before preload validation can obscure the size failure', async () => {
+  const { bridge } = fakeBridge([terminal(ID_1)])
+  const store = new TerminalWorkspaceStore()
+  await store.activate(bridge)
+  await store.pasteImage(bridge, ID_1, 'data:image/png;base64,' + 'A'.repeat(Math.ceil(11 * 1024 * 1024 * 4 / 3)))
+  expect(bridge.pasteImage).not.toHaveBeenCalled()
+  expect(store.getSnapshot().notice).toContain('larger than 10 MiB. Paste a smaller image.')
+  expect(store.getSnapshot().notice).not.toContain('discarded')
+})
+
+it('explains when an image conversion failure discards later workspace input', async () => {
+  const { bridge } = fakeBridge([terminal(ID_1)])
+  const store = new TerminalWorkspaceStore()
+  await store.activate(bridge)
+  const conversion = Promise.withResolvers<string | null>()
+  const paste = store.pasteImage(bridge, ID_1, conversion.promise)
+  store.write(bridge, ID_1, '\r')
+  conversion.resolve(null); await paste
+  expect(bridge.write).not.toHaveBeenCalled()
+  expect(store.getSnapshot().notice).toContain('Later queued input was discarded.')
+})
+
+it('keeps the busy reason and discarded-input warning when workspace image staging is refused', async () => {
+  const { bridge } = fakeBridge([terminal(ID_1)])
+  const store = new TerminalWorkspaceStore()
+  await store.activate(bridge)
+  const staging = Promise.withResolvers<ToolsResult<{ path: string }>>()
+  vi.mocked(bridge.pasteImage).mockImplementationOnce(() => staging.promise)
+  const paste = store.pasteImage(bridge, ID_1, 'image')
+  await waitFor(() => expect(bridge.pasteImage).toHaveBeenCalledOnce())
+  store.write(bridge, ID_1, '\r')
+  staging.resolve({ ok: false, error: { code: 'busy', message: 'Too many operations are running. Try again shortly.' } })
+  await paste
+  expect(bridge.write).not.toHaveBeenCalled()
+  expect(store.getSnapshot().notice).toContain('Later queued input was discarded.')
+  expect(store.getSnapshot().notice).toContain('Too many operations are running. Try again shortly.')
+  store.write(bridge, ID_1, 'fresh')
+  await waitFor(() => expect(bridge.write).toHaveBeenCalledWith({ id: ID_1, data: 'fresh' }))
 })
 
 it('drops failed workspace input and its remainder, then accepts a fresh attempt', async () => {

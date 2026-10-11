@@ -77,6 +77,10 @@ export function hostAbsolutePath(root: string, path: string): string {
 }
 
 type RouterNotice = { message: string; answer?: { hostId: string; decisionId: string; target: HostAnswerTarget }; unsupportedCompose?: DesktopHostConnection }
+type RequestDraftRecovery = Pick<RequestDraftService, 'heldThreadAnswers' | 'reconcile'>
+
+/** The shortest gap between two answer recovery passes that published states ask for. */
+export const REQUEST_DRAFT_PASS_INTERVAL_MS = 500
 
 /** Routing happens in main, before host-local IDs or privileged command schemas are decoded. */
 export class DesktopHostRouter {
@@ -100,6 +104,9 @@ export class DesktopHostRouter {
     window: number
     reads: number
   }>()
+  /** The recovery pass published states ask for: whether one is running, the gap after it, and a request waiting on both. */
+  private readonly draftPass: { running: boolean; gap: ReturnType<typeof setTimeout> | undefined; wanted: RequestDraftRecovery | undefined; disposed: boolean } =
+    { running: false, gap: undefined, wanted: undefined, disposed: false }
 
   constructor(private readonly empty: () => AgentState, private readonly options: { bindRequestDraftDecision?: BindRequestDraftDecision; watcherEnabled?: boolean } = {}) {}
 
@@ -281,10 +288,39 @@ export class DesktopHostRouter {
       ...(thread.kind === 'watcher' || thread.kind === 'watcher-history' ? { watcher: true } : {}), ...recovery }
       : recovery.completed.length ? { connected: false, ready: false, requests: [], ...recovery } : undefined
   }
-  async reconcileRequestDrafts(drafts: Pick<RequestDraftService, 'heldThreadAnswers' | 'reconcile'>): Promise<void> {
+  /**
+   * The recovery pass a published state asks for. A provider publishes dozens of times a second while it streams, and a pass
+   * looks up every held answer's thread, so passes run one at a time and start at least REQUEST_DRAFT_PASS_INTERVAL_MS apart.
+   * Asking while one runs, or before that interval since its start is up, gets one pass when both are over: a slow pass is
+   * followed at once. A pass is over once its receipt reads are issued; each read retires its own acceptance when it
+   * finishes, so a known acceptance never waits behind another pass's socket read.
+   */
+  scheduleRequestDraftReconcile(drafts: RequestDraftRecovery): void {
+    const pass = this.draftPass
+    if (pass.disposed) return
+    if (pass.running || pass.gap) { pass.wanted = drafts; return }
+    pass.running = true
+    const started = Date.now()
+    void this.issueRequestDraftChecks(drafts).catch(() => undefined).finally(() => {
+      pass.running = false
+      if (pass.disposed) return
+      pass.gap = setTimeout(() => {
+        pass.gap = undefined
+        const wanted = pass.wanted
+        pass.wanted = undefined
+        if (wanted) this.scheduleRequestDraftReconcile(wanted)
+      }, Math.max(0, REQUEST_DRAFT_PASS_INTERVAL_MS - (Date.now() - started)))
+    })
+  }
+  async reconcileRequestDrafts(drafts: RequestDraftRecovery): Promise<void> {
+    await Promise.all(await this.issueRequestDraftChecks(drafts))
+    await drafts.reconcile()
+  }
+  /** Retires what is already known, then starts or joins a receipt read for each held remote answer, returned unawaited. */
+  private async issueRequestDraftChecks(drafts: RequestDraftRecovery): Promise<Promise<void>[]> {
     // Already-known local, personal and remote acceptance must not wait for a socket read.
     await drafts.reconcile()
-    const state = this.shell()
+    let state: AgentState | undefined
     const pending: Promise<void>[] = []
     for (const draft of await drafts.heldThreadAnswers()) {
       const owner = draft.target
@@ -303,6 +339,8 @@ export class DesktopHostRouter {
       const completed = connection.service.requestAnswerRecovery?.(identity.id, owner.providerId).completed
       if (completed?.some(item => item.decisionId === decisionId && item.requestId === owner.requestId
         && item.questionsDigest === questionsDigest)) continue
+      // Every host's threads, built once a held answer still needs its receipt and not before.
+      state ??= this.shell()
       const thread = state.host.threads.find(item => item.id === owner.ownerId)
       const request = thread?.requests.find(item => item.id === owner.requestId)
       // A negative receipt is checked again when its provider reconnects or the original request
@@ -353,8 +391,7 @@ export class DesktopHostRouter {
       }
       pending.push(check.promise)
     }
-    await Promise.all(pending)
-    await drafts.reconcile()
+    return pending
   }
 
   async refreshRequestDraft(target: RequestDraftTarget, decisionId?: string): Promise<void> {
@@ -629,5 +666,9 @@ export class DesktopHostRouter {
     return state.error ? { ...state, error: this.refusal(connection, state.error) } : state
   }
   private emit(): void { const state = this.shell(); this.publishedNotice = this.notice; for (const listener of this.listeners) listener(state) }
-  dispose(): void { for (const hostId of [...this.hosts.keys()]) this.remove(hostId); this.listeners.clear(); this.detailListeners.clear() }
+  dispose(): void {
+    for (const hostId of [...this.hosts.keys()]) this.remove(hostId)
+    this.listeners.clear(); this.detailListeners.clear()
+    this.draftPass.disposed = true; clearTimeout(this.draftPass.gap); this.draftPass.gap = undefined; this.draftPass.wanted = undefined
+  }
 }
