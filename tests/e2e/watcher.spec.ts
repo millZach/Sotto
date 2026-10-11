@@ -183,6 +183,10 @@ test.describe("Watcher's room on the built app", () => {
       await expect(workerPane.getByRole('img', { name: 'Watched by Watcher' })).toBeVisible()
       await expect(workerPane.getByText('Watched by Watcher. If you send here, Watcher stops sending to it.')).toBeVisible()
       await capture(launched, 'threads-watched-sotto-dark-1600x1000.png')
+      await resizeContentWindow(launched, 1280, 800)
+      expect(await pageBoundProblems(page)).toEqual([])
+      await capture(launched, 'threads-watched-sotto-dark-1280x800.png')
+      await resizeContentWindow(launched, 1600, 1000)
 
       await openRoom(page)
       const overview = page.getByRole('complementary', { name: 'Overview' })
