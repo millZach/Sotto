@@ -141,7 +141,7 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
                 interval = 15_000_000_000
             }
         }
-        let helloResult = try await callReceived(Wire.snapshotHello, as: Hello.self)
+        let helloResult = try await callReceived(Self.hello, as: Hello.self)
         let hello = helloResult.value
         guard hello.hostId == pairing.hostId, hello.clientId == pairing.clientId else { disconnect(); throw ClientError.invalidIdentity }
         try hello.shell.validate(hostID: pairing.hostId)
@@ -247,6 +247,10 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
     }
 }
 extension HostConnection {
+    /// The snapshot hello, opting in to Watcher's page (`watcher-phone`) and its Stop all (`watcher-phone-stop-all`), now
+    /// that the Watcher tab can show them. Only an Owl desktop that runs Watcher offers them; any other computer reads the
+    /// names and offers nothing new.
+    nonisolated static var hello: [String: JSONValue] { WatcherWire.hello }
     /// What a request that failed means: a timeout's cause, by what the request was for.
     nonisolated static func requestFailure(operation: String) -> ClientError {
         switch operation {

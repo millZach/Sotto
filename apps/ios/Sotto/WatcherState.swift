@@ -1,0 +1,226 @@
+import Foundation
+import SottoCore
+
+// Watcher on this iPhone (ADR-0073, amended October 11, 2026). The Owl desktop that runs Watcher offers `watcher-phone`
+// to a phone that opts in, and hands it Watcher's page with every shell: its conversation, what it did for each reply,
+// the threads it works with and the cards waiting on the user. The phone sends the user's own words, answers and Stop
+// all back to that computer, which checks each one again. SottoCore decodes the page and builds those operations
+// (`WatcherPhoneState`, `WatcherWire`); this is what the Watcher tab reads from them.
+
+/// Watcher's page, as the computer that runs it projects it for a phone. It carries no tool arguments, prompt copies or
+/// tokens. A provider the computer can't name is nil, and shows no logo.
+typealias WatcherPage = WatcherPhoneState
+
+extension WatcherTarget {
+    /// The thread as this iPhone names it.
+    var ref: ThreadRef { ThreadRef(hostID: hostId, threadID: threadId) }
+}
+
+extension WatcherPhoneState.RequestCard {
+    /// A card's identity: its thread and its request.
+    var key: String { target.ref.id + "/" + request.id }
+}
+
+extension WatcherPhoneState.ReceiptGroup {
+    /// A group's identity: Watcher's request and the reply it belongs to, if any.
+    var key: String { requestId + "/" + (replyMessageId ?? "unattached") }
+}
+
+extension WatcherPhoneState {
+    /// Watcher's own thread, as this iPhone names it.
+    var ownRef: ThreadRef? { current?.target.ref }
+    /// Whether a card is Watcher's own request rather than a worker's.
+    func isOwn(_ card: RequestCard) -> Bool { current?.target == card.target }
+    /// The threads Watcher works with now, and the ones it no longer does.
+    var watched: [WatchedThread] { watchedThreads.filter(\.watched) }
+    var noLongerWatched: [WatchedThread] { watchedThreads.filter { !$0.watched } }
+    func isWatched(_ ref: ThreadRef) -> Bool { watchedThreads.contains { $0.watched && $0.target.ref == ref } }
+    /// The card, if it is still waiting.
+    func card(_ ref: ThreadRef, requestID: String) -> RequestCard? {
+        needsYou.first { $0.target.ref == ref && $0.request.id == requestID }
+    }
+    /// Where Watcher's computer says a draft this iPhone sent stands: `queued`, `submitting`, `accepted`, `uncertain` or
+    /// `failed`, or nil when it says nothing of it.
+    func delivery(of draftID: String) -> String? {
+        draftDeliveries?.first { $0.draftId.lowercased() == draftID.lowercased() }?.status
+    }
+    /// Older than `other`, by when the computer read it. A page read before another one already shown is left unshown.
+    func isOlder(than other: WatcherPhoneState) -> Bool {
+        guard let mine = Stamp.date(observedAt), let theirs = Stamp.date(other.observedAt) else { return false }
+        return mine < theirs
+    }
+}
+
+// MARK: - The tab
+
+/// What the Watcher tab says on its icon: a dot while Watcher works, and a count of what needs the user that only
+/// Watcher's page shows: Watcher's own requests, and workers on computers this iPhone doesn't list. A worker's request
+/// that Threads already shows is counted there, not twice.
+struct WatcherTabState: Equatable {
+    let working: Bool
+    let needs: Int
+    init(working: Bool, needs: Int) { self.working = working; self.needs = needs }
+    init(page: WatcherPage?, listed: (ThreadRef) -> Bool) {
+        working = page?.working ?? false
+        needs = page?.needsYou.filter { !listed($0.target.ref) }.count ?? 0
+    }
+    /// What VoiceOver says after the tab's name, for the dot and the badge.
+    var spoken: String {
+        var parts: [String] = []
+        if working { parts.append("Working") }
+        if needs > 0 { parts.append(needs == 1 ? "1 needs you" : "\(needs) need you") }
+        return parts.joined(separator: ", ")
+    }
+}
+
+// MARK: - The conversation
+
+/// A message in Watcher's conversation, or what Watcher did for one of its replies.
+enum WatcherItem: Identifiable, Equatable {
+    case message(Message)
+    case receipts(WatcherPage.ReceiptGroup, attached: Bool)
+    var id: String {
+        switch self {
+        case .message(let message): return "message/" + message.id
+        case .receipts(let group, _): return "receipts/" + group.key
+        }
+    }
+}
+
+enum WatcherConversation {
+    /// Messages in order, each reply followed by what Watcher did for it (2B). A group whose reply isn't in the
+    /// conversation is never attached to another reply: it stands alone, placed by when it happened.
+    static func items(_ page: WatcherPage) -> [WatcherItem] {
+        let messages = page.conversation.messages
+        let ids = Set(messages.map(\.id))
+        var attached: [String: [WatcherPage.ReceiptGroup]] = [:]
+        var loose: [WatcherPage.ReceiptGroup] = []
+        for group in page.receiptGroups where !group.rows.isEmpty {
+            if let reply = group.replyMessageId, ids.contains(reply) { attached[reply, default: []].append(group) }
+            else { loose.append(group) }
+        }
+        // Each loose group goes after the last message written before it; with no times to go by, at the end.
+        var after: [Int: [WatcherPage.ReceiptGroup]] = [:]
+        var leading: [WatcherPage.ReceiptGroup] = []
+        var trailing: [WatcherPage.ReceiptGroup] = []
+        let dated: [(index: Int, date: Date)] = messages.enumerated().compactMap { index, message in
+            guard let stamp = message.createdAt, let date = Stamp.date(stamp) else { return nil }
+            return (index, date)
+        }
+        for group in loose {
+            guard !dated.isEmpty, let when = group.rows.compactMap({ Stamp.date($0.createdAt) }).min() else {
+                trailing.append(group)
+                continue
+            }
+            if let index = dated.last(where: { $0.date <= when })?.index { after[index, default: []].append(group) }
+            else { leading.append(group) }
+        }
+        var items: [WatcherItem] = leading.map { .receipts($0, attached: false) }
+        for (index, message) in messages.enumerated() {
+            items.append(.message(message))
+            items += (attached[message.id] ?? []).map { .receipts($0, attached: true) }
+            items += (after[index] ?? []).map { .receipts($0, attached: false) }
+        }
+        return items + trailing.map { .receipts($0, attached: false) }
+    }
+}
+
+// MARK: - Words
+
+enum WatcherWords {
+    /// What Watcher did, in a word or two.
+    static func action(_ action: String) -> String {
+        switch action {
+        case "start": return "Started"
+        case "send": return "Sent a message"
+        case "stop": return "Stopped"
+        case "settle": return "Settled"
+        default: return "Changed"
+        }
+    }
+    /// Where Watcher's action stands, when the thread hasn't simply taken it.
+    static func delivery(_ receipt: WatcherPage.Receipt) -> String? {
+        switch receipt.deliveryState {
+        case "queued": return "Waiting to go"
+        case "dispatching": return "Sending"
+        case "failed": return "Didn’t reach it"
+        case "uncertain": return "Not confirmed"
+        default: return nil
+        }
+    }
+    /// A watched thread's state, as Threads words it.
+    static func status(_ thread: WatcherPage.WatchedThread) -> String {
+        if !thread.connected || thread.status == "unavailable" { return "Can’t reach it" }
+        switch thread.status {
+        case "running": return "Working"
+        case "error": return "Turn failed"
+        default: return thread.backgroundWorkCount > 0 ? "Working" : "Idle"
+        }
+    }
+    /// Why a thread left Watched.
+    static func left(_ thread: WatcherPage.WatchedThread) -> String {
+        thread.takenOver ? "You took it over" : "No longer watched"
+    }
+    /// The meter beside Stop all: "3 of 4 watched".
+    static func meter(_ page: WatcherPage) -> String { "\(page.inFlight) of \(page.inFlightLimit) watched" }
+    /// The line under Watched's cards.
+    static func room(_ page: WatcherPage) -> String {
+        let room = page.inFlightLimit - page.inFlight
+        if room <= 0 { return "Watcher starts nothing new until one of these finishes or stops. A thread waiting on you still counts." }
+        return (room == 1 ? "1 more can start." : "\(room) more can start.") + " A thread waiting on you still counts."
+    }
+    /// Stop all's question.
+    static func stopQuestion(_ count: Int) -> String {
+        count == 1 ? "Stop the thread Watcher started?" : "Stop the \(count) threads Watcher started?"
+    }
+    static func stopButton(_ count: Int) -> String { count == 1 ? "Stop 1 thread" : "Stop \(count) threads" }
+    /// What Stop all did, thread by thread when not everything stopped. `titles` are by `ThreadRef.id`.
+    static func stopped(_ results: [WatcherStopResult.StoppedTarget], titles: [String: String]) -> String {
+        if results.isEmpty { return "Watcher had no threads to stop. Nothing was stopped." }
+        let done = results.filter { $0.status == "stopped" || $0.status == "requested" }
+        if done.count == results.count {
+            return done.count == 1 ? "Stopped 1 thread Watcher started." : "Stopped \(done.count) threads Watcher started."
+        }
+        let rest = results.filter { $0.status != "stopped" && $0.status != "requested" }.map { outcome in
+            let title = titles[outcome.target.ref.id] ?? "A thread"
+            return outcome.status == "uncertain" ? "\(title) isn’t confirmed." : "\(title): \(outcome.message)"
+        }
+        return "Stopped \(done.count) of \(results.count). " + rest.joined(separator: " ")
+    }
+}
+
+// MARK: - Alerts
+
+/// Alerts for Watcher's own requests and errors, under the alert switches every thread uses (5A). Never for Watcher's
+/// own finished turns: they end after every batch of news. Workers alert from their own computer's thread list. The
+/// first page after connecting is not news, and a request alerts once.
+struct WatcherWatch: Sendable {
+    /// An alert whose ID starts with this is Watcher's, and opens the Watcher tab when tapped.
+    static let alertPrefix = "watcher/"
+    private var seen: Set<String>?
+    private var failed = false
+    init() {}
+    mutating func observe(_ page: WatcherPage, hostID: String, computer: String, onScreen: Bool, switches: AlertSwitches) -> [ThreadAlert] {
+        let first = seen == nil
+        var known = seen ?? []
+        var alerts: [ThreadAlert] = []
+        let own = page.needsYou.filter { page.isOwn($0) }
+        let nowFailed = page.current?.status == "error"
+        defer { seen = known; failed = nowFailed }
+        guard let current = page.current else { return [] }
+        let ref = current.target.ref
+        for card in own {
+            guard known.insert(card.request.id).inserted, !first, !onScreen, switches.needsYou else { continue }
+            let permission = card.request.kind == "permission"
+            alerts.append(ThreadAlert(ref: ref, kind: permission ? .permission : .question, title: "Watcher",
+                                      body: permission ? "Watcher is asking for permission on \(computer)." : "Watcher is asking a question on \(computer).",
+                                      id: Self.alertPrefix + ref.id + "/request/" + card.request.id))
+        }
+        if nowFailed && !failed && !first && !onScreen && switches.failed {
+            alerts.append(ThreadAlert(ref: ref, kind: .failed, title: "Watcher", body: "Watcher stopped with an error on \(computer).",
+                                      id: Self.alertPrefix + ref.id + "/failed/" + UUID().uuidString))
+        }
+        if known.count > 500 { known = known.intersection(own.map(\.request.id)) }
+        return alerts
+    }
+}

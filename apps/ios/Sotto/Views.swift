@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import SottoCore
 
 /// Pairing until this iPhone holds a computer, then Threads, Computers and Settings.
@@ -9,20 +10,32 @@ struct RootView: View {
     }
 }
 
-/// The three tabs. The system tab bar keeps its own glass; the theme's accent tints it.
+/// The tabs: Threads, Watcher when a paired computer runs it, Computers and Settings. The system tab bar keeps its own
+/// glass; the theme's accent tints it.
 struct MainTabs: View {
     @EnvironmentObject var model: AppModel
     @State private var tab = Tab.threads
     @State private var threadPath = NavigationPath()
-    enum Tab: Hashable { case threads, computers, settings }
+    @State private var watcherPath = NavigationPath()
+    enum Tab: Hashable { case threads, watcher, computers, settings }
     var body: some View {
+        let watcher = model.watcherTab
         TabView(selection: $tab) {
             NavigationStack(path: $threadPath) {
                 ThreadsView(openCreated: { ref in threadPath.append(ThreadRoute(ref: ref)) }).threadDestination()
+                    .background(TabItemAccessibility(title: "Watcher", value: watcher.spoken))
             }
                 .tabItem { Label("Threads", systemImage: "bubble.left") }
                 .badge(waitingCount + unreadFinishedCount)
                 .tag(Tab.threads)
+            // Watcher's tab (1B), only for a computer that runs Watcher and shows it to this iPhone. Its owl carries a dot
+            // while Watcher works, and its badge counts what needs the user that only Watcher's page shows.
+            if let hostID = model.watcherHostID {
+                NavigationStack(path: $watcherPath) { WatcherView(hostID: hostID).threadDestination() }
+                    .tabItem { Label("Watcher", image: watcher.working ? "WatcherTabWorking" : "WatcherTab") }
+                    .badge(watcher.needs)
+                    .tag(Tab.watcher)
+            }
             NavigationStack { ComputersView() }
                 .tabItem { Label("Computers", systemImage: "desktopcomputer") }
                 .tag(Tab.computers)
@@ -31,9 +44,14 @@ struct MainTabs: View {
                 .tag(Tab.settings)
         }
         .sheet(isPresented: $model.adding, onDismiss: { model.closeAdding() }) { AddComputerSheet() }
-        // A tapped alert opens its thread on Threads (ADR-0051).
+        // A tapped alert opens its thread on Threads (ADR-0051), and Watcher's own opens the Watcher tab.
         .onChange(of: model.alertOpened) { _, ref in openAlerted(ref) }
-        .onAppear { openAlerted(model.alertOpened) }
+        .onChange(of: model.watcherAlertOpened) { _, hostID in openWatcher(hostID) }
+        .onAppear { openAlerted(model.alertOpened); openWatcher(model.watcherAlertOpened) }
+        // A computer that stops offering Watcher takes its tab with it.
+        .onChange(of: model.watcherHostID) { _, hostID in
+            if hostID == nil, tab == .watcher { tab = .threads; watcherPath = NavigationPath() }
+        }
     }
     private func openAlerted(_ ref: ThreadRef?) {
         guard let ref else { return }
@@ -41,11 +59,52 @@ struct MainTabs: View {
         tab = .threads
         threadPath = NavigationPath([ThreadRoute(ref: ref)])
     }
+    private func openWatcher(_ hostID: String?) {
+        guard hostID != nil else { return }
+        model.watcherAlertOpened = nil
+        guard model.watcherHostID != nil else { return }
+        tab = .watcher
+        watcherPath = NavigationPath()
+    }
     private var waitingCount: Int { ThreadGroups.waiting(model.lists).count + model.terminalRows.filter { $0.reachable && $0.terminal.state == .needsYou }.count }
     /// Recent threads that finished while nothing showed them and have not been opened on either device (ADR-0046).
     private var unreadFinishedCount: Int {
         FocusThreads(model.lists, opened: model.selected).unreadFinishedCount
             + model.terminalRows.filter { $0.finishedUnread && $0.ref != model.selectedTerminal }.count
+    }
+}
+
+/// SwiftUI's tab items take a title, an image and a badge, and nothing VoiceOver can read for the Watcher tab's working
+/// dot. This finds the tab bar's item by its title, once SwiftUI has set it up for this update, and gives it the words:
+/// "Working, 1 needs you". It sits in a tab's own page, where the tab bar's controller is above it.
+struct TabItemAccessibility: UIViewControllerRepresentable {
+    let title: String
+    let value: String
+    func makeUIViewController(context: Context) -> Probe { Probe() }
+    func updateUIViewController(_ probe: Probe, context: Context) {
+        probe.wanted = (title, value)
+        probe.apply()
+    }
+    final class Probe: UIViewController {
+        var wanted: (title: String, value: String)?
+        override func loadView() {
+            let view = UIView()
+            view.isUserInteractionEnabled = false
+            view.isAccessibilityElement = false
+            self.view = view
+        }
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            apply()
+        }
+        func apply() {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let wanted = self.wanted, let items = self.tabBarController?.tabBar.items else { return }
+                for item in items where item.title == wanted.title {
+                    item.accessibilityValue = wanted.value.isEmpty ? nil : wanted.value
+                }
+            }
+        }
     }
 }
 

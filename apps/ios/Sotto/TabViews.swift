@@ -509,6 +509,7 @@ struct ThreadsView: View {
         let recent = groups.recent.filter { !departing.contains($0.id) }
         let settled = groups.settled.filter { !departing.contains($0.id) }
         let unread = Set((recent + settled).filter { groups.isUnreadFinish($0) }.map { $0.id })
+        let watched = model.watchedThreadIDs
         if needs.isEmpty && working.isEmpty && recent.isEmpty && settled.isEmpty && terminals.isEmpty && terminalNeeds.isEmpty {
             let includesTerminals = model.computers.contains { model.show.admits($0.hostID) && model.supportsTerminals($0.hostID) }
             let noMatches = includesTerminals ? "No matching threads or terminals." : "No matching threads."
@@ -552,7 +553,7 @@ struct ThreadsView: View {
                 }
                 ForEach(Array(recent.enumerated()), id: \.element.id) { index, row in
                     if index > 0 { Rectangle().fill(Palette.hairline).frame(height: 1).padding(.leading, Space.s4 + 20) }
-                    ThreadRow(row: row, unread: unread.contains(row.id))
+                    ThreadRow(row: row, unread: unread.contains(row.id), watched: watched.contains(row.id))
                 }
             }
             .sottoCard(.plain)
@@ -564,7 +565,7 @@ struct ThreadsView: View {
                 settledToggle(settled.count)
             }
             if settledExpanded || groups.searching {
-                ThreadRowList(rows: settled, unread: unread)
+                ThreadRowList(rows: settled, unread: unread, watched: watched)
             }
         }
     }
@@ -649,10 +650,17 @@ struct ThreadsView: View {
         let id = item.row.id
         sent[id] = CardAnswer(requestID: item.request.id, busy: busy, done: done, index: index, row: item.row, request: item.request)
         Task {
-            await model.answer(item.request, in: item.row.ref, choice: choice)
+            await model.answer(item.request, in: item.row.ref, choice: choice, answers: Self.oneTapAnswers(item.request, choice: choice))
             sent[id]?.inFlight = false
             resolve(id)
         }
+    }
+
+    /// A chip on a card for one structured question answers that question; plain options and permissions go as the
+    /// choice alone. As a choice alone, a structured question had no answer, and the phone refused to send it.
+    static func oneTapAnswers(_ request: AgentRequest, choice: String) -> [String: QuestionAnswer] {
+        guard request.kind == "question", let question = request.questions?.first else { return [:] }
+        return [question.id: QuestionAnswer(optionIds: [choice])]
     }
 
     /// Settles a card once the model has finished with its answer. Confirmed, it reads Answered for a moment and
@@ -786,7 +794,10 @@ private struct RequestCard: View {
     private var isPermission: Bool { request.kind == "permission" }
     private var tag: String { isPermission ? "Permission" : "Question" }
     private var ask: String { isPermission ? request.text : (request.questions?.first?.question ?? request.text) }
-    private var openLabel: String { "\(row.thread.title). \(tag) from \(Words.provider(row.thread.providerId)) on \(row.computer): \(ask)" }
+    private var openLabel: String {
+        "\(row.thread.title). \(tag) from \(Words.provider(row.thread.providerId)) on \(row.computer)"
+            + WatchedWords.spoken(model.watchedByWatcher(row.ref)) + ": \(ask)"
+    }
     private var reviewWords: String {
         if row.thread.requests.count > 1 { return "Review \(row.thread.requests.count) requests" }
         return isPermission ? "Review permission" : "Review question"
@@ -807,8 +818,8 @@ private struct RequestCard: View {
             Text(row.thread.title).font(.sotto(.lead, .semibold)).foregroundStyle(Palette.ink)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, Space.s2)
-            Text("\(Words.provider(row.thread.providerId)) on \(row.computer)").font(.sotto(.small)).foregroundStyle(Palette.muted)
-                .lineLimit(1)
+            PlaceLine(providerID: row.thread.providerId, watched: model.watchedByWatcher(row.ref),
+                      text: "\(Words.provider(row.thread.providerId)) on \(row.computer)")
                 .padding(.top, Space.s1)
             Text(ask).font(.sotto(.body)).foregroundStyle(Palette.ink).lineLimit(4)
                 .fixedSize(horizontal: false, vertical: true)
@@ -979,7 +990,7 @@ private struct WorkingCard: View {
                 Text(row.thread.title).font(.sotto(.lead, .semibold)).foregroundStyle(Palette.ink)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, Space.s2)
-                Text(place).font(.sotto(.small)).foregroundStyle(Palette.muted).lineLimit(1)
+                PlaceLine(providerID: row.thread.providerId, watched: model.watchedByWatcher(row.ref), text: place)
                     .padding(.top, Space.s1)
                 Text(liveLine).font(.sotto(.small)).foregroundStyle(Palette.muted).lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -992,7 +1003,7 @@ private struct WorkingCard: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
-        .accessibilityLabel("\(row.thread.title), \(state.words), \(place)")
+        .accessibilityLabel("\(row.thread.title), \(state.words), \(place)" + WatchedWords.spoken(model.watchedByWatcher(row.ref)))
         .accessibilityHint("Opens the thread")
         .accessibilityIdentifier("thread-\(row.id)")
     }
@@ -1020,13 +1031,14 @@ private struct WorkingCard: View {
 private struct ThreadRowList: View {
     let rows: [HostedThread]
     let unread: Set<String>
+    var watched: Set<String> = []
     var body: some View {
         VStack(spacing: 0) {
             ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                 if index > 0 {
                     Rectangle().fill(Palette.hairline).frame(height: 1).padding(.leading, Space.s4 + 20)
                 }
-                ThreadRow(row: row, unread: unread.contains(row.id))
+                ThreadRow(row: row, unread: unread.contains(row.id), watched: watched.contains(row.id))
             }
         }
         .sottoCard(.plain)
@@ -1038,6 +1050,8 @@ private struct ThreadRowList: View {
 private struct ThreadRow: View {
     let row: HostedThread
     let unread: Bool
+    /// Watcher works with it: the owl follows its provider's logo.
+    var watched = false
     @Environment(\.sottoDensity) private var density
     private var state: ThreadState { ThreadState(row.thread) }
     private var failed: Bool { row.reachable && state == .failed }
@@ -1048,7 +1062,8 @@ private struct ThreadRow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(row.thread.title).font(.sotto(.body, unread ? .bold : .semibold)).foregroundStyle(Palette.ink)
                         .lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                    Text(line).font(.sotto(.small)).foregroundStyle(failed ? Palette.dangerText : Palette.muted).lineLimit(1)
+                    PlaceLine(providerID: row.thread.providerId, watched: watched, text: line,
+                              tone: failed ? Palette.dangerText : Palette.muted)
                 }
                 Spacer(minLength: Space.s2)
                 if let ago = Words.ago(row.thread.summary?.runningTurnStartedAt ?? row.thread.summary?.lastMessageAt) {
@@ -1062,7 +1077,7 @@ private struct ThreadRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
-        .accessibilityLabel(label)
+        .accessibilityLabel(label + WatchedWords.spoken(watched))
         .accessibilityHint("Opens the thread")
         .accessibilityIdentifier("thread-\(row.id)")
     }

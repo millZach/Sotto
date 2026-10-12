@@ -683,6 +683,203 @@ import XCTest
         capture("question-glow-after")
     }
 
+    /// A question with a few choices is answered on its Threads card: the chip chosen there is the question's answer.
+    func testAOneTapQuestionIsAnsweredOnItsCard() {
+        launch(Self.fixture + ["--ui-question-while-reading"])
+        let chip = app.buttons["Ctrl+J"]
+        reveal(chip)
+        chip.tap()
+        // Another card on Threads has its own Send answer, which stays off until one of its chips is chosen.
+        let send = app.buttons.matching(NSPredicate(format: "label == %@ AND enabled == true", "Send answer")).firstMatch
+        XCTAssertTrue(send.waitForExistence(timeout: 5), "Choosing a chip readies its card's Send answer")
+        reveal(send, fullyVisible: true)
+        send.tap()
+        XCTAssertTrue(labelled("Answer sent.").waitForExistence(timeout: 10), "The chosen chip goes as the question's answer")
+        capture("threads-glow-card-answered")
+    }
+
+    // MARK: Watcher (ADR-0073, amended October 11, 2026)
+
+    private static let watcher = fixture + ["--ui-watcher"]
+
+    /// Opens the Watcher tab, which only a computer that runs Watcher gives this iPhone.
+    @discardableResult private func openWatcher() -> XCUIElement {
+        let tab = app.tabBars.buttons["Watcher"]
+        XCTAssertTrue(tab.waitForExistence(timeout: 10), "A computer that runs Watcher gives it a tab")
+        tab.tap()
+        XCTAssertTrue(byID("watcher-state").waitForExistence(timeout: 10), "Watcher's page opens with its state")
+        return tab
+    }
+    /// Puts the keyboard away by dragging the conversation, so the tab bar can be reached again.
+    private func dismissKeyboard() {
+        let keyboard = app.keyboards.firstMatch
+        guard keyboard.exists else { return }
+        app.scrollViews.firstMatch.swipeDown()
+        XCTAssertTrue(waitUntilGone(keyboard), "Dragging the conversation puts the keyboard away")
+    }
+    /// Turns this iPhone to light in Settings and comes back to the Watcher tab.
+    private func watcherInLight() {
+        app.tabBars.buttons["Settings"].tap()
+        let light = app.buttons["setting-light"]
+        XCTAssertTrue(light.waitForExistence(timeout: 5))
+        reveal(light, swipingDown: true)
+        light.tap()
+        XCTAssertEqual(light.value as? String, "Selected")
+        openWatcher()
+    }
+
+    /// The Watcher tab sits between Threads and Computers, with a dot while Watcher works that VoiceOver reads; its page
+    /// shows Watcher's model and computer, its conversation and one card of what it did for each reply. A message the
+    /// user writes goes to Watcher and its answer arrives under it.
+    func testTheWatcherTabOpensAndTakesAMessage() {
+        launch(Self.watcher)
+        let labels = app.tabBars.buttons.allElementsBoundByIndex.map(\.label)
+        XCTAssertEqual(labels, ["Threads", "Watcher", "Computers", "Settings"], "Watcher's tab sits between Threads and Computers")
+        let tab = openWatcher()
+        XCTAssertEqual(byID("watcher-state").label, "Watcher, Working")
+        XCTAssertTrue(text("Codex · GPT-6.1 Sol on Laptop").exists, "Watcher's model and computer head its page")
+        XCTAssertTrue(text("Started it.").waitForExistence(timeout: 5), "Watcher's conversation is on its page")
+        let receipt = app.buttons["watcher-receipt-\(laptop)/login"]
+        XCTAssertTrue(receipt.exists, "What Watcher did sits under its reply, a row per thread")
+        XCTAssertTrue(receipt.label.contains("Started"), "The row says what Watcher did")
+        capture("watcher-conversation-dark")
+
+        let reply = byID("watcher-reply")
+        XCTAssertTrue(reply.waitForExistence(timeout: 5))
+        XCTAssertEqual(reply.label, "Ask Watcher")
+        reply.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), "The box opens the keyboard, with its own dictation key")
+        reply.typeText("How is the release notes thread doing?")
+        let send = app.buttons["watcher-send"]
+        XCTAssertTrue(send.isEnabled)
+        send.tap()
+        XCTAssertTrue(text("How is the release notes thread doing?").waitForExistence(timeout: 5), "The message joins the conversation")
+        XCTAssertTrue(text("On it.").waitForExistence(timeout: 10), "Watcher's answer arrives under it")
+        // The page already had a row for the release notes thread; Watcher's answer carries one more.
+        let rows = app.buttons.matching(identifier: "watcher-receipt-\(laptop)/notes845")
+        let added = XCTNSPredicateExpectation(predicate: NSPredicate(format: "count == 2"), object: rows)
+        XCTAssertEqual(XCTWaiter.wait(for: [added], timeout: 5), .completed, "With what it did")
+        capture("watcher-sent-dark")
+        dismissKeyboard()
+        watcherInLight()
+        XCTAssertTrue(text("On it.").waitForExistence(timeout: 5))
+        capture("watcher-sent-light")
+        // Last, so the rest of the journey reports first if the tab bar doesn't carry it.
+        let working = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@", "Working"), object: tab)
+        XCTAssertEqual(XCTWaiter.wait(for: [working], timeout: 10), .completed, "VoiceOver hears the working dot as Working")
+    }
+
+    /// A row in what Watcher did opens its thread, with the provider's logo and the owl under its title and the takeover
+    /// line in its reply box.
+    func testAReceiptRowOpensItsThread() {
+        launch(Self.watcher)
+        for appearance in ["dark", "light"] {
+            if appearance == "light" { watcherInLight() } else { openWatcher() }
+            let row = app.buttons["watcher-receipt-\(laptop)/notes845"]
+            reveal(row)
+            XCTAssertTrue(row.label.contains("watched by Watcher"), "The row says Watcher works with the thread")
+            row.tap()
+            let title = byID("thread-title")
+            XCTAssertTrue(title.waitForExistence(timeout: 10), "The row opens its thread")
+            XCTAssertEqual(title.label, "Babysit #845 release notes")
+            XCTAssertTrue(text("Codex on Laptop · Sotto, watched by Watcher").exists, "The owl follows the provider's logo")
+            let takeover = byID("watched-takeover")
+            XCTAssertTrue(takeover.waitForExistence(timeout: 5))
+            XCTAssertEqual(takeover.label, "Watched by Watcher. If you send here, Watcher stops sending to it.")
+            capture("watcher-receipt-thread-" + appearance)
+            back()
+            XCTAssertTrue(byID("watcher-state").waitForExistence(timeout: 10), "Back returns to Watcher's page")
+        }
+    }
+
+    /// A worker's own question sits in Watcher's page and is answered there, as the user's own answer to that thread.
+    func testAWorkersCardIsAnsweredInWatchersPage() {
+        launch(Self.watcher + ["--ui-watcher-can-answer"])
+        openWatcher()
+        XCTAssertTrue(text("The thread’s own card. Your answer goes to Fix login test, not to Watcher.").waitForExistence(timeout: 5))
+        let choice = app.buttons["A fresh account for each run"]
+        reveal(choice)
+        capture("watcher-card-dark")
+        choice.tap()
+        XCTAssertTrue(choice.isSelected, "The chosen answer is marked")
+        let send = app.buttons["watcher-card-send"]
+        reveal(send, fullyVisible: true)
+        XCTAssertTrue(send.isEnabled)
+        send.tap()
+        XCTAssertTrue(labelled("Answer sent.").waitForExistence(timeout: 10), "The answer reached its thread")
+        XCTAssertTrue(waitUntilGone(send), "The card leaves Watcher's page once answered")
+        capture("watcher-card-answered-dark")
+        launch(Self.watcher + ["--ui-watcher-can-answer", "--ui-light"])
+        openWatcher()
+        reveal(app.buttons["A fresh account for each run"])
+        capture("watcher-card-light")
+    }
+
+    /// A phone without Can answer on the computer that runs Watcher reads the cards in its page and answers none of them,
+    /// and says so, as it does on Threads. Watcher's own request badges its tab.
+    func testAPhoneWithoutCanAnswerSaysSoInWatchersPage() {
+        launch(Self.watcher + ["--ui-watcher-asks"])
+        let tab = openWatcher()
+        XCTAssertEqual(byID("watcher-state").label, "Watcher, Needs you")
+        let note = text("This iPhone can’t answer on Laptop yet.")
+        reveal(note)
+        XCTAssertFalse(app.buttons["watcher-card-send"].exists, "Nothing can be sent from a card")
+        XCTAssertFalse(app.buttons["Allow once"].exists)
+        let own = byID("watcher-own-card")
+        reveal(own)
+        XCTAssertTrue(own.label.contains("Watcher asks each time. It can’t be given lasting permission."))
+        XCTAssertTrue(byID("watcher-send-held").exists, "Watcher waits for its own request before it takes more")
+        capture("watcher-cannot-answer-dark")
+        let review = app.buttons["watcher-card-review"].firstMatch
+        reveal(review)
+        review.tap()
+        XCTAssertTrue(text("This iPhone can’t answer on Laptop yet. Turn on Can answer for it in Sotto on Laptop").waitForExistence(timeout: 5))
+        capture("watcher-cannot-answer-sheet-dark")
+        app.buttons["Not now"].tap()
+        XCTAssertTrue(waitUntilGone(app.buttons["Not now"]))
+        watcherInLight()
+        reveal(byID("watcher-own-card"))
+        capture("watcher-cannot-answer-light")
+        // Last, so the rest of the journey reports first if the tab bar doesn't carry it.
+        let badged = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@", "1 needs you"), object: tab)
+        XCTAssertEqual(XCTWaiter.wait(for: [badged], timeout: 10), .completed, "VoiceOver hears Watcher's own request on its tab")
+    }
+
+    /// Watched shows how many threads Watcher works with of how many it may, and Stop all asks first: cancelling stops
+    /// nothing, and confirming stops only the threads Watcher started.
+    func testStopAllAsksFirst() {
+        launch(Self.watcher)
+        openWatcher()
+        app.buttons["watcher-section-watched"].tap()
+        let meter = byID("watcher-meter")
+        XCTAssertTrue(meter.waitForExistence(timeout: 5))
+        XCTAssertEqual(meter.value as? String, "3 of 4 watched")
+        XCTAssertTrue(app.buttons["watched-\(laptop)/login"].exists, "Each watched thread opens from its card")
+        XCTAssertTrue(text("No longer watched").exists)
+        capture("watcher-watched-dark")
+        let stopAll = app.buttons["watcher-stop-all"]
+        stopAll.tap()
+        let confirm = app.buttons["Stop 3 threads"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5), "Stop all asks first")
+        XCTAssertTrue(text("Stop the 3 threads Watcher started?").exists)
+        capture("watcher-stop-all-dark")
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue(waitUntilGone(confirm))
+        XCTAssertEqual(meter.value as? String, "3 of 4 watched", "Cancelling stops nothing")
+        stopAll.tap()
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        confirm.tap()
+        XCTAssertTrue(labelled("Stopped 3 threads Watcher started.").waitForExistence(timeout: 10))
+        let stopped = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "0 of 4 watched"), object: meter)
+        XCTAssertEqual(XCTWaiter.wait(for: [stopped], timeout: 5), .completed)
+        XCTAssertFalse(stopAll.exists, "With nothing watched, there is nothing to stop")
+        capture("watcher-stopped-dark")
+        watcherInLight()
+        app.buttons["watcher-section-watched"].tap()
+        XCTAssertTrue(meter.waitForExistence(timeout: 5))
+        capture("watcher-stopped-light")
+    }
+
     /// Settings on this iPhone: the look, alerts off until turned on, another theme, light, compact and larger text.
     func testSettingsThemeAppearanceDensityAndAlerts() {
         app.tabBars.buttons["Settings"].tap()
@@ -864,6 +1061,7 @@ import XCTest
         XCTAssertTrue(counts.exists)
         XCTAssertTrue(counts.label.contains("2 working"), "The summary counts the threads at work")
         XCTAssertTrue(app.buttons["Try reaching Studio Mac again"].exists, "A computer that can't be reached offers Try again")
+        XCTAssertFalse(app.tabBars.buttons["Watcher"].exists, "A computer that doesn't run Watcher gives it no tab")
         capture("threads-glow-dark")
         app.tabBars.buttons["Computers"].tap()
         XCTAssertTrue(app.buttons["Add computer"].waitForExistence(timeout: 5))
