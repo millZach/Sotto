@@ -38,6 +38,8 @@ A dropped reply leaves the master's operation uncertain and its slot held until 
 
 `read_thread` uses the owning host's history epoch and zero-based message positions, with `-1` before position zero. It caps fifty messages and 64 KiB, returns a restart position for a reset epoch and distinguishes missing history from an empty page. A detail revision, projection fingerprint and event sequence are separate identities. No project-file broker or native mount is added. Projection revisions are fingerprints of text-free control/evidence, not event cursors. Projections cap requests, operations and evidence at one thousand each; exact operation reads remain available separately.
 
+The owning host retains checkpoint and GitHub facts without running a master wake-up loop. The scoped projection may carry up to one thousand `progress` entries, each only a target and opaque fingerprint from the shared progress classifier. Plan-step changes update that fingerprint even when the ordinary shell summary is unchanged. The desktop reconciles ownership before importing facts and progress into its existing wake-up observer. News follows the user's queue and cannot resume a stopped worker.
+
 ## Versions and features
 
 Every host advertises two things beside `v`:

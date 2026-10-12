@@ -15,7 +15,7 @@ import { watcherOpenRequestSchema, type WatcherOpenRequest, type WatcherRoomResu
 import type { AgentHostCommand } from './host'
 import type { AgentControl } from './control'
 import type { WorkspaceHost } from './workspace'
-import { WatcherWakeUp } from './watcherWakeUp'
+import { WatcherWakeUp, watcherProgressFingerprint } from './watcherWakeUp'
 import type { WatcherEvent } from '../../shared/watcherNews'
 import type { CheckpointObservation, PullRequestObservation } from './watcherEvidence'
 import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from './watcherCommands'
@@ -50,11 +50,13 @@ export class WatcherService implements WatcherControlHooks {
   private closed = false
   private remote: WatcherRemoteHosts | undefined
   private remoteOff: (() => void) | undefined
+  private readonly remoteProgress = new Map<string, { hostId: string; fingerprint: string }>()
   private readonly remoteGuards = new Map<string, () => void>()
   private readonly unsubscribe: () => void
   constructor(private readonly options: { directory: string; control: AgentControl; host: WorkspaceHost;
     limit: () => number; historyEnabled: () => boolean; workerHost?: boolean; revoke?: (id: string) => void }) {
     this.wakes = new WatcherWakeUp({ snapshot: () => this.snapshot(), record: () => this.record(),
+      progress: target => this.remoteProgress.get(key(target))?.fingerprint,
       deliver: news => options.control.deliverWakeUp(news.watcher.threadId, news, { tool: false }),
       prune: () => options.control.pruneWatcherWakeUps(), remember: ids => options.control.updateWatcher(record => { record.wakeEventIds = [...new Set([...record.wakeEventIds ?? [], ...ids])].slice(-1_000) }),
       changed: () => this.publish(), failed: () => { this.recoveryNotice = 'Watcher news could not be saved. Reconnect or refresh its threads to retry. Nothing was approved.' } })
@@ -772,6 +774,12 @@ export class WatcherService implements WatcherControlHooks {
           return thread.status === 'running' || thread.lastTurn?.status === 'running' || Boolean(thread.requests.length || thread.backgroundWork?.length || thread.monitoring?.length)
         })
       })
+      for (const [target, progress] of this.remoteProgress) if (progress.hostId === host.hostId) this.remoteProgress.delete(target)
+      const targets = new Set(projection.requests.flatMap(request => request.participants.map(item => key(item.target))))
+      for (const progress of projection.progress ?? []) if (progress.target.hostId === host.hostId && targets.has(key(progress.target))) {
+        this.remoteProgress.set(key(progress.target), { hostId: host.hostId, fingerprint: progress.fingerprint })
+      }
+      while (this.remoteProgress.size > 1_000) this.remoteProgress.delete(this.remoteProgress.keys().next().value!)
       this.wakes.pairedEvidence(host.hostId, projection.evidence)
     }
     this.publish()
@@ -819,8 +827,11 @@ export class WatcherService implements WatcherControlHooks {
     const operations = [...(recentCount ? all.filter(item => !pending.includes(item)).slice(-recentCount) : []), ...pending].slice(-1_000)
     const required = new Set(operations.map(item => item.requestId)), requests = owned.filter(item => required.has(item.id)).slice(-1_000)
     const evidence = requests.flatMap(request => request.participants.flatMap(item => this.wakes.evidence.read(item.target, true))).slice(-1_000)
-    return { hostId: this.hostId(), master, requests, operations, evidence,
-      revision: digest([requests, operations, evidence]), observedAt: now() }
+    const targets = new Set(requests.flatMap(request => request.participants.map(item => key(item.target))))
+    const progress = this.options.control.watcherSnapshot().threads.filter(thread => targets.has(key(this.target(thread.id))))
+      .map(thread => ({ target: this.target(thread.id), fingerprint: watcherProgressFingerprint(thread) })).slice(-1_000)
+    return { hostId: this.hostId(), master, requests, operations, evidence, progress,
+      revision: digest([requests, operations, evidence, progress]), observedAt: now() }
   }
   async readRemote(raw: WatcherHostRead, clientId: string): Promise<unknown> {
     try {
@@ -1027,5 +1038,5 @@ export class WatcherService implements WatcherControlHooks {
     }
     this.publish(); return { status: 'ok', state: this.state(), results }
   }
-  close(): void { this.closed = true; this.remoteOff?.(); this.remoteGuards.clear(); this.wakes.close(); this.unsubscribe(); this.listeners.clear(); this.confirmations.clear(); this.pages.clear(); this.copyChoices.clear() }
+  close(): void { this.closed = true; this.remoteOff?.(); this.remoteGuards.clear(); this.remoteProgress.clear(); this.wakes.close(); this.unsubscribe(); this.listeners.clear(); this.confirmations.clear(); this.pages.clear(); this.copyChoices.clear() }
 }

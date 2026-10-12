@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { EMPTY_AGENT_HOST, type AgentThread } from '../../../src/shared/agents'
 import { WATCHER_QUIET_MS } from '../../../src/shared/watcherOverview'
 import type { WatcherNews } from '../../../src/shared/watcherNews'
-import { WatcherWakeUp } from '../../../src/main/agents/watcherWakeUp'
+import { WatcherWakeUp, type WatcherWakeOptions } from '../../../src/main/agents/watcherWakeUp'
 import { observationDigest } from '../../../src/main/agents/watcherEvidence'
 import { foldWatcherNews, watcherNewsText } from '../../../src/main/agents/watcherNews'
 import { queuedWakeUpText, wakeUpText } from '../../../src/main/agents/wakeUp'
@@ -12,7 +12,7 @@ import { centerTarget, watcherRecordFixture } from '../../fixtures/watcher'
 
 const cleanups: (() => void)[] = []
 afterEach(() => { cleanups.splice(0).forEach(cleanup => cleanup()) })
-function fixture(start = true) {
+function fixture(start = true, progress?: WatcherWakeOptions['progress']) {
   let clock = Date.parse('2026-10-11T10:00:00Z')
   const timers = new Set<{ at: number; callback: () => void }>()
   const record = watcherRecordFixture()
@@ -25,7 +25,7 @@ function fixture(start = true) {
   const remember = vi.fn(async (ids: string[]) => { record.wakeEventIds = [...record.wakeEventIds ?? [], ...ids] })
   const wakes = new WatcherWakeUp({ now: () => clock, snapshot: () => snapshot, record: () => record, prune,
     schedule: (callback, delay) => { const timer = { at: clock + delay, callback }; timers.add(timer); return () => { timers.delete(timer) } },
-    deliver, remember, failed })
+    deliver, remember, failed, progress })
   cleanups.push(() => wakes.close())
   if (start) wakes.start()
   const advance = async (ms: number) => {
@@ -330,4 +330,17 @@ it('keeps owning-host checkpoint causes without starting a master or a wake-up d
   await f.advance(30_000)
   expect(f.delivered).toHaveLength(0)
   expect(f.wakes.news()).toHaveLength(0)
+})
+
+
+it('resets the quiet deadline from paired progress while an unchanged digest stays quiet', async () => {
+  let fingerprint = 'a'.repeat(64)
+  const f = fixture(true, () => fingerprint)
+  await f.advance(19 * 60_000)
+  fingerprint = 'b'.repeat(64); f.wakes.observe()
+  await f.advance(60_000 + 2_000)
+  expect(f.delivered.flatMap(news => news.events).filter(event => event.kind === 'quiet')).toHaveLength(0)
+  f.wakes.observe()
+  await f.advance(WATCHER_QUIET_MS - 60_000)
+  expect(f.delivered.flatMap(news => news.events).filter(event => event.kind === 'quiet')).toHaveLength(1)
 })

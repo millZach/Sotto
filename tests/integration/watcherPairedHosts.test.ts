@@ -349,3 +349,27 @@ it('attributes returning paired evidence to its host, queues news after user wor
   expect((await remote.native.snapshot()).threads.find(item => item.title === 'Synthetic remote worker')!.messages.filter(item => item.role === 'user')).toHaveLength(1)
   expect(f.workspace.adapters.codex.commands.filter(item => item.type === 'answer')).toHaveLength(0)
 }, 60_000)
+
+
+it('resets paired quiet progress when an owning-host plan step completes without changing its shell summary', async () => {
+  const f = await master(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start-refused')
+  const nativeId = (await remote.native.snapshot()).threads.find(item => item.title === 'Synthetic remote worker')!.id
+  const plan = { id: 'synthetic-plan', turnId: 'synthetic-progress-turn', kind: 'plan' as const, status: 'running' as const, sequence: 0, title: 'Synthetic plan',
+    steps: [{ text: 'Synthetic step', status: 'running' as 'running' | 'completed' }] }
+  remote.native.event({ type: 'stream', threadId: nativeId, messageId: 'synthetic-progress', text: '', status: 'running', activities: [plan] })
+  await f.socket.command({ type: 'refresh', provider: 'codex' })
+  const observationKey = JSON.stringify([first.target.hostId, first.target.threadId])
+  await vi.waitFor(() => expect(f.watcher.wakes.observations.has(observationKey)).toBe(true))
+  await f.call('read_operation', { operationId: first.receipt.operationId })
+  const before = f.watcher.wakes.observations.get(observationKey)!.lastProgressAt
+  const shell = f.socket.shell().host.threads.find(item => item.id === first.target.threadId)!
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 19 * 60_000)
+  try {
+    plan.steps[0]!.status = 'completed'
+    remote.native.event({ type: 'stream', threadId: nativeId, messageId: 'synthetic-progress', text: '', status: 'running', activities: [plan] })
+    await f.socket.command({ type: 'refresh', provider: 'codex' })
+    expect(f.socket.shell().host.threads.find(item => item.id === first.target.threadId)!.summary).toEqual(shell.summary)
+    await vi.waitFor(() => expect(f.watcher.wakes.observations.get(observationKey)!.lastProgressAt).not.toBe(before), { timeout: 5_000 })
+  } finally { clock.mockRestore() }
+}, 60_000)
