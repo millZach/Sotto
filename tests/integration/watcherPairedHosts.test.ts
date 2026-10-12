@@ -327,8 +327,8 @@ it('attributes returning paired evidence to its host, queues news after user wor
   for (const state of ['failed', 'passed', 'failed'] as const) {
     checks = state; f.router.replace(f.connection)
     await vi.waitFor(() => {
-      const facts = f.watcher.state().watchedThreads.find(item => item.target.threadId === first.target.threadId)!.evidence
-      const fact = facts?.find(item => item.source === 'github' && item.checksState === state)!
+      const facts = f.watcher.state().watchedThreads.find(item => item.target.threadId === first.target.threadId)!.evidence ?? []
+      const fact = facts.find(item => item.source === 'github' && item.checksState === state)!
       expect(fact).toBeDefined()
       const event = f.watcher.state().news?.find(item => item.kind === 'evidence-changed' && item.evidenceIds?.includes(fact.id))
       expect(event).toMatchObject({ target: first.target, requestId: f.requestId })
