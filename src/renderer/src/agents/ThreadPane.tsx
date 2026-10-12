@@ -8,6 +8,7 @@ import { PaneMenu, type PaneMenuItem } from './PaneMenu'
 import { GitActionButton } from './GitActionButton'
 import { ProviderMark } from './ProviderMark'
 import { AgentRequestCard } from './requests/AgentRequestCard'
+import { messageLinks } from './requests/messageLinks'
 import { CloudIphoneRequest } from './requests/CloudIphoneRequest'
 import { RequestDraftRecovery } from './requests/RequestDraftRecovery'
 import { requestAnswerOwnerKey, requestAnswerStore } from './requests/requestAnswers'
@@ -36,6 +37,7 @@ function ThreadRequests({ row, state, command, blocked, onAnswer, kind }: {
   if (isThreadClosed(thread) || requests.length === 0) return null
   return <div className={kind === 'question' ? 'thread-questions' : undefined}>{requests.map(request => {
     return <AgentRequestCard placement={kind === 'question' ? 'composer' : undefined} key={request.id} ownerId={thread.id} ownerTitle={thread.title} request={request} blocked={blocked}
+      messageLinks={kind === 'question' ? messageLinks(thread.messages) : []}
       draftOwner={{ kind: 'thread', ownerId: thread.id, providerId: row.providerId ?? state.configuration.provider }}
       onWriteAnswer={onAnswer}
       onSubmit={answer => command({ type: 'answer', threadId: thread.id, requestId: request.id, ...answer }).then(result => result === null ? null : { error: result.error })}

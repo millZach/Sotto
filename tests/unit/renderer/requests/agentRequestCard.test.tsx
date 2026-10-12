@@ -1,12 +1,13 @@
 import { deferred } from '../../../fixtures/deferred'
 import React from 'react'
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { AgentRequest } from '../../../../src/shared/agents'
+import type { AgentMessage, AgentRequest } from '../../../../src/shared/agents'
 import type { RequestDraft, RequestDraftBridge, RequestDraftOwner, RequestDraftStatus } from '../../../../src/shared/requestDrafts'
 import { AgentRequestCard, requestExplanation } from '../../../../src/renderer/src/agents/requests/AgentRequestCard'
 import { textLinks } from '../../../../src/renderer/src/agents/requests/LinkedText'
+import { linkPlace, messageLinks } from '../../../../src/renderer/src/agents/requests/messageLinks'
 import { claudePending } from '../../../../src/main/agents/claudeRequests'
 import { pendingRequest } from '../../../../src/main/agents/codexRequests'
 import { grokPending } from '../../../../src/main/agents/grokRequests'
@@ -505,6 +506,89 @@ describe('links in a question', () => {
       expect(screen.getByRole('radio', { name: /^B/u })).not.toBeChecked()
       expect(screen.getByRole('radio', { name: /^A/u })).not.toBeChecked()
     } finally { delete window.sotto }
+  })
+})
+
+describe('links from the message before a question', () => {
+  const said = (id: string, role: 'user' | 'assistant', text: string, extra: Partial<AgentMessage> = {}): AgentMessage => ({ id, role, text, createdAt: '2026-10-11T20:00:00.000Z', ...extra })
+  const review = 'https://laptop.tail.ts.net/review/'
+
+  it('takes each link in the agent’s newest message once, in the order written', () => {
+    const messages = [
+      said('m1', 'assistant', 'An older link, https://example.com/old, is not this question’s.'),
+      said('m2', 'user', 'Show me https://example.com/mine'),
+      said('m3', 'assistant', `**Review page:** ${review} (open in your browser)\n\nThe variants are also at [the tag](https://github.com/o/r/tree/t), and ${review} again.`),
+    ]
+    expect(messageLinks(messages)).toEqual([review, 'https://github.com/o/r/tree/t'])
+  })
+
+  it('leaves out only what the card already shows as a link', () => {
+    const rowsFor = (request: AgentRequest): string[] => {
+      const view = render(<AgentRequestCard ownerId="thread-a" ownerTitle="Workshop" request={request} blocked={null}
+        onSubmit={vi.fn(async () => ({ error: null }))} store={new RequestAnswerStore()} messageLinks={[review, 'https://example.com/form']} />)
+      const rows = screen.queryAllByRole('link', { name: /^Open the link/u }).map(row => row.getAttribute('href')!)
+      view.unmount()
+      return rows
+    }
+    // A link in the question's words is a link already.
+    expect(rowsFor(structured([{ ...single, question: `Which one? See ${review}` }]))).toEqual(['https://example.com/form'])
+    // A header is a plain tag, so the same address there is no link, and its row stays.
+    expect(rowsFor(structured([{ ...single, header: review }]))).toEqual([review, 'https://example.com/form'])
+    // A form's text that only repeats its question and header is not shown, so an address only there keeps its row.
+    const repeating: AgentRequest = { id: 'req-form', kind: 'question', text: 'Pick a layout https://example.com/form', options: [],
+      questions: [{ ...single, header: 'https://example.com/form', question: 'Pick a layout' }] }
+    expect(requestExplanation(repeating)).toBeNull()
+    expect(rowsFor(repeating)).toEqual([review, 'https://example.com/form'])
+    // A plain question's text is shown, with its links live.
+    expect(rowsFor({ id: 'req-plain', kind: 'question', text: 'Keep https://example.com/form?', options: [] })).toEqual([review])
+  })
+
+  it('reads past a visual, finds nothing without an agent message, and ignores addresses that are not web links', () => {
+    const visual = said('visual:v1', 'assistant', 'A diagram of the states', { visual: { kind: 'svg', title: 'States', source: '<svg/>' } as AgentMessage['visual'] })
+    expect(messageLinks([said('m1', 'assistant', `See ${review}`), visual])).toEqual([review])
+    // A host sends a visual without its drawing: words alone (ADR-0056), and the newest the agent wrote.
+    const words = said('visual:v1', 'assistant', 'A diagram, https://example.com/visual')
+    expect(messageLinks([said('m1', 'assistant', `See ${review}`), words])).toEqual(['https://example.com/visual'])
+    expect(messageLinks([said('m1', 'user', `See ${review}`)])).toEqual([])
+    expect(messageLinks([said('m1', 'assistant', 'file:///c/x, mailto:a@b.c and javascript:alert(1)')])).toEqual([])
+  })
+
+  it('names where each link goes by its host, port and path', () => {
+    expect(linkPlace('http://localhost:8075/')).toBe('localhost:8075')
+    expect(linkPlace('https://example.com/a/b?c=d')).toBe('example.com/a/b')
+  })
+
+  it('shows each link as a row between the question and its choices, and opens it without picking a choice, even while the choices are unavailable', () => {
+    const openExternalLink = vi.fn(async () => ({ ok: true }))
+    window.sotto = { openExternalLink } as unknown as NonNullable<typeof window.sotto>
+    try {
+      render(<AgentRequestCard placement="composer" ownerId="thread-a" ownerTitle="Workshop" request={structured([single, multi])} blocked="Waiting for the provider to reconnect."
+        onSubmit={vi.fn(async () => ({ error: null }))} store={new RequestAnswerStore()} messageLinks={[review, 'http://localhost:8075/']} />)
+      const rows = within(screen.getByRole('group', { name: 'Links from the message above' })).getAllByRole('link')
+      expect(rows.map(row => row.getAttribute('aria-label'))).toEqual(['Open the link, laptop.tail.ts.net/review/', 'Open the link, localhost:8075'])
+      // In reading order: the first question's words, its links, then its choices; the second question gets none.
+      const prompt = screen.getByText('Which database?')
+      const firstChoice = screen.getByRole('radio', { name: /Postgres/u })
+      expect(prompt.compareDocumentPosition(rows[0]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(rows[1]!.compareDocumentPosition(firstChoice) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(screen.getAllByRole('group', { name: 'Links from the message above' })).toHaveLength(1)
+      expect(firstChoice).toBeDisabled()
+      // A disabled fieldset disables its form controls, not a link in it. user-event treats everything inside one as
+      // disabled, so the click is dispatched directly; the end-to-end spec presses it in Chromium.
+      fireEvent.click(rows[1]!)
+      expect(openExternalLink).toHaveBeenLastCalledWith('http://localhost:8075/')
+      expect(firstChoice).not.toBeChecked()
+    } finally { delete window.sotto }
+  })
+
+  it('shows them under a plain question’s words too, and shows nothing when there are none', () => {
+    const plain: AgentRequest = { id: 'req-plain', kind: 'question', text: 'Which page should I keep?', options: [] }
+    const { unmount } = render(<AgentRequestCard ownerId="thread-a" ownerTitle="Workshop" request={plain} blocked={null}
+      onSubmit={vi.fn(async () => ({ error: null }))} store={new RequestAnswerStore()} messageLinks={[review]} />)
+    expect(screen.getByRole('link', { name: 'Open the link, laptop.tail.ts.net/review/' })).toBeVisible()
+    unmount()
+    setup(structured())
+    expect(screen.queryByRole('group', { name: 'Links from the message above' })).toBeNull()
   })
 })
 
