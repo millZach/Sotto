@@ -71,11 +71,13 @@ async function inner(temporary) {
   const env = { ...a }
   delete env.HYPRLAND_INSTANCE_SIGNATURE
   const b = spawn('Hyprland', ['-c', config], { env: { ...env, HYPRLAND_NO_SD_NOTIFY: '1' }, stdio: 'ignore' })
+  // Listen from the start: a compositor killed by a signal keeps a null exit code, and its exit event fires only once.
+  const exited = new Promise(done => b.once('exit', done))
   let instance, identity
   const directory = join(a.XDG_RUNTIME_DIR, 'hypr')
   try {
     for (const deadline = Date.now() + 20000; !instance && Date.now() < deadline; await wait(100)) {
-      assert.equal(b.exitCode, null, 'Inner compositor exited')
+      assert.ok(b.exitCode === null && b.signalCode === null, 'Inner compositor exited')
       instance = JSON.parse(hypr(a.HYPRLAND_INSTANCE_SIGNATURE, ['instances', '-j'])).find(item => item.pid === b.pid)
     }
     assert.ok(instance, 'Inner compositor must start')
@@ -105,7 +107,7 @@ async function inner(temporary) {
     assert.equal(code, 0, 'The capture spec must pass')
   } finally {
     b.kill('SIGTERM')
-    if (b.exitCode === null) await new Promise(done => b.once('exit', done))
+    await exited
     if (instance && identity) {
       const folder = join(directory, instance.instance)
       const current = statSync(folder, { throwIfNoEntry: false })
