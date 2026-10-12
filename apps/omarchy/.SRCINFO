@@ -32,6 +32,7 @@ pkgbase = sotto-bin
 	depends = systemd-libs
 	depends = xdg-utils
 	depends = wl-clipboard
+	depends = wtype
 	depends = libsecret
 	optdepends = gnome-keyring: unlock and save credentials through Secret Service
 	provides = sotto

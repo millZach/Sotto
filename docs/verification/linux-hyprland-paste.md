@@ -1,5 +1,7 @@
 # Hyprland dictation paste
 
+The [October 11 live proof](#paste-after-either-keyboard-october-11-2026) fixes paste after a minimal virtual keyboard and supersedes the earlier dispatcher mechanism and live-session limitation below.
+
 October 9, 2026. Review fixes for [#838](https://github.com/millZach/Sotto/issues/838), based on `80053911` on `feat/linux-hyprland-paste`. Built on forge with Node 24.21.0 and Electron 43.1.0. Hyprland 0.56.2 (`efb50993780079460b0cbed1363e2166a2de1d9f`) and the installed Omarchy Lua clipboard and terminal-tag rules.
 
 The verification-script re-review against `968a15e0` below establishes Chromium debugger ownership, cgroup containment and cleanup after SIGINT/SIGTERM. The Bug Bot follow-up against `8e28ace7` at the end records seven application fixes and the new stock-foot and widget-on proofs. Those latest runs supersede the earlier three-target evidence; the earlier sections remain the record of those runs.
@@ -377,3 +379,46 @@ The independent post-run check compares the complete runtime-folder snapshot by 
 ```text
 Independent cleanup check: PASS; runtime folder names and identities unchanged; 10 recorded PIDs exited; 10 scopes and 2 slices inactive; both cgroups empty
 ```
+# Paste after either keyboard, October 11, 2026
+
+VERIFIED on forge's live, unlocked Omarchy desktop, Hyprland 0.56.2 (`efb50993780079460b0cbed1363e2166a2de1d9f`). This section supersedes the dispatcher mechanism and live-keyboard limitation in the earlier evidence below. The owner authorized live desktop input for this fix. No Windows or macOS production code changed.
+
+The original named `send_key_state` request reproducibly returned **Copied** after `wtype x` in both Chromium and stock foot. Both targets pasted after `ydotool type x`. Lua `send_shortcut` had the same failure after wtype. Replacing the names with `code:55` for V and `code:118` for Insert made Chromium pass after either keyboard, but foot after wtype received only `x` even though Sotto reported **Pasted**. A successful dispatcher response was therefore insufficient.
+
+Sotto now sends the chord with a temporary wtype keyboard, which uploads a keymap containing the requested symbol before sending it. Each invocation presses the modifier and key, holds the key for 50 ms, then releases both. This supplies both the correct code and the map the client uses to interpret it. It avoids depending on whichever physical or virtual keyboard was last active, on a chosen physical layout, or on ydotool's daemon. The [source research](../research/hyprland-paste-keyboards.md) records the alternatives and pinned Hyprland/wtype source links. ADR-0062 and the Linux package dependency list now include wtype; the npm runtime dependencies remain unchanged.
+
+The modifier-release wait, both lock checks, focused-window validation, terminal tag/class detection, PRIMARY write, control-character filtering and copied fallback are unchanged. A missing or failed wtype process returns the existing copied result. The locked-session clipboard proof now stubs wtype as well as hyprctl, preserving its guarantee that it sends no live keys.
+
+The repeatable [live proof](../../scripts/verify-hyprland-paste-keyboards.mjs) launches the freshly built, unpackaged Sotto with an isolated settings profile and drives `window.sotto.deliverOutput` through its real preload/IPC/output path. It reads the live Quickshell process's environment, refuses a locked session, seeds known text with `wl-copy`, focuses each owned target, then makes the last keystroke come from wtype or ydotool. `YDOTOOL_SOCKET` names the live runtime's `.ydotool_socket`. Receiving `x` is asserted before Sotto's output, proving the selected keyboard's key actually reached the target. Chromium uses its own fresh profile and a verified, loopback CDP listener; stock foot uses `cat > file` in raw mode with echo off. Before each terminal paste, the proof seeds a different PRIMARY value, so receiving the expected text proves Sotto replaced it.
+
+| Target | Last keystroke | Sotto result | Received text |
+| --- | --- | --- | --- |
+| Chromium textarea | `wtype x` | Pasted | Exact `x` plus transcript, including café, 🚀 and ✓ |
+| Chromium textarea | `ydotool type x` | Pasted | Exact `x` plus transcript, including café, 🚀 and ✓ |
+| Stock foot → cat file | `wtype x` | Pasted | Exact `x` plus transcript; stale PRIMARY replaced |
+| Stock foot → cat file | `ydotool type x` | Pasted | Exact `x` plus transcript; stale PRIMARY replaced |
+
+Opened and inspected the [live capture](../../artifacts/linux-hyprland-paste/any-keyboard-chromium.png). The textarea visibly contains the transcript after wtype; foot's echo is deliberately off. The [results JSON](../../artifacts/linux-hyprland-paste/any-keyboard-results.json) retains all four exact-byte assertions and the compositor revision. The [proof output](../../artifacts/linux-hyprland-paste/any-keyboard-proof.txt) retains each pass and cleanup: all recorded PIDs exited and the proof cgroup is empty. Sotto was asked to quit before scope termination, each opened window closed, the original focus was restored, temporary profiles were removed, and the original Hyprland runtime folders retained their identities.
+
+Run only while the owner has made the unlocked desktop available; this sends real keys:
+
+```sh
+mise exec node@24.21.0 -- npm run build
+mise exec node@24.21.0 -- node scripts/verify-hyprland-paste-keyboards.mjs
+```
+
+The invocation unit tests failed before the change and passed afterwards. Unit/process transport coverage pins the complete fixed wtype argument sequence, terminal PRIMARY ordering, modifier deadlines, lock/focus failures, missing sender and timeout fallback. Existing Windows/macOS invocation and output checks stay intact. Physical modifier release, packaged Linux delivery, Windows/macOS physical paste and other compositor versions were not exercised by this live proof. The standards review found two proof safeguards to strengthen: target ownership is now rechecked immediately before each injection and output, and cleanup waits for Sotto’s ten-second quit drain before stopping its scope. An independent forced-exit probe killed only the owned Sotto process: the proof failed as expected, stopped every owned process, and removed only the private socket, public link and state file tied to that PID and process start. The final four-way rerun passed with these safeguards. The spec review also caught the missing wtype entry in `.SRCINFO`; it was regenerated from the PKGBUILD.
+
+Final local gates, all using `mise exec node@24.21.0 --` and one suite at a time:
+
+| Command | Result |
+| --- | --- |
+| `npm run typecheck` | Passed all four TypeScript projects |
+| `npm run lint` | Passed, no warnings or errors |
+| `npm test -- --maxWorkers=2` | 778 files passed, 55 skipped; 9,779 tests passed, 194 skipped; 540.87 seconds |
+| `npm run notices:verify` | Verified 189 components |
+| `npm run build` | Passed all build outputs |
+| `npx playwright test tests/e2e/linux-platform-profile.spec.ts tests/e2e/linux-dictation-command.spec.ts --workers=1` | 4 passed, 14.2 seconds |
+| External-dependency inventory and production package list | `allowlist check: PASS`; exactly node-pty, sherpa-onnx-node and zod |
+| Final live keyboard proof | All four exact-text cases passed; complete process/window cleanup |
+| Forced-exit cleanup probe | Expected proof failure; all owned processes and dictation files cleaned |
