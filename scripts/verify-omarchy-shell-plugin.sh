@@ -585,6 +585,24 @@ glyph_changed() { # capture
   awk -v m="$mean" 'BEGIN { exit !(m > 0.02) }'
 }
 near() { (($1 - $2 <= 2 && $2 - $1 <= 2)); }
+# What the bar paints at rest, where Sotto's glyph is all it holds: the
+# bounds of whatever differs from the bar's own colour.
+owl_box() { # capture scale
+  local f=$evidence/raw/$1.png bg
+  bg=$(magick "$f" -format '%[pixel:p{5,5}]' info:)
+  magick "$f" -crop "x$((26 * $2))+0+0" +repage \( +clone -fill "$bg" -colorize 100 \) -compose difference -composite \
+    -colorspace gray -threshold 12% -format '%@' info: | sed -nE 's/^([0-9]+)x([0-9]+)\+([0-9]+)\+([0-9]+)$/\1 \2 \3 \4/p'
+}
+# The owl fills the bar's 16 px icon canvas: 16 px across and 15 or 16 high
+# at 1x, twice that at 2x. The old bar and wave was 11 by 12.
+check_owl() { # capture scale
+  local ow oh ox oy s=$2
+  read -r ow oh ox oy <<<"$(owl_box "$1" "$s")"
+  check '[[ -n $ow ]] && ((ow >= 15 * s && ow <= 17 * s && oh >= 13 * s && oh <= 16 * s))' "$1: at rest the bar shows the owl alone, ${ow}x${oh} px at ${s}x, on the bar's 16 px icon canvas"
+}
+# Where each pill was, for the close-ups at the end; the baselines they were
+# measured against are replaced as scenes go on.
+declare -A pill_at=()
 last_verb() { tail -n1 "$work/verbs.log" | cut -f2; }
 last_runner() { tail -n1 "$work/verbs.log" | cut -f1; }
 verbs() { wc -l <"$work/verbs.log"; }
@@ -629,6 +647,7 @@ start_terminals
 say "--- states, Tokyo Night"
 baseline
 capture idle
+check_owl idle 1
 for scene in "starting false - top 0" "listening false - top 12000" "transcribing false - top 0" "copied false - top 0" \
   "failed true The_transcription_service_is_busy._Recording_kept. top 0" "failed false - top 0"; do
   read -r st kept detail edge ago <<<"$scene"
@@ -639,6 +658,7 @@ for scene in "starting false - top 0" "listening false - top 12000" "transcribin
   [[ $st == failed ]] && name=failed-$([[ $kept == true ]] && echo kept || echo plain)
   pcapture "$name"
   read -r w h x y <<<"$(pill "$name")"
+  pill_at[$name]="$x $y"
   check 'near "$y" 31 && near "$x" $(((1600 - w) / 2)) && near "$h" 44' "$name: the pill is centred under the bar (${w}x${h} at $x,$y)"
 done
 write_state delivered false "" top 0
@@ -1097,6 +1117,39 @@ for spec in small:820:560:1 scaled:1920:1080:2; do
 done
 set_display_2 1280 800 1
 
+# Sotto's mark at 2x: B's second display as full HD at 200%, with the
+# pointer in its far corner so each dictation opens there. The bar glyph at
+# rest and while dictating, and the pill in four states; the states scenes
+# hold the same at 1x.
+owl_at_2x() { # capture prefix
+  local p=$1 st kept detail ago
+  set_display_2 1920 1080 2
+  go_idle
+  move_to $((layout_w - 10)) 530
+  sleep 1.2
+  check '[[ $(hypr_b monitors -j | jq -r ".[] | select(.focused) | .name") == WAYLAND-2 ]]' "$p at 2x: the pointer focuses the full-HD display at 200%"
+  capture base-WAYLAND-2 WAYLAND-2
+  capture "$p-2x-idle" WAYLAND-2
+  check_owl "$p-2x-idle" 2
+  strip_y=54
+  for scene in "listening false - 12000" "transcribing false - 0" "copied false - 0" "failed true The_transcription_service_is_busy._Recording_kept. 0"; do
+    read -r st kept detail ago <<<"$scene"
+    [[ $detail == - ]] && detail="" || detail=${detail//_/ }
+    write_state "$st" "$kept" "$detail" top "$ago"
+    sleep 1
+    capture "$p-2x-$st" WAYLAND-2
+    read -r w h x y <<<"$(pill "$p-2x-$st" WAYLAND-2)"
+    pill_at[$p-2x-$st]="$x $y"
+    check '[[ -n $w ]] && near "$y" 62 && near "$x" $(((1920 - w) / 2)) && near "$h" 88' "$p at 2x, $st: the pill is centred under the bar at twice the size (${w}x${h} at $x,$y)"
+  done
+  strip_y=27
+  go_idle
+  set_display_2 1280 800 1
+  park
+}
+say "--- the owl at 2x, Tokyo Night"
+owl_at_2x tokyo
+
 say "--- a bar on the left edge"
 in_shell omarchy bar position left >/dev/null
 strip_x=29 strip_y=0
@@ -1141,14 +1194,20 @@ stop_terminals
 start_terminals
 baseline
 capture light-idle
-for scene in "listening false - 12000" "transcribing false - 0" "failed true Sotto_could_not_reach_OpenRouter._Recording_kept. 0"; do
+check_owl light-idle 1
+for scene in "listening false - 12000" "transcribing false - 0" "copied false - 0" "failed true Sotto_could_not_reach_OpenRouter._Recording_kept. 0"; do
   read -r st kept detail ago <<<"$scene"
   [[ $detail == - ]] && detail="" || detail=${detail//_/ }
   write_state "$st" "$kept" "$detail" top "$ago"
   sleep 1
   pcapture "light-$st"
-  check '[[ -n $(pill "light-$st") ]]' "light $st: the pill shows in the Latte palette"
+  read -r w h x y <<<"$(pill "light-$st")"
+  pill_at[light-$st]="$x $y"
+  check '[[ -n $w ]]' "light $st: the pill shows in the Latte palette"
 done
+say "--- the owl at 2x, Catppuccin Latte"
+owl_at_2x light
+baseline
 write_state listening false "" top 12000
 sleep 1
 pcapture light-drag-start
@@ -1236,6 +1295,37 @@ magick drag-to-left.png -crop 560x440+0+290 +repage "$evidence/curated/drag-ghos
 magick \( bar-left-top.png -crop 1000x140+300+0 +repage \) \( bar-left-left.png -crop 240x420+0+290 +repage -background black -gravity west -extent 1000x420 \) -append "$evidence/curated/bar-on-the-left.png"
 magick verbs-received.png -crop 800x440+0+0 +repage "$evidence/curated/verbs-received.png"
 cp light-listening.png "$evidence/curated/desktop-catppuccin-latte.png"
+# The owl close up, a row for each theme and scale, every cell the same
+# logical size: 1x frames enlarged pixel for pixel, 2x frames as they are.
+# The bar's centre at rest and while dictating, then the start of the pill
+# while listening, transcribing, failed with the recording kept, and copied.
+bar_crop() { # capture scale
+  magick "$1.png" -crop "$((96 * $2))x$((26 * $2))+$(($2 == 1 ? 752 : 864))+0" +repage -filter point -resize "$((400 / $2))%" "$evidence/curated/.$1-bar.png"
+  echo "$evidence/curated/.$1-bar.png"
+}
+lead_crop() { # capture scale
+  local x y
+  read -r x y <<<"${pill_at[$1]}"
+  magick "$1.png" -crop "$((200 * $2))x$((44 * $2))+$x+$y" +repage -filter point -resize "$((200 / $2))%" "$evidence/curated/.$1-lead.png"
+  echo "$evidence/curated/.$1-lead.png"
+}
+gap() { magick -size "$1" xc:gray50 "$evidence/curated/.gap-$1.png"; echo "$evidence/curated/.gap-$1.png"; }
+bar_row() { # rest dictating rest-2x dictating-2x
+  magick "$(bar_crop "$1" 1)" "$(gap 12x104)" "$(bar_crop "$2" 1)" "$(gap 24x104)" "$(bar_crop "$3" 2)" "$(gap 12x104)" "$(bar_crop "$4" 2)" +append "$evidence/curated/.$1-bars.png"
+  echo "$evidence/curated/.$1-bars.png"
+}
+lead_row() { # scale captures...
+  local s=$1 f
+  shift
+  magick $(for f in "$@"; do lead_crop "$f" "$s"; [[ $f == "${@: -1}" ]] || gap 12x88; done) +append "$evidence/curated/.$1-leads.png"
+  echo "$evidence/curated/.$1-leads.png"
+}
+magick "$(bar_row idle listening tokyo-2x-idle tokyo-2x-listening)" "$(gap 1584x12)" \
+  "$(bar_row light-idle light-listening light-2x-idle light-2x-listening)" -append +repage "$evidence/curated/owl-bar.png"
+magick "$(lead_row 1 listening transcribing failed-kept copied)" "$(gap 1636x12)" \
+  "$(lead_row 2 tokyo-2x-listening tokyo-2x-transcribing tokyo-2x-failed tokyo-2x-copied)" "$(gap 1636x12)" \
+  "$(lead_row 1 light-listening light-transcribing light-failed light-copied)" "$(gap 1636x12)" \
+  "$(lead_row 2 light-2x-listening light-2x-transcribing light-2x-failed light-2x-copied)" -append +repage "$evidence/curated/owl-pill.png"
 rm -f "$evidence"/curated/.*.png
 cp "$work/verbs.log" "$evidence/verbs.log"
 cd - >/dev/null
