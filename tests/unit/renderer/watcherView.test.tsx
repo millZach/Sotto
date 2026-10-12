@@ -237,9 +237,17 @@ describe("Watcher's room", () => {
     vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(() => VIEW)
     vi.spyOn(HTMLElement.prototype, 'scrollTop', 'get').mockImplementation(function (this: HTMLElement) { return tops.get(this) ?? 0 })
     vi.spyOn(HTMLElement.prototype, 'scrollTop', 'set').mockImplementation(function (this: HTMLElement, value: number) { tops.set(this, Math.max(0, Math.min(value, height(this) - VIEW))) })
+    // Each message is one row, laid out under its transcript's top and moved by its scroll.
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const log = this.closest<HTMLElement>('.thread-workspace__transcript')
+      const index = log === null || !this.matches('.thread-message') ? -1 : [...log.querySelectorAll('.thread-message')].indexOf(this)
+      const top = index < 0 ? 0 : index * ROW - log!.scrollTop
+      return { top, bottom: index < 0 ? VIEW : top + ROW, left: 0, right: 600, width: 600, height: index < 0 ? VIEW : ROW, x: 0, y: top, toJSON: () => ({}) } as DOMRect
+    })
     try {
       const state = stateWithWatcher()
-      const history = (id: string) => Array.from({ length: 40 }, (_, index) => ({ id: `${id}-${index}`, role: index % 2 ? 'assistant' as const : 'user' as const, text: `${id} ${index}`, createdAt: at }))
+      const history = (id: string, from = 0) => Array.from({ length: 40 - from }, (_, index) => ({ id: `${id}-${index + from}`, role: (index + from) % 2 ? 'assistant' as const : 'user' as const,
+        text: `${id} ${index + from}`, createdAt: at }))
       state.host.threads.find(thread => thread.id === 'watcher')!.messages = history('watcher')
       state.host.threads.find(thread => thread.id === 'footer-links')!.messages = history('footer')
       mockApp('watcher')
@@ -265,13 +273,22 @@ describe("Watcher's room", () => {
       expect(transcript('Watcher').scrollTop).toBe(1_200)
       expect(transcript('Footer links').scrollTop).toBe(700)
       expect(screen.getAllByRole('button', { name: 'Jump to latest' })).toHaveLength(2)
+      // Back with fewer of Watcher's messages in the window: the message that was at the top is at the top again.
+      view.rerender(tree(false))
+      const shorter = structuredClone(state)
+      shorter.host.threads.find(thread => thread.id === 'watcher')!.messages = history('watcher', 10)
+      mockAgents(shorter)
+      view.rerender(tree(true))
+      await paneReady()
+      expect(transcript('Watcher').scrollTop).toBe(200)
+      expect(transcript('Watcher').querySelectorAll('.thread-message')[2]).toHaveTextContent('watcher 12')
       // A reader back at the end follows again, and the next return finds the end.
-      transcript('Watcher').scrollTop = 40 * ROW
+      transcript('Watcher').scrollTop = 30 * ROW
       fireEvent.scroll(transcript('Watcher'))
       view.rerender(tree(false))
       view.rerender(tree(true))
       await paneReady()
-      expect(transcript('Watcher').scrollTop).toBe(40 * ROW - VIEW)
+      expect(transcript('Watcher').scrollTop).toBe(30 * ROW - VIEW)
     } finally { vi.restoreAllMocks() }
   })
 

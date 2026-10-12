@@ -366,13 +366,23 @@ test.describe("Watcher's room on the built app", () => {
       }, CURRENT)
       await expect(pane.getByText('Watcher history 39', { exact: true })).toBeVisible()
       const watcherLog = pane.getByRole('log', { name: 'Thread transcript' })
-      await watcherLog.evaluate(element => { element.scrollTop = 300 })
+      // The first message reaching the top of the view, and how far below the top it starts.
+      const atTop = () => watcherLog.evaluate(element => {
+        const top = element.getBoundingClientRect().top
+        const first = [...element.querySelectorAll('[data-message-id]')].find(item => item.getBoundingClientRect().bottom > top)
+        return { id: first?.getAttribute('data-message-id') ?? null, offset: first ? Math.round(first.getBoundingClientRect().top - top) : null }
+      })
+      await pane.locator('[data-message-id="watcher-long-30"]').evaluate(element => element.scrollIntoView({ block: 'start' }))
       await expect(pane.getByRole('button', { name: 'Jump to latest' })).toBeVisible()
+      await expect.poll(atTop).toMatchObject({ id: 'watcher-long-30' })
+      const read = await atTop()
       await switchTab(page, 'Threads').click()
       await expect(page.getByRole('complementary', { name: 'Thread sidebar' })).toBeVisible()
       await switchTab(page, 'Watcher').click()
       await expect(beside(page)).toHaveAttribute('aria-label', 'Weekly note')
-      await expect.poll(() => watcherLog.evaluate(element => element.scrollTop)).toBe(300)
+      // The transcript is drawn afresh, with fewer of Watcher's messages in the window than before: the same message is
+      // at the top, where it was.
+      await expect.poll(atTop).toEqual(read)
       await expect(pane.getByRole('button', { name: 'Jump to latest' })).toBeVisible()
       // Open in Threads takes the thread to the Threads room, selected.
       await beside(page).getByRole('button', { name: 'Open Weekly note in Threads' }).click()

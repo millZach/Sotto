@@ -158,7 +158,7 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
   // provider received, as it received it (ADR-0061 decision 8).
   const wakeUp = isWakeUpMessage(message)
   const markdown = useMemo(() => wakeUp ? wakeUpMarkdown(message.text) : message.text, [wakeUp, message.text])
-  return <article className="thread-message" data-role={message.role} data-from={wakeUp ? 'sotto' : undefined} ref={article}>
+  return <article className="thread-message" data-role={message.role} data-from={wakeUp ? 'sotto' : undefined} data-message-id={message.id} ref={article}>
     <header>{wakeUp ? <WakeUpWho />
       : <span className="thread-message__who">{message.role === 'user' ? 'You' : message.role === 'assistant' ? speaker === 'watcher' ? <><WatcherOwl size={13} />Watcher</> : provider : 'System'}</span>}
       <time dateTime={message.createdAt}>{clockLabel(Date.parse(message.createdAt))}</time>

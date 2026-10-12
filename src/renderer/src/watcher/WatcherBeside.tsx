@@ -35,18 +35,25 @@ export const roomView = {
 export function useRoomView(): RoomView { return useSyncExternalStore(roomView.subscribe, roomView.get, roomView.get) }
 
 /**
- * Where each reader in the room had scrolled to, Watcher's own and each beside thread's, when that was not its newest
- * message: coming back to the room, or reopening a thread beside Watcher, goes back there.
+ * Where a reader in the room was, when it was not at the newest message: the first message whose text reached the
+ * top of the view and how far below that top it began (negative when it began above it), and, for when that message
+ * is not drawn on the way back, how far the view was from the end.
  */
-const readPositions = new Map<string, number>()
+interface ReadPosition { readonly messageId: string | null; readonly offset: number; readonly fromEnd: number }
+/** Watcher's own reading position and each beside thread's, by thread, for as long as the window lasts. */
+const readPositions = new Map<string, ReadPosition>()
 /** Within this many pixels of the end, a transcript reads as at its newest message and follows what comes next. */
 const AT_END_PX = 24
+/** A message the transcript draws whatever is folded: not one inside an open turn fold, which comes back folded. */
+const anchors = (transcript: HTMLElement): HTMLElement[] => [...transcript.querySelectorAll<HTMLElement>('[data-message-id]')].filter(item => item.closest('.thread-work__body') === null)
 
 /**
  * Keeps the reading position of the transcript in the pane `paneId` across that pane leaving the screen, for as long
- * as the window lasts. It runs after the transcript's own first scroll to its newest message, which comes first
- * because the transcript is deeper in the tree, and tells the transcript at once that its reader is not at the end,
- * so nothing arriving pulls the reader away.
+ * as the window lasts. The position is a message, not a pixel count: a transcript drawn afresh may hold fewer
+ * messages or wrap them otherwise, so the same message comes back to the same place, or, when it is not drawn, the
+ * view comes back as far from the end. It runs after the transcript's own first scroll to its newest message, which
+ * comes first because the transcript is deeper in the tree, and tells the transcript at once that its reader is not
+ * at the end, so nothing arriving pulls the reader away.
  */
 export function useKeptReadingPosition(threadId: string, paneId: string): void {
   useLayoutEffect(() => {
@@ -54,12 +61,17 @@ export function useKeptReadingPosition(threadId: string, paneId: string): void {
     if (transcript == null) return
     const saved = readPositions.get(threadId)
     if (saved !== undefined) {
-      transcript.scrollTop = saved
+      const anchor = saved.messageId === null ? null : anchors(transcript).find(item => item.dataset['messageId'] === saved.messageId)
+      if (anchor) transcript.scrollTop += anchor.getBoundingClientRect().top - transcript.getBoundingClientRect().top - saved.offset
+      else transcript.scrollTop = transcript.scrollHeight - transcript.clientHeight - saved.fromEnd
       transcript.dispatchEvent(new Event('scroll'))
     }
     const remember = (): void => {
-      if (transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight <= AT_END_PX) readPositions.delete(threadId)
-      else readPositions.set(threadId, transcript.scrollTop)
+      const fromEnd = transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight
+      if (fromEnd <= AT_END_PX) { readPositions.delete(threadId); return }
+      const top = transcript.getBoundingClientRect().top
+      const anchor = anchors(transcript).find(item => item.getBoundingClientRect().bottom > top)
+      readPositions.set(threadId, { messageId: anchor?.dataset['messageId'] ?? null, offset: anchor ? anchor.getBoundingClientRect().top - top : 0, fromEnd })
     }
     transcript.addEventListener('scroll', remember, { passive: true })
     return () => transcript.removeEventListener('scroll', remember)
