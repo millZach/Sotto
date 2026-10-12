@@ -3,8 +3,10 @@ import { initializeGitRepository, initializeBareGitRepository } from '../fixture
 import { commitFile, e2eGit as git } from './support/git'
 import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
 import { resizeContentWindow } from './support/sottoWindow'
+import { spawn, type ChildProcess } from 'node:child_process'
+import { once } from 'node:events'
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, openPage, openThreads, userMessageTexts, type LaunchedSotto } from './support/sottoLaunch'
@@ -584,6 +586,59 @@ test('a worktree can be reclaimed from the pane or on settle, keeps its branch, 
     await expect.poll(() => existsSync(worktreePath)).toBe(false)
     expect(git(repo, 'branch', '--list', branch)).toContain(branch)
   } finally {
+    if (launched) await closeSotto(launched)
+    await removeOwnedE2EProfile(root)
+  }
+})
+
+test('a worktree the cleanup rules could only half remove on Windows comes back on the next send', async () => {
+  test.skip(process.platform !== 'win32', 'Only Windows refuses to delete a folder another process works in.')
+  test.setTimeout(180_000)
+  const root = (await ownedE2EProfile({ prefix: 'sotto-e2e-half-reclaim-' })).directory, repo = join(root, 'repo-app')
+  await mkdir(repo)
+  await initializeGitRepository(repo, { files: { 'README.md': 'Committed checkout\n' }, message: 'Add README.md', identity: { name: 'Sotto E2E', email: 'e2e@sotto.invalid' } })
+  let launched: LaunchedSotto | undefined
+  let holder: ChildProcess | undefined
+  try {
+    launched = await launch([['repo-app', repo]])
+    const { page } = launched
+    await mkdir(RECLAIM_SHOTS, { recursive: true })
+    const details = page.getByRole('group', { name: 'Working copy details' })
+    await createByKeyboard(page, 'repo-app', 'Half removed', true)
+    await send(page, 'Work in a worktree of your own.')
+    const thread = await activeThread(page)
+    const worktreePath = thread.worktree!.path!, branch = thread.worktree!.branch!
+    // A thread's idle provider client keeps its worktree as its working folder (ADR-0038).
+    holder = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { cwd: worktreePath, stdio: 'ignore' })
+    await once(holder, 'spawn')
+
+    // Turning a rule on sweeps at once. Nothing was committed, so the worktree's commits are all in main.
+    await openPage(page, 'Settings')
+    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Application', exact: true }).click()
+    await page.getByRole('switch', { name: 'Remove a worktree once its commits are in the default branch' }).click()
+    await expect.poll(async () => (await activeThread(page)).worktree?.reclaimedAt, { timeout: 60_000 }).toBeTruthy()
+    // Windows kept the folder, empty; Git removed its files and its registration and kept the branch.
+    expect(await readdir(worktreePath)).toEqual([])
+    expect(countWorktrees(repo)).toBe(1)
+    expect(git(repo, 'branch', '--list', branch)).toContain(branch)
+
+    await openThreads(page)
+    await expect(page.getByRole('alert').filter({ hasText: 'Working folder unavailable.' })).toHaveCount(0)
+    await page.getByRole('button', { name: `Working copy: ${branch}`, exact: true }).click()
+    await expect(details).toContainText(`Folder removed. Sending to this thread puts it back on ${branch}.`)
+    await page.screenshot({ path: `${RECLAIM_SHOTS}/half-removed-reclaimed.png`, animations: 'disabled' })
+    await details.press('Escape')
+
+    // The next send fills the folder the client still holds.
+    await send(page, 'Carry on where the branch left off.')
+    await expect.poll(async () => (await activeThread(page)).worktree?.reclaimedAt).toBeUndefined()
+    expect(countWorktrees(repo)).toBe(2)
+    expect(git(worktreePath, 'branch', '--show-current')).toBe(branch)
+    expect(await readFile(join(worktreePath, 'README.md'), 'utf8')).toMatch(/^Committed checkout\r?\n$/u)
+    await expect(page.getByRole('alert').filter({ hasText: 'Working folder unavailable.' })).toHaveCount(0)
+    await page.screenshot({ path: `${RECLAIM_SHOTS}/half-removed-restored.png`, animations: 'disabled' })
+  } finally {
+    holder?.kill()
     if (launched) await closeSotto(launched)
     await removeOwnedE2EProfile(root)
   }
