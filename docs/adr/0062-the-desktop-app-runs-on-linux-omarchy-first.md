@@ -97,6 +97,8 @@ Proposed: **option 2**. The tarball is verified the same way the Windows and mac
 
 A Linux unit job in CI is its own ticket. It needs its own changed-area filter, because the host job skips renderer and preload changes. It also needs the suite's Linux-only CI blockers fixed first, such as the real-sshd tripwire under CI and the release verifier refusing Linux. Until it lands, Linux breakage shows up on forge, not in CI.
 
+**October 12, 2026 amendment (#870).** Six Linux shards now run the unit and integration suite whenever Changed areas asks for the full Windows suite, and on every push to `main`. The first shard also typechecks on Linux. The real-sshd tripwire belongs to the dedicated host journey; the release verifier already supports Linux. **Linux result** reports failure unless Changed areas succeeded and every shard passed, or documents-only changes skipped the shards. It is informational until the owner decides to require it. Linux desktop journeys and captures stay on forge ([CI](../ci.md)).
+
 **Omarchy integration lives in `apps/omarchy/`.** That covers the Hyprland bindings and the `sotto` launcher (#858), the shell plugin (#850), the theme template (#840), the PKGBUILD and `.desktop` file (#841), and an install script in the style of Omarchy's `omarchy-install-ai-*`. Nothing there is loaded by the app; it is configuration Omarchy reads.
 
 ## Consequences
