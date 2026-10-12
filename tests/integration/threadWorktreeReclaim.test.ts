@@ -283,6 +283,27 @@ describe("independent working-copy allocation", () => {
     expect(await readFile(join(a.path!, 'notes.txt'), 'utf8')).toBe('not Sotto’s')
     await expect(f.service.inspect(recorded)).rejects.toThrow('no longer this thread’s Git worktree')
   })
+  it('leaves an empty folder Git still registers as it is', async () => {
+    const f = await fixture(); const a = await f.service.ensure(await f.service.allocate(f.project, 'independent'))
+    const recorded = await f.service.inspect(a)
+    // Emptied with its registration intact: a checkout Git knows about, not a half-finished removal.
+    for (const name of await readdir(a.path!)) await rm(join(a.path!, name), { recursive: true, force: true })
+    expect(await f.service.restore(recorded)).toEqual(recorded)
+    expect(await readdir(a.path!)).toEqual([])
+    expect((await git(f.project, ['worktree', 'list', '--porcelain'])).match(/worktree /gu)).toHaveLength(2)
+  })
+  it('leaves an empty folder reached through a link as it is', async () => {
+    const f = await fixture(); const a = await f.service.ensure(await f.service.allocate(f.project, 'independent'))
+    const recorded = await f.service.inspect(a)
+    await git(f.project, ['worktree', 'remove', '--', a.path!])
+    const elsewhere = join(f.root, 'elsewhere'); await mkdir(elsewhere)
+    await symlink(elsewhere, a.path!, 'junction')
+    expect(await f.service.restore(recorded)).toEqual(recorded)
+    expect((await lstat(a.path!)).isSymbolicLink()).toBe(true)
+    expect(await readdir(elsewhere)).toEqual([])
+    expect((await git(f.project, ['worktree', 'list', '--porcelain'])).match(/worktree /gu)).toHaveLength(1)
+    await rm(a.path!, { recursive: false }).catch(() => unlink(a.path!))
+  })
   it.runIf(process.platform === 'win32')('reclaims a folder another process is working in, and restore fills it again', async () => {
     const f = await fixture(); const a = await f.service.ensure(await f.service.allocate(f.project, 'independent'))
     const recorded = await f.service.inspect(a)
