@@ -106,3 +106,44 @@ Free physical memory was 12,027,240 KB before the full suite and 9,995,972 KB be
 The final built-app journeys verify stable and Owl ordinary Send/reply, saved special-kind preservation, bridge gating, stable layout recovery and all five local-host-off room refusals. Dark/light, reduced motion and layout bounds pass at 1600 by 1000, 1280 by 800 and the exact 820 by 560 content size. Visually inspected the final [Owl dark](../../artifacts/watcher-gate/wakeups-owl-dark-820x560.png) and [stable light](../../artifacts/watcher-gate/wakeups-stable-light-820x560.png) captures: sidebar, transcript and composer fit. The two selected synthetic captures are committed in the existing evidence folder and are not ignored. At 150% scaling their PNG dimensions are 1230 by 840 physical pixels. Main bundle timestamp: 16:18:23 local; selected captures: 16:21:52 and 16:21:48. These captures supersede the original ignored run images recorded above.
 
 There is no additional room contract or shared-field change. Production dependencies remain exactly zod, node-pty and sherpa-onnx-node. The authorized incoming main merge carries version 0.1.37; no additional installation was needed. No new domain decision was made, so CONTEXT.md, ADR-0073 and the plan need no follow-up amendment. No implementation or required check remains unfinished locally. Native-provider wakes, packaging, macOS, Linux and phone checks remain outside this verification; remote delivery and the lead's review remain assigned to the lead.
+
+## Main integration after ticket 3 merged, October 11, 2026
+
+Merge `95c25066b` has parents `2b3a1a4e2` and fetched `origin/main` at `6adc78c40`. Main includes ticket 3's merge `988b637d2` (#930), #941, and the later #942 worktree recovery merge. Both actual conflicts are named in the merge body.
+
+- `src/main/agents/control.ts`: compose stale Watcher-news validation with the stopped-participation queue guard in the private final-writer callback. Keep main's normal follow-up readiness fence and native operation guard; user prompts and news keep their existing origins.
+- `tests/e2e/watcher-gate.spec.ts`: retain the exact content-size helper call with the explicit test minimum, its existing comment, and main's added live in-flight-limit journey. Neither viewport nor bounds assertions were relaxed.
+
+The merged Watcher service differs from main only by ticket 4's observers and sourced projections. Ticket 3's reviewed admission/refund/receipt/paging/ownership/closure logic survives. The third-round fixes are present unchanged:
+
+| Incoming change | Preserved check |
+| --- | --- |
+| `a43f27382` | Stopped participation holds saved queues even when native completion precedes interrupt. The private callback rechecks after native preparation. Existing delayed persistence/cleanup, explicit user review, ordinary queue and saved-prompt native-fence regressions pass. |
+| `cb0e025a8` | Working-copy choices require paths; base choices require branches. Both roles are checked before admission and after the native read. Wrong-role choices change no durable record or provider command; a valid branch still reaches creation. |
+| `1c181ba7b` | Expired Stop all previews are pruned on preparation/confirmation, and only the newest sixteen are retained. Expired/evicted IDs refuse without interrupts; newest scope remains usable once. |
+| `f782a665c` | setLimit goes through settingsCoordinator.updateSettings. The new built-app journey checks both the running Watcher limit and saved setting. |
+| #941 | Fixture event/ownership/setup repairs and Gates (Windows)'s forty-minute limit remain intact. |
+| #942 | Half-removed worktree recovery and its verification remain intact through the incoming main merge. |
+
+Two added merge regressions prove the stopped-worker rule at the news/evidence seams. The fake-provider path retains a checkpoint's sourced identity and file count, removes stopped participation from news and observation residency, and holds babysitting news without sending it. Only explicit user review resumes the queue; its Watcher prompt count stays one and no answer command is sent. The real Codex adapter with the fake provider child holds a wake-up in native preparation, accepts Watcher's Stop on the already-completed turn, then verifies there is no matching turn/start or request/answer and the unsent news remains for review.
+
+The focused run passed five files and 92 tests in 46.08 seconds: watcherTools, watcherNativeFences, watcherWakeUp, watcherEvidence and unchanged babysitProviders. No BOM was introduced; both conflicts and the modified test files retain CRLF. No production dependency or package-lock change was needed, no new Watcher poll/timer or contract field was added, and no renderer file was manually edited.
+
+### Ordered gates on the main merge
+
+All six requested gates ran in order against implementation `95c25066b`, with real output. No gate failure, isolated flaky-test retry or additional implementation fix was needed. The later evidence commit changes only this note and selected captures.
+
+| Command | Real result |
+| --- | --- |
+| `npm run typecheck` | Exit 0; all four TypeScript projects |
+| `npm run lint` | Exit 0 |
+| `npm test -- --maxWorkers=2` | Exit 0; 777 files passed, 58 skipped; 9,718 tests passed, 283 skipped; 1,363.31 seconds |
+| `npm run notices:verify` | Exit 0; 189 third-party notice components |
+| `npm run build` | Exit 0; main, host, preload and renderer |
+| `npx playwright test tests/e2e/watcher-gate.spec.ts` | Exit 0; four journeys passed in 19.1 seconds |
+
+Free physical memory was 10,377,340 KB before the full suite and 4,327,632 KB before the built-app journeys, above 3 GB. The full suite emitted SQLite experimental, jsdom canvas and fixture line-ending warnings; build emitted dependency directive warnings. The entire suite passed on the first attempt, including the unchanged babysitting integration and all incoming fixture regressions. Gates (Windows)'s forty-minute limit remains present.
+
+The app journeys check stable/Owl ordinary Send/reply, saved special-kind preservation, bridge gating, stable layout recovery, all five local-host-off room refusals, and the changed limit applying to both the running Watcher and saved settings. Dark/light, reduced motion and bounds pass at 1600 by 1000, 1280 by 800 and exactly 820 by 560 CSS pixels. Visually inspected the new [Owl dark](../../artifacts/watcher-gate/wakeups-main-owl-dark-820x560.png) and [stable light](../../artifacts/watcher-gate/wakeups-main-stable-light-820x560.png) selected captures; sidebar, transcript and composer fit. They are committed in the existing evidence folder and are not ignored. At 150% display scaling, their PNG dimensions are 1230 by 840 device pixels. Main bundle timestamp: 19:41:31 local; captures: 19:42:26 and 19:42:19.
+
+No additional room contract or shared field changed. No new domain decision was made, so CONTEXT.md, ADR-0073 and the plan need no follow-up amendment. Production dependencies remain exactly zod, node-pty and sherpa-onnx-node. This follow-up ran no push, rebase, stash, branch switch, new task worktree, nested review, publication or installation; the initial npm ci remains the worktree's own dependency install. No implementation or required check remains unfinished locally. Packaged builds, paid native-provider turns, macOS, Linux and phones were not exercised; remote delivery and the lead's review remain assigned to the lead.
