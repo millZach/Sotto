@@ -76,19 +76,23 @@ struct WatcherView: View {
 /// Watcher's name, its model and computer, its state, and Conversation | Watched, pinned over the page in glass.
 private struct WatcherHeader: View {
     @EnvironmentObject var model: AppModel
+    @Environment(\.dynamicTypeSize) private var typeSize
     let hostID: String
     @Binding var section: WatcherView.Pane
     var body: some View {
         let page = model.watcherPage(hostID)
         VStack(alignment: .leading, spacing: Space.s3) {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: Space.s3) {
-                    title
-                    Spacer(minLength: Space.s2)
-                    WatcherStatePill(hostID: hostID)
-                }
+            // The state sits beside the name, as the design draws it, and a long model line wraps under the name rather
+            // than push the state onto a row of its own. At accessibility sizes the state goes under the name.
+            if typeSize.isAccessibilitySize {
                 VStack(alignment: .leading, spacing: Space.s2) {
                     title
+                    WatcherStatePill(hostID: hostID)
+                }
+            } else {
+                HStack(spacing: Space.s3) {
+                    title
+                    Spacer(minLength: 0)
                     WatcherStatePill(hostID: hostID)
                 }
             }
@@ -106,16 +110,18 @@ private struct WatcherHeader: View {
     }
     private var title: some View {
         HStack(spacing: Space.s3) {
-            WatcherOwlMark(size: 26)
+            WatcherOwlMark(size: 24)
                 .foregroundStyle(Palette.ink)
-                .frame(width: 44, height: 44)
+                .frame(width: 40, height: 40)
                 .background(Palette.raised, in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Watcher").font(.sotto(.title, .bold)).tracking(-0.4).foregroundStyle(Palette.ink)
                     .accessibilityAddTraits(.isHeader)
-                Text(subtitle).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                // Caption size, as the design draws it: at the small one the line pushed the state off the name's row on
+                // an iPhone SE.
+                Text(subtitle).font(.sotto(.caption)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
             }
         }
     }
