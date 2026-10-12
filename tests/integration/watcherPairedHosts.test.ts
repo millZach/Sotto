@@ -10,7 +10,7 @@ import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
 import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
 import { DESKTOP_CLIENTS_FILE } from '../../src/shared/desktopClients'
 import { watcherToolSchemas, type WatcherToolName, type WatcherToolOutput } from '../../src/shared/watcher'
-import type { WatcherHostControl, WatcherHostProjection } from '../../src/shared/watcherHost'
+import { watcherHostControlSchema, type WatcherHostControl, type WatcherHostProjection } from '../../src/shared/watcherHost'
 import type { HostOperation } from '../../src/shared/hostProtocol'
 import { useSocketHostFixture } from '../fixtures/socketHostFixture'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
@@ -398,4 +398,70 @@ it.each(['stopped', 'closed'] as const)('fences a request %s during remote dispa
     expect((await remote.native.snapshot()).threads.some(item => item.title === input.title)).toBe(false)
     expect(await f.call('start_thread', input)).toMatchObject({ code: 'REQUEST_NOT_ACTIVE', receipt: { deliveryState: 'failed' } })
   } finally { gate.release(); await start }
+})
+
+
+it('keeps restored queues paused after retrying another receipt on the same request', async () => {
+  const f = await master(), input = f.start(), original = f.socket.watcherControl.bind(f.socket)
+  let packet: WatcherHostControl | undefined
+  vi.spyOn(f.socket, 'watcherControl').mockImplementation(async request => { if (request.call.name === 'start_thread') packet = request; return original(request) })
+  const first = await f.call('start_thread', input)
+  if (first.status !== 'ok') throw new Error('start-refused')
+  const queued = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'queue', text: 'Synthetic restored machine queue' })
+  expect(queued).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
+  const nativeId = (await remote.native.snapshot()).threads.find(item => item.title === input.title)!.id
+  await f.socket.close(); await remote.host.close()
+  remote.host = await startFixtureHeadlessHost({ dataDirectory: remote.root, port: 0, providers: { codex: remote.native } })
+  remote.url = 'http://127.0.0.1:' + remote.host.descriptor!.port
+  const socket = new SocketHostService({ url: remote.url, token: f.pairing.token, watcherEnabled: true }); remote.clients.push(socket)
+  await socket.connect(); await socket.command({ type: 'connect', provider: 'codex' })
+  expect(remote.host.service.state().followups?.some(item => item.threadId === first.target.threadId && item.status === 'queued')).toBe(true)
+  expect(await socket.watcherControl(packet!)).toMatchObject({ receipt: { operationId: first.receipt.operationId } })
+  remote.native.event({ type: 'ready', threadId: nativeId, text: 'Synthetic completion after restart' })
+  await socket.command({ type: 'refresh', provider: 'codex' })
+  await vi.waitFor(() => expect(remote.host.service.state().followups?.find(item => item.threadId === first.target.threadId)?.status).toBe('paused'))
+  expect((await remote.native.snapshot()).threads.find(item => item.id === nativeId)!.messages.filter(item => item.role === 'user')).toHaveLength(1)
+}, 60_000)
+
+
+it('keeps operation-specific restart fences when another receipt or a new operation reconnects its request', async () => {
+  const workspace = await workspaceFixture(undefined, { history: true })
+  const f = await agentControlFixture({ directory: workspace.root, host: workspace.host, credentialOptions: { mode: 'unavailable' },
+    control: { historyEnabled: () => true, watcherEnabled: true } })
+  let control = f.control
+  let worker = new WatcherService({ directory: f.root, host: workspace.host, control, historyEnabled: () => true, limit: () => 1, workerHost: true })
+  cleanups.push(async () => { worker.close(); await f.dispose(); await workspace.stop(); await workspace.remove() })
+  await control.start(); await control.commandShell({ type: 'connect', provider: 'codex' }); await worker.recover()
+  const master = { target: { hostId: randomUUID(), threadId: randomUUID() }, projectId: 'synthetic-master-project', provider: 'codex' as const,
+    creationOperationId: randomUUID(), createdAt: new Date().toISOString() }
+  const request = { id: randomUUID(), watcher: master.target, rootUserMessageId: randomUUID(), createdAt: master.createdAt }
+  const target = { hostId: control.hostId()!, threadId: randomUUID() }, clientId = randomUUID()
+  const packet = (call: Extract<WatcherHostControl['call'], { name: 'start_thread' | 'send_to_thread' }>): WatcherHostControl => ({ master, request, call,
+    ceiling: 'approval-required', operation: { id: randomUUID(), requestId: request.id, retryKey: call.input.retryKey,
+      digest: createHash('sha256').update(JSON.stringify([call.name, watcherToolSchemas[call.name].input.parse(call.input)])).digest('hex'), action: call.name === 'start_thread' ? 'start' : 'send', target,
+      generation: 0, deliveryState: 'queued', delivery: call.name === 'start_thread' ? 'now' : call.input.delivery, createdAt: request.createdAt, updatedAt: request.createdAt,
+      receiptId: randomUUID(), cardId: randomUUID(), draftId: randomUUID(), messageId: randomUUID(), anchorMessageId: request.rootUserMessageId,
+      ...call.name === 'start_thread' ? { creationReceiptId: randomUUID(), firstPromptReceiptId: randomUUID() } : {} } })
+  const snapshot = control.watcherSnapshot()
+  const start = packet({ name: 'start_thread', input: { requestId: request.id, retryKey: randomUUID(), project: { hostId: target.hostId, projectId: snapshot.projects.find(item => item.providerId === 'codex')!.id },
+    modelId: snapshot.models.find(item => item.providerId === 'codex' && item.ready)!.id, title: 'Synthetic owned worker', firstPrompt: 'Synthetic first machine prompt', workingCopy: { kind: 'shared' } } })
+  watcherHostControlSchema.parse(start)
+  const started = await worker.admitRemote(start, clientId, () => undefined) as { status: string; code?: string }
+  expect(started.status, started.code).toBe('ok')
+  const queued = packet({ name: 'send_to_thread', input: { requestId: request.id, retryKey: randomUUID(), target, text: 'Synthetic saved queue', delivery: 'queue' } })
+  expect(await worker.admitRemote(queued, clientId, () => undefined)).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
+  worker.close(); control.dispose(); await control.closed()
+  control = f.create()
+  worker = new WatcherService({ directory: f.root, host: workspace.host, control, historyEnabled: () => true, limit: () => 1, workerHost: true })
+  await control.start(); await control.commandShell({ type: 'connect', provider: 'codex' }); await worker.recover()
+  const code = (id: string) => { try { worker.guardOperation(id); return undefined } catch (error) { return (error as { result?: { code: string } }).result?.code } }
+  expect(control.watcherRecord().operations.find(item => item.id === queued.operation.id)?.deliveryState).toBe('queued')
+  expect(code(queued.operation.id)).toBe('HOST_DISCONNECTED')
+  expect(await worker.admitRemote(start, clientId, () => undefined)).toMatchObject({ receipt: { operationId: start.operation.id } })
+  expect(code(queued.operation.id)).toBe('HOST_DISCONNECTED')
+  if (queued.call.name !== 'send_to_thread') throw new Error('Synthetic queue packet mismatch')
+  const fresh = packet({ name: 'send_to_thread', input: { ...queued.call.input, retryKey: randomUUID() } })
+  expect(await worker.admitRemote(fresh, clientId, () => undefined)).toMatchObject({ status: 'ok' })
+  expect(code(fresh.operation.id)).toBeUndefined()
+  expect(code(queued.operation.id)).toBe('HOST_DISCONNECTED')
 })

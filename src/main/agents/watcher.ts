@@ -449,7 +449,7 @@ export class WatcherService implements WatcherControlHooks {
     if (!operation) refuse('UNKNOWN_OPERATION', 'This operation is unavailable.')
     const request = record.requests.find(item => item.id === operation.requestId)!
     if (request.remoteOrigin) {
-      const guard = this.remoteGuards.get(request.id)
+      const guard = this.remoteGuards.get(operation.id)
       if (!guard) refuse('HOST_DISCONNECTED', 'The master connection is unavailable. Reconcile this operation before continuing.')
       guard()
     } else if (record.current?.target.threadId !== request.watcher.threadId) refuse('NOT_CURRENT_WATCHER', 'This operation no longer belongs to the current Watcher.')
@@ -818,7 +818,7 @@ export class WatcherService implements WatcherControlHooks {
         if (retry && (retry.id !== operation.id || retry.digest !== operation.digest || key(retry.target) !== key(operation.target))) refuse('RETRY_KEY_CONFLICT', 'This operation identity changed. Read the original receipt.')
         if (!existing) await this.options.control.updateWatcher(record => { record.requests.push({ ...request, state: 'active', closedAt: null,
           participants: [], remoteOrigin: { clientId, master, creationOperationId: master.creationOperationId, ceiling: packet.ceiling } }) })
-        this.remoteGuards.set(request.id, guard)
+        if (!retry && !this.remoteGuards.has(operation.id)) this.remoteGuards.set(operation.id, guard)
       })
       return await this.mutate(master.target.threadId, call.name, call.input, operation)
     } catch (error) { return error instanceof Refusal ? error.result : watcherRefusal('INVALID_INPUT', 'This machine request could not be admitted. Nothing was sent.') }
