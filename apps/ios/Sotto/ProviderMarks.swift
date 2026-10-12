@@ -44,8 +44,6 @@ struct WatchedOwl: View {
     }
 }
 
-}
-
 /// The marks before a "Codex on Laptop" line (3B): the provider's logo, then the owl on a watched thread.
 struct ProviderMarks: View {
     let providerID: String?
