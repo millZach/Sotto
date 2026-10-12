@@ -151,7 +151,7 @@ test('Linux Settings says what applies, with and without the shell pill', async 
     await app.evaluate(({ shell }) => { shell.openExternal = async () => { throw new Error('No browser') } })
     await tab('Dictation').click()
     await bindingsButton.click()
-    await expect(page.getByRole('alert')).toHaveText('The setup steps could not open in your browser. They are in Sotto’s apps/omarchy/README.md, under “Install the bindings”.')
+    await expect(page.getByRole('alert')).toHaveText(`The setup steps could not open in your browser. They are at ${LINUX_BINDINGS_GUIDE_URL}`)
     if (output) {
       await page.evaluate(async () => { await window.sotto!.updateSettings({ appearance: 'dark' }) })
       await resize(820, 560)

@@ -393,7 +393,7 @@ export function SettingsView({
 
   const openBindingsGuide = async (): Promise<void> => {
     const result = await window.sotto?.openExternalLink?.(LINUX_BINDINGS_GUIDE_URL).catch(() => null)
-    if (result?.ok !== true) setNotice({ text: 'The setup steps could not open in your browser. They are in Sotto’s apps/omarchy/README.md, under “Install the bindings”.', error: true })
+    if (result?.ok !== true) setNotice({ text: `The setup steps could not open in your browser. They are at ${LINUX_BINDINGS_GUIDE_URL}`, error: true })
   }
 
   const selectSection = (id: SettingsSectionId): void => {

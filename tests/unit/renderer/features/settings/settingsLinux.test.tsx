@@ -92,7 +92,7 @@ describe('Settings on Linux', () => {
     render(<SettingsView {...baseProps({ platform: 'linux' })} />)
 
     await userEvent.click(screen.getByRole('button', { name: 'Open setup steps in your browser' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('The setup steps could not open in your browser. They are in Sotto’s apps/omarchy/README.md, under “Install the bindings”.')
+    expect(await screen.findByRole('alert')).toHaveTextContent(`The setup steps could not open in your browser. They are at ${LINUX_BINDINGS_GUIDE_URL}`)
   })
 
   it.each(['win32', 'darwin'] as const)('keeps the %s global shortcut field and offers no setup steps', async (platform) => {
