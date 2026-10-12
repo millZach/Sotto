@@ -2,7 +2,7 @@
 
 Ticket 8b of the Watcher plan, branch `feat/watcher-iphone`, built on ticket 8a's `feat/watcher-phone` (the wire contract at `3cb736fdd`, then its host and SottoCore models merged at `da592927c`). Windows 11 on LAPTOP-RUSSH2J5, October 11, 2026. The design is Zach's picks from the phone prototype of the same day (1B, 2B, 3B, 4B, 5A, 6B, 7A), recorded in ADR-0073's October 11 amendment.
 
-**Native iPhone app: NOT VERIFIED.** No Swift was compiled, run or tested on this machine: there is no Xcode or Swift toolchain here, and the brief allowed installing none. Everything below the first section waits for the Native iOS job on macOS. Until that job is green and its `watcher-*` screenshots have been opened and inspected, this work is source only.
+**Native iPhone app: NOT VERIFIED.** No Swift was compiled, run or tested on this machine: there is no Xcode or Swift toolchain here, and the brief allowed installing none. The Native iOS job has since compiled it and passed its model tests, and four of the six Watcher journeys failed there (see [The first CI run](#the-first-ci-run-october-12)); the fixes for them are again source only. Until that job is green on both phones and its `watcher-*` screenshots have been opened and inspected, the journeys are not proven.
 
 ## What was checked here
 
@@ -12,6 +12,16 @@ Ticket 8b of the Watcher plan, branch `feat/watcher-iphone`, built on ticket 8a'
 - **Review by reading.** Every changed Swift file was read for compile errors by a second reviewer, since nothing here can compile it: SottoCore member and nested type names, conformances SwiftUI needs, enum patterns, file-scoped `private` use, the AppModel test target's sources, the Xcode project's entries and the asset names. It found no compile failure. It found one journey assertion that passed before what it claimed had happened (a receipt row that already existed), which now waits for the second row. Reading is not compiling.
 
 No root gate covers this work: it changes only `apps/ios/`, documents and the iOS job's timeout. The npm suite does not read Swift.
+
+## The first CI run (October 12)
+
+Run 38201680489 (job 114656655740, draft #946, which carries `apps/ios` from this branch onto `main`) compiled the app and its tests and passed all 354 SottoCore and app-model tests, `WatcherModelTests` included. On the iPhone SE, 21 journeys passed, among them `testAWorkersCardIsAnsweredInWatchersPage` and `testAOneTapQuestionIsAnsweredOnItsCard`, and four Watcher journeys failed. `verify-ui.sh` stops after the first phone that fails, so the iPhone 16 Pro Max (accessibility text, reduced motion) has not run any of them yet. The screenshots and the hierarchies the job kept gave each failure's cause:
+
+- **`testStopAllAsksFirst`: the app.** iOS 26 drew Stop all's confirmation dialog as a popover from the middle of Watcher's page and left its Cancel button out, so the journey had nothing to press. The design asks in a centred dialog with Stop and Cancel, so it is now an alert, its message in the design's words with each thread and where it runs. The journey finds the alert by its question and presses its own buttons.
+- **`testAReceiptRowOpensItsThread` and `testAPhoneWithoutCanAnswerSaysSoInWatchersPage`: the journeys.** Watcher's page opens at the end of its conversation under a glass header. The receipt row sat at -39 to 64 points and the card's Review question behind Conversation | Watched; XCTest called each hittable, so the shared reveal helper didn't scroll, and the press landed on the header: the row opened nothing, and Review opened Watched rather than the card's sheet. A Watcher helper now scrolls each target whole between the header and the reply box before it is pressed, in every Watcher conversation journey.
+- **`testTheWatcherTabOpensAndTakesAMessage`: both.** The journey put the keyboard away with a swipe on the first scroll view, which stays above the keyboard; the conversation lets the keyboard go only when a drag carries on down into it. Its screenshot also showed that with the keyboard up on the SE, neither the message sent nor Watcher's answer was on screen: the page scrolled to its end, under the card still waiting. As the design does, sending now puts the keyboard away, and new words are scrolled to just above the box with waiting cards below them. The journey checks both, then puts the keyboard away with a drag down into it.
+
+The passing journeys' screenshots, dark and light, match the design except the header: on the SE the line under Watcher's name was set a size larger than the prototype's, which pushed the state pill onto a row of its own. It is now caption size, with the prototype's 40-point tile, and the state stays beside the name short of the accessibility sizes. The provider logos and owls draw as the desktop's, in the line's colour, and the tab's value read "Working" in the hierarchy.
 
 ## What waits for the Native iOS job
 
@@ -24,11 +34,11 @@ No root gate covers this work: it changes only `apps/ios/`, documents and the iO
 
 | Journey | What it shows | Screenshots |
 |---|---|---|
-| `testTheWatcherTabOpensAndTakesAMessage` | The tab between Threads and Computers; VoiceOver's value for the working dot; Watcher's model and computer; a receipt row; typing in Ask Watcher, sending, and Watcher's answer arriving | `watcher-conversation-dark`, `watcher-sent-dark`, `watcher-sent-light` |
+| `testTheWatcherTabOpensAndTakesAMessage` | The tab between Threads and Computers; VoiceOver's value for the working dot; Watcher's model and computer; a receipt row; typing in Ask Watcher, sending, which puts the keyboard away, and Watcher's answer arriving in view; a drag down into the keyboard putting it away | `watcher-conversation-dark`, `watcher-sent-dark`, `watcher-sent-light` |
 | `testAReceiptRowOpensItsThread` | A row of what Watcher did opens its thread, with the logo and owl under its title and the takeover line in its reply box | `watcher-receipt-thread-dark`, `watcher-receipt-thread-light` |
 | `testAWorkersCardIsAnsweredInWatchersPage` | Fix login test's own question answered in Watcher's page; Answer sent; the card leaves | `watcher-card-dark`, `watcher-card-answered-dark`, `watcher-card-light` |
 | `testAPhoneWithoutCanAnswerSaysSoInWatchersPage` | Without Can answer: the badge and its spoken value, both cards read only, Watcher's own card, the held box, the sheet's own words | `watcher-cannot-answer-dark`, `watcher-cannot-answer-sheet-dark`, `watcher-cannot-answer-light` |
-| `testStopAllAsksFirst` | 3 of 4 watched; Stop all asks first; Cancel stops nothing; confirming stops the three Watcher started | `watcher-watched-dark`, `watcher-stop-all-dark`, `watcher-stopped-dark`, `watcher-stopped-light` |
+| `testStopAllAsksFirst` | 3 of 4 watched; Stop all asks first in an alert naming each thread; Cancel stops nothing; confirming stops the three Watcher started | `watcher-watched-dark`, `watcher-stop-all-dark`, `watcher-stopped-dark`, `watcher-stopped-light` |
 | `testAOneTapQuestionIsAnsweredOnItsCard` | A fix found on the way: a Threads card's chip for one structured question now goes as that question's answer | `threads-glow-card-answered` |
 
 `testThreadsAndComputersInTheGlowLook` also checks that a computer without Watcher gives no Watcher tab.
