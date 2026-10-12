@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
+import { readdir, readFile, unlink } from 'node:fs/promises'
 import { z } from 'zod'
 import { agentAttachmentHandleSchema, agentAttachmentSchema, agentFollowupSchema, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS,
   type AgentAttachmentHandle, type AgentFollowup } from '../../shared/agents'
@@ -22,7 +23,7 @@ const receiptsSchema = z.array(agentDeliveryReceiptsSchema.element.extend({ dige
  * A queued item as the store keeps it. A wake-up keeps the news it was worded from, one part per pull request, so news
  * that comes later folds into it and a stop takes back its pull request's part; the window is sent the words alone.
  */
-const queuedSchema = agentFollowupSchema.extend({ news: z.array(babysitNewsSchema).max(WAKE_UP_NEWS_MAX).optional() })
+const queuedSchema = agentFollowupSchema.extend({ watcherOperationId: z.uuid().optional(), news: z.array(babysitNewsSchema).max(WAKE_UP_NEWS_MAX).optional() })
 export type QueuedFollowup = z.infer<typeof queuedSchema>
 type State = { items: QueuedFollowup[]; receipts: z.infer<typeof receiptsSchema> }
 /**
@@ -49,10 +50,11 @@ export interface FollowupView {
 export class FollowupStore {
   private state: State = { items: [], receipts: [] }
   private readonly dormant = new Map<string, Stored['items'][number]>()
+  private readonly gatedMachines = new Map<string, Stored['items'][number]>()
   private active: (threadId: string) => boolean = () => true
   private tail: Promise<unknown> = Promise.resolve()
   private readonly store: AtomicJsonStore<Stored>
-  constructor(directory: string) {
+  constructor(private readonly directory: string, private readonly historyEnabled: () => boolean = () => true, private readonly isWatcherThread: (id: string) => boolean = () => false, private readonly watcherEnabled: () => boolean = () => true) {
     this.store = new AtomicJsonStore<Stored>(join(directory, 'followups.json'), storedSchema.parse, () => ({ items: [], receipts: [] }))
   }
   /**
@@ -62,10 +64,15 @@ export class FollowupStore {
    */
   async load(stage?: StageInline, kept: (handle: AgentAttachmentHandle) => boolean = () => true, active: (threadId: string) => boolean = () => true): Promise<void> {
     this.active = active
-    const stored = await this.store.read()
+    await this.cleanPrivateCopies()
+    const privateCorruption = !this.historyEnabled() && this.watcherEnabled()
+      && this.hasPrivateWords(await this.readCopy(join(this.directory, 'followups.json')))
+    const stored = await (privateCorruption ? this.store.peek() : this.store.read())
     const items: State['items'] = []
     const lost = new Set<string>()
     for (const item of stored.items) {
+      if (item.watcherOperationId && !this.watcherEnabled()) { this.gatedMachines.set(item.id, structuredClone(item)); continue }
+      if (!this.historyEnabled() && active(item.threadId) && (item.watcherOperationId || this.isWatcherThread(item.threadId))) continue
       if (!active(item.threadId)) {
         this.dormant.set(item.id, structuredClone(item))
         items.push(queuedSchema.parse({ ...item, attachments: item.attachments.filter(attachment => !('dataUrl' in attachment)) }))
@@ -107,12 +114,12 @@ export class FollowupStore {
     const task = this.tail.catch(() => undefined).then(async () => {
       const next = this.get()
       if (update(next) === false) return
-      await this.store.write({ ...next, items: next.items.map(item => this.dormant.get(item.id) ?? item) }); this.state = next
+      await this.store.write({ ...next, items: [...this.gatedMachines.values(), ...next.items.filter(item => !this.active(item.threadId) || this.historyEnabled() || !item.watcherOperationId && !this.isWatcherThread(item.threadId)).map(item => this.dormant.get(item.id) ?? item)] }); this.state = next
     })
     this.tail = task
     return task
   }
-  enqueue(input: Pick<AgentFollowup, 'threadId' | 'draftId' | 'text' | 'attachments' | 'skills' | 'files' | 'resumeAfterTurnId'>): Promise<void> {
+  enqueue(input: Pick<AgentFollowup, 'threadId' | 'draftId' | 'text' | 'attachments' | 'skills' | 'files' | 'resumeAfterTurnId'> & { watcherOperationId?: string; messageId?: string | undefined }): Promise<void> {
     return this.change(state => {
       const receipt = state.receipts.find(r => r.threadId === input.threadId && r.draftId === input.draftId)
       const item = state.items.find(r => r.threadId === input.threadId && r.draftId === input.draftId)
@@ -130,6 +137,44 @@ export class FollowupStore {
       const ordinary = new Set(receipts.filter(receipt => this.active(receipt.threadId)).slice(-MAX_DELIVERED_DRAFTS))
       state.receipts = receipts.filter(receipt => !this.active(receipt.threadId) || ordinary.has(receipt))
     })
+  }
+  async privacyChanged(): Promise<void> { await this.change(() => undefined); await this.cleanPrivateCopies() }
+  private async readCopy(path: string): Promise<string> {
+    try { return await readFile(path, 'utf8') } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return ''; throw error }
+  }
+  private privateItem(item: unknown): boolean {
+    if (!item || typeof item !== 'object') return false
+    const value = item as { watcherOperationId?: unknown; threadId?: unknown }
+    return value.watcherOperationId !== undefined || typeof value.threadId === 'string' && this.isWatcherThread(value.threadId) && this.active(value.threadId)
+  }
+  private hasPrivateWords(contents: string): boolean {
+    try { const value = JSON.parse(contents) as { items?: unknown }; if (Array.isArray(value.items)) return value.items.some(item => this.privateItem(item)) }
+    catch { /* Damaged JSON can still name a private item before its broken boundary. */ }
+    if (/(?<!\\)"watcherOperationId"\s*:/u.test(contents)) return true
+    for (const match of contents.matchAll(/(?<!\\)"threadId"\s*:\s*("(?:[^"\\]|\\.)*")/gu)) {
+      const threadId: unknown = JSON.parse(match[1]!)
+      if (typeof threadId === 'string' && this.isWatcherThread(threadId) && this.active(threadId)) return true
+    }
+    return false
+  }
+  private async cleanPrivateCopies(): Promise<void> {
+    if (this.historyEnabled() || !this.watcherEnabled()) return
+    const names = await readdir(this.directory).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return []; throw error })
+    for (const name of names) if (/^followups\.json\.(?:tmp|corrupt)-\d+-[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/u.test(name)) {
+      const path = join(this.directory, name), contents = await this.readCopy(path)
+      if (!this.hasPrivateWords(contents)) continue
+      let value: { items: unknown[]; [key: string]: unknown }
+      try { value = JSON.parse(contents) as typeof value }
+      catch { await unlink(path).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error }); continue }
+      if (!Array.isArray(value.items)) { await unlink(path).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error }); continue }
+      // Keep ordinary saved queue items, even when another part of this backup fails its schema.
+      value.items = value.items.filter(item => !this.privateItem(item))
+      await new AtomicJsonStore(path, input => input, () => ({})).write(value)
+    }
+  }
+  cancelWatcher(operationIds: ReadonlySet<string>): Promise<void> {
+    return this.change(state => { state.items = state.items.filter(item => !item.watcherOperationId || !operationIds.has(item.watcherOperationId)
+      || item.status === 'dispatching' || item.status === 'uncertain') })
   }
   edit(threadId: string, itemId: string, update?: Pick<AgentFollowup, 'text' | 'attachments' | 'skills' | 'files'>): Promise<void> {
     return this.change(state => {
@@ -220,7 +265,7 @@ export class FollowupStore {
     return this.change(state => {
       const item = state.items.find(item => item.id === id)
       if (!item || item.status !== 'queued' || mode === 'send' && state.items.find(candidate => candidate.threadId === item.threadId)?.id !== id) throw new Error(item?.wakeUp ? 'This wake-up is no longer ready to send.' : 'This follow-up is no longer ready to send.')
-      Object.assign(item, { status: 'dispatching', commandId: randomUUID(), messageId: randomUUID(), updatedAt: new Date().toISOString() })
+      Object.assign(item, { status: 'dispatching', commandId: randomUUID(), messageId: item.watcherOperationId && item.messageId ? item.messageId : randomUUID(), updatedAt: new Date().toISOString() })
     })
   }
   settle(id: string, status: 'accepted' | 'uncertain' | 'failed', error?: string): Promise<void> {

@@ -2,10 +2,12 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { randomBytes } from 'node:crypto'
 import { z } from 'zod'
 
-export interface ThreadToolDefinition { name: string; description: string; inputSchema: Record<string, unknown> }
+export interface ThreadToolDefinition { name: string; description: string; inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown>;
+  annotations?: { readOnlyHint: boolean; destructiveHint: boolean; idempotentHint: boolean; openWorldHint: boolean } }
 export interface ThreadToolResult {
   content: ({ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string })[]
   isError?: boolean
+  structuredContent?: Record<string, unknown>
 }
 /** How a native client reaches one of Sotto's tool servers for one thread: loopback HTTP and a bearer token. */
 export interface ThreadMcpServer { name: string; type: 'http'; url: string; headers: { name: string; value: string }[] }

@@ -812,15 +812,19 @@ export class DevinAcpHost implements AgentHost {
     }
   }
   async execute(command: AgentHostCommand): Promise<AgentHostResult> {
+    return this.executeGuarded(command)
+  }
+  executeFromWatcher(command: AgentHostCommand, guard: () => void): Promise<AgentHostResult> { return this.executeGuarded(command, guard) }
+  private async executeGuarded(command: AgentHostCommand, watcherGuard?: () => void): Promise<AgentHostResult> {
     const generation = this.generation
     if ('threadId' in command && command.type !== 'interrupt') await this.refuseWatcher(command.threadId)
     if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
-    if (command.type !== 'send' && command.type !== 'create-thread') return this.executeNative(command)
+    if (command.type !== 'send' && command.type !== 'create-thread') return this.executeNative(command, watcherGuard)
     if (this.dispatching.has(command.threadId)) throw new Error('Devin is already receiving work for this thread. Wait for its delivery result.')
     this.dispatching.add(command.threadId)
-    try { return await this.executeNative(command) } finally { this.dispatching.delete(command.threadId) }
+    try { return await this.executeNative(command, watcherGuard) } finally { this.dispatching.delete(command.threadId) }
   }
-  private async executeNative(command: AgentHostCommand): Promise<AgentHostResult> {
+  private async executeNative(command: AgentHostCommand, watcherGuard?: () => void): Promise<AgentHostResult> {
     const generation = this.generation; const checksBefore = this.checksStarted
     if (!this.state.connected) throw new Error('Connect Devin before managing threads.')
     let creation: Connection | undefined
@@ -846,6 +850,7 @@ export class DevinAcpHost implements AgentHost {
         this.aliases[command.threadId] = alias; await this.persist()
         if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
         const connection = await this.start(alias.cwd, mode.allows, command.threadId, false)
+        watcherGuard?.()
         if (generation !== this.generation) { connection.intentionalClose = true; connection.rpc.close(); throw new DevinUncertain('Devin connection changed.') }
         creation = connection; this.connections.set(command.threadId, connection)
         await connection.rpc.request('session/new', { cwd: alias.cwd, mcpServers: [] }, async value => {
@@ -911,7 +916,7 @@ export class DevinAcpHost implements AgentHost {
         if (generation !== this.generation || this.connections.get(id) !== connection) throw new DevinUncertain('Devin connection changed.')
         this.reaper.touch(id)
         if (!alias.settingsConfirmed) throw new Error('Devin has not confirmed this thread’s settings. Reconnect before sending.')
-        if (command.type === 'send') return await this.send(command, connection, checksBefore)
+        if (command.type === 'send') return await this.send(command, connection, checksBefore, watcherGuard)
         if (command.type === 'answer') {
           const saved = this.pending.get(command.requestId)
           if (!saved || saved.decision.threadId !== id || saved.connection !== connection) throw new Error('That Devin request is no longer pending.')
@@ -934,9 +939,10 @@ export class DevinAcpHost implements AgentHost {
           try { await connection.rpc.reply(decision.wireId, answer); this.removeRequest(command.requestId) }
           catch { decision.request.delivery = 'uncertain'; this.emit(); return { accepted: false, uncertain: true } }
         } else if (command.type === 'interrupt') {
-          for (const [requestId, saved] of this.pending) if (saved.decision.threadId === id && !saved.decision.answering) {
+          for (const [requestId, saved] of this.pending) if (!watcherGuard && saved.decision.threadId === id && !saved.decision.answering) {
             await connection.rpc.reply(saved.decision.wireId, devinDecline(saved.decision)); this.removeRequest(requestId)
           }
+          watcherGuard?.()
           connection.rpc.write({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId: alias.devinSessionId } })
         }
       }
@@ -952,7 +958,7 @@ export class DevinAcpHost implements AgentHost {
     }
   }
   /** `checksBefore` is how many checks had started when this send was asked for: one this connection passed since is not run again. */
-  private async send(command: Extract<AgentHostCommand, { type: 'send' }>, connection: Connection, checksBefore: number): Promise<AgentHostResult> {
+  private async send(command: Extract<AgentHostCommand, { type: 'send' }>, connection: Connection, checksBefore: number, watcherGuard?: () => void): Promise<AgentHostResult> {
     const generation = this.generation
     const id = command.threadId; const alias = this.aliases[id]!
     const checkConnection = (): void => {
@@ -983,6 +989,7 @@ export class DevinAcpHost implements AgentHost {
       digest: digest(command.text), createdAt: new Date().toISOString(), confirmed: false }
     alias.origins.push(origin); alias.ephemeral = false; await this.persist()
     checkConnection()
+    try { watcherGuard?.() } catch (error) { alias.origins = alias.origins.filter(item => item !== origin); await this.persist(); throw error }
     const turn: ActiveTurn = { origin, text: command.text, assistant: '', streamed: false, ended: false, wake: undefined }
     this.active.set(id, turn)
     this.thread(id).status = 'running'

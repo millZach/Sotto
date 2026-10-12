@@ -6,6 +6,7 @@ export const WATCHER_PROMPT_BYTES_MAX = 32 * 1_024
 export const WATCHER_READ_BYTES_MAX = 64 * 1_024
 export const WATCHER_TITLE_MAX = 512
 export const WATCHER_ROSTER_MAX = 100
+export const WATCHER_PARTICIPATION_HISTORY_MAX = 100
 export const WATCHER_MESSAGES_MAX = 50
 export const WATCHER_TOOL_CALLS_MAX = 8
 export const WATCHER_PROMPTS_PER_THREAD = 4
@@ -24,7 +25,7 @@ export const watcherThreadTargetSchema = z.object({ hostId: z.uuid(), threadId: 
 export const watcherProjectTargetSchema = z.object({ hostId: z.uuid(), projectId: entityId }).strict()
 export type WatcherThreadTarget = z.infer<typeof watcherThreadTargetSchema>
 export type WatcherProjectTarget = z.infer<typeof watcherProjectTargetSchema>
-export const watcherPositionSchema = z.object({ historyEpoch: id, afterPosition: counter }).strict()
+export const watcherPositionSchema = z.object({ historyEpoch: id, afterPosition: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER) }).strict()
 const permission = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('runtime'), mode: agentRuntimeModeSchema }).strict(),
   z.object({ kind: z.literal('provider'), choiceId: entityId }).strict(),
@@ -69,7 +70,7 @@ export const watcherEvidenceSchema = z.object({ id, source: z.enum(['sotto-deliv
   changedFiles: counter.optional(), insertions: counter.optional(), deletions: counter.optional() }).strict()
 const takeover = z.object({ reason: z.enum(['user-send', 'native-user-send', 'user-stop', 'user-settle', 'user-reconfigure']), at: time }).strict()
 const participation = z.object({ requestId: z.uuid(), startedBy: z.enum(['watcher', 'user']), generation: counter,
-  state: z.enum(['participating', 'taken-over', 'relinquished']), takeover: takeover.optional() }).strict()
+  state: z.enum(['participating', 'taken-over', 'relinquished']), takeover: takeover.optional(), automationStopped: z.literal(true).optional() }).strict()
 const pr = z.object({ number: z.number().int().positive(), url: z.string().max(2_048), title: z.string().max(512),
   state: z.enum(['open', 'closed', 'merged']), draft: z.boolean() }).strict()
 const row = z.object({ target: watcherThreadTargetSchema, title: z.string().max(WATCHER_TITLE_MAX), projectId: entityId,
@@ -77,7 +78,7 @@ const row = z.object({ target: watcherThreadTargetSchema, title: z.string().max(
   group: watcherGroupSchema, waitsOn: z.array(pending).max(100), branch: z.string().max(512).nullable(),
   workingCopy: workingCopy.nullable(), pullRequests: z.array(pr).max(50), evidence: z.array(watcherEvidenceSchema).max(100),
   lastActivityAt: time.nullable(), observedAt: time.nullable(), connected: z.boolean(), freshness,
-  userReadAt: time.nullable(), watcherReadAt: time.nullable(), participation: z.array(participation).max(100), protected: z.boolean() }).strict()
+  userReadAt: time.nullable(), watcherReadAt: time.nullable(), participation: z.array(participation).max(WATCHER_PARTICIPATION_HISTORY_MAX), protected: z.boolean() }).strict()
 const staleHost = z.object({ hostId: z.uuid(), observedAt: time.nullable() }).strict()
 const counts = z.object(Object.fromEntries(WATCHER_GROUPS.map(group => [group, counter])) as Record<typeof WATCHER_GROUPS[number], typeof counter>).strict()
 const paging = { cursor: cursor.optional(), limit: z.number().int().min(1).max(WATCHER_ROSTER_MAX).default(WATCHER_ROSTER_MAX) }
@@ -151,18 +152,20 @@ export type WatcherToolOutput<N extends WatcherToolName> = z.infer<(typeof watch
 export const watcherIdentitySchema = z.object({ target: watcherThreadTargetSchema, projectId: entityId,
   provider: watcherProviderSchema, creationOperationId: z.uuid(), createdAt: time }).strict()
 export const watcherParticipantSchema = participation.extend({ target: watcherThreadTargetSchema,
+  lastUserMessageId: id.nullable().optional(),
   promptCount: z.number().int().min(0).max(WATCHER_PROMPTS_PER_THREAD) }).strict()
 export const watcherRequestSchema = z.object({ id: z.uuid(), watcher: watcherThreadTargetSchema, rootUserMessageId: id,
   state: z.enum(['active', 'stopped', 'closed']), createdAt: time, closedAt: time.nullable(),
+  userFollowups: z.array(z.object({ draftId: z.uuid(), messageId: id.optional() }).strict()).max(1_000).optional(),
   participants: z.array(watcherParticipantSchema).max(1_000) }).strict()
 export const watcherOperationSchema = z.object({ id: z.uuid(), requestId: z.uuid(), retryKey: z.uuid(), digest: z.string().regex(/^[a-f0-9]{64}$/u),
   action: z.enum(['start', 'send', 'stop', 'settle']), target: watcherThreadTargetSchema, generation: counter,
   delivery: deliveryMode.optional(), deliveryState: watcherDeliveryStateSchema, createdAt: time, updatedAt: time,
   receiptId: id, cardId: id, creationReceiptId: id.optional(), firstPromptReceiptId: id.optional(), commandId: id.optional(),
-  draftId: z.uuid().optional(), messageId: id.optional(), itemId: id.optional(), anchorMessageId: id.optional(), toolCallId: id.optional(),
-  refusalCode: watcherRefusalCodeSchema.optional() }).strict()
+  draftId: z.uuid().optional(), messageId: id.optional(), itemId: id.optional(), expectedTurnId: id.optional(), expectedLastUserMessageId: id.optional(), anchorMessageId: id.optional(), toolCallId: id.optional(),
+  creationUncertain: z.literal(true).optional(), refusalCode: watcherRefusalCodeSchema.optional() }).strict()
 export const watcherRecordSchema = z.object({ version: z.literal(1), current: watcherIdentitySchema.nullable(),
-  creation: z.object({ identity: watcherIdentitySchema, phase: z.enum(['intent', 'created', 'bound', 'ready']),
+  creation: z.object({ identity: watcherIdentitySchema, modelId: entityId.optional(), reasoningEffort: z.string().max(64).optional(), phase: z.enum(['intent', 'created', 'bound', 'ready']),
     replaces: watcherThreadTargetSchema.nullable() }).strict().nullable(),
   history: z.array(watcherIdentitySchema).max(1_000), requests: z.array(watcherRequestSchema).max(10_000),
   operations: z.array(watcherOperationSchema).max(40_000),

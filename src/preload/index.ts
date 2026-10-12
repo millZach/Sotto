@@ -4,6 +4,10 @@ import { HOSTS_PROVIDER_ACTION, HOSTS_SIGN_IN, HOSTS_UPDATE_CLIENTS, hostClientU
 import { PHONES_GET, PHONES_COMMAND, PHONES_CHANGED, phonesCommandSchema, type PhonesState } from '../shared/phones'
 import { mapHostReferences, parseHostEntityKey } from '../shared/clientIdentity'
 
+import { WATCHER_GET, WATCHER_OPEN, WATCHER_CHANGED, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, WATCHER_SET_LIMIT,
+  WATCHER_RENDERER_ARGUMENT, watcherOpenRequestSchema, watcherRoomStateSchema, watcherRoomResultSchema,
+  watcherPrepareStopAllResultSchema, watcherStopAllRequestSchema, watcherStopAllResultSchema,
+  watcherSetLimitRequestSchema, type WatcherBridge } from '../shared/watcherRoom'
 import { hostClientBridge } from './hostClientBridge'
 import { REQUEST_DRAFT_GET, REQUEST_DRAFT_STATUS, REQUEST_DRAFT_SAVE, REQUEST_DRAFT_CHECK, REQUEST_DRAFT_CHANGED, REQUEST_DRAFT_LIST, REQUEST_DRAFT_DISCARD, requestDraftSchema, requestDraftCheckResultSchema, requestDraftStatusSchema, requestDraftTargetSchema, requestDraftOwnerSchema, requestDraftDiscardSchema, type RequestDraftBridge } from '../shared/requestDrafts'
 import { contextBridge, ipcRenderer } from 'electron'
@@ -283,6 +287,7 @@ export function createSottoBridge(
   renderer: IpcRendererAdapter,
   platform: SottoPlatform,
   canFrostWindow = false,
+  watcherEnabled = false,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(
     renderer,
@@ -315,6 +320,14 @@ export function createSottoBridge(
     1,
   )
   const bridge: SottoBridge = {
+    ...(watcherEnabled ? { watcher: Object.freeze<WatcherBridge>({
+      get: () => invokeParsed(renderer, WATCHER_GET, watcherRoomResultSchema),
+      open: request => invokeParsed(renderer, WATCHER_OPEN, watcherRoomResultSchema, watcherOpenRequestSchema.parse(request)),
+      prepareStopAll: () => invokeParsed(renderer, WATCHER_PREPARE_STOP_ALL, watcherPrepareStopAllResultSchema),
+      stopAll: request => invokeParsed(renderer, WATCHER_STOP_ALL, watcherStopAllResultSchema, watcherStopAllRequestSchema.parse(request)),
+      setLimit: request => invokeParsed(renderer, WATCHER_SET_LIMIT, watcherRoomResultSchema, watcherSetLimitRequestSchema.parse(request)),
+      onChanged: listener => subscribe(renderer, WATCHER_CHANGED, watcherRoomStateSchema, listener),
+    }) } : {}),
     hosts: Object.freeze<import('../shared/hosts').HostsBridge>({ get: () => renderer.invoke(HOSTS_GET) as Promise<HostsState>, command: command => renderer.invoke(HOSTS_COMMAND, hostsCommandSchema.parse(command)) as Promise<HostsState>, onChanged: listener => subscribe(renderer, HOSTS_CHANGED, trustedState<HostsState>('hosts'), listener),
       devices: () => renderer.invoke(HOSTS_DEVICES) as Promise<HostDeviceList>, tailscale: () => renderer.invoke(HOSTS_TAILSCALE) as Promise<TailscaleSummary>,
       connectTailscale: () => renderer.invoke(HOSTS_TAILSCALE_CONNECT) as Promise<TailscaleConnectOutcome>, openTailscaleDownload: () => renderer.invoke(HOSTS_TAILSCALE_DOWNLOAD) as Promise<void>,
@@ -502,7 +515,7 @@ export function exposeRendererBridge(
   const rendererRole = parseRendererRoleArgument(arguments_)
   const platform = parsePlatformArgument(arguments_)
   if (rendererRole === 'main') {
-    context.exposeInMainWorld('sotto', createSottoBridge(renderer, platform, arguments_.includes(WINDOW_FROST_ARGUMENT)))
+    context.exposeInMainWorld('sotto', createSottoBridge(renderer, platform, arguments_.includes(WINDOW_FROST_ARGUMENT), arguments_.includes(WATCHER_RENDERER_ARGUMENT)))
     return true
   }
   if (rendererRole === 'widget') {

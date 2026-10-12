@@ -1242,6 +1242,7 @@ export class CodexAppServerHost implements AgentHost {
     if (confirmation?.desired === desired) confirmation.settle(true)
   }
   async execute(command: AgentHostCommand): Promise<AgentHostResult> { return this.executeNative(command) }
+  executeFromWatcher(command: AgentHostCommand, guard: () => void): Promise<AgentHostResult> { return this.executeNative(command, guard) }
   rollbackCapability(id: string): { supported: boolean; reason?: string } {
     const alias = this.aliases[id]
     if (!alias || alias.kind === 'personal') return { supported: false, reason: 'This thread has no native Codex conversation yet.' }
@@ -1287,7 +1288,7 @@ export class CodexAppServerHost implements AgentHost {
       throw error
     } finally { this.dispatching.delete(id); this.scheduleOutdatedStop() }
   }
-  private async executeNative(command: AgentHostCommand): Promise<AgentHostResult> {
+  private async executeNative(command: AgentHostCommand, watcherGuard?: () => void): Promise<AgentHostResult> {
     const generation = this.generation
     if ('threadId' in command && command.type !== 'interrupt') {
       if (await this.checkLaunchProfile(command.threadId)) {
@@ -1338,7 +1339,7 @@ export class CodexAppServerHost implements AgentHost {
           await this.persist(); this.creating.delete(command.threadId); this.ensureThread(command.threadId); this.live.add(command.threadId); this.histories.add(command.threadId); delete this.ensureThread(command.threadId).historyStatus
           this.reaper.touch(command.threadId)
           this.watcher?.observe(response.thread.id); this.applyThread(command.threadId, response.thread); this.emit()
-        }, () => { this.creating.delete(command.threadId); this.stopSession(command.threadId) }, server)
+        }, () => { this.creating.delete(command.threadId); this.stopSession(command.threadId) }, server, watcherGuard)
       } else {
         const id = command.threadId; const alias = this.aliases[id]
         if (!alias) throw new Error('This Codex provider session is unknown.')
@@ -1418,6 +1419,7 @@ export class CodexAppServerHost implements AgentHost {
           const generation = this.generation
           let skillsRevision: number | undefined
           const validate = (): void => {
+            watcherGuard?.()
             if (generation !== this.generation || !this.state.connected) throw new Error('Codex connection changed before steering. Review this prompt.')
             if (command.skills?.length && skillsRevision !== undefined && skillsRevision !== this.skillsRevision) throw new Error('Codex skills changed before steering. Refresh skills and review the selection.')
             if (!expectedTurnId || this.runningTurns.get(id) !== expectedTurnId || thread.status !== 'running') throw new Error('The active Codex turn changed. Queue this follow-up instead.')
@@ -1453,7 +1455,7 @@ export class CodexAppServerHost implements AgentHost {
               }, () => {
                 alias.origins = alias.origins.filter(o => o !== origin)
                 this.watcher?.forget(alias.codexThreadId, origin.messageId); this.unconfirmedDispatchSessionIds.delete(id); save.start()
-              })
+              }, undefined, watcherGuard)
             } finally { await save.settled() }
           } catch (error) {
             if (error instanceof Uncertain) this.unconfirmedDispatchSessionIds.add(id)
@@ -1466,13 +1468,14 @@ export class CodexAppServerHost implements AgentHost {
           const result = answerRequest(pending, command.answer, command.approved, command.questionAnswers, command.permissionChoice)
           await this.respond(pending, result)
         } else if (command.type === 'interrupt') {
-          await this.decline(id)
+          if (!watcherGuard) await this.decline(id)
+          watcherGuard?.()
           const turnId = this.runningTurns.get(id)
           if (turnId) await this.rpc('turn/interrupt', { threadId: alias.codexThreadId, turnId }, () => {
             this.ensureThread(id).lastTurn = { id: turnId, status: 'interrupted' }
             this.activity.turn(this.ensureThread(id), { id: turnId, status: 'interrupted' }, true)
             this.terminalTurns.add(turnId); this.runningTurns.delete(id); this.ensureThread(id).status = 'idle'; this.emit()
-          })
+          }, undefined, undefined, watcherGuard)
         } else {
           validatePromptAttachments(this.state, alias.modelId, command.attachments)
           // A send the coordinator's read stands for still waits for any read of this thread in flight, which `sync`
@@ -1505,10 +1508,12 @@ export class CodexAppServerHost implements AgentHost {
             // Runtime requests arrive on the subscribed native stream. Re-read authored
             // input after persistence, before registering this prompt as our own input.
             await this.watcher?.pollThread(alias.codexThreadId)
+            watcherGuard?.()
             if (generation !== this.generation || !this.state.connected) throw new Error('Codex connection changed before sending the prompt.')
             if (command.skills?.length && skillsRevision !== this.skillsRevision) throw new Error('Codex skills changed before sending. Refresh skills and review the selection.')
             if (command.expectedLastUserMessageId !== undefined && command.expectedLastUserMessageId !== (this.log.lastUserMessageId(id) ?? null)) throw new Error('The thread changed in Codex before Sotto could reply. Review its manual control state.')
             if (this.ensureThread(id).status === 'running' || this.ensureThread(id).requests.length) throw new Error('The Codex thread started working or needs an answer before another prompt.')
+            watcherGuard?.()
           } catch (error) {
             alias.origins = alias.origins.filter(candidate => candidate !== origin); this.dispatching.delete(id)
             await this.persist(); throw error
@@ -1535,7 +1540,7 @@ export class CodexAppServerHost implements AgentHost {
                 this.watcher?.forget(alias.codexThreadId, origin.messageId)
                 this.unconfirmedDispatchSessionIds.delete(id)
                 save.start()
-              })
+              }, undefined, watcherGuard)
             } finally { await save.settled() }
           } catch (error) {
             if (!(error instanceof Rejected)) this.unconfirmedDispatchSessionIds.add(id)
@@ -1676,17 +1681,17 @@ export class CodexAppServerHost implements AgentHost {
    * Send a request to the app-server it belongs to: `target` when given, else the thread's own for a request
    * that names a thread, else the provider's. A request for a thread with no app-server has nowhere to go.
    */
-  private rpc(method: string, params: unknown, apply: RpcApply = () => undefined, onRejected?: RpcRejected, target?: CodexProcess): Promise<void> {
-    if (target) return target.rpc(method, params, apply, onRejected)
+  private rpc(method: string, params: unknown, apply: RpcApply = () => undefined, onRejected?: RpcRejected, target?: CodexProcess, beforeWrite?: () => void): Promise<void> {
+    if (target) return target.rpc(method, params, apply, onRejected, beforeWrite)
     const threadId = params !== null && typeof params === 'object' ? (params as { threadId?: unknown }).threadId : undefined
     if (typeof threadId === 'string') {
       const id = this.sessionId(threadId)
       const server = id ? this.runtimes.get(id)?.server : undefined
-      return server ? server.rpc(method, params, apply, onRejected) : Promise.reject(new Uncertain('Codex connection closed before acknowledgement.'))
+      return server ? server.rpc(method, params, apply, onRejected, beforeWrite) : Promise.reject(new Uncertain('Codex connection closed before acknowledgement.'))
     }
-    if (this.provider?.alive) return this.provider.rpc(method, params, apply, onRejected)
+    if (this.provider?.alive) return this.provider.rpc(method, params, apply, onRejected, beforeWrite)
     if (!this.state.connected || !this.executable) return Promise.reject(new Uncertain('Codex connection closed before acknowledgement.'))
-    return this.providerServer().then(server => server.rpc(method, params, apply, onRejected))
+    return this.providerServer().then(server => server.rpc(method, params, apply, onRejected, beforeWrite))
   }
   private removeRequest(id: string): void {
     const pending = this.requests.get(id)

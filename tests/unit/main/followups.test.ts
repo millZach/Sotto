@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { CheckoutSendRefusal } from '../../../src/main/agents/checkoutMutations'
 import { randomUUID } from 'node:crypto'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -66,6 +66,22 @@ async function fixture() {
 }
 const queued = (text: string, threadId = 'workshop') => ({ type: 'queue-followup' as const, threadId, draftId: randomUUID(), text })
 const complete = (host: Host, id = 'workshop') => host.update(id, { status: 'idle', lastTurn: { id: randomUUID(), status: 'completed' } })
+
+it('keeps dormant Watcher queues whole in stable with history off and omits active machine prose from disk', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'sotto-followups-')); roots.push(root)
+  const writer = new FollowupStore(root), draftId = randomUUID(), watcherOperationId = randomUUID()
+  await writer.load()
+  await writer.enqueue({ threadId: 'watcher-worker', draftId, watcherOperationId, text: 'Synthetic private queue', attachments: [] })
+  const stable = new FollowupStore(root, () => false, () => false, () => false)
+  await stable.load()
+  expect(stable.get().items).toEqual([])
+  await stable.privacyChanged()
+  expect(JSON.parse(await readFile(join(root, 'followups.json'), 'utf8')).items).toMatchObject([{ draftId, text: 'Synthetic private queue' }])
+  const owl = new FollowupStore(root, () => false)
+  await owl.load()
+  expect(owl.get().items).toEqual([])
+  expect((await readFile(join(root, 'followups.json'), 'utf8')).includes('Synthetic private queue')).toBe(false)
+})
 
 it('durably transfers exact draft ownership, edits/removes/reorders and restores skill identity across restart', async () => {
   const f = await fixture(); f.host.update('workshop', { status: 'running' })
@@ -575,4 +591,39 @@ it('says a checkout-refused manual prompt is kept and retains its durable draft'
   expect(result.threadDrafts).toContainEqual(expect.objectContaining({ draftId: command.draftId, text: command.text }))
   expect(result.deliveries).toContainEqual(expect.objectContaining({ draftId: command.draftId, status: 'failed' }))
   expect(f.host.state.threads.find(t => t.id === 'workshop')?.messages.some(m => m.text === command.text)).toBe(false)
+})
+
+
+it('history-off Owl removes private words from corrupt queues and abandoned copies without changing ordinary backups', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'sotto-followups-')); roots.push(root)
+  const writer = new FollowupStore(root); await writer.load()
+  await writer.enqueue({ threadId: 'worker', draftId: randomUUID(), watcherOperationId: randomUUID(), text: 'Synthetic private backup marker', attachments: [] })
+  await writer.enqueue({ threadId: 'ordinary', draftId: randomUUID(), text: 'Synthetic ordinary backup marker', attachments: [] })
+  const original = await readFile(join(root, 'followups.json'), 'utf8')
+  const corrupt = `followups.json.corrupt-123-${randomUUID()}`, temporary = `followups.json.tmp-123-${randomUUID()}`
+  await writeFile(join(root, corrupt), original)
+  await writeFile(join(root, temporary), original)
+  await writeFile(join(root, 'followups.json'), original.slice(0, -1))
+  const owl = new FollowupStore(root, () => false)
+  await owl.load(); await owl.privacyChanged()
+  for (const name of await readdir(root)) expect((await readFile(join(root, name), 'utf8')).includes('Synthetic private backup marker')).toBe(false)
+  expect((await readFile(join(root, corrupt), 'utf8')).includes('Synthetic ordinary backup marker')).toBe(true)
+  expect((await readFile(join(root, temporary), 'utf8')).includes('Synthetic ordinary backup marker')).toBe(true)
+  await writeFile(join(root, 'followups.json'), '{"ordinary":"Synthetic ordinary corrupt marker"')
+  await new FollowupStore(root, () => false).load()
+  const backups = await Promise.all((await readdir(root)).filter(name => name.includes('.corrupt-')).map(name => readFile(join(root, name), 'utf8')))
+  expect(backups.some(contents => contents.includes('Synthetic ordinary corrupt marker'))).toBe(true)
+})
+
+it('stable retains private corrupt copies whole until Owl owns the history-off cleanup', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'sotto-followups-')); roots.push(root)
+  const writer = new FollowupStore(root); await writer.load()
+  await writer.enqueue({ threadId: 'worker', draftId: randomUUID(), watcherOperationId: randomUUID(), text: 'Synthetic dormant private backup', attachments: [] })
+  const original = await readFile(join(root, 'followups.json'), 'utf8'), name = `followups.json.corrupt-123-${randomUUID()}`
+  await writeFile(join(root, name), original)
+  const stable = new FollowupStore(root, () => false, () => false, () => false)
+  await stable.load(); await stable.privacyChanged()
+  expect(await readFile(join(root, name), 'utf8')).toBe(original)
+  const owl = new FollowupStore(root, () => false); await owl.load()
+  expect((await readFile(join(root, name), 'utf8')).includes('Synthetic dormant private backup')).toBe(false)
 })

@@ -742,7 +742,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
     return next
   }
   async execute(command: AgentHostCommand): Promise<AgentHostResult> { return this.executeNative(command) }
-  private async executeNative(command: AgentHostCommand): Promise<AgentHostResult> {
+  executeFromWatcher(command: AgentHostCommand, guard: () => void): Promise<AgentHostResult> { return this.executeNative(command, guard) }
+  private async executeNative(command: AgentHostCommand, watcherGuard?: () => void): Promise<AgentHostResult> {
     const generation = this.generation
     if ('threadId' in command && await this.watcherProfile(command.threadId, 'modelId' in command ? command.modelId : undefined)) {
       assertWatcherPermission(command)
@@ -750,9 +751,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
     }
     if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
     // A command that ends (an answer, a stop, a dispatch let go) may leave an outdated CLI free to stop.
-    try { return await this.dispatchNative(command) } finally { this.scheduleOutdatedStop() }
+    try { return await this.dispatchNative(command, watcherGuard) } finally { this.scheduleOutdatedStop() }
   }
-  private async dispatchNative(command: AgentHostCommand): Promise<AgentHostResult> {
+  private async dispatchNative(command: AgentHostCommand, watcherGuard?: () => void): Promise<AgentHostResult> {
     if ('threadId' in command && this.aliases[command.threadId]?.kind === 'personal') throw new Error('That thread is unavailable.')
     if (!this.state.connected) throw new Error('Connect Claude Code before continuing.')
     if (command.type === 'create-project') {
@@ -767,6 +768,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       const project = this.state.projects.find(candidate => candidate.id === command.projectId)
       if (!project) throw new Error('Choose an existing project.')
       const cwd = await existingWorkingDirectory(command.workingDirectory ?? project.path)
+      watcherGuard?.()
       // A spare started for exactly this thread hands it the session ID its CLI already runs (#769); any other spare goes.
       const spare = this.spareFor(command.threadId, cwd, settingsOf(command))
       if (!spare) void this.discardSpare(command.threadId)
@@ -843,6 +845,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
           await this.sync(id); checkLatestUserMessage()
           if (thread.requests.length || this.threads.get(id)?.status === 'running') throw new Error('The Claude thread started working or needs an answer before another prompt.')
           if (this.runtimes.get(id) !== runtime) throw new Error('Claude Code stopped before this message was sent. Nothing was sent; send it again.')
+          watcherGuard?.()
         }
         catch (error) {
           alias.origins = alias.origins.filter(candidate => candidate.uuid !== origin.uuid)
@@ -873,7 +876,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
         return { accepted: true }
       } finally { this.dispatching.delete(id) }
     }
-    if (command.type === 'steer') return this.steerTurn(id, alias, thread, command, readForSend)
+    if (command.type === 'steer') return this.steerTurn(id, alias, thread, command, readForSend, watcherGuard)
     // Answering and interrupting start the session too, so a reaped thread behaves like a live one.
     let runtime: Runtime
     try { runtime = await this.start(id) }
@@ -929,7 +932,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
       await settle(); return { accepted: true }
     }
     if (command.type === 'interrupt') {
-      await this.denyPending(id, runtime)
+      if (!watcherGuard) await this.denyPending(id, runtime)
+      watcherGuard?.()
       this.interrupting.add(id)
       const stopping = thread.lastTurn
       try {
@@ -1743,7 +1747,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
    * acknowledgement, so the thread shows it from then as it shows a Codex steer. Claude reads it in at the turn's next
    * model step; one the turn ends before reading, a stop included, starts the next turn (see `steers`).
    */
-  private async steerTurn(id: string, alias: Alias, thread: AgentThread, command: Extract<AgentHostCommand, { type: 'steer' }>, readForSend: () => boolean): Promise<AgentHostResult> {
+  private async steerTurn(id: string, alias: Alias, thread: AgentThread, command: Extract<AgentHostCommand, { type: 'steer' }>, readForSend: () => boolean, watcherGuard?: () => void): Promise<AgentHostResult> {
     validatePromptAttachments(this.state, alias.modelId, command.attachments)
     if (alias.origins.some(origin => origin.messageId === command.messageId)) return this.messageLog.has(id, command.messageId) ? { accepted: true } : { accepted: false, uncertain: true }
     const runtime = this.runtimes.get(id)
@@ -1759,7 +1763,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     try {
       const { content, nativeText, origin } = await this.nativePrompt(id, command)
       await this.addOrigin(id, alias, origin)
-      try { await this.sync(id); validate() }
+      try { await this.sync(id); validate(); watcherGuard?.() }
       catch (error) { alias.origins = alias.origins.filter(candidate => candidate.uuid !== origin.uuid); await this.persist(); throw error }
       let timer: ReturnType<typeof setTimeout> | undefined
       const forget = (): void => { clearTimeout(timer); this.acknowledgements.delete(origin.uuid) }

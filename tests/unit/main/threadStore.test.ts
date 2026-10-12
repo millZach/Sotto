@@ -42,6 +42,20 @@ const conversation = (count: number): AgentMessage[] => Array.from({ length: cou
 ]).flat()
 
 describe('thread store', () => {
+  it('reads bounded forward positions independently of the pane window', async () => {
+    const f = await store()
+    f.store.appendMany('forward', conversation(4).map(message => ({ kind: 'message-added', at, message })))
+    const pane = f.store.readMessages('forward', { turns: 1 })
+    const first = f.store.readForwardMessages('forward', -1, 3)
+    expect(first.messages.map(row => row.position)).toEqual([0, 1, 2])
+    expect(first.hasMore).toBe(true)
+    expect(first.earlierAvailable).toBe(false)
+    const next = f.store.readForwardMessages('forward', 2, 3)
+    expect(next.messages.map(row => row.position)).toEqual([3, 4, 5])
+    expect(f.store.readMessages('forward', { turns: 1 })).toEqual(pane)
+    expect(f.store.readForwardMessages('forward', undefined, 2).messages.map(row => row.position)).toEqual([6, 7])
+  })
+
   it('repairs exact native aliases durably without discarding distinct content or authority', async () => {
     const f = await store()
     const canonical = { ...message('own', 'user', 'Same words'), commandId: 'sent-command' }

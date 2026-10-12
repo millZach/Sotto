@@ -10,7 +10,7 @@ Sotto is a desktop dictation app with manual coding threads across native provid
 
 **Watcher gate.** Whether Watcher is available in the running build: on for Sotto Owl, off for stable (ADR-0072). Stable shows and starts none of Watcher, including Watcher history, while keeping its saved records in main and settings whole for a return to Owl. Pane layout, focused pane and selected thread are renderer view state; stable treats a hidden Watcher as a missing thread and does not preserve or restore that view.
 
-**Watcher.** The one current native agent thread on a computer, using its provider's own tools and settings, with Sotto's bounded thread tools and a pinned asking permission mode (ADR-0073). It reads and searches natively; its own changes ask on normal request cards. Its system prompt guides coordination but grants no authority. Earlier conversations become Watcher history when its provider changes. Avoid: "command center", the old "Coordinator", "assignment", "Agents room".
+**Watcher.** The one current native agent thread on a computer, using its provider's own tools and settings, with Sotto's bounded thread tools and a pinned asking permission mode (ADR-0073). It reads and searches natively; its own changes ask on normal request cards. Its system prompt guides coordination but grants no authority. Earlier conversations become Watcher history when its provider changes. Replacement waits for its workers' in-flight slots to clear. Text-free native message heads let Owl detect takeover after a stable session. A machine Stop leaves user queues intact and waiting for review. Avoid: "command center", the old "Coordinator", "assignment", "Agents room".
 
 **Watcher history.** An earlier Watcher conversation retained for reading when its provider changes. It cannot be resumed as Watcher.
 
@@ -18,7 +18,7 @@ Sotto is a desktop dictation app with manual coding threads across native provid
 
 **Overview.** The sidebar list of all other threads in Watcher’s room, grouped by what the user must do, with source and read times. It is a projection, not a work queue or attention store; its groups are Needs you, Ready for review, Working, Landing, Quiet and Idle.
 
-**Watcher request.** A particular user instruction to Watcher, with main's identity, root user-message reference and budgets. Qualify it to distinguish it from an agent's pending question or permission request; retries and wake-ups keep its identity and budgets.
+**Watcher request.** A particular user instruction to Watcher, with main's identity, root user-message reference and budgets. Qualify it to distinguish it from an agent's pending question or permission request; retries and wake-ups keep its identity and budgets. A direct instruction to a worker ends Watcher's participation in that worker across later requests; another instruction to Watcher alone does not restore it. Explicit Queue to Watcher retains the last executed request even after Stop all, and refuses before the first actual Send. An uncertain delivery keeps its slot through takeover until reconciled.
 
 **Thread card.** A main-backed reference or receipt in Watcher's transcript opening a real thread pane. It is distinct from a request card, where the user answers the owning thread, and from a visual; it answers and approves nothing.
 
@@ -215,7 +215,7 @@ Answering a question or permission request and creating a project are also part 
 
 **Recheck.** An adapter's read of what is new in a thread just before the prompt goes out, once the send has saved what it is about to send, so input typed into the session while the send was being prepared is seen. Nothing the send waits on after it can let input in unseen: Grok's one later wait finds the thread's process already running, or cancels the send when the session was unloaded. A reply to an old last message is refused there. Claude reads the transcript and Grok the history; Codex polls its session log, in process. It is never skipped (#765). Avoid: "second read".
 
-**Takeover.** A user-authored message sent directly through the provider, outside Sotto, such as through `codex resume`. The adapter observes it without a Sotto command ID; the stale-reply check prevents an older prepared reply from being sent afterward. Opening or reading a thread is not a takeover.
+**Takeover.** The user taking direct control of a thread. Native input, such as through `codex resume`, is observed without a Sotto command ID; the stale-reply check prevents an older prepared reply from being sent afterward. On a Watcher participant, direct Sotto sends, queued instructions and stop, settle, compaction or configuration controls also fence Watcher before dispatch. Opening, reading and editing an unsent draft do not take over a thread. Answering its existing request card keeps participation.
 
 **Stale-reply check.** The adapter's refusal of a send that names a different user message as the thread's newest than the one it recorded, so a reply written before a takeover is not sent after it. The coordinator names the thread's `lastUserMessageId`, which the adapter publishes from what it recorded rather than from the window of messages it holds: a window put away while the thread's session ended and taken back up later holds none of the older messages. Each adapter words its refusal its own way, says the thread changed, and sends nothing.
 

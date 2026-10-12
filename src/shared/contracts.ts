@@ -318,6 +318,7 @@ export type OutputResult = OutputOutcome | UnavailableResult
 export type OutputDeliveryRequest = z.infer<typeof outputDeliveryRequestSchema>
 
 export interface SottoBridge {
+  readonly watcher?: import('./watcherRoom').WatcherBridge
   readonly hosts?: import('./hosts').HostsBridge
   readonly phones?: import('./phones').PhonesBridge
   readonly requestDrafts?: import('./requestDrafts').RequestDraftBridge

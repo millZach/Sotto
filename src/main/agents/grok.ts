@@ -965,7 +965,8 @@ export class GrokAcpHost implements AgentHost {
     return true
   }
   async execute(command: AgentHostCommand): Promise<AgentHostResult> { return this.executeNative(command) }
-  private async executeNative(command: AgentHostCommand): Promise<AgentHostResult> {
+  executeFromWatcher(command: AgentHostCommand, guard: () => void): Promise<AgentHostResult> { return this.executeNative(command, guard) }
+  private async executeNative(command: AgentHostCommand, watcherGuard?: () => void): Promise<AgentHostResult> {
     const generation = this.generation
     const watcherProfile = 'threadId' in command ? await this.checkLaunchProfile(command.threadId) : undefined
     this.assertGeneration(generation)
@@ -1009,6 +1010,7 @@ export class GrokAcpHost implements AgentHost {
           const mcpServers = await this.toolServers(command.threadId); const meta = await this.sessionMeta(command.threadId, alias.runtimeMode)
           this.assertGeneration(generation)
           if (this.processes.get(command.threadId) !== entry) throw new GrokUncertain('Grok thread process changed before its session could start.')
+          watcherGuard?.()
           await rpc.request('session/new', { cwd: alias.cwd, mcpServers, _meta: meta }, async value => {
             const response = z.object({ sessionId: z.string().uuid(), models: catalogSchema }).parse(value)
             alias.grokSessionId = response.sessionId; alias.nativeModelId = response.models.currentModelId; await this.persist(); this.thread(command.threadId).status = 'error'; this.emit()
@@ -1138,6 +1140,7 @@ export class GrokAcpHost implements AgentHost {
             // The turn runs on the process that holds the thread's session, and stays there to its end.
             entry = await this.threadProcess(command.threadId)
             if (generation !== this.generation || !this.state.connected || !this.activePrompts.has(command.threadId) || !this.loaded.has(command.threadId)) throw new Error('The Grok prompt was cancelled before dispatch.')
+            watcherGuard?.()
           } catch (error) {
             // No prompt was written. Rolling back this reserved origin cannot duplicate native work.
             alias.origins = alias.origins.filter(item => item !== origin); this.activePrompts.delete(command.threadId); await this.persist()
@@ -1180,11 +1183,13 @@ export class GrokAcpHost implements AgentHost {
           try { await pending.rpc.reply(pending.wireId, result); this.removeRequest(pending) }
           catch { pending.request.delivery = 'uncertain'; this.emit(); return { accepted: false, uncertain: true } }
         } else if (command.type === 'interrupt') {
-          this.activePrompts.delete(command.threadId)
-          await this.decline(command.threadId)
+          if (!watcherGuard) this.activePrompts.delete(command.threadId)
+          if (!watcherGuard) await this.decline(command.threadId)
           this.assertGeneration(generation)
           const entry = await this.threadProcess(command.threadId)
           this.assertGeneration(generation)
+          watcherGuard?.()
+          if (watcherGuard) this.activePrompts.delete(command.threadId)
           entry.rpc.write({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId: alias.grokSessionId } })
         }
       }
