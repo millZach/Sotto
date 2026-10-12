@@ -293,14 +293,26 @@ lines.on('line', async line => {
       const command = typeof frame.message.content === 'string' ? frame.message.content : ''
       const stdout = `<local-command-stdout>${script.localCommand}</local-command-stdout>`
       const lifecycle = state => { if (!script.evidence) output({ type: 'command_lifecycle', command_uuid: frame.uuid, state, uuid: randomUUID(), session_id: session }) }
-      persist({ type: 'system', subtype: 'local_command', content: command, level: 'info', uuid: randomUUID() })
-      persist({ type: 'system', subtype: 'local_command', content: stdout, level: 'info', uuid: randomUUID() })
-      lifecycle('queued'); lifecycle('started')
-      output({ type: 'assistant', uuid: randomUUID(), session_id: session, parent_tool_use_id: null, message: { id: randomUUID(), model: '<synthetic>', role: 'assistant', content: [{ type: 'text', text: script.localCommand }] },
-        local_command_source: stdout, local_command_outcome: { kind: 'unavailable_headless' } })
-      output({ type: 'result', subtype: 'success', session_id: session, is_error: false, num_turns: 0, result: script.localCommand,
-        ...(script.evidence === 'none' ? {} : { user_message_uuid: frame.uuid, user_message_uuids: [frame.uuid] }) })
-      lifecycle('completed'); return
+      const transcript = () => {
+        persist({ type: 'system', subtype: 'local_command', content: command, level: 'info', uuid: randomUUID() })
+        persist({ type: 'system', subtype: 'local_command', content: stdout, level: 'info', uuid: randomUUID() })
+        if (script.holdLocalCommandTranscript || script.holdLocalCommandStream) writeFileSync(join(root, 'local-command-transcript-written'), '')
+      }
+      const stream = () => {
+        lifecycle('queued'); lifecycle('started')
+        output({ type: 'assistant', uuid: randomUUID(), session_id: session, parent_tool_use_id: null, message: { id: script.localCommandReplyId ?? randomUUID(), model: '<synthetic>', role: 'assistant', content: [{ type: 'text', text: script.localCommand }] },
+          local_command_source: stdout, local_command_outcome: { kind: 'unavailable_headless' } })
+        output({ type: 'result', subtype: 'success', session_id: session, is_error: false, num_turns: 0, result: script.localCommand,
+          ...(script.evidence === 'none' ? {} : { user_message_uuid: frame.uuid, user_message_uuids: [frame.uuid] }) })
+        lifecycle('completed')
+      }
+      // Hold either source until the test has consumed the other, without guessing how fast the adapter runs.
+      if (script.holdLocalCommandTranscript) {
+        stream(); await released(script.holdLocalCommandTranscript); transcript()
+      } else {
+        transcript(); if (script.holdLocalCommandStream) await released(script.holdLocalCommandStream); stream()
+      }
+      return
     }
     if (script.steering && turnOpen) { steered.push(frame); lifecycleOf(frame.uuid, 'queued'); return }
     turnOpen = true
