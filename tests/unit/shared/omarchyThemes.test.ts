@@ -169,7 +169,7 @@ describe('Omarchy M3 and readability check', () => {
     // #936, which needed new design baselines on Windows.
     expect(createHash('sha256').update(JSON.stringify(BUILT_IN_THEMES)).digest('hex')).toBe('18defa9e80c06093d4ffb6fbc1f5f3984bc3bd437e06b9aa9d5028548c5c4e08')
     const tokenText = readFileSync('src/renderer/src/styles/tokens.css', 'utf8').replace(/\r\n/gu, '\n')
-    expect(createHash('sha256').update(tokenText).digest('hex')).toBe('8dcf19fbac79cb05d8a38b5212879a981bebf5a1d188be0f12e1c6a5033d12df')
+    expect(createHash('sha256').update(tokenText).digest('hex')).toBe('477d601ccf2427d2609aa53ae0aa573ff874f9f5a52d837c5ccbcfc0a82bbf3e')
     // Existing Windows and macOS imports named Omarchy remain user themes.
     expect(parseCustomThemes([{ ...parseOmarchyTheme(fixtures.themes.hackerman.rendered), id: 'omarchy' }])[0]?.id).toBe('omarchy')
   })

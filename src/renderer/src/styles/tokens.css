@@ -349,7 +349,7 @@
   --theme-contrast-target: black;
   --tt-glass-blur: 12px;
   --tt-glass-saturation: 1.14;
-  --tt-success: oklch(0.45 0.11 158);
+  --tt-success: oklch(0.445 0.11 158);
   --tt-provider-codex: #c9ced6;
   --tt-provider-claude: #e2ad80;
   --tt-provider-grok: #bfaefc;

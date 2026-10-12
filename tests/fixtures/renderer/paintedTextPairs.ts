@@ -53,6 +53,7 @@ export const PAINTED_TEXT_PAIRS: readonly PaintedTextPair[] = [
   pair('--changes-picked-remove', [...removed, picked], 'picked removed line sign'),
   // Status text, and its on-tint tones on the selection and in the bubble.
   ...each('success', [['sidebar'], ['sidebar', hover], ['surface-overlay'], ['canvas']], 'file badges, done and updated'),
+  ...each('success', [['bubble'], ['bubble', hover], ['canvas', hover]], 'Copied, on a message and in the bubble'),
   ...each('warning', [['sidebar'], ['sidebar', hover], ['surface-elevated'], ['canvas'], ['code-bg'], ['field'], [followups], [followups, hover]], 'warning text and code strings'),
   pair('warning-text', ['warning-surface'], 'warning card'),
   ...each('warning-on-tint', [['selected'], ['bubble']], 'needs you or a branch problem on the current row, a failed send'),
