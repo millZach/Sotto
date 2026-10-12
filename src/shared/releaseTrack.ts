@@ -1,9 +1,10 @@
 import { APP_NAME } from './constants'
+import { isOwlFeatureEnabled } from './owlFeatures'
 
 export type ReleaseTrack = 'stable' | 'owl'
 
-/** Watcher is preview-only until it is explicitly promoted to both tracks (ADR-0072). */
-export function isWatcherEnabled(track: ReleaseTrack): boolean { return track === 'owl' }
+/** Compatibility wrapper around the Owl feature list for Watcher branches in flight. */
+export function isWatcherEnabled(track: ReleaseTrack): boolean { return isOwlFeatureEnabled('watcher', track) }
 
 /** Owl is a versioned preview track, independent of the app's identity. */
 export function getReleaseTrack(version: string): ReleaseTrack {

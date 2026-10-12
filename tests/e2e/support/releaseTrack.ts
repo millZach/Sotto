@@ -13,11 +13,12 @@ async function removeEntry(entry: string): Promise<void> {
 
 /** Exercise Electron's real version-derived track without changing the repository manifests. */
 export async function onReleaseTrack(track: ReleaseTrack, run: () => Promise<void>): Promise<void> {
-  const before = { entry: process.env.SOTTO_E2E_MAIN_ENTRY, gate: process.env.SOTTO_WATCHER_ENABLED }
+  const before = { entry: process.env.SOTTO_E2E_MAIN_ENTRY, gate: process.env.SOTTO_WATCHER_ENABLED, features: process.env.SOTTO_OWL_FEATURES }
   let entry: string | undefined
   try {
     delete process.env.SOTTO_E2E_MAIN_ENTRY
     delete process.env.SOTTO_WATCHER_ENABLED
+    delete process.env.SOTTO_OWL_FEATURES
     if (track === 'owl') {
       entry = await mkdtemp(join(tmpdir(), 'sotto-owl-entry-'))
       await writeFile(join(entry, 'package.json'), `${JSON.stringify({ name: 'sotto-owl-e2e', version: OWL_E2E_VERSION,
@@ -30,6 +31,8 @@ export async function onReleaseTrack(track: ReleaseTrack, run: () => Promise<voi
     else process.env.SOTTO_E2E_MAIN_ENTRY = before.entry
     if (before.gate === undefined) delete process.env.SOTTO_WATCHER_ENABLED
     else process.env.SOTTO_WATCHER_ENABLED = before.gate
+    if (before.features === undefined) delete process.env.SOTTO_OWL_FEATURES
+    else process.env.SOTTO_OWL_FEATURES = before.features
     if (entry) await removeEntry(entry)
   }
 }
