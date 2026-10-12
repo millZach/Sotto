@@ -1,0 +1,21 @@
+{
+  "version": "43.1.0",
+  "packaged": false,
+  "executable": "/home/zach/Projects/Sotto/.worktrees/codex-terminal-state/node_modules/electron/dist/electron",
+  "userData": "/home/zach/Projects/Sotto/.worktrees/codex-terminal-state/.cache/c950-hjiqEA/profile",
+  "codex": "codex-cli 0.162.1",
+  "model": "GPT-6-Luna",
+  "reasoning": "low",
+  "states": [
+    "idle",
+    "working",
+    "idle"
+  ],
+  "final": {
+    "state": "idle",
+    "detection": "available",
+    "replied": true
+  },
+  "pageErrors": [],
+  "nestedPid": 2122307
+}

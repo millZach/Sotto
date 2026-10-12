@@ -180,14 +180,16 @@ export interface TerminalScreenEvidence {
   failed?: boolean
 }
 
-/** Each compatibility entry is deliberately a single checked CLI version, never an optimistic version range. */
-export const TERMINAL_SCREEN_RULES = { claude: '2.1.295', codex: '0.162.0', grok: '1.0.50' } as const
+/** Each compatibility entry names checked CLI versions, never an optimistic version range. */
+export const TERMINAL_SCREEN_RULES: Readonly<Record<TerminalProvider, readonly string[]>> = {
+  claude: ['2.1.295'], codex: ['0.162.0', '0.162.1'], grok: ['1.0.50'],
+}
 
 export class TerminalScreenRules {
   private version: string | undefined
   constructor(private readonly provider: TerminalProvider) {}
   /** Whether the CLI's own banner named the version these rules were checked against; undefined until a banner names one. */
-  get supported(): boolean | undefined { return this.version === undefined ? undefined : this.version === TERMINAL_SCREEN_RULES[this.provider] }
+  get supported(): boolean | undefined { return this.version === undefined ? undefined : TERMINAL_SCREEN_RULES[this.provider].includes(this.version) }
   read(screen: TerminalAgentScreen): TerminalScreenEvidence {
     const all = screen.logicalLines()
     const header = all.join('\n')
@@ -195,9 +197,9 @@ export class TerminalScreenRules {
       : this.provider === 'codex' ? /(?:OpenAI )?Codex\s*\(v(\d+\.\d+\.\d+)\)/u.exec(header)?.[1]
       : /Grok Build(?: \(pager\))?\s*(?:-\s*)?v?(\d+\.\d+\.\d+)/u.exec(header)?.[1]
     if (version) this.version = version
-    if (!screen.reliable || this.version !== TERMINAL_SCREEN_RULES[this.provider]) return {
+    if (!screen.reliable || this.supported !== true) return {
       detection: 'unavailable',
-      ...(this.version && this.version !== TERMINAL_SCREEN_RULES[this.provider] ? { unsupportedVersion: true } : {}),
+      ...(this.supported === false ? { unsupportedVersion: true } : {}),
       ...(!this.version && screen.reliable && all.some(line => line.trim() !== '') ? { unresolvedVersion: true } : {}),
     }
     // Native chrome cannot belong to a transcript code example. Track fences from the whole bounded screen,
@@ -241,7 +243,10 @@ export class TerminalScreenRules {
       // The native status row owns an elapsed clock and interrupt hint. Reduced motion omits its leading activity bullet.
       const work = /^(?:•\s+)?[\p{L}\p{N}][^()>\r\n]*\((?:\d+h \d{2}m \d{2}s|\d+m \d{2}s|\d+s) • esc to interrupt\)(?: • \S.*)?$/mu.test(text)
       if (work) return { detection: 'available', state: 'working', failed }
-      if (bottom.slice(-4).some(line => /^›\s*(?:Ask Codex to do anything)?$/u.test(line)) && /(?:^|\s)\? for shortcuts(?:\s+\d+% context left)?$/iu.test(bottom.at(-1) ?? '')) return { detection: 'available', state: 'idle', failed }
+      // The default model, effort and folder row can be the footer when the shortcuts hint is hidden.
+      const readyFooter = /(?:^|\s)\? for shortcuts(?:\s+\d+% context left)?(?:\s+⚠ \d+ warnings? · f2 to view)?$/iu.test(footer)
+        || /^GPT-[\p{L}\p{N}.-]+(?: (?:minimal|low|medium|high|xhigh|max))? · (?:\/|[A-Z]:[\\/]|~[\\/])\S.*$/iu.test(footer)
+      if (bottom.slice(-4).some(line => /^›\s*(?:Ask Codex to do anything)?$/u.test(line)) && readyFooter) return { detection: 'available', state: 'idle', failed }
       const prompt = /^(?:Would you like to run the following command\?|Would you like to make the following edits\?|Would you like to apply these changes\?)$/mu.test(text)
       const choices = /^(?:›\s*)?1\.\s+Yes, proceed(?:\s|$)/mu.test(text) && /^(?:›\s*)?[2-9]\.\s+No, and tell Codex .+/mu.test(text)
         && /^›\s*[1-9]\.\s+\S.+/mu.test(text)

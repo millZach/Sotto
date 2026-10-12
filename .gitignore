@@ -435,3 +435,16 @@ artifacts/linux-dictation-unreachable/*
 !artifacts/linux-dictation-unreachable/results.json
 !artifacts/linux-dictation-unreachable/paste-proof.txt
 !artifacts/linux-dictation-unreachable/notification-proof.json
+
+# Codex terminal state proof; retain only the cited captures and metadata.
+artifacts/codex-terminal-state/*
+!artifacts/codex-terminal-state/built-working.png
+!artifacts/codex-terminal-state/built-idle-1600x1000-dark.png
+!artifacts/codex-terminal-state/built-idle-1280x800-dark.png
+!artifacts/codex-terminal-state/built-idle-820x560-light.png
+!artifacts/codex-terminal-state/built-result.json
+!artifacts/codex-terminal-state/packaged-working.png
+!artifacts/codex-terminal-state/packaged-idle-1600x1000-dark.png
+!artifacts/codex-terminal-state/packaged-idle-1280x800-dark.png
+!artifacts/codex-terminal-state/packaged-idle-820x560-light.png
+!artifacts/codex-terminal-state/packaged-result.json

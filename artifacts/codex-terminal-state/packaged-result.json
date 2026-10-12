@@ -1,0 +1,23 @@
+{
+  "version": "0.1.37",
+  "packaged": true,
+  "executable": "/home/zach/Projects/Sotto/.worktrees/codex-terminal-state/.cache/codex-terminal-state/package/linux-unpacked/sotto",
+  "userData": "/home/zach/Projects/Sotto/.worktrees/codex-terminal-state/.cache/c950-Mc2ZA1/config/sotto",
+  "sourceVersion": "0.1.37",
+  "mainSha256": "86fc80d1fc7c52ebd618e2c7f05c0d88d77ef52c734dc37b50a2577f6959de84",
+  "codex": "codex-cli 0.162.1",
+  "model": "GPT-6-Luna",
+  "reasoning": "low",
+  "states": [
+    "idle",
+    "working",
+    "idle"
+  ],
+  "final": {
+    "state": "idle",
+    "detection": "available",
+    "replied": true
+  },
+  "pageErrors": [],
+  "nestedPid": 2162713
+}
