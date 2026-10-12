@@ -68,7 +68,7 @@ Escape dismisses a saved host's SSH question. While SSH is still waiting, **Answ
 
 Terminal mode keeps closed terminals on its Closed shelf until you quit. Reopen starts the same command with fresh output; Stop keeps the output readable.
 
-Terminal mode also shows what each agent is doing. **Needs you** comes first across projects, then **Working**, then other terminals by project. Answer an approval or question in the terminal itself. A turn completed out of sight says **Just finished**, with a dot and bold title, until you view it. Every pane on screen counts, focused or not; a minimised or hidden window does not. Plain shells keep **Running** and **Idle**.
+Terminal mode also shows what each agent is doing. **Needs you** comes first across projects, then **Working**, then other terminals by project. Answer an approval or question in the terminal itself. A completed turn on screen returns to **Idle**, including Codex with its default model and folder status line. A turn completed out of sight says **Just finished**, with a dot and bold title, until you view it. Every pane on screen counts, focused or not; a minimised or hidden window does not. Plain shells keep **Running** and **Idle**.
 
 A provider exiting in Terminal mode shows **Exited**, prints its exit code and leaves an interactive shell in the same folder. Close tries to reclaim a terminal's own worktree with its branch kept; folders with uncommitted work stay. All terminal surfaces prefer PowerShell 7 on Windows when it is on PATH, and use the login shell on macOS and Linux. Tools and drawer shells share 32 slots across all threads, ended shells included. After quitting, those shells return with no saved output.
 
