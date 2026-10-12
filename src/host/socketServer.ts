@@ -234,8 +234,8 @@ export async function startSocketServer(options: SocketServerOptions) {
   const shell = (peer: Peer) => {
     const original = service.shell()
     const visible = isPhonePeer(peer) ? visibleWatcherState(original, false) : original
-    const hiddenProjects = new Set([...original.host.threads.filter(thread => hiddenThread(peer, thread.id)).map(thread => thread.projectId),
-      ...isPhonePeer(peer) ? service.watcherPhoneExclusions?.().projectIds ?? [] : []])
+    const hiddenProjects = isPhonePeer(peer) ? new Set([...original.host.threads.filter(thread => hiddenThread(peer, thread.id)).map(thread => thread.projectId),
+      ...service.watcherPhoneExclusions?.().projectIds ?? []]) : new Set<string>()
     const state = hiddenProjects.size ? { ...visible, host: { ...visible.host, projects: visible.host.projects.filter(project =>
       !hiddenProjects.has(project.id) || visible.host.threads.some(thread => thread.projectId === project.id)) } } : visible
     const draft = peer.editingThreadId === peer.selectedThreadId
