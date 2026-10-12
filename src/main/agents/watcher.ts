@@ -879,7 +879,8 @@ export class WatcherService implements WatcherControlHooks {
   private listThreads(input: WatcherToolInput<'list_threads'>) {
     if (input.hostId && input.hostId !== this.hostId() || input.project && input.project.hostId !== this.hostId()) refuse('HOST_FEATURE_UNAVAILABLE', 'Remote Watcher thread reads are not available yet.')
     const state = this.options.control.shell(), record = this.record(), snapshot = this.snapshot()
-    const rows = watcherOverview({ host: snapshot }, Date.now(), this.wakes.observations).filter(row => (!input.project || row.thread.projectId === input.project.projectId)
+    const rows = watcherOverview({ host: snapshot }, Date.now(), this.wakes.observations).filter(row => (!input.hostId || (row.thread.hostId ?? this.hostId()) === input.hostId)
+      && (!input.project || row.thread.projectId === input.project.projectId)
       && (!input.group || row.group === input.group) && (input.includeSettled || !isWorkspaceThreadSettled(row.thread, state.host.projects.find(item => item.id === row.thread.projectId))))
       .map(row => { const thread = row.thread, target = { hostId: thread.hostId ?? this.hostId(), threadId: thread.id }
         return { target, title: thread.title, projectId: thread.projectId, provider: thread.providerId ?? resolveModel(state.host.models, thread.modelId)?.providerId,
@@ -899,7 +900,7 @@ export class WatcherService implements WatcherControlHooks {
     if (input.hostId && input.hostId !== this.hostId()) refuse('HOST_FEATURE_UNAVAILABLE', 'Remote Watcher projects are not available yet.')
     const state = this.options.control.shell()
     const snapshots = [state.host, ...this.remote?.hosts().flatMap(host => this.remote?.snapshot(host.hostId) ?? []) ?? []]
-    const rows = snapshots.flatMap(snapshot => snapshot.projects.filter(item => !this.reservedProject(item.path)).map(project => ({
+    const rows = snapshots.filter(snapshot => !input.hostId || (snapshot.hostId ?? this.hostId()) === input.hostId).flatMap(snapshot => snapshot.projects.filter(item => !this.reservedProject(item.path)).map(project => ({
       target: { hostId: snapshot.hostId ?? this.hostId(), projectId: project.id }, title: project.title, displayRoot: project.path,
       workers: snapshot.models.filter(model => model.ready).slice(0, 100).map(model => {
         let defaultPermission: ReturnType<WatcherService['permission']> | null = null

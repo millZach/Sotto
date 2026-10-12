@@ -480,3 +480,18 @@ it.each([
   if (first.status !== 'ok') throw new Error('start-refused')
   expect(f.socket.shell().host.threads.find(item => item.id === first.target.threadId)?.runtimeMode).toBe('approval-required')
 })
+
+
+it.each(['list_projects', 'list_threads'] as const)('applies the explicit local host filter to %s while keeping the aggregate available', async name => {
+  const f = await master()
+  expect(await f.call('start_thread', f.start())).toMatchObject({ status: 'ok' })
+  const aggregate = await f.call(name, {})
+  if (aggregate.status !== 'ok') throw new Error('list-refused')
+  const all = 'projects' in aggregate ? aggregate.projects : aggregate.rows
+  expect(all.some(item => item.target.hostId === f.pairing.hostId)).toBe(true)
+  const local = await f.call(name, { hostId: f.control.hostId()! })
+  if (local.status !== 'ok') throw new Error('list-refused')
+  const rows = 'projects' in local ? local.projects : local.rows
+  expect(rows.every(item => item.target.hostId === f.control.hostId())).toBe(true)
+  expect(rows.some(item => item.target.hostId === f.pairing.hostId)).toBe(false)
+})
