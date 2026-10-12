@@ -3,6 +3,8 @@ import { execFileSync } from 'node:child_process'
 import { closeSync, openSync, readSync } from 'node:fs'
 import { expect, it } from 'vitest'
 
+// Opening every tracked file can exceed fifteen seconds while other Windows suites use the disk.
+// The deadline is for the full repository scan; the BOM assertion and three-byte reads stay the same.
 it('keeps every tracked file free of a UTF-8 byte order mark', () => {
   const files = execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8' }).split('\0').filter(Boolean)
   const bom = Buffer.from([0xef, 0xbb, 0xbf])
@@ -22,4 +24,4 @@ it('keeps every tracked file free of a UTF-8 byte order mark', () => {
     }
   })
   expect(offenders).toEqual([])
-})
+}, 60_000)
