@@ -81,6 +81,9 @@ work=$(mktemp -d /tmp/sotto-shell-proof.XXXXXX)
 trap 'rm -rf -- "$work"' EXIT
 temporary=$(sandbox temporary "$work")
 export TMPDIR="$temporary" TMP="$temporary" TEMP="$temporary"
+# The nested shell's private D-Bus activates nothing, so no desktop portal
+# starts on it.
+bus_config=$(sandbox bus "$work")
 evidence=$work/evidence
 mkdir -m 700 "$evidence" "$evidence/raw" "$evidence/curated"
 : >"$evidence/proof.txt"
@@ -476,7 +479,7 @@ in_shell() { sandbox check "$home/.config/omarchy" || fail "linked sandbox confi
 shell_up() { in_shell omarchy-shell shell ping >/dev/null 2>&1; }
 start_shell() {
   sandbox validate "$home" "$omarchy_path" || fail "sandbox shell.json validation failed before startup"
-  scoped omarchy-shell "$work/env-shell" dbus-run-session -- quickshell -p "$omarchy_path/shell"
+  scoped omarchy-shell "$work/env-shell" dbus-run-session --config-file="$bus_config" -- quickshell -p "$omarchy_path/shell"
   wait_for 30 shell_up || fail "the nested Omarchy shell did not answer"
   sleep 2
 }
