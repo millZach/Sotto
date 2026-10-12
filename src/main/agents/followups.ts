@@ -245,7 +245,8 @@ export class FollowupStore {
       if (JSON.stringify(kept) === JSON.stringify(item.news) && item.status === 'queued') return false
       if (!kept.length) { state.items = state.items.filter(candidate => candidate !== item); return }
       Object.assign(item, { news: kept, text: word(kept), status: item.status === 'dispatching' ? 'queued' : item.status, updatedAt: new Date().toISOString() })
-      delete item.commandId; delete item.messageId; delete item.error
+      delete item.commandId; delete item.messageId
+      if (item.status === 'queued') delete item.error
     })
   }
   pause(threadId: string, error: string): Promise<void> {

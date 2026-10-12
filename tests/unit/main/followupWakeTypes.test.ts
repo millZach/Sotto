@@ -53,3 +53,24 @@ it('words, withdraws and prunes a stored queue containing both news sources', as
     await rm(directory, { recursive: true, force: true })
   }
 })
+
+it.each(['paused', 'failed'] as const)('retains a %s wake-up explanation when pruning part of its news', async status => {
+  const directory = await mkdtemp(join(tmpdir(), 'sotto-wake-types-'))
+  if (dirname(resolve(directory)) !== resolve(tmpdir()) || !directory.includes('sotto-wake-types-')) throw new Error('Unexpected fixture path')
+  try {
+    const store = new FollowupStore(directory); await store.load()
+    const news = (number: number): BabysitNews => ({ pullRequest: { number, title: 'Synthetic pull request', url: 'https://github.com/o/r/pull/' + number },
+      startedBy: 'user', head: 'head', changes: [], ended: null })
+    const word: WordWakeUp = items => queuedWakeUpText(items, { tool: true })
+    await store.queueWakeUp('thread', news(1), word); await store.queueWakeUp('thread', news(2), word)
+    const id = store.peek().items[0]!.id, error = 'Synthetic explanation for the held queue'
+    if (status === 'paused') await store.pause('thread', error)
+    else { await store.claim(id); await store.settle(id, 'failed', error) }
+    await store.pruneWakeUp(id, item => !isWatcherNews(item) && item.pullRequest.number === 2, word)
+    expect(store.peek().items[0]).toMatchObject({ id, status, error, news: [news(2)] })
+    expect(store.peek().items[0]!.text).toBe(word([news(2)]))
+    await store.resume('thread')
+    expect(store.peek().items[0]).toMatchObject({ status: 'queued' })
+    expect(store.peek().items[0]!.error).toBeUndefined()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
