@@ -5,6 +5,7 @@ import type { WatcherThreadTarget } from '../../../shared/watcher'
 import type { WatcherBridge, WatcherRoomResult, WatcherRoomState } from '../../../shared/watcherRoom'
 import { useOptionalAgents } from '../agents/AgentContext'
 import { useWatcherEnabled } from '../state/watcherFeature'
+import { useFirstMessageDelivery } from './watcherFirstMessage'
 
 /** Why the room has no state to show: main has not answered yet, or this build offers no Watcher bridge. */
 export type WatcherRoomStatus = 'loading' | 'ready' | 'unavailable'
@@ -58,7 +59,8 @@ function newer(current: WatcherRoomState | null, next: WatcherRoomState): Watche
 
 /**
  * Reads Watcher's projection from main while the Watcher gate is on, and nothing at all while it is off: no
- * read, no subscription, and every consumer sees `null`. `bridge` is the preload's, or a test's stand-in.
+ * read, no subscription, and every consumer sees `null`. `bridge` is the preload's, or a test's stand-in. It also
+ * delivers the first entry's message once Watcher exists, since it stays mounted when the room does not.
  */
 export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: WatcherBridge | undefined; readonly children: ReactNode }): ReactNode {
   const enabled = useWatcherEnabled()
@@ -87,6 +89,8 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
   const currentThreadId = current === null ? null : threadForTarget(agentState, current.target)?.id ?? null
   const watchedKey = state === null || agentState === null ? '' : JSON.stringify(watchedTargets(state).map(target => threadForTarget(agentState, target)?.id).filter(Boolean))
   const watchedThreadIds = useMemo<ReadonlySet<string>>(() => watchedKey === '' ? NONE : new Set(JSON.parse(watchedKey) as string[]), [watchedKey])
+  // A first message sent before Watcher existed goes to it from here, so leaving the room cannot lose it.
+  useFirstMessageDelivery(enabled ? agents : null, currentThreadId)
   const value = useMemo<WatcherRoom | null>(() => !enabled ? null : {
     status: !live ? 'unavailable' : answered ? 'ready' : 'loading',
     state, error, currentThreadId, watchedThreadIds, settle,

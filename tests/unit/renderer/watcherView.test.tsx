@@ -18,6 +18,7 @@ import { WatcherRoomProvider, threadForTarget } from '../../../src/renderer/src/
 import { roomView } from '../../../src/renderer/src/watcher/WatcherBeside'
 import { WatcherDock } from '../../../src/renderer/src/watcher/WatcherDock'
 import { WatcherView } from '../../../src/renderer/src/watcher/WatcherView'
+import { firstMessage } from '../../../src/renderer/src/watcher/watcherFirstMessage'
 import { agentContextFixture } from '../../fixtures/agentContext'
 import { threadsStateFixture } from '../../fixtures/agentState'
 import { openSidebarFolders } from '../../fixtures/renderer/liveAgentState'
@@ -104,7 +105,7 @@ async function paneReady(): Promise<void> {
   await screen.findByRole('meter', { name: 'Watched threads' })
 }
 
-beforeEach(() => { vi.mocked(useAgents).mockReset(); vi.mocked(useOptionalAgents).mockReset(); vi.mocked(useOptionalApp).mockReset(); localStorage.clear(); roomView.set({ besideId: null, share: 0.5 }) })
+beforeEach(() => { vi.mocked(useAgents).mockReset(); vi.mocked(useOptionalAgents).mockReset(); vi.mocked(useOptionalApp).mockReset(); localStorage.clear(); roomView.set({ besideId: null, share: 0.5 }); firstMessage.clear() })
 afterEach(() => { cleanup(); localStorage.clear(); sessionStorage.clear() })
 
 describe("Watcher's room", () => {
@@ -136,6 +137,59 @@ describe("Watcher's room", () => {
     bridge.open.mockResolvedValueOnce({ status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: 'Claude Code is not connected. Nothing was started.', retryable: true })
     setPromptText(await screen.findByRole('textbox', { name: 'Watcher message' }), 'Start the release checks.')
     fireEvent.click(screen.getByRole('button', { name: 'Start Watcher and send' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Claude Code is not connected. Nothing was started.')
+    expect(promptText(screen.getByRole('textbox', { name: 'Watcher message' }))).toBe('Start the release checks.')
+    expect(screen.getByRole('button', { name: 'Start Watcher and send' })).toBeEnabled()
+    expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'manual-send' }))
+  })
+
+  it('keeps the first message when the room is left while Watcher starts, and sends it to Watcher once', async () => {
+    mockApp('watcher')
+    const command = mockAgents(stateWithWatcher())
+    const { bridge, publish } = fakeBridge(roomState({ current: null, currentOptions: null, watchedThreads: [], requests: [], inFlight: 0 }))
+    let answer: (result: WatcherRoomResult) => void = () => undefined
+    bridge.open.mockImplementationOnce(() => new Promise<WatcherRoomResult>(resolve => { answer = resolve }))
+    const tree = (room: boolean) => <React.StrictMode><WatcherRoomProvider bridge={bridge}><SidebarChromeProvider updateControl={null}>
+      {room ? <WatcherView now={NOW} /> : <p>Threads</p>}
+    </SidebarChromeProvider></WatcherRoomProvider></React.StrictMode>
+    const view = render(tree(true))
+    setPromptText(await screen.findByRole('textbox', { name: 'Watcher message' }), 'Keep an eye on the footer links.')
+    fireEvent.click(screen.getByRole('button', { name: 'Start Watcher and send' }))
+    await waitFor(() => expect(bridge.open).toHaveBeenCalledTimes(1))
+    // Leaving for another room while main creates Watcher, then coming back before it answers: still starting.
+    view.rerender(tree(false))
+    view.rerender(tree(true))
+    expect(await screen.findByText('Starting Watcher…')).toBeInTheDocument()
+    expect(promptText(screen.getByRole('textbox', { name: 'Watcher message' }))).toBe('Keep an eye on the footer links.')
+    expect(screen.getByRole('button', { name: 'Start Watcher and send' })).toBeDisabled()
+    // Away again when main answers: the message goes to the new Watcher all the same.
+    view.rerender(tree(false))
+    await act(async () => { answer({ status: 'ok', state: roomState() }) })
+    await waitFor(() => expect(command).toHaveBeenCalledWith(expect.objectContaining({ type: 'manual-send', threadId: 'watcher', text: 'Keep an eye on the footer links.' })))
+    // Back in the room, later projections and a fresh mount send nothing more.
+    view.rerender(tree(true))
+    await paneReady()
+    act(() => publish(roomState({ observedAt: new Date(NOW + 1_000).toISOString() })))
+    expect(command.mock.calls.filter(([request]) => request.type === 'manual-send')).toHaveLength(1)
+    expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'select-thread' }))
+  })
+
+  it('shows a refusal that came while the room was left, with the message still in the composer', async () => {
+    mockApp('watcher')
+    const command = mockAgents(stateWithWatcher())
+    const { bridge } = fakeBridge(roomState({ current: null, currentOptions: null, watchedThreads: [], requests: [], inFlight: 0 }))
+    let answer: (result: WatcherRoomResult) => void = () => undefined
+    bridge.open.mockImplementationOnce(() => new Promise<WatcherRoomResult>(resolve => { answer = resolve }))
+    const tree = (room: boolean) => <WatcherRoomProvider bridge={bridge}><SidebarChromeProvider updateControl={null}>
+      {room ? <WatcherView now={NOW} /> : <p>Threads</p>}
+    </SidebarChromeProvider></WatcherRoomProvider>
+    const view = render(tree(true))
+    setPromptText(await screen.findByRole('textbox', { name: 'Watcher message' }), 'Start the release checks.')
+    fireEvent.click(screen.getByRole('button', { name: 'Start Watcher and send' }))
+    await waitFor(() => expect(bridge.open).toHaveBeenCalledTimes(1))
+    view.rerender(tree(false))
+    await act(async () => { answer({ status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: 'Claude Code is not connected. Nothing was started.', retryable: true }) })
+    view.rerender(tree(true))
     expect(await screen.findByRole('alert')).toHaveTextContent('Claude Code is not connected. Nothing was started.')
     expect(promptText(screen.getByRole('textbox', { name: 'Watcher message' }))).toBe('Start the release checks.')
     expect(screen.getByRole('button', { name: 'Start Watcher and send' })).toBeEnabled()

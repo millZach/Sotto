@@ -17,12 +17,12 @@ import { OwlRoomSky } from '../agents/OwlSky'
 import { useClock } from '../agents/paneGrid'
 import { PromptEditor, type PromptEditorElement } from '../agents/PromptEditor'
 import { useShared } from '../agents/stateSharing'
-import { sendThreadRevision } from '../agents/ThreadComposer'
 import { describeThreads, providerKey, type ThreadRow } from '../agents/threadFacts'
 import { effortChoices, WatcherPermission } from '../agents/ThreadOptions'
 import { ThreadPane } from '../agents/ThreadPane'
 import { useWatcherRoom, type WatcherRoom } from './watcherRoom'
 import { BESIDE_PANE_ID, BesideDivider, BesidePane, roomView, shownShare, useRoomView } from './WatcherBeside'
+import { firstMessage, useFirstMessage } from './watcherFirstMessage'
 import { WatcherDock } from './WatcherDock'
 import { WatcherGlance } from './WatcherGlance'
 import { overviewCount, useOverview, WatcherOverviewList, type OpenThread, type OverviewEntry } from './WatcherOverview'
@@ -136,38 +136,30 @@ function WatcherHeader({ room, limit, count, listOpen, listButton, onToggleList 
  * The first time: the room as it will be, with Watcher's composer ready (Zach's pick on October 11, 2026). The user
  * picks one of their own Codex, Claude Code or Grok Build models in the composer and sends what they want done first;
  * that send asks main to create Watcher, selecting nothing anywhere, and the message then goes to it as its first. A
- * refusal is said in main's own words and the message stays in the composer.
+ * refusal is said in main's own words and the message stays in the composer. What it holds is the window's
+ * (`firstMessage`), so leaving the room and coming back finds it as it was, starting included.
  */
-function WatcherFirstEntry({ state, room, onStarted }: {
-  readonly state: AgentState
-  readonly room: WatcherRoom
-  /** Main created Watcher: the message to send it as soon as its thread is in the window. */
-  readonly onStarted: (message: string) => void
-}): ReactNode {
+function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readonly room: WatcherRoom }): ReactNode {
   const app = useOptionalApp()
   const models = useMemo(() => state.host.models.filter(model => model.ready !== false && watcherProviderOf(model) !== null), [state.host.models])
-  const [modelId, setModelId] = useState('')
+  const { text, modelId, effort, phase, error } = useFirstMessage()
   const model = models.find(item => item.id === modelId) ?? models[0]
-  const [effort, setEffort] = useState<string | null>(null)
   const reasoning = effort ?? model?.defaultReasoningEffort ?? ''
   const efforts = effortChoices(model, reasoning)
-  const [text, setText] = useState('')
-  const [starting, setStarting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const starting = phase !== 'writing'
   const field = useRef<PromptEditorElement | null>(null)
   const provider = model === undefined ? null : watcherProviderOf(model)
   const ready = model !== undefined && provider !== null && room.open !== null && !starting
   const canSend = ready && text.trim() !== ''
   const start = async (): Promise<void> => {
     if (!canSend || model === undefined || provider === null || room.open === null) return
-    setStarting(true); setError(null)
+    firstMessage.update({ phase: 'starting', error: null })
+    // Main's answer is kept by the window, not here: the room may be gone by the time it comes.
     try {
       const refusal = room.settle(await room.open({ provider, modelId: model.id, ...(reasoning ? { reasoningEffort: reasoning } : {}) }))
-      if (refusal !== null) { setError(refusal); setStarting(false); return }
-      onStarted(text.trim())
+      firstMessage.update(refusal === null ? { phase: 'started' } : { phase: 'writing', error: refusal })
     } catch {
-      setError('Sotto could not start Watcher. Nothing was started, and your message is still here. Try again.')
-      setStarting(false)
+      firstMessage.update({ phase: 'writing', error: 'Sotto could not start Watcher. Nothing was started, and your message is still here. Try again.' })
     }
   }
   const providerName = provider === null ? null : PROVIDER_LABELS[provider]
@@ -191,7 +183,7 @@ function WatcherFirstEntry({ state, room, onStarted }: {
       <form className="thread-prompt" onSubmit={event => { event.preventDefault(); void start() }}>
         <PromptEditor fieldRef={field} id={WATCHER_PROMPT_ID} text={text} skills={[]} sigils={[]} label="Watcher message" editable={!starting}
           placeholder="Say what to start or check. Sending starts Watcher."
-          onChange={next => setText(next)}
+          onChange={next => firstMessage.update({ text: next })}
           onKeyDown={event => {
             if (event.key !== 'Enter' || event.shiftKey || event.altKey || event.nativeEvent.isComposing) return
             event.preventDefault()
@@ -202,8 +194,8 @@ function WatcherFirstEntry({ state, room, onStarted }: {
           <div className="thread-prompt__meta">
             <div className="thread-options-bar">
               <div className="thread-options thread-options--chips" role="group" aria-label="Watcher’s model">
-                <ModelPicker models={models} modelId={model.id} disabled={starting} onChange={id => { setModelId(id); setEffort(null) }} />
-                {efforts.length > 0 ? <EffortPicker key={model.id} value={reasoning} options={efforts} disabled={starting} onChange={setEffort}
+                <ModelPicker models={models} modelId={model.id} disabled={starting} onChange={id => firstMessage.update({ modelId: id, effort: null })} />
+                {efforts.length > 0 ? <EffortPicker key={model.id} value={reasoning} options={efforts} disabled={starting} onChange={value => firstMessage.update({ effort: value })}
                   defaultValue={model.defaultReasoningEffort} modelName={model.name} /> : null}
                 <WatcherPermission />
               </div>
@@ -226,30 +218,22 @@ function WatcherFirstEntry({ state, room, onStarted }: {
 
 /**
  * The current Watcher's real thread pane: its transcript, its request cards and its composer, under Watcher's header
- * and the needs-you line. A message written before Watcher existed goes to it through the composer's own send, once
- * its thread is in the window.
+ * and the needs-you line. The first entry's message reaches it from the room provider (`useFirstMessageDelivery`).
  */
-function WatcherPane({ state, row, header, error, focused, now, firstMessage, onFirstSent }: {
+function WatcherPane({ state, row, header, error, focused, now }: {
   readonly state: AgentState
   readonly row: ThreadRow
   readonly header: ReactNode
   readonly error: string | null
   readonly focused: boolean
   readonly now: number | undefined
-  readonly firstMessage: string | null
-  readonly onFirstSent: () => void
 }): ReactNode {
   const agents = useAgents()
-  const sent = useRef<string | null>(null)
-  useEffect(() => {
-    if (firstMessage === null || sent.current === row.thread.id) return
-    sent.current = row.thread.id
-    onFirstSent()
-    agents.threadDrafts.edit(row.thread.id, { text: firstMessage })
-    void sendThreadRevision(agents.threadDrafts, row, agents.command, performance.now())
-    // The first-entry composer had focus and is gone; Watcher's own composer takes it.
-    window.setTimeout(() => { if (document.activeElement === null || document.activeElement === document.body) document.getElementById(WATCHER_PROMPT_ID)?.focus() }, 0)
-  }, [firstMessage, row, agents.threadDrafts, agents.command, onFirstSent])
+  // The first entry's composer had focus and is gone, or the room opened before Watcher's thread arrived: focus left
+  // with nowhere to be goes to Watcher's own composer.
+  useLayoutEffect(() => {
+    if (document.activeElement === null || document.activeElement === document.body) document.getElementById(WATCHER_PROMPT_ID)?.focus()
+  }, [])
   return <ThreadPane row={row} state={state} command={agents.command} store={agents.threadDrafts} focused={focused} promptId={WATCHER_PROMPT_ID}
     error={error} now={now} watcherHeader={header} />
 }
@@ -300,7 +284,6 @@ export function WatcherView({ now: fixedNow, updateControl }: {
   const opener = useRef<HTMLElement | null>(null)
   const pendingFocus = useRef<{ readonly threadId: string; readonly atRequest: boolean } | null>(null)
   const [focusedPane, setFocusedPane] = useState<'watcher' | 'beside'>('watcher')
-  const [firstMessage, setFirstMessage] = useState<string | null>(null)
   const area = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
 
@@ -382,10 +365,10 @@ export function WatcherView({ now: fixedNow, updateControl }: {
   if (room === null || room.status === 'unavailable') watcherContent = status('This build cannot reach Watcher yet. Nothing was started. A later Sotto Owl build adds it.')
   else if (state === null || room.status === 'loading') watcherContent = status(agents.error ?? 'Opening Watcher…')
   else if (room.error !== null && room.state === null) watcherContent = status(room.error, true)
-  else if (current === null) watcherContent = <>{header}<WatcherFirstEntry state={state} room={room} onStarted={setFirstMessage} /></>
+  else if (current === null) watcherContent = <>{header}<WatcherFirstEntry state={state} room={room} /></>
   else if (watcherRow === undefined) watcherContent = status('Opening Watcher…')
   else watcherContent = <WatcherPane state={state} row={watcherRow} header={header} error={focusedPane === 'watcher' || besideRow === undefined ? error : null}
-    focused={focusedPane === 'watcher' || besideRow === undefined} now={fixedNow} firstMessage={firstMessage} onFirstSent={() => setFirstMessage(null)} />
+    focused={focusedPane === 'watcher' || besideRow === undefined} now={fixedNow} />
 
   const beside = besideRow !== undefined && state !== null
   const share = shownShare(width, view.share)
