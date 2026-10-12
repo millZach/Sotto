@@ -79,6 +79,8 @@ it('admits a paired phone origin without Can answer, keeps the computer defaults
   const sent = await peer.call('send', packet)
   expect(watcherPhoneSendResultSchema.parse(sent.result)).toMatchObject({ status: 'ok' })
   expect(f.watcher.state().requests.at(-1)?.phoneOrigin).toEqual(packet.request.origin)
+  expect(f.phone.state(false).conversation.messages[0]?.text).toBe(packet.request.text)
+  expect(f.native(f.target.threadId).messages[0]?.text).toContain('[Sotto Watcher request:')
   expect(await peer.call('receipt', { op: 'receipt', commandId: 'send' })).toMatchObject({ ok: true, result: { status: 'completed' } })
   expect(f.phone.state(false).draftDeliveries).toEqual(expect.arrayContaining([{ draftId: packet.request.draftId, status: 'accepted' }]))
   const roots = f.watcher.state().requests.length
@@ -89,6 +91,15 @@ it('admits a paired phone origin without Can answer, keeps the computer defaults
   expect(await peer.call('wrong-host', { ...packet, request: { ...packet.request, origin: { ...packet.request.origin, hostId: randomUUID() } } })).toMatchObject({ ok: true, result: { status: 'refused' } })
   expect(await peer.call('retired', { ...packet, request: { ...packet.request, target: worker } })).toMatchObject({ ok: true, result: { status: 'refused', code: 'TARGET_CHANGED' } })
   expect(await peer.call('generic', { op: 'command', command: { type: 'manual-send', threadId: f.target.threadId, text: 'Synthetic forged generic' } })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
+})
+
+it('does not attach an old receipt to an assistant reply after a later user instruction', async () => {
+  const f = await fixture(), peer = await f.pair(); await peer.call('first', f.send(peer.paired.clientId)); await f.start()
+  const firstRequest = f.watcher.state().requests.at(-1)!.id
+  await f.finish(f.target.threadId); await peer.call('second', f.send(peer.paired.clientId, randomUUID(), 'Synthetic later instruction'))
+  f.native(f.target.threadId).messages.push({ id: 'later-reply', role: 'assistant', text: 'Synthetic later reply', createdAt: new Date(Date.now() + 1_000).toISOString() })
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect(f.phone.state(false).receiptGroups.find(row => row.requestId === firstRequest)?.replyMessageId).toBeNull()
 })
 
 it('uses the computer default even when the phone cannot answer and refuses a Watcher send that would answer a card', async () => {

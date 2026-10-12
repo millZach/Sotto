@@ -1,7 +1,7 @@
 import type { AgentCommand, AgentThread } from '../../shared/agents'
 import { watcherPhoneStateSchema, type WatcherPhoneState, type WatcherPhoneSend, type WatcherPhoneResult,
   type WatcherPhoneSendResult, type WatcherPhonePrepareStopResult, type WatcherPhoneStopResult } from '../../shared/watcherPhone'
-import { watcherRefusal, type WatcherService } from './watcher'
+import { watcherRefusal, watcherGuidancePrefix, WATCHER_GUIDANCE_SUFFIX, type WatcherService } from './watcher'
 import type { AgentControl } from './control'
 import type { ClientIdentity } from './hostService'
 
@@ -15,8 +15,13 @@ export class WatcherPhoneService {
       (row.hostId ?? snapshot.hostId) === target.hostId && row.id === target.threadId)
     const current = room.current && thread(room.current.target)
     const detail = current ? this.control.threadDetail(current.id) : null
-    const messages = (detail?.messages ?? []).slice(-200).map(message => ({ id: message.id, role: message.role,
-      text: message.text, createdAt: message.createdAt }))
+    const messages = (detail?.messages ?? []).slice(-200).map(message => {
+      const request = message.role === 'user' ? room.requests.find(row => row.rootUserMessageId === message.id
+        || row.userFollowups?.some(followup => followup.messageId === message.id)) : undefined
+      const footer = request ? message.text.lastIndexOf(`\n\n${watcherGuidancePrefix(request.id, request.watcher.hostId)}`) : -1
+      const text = footer >= 0 && message.text.endsWith(WATCHER_GUIDANCE_SUFFIX) ? message.text.slice(0, footer) : message.text
+      return { id: message.id, role: message.role, text, createdAt: message.createdAt }
+    })
     const receiptGroups: WatcherPhoneState['receiptGroups'] = []
     for (const operation of room.receipts.slice(-500)) {
       const request = room.requests.find(row => row.id === operation.requestId)
@@ -24,7 +29,11 @@ export class WatcherPhoneService {
       // Use the retained conversation's actual assistant message at this operation's time. Missing history
       // stays an unattached receipt; a root user-message reference is never presented as an assistant reply.
       const rootIndex = messages.findIndex(message => message.id === request.rootUserMessageId)
-      const replies = rootIndex < 0 ? [] : messages.slice(rootIndex + 1).filter(message => message.role === 'assistant')
+      const tail = rootIndex < 0 ? [] : messages.slice(rootIndex + 1)
+      const nextUser = tail.findIndex(message => message.role === 'user' && message.createdAt > operation.createdAt)
+      const window = nextUser < 0 ? tail : tail.slice(0, nextUser)
+      const lastUser = window.findLastIndex(message => message.role === 'user')
+      const replies = window.slice(lastUser + 1).filter(message => message.role === 'assistant')
       const reply = replies.findLast(message => message.createdAt <= operation.createdAt)
         ?? replies.find(message => message.createdAt >= operation.createdAt)
       const replyMessageId = reply?.id ?? null
