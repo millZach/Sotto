@@ -618,3 +618,37 @@ it('keeps independent paired GitHub facts on their host and replaces only the ch
   expect(facts().some(fact => fact.githubAutoMergeEnabled === true)).toBe(true)
   expect(f.delivered.flatMap(news => news.events).every(event => event.target.hostId === remoteHost)).toBe(true)
 })
+
+it('supersedes partially restored paired news only when a known owning-host fact changes', async () => {
+  const f = fixture(false), remoteHost = '55555555-5555-4555-8555-555555555555'
+  const target = { hostId: remoteHost, threadId: f.thread.id }, owner = new WatcherEvidenceStore()
+  f.thread.status = 'idle'; f.thread.lastTurn = undefined
+  f.thread.hostId = remoteHost
+  f.record.requests[0]!.participants[0]!.target = target
+  f.snapshot.threads.unshift({ ...f.thread, hostId: centerTarget.hostId })
+  const capture = { threadId: f.thread.id, checkpointId: 'retained-capture', observedAt: new Date(f.now()).toISOString(), availability: 'available' as const, changedFiles: 1 }
+  owner.checkpoint(target, capture)
+  owner.pullRequest(target, { url: 'https://github.com/o/r/pull/1', head: 'head', observedAt: capture.observedAt, availability: 'available', checks: 'passed' })
+  f.wakes.start(); f.wakes.pairedEvidence(remoteHost, owner.read(target, true, f.now())); await f.advance(2_000)
+  const saved = f.delivered[0]!.events.find(event => event.kind === 'evidence-changed')!
+  f.wakes.close()
+  const deliver = vi.fn<(news: WatcherNews) => Promise<void>>(async () => undefined)
+  const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, canDeliver: () => true, now: f.now,
+    restoredEvents: () => f.delivered.flatMap(news => news.events), deliver, remember: async () => undefined,
+    prune: async () => undefined, schedule: callback => { callback(); return () => undefined } })
+  cleanups.push(() => recovered.close())
+  recovered.start()
+  recovered.restoreCheckpoint(capture)
+  expect(recovered.evidence.read(centerTarget)).toEqual([])
+  expect(recovered.due(saved)).toBe(true)
+  recovered.pairedEvidence(remoteHost, owner.read(target, true, f.now()).filter(fact => fact.source === 'checkpoint'))
+  await recovered.drained()
+  expect(recovered.due(saved)).toBe(true)
+  expect(deliver).not.toHaveBeenCalled()
+  owner.checkpoint(target, { ...capture, checkpointId: 'new-capture', changedFiles: 2 })
+  recovered.pairedEvidence(remoteHost, owner.read(target, true, f.now()).filter(fact => fact.source === 'checkpoint'))
+  await recovered.drained()
+  expect(recovered.due(saved)).toBe(false)
+  expect(deliver).toHaveBeenCalledTimes(1)
+  expect(deliver.mock.calls[0]![0].events.every(event => event.target.hostId === remoteHost)).toBe(true)
+})

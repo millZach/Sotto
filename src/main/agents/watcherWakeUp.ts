@@ -272,12 +272,14 @@ export class WatcherWakeUp {
   }
   pairedEvidence(hostId: string, facts: readonly WatcherEvidence[]): void {
     if (!this.started || this.closed) return
-    const changed = new Map<string, WatcherThreadTarget>()
+    const changed = new Map<string, WatcherThreadTarget>(), before = new Map<string, string[]>()
     for (const fact of facts) {
       if (fact.target.hostId !== hostId) continue
-      if (this.evidence.paired(fact)) changed.set(targetKey(fact.target), fact.target)
+      const key = targetKey(fact.target)
+      if (!before.has(key)) before.set(key, this.knownEvidenceIds(fact.target))
+      if (this.evidence.paired(fact)) changed.set(key, fact.target)
     }
-    for (const target of changed.values()) this.evidenceChanged(target)
+    for (const [key, target] of changed) this.evidenceChanged(target, before.get(key))
   }
   pullRequest(read: PullRequestObservation): void {
     if (this.closed) return
