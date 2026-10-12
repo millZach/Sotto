@@ -49,13 +49,13 @@ The agent also noted that a save inserts a notice above the page and pushes the 
 
 ## Gates
 
-Run on forge with Node 24.21.0, from this branch before it was committed.
+Run on forge with Node 24.21.0: before the first commit, and typecheck, lint, notices and the suite again after the review fixes.
 
 | Gate | Result |
 | --- | --- |
 | `npm run typecheck` | PASS |
 | `npm run lint` | PASS |
-| `npm test -- --maxWorkers=2` | PASS, 779 files and 9,800 tests; 55 files and 194 tests skipped |
+| `npm test -- --maxWorkers=2` | PASS before review, 779 files and 9,800 tests; 55 files and 194 tests skipped. After the review fixes, 9,799 passed and 1 failed: `tests/integration/watcherTools.test.ts` › "refunds a queued prompt after a definite reconciled failure exactly once" (`promptCount` 0, expected 1). That file failed 3 of 5 runs alone on this branch and 4 of 5 on `main` at `e1b3225e`; it is a Watcher flake this change does not touch. |
 | `npm run notices:verify` | PASS, 189 components |
 | `npm run build`, then the built `out/` externals against `scripts/release-external-dependencies.mjs` | PASS: main imports only reviewed names, dynamic imports `node-pty` and `sherpa-onnx-node`, preload `electron`; `package.json` and the lockfile unchanged |
 | Linux specs in the nested desktop: `linux-platform-profile`, `linux-dictation-command`, `linux-shell-plumbing`, `linux-settings-copy` | PASS, 8 of 8 ([log](../../artifacts/linux-settings-copy/linux-specs-proof.txt)) |
