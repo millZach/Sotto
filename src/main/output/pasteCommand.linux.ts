@@ -4,7 +4,7 @@ import type { PasteInvocation } from './pasteCommand'
 import type { PasteProcessAdapter } from './outputService'
 import { PASTE_PROCESS_TIMEOUT_MS } from './outputService'
 
-export const HYPRLAND_KEY_HOLD_MS = 50
+export const LINUX_PASTE_KEY_HOLD_MS = 50
 export const MODIFIER_RELEASE_POLL_MS = 25
 export const MODIFIER_RELEASE_WAIT_MS = 300
 
@@ -38,19 +38,19 @@ export function hyprlandPasteChord(activeWindow: unknown): { mods: 'CTRL' | 'SHI
 }
 
 export function buildHyprlandKeyInvocation(chord: ReturnType<typeof hyprlandPasteChord>): PasteInvocation {
+  // Named Hyprland dispatchers resolve against the last keyboard's keymap.
+  // wtype supplies a matching map for this chord, including after a minimal
+  // virtual keyboard. Raw codes alone can be accepted but interpreted wrongly.
+  const modifier = chord.mods === 'CTRL' ? 'ctrl' : 'shift'
+  const key = chord.key === 'V' ? 'v' : 'Insert'
   return {
-    executable: 'hyprctl',
-    args: ['eval', [
-      `hl.dispatch(hl.dsp.send_key_state({ mods = "${chord.mods}", key = "${chord.key}", state = "down" }))`,
-      'hl.timer(function()',
-      `  hl.dispatch(hl.dsp.send_key_state({ mods = "${chord.mods}", key = "${chord.key}", state = "up" }))`,
-      `end, { timeout = ${HYPRLAND_KEY_HOLD_MS}, type = "oneshot" })`,
-    ].join('\n')],
+    executable: 'wtype',
+    args: ['-M', modifier, '-P', key, '-s', String(LINUX_PASTE_KEY_HOLD_MS), '-p', key, '-m', modifier],
   }
 }
 
 const execute = promisify(execFile)
-export async function runHyprctl(invocation: PasteInvocation, timeoutMs = PASTE_PROCESS_TIMEOUT_MS): Promise<string> {
+export async function runLinuxPasteCommand(invocation: PasteInvocation, timeoutMs = PASTE_PROCESS_TIMEOUT_MS): Promise<string> {
   const { stdout } = await execute(invocation.executable, [...invocation.args], {
     shell: false, encoding: 'utf8', timeout: Math.max(1, Math.ceil(timeoutMs)), maxBuffer: 256 * 1024,
   })
@@ -58,7 +58,7 @@ export async function runHyprctl(invocation: PasteInvocation, timeoutMs = PASTE_
 }
 
 export function createHyprlandPasteAdapter(
-  run: (invocation: PasteInvocation, timeoutMs?: number) => Promise<string> = runHyprctl,
+  run: (invocation: PasteInvocation, timeoutMs?: number) => Promise<string> = runLinuxPasteCommand,
   delay: (milliseconds: number) => Promise<void> = ms => new Promise(resolve => setTimeout(resolve, ms)),
   now: () => number = () => performance.now(),
   copyToPrimary: () => Promise<void> = async () => { throw new Error('Primary selection unavailable') },
@@ -97,10 +97,10 @@ export function createHyprlandPasteAdapter(
         const chord = hyprlandPasteChord(activeWindow)
         if (chord.mods === 'SHIFT') await copyToPrimary()
         // Modifier polling and target lookup can outlast the initial lock check.
-        // The compositor owns the release timer even if this request loses its reply.
-        // Keep the lock recheck immediately before the single down/up request.
+        // Keep the lock recheck immediately before the self-contained chord.
         if (JSON.parse(await run({ executable: 'hyprctl', args: ['locked', '-j'] })).locked !== false) return false
-        return await run(buildHyprlandKeyInvocation(chord)) === 'ok'
+        await run(buildHyprlandKeyInvocation(chord))
+        return true
       } catch {
         return false
       }

@@ -35,7 +35,7 @@ import { SegmentedControl } from '../../components/SegmentedControl'
 import { Toggle } from '../../components/Toggle'
 import { SpeechModelStatus as SpeechModelStatusView } from '../../components/SpeechModelStatus'
 import { SPEECH_MODEL, type SpeechModelStatus } from '../../../../shared/speechModel'
-import { platformCopy } from '../../platformCopy'
+import { LINUX_BINDINGS_GUIDE_URL, platformCopy } from '../../platformCopy'
 import { OpenRouterKeyField } from '../../components/OpenRouterKeyField'
 import { AgentSetupFields } from '../../agents/AgentAccountSettings'
 import { ProvidersSettings } from '../../agents/ProvidersSettings'
@@ -391,6 +391,11 @@ export function SettingsView({
     }
   }
 
+  const openBindingsGuide = async (): Promise<void> => {
+    const result = await window.sotto?.openExternalLink?.(LINUX_BINDINGS_GUIDE_URL).catch(() => null)
+    if (result?.ok !== true) setNotice({ text: `The setup steps could not open in your browser. They are at ${LINUX_BINDINGS_GUIDE_URL}`, error: true })
+  }
+
   const selectSection = (id: SettingsSectionId): void => {
     if (id !== 'settings-capture') stopMicrophoneTest()
     setActiveSection(id)
@@ -491,6 +496,8 @@ export function SettingsView({
                     {platform === 'linux' ? <div className="tt-field">
                       <p className="tt-field__label">Compositor bindings</p>
                       <p className="tt-field__description">{copy.settingsGlobalShortcutDescription}</p>
+                      {/* Sotto never writes Hyprland's files; the steps are the user's to follow. */}
+                      <Button variant="secondary" aria-label="Open setup steps in your browser" onClick={() => void openBindingsGuide()}>Open setup steps<ArrowUpRight size={15} aria-hidden="true" /></Button>
                     </div> : <Field label="Global shortcut" description={copy.settingsGlobalShortcutDescription}>
                       <input className="tt-input" value={hotkeyDraft.value} onBlur={() => void saveHotkey()} onChange={(event) => {
                         const value = event.currentTarget.value
@@ -589,7 +596,11 @@ export function SettingsView({
                   <Toggle label="Remove a worktree once its commits are in the default branch" checked={settings.worktreeCleanup.unchanged} onCheckedChange={checked => void save({ worktreeCleanup: { unchanged: checked } })} description="Checked against the local copy of the repository's default branch, once an hour." />
                   <Toggle label="Remove a worktree when its pull request is merged" checked={settings.worktreeCleanup.merged} onCheckedChange={checked => void save({ worktreeCleanup: { merged: checked } })} description="Once an hour, asks GitHub through gh, on your own sign-in, whether the worktree's branch has a merged pull request." />
                   <ProjectThreadDefaults settings={settings} onSave={save} />
-                  <Toggle label="Show floating widget when idle" checked={settings.showWidgetWhenIdle} onCheckedChange={(checked) => void save({ showWidgetWhenIdle: checked })} description="Keep the small dictation sliver on screen between sessions. Click it to dictate." />
+                  {/* While Omarchy's shell pill stands in for the widget, the switch would change nothing anyone can see. */}
+                  <Toggle label="Show floating widget when idle" checked={settings.showWidgetWhenIdle} onCheckedChange={(checked) => void save({ showWidgetWhenIdle: checked })}
+                    {...(platform === 'linux' && settings.shellPillInUse === true
+                      ? { disabled: true, description: 'On Omarchy, Sotto’s owl in the bar takes the floating widget’s place. Remove the shell plugin to bring the widget back.' }
+                      : { description: 'Keep the small dictation sliver on screen between sessions. Click it to dictate.' })} />
                   <Toggle label={copy.settingsLaunchAtStartupLabel} checked={settings.launchAtStartup}
                     {...(platform === 'linux' && !linuxStartupSupported ? { disabled: true, description: 'Sotto cannot change sign-in startup here.' } : {})} onCheckedChange={async (checked) => {
                     const result = await onSetStartup(checked).catch(() => null)
@@ -605,21 +616,24 @@ export function SettingsView({
                   <Field label="History retention" description="Maximum saved entries when history is enabled."><Select disabled={!settings.historyEnabled} value={String(settings.historyRetention)} onChange={(event) => { const value = event.currentTarget.value; void save({ historyRetention: value === 'unlimited' ? 'unlimited' : Number(value) as HistoryRetention }) }}><option value="25">25 entries</option><option value="100">100 entries</option><option value="500">500 entries</option><option value="unlimited">Unlimited</option></Select></Field>
                 </div>
                 <div className="settings-updates" id="settings-updates">
-                  <div className="settings-section__heading"><h2>Updates</h2><p>Sotto looks for new releases on GitHub and installs them itself.</p></div>
+                  <div className="settings-section__heading"><h2>Updates</h2><p>{copy.settingsUpdatesLead}</p></div>
+                  {/* Where Sotto never updates itself, the row says how to update by hand and offers nothing to press. */}
                   <div className="settings-update-row">
                     <div>
                       <p className="settings-update-version">{updateStatus === null ? 'Sotto' : `${releaseTrackName(releaseTrackOf(updateStatus))} ${updateStatus.currentVersion}`}</p>
-                      <p className="settings-update-status" aria-live="polite">{updateStatusCopy(updateStatus)}</p>
+                      {copy.settingsUpdatesByHand === null
+                        ? <p className="settings-update-status" aria-live="polite">{updateStatusCopy(updateStatus)}</p>
+                        : <p className="settings-update-status">{copy.settingsUpdatesByHand}</p>}
                     </div>
-                    <div className="settings-update-actions">
+                    {copy.settingsUpdatesByHand === null ? <div className="settings-update-actions">
                       {updateStatus?.phase.phase === 'available' ? <Button variant="secondary" disabled={updateBusy} onClick={() => void runUpdateAction(onDownloadUpdate)}>Download</Button> : null}
                       {updateStatus?.phase.phase === 'downloaded' ? <Button variant="secondary" disabled={updateBusy} onClick={() => void runUpdateAction(onInstallUpdate)}>Restart and install</Button> : null}
                       <Button variant="secondary" disabled={updateBusy} onClick={() => void runUpdateAction(onCheckForUpdates)}>{updateBusy ? 'Working...' : 'Check now'}</Button>
-                    </div>
+                    </div> : null}
                   </div>
-                  <div className="settings-rows">
+                  {copy.settingsUpdatesByHand === null ? <div className="settings-rows">
                     <Toggle label="Check for updates automatically" checked={settings.autoUpdateCheck} onCheckedChange={(checked) => void save({ autoUpdateCheck: checked })} description={UPDATE_CHECK_PRIVACY_NOTICE} />
-                  </div>
+                  </div> : null}
                 </div>
 
                 <div className="settings-danger-row">

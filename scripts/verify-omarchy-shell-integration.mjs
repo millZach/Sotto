@@ -10,7 +10,7 @@ import { appendFileSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, 
 import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { setTimeout as wait } from 'node:timers/promises'
-import { assertPlainTree, copyRegularTree, prepareSandboxHome, prepareSandboxTmp, rewriteSandboxConfig, snapshotTree, validateSandboxConfig } from './omarchy-shell-sandbox.mjs'
+import { assertPlainTree, copyRegularTree, prepareSandboxBus, prepareSandboxHome, prepareSandboxTmp, rewriteSandboxConfig, snapshotTree, validateSandboxConfig } from './omarchy-shell-sandbox.mjs'
 import { assertProofInstancesPreserved, createOwnedProofProcesses, installProofCleanup, isProofProcessAlive, snapshotProofInstances, terminateThenCleanup } from './owned-proof-processes.mjs'
 
 const run = promisify(execFile)
@@ -245,7 +245,9 @@ async function orchestrate() {
     writeFileSync(join(home, '.local/state/omarchy/current/theme.name'), 'tokyo-night\n')
     assertPlainTree(join(home, '.config/omarchy'))
     validateSandboxConfig(home, omarchy)
-    startIsolated('nested Omarchy shell', 'dbus-run-session', ['--', 'quickshell', '-p', join(omarchy, 'shell')], logOptions('shell'))
+    // Private buses that activate nothing, so no desktop portal starts on either.
+    const busConfig = prepareSandboxBus(root)
+    startIsolated('nested Omarchy shell', 'dbus-run-session', [`--config-file=${busConfig}`, '--', 'quickshell', '-p', join(omarchy, 'shell')], logOptions('shell'))
     await until('isolated shell answers', async () => { try { await run('omarchy-shell', ['shell', 'ping'], { env }); return true } catch { return false } }, 30000)
     assertPlainTree(join(home, '.config/omarchy'))
     const installed = await run('bash', [join(checkout, 'apps/omarchy/install-shell-plugin.sh'), '--command', join(checkout, 'apps/omarchy/sotto')], { env })
@@ -258,8 +260,8 @@ async function orchestrate() {
     const details = { root, home, runtime, evidence, proof, liveSignature: live.HYPRLAND_INSTANCE_SIGNATURE, liveDisplay: live.WAYLAND_DISPLAY, signature: b.instance, display: b.wl_socket }
     const configPath = join(root, 'journey.json')
     writeFileSync(configPath, JSON.stringify(details))
-    // Electron must not reach the live session's desktop portal, even in nested Wayland.
-    const worker = startIsolated('real app integration journey', 'dbus-run-session', ['--', process.execPath, script, '--journey', configPath], { stdio: 'inherit' })
+    // Electron must not reach the live session's desktop portal, even in nested Wayland, nor start one of its own.
+    const worker = startIsolated('real app integration journey', 'dbus-run-session', [`--config-file=${busConfig}`, '--', process.execPath, script, '--journey', configPath], { stdio: 'inherit' })
     const code = await new Promise((resolve, reject) => { worker.once('error', reject); worker.once('exit', resolve) })
     assert.equal(code, 0, 'The real app integration journey must pass')
     await curate(evidence)

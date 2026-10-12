@@ -209,5 +209,6 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   else if (action === 'configure' && args.length === 2) rewriteSandboxConfig(...args)
   else if (action === 'validate' && args.length === 2) validateSandboxConfig(...args)
   else if (action === 'temporary' && args.length === 1) console.log(prepareSandboxTmp(args[0]))
-  else throw new Error('Expected setup, check, copy, remove, stamp, configure, validate or temporary with sandbox paths')
+  else if (action === 'bus' && args.length === 1) console.log(prepareSandboxBus(args[0]))
+  else throw new Error('Expected setup, check, copy, remove, stamp, configure, validate, temporary or bus with sandbox paths')
 }
