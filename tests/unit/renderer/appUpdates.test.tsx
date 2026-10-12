@@ -142,4 +142,17 @@ describe('Sotto application onboarding integration', () => {
     const control = await screen.findByRole('button', { name: 'Update checks run only in the installed Windows app.' })
     expect(control).toHaveAttribute('aria-disabled', 'true')
   })
+
+  it.each([['win32', 1], ['darwin', 1], ['linux', 0]] as const)('on %s the sidebar foot carries %i update control', async (platform, count) => {
+    renderApp(createBridge({
+      platform,
+      getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
+      getUpdateStatus: vi.fn(async () => ({ currentVersion: '3.4.0', phase: { phase: 'unsupported' as const }, checkedAt: null })),
+    }))
+    await openPage('home')
+
+    await screen.findByRole('heading', { level: 1, name: /ready when you are/i })
+    // Linux has no in-app updater (ADR-0062), so its foot offers nothing to press.
+    await waitFor(() => expect(document.querySelectorAll('.update-control')).toHaveLength(count))
+  })
 })

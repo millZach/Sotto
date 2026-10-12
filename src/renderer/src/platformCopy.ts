@@ -22,6 +22,10 @@ export interface PlatformCopy {
   readonly settingsLaunchAtStartupLabel: string
   readonly settingsStartupFailureNotice: string
   readonly settingsStartMinimizedDescription: string
+  /** The line under Settings' Updates heading. */
+  readonly settingsUpdatesLead: string
+  /** null where Settings offers update checks; otherwise how to update by hand, shown in their place. */
+  readonly settingsUpdatesByHand: string | null
   readonly widgetMicrophoneBlockedDetail: string
   readonly widgetPermissionPromptDetail: string
   readonly widgetProcessingDetail: string
@@ -55,6 +59,8 @@ const PLATFORM_COPY: Readonly<Record<SottoPlatform, PlatformCopy>> = Object.free
     settingsLaunchAtStartupLabel: 'Launch when Windows starts',
     settingsStartupFailureNotice: 'Windows startup could not be updated.',
     settingsStartMinimizedDescription: 'Open directly in the tray when Sotto launches.',
+    settingsUpdatesLead: 'Sotto looks for new releases on GitHub and installs them itself.',
+    settingsUpdatesByHand: null,
     widgetMicrophoneBlockedDetail: 'Allow microphone access in Windows Settings.',
     widgetPermissionPromptDetail: 'Approve access in Windows',
     widgetProcessingDetail: 'Transcribed on this computer, never saved',
@@ -79,11 +85,13 @@ const PLATFORM_COPY: Readonly<Record<SottoPlatform, PlatformCopy>> = Object.free
     settingsMicrophoneUnavailable: 'Microphones are unavailable. Check your input device, then test again.',
     settingsMicrophoneDenied: 'Microphone access is blocked. Allow access if asked, then test again.',
     settingsMicrophoneDefaultOption: 'System default',
-    settingsGlobalShortcutDescription: 'Compositor bindings live in Hyprland. Omarchy defaults: hold F9 to talk, or press Super+Ctrl+X to start and stop. Install Sotto’s bindings first.',
+    settingsGlobalShortcutDescription: 'Compositor bindings live in Hyprland, not in Sotto. Once Sotto’s bindings are installed, hold F9 to talk, or press Super+Ctrl+X to start and stop.',
     settingsAutoPasteDescription: 'Paste into the focused window on Hyprland, terminals included. If it does not get through, use Super+V, Omarchy’s universal paste.',
     settingsLaunchAtStartupLabel: 'Launch when you sign in',
     settingsStartupFailureNotice: 'Launch at sign-in could not be updated.',
     settingsStartMinimizedDescription: 'Open directly in the tray when Sotto launches.',
+    settingsUpdatesLead: 'Sotto never updates itself on Linux. New versions come through pacman.',
+    settingsUpdatesByHand: 'Install the next sotto-bin package with sudo pacman -U. Once sotto-bin is in a package repository, omarchy update brings it.',
     widgetMicrophoneBlockedDetail: 'Allow microphone access if asked.',
     widgetPermissionPromptDetail: 'Allow microphone access if asked',
     widgetProcessingDetail: 'Transcribed on this computer, never saved',
@@ -116,11 +124,16 @@ const PLATFORM_COPY: Readonly<Record<SottoPlatform, PlatformCopy>> = Object.free
     settingsLaunchAtStartupLabel: 'Launch when your Mac starts',
     settingsStartupFailureNotice: 'The login item could not be updated.',
     settingsStartMinimizedDescription: 'Open directly in the menu bar when Sotto launches.',
+    settingsUpdatesLead: 'Sotto looks for new releases on GitHub and installs them itself.',
+    settingsUpdatesByHand: null,
     widgetMicrophoneBlockedDetail: 'Allow microphone access in System Settings.',
     widgetPermissionPromptDetail: 'Approve access in macOS',
     widgetProcessingDetail: 'Transcribed on this computer, never saved',
   }),
 })
+
+/** Where Settings sends a Linux user to install the compositor bindings; Sotto never edits Hyprland's files itself. */
+export const LINUX_BINDINGS_GUIDE_URL = 'https://github.com/millZach/Sotto/blob/main/apps/omarchy/README.md#install-the-bindings'
 
 export function platformCopy(platform: SottoPlatform): PlatformCopy {
   return PLATFORM_COPY[platform]
