@@ -4,6 +4,7 @@ import { EMPTY_AGENT_HOST, type AgentThread } from '../../../src/shared/agents'
 import { WATCHER_QUIET_MS } from '../../../src/shared/watcherOverview'
 import type { WatcherNews } from '../../../src/shared/watcherNews'
 import { WatcherWakeUp } from '../../../src/main/agents/watcherWakeUp'
+import { observationDigest } from '../../../src/main/agents/watcherEvidence'
 import { foldWatcherNews, watcherNewsText } from '../../../src/main/agents/watcherNews'
 import { queuedWakeUpText, wakeUpText } from '../../../src/main/agents/wakeUp'
 import type { BabysitNews } from '../../../src/main/agents/babysitNews'
@@ -165,4 +166,76 @@ it('reschedules quiet from a completed plan step at minute nineteen without copy
   await f.advance(WATCHER_QUIET_MS - 60_000)
   expect(f.delivered.flatMap(news => news.events).filter(event => event.kind === 'quiet')).toHaveLength(1)
   expect(JSON.stringify(f.delivered)).not.toContain('private step contents')
+})
+
+
+it('wakes for failed, passed and failed evidence on one head, while repeated reads remain quiet', async () => {
+  const f = fixture(), url = 'https://github.com/o/r/pull/1'
+  f.thread.pullRequests = [{ url, number: 1, title: 'Synthetic pull request', state: 'open', draft: false, source: 'linked', linkedAt: new Date(f.now()).toISOString() }]
+  for (const checks of ['failed', 'passed', 'failed'] as const) {
+    f.wakes.pullRequest({ url, head: 'same-head', observedAt: new Date(f.now()).toISOString(), availability: 'available', checks, checkCount: 1 })
+    await f.advance(2_000)
+  }
+  const events = f.delivered.flatMap(news => news.events).filter(event => event.kind === 'evidence-changed')
+  expect(events).toHaveLength(3)
+  expect(new Set(events.map(event => event.id)).size).toBe(3)
+  expect(f.wakes.due(events[0]!)).toBe(false)
+  f.wakes.pullRequest({ url, head: 'same-head', observedAt: new Date(f.now()).toISOString(), availability: 'available', checks: 'failed', checkCount: 1 })
+  await f.advance(2_000)
+  expect(f.delivered.flatMap(news => news.events).filter(event => event.kind === 'evidence-changed')).toHaveLength(3)
+})
+
+it('restores the latest evidence occurrence without replaying it or suppressing a later return to an old state', async () => {
+  const f = fixture()
+  const checkpoint = (changedFiles: number) => ({ threadId: f.thread.id, checkpointId: 'same-checkpoint',
+    observedAt: new Date(f.now()).toISOString(), availability: 'available' as const, changedFiles })
+  for (const count of [1, 2, 1]) { f.wakes.checkpoint(checkpoint(count)); await f.advance(2_000) }
+  f.wakes.close()
+  f.thread.status = 'idle'; f.thread.lastTurn = undefined
+  const deliver = vi.fn(async (_news: WatcherNews) => undefined)
+  const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, deliver, now: f.now,
+    prune: async () => undefined, remember: async () => undefined, schedule: callback => { callback(); return () => undefined } })
+  cleanups.push(() => recovered.close())
+  recovered.start(); recovered.checkpoint(checkpoint(1)); await recovered.drained()
+  expect(deliver).not.toHaveBeenCalled()
+  recovered.checkpoint(checkpoint(2)); await recovered.drained()
+  recovered.checkpoint(checkpoint(1)); await recovered.drained()
+  expect(deliver).toHaveBeenCalledTimes(2)
+})
+
+
+it('keeps the same evidence due when unchanged native facts move around a checkpoint fact', async () => {
+  const f = fixture()
+  f.thread.status = 'idle'; f.thread.lastTurn!.status = 'completed'; f.wakes.observe()
+  f.wakes.checkpoint({ threadId: f.thread.id, checkpointId: 'checkpoint', observedAt: new Date(f.now()).toISOString(), availability: 'available', changedFiles: 1 })
+  await f.advance(2_000)
+  const event = f.delivered[0]!.events.find(event => event.kind === 'evidence-changed')!
+  expect(f.wakes.due(event)).toBe(true)
+  f.wakes.observe()
+  expect(f.wakes.due(event)).toBe(true)
+  await f.advance(2_000)
+  expect(f.delivered).toHaveLength(1)
+})
+
+it('keeps a legacy evidence ID valid only for its reconciled occurrence', async () => {
+  const f = fixture()
+  const checkpoint = (changedFiles: number) => ({ threadId: f.thread.id, checkpointId: 'legacy-checkpoint',
+    observedAt: new Date(f.now()).toISOString(), availability: 'available' as const, changedFiles })
+  f.wakes.checkpoint(checkpoint(1)); await f.advance(2_000)
+  const current = f.delivered[0]!.events.find(event => event.kind === 'evidence-changed')!
+  const legacyId = observationDigest([current.kind, current.requestId, current.target, current.generation, current.evidenceIds])
+  const legacy = { ...current, id: legacyId }
+  f.record.wakeEventIds = [legacyId]; f.wakes.close()
+  f.thread.status = 'idle'; f.thread.lastTurn = undefined
+  const deliver = vi.fn(async (_news: WatcherNews) => undefined)
+  const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, deliver, now: f.now,
+    prune: async () => undefined, remember: async () => undefined, schedule: callback => { callback(); return () => undefined } })
+  cleanups.push(() => recovered.close())
+  recovered.start(); recovered.checkpoint(checkpoint(1)); await recovered.drained()
+  expect(deliver).not.toHaveBeenCalled()
+  expect(recovered.due(legacy)).toBe(true)
+  recovered.checkpoint(checkpoint(2)); await recovered.drained()
+  recovered.checkpoint(checkpoint(1)); await recovered.drained()
+  expect(recovered.due(legacy)).toBe(false)
+  expect(deliver).toHaveBeenCalledTimes(2)
 })
