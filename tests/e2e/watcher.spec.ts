@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
@@ -13,7 +13,8 @@ import { evidenceDirectory } from '../fixtures/evidence'
 import { pageBoundProblems } from './support/designCapture'
 import { onReleaseTrack } from './support/releaseTrack'
 import { captureWindow } from './support/sottoCapture'
-import { openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 import { holdOwlSky } from './support/sottoOwl'
 import { resizeContentWindow } from './support/sottoWindow'
 
@@ -22,7 +23,8 @@ import { resizeContentWindow } from './support/sottoWindow'
  * October 11, 2026: the first entry by sending, the needs-you line, the Overview over the room on All threads, a thread
  * opened beside Watcher, the floating switch and the badges, on the Sotto Owl track, with stable showing none of it.
  * Main's Watcher side is stood in for by a seeded projection (src/renderer/src/e2e/watcherStandIn.ts), so these runs
- * check the room, not main. Run after `npm run build`. Captures go to disposable run evidence;
+ * check the room on a fixed picture, except one journey that seeds nothing and runs against main's own Watcher over
+ * the fake Codex app server. Run after `npm run build`. Captures go to disposable run evidence;
  * `SOTTO_E2E_EVIDENCE=publish` writes artifacts/watcher-room.
  */
 const evidenceRoot = evidenceDirectory('artifacts/watcher-room')
@@ -607,6 +609,76 @@ test.describe("Watcher's room on the built app", () => {
         await capture(launched, 'room-empty-sotto-dark-1280x800.png')
       })
     })
+  })
+
+  /**
+   * The one journey here with no stand-in: the room reads main's own bridge (preload's `window.sotto.watcher`, main's
+   * WatcherService) over the fake Codex app server the integration tests use, so starting Watcher is main's real `open`
+   * and the first message is a real send to a real Watcher thread.
+   */
+  test('against main’s own Watcher, the first message starts Watcher on Codex and reaches it', async () => {
+    test.setTimeout(3 * 60_000)
+    const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-watcher-main-' })).directory
+    const root = join(profile, 'native-fixture')
+    for (const folder of ['claude', 'codex']) await mkdir(join(root, folder), { recursive: true })
+    await writeFile(join(root, 'codex', 'script.json'), JSON.stringify({ reply: 'Watcher here. I will look at the release notes.' }))
+    const previous = { root: process.env.SOTTO_E2E_NATIVE_FIXTURE_ROOT, executable: process.env.SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE }
+    process.env.SOTTO_E2E_NATIVE_FIXTURE_ROOT = root
+    process.env.SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE = process.execPath
+    try {
+      await onReleaseTrack('owl', async () => {
+        const launched = await launchSotto('success', profile)
+        try {
+          const { page } = launched
+          await page.evaluate(async () => {
+            await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
+            const agents = window.sotto!.agents!
+            await agents.command({ type: 'configure', patch: { provider: 'codex', enabled: true, enabledProviders: ['codex'], checkClientUpdates: false } })
+            await agents.command({ type: 'connect', provider: 'codex' })
+          })
+          await page.reload()
+          await openThreads(page)
+          // Main's bridge, not a stand-in: nothing is seeded, and main answers that no Watcher exists yet.
+          expect(await page.evaluate(key => localStorage.getItem(key), WATCHER_STAND_IN_KEY)).toBeNull()
+          expect(await page.evaluate(async () => (await window.sotto!.watcher!.get()))).toMatchObject({ status: 'ok', state: { current: null } })
+          await resizeContentWindow(launched, 1280, 800)
+          await openRoom(page)
+          await expect(page.getByRole('heading', { level: 2, name: 'Start Watcher' })).toBeVisible()
+          await expect(page.getByRole('group', { name: 'Watcher’s model' }).getByRole('combobox', { name: 'Thread model' })).toBeVisible()
+          await page.getByRole('textbox', { name: 'Watcher message' }).click()
+          await page.keyboard.type('Check the release notes and tell me what is missing.')
+          await page.getByRole('button', { name: 'Start Watcher and send' }).click()
+          // Main created Watcher on Codex: its own pane, the meter, the message and the provider's reply.
+          const pane = watcherPane(page)
+          await expect(page.getByRole('meter', { name: 'Watched threads' })).toHaveAttribute('aria-valuetext', '0 of 4 watched')
+          await expect(pane.locator('[data-role="user"]')).toContainText('Check the release notes and tell me what is missing.')
+          await expect(pane.locator('[data-role="assistant"]')).toContainText('Watcher here. I will look at the release notes.')
+          await expect(pane.locator('[data-role="user"]')).toHaveCount(1)
+          const record = await page.evaluate(async () => (await window.sotto!.watcher!.get()))
+          expect(record).toMatchObject({ status: 'ok', state: { current: { provider: 'codex' } } })
+          // Watcher is its room's: not listed on the Threads page, and nothing there was selected for it.
+          await switchTab(page, 'Threads').click()
+          await expect(page.getByRole('complementary', { name: 'Thread sidebar' })).toBeVisible()
+          await expect(page.getByRole('complementary', { name: 'Thread sidebar' }).getByText('Watcher', { exact: true })).toHaveCount(0)
+          // Threads in flight saves through main's own setLimit.
+          await switchTab(page, 'Watcher').click()
+          await page.getByRole('button', { name: 'More Watcher actions' }).click()
+          await page.getByRole('combobox', { name: 'Threads in flight' }).selectOption('3')
+          await expect(page.getByRole('meter', { name: 'Watched threads' })).toHaveAttribute('aria-valuetext', '0 of 3 watched')
+          await expect.poll(async () => (await page.evaluate(() => window.sotto!.getSettings())).watcherInFlightLimit).toBe(3)
+          await page.keyboard.press('Escape')
+          await settle(page)
+          expect(await pageBoundProblems(page)).toEqual([])
+          await capture(launched, 'room-main-sotto-dark-1280x800.png')
+        } finally { await closeSotto(launched) }
+      })
+    } finally {
+      if (previous.root === undefined) delete process.env.SOTTO_E2E_NATIVE_FIXTURE_ROOT
+      else process.env.SOTTO_E2E_NATIVE_FIXTURE_ROOT = previous.root
+      if (previous.executable === undefined) delete process.env.SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE
+      else process.env.SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE = previous.executable
+      await removeOwnedE2EProfile(profile)
+    }
   })
 
   test('stable shows nothing of Watcher, even with a projection seeded', async () => {
