@@ -435,3 +435,8 @@ artifacts/linux-dictation-unreachable/*
 !artifacts/linux-dictation-unreachable/results.json
 !artifacts/linux-dictation-unreachable/paste-proof.txt
 !artifacts/linux-dictation-unreachable/notification-proof.json
+
+# Linux shutdown proof; retain the native-event summary and the inspected quit-journey capture.
+artifacts/linux-shutdown-drain/*
+!artifacts/linux-shutdown-drain/result.json
+!artifacts/linux-shutdown-drain/before-quit.png
