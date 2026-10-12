@@ -513,26 +513,44 @@ describe('links from the message before a question', () => {
   const said = (id: string, role: 'user' | 'assistant', text: string, extra: Partial<AgentMessage> = {}): AgentMessage => ({ id, role, text, createdAt: '2026-10-11T20:00:00.000Z', ...extra })
   const review = 'https://laptop.tail.ts.net/review/'
 
-  it('takes each link in the agent’s newest message once, leaving out what the question already shows', () => {
+  it('takes each link in the agent’s newest message once, in the order written', () => {
     const messages = [
       said('m1', 'assistant', 'An older link, https://example.com/old, is not this question’s.'),
       said('m2', 'user', 'Show me https://example.com/mine'),
-      said('m3', 'assistant', `**Review page:** ${review} (open in your browser)\n\nThe variants are also at [the tag](https://github.com/o/r/tree/t), and ${review} again.\n\nThe question links https://example.com/asked itself.`),
+      said('m3', 'assistant', `**Review page:** ${review} (open in your browser)\n\nThe variants are also at [the tag](https://github.com/o/r/tree/t), and ${review} again.`),
     ]
-    const request = structured([{ ...single, question: 'Which one? See https://example.com/asked' }])
-    expect(messageLinks(messages, request)).toEqual([review, 'https://github.com/o/r/tree/t'])
+    expect(messageLinks(messages)).toEqual([review, 'https://github.com/o/r/tree/t'])
+  })
+
+  it('leaves out only what the card already shows as a link', () => {
+    const rowsFor = (request: AgentRequest): string[] => {
+      const view = render(<AgentRequestCard ownerId="thread-a" ownerTitle="Workshop" request={request} blocked={null}
+        onSubmit={vi.fn(async () => ({ error: null }))} store={new RequestAnswerStore()} messageLinks={[review, 'https://example.com/form']} />)
+      const rows = screen.queryAllByRole('link', { name: /^Open the link/u }).map(row => row.getAttribute('href')!)
+      view.unmount()
+      return rows
+    }
+    // A link in the question's words is a link already.
+    expect(rowsFor(structured([{ ...single, question: `Which one? See ${review}` }]))).toEqual(['https://example.com/form'])
     // A header is a plain tag, so the same address there is no link, and its row stays.
-    expect(messageLinks(messages, structured([{ ...single, header: review }]))).toEqual([review, 'https://github.com/o/r/tree/t', 'https://example.com/asked'])
+    expect(rowsFor(structured([{ ...single, header: review }]))).toEqual([review, 'https://example.com/form'])
+    // A form's text that only repeats its question and header is not shown, so an address only there keeps its row.
+    const repeating: AgentRequest = { id: 'req-form', kind: 'question', text: 'Pick a layout https://example.com/form', options: [],
+      questions: [{ ...single, header: 'https://example.com/form', question: 'Pick a layout' }] }
+    expect(requestExplanation(repeating)).toBeNull()
+    expect(rowsFor(repeating)).toEqual([review, 'https://example.com/form'])
+    // A plain question's text is shown, with its links live.
+    expect(rowsFor({ id: 'req-plain', kind: 'question', text: 'Keep https://example.com/form?', options: [] })).toEqual([review])
   })
 
   it('reads past a visual, finds nothing without an agent message, and ignores addresses that are not web links', () => {
     const visual = said('visual:v1', 'assistant', 'A diagram of the states', { visual: { kind: 'svg', title: 'States', source: '<svg/>' } as AgentMessage['visual'] })
-    expect(messageLinks([said('m1', 'assistant', `See ${review}`), visual], structured())).toEqual([review])
+    expect(messageLinks([said('m1', 'assistant', `See ${review}`), visual])).toEqual([review])
     // A host sends a visual without its drawing: words alone (ADR-0056), and the newest the agent wrote.
     const words = said('visual:v1', 'assistant', 'A diagram, https://example.com/visual')
-    expect(messageLinks([said('m1', 'assistant', `See ${review}`), words], structured())).toEqual(['https://example.com/visual'])
-    expect(messageLinks([said('m1', 'user', `See ${review}`)], structured())).toEqual([])
-    expect(messageLinks([said('m1', 'assistant', 'file:///c/x, mailto:a@b.c and javascript:alert(1)')], structured())).toEqual([])
+    expect(messageLinks([said('m1', 'assistant', `See ${review}`), words])).toEqual(['https://example.com/visual'])
+    expect(messageLinks([said('m1', 'user', `See ${review}`)])).toEqual([])
+    expect(messageLinks([said('m1', 'assistant', 'file:///c/x, mailto:a@b.c and javascript:alert(1)')])).toEqual([])
   })
 
   it('names where each link goes by its host, port and path', () => {

@@ -4,7 +4,7 @@ import type { AgentRequest } from '../../../../shared/agents'
 import { requestDraftQuestions, type RequestDraftOwner } from '../../../../shared/requestDrafts'
 import { Button } from '../../components/Button'
 import { LinkedText } from './LinkedText'
-import { linkPlace } from './messageLinks'
+import { linkPlace, webLinks } from './messageLinks'
 import {
   answerProgress, blocksSending, EMPTY_SELECTION, isRequired, isUnavailable, legacyPermissionAnswer, permissionAnswer,
   permissionSummary, pickOption, pickOther, requestAnswerOwnerKey, requestAnswerStore, requestMode, structuredAnswer, textOnly, useRequestEntry,
@@ -29,7 +29,8 @@ export interface AgentRequestCardProps {
   readonly store?: RequestAnswerStore
   /** Thread questions sit above the composer; other hosts keep their existing placement. */
   readonly placement?: 'composer' | undefined
-  /** The web links in the agent's message just before a question, which the card covers once it docks. */
+  /** The web links in the agent's message just before a question, which the card covers once it docks. Those the card
+   *  already shows as links in the request's own words are left out. */
   readonly messageLinks?: readonly string[]
 }
 
@@ -48,6 +49,8 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
   const toggle = useRef<HTMLButtonElement>(null)
   const baseId = useId()
   const mode = requestMode(request)
+  const linked = linkedWords(request, mode)
+  const rows = messageLinks.filter(url => !linked.has(url))
   const permission = mode === 'permission'
   const docked = placement === 'composer' && !permission
   const nativeUncertain = request.delivery === 'uncertain'
@@ -122,7 +125,7 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
         <div className={`agent-request__head${docked && questions.length === 1 ? ' tt-visually-hidden' : ''}`}><strong id={titleId}>{questions.length === 1 ? 'Question' : `${questions.length} questions`}</strong>
           {request.context?.toolName ? <span className="agent-request__tag">{request.context.toolName}</span> : null}</div>
         <FormContext request={request} />
-        {questions.map((question, index) => <QuestionField key={question.id} name={`${baseId}-q${index}`} question={question} links={index === 0 ? messageLinks : []}
+        {questions.map((question, index) => <QuestionField key={question.id} name={`${baseId}-q${index}`} question={question} links={index === 0 ? rows : []}
           selection={entry.selections[question.id] ?? EMPTY_SELECTION} disabled={disabled}
           onChange={selection => store.select(entryOwner, request.id, question.id, selection)} />)}
         <div className="agent-request__footer">
@@ -133,7 +136,7 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
       </form> : <>
         <div className="agent-request__head"><strong id={titleId}>Question</strong></div>
         <p className="agent-request__text"><LinkedText text={request.text} /></p>
-        <MessageLinks links={messageLinks} />
+        <MessageLinks links={rows} />
         {mode === 'legacy-options' ? <>
           <fieldset className="agent-request__question" disabled={disabled}>
             <legend className="tt-visually-hidden">{request.text}</legend>
@@ -187,6 +190,18 @@ function OptionLabel({ label }: { readonly label: string }): ReactNode {
   const recommendation = /\s*\(recommended\)\s*$/iu.exec(label)
   return <span className="agent-request__label"><LinkedText text={recommendation ? label.slice(0, recommendation.index) : label} />
     {recommendation ? <> <span className="agent-request__recommended">(recommended)</span></> : null}</span>
+}
+
+/**
+ * Every web address the card shows as a link in the request's own words: a structured form's explanation when it says
+ * more than its questions, each question and each choice; otherwise the request's text and its choices. A header is a
+ * plain tag and a hidden explanation is not shown, so an address only there is no link and a row still carries it.
+ */
+function linkedWords(request: AgentRequest, mode: ReturnType<typeof requestMode>): Set<string> {
+  const texts = mode === 'structured'
+    ? [requestExplanation(request) ?? '', ...(request.questions ?? []).flatMap(question => [question.question, ...question.options.flatMap(option => [option.label, option.description ?? ''])])]
+    : [request.text, ...request.options.map(option => option.label)]
+  return new Set(texts.flatMap(webLinks))
 }
 
 /**

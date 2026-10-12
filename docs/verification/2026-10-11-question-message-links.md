@@ -10,7 +10,7 @@ An agent handed Zach a prototype as a link in its message, then asked which vari
 
 The links are those in the agent's newest message that is not a visual, each once, in the order written, leaving out any the question already shows as a link. A request has no place in the transcript of its own, but the agent waits on the answer, so its newest message is the one the question follows. Only questions get them, not permissions.
 
-- A question's header is a tag of plain words, so an address written there still gets its row.
+- A row is left out only when the card already shows its address as a link. A question's header is a tag of plain words, and a form's text that only repeats its questions is not shown, so an address only there still gets its row.
 - A visual is skipped only where it arrives with its drawing. A host sends visuals without it, to the iPhone and to a desktop reading another computer's threads, and ADR-0056 makes those words alone, a reply like any other, so they count there.
 
 ## What was shown
