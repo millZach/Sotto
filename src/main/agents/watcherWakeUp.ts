@@ -1,7 +1,7 @@
 import { capabilitiesForThread, isThreadProviderConnected, type AgentHostSnapshot, type AgentThread } from '../../shared/agents'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { WATCHER_QUIET_MS, watcherObservationKey, type WatcherObservation } from '../../shared/watcherOverview'
-import type { WatcherRecord, WatcherThreadTarget } from '../../shared/watcher'
+import type { WatcherEvidence, WatcherRecord, WatcherThreadTarget } from '../../shared/watcher'
 import { WATCHER_BATCH_MS, WATCHER_BATCH_MAX_MS, type WatcherEvent, type WatcherNews } from '../../shared/watcherNews'
 import { pullRequestKey } from '../../shared/gitPullRequests'
 import { WatcherEvidenceStore, observationDigest, targetKey, type CheckpointObservation, type PullRequestObservation } from './watcherEvidence'
@@ -61,6 +61,7 @@ export class WatcherWakeUp {
   }
   news(): WatcherEvent[] { return this.recent.filter(event => this.due(event)) }
   private event(kind: WatcherEvent['kind'], target: WatcherThreadTarget, identity: unknown, extra: Partial<WatcherEvent> = {}): void {
+    if (!this.started || this.closed) return
     for (const { request, participant } of this.workers(kind === 'taken-over').filter(item => targetKey(item.participant.target) === targetKey(target))) {
       if (kind !== 'taken-over' && (participant.state !== 'participating' || participant.automationStopped)) continue
       if (kind === 'taken-over' && participant.state !== 'taken-over') continue
@@ -188,8 +189,20 @@ export class WatcherWakeUp {
     const evidenceIds = this.evidence.read(target).map(item => item.id).sort()
     this.event('evidence-changed', target, evidenceIds, { evidenceIds, revision: observationDigest(evidenceIds) })
   }
-  pullRequest(read: PullRequestObservation): void {
+  pairedEvidence(hostId: string, facts: readonly WatcherEvidence[]): void {
     if (!this.started || this.closed) return
+    const changed = new Map<string, WatcherThreadTarget>()
+    for (const { id: _id, ...fact } of facts) {
+      void _id
+      if (fact.target.hostId !== hostId) continue
+      // A source's latest fact replaces its old truth, including a return to an earlier state.
+      const slot = `host:${fact.source}:${fact.referenceId ?? fact.url ?? ''}`
+      if (this.evidence.put(slot, fact)) changed.set(targetKey(fact.target), fact.target)
+    }
+    for (const target of changed.values()) this.evidenceChanged(target)
+  }
+  pullRequest(read: PullRequestObservation): void {
+    if (this.closed) return
     const snapshot = this.options.snapshot()
     if (!snapshot.hostId) return
     for (const thread of snapshot.threads) if ([...thread.pullRequests ?? [], ...thread.worktree?.git?.pullRequest ? [thread.worktree.git.pullRequest] : []]
@@ -200,7 +213,7 @@ export class WatcherWakeUp {
     this.options.changed?.()
   }
   checkpoint(read: CheckpointObservation): void {
-    if (!this.started || this.closed) return
+    if (this.closed) return
     const snapshot = this.options.snapshot()
     if (!snapshot.hostId) return
     const target = { hostId: snapshot.hostId, threadId: read.threadId }

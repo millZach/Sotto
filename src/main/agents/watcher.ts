@@ -749,7 +749,6 @@ export class WatcherService implements WatcherControlHooks {
     for (const host of this.remote.hosts().filter(item => item.reads && item.connected && (!hostId || item.hostId === hostId))) {
       const projection = await this.remote.read(host.hostId, { master }) as WatcherHostProjection
       if (projection.hostId !== host.hostId || JSON.stringify(projection.master) !== JSON.stringify(master)) throw new Error('wrong-watcher-host')
-      for (const evidence of projection.evidence) { const { id: _id, ...fact } = evidence; void _id; this.wakes.evidence.put(`host:${fact.source}:${fact.referenceId ?? fact.checkpointId ?? fact.fact}`, fact) }
       await this.options.control.updateWatcher(record => {
         for (const remoteRequest of projection.requests) {
           const request = record.requests.find(item => item.id === remoteRequest.id && key(item.watcher) === key(master.target))
@@ -773,6 +772,7 @@ export class WatcherService implements WatcherControlHooks {
           return thread.status === 'running' || thread.lastTurn?.status === 'running' || Boolean(thread.requests.length || thread.backgroundWork?.length || thread.monitoring?.length)
         })
       })
+      this.wakes.pairedEvidence(host.hostId, projection.evidence)
     }
     this.publish()
   }

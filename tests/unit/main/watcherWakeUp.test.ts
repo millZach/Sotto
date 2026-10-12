@@ -12,7 +12,7 @@ import { centerTarget, watcherRecordFixture } from '../../fixtures/watcher'
 
 const cleanups: (() => void)[] = []
 afterEach(() => { cleanups.splice(0).forEach(cleanup => cleanup()) })
-function fixture() {
+function fixture(start = true) {
   let clock = Date.parse('2026-10-11T10:00:00Z')
   const timers = new Set<{ at: number; callback: () => void }>()
   const record = watcherRecordFixture()
@@ -27,7 +27,7 @@ function fixture() {
     schedule: (callback, delay) => { const timer = { at: clock + delay, callback }; timers.add(timer); return () => { timers.delete(timer) } },
     deliver, remember, failed })
   cleanups.push(() => wakes.close())
-  wakes.start()
+  if (start) wakes.start()
   const advance = async (ms: number) => {
     const end = clock + ms
     while (true) {
@@ -317,4 +317,17 @@ it.each([0, 20])('retains the bounded pending batch after a failed save and %s s
   expect(f.delivered[0]!.omitted).toBe(Math.max(0, targets.length - stopped - 50))
   expect(f.delivered[0]!.events.map(event => event.target)).toEqual(targets.slice(stopped, stopped + 50))
   expect(f.record.wakeEventIds).toEqual(f.delivered[0]!.events.map(event => event.id))
+})
+
+
+it('keeps owning-host checkpoint causes without starting a master or a wake-up deadline', async () => {
+  const f = fixture(false)
+  f.wakes.checkpoint({ threadId: f.thread.id, checkpointId: 'synthetic-checkpoint', observedAt: new Date(f.now()).toISOString(),
+    availability: 'unavailable', reason: 'capture-unavailable' })
+  expect(f.wakes.evidence.read(centerTarget)).toEqual([expect.objectContaining({ target: centerTarget, source: 'checkpoint', reason: 'capture-unavailable' })])
+  expect(f.wakes.ready()).toBe(false)
+  expect(f.timers.size).toBe(0)
+  await f.advance(30_000)
+  expect(f.delivered).toHaveLength(0)
+  expect(f.wakes.news()).toHaveLength(0)
 })

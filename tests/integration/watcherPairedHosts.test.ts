@@ -10,7 +10,7 @@ import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
 import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
 import { DESKTOP_CLIENTS_FILE } from '../../src/shared/desktopClients'
 import { watcherToolSchemas, type WatcherToolName, type WatcherToolOutput } from '../../src/shared/watcher'
-import type { WatcherHostControl } from '../../src/shared/watcherHost'
+import type { WatcherHostControl, WatcherHostProjection } from '../../src/shared/watcherHost'
 import type { HostOperation } from '../../src/shared/hostProtocol'
 import { useSocketHostFixture } from '../fixtures/socketHostFixture'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
@@ -306,3 +306,46 @@ it('refuses a remote mutation before transmission when the master closes during 
     expect(f.watcher.state().requests[0]!.participants[0]!.promptCount).toBe(1)
   } finally { gate.release(); await start }
 })
+
+
+it('attributes returning paired evidence to its host, queues news after user work and withdraws it on Stop', async () => {
+  const f = await master(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start-refused')
+  let checks: 'failed' | 'passed' = 'failed'
+  const original = f.socket.watcherRead.bind(f.socket)
+  vi.spyOn(f.socket, 'watcherRead').mockImplementation(async packet => {
+    const result = await original(packet)
+    if (packet.call) return result
+    const projection = result as WatcherHostProjection
+    return { ...projection, evidence: [...projection.evidence, { id: 'synthetic-host-fact', target: first.target,
+      source: 'github', observedAt: new Date().toISOString(), freshness: 'fresh', availability: 'available',
+      fact: checks === 'failed' ? 'checks-failed' : 'checks-passed', checksState: checks,
+      headId: 'synthetic-head', url: 'https://github.com/synthetic/project/pull/5' }] }
+  })
+  await f.control.commandShell({ type: 'queue-followup', threadId: f.id, draftId: randomUUID(), text: 'Synthetic user continuation' })
+  const occurrences: string[] = []
+  for (const state of ['failed', 'passed', 'failed'] as const) {
+    checks = state; f.router.replace(f.connection)
+    await vi.waitFor(() => {
+      const facts = f.watcher.state().watchedThreads.find(item => item.target.threadId === first.target.threadId)!.evidence
+      const fact = facts.find(item => item.source === 'github' && item.checksState === state)!
+      expect(fact).toBeDefined()
+      const event = f.watcher.state().news?.find(item => item.kind === 'evidence-changed' && item.evidenceIds?.includes(fact.id))
+      expect(event).toMatchObject({ target: first.target, requestId: f.requestId })
+      expect(occurrences).not.toContain(event!.id)
+    }, { timeout: 15_000 })
+    const event = f.watcher.state().news!.find(item => item.kind === 'evidence-changed' && item.target.threadId === first.target.threadId)!
+    occurrences.push(event.id)
+    await vi.waitFor(() => expect(f.control.shell().followups?.filter(item => item.threadId === f.id).at(-1)?.wakeUp).toBe(true), { timeout: 15_000 })
+    expect(f.control.shell().followups!.filter(item => item.threadId === f.id)[0]!.text).toBe('Synthetic user continuation')
+  }
+  expect(new Set(occurrences).size).toBe(3)
+  expect(await f.call('stop_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target })).toMatchObject({ status: 'ok' })
+  checks = 'passed'; f.router.replace(f.connection)
+  await vi.waitFor(() => expect(f.watcher.state().news?.some(item => item.target.threadId === first.target.threadId)).toBe(false))
+  await vi.waitFor(() => expect(f.control.shell().followups?.some(item => item.threadId === f.id && item.wakeUp)).toBe(false))
+  expect(f.control.shell().followups!.find(item => item.threadId === f.id)?.text).toBe('Synthetic user continuation')
+  expect(f.watcher.state().watchedThreads.find(item => item.target.threadId === first.target.threadId)!.participation[0]).toMatchObject({ automationStopped: true, promptCount: 1 })
+  expect((await remote.native.snapshot()).threads.find(item => item.title === 'Synthetic remote worker')!.messages.filter(item => item.role === 'user')).toHaveLength(1)
+  expect(f.workspace.adapters.codex.commands.filter(item => item.type === 'answer')).toHaveLength(0)
+}, 60_000)
