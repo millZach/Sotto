@@ -1,7 +1,8 @@
 // @vitest-environment node
 import * as worktrees from '../../../src/main/agents/threadWorktrees'
 import { join } from 'node:path'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { expect, it, vi } from 'vitest'
 import { workspaceFixture } from '../../fixtures/workspaceFixture'
 import { connectCheckpoints } from '../../../src/main/tools/checkpointIntegration'
@@ -10,6 +11,7 @@ import { resolveFilesBinding } from '../../../src/main/files/binding'
 import type { GitActions } from '../../../src/main/agents/gitActions'
 import type { AgentControl } from '../../../src/main/agents/control'
 import { deferred } from '../../fixtures/deferred'
+import { inactiveLocalHost } from '../../../src/main/hosts/inactiveLocalHost'
 
 it('excludes an unallocated worktree from shared-folder checkpoint guards while retaining active shared-thread protection', async () => {
   const f = await workspaceFixture()
@@ -124,5 +126,50 @@ it('takes a send\'s checkpoint from the thread the coordinator just read, settli
     expect(settle).toHaveBeenCalledOnce()
     // Taking the checkpoint asks for the thread's history, not whether other work is pending.
     expect(pending).not.toHaveBeenCalled()
+  } finally { vi.restoreAllMocks(); integration?.dispose(); await f.stop(); await f.remove() }
+})
+
+
+it('connects checkpoints while the local host is off without creating Watcher observers', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'sotto-checkpoints-inactive-'))
+  let integration: ReturnType<typeof connectCheckpoints> | undefined
+  try {
+    const runtime = await inactiveLocalHost(root)
+    const files = new FilesService({ resolveBinding: id => resolveFilesBinding(runtime.agentHost.workspaceSnapshot(), id), copyPath: vi.fn(), reveal: vi.fn() })
+    const report = vi.fn()
+    integration = connectCheckpoints({ files, directory: root, host: runtime.agentHost, control: runtime.agentControl, registry: null, report })
+    await integration.checkpoints.initialize()
+    expect(runtime.agentControl.watcherObservationsEnabled()).toBe(false)
+    expect(runtime.watcher).toBeUndefined()
+    expect(runtime.agentControl.shell().host.threads).toEqual([])
+    expect(report).not.toHaveBeenCalled()
+    await runtime.close()
+  } finally { integration?.dispose(); await rm(root, { recursive: true, force: true }) }
+})
+
+
+it('keeps a refused before-turn capture on its checkpoint identity without guessing a native turn', async () => {
+  const f = await workspaceFixture()
+  let integration: ReturnType<typeof connectCheckpoints> | undefined
+  try {
+    const snapshot = await f.host.connect()
+    const project = snapshot.projects.find(item => item.providerId === 'codex')!
+    const model = snapshot.models.find(item => item.providerId === 'codex')!
+    await f.host.execute({ type: 'create-thread', commandId: 'ready', threadId: 'ready', projectId: project.id, modelId: model.id, title: 'Ready' })
+    const state = f.host.workspaceSnapshot()
+    vi.spyOn(f.host, 'workspaceSnapshot').mockReturnValue({ ...state, threads: state.threads.map(thread => thread.id === 'ready'
+      ? { ...thread, lastTurn: { id: 'previous-turn', status: 'completed' as const } } : thread) })
+    const files = new FilesService({ resolveBinding: id => resolveFilesBinding(f.host.workspaceSnapshot(), id), copyPath: vi.fn(), reveal: vi.fn() })
+    const observed = vi.fn()
+    integration = connectCheckpoints({ files, directory: f.root, host: f.host, registry: f.registry,
+      control: { subscribe: () => () => undefined, hasPendingThreadWork: () => false,
+        watcherObservationsEnabled: () => true, checkpointObserved: observed } as unknown as AgentControl, report: vi.fn() })
+    const capture = (integration.checkpoints as unknown as { capture: { snapshot: () => Promise<unknown> } }).capture
+    vi.spyOn(capture, 'snapshot').mockRejectedValueOnce(new Error('Synthetic unavailable capture'))
+    await integration.checkpoints.beforeTurn('ready')
+    expect(observed).toHaveBeenCalledOnce()
+    expect(observed.mock.calls[0]![0]).toMatchObject({ threadId: 'ready', checkpointId: expect.any(String), availability: 'unavailable', reason: 'capture-unavailable' })
+    expect(observed.mock.calls[0]![0]).not.toHaveProperty('turnId')
+    expect(observed.mock.calls[0]![0]).not.toHaveProperty('changedFiles')
   } finally { vi.restoreAllMocks(); integration?.dispose(); await f.stop(); await f.remove() }
 })

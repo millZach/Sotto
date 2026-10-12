@@ -17,7 +17,9 @@ import {
 import type { BabysitNews } from './babysitNews'
 import { BABYSIT_REFUSALS, type Babysitter } from './babysitting'
 import { pullRequestAddress } from '../../shared/gitPullRequests'
-import { wakeUpText } from './wakeUp'
+import { queuedWakeUpText, isWatcherNews, type WakeUpNews } from './wakeUp'
+import type { WatcherEvent } from '../../shared/watcherNews'
+import type { CheckpointObservation, PullRequestObservation } from './watcherEvidence'
 import { nearestReasoningEffort, resolveNewThreadPermission } from '../../shared/newThreadDefaults'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentCredentials } from './credentials'
@@ -47,7 +49,7 @@ import { FinishedUnread } from './finishedUnread'
 import { withoutLegacyManagement, type HostAnswerTarget } from '../../shared/hostProtocol'
 import { agentCommandSchema } from '../../shared/agents'
 import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from './watcherCommands'
-import { watcherRecordSchema, emptyWatcherRecord, type WatcherRecord } from '../../shared/watcher'
+import { watcherRecordSchema, emptyWatcherRecord, type WatcherRecord, type WatcherThreadTarget } from '../../shared/watcher'
 import { migrateWatcherRecord } from './watcherRecords'
 
 /** One shared empty array stands in for every shell thread's history; the clone that follows copies nothing. */
@@ -264,7 +266,7 @@ export class AgentControl {
   }
   useWatcher(hooks: WatcherControlHooks): () => void {
     if (this.dependencies.watcherEnabled === true) this.watcherHooks = hooks
-    return () => { if (this.watcherHooks === hooks) this.watcherHooks = undefined }
+    return () => { if (this.watcherHooks === hooks) { this.watcherHooks = undefined; this.refreshWatcherObservation() } }
   }
   commandFromWatcher(command: WatcherCommand, origin: WatcherCommandOrigin): Promise<AgentState> {
     if (!this.watcherHooks || !['create-thread', 'manual-send', 'queue-followup', 'steer', 'interrupt', 'settle-thread'].includes(command.type)) {
@@ -1404,7 +1406,7 @@ export class AgentControl {
       ...(this.dependencies.observeActiveThread !== false && this.state.activeThreadId ? [this.state.activeThreadId] : []),
       ...(this.state.draftThreadId && this.hasDraft() ? [this.state.draftThreadId] : []),
       ...this.viewedThreadIds.filter(id => this.state.host.threads.some(thread => thread.id === id)),
-      ...this.queuedThreadIds(), ...this.outbox.flatMap(item => item.threadId ? [item.threadId] : []), ...threadIds])].filter(id => this.watcherAvailable(id)))
+      ...this.watcherHooks?.watchedThreadIds?.() ?? [], ...this.queuedThreadIds(), ...this.outbox.flatMap(item => item.threadId ? [item.threadId] : []), ...threadIds])].filter(id => this.watcherAvailable(id)))
   }
   /**
    * The threads whose follow-up queue holds something of the user's, or a wake-up already sending. A queue holding only
@@ -1414,20 +1416,28 @@ export class AgentControl {
   private queuedThreadIds(): string[] {
     return this.followupStore.peek().items.filter(item => !isWaitingWakeUp(item)).map(item => item.threadId)
   }
+  canDeliverWatcherNews(target: WatcherThreadTarget): boolean {
+    if (this.disposed || this.dependencies.watcherEnabled !== true || !this.watcherHooks
+      || this.watcher.current?.target.hostId !== target.hostId || this.watcher.current.target.threadId !== target.threadId) return false
+    const thread = this.state.host.threads.find(item => item.id === target.threadId && (item.hostId ?? this.state.host.hostId) === target.hostId)
+    return !!thread && this.state.host.connected && thread.clientConnected !== false && isThreadProviderConnected(this.state.host, thread)
+      && !isThreadClosed(thread) && !isWorkspaceThreadSettled(thread, this.state.host.projects.find(project => project.id === thread.projectId))
+  }
   /**
    * Hands a thread babysitting's news as a wake-up (ADR-0061 decision 8): Sotto's own item in the thread's follow-up
    * queue, which sends it at once when the thread is ready and otherwise when the queue would send the next one,
    * folded into a wake-up already waiting. Resolves once it is saved, which is when the news counts as told; a thread
    * that is gone, settled or archived takes nothing, and the rejection leaves the news untold.
    */
-  async deliverWakeUp(threadId: string, news: BabysitNews, options: { readonly tool: boolean }): Promise<void> {
+  async deliverWakeUp(threadId: string, news: WakeUpNews, options: { readonly tool: boolean }): Promise<void> {
     if (this.disposed) throw new Error('Sotto is closing.')
+    if (isWatcherNews(news) && (news.watcher.threadId !== threadId || !this.canDeliverWatcherNews(news.watcher))) throw new Error('Watcher is unavailable.')
     const thread = this.state.host.threads.find(item => item.id === threadId)
     if (!thread) throw new Error('This thread is not on this host.')
     if (isThreadClosed(thread) || isWorkspaceThreadSettled(thread, this.state.host.projects.find(project => project.id === thread.projectId))) throw new Error('This thread is settled or archived.')
     // News arriving while the thread rests follows the turn it rests on; a request waiting on the user still holds it.
     const reviewed = thread.status !== 'running' && thread.lastTurn?.status !== 'running' ? thread.lastTurn?.id ?? 'unknown' : undefined
-    await this.followupStore.queueWakeUp(threadId, news, items => wakeUpText(items, options), reviewed)
+    await this.followupStore.queueWakeUp(threadId, news, items => queuedWakeUpText(items, options), reviewed)
     this.syncFollowups(); this.publish(); this.pumpFollowups()
   }
   /**
@@ -1436,8 +1446,33 @@ export class AgentControl {
    */
   async withdrawWakeUp(threadId: string, url: string | undefined, options: { readonly tool: boolean }): Promise<void> {
     if (!this.watcherAvailable(threadId)) throw new Error('Watcher is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
-    await this.followupStore.withdrawWakeUp(threadId, url, items => wakeUpText(items, options))
+    await this.followupStore.withdrawWakeUp(threadId, url, items => queuedWakeUpText(items, options))
     this.syncFollowups(); this.publish()
+  }
+  /** Main observers only; these carry sourced facts, never user command authority. */
+  pullRequestObserved(read: PullRequestObservation): void { if (this.dependencies.watcherEnabled === true) this.watcherHooks?.pullRequestObserved?.(read) }
+  watcherObservationsEnabled(): boolean { return this.dependencies.watcherEnabled === true && this.watcherHooks !== undefined }
+  restoreCheckpoint(read: CheckpointObservation): void { if (this.dependencies.watcherEnabled === true) this.watcherHooks?.restoreCheckpoint?.(read) }
+  checkpointObserved(read: CheckpointObservation): void { if (this.dependencies.watcherEnabled === true) this.watcherHooks?.checkpointObserved?.(read) }
+  private watcherObservedIds = ''
+  refreshWatcherObservation(): void {
+    if (this.dependencies.watcherEnabled !== true) return
+    const ids = JSON.stringify(this.watcherHooks?.watchedThreadIds?.() ?? [])
+    if (this.watcherObservedIds === ids) return
+    this.watcherObservedIds = ids; this.observe()
+  }
+  restoredWatcherEvents(): WatcherEvent[] {
+    if (this.dependencies.watcherEnabled !== true || !this.watcherHooks || !this.watcher.current) return []
+    const target = this.watcher.current.target
+    return this.followupStore.peek().items.filter(item => isWaitingWakeUp(item) && item.threadId === target.threadId)
+      .flatMap(item => item.news?.flatMap(news => isWatcherNews(news) && news.watcher.hostId === target.hostId
+        && news.watcher.threadId === target.threadId ? news.events : []) ?? []).slice(-400)
+  }
+  async pruneWatcherWakeUps(): Promise<void> {
+    if (this.dependencies.watcherEnabled !== true || this.disposed || !this.watcherHooks?.wakeReady?.()) return
+    const items = this.followupStore.peek().items.filter(item => item.news?.some(isWatcherNews) && isWaitingWakeUp(item) && this.wakeUpOutdated(item.threadId, item))
+    for (const item of items) await this.pruneWakeUp(item.threadId, item.id)
+    if (items.length) { this.syncFollowups(); this.publish(); this.pumpFollowups() }
   }
   /**
    * Early start (#769): the user began typing in this thread's composer, so its provider session starts now rather
@@ -1807,12 +1842,18 @@ export class AgentControl {
    */
   private wakeUpOutdated(threadId: string, item: Pick<QueuedFollowup, 'wakeUp' | 'news'>): boolean {
     const guard = this.wakeUpGuard
-    return guard !== undefined && item.wakeUp === true && (item.news ?? []).some(news => !guard.due(threadId, news))
+    return item.wakeUp === true && (item.news ?? []).some(news => isWatcherNews(news)
+      ? this.dependencies.watcherEnabled !== true || news.events.some(event => !this.watcherHooks?.wakeDue?.(event))
+      : guard !== undefined && !guard.due(threadId, news))
   }
   private pruneWakeUp(threadId: string, id: string): Promise<void> {
     const guard = this.wakeUpGuard
-    if (!guard) return Promise.resolve()
-    return this.followupStore.pruneWakeUp(id, news => guard.due(threadId, news), items => wakeUpText(items, { tool: guard.tool(threadId) }))
+    return this.followupStore.pruneWakeUp(id, news => isWatcherNews(news) ? news.events.length > 0 : !guard || guard.due(threadId, news),
+      items => queuedWakeUpText(items, { tool: guard?.tool(threadId) ?? false }), news => {
+        if (!isWatcherNews(news)) return news
+        const events = news.events.filter(event => this.dependencies.watcherEnabled === true && this.watcherHooks?.wakeDue?.(event))
+        return events.length ? { ...news, events } : undefined
+      })
   }
   /**
    * The user's Babysit pull request and Stop babysitting on the Pull request surface (ADR-0061 decision 3), from this
@@ -2364,6 +2405,7 @@ export class AgentControl {
       // A steer may have selected any queue item. Reconcile its late echo before the queue head.
       const first = items.find(item => item.threadId === threadId && item.messageId && thread?.messages.some(message => message.role === 'user' && message.id === item.messageId))
         ?? items.find(item => item.threadId === threadId)!
+      if (first.news?.some(isWatcherNews) && !this.watcherHooks?.wakeReady?.()) continue
       // Native idle status can precede turn/completed. A still-running outcome is
       // neither permission to dispatch nor a terminal failure requiring review.
       const terminalBlocked = thread && thread.status !== 'running' && thread.lastTurn?.status !== 'running'
@@ -2429,9 +2471,11 @@ export class AgentControl {
           const queueGuard = !item.watcherOperationId && this.watcherHooks ? () => {
             if (this.watcherHooks?.preserveUserQueue(threadId)) throw new Error('Watcher stopped this thread. Review it and resume its queue when ready.')
           } : undefined
+          // News freshness and stopped participation both reach the native writer without changing origin.
+          const writeGuard = item.news?.some(isWatcherNews) ? () => { validate(); queueGuard?.() } : queueGuard
           await this.dispatch({ type: 'send', commandId: item.commandId!, threadId, messageId: item.messageId!, text: item.text.trim(), attachments: item.attachments, ...(item.skills ? { skills: item.skills } : {}), ...(item.files ? { files: item.files } : {}),
             expectedLastUserMessageId: lastUserMessageIdOf(this.thread(threadId)), ...(item.wakeUp ? { wakeUp: true as const } : {}) }, turn, validate, item.wakeUp ? undefined : item.draftId,
-            this.localClient, undefined, undefined, queueGuard)
+            this.localClient, undefined, undefined, writeGuard)
           await this.followupStore.settle(item.id, 'accepted')
         } catch (error) {
           failure = error instanceof CheckoutSendRefusal ? error.queuedMessage() : error instanceof Error ? error.message : first.wakeUp ? 'Could not send this wake-up.' : 'Could not dispatch this follow-up.'
