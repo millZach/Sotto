@@ -31,6 +31,22 @@ function provide(state: AgentState) {
 }
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 
+const LOCAL = '11111111-1111-4111-8111-111111111111'
+const FORGE = '22222222-2222-4222-8222-222222222222'
+/** This computer and forge, with a forge thread selected: the shell's catalog is forge's, which has no Grok. */
+function twoComputers(configuration: Partial<AgentState['configuration']> = {}, forge: { connected?: boolean; mayAnswer?: boolean } = {}): AgentState {
+  const state = fixture(configuration)
+  const localModels = state.host.models
+  const forgeModels = localModels.filter(model => model.providerId !== 'grok')
+  state.host.models = forgeModels
+  state.connections = [{ hostId: LOCAL, name: 'This computer', kind: 'local', connected: true }, { hostId: FORGE, name: 'forge', kind: 'remote', connected: forge.connected ?? true }]
+  state.host.clientHosts = [
+    { hostId: LOCAL, connected: true, models: localModels, capabilities: caps, projectsDirectory: 'D:\\Projects', mayAnswer: true },
+    { hostId: FORGE, connected: forge.connected ?? true, models: forgeModels, capabilities: caps, projectsDirectory: '/home/zach/projects', mayAnswer: forge.mayAnswer ?? true },
+  ]
+  return state
+}
+
 describe('New threads start with (issue #347)', () => {
   it('shows the configured default model and saves a chosen one to Settings', async () => {
     const { command } = provide(fixture({ newThreadModelId: 'claude:sonnet' }))
@@ -68,13 +84,54 @@ describe('New threads start with (issue #347)', () => {
     expect(chip).toHaveTextContent('Full access')
     fireEvent.click(chip)
     fireEvent.click(screen.getByRole('option', { name: 'Provider default' }))
-    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure', patch: { newThreadRuntimeMode: undefined } }))
+    // Null, not undefined: the patch may cross to a host as JSON, which drops an undefined field.
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure', patch: { newThreadRuntimeMode: null } }))
   })
 
   it('notes the nearest fit when the chosen model’s provider lacks the chosen permission', () => {
     provide(fixture({ newThreadModelId: 'grok:test', newThreadRuntimeMode: 'auto-accept-edits' }))
     render(<AgentSetupFields />)
     expect(screen.getByText('Grok Build has no "Allow edits", so its threads start on "Ask for approval".')).toBeInTheDocument()
+  })
+
+  it('offers this computer’s models while another host’s thread is selected (ADR-0074)', () => {
+    provide(twoComputers({ newThreadModelId: 'grok:test' }))
+    render(<AgentSetupFields />)
+    expect(screen.getByRole('combobox', { name: 'Thread model' })).toHaveTextContent('Grok Test')
+    expect(screen.getByText('A new thread in a project opens straight away with these, on every connected computer. Change them for one thread under its composer.')).toBeInTheDocument()
+  })
+
+  it('names a host that holds back a permission that lets a thread act without asking, and only while it does', () => {
+    provide(twoComputers({ newThreadModelId: 'claude:sonnet', newThreadRuntimeMode: 'auto' }, { mayAnswer: false }))
+    render(<AgentSetupFields />)
+    expect(screen.getByText('forge doesn’t let this computer answer permission requests yet, so its new threads start on "Ask for approval".')).toBeInTheDocument()
+    cleanup()
+    for (const state of [twoComputers({ newThreadModelId: 'claude:sonnet', newThreadRuntimeMode: 'approval-required' }, { mayAnswer: false }),
+      twoComputers({ newThreadModelId: 'claude:sonnet', newThreadRuntimeMode: 'auto' }, { mayAnswer: true }),
+      twoComputers({ newThreadModelId: 'claude:sonnet' }, { mayAnswer: false })]) {
+      provide(state)
+      render(<AgentSetupFields />)
+      expect(screen.queryByText(/let this computer answer/)).not.toBeInTheDocument()
+      cleanup()
+    }
+  })
+
+  it('lists each computer’s projects folder and saves each to its own computer (ADR-0074)', async () => {
+    const { command } = provide(twoComputers())
+    render(<AgentSetupFields />)
+    expect(screen.getByRole('textbox', { name: 'Default projects directory on this computer' })).toHaveValue('D:\\Projects')
+    const forge = screen.getByRole('textbox', { name: 'Default projects directory on forge' })
+    expect(forge).toHaveValue('/home/zach/projects')
+    fireEvent.change(forge, { target: { value: '/srv/projects' } })
+    fireEvent.blur(forge)
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure', patch: { projectsDirectory: '/srv/projects' }, hostId: FORGE }))
+  })
+
+  it('keeps a disconnected host’s projects folder until it connects', () => {
+    provide(twoComputers({}, { connected: false }))
+    render(<AgentSetupFields />)
+    expect(screen.getByRole('textbox', { name: 'Default projects directory on forge' })).toBeDisabled()
+    expect(screen.getByText('Connect forge to change its projects directory.')).toBeInTheDocument()
   })
 
   it('notes that a provider with its own permission profiles starts on its first', () => {

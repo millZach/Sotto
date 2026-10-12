@@ -71,6 +71,17 @@ describe('new-thread defaults applied on create-thread (issue #347)', () => {
     expect(created.host.threads.find(t => t.id === created.activeThreadId)).toMatchObject({ reasoningEffort: 'high', runtimeMode: 'full-access' })
   })
 
+  it('puts the permission default back to the provider’s own on null, the spelling JSON carries to a host (ADR-0074)', async () => {
+    const f = await controlFixture()
+    await f.control.command({ type: 'configure', patch: { newThreadRuntimeMode: 'full-access' } })
+    const cleared = await f.control.command({ type: 'configure', patch: { newThreadRuntimeMode: null } })
+    expect(cleared.error).toBeNull()
+    expect(cleared.configuration.newThreadRuntimeMode).toBeUndefined()
+    const created = await f.control.command({ type: 'create-thread', projectId: 'project', title: 'Provider default', modelId: 'claude:test' })
+    expect(f.host.attempts.find(item => (item as { type: string }).type === 'create-thread')).not.toHaveProperty('runtimeMode')
+    expect(created.error).toBeNull()
+  })
+
   it('lets an explicit choice win over the configured default', async () => {
     const f = await controlFixture()
     await f.control.command({ type: 'configure', patch: { newThreadReasoningEffort: 'high', newThreadRuntimeMode: 'full-access' } })

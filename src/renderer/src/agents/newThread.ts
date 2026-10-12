@@ -1,7 +1,7 @@
 import { hostEntityKey, parseHostEntityKey, projectWorkingCopyDefaultKey } from '../../../shared/clientIdentity'
-import { defaultNewThreadModelId, hostForThread, type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
+import { defaultNewThreadModelId, hostForThread, type AgentModel, type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
 import { resolveModel } from '../../../shared/modelCatalog'
-import { nearestReasoningEffort, resolveNewThreadPermission } from '../../../shared/newThreadDefaults'
+import { hostNewThreadPermission, nearestReasoningEffort } from '../../../shared/newThreadDefaults'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../../shared/threadActivity'
 import type { AgentConnection } from './AgentContext'
 import { draftThread, UNCONFIRMED_CREATION } from './draftThreads'
@@ -62,21 +62,53 @@ export function unusedNewThread(state: AgentState, project: AgentProject): Agent
     && (thread.summary?.messageCount ?? thread.messages.length) === 0)
 }
 
-/** Read creation and reuse against the same host catalog and current Settings defaults. */
-function newThreadOptions(state: AgentState, project: AgentProject) {
-  const projectHost = hostForThread(state.host, { hostId: projectHostId(state, project) })
-  const modelId = defaultNewThreadModelId(state.configuration, projectHost.models, state.reasoningAccounts)
+/**
+ * The catalog the new-thread defaults are chosen from: this computer's own host's, where they are kept, or the
+ * selected host's when no local host runs (ADR-0074).
+ */
+export function newThreadDefaultsCatalog(state: AgentState): AgentModel[] {
+  const local = state.connections?.find(connection => connection.kind === 'local')?.hostId
+  return local === undefined ? state.host.models : hostForThread(state.host, { hostId: local }).models
+}
+
+/**
+ * The model a new thread starts on, on the project's host: the default, unless that is a remote host whose catalog
+ * does not list it, where the thread starts on that host's recommended ready model instead. This computer's own host
+ * keeps the default even while its provider is away, so the thread can say what to connect.
+ */
+function startingModelId(chosen: string, models: readonly AgentModel[], remote: boolean): string {
+  if (!remote || !chosen || resolveModel(models, chosen)) return chosen
+  const ready = models.filter(model => model.ready)
+  return (ready.find(model => model.recommended) ?? ready[0])?.id ?? chosen
+}
+
+/**
+ * What a new thread on `hostId` starts on: this computer's new-thread defaults, which apply on every host (ADR-0074),
+ * fit to that host. The default model is read from the catalog Settings shows it from, inherited model included, and
+ * then fit to the host's own catalog; the effort maps by its position among that default model's levels. `sentEffort`
+ * is the effort a default chose, and `permission` what a default chose, held back to asking where the host does not
+ * let this computer answer. Where neither chose, the host's own choice applies. Creation, reuse and Settings' note all
+ * read this, so the note never says something creation does not do.
+ */
+export function newThreadOptionsOn(state: AgentState, hostId: string | undefined) {
+  const projectHost = hostForThread(state.host, { hostId })
+  const remote = state.connections?.find(connection => connection.hostId === hostId)?.kind === 'remote'
+  const configuration = state.configuration
+  const defaults = newThreadDefaultsCatalog(state)
+  const chosenId = defaultNewThreadModelId(configuration, defaults, state.reasoningAccounts)
+  const modelId = startingModelId(chosenId, projectHost.models, remote)
   // A long-context variant the catalog does not list (`opus[1m]`) answers from its base model's entry.
   const selectedModel = resolveModel(projectHost.models, modelId)
-  const configuration = state.configuration
-  let reasoningEffort: string | undefined
+  let sentEffort: string | undefined
   if (configuration.newThreadReasoningEffort) {
-    const reference = resolveModel(projectHost.models, configuration.newThreadModelId)?.reasoningEfforts ?? selectedModel?.reasoningEfforts ?? []
-    reasoningEffort = nearestReasoningEffort(configuration.newThreadReasoningEffort, reference, selectedModel?.reasoningEfforts ?? [])
+    const reference = (resolveModel(defaults, chosenId) ?? selectedModel)?.reasoningEfforts ?? []
+    sentEffort = nearestReasoningEffort(configuration.newThreadReasoningEffort, reference, selectedModel?.reasoningEfforts ?? [])
   }
-  const permission = resolveNewThreadPermission(selectedModel, configuration.newThreadRuntimeMode)
-  return { modelId, selectedModel, reasoningEffort: reasoningEffort ?? selectedModel?.defaultReasoningEffort, permission }
+  const mayAnswer = !remote || state.host.clientHosts?.find(item => item.hostId === hostId)?.mayAnswer === true
+  const permission = hostNewThreadPermission(selectedModel, configuration.newThreadRuntimeMode, mayAnswer)
+  return { modelId, selectedModel, sentEffort, reasoningEffort: sentEffort ?? selectedModel?.defaultReasoningEffort, permission }
 }
+function newThreadOptions(state: AgentState, project: AgentProject) { return newThreadOptionsOn(state, projectHostId(state, project)) }
 
 /**
  * Open a new thread in `project` at once, on the defaults from Settings → Agents: the pen on a project row,
@@ -85,7 +117,7 @@ function newThreadOptions(state: AgentState, project: AgentProject) {
  * with the reason. The draft uses the same option helpers as main, so its chips show the defaults immediately.
  */
 export async function beginNewThread(state: AgentState, command: AgentConnection['command'], project: AgentProject): Promise<ThreadCreationStart | { readonly error: string }> {
-  const { modelId, selectedModel, reasoningEffort, permission } = newThreadOptions(state, project)
+  const { modelId, selectedModel, sentEffort, reasoningEffort, permission } = newThreadOptions(state, project)
   if (!modelId) return { error: 'No model is ready to start this thread. Connect a provider or choose one in Settings → Agents.' }
   let workingCopy: 'independent' | 'shared'
   try { workingCopy = await projectWorkingCopy(state, project) }
@@ -96,7 +128,11 @@ export async function beginNewThread(state: AgentState, command: AgentConnection
   const thread = draftThread({ id: threadId, projectId: project.id, title, modelId, workingCopy, ...worktreeChoices,
     ...(selectedModel?.providerId ? { providerId: selectedModel.providerId } : {}),
     reasoningEffort, runtimeMode: permission.runtimeMode, providerMode: permission.providerMode, host: draftHost(state, project) })
-  const created = command({ type: 'create-thread', threadId, projectId: project.id, title, modelId, titleSource: 'default', workingCopy, ...worktreeChoices })
+  // The defaults go with the creation, since a remote host would otherwise start the thread on its own (ADR-0074).
+  // A provider's own permission profiles (Devin) are left to the host, which starts on the first, as before.
+  const chosen = { ...(sentEffort !== undefined ? { reasoningEffort: sentEffort } : {}),
+    ...(state.configuration.newThreadRuntimeMode && permission.runtimeMode ? { runtimeMode: permission.runtimeMode } : {}) }
+  const created = command({ type: 'create-thread', threadId, projectId: project.id, title, modelId, titleSource: 'default', workingCopy, ...worktreeChoices, ...chosen })
     .then(result => result === null ? UNCONFIRMED_CREATION : result.error, () => UNCONFIRMED_CREATION)
   return { thread, created }
 }
