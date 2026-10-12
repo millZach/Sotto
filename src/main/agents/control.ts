@@ -1832,7 +1832,7 @@ export class AgentControl {
   }
   private pruneWakeUp(threadId: string, id: string): Promise<void> {
     const guard = this.wakeUpGuard
-    return this.followupStore.pruneWakeUp<WakeUpNews>(id, news => isWatcherNews(news) ? news.events.length > 0 : !guard || guard.due(threadId, news),
+    return this.followupStore.pruneWakeUp(id, news => isWatcherNews(news) ? news.events.length > 0 : !guard || guard.due(threadId, news),
       items => queuedWakeUpText(items, { tool: guard?.tool(threadId) ?? false }), news => {
         if (!isWatcherNews(news)) return news
         const events = news.events.filter(event => this.dependencies.watcherEnabled === true && this.watcherHooks?.wakeDue?.(event))
