@@ -686,7 +686,7 @@ private struct MessageView: View, Equatable {
 
 /// A message as blocks (headings, lists, code, quotes, paragraphs), each with its inline Markdown, as the desktop
 /// draws it. A stray backtick can't reach past its own block, and a key chord such as Ctrl+` reads as a key.
-private struct MarkdownText: View {
+struct MarkdownText: View {
     let text: String
     @Environment(\.sottoDensity) private var density
     var body: some View {
@@ -1391,7 +1391,7 @@ private struct UnconfirmedRow: View {
     /// What the row says for its kind: on its way, and unconfirmed.
     private var words: (sending: String, unconfirmed: String) {
         switch item.kind {
-        case "answer": return ("Sending your answer…", "Your answer isn’t confirmed. Check the thread before you answer again.")
+        case "answer", "watcher-answer": return ("Sending your answer…", "Your answer isn’t confirmed. Check the thread before you answer again.")
         case "interrupt": return ("Stopping…", "Stop isn’t confirmed. Check whether the thread is still working.")
         case "queue": return ("Queuing…", "Queuing isn’t confirmed. Check the thread’s queue before you send it again.")
         case "steer": return ("Steering…", "Steer isn’t confirmed. Check the thread before you steer again.")
@@ -1715,11 +1715,12 @@ private struct FollowupCard: View {
 // MARK: - Question and permission sheet
 
 /// The whole request: its context and every choice, on glass with a warm wash. Nothing is chosen for the user, and a
-/// question is sent only when they press Send answer.
-private struct RequestSheet: View {
+/// question is sent only when they press Send answer. It answers the request where it waits: in its own thread, or as a
+/// card in Watcher's page (4B), where the answer is still the user's own, to the thread that asked.
+struct RequestSheet: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) var dismiss
-    let ref: ThreadRef
+    let place: RequestPlace
     let request: AgentRequest
     @State private var answers: [String: QuestionAnswer] = [:]
     @State private var choice: String?
@@ -1727,16 +1728,19 @@ private struct RequestSheet: View {
     /// Questions whose own-answer box is open.
     @State private var writing: Set<String> = []
     @FocusState private var focus: String?
-    private var thread: ThreadSummary? { model.thread(ref) }
-    private var computer: String { model.name(ref.hostID) }
+    init(place: RequestPlace, request: AgentRequest) { self.place = place; self.request = request }
+    init(ref: ThreadRef, request: AgentRequest) { self.init(place: .thread(ref), request: request) }
+    /// The asking thread's title and provider.
+    private var owner: (title: String, providerID: String?)? { model.requestOwner(place) }
+    private var computer: String { model.name(place.hostID) }
     /// The request as the computer holds it now; nil once it is answered or replaced.
-    private var current: AgentRequest? { thread?.requests.first { $0.id == request.id } }
+    private var current: AgentRequest? { model.waitingRequest(request.id, at: place) }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                if let current, let thread {
-                    content(current, thread)
+                if let current, let owner {
+                    content(current, threadTitle: owner.title, providerID: owner.providerID)
                 } else {
                     Text("This request was answered or changed.").font(.sotto(.lead, .semibold)).foregroundStyle(Palette.ink)
                     Button("Close") { dismiss() }.buttonStyle(PillButtonStyle(kind: .soft, wide: true)).padding(.top, Space.s4)
@@ -1751,15 +1755,15 @@ private struct RequestSheet: View {
         .safeAreaInset(edge: .bottom, spacing: 0) { footer }
         .presentationBackground { SheetBackdrop(wash: true) }
         .presentationCornerRadius(Radius.xl)
-        .onChange(of: current == nil && model.pending(for: ref).isEmpty) { _, gone in if gone { dismiss() } }
+        .onChange(of: current == nil && !model.hasPending(at: place)) { _, gone in if gone { dismiss() } }
     }
 
-    @ViewBuilder private func content(_ current: AgentRequest, _ thread: ThreadSummary) -> some View {
-        let provider = Words.provider(thread.providerId)
+    @ViewBuilder private func content(_ current: AgentRequest, threadTitle: String, providerID: String?) -> some View {
+        let provider = Words.provider(providerID)
         let permission = current.kind == "permission"
         let count = current.questions?.count ?? 0
-        let from = permission ? "Permission for \(provider) in \(thread.title)"
-            : count > 1 ? "\(count) questions from \(provider) in \(thread.title)" : "Question from \(provider) in \(thread.title)"
+        let from = permission ? "Permission for \(provider) in \(threadTitle)"
+            : count > 1 ? "\(count) questions from \(provider) in \(threadTitle)" : "Question from \(provider) in \(threadTitle)"
         HStack(spacing: Space.s2) {
             Light(tone: .warning)
             Text(from).font(.sotto(.small)).foregroundStyle(Palette.muted).lineLimit(2)
@@ -1801,7 +1805,7 @@ private struct RequestSheet: View {
         if !current.supported {
             note("This request can’t be answered here. Check the thread, or answer it on \(computer).")
             Button("Not now") { dismiss() }.buttonStyle(PillButtonStyle(kind: .soft, wide: true)).padding(.top, Space.s5)
-        } else if !model.mayAnswer(ref.hostID) {
+        } else if !model.mayAnswer(at: place) {
             note("This iPhone can’t answer on \(computer) yet. Turn on Can answer for it in Sotto on \(computer), or answer there.")
             Button("Not now") { dismiss() }.buttonStyle(PillButtonStyle(kind: .soft, wide: true)).padding(.top, Space.s5)
         } else if permission {
@@ -1843,7 +1847,7 @@ private struct RequestSheet: View {
 
     /// The answer this iPhone sent for the request, while its computer hasn't confirmed it.
     @ViewBuilder private func sendingLine(_ current: AgentRequest) -> some View {
-        if let marker = model.pending(for: ref).first(where: { $0.kind == "answer" && $0.requestID == current.id }) {
+        if let marker = model.answerMarker(current.id, at: place) {
             let sending = model.isSending(marker)
             HStack(spacing: Space.s2) {
                 if sending { ProgressView().controlSize(.small) }
@@ -1858,7 +1862,7 @@ private struct RequestSheet: View {
     // MARK: Permission
 
     @ViewBuilder private func permissionChoices(_ current: AgentRequest) -> some View {
-        let enabled = model.canAnswer(current, in: ref)
+        let enabled = model.canAnswer(current, at: place)
         VStack(spacing: Space.s2) {
             sendingLine(current)
             Group {
@@ -1882,7 +1886,7 @@ private struct RequestSheet: View {
     }
 
     /// Sends against the request as the computer holds it now, never the copy the sheet opened with.
-    private func send(_ current: AgentRequest, choice: String) { Task { await model.answer(current, in: ref, choice: choice) } }
+    private func send(_ current: AgentRequest, choice: String) { Task { await model.answer(current, at: place, choice: choice) } }
 
     /// Allow once first, then the other allows, then deny and the rest.
     private static func rank(_ choice: PermissionChoice) -> Int {
@@ -1908,7 +1912,7 @@ private struct RequestSheet: View {
 
     /// The choices wait while the answer can't be sent; the links above them still open.
     @ViewBuilder private func question(_ current: AgentRequest) -> some View {
-        let enabled = model.canAnswer(current, in: ref)
+        let enabled = model.canAnswer(current, at: place)
         VStack(alignment: .leading, spacing: Space.s5) {
             if let questions = current.questions, !questions.isEmpty {
                 ForEach(questions) { item in questionField(item, showsTitle: questions.count > 1, enabled: enabled) }
@@ -2052,22 +2056,22 @@ private struct RequestSheet: View {
     private func sendAnswer(_ current: AgentRequest) {
         focus = nil
         Task {
-            if current.questions?.isEmpty == false { await model.answer(current, in: ref, answers: answers) }
-            else if !current.options.isEmpty { await model.answer(current, in: ref, choice: choice) }
-            else { await model.answer(current, in: ref, text: text) }
+            if current.questions?.isEmpty == false { await model.answer(current, at: place, answers: answers) }
+            else if !current.options.isEmpty { await model.answer(current, at: place, choice: choice) }
+            else { await model.answer(current, at: place, text: text) }
         }
     }
 
     /// Not now and Send answer stay in reach under a question, whatever its length.
     @ViewBuilder private var footer: some View {
-        if let current, current.kind != "permission", current.supported, model.mayAnswer(ref.hostID) {
+        if let current, current.kind != "permission", current.supported, model.mayAnswer(at: place) {
             VStack(spacing: Space.s2) {
                 sendingLine(current)
                 HStack(spacing: Space.s2) {
                     Button("Not now") { dismiss() }.buttonStyle(PillButtonStyle(kind: .soft, wide: true))
                     Button("Send answer") { sendAnswer(current) }
                         .buttonStyle(PillButtonStyle(kind: .primary, wide: true))
-                        .disabled(!model.canAnswer(current, in: ref) || !ready(current))
+                        .disabled(!model.canAnswer(current, at: place) || !ready(current))
                         .accessibilityIdentifier("request-send-answer")
                 }
             }
