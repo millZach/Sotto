@@ -683,6 +683,21 @@ import XCTest
         capture("question-glow-after")
     }
 
+    /// A question with a few choices is answered on its Threads card: the chip chosen there is the question's answer.
+    func testAOneTapQuestionIsAnsweredOnItsCard() {
+        launch(Self.fixture + ["--ui-question-while-reading"])
+        let chip = app.buttons["Ctrl+J"]
+        reveal(chip)
+        chip.tap()
+        // Another card on Threads has its own Send answer, which stays off until one of its chips is chosen.
+        let send = app.buttons.matching(NSPredicate(format: "label == %@ AND enabled == true", "Send answer")).firstMatch
+        XCTAssertTrue(send.waitForExistence(timeout: 5), "Choosing a chip readies its card's Send answer")
+        reveal(send, fullyVisible: true)
+        send.tap()
+        XCTAssertTrue(labelled("Answer sent.").waitForExistence(timeout: 10), "The chosen chip goes as the question's answer")
+        capture("threads-glow-card-answered")
+    }
+
     /// Settings on this iPhone: the look, alerts off until turned on, another theme, light, compact and larger text.
     func testSettingsThemeAppearanceDensityAndAlerts() {
         app.tabBars.buttons["Settings"].tap()

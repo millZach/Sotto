@@ -649,10 +649,17 @@ struct ThreadsView: View {
         let id = item.row.id
         sent[id] = CardAnswer(requestID: item.request.id, busy: busy, done: done, index: index, row: item.row, request: item.request)
         Task {
-            await model.answer(item.request, in: item.row.ref, choice: choice)
+            await model.answer(item.request, in: item.row.ref, choice: choice, answers: Self.oneTapAnswers(item.request, choice: choice))
             sent[id]?.inFlight = false
             resolve(id)
         }
+    }
+
+    /// A chip on a card for one structured question answers that question; plain options and permissions go as the
+    /// choice alone. As a choice alone, a structured question had no answer, and the phone refused to send it.
+    static func oneTapAnswers(_ request: AgentRequest, choice: String) -> [String: QuestionAnswer] {
+        guard request.kind == "question", let question = request.questions?.first else { return [:] }
+        return [question.id: QuestionAnswer(optionIds: [choice])]
     }
 
     /// Settles a card once the model has finished with its answer. Confirmed, it reads Answered for a moment and
