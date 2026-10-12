@@ -951,3 +951,33 @@ it('keeps news and checkpoint evidence from restarting a worker stopped by Watch
   expect(f.service.state().watchedThreads.find(item => item.target.threadId === first.target.threadId)!.participation[0]).toMatchObject({ state: 'taken-over', promptCount: 1 })
   expect(f.workspace.adapters.codex.commands.filter(item => item.type === 'answer')).toHaveLength(0)
 })
+
+it.each(['workspace-settled', 'archived', 'missing-hooks', 'disconnected'] as const)('holds checkpoint news for a %s master and queues it after recovery', async unavailable => {
+  const f = await fixture(), started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+  const target = f.service.state().current!.target
+  const master = f.control.watcherSnapshot().threads.find(thread => thread.id === f.id)!
+  expect(f.control.canDeliverWatcherNews(target)).toBe(true) // Busy is queueable.
+  expect(f.control.canDeliverWatcherNews({ ...target, hostId: randomUUID() })).toBe(false)
+  if (unavailable === 'workspace-settled') master.workspaceSettledAt = new Date().toISOString()
+  if (unavailable === 'archived') master.archivedAt = new Date().toISOString()
+  if (unavailable === 'missing-hooks') f.control.useWatcher(f.service)()
+  if (unavailable === 'disconnected') f.control.watcherSnapshot().connected = false
+  expect(f.control.canDeliverWatcherNews(target)).toBe(false)
+  const deliver = vi.spyOn(f.control, 'deliverWakeUp')
+  f.service.checkpointObserved({ threadId: started.target.threadId, checkpointId: 'held-capture', observedAt: new Date().toISOString(), availability: 'available' })
+  await f.service.wakes.drained()
+  expect(deliver).not.toHaveBeenCalled()
+  delete master.workspaceSettledAt; delete master.archivedAt
+  if (unavailable === 'disconnected') f.control.watcherSnapshot().connected = true
+  if (unavailable === 'missing-hooks') f.control.useWatcher(f.service)
+  f.service.wakes.observe()
+  await vi.waitFor(() => expect(f.control.shell().followups?.some(item => item.threadId === f.id && item.wakeUp)).toBe(true), { timeout: 15_000 })
+  expect(deliver).toHaveBeenCalledTimes(1)
+  await f.service.wakes.drained()
+  const saved = deliver.mock.calls[0]![1]
+  if (!('source' in saved) || saved.source !== 'watcher') throw new Error('Expected Watcher news')
+  expect(saved.events.some(event => event.kind === 'evidence-changed')).toBe(true)
+  expect(f.control.watcherRecord().wakeEventIds).toEqual(saved.events.map(event => event.id))
+  expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'answer')).toHaveLength(0)
+})

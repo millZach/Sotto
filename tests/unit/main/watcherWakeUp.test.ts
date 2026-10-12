@@ -20,12 +20,13 @@ function fixture() {
     status: 'running', lastTurn: { id: 'turn-1', status: 'running' }, messages: [], requests: [] }
   const snapshot = { ...structuredClone(EMPTY_AGENT_HOST), connected: true, hostId: centerTarget.hostId,
     capabilities: { ...EMPTY_AGENT_HOST.capabilities, observe: true }, threads: [thread], projects: [{ id: 'project', title: 'Project', path: 'synthetic' }] }
+  const canDeliver = vi.fn(() => true)
   const delivered: WatcherNews[] = [], prune = vi.fn(async () => undefined), failed = vi.fn()
   const deliver = vi.fn(async (news: WatcherNews) => { delivered.push(structuredClone(news)) })
   const remember = vi.fn(async (ids: string[]) => { record.wakeEventIds = [...record.wakeEventIds ?? [], ...ids] })
   const wakes = new WatcherWakeUp({ now: () => clock, snapshot: () => snapshot, record: () => record, prune,
     schedule: (callback, delay) => { const timer = { at: clock + delay, callback }; timers.add(timer); return () => { timers.delete(timer) } },
-    deliver, remember, failed })
+    deliver, remember, failed, canDeliver })
   cleanups.push(() => wakes.close())
   wakes.start()
   const advance = async (ms: number) => {
@@ -37,7 +38,7 @@ function fixture() {
     }
     clock = end; await wakes.drained()
   }
-  return { wakes, record, snapshot, thread, timers, delivered, deliver, remember, failed, advance, now: () => clock }
+  return { canDeliver, wakes, record, snapshot, thread, timers, delivered, deliver, remember, failed, advance, now: () => clock }
 }
 
 it('batches for two seconds and never delays a sustained burst past five seconds', async () => {
@@ -123,7 +124,7 @@ it('reconciles durable event IDs without replaying a terminal observation after 
   const f = fixture(); f.thread.status = 'idle'; f.thread.lastTurn!.status = 'completed'; f.wakes.observe()
   await f.advance(2_000); f.wakes.close()
   const delivered = vi.fn(async () => undefined)
-  const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, deliver: delivered,
+  const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, canDeliver: () => true, deliver: delivered,
     now: f.now, prune: async () => undefined, remember: async () => undefined, schedule: callback => { callback(); return () => undefined } })
   recovered.start(); await recovered.drained(); recovered.close()
   expect(delivered).not.toHaveBeenCalled()
@@ -195,7 +196,7 @@ it('restores the latest evidence occurrence without replaying it or suppressing 
   f.wakes.close()
   f.thread.status = 'idle'; f.thread.lastTurn = undefined
   const deliver = vi.fn<(news: WatcherNews) => Promise<void>>(async () => undefined)
-  const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, deliver, now: f.now,
+  const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, canDeliver: () => true, deliver, now: f.now,
     prune: async () => undefined, remember: async () => undefined, schedule: callback => { callback(); return () => undefined } })
   cleanups.push(() => recovered.close())
   recovered.start(); recovered.checkpoint(checkpoint(1)); await recovered.drained()
@@ -230,7 +231,7 @@ it('keeps a legacy evidence ID valid only for its reconciled occurrence', async 
   f.record.wakeEventIds = [legacyId]; f.wakes.close()
   f.thread.status = 'idle'; f.thread.lastTurn = undefined
   const deliver = vi.fn<(news: WatcherNews) => Promise<void>>(async () => undefined)
-  const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, deliver, now: f.now,
+  const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, canDeliver: () => true, deliver, now: f.now,
     prune: async () => undefined, remember: async () => undefined, schedule: callback => { callback(); return () => undefined } })
   cleanups.push(() => recovered.close())
   recovered.start(); recovered.checkpoint(checkpoint(1)); await recovered.drained()
@@ -249,7 +250,7 @@ it('keeps undelivered checkpoint news pending through save failures without need
   f.wakes.checkpoint({ threadId: f.thread.id, checkpointId: 'capture', observedAt: new Date(f.now()).toISOString(), availability: 'available', changedFiles: 1 })
   await f.advance(2_000)
   expect(f.delivered).toHaveLength(0)
-  await f.advance(4_000)
+  await f.advance(6_000)
   expect(f.delivered).toHaveLength(1)
   expect(f.deliver).toHaveBeenCalledTimes(3)
   expect(f.record.wakeEventIds).toEqual(f.delivered[0]!.events.map(event => event.id))
@@ -336,4 +337,65 @@ it('ignores background Git fetches but wakes for branch, diff and ahead/behind c
     f.wakes.observe(); await f.advance(2_000)
   }
   expect(f.delivered).toHaveLength(7)
+})
+
+it('holds unavailable-recipient news without deadlines and resumes the unchanged news when available', async () => {
+  const f = fixture()
+  f.thread.status = 'idle'; f.thread.lastTurn = undefined; f.wakes.observe()
+  f.canDeliver.mockReturnValue(false)
+  f.wakes.checkpoint({ threadId: f.thread.id, checkpointId: 'capture', observedAt: new Date(f.now()).toISOString(), availability: 'available' })
+  await f.advance(10 * 60_000)
+  expect(f.deliver).not.toHaveBeenCalled()
+  expect(f.failed).not.toHaveBeenCalled()
+  expect(f.timers.size).toBe(0)
+  f.canDeliver.mockReturnValue(true); f.wakes.observe(); await f.advance(2_000)
+  expect(f.delivered).toHaveLength(1)
+  expect(f.record.wakeEventIds).toEqual(f.delivered[0]!.events.map(event => event.id))
+})
+
+it.each(['deliver', 'remember'] as const)('backs off %s failures, caps automatic attempts and retains news for event-driven recovery', async failing => {
+  const f = fixture()
+  f.thread.status = 'idle'; f.thread.lastTurn = undefined; f.wakes.observe()
+  const calls: number[] = []
+  f[failing].mockImplementation(async () => { calls.push(f.now()); throw new Error('synthetic save failure') })
+  f.wakes.checkpoint({ threadId: f.thread.id, checkpointId: 'capture', observedAt: new Date(f.now()).toISOString(), availability: 'available' })
+  const began = f.now()
+  await f.advance(30 * 60_000)
+  expect(calls.map(at => at - began)).toEqual([2_000, 4_000, 8_000, 16_000, 32_000, 64_000, 124_000, 184_000])
+  expect(f.timers.size).toBe(0)
+  f.wakes.observe(); await f.advance(10 * 60_000)
+  expect(calls).toHaveLength(8)
+  f.deliver.mockImplementation(async news => { f.delivered.push(structuredClone(news)) })
+  f.remember.mockImplementation(async ids => { f.record.wakeEventIds = ids })
+  f.canDeliver.mockReturnValue(false); f.wakes.observe()
+  f.canDeliver.mockReturnValue(true); f.wakes.observe(); await f.advance(2_000)
+  expect(f.delivered).toHaveLength(1)
+  expect(f.record.wakeEventIds).toEqual(f.delivered[0]!.events.map(event => event.id))
+})
+
+it('holds news if the recipient becomes unavailable during queue admission', async () => {
+  const f = fixture()
+  f.thread.status = 'idle'; f.thread.lastTurn = undefined; f.wakes.observe()
+  f.deliver.mockImplementationOnce(async () => { f.canDeliver.mockReturnValue(false); throw new Error('Watcher is unavailable.') })
+  f.wakes.checkpoint({ threadId: f.thread.id, checkpointId: 'capture', observedAt: new Date(f.now()).toISOString(), availability: 'available' })
+  await f.advance(60_000)
+  expect(f.deliver).toHaveBeenCalledTimes(1)
+  expect(f.failed).not.toHaveBeenCalled()
+  expect(f.timers.size).toBe(0)
+  f.canDeliver.mockReturnValue(true); f.wakes.observe(); await f.advance(2_000)
+  expect(f.delivered).toHaveLength(1)
+})
+
+it('does not shorten persistence backoff when fresh evidence or shell observations arrive', async () => {
+  const f = fixture(), attempts: number[] = [], began = f.now()
+  f.thread.status = 'idle'; f.thread.lastTurn = undefined; f.wakes.observe()
+  f.deliver.mockImplementation(async () => { attempts.push(f.now() - began); throw new Error('synthetic save failure') })
+  const checkpoint = (changedFiles: number) => ({ threadId: f.thread.id, checkpointId: 'capture', observedAt: new Date(f.now()).toISOString(),
+    availability: 'available' as const, changedFiles })
+  f.wakes.checkpoint(checkpoint(1)); await f.advance(5_000)
+  f.wakes.checkpoint(checkpoint(2)); f.wakes.observe(); await f.advance(2_999)
+  expect(attempts).toEqual([2_000, 4_000])
+  await f.advance(1)
+  expect(attempts).toEqual([2_000, 4_000, 8_000])
+  expect(f.deliver.mock.calls[2]![0].events[0]!.revision).toBe(observationDigest(f.wakes.evidence.read(centerTarget).map(fact => fact.id).sort()))
 })
