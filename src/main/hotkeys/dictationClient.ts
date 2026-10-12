@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path'
 import { dictationSocketPath, parseDictationArguments } from './dictationCommand'
 import { readDictationEndpoint, validateDictationFolder } from './dictationEndpoint'
 import { assertDictationDirectories, validateDictationRuntime } from './dictationRuntime'
+import { notifyDictationUnavailable } from './dictationUnavailableNotice'
 
 const request = parseDictationArguments(process.argv.slice(2))
 if (request === null) {
@@ -10,8 +11,10 @@ if (request === null) {
   process.exitCode = 2
 } else {
   let guidance = 'Dictation needs a private desktop runtime folder owned by you, with no folder links. Open Sotto in a desktop session that provides one, then try again.'
+  let runtimeValid = false
   try {
     const directories = validateDictationRuntime(process.env.XDG_RUNTIME_DIR)
+    runtimeValid = true
     guidance = 'Sotto’s dictation socket is unavailable. Open Sotto in this desktop session, then try again.'
     const path = dictationSocketPath(process.env.XDG_RUNTIME_DIR)
     directories.push(validateDictationFolder(dirname(path)))
@@ -19,12 +22,13 @@ if (request === null) {
     assertDictationDirectories(directories)
     const socket = createConnection(endpoint.target === null ? path : join(dirname(path), endpoint.target))
     let finished = false
-    const fail = (): void => {
+    const fail = (error?: NodeJS.ErrnoException): void => {
       if (finished) return
       finished = true
       console.error('Sotto could not receive the dictation command. Open Sotto in this desktop session, then try again.')
       process.exitCode = 1
       socket.destroy()
+      if (error?.code === 'ENOENT' || error?.code === 'ECONNREFUSED') void notifyDictationUnavailable(request.command)
     }
     socket.setTimeout(1_000, fail)
     socket.once('error', fail)
@@ -41,8 +45,9 @@ if (request === null) {
       else { finished = true; socket.destroy() }
     })
     socket.once('close', () => { if (!finished) fail() })
-  } catch {
+  } catch (error) {
     console.error(guidance)
     process.exitCode = 1
+    if (runtimeValid && (error as NodeJS.ErrnoException).code === 'ENOENT') void notifyDictationUnavailable(request.command)
   }
 }

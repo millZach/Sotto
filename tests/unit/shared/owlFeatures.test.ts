@@ -1,0 +1,29 @@
+// @vitest-environment node
+import { existsSync } from 'node:fs'
+import { describe, expect, it } from 'vitest'
+import { OWL_FEATURES, isOwlFeatureEnabled, owlFeaturesForTrack, type OwlFeature } from '../../../src/shared/owlFeatures'
+
+describe('Owl feature list', () => {
+  it('records Watcher as the first feature and points to its owning decision', () => {
+    expect(OWL_FEATURES[0]).toMatchObject({ id: 'watcher', name: 'Watcher', owlSince: '2026-10-10', sentToStable: false })
+    expect(new Set(OWL_FEATURES.map(feature => feature.id)).size).toBe(OWL_FEATURES.length)
+    for (const feature of OWL_FEATURES) expect(existsSync(feature.owner)).toBe(true)
+    expect(owlFeaturesForTrack('stable')).toEqual({ watcher: false })
+    expect(owlFeaturesForTrack('owl')).toEqual({ watcher: true })
+  })
+
+  it('keeps a second feature in Owl until its single stable flag changes', () => {
+    const second: OwlFeature = { id: 'second', name: 'Second feature', owlSince: '2026-10-12', owner: 'test plan', sentToStable: false }
+    const features = [...OWL_FEATURES, second]
+    expect(isOwlFeatureEnabled('second', 'owl', features)).toBe(true)
+    expect(isOwlFeatureEnabled('second', 'stable', features)).toBe(false)
+    const graduated = [...OWL_FEATURES, { ...second, sentToStable: true }]
+    expect(isOwlFeatureEnabled('second', 'owl', graduated)).toBe(true)
+    expect(isOwlFeatureEnabled('second', 'stable', graduated)).toBe(true)
+    expect(isOwlFeatureEnabled('watcher', 'stable', graduated)).toBe(false)
+  })
+
+  it.each(['stable', 'owl'] as const)('keeps an unknown feature off in %s', track => {
+    expect(isOwlFeatureEnabled('unknown', track)).toBe(false)
+  })
+})

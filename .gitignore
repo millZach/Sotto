@@ -384,6 +384,8 @@ artifacts/watcher-rename/*
 artifacts/watcher-gate/*
 !artifacts/watcher-gate/*.png
 !artifacts/watcher-gate/profile.json
+!artifacts/watcher-gate/owl-features-package-status.json
+!artifacts/watcher-gate/owl-features-design-comparison.json
 
 # Selected Watcher thread-tool evidence; other generated captures stay local.
 artifacts/watcher-thread-tools/*
@@ -407,3 +409,28 @@ artifacts/linux-window-minimum/*
 !artifacts/linux-window-minimum/proof.txt
 
 !artifacts/linux-window-minimum/shell-plumbing-proof.txt
+# Linux Settings copy proof; retain only the cited frames and the run log.
+artifacts/linux-settings-copy/*
+!artifacts/linux-settings-copy/proof.txt
+!artifacts/linux-settings-copy/linux-specs-proof.txt
+!artifacts/linux-settings-copy/bindings-1600x1000-dark.png
+!artifacts/linux-settings-copy/bindings-820x560-light.png
+!artifacts/linux-settings-copy/bindings-open-failed-820x560-dark.png
+!artifacts/linux-settings-copy/updates-1280x800-dark.png
+!artifacts/linux-settings-copy/updates-820x560-light.png
+!artifacts/linux-settings-copy/widget-with-plugin-1600x1000-dark.png
+!artifacts/linux-settings-copy/widget-with-plugin-1280x800-light.png
+!artifacts/linux-settings-copy/widget-with-plugin-820x560-dark.png
+!artifacts/linux-settings-copy/widget-without-plugin-1280x800-light.png
+!artifacts/linux-settings-copy/widget-without-plugin-820x560-dark.png
+
+# Linux dictation notification and paste proof; retain only cited evidence.
+artifacts/linux-dictation-unreachable/*
+!artifacts/linux-dictation-unreachable/f9-notification.png
+!artifacts/linux-dictation-unreachable/chromium-wtype.png
+!artifacts/linux-dictation-unreachable/chromium-ydotool.png
+!artifacts/linux-dictation-unreachable/foot-wtype.png
+!artifacts/linux-dictation-unreachable/foot-ydotool.png
+!artifacts/linux-dictation-unreachable/results.json
+!artifacts/linux-dictation-unreachable/paste-proof.txt
+!artifacts/linux-dictation-unreachable/notification-proof.json
