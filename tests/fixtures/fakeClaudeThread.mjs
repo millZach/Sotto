@@ -160,6 +160,12 @@ const act = () => {
   // Consume before delivery so a resumed process cannot replay this as a new live event.
   unlinkSync(control)
   if (action.type === 'exit') { process.exit(1) }
+  // A turn Claude Code gives itself, as 2.1.283 reports finished background work: a query and a model request, no prompt.
+  if (action.type === 'self-turn') {
+    turnOpen = true; turnPrompt = undefined
+    output({ type: 'system', subtype: 'init', session_id: session })
+    output({ type: 'system', subtype: 'status', status: 'requesting', uuid: randomUUID(), session_id: session }); return
+  }
   // `persist` also writes the burst to the session log first, as the CLI records what it streams.
   if (action.type === 'raw-burst') {
     const frames = action.persist ? action.frames.map(persist) : action.frames

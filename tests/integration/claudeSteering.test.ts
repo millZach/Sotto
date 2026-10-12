@@ -34,6 +34,11 @@ const turnRecords = async (f: Fixture) => (await thread(f)).activities?.filter(a
 const turns = async (f: Fixture) => (await turnRecords(f)).map(activity => activity.status)
 const steered = async (f: Fixture) => (await turnRecords(f)).map(activity => activity.steered === true)
 const steer = (f: Fixture, text: string) => f.host.execute({ type: 'steer', commandId: randomUUID(), messageId: randomUUID(), threadId: 'thread', text })
+/** The turn calls a command, in the assistant message that makes the call, and the call returns in its result. */
+const callTool = (f: Fixture) => f.action('thread', { type: 'raw', persist: true, frame: { type: 'assistant', uuid: randomUUID(), parent_tool_use_id: null,
+  message: { id: randomUUID(), role: 'assistant', content: [{ type: 'tool_use', id: 'tool', name: 'Bash', input: { command: 'npm test' } }] } } })
+const returnTool = (f: Fixture) => f.action('thread', { type: 'raw', persist: true, frame: { type: 'user', uuid: randomUUID(), parent_tool_use_id: null,
+  message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tool', content: 'ok' }] } } })
 
 it('offers steering for Claude threads', async () => {
   const f = await running()
@@ -74,14 +79,12 @@ it('cuts a turn mid-thought, and the reply Claude was thinking toward never land
 
 it('lets a running tool call return, then reads the steer into the same turn', async () => {
   const f = await running()
-  await f.action('thread', { type: 'raw', persist: true, frame: { type: 'assistant', uuid: randomUUID(), parent_tool_use_id: null,
-    message: { id: randomUUID(), role: 'assistant', content: [{ type: 'tool_use', id: 'tool', name: 'Bash', input: { command: 'npm test' } }] } } })
+  await callTool(f)
   await expect.poll(async () => (await thread(f)).activities?.some(activity => activity.kind === 'command' && activity.status === 'running')).toBe(true)
   // Sent now, the steer would cut the turn here, as the fake CLI does; while the call runs it goes as a plain prompt.
   expect(await steer(f, 'Also this')).toEqual({ accepted: true })
   expect(await turns(f)).toEqual(['running'])
-  await f.action('thread', { type: 'raw', persist: true, frame: { type: 'user', uuid: randomUUID(), parent_tool_use_id: null,
-    message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tool', content: 'ok' }] } } })
+  await returnTool(f)
   await f.action('thread', { type: 'say', text: 'Reading it' })
   await f.driver.completeTurn('thread', 'Done')
   await expect.poll(async () => (await thread(f)).status).toBe('idle')
@@ -91,14 +94,37 @@ it('lets a running tool call return, then reads the steer into the same turn', a
 
 it('cuts the next step for a steer once the tool call it waited on has returned', async () => {
   const f = await running()
-  await f.action('thread', { type: 'raw', persist: true, frame: { type: 'assistant', uuid: randomUUID(), parent_tool_use_id: null,
-    message: { id: randomUUID(), role: 'assistant', content: [{ type: 'tool_use', id: 'tool', name: 'Bash', input: { command: 'npm test' } }] } } })
-  await f.action('thread', { type: 'raw', persist: true, frame: { type: 'user', uuid: randomUUID(), parent_tool_use_id: null,
-    message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tool', content: 'ok' }] } } })
+  await callTool(f)
+  await returnTool(f)
   await expect.poll(async () => (await thread(f)).activities?.some(activity => activity.kind === 'command' && activity.status === 'completed')).toBe(true)
   await steer(f, 'Also this')
   await expect.poll(() => turns(f)).toEqual(['interrupted', 'running'])
   expect(await steered(f)).toEqual([true, false])
+})
+
+it('reads a turn Claude Code cut with no steer held as stopped, not failed', async () => {
+  const f = await running()
+  // As a stop whose word came while the turn before it was ending leaves the next turn.
+  await f.action('thread', { type: 'raw', frame: { type: 'result', subtype: 'error_during_execution', is_error: true, terminal_reason: 'aborted_streaming', result: '' } })
+  await expect.poll(async () => (await thread(f)).status).toBe('idle')
+  expect(await turns(f)).toEqual(['interrupted'])
+  expect(await steered(f)).toEqual([false])
+  expect((await f.host.snapshot()).error).toBeUndefined()
+})
+
+it('cuts a turn Claude Code gave itself, and leaves the steer its own turn', async () => {
+  const f = await running()
+  await f.driver.completeTurn('thread', 'Done')
+  await expect.poll(async () => (await thread(f)).status).toBe('idle')
+  await f.action('thread', { type: 'self-turn' })
+  await expect.poll(async () => (await thread(f)).status).toBe('running')
+  expect(await steer(f, 'Also this')).toEqual({ accepted: true })
+  // The cut turn answered no message of Sotto's; the steer's own turn runs, not marked steered before it began.
+  await expect.poll(() => turns(f)).toEqual(['completed', 'running'])
+  expect(await steered(f)).toEqual([false, false])
+  await f.driver.completeTurn('thread', 'Answered')
+  await expect.poll(async () => (await thread(f)).status).toBe('idle')
+  expect(await turns(f)).toEqual(['completed', 'completed'])
 })
 
 it('stops the turn a steer started as stopped, not steered', async () => {

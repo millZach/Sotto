@@ -1522,13 +1522,16 @@ export class ClaudeStreamJsonHost implements AgentHost {
       thread.usage = this.usage.get(id)
       this.messageLog.dropEmpty(id); this.streaming.delete(id)
       const { origin, stopped, steered, status } = ending!
+      const selfTurn = origin !== undefined && this.selfTurns.get(id) === origin
       this.selfTurns.delete(id); this.queries.delete(id)
       this.interrupting.delete(id)
       const failure = frame.is_error === true && !stopped ? claudeTurnFailure(frame, this.assistantErrors.get(id)) : null
       if (origin) {
         this.completedOrigins.add(origin)
         thread.lastTurn = { id: origin, status }
-        this.markTurn(id, status, alias.origins.find(value => value.uuid === origin)?.messageId, failure ?? undefined, steered)
+        // A turn Claude Code gave itself answers no message of Sotto's. The newest message may be a steer whose own
+        // turn has not begun, so it has no record to settle here.
+        if (!selfTurn) this.markTurn(id, status, alias.origins.find(value => value.uuid === origin)?.messageId, failure ?? undefined, steered)
       }
       this.assistantErrors.delete(id)
       // A prompt of Sotto's that Claude Code held behind its own turn starts next, so the thread goes straight on to it,
@@ -1825,10 +1828,14 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const origin = typeof frame.user_message_uuid === 'string' ? frame.user_message_uuid : this.selfTurns.get(id)
       ?? (object(frame.origin) ? undefined : alias.origins.findLast(value => !this.foldedSteers.has(value.uuid) && !this.steers.has(value.uuid))?.uuid)
     // A turn the user stopped ends in an error result, which is no failure of Claude Code's.
-    const stopped = this.interrupting.has(id) || thread.lastTurn?.status === 'interrupted' && (!origin || thread.lastTurn.id === origin)
+    const stopping = this.interrupting.has(id) || thread.lastTurn?.status === 'interrupted' && (!origin || thread.lastTurn.id === origin)
     // So does one a steer cut, said by an aborted ending while the CLI still holds a steer sent now. A turn that
     // finished as the steer came is finished, and the steer runs next all the same.
-    const steered = !stopped && claudeTurnAborted(frame) && [...this.steers.values()].some(steer => steer.threadId === id && steer.now && !steer.carried)
+    const aborted = claudeTurnAborted(frame)
+    const steered = !stopping && aborted && [...this.steers.values()].some(steer => steer.threadId === id && steer.now && !steer.carried)
+    // Claude Code cuts a turn only for a stop or a prompt sent now, so any other cut is a stop, one whose word came
+    // while the turn before it was ending included.
+    const stopped = !steered && (stopping || aborted)
     return { origin, stopped, steered, status: stopped || steered ? 'interrupted' : frame.is_error === true ? 'failed' : 'completed' }
   }
   private projectActivity(id: string, frame: ClaudeFrame, live = false, turnEnd?: AgentActivity['status']): void {
