@@ -36,7 +36,7 @@ Stable shows and reads none of it.
 - **Thread names in Watcher's replies do not open threads yet.** Nothing in the contract says which words in Watcher's prose name a thread, and the plan rules out parsing them; ticket 7's receipt cards carry that link. Written to the run's `room-needs.md`.
 - **The Overview's foot says "Shift-click opens a thread in Threads. Esc closes."** The mock-up's foot said settled threads are in the Threads room; this room keeps them under Settled, as the plan asks, so the foot teaches the one gesture that is otherwise invisible.
 - **Status colours lean toward the text.** The Overview's and the needs-you line's warning and success inks mix a fifth of the way toward the text colour, as ticket 6's Overview did, and the count on All threads lifts to the secondary text colour while the button is pressed: on its fill the muted count read 4.40:1 in Tropic dark.
-- **Quiet, Landing, read marks and a check time** still wait for the projection to carry observations; the room-needs file lists them.
+- **Quiet, Landing, read marks and a check time** still wait for the projection to carry observations; the room-needs file lists them. In particular the Overview's rows show only their last activity time: the plan's **Read [time]**, and **Read by you**, **Read by Watcher** and **Observed [time]** told apart in each row's detail and accessible text, need read marks and observation times the room contract does not carry yet, so the rows say none of them rather than guess (room-needs items 1, 2 and 7).
 - **macOS** gives the header a 64-pixel inset for the traffic lights and moves the sky with the tile. It is untested.
 
 ## How it was run
