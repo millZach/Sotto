@@ -143,3 +143,42 @@ The built-app journeys check stable/Owl ordinary Send and reply, saved special k
 The owned-profile harness closed its Electron launches, and the final inventory found no Node, Electron or SSH process with this worktree in its command line. No renderer change was authored, no baseline was regenerated, and production dependencies remain zod, node-pty and sherpa-onnx-node. The host protocol documents the optional progress field; the incoming CONTEXT wording remains alongside the paired-origin definition. These are corrections to the existing observation contract, with no new authority or domain decision requiring another ADR or plan amendment.
 
 No live forge check was repeated, as requested. The original live result and retained-profile limitation remain unchanged. This follow-up adds local socket/fake-provider and built Windows app proof, not new paid-provider, packaged, macOS, Linux or phone UI evidence. Watcher is not filtered out of phone projections. Nothing was pushed, rebased, stashed, switched, published or installed, no worktree was created, and no nested review ran. The lead owns integration, the pull request and the two-axis review. No implementation or required local check remains unfinished.
+
+
+## Pre-pull-request review corrections (2026-10-12)
+
+All eight findings from the two-axis review were verified against the code. The four spec corrections were committed before a model-capacity interruption; this continuation inspected the two saved files and completed the identity, documentation and shared-reader changes. No merge or live forge check was repeated.
+
+| Finding | Commit | Correction and regression evidence |
+| --- | --- | --- |
+| 1: stopped request reaches the host | `1005fe7e0` | Recheck live request state after persistence and immediately before transmission. Both stopped and closed races failed against the old sender; they now refuse with `REQUEST_NOT_ACTIVE`, no wire call or worker creation, and a released slot. Confirmed Stop all retains its explicit target guard. |
+| 2: receipt retry authorizes restored queues | `266b08c15` | Bind connection guards to operation IDs and install none on receipt retry. A history-on coordinator restart reproduced the old change from `HOST_DISCONNECTED` to allowed; retrying an old receipt and admitting a fresh operation now leave the old queue fenced. The fresh operation alone receives its own guard. |
+| 3: omitted permission rejects the common default | `80554164b` | Resolve the narrower desktop/host default before creating and rechecking a worker. Both orderings use `approval-required`; the old asking-desktop/full-host case refused `PERMISSION_TOO_WIDE`. Explicit widening and incomparable modes still refuse. |
+| 4: local-host filter includes remote catalogs | `dd1457923` | Apply explicit host filters before paging thread and project catalogs. Both regressions included remote targets before the fix; unfiltered aggregation and explicit remote routes remain available. |
+| 5: host-qualified identity is lost | `8f967c22f` | Keep host/entity pairs in watched participation, quiet callbacks, project filters, settlement, protected reads, queue preservation and request/receipt checks. Seven collision regressions fail with the old lookups. Local and remote twins now retain only their own session and queue; remote quiet news keeps its host, while local settlement and reserved paths cannot affect the remote twin. |
+| 6: contradictory local-only documentation | `8336f2019` | Replace the local-only heading and identities and remove the obsolete future-ticket restriction. The documentation regression fails against the old section and all four glossary/document checks pass with the correction. |
+| 7 and 8: repeated snapshot access and read switches | `ba8a63327` | Use one owning-host snapshot accessor and one read dispatcher. Both authenticated entry points keep their caller, paired-client and receipt ownership checks. These are verified maintainability findings, with no claimed behavioral failure before refactoring; the 85 paired/local cases and strict test compilation passed after inspecting the saved edits. |
+
+The final focused run passed 119 tests across paired hosts, local tools and wake-ups in 42.21 seconds. It includes the seven red collision probes and the existing evidence, takeover, queue, protected-read, refund, stopped-request and Stop all behavior. The test fixture for stale sender projection now explicitly marks only the synthetic sender request active, so the test still isolates the owning host's relinquished-participant refusal; the separate stop/closed races prove the real sender cannot revive a request. Host-default configuration uses its authenticated local desktop client. An initial quiet fixture used the local host ID and a shared target object; both were corrected before the definitive two remote-host red probes, with no production inference drawn from that setup error.
+
+All eight gates passed in the requested order on implementation `8f967c22f`. Free memory was 11,697,012 KB before the full suite, above 3 GB. Actual output is retained in ignored `artifacts/watcher-paired-hosts/review-*.log` files, normalized to UTF-8 without BOM.
+
+
+| Command | Result |
+| --- | --- |
+| `npm run typecheck` | Exit 0; all four projects |
+| `npm run lint` | Exit 0 |
+| `npm test -- --maxWorkers=2` | Exit 0; 781 files and 9,791 tests passed; 59 files and 284 tests skipped; 1,157.30 seconds |
+| `npm run notices:verify` | Exit 0; 189 components |
+| `npm run build` | Exit 0; main, host, preload and renderer |
+| `npm run test:socket` | Exit 0; 22 files and 466 tests passed; ten skipped; 144.37 seconds |
+| `npm run build:host` | Exit 0; plain Node host, 204 modules; 1.96 seconds |
+| `npx playwright test tests/e2e/watcher-gate.spec.ts` | Exit 0; four journeys; 14.6 seconds |
+
+No gate failed and no isolated flaky-test retry was needed. SQLite experimental, jsdom canvas, dependency directive and Playwright color warnings were non-failing output. The implementation stayed unchanged during the ordered run.
+
+The built Windows app again passed stable/Owl ordinary Send and reply, saved special kinds and bridge gating, stable layout recovery, all five local-host-off room refusals, and immediate in-flight-limit changes. Bounds, dark/light and reduced motion passed at 1600x1000, 1280x800 and exactly 820x560 content pixels. Visually inspected the new [Owl dark](../../artifacts/watcher-paired-hosts/review-owl-dark-820x560.png) and [stable light](../../artifacts/watcher-paired-hosts/review-stable-light-820x560.png) minimum captures: sidebar, transcript and composer fit. Both selected captures are byte-identical to the new run's images, at 1230x840 device pixels on the laptop's 150% scaling.
+
+The final inventory found no Node, Electron or SSH process with this worktree in its command line. No renderer change was authored and no baseline was regenerated. Production dependencies remain exactly zod, node-pty and sherpa-onnx-node. No new authority or domain decision was introduced: these corrections implement the existing owning-host and permission contracts, so CONTEXT, ADR-0073 and the plan remain accurate.
+
+No live forge check was repeated. The original live proof and its retained-profile cleanup limitation remain unchanged. This continuation adds local fake-provider/socket and built Windows app evidence, with no new paid-provider, packaged, macOS, Linux or phone UI proof. Watcher remains in phone projections. Nothing was pushed, merged, rebased, stashed, switched, published or installed, no worktree was created and no nested review ran. All requested review findings and local gates are complete; the lead owns integration and the pull request.
