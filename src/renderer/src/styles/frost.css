@@ -24,6 +24,11 @@
   background: var(--tt-frost-sidebar);
 }
 
+/* Sotto Owl's night band is the sidebar's own paint at the top, so it frosts at the sidebar's solidity. */
+:root[data-frost] .thread-nav[data-sky] {
+  background: linear-gradient(var(--tt-frost-owl-night) 76px, var(--tt-frost-sidebar) 92px);
+}
+
 /* The Tools panel docked beside the panes is part of the room. Floating over them it stays solid, or the
    conversation would show through it; its sticky bars keep their own colour over what scrolls beneath. */
 :root[data-frost] .tools-panel:not([data-mode='overlay']) .tools-panel__sheet {

@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { platformProfile } from '../../../src/main/platformProfile'
+import { getReleaseTrack, releaseTrackName } from '../../../src/shared/releaseTrack'
 import { darwinOverrides, createHarness } from '../../fixtures/windowManager'
 
 describe('WindowManager construction', () => {
@@ -33,6 +34,33 @@ describe('WindowManager construction', () => {
         },
       },
     ])
+  })
+
+  it('clears Linux decoration insets while keeping the main room opaque and its minimum unchanged', async () => {
+    const { manager, options } = createHarness({ platform: 'linux', chrome: platformProfile('linux') })
+
+    await manager.createMainWindow()
+
+    expect(options).toStrictEqual([{
+      width: 1_080,
+      height: 720,
+      minWidth: 820,
+      minHeight: 560,
+      transparent: true,
+      show: false,
+      title: 'Sotto',
+      backgroundColor: '#000000',
+      autoHideMenuBar: true,
+      frame: false,
+      webPreferences: {
+        preload: 'C:/Sotto/out/preload/index.js',
+        additionalArguments: ['--sotto-renderer-role=main', '--sotto-platform=linux'],
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+        webviewTag: true,
+      },
+    }])
   })
 
   it('opens a frosted main window clear over acrylic and tells only its renderer that it can frost', async () => {
@@ -349,6 +377,22 @@ describe('WindowManager construction', () => {
       absent.windows[0],
     )
     expect(failing.windows[0]!.setAlwaysOnTop).toHaveBeenCalledWith(true, 'floating')
+  })
+
+  // Main names the window from app.getVersion() exactly this way; the page's own <title> says Sotto on every build.
+  it.each([
+    ['0.1.34', 'Sotto'],
+    ['0.1.37-owl.20261011.1', 'Sotto Owl'],
+  ])('titles the main window for the build it is (%s) and keeps that title against the page', async (version, title) => {
+    const { manager, options, windows } = createHarness({ title: releaseTrackName(getReleaseTrack(version)) })
+
+    await manager.createMainWindow()
+    await manager.createWidgetWindow()
+
+    expect(options[0]).toMatchObject({ title })
+    expect(windows[0]!.emit('page-title-updated').preventDefault).toHaveBeenCalledOnce()
+    // The widget's window is never named for the build.
+    expect(options[1]).not.toHaveProperty('title')
   })
 
   it('retains one instance of each window', async () => {

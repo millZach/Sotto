@@ -12,7 +12,7 @@ describe('WindowManager lifecycle', () => {
 
     expect(windows[0]!.destroy).toHaveBeenCalledOnce()
     expect(windows[1]!.destroy).toHaveBeenCalledOnce()
-    expect(windows[0]!.removedListeners).toStrictEqual(['maximize', 'unmaximize', 'hide', 'minimize', 'close', 'closed'])
+    expect(windows[0]!.removedListeners).toStrictEqual(['maximize', 'unmaximize', 'hide', 'minimize', 'close', 'closed', 'page-title-updated'])
     expect(windows[0]!.webContents.removeListener).toHaveBeenCalledTimes(3)
     expect(windows[1]!.removedListeners).toStrictEqual(['closed', 'moved'])
     expect(windows[1]!.webContents.removeListener).toHaveBeenCalledTimes(3)
@@ -88,7 +88,7 @@ describe('WindowManager lifecycle', () => {
     crashed.emitRenderProcessGone()
 
     expect(crashed.destroy).toHaveBeenCalledOnce()
-    expect(crashed.removedListeners).toStrictEqual(['maximize', 'unmaximize', 'hide', 'minimize', 'close', 'closed'])
+    expect(crashed.removedListeners).toStrictEqual(['maximize', 'unmaximize', 'hide', 'minimize', 'close', 'closed', 'page-title-updated'])
     expect(crashed.webContents.removeListener).toHaveBeenCalledTimes(3)
     expect(crashed.removeRenderProcessGoneListener).toHaveBeenCalledOnce()
     expect(manager.getMainWebContents()).toBeNull()

@@ -13,7 +13,7 @@ import {
   transcriptStamp,
 } from '../../../src/renderer/src/features/dictate/DictateRoom'
 import { platformCopy } from '../../../src/renderer/src/platformCopy'
-import { MICROPHONE_NOT_SET_UP_DETAIL, TRANSCRIPTION_ERROR_DETAIL, TRANSCRIPTION_KEPT_DETAIL, type DictationState } from '../../../src/shared/dictation'
+import { MICROPHONE_NOT_SET_UP_DETAIL, SPEECH_MODEL_NOT_READY_DETAIL, TRANSCRIPTION_ERROR_DETAIL, TRANSCRIPTION_KEPT_DETAIL, type DictationState } from '../../../src/shared/dictation'
 import type { HistoryEntry } from '../../../src/shared/history'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
 
@@ -29,6 +29,7 @@ const entries: readonly HistoryEntry[] = [
 
 const baseProps = {
   settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, llmApiKey: crypto.randomUUID() },
+  speechModel: { state: 'ready' as const },
   platform: 'win32' as const,
   dictation: { status: 'idle' as const },
   entries,
@@ -208,8 +209,8 @@ describe('DictateRoom', () => {
     const onRetry = vi.fn(async () => undefined)
     const onDismiss = vi.fn(async () => undefined)
     render(<DictateRoom {...baseProps} onRetry={onRetry} onDismiss={onDismiss}
-      dictation={{ status: 'error', sessionId: 'one', code: 'TRANSCRIPTION_RATE_LIMITED', message: 'internal', kept: true }} />)
-    expect(screen.getByRole('alert')).toHaveTextContent(TRANSCRIPTION_KEPT_DETAIL.TRANSCRIPTION_RATE_LIMITED)
+      dictation={{ status: 'error', sessionId: 'one', code: 'TRANSCRIPTION_FAILED', message: 'internal', kept: true }} />)
+    expect(screen.getByRole('alert')).toHaveTextContent(TRANSCRIPTION_KEPT_DETAIL.TRANSCRIPTION_FAILED)
     expect(screen.getByRole('alert')).not.toHaveTextContent('was not kept')
     // The shortcut would start over, so it is not shown beside Try again.
     expect(screen.queryByText(/in any app/)).not.toBeInTheDocument()
@@ -226,14 +227,14 @@ describe('DictateRoom', () => {
 
   it('says when Try again failed too', () => {
     render(<DictateRoom {...baseProps} onRetry={vi.fn(async () => undefined)} onDismiss={vi.fn(async () => undefined)}
-      dictation={{ status: 'error', sessionId: 'one', code: 'TRANSCRIPTION_RATE_LIMITED', message: 'internal', kept: true, retried: true }} />)
-    expect(screen.getByRole('alert')).toHaveTextContent(`Try again did not get through. ${TRANSCRIPTION_KEPT_DETAIL.TRANSCRIPTION_RATE_LIMITED}`)
+      dictation={{ status: 'error', sessionId: 'one', code: 'TRANSCRIPTION_FAILED', message: 'internal', kept: true, retried: true }} />)
+    expect(screen.getByRole('alert')).toHaveTextContent(`Try again failed too. ${TRANSCRIPTION_KEPT_DETAIL.TRANSCRIPTION_FAILED}`)
   })
 
   it('dismisses an error with Escape, but not from a text field or over a dialog', async () => {
     const user = userEvent.setup()
     const onDismiss = vi.fn(async () => undefined)
-    const error = { status: 'error' as const, sessionId: 'one', code: 'TRANSCRIPTION_RATE_LIMITED', message: 'internal', kept: true }
+    const error = { status: 'error' as const, sessionId: 'one', code: 'TRANSCRIPTION_FAILED', message: 'internal', kept: true }
     const now = vi.spyOn(Date, 'now').mockReturnValue(1_000)
     const { rerender } = render(<>
       <input aria-label="Search threads" />
@@ -310,11 +311,11 @@ describe('DictateRoom', () => {
     now.mockRestore()
   })
 
-  it('still points at Settings when a kept recording failed on the key', async () => {
+  it('still points at Settings when a kept recording failed on the speech model', async () => {
     const user = userEvent.setup()
     const onOpenSettings = vi.fn()
     render(<DictateRoom {...baseProps} onRetry={vi.fn(async () => undefined)} onDismiss={vi.fn(async () => undefined)} onOpenSettings={onOpenSettings}
-      dictation={{ status: 'error', sessionId: 'one', code: 'TRANSCRIPTION_UNAUTHORIZED', message: 'internal', kept: true }} />)
+      dictation={{ status: 'error', sessionId: 'one', code: 'TRANSCRIPTION_MODEL_NOT_READY', message: 'internal', kept: true }} />)
     expect(screen.getByRole('button', { name: 'Try again' })).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Open Settings' }))
     expect(onOpenSettings).toHaveBeenCalledOnce()
@@ -324,22 +325,33 @@ describe('DictateRoom', () => {
     const user = userEvent.setup()
     const onDismiss = vi.fn(async () => undefined)
     render(<DictateRoom {...baseProps} onRetry={vi.fn(async () => undefined)} onDismiss={onDismiss}
-      dictation={{ status: 'error', sessionId: 'one', code: 'TRANSCRIPTION_RATE_LIMITED', message: 'internal' }} />)
-    expect(screen.getByRole('alert')).toHaveTextContent(TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_RATE_LIMITED)
+      dictation={{ status: 'error', sessionId: 'one', code: 'TRANSCRIPTION_FAILED', message: 'internal' }} />)
+    expect(screen.getByRole('alert')).toHaveTextContent(TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_FAILED)
     expect(screen.getByRole('button', { name: 'Start dictation' })).toBeEnabled()
     expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Dismiss' }))
     expect(onDismiss).toHaveBeenCalledOnce()
   })
 
-  it('names the missing key and sends people to Settings instead of a dead pill', async () => {
+  it('names the missing speech model and sends people to Settings instead of a dead pill', async () => {
     const user = userEvent.setup()
     const onOpenSettings = vi.fn()
-    render(<DictateRoom {...baseProps} settings={{ ...DEFAULT_SETTINGS }} onOpenSettings={onOpenSettings} />)
-    expect(screen.getByRole('button', { name: 'API key required' })).toBeDisabled()
+    render(<DictateRoom {...baseProps} speechModel={{ state: 'missing' }} onOpenSettings={onOpenSettings} />)
+    expect(screen.getByRole('heading', { level: 1, name: 'The speech model is not ready yet.' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Speech model needed' })).toBeDisabled()
+    expect(screen.getByText('Speech model not downloaded')).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Open Settings' }))
     expect(onOpenSettings).toHaveBeenCalledOnce()
     expect(screen.queryByText(/press/i)).not.toBeInTheDocument()
+  })
+
+  it('shows the downloading and loading labels while the speech model is not ready', () => {
+    const { rerender } = render(<DictateRoom {...baseProps} speechModel={{ state: 'downloading', receivedBytes: 1, totalBytes: 2 }} />)
+    expect(screen.getByRole('button', { name: 'Downloading speech model' })).toBeDisabled()
+    expect(screen.getByText(/Downloading the speech model/)).toBeVisible()
+    rerender(<DictateRoom {...baseProps} speechModel={{ state: 'loading' }} />)
+    expect(screen.getByRole('button', { name: 'Starting speech model' })).toBeDisabled()
+    expect(screen.getByText('Starting the speech model')).toBeVisible()
   })
 
   it('says no microphone is set up after a skip and points at the Settings test', async () => {
@@ -396,6 +408,16 @@ describe('DictateRoom', () => {
     expect(dictateSentence({ status: 'idle' }, copy).sentence).toBe('Ready when you are.')
     expect(dictateSentence({ status: 'requesting-permission', sessionId: 'a' }, copy)).toMatchObject({ sentence: 'Connecting to your microphone.', detail: copy.homeRequestingPermissionDetail })
     expect(dictateSentence({ status: 'error', sessionId: 'a', code: 'MIC_PERMISSION_DENIED', message: '' }, copy)).toMatchObject({ tone: 'error', detail: copy.homeMicrophonePermissionDenied })
+  })
+
+  it('says the speech model is not ready yet while idle, and gives its own detail when a dictation fails on it', () => {
+    const copy = platformCopy('win32')
+    expect(dictateSentence({ status: 'idle' }, copy, false, false)).toEqual({
+      sentence: 'The speech model is not ready yet.', tone: 'normal',
+    })
+    expect(dictateSentence(
+      { status: 'error', sessionId: 'a', code: 'SPEECH_MODEL_NOT_READY', message: '' }, copy,
+    )).toMatchObject({ tone: 'error', detail: SPEECH_MODEL_NOT_READY_DETAIL })
   })
 
   it.each(Object.entries(TRANSCRIPTION_ERROR_DETAIL))('says why %s happened in the detail line', (code, detail) => {

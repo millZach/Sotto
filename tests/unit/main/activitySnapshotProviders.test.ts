@@ -5,11 +5,12 @@ import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
 import { cloneActivitySnapshot, immutableActivities, isImmutableActivities } from '../../../src/main/agents/activitySnapshots'
 import type { ActivitySubscriptionOptions, ThreadHostEvent, ThreadReadPurpose } from '../../../src/main/agents/host'
-import { ConfiguredProviderHost } from '../../../src/main/agents/providerSwitch'
+import { ConfiguredProviderHost, providerEntityId } from '../../../src/main/agents/providerSwitch'
 import { SottoThreadHost, ThreadRegistry } from '../../../src/main/agents/threads'
 import type { AgentHostSnapshot } from '../../../src/shared/agents'
 import type { AgentActivity } from '../../../src/shared/agentActivity'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
+import { CertifyingProviderHost } from '../../fixtures/certifyingProviderHost'
 import { deferred } from '../../fixtures/deferred'
 
 const cleanup: Array<() => Promise<void>> = []
@@ -199,4 +200,42 @@ it('reads a provider whole when a subscriber that reads messages arrives while a
   await reading
   // The read that went out without messages does not take them away from it.
   expect(plain.at(-1)!.threads.find(thread => thread.title === 'Workshop')!.messages.map(message => message.id)).toEqual(['ask'])
+})
+
+async function switched(codex: FakeProviderHost) {
+  const root = await mkdtemp(join(tmpdir(), 'sotto-activity-provider-'))
+  const registry = new ThreadRegistry(root)
+  const host = new ConfiguredProviderHost({
+    hosts: { codex: new SottoThreadHost('codex', codex, registry), claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost() },
+    provider: () => 'codex', enabledProviders: () => ['codex'], threadProvider: id => registry.byThread(id)?.provider,
+  })
+  cleanup.push(async () => { host.disconnect(); await registry.flush(); await rm(root, { recursive: true, force: true }) })
+  await host.connect()
+  const shared: AgentHostSnapshot[] = []
+  const off = host.subscribeActivitySnapshots(snapshot => shared.push(snapshot))
+  cleanup.push(async () => { off() })
+  return shared
+}
+
+// The catalog crossed every layer as copies: 608 models on the owner's machine, about ten times per publication.
+it('publishes one certified catalog through the switch until a provider changes its catalog (#917)', async () => {
+  const codex = new CertifyingProviderHost()
+  const shared = await switched(codex)
+  codex.emitActivity(); codex.emitActivity()
+  const [first, second] = shared.slice(-2).map(snapshot => snapshot.models)
+  expect(second).toBe(first)
+  expect(Object.isFrozen(first)).toBe(true)
+  expect(first!.map(model => [model.id, model.ready])).toEqual([[providerEntityId('codex', 'model', 'fake:model'), true]])
+  codex.state.models = [...codex.state.models, { id: 'fake:second', provider: 'Fake', name: 'Second model', ready: true }]
+  codex.emitActivity()
+  const third = shared.at(-1)!.models
+  expect(third).not.toBe(first)
+  expect(third.map(model => model.id)).toEqual([providerEntityId('codex', 'model', 'fake:model'), providerEntityId('codex', 'model', 'fake:second')])
+})
+
+it('freezes no catalog an adapter did not certify (#917)', async () => {
+  const codex = new SharedProvider()
+  const shared = await switched(codex)
+  codex.emitActivity()
+  expect(Object.isFrozen(shared.at(-1)!.models)).toBe(false)
 })

@@ -1,0 +1,240 @@
+{
+  "provider": "codex",
+  "freeMemoryKB": 11089696,
+  "sandboxProbes": [
+    {
+      "launch": 1,
+      "readExitCode": 0,
+      "readSucceeded": true,
+      "writeExitCode": 0,
+      "writeRefused": true
+    },
+    {
+      "launch": 2,
+      "readExitCode": 0,
+      "readSucceeded": true,
+      "writeExitCode": 0,
+      "writeRefused": true
+    }
+  ],
+  "platform": "win32",
+  "date": "2026-10-10T06:29:50.617Z",
+  "resumedAt": "2026-10-10T06:42:40.662Z",
+  "version": "0.162.0",
+  "turnsSubmitted": 3,
+  "turnsCompleted": 3,
+  "metadataReconstructed": true,
+  "sameNativeSession": true,
+  "nativeCanary": {
+    "exitCode": 0,
+    "denialMarker": false,
+    "categoryPermissionDenied": false,
+    "unauthorizedException": true,
+    "ioException": false,
+    "accessDeniedHResult": true,
+    "innerAccessDeniedHResult": false
+  },
+  "cardsSeen": 1,
+  "answersSent": 0,
+  "checks": [
+    {
+      "name": "native-model-available",
+      "passed": true
+    },
+    {
+      "name": "windows-launch-sandbox-probe",
+      "passed": true
+    },
+    {
+      "name": "turn-budget",
+      "passed": true
+    },
+    {
+      "name": "scoped-tool-accepted",
+      "passed": true
+    },
+    {
+      "name": "scoped-tool-no-card",
+      "passed": true
+    },
+    {
+      "name": "scoped-tool-completed",
+      "passed": true
+    },
+    {
+      "name": "scoped-tool-called",
+      "passed": true
+    },
+    {
+      "name": "turn-budget",
+      "passed": true
+    },
+    {
+      "name": "native-read-search-accepted",
+      "passed": true
+    },
+    {
+      "name": "native-read-search-no-card",
+      "passed": true
+    },
+    {
+      "name": "native-read-search-completed",
+      "passed": true
+    },
+    {
+      "name": "native-read-content",
+      "passed": true
+    },
+    {
+      "name": "native-read-tool-observed",
+      "passed": true
+    },
+    {
+      "name": "native-search-tool-observed",
+      "passed": true
+    },
+    {
+      "name": "turn-budget",
+      "passed": true
+    },
+    {
+      "name": "edit-permission-card",
+      "passed": true
+    },
+    {
+      "name": "edit-accepted",
+      "passed": true
+    },
+    {
+      "name": "sentinel-unchanged-after-interrupt",
+      "passed": true
+    },
+    {
+      "name": "sentinel-unchanged-at-cleanup",
+      "passed": true
+    },
+    {
+      "name": "no-native-permission-answers",
+      "passed": true
+    },
+    {
+      "name": "native-model-available",
+      "passed": true
+    },
+    {
+      "name": "recovery-scoped-tool-called",
+      "passed": true
+    },
+    {
+      "name": "recovery-native-read-tool-observed",
+      "passed": true
+    },
+    {
+      "name": "recovery-native-search-tool-observed",
+      "passed": true
+    },
+    {
+      "name": "recovery-edit-permission-card",
+      "passed": true
+    },
+    {
+      "name": "recovery-sentinel-unchanged-after-interrupt",
+      "passed": true
+    },
+    {
+      "name": "recovery-no-native-permission-answers",
+      "passed": true
+    },
+    {
+      "name": "sentinel-unchanged-at-cleanup",
+      "passed": true
+    },
+    {
+      "name": "no-native-permission-answers",
+      "passed": true
+    },
+    {
+      "name": "native-model-available",
+      "passed": true
+    },
+    {
+      "name": "recovery-scoped-tool-called",
+      "passed": true
+    },
+    {
+      "name": "recovery-native-read-tool-observed",
+      "passed": true
+    },
+    {
+      "name": "recovery-native-search-tool-observed",
+      "passed": true
+    },
+    {
+      "name": "recovery-edit-permission-card",
+      "passed": true
+    },
+    {
+      "name": "recovery-sentinel-unchanged-after-interrupt",
+      "passed": true
+    },
+    {
+      "name": "recovery-no-native-permission-answers",
+      "passed": true
+    },
+    {
+      "name": "sentinel-unchanged-at-cleanup",
+      "passed": true
+    },
+    {
+      "name": "no-native-permission-answers",
+      "passed": true
+    },
+    {
+      "name": "native-model-available",
+      "passed": true
+    },
+    {
+      "name": "recovery-scoped-tool-called",
+      "passed": true
+    },
+    {
+      "name": "recovery-native-read-tool-observed",
+      "passed": true
+    },
+    {
+      "name": "recovery-native-search-tool-observed",
+      "passed": true
+    },
+    {
+      "name": "recovery-edit-permission-card",
+      "passed": true
+    },
+    {
+      "name": "recovery-sentinel-unchanged-after-interrupt",
+      "passed": true
+    },
+    {
+      "name": "recovery-no-native-permission-answers",
+      "passed": true
+    },
+    {
+      "name": "windows-cold-resume-sandbox-probe",
+      "passed": true
+    },
+    {
+      "name": "windows-read-only-blocked-unasked-write",
+      "passed": false
+    },
+    {
+      "name": "sentinel-unchanged-at-cleanup",
+      "passed": true
+    },
+    {
+      "name": "no-native-permission-answers",
+      "passed": true
+    }
+  ],
+  "result": "failed",
+  "failedCheck": "windows-unasked-write",
+  "failureReason": "provider-operation-failed"
+}

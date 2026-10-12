@@ -255,3 +255,10 @@
 .settings-view .agent-voice-license pre { max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.6; }
 .settings-view .agent-voice-settings progress { width: 100%; accent-color: var(--theme-accent); }
 @media (max-width: 620px) { .settings-view .agent-fields { grid-template-columns: minmax(0, 1fr); } }
+
+/* The speech model's download and status (ADR-0071), in Settings → Transcription and setup. */
+.speech-model-status { display: grid; gap: 8px; justify-items: start; margin-top: 10px; }
+.speech-model-status__bar { width: 100%; height: 6px; border-radius: var(--tt-radius-pill); background: var(--tt-hairline); overflow: hidden; }
+.speech-model-status__bar > span { display: block; height: 100%; background: var(--tt-accent); transition: width 240ms ease-out; }
+.speech-model-status__ready { color: var(--tt-accent-text); font-weight: 600; }
+.speech-model-status__error { color: var(--tt-error-text); }

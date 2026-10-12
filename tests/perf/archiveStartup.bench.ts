@@ -89,6 +89,8 @@ async function seed(root: string, count: number): Promise<void> {
       threads.push({ id, title: `Archive ${i}`, projectId: 'project', modelId: 'fake:model', status: 'idle', messages: [], requests: [],
         historyEpoch: 'generation-1', workspaceSettledAt: '2026-09-01T00:00:00.000Z' })
     }
+    // An archive an earlier start has already read whole once: from then on a start reads no record (#918).
+    store.markSubagentWordsMoved()
   } finally { store.close() }
   const hostId = await loadHostIdentity(root)
   const snapshot = stampHostSnapshot({ ...EMPTY_AGENT_HOST, projects: [{ id: 'project', title: 'Synthetic project', path: root }],

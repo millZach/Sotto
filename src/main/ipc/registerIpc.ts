@@ -23,7 +23,9 @@ import {
   OUTPUT_DELIVER,
   RECOVERY_NOTICE_LIST,
   TRANSCRIPTION_CANCEL,
-  TRANSCRIPTION_CHECK_KEY,
+  SPEECH_MODEL_GET_STATUS,
+  SPEECH_MODEL_DOWNLOAD,
+  OPENROUTER_CHECK_KEY,
   TRANSCRIPTION_TRANSCRIBE,
   MICROPHONE_ENSURE_ACCESS,
   TRANSCRIPT_POLISH,
@@ -54,7 +56,7 @@ import {
   type OutputOutcome,
   type OutputDeliveryRequest,
   type OutputResult,
-  type TranscriptionKeyCheck,
+  type OpenRouterKeyCheck,
   type TranscriptionRequest,
   type TranscriptionResult,
   type StartupState,
@@ -64,6 +66,7 @@ import {
   type WidgetDragPayload,
   type WidgetPresentationPayload,
 } from '../../shared/contracts'
+import type { SpeechModelStatus } from '../../shared/speechModel'
 import { historyEntrySchema, type HistoryEntry } from '../../shared/history'
 import {
   settingsSchema,
@@ -73,6 +76,7 @@ import {
 } from '../../shared/settings'
 import type { RendererRole } from '../security'
 import type { RecoveryNotice } from '../../shared/recoveryNotice'
+import { OMARCHY_THEME_ID } from '../../shared/themes/omarchy'
 
 const noPayloadSchema = z.undefined()
 const settingKeys = [
@@ -88,10 +92,10 @@ const settingKeys = [
   'effortColor',
   'customThemes',
   'reducedMotion',
+  'terminalFontSize',
   'microphoneId',
   'maxRecordingSeconds',
   'soundCues',
-  'language',
   'formatWhitespace',
   'autoCopy',
   'autoPaste',
@@ -126,7 +130,6 @@ const settingKeys = [
   'proactivePanels',
   'commitMessages',
   'pullRequestText',
-  'streamingAsr',
   'autoUpdateCheck',
   'webLinkDestination',
   'responseStreaming',
@@ -137,6 +140,7 @@ const settingKeys = [
   'browserWithoutAsking',
   'visualsInThreads',
   'babysitPullRequests',
+  'watcherInFlightLimit',
   'memoryEnabled',
   'cloudIphoneMonthlyMinutes',
   'cloudIphoneIdleMinutes',
@@ -145,7 +149,7 @@ const settingKeys = [
 const looseSettingsPatchSchema = settingsSchema
   // `tailnetConnections` is a headless host's own, written by its administrative route; nothing on a desktop sets it,
   // so a payload naming it is refused rather than dropped (ADR-0053).
-  .omit({ hotkey: true, launchAtStartup: true, tailnetConnections: true })
+  .omit({ hotkey: true, launchAtStartup: true, tailnetConnections: true, omarchyTheme: true })
   .partial()
   // The retired accent is still accepted from older callers and never copied
   // into the patch below (ADR-0011).
@@ -154,6 +158,13 @@ const looseSettingsPatchSchema = settingsSchema
   .superRefine((patch, context) => {
     if (Object.values(patch).some((value) => value === undefined)) {
       context.addIssue({ code: 'custom', message: 'Undefined settings fields are not allowed' })
+    }
+    if (process.platform !== 'linux') {
+      for (const key of ['lightTheme', 'darkTheme'] as const) {
+        if (patch[key] === OMARCHY_THEME_ID) {
+          context.addIssue({ code: 'custom', path: [key], message: 'Unknown theme selection' })
+        }
+      }
     }
   })
 
@@ -277,7 +288,16 @@ export interface TranscriptPolishIpcService {
 export interface TranscriptionIpcService {
   transcribe(request: TranscriptionRequest): Promise<TranscriptionResult>
   cancel(requestId: string): void
-  checkKey(): Promise<TranscriptionKeyCheck>
+}
+
+/** The speech model on this computer (ADR-0071): where it stands, and a way to start or retry its download. */
+export interface SpeechModelIpcService {
+  status(): SpeechModelStatus
+  download(): void
+}
+
+export interface OpenRouterKeyIpcService {
+  check(): Promise<OpenRouterKeyCheck>
 }
 
 export interface UpdateIpcService {
@@ -305,6 +325,8 @@ export interface RegisterIpcDependencies {
   readonly output?: OutputIpcService
   readonly transcriptPolish?: TranscriptPolishIpcService
   readonly transcription?: TranscriptionIpcService
+  readonly speechModel?: SpeechModelIpcService
+  readonly openRouterKey?: OpenRouterKeyIpcService
   readonly updates?: UpdateIpcService
   readonly recoveryNotices?: RecoveryNoticeIpcService
   readonly widget?: WidgetIpcService
@@ -607,7 +629,7 @@ export function registerIpc(
       transcriptionRequestSchema,
       1,
       async (request): Promise<TranscriptionResult> => {
-        if (dependencies.transcription === undefined) return { ok: false, reason: 'unconfigured' }
+        if (dependencies.transcription === undefined) return { ok: false, reason: 'model-not-ready' }
         return dependencies.transcription.transcribe(request)
       },
     )
@@ -621,9 +643,18 @@ export function registerIpc(
         return OK
       },
     )
-    register(TRANSCRIPTION_CHECK_KEY, noPayloadSchema, 0, async (): Promise<TranscriptionKeyCheck> => {
-      if (dependencies.transcription === undefined) return { ok: false, reason: 'unconfigured' }
-      return dependencies.transcription.checkKey()
+    register(SPEECH_MODEL_GET_STATUS, noPayloadSchema, 0, async (): Promise<SpeechModelStatus> => {
+      if (dependencies.speechModel === undefined) return { state: 'missing' }
+      return dependencies.speechModel.status()
+    })
+    register(SPEECH_MODEL_DOWNLOAD, noPayloadSchema, 0, async (): Promise<CommandResult> => {
+      if (dependencies.speechModel === undefined) return UNAVAILABLE
+      dependencies.speechModel.download()
+      return OK
+    })
+    register(OPENROUTER_CHECK_KEY, noPayloadSchema, 0, async (): Promise<OpenRouterKeyCheck> => {
+      if (dependencies.openRouterKey === undefined) return { ok: false, reason: 'unconfigured' }
+      return dependencies.openRouterKey.check()
     })
     register(MICROPHONE_ENSURE_ACCESS, noPayloadSchema, 0, async (): Promise<boolean> => {
       if (dependencies.microphoneAccess === undefined) return true

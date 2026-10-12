@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { OMARCHY_THEME_ID, omarchyThemeSchema, type OmarchyTheme } from './themes/omarchy'
 
 import { DEFAULT_HOTKEY } from './constants'
 import {
@@ -117,6 +118,8 @@ export interface AppSettings {
   effortColor: EffortColor
   /** Themes the user created, duplicated or imported, already canonical. */
   customThemes: ThemeDefinition[]
+  /** Linux-only, read-only palette supplied by main. Never saved or patched. */
+  omarchyTheme?: OmarchyTheme | null | undefined
   webLinkDestination: 'external' | 'embedded'
   /** `live` draws assistant text as it streams; `complete` shows each reply once it is finished. Activity is always live. */
   responseStreaming: 'live' | 'complete'
@@ -132,6 +135,8 @@ export interface AppSettings {
    * started ends at once; what the user started from the Pull request surface stays.
    */
   babysitPullRequests: boolean
+  /** Computer-wide watcher capacity; lowering it holds admission and stops nothing. */
+  watcherInFlightLimit: number
   /** Applies only to new threads; existing provider sessions keep their working folder. */
   threadWorkingCopyDefault: 'shared' | 'independent'
   /** Explicit project overrides; an absent key inherits the global default. */
@@ -177,9 +182,15 @@ export interface AppSettings {
   reducedMotion: ReducedMotion
   microphoneId: string | null
   hotkey: string
+  /** Text size in every terminal, in pixels; changed from the focused terminal's zoom chords. */
+  terminalFontSize: number
+  /**
+   * Dictation is always cut at pauses and transcribed on this computer, by a model that works out
+   * the language itself (ADR-0071), so the `language` and `streamingAsr` settings are gone; a
+   * settings file that still carries either parses and drops it.
+   */
   maxRecordingSeconds: MaxRecordingSeconds
   soundCues: boolean
-  language: string
   formatWhitespace: boolean
   autoCopy: true
   autoPaste: boolean
@@ -217,7 +228,6 @@ export interface AppSettings {
   pullRequestText: boolean
   /** Off stops every generated commit message; a commit whose dialog message was left empty takes the stand-in subject. */
   commitMessages: boolean
-  streamingAsr: boolean
   autoUpdateCheck: boolean
   /**
    * Whether the agent runtime runs on this computer at all. Read once at
@@ -252,7 +262,7 @@ export interface AppSettings {
 }
 
 export type SettingsPatch = Partial<
-  Omit<AppSettings, 'hotkey' | 'launchAtStartup' | 'worktreeCleanup'>
+  Omit<AppSettings, 'hotkey' | 'launchAtStartup' | 'worktreeCleanup' | 'omarchyTheme'>
 > & {
   /** Merge only the supplied cleanup rules with the latest saved settings. */
   worktreeCleanup?: Partial<WorktreeCleanupRules>
@@ -268,13 +278,14 @@ const fieldSchemas = {
   version: z.literal(SETTINGS_VERSION),
   theme: z.enum(['system', 'light', 'dark']),
   appearance: z.enum(APPEARANCES),
-  lightTheme: z.string().refine(isThemeId),
-  darkTheme: z.string().refine(isThemeId),
+  lightTheme: z.string().refine(value => isThemeId(value) || value === OMARCHY_THEME_ID),
+  darkTheme: z.string().refine(value => isThemeId(value) || value === OMARCHY_THEME_ID),
   appearanceContrast: z.number().int().min(APPEARANCE_CONTRAST.min).max(APPEARANCE_CONTRAST.max).refine(value => value % APPEARANCE_CONTRAST.step === 0),
   glassOpacity: z.number().int().min(GLASS_OPACITY.min).max(GLASS_OPACITY.max).refine(value => value % GLASS_OPACITY.step === 0),
   frostedWindow: z.boolean(),
   frostSeeThrough: z.number().int().min(FROST_SEE_THROUGH.min).max(FROST_SEE_THROUGH.max).refine(value => value % FROST_SEE_THROUGH.step === 0),
   effortColor: z.enum(EFFORT_COLORS),
+  omarchyTheme: omarchyThemeSchema.nullable().optional(),
   customThemes: customThemesSchema as z.ZodType<ThemeDefinition[]>,
   webLinkDestination: z.enum(['external', 'embedded']),
   responseStreaming: z.enum(['live', 'complete']),
@@ -282,12 +293,13 @@ const fieldSchemas = {
   browserWithoutAsking: z.boolean(),
   visualsInThreads: z.boolean(),
   babysitPullRequests: z.boolean(),
+  watcherInFlightLimit: z.number().int().min(1).max(8),
   reducedMotion: z.enum(['system', 'on']),
   microphoneId: z.string().min(1).nullable(),
   hotkey: z.string().min(1),
+  terminalFontSize: z.number().int().min(8).max(32),
   maxRecordingSeconds: z.union([z.literal(30), z.literal(60), z.literal(120), z.literal(300)]),
   soundCues: z.boolean(),
-  language: z.string().min(1),
   formatWhitespace: z.boolean(),
   autoCopy: z.literal(true),
   autoPaste: z.boolean(),
@@ -328,7 +340,6 @@ const fieldSchemas = {
   proactivePanels: z.boolean(),
   pullRequestText: z.boolean(),
   commitMessages: z.boolean(),
-  streamingAsr: z.boolean(),
   autoUpdateCheck: z.boolean(),
   localHostEnabled: z.boolean(),
   phoneAccess: z.boolean(),
@@ -364,12 +375,13 @@ export const DEFAULT_SETTINGS: AppSettings = {
   browserWithoutAsking: true,
   visualsInThreads: true,
   babysitPullRequests: true,
+  watcherInFlightLimit: 4,
   reducedMotion: 'system',
   microphoneId: null,
   hotkey: DEFAULT_HOTKEY,
+  terminalFontSize: 13,
   maxRecordingSeconds: 60,
   soundCues: true,
-  language: 'auto',
   formatWhitespace: true,
   autoCopy: true,
   autoPaste: true,
@@ -416,7 +428,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // On by default: when a thread's provider writes nothing, the Git action commits
   // under the stand-in subject "Update project files" rather than waiting.
   commitMessages: true,
-  streamingAsr: true,
   // On by default: an install that never opens Settings still learns about a
   // fix. The check asks GitHub for a version number and sends nothing else,
   // and turning it off stops the request entirely.
@@ -457,7 +468,7 @@ function parseField<Key extends keyof AppSettings>(
   return result.success ? (result.data as AppSettings[Key]) : defaults[key]
 }
 
-export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SETTINGS): AppSettings {
+export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SETTINGS, allowOmarchy = false): AppSettings {
   const persisted = isRecord(input) ? input : {}
   // The library is read leniently, one theme at a time, so a single damaged
   // entry never costs the user the rest of their themes. A half naming a theme
@@ -465,8 +476,10 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
   const customThemes = Array.isArray(persisted.customThemes)
     ? parseCustomThemes(persisted.customThemes)
     : [...defaults.customThemes]
-  const half = (key: 'lightTheme' | 'darkTheme'): string =>
-    resolveThemeHalfId(parseField(persisted, key, defaults), key === 'lightTheme' ? 'light' : 'dark', customThemes)
+  const half = (key: 'lightTheme' | 'darkTheme'): string => {
+    const id = parseField(persisted, key, defaults)
+    return allowOmarchy && id === OMARCHY_THEME_ID ? id : resolveThemeHalfId(id, key === 'lightTheme' ? 'light' : 'dark', customThemes)
+  }
 
   return {
     version: parseField(persisted, 'version', defaults),
@@ -486,12 +499,13 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     browserWithoutAsking: parseField(persisted, 'browserWithoutAsking', defaults),
     visualsInThreads: parseField(persisted, 'visualsInThreads', defaults),
     babysitPullRequests: parseField(persisted, 'babysitPullRequests', defaults),
+    watcherInFlightLimit: parseField(persisted, 'watcherInFlightLimit', defaults),
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),
     microphoneId: parseField(persisted, 'microphoneId', defaults),
     hotkey: parseField(persisted, 'hotkey', defaults),
+    terminalFontSize: parseField(persisted, 'terminalFontSize', defaults),
     maxRecordingSeconds: parseField(persisted, 'maxRecordingSeconds', defaults),
     soundCues: parseField(persisted, 'soundCues', defaults),
-    language: parseField(persisted, 'language', defaults),
     formatWhitespace: parseField(persisted, 'formatWhitespace', defaults),
     autoCopy: parseField(persisted, 'autoCopy', defaults),
     autoPaste: parseField(persisted, 'autoPaste', defaults),
@@ -527,7 +541,6 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     proactivePanels: parseField(persisted, 'proactivePanels', defaults),
     pullRequestText: parseField(persisted, 'pullRequestText', defaults),
     commitMessages: parseField(persisted, 'commitMessages', defaults),
-    streamingAsr: parseField(persisted, 'streamingAsr', defaults),
     autoUpdateCheck: parseField(persisted, 'autoUpdateCheck', defaults),
     localHostEnabled: parseField(persisted, 'localHostEnabled', defaults),
     phoneAccess: parseField(persisted, 'phoneAccess', defaults),

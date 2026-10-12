@@ -38,12 +38,13 @@ const customSettings = {
   browserWithoutAsking: false,
   visualsInThreads: false,
   babysitPullRequests: false,
+  watcherInFlightLimit: 6,
   reducedMotion: 'on',
   microphoneId: 'microphone-1',
+  terminalFontSize: 17,
   hotkey: 'Alt+D',
   maxRecordingSeconds: 300,
   soundCues: false,
-  language: 'fr',
   formatWhitespace: false,
   autoCopy: true,
   autoPaste: false,
@@ -79,7 +80,6 @@ const customSettings = {
   proactivePanels: true,
   pullRequestText: false,
   commitMessages: false,
-  streamingAsr: false,
   autoUpdateCheck: false,
   localHostEnabled: false,
   phoneAccess: true,
@@ -117,6 +117,17 @@ describe('settings', () => {
     expect(parseSettings({}).babysitPullRequests).toBe(true)
     expect(parseSettings({ babysitPullRequests: false }).babysitPullRequests).toBe(false)
     expect(parseSettings({ babysitPullRequests: 'no' }).babysitPullRequests).toBe(true)
+  })
+  it('defaults watcher capacity to four and accepts only integers from one to eight', () => {
+    expect(parseSettings({}).watcherInFlightLimit).toBe(4)
+    for (const watcherInFlightLimit of [1, 4, 8]) {
+      expect(parseSettings({ watcherInFlightLimit }).watcherInFlightLimit).toBe(watcherInFlightLimit)
+      expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, watcherInFlightLimit }).success).toBe(true)
+    }
+    for (const watcherInFlightLimit of [0, 9, 2.5, '4', null]) {
+      expect(parseSettings({ watcherInFlightLimit }).watcherInFlightLimit).toBe(4)
+      expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, watcherInFlightLimit }).success).toBe(false)
+    }
   })
   it('starts every worktree cleanup rule off and recovers an unusable rule set to the defaults', () => {
     expect(parseSettings({}).worktreeCleanup).toEqual({ afterDays: null, merged: false, onSettle: false, unchanged: false })
@@ -158,10 +169,15 @@ describe('settings', () => {
     expect(mergeMethodChosenPatch({ defaultMergeMethod: 'merge', lastMergeMethod: 'merge' }, 'squash')).toBeNull()
   })
   it('drops retired transcription settings while preserving valid settings', () => {
-    const legacy = { ...customSettings, modelPreset: 'fast', inferencePreference: 'wasm', remoteAsr: true, remoteAsrUrl: 'http://retired.invalid' }
+    // The speech model detects the language and every dictation is segmented (ADR-0071), so
+    // language and streamingAsr went with the earlier local and hosted settings.
+    const legacy = {
+      ...customSettings, modelPreset: 'fast', inferencePreference: 'wasm', remoteAsr: true, remoteAsrUrl: 'http://retired.invalid',
+      language: 'fr', streamingAsr: false,
+    }
     expect(parseSettings(legacy)).toEqual(customSettings)
     expect(settingsSchema.parse(legacy)).toEqual(customSettings)
-    for (const field of ['modelPreset', 'inferencePreference', 'remoteAsr', 'remoteAsrUrl']) {
+    for (const field of ['modelPreset', 'inferencePreference', 'remoteAsr', 'remoteAsrUrl', 'language', 'streamingAsr']) {
       expect(parseSettings(legacy)).not.toHaveProperty(field)
     }
   })
@@ -274,6 +290,8 @@ describe('settings', () => {
   it('defines the complete versioned defaults', () => {
     expect(SETTINGS_VERSION).toBe(1)
     expect(DEFAULT_SETTINGS).toEqual({
+      watcherInFlightLimit: 4,
+      terminalFontSize: 13,
       memoryEnabled: false,
       webLinkDestination: 'external',
       responseStreaming: 'live',
@@ -297,7 +315,6 @@ describe('settings', () => {
       hotkey: 'CommandOrControl+Shift+Space',
       maxRecordingSeconds: 60,
       soundCues: true,
-      language: 'auto',
       formatWhitespace: true,
       autoCopy: true,
       autoPaste: true,
@@ -333,7 +350,6 @@ describe('settings', () => {
       proactivePanels: false,
       pullRequestText: true,
       commitMessages: true,
-      streamingAsr: true,
       autoUpdateCheck: true,
       localHostEnabled: true,
       phoneAccess: false,
@@ -396,7 +412,6 @@ describe('settings', () => {
     expect(parseSettings({}).llmFormatting).toBe(false)
     expect(parseSettings({ llmFormatting: 'yes' }).llmFormatting).toBe(false)
     expect(parseSettings({ llmTimeoutMs: 100 }).llmTimeoutMs).toBe(2_500)
-    expect(parseSettings({ streamingAsr: false }).streamingAsr).toBe(false)
   })
 
 
@@ -470,9 +485,7 @@ describe('settings', () => {
     },
   )
 
-  it('requires a non-empty language and a literal true autoCopy value', () => {
-    expect(parseSettings({ language: '' }).language).toBe(DEFAULT_SETTINGS.language)
-    expect(parseSettings({ language: 'es' }).language).toBe('es')
+  it('requires a literal true autoCopy value', () => {
     expect(parseSettings({ autoCopy: false }).autoCopy).toBe(true)
     expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, autoCopy: false }).success).toBe(false)
   })

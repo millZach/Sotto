@@ -17,7 +17,7 @@ export function followupDigest(input: Pick<AgentFollowup, 'text' | 'skills' | 'f
   // Mentioned files join the digest only when there are any, so revisions without them keep their existing identity.
   return createHash('sha256').update(JSON.stringify(input.files?.length ? [...base, input.files] : base)).digest('hex')
 }
-const receiptsSchema = z.array(agentDeliveryReceiptsSchema.element.extend({ digest: z.string().optional() })).max(MAX_DELIVERED_DRAFTS)
+const receiptsSchema = z.array(agentDeliveryReceiptsSchema.element.extend({ digest: z.string().optional() })).max(MAX_DELIVERED_DRAFTS * 2)
 /**
  * A queued item as the store keeps it. A wake-up keeps the news it was worded from, one part per pull request, so news
  * that comes later folds into it and a stop takes back its pull request's part; the window is sent the words alone.
@@ -48,6 +48,8 @@ export interface FollowupView {
 /** Only durable snapshots become visible. No provider work runs under this store's mutation lane. */
 export class FollowupStore {
   private state: State = { items: [], receipts: [] }
+  private readonly dormant = new Map<string, Stored['items'][number]>()
+  private active: (threadId: string) => boolean = () => true
   private tail: Promise<unknown> = Promise.resolve()
   private readonly store: AtomicJsonStore<Stored>
   constructor(directory: string) {
@@ -58,11 +60,17 @@ export class FollowupStore {
    * still there. One that lost an image, because its content is gone or an inline one was not the image it claimed,
    * is paused and says so, never sent without it.
    */
-  async load(stage?: StageInline, kept: (handle: AgentAttachmentHandle) => boolean = () => true): Promise<void> {
+  async load(stage?: StageInline, kept: (handle: AgentAttachmentHandle) => boolean = () => true, active: (threadId: string) => boolean = () => true): Promise<void> {
+    this.active = active
     const stored = await this.store.read()
     const items: State['items'] = []
     const lost = new Set<string>()
     for (const item of stored.items) {
+      if (!active(item.threadId)) {
+        this.dormant.set(item.id, structuredClone(item))
+        items.push(queuedSchema.parse({ ...item, attachments: item.attachments.filter(attachment => !('dataUrl' in attachment)) }))
+        continue
+      }
       const attachments: AgentAttachmentHandle[] = []
       for (const attachment of item.attachments) {
         if (!('dataUrl' in attachment)) { attachments.push(attachment); continue }
@@ -76,12 +84,13 @@ export class FollowupStore {
     this.state = { items, receipts: stored.receipts }
     await this.change(state => {
       for (const item of state.items) {
+        if (!active(item.threadId)) continue
         const remaining = item.attachments.filter(kept)
         if (remaining.length === item.attachments.length && !lost.has(item.id)) continue
         item.attachments = remaining
         if (['queued', 'paused', 'failed'].includes(item.status)) { item.status = 'paused'; item.error = LOST_IMAGES }
       }
-      for (const item of state.items) if (item.status === 'dispatching') {
+      for (const item of state.items) if (active(item.threadId) && item.status === 'dispatching') {
         item.status = 'uncertain'; item.error = 'Dispatch was interrupted. Refresh to reconcile; this message will not be replayed.'
       }
     })
@@ -98,7 +107,7 @@ export class FollowupStore {
     const task = this.tail.catch(() => undefined).then(async () => {
       const next = this.get()
       if (update(next) === false) return
-      await this.store.write(next); this.state = next
+      await this.store.write({ ...next, items: next.items.map(item => this.dormant.get(item.id) ?? item) }); this.state = next
     })
     this.tail = task
     return task
@@ -117,7 +126,9 @@ export class FollowupStore {
       // The user's follow-ups go before a wake-up that waits, which goes when the queue would send the next one (decision 8).
       const wakeUp = state.items.findIndex(item => waitingWakeUp(item, input.threadId))
       state.items.splice(wakeUp === -1 ? state.items.length : wakeUp, 0, queuedSchema.parse({ ...input, id: randomUUID(), status: 'queued', createdAt: now, updatedAt: now }))
-      state.receipts = [...state.receipts, { threadId: input.threadId, draftId: input.draftId, digest }].slice(-MAX_DELIVERED_DRAFTS)
+      const receipts = [...state.receipts, { threadId: input.threadId, draftId: input.draftId, digest }]
+      const ordinary = new Set(receipts.filter(receipt => this.active(receipt.threadId)).slice(-MAX_DELIVERED_DRAFTS))
+      state.receipts = receipts.filter(receipt => !this.active(receipt.threadId) || ordinary.has(receipt))
     })
   }
   edit(threadId: string, itemId: string, update?: Pick<AgentFollowup, 'text' | 'attachments' | 'skills' | 'files'>): Promise<void> {

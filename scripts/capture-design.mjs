@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import process from 'node:process'
@@ -16,8 +16,17 @@ const specs = [
   'tests/e2e/design-capture-scaling.spec.ts',
 ]
 const fragmentsRoot = await mkdtemp(join(tmpdir(), 'sotto-design-captures-'))
+// Help and Settings show the running version. The captures start the app from an entry whose manifest pins the
+// version the committed baselines show, the way the Owl specs set an Owl version, so a release bump changes no
+// capture. Its name keeps any default path Electron derives from it away from Sotto's own data folder.
+const DESIGN_CAPTURE_VERSION = '0.1.36'
+let entryRoot
 
 try {
+  entryRoot = await mkdtemp(join(tmpdir(), 'sotto-design-entry-'))
+  await writeFile(join(entryRoot, 'package.json'), `${JSON.stringify({
+    name: 'sotto-design-capture', version: DESIGN_CAPTURE_VERSION, main: resolve(process.cwd(), 'out/main/index.js'),
+  }, null, 2)}\n`, 'utf8')
   const child = spawn(process.execPath, [cli, 'test', ...specs, '--workers=1'], {
     cwd: process.cwd(),
     env: {
@@ -29,6 +38,7 @@ try {
       SOTTO_DESIGN_CAPTURE: '1',
       SOTTO_UPDATE_DESIGN_BASELINES: update ? '1' : '0',
       SOTTO_DESIGN_CAPTURE_FRAGMENTS: fragmentsRoot,
+      SOTTO_E2E_MAIN_ENTRY: entryRoot,
     },
     stdio: 'inherit',
     windowsHide: true,
@@ -53,5 +63,6 @@ try {
   process.stderr.write(`${error instanceof Error ? error.message : 'Design capture could not finish'}\n`)
   process.exitCode = 1
 } finally {
-  await rm(fragmentsRoot, { recursive: true, force: true })
+  // Both folders go whatever happened above, each removal attempted on its own.
+  await Promise.all([fragmentsRoot, entryRoot].filter(Boolean).map((folder) => rm(folder, { recursive: true, force: true })))
 }

@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AgentCommand, AgentState } from '../../../src/shared/agents'
+import type { PromptEditorElement } from '../../../src/renderer/src/agents/promptSelection'
 import type { FileListing, FilesBridge } from '../../../src/shared/files'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
@@ -56,6 +57,7 @@ function mount() {
   const live = liveAgentState(state)
   vi.mocked(useAgents).mockImplementation(live.useLive)
   render(<ThreadsView now={NOW} />)
+  mountedEditors.add((screen.getByRole('textbox', { name: 'Prompt' }) as PromptEditorElement).editor)
   return { live, prompt: () => screen.getByRole('textbox', { name: 'Prompt' }) as HTMLElement }
 }
 
@@ -70,11 +72,19 @@ function type(prompt: HTMLElement, value: string): void {
 
 const optionNames = (list: HTMLElement): string[] => within(list).getAllByRole('option').map(option => option.querySelector('.composer-picker__name')!.textContent!)
 
+const mountedEditors = new Set<PromptEditorElement['editor']>()
+
 beforeEach(() => {
   vi.mocked(useAgents).mockReset()
   Object.assign(window, { sotto: { files: filesBridge().bridge } })
 })
-afterEach(() => { cleanup(); Reflect.deleteProperty(window, 'sotto') })
+afterEach(() => {
+  cleanup()
+  // Tiptap defers destruction by a tick; finish it before Vitest removes document.
+  for (const editor of mountedEditors) editor.destroy()
+  mountedEditors.clear()
+  Reflect.deleteProperty(window, 'sotto')
+})
 
 describe('file mention tokens', () => {
   it('reads an @ token at the caret as a path being browsed', () => {

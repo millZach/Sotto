@@ -175,13 +175,13 @@ export interface WebContentsLike {
   ): void
 }
 
+/** The window events Sotto listens for; `close` and `page-title-updated` can be prevented. */
+export type WindowEventName = 'close' | 'closed' | 'moved' | 'maximize' | 'unmaximize' | 'hide' | 'minimize' | 'page-title-updated'
+
 export interface BrowserWindowLike {
   readonly webContents: WebContentsLike
-  on(event: 'close' | 'closed' | 'moved' | 'maximize' | 'unmaximize' | 'hide' | 'minimize', listener: (event: CloseEventLike) => void): void
-  removeListener(
-    event: 'close' | 'closed' | 'moved' | 'maximize' | 'unmaximize' | 'hide' | 'minimize',
-    listener: (event: CloseEventLike) => void,
-  ): void
+  on(event: WindowEventName, listener: (event: CloseEventLike) => void): void
+  removeListener(event: WindowEventName, listener: (event: CloseEventLike) => void): void
   hide(): void
   show(): void
   focus(): void
@@ -268,6 +268,8 @@ export interface WindowManagerDependencies {
   readonly windowFrost?: WindowFrost | null
   /** Whether the user asked for a frosted main window, read when the window is made. */
   readonly frostedWindow?: () => boolean
+  /** The main window's title: the running build's name ("Sotto Owl" on that track). Defaults to Sotto. */
+  readonly title?: string
 }
 
 type WindowKind = RendererRole
@@ -448,8 +450,12 @@ export class WindowManager {
       height: 720,
       minWidth: 820,
       minHeight: 560,
+      // Electron 43's Linux frame adds resize insets to frameless size constraints.
+      // A transparent native surface clears those insets; the solid background
+      // below still paints the room opaque. Other platforms keep their options.
+      ...(this.dependencies.platform === 'linux' ? { transparent: true as const } : {}),
       show: false,
-      title: APP_NAME,
+      title: this.dependencies.title ?? APP_NAME,
       ...mainWindowFrostOptions(this.frost(), this.dependencies.frostedWindow?.() ?? false),
       autoHideMenuBar: true,
       ...windowIconOptions(this.dependencies),
@@ -1016,6 +1022,10 @@ export class WindowManager {
       }
       this.runWindowCleanup(window)
     }
+    // The page's <title> says Sotto until the renderer learns the track, so it never renames the window: main
+    // names the window for the build it is from the start, and finds it again by that name.
+    const onPageTitle = (event: CloseEventLike): void => event.preventDefault()
+    window.on('page-title-updated', onPageTitle)
     const onMaximized = (): void => window.webContents.send(APP_MAXIMIZED, window.isMaximized())
     window.on('maximize', onMaximized)
     const onUnmaximized = (): void => onMaximized()
@@ -1034,6 +1044,7 @@ export class WindowManager {
       window.removeListener('minimize', onMinimized)
       window.removeListener('close', onClose)
       window.removeListener('closed', onClosed)
+      window.removeListener('page-title-updated', onPageTitle)
     })
   }
 

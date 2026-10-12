@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -8,6 +8,8 @@ import { AgentControl } from '../../../src/main/agents/control'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
+import { watcherRecordFixture } from '../../fixtures/watcher'
+import { emptyWatcherRecord } from '../../../src/shared/watcher'
 import { testCredentials } from '../../fixtures/testCredentials'
 import { createAgentControl } from '../../fixtures/agentControlFixture'
 import { deferred } from '../../fixtures/deferred'
@@ -15,18 +17,18 @@ import { deferred } from '../../fixtures/deferred'
 const roots: string[] = []
 const controls: AgentControl[] = []
 
-async function fixture() {
+async function fixture(historyEnabled = true) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-persistence-'))
   roots.push(root)
   const credentials = await testCredentials(root, { mode: 'unavailable' })
 
   const host = new E2EAgentHost()
-  const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
+  const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner, historyEnabled: () => historyEnabled,
   })
   controls.push(control)
   await control.start()
   if (!control.get().host.connected) await control.command({ type: 'connect' })
-  return { root, host, control }
+  return { root, host, control, credentials }
 }
 
 afterEach(async () => {
@@ -36,6 +38,51 @@ afterEach(async () => {
 })
 
 describe('coordinator persistence', () => {
+  it('migrates an older agents store without adopting a thread named Watcher or old management', async () => {
+    const f = await fixture()
+    f.control.dispose(); await f.control.closed()
+    const path = join(f.root, 'agents.json')
+    const saved = JSON.parse(await readFile(path, 'utf8'))
+    delete saved.watcher
+    saved.assignments = [{ threadId: 'workshop', instruction: 'Retired words', mode: 'managed' }]
+    await writeFile(path, JSON.stringify(saved), 'utf8')
+    const reopened = createAgentControl({ directory: f.root, host: f.host, credentials: f.credentials, reasoner: e2eAgentReasoner })
+    controls.push(reopened); await reopened.start(); reopened.dispose(); await reopened.closed()
+    const migrated = JSON.parse(await readFile(path, 'utf8'))
+    expect(migrated.watcher).toEqual(emptyWatcherRecord())
+    expect(migrated).not.toHaveProperty('assignments')
+    expect(migrated.configuration).toEqual(saved.configuration)
+    expect((await readdir(f.root)).some(name => name.includes('.corrupt-'))).toBe(false)
+  })
+
+  it('retains text-free watcher uncertainty, budgets and ownership across history-off restarts', async () => {
+    const f = await fixture(false)
+    f.control.dispose(); await f.control.closed()
+    const path = join(f.root, 'agents.json')
+    const saved = JSON.parse(await readFile(path, 'utf8'))
+    const record = watcherRecordFixture()
+    saved.watcher = record
+    await writeFile(path, JSON.stringify(saved), 'utf8')
+    const warnings = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    for (let restart = 0; restart < 2; restart++) {
+      const host = new E2EAgentHost()
+      const reopened = createAgentControl({ directory: f.root, host, credentials: f.credentials, reasoner: e2eAgentReasoner, historyEnabled: () => false })
+      controls.push(reopened); await reopened.start()
+      host.event({ type: 'manual', threadId: 'workshop', text: 'DISTINCT_PRIVATE_WATCHER_REQUEST' })
+      host.event({ type: 'stream', threadId: 'workshop', messageId: 'private-reply', text: 'DISTINCT_PRIVATE_FILE_CONTENT', status: 'idle' })
+      reopened.dispose(); await reopened.closed()
+      expect(JSON.parse(await readFile(path, 'utf8')).watcher).toEqual(record)
+      // No recovery writer may mistake a retained uncertain operation for new work.
+      expect((await host.snapshot()).threads.flatMap(thread => thread.messages).filter(message => message.commandId)).toEqual([])
+    }
+    for (const name of await readdir(f.root)) {
+      if (!name.endsWith('.json') && !name.includes('.tmp-') && !name.includes('.corrupt-')) continue
+      const text = await readFile(join(f.root, name), 'utf8')
+      expect(text).not.toContain('DISTINCT_PRIVATE_WATCHER_REQUEST')
+      expect(text).not.toContain('DISTINCT_PRIVATE_FILE_CONTENT')
+    }
+    expect(warnings.mock.calls.flat().join(' ')).not.toContain('DISTINCT_PRIVATE')
+  })
   function agentsWriteSpy() {
     const realWrite = AtomicJsonStore.prototype.write
     const spy = vi.spyOn(AtomicJsonStore.prototype, 'write')

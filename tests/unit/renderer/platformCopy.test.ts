@@ -13,7 +13,7 @@ const win32Strings: Omit<PlatformCopy, 'platform' | 'accessibilityHelp'> = {
   helpPasteFallback:
     'Sotto is clipboard first: successful text is always copied. Automatic paste may be blocked in elevated, protected, or password fields and applications with custom input handling. When that happens, paste manually with Ctrl+V.',
   openRouterKeyUnreadable:
-    'Sotto could not read the saved OpenRouter key. Nothing was deleted. Enter the key again in Settings → Transcription.',
+    'Sotto could not read the saved OpenRouter key. Nothing was deleted. Enter the key again in Settings → Cleanup.',
   homeMicrophonePermissionDenied:
     'Microphone access is off. Check Windows privacy settings, then try again.',
   homeRequestingPermissionDetail: 'Windows may ask for access.',
@@ -32,7 +32,7 @@ const win32Strings: Omit<PlatformCopy, 'platform' | 'accessibilityHelp'> = {
   settingsStartMinimizedDescription: 'Open directly in the tray when Sotto launches.',
   widgetMicrophoneBlockedDetail: 'Allow microphone access in Windows Settings.',
   widgetPermissionPromptDetail: 'Approve access in Windows',
-  widgetProcessingDetail: 'Sent to OpenRouter, never saved',
+  widgetProcessingDetail: 'Transcribed on this computer, never saved',
 }
 
 describe('platformCopy', () => {

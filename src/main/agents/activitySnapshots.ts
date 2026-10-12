@@ -1,5 +1,5 @@
 import type { AgentActivity } from '../../shared/agentActivity'
-import type { AgentHostSnapshot } from '../../shared/agents'
+import type { AgentHostSnapshot, AgentModel } from '../../shared/agents'
 import type { ActivitySubscriptionOptions, AgentHost } from './host'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
 
@@ -30,6 +30,23 @@ export function isImmutableActivities(activities: readonly AgentActivity[] | und
   return activities !== undefined && owned.has(activities)
 }
 
+/** A model catalog owned and frozen the same way. Every layer between an adapter and the window then shares one copy
+ * until the catalog itself changes, where each used to copy all of it, 608 models on the owner's machine (#917). */
+export function immutableModels(models: readonly AgentModel[]): AgentModel[] {
+  return copy(models, new WeakMap(), true) as AgentModel[]
+}
+
+export function isImmutableModels(models: readonly AgentModel[] | undefined): boolean {
+  return models !== undefined && owned.has(models)
+}
+
+/** What an adapter does before it builds its activity view: it takes ownership of each thread's activity and of its
+ * model catalog, which it only ever replaces, never edits. */
+export function certifyActivityView(state: { models: AgentModel[] }, threads: Iterable<{ activities?: AgentActivity[] | undefined }>): void {
+  for (const thread of threads) if (thread.activities && !isImmutableActivities(thread.activities)) thread.activities = immutableActivities(thread.activities)
+  if (!isImmutableModels(state.models)) state.models = immutableModels(state.models)
+}
+
 /** A private subscription snapshot: mutable metadata belongs to this consumer, while certified
  * activity trees may be shared. It is also what an adapter hands back for a thread refresh or settings
  * result that asked for history from events (#368). Every other public snapshot still uses
@@ -37,7 +54,7 @@ export function isImmutableActivities(activities: readonly AgentActivity[] | und
 export function cloneActivitySnapshot(snapshot: AgentHostSnapshot): AgentHostSnapshot {
   // Whole-history legacy hosts have nothing to share. Keep their established clone path
   // instead of checking ownership on every nested object in every retained record.
-  if (!snapshot.threads.some(thread => isImmutableActivities(thread.activities))) return cloneHostSnapshot(snapshot)
+  if (!isImmutableModels(snapshot.models) && !snapshot.threads.some(thread => isImmutableActivities(thread.activities))) return cloneHostSnapshot(snapshot)
   return copy(snapshot, new WeakMap(), false) as AgentHostSnapshot
 }
 

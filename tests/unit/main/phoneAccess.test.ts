@@ -22,6 +22,16 @@ it('turns on: checks Tailscale, opens a loopback listener with no admin routes, 
   await access.close()
 })
 
+it('advertises the packaged version supplied by desktop startup on the phone listener', async () => {
+  const fake = fakeTailscale(), server = fakeServer()
+  const startServer = vi.fn(server.startServer)
+  const { access } = create({ tailscale: fake.tailscale, startServer, listener: { sottoVersion: '0.1.37' } })
+  try {
+    await access.start()
+    expect(startServer.mock.calls[0]![0].sottoVersion).toBe('0.1.37')
+  } finally { await access.close() }
+})
+
 it('honours tailnetConnections only when told which clients are desktops, so a desktop’s settings file never raises its phone listener', async () => {
   const fake = fakeTailscale(), server = fakeServer()
   // The desktop's own phone access: a hand-edited settings file naming the headless host's setting changes nothing.

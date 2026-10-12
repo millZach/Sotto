@@ -28,11 +28,13 @@ test('steers a queued message from the keyboard without consuming the newer draf
     await expect(pane.getByLabel('Thread transcript')).toContainText('Start the work')
     await expect.poll(() => page.evaluate(async docs => (await window.sotto!.agents!.get()).host.threads.find(t => t.id === docs)?.lastTurn?.status, docs)).toBe('running')
     const turn = await page.evaluate(async docs => (await window.sotto!.agents!.get()).host.threads.find(t => t.id === docs)!.lastTurn!.id, docs)
-    for (const text of ['Keep this queued', 'Use the simpler approach']) {
+    const queue = pane.getByRole('region', { name: 'Queued messages' })
+    for (const [index, text] of ['Keep this queued', 'Use the simpler approach'].entries()) {
       await fillPrompt(prompt, text)
       await prompt.press('Enter')
+      await expect(queue.getByRole('button', { name: 'Steer now', exact: true })).toHaveCount(index + 1)
+      await expect(queue.getByRole('button', { name: 'Steer now', exact: true }).last()).toBeEnabled()
     }
-    const queue = pane.getByRole('region', { name: 'Queued messages' })
     await expect(queue.getByRole('button', { name: 'Steer now', exact: true })).toHaveCount(2)
     await fillPrompt(prompt, 'Keep this newer draft')
     for (const appearance of ['dark', 'light'] as const) {
@@ -44,6 +46,9 @@ test('steers a queued message from the keyboard without consuming the newer draf
         }, [width, height])
         await expect.poll(() => page.evaluate(() => innerWidth)).toBe(width)
         const toggle = queue.getByRole('button', { name: /^Queued/ })
+        // Width can settle before React sees the first short-window media change.
+        // Wait for its collapsed queue before opening it, so a late update cannot hide the rows.
+        if (appearance === 'dark' && height === 560) await expect(toggle).toHaveAttribute('aria-expanded', 'false')
         if (await toggle.getAttribute('aria-expanded') === 'false') await toggle.click()
         await expect(queue.getByRole('button', { name: 'Steer now' }).last()).toBeVisible()
         expect(await queue.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)

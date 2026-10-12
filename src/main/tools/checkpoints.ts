@@ -13,6 +13,7 @@ import { LINK_MESSAGE, blobName, checkpointPathSchema, isInside } from './checkp
 import { CheckpointStore, type CheckpointRecord, type Snapshot } from './checkpointStore'
 import { CheckpointReferences } from './checkpointReferences'
 import type { CheckpointDependencies, CheckpointThread } from './checkpointTypes'
+import { AtomicJsonStore } from '../storage/atomicJsonStore'
 
 const equal = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
 /** Whether no thread work or checkout change is active or pending. A thread whose `busy` was not checked counts as busy. */
@@ -44,7 +45,7 @@ export class CheckpointService extends ToolOperations {
     return this.loaded ??= this.store.load().then(({ records, setAside }) => {
       if (setAside) this.setAside(setAside)
       for (const record of records) {
-        if (record.status === 'capturing') {
+        if (record.status === 'capturing' && !this.dependencies.preserveThread?.(record.threadId)) {
           record.status = 'unavailable'
           record.reason = 'Checkpoint capture was interrupted before its completed file snapshot was saved. Later edits cannot be safely attributed to that turn.'
         }
@@ -64,6 +65,34 @@ export class CheckpointService extends ToolOperations {
     if (!exists) { this.recoveryBackup = undefined; this.recoveryNotice = undefined }
   }
   private unresolved(record: CheckpointRecord): boolean { return record.status === 'reverting' || record.status === 'uncertain' }
+  private preservesBackup(text: string): boolean {
+    return [...text.matchAll(/"threadId"\s*:\s*("(?:[^"\\]|\\.)*")/g)].some(match => {
+      try { return this.dependencies.preserveThread?.(JSON.parse(match[1]!)) === true } catch { return false }
+    })
+  }
+  /** Readable mixed copies can lose ordinary records without changing any dormant record. */
+  private dormantBackup(text: string): string | undefined {
+    const owner = (item: unknown): item is Record<string, unknown> & { threadId: string } => typeof item === 'object' && item !== null && 'threadId' in item && typeof item.threadId === 'string'
+    const retained = (items: unknown[]): unknown[] | undefined => items.every(owner) ? items.filter(item => this.dependencies.preserveThread?.(item.threadId)) : undefined
+    try {
+      const value: unknown = JSON.parse(text)
+      if (Array.isArray(value)) { const records = retained(value); return records ? JSON.stringify(records) : undefined }
+      if (typeof value === 'object' && value !== null && 'records' in value && Array.isArray(value.records)) {
+        const records = retained(value.records)
+        return records ? JSON.stringify({ ...value, records }) : undefined
+      }
+      if (owner(value)) return this.dependencies.preserveThread?.(value.threadId) ? text : undefined
+    } catch { /* A damaged copy may instead be a readable journal. */ }
+    try {
+      const entries: unknown[] = text.split('\n').filter(line => line.trim()).map(line => JSON.parse(line))
+      const journalEntry = (entry: unknown): entry is Record<string, unknown> & { record: Record<string, unknown> & { threadId: string } } => typeof entry === 'object' && entry !== null && 'record' in entry && owner(entry.record)
+      if (!entries.length || !entries.every(journalEntry)) return undefined
+      return entries.filter(entry => this.dependencies.preserveThread?.(entry.record.threadId)).map(entry => JSON.stringify(entry)).join('\n')
+    } catch { return undefined }
+  }
+  private async writeBackup(path: string, text: string): Promise<void> {
+    await new AtomicJsonStore<unknown>(path, value => value, () => undefined).writeSerialized(text)
+  }
   private async removeBackup(path: string): Promise<void> {
     for (let attempt = 0; attempt < 3; attempt++) {
       try { await unlink(path); if (path === this.recoveryBackup) { this.recoveryBackup = undefined; this.recoveryNotice = undefined } return }
@@ -84,7 +113,7 @@ export class CheckpointService extends ToolOperations {
   private async save(changed?: readonly CheckpointRecord[]): Promise<void> {
     const cutoff = (this.dependencies.now?.() ?? Date.now()) - 30 * 24 * 60 * 60 * 1000
     let removed = false
-    for (const record of this.records.values()) if (!this.unresolved(record) && (this.dependencies.historyEnabled?.() === false || Date.parse(record.createdAt) < cutoff)) { this.records.delete(record.id); removed = true }
+    for (const record of this.records.values()) if (!this.dependencies.preserveThread?.(record.threadId) && !this.unresolved(record) && (this.dependencies.historyEnabled?.() === false || Date.parse(record.createdAt) < cutoff)) { this.records.delete(record.id); removed = true }
     const directory = join(this.dependencies.directory, 'blobs')
     let blobsMissing = false, listed = false
     const blobInfo = await lstat(directory).catch(error => {
@@ -106,34 +135,64 @@ export class CheckpointService extends ToolOperations {
     // Only records added or changed since the last save are counted again, so a send's save does not scan every
     // saved checkpoint's files. The stored size comes from each record's own: a journal save measures only its own.
     this.references.sync(this.records.values())
-    let total = this.store.measure([...this.records.values()], changed) + this.references.bytes
-    const backupNames = (await readdir(this.dependencies.directory).catch(error => { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') this.dependencies.report?.('checkpoint-cleanup-failed'); return [] })).filter(name => name.startsWith('checkpoints.json.corrupt-'))
-    const backups = new Map<string, { size: number; createdAt: number }>()
+    const active = [...this.records.values()].filter(record => !this.dependencies.preserveThread?.(record.threadId))
+    const budget = active.length === this.records.size ? this.references : new CheckpointReferences(hash => this.blobSizes.get(hash) ?? 0)
+    if (budget !== this.references) budget.sync(active)
+    let total = this.store.measure(active, changed?.filter(record => !this.dependencies.preserveThread?.(record.threadId))) + budget.bytes
+    // A failed listing leaves dormant recovery copies unknown, so their file backups cannot be collected yet.
+    let unreadBackup = false
+    const backupNames = (await readdir(this.dependencies.directory).catch(error => { unreadBackup = this.dependencies.preserveThread !== undefined; if ((error as NodeJS.ErrnoException).code !== 'ENOENT') this.dependencies.report?.('checkpoint-cleanup-failed'); return [] })).filter(name => name.startsWith('checkpoints.json.corrupt-'))
+    const backups = new Map<string, { size: number; createdAt: number; dormant?: string }>()
     const removedBackups = new Set<string>()
+    const rewrittenBackups = new Map<string, string>()
+    const preservedBackupBlobs = new Set<string>()
     for (const name of backupNames) {
-      const info = await lstat(join(this.dependencies.directory, name)).catch(error => { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') this.dependencies.report?.('checkpoint-cleanup-failed'); return null })
+      const info = await lstat(join(this.dependencies.directory, name)).catch(error => { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') { unreadBackup ||= this.dependencies.preserveThread !== undefined; this.dependencies.report?.('checkpoint-cleanup-failed') } return null })
       if (!info?.isFile() || info.isSymbolicLink()) continue
+      if (this.dependencies.preserveThread) {
+        const text = await readFile(join(this.dependencies.directory, name), 'utf8').catch(() => { unreadBackup = true; this.dependencies.report?.('checkpoint-cleanup-failed'); return undefined })
+        if (text === undefined) continue
+        if (this.preservesBackup(text)) {
+          const dormant = this.dormantBackup(text)
+          for (const match of (dormant ?? text).matchAll(/"hash"\s*:\s*"([a-f0-9]{64})"/g)) preservedBackupBlobs.add(match[1]!)
+          if (dormant !== undefined) {
+            let canonical = text.trim()
+            try { canonical = JSON.stringify(JSON.parse(text)) } catch { /* Journal lines are already compact. */ }
+            const ordinaryBytes = Math.max(0, Buffer.byteLength(canonical) - Buffer.byteLength(dormant))
+            if (ordinaryBytes && (this.historyOff() || info.mtimeMs < cutoff)) rewrittenBackups.set(name, dormant)
+            else if (ordinaryBytes) { backups.set(name, { size: ordinaryBytes, createdAt: info.mtimeMs, dormant }); total += ordinaryBytes }
+          }
+          continue
+        }
+      }
       if (this.dependencies.historyEnabled?.() === false || info.mtimeMs < cutoff) removedBackups.add(name)
       else { backups.set(name, { size: info.size, createdAt: info.mtimeMs }); total += info.size }
     }
     const oldest = [
-      ...[...this.records.values()].filter(record => !this.unresolved(record)).map(record => ({ createdAt: Date.parse(record.createdAt), recordId: record.id, backup: undefined })),
+      ...[...this.records.values()].filter(record => !this.dependencies.preserveThread?.(record.threadId) && !this.unresolved(record)).map(record => ({ createdAt: Date.parse(record.createdAt), recordId: record.id, backup: undefined })),
       ...[...backups].map(([name, info]) => ({ createdAt: info.createdAt, recordId: undefined, backup: name })),
     ].sort((a, b) => a.createdAt - b.createdAt)
     for (const item of oldest) {
       if (total <= (this.dependencies.maxBytes ?? 500_000_000)) break
       if (item.recordId) {
         this.records.delete(item.recordId); removed = true
-        const referenced = this.references.bytes
+        const referenced = budget.bytes
         this.references.remove(item.recordId)
-        total -= this.store.sizeOf(item.recordId) + referenced - this.references.bytes
+        if (budget !== this.references) budget.remove(item.recordId)
+        total -= this.store.sizeOf(item.recordId) + referenced - budget.bytes
       }
-      if (item.backup) { total -= backups.get(item.backup)!.size; backups.delete(item.backup); removedBackups.add(item.backup) }
+      if (item.backup) {
+        const backup = backups.get(item.backup)!
+        total -= backup.size; backups.delete(item.backup)
+        if (backup.dormant !== undefined) rewrittenBackups.set(item.backup, backup.dormant)
+        else removedBackups.add(item.backup)
+      }
     }
     this.store.retain(new Set(this.records.keys()))
     // Commit references before deleting any file backups. A removal cannot be journaled.
     await this.store.commit([...this.records.values()], removed ? undefined : changed?.filter(record => this.records.has(record.id)))
-    for (const name of regular) if (!this.references.has(name)) {
+    for (const [name, text] of rewrittenBackups) await this.writeBackup(join(this.dependencies.directory, name), text)
+    for (const name of regular) if (!unreadBackup && !this.references.has(name) && !preservedBackupBlobs.has(name)) {
       const info = await lstat(join(directory, name)).catch(error => { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') this.dependencies.report?.('checkpoint-cleanup-failed'); return null })
       if (info?.isFile() && !info.isSymbolicLink()) await this.removeBackup(join(directory, name))
       this.blobSizes.delete(name)
@@ -143,6 +202,7 @@ export class CheckpointService extends ToolOperations {
   }
   async forgetThread(threadId: string): Promise<void> { return this.serial(async () => {
     await this.load()
+    if (this.dependencies.preserveThread?.(threadId)) return
     for (const record of this.records.values()) if (record.threadId === threadId && !this.unresolved(record)) this.records.delete(record.id)
     await this.save()
     // A recovery copy must not retain a forgotten thread's records either. Match the
@@ -152,7 +212,10 @@ export class CheckpointService extends ToolOperations {
       const mentionsThread = [...text.matchAll(/"threadId"\s*:\s*("(?:[^"\\]|\\.)*")/g)].some(match => {
         try { return JSON.parse(match[1]!) === threadId } catch { return false }
       })
-      if (mentionsThread) await this.removeBackup(path)
+      if (mentionsThread) {
+        if (this.preservesBackup(text)) { const dormant = this.dormantBackup(text); if (dormant !== undefined) await this.writeBackup(path, dormant) }
+        else await this.removeBackup(path)
+      }
     }
   }) }
   async privacyChanged(): Promise<void> { return this.serial(async () => { await this.load(); if (this.historyOff()) this.capture.forget(); await this.save() }) }
@@ -164,7 +227,7 @@ export class CheckpointService extends ToolOperations {
     return next
   }
   isBlocked(threadId: string): boolean {
-    const records = [...this.records.values()]
+    const records = [...this.records.values()].filter(record => !this.dependencies.preserveThread?.(record.threadId))
     const cwd = records.find(record => record.threadId === threadId)?.cwd
     return records.some(record => (record.threadId === threadId || cwd !== undefined && record.cwd === cwd) && ['reverting', 'uncertain'].includes(record.status)) || this.locks.has(threadId)
   }
@@ -177,7 +240,7 @@ export class CheckpointService extends ToolOperations {
   async isWorkspaceBlocked(threadId: string, destinationFolder?: string): Promise<boolean> {
     await this.load()
     if (this.isBlocked(threadId)) return true
-    const pending = [...this.records.values()].filter(record => ['reverting', 'uncertain'].includes(record.status) || this.locks.has(record.threadId))
+    const pending = [...this.records.values()].filter(record => !this.dependencies.preserveThread?.(record.threadId) && (['reverting', 'uncertain'].includes(record.status) || this.locks.has(record.threadId)))
     if (!pending.length) return false
     const folder = destinationFolder ?? (await workspace(this.dependencies.files, threadId)).workingDirectory
     const checkout = await checkoutIdentity(folder)
@@ -213,6 +276,7 @@ export class CheckpointService extends ToolOperations {
     }
   }
   async beforeTurn(threadId: string): Promise<void> {
+    if (this.dependencies.preserveThread?.(threadId)) return
     await this.afterTurn(threadId)
     return this.serial(async () => {
     await this.load()
@@ -238,7 +302,7 @@ export class CheckpointService extends ToolOperations {
     }
     // Asked after the capture, which notices when the folder's Git directory changed and forgets its checkout.
     const checkout = await this.capture.checkout(canonical)
-    const candidates = [...this.records.values()].filter(record => record.threadId !== threadId && record.status === 'capturing')
+    const candidates = [...this.records.values()].filter(record => record.threadId !== threadId && record.status === 'capturing' && !this.dependencies.preserveThread?.(record.threadId))
     const sameCheckout = await Promise.all(candidates.map(record => this.sharesCheckout(record, checkout)))
     const overlapping = candidates.filter((_record, index) => sameCheckout[index])
     const overlapReason = overlapping.length ? 'Other thread work overlapped in this shared working copy. Its files cannot be safely attributed to this turn.' : undefined
@@ -250,6 +314,7 @@ export class CheckpointService extends ToolOperations {
     await this.save(pending ? undefined : [record, ...overlapping])
   }) }
   async afterTurn(threadId: string): Promise<void> { return this.serial(async () => {
+    if (this.dependencies.preserveThread?.(threadId)) return
     await this.load()
     if (this.historyOff()) { this.capture.forget(); await this.save(); return }
     const record = [...this.records.values()].find(record => record.threadId === threadId && record.status === 'capturing')

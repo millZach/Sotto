@@ -12,12 +12,13 @@ import {
 
 import type {
   HotkeyChangeResult,
-  TranscriptionKeyCheck,
+  OpenRouterKeyCheck,
   StartupState,
   SottoBridge,
   TranscriptPolishAsrContext,
   UpdateStatus,
 } from '../../../shared/contracts'
+import type { SpeechModelStatus } from '../../../shared/speechModel'
 import { initialDictationState, type DictationState, type WidgetSnapshot } from '../../../shared/dictation'
 import { E2E_HISTORY_CREATED_AT } from '../../../shared/e2e'
 import type { HistoryEntry } from '../../../shared/history'
@@ -34,7 +35,7 @@ import {
   type DictationTranscriber,
 } from '../features/dictation/dictationController'
 import { platformCopy, type PlatformCopy } from '../platformCopy'
-import { createUnconfiguredTranscriber, OpenRouterTranscriber, type TranscriptionBridge } from '../transcription/openRouterTranscriber'
+import { createUnconfiguredTranscriber, LocalTranscriber, type TranscriptionBridge } from '../transcription/localTranscriber'
 
 export type AppStatus = 'loading' | 'ready' | 'unavailable'
 export type HistoryStatus = 'loading' | 'ready' | 'degraded'
@@ -72,8 +73,10 @@ export interface AppControllerFactoryBindings {
   readonly retainOutput?: (entry: HistoryEntry) => void
   readonly publishWidgetState: (snapshot: WidgetSnapshot) => ReturnType<SottoBridge['publishWidgetState']>
   readonly polishTranscript?: SottoBridge['polishTranscript']
-  /** Present when the preload bridge exposes hosted transcription. */
+  /** Present when the preload bridge exposes the speech model in main. */
   readonly transcription?: TranscriptionBridge
+  /** Whether the speech model can transcribe now; absent where nothing reports it, which counts as ready. */
+  readonly speechModelReady?: () => boolean
   readonly platform?: SottoPlatform
 }
 
@@ -91,7 +94,7 @@ function createProductionTranscriber(
   bindings: AppControllerFactoryBindings,
 ): DictationTranscriber {
   if (bindings.transcription === undefined) return createUnconfiguredTranscriber()
-  return new OpenRouterTranscriber({ bridge: bindings.transcription })
+  return new LocalTranscriber({ bridge: bindings.transcription })
 }
 
 const productionFactories: ProductionControllerFactories = {
@@ -114,6 +117,7 @@ export function createProductionDictationController(
     deliverOutput: bindings.deliverOutput,
     addHistory: bindings.addHistory,
     ...(bindings.retainOutput ? { retainOutput: bindings.retainOutput } : {}),
+    ...(bindings.speechModelReady ? { speechModelReady: bindings.speechModelReady } : {}),
     publishWidgetState: bindings.publishWidgetState,
     ...(platform === undefined ? {} : { platform }),
     ...(polish === undefined
@@ -144,7 +148,9 @@ export interface AppActions {
   clearHistory(): Promise<boolean>
   copyHistory(text: string): Promise<boolean>
   dismissDictationRecovery(id: string): void
-  checkTranscriptionKey(): Promise<TranscriptionKeyCheck>
+  checkOpenRouterKey(): Promise<OpenRouterKeyCheck>
+  /** Starts the speech model download, or retries one that failed. */
+  downloadSpeechModel(): Promise<void>
   checkForUpdates(): Promise<UpdateStatus | null>
   downloadUpdate(): Promise<boolean>
   installUpdate(): Promise<boolean>
@@ -168,6 +174,8 @@ export interface AppContextValue {
   readonly dictation: DictationState
   readonly navigation: AppNavigation
   readonly recoveryNotices: readonly RecoveryNotice[]
+  /** Where the speech model stands (ADR-0071); null until main answers. */
+  readonly speechModel: SpeechModelStatus | null
   /** Null until the main process answers, and on any build without a feed. */
   readonly update: UpdateStatus | null
   /** How many times the application menu asked for a check; each rise is one press. */
@@ -212,6 +220,8 @@ export function AppProvider({
   const [navigation, setNavigation] = useState<AppNavigation>('onboarding')
   const [recoveryNotices, setRecoveryNotices] = useState<readonly RecoveryNotice[]>([])
   const [update, setUpdate] = useState<UpdateStatus | null>(null)
+  const [speechModel, setSpeechModel] = useState<SpeechModelStatus | null>(null)
+  const speechModelRef = useRef<SpeechModelStatus | null>(null)
   const [updateCheckRequest, setUpdateCheckRequest] = useState(0)
 
   // The main process resolved the platform once and carried it across the
@@ -240,6 +250,11 @@ export function AppProvider({
 
   const commitUpdate = useCallback((next: UpdateStatus): void => {
     setUpdate(next)
+  }, [])
+
+  const commitSpeechModel = useCallback((next: SpeechModelStatus): void => {
+    speechModelRef.current = next
+    setSpeechModel(next)
   }, [])
 
   const isCurrentGeneration = useCallback(
@@ -338,6 +353,7 @@ export function AppProvider({
     let unsubscribeSettings: (() => void) | null = null
     let unsubscribeRecoveryNotices: (() => void) | null = null
     let unsubscribeUpdateStatus: (() => void) | null = null
+    let unsubscribeSpeechModel: (() => void) | null = null
     let unsubscribeUpdateCheckRequests: (() => void) | null = null
     setStatus('loading')
     setHistoryStatus('loading')
@@ -388,6 +404,17 @@ export function AppProvider({
     } catch {
       // Without the menu's request the footer control still offers the same check.
     }
+    try {
+      unsubscribeSpeechModel = bridge.onSpeechModelStatus((speechModelStatus) => {
+        if (isCurrentGeneration(generation)) commitSpeechModel(speechModelStatus)
+      })
+    } catch {
+      // Without the subscription the status below is still read once.
+    }
+    void bridge.getSpeechModelStatus().then(
+      (speechModelStatus) => { if (isCurrentGeneration(generation)) commitSpeechModel(speechModelStatus) },
+      () => undefined,
+    )
     void bridge.getUpdateStatus().then(
       (result) => {
         if (isCurrentGeneration(generation) && 'currentVersion' in result) commitUpdate(result)
@@ -448,6 +475,8 @@ export function AppProvider({
             cancelTranscription: (requestId) =>
               bridge.cancelTranscription(requestId),
           },
+          // Until main has said where the model stands, it is not ready: at launch it is still loading.
+          speechModelReady: () => speechModelRef.current?.state === 'ready',
           addHistory: async (entry) => {
             // E2E dictations get a constant timestamp so design captures do not
             // bake the capture minute into the RECENT log. The widget never sees
@@ -537,6 +566,8 @@ export function AppProvider({
       unsubscribeRecoveryNotices = null
       try { unsubscribeUpdateStatus?.() } catch { /* listener is already unreachable */ }
       unsubscribeUpdateStatus = null
+      try { unsubscribeSpeechModel?.() } catch { /* listener is already unreachable */ }
+      unsubscribeSpeechModel = null
       try { unsubscribeUpdateCheckRequests?.() } catch { /* listener is already unreachable */ }
       unsubscribeUpdateCheckRequests = null
       if (controllerRef.current === localController) controllerRef.current = null
@@ -625,9 +656,13 @@ export function AppProvider({
         return false
       }
     },
-    checkTranscriptionKey: async () => {
+    checkOpenRouterKey: async () => {
       if (bridge === undefined) return { ok: false, reason: 'unconfigured' }
-      try { return await bridge.checkTranscriptionKey() } catch { return { ok: false, reason: 'network' } }
+      try { return await bridge.checkOpenRouterKey() } catch { return { ok: false, reason: 'network' } }
+    },
+    downloadSpeechModel: async () => {
+      if (bridge === undefined) return
+      try { await bridge.downloadSpeechModel() } catch { /* the status it would have changed stays as it was */ }
     },
     // Nothing about updating may raise a failure banner: an update that cannot
     // be reached is simply an update the user hears nothing about.
@@ -696,10 +731,11 @@ export function AppProvider({
     dictation,
     navigation,
     recoveryNotices,
+    speechModel,
     update,
     updateCheckRequest,
     actions,
-  }), [windowMaximized, actions, copy, dictation, dictationRecovery, failure, history, historyStatus, navigation, platform, recoveryNotices, settings, status, update, updateCheckRequest])
+  }), [windowMaximized, actions, copy, dictation, dictationRecovery, failure, history, historyStatus, navigation, platform, recoveryNotices, settings, speechModel, status, update, updateCheckRequest])
 
   return createElement(AppContext.Provider, { value }, children)
 }

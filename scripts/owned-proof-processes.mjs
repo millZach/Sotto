@@ -12,7 +12,7 @@ import { setTimeout, clearTimeout } from 'node:timers'
 
 const run = promisify(execFile)
 export const snapshotProofInstances = directory => new Map(readdirSync(directory).sort().map(name => {
-  // Windows file IDs can exceed Number's integer precision; keep their full identity.
+  // Windows file IDs exceed Number's exact integer range; bigint identities reveal replacements.
   const { dev, ino } = statSync(join(directory, name), { bigint: true })
   return [name, { dev, ino }]
 }))

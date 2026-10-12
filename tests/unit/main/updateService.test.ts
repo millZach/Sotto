@@ -91,6 +91,12 @@ const available = { phase: 'available', version: '3.5.0', problem: null } as con
 const downloaded = { phase: 'downloaded', version: '3.5.0', problem: null } as const
 
 describe('UpdateService', () => {
+  it('reports the Owl track through existing status even without an updater', async () => {
+    const { service } = createService({ currentVersion: '0.1.37-owl.20261011.1' })
+    expect(service.status().releaseTrack).toBe('owl')
+    expect((await service.check('manual')).releaseTrack).toBe('owl')
+  })
+
   it('walks checking, available, progress, and downloaded in order', async () => {
     const updater = createFakeUpdater({
       check: offersUpdate,
@@ -104,6 +110,8 @@ describe('UpdateService', () => {
 
     await expect(service.check('manual')).resolves.toEqual({
       currentVersion: '3.4.0',
+      releaseTrack: 'stable',
+      watcherEnabled: false,
       phase: available,
       checkedAt: 1_000,
     })
@@ -128,6 +136,8 @@ describe('UpdateService', () => {
     expect(service.status().checkedAt).toBeNull()
     await expect(service.check('manual')).resolves.toEqual({
       currentVersion: '3.4.0',
+      releaseTrack: 'stable',
+      watcherEnabled: false,
       phase: { phase: 'up-to-date' },
       checkedAt: 5_000,
     })
@@ -267,6 +277,8 @@ describe('UpdateService', () => {
     service.start()
     await expect(service.check('manual')).resolves.toEqual({
       currentVersion: '3.4.0',
+      releaseTrack: 'stable',
+      watcherEnabled: false,
       phase: { phase: 'unsupported' },
       checkedAt: null,
     })
@@ -285,6 +297,8 @@ describe('UpdateService', () => {
 
     await expect(service.check('manual')).resolves.toEqual({
       currentVersion: '3.4.0',
+      releaseTrack: 'stable',
+      watcherEnabled: false,
       phase: { phase: 'unsupported' },
       checkedAt: null,
     })
@@ -300,6 +314,8 @@ describe('UpdateService', () => {
 
     await expect(service.check('manual')).resolves.toEqual({
       currentVersion: '3.4.0',
+      releaseTrack: 'stable',
+      watcherEnabled: false,
       phase: { phase: 'failed', problem: 'net::ERR_NAME_NOT_RESOLVED' },
       checkedAt: 1_000,
     })
@@ -546,6 +562,8 @@ describe('UpdateService', () => {
 
     await expect(service.check('manual')).resolves.toEqual({
       currentVersion: '3.4.0',
+      releaseTrack: 'stable',
+      watcherEnabled: false,
       phase: { phase: 'idle' },
       checkedAt: null,
     })

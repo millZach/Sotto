@@ -14,6 +14,17 @@ import type { AdapterContractSkips, AdapterFixture, AdapterSessionOptions, Recor
 import { skipUnsupportedFixture, withFixtureSkip } from '../fixtures/contractSkip'
 import { handleOf, PIXEL_PNG } from '../fixtures/stagedImages'
 
+/** Create a settled thread before a contract test acts on its provider session. */
+export async function createContractThread(f: Pick<AdapterFixture, 'host' | 'projectId' | 'modelId'>, title: string): Promise<string> {
+  const id = randomUUID()
+  const result = await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: f.modelId, title })
+  expect(result.accepted || result.uncertain).toBe(true)
+  // A late acknowledgement may still publish this exact thread. Do not send through an alias that
+  // is not there yet, and do not create it again; the contract starts once creation has settled.
+  await expect.poll(async () => (await f.host.snapshot()).threads.some(thread => thread.id === id), { timeout: 12_000 }).toBe(true)
+  return id
+}
+
 /** New provider adapters must pass these behavioural checks with observable fake effects. */
 export function describeAdapterContract(name: string, factory: (session?: AdapterSessionOptions) => Promise<AdapterFixture>, skips: AdapterContractSkips): void {
   describe(`${name} thread interface contract`, () => {
@@ -43,6 +54,19 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       unsubscribeEvents = f.host.subscribeEvents?.(event => events.push(event))
     })
     afterEach(async () => { unsubscribeEvents?.(); unsubscribeEvents = undefined; const previous = f; f = undefined!; await previous?.cleanup() })
+    it('keeps ordinary permissions when main supplies no Watcher profile', async context => {
+      if (!f.host.useLaunchProfiles) { context.skip(); return }
+      f.host.useLaunchProfiles({ profileFor: async () => undefined })
+      const before = await thread()
+      expect(await send()).toEqual({ accepted: true })
+      await f.driver.raisePermission(sessionId, 'Ordinary permission')
+      await expect.poll(async () => (await thread()).requests.some(request => request.kind === 'permission')).toBe(true)
+      const request = (await thread()).requests.find(request => request.kind === 'permission')!
+      expect(await f.host.execute({ type: 'answer', threadId: sessionId, commandId: randomUUID(), requestId: request.id,
+        answer: 'Allow once', approved: true })).toMatchObject({ accepted: true })
+      expect((await thread()).runtimeMode).toBe(before.runtimeMode)
+      await expect.poll(async () => (await f.driver.requests()).some(record => permissionDecision(record) === true)).toBe(true)
+    })
     it('observes provider takeover and rejects a reply based on stale user input', async () => {
       await send()
       await f.driver.typeInProvider(sessionId, 'Typed in the provider')
@@ -246,11 +270,7 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
     // The window still has to outlast the setup between creating a thread and watching it.
     const impatient = { reaperSweepMs: 20, sessionIdleMs: 150 }
     const thread = async (id: string) => (await f.host.snapshot()).threads.find(t => t.id === id)!
-    const create = async (title: string): Promise<string> => {
-      const id = randomUUID()
-      await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: f.modelId, title })
-      return id
-    }
+    const create = (title: string) => createContractThread(f, title)
     const send = (id: string, messageId: string, text: string) =>
       f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId, text })
     const starts = (id: string) => f.sessions!.starts(id)

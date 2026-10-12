@@ -1,0 +1,15 @@
+{
+  "identity": {
+    "version": "0.1.35-owl.20261009.1",
+    "name": "sotto",
+    "isolatedProfile": true
+  },
+  "status": {
+    "currentVersion": "0.1.35-owl.20261009.1",
+    "releaseTrack": "owl",
+    "phase": {
+      "phase": "idle"
+    },
+    "checkedAt": null
+  }
+}

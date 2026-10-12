@@ -5,13 +5,13 @@ import { readFile } from 'node:fs/promises'
 import { z } from 'zod'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
-import { ActivitySubscribers, cloneActivitySnapshot, subscribeActivitySnapshots } from './activitySnapshots'
+import { ActivitySubscribers, cloneActivitySnapshot, immutableModels, isImmutableModels, subscribeActivitySnapshots } from './activitySnapshots'
 import { join, resolve } from 'node:path'
-import { EMPTY_AGENT_HOST, PROVIDER_LABELS, parsePublicProviderEntityId, providerIdSchema, publicProviderEntityId, type AgentCapabilities, type AgentHostSnapshot, type AgentProviderStatus, type ProviderId } from '../../shared/agents'
+import { EMPTY_AGENT_HOST, PROVIDER_LABELS, parsePublicProviderEntityId, providerIdSchema, publicProviderEntityId, type AgentCapabilities, type AgentHostSnapshot, type AgentModel, type AgentProviderStatus, type ProviderId } from '../../shared/agents'
 import { resolveModel } from '../../shared/modelCatalog'
 import { ProviderUnavailable, providerProblemOf } from './providerProblem'
 import { sameSnapshot } from './sameSnapshot'
-import { confirmedSettingsSnapshot, type ActivitySubscriptionOptions, type AgentHost, type AgentHostCommand, type AgentHostResult, type AgentSkillScope, type RestoredThreadHistory, type ShortTextPrompt, type ThreadHistorySource, type ThreadHostEvent, type ThreadReadPurpose, type ThreadSessionDraft } from './host'
+import { confirmedSettingsSnapshot, type ActivitySubscriptionOptions, type AgentHost, type AgentHostCommand, type AgentHostResult, type AgentSkillScope, type RestoredThreadHistory, type ShortTextPrompt, type ThreadHistorySource, type ThreadHostEvent, type ThreadReadPurpose, type ThreadSessionDraft, type ThreadLaunchProfiles } from './host'
 
 /** Public IDs are opaque to callers and reversible only at the provider boundary. */
 export function providerEntityId(provider: ProviderId, kind: 'model' | 'project', value: string): string {
@@ -34,6 +34,18 @@ type Slot = { snapshot: AgentHostSnapshot; status: AgentProviderStatus; wanted: 
 
 /** Independent native connections; durable Sotto thread identity selects the transport, never reasoning settings. */
 export class ConfiguredProviderHost implements AgentHost {
+  useLaunchProfiles(profiles: ThreadLaunchProfiles): void {
+    for (const id of providerIdSchema.options) this.options.hosts[id].useLaunchProfiles?.(profiles)
+  }
+  profileRefusalHandler(threadId: string) {
+    // Each SottoThreadHost stops only its bound or early-start runtime. Include early starts
+    // whose provider is not yet in the durable registry; one broken cleanup must not block another.
+    const handlers = Object.values(this.options.hosts).flatMap(host => {
+      const handler = host.profileRefusalHandler?.(threadId)
+      return handler ? [handler] : []
+    })
+    return async (reason: string): Promise<void> => { await Promise.allSettled(handlers.map(async handler => handler(reason))) }
+  }
   readonly concurrentProviders = true
   private legacyProjectProvider: ProviderId | undefined
   private identityLoad: Promise<void> | undefined
@@ -43,6 +55,9 @@ export class ConfiguredProviderHost implements AgentHost {
   /** Undefined until something says what it is looking at; a connection never invents a watched set. */
   private observed: readonly string[] | undefined
   private readonly slots = new Map<ProviderId, Slot>()
+  /** Each provider's models as last named, and the catalog last published from them. */
+  private readonly namedModels = new Map<ProviderId, { source: AgentModel[]; connected: boolean; models: AgentModel[] }>()
+  private aggregateModels: { parts: AgentModel[][]; models: AgentModel[] } | undefined
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   /** Each activity subscriber, and whether it keeps history from the providers' events. */
   private readonly activityListeners = new ActivitySubscribers()
@@ -129,19 +144,37 @@ export class ConfiguredProviderHost implements AgentHost {
     const connected = providers.filter(provider => provider.connection === 'connected')
     const result: AgentHostSnapshot = { connected: connected.length > 0, name: connected.length === 1 ? connected[0]!.name : 'Native providers', version: '', capabilities, providers,
       models: [], projects: [], threads: [] }
+    const parts: AgentModel[][] = []
     for (const [provider, slot] of this.slots) {
-      result.models.push(...slot.snapshot.models.map(model => ({ ...model, providerId: provider,
-        id: providerEntityId(provider, 'model', model.id), ready: model.ready && slot.status.connection === 'connected' })))
+      parts.push(this.slotModels(provider, slot))
       result.projects.push(...slot.snapshot.projects.map(project => ({ ...project, providerId: provider, id: this.projectId(provider, project.id) })))
       result.threads.push(...slot.snapshot.threads.map(thread => ({ ...thread, providerId: provider,
         projectId: this.projectId(provider, thread.projectId), modelId: thread.modelId ? providerEntityId(provider, 'model', thread.modelId) : '',
         ...(thread.usage ? { usage: { ...thread.usage, modelId: thread.usage.modelId ? providerEntityId(provider, 'model', thread.usage.modelId) : undefined } } : {}) })))
     }
+    // One catalog for every publish until a provider's own catalog or connection changes, so the layers to the window
+    // share it rather than copy it (#917).
+    // A host whose adapter does not certify its catalog hands over a new one each time; freezing that would only add work.
+    const held = this.aggregateModels
+    const certified = [...this.slots.values()].every(slot => !slot.snapshot.models.length || isImmutableModels(slot.snapshot.models))
+    result.models = held && held.parts.length === parts.length && held.parts.every((part, index) => part === parts[index]) ? held.models
+      : certified ? immutableModels(parts.flat()) : parts.flat()
+    this.aggregateModels = { parts, models: result.models }
     if (!result.connected) {
       const error = providers.find(provider => provider.error)?.error
       if (error) result.error = error
     }
     return result
+  }
+  /** A provider's models as the switch names them, rebuilt only when its catalog or its connection changes. */
+  private slotModels(provider: ProviderId, slot: { snapshot: AgentHostSnapshot; status: AgentProviderStatus }): AgentModel[] {
+    const connected = slot.status.connection === 'connected'
+    const held = this.namedModels.get(provider)
+    if (held && held.source === slot.snapshot.models && held.connected === connected) return held.models
+    const models = slot.snapshot.models.map(model => ({ ...model, providerId: provider,
+      id: providerEntityId(provider, 'model', model.id), ready: model.ready && connected }))
+    this.namedModels.set(provider, { source: slot.snapshot.models, connected, models })
+    return models
   }
   private publish(): void {
     if (!this.listeners.size && !this.activityListeners.size) return

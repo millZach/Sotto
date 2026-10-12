@@ -104,7 +104,7 @@ function threadSidebar(page: Page): Locator {
 }
 
 /** First-run setup's nine steps, in the order the footer walks them. */
-const FIRST_RUN_STEPS = ['welcome', 'look', 'microphone', 'key', 'shortcut', 'agents', 'project', 'computers', 'phone'] as const
+const FIRST_RUN_STEPS = ['welcome', 'look', 'microphone', 'speech-model', 'shortcut', 'agents', 'project', 'computers', 'phone'] as const
 export type FirstRunStepId = typeof FIRST_RUN_STEPS[number]
 
 export interface FirstRunSetupOptions {

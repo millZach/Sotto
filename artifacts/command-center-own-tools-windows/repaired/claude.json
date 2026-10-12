@@ -1,0 +1,129 @@
+{
+  "provider": "claude",
+  "freeMemoryKB": 10151176,
+  "sandboxProbes": [],
+  "platform": "win32",
+  "date": "2026-10-10T06:45:58.982Z",
+  "resumedAt": null,
+  "version": "2.1.296",
+  "turnsSubmitted": 4,
+  "turnsCompleted": 4,
+  "metadataReconstructed": false,
+  "sameNativeSession": false,
+  "nativeCanary": {
+    "exitCode": -1,
+    "denialMarker": false,
+    "categoryPermissionDenied": false,
+    "unauthorizedException": false,
+    "ioException": false,
+    "accessDeniedHResult": false,
+    "innerAccessDeniedHResult": false
+  },
+  "cardsSeen": 1,
+  "answersSent": 0,
+  "checks": [
+    {
+      "name": "native-model-available",
+      "passed": true
+    },
+    {
+      "name": "turn-budget",
+      "passed": true
+    },
+    {
+      "name": "scoped-tool-accepted",
+      "passed": true
+    },
+    {
+      "name": "scoped-tool-no-card",
+      "passed": true
+    },
+    {
+      "name": "scoped-tool-completed",
+      "passed": true
+    },
+    {
+      "name": "scoped-tool-called",
+      "passed": true
+    },
+    {
+      "name": "turn-budget",
+      "passed": true
+    },
+    {
+      "name": "native-read-search-accepted",
+      "passed": true
+    },
+    {
+      "name": "native-read-search-no-card",
+      "passed": true
+    },
+    {
+      "name": "native-read-search-completed",
+      "passed": true
+    },
+    {
+      "name": "native-read-content",
+      "passed": true
+    },
+    {
+      "name": "native-read-tool-observed",
+      "passed": true
+    },
+    {
+      "name": "native-search-tool-observed",
+      "passed": true
+    },
+    {
+      "name": "turn-budget",
+      "passed": true
+    },
+    {
+      "name": "edit-permission-card",
+      "passed": true
+    },
+    {
+      "name": "edit-accepted",
+      "passed": true
+    },
+    {
+      "name": "sentinel-unchanged-after-interrupt",
+      "passed": true
+    },
+    {
+      "name": "turn-budget",
+      "passed": true
+    },
+    {
+      "name": "cold-resume-accepted",
+      "passed": true
+    },
+    {
+      "name": "cold-resume-no-card",
+      "passed": true
+    },
+    {
+      "name": "cold-resume-completed",
+      "passed": true
+    },
+    {
+      "name": "cold-resume-scoped-tool-called",
+      "passed": true
+    },
+    {
+      "name": "sentinel-still-unchanged",
+      "passed": true
+    },
+    {
+      "name": "sentinel-unchanged-at-cleanup",
+      "passed": true
+    },
+    {
+      "name": "no-native-permission-answers",
+      "passed": true
+    }
+  ],
+  "result": "passed",
+  "failedCheck": "",
+  "failureReason": ""
+}
