@@ -53,7 +53,7 @@ fs.writeFileSync = function (path, ...args) {
     expect(await run(runtime, 'cancel')).toBe(1)
     expect(await Promise.all(Array.from({ length: 8 }, (_, i) => run(runtime, i % 2 ? 'start' : 'toggle')))).toEqual(Array(8).fill(1))
     expect(notifications(runtime)).toHaveLength(1)
-    expect(notifications(runtime)[0]).toContain('Open Sotto, then press F9 again.')
+    expect(notifications(runtime)[0]).toContain('Open Sotto, then try again.')
     const old = new Date(Date.now() - 5_001)
     utimesSync(join(runtime, 'sotto-dictation-notice'), old, old)
     expect(await Promise.all(Array.from({ length: 8 }, () => run(runtime, 'toggle')))).toEqual(Array(8).fill(1))
