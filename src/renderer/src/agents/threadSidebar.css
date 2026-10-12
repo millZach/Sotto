@@ -176,6 +176,8 @@
 .thread-nav__branch > svg, .thread-nav__copy-kind { flex: none; }
 .thread-nav__branch-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .thread-nav__branch[data-working-copy-state='error'] { color: var(--tt-warning-text); }
+/* The current row's selection is a tint, so its amber takes the on-tint tone. */
+.thread-nav__row[data-current] :is(.thread-nav__branch[data-working-copy-state='error'], .thread-nav__status[data-state='needs'], .thread-nav__status[data-state='working'][data-disconnected]) { color: var(--tt-warning-on-tint); }
 .thread-nav .thread-nav__row--details .thread-nav__row-actions { position: absolute; top: auto; bottom: 3px; right: 1px; opacity: 0; pointer-events: none; border-radius: 6px; background: var(--tt-sidebar); }
 .thread-nav__row--details:is(:hover, :focus-within) .thread-nav__row-actions { position: absolute; opacity: 1; pointer-events: auto; }
 .thread-nav__row--details[data-current] .thread-nav__row-actions { background: var(--tt-selected); }
