@@ -13,18 +13,22 @@ export interface SettingsRepositoryOptions {
   defaults?: AppSettings
   /** Present only on Linux. The palette is projected into reads, never persisted. */
   omarchyTheme?: () => OmarchyTheme | null
+  /** Present only on Linux. Whether the shell pill replaces the floating widget, projected into reads, never persisted. */
+  shellPillInUse?: () => boolean
 }
 
 export class SettingsRepository {
   private readonly store: AtomicJsonStore<AppSettings>
   private readonly defaults: AppSettings
   private readonly omarchyTheme: (() => OmarchyTheme | null) | undefined
+  private readonly shellPillInUse: (() => boolean) | undefined
   private readonly watcherEnabled: boolean
   private mutationTail: Promise<void> = Promise.resolve()
 
   constructor(filePath: string, options: SettingsRepositoryOptions = {}) {
     this.watcherEnabled = options.watcherEnabled ?? true
     this.omarchyTheme = options.omarchyTheme
+    this.shellPillInUse = options.shellPillInUse
     this.defaults = options.defaults ?? DEFAULT_SETTINGS
     this.store =
       options.store ??
@@ -104,7 +108,12 @@ export class SettingsRepository {
   private parse(input: unknown): AppSettings { return parseSettings(input, this.defaults, this.omarchyTheme !== undefined) }
 
   private project(settings: AppSettings): AppSettings {
-    return this.omarchyTheme ? { ...settings, omarchyTheme: this.omarchyTheme() } : settings
+    if (!this.omarchyTheme && !this.shellPillInUse) return settings
+    return {
+      ...settings,
+      ...(this.omarchyTheme ? { omarchyTheme: this.omarchyTheme() } : {}),
+      ...(this.shellPillInUse ? { shellPillInUse: this.shellPillInUse() } : {}),
+    }
   }
   private writeSettings(settings: AppSettings): Promise<void> {
     return this.store.writeSerialized(JSON.stringify(this.parse(settings), null, 2))

@@ -252,6 +252,7 @@ type NativeDiagnostic =
   | 'omarchy-theme-invalid'
   | 'omarchy-theme-watch-failed'
   | 'omarchy-theme-refresh-failed'
+  | 'shell-pill-refresh-failed'
   | LinuxAutostartEvent
   | BootstrapDiagnostic
   | NativeRuntimeDiagnostic
@@ -582,6 +583,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     () => repaintOmarchy(), logOperational)
   omarchyTheme.load()
   app.on('will-quit', () => omarchyTheme.dispose())
+  // Whether Omarchy's shell pill has taken the floating widget's place; Settings reads it to explain the idle widget row.
+  let shellPillInUse = false
   const recoveryNotices = new RecoveryNoticeCenter()
   const { settings: plainSettings, history } = createStorageRepositories(
     userDataPath,
@@ -590,7 +593,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     platformDefaults,
     logOperational,
     watcherEnabled,
-    platform === 'linux' ? { omarchyTheme: () => omarchyTheme.get() } : {},
+    platform === 'linux' ? { omarchyTheme: () => omarchyTheme.get(), shellPillInUse: () => shellPillInUse } : {},
   )
   await initializeOmarchySelection(platform, omarchyTheme.get(), plainSettings)
   await history.initialize()
@@ -1276,7 +1279,12 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       e2eConfiguration?.userDataPath ?? process.env.XDG_RUNTIME_DIR,
       new ShellWidgetMonitor(
         platform, homedir(),
-        present => { void windows.setWidgetSuppressed(present).catch(() => logOperational('native-widget-show-failed')) },
+        present => {
+          void windows.setWidgetSuppressed(present).catch(() => logOperational('native-widget-show-failed'))
+          if (present === shellPillInUse) return
+          shellPillInUse = present
+          void settingsCoordinator.republish().catch(() => logOperational('shell-pill-refresh-failed'))
+        },
       ),
       async command => {
         if (command.startsWith('place ')) {
@@ -1370,7 +1378,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           copyPath: async request => copyHostPath(await hostRouter.gitChangesPath(request)),
         },
       }, () => windows.getTrustedRenderers())
-      repaintOmarchy = () => { void settingsCoordinator.refreshAppearance().catch(() => logOperational('omarchy-theme-refresh-failed')) }
+      repaintOmarchy = () => { void settingsCoordinator.republish().catch(() => logOperational('omarchy-theme-refresh-failed')) }
       omarchyTheme.start()
       // Theme export and Open VSX (ADR-0011). End-to-end runs use an offline Open VSX and a fixed export folder.
       const cleanupThemes = registerThemesIpc(ipcMain, {
@@ -1405,7 +1413,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           open: request => localRuntime?.watcher?.open(request) ?? Promise.resolve(unavailableWatcher()),
           prepareStopAll: async () => localRuntime?.watcher?.prepareStopAll() ?? unavailableWatcher(),
           stopAll: request => localRuntime?.watcher?.stopAll(request.confirmationId) ?? Promise.resolve(unavailableWatcher()),
-          setLimit: async request => { if (!localRuntime?.watcher) return unavailableWatcher(); await settings.update({ watcherInFlightLimit: request.limit }); return localRuntime.watcher.get() },
+          setLimit: async request => { if (!localRuntime?.watcher) return unavailableWatcher(); await settingsCoordinator.updateSettings({ watcherInFlightLimit: request.limit }); return localRuntime.watcher.get() },
         } satisfies Omit<import('../shared/watcherRoom').WatcherBridge, 'onChanged'> } : {}),
         settings: {
           get: () => settingsCoordinator.getSettings(),

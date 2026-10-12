@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, readdir, rm, rename, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, onTestFailed, vi } from 'vitest'
 import { FilesService } from '../../../src/main/files/service'
 import { CheckoutMutations } from '../../../src/main/agents/checkoutMutations'
 import { CheckpointService } from '../../../src/main/tools/checkpoints'
@@ -128,7 +128,13 @@ describe('completed native turn checkpoints', () => {
     expect(await mutations.isMutating(f.repo)).toBe(false)
   })
   it('refuses a concurrent Git action on the thread lane and completes the revert', async () => {
-    const f = await fixture(), request = await f.complete()
+    const started = performance.now()
+    let phase = 'fixture'
+    onTestFailed(() => console.error('checkpoint-lane-failed', phase, Math.round(performance.now() - started)))
+    const f = await fixture()
+    phase = 'capture'
+    const request = await f.complete()
+    phase = 'initialize'
     await f.service.initialize()
     let lane: Promise<unknown> = Promise.resolve()
     const onLane = <T>(work: () => Promise<T>): Promise<T> => {
@@ -142,16 +148,21 @@ describe('completed native turn checkpoints', () => {
     vi.spyOn(internals, 'checkFiles').mockImplementationOnce(async (...args) => { checking(); await paused; await checkFiles(...args) })
     const rollback = f.dependencies.rollback
     f.dependencies.rollback = (...args) => onLane(() => rollback(...args))
+    phase = 'validation-entry'
     const revert = f.service.revertCheckpoint({ ...request, confirmed: true })
-    await entered
-    const gitAction = onLane(async () => {
-      await f.service.initialize()
-      if (await f.service.isWorkspaceBlocked('thread-a')) return 'refused'
-      git(f.repo, 'status', '--porcelain'); return 'accepted'
-    })
-    // Start the action while validation holds the checkpoint queue.
-    release()
-    expect(await gitAction).toBe('refused')
+    try {
+      // A pre-validation refusal must surface its cause instead of leaving the barrier pending forever.
+      await Promise.race([entered, revert.then(result => { unwrap(result); throw new Error('Revert ended before file validation.') })])
+      phase = 'git-refusal'
+      const gitAction = onLane(async () => {
+        await f.service.initialize()
+        if (await f.service.isWorkspaceBlocked('thread-a')) return 'refused'
+        git(f.repo, 'status', '--porcelain'); return 'accepted'
+      })
+      // Prove the refusal while validation still holds the checkpoint queue.
+      expect(await gitAction).toBe('refused')
+    } finally { release() }
+    phase = 'revert-completion'
     expect(unwrap(await revert).status).toBe('reverted')
   })
   it.each(['backup stat', 'storage listing', 'blob listing', 'blob stat'])('keeps sends working when %s cleanup fails', async failure => {
@@ -531,4 +542,15 @@ it('publishes completed file counts without file contents and marks shared overl
   f.state.userMessageIds.push('user-2'); f.second.userMessageIds = ['other-user']
   await f.service.afterTurn('thread-a'); await f.service.afterTurn('thread-b')
   expect(observed.mock.calls.flat().every(read => read.availability === 'unavailable' && read.reason === 'shared-checkout' && read.changedFiles === undefined)).toBe(true)
+})
+
+it('attributes a capture failure by its cause even when its explanation mentions overlap', async () => {
+  const f = await fixture(), observed = vi.fn<NonNullable<CheckpointDependencies['observed']>>()
+  f.dependencies.observed = observed
+  const capture = (f.service as unknown as { capture: { snapshot: (...args: unknown[]) => Promise<unknown> } }).capture
+  const spy = vi.spyOn(capture, 'snapshot').mockRejectedValueOnce(new Error('A capture read overlapped a file replacement.'))
+  try { await f.service.beforeTurn(f.state.threadId) }
+  finally { spy.mockRestore() }
+  expect(observed).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ availability: 'unavailable', reason: 'capture-unavailable' }))
+  expect(JSON.stringify(observed.mock.calls)).not.toContain('file replacement')
 })

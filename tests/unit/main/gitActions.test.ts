@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { execFileSync } from 'node:child_process'
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises'
 
@@ -10,8 +10,11 @@ import { gitActionStages } from '../../../src/shared/gitActions'
 import type { CommitMaterial } from '../../../src/main/llm/commitMessage'
 import type { PullRequestMaterial } from '../../../src/main/llm/pullRequestText'
 import { deferred } from '../../fixtures/deferred'
-import { ownedGitRepository, initializeBareGitRepository } from '../../fixtures/gitRepository'
+import { ownedGitRepository, gitRepositorySeed, initializeBareGitRepository } from '../../fixtures/gitRepository'
 
+let seed: Awaited<ReturnType<typeof gitRepositorySeed>>
+beforeAll(async () => { seed = await gitRepositorySeed({ files: { 'work.txt': 'first\n' }, message: 'First' }) })
+afterAll(async () => { await seed?.dispose() })
 const repositories: Array<Awaited<ReturnType<typeof ownedGitRepository>>> = []
 afterEach(async () => { for (const repository of repositories.splice(0)) await repository.dispose() })
 const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, windowsHide: true, encoding: 'utf8' }).trim()
@@ -21,8 +24,7 @@ const configure = (cwd: string) => { git(cwd, 'config', 'user.name', 'Fixture');
 interface GhFixture { (args: readonly string[]): Promise<string> }
 /** A repository on `main`, pushed to an owned bare remote, and a second clone that can move the remote under it. */
 async function fixture(options: { remote?: boolean; gh?: GhFixture; commitMessage?: string | null; pullRequestText?: { title: string; body: string } | null; followTemplates?: boolean } = {}) {
-  const repository = await ownedGitRepository({ files: { 'work.txt': 'first\n' }, message: 'First',
-    remote: options.remote !== false, secondClone: options.remote !== false })
+  const repository = await seed.copy({ remote: options.remote !== false, secondClone: options.remote !== false })
   repositories.push(repository)
   const { root, repo, remote, other } = repository
   // These cases install deliberate hooks in .githooks after repository setup.

@@ -5,13 +5,14 @@ import { ThemeEditorHost } from '../../../src/renderer/src/features/settings/the
 import { closeThemeEditor } from '../../../src/renderer/src/features/settings/themes/themeEditorSession'
 import { resolveThemeFor } from '../../../src/shared/themes/library'
 import { ThemeGallery } from '../../../src/renderer/src/features/settings/themes/ThemeGallery'
-import { applyAppearance, appearancePreview, resolveAppearance } from '../../../src/renderer/src/state/appearance'
+import { APPEARANCE_CACHE_KEY, applyAppearance, appearancePreview, readCachedAppearance, resolveAppearance } from '../../../src/renderer/src/state/appearance'
 import { DEFAULT_SETTINGS, type SettingsPatch, type AppSettings } from '../../../src/shared/settings'
-import { OMARCHY_THEME_ID, omarchySuccessText, parseOmarchyTheme } from '../../../src/shared/themes/omarchy'
+import { OMARCHY_THEME_ID, guardOmarchyColors, omarchySuccessText, omarchyThemeSchema, parseOmarchyTheme } from '../../../src/shared/themes/omarchy'
 import fixtures from '../../fixtures/omarchy-themes.json'
+import legacyCache from '../../fixtures/omarchy-theme-cache-v0070.json'
 import { ThemeLivePreview } from '../../../src/renderer/src/features/settings/themes/ThemeLivePreview'
 
-afterEach(() => { cleanup(); act(() => closeThemeEditor()); appearancePreview.reset() })
+afterEach(() => { cleanup(); act(() => closeThemeEditor()); appearancePreview.reset(); vi.unstubAllGlobals(); localStorage.clear() })
 function gallery(system: string, light = false) {
  const theme = parseOmarchyTheme(fixtures.themes[light ? 'catppuccin-latte' : 'tokyo-night'].rendered, light ? 'Catppuccin Latte' : 'Tokyo Night')
  const shown = { ...DEFAULT_SETTINGS, appearance: 'system' as const, lightTheme: OMARCHY_THEME_ID, darkTheme: OMARCHY_THEME_ID, omarchyTheme: theme }
@@ -21,6 +22,37 @@ function gallery(system: string, light = false) {
 }
 
 describe('Omarchy Appearance', () => {
+ it.each(Object.entries(legacyCache.themes))('repairs the base-version %s cache before first paint', (_name, cached) => {
+  vi.stubGlobal('sotto', { platform: 'linux' })
+  const oldTheme = omarchyThemeSchema.parse(cached)
+  localStorage.setItem(APPEARANCE_CACHE_KEY, JSON.stringify({ ...DEFAULT_SETTINGS, appearance: oldTheme.appearance, lightTheme: OMARCHY_THEME_ID, darkTheme: OMARCHY_THEME_ID, omarchyTheme: oldTheme }))
+  const choice = readCachedAppearance()
+  expect(choice.omarchyTheme?.colors).toEqual(guardOmarchyColors(oldTheme.colors, oldTheme.appearance))
+  const root = document.createElement('html')
+  expect(() => applyAppearance(choice, root, true, null, false)).not.toThrow()
+  expect(root.dataset.themeId).toBe(OMARCHY_THEME_ID)
+  expect(root.style.getPropertyValue('--tt-success')).toBe(omarchySuccessText(choice.omarchyTheme!.colors, oldTheme.appearance))
+ })
+ it('falls back before first paint when a cached Omarchy palette cannot read', () => {
+  vi.stubGlobal('sotto', { platform: 'linux' })
+  const oldTheme = omarchyThemeSchema.parse(legacyCache.themes.everforest)
+  const colors = { ...oldTheme.colors, canvas: 'oklch(1 0 0)', text: 'oklch(1 0 0)' }
+  localStorage.setItem(APPEARANCE_CACHE_KEY, JSON.stringify({ ...DEFAULT_SETTINGS, darkTheme: OMARCHY_THEME_ID, omarchyTheme: { ...oldTheme, colors } }))
+  const root = document.createElement('html')
+  expect(() => applyAppearance(readCachedAppearance(), root, true, null, false)).not.toThrow()
+  expect(root.dataset.themeId).toBe(DEFAULT_SETTINGS.darkTheme)
+  expect(root.style.getPropertyValue('--tt-success')).toBe('')
+ })
+ it.each(['win32', 'darwin'])('%s still ignores an old Omarchy cache before first paint', platform => {
+  vi.stubGlobal('sotto', { platform })
+  localStorage.setItem(APPEARANCE_CACHE_KEY, JSON.stringify({ ...DEFAULT_SETTINGS, darkTheme: OMARCHY_THEME_ID, omarchyTheme: legacyCache.themes.everforest }))
+  const root = document.createElement('html')
+  const choice = readCachedAppearance()
+  expect(choice).not.toHaveProperty('omarchyTheme')
+  applyAppearance(choice, root, true, null, false)
+  expect(root.dataset.themeId).toBe(DEFAULT_SETTINGS.darkTheme)
+  expect(root.style.getPropertyValue('--tt-success')).toBe('')
+ })
  it.each(['matching', 'waiting', 'missing'] as const)('Create theme copies the painted half when Omarchy is %s', async state => {
   const runtime = parseOmarchyTheme(fixtures.themes['tokyo-night'].rendered, 'Tokyo Night')
   const resolved = state === 'matching' ? 'dark' : 'light'

@@ -3,8 +3,6 @@ import { syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { afterEach } from 'vitest'
-import { configure } from '@testing-library/react'
-import '@testing-library/jest-dom/vitest'
 
 // macOS: /var/folders is a symlink to /private/var/folders. Git, fs.realpath and PATH
 // lookups return the physical path, so a test that builds expected paths from os.tmpdir()
@@ -44,7 +42,13 @@ function putGitFirstOnPath(): void {
 // Testing Library's findBy and waitFor give up after one second, the same machine-describing deadline that
 // `vitest.config.ts` raises for `expect.poll`. A render that waits on a resolved command can take longer than
 // that on a loaded runner, so they get the same five seconds; something genuinely missing still fails.
-configure({ asyncUtilTimeout: 5_000 })
+// Only DOM files need renderer cleanup and matchers. Loading React for every Node fixture
+// paid that module setup again in hundreds of files without exercising a renderer.
+if (typeof document !== 'undefined') {
+  const { configure } = await import('@testing-library/react')
+  await import('@testing-library/jest-dom/vitest')
+  configure({ asyncUtilTimeout: 5_000 })
+}
 
 // ProseMirror measures selections to scroll the caret; jsdom has no layout or hit testing.
 if (typeof Range !== 'undefined') {
