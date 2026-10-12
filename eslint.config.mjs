@@ -29,6 +29,7 @@ export default tseslint.config(
       'artifacts/omarchy-shell-plugin/**',
       'artifacts/linux-shell-plumbing/**',
       'artifacts/linux-package/**',
+      'artifacts/linux-settings-copy/**',
       'apps/omarchy/src/**',
       'apps/omarchy/pkg/**',
       'artifacts/e2e-runs/**',

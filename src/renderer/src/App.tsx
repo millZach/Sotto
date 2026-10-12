@@ -376,7 +376,8 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
     )
   } else {
     const navigation = app.navigation
-    const updateControl = <UpdateControl status={app.update} busy={updateFlow.busy} onActivate={updateFlow.activate} />
+    // Linux has no in-app updater (ADR-0062): pacman brings new versions, so the foot offers nothing to press.
+    const updateControl = app.platform === 'linux' ? null : <UpdateControl status={app.update} busy={updateFlow.busy} onActivate={updateFlow.activate} />
     // Watcher's room is reachable only while its gate is on; without it the navigation lands on Threads.
     const watcherPage = navigation === 'watcher' && watcherEnabled
     const threadsPage = navigation === 'threads' || (navigation === 'watcher' && !watcherEnabled) || (navigation === 'memory' && !memoryEnabled)

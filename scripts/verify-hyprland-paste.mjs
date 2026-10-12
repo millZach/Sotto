@@ -44,9 +44,11 @@ assert.equal(JSON.parse(locked).locked, true, 'This proof is for the locked forg
 const stub = join(scratch, 'bin')
 await mkdir(stub, { recursive: true })
 await writeFile(join(stub, 'hyprctl'), '#!/bin/sh\nexec "$SOTTO_HYPRCTL_NODE" "$SOTTO_HYPRCTL_STUB" "$@"\n', { mode: 0o700 })
+await writeFile(join(stub, 'wtype'), '#!/bin/sh\nexec "$SOTTO_HYPRCTL_NODE" "$SOTTO_WTYPE_STUB" "$@"\n', { mode: 0o700 })
 Object.assign(env, {
   PATH: `${stub}:${env.PATH}`, SOTTO_HYPRCTL_NODE: process.execPath,
   SOTTO_HYPRCTL_STUB: join(root, 'tests/fixtures/hyprctl.mjs'),
+  SOTTO_WTYPE_STUB: join(root, 'tests/fixtures/wtype.mjs'),
   SOTTO_HYPRCTL_LOG: join(evidence, 'hyprctl-arguments.jsonl'), SOTTO_HYPRCTL_TAGS: 'app',
 })
 await writeFile(env.SOTTO_HYPRCTL_LOG, '')
