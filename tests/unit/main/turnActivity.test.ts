@@ -26,4 +26,12 @@ describe('turn lifecycle records for providers that report none', () => {
     expect(markTurnActivity(both, { provider: 'grok', turnId: 'b', status: 'interrupted', at: 3_000 }).at(-1))
       .toMatchObject({ id: 'grok-turn-b', status: 'interrupted', title: 'Turn interrupted' })
   })
+
+  it('marks an interrupted turn a steer ended as steered, and no other', () => {
+    const cut = markTurnActivity([], { provider: 'claude', turnId: 'a', status: 'interrupted', steered: true, at: 1_000 })
+    expect(cut[0]).toMatchObject({ status: 'interrupted', title: 'Turn steered', steered: true })
+    const finished = markTurnActivity([], { provider: 'claude', turnId: 'a', status: 'completed', steered: true, at: 1_000 })
+    expect(finished[0]).toMatchObject({ status: 'completed', title: 'Turn completed' })
+    expect(finished[0]!.steered).toBeUndefined()
+  })
 })

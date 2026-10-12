@@ -30,7 +30,7 @@ import { claudeSkillPrompt, discoverClaudeSkills } from './claudeSkills'
 import { verifyFileMentions } from './promptFiles'
 import { ClaudeSubscriptionClient } from './subscriptionClaude'
 import { ClaudeProtocol, ClaudeRejected, ClaudeWritePending, object, type ClaudeFrame } from './claudeProtocol'
-import { claudeTurnFailure } from './claudeTurnFailure'
+import { claudeTurnAborted, claudeTurnFailure } from './claudeTurnFailure'
 import { authoredClaudeUser, claudeDigest, ClaudeSessionLog, claudeText } from './claudeSessionLog'
 import { claudeAnswer, claudeDenial, claudePending, type ClaudePending } from './claudeRequests'
 import { unreadableRequest } from './nativeRequests'
@@ -305,13 +305,16 @@ export class ClaudeStreamJsonHost implements AgentHost {
   /** Origins Claude Code has said it started running, whose echo has not come. */
   private readonly startedOrigins = new Set<string>()
   /**
-   * Steers Claude Code holds and has not read, by origin. It queues a prompt sent while a turn runs and reads it into
-   * that turn at its next model step; `carried` once the turn ended first, a stop included, so it starts the next turn.
+   * Steers Claude Code holds and has not read, by origin. It queues a prompt sent while a turn runs. One sent now cuts
+   * the turn and starts the next; one sent while a tool call runs is read into the turn once the call returns, and is
+   * part of that turn. `carried` once the turn ended first, a cut or a stop included, so it starts the next turn.
    * `unconfirmed` once its acknowledgement never came: still told apart from a turn's prompt, but not waited for.
    */
-  private readonly steers = new Map<string, { readonly threadId: string; carried: boolean; unconfirmed?: true }>()
+  private readonly steers = new Map<string, { readonly threadId: string; readonly now: boolean; carried: boolean; unconfirmed?: true }>()
   /** Steers read into a running turn: part of that turn, never the prompt it answers. */
   private readonly foldedSteers = new Set<string>()
+  /** Per thread: the tool calls of the running turn's own messages still waiting for their results (see `steerTurn`). */
+  private readonly toolsRunning = new Map<string, Set<string>>()
   private readonly dispatching = new Set<string>()
   /** Threads whose stop has gone out: the error result that closes the turn may arrive before the stop is acknowledged. */
   private readonly interrupting = new Set<string>()
@@ -485,7 +488,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       threadId: id, messages: this.messageLog.messages(id), ...(this.activityHistoryPending.has(id) ? {} : { activities: thread.activities ?? [] }), ...(thread.historyEpoch ? { historyEpoch: thread.historyEpoch } : {}),
     }]))
     this.messageLog.forgetAll()
-    this.threads.clear(); this.activityHistoryPending.clear(); this.logs.clear(); this.activity.clear(); this.subagentModels.clear(); this.logOrigins.clear(); this.lastLogDigest.clear(); this.replays.clear(); this.readsBeforeSend.clear(); this.nativeTakeovers.clear(); this.completedOrigins.clear(); this.steers.clear(); this.foldedSteers.clear(); this.selfTurns.clear(); this.queries.clear(); this.interrupting.clear(); this.assistantBlocks.clear()
+    this.threads.clear(); this.activityHistoryPending.clear(); this.logs.clear(); this.activity.clear(); this.subagentModels.clear(); this.logOrigins.clear(); this.lastLogDigest.clear(); this.replays.clear(); this.readsBeforeSend.clear(); this.nativeTakeovers.clear(); this.completedOrigins.clear(); this.steers.clear(); this.foldedSteers.clear(); this.toolsRunning.clear(); this.selfTurns.clear(); this.queries.clear(); this.interrupting.clear(); this.assistantBlocks.clear()
     for (const [id, stored] of Object.entries(aliases)) {
       if (stored.kind === 'personal') continue
       let alias = stored
@@ -1225,7 +1228,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
         const cut = running || !!thread.monitoring?.length || !!thread.backgroundWork?.length
         this.clearMonitoring(id)
         this.thinkingEnded(id)
-        this.runtimes.delete(id); this.selfTurns.delete(id); this.queries.delete(id); this.interrupting.delete(id); this.reaper.forget(id); this.messageLog.dropEmpty(id); this.messageLog.release(id); this.streaming.delete(id); this.flushCursors(); thread.requests = []
+        this.runtimes.delete(id); this.selfTurns.delete(id); this.queries.delete(id); this.interrupting.delete(id); this.toolsRunning.delete(id); this.reaper.forget(id); this.messageLog.dropEmpty(id); this.messageLog.release(id); this.streaming.delete(id); this.flushCursors(); thread.requests = []
         delete thread.providerSessionOpen
         if (saved?.compaction?.status === 'running') {
           saved.compaction = { ...saved.compaction, status: 'uncertain', error: 'Native compaction was interrupted when Claude Code stopped. Its result is read from the native session; it will not be retried.' }
@@ -1463,6 +1466,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const ending = frame.type === 'result' && !frame.parent_tool_use_id ? this.resultEnding(id, frame) : undefined
     this.projectActivity(id, frame, true, ending?.status)
     if (frame.parent_tool_use_id) { this.emit(true); return }
+    this.trackTools(id, frame)
     this.observeCompaction(id, frame, false)
     if (frame.type === 'user' && authoredClaudeUser(frame)) {
       this.message(id, frame, false)
@@ -1517,23 +1521,24 @@ export class ClaudeStreamJsonHost implements AgentHost {
       this.usage.claudeResult(id, frame)
       thread.usage = this.usage.get(id)
       this.messageLog.dropEmpty(id); this.streaming.delete(id)
-      const { origin, stopped, status } = ending!
+      const { origin, stopped, steered, status } = ending!
       this.selfTurns.delete(id); this.queries.delete(id)
       this.interrupting.delete(id)
       const failure = frame.is_error === true && !stopped ? claudeTurnFailure(frame, this.assistantErrors.get(id)) : null
       if (origin) {
         this.completedOrigins.add(origin)
         thread.lastTurn = { id: origin, status }
-        this.markTurn(id, status, alias.origins.find(value => value.uuid === origin)?.messageId, failure ?? undefined)
+        this.markTurn(id, status, alias.origins.find(value => value.uuid === origin)?.messageId, failure ?? undefined, steered)
       }
       this.assistantErrors.delete(id)
       // A prompt of Sotto's that Claude Code held behind its own turn starts next, so the thread goes straight on to it,
-      // and so does a steer the turn ended before reading.
+      // and so does a steer the turn ended before reading or was cut for.
       const steers = [...this.steers.values()].filter(steer => steer.threadId === id)
       for (const steer of steers) steer.carried = true
       const held = steers.some(steer => !steer.unconfirmed) || alias.origins.some(value => this.acknowledgements.has(value.uuid))
       thread.status = failure !== null ? 'error' : held ? 'running' : 'idle'
-      if (frame.is_error === true) this.clearMonitoring(id)
+      // A cut for a steer drops only the step Claude was on, so background work goes on with the session.
+      if (frame.is_error === true && !steered) this.clearMonitoring(id)
       if (failure !== null) { this.turnFailures.set(id, failure); this.state.error = failure }
       else if (frame.is_error !== true) this.clearTurnFailure(id)
     }
@@ -1723,6 +1728,19 @@ export class ClaudeStreamJsonHost implements AgentHost {
       throw error
     }
   }
+  /** A turn's tool call goes out in its assistant message and is done when its result comes back; a result ends them all. */
+  private trackTools(id: string, frame: ClaudeFrame): void {
+    if (frame.type === 'result') { this.toolsRunning.delete(id); return }
+    if (frame.type !== 'assistant' && frame.type !== 'user') return
+    const content = object(frame.message)?.content
+    if (!Array.isArray(content)) return
+    const running = this.toolsRunning.get(id) ?? new Set<string>()
+    for (const block of content.map(object)) {
+      if (frame.type === 'assistant' && block?.type === 'tool_use' && typeof block.id === 'string') running.add(block.id)
+      if (frame.type === 'user' && block?.type === 'tool_result' && typeof block.tool_use_id === 'string') running.delete(block.tool_use_id)
+    }
+    if (running.size) this.toolsRunning.set(id, running); else this.toolsRunning.delete(id)
+  }
   /** A steer the CLI held unread ends with the CLI; one still unacknowledged reports uncertain now rather than at the deadline. */
   private dropSteers(id: string): void {
     for (const [uuid, steer] of this.steers) if (steer.threadId === id) { this.steers.delete(uuid); this.acknowledgements.get(uuid)?.(false) }
@@ -1744,8 +1762,12 @@ export class ClaudeStreamJsonHost implements AgentHost {
   }
   /**
    * Steering: a prompt written to the CLI while its turn runs. Claude Code queues it and says so at once, which is the
-   * acknowledgement, so the thread shows it from then as it shows a Codex steer. Claude reads it in at the turn's next
-   * model step; one the turn ends before reading, a stop included, starts the next turn (see `steers`).
+   * acknowledgement, so the thread shows it from then as it shows a Codex steer. While Claude thinks or writes, it goes
+   * as Claude Code's own send now (`priority: 'now'`, ADR-0075): the CLI drops the step and ends the turn, so the steer
+   * runs as the next; left to the next model step, it could wait minutes behind a long reply. While one of the turn's
+   * tool calls runs it goes as a plain prompt, read into the turn once the call returns, which is as soon: sent now, it
+   * would wait for the call too, and the CLI would hold a stop until the call ended. One the turn ends before reading,
+   * a stop included, starts the next turn (see `steers`).
    */
   private async steerTurn(id: string, alias: Alias, thread: AgentThread, command: Extract<AgentHostCommand, { type: 'steer' }>, readForSend: () => boolean, watcherGuard?: () => void): Promise<AgentHostResult> {
     validatePromptAttachments(this.state, alias.modelId, command.attachments)
@@ -1777,24 +1799,25 @@ export class ClaudeStreamJsonHost implements AgentHost {
           resolve(delivered)
         })
       })
-      this.steers.set(origin.uuid, { threadId: id, carried: false })
-      try { await runtime!.protocol.write({ type: 'user', uuid: origin.uuid, session_id: alias.sessionId, parent_tool_use_id: null, message: { role: 'user', content } }) }
+      const now = !this.toolsRunning.has(id)
+      this.steers.set(origin.uuid, { threadId: id, now, carried: false })
+      try { await runtime!.protocol.write({ type: 'user', uuid: origin.uuid, session_id: alias.sessionId, parent_tool_use_id: null, ...(now ? { priority: 'now' } : {}), message: { role: 'user', content } }) }
       catch { forget(); unconfirmed(); return { accepted: false, uncertain: true } }
       if (!await acknowledged) return { accepted: false, uncertain: true }
       this.emit()
       return { accepted: true }
     } finally { this.dispatching.delete(id) }
   }
-  private markTurn(id: string, status: AgentActivity['status'], turnId?: string, error?: string): void {
+  private markTurn(id: string, status: AgentActivity['status'], turnId?: string, error?: string, steered?: boolean): void {
     const thread = this.ensureActivityHistory(id); if (!thread) return
     const last = this.messageLog.lastUserMessageId(id)
     const turn = turnId ?? last
     if (turn === undefined) return
     thread.activities = markTurnActivity(thread.activities, { provider: 'claude', turnId: turn, status,
-      ...(last === turn ? { afterMessageId: turn } : {}), ...(error !== undefined ? { error } : {}) })
+      ...(last === turn ? { afterMessageId: turn } : {}), ...(error !== undefined ? { error } : {}), ...(steered ? { steered } : {}) })
   }
   /** The turn a `result` ends, and how it ended. */
-  private resultEnding(id: string, frame: ClaudeFrame): { origin: string | undefined; stopped: boolean; status: 'interrupted' | 'failed' | 'completed' } {
+  private resultEnding(id: string, frame: ClaudeFrame): { origin: string | undefined; stopped: boolean; steered: boolean; status: 'interrupted' | 'failed' | 'completed' } {
     const alias = this.aliases[id]!; const thread = this.threads.get(id)!
     // Claude Code leaves its own prompt's identity off the result of a turn it gave itself and says where that prompt
     // came from instead, so such a result never ends a prompt of Sotto's still waiting to go out.
@@ -1803,7 +1826,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
       ?? (object(frame.origin) ? undefined : alias.origins.findLast(value => !this.foldedSteers.has(value.uuid) && !this.steers.has(value.uuid))?.uuid)
     // A turn the user stopped ends in an error result, which is no failure of Claude Code's.
     const stopped = this.interrupting.has(id) || thread.lastTurn?.status === 'interrupted' && (!origin || thread.lastTurn.id === origin)
-    return { origin, stopped, status: stopped ? 'interrupted' : frame.is_error === true ? 'failed' : 'completed' }
+    // So does one a steer cut, said by an aborted ending while the CLI still holds a steer sent now. A turn that
+    // finished as the steer came is finished, and the steer runs next all the same.
+    const steered = !stopped && claudeTurnAborted(frame) && [...this.steers.values()].some(steer => steer.threadId === id && steer.now && !steer.carried)
+    return { origin, stopped, steered, status: stopped || steered ? 'interrupted' : frame.is_error === true ? 'failed' : 'completed' }
   }
   private projectActivity(id: string, frame: ClaudeFrame, live = false, turnEnd?: AgentActivity['status']): void {
     const thread = this.ensureActivityHistory(id)!
