@@ -743,8 +743,8 @@ import XCTest
     /// header (on CI it opened Watched instead of a card's Review question).
     private var watcherBand: (top: CGFloat, bottom: CGFloat) {
         let header = byID("watcher-section-conversation")
-        // The header's glass ends its bottom padding below Conversation | Watched.
-        let top = (header.exists ? header.frame.maxY : app.windows.firstMatch.frame.minY) + 12
+        // The header's glass ends the switch's own padding and the header's bottom padding below Conversation | Watched.
+        let top = (header.exists ? header.frame.maxY : app.windows.firstMatch.frame.minY) + 16
         let tabs = app.tabBars.firstMatch
         var bottom = tabs.exists ? tabs.frame.minY : app.windows.firstMatch.frame.maxY
         // The box's glass starts above its text; a held line or a message sits above the box.
@@ -761,6 +761,7 @@ import XCTest
         let origin = window.coordinate(withNormalizedOffset: .zero)
         var down = true
         var steps: [String] = []
+        var settling = 0
         func placed(_ frame: CGRect, _ band: (top: CGFloat, bottom: CGFloat)) -> Bool {
             if frame.height <= band.bottom - band.top { return frame.minY >= band.top && frame.maxY <= band.bottom }
             return frame.minY >= band.top && frame.minY <= band.bottom - 60
@@ -773,8 +774,13 @@ import XCTest
                 let frame = target.frame
                 if placed(frame, band) {
                     if target.isHittable { return }
-                    steps.append("\(attempt): target \(frame) is in place but can't be pressed")
-                    break
+                    // A page still settling after a drag can't be pressed yet; give it a moment, a few times at most.
+                    steps.append("\(attempt): target \(frame) is in place but can't be pressed yet")
+                    settling += 1
+                    if settling > 3 { break }
+                    let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in target.isHittable }, object: nil)
+                    _ = XCTWaiter.wait(for: [ready], timeout: 2)
+                    continue
                 }
                 if !frame.isEmpty {
                     let fits = frame.height <= band.bottom - band.top
