@@ -11,7 +11,7 @@ import { settingsLayoutProblems, settingsTextContrast } from './support/settings
 const SHOTS = evidenceDirectory('artifacts/cloud-iphone')
 /** What in Settings > Cloud iPhone must not be cut off, and the page's own text whose contrast is measured. */
 const CLOUD_CONTROLS = 'input,button,p,h3,li,[role="meter"]'
-const CLOUD_TEXT = '.settings-group > h3, .settings-group__note, .tt-field__label, .tt-field__description, .cloud-iphone-usage > p, .cloud-iphone-recent span'
+const CLOUD_TEXT = '.settings-group > h3, .settings-group__note, .tt-field__label, .tt-field__description, .cloud-iphone-usage > p, .cloud-iphone-recent span, .cloud-iphone-recent__empty, .settings-remote-status'
 
 async function resize(launched: LaunchedSotto, width: number, height: number): Promise<void> {
   await resizeContentWindow(launched, width, height, [800, 540])
@@ -46,15 +46,32 @@ test('an agent asks for a cloud iPhone, the user starts it in the thread, and th
     })
     await page.reload(); await resize(launched, 1280, 800); await openThreads(page)
 
-    // Settings > Cloud iPhone: a wrong key is not saved; the fake's key is.
-    const saved = await page.evaluate(async key => {
-      const bridge = window.sotto!.cloudIphone!
-      const wrong = await bridge.setKey({ value: 'rc_live_wrong' })
-      const right = await bridge.setKey({ value: key })
-      return { wrong: wrong.ok && wrong.value, right: right.ok && right.value }
-    }, fake.key)
-    expect(saved.wrong).toMatchObject({ saved: false })
-    expect(saved.right).toEqual({ saved: true, problem: null })
+    // Settings > Cloud iPhone before any session: no sessions yet. A wrong key typed there is refused and not saved, and
+    // the fake's key is saved. Each state's words meet 4.5:1 in light and dark.
+    await openPage(page, 'Settings')
+    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Cloud iPhone', exact: true }).click()
+    const cloudPanel = page.getByRole('tabpanel', { name: 'Cloud iPhone', exact: true })
+    const readable = async (state: string): Promise<void> => {
+      for (const mode of ['dark', 'light'] as const) {
+        await page.evaluate(async appearance => window.sotto!.updateSettings({ appearance }), mode)
+        await expect(page.locator('html')).toHaveAttribute('data-theme', mode)
+        for (const { text, ratio } of await settingsTextContrast(page, 'settings-cloud-iphone', CLOUD_TEXT)) expect(ratio, `${text} ${state} in ${mode}`).toBeGreaterThanOrEqual(4.5)
+      }
+      await page.evaluate(async () => window.sotto!.updateSettings({ appearance: 'dark' }))
+    }
+    await expect(cloudPanel.getByText('No sessions yet.', { exact: true })).toBeVisible()
+    await readable('with no sessions')
+    await cloudPanel.getByLabel('Key').fill('rc_live_wrong')
+    await cloudPanel.getByRole('button', { name: 'Save key', exact: true }).click()
+    await expect(cloudPanel.getByRole('alert')).toBeVisible()
+    expect(await page.evaluate(async () => { const result = await window.sotto!.cloudIphone!.status(); return result.ok && result.value.keySaved })).toBe(false)
+    await readable('after a refused key')
+    await cloudPanel.getByLabel('Key').fill(fake.key)
+    await cloudPanel.getByRole('button', { name: 'Save key', exact: true }).click()
+    await expect(cloudPanel.getByRole('status').filter({ hasText: 'Key saved.' })).toBeVisible()
+    await expect(cloudPanel.getByRole('button', { name: 'Replace key', exact: true })).toBeVisible()
+    await readable('after a saved key')
+    await openThreads(page)
 
     await page.getByRole('button', { name: 'Workshop', exact: true }).first().click()
     const workingDirectory = await page.evaluate(async () => {
@@ -131,7 +148,6 @@ test('an agent asks for a cloud iPhone, the user starts it in the thread, and th
     await openPage(page, 'Settings')
     await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Cloud iPhone', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Cloud iPhone', exact: true })).toBeVisible()
-    const cloudPanel = page.getByRole('tabpanel', { name: 'Cloud iPhone', exact: true })
     await expect(cloudPanel.getByRole('meter', { name: 'Cloud iPhone minutes used this month' })).toHaveAttribute('aria-valuetext', /^\d+ of 750 minutes$/u)
     // Grouped as Git is, every row the page's usual label on the left and control on the right.
     await expect(cloudPanel.getByRole('heading', { level: 3 })).toHaveText(['run.cloud', 'Spending', 'Recent sessions'])

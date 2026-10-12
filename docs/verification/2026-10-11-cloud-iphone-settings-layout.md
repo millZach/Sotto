@@ -17,6 +17,7 @@ The group heading is now one component, `SettingsGroup`, which Git uses too, so 
 - The three headings are run.cloud, Spending and Recent sessions, in that order. The key field says "Key saved" and the session from the run is listed.
 - At 1600x1000, 1280x800 and 820x560, in light and dark, nothing overflows the form or the window and no control is cut off, at the top of the page and scrolled to the bottom.
 - Every heading, note, label, description, minutes line and session line meets 4.5:1 on its surface, in light and dark and at every size.
+- Before any session, with the key typed on the page: "No sessions yet.", run.cloud's refusal of a wrong key and "Key saved." each meet 4.5:1 in light and dark. The refused key is not saved.
 - With Reduced motion on, the page arrives without its slide and nothing on it animates, and it still fits. With Reduced motion following the system, it arrives as every Settings page does.
 - From the key field, Tab goes to Remove key, then the monthly cap, then the idle minutes. Replace key stays disabled, and out of the path, until a new key is typed.
 - The meter reads its value as words, such as "1 of 750 minutes".
@@ -34,5 +35,4 @@ In `artifacts/cloud-iphone/`, added by hand as that folder's others are:
 
 ## Not shown here
 
-- The key's error line after run.cloud refuses a key. The renderer's unit tests cover it.
 - The three variants Zach compared are kept on the tag `prototype/cloud-iphone-settings-layout`.
