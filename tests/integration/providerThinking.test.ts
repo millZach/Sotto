@@ -177,9 +177,12 @@ it('Claude settles a thinking block as interrupted when the user stops the turn 
     await f.host.execute({ type: 'send', commandId: 'send', messageId: 'user', threadId: id, text: 'Think first' })
     await f.action(id, { type: 'complete', text: 'Never sent.', thinking: 'Half of a thought.', holdInThinking: 'release-thought' })
     await expect.poll(async () => (await thoughts(f.host)).map(row => row.status)).toEqual(['running'])
+    await writeFile(join(f.root, 'interrupt-script.json'), JSON.stringify({ holdResult: 'release-interrupt-result' }))
     expect(await f.host.execute({ type: 'interrupt', commandId: 'stop', threadId: id })).toEqual({ accepted: true })
     await expect.poll(async () => (await thread(f.host))?.lastTurn?.status).toBe('interrupted')
-    expect((await thoughts(f.host)).map(row => [row.text, row.status])).toEqual([['Half of a', 'interrupted']])
+    expect((await thoughts(f.host)).map(row => [row.text, row.status])).toEqual([['Half of a', 'running']])
+    await writeFile(join(f.root, 'release-interrupt-result'), '')
+    await expect.poll(async () => (await thoughts(f.host)).map(row => [row.text, row.status])).toEqual([['Half of a', 'interrupted']])
   } finally { await f.cleanup() }
 })
 

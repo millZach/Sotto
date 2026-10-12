@@ -158,6 +158,7 @@ import {
 import { APP_ID, APP_NAME } from '../shared/constants'
 import { getReleaseTrack, releaseTrackName } from '../shared/releaseTrack'
 import { hostReleaseVersion } from './hosts/hostReleaseVersion'
+import { WATCHER_CHANGED, WATCHER_RENDERER_ARGUMENT } from '../shared/watcherRoom'
 import { runningVersion, watcherEnabledForRun } from './runningVersion'
 import type { DictationCommand } from '../shared/contracts'
 import type { WidgetSnapshot } from '../shared/dictation'
@@ -193,6 +194,7 @@ import { registerFilesIpc } from './files/ipc'
 import { FilesService } from './files/service'
 import { registerToolsIpc } from './tools/ipc'
 import { registerThemesIpc } from './themes/ipc'
+import { OmarchyThemeMonitor, initializeOmarchySelection } from './themes/omarchy'
 import { OpenVsxClient } from './themes/openVsx'
 import { createOpenVsxFixtureFetch } from './themes/openVsxFixture'
 import { TerminalService } from './tools/terminal'
@@ -246,6 +248,10 @@ const profile = platformProfile(platform)
 const platformDefaults = defaultSettings(profile.defaultHotkey)
 
 type NativeDiagnostic =
+  | 'omarchy-theme-missing'
+  | 'omarchy-theme-invalid'
+  | 'omarchy-theme-watch-failed'
+  | 'omarchy-theme-refresh-failed'
   | LinuxAutostartEvent
   | BootstrapDiagnostic
   | NativeRuntimeDiagnostic
@@ -571,6 +577,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const appRunningVersion = runningVersion(app.getVersion(), process.versions.electron, appVersion)
   const hostVersion = hostReleaseVersion(appRunningVersion, appVersion)
   const watcherEnabled = watcherEnabledForRun({ version: appRunningVersion, isPackaged: app.isPackaged, override: process.env.SOTTO_WATCHER_ENABLED })
+  let repaintOmarchy: () => void = () => undefined
+  const omarchyTheme = new OmarchyThemeMonitor(platform, homedir(),
+    () => repaintOmarchy(), logOperational)
+  omarchyTheme.load()
+  app.on('will-quit', () => omarchyTheme.dispose())
   const recoveryNotices = new RecoveryNoticeCenter()
   const { settings: plainSettings, history } = createStorageRepositories(
     userDataPath,
@@ -579,7 +590,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     platformDefaults,
     logOperational,
     watcherEnabled,
+    platform === 'linux' ? { omarchyTheme: () => omarchyTheme.get() } : {},
   )
+  await initializeOmarchySelection(platform, omarchyTheme.get(), plainSettings)
   await history.initialize()
   const credentials = new AgentCredentials(userDataPath, safeStorage, notice => recoveryNotices.publish(notice))
   await credentials.load()
@@ -616,7 +629,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const windows = new WindowManager({
     title: buildName,
     createWindow: options => {
-      const window = new BrowserWindow(options)
+      const window = new BrowserWindow(watcherEnabled && options.webPreferences?.additionalArguments?.includes('--sotto-renderer-role=main')
+        ? { ...options, webPreferences: { ...options.webPreferences, additionalArguments: [...options.webPreferences.additionalArguments, WATCHER_RENDERER_ARGUMENT] } } : options)
       window.webContents.on('before-input-event', (_event, input) => {
         window.webContents.setIgnoreMenuShortcuts(terminalTakesMenuShortcut(input, terminalFocus.has(window.webContents), platform))
       })
@@ -1355,6 +1369,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           copyPath: async request => copyHostPath(await hostRouter.gitChangesPath(request)),
         },
       }, () => windows.getTrustedRenderers())
+      repaintOmarchy = () => { void settingsCoordinator.refreshAppearance().catch(() => logOperational('omarchy-theme-refresh-failed')) }
+      omarchyTheme.start()
       // Theme export and Open VSX (ADR-0011). End-to-end runs use an offline Open VSX and a fixed export folder.
       const cleanupThemes = registerThemesIpc(ipcMain, {
         openVsx: new OpenVsxClient(e2eConfiguration === null ? undefined : createOpenVsxFixtureFetch()),
@@ -1379,7 +1395,17 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const cleanupAgents = registerAgentIpc(ipcMain, hostRouter, hostRouter, () => windows.getTrustedRenderers(), { encodeReceipt: agentStateBroadcaster.encodeReceipt, workingCopyOptions: projectId => { const key = parseHostEntityKey(projectId); if (key && key.hostId !== agentControl.hostId()) throw new Error('Working-copy choices are on the host machine. Use the existing project folder or create its worktree there.'); return agentHost.workingCopyOptions(key?.id ?? projectId) } })
       // An E2E run never leaves the app for System Settings.
       const systemSettingsOpener = e2eConfiguration === null ? createSystemSettingsOpener(platform, url => shell.openExternal(url)) : null
+      const cleanupWatcher = localRuntime?.watcher?.subscribe(state => windows.sendToMain(WATCHER_CHANGED, state))
+      const unavailableWatcher = () => ({ status: 'refused', code: 'HOST_FEATURE_UNAVAILABLE',
+        message: 'Turn on Run the local host in Settings and restart Sotto to use Watcher.', retryable: true } as const)
       const cleanup = registerIpc(ipcMain, {
+        ...(watcherEnabled ? { watcher: {
+          get: async () => localRuntime?.watcher?.get() ?? unavailableWatcher(),
+          open: request => localRuntime?.watcher?.open(request) ?? Promise.resolve(unavailableWatcher()),
+          prepareStopAll: async () => localRuntime?.watcher?.prepareStopAll() ?? unavailableWatcher(),
+          stopAll: request => localRuntime?.watcher?.stopAll(request.confirmationId) ?? Promise.resolve(unavailableWatcher()),
+          setLimit: async request => { if (!localRuntime?.watcher) return unavailableWatcher(); await settingsCoordinator.updateSettings({ watcherInFlightLimit: request.limit }); return localRuntime.watcher.get() },
+        } satisfies Omit<import('../shared/watcherRoom').WatcherBridge, 'onChanged'> } : {}),
         settings: {
           get: () => settingsCoordinator.getSettings(),
           update: (patch) => { requireLocalHistoryCleanup(startupSettings.localHostEnabled, agentHistoryEnabled, patch.historyEnabled); return settingsCoordinator.updateSettings(patch) },
@@ -1483,6 +1509,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         transcription.dispose()
         speechModelStore?.dispose()
         updates.dispose()
+        cleanupWatcher?.()
         cleanup()
       }
       if (e2eState === null) return cleanupNativeIpc

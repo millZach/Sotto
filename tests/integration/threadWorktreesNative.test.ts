@@ -35,7 +35,7 @@ async function fixture(provider: keyof typeof factories, committed = true, neste
     threadProvider: id => registry.byThread(id)?.provider,
     hosts: { codex: new FakeProviderHost(), claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), [provider]: new SottoThreadHost(provider, f.host, registry) } })
   const workspace = new WorkspaceHost(native, f.root)
-  cleanup.push(async () => { workspace.disconnect(); await f.adapter.closed(); await workspace.privacyChanged(); workspace.dispose(); await registry.flush(); await f.cleanup() })
+  cleanup.push(async () => { workspace.disconnect(); await f.adapter.closed(); await workspace.close(); await registry.flush(); await f.cleanup() })
   await workspace.connect(provider)
   await workspace.execute({ type: 'create-project', provider, commandId: 'project', projectId: 'original-scope', title: 'Project', path: project })
   const model = workspace.workspaceSnapshot().models.find(model => model.providerId === provider)!
@@ -185,7 +185,8 @@ describe('native thread working copies', () => {
     const snapshot = workspace.workspaceSnapshot()
     await workspace.execute({ type: 'create-thread', commandId: 'reuse', threadId: 'reuse', projectId: 'original-scope', title: 'Reuse', modelId: snapshot.models.find(model => model.providerId === provider)!.id,
       workingCopy: 'independent', existingWorktreePath: owner.worktree!.path! })
-    await workspace.privacyChanged()
+    // A restart drains writes and detaches provider subscriptions before another workspace opens its stores.
+    await workspace.close()
     const restored = new WorkspaceHost(native, f.root); await restored.initialize(); await restored.connect(provider)
     try {
       await restored.execute(prompt('reuse'))
@@ -193,7 +194,7 @@ describe('native thread working copies', () => {
       expect(reused).toMatchObject({ workingDirectory: owner.workingDirectory, worktree: { reused: true, mode: 'independent' } })
       expect(await readFile(join(reused.workingDirectory!, 'tracked.txt'), 'utf8')).toBe('shared unfinished edits')
       expect((await git(project, ['worktree', 'list', '--porcelain'])).match(/worktree /gu)).toHaveLength(2)
-    } finally { await restored.privacyChanged(); restored.dispose() }
+    } finally { await restored.close() }
   })
 
   it('devin: refuses a locked working copy before another native prompt without changing its files', async () => {

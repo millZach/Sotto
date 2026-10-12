@@ -54,6 +54,8 @@ test.describe('Watcher follows the running release track', () => {
           const update = await page.evaluate(() => window.sotto!.getUpdateStatus())
           return 'watcherEnabled' in update ? update.watcherEnabled : undefined
         }).toBe(track === 'owl')
+        expect(await page.evaluate(() => Boolean(window.sotto!.watcher))).toBe(track === 'owl')
+        if (track === 'owl') expect(await page.evaluate(() => window.sotto!.watcher!.get())).toMatchObject({ status: 'ok', state: { current: null } })
         const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
         await expect(sidebar.getByRole('button', { name: 'Workshop', exact: true })).toBeVisible()
         for (const thread of special) await expect(sidebar.getByRole('button', { name: thread.title, exact: true })).toHaveCount(listed(track, thread))
@@ -91,7 +93,7 @@ test.describe('Watcher follows the running release track', () => {
           await page.evaluate(async appearance => { await window.sotto!.updateSettings({ appearance }) }, appearance)
           await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
           for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
-            await resizeContentWindow(launched, width, height)
+            await resizeContentWindow(launched, width, height, [800, 540])
             await settle(page)
             expect(await pageBoundProblems(page)).toEqual([])
             for (const thread of special) await expect(sidebar.getByRole('button', { name: thread.title, exact: true })).toHaveCount(listed(track, thread))
@@ -162,5 +164,48 @@ test.describe('Watcher follows the running release track', () => {
         await profile.dispose()
       }
     })
+  })
+})
+
+
+test('Owl refuses the private room actions plainly when the local host is off', async () => {
+  await onReleaseTrack('owl', async () => {
+    const profile = await ownedE2EProfile({ prefix: 'sotto-e2e-watcher-gate-', settings: {
+      ...DEFAULT_SETTINGS, onboardingComplete: true, localHostEnabled: false, showWidgetWhenIdle: false,
+    } })
+    let launched: Awaited<ReturnType<typeof launchSotto>> | undefined
+    try {
+      launched = await launchSotto('success', profile.directory)
+      const results = await launched.page.evaluate(async () => {
+        const room = window.sotto!.watcher!
+        return [await room.get(), await room.open({ provider: 'codex', modelId: 'codex:test' }),
+          await room.prepareStopAll(), await room.stopAll({ confirmationId: '24c7c937-b368-4bbb-9595-31c7c8463e29' }), await room.setLimit({ limit: 1 })]
+      })
+      for (const result of results) expect(result).toMatchObject({ status: 'refused', code: 'HOST_FEATURE_UNAVAILABLE', message: expect.stringContaining('Run the local host') })
+      expect(await launched.page.evaluate(async () => (await window.sotto!.getSettings()).watcherInFlightLimit)).toBe(DEFAULT_SETTINGS.watcherInFlightLimit)
+    } finally { if (launched) await closeSotto(launched); await profile.dispose() }
+  })
+})
+
+test('Owl applies a changed in-flight limit to the running Watcher at once', async () => {
+  await onReleaseTrack('owl', async () => {
+    const profile = await ownedE2EProfile({ prefix: 'sotto-e2e-watcher-gate-', settings: {
+      ...DEFAULT_SETTINGS, onboardingComplete: true, showWidgetWhenIdle: false,
+    } })
+    let launched: Awaited<ReturnType<typeof launchSotto>> | undefined
+    try {
+      launched = await launchSotto('success', profile.directory)
+      const [before, changed, after, saved] = await launched.page.evaluate(async () => {
+        const room = window.sotto!.watcher!
+        const before = await room.get()
+        const changed = await room.setLimit({ limit: 1 })
+        return [before, changed, await room.get(), (await window.sotto!.getSettings()).watcherInFlightLimit]
+      })
+      expect(before).toMatchObject({ status: 'ok', state: { inFlightLimit: DEFAULT_SETTINGS.watcherInFlightLimit } })
+      // The running Watcher reads the new limit, not only the saved settings file.
+      expect(changed).toMatchObject({ status: 'ok', state: { inFlightLimit: 1 } })
+      expect(after).toMatchObject({ status: 'ok', state: { inFlightLimit: 1 } })
+      expect(saved).toBe(1)
+    } finally { if (launched) await closeSotto(launched); await profile.dispose() }
   })
 })

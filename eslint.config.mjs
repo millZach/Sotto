@@ -4,11 +4,19 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   {
     ignores: [
+      '.t/**',
+      'artifacts/omarchy-theme/**',
+      'artifacts/omarchy-muted/**',
+      'artifacts/builtin-palette-contrast/**',
       'artifacts/watcher-benchmark/**',
       'artifacts/watcher-rename/**',
       'artifacts/watcher-gate/**',
       'artifacts/*-center-*/**',
       'artifacts/watcher-live/**',
+      'artifacts/watcher-thread-tools/**',
+      'artifacts/watcher-thread-tools-live/**',
+      'artifacts/watcher-thread-tools-review/**',
+      'artifacts/watcher-thread-tools-gates/**',
       'artifacts/watcher-own-tools-live/**',
       'artifacts/watcher-own-tools-windows/**',
       'artifacts/sotto-owl-release/**',
@@ -24,6 +32,7 @@ export default tseslint.config(
       'apps/omarchy/pkg/**',
       'artifacts/e2e-runs/**',
       'artifacts/omarchy-shell-integration/**',
+      'artifacts/linux-window-minimum/**',
       'artifacts/linux-hyprland-paste/**',
       'artifacts/linux-no-window-controls/**',
       'artifacts/visuals-live/**',

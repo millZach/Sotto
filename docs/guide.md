@@ -651,6 +651,14 @@ Linux updates come from the package manager. Before the AUR publication, install
 
 ### Linux development builds
 
+The main window resizes down to 820×560.
+
+Install the [Omarchy theme template](../apps/omarchy/README.md#follow-the-omarchy-theme) with `apps/omarchy/install-theme.sh` from the source checkout. It needs no sudo. Omarchy renders `~/.config/omarchy/themed/sotto.json.tpl` into its current theme folder at installation and on every switch. Sotto watches that rendered palette, so the main window and floating widget repaint live.
+
+On first start with a valid palette, both theme halves choose **Omarchy** and the colour scheme is **Match Linux**. Existing settings stay as you chose them. In **Settings → Appearance**, choose Omarchy separately for Light and Dark. The current half names the Omarchy theme; the other says “Waits for a light/dark Omarchy theme” and uses Sotto until a matching theme arrives. Match Linux follows Omarchy’s mode when that half uses Omarchy; an explicit Light or Dark mode keeps your choice. Any other palette switches away as usual. **Create theme** copies the current palette into an editable theme.
+
+The readability check raises text to 4.5:1 and the focus ring to 3:1. It covers timestamps on selected and hovered threads and in message bubbles, plus line numbers and signs on hovered and selected lines in Changes. It keeps Omarchy’s red and yellow only where they still mean error and warning and can read with at most a 35% mix toward text; otherwise Sotto supplies red and amber. A missing, unresolved or malformed file paints Sotto, without changing your selections. A valid file restores Omarchy. There is no Omarchy entry, file read or watcher on Windows or macOS.
+
 The unpackaged desktop app starts on Omarchy (Arch Linux and Hyprland on Wayland). Prepare a source checkout with Node 24:
 
 ```sh
@@ -702,7 +710,7 @@ Unit and integration tests cover settings recovery, history privacy, audio math 
 
 The deterministic boundary is rejected in packaged builds and accepts calls only from the trusted main renderer. It never logs transcript text or PCM.
 
-Every push to `main` and every pull request against it runs typecheck, lint, `vitest run` and the third-party notices check on a Windows runner (`.github/workflows/ci.yml`). Desktop end-to-end tests and live provider suites stay local. A separate Linux job checks the host archive and socket contract. See the [continuous integration guide](ci.md) for what each step does and how to read a failed check.
+Every push to `main` and every pull request against it runs typecheck, lint, `vitest run` and the third-party notices check on a Windows runner (`.github/workflows/ci.yml`). The trial Desktop check (Windows) runs selected scripted journeys for dictation recovery, command receipts, queued steering, the daily workspace and its restart, Settings, and widget dictation when app code, Electron journeys or fixtures change, and on every push to `main`. The full desktop end-to-end suite and live provider suites stay local. A separate Linux job checks the host archive and socket contract. See the [continuous integration guide](ci.md) for what each step does and how to read a failed check.
 
 ### Windows packages
 
@@ -809,3 +817,5 @@ A line under Watcher's header names each thread that needs you and why: a questi
 Watcher's header says how many threads it is working with, for example "2 of 4 watched". **More Watcher actions** holds **Threads in flight**, from one to eight, which saves as you change it; lowering it stops nothing. Watcher's composer says **Ask before changes** where a thread's permissions would be: Watcher asks before it changes anything, and only you answer its requests. A thread Watcher watches shows the owl right after its provider logo in the sidebar, the Overview and its pane's header, and its composer says **Watched by Watcher. If you send here, Watcher stops sending to it.** Watcher itself is not listed on the Threads page; Watcher history is.
 
 Watcher is available only in Owl builds. Stable builds carrying the Watcher gate hide Watcher and its history, start none of them, and keep their records, thread kinds, settings and conversation histories whole for a later return to Owl, even with Keep local history off in stable. Pane layout and selection pointing at Watcher do not survive a stable session: stable handles those views like missing threads. The saved Watcher records remain available in Owl. To clear Watcher history, turn that setting off in Owl. Ordinary threads, drafts, keys and the dictation shortcut keep working. Older stable builds, including 0.1.35 and 0.1.36, still drop Watcher metadata on save; back up the closed profile before returning to one. See [the release procedure](release/releasing.md#cutting-a-sotto-owl-build-windows) for tested data behavior and publishing steps. Owl is Windows only; macOS has no updater and Linux is outside this preview track.
+
+Watcher's local tool boundary uses four threads in flight by default (one to eight) and four prompts per worker for each user request. Queued, waiting and uncertain deliveries hold capacity. Lowering the limit stops nothing. A repeated call returns its original receipt; an uncertain receipt is reconciled rather than resent. A direct instruction or control on a watched worker ends Watcher's participation, including later requests. Answer questions and permissions on the worker's own card; Watcher cannot answer or widen them. Stop all confirms only eligible threads Watcher started and can report individual unconfirmed stops. The room and phone surfaces are delivered by their own tickets.

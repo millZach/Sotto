@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
+import { heldOperation } from '../fixtures/deferred'
 import { describeAdapterContract } from './adapterContract'
 import { grokFixture, grokFixtureSkips } from '../fixtures/fakeGrokThreadFixture'
 describeAdapterContract('Grok ACP', session => grokFixture(undefined, undefined, undefined, session), grokFixtureSkips)
@@ -38,4 +39,27 @@ it("starts a Grok thread created without a level on the model's default, and tel
     expect(setModel.map(request => request.params)).toEqual([{ sessionId: await f.realId(id), modelId: 'fixture-model', _meta: { reasoningEffort: 'high' } }])
     expect((await f.host.snapshot()).threads.find(thread => thread.id === id)).toMatchObject({ reasoningEffort: 'high' })
   } finally { await f.cleanup() }
+})
+
+
+it('a machine Stop losing its final fence preserves a user prompt still preparing on Grok', async () => {
+  const f = await grokFixture(undefined, 10_000), gate = heldOperation()
+  let spy: { mockRestore(): void } | undefined
+  try {
+    await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+    const id = randomUUID()
+    await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: f.modelId, title: 'Test' })
+    const native = f.adapter as unknown as { activePrompts: Set<string>; threadProcess(id: string): Promise<unknown> }
+    const original = native.threadProcess.bind(native)
+    spy = vi.spyOn(native, 'threadProcess').mockImplementation(async threadId => { const entry = await original(threadId); await gate.wait(); return entry })
+    native.activePrompts.add(id)
+    let stopAllowed = true
+    const stopped = f.adapter.executeFromWatcher({ type: 'interrupt', commandId: randomUUID(), threadId: id }, () => { if (!stopAllowed) throw new Error('Synthetic final takeover fence') })
+    await gate.entered
+    stopAllowed = false; gate.release()
+    await expect(stopped).rejects.toThrow('Synthetic final takeover fence')
+    expect(native.activePrompts.has(id)).toBe(true)
+    expect((await f.driver.requests()).some(item => item.method === 'session/cancel')).toBe(false)
+  } finally { gate.release(); spy?.mockRestore(); await f.cleanup() }
 })

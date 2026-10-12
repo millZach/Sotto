@@ -40,3 +40,11 @@ Greptile identified a renderer/main mismatch for settled projects. A focused reg
 After this fix, both queue UI suites passed (44 tests); typecheck and lint passed.
 
 The final-build keyboard repeat initially pressed the next action before delivery released its busy state. The test now asserts the action is enabled before pressing Enter. Three traced repetitions passed after this synchronization change.
+
+## Synchronize the desktop check after resizing
+
+October 11, 2026, during [PR #934](https://github.com/millZach/Sotto/pull/934). [Windows desktop run 38178628223](https://github.com/millZach/Sotto/actions/runs/38178628223/job/114586322649) failed while capturing the first 820×560 queue. The saved context still shows a running turn and two queued messages, with the queue collapsed. The test waited for renderer width, then read `aria-expanded` before React received the short-window media-query update. It could therefore skip opening the queue and wait for rows that had just been hidden.
+
+The fixture now asserts the first short-window collapse before opening the queue. It also waits for each submitted item to appear with an enabled Steer now action before entering the next one; an initial Linux verification attempt exposed that second admission race (one row instead of two). All original row visibility, width, draft preservation, turn identity, keyboard and final-message assertions remain, with their existing deadlines. Production and platform behavior are unchanged.
+
+The unchanged isolated Linux case passed once (3.6 seconds), which does not clear the Windows race. The final repaired case passed through `scripts/verify-shell-plumbing.mjs` in the private-bus, nested-only sandbox: **1 passed in 3.3 seconds**. Both 820×560 captures were opened and inspected; both queued rows and the newer draft fit in Light and Dark. The proof stopped its owned compositor and process, emptied all recorded cgroups, removed `/tmp/sp-J73m6J` and preserved all four protected live trees. No portal service activated. No baseline was regenerated; the six ordinary captures remain disposable E2E evidence. Fresh typecheck and lint passed before pushing; the final-head Windows CI result is recorded in PR #934.

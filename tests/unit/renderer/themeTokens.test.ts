@@ -21,6 +21,7 @@ import {
   type PaintOptions,
   type Rgba,
 } from '../../fixtures/renderer/themeTokenResolver'
+import { PAINTED_TEXT_PAIRS, paintedContrast, withPaintedLayers } from '../../fixtures/renderer/paintedTextPairs'
 
 const tokensCss = readFileSync(join(process.cwd(), 'src/renderer/src/styles/tokens.css'), 'utf8')
 const tokenBlocks = parseTokenBlocks(tokensCss)
@@ -57,6 +58,13 @@ describe('main-window theme tokens', () => {
     expect(contrast(color('bubble-text'), color('bubble'))).toBeGreaterThanOrEqual(4.5)
     expect(contrast(color('terminal-foreground'), color('terminal-background')), 'terminal text').toBeGreaterThanOrEqual(4.5)
     expect(contrast(color('effort-text'), color('surface-elevated')), 'gold effort word').toBeGreaterThanOrEqual(4.5)
+  })
+
+  it.each(combinations)('%s mode of %s keeps every text pair the window paints at 4.5:1', (mode, id) => {
+    const declarations = withPaintedLayers(rootDeclarations(mode, id, {}, tokenBlocks))
+    for (const pair of PAINTED_TEXT_PAIRS) {
+      expect(paintedContrast(declarations, pair), `${pair.ink} on ${pair.surface.join(' + ')} (${pair.where})`).toBeGreaterThanOrEqual(4.5)
+    }
   })
 
   it.each(combinations)('%s mode of %s keeps the tinted effort word readable in every colourway', (mode, id) => {

@@ -6,7 +6,8 @@ import { createHash } from 'node:crypto'
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { describe, afterEach, expect, it, vi } from 'vitest'
+import { describe, afterAll, afterEach, expect, it, vi } from 'vitest'
+import { disposeAskpassCompiler } from '../fixtures/askpassCompiler'
 import { SshFailure, SshHostLauncher, type SshApproval, type SshPrompt } from '../../src/main/hosts/sshLauncher'
 import { CONTROL_OPTIONS, type SpawnSsh } from '../../src/main/hosts/sshProcess'
 import { AskpassBroker } from '../../src/main/hosts/sshAskpass'
@@ -14,6 +15,14 @@ import { LAUNCH_SCRIPT_SOURCE } from '../../src/main/hosts/launchScript'
 import { createServer } from 'node:http'
 import { hostRelease, localArchiveName, releasesPage, sha256, sidecar, tarGz } from '../fixtures/hostArchive'
 import { fakeSystemd } from '../fixtures/fakeSystemd'
+
+// The native helper still runs on every connection. Compilation has no per-connection state.
+vi.mock('node:child_process', async importOriginal => {
+  const actual = await importOriginal<typeof import('node:child_process')>()
+  const { cachedAskpassCompiler } = await import('../fixtures/askpassCompiler')
+  return { ...actual, execFile: cachedAskpassCompiler(actual.execFile) }
+})
+afterAll(disposeAskpassCompiler)
 
 const directories: string[] = [], launchers: SshHostLauncher[] = [], hosts: number[] = []
 afterEach(async () => {

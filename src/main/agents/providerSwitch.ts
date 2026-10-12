@@ -330,11 +330,20 @@ export class ConfiguredProviderHost implements AgentHost {
     return providerEntityId(this.options.provider(), kind, id)
   }
   async execute(command: AgentHostCommand): Promise<AgentHostResult> {
+    return this.executeGuarded(command)
+  }
+  executeFromWatcher(command: AgentHostCommand, guard: () => void): Promise<AgentHostResult> { return this.executeGuarded(command, guard) }
+  private async executeGuarded(command: AgentHostCommand, guard?: () => void): Promise<AgentHostResult> {
+    const dispatch = (id: ProviderId, value: AgentHostCommand) => {
+      guard?.()
+      const host = this.options.hosts[id]
+      return guard && host.executeFromWatcher ? host.executeFromWatcher(value, guard) : host.execute(value)
+    }
     if (command.type === 'create-project') {
       const id = command.provider ?? this.options.provider(); this.requireConnected(id)
       if (!this.slots.get(id)!.status.capabilities.projects) throw new Error('This provider does not support creating projects.')
       const nativeId = id === this.legacyProjectProvider ? command.projectId : nativeEntityId(id, 'project', command.projectId)
-      return this.options.hosts[id].execute({ ...command, projectId: nativeId })
+      return dispatch(id, { ...command, projectId: nativeId })
     }
     if (command.type === 'create-thread') {
       const model = resolveModel(this.aggregate().models, this.resolveModelId(command.modelId))
@@ -368,7 +377,7 @@ export class ConfiguredProviderHost implements AgentHost {
           try { await this.registrationStore?.write([...this.registrations]) }
           catch (error) { this.registrations.delete(key); throw error }
           let result: AgentHostResult
-          try { result = await this.options.hosts[id].execute({ type: 'create-project', commandId: `${command.commandId}:project`, projectId, title: project.title, path: project.path }) }
+          try { result = await dispatch(id, { type: 'create-project', commandId: `${command.commandId}:project`, projectId, title: project.title, path: project.path }) }
           catch (error) { this.registrations.delete(key); await this.registrationStore?.write([...this.registrations]); throw error }
           if (!result.accepted && !result.uncertain) {
             this.registrations.delete(key); await this.registrationStore?.write([...this.registrations])
@@ -384,18 +393,18 @@ export class ConfiguredProviderHost implements AgentHost {
       }
       if (this.registrations.delete(key)) await this.registrationStore?.write([...this.registrations])
       this.requireConnected(id)
-      return this.options.hosts[id].execute({ ...command, projectId: target.id, modelId: nativeEntityId(id, 'model', model.id) })
+      return dispatch(id, { ...command, projectId: target.id, modelId: nativeEntityId(id, 'model', model.id) })
     }
     const id = this.owner(command.threadId); this.requireConnected(id)
     const capabilities = this.slots.get(id)!.status.capabilities
     const needed = command.type === 'send' ? 'submit' : command.type === 'interrupt' ? 'interrupt' : command.type === 'compact-thread' ? 'compact' : command.type === 'configure-thread' ? 'configureThread' : undefined
     if (needed && !capabilities[needed]) throw new Error('This provider does not support that thread action.')
     if ((command.type === 'send' || command.type === 'steer') && command.skills?.length && !capabilities.skills) throw providerTakesNoSkills(id)
-    if (command.type !== 'configure-thread') return this.options.hosts[id].execute(command)
+    if (command.type !== 'configure-thread') return dispatch(id, command)
     const slot = this.slots.get(id)!; const epoch = slot.epoch
     // As for a thread refresh: no messages only when this connection's subscription asked for none either (#368).
     const settings = command.historyFromEvents && !slot.historyFromEvents ? { ...command, historyFromEvents: false } : command
-    const [result, snapshot] = confirmedSettingsSnapshot(await this.options.hosts[id].execute(settings.modelId !== undefined ? { ...settings, modelId: nativeEntityId(id, 'model', settings.modelId) } : settings))
+    const [result, snapshot] = confirmedSettingsSnapshot(await dispatch(id, settings.modelId !== undefined ? { ...settings, modelId: nativeEntityId(id, 'model', settings.modelId) } : settings))
     // The provider's snapshot of a confirmed change becomes the whole view, as a read of the thread would.
     // One from a connection that has since changed is dropped.
     if (!snapshot || slot.epoch !== epoch) return result

@@ -539,6 +539,19 @@ export class ThreadStore {
     return { messages: rows.map(messageOf), earlierAvailable: firstPosition > 0, firstPosition, lastPosition }
   }
 
+  /** Forward positions for automation; this never moves a pane's backwards history window. */
+  readForwardMessages(threadId: string, afterPosition: number | undefined, limit: number): { messages: { message: AgentMessage; position: number }[]; earlierAvailable: boolean; hasMore: boolean } {
+    const count = Math.max(1, Math.min(50, limit))
+    const newest = afterPosition === undefined
+    const rows = newest
+      ? this.statement('SELECT * FROM messages WHERE thread_id = ? ORDER BY position DESC LIMIT ?').all(threadId, count + 1).reverse()
+      : this.statement('SELECT * FROM messages WHERE thread_id = ? AND position > ? ORDER BY position LIMIT ?').all(threadId, afterPosition, count + 1)
+    const hasMore = !newest && rows.length > count
+    const page = newest ? rows.slice(-count) : rows.slice(0, count)
+    return { messages: page.map(row => ({ message: messageOf(row), position: Number(row.position) })),
+      earlierAvailable: (page[0] ? Number(page[0].position) : 0) > 0, hasMore }
+  }
+
   /** Every message this thread holds, by ID and role, oldest first: what an adapter needs to recognise
    * a message the store already has without reading the words back out of it. */
   messageIdentities(threadId: string): { id: string; role: 'user' | 'assistant' }[] {
