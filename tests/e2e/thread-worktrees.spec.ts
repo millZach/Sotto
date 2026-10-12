@@ -3,14 +3,13 @@ import { initializeGitRepository, initializeBareGitRepository } from '../fixture
 import { commitFile, e2eGit as git } from './support/git'
 import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
 import { resizeContentWindow } from './support/sottoWindow'
-import { spawn, type ChildProcess } from 'node:child_process'
-import { once } from 'node:events'
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, openPage, openThreads, userMessageTexts, type LaunchedSotto } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
+import { holdFolder } from '../fixtures/folderHolder'
 
 const SHOTS = evidenceDirectory('artifacts/new-thread-setup')
 /** The host reads these folders on its own timer, and Git's index lock is held for a moment each time; a test command that meets it tries again. */
@@ -598,7 +597,7 @@ test('a worktree the cleanup rules could only half remove on Windows comes back 
   await mkdir(repo)
   await initializeGitRepository(repo, { files: { 'README.md': 'Committed checkout\n' }, message: 'Add README.md', identity: { name: 'Sotto E2E', email: 'e2e@sotto.invalid' } })
   let launched: LaunchedSotto | undefined
-  let holder: ChildProcess | undefined
+  let holder: Awaited<ReturnType<typeof holdFolder>> | undefined
   try {
     launched = await launch([['repo-app', repo]])
     const { page } = launched
@@ -609,8 +608,7 @@ test('a worktree the cleanup rules could only half remove on Windows comes back 
     const thread = await activeThread(page)
     const worktreePath = thread.worktree!.path!, branch = thread.worktree!.branch!
     // A thread's idle provider client keeps its worktree as its working folder (ADR-0038).
-    holder = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { cwd: worktreePath, stdio: 'ignore' })
-    await once(holder, 'spawn')
+    holder = await holdFolder(worktreePath)
 
     // Turning a rule on sweeps at once. Nothing was committed, so the worktree's commits are all in main.
     await openPage(page, 'Settings')
@@ -638,7 +636,7 @@ test('a worktree the cleanup rules could only half remove on Windows comes back 
     await expect(page.getByRole('alert').filter({ hasText: 'Working folder unavailable.' })).toHaveCount(0)
     await page.screenshot({ path: `${RECLAIM_SHOTS}/half-removed-restored.png`, animations: 'disabled' })
   } finally {
-    holder?.kill()
+    await holder?.release()
     if (launched) await closeSotto(launched)
     await removeOwnedE2EProfile(root)
   }

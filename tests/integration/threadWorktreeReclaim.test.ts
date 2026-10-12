@@ -1,14 +1,13 @@
 // @vitest-environment node
 
 import { initializeGitRepository } from '../fixtures/gitRepository'
-import { spawn } from 'node:child_process'
-import { once } from 'node:events'
 import { lstat, mkdir, readdir, readFile, rename, rm, symlink, unlink, writeFile } from 'node:fs/promises'
 
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { runWorktreeGit as git, ThreadWorktrees } from '../../src/main/agents/threadWorktrees'
 
+import { holdFolder } from '../fixtures/folderHolder'
 import { fixture, removeTestCheckout } from '../fixtures/threadWorktreeFixture'
 
 describe("independent working-copy allocation", () => {
@@ -308,10 +307,8 @@ describe("independent working-copy allocation", () => {
     const f = await fixture(); const a = await f.service.ensure(await f.service.allocate(f.project, 'independent'))
     const recorded = await f.service.inspect(a)
     // The thread's idle provider client holds its worktree as its working folder.
-    const holder = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { cwd: a.path!, stdio: 'ignore' })
-    const exited = once(holder, 'exit')
+    const holder = await holdFolder(a.path!)
     try {
-      await once(holder, 'spawn')
       const reclaimed = await f.service.reclaim(recorded, { automatic: true })
       expect(reclaimed).toMatchObject({ status: 'ready', branch: recorded.branch, path: a.path })
       expect(reclaimed.reclaimedAt).toBeTruthy()
@@ -321,8 +318,7 @@ describe("independent working-copy allocation", () => {
       expect(restored).toMatchObject({ status: 'ready', branch: recorded.branch, reclaimedAt: undefined })
       expect(await readFile(join(a.path!, 'tracked.txt'), 'utf8')).toBe('committed baseline')
     } finally {
-      holder.kill()
-      await exited
+      await holder.release()
     }
   })
 })
