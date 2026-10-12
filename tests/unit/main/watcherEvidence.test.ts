@@ -75,3 +75,18 @@ it('reuses checks only for unrequested same-URL same-head details and never for 
     expect(read.checkCount).toBeUndefined()
   }
 })
+
+it('refreshes Git read and fetch times without changing fact identity', () => {
+  const store = new WatcherEvidenceStore()
+  const thread: AgentThread = { id: 'worker', projectId: 'project', modelId: 'model', title: 'Worker', status: 'running', requests: [], messages: [],
+    worktree: { mode: 'shared', status: 'ready', branch: 'main', baseBranch: 'main', git: { isRepository: true, branch: 'main', upstream: null, hasRemote: false,
+    defaultBranch: 'main', isDefaultBranch: true, dirty: true, changedFiles: 2, insertions: 4, deletions: 1,
+    ahead: 0, behind: 0, aheadOfDefault: null, pullRequest: null, readAt: centerTime, fetchedAt: null } } }
+  expect(store.observeThread(thread, centerTarget, centerTime)).toBe(true)
+  const id = store.read(centerTarget)[0]!.id
+  const stamp = '2026-10-12T10:00:00.000Z'
+  thread.worktree!.git!.readAt = stamp
+  thread.worktree!.git!.fetchedAt = stamp
+  expect(store.observeThread(thread, centerTarget, stamp)).toBe(false)
+  expect(store.read(centerTarget, true, Date.parse(stamp))).toMatchObject([{ id, observedAt: stamp, fetchedAt: stamp, freshness: 'fresh' }])
+})

@@ -19,7 +19,7 @@ export interface CheckpointObservation {
 export class WatcherEvidenceStore {
   private readonly entries = new Map<string, Map<string, WatcherEvidence>>()
   put(slot: string, input: Omit<WatcherEvidence, 'id'>): boolean {
-    const id = observationDigest([slot, input.target, { ...input, observedAt: undefined }])
+    const id = observationDigest([slot, input.target, { ...input, observedAt: undefined, fetchedAt: undefined }])
     const parsed = watcherEvidenceSchema.safeParse({ ...input, id })
     if (!parsed.success) return false
     const item = parsed.data
@@ -47,7 +47,7 @@ export class WatcherEvidenceStore {
     const git = thread.worktree?.git
     if (git) changed = this.put('working-copy', { target, source: 'working-copy', observedAt: git.readAt,
       freshness: 'fresh', availability: 'available', fact: 'files-changed', branch: git.branch,
-      changedFiles: git.changedFiles, insertions: git.insertions, deletions: git.deletions, fetchedAt: git.fetchedAt }) || changed
+      changedFiles: git.changedFiles, insertions: git.insertions, deletions: git.deletions, ahead: git.ahead, behind: git.behind, fetchedAt: git.fetchedAt }) || changed
     const prs = [...thread.pullRequests ?? [], ...git?.pullRequest ? [git.pullRequest] : []]
     const links = new Set(prs.map(pr => pullRequestKey(pr.url)))
     const entries = this.entries.get(targetKey(target))

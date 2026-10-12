@@ -8,7 +8,7 @@ import { observationDigest } from '../../../src/main/agents/watcherEvidence'
 import { foldWatcherNews, watcherNewsText } from '../../../src/main/agents/watcherNews'
 import { queuedWakeUpText, wakeUpText } from '../../../src/main/agents/wakeUp'
 import type { BabysitNews } from '../../../src/main/agents/babysitNews'
-import { centerTarget, watcherRecordFixture } from '../../fixtures/watcher'
+import { centerTarget, centerTime, watcherRecordFixture } from '../../fixtures/watcher'
 
 const cleanups: (() => void)[] = []
 afterEach(() => { cleanups.splice(0).forEach(cleanup => cleanup()) })
@@ -317,4 +317,23 @@ it.each([0, 20])('retains the bounded pending batch after a failed save and %s s
   expect(f.delivered[0]!.omitted).toBe(Math.max(0, targets.length - stopped - 50))
   expect(f.delivered[0]!.events.map(event => event.target)).toEqual(targets.slice(stopped, stopped + 50))
   expect(f.record.wakeEventIds).toEqual(f.delivered[0]!.events.map(event => event.id))
+})
+
+it('ignores background Git fetches but wakes for branch, diff and ahead/behind changes', async () => {
+  const f = fixture()
+  const git = { isRepository: true, branch: 'main', upstream: null, hasRemote: false,
+    defaultBranch: 'main', isDefaultBranch: true, dirty: true, changedFiles: 2, insertions: 4, deletions: 1,
+    ahead: 0, behind: 0, aheadOfDefault: null, pullRequest: null, readAt: centerTime, fetchedAt: null as string | null }
+  f.thread.worktree = { mode: 'shared', status: 'ready', branch: 'main', baseBranch: 'main', git }
+  f.wakes.observe(); await f.advance(2_000)
+  for (let n = 0; n < 3; n++) {
+    git.readAt = new Date(f.now()).toISOString(); git.fetchedAt = git.readAt
+    f.wakes.observe(); await f.advance(30_000)
+  }
+  expect(f.delivered).toHaveLength(1)
+  for (const change of [{ branch: 'topic' }, { changedFiles: 3 }, { insertions: 5 }, { deletions: 2 }, { ahead: 1 }, { behind: 1 }]) {
+    Object.assign(git, change)
+    f.wakes.observe(); await f.advance(2_000)
+  }
+  expect(f.delivered).toHaveLength(7)
 })
