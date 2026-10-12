@@ -31,6 +31,18 @@ artifacts/sotto-owl-branding/*
 !artifacts/sotto-owl-branding/settings-stable-dark-820x560.png
 !artifacts/sotto-owl-branding/settings-stable-light-1280x800.png
 !artifacts/sotto-owl-branding/settings-stable-light-820x560.png
+artifacts/builtin-palette-contrast/*
+!artifacts/builtin-palette-contrast/browser-before.json
+!artifacts/builtin-palette-contrast/browser-after.json
+!artifacts/builtin-palette-contrast/computed-minimums.json
+!artifacts/builtin-palette-contrast/hush-dark-sidebar-before.png
+!artifacts/builtin-palette-contrast/hush-dark-sidebar-after.png
+!artifacts/builtin-palette-contrast/hush-dark-bubble-before.png
+!artifacts/builtin-palette-contrast/hush-dark-bubble-after.png
+!artifacts/builtin-palette-contrast/citrine-dark-changes-before.png
+!artifacts/builtin-palette-contrast/citrine-dark-changes-after.png
+!artifacts/builtin-palette-contrast/tropic-light-changes-before.png
+!artifacts/builtin-palette-contrast/tropic-light-changes-after.png
 artifacts/sotto-owl-night-sky/*
 !artifacts/sotto-owl-night-sky/night-sky.json
 !artifacts/sotto-owl-night-sky/threads-owl-sotto-dark-1600x1000.png
@@ -375,3 +387,21 @@ artifacts/watcher-gate/*
 artifacts/watcher-thread-tools/*
 !artifacts/watcher-thread-tools/owl-dark-820x560.png
 !artifacts/watcher-thread-tools/stable-light-820x560.png
+# Omarchy muted-text proof; retain only the cited captures and measurements.
+artifacts/omarchy-muted/*
+!artifacts/omarchy-muted/changes-tokyo-night.png
+!artifacts/omarchy-muted/changes-catppuccin-latte.png
+!artifacts/omarchy-muted/browser-measurements.json
+!artifacts/omarchy-muted/measurements.json
+
+# Linux native minimum proof; retain only the cited frames and observations.
+artifacts/linux-window-minimum/*
+!artifacts/linux-window-minimum/minimum-light.png
+!artifacts/linux-window-minimum/minimum-dark.png
+!artifacts/linux-window-minimum/minimum-settings-light.png
+!artifacts/linux-window-minimum/minimum-settings-dark.png
+!artifacts/linux-window-minimum/sizes.json
+!artifacts/linux-window-minimum/probe.json
+!artifacts/linux-window-minimum/proof.txt
+
+!artifacts/linux-window-minimum/shell-plumbing-proof.txt

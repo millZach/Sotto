@@ -483,8 +483,8 @@ export class WatcherService implements WatcherControlHooks {
         if (create.reasoningEffort && !model.reasoningEfforts?.includes(create.reasoningEffort)) refuse('INVALID_INPUT', 'Choose an effort this worker model offers.')
         this.permission(model, create.permission)
         this.prunePages()
-        if (create.workingCopy.kind === 'existing-worktree' && !this.copyChoices.has(create.workingCopy.choiceId)
-          || create.baseRefChoiceId && !this.copyChoices.has(create.baseRefChoiceId)) refuse('WORKING_COPY_CHANGED', 'Read the working-copy choices again before starting this thread.')
+        if (create.workingCopy.kind === 'existing-worktree' && !this.copyChoices.get(create.workingCopy.choiceId)?.path
+          || create.baseRefChoiceId && !this.copyChoices.get(create.baseRefChoiceId)?.branch) refuse('WORKING_COPY_CHANGED', 'Read the working-copy choices again before starting this thread.')
       }
       const previous = request.participants.find(item => key(item.target) === key(target))
       if (send && previous?.state === 'relinquished') refuse('REQUEST_NOT_ACTIVE', 'Watcher settled this participation. It will not send another prompt for this request.')
@@ -702,8 +702,8 @@ export class WatcherService implements WatcherControlHooks {
     const copy = input.workingCopy.kind === 'existing-worktree' ? this.copyChoices.get(input.workingCopy.choiceId) : undefined
     const base = input.baseRefChoiceId ? this.copyChoices.get(input.baseRefChoiceId) : undefined
     if (copy && (copy.projectId !== input.project.projectId || copy.revision !== revision || !options.worktrees.some(item => item.path === copy.path))
-      || base && (base.projectId !== input.project.projectId || base.revision !== revision) || input.workingCopy.kind === 'existing-worktree' && !copy
-      || input.baseRefChoiceId && !base || !options.isGit && input.workingCopy.kind !== 'shared') refuse('WORKING_COPY_CHANGED', 'The working-copy choices changed. Read them again. Nothing was started.')
+      || base && (base.projectId !== input.project.projectId || base.revision !== revision) || input.workingCopy.kind === 'existing-worktree' && !copy?.path
+      || input.baseRefChoiceId && !base?.branch || !options.isGit && input.workingCopy.kind !== 'shared') refuse('WORKING_COPY_CHANGED', 'The working-copy choices changed. Read them again. Nothing was started.')
     if (copy && this.options.control.watcherSnapshot().threads.some(thread => thread.worktree?.path === copy.path)) refuse('WORKING_COPY_UNAVAILABLE', 'That working copy is already used by a thread.')
     return { workingCopy: input.workingCopy.kind === 'shared' ? 'shared' as const : 'independent' as const,
       ...(copy?.path ? { existingWorktreePath: copy.path } : {}), ...(base?.branch ? { baseBranch: base.branch } : {}) }
@@ -749,14 +749,21 @@ export class WatcherService implements WatcherControlHooks {
     return { targets: [...new Map(ownership.map(item => [key(item.target), item.target])).values()],
       signature: digest(ownership.map(item => [key(item.target), item.requestId, key(item.watcher)])) }
   }
+  private pruneConfirmations(): void {
+    for (const [id, confirmation] of this.confirmations) if (confirmation.expires < Date.now()) this.confirmations.delete(id)
+    while (this.confirmations.size > 16) this.confirmations.delete(this.confirmations.keys().next().value!)
+  }
   prepareStopAll(): WatcherPrepareStopAllResult {
     if (this.closed) return watcherRefusal('NOT_CURRENT_WATCHER', 'Watcher is stopping. Nothing was stopped. Reopen Sotto.')
+    this.pruneConfirmations()
     const { targets, signature } = this.stopAllScope(), id = randomUUID(), expires = Date.now() + 60_000
     this.confirmations.set(id, { targets, expires, signature })
+    this.pruneConfirmations()
     return { status: 'ok', confirmationId: id, targets, expiresAt: new Date(expires).toISOString() }
   }
   async stopAll(confirmationId: string): Promise<WatcherStopAllResult> {
     if (this.closed) return watcherRefusal('NOT_CURRENT_WATCHER', 'Watcher is stopping. Nothing was stopped. Reopen Sotto.')
+    this.pruneConfirmations()
     const confirmation = this.confirmations.get(confirmationId); this.confirmations.delete(confirmationId)
     if (!confirmation || confirmation.expires < Date.now() || confirmation.signature !== this.stopAllScope().signature) {
       return watcherRefusal('TARGET_CHANGED', 'The threads to stop changed or the confirmation expired. Review Stop all again.')

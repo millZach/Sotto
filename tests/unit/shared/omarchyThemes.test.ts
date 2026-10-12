@@ -12,10 +12,12 @@ import { BUILT_IN_THEMES, DEFAULT_THEME_ID, resolveThemeFor, parseCustomThemes }
 import { OMARCHY_THEME_ID, OMARCHY_TEXT_PAIRS, guardOmarchyColors, omarchySuccessText, parseOmarchyTheme, readableOmarchyMix } from '../../../src/shared/themes/omarchy'
 import { OMARCHY_CSS_TEXT_PAIRS, OMARCHY_GRAPHIC_COLOR_TOKENS } from '../../fixtures/renderer/omarchyTextSurfaces'
 import { parseTokenBlocks, rootDeclarations, resolveColor, contrast, over } from '../../fixtures/renderer/themeTokenResolver'
+import { PAINTED_TEXT_PAIRS, paintedContrast, withPaintedLayers } from '../../fixtures/renderer/paintedTextPairs'
 
 const entries = Object.entries(fixtures.themes)
 const blocks = parseTokenBlocks(readFileSync('src/renderer/src/styles/tokens.css', 'utf8'))
 const widgetBlocks = parseTokenBlocks(readFileSync('src/renderer/src/widget/widget-tokens.css', 'utf8'))
+const changesBlocks = parseTokenBlocks(readFileSync('src/renderer/src/tools/changes.css', 'utf8'))
 const rgb = (value: string) => parseThemeRgb(value, { r: 0, g: 0, b: 0 })
 
 describe('Omarchy M3 and readability check', () => {
@@ -42,7 +44,40 @@ describe('Omarchy M3 and readability check', () => {
     for (const [ink, surfaces] of OMARCHY_CSS_TEXT_PAIRS) for (const surface of surfaces) {
       expect(contrast(color(ink), color(surface)), `${name}: ${ink} on ${surface}`).toBeGreaterThanOrEqual(4.5)
     }
+    // threadSidebar.css paints --tt-hover over the sidebar, rather than using
+    // the opaque sidebarRowHover role. Both selected and hovered rows keep timestamps.
+    const hoveredSidebar = over(resolveColor('--tt-hover', declarations), color('sidebar'))
+    for (const ink of ['text-muted', 'text-2']) {
+      for (const [surface, background] of [
+        ['selected sidebar row', color('sidebar-row-selected')],
+        ['hovered sidebar row', hoveredSidebar], ['message bubble', color('bubble')],
+      ] as const) {
+        expect(contrast(color(ink), background), `${name}: ${ink} on ${surface}`).toBeGreaterThanOrEqual(4.5)
+      }
+    }
+    // Changes preserves each line's tint beneath its hover or selection image.
+    // Read the selection wash from the stylesheet so this covers the real 22% fill.
+    const picked = changesBlocks.find(block => block.selectors.includes('.changes-diff__rows') && block.declarations.has('--changes-picked'))!.declarations.get('--changes-picked')!
+    declarations.set('--changes-picked', picked)
+    for (const base of ['code-bg', 'diff-add', 'diff-remove']) {
+      const background = color(base)
+      const inks = ['text', 'text-muted', 'text-2', 'code-text', ...(base === 'diff-add' ? ['success'] : base === 'diff-remove' ? ['error-text'] : [])]
+      for (const wash of ['none', '--tt-hover', '--changes-picked']) {
+        const surface = wash === 'none' ? background : over(resolveColor(wash, declarations), background)
+        const pixel = { r: Math.round(surface.r), g: Math.round(surface.g), b: Math.round(surface.b), a: 1 }
+        for (const ink of inks) {
+          expect(contrast(color(ink), surface), `${name}: ${ink} on ${base} with ${wash}`).toBeGreaterThanOrEqual(4.5)
+          expect(contrast(color(ink), pixel), `${name}: ${ink} on the painted ${base} with ${wash}`).toBeGreaterThanOrEqual(4.5)
+        }
+      }
+    }
     expect(contrast(color('focus-ring'), color('canvas'))).toBeGreaterThanOrEqual(3)
+    // The pairs the window really paints, which every built-in half meets too (themeTokens.test.ts).
+    const painted = withPaintedLayers(rootDeclarations(theme.appearance, DEFAULT_THEME_ID, { colors: theme.colors }, blocks))
+    painted.set('--tt-success', omarchySuccessText(theme.colors, theme.appearance))
+    for (const pair of PAINTED_TEXT_PAIRS) {
+      expect(paintedContrast(painted, pair), `${name}: ${pair.ink} on ${pair.surface.join(' + ')} (${pair.where})`).toBeGreaterThanOrEqual(4.5)
+    }
   })
   it.each(entries)('%s keeps widget status text readable through the widget token projection', (name, fixture) => {
     const theme = parseOmarchyTheme(fixture.rendered, name)
@@ -129,6 +164,12 @@ describe('Omarchy M3 and readability check', () => {
     expect(settings.appearance).toBe('dark')
     expect(settings).not.toHaveProperty('omarchyTheme')
     expect(BUILT_IN_THEMES).toHaveLength(6)
+    // Pin all twelve shipped halves and their token projection; the Linux repair
+    // must never change Windows/macOS palettes. They last changed on purpose for
+    // #936, which needed new design baselines on Windows.
+    expect(createHash('sha256').update(JSON.stringify(BUILT_IN_THEMES)).digest('hex')).toBe('18defa9e80c06093d4ffb6fbc1f5f3984bc3bd437e06b9aa9d5028548c5c4e08')
+    const tokenText = readFileSync('src/renderer/src/styles/tokens.css', 'utf8').replace(/\r\n/gu, '\n')
+    expect(createHash('sha256').update(tokenText).digest('hex')).toBe('477d601ccf2427d2609aa53ae0aa573ff874f9f5a52d837c5ccbcfc0a82bbf3e')
     // Existing Windows and macOS imports named Omarchy remain user themes.
     expect(parseCustomThemes([{ ...parseOmarchyTheme(fixtures.themes.hackerman.rendered), id: 'omarchy' }])[0]?.id).toBe('omarchy')
   })

@@ -2369,6 +2369,8 @@ export class AgentControl {
     const reviewed = thread && this.followupStore.peek().items.find(i => i.threadId === threadId)?.resumeAfterTurnId === (thread.lastTurn?.id ?? 'unknown')
     return Boolean(thread && isThreadProviderConnected(this.state.host, thread) && (thread.status === 'idle' || thread.status === 'error' && reviewed)
       && thread.lastTurn?.status !== 'running'
+      // A machine Stop holds saved user prompts even when native completion arrives before its interrupt.
+      && !this.watcherHooks?.preserveUserQueue(threadId)
       && (thread.nativeSessionStarted === false || thread.lastTurn?.status === 'completed' || reviewed) && !thread.requests.length
       && (!thread.historyStatus || thread.historyStatus === 'ready') && !isThreadClosed(thread)
       && !isWorkspaceThreadSettled(thread, this.state.host.projects.find(p => p.id === thread.projectId))
@@ -2449,8 +2451,15 @@ export class AgentControl {
           validate()
           this.sendStages(turn)?.addRead(readMs)
           if (turn) { turn.threadId = threadId; turn.projectId = this.thread(threadId).projectId }
+          // A saved user prompt keeps its user origin. Only its Watcher stop fence travels to the native writer.
+          const queueGuard = !item.watcherOperationId && this.watcherHooks ? () => {
+            if (this.watcherHooks?.preserveUserQueue(threadId)) throw new Error('Watcher stopped this thread. Review it and resume its queue when ready.')
+          } : undefined
+          // News freshness and stopped participation both reach the native writer without changing origin.
+          const writeGuard = item.news?.some(isWatcherNews) ? () => { validate(); queueGuard?.() } : queueGuard
           await this.dispatch({ type: 'send', commandId: item.commandId!, threadId, messageId: item.messageId!, text: item.text.trim(), attachments: item.attachments, ...(item.skills ? { skills: item.skills } : {}), ...(item.files ? { files: item.files } : {}),
-            expectedLastUserMessageId: lastUserMessageIdOf(this.thread(threadId)), ...(item.wakeUp ? { wakeUp: true as const } : {}) }, turn, validate, item.wakeUp ? undefined : item.draftId, undefined, undefined, item.news?.some(isWatcherNews) ? { guard: validate } : undefined)
+            expectedLastUserMessageId: lastUserMessageIdOf(this.thread(threadId)), ...(item.wakeUp ? { wakeUp: true as const } : {}) }, turn, validate, item.wakeUp ? undefined : item.draftId,
+            this.localClient, undefined, undefined, writeGuard)
           await this.followupStore.settle(item.id, 'accepted')
         } catch (error) {
           failure = error instanceof CheckoutSendRefusal ? error.queuedMessage() : error instanceof Error ? error.message : first.wakeUp ? 'Could not send this wake-up.' : 'Could not dispatch this follow-up.'
@@ -3125,13 +3134,13 @@ export class AgentControl {
     return () => { activity.active.delete(token) }
   }
   private async dispatch(command: DispatchCommand, turn?: ActiveTurn, validate?: () => void, draftId?: string,
-    client: ClientIdentity = this.localClient, atomicDigest?: string, machineOrigin?: WatcherCommandOrigin): Promise<void> {
+    client: ClientIdentity = this.localClient, atomicDigest?: string, machineOrigin?: WatcherCommandOrigin, queueGuard?: () => void): Promise<void> {
     const releaseAnswer = command.type === 'answer' ? this.holdAnswer(command.threadId, command.commandId) : () => undefined
-    try { await this.dispatchPending(command, turn, validate, draftId, client, atomicDigest, machineOrigin) }
+    try { await this.dispatchPending(command, turn, validate, draftId, client, atomicDigest, machineOrigin, queueGuard) }
     finally { releaseAnswer(); this.settingsDispatching.delete(command.commandId) }
   }
   private async dispatchPending(command: DispatchCommand, turn?: ActiveTurn, validate?: () => void, draftId?: string,
-    client: ClientIdentity = this.localClient, atomicDigest?: string, machineOrigin?: WatcherCommandOrigin): Promise<void> {
+    client: ClientIdentity = this.localClient, atomicDigest?: string, machineOrigin?: WatcherCommandOrigin, queueGuard?: () => void): Promise<void> {
     // A prompt or an answer stays as a draft when this refuses; a create, a setting or a stop has none.
     const draftKept = promptOf(command) !== null || command.type === 'answer'
     this.canAct(undefined, draftKept)
@@ -3142,6 +3151,7 @@ export class AgentControl {
     const operation = draftId ? this.watcher.operations.find(item => item.draftId === draftId) : undefined
     const origin = machineOrigin ?? (operation ? { operationId: operation.id, guard: () => this.watcherHooks!.guardOperation(operation.id) } : undefined)
     origin?.guard()
+    const writeGuard = origin?.guard ?? queueGuard
     const provider = command.type === 'create-project' ? command.provider ?? this.state.configuration.provider
       : command.type === 'create-thread' || (command.type === 'configure-thread' && command.modelId && this.thread(command.threadId).nativeSessionStarted === false)
         ? resolveModel(this.state.host.models, command.modelId)?.providerId : command.type === 'answer'
@@ -3230,9 +3240,9 @@ export class AgentControl {
           this.firstOutputs.watch(prompt.threadId, stages, this.state.host.threads.find(item => item.id === prompt.threadId))
           endLoan = lendSendStages(command.commandId, stages)
         }
-        origin?.guard()
-        result = await (origin && this.dependencies.host.executeFromWatcher
-          ? this.dependencies.host.executeFromWatcher(hostCommand, origin.guard) : this.dependencies.host.execute(hostCommand)).catch(error => {
+        writeGuard?.()
+        result = await (writeGuard && this.dependencies.host.executeFromWatcher
+          ? this.dependencies.host.executeFromWatcher(hostCommand, writeGuard) : this.dependencies.host.execute(hostCommand)).catch(error => {
           if (turn) turn.failureCode = 'provider-failed'
           throw error
         })

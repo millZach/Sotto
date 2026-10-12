@@ -66,7 +66,8 @@ jobs:
   gates:
     name: Gates (Windows)
     runs-on: windows-latest
-    timeout-minutes: 30
+    # The suite alone reached 26.2 minutes; leave room for cold setup and runner variation (#895).
+    timeout-minutes: 40
     env:
       # Live provider suites stay opt-in; CI never holds provider credentials.
       CI: 'true'

@@ -6,6 +6,8 @@ export default tseslint.config(
     ignores: [
       '.t/**',
       'artifacts/omarchy-theme/**',
+      'artifacts/omarchy-muted/**',
+      'artifacts/builtin-palette-contrast/**',
       'artifacts/watcher-benchmark/**',
       'artifacts/watcher-rename/**',
       'artifacts/watcher-gate/**',
@@ -30,6 +32,7 @@ export default tseslint.config(
       'apps/omarchy/pkg/**',
       'artifacts/e2e-runs/**',
       'artifacts/omarchy-shell-integration/**',
+      'artifacts/linux-window-minimum/**',
       'artifacts/linux-hyprland-paste/**',
       'artifacts/linux-no-window-controls/**',
       'artifacts/visuals-live/**',
