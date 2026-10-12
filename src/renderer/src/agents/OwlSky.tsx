@@ -65,3 +65,33 @@ export function OwlSky(): ReactNode {
       data-ink={star.accent ? 'accent' : undefined} data-twinkle={star.twinkle} data-open-sky={inOpenSky(star) || undefined} style={place(star)} />)}
   </div>
 }
+
+/** How wide the sidebar is where the room's stars are read from: the scatter keeps the places it has there. */
+const ROOM_SKY_WIDTH = 320
+/** Watcher's name sits where these two would, so in the room they step just above and below it. */
+const ROOM_MOVES = new Map<number, { readonly left: number; readonly top: number }>([[1, { left: 96, top: 39.5 }], [2, { left: 70, top: 5 }]])
+
+/** Pixels from the tile's side for a star anchored across a sidebar of the room's width. */
+function roomLeft({ at, size }: OwlSkyStar): number {
+  if ('left' in at) return at.left
+  if ('right' in at) return ROOM_SKY_WIDTH - at.right - size
+  return 40 + (ROOM_SKY_WIDTH - 198) * at.between
+}
+
+/**
+ * The same sky in Watcher's room, which has no sidebar (the no-sidebar mock-up Zach picked on October 11, 2026): the
+ * tile keeps the window's top-left corner, and the night spreads across that corner of the room's header and fades
+ * before the conversation. The eleven stars fall where they do on a 320-pixel sidebar, except the two Watcher's name
+ * would cover. Decoration, like the sidebar's: hidden, under every control, never pressed.
+ */
+export function OwlRoomSky(): ReactNode {
+  return <div className="watcher-room__sky" aria-hidden="true">
+    <div className="watcher-room__stars">
+      {OWL_SKY_STARS.map((star, index) => {
+        const { left, top } = ROOM_MOVES.get(index) ?? { left: roomLeft(star), top: star.top }
+        return <i key={index} className="thread-nav__star" data-tier={star.tier} data-ink={star.accent ? 'accent' : undefined} data-twinkle={star.twinkle}
+          style={{ left: `calc(var(--owl-sky-inset) + ${left}px)`, top: `${top}px`, ...{ '--owl-star-size': `${star.size}px` } as CSSProperties }} />
+      })}
+    </div>
+  </div>
+}

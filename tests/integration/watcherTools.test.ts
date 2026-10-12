@@ -702,12 +702,17 @@ it.each(['preparation', 'native', 'reconciled'])('refunds a queued prompt after 
       if (command.type === 'send' && command.text === input.text) throw new Error('Synthetic native pre-write failure')
       return execute(command)
     })
+  // Recovery must see the stale receipt before any live observation has already refunded it.
+  const observation = failure === 'reconciled' ? vi.spyOn(f.service, 'observe').mockImplementation(() => undefined) : undefined
+  cleanups.push(async () => { observation?.mockRestore() })
   await f.finish(first.target.threadId)
   await vi.waitFor(() => expect(f.control.shell().followups?.find(item => item.text === input.text)?.status).toBe('failed'))
+  if (failure === 'reconciled') expect(f.service.state().requests[0]!.participants[0]!.promptCount).toBe(2)
   if (failure === 'reconciled') await f.control.updateWatcher(record => {
     // Recovery can fence a stale dispatch receipt as uncertain before observing the durable failed queue item.
     record.operations.at(-1)!.deliveryState = 'uncertain'
   })
+  observation?.mockRestore()
   await f.control.commandShell({ type: 'refresh', provider: 'codex' })
   expect(f.service.state().receipts.at(-1)?.deliveryState).toBe('failed')
   expect(f.service.state().requests[0]!.participants[0]!.promptCount).toBe(1)
@@ -950,4 +955,56 @@ it('keeps news and checkpoint evidence from restarting a worker stopped by Watch
   await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.filter(item => item.type === 'send' && item.text.includes('pull/4'))).toHaveLength(1))
   expect(f.service.state().watchedThreads.find(item => item.target.threadId === first.target.threadId)!.participation[0]).toMatchObject({ state: 'taken-over', promptCount: 1 })
   expect(f.workspace.adapters.codex.commands.filter(item => item.type === 'answer')).toHaveLength(0)
+})
+
+it.each(['workspace-settled', 'archived', 'missing-hooks', 'disconnected'] as const)('holds checkpoint news for a %s master and queues it after recovery', async unavailable => {
+  const f = await fixture(), started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+  const target = f.service.state().current!.target
+  const master = f.control.watcherSnapshot().threads.find(thread => thread.id === f.id)!
+  expect(f.control.canDeliverWatcherNews(target)).toBe(true) // Busy is queueable.
+  expect(f.control.canDeliverWatcherNews({ ...target, hostId: randomUUID() })).toBe(false)
+  if (unavailable === 'workspace-settled') master.workspaceSettledAt = new Date().toISOString()
+  if (unavailable === 'archived') master.archivedAt = new Date().toISOString()
+  if (unavailable === 'missing-hooks') f.control.useWatcher(f.service)()
+  if (unavailable === 'disconnected') f.control.watcherSnapshot().connected = false
+  expect(f.control.canDeliverWatcherNews(target)).toBe(false)
+  const deliver = vi.spyOn(f.control, 'deliverWakeUp')
+  f.service.checkpointObserved({ threadId: started.target.threadId, checkpointId: 'held-capture', observedAt: new Date().toISOString(), availability: 'available' })
+  await f.service.wakes.drained()
+  expect(deliver).not.toHaveBeenCalled()
+  delete master.workspaceSettledAt; delete master.archivedAt
+  if (unavailable === 'disconnected') f.control.watcherSnapshot().connected = true
+  if (unavailable === 'missing-hooks') f.control.useWatcher(f.service)
+  f.service.wakes.observe()
+  await vi.waitFor(() => expect(f.control.shell().followups?.some(item => item.threadId === f.id && item.wakeUp)).toBe(true), { timeout: 15_000 })
+  expect(deliver).toHaveBeenCalledTimes(1)
+  await f.service.wakes.drained()
+  const saved = deliver.mock.calls[0]![1]
+  if (!('source' in saved) || saved.source !== 'watcher') throw new Error('Expected Watcher news')
+  expect(saved.events.some(event => event.kind === 'evidence-changed')).toBe(true)
+  expect(f.control.watcherRecord().wakeEventIds).toEqual(saved.events.map(event => event.id))
+  expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'answer')).toHaveLength(0)
+})
+
+it('keeps durably waiting checkpoint news through Watcher recovery and same-fact replay', async () => {
+  const f = await fixture(), started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+  const read = { threadId: started.target.threadId, checkpointId: randomUUID(), observedAt: new Date().toISOString(),
+    availability: 'available' as const, changedFiles: 1 }
+  f.service.checkpointObserved(read)
+  await vi.waitFor(() => expect(f.control.shell().followups?.some(item => item.threadId === f.id && item.text.includes('Sotto observed changed evidence'))).toBe(true), { timeout: 15_000 })
+  await f.service.wakes.drained()
+  const waiting = f.control.shell().followups!.find(item => item.threadId === f.id && item.wakeUp)!
+  const ids = f.control.watcherRecord().wakeEventIds
+  f.service.close()
+  const restarted = new WatcherService({ directory: f.root, control: f.control, host: f.workspace.host,
+    historyEnabled: () => true, limit: () => 4 })
+  cleanups.push(async () => restarted.close())
+  await restarted.recover(); await restarted.wakes.drained()
+  expect(f.control.shell().followups!.find(item => item.id === waiting.id)?.text).toBe(waiting.text)
+  restarted.checkpointObserved({ ...read, observedAt: new Date().toISOString() }); await restarted.wakes.drained()
+  expect(f.control.shell().followups!.find(item => item.id === waiting.id)?.text).toBe(waiting.text)
+  expect(f.control.watcherRecord().wakeEventIds).toEqual(ids)
+  expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'answer')).toHaveLength(0)
 })

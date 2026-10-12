@@ -57,6 +57,8 @@ export class WatcherService implements WatcherControlHooks {
     limit: () => number; historyEnabled: () => boolean; workerHost?: boolean; revoke?: (id: string) => void }) {
     this.wakes = new WatcherWakeUp({ snapshot: () => this.snapshot(), record: () => this.record(),
       progress: target => this.remoteProgress.get(key(target))?.fingerprint,
+      restoredEvents: () => options.control.restoredWatcherEvents(),
+      canDeliver: target => options.control.canDeliverWatcherNews(target),
       deliver: news => options.control.deliverWakeUp(news.watcher.threadId, news, { tool: false }),
       prune: () => options.control.pruneWatcherWakeUps(), remember: ids => options.control.updateWatcher(record => { record.wakeEventIds = [...new Set([...record.wakeEventIds ?? [], ...ids])].slice(-1_000) }),
       changed: () => this.publish(), failed: () => { this.recoveryNotice = 'Watcher news could not be saved. Reconnect or refresh its threads to retry. Nothing was approved.' } })
@@ -104,6 +106,7 @@ export class WatcherService implements WatcherControlHooks {
   wakeDue(event: WatcherEvent): boolean { return this.wakes.due(event) }
   wakeReady(): boolean { return this.wakes.ready() }
   pullRequestObserved(read: PullRequestObservation): void { this.wakes.pullRequest(read) }
+  restoreCheckpoint(read: CheckpointObservation): void { this.wakes.restoreCheckpoint(read) }
   checkpointObserved(read: CheckpointObservation): void { this.wakes.checkpoint(read) }
   private transaction<T>(work: () => Promise<T>): Promise<T> {
     const task = this.tail.catch(() => undefined).then(work); this.tail = task; return task

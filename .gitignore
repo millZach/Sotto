@@ -203,6 +203,7 @@ artifacts/git-interface-run/
 artifacts/worktree-origin-fallback-run/
 artifacts/codex-questions-thread-agents/
 artifacts/git-settings/
+artifacts/question-message-links/
 artifacts/phase-three-themes/
 artifacts/thread-browser-player/
 artifacts/new-thread-defaults/
@@ -385,11 +386,49 @@ artifacts/watcher-gate/*
 !artifacts/watcher-gate/*.png
 !artifacts/watcher-gate/profile.json
 artifacts/watcher-paired-hosts/
+!artifacts/watcher-gate/owl-features-package-status.json
+!artifacts/watcher-gate/owl-features-design-comparison.json
 
 # Selected Watcher thread-tool evidence; other generated captures stay local.
 artifacts/watcher-thread-tools/*
 !artifacts/watcher-thread-tools/owl-dark-820x560.png
 !artifacts/watcher-thread-tools/stable-light-820x560.png
+# Watcher's room evidence; retain only the captures and readings the verification note cites.
+artifacts/watcher-room/*
+!artifacts/watcher-room/beside-sotto-dark-1280x800.png
+!artifacts/watcher-room/beside-sotto-dark-1600x1000.png
+!artifacts/watcher-room/beside-sotto-dark-820x560.png
+!artifacts/watcher-room/beside-sotto-light-820x560.png
+!artifacts/watcher-room/beside-tropic-dark-1280x800.png
+!artifacts/watcher-room/beside-tropic-light-1280x800.png
+!artifacts/watcher-room/compare-beside-1280x800-dark.png
+!artifacts/watcher-room/compare-beside-820x560-dark.png
+!artifacts/watcher-room/compare-first-1280x800-dark.png
+!artifacts/watcher-room/compare-list-1280x800-dark.png
+!artifacts/watcher-room/compare-room-1280x800-dark.png
+!artifacts/watcher-room/compare-room-1280x800-light.png
+!artifacts/watcher-room/compare-room-820x560-dark.png
+!artifacts/watcher-room/first-entry-sotto-dark-1280x800.png
+!artifacts/watcher-room/first-entry-sotto-dark-1600x1000.png
+!artifacts/watcher-room/first-entry-sotto-dark-820x560.png
+!artifacts/watcher-room/list-sotto-dark-1280x800.png
+!artifacts/watcher-room/list-sotto-dark-820x560.png
+!artifacts/watcher-room/list-tropic-light-1280x800.png
+!artifacts/watcher-room/readings.json
+!artifacts/watcher-room/room-disconnected-sotto-dark-820x560.png
+!artifacts/watcher-room/room-empty-sotto-dark-1280x800.png
+!artifacts/watcher-room/room-long-title-sotto-dark-820x560.png
+!artifacts/watcher-room/room-main-sotto-dark-1280x800.png
+!artifacts/watcher-room/room-sotto-dark-1280x800-reduced-motion-setting.png
+!artifacts/watcher-room/room-sotto-dark-1280x800.png
+!artifacts/watcher-room/room-sotto-dark-1600x1000.png
+!artifacts/watcher-room/room-sotto-dark-820x560.png
+!artifacts/watcher-room/room-sotto-light-1280x800.png
+!artifacts/watcher-room/room-sotto-light-1600x1000.png
+!artifacts/watcher-room/room-sotto-light-820x560.png
+!artifacts/watcher-room/room-tropic-dark-1280x800.png
+!artifacts/watcher-room/room-tropic-light-1280x800.png
+!artifacts/watcher-room/threads-watched-sotto-dark-1280x800.png
 # Omarchy muted-text proof; retain only the cited captures and measurements.
 artifacts/omarchy-muted/*
 !artifacts/omarchy-muted/changes-tokyo-night.png
@@ -422,3 +461,19 @@ artifacts/linux-settings-copy/*
 !artifacts/linux-settings-copy/widget-with-plugin-820x560-dark.png
 !artifacts/linux-settings-copy/widget-without-plugin-1280x800-light.png
 !artifacts/linux-settings-copy/widget-without-plugin-820x560-dark.png
+
+# Linux dictation notification and paste proof; retain only cited evidence.
+artifacts/linux-dictation-unreachable/*
+!artifacts/linux-dictation-unreachable/f9-notification.png
+!artifacts/linux-dictation-unreachable/chromium-wtype.png
+!artifacts/linux-dictation-unreachable/chromium-ydotool.png
+!artifacts/linux-dictation-unreachable/foot-wtype.png
+!artifacts/linux-dictation-unreachable/foot-ydotool.png
+!artifacts/linux-dictation-unreachable/results.json
+!artifacts/linux-dictation-unreachable/paste-proof.txt
+!artifacts/linux-dictation-unreachable/notification-proof.json
+
+# Linux shutdown proof; retain the native-event summary and the inspected quit-journey capture.
+artifacts/linux-shutdown-drain/*
+!artifacts/linux-shutdown-drain/result.json
+!artifacts/linux-shutdown-drain/before-quit.png

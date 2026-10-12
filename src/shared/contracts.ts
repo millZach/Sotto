@@ -282,7 +282,9 @@ export const updateStatusSchema = z
     currentVersion: updateVersionSchema,
     /** Main supplies this even when updating is unsupported. Older fixtures may omit it. */
     releaseTrack: z.enum(['stable', 'owl']).optional(),
-    /** Immutable startup gate, including the unpackaged test override. */
+    /** Main's immutable startup answers. Older fixtures may omit them. */
+    owlFeatures: z.record(z.string(), z.boolean()).optional(),
+    /** Compatibility alias for owlFeatures.watcher, wrapping the Owl feature list. */
     watcherEnabled: z.boolean().optional(),
     phase: updatePhaseSchema,
     /** When the last check started, as epoch milliseconds; null before the first. */

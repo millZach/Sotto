@@ -4,7 +4,9 @@ This folder holds configuration Omarchy reads, rather than code Sotto loads. ADR
 
 ## Dictation command
 
-Keep Sotto running in the desktop session. A compositor binding is a key Hyprland listens for and uses to run Sotto's dictation command:
+Keep Sotto running in the desktop session. If Sotto is closed, F9 and Super+Ctrl+X show **Sotto isn't open. Open Sotto to start dictation.** Releasing F9 and cancelling stay quiet. Repeated presses share a five-second pause between notifications. The key never opens Sotto for you: open it yourself before dictating.
+
+A compositor binding is a key Hyprland listens for and uses to run Sotto's dictation command:
 
 ```sh
 sotto dictation start
@@ -132,7 +134,7 @@ Builds need no root. Installation does. `install.sh path/to/package.pkg.tar.zst`
 
 Regenerate the hicolor icons from `build/icon.svg` with `mise exec node@24.21.0 -- node scripts/generate-brand-assets.mjs --linux` at the repository root. This leaves Windows, macOS and phone outputs alone. Refresh the three icon checksums and run `makepkg --printsrcinfo > .SRCINFO` afterward.
 
-The package installs the app into `/opt/sotto`, links `/usr/bin/sotto` to `/opt/sotto/bin/sotto`, adds `sotto.desktop` and hicolor icons, and sets `chrome-sandbox` to root:root 4755. Arch's user namespaces normally supply the sandbox. The helper supports desktops with user namespaces turned off. The dependency list follows forge's `t3code-bin`, with wl-clipboard and libsecret added. Omarchy supplies gnome-keyring; an unlocked Secret Service is needed to save keys.
+The package installs the app into `/opt/sotto`, links `/usr/bin/sotto` to `/opt/sotto/bin/sotto`, adds `sotto.desktop` and hicolor icons, and sets `chrome-sandbox` to root:root 4755. Arch's user namespaces normally supply the sandbox. The helper supports desktops with user namespaces turned off. The dependency list follows forge's `t3code-bin`, with wl-clipboard for copying, wtype for automatic paste and libsecret for credentials added. Omarchy supplies gnome-keyring; an unlocked Secret Service is needed to save keys.
 
 Open Sotto from the application menu or run `sotto`. Under Settings → Application, **Launch when you sign in** writes or removes `$XDG_CONFIG_HOME/autostart/sotto.desktop` (normally `~/.config/autostart/sotto.desktop`). uwsm runs it at sign-in. Development builds keep that row disabled. **Start minimized** keeps the main window hidden at sign-in.
 

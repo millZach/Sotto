@@ -18,6 +18,7 @@ import type { BabysitNews } from './babysitNews'
 import { BABYSIT_REFUSALS, type Babysitter } from './babysitting'
 import { pullRequestAddress } from '../../shared/gitPullRequests'
 import { queuedWakeUpText, isWatcherNews, type WakeUpNews } from './wakeUp'
+import type { WatcherEvent } from '../../shared/watcherNews'
 import type { CheckpointObservation, PullRequestObservation } from './watcherEvidence'
 import { nearestReasoningEffort, resolveNewThreadPermission } from '../../shared/newThreadDefaults'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
@@ -48,7 +49,7 @@ import { FinishedUnread } from './finishedUnread'
 import { withoutLegacyManagement, type HostAnswerTarget } from '../../shared/hostProtocol'
 import { agentCommandSchema } from '../../shared/agents'
 import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from './watcherCommands'
-import { watcherRecordSchema, emptyWatcherRecord, type WatcherRecord } from '../../shared/watcher'
+import { watcherRecordSchema, emptyWatcherRecord, type WatcherRecord, type WatcherThreadTarget } from '../../shared/watcher'
 import { migrateWatcherRecord } from './watcherRecords'
 
 /** One shared empty array stands in for every shell thread's history; the clone that follows copies nothing. */
@@ -1415,6 +1416,13 @@ export class AgentControl {
   private queuedThreadIds(): string[] {
     return this.followupStore.peek().items.filter(item => !isWaitingWakeUp(item)).map(item => item.threadId)
   }
+  canDeliverWatcherNews(target: WatcherThreadTarget): boolean {
+    if (this.disposed || this.dependencies.watcherEnabled !== true || !this.watcherHooks
+      || this.watcher.current?.target.hostId !== target.hostId || this.watcher.current.target.threadId !== target.threadId) return false
+    const thread = this.state.host.threads.find(item => item.id === target.threadId && (item.hostId ?? this.state.host.hostId) === target.hostId)
+    return !!thread && this.state.host.connected && thread.clientConnected !== false && isThreadProviderConnected(this.state.host, thread)
+      && !isThreadClosed(thread) && !isWorkspaceThreadSettled(thread, this.state.host.projects.find(project => project.id === thread.projectId))
+  }
   /**
    * Hands a thread babysitting's news as a wake-up (ADR-0061 decision 8): Sotto's own item in the thread's follow-up
    * queue, which sends it at once when the thread is ready and otherwise when the queue would send the next one,
@@ -1423,7 +1431,7 @@ export class AgentControl {
    */
   async deliverWakeUp(threadId: string, news: WakeUpNews, options: { readonly tool: boolean }): Promise<void> {
     if (this.disposed) throw new Error('Sotto is closing.')
-    if (isWatcherNews(news) && (this.dependencies.watcherEnabled !== true || !this.watcherHooks || this.watcher.current?.target.threadId !== threadId)) throw new Error('Watcher is unavailable.')
+    if (isWatcherNews(news) && (news.watcher.threadId !== threadId || !this.canDeliverWatcherNews(news.watcher))) throw new Error('Watcher is unavailable.')
     const thread = this.state.host.threads.find(item => item.id === threadId)
     if (!thread) throw new Error('This thread is not on this host.')
     if (isThreadClosed(thread) || isWorkspaceThreadSettled(thread, this.state.host.projects.find(project => project.id === thread.projectId))) throw new Error('This thread is settled or archived.')
@@ -1444,6 +1452,7 @@ export class AgentControl {
   /** Main observers only; these carry sourced facts, never user command authority. */
   pullRequestObserved(read: PullRequestObservation): void { if (this.dependencies.watcherEnabled === true) this.watcherHooks?.pullRequestObserved?.(read) }
   watcherObservationsEnabled(): boolean { return this.dependencies.watcherEnabled === true && this.watcherHooks !== undefined }
+  restoreCheckpoint(read: CheckpointObservation): void { if (this.dependencies.watcherEnabled === true) this.watcherHooks?.restoreCheckpoint?.(read) }
   checkpointObserved(read: CheckpointObservation): void { if (this.dependencies.watcherEnabled === true) this.watcherHooks?.checkpointObserved?.(read) }
   private watcherObservedIds = ''
   refreshWatcherObservation(): void {
@@ -1451,6 +1460,13 @@ export class AgentControl {
     const ids = JSON.stringify(this.watcherHooks?.watchedThreadIds?.() ?? [])
     if (this.watcherObservedIds === ids) return
     this.watcherObservedIds = ids; this.observe()
+  }
+  restoredWatcherEvents(): WatcherEvent[] {
+    if (this.dependencies.watcherEnabled !== true || !this.watcherHooks || !this.watcher.current) return []
+    const target = this.watcher.current.target
+    return this.followupStore.peek().items.filter(item => isWaitingWakeUp(item) && item.threadId === target.threadId)
+      .flatMap(item => item.news?.flatMap(news => isWatcherNews(news) && news.watcher.hostId === target.hostId
+        && news.watcher.threadId === target.threadId ? news.events : []) ?? []).slice(-400)
   }
   async pruneWatcherWakeUps(): Promise<void> {
     if (this.dependencies.watcherEnabled !== true || this.disposed || !this.watcherHooks?.wakeReady?.()) return

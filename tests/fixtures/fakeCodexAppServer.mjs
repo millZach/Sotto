@@ -170,8 +170,8 @@ function raise(thread, kind, text, method, overrides = {}) {
 }
 createInterface({ input: process.stdin }).on('line', line => withState(() => {
   const message = JSON.parse(line)
-  record(message)
   if (!message.method) {
+    record(message)
     const request = pending.get(message.id)
     if (request) {
       const valid = message.error !== undefined
@@ -184,12 +184,14 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
     return
   }
   const { id, method, params = {} } = message
-  if (method === 'initialized') return
+  if (method === 'initialized') { record(message); return }
   const script = read('script.json', {})
   const delay = script.delay?.method === method ? script.delay.ms : 0
   if (delay) { delete script.delay; writeFileSync(file('script.json'), JSON.stringify(script)) }
   const holdReply = script.holdReply === method
   if (holdReply) { delete script.holdReply; writeFileSync(file('script.json'), JSON.stringify(script)) }
+  // Seeing the request in the journal also proves its script was captured. A parent may replace it immediately.
+  record(message)
   const reply = result => {
     // A benchmark's count of what each reply weighs: the method and its size on the wire, never the body.
     if (script.recordReplyBytes) appendFileSync(file('replies.jsonl'), JSON.stringify({ method, bytes: Buffer.byteLength(JSON.stringify({ id, result })) + 1 }) + '\n')

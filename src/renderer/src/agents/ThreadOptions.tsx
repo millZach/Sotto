@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { Check, ChevronDown } from 'lucide-react'
+import { Check, ChevronDown, Lock } from 'lucide-react'
 import { hostForThread, capabilitiesForThread, isThreadProviderConnected, PROVIDER_LABELS, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, THREAD_SETTINGS_UNRECONCILED, type AgentModel, type AgentRuntimeMode, type AgentState, type AgentThread } from '../../../shared/agents'
 import { catalogEntry, chosenModelId, resolveModel } from '../../../shared/modelCatalog'
 import type { AgentConnection } from './AgentContext'
@@ -8,6 +8,7 @@ import { moveListboxFocus } from './listboxKeys'
 import { ModelPicker } from './ModelPicker'
 import { EffortPicker, effortLabel } from './EffortPicker'
 import { OPTION_CHIP_NAMES } from './optionChipNames'
+import { providerKey } from './threadFacts'
 import { pendingSettingsStore, permissionPatch, settingValues, settingValuesFor, unconfirmedKinds, usePendingSettings, usesProviderModes, type SettingKind, type SettingsPatch } from './pendingSettings'
 import './threadChips.css'
 
@@ -25,6 +26,12 @@ export function threadOptionsSummary(model: AgentModel | undefined, effort: stri
   const own = model?.providerModes?.find(candidate => candidate.id === startingProviderMode(model, providerMode))
   const permissions = own ? own.name : mode ? RUNTIME_LABELS[mode] : 'Provider default'
   return [model?.name ?? 'Choose model', reasoning ? capitalise(reasoning) : null, permissions].filter(Boolean).join(' · ')
+}
+
+/** Watcher's permission mode, a fact rather than a choice: it always asks before changes (ADR-0073). */
+export function WatcherPermission(): ReactNode {
+  return <span className="thread-options__pinned" title="Watcher always asks before it changes anything. Its own edits and commands wait for your answer.">
+    <Lock size={13} aria-hidden="true" /><span className="tt-visually-hidden">Permissions: </span>Ask before changes</span>
 }
 
 export interface ChoiceOption { readonly id: string; readonly label: string; readonly description?: string; readonly disabled?: boolean }
@@ -103,13 +110,16 @@ function canCreateWith(state: AgentState, model: AgentModel): boolean {
 /**
  * The models a thread may use. Before its first send (`nativeSessionStarted === false`) any ready model
  * from a connected provider that can create threads is a choice; once a native session exists (or its
- * start is unknown) the thread stays with its own provider.
+ * start is unknown) the thread stays with its own provider. `sameProvider` keeps it there from the start:
+ * Watcher's provider is chosen when it is created, and changing it is another Watcher (ADR-0073).
  */
-function threadModelChoices(state: AgentState, thread: AgentThread): { readonly models: AgentModel[]; readonly locked: boolean } {
+function threadModelChoices(state: AgentState, thread: AgentThread, sameProvider = false): { readonly models: AgentModel[]; readonly locked: boolean } {
   state = { ...state, host: hostForThread(state.host, thread) }
   if (thread.nativeSessionStarted === false) {
     const own = catalogEntry(state.host.models, thread.modelId)
+    const provider = thread.providerId ?? (own ? own.providerId ?? providerKey(own.provider) : undefined)
     const models = state.host.models.filter(model => model === own || canCreateWith(state, model))
+      .filter(model => !sameProvider || provider === undefined || (model.providerId ?? providerKey(model.provider)) === provider)
     return { models, locked: false }
   }
   return { models: state.host.models.filter(model => !thread.providerId || model.providerId === thread.providerId), locked: true }
@@ -222,7 +232,7 @@ const sending = (state: AgentState, threadId: string): boolean =>
  * they never move the row; otherwise under the chips. Focus stays on the chip a choice was made from. New thread
  * and New terminal show the same three controls laid out in full.
  */
-export function ThreadOptions({ thread, state, command, turnNote = true, getDraftText, onDraftText, noticeSlot }: {
+export function ThreadOptions({ thread, state, command, turnNote = true, getDraftText, onDraftText, noticeSlot, watcher = false }: {
   readonly thread: AgentThread; readonly state: AgentState; readonly command: AgentConnection['command']
   /** Explain options locked by a running turn; off where the composer already says it cannot send. */
   readonly turnNote?: boolean
@@ -231,13 +241,18 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   readonly onDraftText?: (text: string) => void
   /** Where the composer wants the lines about a refused or unconfirmed change, under its whole footer row. */
   readonly noticeSlot?: HTMLElement | null | undefined
+  /**
+   * Watcher's own options (ADR-0073): its asking mode is said in words where the permissions choice would be, and it
+   * keeps its provider, offering only that provider's models.
+   */
+  readonly watcher?: boolean
 }): ReactNode {
   const settings = usePendingSettings(thread.id)
   const bar = useRef<HTMLDivElement>(null)
   const refocus = useRef<HTMLButtonElement | null>(null)
   const captionId = useId()
   const unconfirmedId = useId()
-  const { models, locked } = threadModelChoices(state, thread)
+  const { models, locked } = threadModelChoices(state, thread, watcher)
   /** What the window has drawn from main's published state: the confirmed values a press is measured against. */
   const drawn = settingValues(state, thread)
   const unconfirmed = unconfirmedKinds(state, thread.id)
@@ -270,7 +285,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
     pendingSettingsStore.press(thread.id, kind, value, patch, command, drawn, showing)
   }
   const capabilities = capabilitiesForThread(state.host, thread)
-  if (locked && !capabilities.configureThread) return null
+  if (locked && !capabilities.configureThread) return watcher ? <WatcherPermission /> : null
   const modelDisabled = locked && capabilities.configureThreadModel === false
   // The model shown is the one pressed; effort and permissions are read for it, as they will be once it lands.
   const confirmedModel = resolveModel(models, thread.modelId)
@@ -330,7 +345,9 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
         disabled={fixed || modelDisabled} onChange={reasoningEffort => press('effort', reasoningEffort, { reasoningEffort }, unpressed.effort)}
         defaultValue={model?.defaultReasoningEffort} modelName={model?.name}
         hasUltrathink={hasUltrathink} {...(addUltrathink ? { onUltrathink: addUltrathink } : {})} />}
-      {modes.length > 0 && <ChoiceChip label={OPTION_CHIP_NAMES.permissions} placeholder="Provider default" value={permission} options={modes} disabled={fixed}
+      {watcher
+        ? <WatcherPermission />
+        : modes.length > 0 && <ChoiceChip label={OPTION_CHIP_NAMES.permissions} placeholder="Provider default" value={permission} options={modes} disabled={fixed}
         pending={pendingPermission !== null} describedBy={permissionUnconfirmed ? unconfirmedId : captionId}
         onChange={mode => press('permissions', mode, permissionPatch(model, mode), unpressed.permissions)} />}
     </div>

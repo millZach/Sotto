@@ -7,7 +7,10 @@ import { pullRequestKey } from '../../shared/gitPullRequests'
 import { WatcherEvidenceStore, observationDigest, targetKey, type CheckpointObservation, type PullRequestObservation } from './watcherEvidence'
 import { foldWatcherEvents, foldWatcherNews, requestRevision } from './watcherNews'
 
-interface Progress { fingerprint: string; connected: boolean; connectedAt: number; progressAt: number; quiet: boolean; cancel?: () => void }
+const RETRY_LIMIT = 8
+const RETRY_MAX_MS = 60_000
+
+interface Progress { fingerprint: string; connected: boolean; connectedAt: number; progressAt: number; quiet: boolean; links?: Set<string>; cancel?: () => void }
 /** Opaque progress only: no plan, message, tool input or output text crosses the host projection. */
 export function watcherProgressFingerprint(thread: AgentThread): string {
   return observationDigest([thread.status, thread.lastTurn, thread.messages.map(message => [message.id, message.text.length]),
@@ -16,6 +19,8 @@ export function watcherProgressFingerprint(thread: AgentThread): string {
 export interface WatcherWakeOptions {
   snapshot: () => AgentHostSnapshot; record: () => WatcherRecord
   progress?: (target: WatcherThreadTarget) => string | undefined
+  restoredEvents?: () => readonly WatcherEvent[]
+  canDeliver: (target: WatcherThreadTarget) => boolean
   deliver: (news: WatcherNews) => Promise<void>; prune: () => Promise<void>
   remember: (ids: string[]) => Promise<void>; changed?: () => void; failed?: () => void
   now?: () => number; schedule?: (callback: () => void, delay: number) => () => void
@@ -26,12 +31,15 @@ export class WatcherWakeUp {
   readonly observations = new Map<string, WatcherObservation>()
   private readonly progress = new Map<string, Progress>()
   private readonly seen = new Set<string>()
-  private readonly latestEvidence = new Map<string, { fingerprint: string; id: string; legacyId?: string }>()
+  private readonly latestEvidence = new Map<string, { fingerprint: string; id: string; legacyId?: string; restoredRefs?: Set<string> }>()
   private readonly rememberPending = new Set<string>()
   private pending: WatcherEvent[] = []
   private recent: WatcherEvent[] = []
   private cancelBatch: (() => void) | undefined
   private firstPending = 0
+  private deliveryAvailable = false
+  private retryFailures = 0
+  private retryAt = 0
   private started = false
   private closed = false
   private readonly now: () => number
@@ -48,6 +56,20 @@ export class WatcherWakeUp {
       this.seen.add(id)
       const match = /^([a-f0-9]{64})\.([a-f0-9]{64})\.([a-f0-9]{64})$/u.exec(id)
       if (match) this.latestEvidence.set(match[1]!, { fingerprint: match[2]!, id })
+    }
+    for (const event of this.options.restoredEvents?.() ?? []) {
+      this.seen.add(event.id)
+      if (event.kind !== 'evidence-changed' || !event.evidenceIds?.length) continue
+      const fingerprint = observationDigest([...event.evidenceIds].sort())
+      if (event.revision !== fingerprint && event.revision !== observationDigest(event.evidenceIds)) continue
+      const scope = observationDigest([event.kind, event.requestId, event.target, event.generation])
+      const latest = this.latestEvidence.get(scope)
+      if (latest && (latest.id !== event.id && latest.legacyId !== event.id
+        || latest.fingerprint !== fingerprint && latest.fingerprint !== observationDigest(event.evidenceIds))) continue
+      this.latestEvidence.set(scope, { ...latest ?? { fingerprint, id: event.id,
+        .../^[a-f0-9]{64}$/u.test(event.id) ? { legacyId: event.id } : {} }, restoredRefs: new Set(event.evidenceIds) })
+      this.seen.add(event.id)
+      while (this.latestEvidence.size > 2_000) this.latestEvidence.delete(this.latestEvidence.keys().next().value!)
     }
     this.observe()
   }
@@ -82,7 +104,9 @@ export class WatcherWakeUp {
       if (kind === 'evidence-changed') {
         const scope = observationDigest([kind, request.id, target, participant.generation]), fingerprint = observationDigest(identity)
         const previous = this.latestEvidence.get(scope)
-        if (previous?.fingerprint === fingerprint) continue
+        if (previous?.fingerprint === fingerprint) { delete previous.restoredRefs; continue }
+        // Missing source observations at restart are unknown; the waiting queue supplies text-free references.
+        if (previous?.restoredRefs) continue
         // Preserve the latest state across restart; a return to an earlier state is a new occurrence.
         id = [scope, fingerprint, observationDigest([stableId, previous?.id ?? null])].join('.')
         const legacyId = !previous ? [stableId, observationDigest([kind, request.id, target, participant.generation,
@@ -97,36 +121,58 @@ export class WatcherWakeUp {
       this.seen.add(event.id)
       // Seen identities are bounded in memory and persisted only after a successful queue save.
       while (this.seen.size > 2_000) this.seen.delete(this.seen.values().next().value!)
+      if (this.retryFailures >= RETRY_LIMIT) { this.retryFailures = 0; this.retryAt = 0 }
       this.recent = foldWatcherEvents(this.recent, [event]).slice(-400)
       this.pending = foldWatcherEvents(this.pending, [event]).filter(item => this.due(item))
       this.batch()
     }
   }
+  private canDeliver(): boolean {
+    const watcher = this.options.record().current?.target
+    return !!watcher && this.options.canDeliver(watcher)
+  }
   private batch(): void {
-    if (!this.pending.length && !this.rememberPending.size || this.closed) return
+    const available = this.canDeliver()
+    if (available !== this.deliveryAvailable) {
+      this.deliveryAvailable = available
+      this.retryFailures = 0; this.retryAt = 0
+      this.cancelBatch?.(); this.cancelBatch = undefined
+    }
+    if (this.closed || !this.pending.length && !this.rememberPending.size
+      || !available && !this.rememberPending.size || this.retryFailures >= RETRY_LIMIT) {
+      this.cancelBatch?.(); this.cancelBatch = undefined
+      return
+    }
+    // Observations and new events cannot shorten an outstanding persistence backoff.
+    if (this.retryAt && this.cancelBatch) return
     if (!this.cancelBatch) this.firstPending = this.now()
     this.cancelBatch?.()
-    this.cancelBatch = this.schedule(() => { this.cancelBatch = undefined; this.flush() }, Math.max(0, Math.min(WATCHER_BATCH_MS, this.firstPending + WATCHER_BATCH_MAX_MS - this.now())))
+    const delay = this.retryAt ? this.retryAt - this.now() : Math.min(WATCHER_BATCH_MS, this.firstPending + WATCHER_BATCH_MAX_MS - this.now())
+    this.cancelBatch = this.schedule(() => { this.cancelBatch = undefined; this.flush() }, Math.max(0, delay))
   }
   private flush(): void {
-    const events = this.pending.filter(event => this.due(event)), watcher = this.options.record().current?.target
-    this.pending = []
+    const events = this.canDeliver() ? this.pending.filter(event => this.due(event)) : [], watcher = this.options.record().current?.target
+    if (events.length) this.pending = []
     if (this.closed || !events.length && !this.rememberPending.size) return
     const news = watcher && events.length ? foldWatcherNews(undefined, { source: 'watcher', watcher, events, omitted: 0 }) : undefined
     this.tail = this.tail.catch(() => undefined).then(async () => {
       if (this.closed) return
+      let failed = false
       const valid = news && { ...news, events: news.events.filter(event => this.due(event)) }
       if (valid?.events.length) {
         try {
-          await this.options.deliver(valid)
-          if (this.closed) return
-          for (const event of valid.events) this.rememberPending.add(event.id)
-          while (this.rememberPending.size > 1_000) this.rememberPending.delete(this.rememberPending.values().next().value!)
+          // Recheck after the serialized lane; recipient refusal is held, not retried by a timer.
+          if (this.canDeliver()) {
+            await this.options.deliver(valid)
+            if (this.closed) return
+            for (const event of valid.events) this.rememberPending.add(event.id)
+            while (this.rememberPending.size > 1_000) this.rememberPending.delete(this.rememberPending.values().next().value!)
+          } else this.pending = foldWatcherEvents(events, this.pending).filter(event => this.due(event))
         } catch {
           if (this.closed) return
           // Keep the full batch behind the delivery limit; later observations and withdrawal still win.
           this.pending = foldWatcherEvents(events, this.pending).filter(event => this.due(event))
-          this.options.failed?.()
+          failed = this.canDeliver()
         }
       }
       const ids = [...this.rememberPending]
@@ -134,9 +180,16 @@ export class WatcherWakeUp {
         try {
           await this.options.remember(ids)
           for (const id of ids) this.rememberPending.delete(id)
-        } catch { if (!this.closed) this.options.failed?.() }
+        } catch { if (!this.closed) failed = true }
       }
-      if (!this.closed) this.batch()
+      if (this.closed) return
+      if (failed) {
+        this.cancelBatch?.(); this.cancelBatch = undefined
+        this.retryFailures++
+        this.retryAt = this.now() + Math.min(RETRY_MAX_MS, WATCHER_BATCH_MS * 2 ** (this.retryFailures - 1))
+        this.options.failed?.()
+      } else { this.retryFailures = 0; this.retryAt = 0 }
+      this.batch()
     })
   }
   observe(): void {
@@ -163,8 +216,13 @@ export class WatcherWakeUp {
       if (landing) observed.landing = { source: landing.source === 'github' ? 'github' : 'user-landing-action', observedAt: landing.observedAt, fresh: true }
       this.observations.set(watcherObservationKey(thread), observed)
       if (connected) {
+        const before = this.knownEvidenceIds(target)
+        const links = new Set([...thread.pullRequests ?? [], ...thread.worktree?.git?.pullRequest ? [thread.worktree.git.pullRequest] : []].flatMap(pr => { const key = pullRequestKey(pr.url); return key ? [key] : [] }))
+        const added = progress.links !== undefined && [...links].some(link => !progress.links!.has(link))
+        progress.links = links
+        before.push(...facts.filter(item => item.source === 'github' && item.url && !links.has(pullRequestKey(item.url) ?? '')).map(item => item.id))
         const changedEvidence = this.evidence.observeThread(thread, target, stamp)
-        if (changedEvidence) this.evidenceChanged(target)
+        if (changedEvidence) this.evidenceChanged(target, before, added)
         const turn = thread.lastTurn
         if (thread.status !== 'running' && turn && ['completed', 'failed'].includes(turn.status)) this.event(turn.status === 'failed' ? 'turn-failed' : 'turn-finished', target,
           [turn.id, turn.status], { turnId: turn.id, backgroundWorkCount: (thread.backgroundWork?.length ?? 0) + (thread.monitoring?.length ?? 0), evidenceIds: this.evidence.read(target).filter(item => item.turnId === turn.id).map(item => item.id) })
@@ -194,11 +252,22 @@ export class WatcherWakeUp {
     }
     this.pending = this.pending.filter(event => this.due(event))
     if (!this.pending.length && !this.rememberPending.size) { this.cancelBatch?.(); this.cancelBatch = undefined }
+    this.batch()
     // Withdrawal is advisory; the queue also rechecks before claim and at the provider writer.
     this.tail = this.tail.catch(() => undefined).then(() => this.closed ? undefined : this.options.prune()).catch(() => this.options.failed?.())
   }
-  private evidenceChanged(target: WatcherThreadTarget): void {
+  private knownEvidenceIds(target: WatcherThreadTarget): string[] {
+    return this.evidence.knownIdentities(target)
+  }
+  private evidenceChanged(target: WatcherThreadTarget, before: readonly string[] = [], added = false): void {
     const evidenceIds = this.evidence.read(target).map(item => item.id).sort()
+    // A changed or removed already-observed fact is real news, including an unlink during incomplete recovery.
+    const identities = this.evidence.identities(target)
+    if (added || before.some(id => !identities.has(id))) for (const { request, participant } of this.workers()) {
+      if (targetKey(participant.target) !== targetKey(target)) continue
+      const latest = this.latestEvidence.get(observationDigest(['evidence-changed', request.id, target, participant.generation]))
+      if (latest) delete latest.restoredRefs
+    }
     this.event('evidence-changed', target, evidenceIds, { evidenceIds, revision: observationDigest(evidenceIds) })
   }
   pairedEvidence(hostId: string, facts: readonly WatcherEvidence[]): void {
@@ -220,16 +289,29 @@ export class WatcherWakeUp {
     for (const thread of snapshot.threads) if ([...thread.pullRequests ?? [], ...thread.worktree?.git?.pullRequest ? [thread.worktree.git.pullRequest] : []]
       .some(pr => pullRequestKey(pr.url) === pullRequestKey(read.url))) {
       const target = { hostId: thread.hostId ?? snapshot.hostId, threadId: thread.id }
-      if (this.evidence.pullRequest(target, read)) this.evidenceChanged(target)
+      const before = this.knownEvidenceIds(target)
+      if (this.evidence.pullRequest(target, read)) this.evidenceChanged(target, before)
     }
     this.options.changed?.()
+  }
+  restoreCheckpoint(read: CheckpointObservation): void {
+    if (!this.started || this.closed) return
+    const hostId = this.options.snapshot().hostId
+    if (!hostId) return
+    const target = { hostId, threadId: read.threadId }, id = this.evidence.checkpointIdentity(target, read)
+    const referenced = this.workers().some(({ request, participant }) => targetKey(participant.target) === targetKey(target)
+      && this.latestEvidence.get(observationDigest(['evidence-changed', request.id, target, participant.generation]))?.restoredRefs?.has(id))
+    if (!referenced) return
+    this.evidence.checkpoint(target, read)
+    this.evidenceChanged(target)
   }
   checkpoint(read: CheckpointObservation): void {
     if (this.closed) return
     const snapshot = this.options.snapshot()
     if (!snapshot.hostId) return
     const target = { hostId: snapshot.hostId, threadId: read.threadId }
-    if (this.evidence.checkpoint(target, read)) this.evidenceChanged(target)
+    const before = this.knownEvidenceIds(target)
+    if (this.evidence.checkpoint(target, read)) this.evidenceChanged(target, before)
     this.options.changed?.()
   }
   due(event: WatcherEvent): boolean {
@@ -250,6 +332,7 @@ export class WatcherWakeUp {
       const scope = observationDigest([event.kind, event.requestId, event.target, event.generation])
       const latest = this.latestEvidence.get(scope)
       if (!latest || latest.id !== event.id && latest.legacyId !== event.id) return false
+      if (latest.restoredRefs) return true
       const current = observationDigest(this.evidence.read(event.target).map(item => item.id).sort())
       return event.revision === current || Boolean(latest.legacyId === event.id && event.evidenceIds
         && event.revision === observationDigest(event.evidenceIds) && current === observationDigest([...event.evidenceIds].sort()))

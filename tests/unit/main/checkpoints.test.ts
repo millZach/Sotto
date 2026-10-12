@@ -554,3 +554,32 @@ it('attributes a capture failure by its cause even when its explanation mentions
   expect(observed).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ availability: 'unavailable', reason: 'capture-unavailable' }))
   expect(JSON.stringify(observed.mock.calls)).not.toContain('file replacement')
 })
+
+it('republishes the latest saved checkpoint facts on initialization without paths or prose', async () => {
+  const f = await fixture(), saved = await f.complete()
+  f.service.dispose()
+  const observed = vi.fn<NonNullable<CheckpointDependencies['observed']>>()
+  const restarted = new CheckpointService({ ...f.dependencies, observed })
+  cleanup.push(async () => restarted.dispose())
+  await restarted.initialize()
+  expect(observed).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ threadId: 'thread-a',
+    checkpointId: saved.checkpointId, availability: 'available', changedFiles: 2 }))
+  expect(JSON.stringify(observed.mock.calls)).not.toMatch(/app.txt|new.txt|before|after/)
+  await restarted.initialize()
+  expect(observed).toHaveBeenCalledTimes(1)
+})
+
+it('offers saved captures for reference recovery before publishing the newest current fact', async () => {
+  const f = await fixture(), first = await f.complete()
+  await f.service.beforeTurn(f.state.threadId)
+  await writeFile(join(f.repo, 'later.txt'), 'later')
+  f.state.userMessageIds.push('user-2'); await f.service.afterTurn(f.state.threadId); f.service.dispose()
+  const restored: string[] = [], observed: string[] = []
+  const restarted = new CheckpointService({ ...f.dependencies, restore: read => restored.push(read.checkpointId),
+    observed: read => observed.push(read.checkpointId) })
+  cleanup.push(async () => restarted.dispose())
+  await restarted.initialize()
+  expect(restored).toHaveLength(2)
+  expect(restored[0]).toBe(first.checkpointId)
+  expect(observed).toEqual([restored[1]])
+})

@@ -2323,7 +2323,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     void pending.finally(() => { if (lanes.get(key) === pending) lanes.delete(key) }).catch(() => undefined)
     return pending
   }
-  private flush(): Promise<void> {
+  /** Drain accepted history writes without closing stores still used by shutdown cleanup. */
+  flush(): Promise<void> {
     this.writeEvents()
     // This write covers whatever a waiting one would have written, so it takes its place.
     if (this.writeTimer) { clearTimeout(this.writeTimer); this.writeTimer = undefined }

@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { writeFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { codexFixture } from '../fixtures/codexFixture'
@@ -82,6 +82,8 @@ describe('Codex app-server per thread session', () => {
     const threadId = randomUUID()
     const creating = f.host.execute({ type: 'create-thread', threadId, commandId: randomUUID(), projectId: f.projectId, modelId: f.modelId, title: 'Created during the update' })
     await expect.poll(async () => (await f.driver.requests()).some(record => record.method === 'thread/start')).toBe(true)
+    // The journal is a handoff: the fake consumed the hold before this test replaces its script.
+    expect(JSON.parse(await readFile(join(f.root, 'script.json'), 'utf8'))).not.toHaveProperty('holdReply')
     await f.script({ version: 'codex/0.200.0' })
     await f.adapter.clientUpdated()
     // Codex answers `thread/start` after the update, on the app-server the create started, and the thread is made.

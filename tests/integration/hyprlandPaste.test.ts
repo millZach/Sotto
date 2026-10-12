@@ -16,13 +16,15 @@ afterEach(async () => {
 })
 
 describe.skipIf(process.platform !== 'linux')("Hyprland process transport over a recording stub on PATH (Linux Hyprland transport)", () => {
-  it.each(['app', 'terminal', 'exit', 'reply'])('delivers the %s case with no shell interpolation', async target => {
+  it.each(['app', 'terminal', 'exit'])('delivers the %s case with no shell interpolation', async target => {
     directory = await mkdtemp(join(tmpdir(), 'sotto-hyprctl-'))
     const log = join(directory, 'arguments.jsonl')
     await writeFile(join(directory, 'hyprctl'), '#!/bin/sh\nexec "$SOTTO_HYPRCTL_NODE" "$SOTTO_HYPRCTL_STUB" "$@"\n', { mode: 0o700 })
+    await writeFile(join(directory, 'wtype'), '#!/bin/sh\nexec "$SOTTO_HYPRCTL_NODE" "$SOTTO_WTYPE_STUB" "$@"\n', { mode: 0o700 })
     vi.stubEnv('PATH', `${directory}${delimiter}${process.env.PATH}`)
     vi.stubEnv('SOTTO_HYPRCTL_NODE', process.execPath)
     vi.stubEnv('SOTTO_HYPRCTL_STUB', join(process.cwd(), 'tests/fixtures/hyprctl.mjs'))
+    vi.stubEnv('SOTTO_WTYPE_STUB', join(process.cwd(), 'tests/fixtures/wtype.mjs'))
     vi.stubEnv('SOTTO_HYPRCTL_LOG', log)
     vi.stubEnv('SOTTO_HYPRCTL_TAGS', target)
     vi.stubEnv('SOTTO_HYPRCTL_FAIL', target)
@@ -35,22 +37,17 @@ describe.skipIf(process.platform !== 'linux')("Hyprland process transport over a
     })
     const text = 'exact text "$(touch no)"; `echo no`\n'
     await expect(output.deliver(text, { autoPaste: true, pasteDelayMs: 75 })).resolves.toBe(
-      ['exit', 'reply'].includes(target) ? 'copied' : 'pasted',
+      target === 'exit' ? 'copied' : 'pasted',
     )
     expect(clipboard).toBe(text)
     expect(copyToPrimary).toHaveBeenCalledTimes(target === 'terminal' ? 1 : 0)
     const args = parseProviderRecords(await readFile(log, 'utf8'), { keepEmptyLines: true })
-    const mods = target === 'terminal' ? 'SHIFT' : 'CTRL'
-    const key = target === 'terminal' ? 'Insert' : 'V'
+    const modifier = target === 'terminal' ? 'shift' : 'ctrl'
+    const key = target === 'terminal' ? 'Insert' : 'v'
     expect(args).toEqual([
       ['locked', '-j'], ['repl', MODIFIERS_HELD_QUERY], ['activewindow', '-j'],
       ['locked', '-j'],
-      ['eval', [
-        `hl.dispatch(hl.dsp.send_key_state({ mods = "${mods}", key = "${key}", state = "down" }))`,
-        'hl.timer(function()',
-        `  hl.dispatch(hl.dsp.send_key_state({ mods = "${mods}", key = "${key}", state = "up" }))`,
-        'end, { timeout = 50, type = "oneshot" })',
-      ].join('\n')],
+      ['wtype', '-M', modifier, '-P', key, '-s', '50', '-p', key, '-m', modifier],
     ])
     expect(JSON.stringify(args)).not.toContain(text)
   })

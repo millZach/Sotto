@@ -28,6 +28,15 @@
 /* A web address in a question, its choices or its explanation: underlined in the link colour, as in a message. */
 .agent-request__link { color: var(--tt-link); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; border-radius: 2px; cursor: pointer; }
 .agent-request__link:hover { color: var(--tt-primary-hover); }
+/* The links from the agent's message before a question: a row each, as the iPhone's question sheet shows them. */
+.agent-request__link-rows { display: grid; gap: 6px; }
+.agent-request__link-row { display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 44px; padding: 7px 12px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); color: var(--tt-text); text-decoration: none; cursor: pointer; }
+.agent-request__link-row:hover { background: var(--tt-hover); }
+.agent-request__link-row > svg { flex: none; color: var(--tt-text-muted); }
+.agent-request__link-row > svg:first-child { color: var(--tt-accent-text); }
+.agent-request__link-row > span { display: grid; flex: 1; min-width: 0; }
+.agent-request__link-row strong { font-size: 14px; font-weight: 600; }
+.agent-request__link-row small { overflow: hidden; color: var(--tt-text-muted); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
 .agent-request__note { color: var(--tt-text-muted); font-size: 13px; }
 .agent-request__options { display: grid; gap: 2px; }
 .agent-request__option { display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: start; gap: 10px; padding: 7px 8px; margin: 0 -8px; border-radius: var(--tt-radius-md); cursor: pointer; }

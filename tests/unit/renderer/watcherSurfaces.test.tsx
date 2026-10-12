@@ -48,14 +48,21 @@ describe('Watcher kinds in existing thread surfaces', () => {
     gate.enabled = enabled
     const { current, history } = seed()
     render(<PageSidebar now={NOW} />)
-    for (const thread of [current, history]) expect(screen.queryByRole('button', { name: thread.title }) !== null).toBe(enabled)
+    // With the gate on, the current Watcher lives in Watcher's room; its history stays where ordinary threads are.
+    expect(screen.queryByRole('button', { name: current.title })).toBeNull()
+    expect(screen.queryByRole('button', { name: history.title }) !== null).toBe(enabled)
   })
 
-  it('keeps the existing Watcher pane and draft when the gate is on', () => {
+  it('leaves the current Watcher to its room when the gate is on, and keeps Watcher history on the Threads page', async () => {
     gate.enabled = true
-    const { current } = seed()
+    const { command, current, history } = seed()
     render(<ThreadsView now={NOW} />)
-    expect(screen.getByRole('region', { name: current.title })).toBeVisible()
-    expect(within(screen.getByRole('region', { name: current.title })).getByRole('textbox', { name: 'Prompt' })).toHaveTextContent('Saved Watcher prompt')
+    expect(screen.queryByRole('region', { name: current.title })).toBeNull()
+    expect(screen.queryByDisplayValue('Saved Watcher prompt')).toBeNull()
+    const sidebar = within(screen.getByRole('complementary', { name: 'Thread sidebar' }))
+    expect(sidebar.queryByRole('button', { name: current.title })).toBeNull()
+    await act(async () => { fireEvent.click(sidebar.getByRole('button', { name: history.title })) })
+    expect(command).toHaveBeenCalledWith({ type: 'select-thread', threadId: history.id })
+    expect(command).not.toHaveBeenCalledWith({ type: 'select-thread', threadId: current.id })
   })
 })

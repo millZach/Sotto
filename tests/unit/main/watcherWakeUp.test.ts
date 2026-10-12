@@ -8,7 +8,7 @@ import { observationDigest } from '../../../src/main/agents/watcherEvidence'
 import { foldWatcherNews, watcherNewsText } from '../../../src/main/agents/watcherNews'
 import { queuedWakeUpText, wakeUpText } from '../../../src/main/agents/wakeUp'
 import type { BabysitNews } from '../../../src/main/agents/babysitNews'
-import { centerTarget, watcherRecordFixture } from '../../fixtures/watcher'
+import { centerTarget, centerTime, watcherRecordFixture } from '../../fixtures/watcher'
 
 const cleanups: (() => void)[] = []
 afterEach(() => { cleanups.splice(0).forEach(cleanup => cleanup()) })
@@ -20,12 +20,13 @@ function fixture(start = true, progress?: WatcherWakeOptions['progress']) {
     status: 'running', lastTurn: { id: 'turn-1', status: 'running' }, messages: [], requests: [] }
   const snapshot: AgentHostSnapshot = { ...structuredClone(EMPTY_AGENT_HOST), connected: true, hostId: centerTarget.hostId,
     capabilities: { ...EMPTY_AGENT_HOST.capabilities, observe: true }, threads: [thread], projects: [{ id: 'project', title: 'Project', path: 'synthetic' }] }
+  const canDeliver = vi.fn(() => true)
   const delivered: WatcherNews[] = [], prune = vi.fn(async () => undefined), failed = vi.fn()
   const deliver = vi.fn(async (news: WatcherNews) => { delivered.push(structuredClone(news)) })
   const remember = vi.fn(async (ids: string[]) => { record.wakeEventIds = [...record.wakeEventIds ?? [], ...ids] })
   const wakes = new WatcherWakeUp({ now: () => clock, snapshot: () => snapshot, record: () => record, prune,
     schedule: (callback, delay) => { const timer = { at: clock + delay, callback }; timers.add(timer); return () => { timers.delete(timer) } },
-    deliver, remember, failed, ...progress ? { progress } : {} })
+    deliver, remember, failed, canDeliver, ...progress ? { progress } : {} })
   cleanups.push(() => wakes.close())
   if (start) wakes.start()
   const advance = async (ms: number) => {
@@ -37,7 +38,7 @@ function fixture(start = true, progress?: WatcherWakeOptions['progress']) {
     }
     clock = end; await wakes.drained()
   }
-  return { wakes, record, snapshot, thread, timers, delivered, deliver, remember, failed, advance, now: () => clock }
+  return { canDeliver, wakes, record, snapshot, thread, timers, delivered, deliver, remember, failed, advance, now: () => clock }
 }
 
 it('batches for two seconds and never delays a sustained burst past five seconds', async () => {
@@ -123,7 +124,7 @@ it('reconciles durable event IDs without replaying a terminal observation after 
   const f = fixture(); f.thread.status = 'idle'; f.thread.lastTurn!.status = 'completed'; f.wakes.observe()
   await f.advance(2_000); f.wakes.close()
   const delivered = vi.fn(async () => undefined)
-  const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, deliver: delivered,
+  const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, canDeliver: () => true, deliver: delivered,
     now: f.now, prune: async () => undefined, remember: async () => undefined, schedule: callback => { callback(); return () => undefined } })
   recovered.start(); await recovered.drained(); recovered.close()
   expect(delivered).not.toHaveBeenCalled()
@@ -195,7 +196,7 @@ it('restores the latest evidence occurrence without replaying it or suppressing 
   f.wakes.close()
   f.thread.status = 'idle'; f.thread.lastTurn = undefined
   const deliver = vi.fn<(news: WatcherNews) => Promise<void>>(async () => undefined)
-  const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, deliver, now: f.now,
+  const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, canDeliver: () => true, deliver, now: f.now,
     prune: async () => undefined, remember: async () => undefined, schedule: callback => { callback(); return () => undefined } })
   cleanups.push(() => recovered.close())
   recovered.start(); recovered.checkpoint(checkpoint(1)); await recovered.drained()
@@ -230,7 +231,7 @@ it('keeps a legacy evidence ID valid only for its reconciled occurrence', async 
   f.record.wakeEventIds = [legacyId]; f.wakes.close()
   f.thread.status = 'idle'; f.thread.lastTurn = undefined
   const deliver = vi.fn<(news: WatcherNews) => Promise<void>>(async () => undefined)
-  const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, deliver, now: f.now,
+  const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, canDeliver: () => true, deliver, now: f.now,
     prune: async () => undefined, remember: async () => undefined, schedule: callback => { callback(); return () => undefined } })
   cleanups.push(() => recovered.close())
   recovered.start(); recovered.checkpoint(checkpoint(1)); await recovered.drained()
@@ -249,7 +250,7 @@ it('keeps undelivered checkpoint news pending through save failures without need
   f.wakes.checkpoint({ threadId: f.thread.id, checkpointId: 'capture', observedAt: new Date(f.now()).toISOString(), availability: 'available', changedFiles: 1 })
   await f.advance(2_000)
   expect(f.delivered).toHaveLength(0)
-  await f.advance(4_000)
+  await f.advance(6_000)
   expect(f.delivered).toHaveLength(1)
   expect(f.deliver).toHaveBeenCalledTimes(3)
   expect(f.record.wakeEventIds).toEqual(f.delivered[0]!.events.map(event => event.id))
@@ -360,4 +361,230 @@ it.each(['thread', 'project'] as const)('keeps remote quiet news on its host whe
   await f.advance(WATCHER_QUIET_MS + 2_000)
   const quiet = f.delivered.flatMap(news => news.events).filter(event => event.kind === 'quiet')
   expect(quiet.map(event => event.target)).toEqual([{ hostId: remoteHost, threadId: f.thread.id }])
+})
+
+it('ignores background Git fetches but wakes for branch, diff and ahead/behind changes', async () => {
+  const f = fixture()
+  const git = { isRepository: true, branch: 'main', upstream: null, hasRemote: false,
+    defaultBranch: 'main', isDefaultBranch: true, dirty: true, changedFiles: 2, insertions: 4, deletions: 1,
+    ahead: 0, behind: 0, aheadOfDefault: null, pullRequest: null, readAt: centerTime, fetchedAt: null as string | null }
+  f.thread.worktree = { mode: 'shared', status: 'ready', branch: 'main', baseBranch: 'main', git }
+  f.wakes.observe(); await f.advance(2_000)
+  for (let n = 0; n < 3; n++) {
+    git.readAt = new Date(f.now()).toISOString(); git.fetchedAt = git.readAt
+    f.wakes.observe(); await f.advance(30_000)
+  }
+  expect(f.delivered).toHaveLength(1)
+  for (const change of [{ branch: 'topic' }, { changedFiles: 3 }, { insertions: 5 }, { deletions: 2 }, { ahead: 1 }, { behind: 1 }]) {
+    Object.assign(git, change)
+    f.wakes.observe(); await f.advance(2_000)
+  }
+  expect(f.delivered).toHaveLength(7)
+})
+
+it('holds unavailable-recipient news without deadlines and resumes the unchanged news when available', async () => {
+  const f = fixture()
+  f.thread.status = 'idle'; f.thread.lastTurn = undefined; f.wakes.observe()
+  f.canDeliver.mockReturnValue(false)
+  f.wakes.checkpoint({ threadId: f.thread.id, checkpointId: 'capture', observedAt: new Date(f.now()).toISOString(), availability: 'available' })
+  await f.advance(10 * 60_000)
+  expect(f.deliver).not.toHaveBeenCalled()
+  expect(f.failed).not.toHaveBeenCalled()
+  expect(f.timers.size).toBe(0)
+  f.canDeliver.mockReturnValue(true); f.wakes.observe(); await f.advance(2_000)
+  expect(f.delivered).toHaveLength(1)
+  expect(f.record.wakeEventIds).toEqual(f.delivered[0]!.events.map(event => event.id))
+})
+
+it.each(['deliver', 'remember'] as const)('backs off %s failures, caps automatic attempts and retains news for event-driven recovery', async failing => {
+  const f = fixture()
+  f.thread.status = 'idle'; f.thread.lastTurn = undefined; f.wakes.observe()
+  const calls: number[] = []
+  f[failing].mockImplementation(async () => { calls.push(f.now()); throw new Error('synthetic save failure') })
+  f.wakes.checkpoint({ threadId: f.thread.id, checkpointId: 'capture', observedAt: new Date(f.now()).toISOString(), availability: 'available' })
+  const began = f.now()
+  await f.advance(30 * 60_000)
+  expect(calls.map(at => at - began)).toEqual([2_000, 4_000, 8_000, 16_000, 32_000, 64_000, 124_000, 184_000])
+  expect(f.timers.size).toBe(0)
+  f.wakes.observe(); await f.advance(10 * 60_000)
+  expect(calls).toHaveLength(8)
+  f.deliver.mockImplementation(async news => { f.delivered.push(structuredClone(news)) })
+  f.remember.mockImplementation(async ids => { f.record.wakeEventIds = ids })
+  f.canDeliver.mockReturnValue(false); f.wakes.observe()
+  f.canDeliver.mockReturnValue(true); f.wakes.observe(); await f.advance(2_000)
+  expect(f.delivered).toHaveLength(1)
+  expect(f.record.wakeEventIds).toEqual(f.delivered[0]!.events.map(event => event.id))
+})
+
+it('holds news if the recipient becomes unavailable during queue admission', async () => {
+  const f = fixture()
+  f.thread.status = 'idle'; f.thread.lastTurn = undefined; f.wakes.observe()
+  f.deliver.mockImplementationOnce(async () => { f.canDeliver.mockReturnValue(false); throw new Error('Watcher is unavailable.') })
+  f.wakes.checkpoint({ threadId: f.thread.id, checkpointId: 'capture', observedAt: new Date(f.now()).toISOString(), availability: 'available' })
+  await f.advance(60_000)
+  expect(f.deliver).toHaveBeenCalledTimes(1)
+  expect(f.failed).not.toHaveBeenCalled()
+  expect(f.timers.size).toBe(0)
+  f.canDeliver.mockReturnValue(true); f.wakes.observe(); await f.advance(2_000)
+  expect(f.delivered).toHaveLength(1)
+})
+
+it('does not shorten persistence backoff when fresh evidence or shell observations arrive', async () => {
+  const f = fixture(), attempts: number[] = [], began = f.now()
+  f.thread.status = 'idle'; f.thread.lastTurn = undefined; f.wakes.observe()
+  f.deliver.mockImplementation(async () => { attempts.push(f.now() - began); throw new Error('synthetic save failure') })
+  const checkpoint = (changedFiles: number) => ({ threadId: f.thread.id, checkpointId: 'capture', observedAt: new Date(f.now()).toISOString(),
+    availability: 'available' as const, changedFiles })
+  f.wakes.checkpoint(checkpoint(1)); await f.advance(5_000)
+  f.wakes.checkpoint(checkpoint(2)); f.wakes.observe(); await f.advance(2_999)
+  expect(attempts).toEqual([2_000, 4_000])
+  await f.advance(1)
+  expect(attempts).toEqual([2_000, 4_000, 8_000])
+  expect(f.deliver.mock.calls[2]![0].events[0]!.revision).toBe(observationDigest(f.wakes.evidence.read(centerTarget).map(fact => fact.id).sort()))
+})
+
+it('owns no quiet deadline for an unwatched same-ID thread on another host', () => {
+  const f = fixture()
+  f.snapshot.threads.unshift({ ...f.thread, hostId: '55555555-5555-4555-8555-555555555555' })
+  f.wakes.observe()
+  expect(f.timers.size).toBe(1)
+})
+
+it.each(['idle', 'question', 'disconnected'] as const)('uses the watched host at quiet expiry even when another same-ID thread is %s', async state => {
+  const f = fixture()
+  const other = { ...f.thread, hostId: '55555555-5555-4555-8555-555555555555' }
+  if (state === 'idle') { other.status = 'idle'; other.lastTurn = undefined }
+  if (state === 'question') other.requests = [{ id: 'other-card', kind: 'question', text: 'private other-host question', options: [] }]
+  if (state === 'disconnected') other.clientConnected = false
+  f.snapshot.threads.unshift(other); f.wakes.observe()
+  await f.advance(WATCHER_QUIET_MS + 2_000)
+  const quiet = f.delivered.flatMap(news => news.events).filter(event => event.kind === 'quiet')
+  expect(quiet.map(event => event.target)).toEqual([centerTarget])
+})
+
+it('keeps remote same-ID participants out of this host provider residency and quiet deadlines', () => {
+  const f = fixture()
+  f.record.requests[0]!.participants[0]!.target = { ...centerTarget, hostId: '55555555-5555-4555-8555-555555555555' }
+  f.wakes.observe()
+  expect(f.wakes.watchedThreadIds(centerTarget.hostId)).toEqual([])
+  expect(f.timers.size).toBe(0)
+})
+
+it('does not wake for alternating surface and babysitting reads of unchanged GitHub facts', async () => {
+  const f = fixture(), url = 'https://github.com/o/r/pull/1'
+  f.thread.pullRequests = [{ url, number: 1, title: 'Synthetic pull request', state: 'open', draft: false, source: 'linked', linkedAt: new Date(f.now()).toISOString() }]
+  for (let n = 0; n < 6; n++) {
+    f.wakes.pullRequest({ url, head: 'same-head', observedAt: new Date(f.now()).toISOString(), availability: 'available', state: 'open',
+      checks: 'passed', checkCount: 1, ...(n % 2 ? {} : { reviewApproved: true, autoMerge: true }) })
+    await f.advance(2_000)
+  }
+  expect(f.delivered).toHaveLength(1)
+  expect(f.wakes.evidence.read(centerTarget).some(item => item.githubReviewApproved === true)).toBe(true)
+  expect(f.wakes.evidence.read(centerTarget).some(item => item.fact === 'auto-merge-observed')).toBe(true)
+})
+
+it.each([true, false])('retains waiting checkpoint news during incomplete restart observations with saved metadata %s', async savedMetadata => {
+  const f = fixture()
+  f.thread.status = 'idle'; f.thread.lastTurn!.status = 'completed'; f.wakes.observe()
+  const checkpoint = (changedFiles: number) => ({ threadId: f.thread.id, checkpointId: 'saved-capture',
+    observedAt: new Date(f.now()).toISOString(), availability: 'available' as const, changedFiles })
+  f.wakes.checkpoint(checkpoint(1)); await f.advance(2_000)
+  const saved = f.delivered[0]!.events.find(event => event.kind === 'evidence-changed')!
+  if (!savedMetadata) f.record.wakeEventIds = []
+  f.wakes.close()
+  const retained: boolean[] = [], deliver = vi.fn<(news: WatcherNews) => Promise<void>>(async () => undefined)
+  const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, canDeliver: () => true, now: f.now,
+    restoredEvents: () => f.delivered.flatMap(news => news.events), deliver, remember: async () => undefined,
+    prune: async () => { retained.push(recovered.due(saved)) }, schedule: callback => { callback(); return () => undefined } })
+  cleanups.push(() => recovered.close())
+  recovered.start(); await recovered.drained()
+  expect(retained).toEqual([true])
+  expect(deliver).not.toHaveBeenCalled()
+  recovered.checkpoint(checkpoint(1)); await recovered.drained()
+  expect(recovered.due(saved)).toBe(true)
+  expect(deliver).not.toHaveBeenCalled()
+  recovered.checkpoint(checkpoint(2)); await recovered.drained()
+  expect(recovered.due(saved)).toBe(false)
+  expect(deliver).toHaveBeenCalledTimes(1)
+})
+
+it('invalidates an explicitly unlinked PR during incomplete evidence recovery', async () => {
+  const f = fixture(), url = 'https://github.com/o/r/pull/1'
+  f.thread.status = 'idle'; f.thread.lastTurn!.status = 'completed'
+  f.thread.pullRequests = [{ url, number: 1, title: 'Synthetic pull request', state: 'open', draft: false, source: 'linked', linkedAt: new Date(f.now()).toISOString() }]
+  f.wakes.observe()
+  f.wakes.checkpoint({ threadId: f.thread.id, checkpointId: 'capture', observedAt: new Date(f.now()).toISOString(), availability: 'available' })
+  await f.advance(2_000); f.wakes.close()
+  const saved = f.delivered[0]!.events.find(event => event.kind === 'evidence-changed')!
+  const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, canDeliver: () => true, now: f.now,
+    restoredEvents: () => f.delivered.flatMap(news => news.events), deliver: async () => undefined, remember: async () => undefined,
+    prune: async () => undefined, schedule: () => () => undefined })
+  cleanups.push(() => recovered.close())
+  recovered.start()
+  expect(recovered.due(saved)).toBe(true)
+  f.thread.pullRequests = []; recovered.observe()
+  expect(recovered.due(saved)).toBe(false)
+})
+
+it('keeps waiting checkpoint news through recovery of a full evidence projection', async () => {
+  const f = fixture()
+  f.thread.status = 'idle'; f.thread.lastTurn!.status = 'completed'
+  f.thread.pullRequests = Array.from({ length: 50 }, (_, n) => ({ url: 'https://github.com/o/r/pull/' + (n + 1), number: n + 1,
+    title: 'Synthetic pull request', state: 'open' as const, draft: false, source: 'linked' as const, linkedAt: new Date(f.now()).toISOString() }))
+  f.wakes.observe()
+  for (const pr of f.thread.pullRequests) f.wakes.pullRequest({ url: pr.url, head: 'head', observedAt: new Date(f.now()).toISOString(),
+    availability: 'available', state: 'open', checks: 'passed', reviewApproved: true, autoMerge: true })
+  const checkpoint = (changedFiles: number) => ({ threadId: f.thread.id, checkpointId: 'capture',
+    observedAt: new Date(f.now()).toISOString(), availability: 'available' as const, changedFiles })
+  f.wakes.checkpoint(checkpoint(1)); await f.advance(2_000); f.wakes.close()
+  const saved = f.delivered[0]!.events.find(event => event.kind === 'evidence-changed')!
+  expect(saved.evidenceIds).toHaveLength(100)
+  const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, canDeliver: () => true, now: f.now,
+    restoredEvents: () => f.delivered.flatMap(news => news.events), deliver: async () => undefined, remember: async () => undefined,
+    prune: async () => undefined, schedule: () => () => undefined })
+  cleanups.push(() => recovered.close())
+  recovered.start()
+  expect(recovered.due(saved)).toBe(true)
+  recovered.checkpoint(checkpoint(1))
+  for (const pr of f.thread.pullRequests) recovered.pullRequest({ url: pr.url, head: 'head', observedAt: new Date(f.now()).toISOString(),
+    availability: 'available', state: 'open', checks: 'passed', reviewApproved: true, autoMerge: true })
+  expect(recovered.due(saved)).toBe(true)
+  recovered.checkpoint(checkpoint(2))
+  expect(recovered.due(saved)).toBe(false)
+})
+
+it('invalidates newly linked PR news during incomplete recovery', async () => {
+  const f = fixture()
+  f.thread.status = 'idle'; f.thread.lastTurn!.status = 'completed'; f.wakes.observe()
+  f.wakes.checkpoint({ threadId: f.thread.id, checkpointId: 'capture', observedAt: new Date(f.now()).toISOString(), availability: 'available' })
+  await f.advance(2_000); f.wakes.close()
+  const saved = f.delivered[0]!.events.find(event => event.kind === 'evidence-changed')!
+  const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, canDeliver: () => true, now: f.now,
+    restoredEvents: () => f.delivered.flatMap(news => news.events), deliver: async () => undefined, remember: async () => undefined,
+    prune: async () => undefined, schedule: () => () => undefined })
+  cleanups.push(() => recovered.close())
+  recovered.start(); expect(recovered.due(saved)).toBe(true)
+  f.thread.pullRequests = [{ url: 'https://github.com/o/r/pull/1', number: 1, title: 'Synthetic pull request',
+    state: 'open', draft: false, source: 'linked', linkedAt: new Date(f.now()).toISOString() }]
+  recovered.observe()
+  expect(recovered.due(saved)).toBe(false)
+})
+
+it('supersedes waiting news when a newer saved checkpoint loads after its referenced capture', async () => {
+  const f = fixture()
+  f.thread.status = 'idle'; f.thread.lastTurn!.status = 'completed'; f.wakes.observe()
+  const read = { threadId: f.thread.id, checkpointId: 'saved-capture', observedAt: new Date(f.now()).toISOString(), availability: 'available' as const, changedFiles: 1 }
+  f.wakes.checkpoint(read); await f.advance(2_000); f.wakes.close()
+  const saved = f.delivered[0]!.events.find(event => event.kind === 'evidence-changed')!
+  const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, canDeliver: () => true, now: f.now,
+    restoredEvents: () => f.delivered.flatMap(news => news.events), deliver: async () => undefined, remember: async () => undefined,
+    prune: async () => undefined, schedule: () => () => undefined })
+  cleanups.push(() => recovered.close())
+  recovered.start(); expect(recovered.due(saved)).toBe(true)
+  recovered.restoreCheckpoint({ ...read, checkpointId: 'unreferenced-older-capture' })
+  expect(recovered.evidence.read(centerTarget).some(item => item.source === 'checkpoint')).toBe(false)
+  recovered.restoreCheckpoint(read)
+  expect(recovered.due(saved)).toBe(true)
+  recovered.checkpoint({ ...read, checkpointId: 'newest-capture', changedFiles: 2 })
+  expect(recovered.due(saved)).toBe(false)
 })

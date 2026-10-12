@@ -1,11 +1,4 @@
-/* Settings → Git: the section's rows grouped under the moment each setting acts, with the writing example. */
-.settings-view .git-settings__group { margin-top: 26px; }
-.settings-view .git-settings__group:first-child { margin-top: 22px; }
-.settings-view .git-settings__group > h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; color: var(--tt-text-2); font-size: 14px; font-weight: 600; line-height: 1.35; }
-.settings-view .git-settings__group > h3 > svg { flex: none; color: var(--tt-text-muted); }
-.settings-view .git-settings__group > .settings-rows { border-top: 1px solid var(--tt-hairline); }
-.settings-view .git-settings__group-note { margin: 0 0 8px; color: var(--tt-text-muted); font-size: 13px; line-height: 1.45; }
-
+/* Settings → Git: the writing style's custom instructions and the example under it. Groups are SettingsGroup's. */
 .settings-view .git-settings__custom { margin-top: 14px; }
 .settings-view .git-settings__custom-label { margin: 0 0 6px; color: var(--tt-text-muted); font-size: 13px; }
 .settings-view .git-settings__custom-label > label { color: var(--tt-text); font-size: 14px; font-weight: 500; }

@@ -15,6 +15,7 @@ export function pullRequestObservation(fingerprint: PullRequestFingerprint, deta
     && pullRequestKey(previous.url) === pullRequestKey(fingerprint.url) && previous.availability === 'available' ? previous : undefined
   return { url: fingerprint.url, head: fingerprint.head, state: fingerprint.state, availability: 'available', observedAt,
     checks: checks ? summarizePullRequestChecks(fingerprint.head, checks) : known?.checks ?? 'unknown',
+    checksObservedAt: checks || !known ? observedAt : known.checksObservedAt ?? known.observedAt,
     ...(checks ? { checkCount: checks.length } : known?.checkCount !== undefined ? { checkCount: known.checkCount } : {}),
     // Historical review pages do not establish GitHub's current review decision.
   }

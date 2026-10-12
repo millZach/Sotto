@@ -12,6 +12,7 @@ import { CheckpointCapture } from './checkpointCapture'
 import { LINK_MESSAGE, blobName, checkpointPathSchema, isInside } from './checkpointPaths'
 import { CheckpointStore, type CheckpointRecord, type Snapshot } from './checkpointStore'
 import { CheckpointReferences } from './checkpointReferences'
+import type { CheckpointObservation } from '../agents/watcherEvidence'
 import type { CheckpointDependencies, CheckpointThread } from './checkpointTypes'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 
@@ -58,7 +59,23 @@ export class CheckpointService extends ToolOperations {
     this.recoveryNotice = `Sotto set aside a checkpoint file it could not read as ${basename(backup)} and kept the rest.`
     try { this.dependencies.report?.(this.recoveryNotice) } catch { /* Reporting cannot prevent recovery. */ }
   }
-  initialize(): Promise<void> { if (this.initialized) return Promise.resolve(); return this.serial(async () => { await this.load(); if (!this.initialized) { await this.save(); this.initialized = true } }) }
+  initialize(): Promise<void> {
+    if (this.initialized) return Promise.resolve()
+    return this.serial(async () => {
+      await this.load()
+      if (this.initialized) return
+      await this.save(); this.initialized = true
+      if (!this.dependencies.observed || this.historyOff()) return
+      const latest = new Map<string, CheckpointRecord>()
+      for (const record of this.records.values()) {
+        if (this.dependencies.preserveThread?.(record.threadId) || !['ready', 'unavailable'].includes(record.status)) continue
+        this.dependencies.restore?.(this.observation(record))
+        const previous = latest.get(record.threadId)
+        if (!previous || Date.parse(previous.createdAt) <= Date.parse(record.createdAt)) latest.set(record.threadId, record)
+      }
+      for (const record of latest.values()) this.publishObservation(record)
+    })
+  }
   private async refreshRecoveryNotice(): Promise<void> {
     if (!this.recoveryBackup) return
     const exists = await lstat(this.recoveryBackup).catch(error => { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; this.dependencies.report?.('checkpoint-cleanup-failed'); return true })
@@ -337,9 +354,12 @@ export class CheckpointService extends ToolOperations {
   }) }
   private publishObservation(record: CheckpointRecord): void {
     if (!this.dependencies.observed) return
-    this.dependencies.observed({ threadId: record.threadId, checkpointId: record.id, observedAt: new Date(this.dependencies.now?.() ?? Date.now()).toISOString(),
+    this.dependencies.observed(this.observation(record))
+  }
+  private observation(record: CheckpointRecord): CheckpointObservation {
+    return { threadId: record.threadId, checkpointId: record.id, observedAt: new Date(this.dependencies.now?.() ?? Date.now()).toISOString(),
       availability: record.status === 'ready' ? 'available' : 'unavailable',
-      ...(record.status === 'ready' ? { changedFiles: this.changes(record).length } : { reason: record.unavailableReason ?? 'capture-unavailable' }) })
+      ...(record.status === 'ready' ? { changedFiles: this.changes(record).length } : { reason: record.unavailableReason ?? 'capture-unavailable' }) }
   }
   private matches(record: CheckpointRecord, thread: CheckpointThread): boolean { return record.threadId === thread.threadId && record.providerId === thread.providerId && record.bindingId === thread.bindingId }
   private changes(record: CheckpointRecord): Checkpoint['files'] {

@@ -196,3 +196,57 @@ Visually inspected this run's [Owl dark](../../artifacts/watcher-gate/wakeups-re
 No additional room-contract field or channel changed. The structured cause is private checkpoint storage; event IDs remain opaque strings within the existing bound and older IDs remain readable. CONTEXT.md is corrected for finding 8; these fixes settle no new domain decision, so ADR-0073 and the plan need no new amendment. Production dependencies remain exactly zod, node-pty and sherpa-onnx-node. No renderer file was edited, and existing file endings and UTF-8 without a BOM were retained.
 
 News still grants and answers nothing, and never resumes a worker Watcher stopped. Queue retries use the owned batching deadline and fetch no provider, Git or GitHub state; no Watcher poll timer was introduced. Ordinary threads and babysitting remain unchanged in their integration and gate proofs. There is no unfinished local implementation or required check. Packaged builds, paid native-provider turns, macOS, Linux and phones were not exercised. The lead owns remote delivery and the pull request; this work ran no push, rebase, stash, branch switch, new task worktree, nested review, publication or installation.
+
+
+## Pull request 957: Greptile follow-up, October 12, 2026
+
+The lead's main merge 8e3c57b3c was already present at entry, and the branch was clean. The prior bug-bot round is retained in 772d41e00 (Git clocks and ahead/behind), f01f3ad85 (held news and capped persistence retries), 6fb9a43ce (host-qualified quiet) and 7bc2aec09 (fake Codex request/script handoff). Zach reported that the lead ran that round's gates green with 9,775 tests, pushed it and merged main. That is the lead's report, not a claim of local output for the interrupted prior run.
+
+All three new findings were reproduced and fixed.
+
+| Finding | Commit | Cause and red/green proof |
+| --- | --- | --- |
+| 1. Restart withdraws waiting checkpoint news | bb66ccf83 | The old cold store made the restored event not due at the first prune, and checkpoint initialization emitted zero saved facts. Reconcile waiting queue references before observation, keeping unobserved facts unknown; restore queued identities even if their separate metadata save failed. Checkpoint initialization republishes each thread's newest retained ready/unavailable capture once through the gated observer. Same-fact hydration preserves the old occurrence, while observed changes and ownership fences supersede it. |
+| 2. Readers overwrite GitHub facts | f72cc7abe | The old checks-only read removed approval/auto-merge and returned changed; carrying unrequested checks forward refreshed their old timestamp. Keep PR state, checks, current review and auto-merge as separate facts for the same canonical URL/head, each with its own time/freshness. Update only observed fields, retain explicit false values, clear earlier-head facts and reject late old-head/old-field answers. Alternating unchanged readers produce one wake-up. |
+| 3. Held news loses its error | 6244c540d | Both paused and failed probes lost their error after partial pruning. Keep it while those statuses remain, and clear it when the item is queued again. The news body can change without making the held queue ready. |
+
+c99c547dd fixes the related recovery unlink edge: the new probe initially left an explicitly removed association due while recovery was incomplete. An association removed from an observed roster is a real change, even when its checks were unknown. That now invalidates the older aggregate without treating unobserved source facts as changes.
+
+The shared schema addition is only optional WatcherEvidence.githubAutoMergeEnabled, committed with finding 2 before the later fixes and described at the top of the external room contract. Each separate GitHub fact uses the existing observedAt, freshness and availability fields. Channels, envelopes, saved control formats and phone scope are unchanged. ADR-0073 records both source timing and restart reconciliation; no new glossary term or plan amendment is needed.
+
+The reader/wake/tool/unchanged-babysitting focused run passed four files and 120 tests in 44.20 seconds. The initial recovery/checkpoint/integration run passed three files and 87 tests in 35.79 seconds. The real coordinator waiting-queue recovery/replay case passed separately in 5.84 seconds, after correcting its matcher to the actual news wording; no deadline was changed. The paused/failed callback, follow-up and workspace queue run passed three files and 54 tests in 9.54 seconds. The final wake/evidence run passed 50 tests in 1.45 seconds, including explicit unlink and missing metadata.
+
+The first typecheck exposed TS2379 in a new changed-head fixture that explicitly set absent optional fields to undefined. 4055484d9 omits those fields as the interface requires; production types and behavior are unchanged. The ordered gates restarted after that fix.
+
+d44265406 fixes the fifty-PR evidence boundary. The direct probe reported all fifty unchanged reads as changed, and the regression failed. Keep a private bounded cache of 300 facts (enough for fifty linked PRs with independent facts), return at most 100, and move facts only on actual changes. The regression preserves identity and ordering on unchanged reads, keeps the projection bound and surfaces a real changed check. The focused evidence/wake/babysitting run passed 57 tests in 9.16 seconds.
+
+The first full run was intentionally stopped with exit 1 after this capacity probe; it has no completed suite result. The final ordered gates restart on the corrected source.
+
+3b8caa954 fixes recovery at that boundary. Full-projection and new-link probes went red. Compare source changes with the full bounded cache, so projection omissions do not become removals. Retained captures are first offered to a private restorer; only a capture referenced by the queued occurrence seeds its comparison before publishing the newest capture. Disabling that priming kept old news due after a newer saved capture; the enabled regression passes. The recovery/checkpoint/tool run passed 161 tests in 55.65 seconds. No shared field or poll was added.
+
+Typecheck then caught nullable canonical PR keys in the new association set. 9ae88b46c filters unsupported keys and handles null during retained association comparison, without widening the type.
+
+### Final ordered gates
+
+All six gates ran in the requested order on implementation `9ae88b46c`. No code changed during or after this final run. The evidence commit adds only this note and the two selected captures.
+
+| Command | Real result |
+| --- | --- |
+| `npm run typecheck` | Exit 0; all four TypeScript projects |
+| `npm run lint` | Exit 0 |
+| `npm test -- --maxWorkers=2` | Exit 0; 780 files passed, 58 skipped; 9,792 tests passed, 282 skipped; 1,312.01 seconds |
+| `npm run notices:verify` | Exit 0; 189 third-party notice components |
+| `npm run build` | Exit 0; main, host, preload and renderer |
+| `npx playwright test tests/e2e/watcher-gate.spec.ts` | Exit 0; four journeys passed; the recorded repeat took 14.9 seconds |
+
+The prescribed free-memory check returned 3,414,432 KB before the final full suite, above 3 GB. Free memory before the built-app checks was 7,322,788 KB. No final suite failure or isolated flaky-test retry occurred. The first app run's saved result was passed with no failed tests; its stdout was lost during context compaction, so the same four journeys were repeated to retain the exact output. SQLite experimental, jsdom canvas, fixture line-ending, dependency directive and color-environment warnings were non-failing.
+
+The built Windows app verifies stable/Owl ordinary Send/reply, saved special-kind preservation, bridge gating, stable layout recovery, all five local-host-off room refusals, and immediate in-flight-limit coordination with saved settings. Light/dark, reduced motion and layout bounds pass at 1600 by 1000, 1280 by 800 and exactly 820 by 560 CSS pixels. No paid provider or user profile was used.
+
+Visually inspected the fresh [Owl dark](../../artifacts/watcher-gate/wakeups-greptile-owl-dark-820x560.png) and [stable light](../../artifacts/watcher-gate/wakeups-greptile-stable-light-820x560.png) captures. Sidebar, transcript and composer fit; stable hides the preserved Watcher rows, while Owl exposes them. Each selected PNG matches the inspected run image byte-for-byte, is not ignored, and is 1230 by 840 device pixels at this laptop's 150% display scaling. Main bundle timestamp: 13:43:52 local, October 12; captures: 13:48:20 (Owl) and 13:48:14 (stable).
+
+Failed GitHub reads overlay unavailability on retained facts without inventing new observation times. Recovery tests cover missing metadata, same-fact replay, newer saved checkpoints, explicit PR unlink/link changes, full evidence projections, and stopped/retired ownership fences. Follow-up tests cover partial pruning of paused and failed news and explicit return to queued. Existing babysitting integration and fake-provider finish/question/failure proofs passed in the full suite.
+
+News still answers or grants nothing, and never restarts a worker Watcher stopped. Stable constructs none of these observers and preserves saved records. No Watcher poll timer, production dependency, renderer edit, phone restriction or new network host was added. Private cache bounds and recovery wiring do not widen the room envelope. Files retain their original line endings and UTF-8 without a BOM.
+
+All three findings are fixed locally. Packaged/installed builds, paid native-provider turns, macOS, Linux and phones were not exercised and are outside this follow-up. This run performed no push, rebase, stash, branch switch, worktree creation, publication, installation or nested review. The lead owns remote delivery and pull request #957. There is no unfinished implementation or required gate.
