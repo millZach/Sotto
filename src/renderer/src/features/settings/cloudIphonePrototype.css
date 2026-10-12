@@ -1,0 +1,46 @@
+/* PROTOTYPE — throwaway. Settings > Cloud iPhone variants and the floating variant bar. */
+
+/* Room under the last row so the variant bar never covers it. */
+.settings-view .cloud-proto { padding-bottom: 64px; }
+
+/* The key row: the field as every row has it, its buttons at the right underneath, as Verify key sits on Cleanup. */
+.settings-view .cloud-proto__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.settings-view .cloud-proto__key .settings-remote-status { margin-top: 8px; }
+
+/* This month's minutes, laid out as a field: words on the left, the meter where the control goes. */
+.settings-view .cloud-proto__usage { display: grid; grid-template-columns: minmax(0, 1fr) minmax(140px, 240px); grid-template-areas: 'label meter' 'description meter'; gap: 5px 22px; align-items: center; }
+.settings-view .cloud-proto__label { grid-area: label; margin: 0; color: var(--tt-text); font-size: 15px; font-weight: 500; line-height: 1.35; }
+.settings-view .cloud-proto__description { grid-area: description; margin: 0; max-width: 330px; color: var(--tt-text-muted); font-size: 13px; line-height: 1.45; }
+.settings-view .cloud-proto__usage > .cloud-proto__meter { grid-area: meter; }
+.settings-view .cloud-proto__meter { height: 6px; border-radius: var(--tt-radius-pill); background: var(--tt-hairline); overflow: hidden; }
+.settings-view .cloud-proto__meter > i { display: block; height: 100%; border-radius: inherit; background: var(--tt-accent); }
+
+/* Recent sessions: one quiet line each, the title taking the room and the date and minutes at the right. */
+.settings-view .cloud-proto__sessions { display: grid; margin: 0; padding: 0; list-style: none; }
+.settings-view .cloud-proto__sessions > li { display: grid; grid-template-columns: minmax(0, 1fr) auto 56px; gap: 16px; align-items: baseline; padding: 12px 0; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 13px; }
+.settings-view .cloud-proto__sessions > li:last-child { border-bottom: 0; }
+.settings-view .cloud-proto__sessions > li > span:first-child { min-width: 0; overflow: hidden; color: var(--tt-text); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.settings-view .cloud-proto__sessions > li > span:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+.settings-view .cloud-proto__empty { margin: 0; color: var(--tt-text-muted); font-size: 13px; }
+/* Inside a group the list is the row, so it keeps the rows' hairline but not their height. */
+.settings-view .settings-rows > .cloud-proto__sessions, .settings-view .settings-rows > .cloud-proto__empty { min-height: 0; padding-block: 4px; }
+.settings-view .settings-rows > .cloud-proto__empty { padding-block: 17px; }
+
+/* B: the list sits under its label inside one row. */
+.settings-view .cloud-proto__recent > .cloud-proto__sessions, .settings-view .cloud-proto__recent > .cloud-proto__empty { margin-top: 8px; }
+
+/* C: the statement's meter runs the width of the column. */
+.settings-view .cloud-proto__statement > .cloud-proto__meter { margin-top: 14px; max-width: 520px; }
+.settings-view .cloud-proto--c .settings-updates > .cloud-proto__sessions { border-top: 1px solid var(--tt-hairline); }
+.settings-view .cloud-proto--c .settings-updates > .cloud-proto__empty { padding: 17px 0; border-top: 1px solid var(--tt-hairline); }
+
+@media (max-width: 620px) {
+  .settings-view .cloud-proto__usage { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'label' 'description' 'meter'; gap: 9px; }
+}
+
+/* The bar is the prototype's, not Sotto's: high contrast so it never reads as part of a variant. */
+.prototype-switcher { position: fixed; z-index: 9999; bottom: 18px; left: 50%; display: flex; align-items: center; gap: 10px; transform: translateX(-50%); padding: 6px 10px; border-radius: var(--tt-radius-pill); background: var(--tt-text); color: var(--tt-canvas); box-shadow: var(--tt-shadow-lg); font-size: 13px; white-space: nowrap; -webkit-app-region: no-drag; }
+.prototype-switcher > button { width: 28px; height: 28px; border: 0; border-radius: var(--tt-radius-pill); background: transparent; color: inherit; font-size: 18px; line-height: 1; cursor: pointer; }
+.prototype-switcher > button:hover { background: var(--tt-text-muted); }
+.prototype-switcher > span { min-width: 220px; text-align: center; }
+.prototype-switcher__option { display: inline-flex; align-items: center; gap: 6px; padding-left: 10px; border-left: 1px solid var(--tt-text-muted); }
