@@ -25,7 +25,7 @@ function fixture(start = true, progress?: WatcherWakeOptions['progress']) {
   const remember = vi.fn(async (ids: string[]) => { record.wakeEventIds = [...record.wakeEventIds ?? [], ...ids] })
   const wakes = new WatcherWakeUp({ now: () => clock, snapshot: () => snapshot, record: () => record, prune,
     schedule: (callback, delay) => { const timer = { at: clock + delay, callback }; timers.add(timer); return () => { timers.delete(timer) } },
-    deliver, remember, failed, progress })
+    deliver, remember, failed, ...progress ? { progress } : {} })
   cleanups.push(() => wakes.close())
   if (start) wakes.start()
   const advance = async (ms: number) => {
