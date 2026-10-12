@@ -687,8 +687,11 @@ import XCTest
     func testAOneTapQuestionIsAnsweredOnItsCard() {
         launch(Self.fixture + ["--ui-question-while-reading"])
         let chip = app.buttons["Ctrl+J"]
-        reveal(chip)
+        // Whole and clear of the floating tab bar. At the largest text on the Pro Max, a chip mostly under the bar is
+        // hittable to XCTest only at its top corner, outside its capsule, and on CI the press there opened the thread.
+        reveal(chip, fullyVisible: true)
         chip.tap()
+        XCTAssertTrue(chip.isSelected, "The pressed chip is chosen on its card")
         // Another card on Threads has its own Send answer, which stays off until one of its chips is chosen.
         let send = app.buttons.matching(NSPredicate(format: "label == %@ AND enabled == true", "Send answer")).firstMatch
         XCTAssertTrue(send.waitForExistence(timeout: 5), "Choosing a chip readies its card's Send answer")
