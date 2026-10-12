@@ -81,7 +81,7 @@ BorderSurface {
           name: card.look.glyph
           color: card.look.tone === "error" ? Color.urgent : card.ink
           fontFamily: Style.font.family
-          size: name === "sotto" || name === "retry" ? Style.space(22) : Style.font.iconLarge
+          size: name === "retry" ? Style.space(22) : Style.font.iconLarge
         }
       }
 

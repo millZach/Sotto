@@ -288,4 +288,18 @@ describe('SettingsRepository', () => {
     await expect(repository.get()).resolves.toEqual(DEFAULT_SETTINGS)
     expect(defaultSettings(platformProfile('win32').defaultHotkey)).toEqual(DEFAULT_SETTINGS)
   })
+
+  it('projects whether the shell pill is in use into reads and never saves it', async () => {
+    const { filePath } = await createRepository()
+    let inUse = false
+    const linux = new SettingsRepository(filePath, { shellPillInUse: () => inUse })
+    expect((await linux.get()).shellPillInUse).toBe(false)
+    inUse = true
+    expect((await linux.get()).shellPillInUse).toBe(true)
+    expect((await linux.update({ showWidgetWhenIdle: false })).shellPillInUse).toBe(true)
+    // A rollback saves a projected snapshot back; the projection still stays out of the file.
+    await linux.save({ ...(await linux.get()), shellPillInUse: true })
+    expect(JSON.parse(await readFile(filePath, 'utf8'))).not.toHaveProperty('shellPillInUse')
+    expect(await new SettingsRepository(filePath).get()).not.toHaveProperty('shellPillInUse')
+  })
 })

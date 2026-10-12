@@ -302,6 +302,8 @@ artifacts/omarchy-shell-plugin/*
 !artifacts/omarchy-shell-plugin/late-stop-before-fix.png
 !artifacts/omarchy-shell-plugin/nested-proof.txt
 !artifacts/omarchy-shell-plugin/notices.png
+!artifacts/omarchy-shell-plugin/owl-bar.png
+!artifacts/omarchy-shell-plugin/owl-pill.png
 !artifacts/omarchy-shell-plugin/read-failure-keeps-pill.png
 !artifacts/omarchy-shell-plugin/rule-a-after-copied.png
 !artifacts/omarchy-shell-plugin/rule-a-coalesced.png
@@ -382,6 +384,8 @@ artifacts/watcher-rename/*
 artifacts/watcher-gate/*
 !artifacts/watcher-gate/*.png
 !artifacts/watcher-gate/profile.json
+!artifacts/watcher-gate/owl-features-package-status.json
+!artifacts/watcher-gate/owl-features-design-comparison.json
 
 # Selected Watcher thread-tool evidence; other generated captures stay local.
 artifacts/watcher-thread-tools/*
@@ -405,6 +409,20 @@ artifacts/linux-window-minimum/*
 !artifacts/linux-window-minimum/proof.txt
 
 !artifacts/linux-window-minimum/shell-plumbing-proof.txt
+# Linux Settings copy proof; retain only the cited frames and the run log.
+artifacts/linux-settings-copy/*
+!artifacts/linux-settings-copy/proof.txt
+!artifacts/linux-settings-copy/linux-specs-proof.txt
+!artifacts/linux-settings-copy/bindings-1600x1000-dark.png
+!artifacts/linux-settings-copy/bindings-820x560-light.png
+!artifacts/linux-settings-copy/bindings-open-failed-820x560-dark.png
+!artifacts/linux-settings-copy/updates-1280x800-dark.png
+!artifacts/linux-settings-copy/updates-820x560-light.png
+!artifacts/linux-settings-copy/widget-with-plugin-1600x1000-dark.png
+!artifacts/linux-settings-copy/widget-with-plugin-1280x800-light.png
+!artifacts/linux-settings-copy/widget-with-plugin-820x560-dark.png
+!artifacts/linux-settings-copy/widget-without-plugin-1280x800-light.png
+!artifacts/linux-settings-copy/widget-without-plugin-820x560-dark.png
 
 # New-thread defaults on every host (ADR-0074); retain only the captures its verification note cites.
 artifacts/new-thread-defaults-every-host/*
