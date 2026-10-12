@@ -1,16 +1,18 @@
 // Built-app proof that Settings says what applies on Linux: the bindings' setup steps, pacman updates, and the
-// idle widget row with and without the shell pill. With SOTTO_PROOF_CAPTURE_DIR set, run it inside an owned nested
-// Hyprland (scripts/verify-linux-window-minimum.mjs --exec); it then floats its own window there and captures it with grim.
+// idle widget row with and without the shell pill. Run inside the owned nested Hyprland of
+// scripts/verify-linux-window-minimum.mjs --exec, it also floats its own window there and captures it with grim,
+// into the shared evidence folder (tests/fixtures/evidence.ts).
 import { execFile } from 'node:child_process'
 import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { isAbsolute, join } from 'node:path'
+import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { _electron as electron, expect, test, type Locator } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { LINUX_BINDINGS_GUIDE_URL } from '../../src/renderer/src/platformCopy'
 import { closeSotto, firstSottoWindow, launchSotto, openPage, type LaunchedSotto } from './support/sottoLaunch'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 const run = promisify(execFile)
 const SIZES = [[1600, 1000], [1280, 800], [820, 560]] as const
@@ -22,12 +24,10 @@ interface HyprClient { readonly address: string; readonly pid: number; readonly 
 test('Linux Settings says what applies, with and without the shell pill', async () => {
   test.skip(process.platform !== 'linux', 'Linux Settings copy')
   test.setTimeout(240_000)
-  const output = process.env.SOTTO_PROOF_CAPTURE_DIR
+  // Captures and window moves go only to the owned nested compositor, which names the live one it must not touch.
+  const output = process.env.SOTTO_NESTED_LIVE_SIGNATURE ? evidenceDirectory('artifacts/linux-settings-copy') : undefined
   if (output) {
-    // Captures and window moves go only to an owned nested compositor, never the live session.
-    expect(isAbsolute(output)).toBe(true)
     expect(process.env.HYPRLAND_INSTANCE_SIGNATURE).toBeTruthy()
-    expect(process.env.SOTTO_NESTED_LIVE_SIGNATURE).toBeTruthy()
     expect(process.env.HYPRLAND_INSTANCE_SIGNATURE).not.toBe(process.env.SOTTO_NESTED_LIVE_SIGNATURE)
     await mkdir(output, { recursive: true })
     await run('hyprctl', ['dismissnotify'])

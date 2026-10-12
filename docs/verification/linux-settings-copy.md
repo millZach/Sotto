@@ -18,7 +18,7 @@ Windows and macOS do not change. Their update copy, controls and switch, the glo
 
 ## Native proof
 
-**VERIFIED on forge:** the built, unpackaged Sotto 0.1.37 (Electron 43.1.0) on Hyprland 0.56, in an owned nested Hyprland inside a second owned one, with a private HOME, XDG folders, runtime folder and TMPDIR, and its own `dbus-run-session` that activates nothing (no desktop portal). The run used `scripts/verify-linux-window-minimum.mjs --exec` around [the spec](../../tests/e2e/linux-settings-copy.spec.ts); the spec gave Sotto a HOME of its own inside that. [proof.txt](../../artifacts/linux-settings-copy/proof.txt) is the run: one pass, owned compositors and processes stopped, live Omarchy, Hyprland and Sotto folders unchanged.
+**VERIFIED on forge:** the built, unpackaged Sotto 0.1.37 (Electron 43.1.0) on Hyprland 0.56, in an owned nested Hyprland inside a second owned one, with a private HOME, XDG folders, runtime folder and TMPDIR, and its own `dbus-run-session` that activates nothing (no desktop portal). The run used `scripts/verify-linux-window-minimum.mjs --exec` around [the spec](../../tests/e2e/linux-settings-copy.spec.ts), with `SOTTO_E2E_EVIDENCE=publish`; the spec gave Sotto a HOME of its own inside that. [proof.txt](../../artifacts/linux-settings-copy/proof.txt) is the run: one pass, owned compositors and processes stopped, live Omarchy, Hyprland and Sotto folders unchanged.
 
 What the spec drove, in order:
 
@@ -37,7 +37,11 @@ The window was floated and sized through the nested compositor and captured with
 - Idle widget row with the plugin: [1600×1000 Dark](../../artifacts/linux-settings-copy/widget-with-plugin-1600x1000-dark.png), [1280×800 Light](../../artifacts/linux-settings-copy/widget-with-plugin-1280x800-light.png), [820×560 Dark](../../artifacts/linux-settings-copy/widget-with-plugin-820x560-dark.png).
 - Idle widget row without it: [1280×800 Light](../../artifacts/linux-settings-copy/widget-without-plugin-1280x800-light.png), [820×560 Dark](../../artifacts/linux-settings-copy/widget-without-plugin-820x560-dark.png).
 
-The first run's frames showed the bindings label sitting a paragraph's margin above its description; the row's label is a `<p>`, not a `<label>`, and kept the browser's margins. The row now sheds them, and the frames above are from the second run.
+The first run's frames showed the bindings label sitting a paragraph's margin above its description; the row's label is a `<p>`, not a `<label>`, and kept the browser's margins. The row now sheds them, and the frames above are from the final run, after review.
+
+## Review
+
+The two-axis review ran on Sol (gpt-6.1-sol) at max reasoning. Standards found that the browser-failure notice named a file the installed package does not carry; it now gives the guide's address. The guide said the idle widget switch stays unavailable until the plugin is removed; it now says the switch also returns when Sotto loses its state file. The spec chose its own capture folder; it now captures through the shared evidence helper. Standards also flagged `settingsUpdatesByHand: string | null` doubling as "this platform has no updater" as possible Primitive Obsession. It is kept: it is the same idiom as `accessibilityHelp: string | null` beside it. Spec found that the setup steps' link pointed into a private repository. `millZach/Sotto` is public (GitHub's API reports it so, and the guide's address answers 200 without signing in); `docs/release/releasing.md` still calls it private, which this change leaves alone.
 
 ## The saved-setting notice
 
@@ -64,7 +68,7 @@ The first run of those four specs also passed 8 of 8, with `settings-index` skip
 mise exec node@24.21.0 -- npm ci
 mise exec node@24.21.0 -- node node_modules/electron/install.js
 mise exec node@24.21.0 -- npm run build
-mise exec node@24.21.0 -- node scripts/verify-linux-window-minimum.mjs --exec /usr/bin/env SOTTO_PROOF_CAPTURE_DIR=$PWD/artifacts/linux-settings-copy $PWD/node_modules/.bin/playwright test tests/e2e/linux-settings-copy.spec.ts
+mise exec node@24.21.0 -- node scripts/verify-linux-window-minimum.mjs --exec $PWD/node_modules/.bin/playwright test tests/e2e/linux-settings-copy.spec.ts
 ```
 
-Without `SOTTO_PROOF_CAPTURE_DIR` the spec checks the same behaviour and captures nothing. It always gives Sotto its own HOME, so the plugin folder it creates and removes is never the user's.
+Inside the harness the spec captures into `artifacts/e2e-runs/linux-settings-copy/`, through the shared evidence helper (`docs/ci.md`). To refresh the frames kept here, run the harness's command as `/usr/bin/env SOTTO_E2E_EVIDENCE=publish $PWD/node_modules/.bin/playwright test …`. Outside the harness the spec checks the same behaviour and captures nothing. It always gives Sotto its own HOME, so the plugin folder it creates and removes is never the user's.
