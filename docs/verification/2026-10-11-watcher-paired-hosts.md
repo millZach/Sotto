@@ -98,3 +98,48 @@ All eight requested commands passed in order on `f4b83f291`. The final full-suit
 The rebuilt Electron journeys retain stable/Owl ordinary Send/reply, saved-kind and bridge gating, layout/keyboard recovery and all local-host-off refusals. Both themes and reduced motion passed at 1600x1000, 1280x800 and the exact 820x560 content size. The incoming native-frame helper changes only the disposable test window's minimum. I inspected the new [Owl dark](../../artifacts/watcher-paired-hosts/merge-owl-dark-820x560.png) and [stable light](../../artifacts/watcher-paired-hosts/merge-stable-light-820x560.png) captures: sidebar, transcript and composer fit. Their 1230x840 physical pixels reflect the laptop's 150% scaling. Main bundle timestamp was 18:02:13 local; the final host bundle was 18:06:56. These captures contain synthetic fixtures only.
 
 The owned-profile harness closed its Electron launches; a final inventory found zero Node, Electron or SSH processes with this worktree in their command line. No installed/package, macOS, Linux or phone UI proof was added. The original live proof and retained-profile limitation above remain unchanged. This merged native paired-host build was not live rechecked, as requested. Nothing was pushed; the lead still owns integration, review and CI.
+
+## Pushed wakeups review merge follow-up
+
+Merge `68fbb24f4` brings in PR #957 at `6fe69dfd6`, including all eight ticket-4 review corrections and its merge of main with the final ticket-3 review fixes, fixture repairs and palette baselines. The merge has one conflict, in `src/main/agents/watcher.ts`: retain the incoming working-copy path and base-branch role checks inside the paired owning-host guard. The master defers remote choices to their owner; that owner applies both role checks before admission and after the native read. Every other file merges cleanly.
+
+The merged code retains plan-progress quiet deadlines, comments-only check evidence, distinct occurrences when evidence returns, bounded unsaved-news retries, structured checkpoint causes, callbacks accepting all news sources, the shared check classifier and the corrected glossary. It also retains ticket 3's latest stopped-queue writer fence, bounded Stop all confirmations and choice roles, alongside ticket 5's identities, ceilings, refunds, refusal codes, uncertain slots, reconnection receipts and takeover enforcement.
+
+`7a2735739` fixes an evidence-only paired-host gap found during this check: direct import stored facts without notifying the shared occurrence observer. Each owning-host source now replaces its prior truth and notifies the same observer after participation reconciliation. Facts for another host are ignored. The owning host also retains checkpoint and GitHub observations without starting a master, news delivery or quiet deadline. No host receives a capacity source, answer policy or the master's local bearer.
+
+The added socket regression stalled at its original fifteen-second deadline before the fix. It now proves three distinct failed/passed/failed occurrences on one head, the owning host in every target, news behind the user's continuation, withdrawal on Stop, one worker prompt and no answer. The evidence-only probe retains a structured checkpoint cause with no master readiness, deadline or delivery. The focused run passed two files and 39 tests in 15.83 seconds. Its final sequence test has a scoped sixty-second deadline for the three real batching windows and socket setup; its assertions and batching deadlines are unchanged.
+
+The first typecheck caught an optional projected evidence list. `e6af98b98` repaired that lookup. Lint then rejected its asserted optional chain; `91d87a520` defaults the missing list to an empty array before the existing fact-presence assertion. Both failures were confined to the new fixture and were corrected in separate commits.
+
+
+`798fccb12` fixes the second paired seam. Socket shells strip activity details, so an owning-host plan step could complete without changing the master's quiet-progress fingerprint. The host now projects the shared classifier's opaque digest for scoped targets, with at most one thousand optional progress entries. The master uses that digest in its existing observer; repeated observations of the same digest do not postpone quiet. Projection revisions include progress so a detail-only change produces a notification. Protocol stays v1 and contains no new permission or capacity source.
+
+The synchronized socket probe failed with an unchanged progress time when a plan step completed at minute nineteen despite the same shell summary. It passes after the fix. The clock probe rejects the old quiet deadline and sends exactly one notice after twenty minutes of unchanged new progress. All 41 focused tests across two files passed in 14.55 seconds. The exploratory fixture first lacked a required activity turn ID; after correcting that, its baseline had to await the owning-host operation read before testing the isolated plan change. Neither exploratory setup error was treated as production evidence.
+
+The strict test project then rejected an explicitly undefined optional callback. `8c75e1cf9` omits it when absent, without widening the production interface. Typecheck and lint passed after this separate fixture correction.
+
+Before this second seam was corrected, the ordered run through the socket gate passed: typecheck and lint, 781 files and 9,773 tests in 1,121.12 seconds, 189 notice components, the desktop build, then 22 socket files with 466 tests and ten skipped in 156.03 seconds. It needed no flaky-test retry. Those logs are retained as `r957-before-progress-*.log`; they do not stand in for the final implementation's gates.
+
+
+### Final ordered gates on the pushed merge
+
+All eight commands passed in order on implementation `8c75e1cf9`. Free memory was 12,175,880 KB before the earlier suite and 12,423,408 KB before the final suite, each above 3 GB. Actual output is retained in the ignored `r957-*.log` files, normalized to UTF-8 without BOM.
+
+| Command | Final result |
+| --- | --- |
+| `npm run typecheck` | Exit 0; all four projects |
+| `npm run lint` | Exit 0 |
+| `npm test -- --maxWorkers=2` | Exit 0; 781 files and 9,775 tests passed, 59 files and 284 tests skipped; 1,139.38 seconds |
+| `npm run notices:verify` | Exit 0; 189 components |
+| `npm run build` | Exit 0; main, host, preload and renderer |
+| `npm run test:socket` | Exit 0; 22 files and 466 tests passed, ten skipped; 154.22 seconds |
+| `npm run build:host` | Exit 0; plain Node host, 204 modules; 2.21 seconds |
+| `npx playwright test tests/e2e/watcher-gate.spec.ts` | Exit 0; four journeys; 14.6 seconds |
+
+Both full suites passed without isolated retries. SQLite experimental, jsdom canvas, fixture line-ending, dependency directive and Playwright color warnings were non-failing output. No global deadline or production startup behavior changed.
+
+The built-app journeys check stable/Owl ordinary Send and reply, saved special kinds and bridge gating, stable layout recovery, all five local-host-off room refusals, and a changed in-flight limit reaching both the running Watcher and saved settings. Dark/light, reduced motion and bounds passed at 1600x1000, 1280x800 and exactly 820x560 content pixels. Visually inspected the new [Owl dark](../../artifacts/watcher-paired-hosts/r957-owl-dark-820x560.png) and [stable light](../../artifacts/watcher-paired-hosts/r957-stable-light-820x560.png) captures: sidebar, transcript and composer fit. Each selected file is byte-identical to its run capture. Their 1230x840 device pixels reflect the laptop's 150% scaling. Main bundle timestamp: 23:41:26 local; standalone host bundle: 23:45:04; selected captures: 23:45:23 and 23:45:18.
+
+The owned-profile harness closed its Electron launches, and the final inventory found no Node, Electron or SSH process with this worktree in its command line. No renderer change was authored, no baseline was regenerated, and production dependencies remain zod, node-pty and sherpa-onnx-node. The host protocol documents the optional progress field; the incoming CONTEXT wording remains alongside the paired-origin definition. These are corrections to the existing observation contract, with no new authority or domain decision requiring another ADR or plan amendment.
+
+No live forge check was repeated, as requested. The original live result and retained-profile limitation remain unchanged. This follow-up adds local socket/fake-provider and built Windows app proof, not new paid-provider, packaged, macOS, Linux or phone UI evidence. Watcher is not filtered out of phone projections. Nothing was pushed, rebased, stashed, switched, published or installed, no worktree was created, and no nested review ran. The lead owns integration, the pull request and the two-axis review. No implementation or required local check remains unfinished.
