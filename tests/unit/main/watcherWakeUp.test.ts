@@ -293,3 +293,28 @@ it('folds newer evidence into a failed save retry instead of retaining its older
   expect(f.delivered[0]!.events[0]!.revision).toBe(observationDigest(f.wakes.evidence.read(centerTarget).map(fact => fact.id).sort()))
   expect(f.record.wakeEventIds).toEqual(f.delivered[0]!.events.map(event => event.id))
 })
+
+it.each([0, 20])('retains the bounded pending batch after a failed save and %s stopped participants', async stopped => {
+  const f = fixture(), request = f.record.requests[0]!, participant = request.participants[0]!
+  f.thread.status = 'idle'; f.thread.lastTurn = undefined
+  const targets = [centerTarget]
+  for (let n = 1; n < 60; n++) {
+    const target = { ...centerTarget, threadId: 'overflow-' + n }
+    targets.push(target)
+    f.snapshot.threads.push({ ...f.thread, id: target.threadId })
+    request.participants.push({ ...participant, target })
+  }
+  f.deliver.mockRejectedValueOnce(new Error('synthetic save failure'))
+  for (const target of targets) f.wakes.checkpoint({ threadId: target.threadId, checkpointId: 'capture',
+    observedAt: new Date(f.now()).toISOString(), availability: 'available', changedFiles: 1 })
+  await f.advance(2_000)
+  expect(f.deliver.mock.calls[0]![0].events).toHaveLength(50)
+  expect(f.deliver.mock.calls[0]![0].omitted).toBe(10)
+  for (const item of request.participants.slice(0, stopped)) item.automationStopped = true
+  if (stopped) f.wakes.observe()
+  await f.advance(2_000)
+  expect(f.delivered).toHaveLength(1)
+  expect(f.delivered[0]!.omitted).toBe(Math.max(0, targets.length - stopped - 50))
+  expect(f.delivered[0]!.events.map(event => event.target)).toEqual(targets.slice(stopped, stopped + 50))
+  expect(f.record.wakeEventIds).toEqual(f.delivered[0]!.events.map(event => event.id))
+})

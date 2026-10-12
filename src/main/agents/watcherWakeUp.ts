@@ -111,8 +111,8 @@ export class WatcherWakeUp {
           while (this.rememberPending.size > 1_000) this.rememberPending.delete(this.rememberPending.values().next().value!)
         } catch {
           if (this.closed) return
-          // New observations win over failed news; stopped or answered news is withdrawn.
-          this.pending = foldWatcherEvents(valid.events, this.pending).filter(event => this.due(event))
+          // Keep the full batch behind the delivery limit; later observations and withdrawal still win.
+          this.pending = foldWatcherEvents(events, this.pending).filter(event => this.due(event))
           this.options.failed?.()
         }
       }
