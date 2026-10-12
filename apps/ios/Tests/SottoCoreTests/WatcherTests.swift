@@ -36,12 +36,13 @@ final class WatcherTests: XCTestCase {
     func testWorkerAnswerPreservesItsNativeChoiceAndNeverUsesWatcherAsOwner() throws {
         let page = try decode(WatcherPhoneState.self, state), card = try XCTUnwrap(page.needsYou.first)
         let answer = try Commands.answer(threadID: card.target.threadId, request: card.request, currentRequests: [card.request], choice: "once")
-        let operation = try WatcherWire.answer(target: card.target, command: answer)
+        guard case .object(let fields) = answer else { return XCTFail("An answer command is a JSON object") }
+        let operation = try WatcherWire.answer(target: card.target, command: fields)
         let value = JSONValue.object(operation)
         XCTAssertEqual(value["request"]["command"]["threadId"], .string("worker"))
         XCTAssertEqual(value["request"]["command"]["permissionChoice"], .string("once"))
         XCTAssertEqual(value["request"]["command"]["approved"], .bool(true))
-        XCTAssertThrowsError(try WatcherWire.answer(target: WatcherTarget(hostId: host, threadId: "watcher"), command: answer))
+        XCTAssertThrowsError(try WatcherWire.answer(target: WatcherTarget(hostId: host, threadId: "watcher"), command: fields))
     }
     func testRefusalsAndSendAndStopRepliesDecodeWithoutApprovingAnything() throws {
         if case .ok(let page) = try decode(WatcherPhoneResult.self, "{\"status\":\"ok\",\"state\":\(state)}") { XCTAssertTrue(page.working) }
