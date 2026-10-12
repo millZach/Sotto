@@ -15,6 +15,9 @@ export interface CheckpointObservation {
   threadId: string; checkpointId: string; observedAt: string; turnId?: string; changedFiles?: number
   availability: 'available' | 'unavailable' | 'unsupported'; reason?: 'capture-unavailable' | 'shared-checkout' | 'unsupported'
 }
+const EVIDENCE_CACHE_MAX = 300 // Fifty linked PRs can each supply five independent facts, plus local facts.
+const EVIDENCE_PROJECTION_MAX = 100
+
 /** Bounded in-memory facts only. Never keep raw errors, file paths, tool inputs, output or review bodies. */
 export class WatcherEvidenceStore {
   private readonly entries = new Map<string, Map<string, WatcherEvidence>>()
@@ -25,14 +28,16 @@ export class WatcherEvidenceStore {
     const item = parsed.data
     const key = targetKey(item.target), entries = this.entries.get(key) ?? new Map<string, WatcherEvidence>()
     const previous = entries.get(slot)
-    entries.delete(slot); entries.set(slot, item)
-    while (entries.size > 100) entries.delete(entries.keys().next().value!)
+    // Clock-only refreshes preserve ordering; only a real change becomes a recent fact.
+    if (previous?.id !== id) entries.delete(slot)
+    entries.set(slot, item)
+    while (entries.size > EVIDENCE_CACHE_MAX) entries.delete(entries.keys().next().value!)
     this.entries.set(key, entries)
     return previous?.id !== id
   }
   read(target: WatcherThreadTarget, connected = true, now = Date.now()): WatcherEvidence[] {
     const entries = this.entries.get(targetKey(target))
-    return [...entries?.values() ?? []].map(item => {
+    return [...entries?.values() ?? []].slice(-EVIDENCE_PROJECTION_MAX).map(item => {
       const unread = item.source === 'github' && item.url ? entries?.get('pr:' + pullRequestKey(item.url)) : undefined
       return { ...item,
         ...connected ? (['github', 'working-copy'].includes(item.source) && now - Date.parse(item.observedAt) > 5 * 60_000 ? { freshness: 'stale' as const } : {})

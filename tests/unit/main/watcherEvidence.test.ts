@@ -139,3 +139,17 @@ it('uses the same GitHub fact identities for equivalent URL spelling', () => {
   store.pullRequest(centerTarget, read)
   expect(store.pullRequest(centerTarget, { ...read, url: 'https://github.com/O/R/pull/1' })).toBe(false)
 })
+
+it('keeps fifty PRs quiet on identical reads while bounding the projection and surfacing real changes', () => {
+  const store = new WatcherEvidenceStore()
+  const read = (number: number) => ({ url: 'https://github.com/o/r/pull/' + number, head: 'head', observedAt: centerTime,
+    availability: 'available' as const, state: 'open' as const, checks: 'passed' as const, checkCount: 1, reviewApproved: true, autoMerge: true })
+  for (let n = 1; n <= 50; n++) store.pullRequest(centerTarget, read(n))
+  const ids = store.read(centerTarget).map(item => item.id)
+  for (let n = 1; n <= 50; n++) expect(store.pullRequest(centerTarget, { ...read(n), observedAt: '2026-10-12T12:00:00.000Z' })).toBe(false)
+  expect(store.read(centerTarget).map(item => item.id)).toEqual(ids)
+  expect(store.read(centerTarget)).toHaveLength(100)
+  expect(store.pullRequest(centerTarget, { ...read(1), observedAt: '2026-10-12T12:01:00.000Z', checks: 'failed' })).toBe(true)
+  expect(store.read(centerTarget).find(item => item.url === read(1).url && item.fact === 'checks-failed')).toBeDefined()
+  expect(store.read(centerTarget)).toHaveLength(100)
+})
