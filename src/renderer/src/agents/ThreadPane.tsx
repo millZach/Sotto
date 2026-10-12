@@ -8,6 +8,7 @@ import { PaneMenu, type PaneMenuItem } from './PaneMenu'
 import { GitActionButton } from './GitActionButton'
 import { ProviderMark } from './ProviderMark'
 import { AgentRequestCard } from './requests/AgentRequestCard'
+import { MessageLinksVariant, messageLinks, messageLinksPrototypeEnabled, useMessageLinksPrototype } from './requests/MessageLinks.prototype'
 import { CloudIphoneRequest } from './requests/CloudIphoneRequest'
 import { RequestDraftRecovery } from './requests/RequestDraftRecovery'
 import { requestAnswerOwnerKey, requestAnswerStore } from './requests/requestAnswers'
@@ -33,9 +34,12 @@ function ThreadRequests({ row, state, command, blocked, onAnswer, kind }: {
 }): ReactNode {
   const thread = row.thread
   const requests = thread.requests.filter(request => request.kind === kind)
+  const prototype = useMessageLinksPrototype()
   if (isThreadClosed(thread) || requests.length === 0) return null
-  return <div className={kind === 'question' ? 'thread-questions' : undefined}>{requests.map(request => {
+  const showLinks = kind === 'question' && messageLinksPrototypeEnabled()
+  return <div className={kind === 'question' ? 'thread-questions' : undefined}>{showLinks ? prototype.switcher : null}{requests.map(request => {
     return <AgentRequestCard placement={kind === 'question' ? 'composer' : undefined} key={request.id} ownerId={thread.id} ownerTitle={thread.title} request={request} blocked={blocked}
+      {...(showLinks ? { messageLinks: <MessageLinksVariant variant={prototype.variant} links={messageLinks(thread.messages, request)} /> } : {})}
       draftOwner={{ kind: 'thread', ownerId: thread.id, providerId: row.providerId ?? state.configuration.provider }}
       onWriteAnswer={onAnswer}
       onSubmit={answer => command({ type: 'answer', threadId: thread.id, requestId: request.id, ...answer }).then(result => result === null ? null : { error: result.error })}

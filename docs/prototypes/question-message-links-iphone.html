@@ -1,0 +1,81 @@
+<!doctype html>
+<!-- PROTOTYPE — throwaway. The iPhone's question sheet with the links from the agent's message before the question,
+     two ways, beside today's sheet. Colours are the iPhone's dark Sotto palette (apps/ios/Sotto/ThemePalettes.swift). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Question sheet links on the iPhone</title>
+<style>
+  :root { --canvas: #040507; --surface: #090a0e; --raised: #111316; --overlay: #18191d; --text: #f9fafd; --muted: #a0a5ae; --border: #2a2f39; --accent: #47b8a9; --accent-text: #6bc3b6; --accent-surface: #0c3b36; }
+  body { margin: 0; padding: 28px; background: #1d1f24; color: var(--text); font: 15px/1.4 -apple-system, "SF Pro Text", "Segoe UI", system-ui, sans-serif; }
+  .row { display: flex; gap: 28px; align-items: flex-start; }
+  figure { margin: 0; }
+  figcaption { margin: 0 0 10px; color: #c9ccd3; font-size: 14px; max-width: 390px; }
+  figcaption b { color: #fff; }
+  .phone { position: relative; width: 390px; height: 844px; overflow: hidden; border-radius: 44px; background: var(--canvas); box-shadow: 0 0 0 10px #000, 0 20px 50px rgba(0,0,0,.5); }
+  .thread { padding: 64px 18px 0; color: var(--muted); font-size: 15px; }
+  .thread p { margin: 0 0 12px; color: var(--text); opacity: .35; }
+  .sheet { position: absolute; inset: 120px 0 0; display: flex; flex-direction: column; border-radius: 22px 22px 0 0; background: var(--overlay); box-shadow: 0 -1px 0 var(--border); }
+  .grab { width: 38px; height: 5px; margin: 8px auto 4px; border-radius: 3px; background: #3a3d44; }
+  .body { flex: 1; overflow: auto; padding: 10px 18px 0; }
+  .tag { display: inline-block; padding: 2px 9px; border: 1px solid var(--border); border-radius: 999px; color: var(--muted); font-size: 12px; }
+  h2 { margin: 8px 0 0; font-size: 20px; font-weight: 600; line-height: 1.25; }
+  .caption { margin: 18px 0 6px; color: var(--muted); font-size: 13px; }
+  .links { display: grid; gap: 8px; margin-top: 16px; }
+  .caption + .links { margin-top: 0; }
+  .link { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 12px; background: rgba(255,255,255,.04); }
+  .link svg { flex: none; }
+  .link span { flex: 1; min-width: 0; display: grid; }
+  .link b { font-size: 15px; font-weight: 600; }
+  .link small { overflow: hidden; color: var(--muted); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+  .choices { display: grid; gap: 10px; margin-top: 20px; }
+  .choice { padding: 12px 14px; border: 1px solid var(--border); border-radius: 14px; background: var(--raised); }
+  .choice b { font-weight: 600; }
+  .choice em { color: var(--accent-text); font-style: normal; font-size: 13px; }
+  .choice small { display: block; margin-top: 3px; color: var(--muted); font-size: 13px; }
+  .footer { display: flex; gap: 10px; padding: 14px 18px 34px; border-top: 1px solid var(--border); background: var(--overlay); }
+  .pill { flex: 1; padding: 13px 0; border-radius: 999px; text-align: center; font-weight: 600; }
+  .soft { background: #24262c; }
+  .primary { background: var(--accent); color: #07100e; opacity: .5; }
+</style>
+</head>
+<body>
+<template id="link">
+  <div class="link">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6bc3b6" stroke-width="2.4" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>
+    <span><b>Open the link</b><small></small></span>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a0a5ae" stroke-width="2.2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M10 14 17 7M11 7h6v6"/></svg>
+  </div>
+</template>
+<div class="row" id="row"></div>
+<script>
+  const places = ['localhost', 'github.com/millZach/Sotto/tree/prototype/cloud-iphone-settings-layout']
+  const variants = [
+    { title: 'Today', note: 'The sheet covers the thread. The agent’s message, and the link in it, is underneath.', links: 'none' },
+    { title: 'A · Same rows', note: 'The message’s links join the rows the sheet already shows for a question’s own links. Nothing says where they came from.', links: 'rows' },
+    { title: 'B · Rows under a caption', note: 'The same rows, under “From the message above”, so it is clear the question itself did not carry them.', links: 'caption' },
+  ]
+  const row = document.getElementById('row')
+  for (const variant of variants) {
+    const links = variant.links === 'none' ? '' : `${variant.links === 'caption' ? '<p class="caption">From the message above</p>' : ''}<div class="links"></div>`
+    row.insertAdjacentHTML('beforeend', `<figure><figcaption><b>${variant.title}</b> · ${variant.note}</figcaption><div class="phone">
+      <div class="thread"><p>Review page: http://localhost:8075/ (it’s open in your browser)</p><p>I found why the page looks different…</p></div>
+      <div class="sheet"><div class="grab"></div><div class="body">
+        <span class="tag">Layout</span><h2>Which layout should Settings &gt; Cloud iPhone use?</h2>${links}
+        <div class="choices">
+          <div class="choice"><b>A · Groups</b> <em>Recommended</em><small>Three small headings with icons, as Git groups its settings.</small></div>
+          <div class="choice"><b>B · One list</b><small>No subheadings, one run of rows like Output.</small></div>
+          <div class="choice"><b>C · Usage first</b><small>This month’s minutes lead with a wide meter.</small></div>
+        </div></div>
+        <div class="footer"><div class="pill soft">Not now</div><div class="pill primary">Send answer</div></div>
+      </div></div></figure>`)
+    const holder = row.lastElementChild.querySelector('.links')
+    if (holder) for (const place of places) {
+      const node = document.getElementById('link').content.cloneNode(true)
+      node.querySelector('small').textContent = place
+      holder.appendChild(node)
+    }
+  }
+</script>
+</body>
+</html>

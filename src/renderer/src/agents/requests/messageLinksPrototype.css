@@ -1,0 +1,26 @@
+/* PROTOTYPE — throwaway. The links from the agent's message on a question card, three ways, and the variant bar. */
+.message-links { margin: 10px 0 12px; }
+
+/* A: rows, as the iPhone's question sheet shows a question's links. */
+.message-links--rows { display: grid; gap: 6px; }
+.message-links__row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; padding: 8px 12px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-surface-sunken); color: var(--tt-text); font: inherit; text-align: left; cursor: pointer; }
+.message-links__row:hover { background: var(--tt-hover); }
+.message-links__row > svg:first-child { flex: none; color: var(--tt-accent-text); }
+.message-links__row > svg:last-child { flex: none; color: var(--tt-text-muted); }
+.message-links__row > span { display: grid; flex: 1; min-width: 0; }
+.message-links__row b { font-size: 14px; font-weight: 600; }
+.message-links__row small { overflow: hidden; color: var(--tt-text-muted); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
+
+/* B: one quiet line. */
+.message-links--line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; color: var(--tt-text-muted); font-size: 13.5px; }
+.message-links--line .agent-request__link { display: inline-flex; align-items: center; gap: 2px; font-size: 14px; }
+
+/* C: the paragraph each link came from, quoted. */
+.message-links--quote figcaption { margin-bottom: 4px; color: var(--tt-text-muted); font-size: 12.5px; }
+.message-links--quote blockquote { margin: 0 0 6px; padding: 6px 0 6px 12px; border-left: 2px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+
+/* The bar is the prototype's, not Sotto's: high contrast so it never reads as part of a variant. */
+.prototype-switcher { position: fixed; z-index: 9999; top: 46px; left: 50%; display: flex; align-items: center; gap: 10px; transform: translateX(-50%); padding: 6px 10px; border-radius: var(--tt-radius-pill); background: var(--tt-text); color: var(--tt-canvas); box-shadow: var(--tt-shadow-lg); font-size: 13px; white-space: nowrap; -webkit-app-region: no-drag; }
+.prototype-switcher > button { width: 28px; height: 28px; border: 0; border-radius: var(--tt-radius-pill); background: transparent; color: inherit; font-size: 18px; line-height: 1; cursor: pointer; }
+.prototype-switcher > button:hover { background: var(--tt-text-muted); }
+.prototype-switcher > span { min-width: 240px; text-align: center; }
