@@ -325,9 +325,12 @@ test.describe("Watcher's room on the built app", () => {
         await capture(launched, `beside-sotto-dark-${width}x${height}.png`)
       }
       await resizeContentWindow(launched, 1280, 800)
-      // The divider answers the keyboard.
+      await settle(page)
+      // The divider answers the keyboard, once it has measured the wider room: until then the minimum size's
+      // range still holds and clamps the step.
       const divider = page.getByRole('separator', { name: 'Resize panes' })
       const before = Number(await divider.getAttribute('aria-valuenow'))
+      await expect.poll(async () => Number(await divider.getAttribute('aria-valuemax'))).toBeGreaterThanOrEqual(before + 5)
       await divider.focus()
       await page.keyboard.press('ArrowRight')
       await expect(divider).toHaveAttribute('aria-valuenow', String(before + 5))
