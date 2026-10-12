@@ -859,12 +859,17 @@ import XCTest
         capture("watcher-watched-dark")
         let stopAll = app.buttons["watcher-stop-all"]
         stopAll.tap()
-        let confirm = app.buttons["Stop 3 threads"]
-        XCTAssertTrue(confirm.waitForExistence(timeout: 5), "Stop all asks first")
-        XCTAssertTrue(text("Stop the 3 threads Watcher started?").exists)
+        // An alert, named by its question, so its Cancel is always there to press (iOS 26 leaves a confirmation
+        // dialog's out).
+        let question = app.alerts["Stop the 3 threads Watcher started?"]
+        XCTAssertTrue(question.waitForExistence(timeout: 5), "Stop all asks first")
+        let confirm = question.buttons["Stop 3 threads"]
+        XCTAssertTrue(confirm.exists)
+        let named = question.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Add Android share sheet, Claude Code on Studio Mac")).firstMatch
+        XCTAssertTrue(named.exists, "The question names each thread it would stop and where it runs")
         capture("watcher-stop-all-dark")
-        app.buttons["Cancel"].tap()
-        XCTAssertTrue(waitUntilGone(confirm))
+        question.buttons["Cancel"].tap()
+        XCTAssertTrue(waitUntilGone(question))
         XCTAssertEqual(meter.value as? String, "3 of 4 watched", "Cancelling stops nothing")
         stopAll.tap()
         XCTAssertTrue(confirm.waitForExistence(timeout: 5))

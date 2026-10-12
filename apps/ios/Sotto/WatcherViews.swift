@@ -39,16 +39,26 @@ struct WatcherView: View {
             RequestSheet(place: card.place, request: card.request)
                 .presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
         }
-        .confirmationDialog(WatcherWords.stopQuestion(stopPreview?.targets.count ?? 0),
-                            isPresented: Binding(get: { stopPreview != nil }, set: { if !$0 { stopPreview = nil } }),
-                            titleVisibility: .visible, presenting: stopPreview) { preview in
+        // Stop all asks in the middle of the screen, with Cancel beside Stop, as the design draws it. iOS 26 draws a
+        // confirmation dialog as a menu from the page and leaves its Cancel out, so this is an alert.
+        .alert(WatcherWords.stopQuestion(stopPreview?.targets.count ?? 0),
+               isPresented: Binding(get: { stopPreview != nil }, set: { if !$0 { stopPreview = nil } }),
+               presenting: stopPreview) { preview in
             Button(WatcherWords.stopButton(preview.targets.count), role: .destructive) {
                 Task { await model.confirmWatcherStop(preview, on: hostID) }
             }
             Button("Cancel", role: .cancel) {}
         } message: { preview in
-            Text(preview.targets.map(\.title).joined(separator: ", ") + ". Threads you started or took over stay as they are.")
+            Text(stopMessage(preview))
         }
+    }
+
+    /// What stays, then each thread Stop all would stop and where it runs: "Fix login test, Claude Code on Laptop".
+    private func stopMessage(_ preview: WatcherStopPreview) -> String {
+        let threads = preview.targets.map { target in
+            "\(target.title), \(AgentNames.name(target.provider)) on \(model.computerName(target.hostId) ?? "another computer")"
+        }
+        return (["Threads you started or took over keep going, and so does Watcher.", ""] + threads).joined(separator: "\n")
     }
 
     /// Stop all asks first: the computer says which threads it would stop, and nothing stops until the user confirms.
