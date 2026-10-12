@@ -1,6 +1,6 @@
 import React, { useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import { ArrowUpRight } from 'lucide-react'
-import type { AgentState } from '../../../shared/agents'
+import type { AgentState, AgentThread } from '../../../shared/agents'
 import type { AgentConnection } from '../agents/AgentContext'
 import { PullRequestOpenerContext, type PullRequestOpener } from '../agents/BranchToolbar'
 import { toolsPanelStore } from '../tools/toolsPanelStore'
@@ -52,12 +52,17 @@ const anchors = (transcript: HTMLElement): HTMLElement[] => [...transcript.query
  * Keeps the reading position of the transcript in the pane `paneId` across that pane leaving the screen, for as long
  * as the window lasts. The position is a message, not a pixel count: a transcript drawn afresh may hold fewer
  * messages or wrap them otherwise, so the same message comes back to the same place, or, when it is not drawn, the
- * view comes back as far from the end. It runs after the transcript's own first scroll to its newest message, which
- * comes first because the transcript is deeper in the tree, and tells the transcript at once that its reader is not
- * at the end, so nothing arriving pulls the reader away.
+ * view comes back as far from the end. Nothing is restored or remembered until `thread`'s history is drawn
+ * (`historyDrawn`): a thread whose history the window let go comes back as an empty transcript first, and that view is
+ * not where its reader was. It runs after the transcript's own scroll to its newest message, which comes first because
+ * the transcript is deeper in the tree, and tells the transcript at once that its reader is not at the end, so nothing
+ * arriving pulls the reader away.
  */
-export function useKeptReadingPosition(threadId: string, paneId: string): void {
+export function useKeptReadingPosition(thread: AgentThread, paneId: string): void {
+  const threadId = thread.id
+  const drawn = historyDrawn(thread)
   useLayoutEffect(() => {
+    if (!drawn) return
     const transcript = document.getElementById(paneId)?.querySelector<HTMLElement>('.thread-workspace__transcript')
     if (transcript == null) return
     const saved = readPositions.get(threadId)
@@ -76,7 +81,16 @@ export function useKeptReadingPosition(threadId: string, paneId: string): void {
     }
     transcript.addEventListener('scroll', remember, { passive: true })
     return () => transcript.removeEventListener('scroll', remember)
-  }, [threadId, paneId])
+  }, [threadId, paneId, drawn])
+}
+
+/**
+ * Whether a thread's history is in the window, so its transcript draws what was read: not while it loads, and not
+ * while the thread says it has messages the window does not hold yet.
+ */
+export function historyDrawn(thread: AgentThread): boolean {
+  if (thread.historyStatus === 'loading' || thread.historyStatus === 'error') return false
+  return thread.messages.length > 0 || (thread.summary?.messageCount ?? 0) === 0
 }
 
 /** The widest share Watcher may take, and the narrowest, so that each pane keeps its minimum where the room allows it. */
@@ -157,7 +171,7 @@ export function BesidePane({ row, state, command, store, focused, underControls,
   readonly onOpenInThreads: () => void
 }): ReactNode {
   const threadId = row.thread.id
-  useKeptReadingPosition(threadId, BESIDE_PANE_ID)
+  useKeptReadingPosition(row.thread, BESIDE_PANE_ID)
   const pullRequests = useMemo<PullRequestOpener>(() => ({
     open: id => { toolsPanelStore.showPullRequest(id); onOpenInThreads() },
     where: 'in Tools on the Threads page',

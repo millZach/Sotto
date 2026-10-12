@@ -232,7 +232,7 @@ function WatcherPane({ state, row, header, error, focused, now }: {
 }): ReactNode {
   const agents = useAgents()
   // Its reading position is kept for a trip to another room, as a beside thread's is for its next opening.
-  useKeptReadingPosition(row.thread.id, WATCHER_PANE_ID)
+  useKeptReadingPosition(row.thread, WATCHER_PANE_ID)
   // The first entry's composer had focus and is gone, or the room opened before Watcher's thread arrived: focus left
   // with nowhere to be goes to Watcher's own composer.
   useLayoutEffect(() => {

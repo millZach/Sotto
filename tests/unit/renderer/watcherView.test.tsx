@@ -229,26 +229,37 @@ describe("Watcher's room", () => {
     expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'select-thread' }))
   })
 
-  it('keeps Watcher’s reading position, and a beside thread’s, for a trip to another room', async () => {
-    const ROW = 100
-    const VIEW = 500
+  const ROW = 100
+  const VIEW = 500
+  /** Lays transcripts out in jsdom: each message one row under its transcript's top, moved by its scroll. */
+  function layOutTranscripts(): void {
     const tops = new WeakMap<Element, number>()
     const height = (element: HTMLElement): number => element.querySelectorAll('.thread-message').length * ROW
     vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function (this: HTMLElement) { return height(this) })
     vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(() => VIEW)
     vi.spyOn(HTMLElement.prototype, 'scrollTop', 'get').mockImplementation(function (this: HTMLElement) { return tops.get(this) ?? 0 })
     vi.spyOn(HTMLElement.prototype, 'scrollTop', 'set').mockImplementation(function (this: HTMLElement, value: number) { tops.set(this, Math.max(0, Math.min(value, height(this) - VIEW))) })
-    // Each message is one row, laid out under its transcript's top and moved by its scroll.
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
       const log = this.closest<HTMLElement>('.thread-workspace__transcript')
       const index = log === null || !this.matches('.thread-message') ? -1 : [...log.querySelectorAll('.thread-message')].indexOf(this)
       const top = index < 0 ? 0 : index * ROW - log!.scrollTop
       return { top, bottom: index < 0 ? VIEW : top + ROW, left: 0, right: 600, width: 600, height: index < 0 ? VIEW : ROW, x: 0, y: top, toJSON: () => ({}) } as DOMRect
     })
+  }
+  const history = (id: string, from = 0) => Array.from({ length: 40 - from }, (_, index) => ({ id: `${id}-${index + from}`, role: (index + from) % 2 ? 'assistant' as const : 'user' as const,
+    text: `${id} ${index + from}`, createdAt: at }))
+  /** The window let a thread's history go: it comes back with none, saying it has some, until the history arrives. */
+  const withoutHistory = (state: AgentState, threadId: string): AgentState => {
+    const next = structuredClone(state)
+    next.host.threads = next.host.threads.map(item => item.id !== threadId ? item
+      : { ...item, messages: [], historyStatus: 'loading' as const, summary: { messageCount: item.messages.length, activityCount: 0 } })
+    return next
+  }
+
+  it('keeps Watcher’s reading position, and a beside thread’s, for a trip to another room', async () => {
+    layOutTranscripts()
     try {
       const state = stateWithWatcher()
-      const history = (id: string, from = 0) => Array.from({ length: 40 - from }, (_, index) => ({ id: `${id}-${index + from}`, role: (index + from) % 2 ? 'assistant' as const : 'user' as const,
-        text: `${id} ${index + from}`, createdAt: at }))
       state.host.threads.find(thread => thread.id === 'watcher')!.messages = history('watcher')
       state.host.threads.find(thread => thread.id === 'footer-links')!.messages = history('footer')
       mockApp('watcher')
@@ -290,6 +301,45 @@ describe("Watcher's room", () => {
       view.rerender(tree(true))
       await paneReady()
       expect(transcript('Watcher').scrollTop).toBe(30 * ROW - VIEW)
+    } finally { vi.restoreAllMocks() }
+  })
+
+  it('waits for a thread’s history before putting its reader back, and never keeps the empty view as the place', async () => {
+    layOutTranscripts()
+    try {
+      const state = stateWithWatcher()
+      state.host.threads.find(thread => thread.id === 'watcher')!.messages = history('watcher')
+      state.host.threads.find(thread => thread.id === 'footer-links')!.messages = history('footer')
+      mockApp('watcher')
+      mockAgents(state)
+      const { bridge } = fakeBridge(roomState())
+      const tree = (room: boolean) => <WatcherRoomProvider bridge={bridge}><SidebarChromeProvider updateControl={null}>
+        {room ? <WatcherView now={NOW} /> : <p>Threads</p>}
+      </SidebarChromeProvider></WatcherRoomProvider>
+      const view = render(tree(true))
+      await paneReady()
+      const transcript = (pane: string) => within(screen.getByRole('region', { name: pane })).getByRole('log', { name: 'Thread transcript' })
+      fireEvent.click(screen.getByRole('button', { name: 'All threads, 9. Show the list' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Open Footer links beside Watcher' }))
+      transcript('Footer links').scrollTop = 700
+      fireEvent.scroll(transcript('Footer links'))
+      transcript('Watcher').scrollTop = 1_200
+      fireEvent.scroll(transcript('Watcher'))
+      view.rerender(tree(false))
+      // Back after other threads pushed both histories out of the window: each pane draws an empty transcript first,
+      // which scrolls as it settles. That is not where either reader was.
+      mockAgents(withoutHistory(withoutHistory(state, 'footer-links'), 'watcher'))
+      view.rerender(tree(true))
+      await screen.findByRole('region', { name: 'Footer links' })
+      expect(transcript('Footer links')).toHaveAttribute('aria-busy', 'true')
+      fireEvent.scroll(transcript('Footer links'))
+      fireEvent.scroll(transcript('Watcher'))
+      // The histories arrive: both readers are back where they were, not at the newest message.
+      mockAgents(state)
+      view.rerender(tree(true))
+      await waitFor(() => expect(transcript('Footer links').scrollTop).toBe(700))
+      expect(transcript('Watcher').scrollTop).toBe(1_200)
+      expect(screen.getAllByRole('button', { name: 'Jump to latest' })).toHaveLength(2)
     } finally { vi.restoreAllMocks() }
   })
 
