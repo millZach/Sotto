@@ -14,7 +14,7 @@ import { ownedGitRepository, gitRepositorySeed, initializeBareGitRepository } fr
 
 let seed: Awaited<ReturnType<typeof gitRepositorySeed>>
 beforeAll(async () => { seed = await gitRepositorySeed({ files: { 'work.txt': 'first\n' }, message: 'First' }) })
-afterAll(async () => { await seed.dispose() })
+afterAll(async () => { await seed?.dispose() })
 const repositories: Array<Awaited<ReturnType<typeof ownedGitRepository>>> = []
 afterEach(async () => { for (const repository of repositories.splice(0)) await repository.dispose() })
 const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, windowsHide: true, encoding: 'utf8' }).trim()
