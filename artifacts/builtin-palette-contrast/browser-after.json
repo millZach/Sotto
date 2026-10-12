@@ -169,7 +169,7 @@
       "background": {
         "r": 163,
         "g": 203,
-        "b": 195
+        "b": 194
       },
       "paint": [
         {
@@ -194,25 +194,25 @@
         },
         {
           "element": "changes-line",
-          "background": "color(srgb -0.0494765 0.403281 0.238159 / 0.12)",
+          "background": "color(srgb -0.0583824 0.397578 0.232899 / 0.12)",
           "image": "linear-gradient(color(srgb -0.0402355 0.49073 0.454704 / 0.22), color(srgb -0.0402355 0.49073 0.454704 / 0.22))"
         }
       ],
-      "ratio": 9.463720755789183
+      "ratio": 9.456541795429581
     },
     {
       "half": "t3-code-light",
       "surface": "selected Changes add: sign",
       "foreground": {
-        "r": 26,
-        "g": 80,
-        "b": 49,
+        "r": 25,
+        "g": 79,
+        "b": 48,
         "a": 1
       },
       "background": {
         "r": 163,
         "g": 203,
-        "b": 195
+        "b": 194
       },
       "paint": [
         {
@@ -237,11 +237,11 @@
         },
         {
           "element": "changes-line",
-          "background": "color(srgb -0.0494765 0.403281 0.238159 / 0.12)",
+          "background": "color(srgb -0.0583824 0.397578 0.232899 / 0.12)",
           "image": "linear-gradient(color(srgb -0.0402355 0.49073 0.454704 / 0.22), color(srgb -0.0402355 0.49073 0.454704 / 0.22))"
         }
       ],
-      "ratio": 5.317131179289145
+      "ratio": 5.3935016298485845
     },
     {
       "half": "t3-code-light",
@@ -852,7 +852,7 @@
         },
         {
           "element": "changes-line",
-          "background": "color(srgb -0.0494765 0.403281 0.238159 / 0.12)",
+          "background": "color(srgb -0.0583824 0.397578 0.232899 / 0.12)",
           "image": "linear-gradient(color(srgb 0.33719 0.411787 0.372578 / 0.22), color(srgb 0.33719 0.411787 0.372578 / 0.22))"
         }
       ],
@@ -862,9 +862,9 @@
       "half": "hush-light",
       "surface": "selected Changes add: sign",
       "foreground": {
-        "r": 15,
-        "g": 77,
-        "b": 49,
+        "r": 13,
+        "g": 76,
+        "b": 48,
         "a": 1
       },
       "background": {
@@ -895,11 +895,11 @@
         },
         {
           "element": "changes-line",
-          "background": "color(srgb -0.0494765 0.403281 0.238159 / 0.12)",
+          "background": "color(srgb -0.0583824 0.397578 0.232899 / 0.12)",
           "image": "linear-gradient(color(srgb 0.33719 0.411787 0.372578 / 0.22), color(srgb 0.33719 0.411787 0.372578 / 0.22))"
         }
       ],
-      "ratio": 5.199284666385713
+      "ratio": 5.280352022594632
     },
     {
       "half": "hush-light",
@@ -1510,7 +1510,7 @@
         },
         {
           "element": "changes-line",
-          "background": "color(srgb -0.0494765 0.403281 0.238159 / 0.12)",
+          "background": "color(srgb -0.0583824 0.397578 0.232899 / 0.12)",
           "image": "linear-gradient(color(srgb 0.462694 0.384337 0.290223 / 0.22), color(srgb 0.462694 0.384337 0.290223 / 0.22))"
         }
       ],
@@ -1520,9 +1520,9 @@
       "half": "linen-light",
       "surface": "selected Changes add: sign",
       "foreground": {
-        "r": 22,
-        "g": 77,
-        "b": 47,
+        "r": 20,
+        "g": 76,
+        "b": 46,
         "a": 1
       },
       "background": {
@@ -1553,11 +1553,11 @@
         },
         {
           "element": "changes-line",
-          "background": "color(srgb -0.0494765 0.403281 0.238159 / 0.12)",
+          "background": "color(srgb -0.0583824 0.397578 0.232899 / 0.12)",
           "image": "linear-gradient(color(srgb 0.462694 0.384337 0.290223 / 0.22), color(srgb 0.462694 0.384337 0.290223 / 0.22))"
         }
       ],
-      "ratio": 5.078074554775099
+      "ratio": 5.159547682000762
     },
     {
       "half": "linen-light",
@@ -2141,7 +2141,7 @@
         "a": 1
       },
       "background": {
-        "r": 167,
+        "r": 166,
         "g": 187,
         "b": 193
       },
@@ -2168,23 +2168,23 @@
         },
         {
           "element": "changes-line",
-          "background": "color(srgb -0.0494765 0.403281 0.238159 / 0.12)",
+          "background": "color(srgb -0.0583824 0.397578 0.232899 / 0.12)",
           "image": "linear-gradient(color(srgb 0.239155 0.345119 0.470619 / 0.22), color(srgb 0.239155 0.345119 0.470619 / 0.22))"
         }
       ],
-      "ratio": 9.037856536750613
+      "ratio": 9.019216288658702
     },
     {
       "half": "nocturne-light",
       "surface": "selected Changes add: sign",
       "foreground": {
-        "r": 12,
-        "g": 77,
-        "b": 52,
+        "r": 10,
+        "g": 76,
+        "b": 51,
         "a": 1
       },
       "background": {
-        "r": 167,
+        "r": 166,
         "g": 187,
         "b": 193
       },
@@ -2211,11 +2211,11 @@
         },
         {
           "element": "changes-line",
-          "background": "color(srgb -0.0494765 0.403281 0.238159 / 0.12)",
+          "background": "color(srgb -0.0583824 0.397578 0.232899 / 0.12)",
           "image": "linear-gradient(color(srgb 0.239155 0.345119 0.470619 / 0.22), color(srgb 0.239155 0.345119 0.470619 / 0.22))"
         }
       ],
-      "ratio": 4.9470691629156756
+      "ratio": 5.012962550129429
     },
     {
       "half": "nocturne-light",
@@ -2826,7 +2826,7 @@
         },
         {
           "element": "changes-line",
-          "background": "color(srgb -0.0494765 0.403281 0.238159 / 0.12)",
+          "background": "color(srgb -0.0583824 0.397578 0.232899 / 0.12)",
           "image": "linear-gradient(color(srgb 0.760747 0.0941959 0.356901 / 0.22), color(srgb 0.760747 0.0941959 0.356901 / 0.22))"
         }
       ],
@@ -2836,9 +2836,9 @@
       "half": "tropic-light",
       "surface": "selected Changes add: sign",
       "foreground": {
-        "r": 32,
+        "r": 31,
         "g": 75,
-        "b": 48,
+        "b": 47,
         "a": 1
       },
       "background": {
@@ -2869,11 +2869,11 @@
         },
         {
           "element": "changes-line",
-          "background": "color(srgb -0.0494765 0.403281 0.238159 / 0.12)",
+          "background": "color(srgb -0.0583824 0.397578 0.232899 / 0.12)",
           "image": "linear-gradient(color(srgb 0.760747 0.0941959 0.356901 / 0.22), color(srgb 0.760747 0.0941959 0.356901 / 0.22))"
         }
       ],
-      "ratio": 4.823955693301472
+      "ratio": 4.834921663410809
     },
     {
       "half": "tropic-light",
@@ -3484,7 +3484,7 @@
         },
         {
           "element": "changes-line",
-          "background": "color(srgb -0.0494765 0.403281 0.238159 / 0.12)",
+          "background": "color(srgb -0.0583824 0.397578 0.232899 / 0.12)",
           "image": "linear-gradient(color(srgb 0.54112 0.43532 0.0000723165 / 0.22), color(srgb 0.54112 0.43532 0.0000723165 / 0.22))"
         }
       ],
@@ -3494,9 +3494,9 @@
       "half": "citrine-light",
       "surface": "selected Changes add: sign",
       "foreground": {
-        "r": 23,
-        "g": 77,
-        "b": 43,
+        "r": 22,
+        "g": 76,
+        "b": 42,
         "a": 1
       },
       "background": {
@@ -3527,11 +3527,11 @@
         },
         {
           "element": "changes-line",
-          "background": "color(srgb -0.0494765 0.403281 0.238159 / 0.12)",
+          "background": "color(srgb -0.0583824 0.397578 0.232899 / 0.12)",
           "image": "linear-gradient(color(srgb 0.54112 0.43532 0.0000723165 / 0.22), color(srgb 0.54112 0.43532 0.0000723165 / 0.22))"
         }
       ],
-      "ratio": 5.406593232400402
+      "ratio": 5.487747898332374
     },
     {
       "half": "citrine-light",

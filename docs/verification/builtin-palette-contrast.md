@@ -10,16 +10,16 @@ The issue's table measured muted text on 35 surfaces. Some of those carry no mut
 
 Following every `color:` that paints text back to the background behind it, states included, turned up more pairs below 4.5:1 than the issue listed:
 
-- amber, green and red status text in the light halves (file badges, branch problems, notes, "Updated", code strings and the − sign);
+- amber, green and red status text in the light halves (file badges, branch problems, notes, "Updated", "Copied", code strings and the − sign);
 - a hovered link in the bubble and on the selection;
 - code keywords, which use the primary action's fill as ink;
 - faint ghost buttons on menus, sunken cards and glass, and on two tinted cards (the bubble's Dismiss and the theme-import warning);
 - amber on the current row (needs you, disconnected, a branch problem) and on a failed send's status in the bubble;
 - red on a selected browser tab whose page is unavailable, and on a link that would not open, in the bubble.
 
-Icons need 3:1, and disabled controls are exempt. The two-axis review found the needs-you status, the failed send and the failed link. Those three reach their ink through local aliases (`--threads-warning-text`) or the raw `--tt-error` token, which the first audit's search for `color:` reading a `--tt-*` token did not follow. A second sweep followed every alias.
+Icons need 3:1, and disabled controls are exempt. The two-axis review found the needs-you status, the failed send and the failed link. Those three reach their ink through local aliases (`--threads-warning-text`) or the raw `--tt-error` token, which the first audit's search for `color:` reading a `--tt-*` token did not follow. A second sweep followed every alias. Greptile's review then found "Copied" in the bubble, which the darker green had already lifted to 4.57:1. The green moved a further 0.005 to reach the same 4.6:1 as every other fix, and the pair is now listed.
 
-`tests/fixtures/renderer/paintedTextPairs.ts` lists the pairs: 170 of them, each an ink, a surface and the translucent layers over it. The Changes tints (now `--changes-added` and `--changes-removed`), the selection wash, the follow-ups surface and the stylesheets' own mixes are read from the stylesheets that declare them. `themeTokens.test.ts` holds every built-in half to the list, and `omarchyThemes.test.ts` holds all 22 stock Omarchy palettes to it as well. Contrast is computed the way the Omarchy audit models it: each wash is composited fractionally over the tint beneath, and the lower of that and the rounded sRGB pixel counts. Against `main`'s palettes, the new test fails 11 of the 12 halves.
+`tests/fixtures/renderer/paintedTextPairs.ts` lists the pairs: 173 of them, each an ink, a surface and the translucent layers over it. The Changes tints (now `--changes-added` and `--changes-removed`), the selection wash, the follow-ups surface and the stylesheets' own mixes are read from the stylesheets that declare them. `themeTokens.test.ts` holds every built-in half to the list, and `omarchyThemes.test.ts` holds all 22 stock Omarchy palettes to it as well. Contrast is computed the way the Omarchy audit models it: each wash is composited fractionally over the tint beneath, and the lower of that and the rounded sRGB pixel counts. Against `main`'s palettes, the new test fails 11 of the 12 halves.
 
 ## How each pair was fixed
 
@@ -32,7 +32,7 @@ Each palette fix moves one role's OKLCH lightness and nothing else, only in a ha
 - **Red:** `errorForeground` darkens in five light halves and lifts in four dark ones, by 0.007 to 0.029.
 - **Status on a tint:** the selection and the bubble are tints, and status text on them would have pulled amber a further 0.02 darker and dark red toward pink. Two tokens in `tokens.css` take it instead. `--tt-warning-on-tint` mixes amber a tenth toward the body ink, for needs you, disconnected and a branch problem on the current row and for a failed send's status in the bubble. `--tt-error-on-tint` mixes red a fifth toward it, for a selected unavailable browser tab and for a link that would not open, in the bubble.
 - **Link hover:** `messageActionHover` darkens in four light halves and lifts a hair in Tropic dark. It is also the primary button's hover fill, which only gains contrast.
-- **Green, light mode:** the `--tt-success` constant in `tokens.css` darkens from L 0.50 to 0.45. The plain + sign then reads on added lines, and the finished ring only gains. Omarchy sets its own green at load and is unaffected.
+- **Green, light mode:** the `--tt-success` constant in `tokens.css` darkens from L 0.50 to 0.445. The plain + sign then reads on added lines and Copied in the bubble, and the finished ring only gains. Omarchy sets its own green at load and is unaffected.
 - **Picked Changes lines:** the 22% selection wash stays, because a lighter wash made a picked line almost indistinguishable from a hovered one (1.01:1 between them in Tropic dark at 16%). A picked line's numbers take the body ink instead, as a pointed-at number already does. Its signs keep 70% green and 40% red, mixed toward that ink in OKLab. An sRGB mix of green and white can be darker than both, which is how Tokyo Night fell short of 4.5:1.
 - **Code keywords:** they mix the primary fill 85% toward the body ink (`rich-messages.css`). The fill was tuned for its button, so the fix belongs where it is used as text. This also lifts seven stock Omarchy palettes whose keywords read at 4.06 to 4.44:1, without changing the Omarchy guard.
 
@@ -115,7 +115,7 @@ Sotto dark needs no palette change. Sotto light changes only `placeholder`, `war
 
 | What | Before | After |
 | --- | --- | --- |
-| `--tt-success`, light (`tokens.css`) | `oklch(0.5 0.11 158)` | `oklch(0.45 0.11 158)` |
+| `--tt-success`, light (`tokens.css`) | `oklch(0.5 0.11 158)` | `oklch(0.445 0.11 158)` |
 | Picked line numbers (`changes.css`) | `--tt-text-muted` | `--tt-text` |
 | Picked + sign (`--changes-picked-add`) | `--tt-success` | `color-mix(in oklab, var(--tt-success) 70%, var(--tt-text))` |
 | Picked − sign (`--changes-picked-remove`) | `--tt-error-text` | `color-mix(in oklab, var(--tt-error-text) 40%, var(--tt-text))` |
@@ -139,13 +139,14 @@ Computed from the tokens, at the default Contrast 100% and Glass 80%, without fr
 | Changes, picked context line: number | 3.43:1 (Citrine dark) | 8.48:1 (Linen dark) |
 | Changes, picked added line: number | 2.71:1 (Citrine dark) | 6.81:1 (Linen dark) |
 | Changes, picked removed line: number | 2.91:1 (Citrine dark) | 7.11:1 (Linen dark) |
-| Changes, picked added line: + sign | 2.78:1 (Tropic light) | 4.81:1 (Tropic light) |
+| Changes, picked added line: + sign | 2.78:1 (Tropic light) | 4.87:1 (Tropic light) |
 | Changes, picked removed line: − sign | 2.91:1 (Linen dark) | 5.25:1 (Citrine dark) |
 | Changes, hovered added line: number | 4.32:1 (Linen dark) | 4.87:1 (Citrine dark) |
 | Changes, hovered removed line: number | 4.44:1 (Linen dark) | 4.80:1 (Nocturne light) |
-| Changes, added line: + sign | 3.82:1 (Linen light) | 4.70:1 (Linen light) |
+| Changes, added line: + sign | 3.82:1 (Linen light) | 4.76:1 (Linen light) |
 | Changes, removed line: − sign | 4.10:1 (Linen light) | 4.60:1 (Sotto light) |
-| Green text: file badge, done, updated | 3.95:1 (Linen light) | 4.94:1 (Linen light) |
+| Green text: file badge, done, updated | 3.95:1 (Linen light) | 5.01:1 (Linen light) |
+| Green Copied, in the bubble and on a hovered reply | 3.65:1 (Linen light) | 4.63:1 (Linen light) |
 | Amber text: badges, notes, code strings | 3.90:1 (Tropic light) | 4.60:1 (Sotto light) |
 | Amber on the current row: needs you, branch problem | 3.52:1 (Tropic light) | 4.67:1 (Sotto light) |
 | Amber status of a failed send, in the bubble | 3.52:1 (Tropic light) | 4.71:1 (Tropic light) |
@@ -183,11 +184,11 @@ Under each capture it reads the painted ink against the composited background: t
 | Strong hover: Git tag | 4.17:1 (Hush dark) | 4.74:1 (Citrine dark) |
 | Picked context line: number | 3.43:1 (Citrine dark) | 8.50:1 (Linen dark) |
 | Picked added line: number | 2.71:1 (Citrine dark) | 6.82:1 (Linen dark) |
-| Picked added line: + sign | 2.78:1 (Tropic light) | 4.82:1 (Tropic light) |
+| Picked added line: + sign | 2.78:1 (Tropic light) | 4.83:1 (Tropic light) |
 | Picked removed line: number | 2.91:1 (Citrine dark) | 7.20:1 (Linen dark) |
 | Picked removed line: − sign | 2.91:1 (Linen dark) | 5.25:1 (Citrine dark) |
 
-Neither run had a page error. Build SHA-256: `out/main/index.js` `b70deb369a82f532dd35f7f1bfd5c41a61e4c47514e2c5ef947dc75a8a7d1fb3`; the renderer chunk carrying the palettes, `out/renderer/assets/accelerator-1tEXzmO2.js`, `3233f30ab47394a1922a8a446a2403424afc33952a48b3e5416f58c3cd34c40a`; `out/renderer/assets/main--gqofUuj.css` `02a9133de657db61cf0768b9b90f5f914401623b33f6ddf02d6fae685ca80696`.
+Neither run had a page error. Build SHA-256: `out/main/index.js` `b70deb369a82f532dd35f7f1bfd5c41a61e4c47514e2c5ef947dc75a8a7d1fb3`; the renderer chunk carrying the palettes, `out/renderer/assets/accelerator-1tEXzmO2.js`, `3233f30ab47394a1922a8a446a2403424afc33952a48b3e5416f58c3cd34c40a`; `out/renderer/assets/main-DP2KDOEB.css` `e6c6d67deb5872dabdd1e4c7e7a4e8488ea13bf5ed7895ce9c5a970e829ced26`.
 
 On the same inner display and build, `tests/e2e/omarchy-muted-surfaces.spec.ts`, which now shares its measuring step with the new spec (`tests/e2e/support/paintedPair.ts`), passed in 45 seconds. All 198 Omarchy samples read at 4.5:1 or better, the lowest 4.5163:1 on a picked added line in Kanagawa. All 108 built-in samples now do too, the lowest 4.5493:1 on Hush dark's current row; on `main`, the issue's sample put that at 3.99:1.
 
