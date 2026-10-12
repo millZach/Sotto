@@ -159,7 +159,7 @@ import { APP_ID, APP_NAME } from '../shared/constants'
 import { getReleaseTrack, releaseTrackName } from '../shared/releaseTrack'
 import { hostReleaseVersion } from './hosts/hostReleaseVersion'
 import { WATCHER_CHANGED, WATCHER_RENDERER_ARGUMENT } from '../shared/watcherRoom'
-import { runningVersion, watcherEnabledForRun } from './runningVersion'
+import { runningVersion, owlFeaturesForRun } from './runningVersion'
 import type { DictationCommand } from '../shared/contracts'
 import type { WidgetSnapshot } from '../shared/dictation'
 import { widgetPresentationFor } from '../shared/themeBranding'
@@ -577,7 +577,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // Packaging can override the version without editing the source manifest, so it is read from the app (ADR-0072).
   const appRunningVersion = runningVersion(app.getVersion(), process.versions.electron, appVersion)
   const hostVersion = hostReleaseVersion(appRunningVersion, appVersion)
-  const watcherEnabled = watcherEnabledForRun({ version: appRunningVersion, isPackaged: app.isPackaged, override: process.env.SOTTO_WATCHER_ENABLED })
+  const owlFeatures = owlFeaturesForRun({ version: appRunningVersion, isPackaged: app.isPackaged,
+    overrides: process.env.SOTTO_OWL_FEATURES, watcherOverride: process.env.SOTTO_WATCHER_ENABLED })
+  // Existing Watcher options wrap the Owl feature list for branches in flight.
+  const watcherEnabled = owlFeatures.watcher
   let repaintOmarchy: () => void = () => undefined
   const omarchyTheme = new OmarchyThemeMonitor(platform, homedir(),
     () => repaintOmarchy(), logOperational)
@@ -739,7 +742,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   app.on('browser-window-blur', windowFocusChanged)
   windowFocusChanged()
   const quitHandles: HostQuitHandles = { localRuntime }
-  registerHostQuitDrain(app, quitHandles, () => console.error('[Sotto] host-shutdown-failed'), () => logOperational('phone-access-close-failed'), platform === 'darwin' ? powerMonitor : undefined)
+  registerHostQuitDrain(app, quitHandles, () => console.error('[Sotto] host-shutdown-failed'), () => logOperational('phone-access-close-failed'), platform, powerMonitor)
   let browserService: BrowserService | undefined
   let cloudIphoneService: CloudIphoneService | undefined
   const browserAgentServer = createBrowserAgentServer(() => browserService, () => cloudIphoneService)
@@ -1110,7 +1113,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // 'unsupported' phase without constructing electron-updater at all.
   const updatesSupported = app.isPackaged && e2eConfiguration === null && profile.inAppUpdates
   const updates = new UpdateService({
-    currentVersion: appRunningVersion, watcherEnabled,
+    currentVersion: appRunningVersion, owlFeatures, watcherEnabled,
     getSettings: () => settings.get(),
     ...(updatesSupported ? { createUpdater: createElectronUpdaterAdapter } : {}),
     onStatusChanged: (status) => {

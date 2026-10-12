@@ -1,9 +1,10 @@
 import React, { useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { ChevronDown, ChevronUp } from 'lucide-react'
+import { ArrowUpRight, ChevronDown, ChevronUp, Link2 } from 'lucide-react'
 import type { AgentRequest } from '../../../../shared/agents'
 import { requestDraftQuestions, type RequestDraftOwner } from '../../../../shared/requestDrafts'
 import { Button } from '../../components/Button'
 import { LinkedText } from './LinkedText'
+import { linkPlace, webLinks } from './messageLinks'
 import {
   answerProgress, blocksSending, EMPTY_SELECTION, isRequired, isUnavailable, legacyPermissionAnswer, permissionAnswer,
   permissionSummary, pickOption, pickOther, requestAnswerOwnerKey, requestAnswerStore, requestMode, structuredAnswer, textOnly, useRequestEntry,
@@ -28,13 +29,16 @@ export interface AgentRequestCardProps {
   readonly store?: RequestAnswerStore
   /** Thread questions sit above the composer; other hosts keep their existing placement. */
   readonly placement?: 'composer' | undefined
+  /** The web links in the agent's message just before a question, which the card covers once it docks. Those the card
+   *  already shows as links in the request's own words are left out. */
+  readonly messageLinks?: readonly string[]
 }
 
 /**
  * One pending question or approval, answered here and nowhere else. It shows exactly the choices the provider
  * offered, sends one answer for this request's own ID, and holds instead of resending when delivery is unknown.
  */
-export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blocked, onSubmit, onCheck, onWriteAnswer, placement, store = requestAnswerStore }: AgentRequestCardProps): ReactNode {
+export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blocked, onSubmit, onCheck, onWriteAnswer, placement, messageLinks = [], store = requestAnswerStore }: AgentRequestCardProps): ReactNode {
   const draftQuestions = requestDraftQuestions(request)
   const entryOwner = requestAnswerOwnerKey(ownerId, request, draftOwner)
   const entry = useRequestEntry(entryOwner, request.id, store, draftOwner && draftQuestions.length > 0
@@ -45,6 +49,8 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
   const toggle = useRef<HTMLButtonElement>(null)
   const baseId = useId()
   const mode = requestMode(request)
+  const linked = linkedWords(request, mode)
+  const rows = messageLinks.filter(url => !linked.has(url))
   const permission = mode === 'permission'
   const docked = placement === 'composer' && !permission
   const nativeUncertain = request.delivery === 'uncertain'
@@ -119,7 +125,7 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
         <div className={`agent-request__head${docked && questions.length === 1 ? ' tt-visually-hidden' : ''}`}><strong id={titleId}>{questions.length === 1 ? 'Question' : `${questions.length} questions`}</strong>
           {request.context?.toolName ? <span className="agent-request__tag">{request.context.toolName}</span> : null}</div>
         <FormContext request={request} />
-        {questions.map((question, index) => <QuestionField key={question.id} name={`${baseId}-q${index}`} question={question}
+        {questions.map((question, index) => <QuestionField key={question.id} name={`${baseId}-q${index}`} question={question} links={index === 0 ? rows : []}
           selection={entry.selections[question.id] ?? EMPTY_SELECTION} disabled={disabled}
           onChange={selection => store.select(entryOwner, request.id, question.id, selection)} />)}
         <div className="agent-request__footer">
@@ -130,6 +136,7 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
       </form> : <>
         <div className="agent-request__head"><strong id={titleId}>Question</strong></div>
         <p className="agent-request__text"><LinkedText text={request.text} /></p>
+        <MessageLinks links={rows} />
         {mode === 'legacy-options' ? <>
           <fieldset className="agent-request__question" disabled={disabled}>
             <legend className="tt-visually-hidden">{request.text}</legend>
@@ -185,9 +192,44 @@ function OptionLabel({ label }: { readonly label: string }): ReactNode {
     {recommendation ? <> <span className="agent-request__recommended">(recommended)</span></> : null}</span>
 }
 
-function QuestionField({ name, question, selection, disabled, onChange }: {
+/**
+ * Every web address the card shows as a link in the request's own words: a structured form's explanation when it says
+ * more than its questions, each question and each choice; otherwise the request's text and its choices. A header is a
+ * plain tag and a hidden explanation is not shown, so an address only there is no link and a row still carries it.
+ */
+function linkedWords(request: AgentRequest, mode: ReturnType<typeof requestMode>): Set<string> {
+  const texts = mode === 'structured'
+    ? [requestExplanation(request) ?? '', ...(request.questions ?? []).flatMap(question => [question.question, ...question.options.flatMap(option => [option.label, option.description ?? ''])])]
+    : [request.text, ...request.options.map(option => option.label)]
+  return new Set(texts.flatMap(webLinks))
+}
+
+/**
+ * The links from the agent's message before a question, each a row of its own between the question and its choices,
+ * as the iPhone's question sheet shows them. A row is a link, not a choice: pressing it opens the page where the
+ * question's own links open, picks nothing, and works while the choices cannot be used.
+ */
+function MessageLinks({ links }: { readonly links: readonly string[] }): ReactNode {
+  if (links.length === 0) return null
+  return <div className="agent-request__link-rows" role="group" aria-label="Links from the message above">
+    {links.map(url => {
+      const place = linkPlace(url)
+      return <a key={url} className="agent-request__link-row tt-focusable" href={url} rel="noopener noreferrer" target="_blank" title={url} aria-label={`Open the link, ${place}`}
+        onClick={event => { event.preventDefault(); event.stopPropagation(); void window.sotto?.openExternalLink?.(url) }}
+        onAuxClick={event => event.preventDefault()}>
+        <Link2 size={16} aria-hidden="true" />
+        <span><strong>Open the link</strong><small>{place}</small></span>
+        <ArrowUpRight size={16} aria-hidden="true" />
+      </a>
+    })}
+  </div>
+}
+
+function QuestionField({ name, question, selection, disabled, onChange, links = [] }: {
   readonly name: string; readonly question: StructuredQuestion; readonly selection: typeof EMPTY_SELECTION
   readonly disabled: boolean; readonly onChange: (selection: typeof EMPTY_SELECTION) => void
+  /** The message's links, shown under this question's words: the first question's, when a form has several. */
+  readonly links?: readonly string[]
 }): ReactNode {
   const type = question.multiSelect ? 'checkbox' : 'radio'
   const onlyText = textOnly(question)
@@ -203,6 +245,7 @@ function QuestionField({ name, question, selection, disabled, onChange }: {
   return <fieldset ref={field} className="agent-request__question" disabled={disabled}>
     <legend>{question.header ? <span className="agent-request__tag">{question.header}</span> : null}<span className="agent-request__prompt"><LinkedText text={question.question} /></span>
       {optional ? <span className="agent-request__optional">Optional</span> : null}</legend>
+    <MessageLinks links={links} />
     {isUnavailable(question) ? <p className="agent-request__unavailable" data-required={!optional || undefined}>{question.unavailableReason}</p> : <>
       {question.multiSelect && !onlyText ? <span className="agent-request__note">Choose any that apply.</span> : null}
       {onlyText ? question.allowFreeText

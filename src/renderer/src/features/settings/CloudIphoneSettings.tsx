@@ -1,10 +1,11 @@
 import React, { useEffect, useState, type ReactNode } from 'react'
+import { Check, CircleAlert, Gauge, History, KeyRound } from 'lucide-react'
 import { CLOUD_IPHONE_PRICE_PER_MINUTE_USD } from '../../../../shared/cloudIphone'
 import type { AppSettings, SettingsPatch } from '../../../../shared/settings'
 import { Button } from '../../components/Button'
-import { Card } from '../../components/Card'
 import { Field } from '../../components/Field'
 import { bridgeCloudIphone, cloudIphoneStore, useCloudStatus, type CloudIphoneBridgeLike, type CloudIphoneStore } from '../../tools/cloudIphoneStore'
+import { SettingsGroup } from './SettingsGroup'
 import './cloudIphone.css'
 
 function parseBoundedInteger(value: string, minimum: number, maximum: number): number | null {
@@ -49,8 +50,9 @@ export interface CloudIphoneSettingsProps {
 }
 
 /**
- * Settings > Cloud iPhone (ADR-0047): the run.cloud key, the monthly spending cap, the idle timeout, this month's
- * minutes against the cap, and recent sessions. Nothing here starts a session; that is the thread's own request card.
+ * Settings > Cloud iPhone (ADR-0047): the run.cloud key, the monthly spending cap, this month's minutes against it,
+ * the idle timeout, and recent sessions, in groups under small headings as Git's are (Zach's pick A, October 11,
+ * 2026). Nothing here starts a session; that is the thread's own request card.
  */
 export function CloudIphoneSettings({ settings, onUpdateSettings, bridge = bridgeCloudIphone(), store = cloudIphoneStore }: CloudIphoneSettingsProps): ReactNode {
   const status = useCloudStatus(store)
@@ -79,54 +81,49 @@ export function CloudIphoneSettings({ settings, onUpdateSettings, bridge = bridg
   const monthMinutes = status?.monthMinutes ?? 0
   const capMinutes = status?.capMinutes ?? monthlyCap
   const meterPercent = capMinutes > 0 ? Math.min(100, Math.round((monthMinutes / capMinutes) * 100)) : 0
+  const used = `${monthMinutes} of ${capMinutes} minutes`
 
-  return <div className="settings-rows cloud-iphone-settings">
-    <p className="cloud-iphone-intro">Agents test native iOS builds on a run.cloud simulator. Each session asks you first.</p>
-
-    <Card as="section" className="cloud-iphone-card" aria-labelledby="cloud-iphone-runcloud">
-      <h3 id="cloud-iphone-runcloud">run.cloud</h3>
-      <p>The build is uploaded to run.cloud, in the EU, and deleted when the session ends. About ${CLOUD_IPHONE_PRICE_PER_MINUTE_USD.toFixed(2)} a minute; your first $15 each month is free.</p>
-      <div className="settings-input-action">
+  return <div className="cloud-iphone-settings">
+    <SettingsGroup title="run.cloud" icon={KeyRound} note="Agents test native iOS builds on a run.cloud simulator, and each session asks you first. The build is uploaded to run.cloud, in the EU, and deleted when the session ends.">
+      {/* The key and its verdict are one row, its buttons at the right under the field as Verify key sits on Cleanup. */}
+      <div className="key-field">
         <Field label="Key" description="Checked with run.cloud before it is saved.">
           <input className="tt-input" type="password" autoComplete="off" spellCheck={false} value={key}
-            placeholder={keySaved ? 'Saved securely · enter to replace' : 'Paste your run.cloud key'}
+            placeholder={keySaved ? 'Key saved' : 'Paste your run.cloud key'}
             onChange={event => { setKey(event.target.value); setKeyNotice(null) }} />
         </Field>
+        <div className="cloud-iphone-key__actions">
+          {keySaved ? <Button variant="ghost" disabled={savingKey} onClick={() => void saveKey('')}>Remove key</Button> : null}
+          <Button variant="secondary" disabled={savingKey || !key.trim() || !bridge} onClick={() => void saveKey(key.trim())}>{savingKey ? 'Checking…' : keySaved ? 'Replace key' : 'Save key'}</Button>
+        </div>
+        {keyNotice ? <p className={`settings-remote-status${keyNotice.error ? ' settings-remote-status--error' : ''}`} role={keyNotice.error ? 'alert' : 'status'}>
+          {keyNotice.error ? <CircleAlert size={16} aria-hidden="true" /> : <Check size={16} aria-hidden="true" />}{keyNotice.text}
+        </p> : null}
       </div>
-      <div className="cloud-iphone-actions">
-        <Button variant="secondary" disabled={savingKey || !key.trim() || !bridge} onClick={() => void saveKey(key.trim())}>{savingKey ? 'Checking…' : keySaved ? 'Replace key' : 'Save key'}</Button>
-        {keySaved ? <Button variant="ghost" disabled={savingKey} onClick={() => void saveKey('')}>Remove key</Button> : null}
-      </div>
-      {keyNotice ? <p className={keyNotice.error ? 'tt-field__error' : 'settings-disclosure'} role={keyNotice.error ? 'alert' : 'status'}>{keyNotice.text}</p> : null}
-    </Card>
+    </SettingsGroup>
 
-    <Card as="section" className="cloud-iphone-card" aria-labelledby="cloud-iphone-spending">
-      <h3 id="cloud-iphone-spending">Spending</h3>
-      <div className="settings-input-action">
-        <Field label="Monthly cap" description="Minutes a month, 10 to 100000." {...(cap.error === undefined ? {} : { error: cap.error })}>
-          <input className="tt-input" inputMode="numeric" value={cap.draft} onBlur={() => void cap.commit()} onChange={event => cap.setDraft(event.target.value)} />
-        </Field>
-      </div>
+    <SettingsGroup title="Spending" icon={Gauge} note={`About $${CLOUD_IPHONE_PRICE_PER_MINUTE_USD.toFixed(2)} a minute; your first $15 each month is free.`}>
+      <Field label="Monthly cap" description="Minutes a month, 10 to 100000." {...(cap.error === undefined ? {} : { error: cap.error })}>
+        <input className="tt-input" inputMode="numeric" value={cap.draft} onBlur={() => void cap.commit()} onChange={event => cap.setDraft(event.target.value)} />
+      </Field>
+      {/* This month's minutes as a row: the words where a label goes, the meter where a control goes. */}
       <div className="cloud-iphone-usage">
-        <span>Used in {status ? monthName(status.month) : 'this month'}</span>
-        <span>{monthMinutes} of {capMinutes} minutes</span>
-        <div className="cloud-iphone-meter" role="meter" aria-label="Cloud iPhone minutes used this month" aria-valuenow={monthMinutes} aria-valuemin={0} aria-valuemax={capMinutes}>
+        <p className="cloud-iphone-usage__label">Used in {status ? monthName(status.month) : 'this month'}</p>
+        <p className="cloud-iphone-usage__text">{used}</p>
+        <div className="cloud-iphone-meter" role="meter" aria-label="Cloud iPhone minutes used this month" aria-valuenow={monthMinutes} aria-valuemin={0} aria-valuemax={capMinutes} aria-valuetext={used}>
           <i style={{ width: `${meterPercent}%` }} />
         </div>
       </div>
-      <div className="settings-input-action">
-        <Field label="Idle sessions end after" description="Minutes with no tap, typing or agent action, 1 to 60." {...(idle.error === undefined ? {} : { error: idle.error })}>
-          <input className="tt-input" inputMode="numeric" value={idle.draft} onBlur={() => void idle.commit()} onChange={event => idle.setDraft(event.target.value)} />
-        </Field>
-      </div>
-    </Card>
+      <Field label="Idle sessions end after" description="Minutes with no tap, typing or agent action, 1 to 60." {...(idle.error === undefined ? {} : { error: idle.error })}>
+        <input className="tt-input" inputMode="numeric" value={idle.draft} onBlur={() => void idle.commit()} onChange={event => idle.setDraft(event.target.value)} />
+      </Field>
+    </SettingsGroup>
 
-    <Card as="section" className="cloud-iphone-card" aria-labelledby="cloud-iphone-recent">
-      <h3 id="cloud-iphone-recent">Recent sessions</h3>
+    <SettingsGroup title="Recent sessions" icon={History}>
       {status && status.recent.length > 0
         ? <ul className="cloud-iphone-recent">{status.recent.map(item => <li key={`${item.threadId}-${item.startedAt}`}>
           <span>{item.threadTitle}</span><span>{dateWords(item.startedAt)}</span><span>{item.minutes} min</span></li>)}</ul>
-        : <p>No sessions yet.</p>}
-    </Card>
+        : <p className="cloud-iphone-recent__empty">No sessions yet.</p>}
+    </SettingsGroup>
   </div>
 }
