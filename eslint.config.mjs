@@ -22,6 +22,7 @@ export default tseslint.config(
       'artifacts/sotto-owl-release/**',
       'artifacts/sotto-owl-branding/**',
       'artifacts/sotto-owl-night-sky/**',
+      'artifacts/watcher-room/**',
       'artifacts/terminal-truths/**',
       'artifacts/voice-control-removal/merged-setup/**',
       'artifacts/skill-pill-composer/**',

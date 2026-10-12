@@ -8,11 +8,24 @@ Sotto has one current **Watcher** on this computer, identified by main's durable
 
 Zach chose the name **Watcher** on October 9, 2026. Watcher is a bare name, shown as Sotto's owl. The source of these picks is the [approved owl mock-up](C:/Users/zache/AppData/Local/zstack-scratch/owl-prototype/); it stays outside the repository.
 
-- The owl, icon only, sits in the sidebar foot switch between Dictate and Threads. Its tooltip and accessible name are **Watcher**.
+- The owl, icon only, sits in the room switch between Dictate and Threads: in the sidebar foot, and in Watcher's room in its floating switch (below). Its tooltip and accessible name are **Watcher**.
 - A watched thread shows the owl right after its provider logo in the sidebar row and pane header, in the row's muted text colour. Teal belongs only to the Sotto Owl header tile and the switch while Watcher's room is open.
 - The badge's tooltip and accessible name are **Watched by Watcher**. The pane-header owl is an image, not a control.
 - The watched thread's composer says **Watched by Watcher. If you send here, Watcher stops sending to it.**
 - The room header's limit reads **3 of 4 watched**. Stop all asks **Stop the 2 threads Watcher started?** with the actual eligible count.
+
+### Watcher's room without a sidebar
+
+After seeing the built room, Zach decided on October 11, 2026 that Watcher's room has no sidebar: "The navigation at the bottom should be there still but no side bar. That makes it unique and truly like a command center." He asked for an easy way to reach a thread from the room, and no Kanban. He then picked from the [no-sidebar mock-up](C:/Users/zache/AppData/Local/zstack-scratch/watcher-room-no-sidebar/index.html), which stays outside the repository with its captures and notes:
+
+- **Navigation (1C).** In Watcher's room the switch (Dictate, the owl, Threads) and the page links float in a pill at the bottom centre. Every other page keeps its sidebar and its switch where they are.
+- **Reaching a thread (2D).** **All threads**, beside Watcher's name, opens the Overview as a light list over the room. Escape or a press outside closes it. No Kanban and no columns.
+- **At a glance (3A).** One line under Watcher's header names each thread that needs the user and why: a question, a permission or a failed turn. It is gone when nothing waits.
+- **First entry (4C).** Watcher's composer, ready, with its model chip for Codex, Claude Code or Grok Build. The first message starts Watcher; there is no separate start screen.
+- **A press on a thread (5A).** The thread opens in its real pane beside Watcher, at its question or permission when opened from Open to answer or the needs-you line. Shift with the press, or **Open in Threads** in the pane's header, goes to the Threads room with the thread selected.
+- **The corner (6A).** The Sotto Owl tile and its night sky keep the window's top-left corner, as on every other Owl page, and the small owl before Watcher's name goes.
+
+Without a sidebar, Watcher and a thread fit side by side even at the 820 by 560 minimum, so the room uses no tabs. This replaces the plan's sidebar Overview and its narrow-width tabs; the Overview's groups and what the beside pane does are unchanged.
 
 ## Provider tools and pinned permissions
 

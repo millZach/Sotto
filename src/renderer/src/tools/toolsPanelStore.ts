@@ -112,6 +112,18 @@ export class ToolsPanelStore {
   }
 
   /**
+   * Opens Tools > Browser on a page main just opened for a thread, as a press that names that thread asks: a link in a
+   * thread opened beside Watcher, whose room has no Tools of its own, so the window goes to Threads to show it. A
+   * panel pinned to another thread is pinned to this one instead.
+   */
+  showBrowserPageOf(page: BrowserPage): void {
+    this.browser.adopt(page)
+    const pinned = this.chrome.pinnedThreadId
+    const threadId = page.workspace.threadId
+    this.update({ open: true, surface: 'browser', ...(pinned !== null && pinned !== threadId ? { pinnedThreadId: threadId } : {}) })
+  }
+
+  /**
    * Opens the Pull request surface for a thread, as the pull request badge under its composer asks. A panel
    * pinned to another thread is pinned to this one instead, since the press names this thread's pull request.
    */
