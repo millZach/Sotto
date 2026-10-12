@@ -12,10 +12,16 @@
   "appName": "Sotto",
   "appIcon": "sotto",
   "summary": "Sotto isn't open.",
-  "body": "Open Sotto, then try again.",
+  "body": "Open Sotto to start dictation.",
   "sottoClosedBeforeAndAfter": true,
   "bindingsUnchanged": true,
   "capture": "f9-notification.png",
   "launcher": "/home/zach/Projects/Sotto/.worktrees/dictation-unreachable/apps/omarchy/sotto",
-  "temporaryCompositorPathRestored": true
+  "temporaryCompositorPathRestored": true,
+  "recapture": {
+    "date": "2026-10-12",
+    "input": "apps/omarchy/sotto dictation start from this checkout, run in the live session with Sotto closed",
+    "locked": false,
+    "capture": "f9-notification.png"
+  }
 }

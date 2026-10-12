@@ -4,7 +4,7 @@ October 11, 2026 (Pacific). Branch `fix/linux-dictation-unreachable`, based on `
 
 ## Notification
 
-Copy for start and toggle: **Sotto isn't open. Open Sotto, then try again.** The hotkey does not launch Sotto because a cold start that immediately opens the microphone would surprise people.
+Copy for start and toggle: **Sotto isn't open. Open Sotto to start dictation.** Zach chose this body on October 12; it replaced **Open Sotto, then try again.** The hotkey does not launch Sotto because a cold start that immediately opens the microphone would surprise people.
 
 The installed daemon does not group by app name. `NotificationLogic.js` snapshots `appName` and `appIcon`; `Service.qml` tracks replacement by `originalId`, inserts new IDs into `popupModel`, and renders one card per row. The old mako grouping behavior and the Quickshell regression are also described in [Omarchy #10145](https://github.com/omacom/omarchy/issues/10145). `notify-send` receives `--app-name Sotto --app-icon sotto --icon sotto`. The first real press exposed a missing icon: with libnotify 0.8.8, `--icon` is the content image and Omarchy draws `appIcon`. Adding `--app-icon` fixed the rendered card, and the unit expectation was updated. The [libnotify CLI source](https://github.com/GNOME/libnotify/blob/master/tools/notify-send.c) documents these separate fields. Sotto supplies the cooldown independently of the daemon.
 
@@ -95,3 +95,9 @@ October 12: repeating the full suite on `188a3a2f` reproduced the Watcher failur
 The same failure was reproduced against the original `82f7da274` source and tests, projected into this checkout's ignored cache. Adding one explicit refresh immediately before the original fixture rewound the receipt forced the observer to finish first; the assertion then received 0 instead of 1. This was an instrumented scheduling reproduction, not an unmodified main-suite run. Restoring the uncertain receipt and its reserved count of 2 together made that same case pass against main's production source.
 
 The fixture now explicitly observes the failure before restoring both fields as a consistent stale checkpoint. Existing assertions still require exactly one refund, no duplicate command, retry refusal and the prompt limit. Production Watcher code is unchanged. **VERIFIED:** all 57 Watcher tool tests passed; independent standards and specification reviews found no issue. A new full gate run follows this correction; its result is recorded in PR #958. The desktop proofs above remain applicable because this correction changes only test setup.
+
+## New notification text (October 12)
+
+Zach asked for the notification to say Sotto has to be open to dictate, so the body is now **Open Sotto to start dictation.** The title, icon, cooldown and when it appears are unchanged. **VERIFIED:** with Sotto closed and the screen unlocked, this checkout's `apps/omarchy/sotto dictation start` exited 1 and showed the new card. The [capture](../../artifacts/linux-dictation-unreachable/f9-notification.png) was replaced, and the F9 path is the one proved above.
+
+**VERIFIED, F9 with Sotto hidden:** Zach expects F9 to dictate whenever Sotto is running, including when its window is hidden. On the installed 0.1.37-3 package, I closed Sotto's window to the tray (no Sotto window left, process still running) and held F9 through ydotool. The state file read `listening`, and `sotto dictation cancel` returned it to `idle`. No window opened and no notification appeared. Sotto was quit afterwards.

@@ -31,7 +31,7 @@ export async function notifyDictationUnavailable(command: CompositorDictationCom
       execFile('notify-send', [
         // libnotify separates the application icon from the optional content image.
         '--app-name', 'Sotto', '--app-icon', 'sotto', '--icon', 'sotto', '--expire-time', '5000',
-        'Sotto isn\'t open.', 'Open Sotto, then try again.',
+        'Sotto isn\'t open.', 'Open Sotto to start dictation.',
       ], { shell: false, timeout: 1_000 }, () => { /* The CLI error still explains failure if notifications are unavailable. */ })
     } finally {
       if (lock.listening) await new Promise<void>(resolve => lock.close(() => resolve()))

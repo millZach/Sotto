@@ -23,7 +23,7 @@ describe.skipIf(process.platform !== 'linux')('closed-app desktop notification',
   })
 
   it.each([
-    ['start', 'Open Sotto, then try again.'], ['toggle', 'Open Sotto, then try again.'],
+    ['start', 'Open Sotto to start dictation.'], ['toggle', 'Open Sotto to start dictation.'],
   ] as const)('uses fixed Sotto copy, name and icon for %s, without a shell', async (command, body) => {
     await notifyDictationUnavailable(command)
     expect(exec).toHaveBeenCalledExactlyOnceWith('notify-send', [
