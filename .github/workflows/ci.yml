@@ -159,6 +159,63 @@ jobs:
       - name: Unit and integration tests
         run: npm test -- --maxWorkers=2 --shard=${{ matrix.shard }}/6
 
+  # Six shards keep the Linux suite near the Windows shards' duration without changing those jobs.
+  # This uses the full-suite decision, not the host filter that skips renderer and preload changes.
+  linux-tests:
+    name: Tests (Linux, ${{ matrix.shard }}/6)
+    needs: changes
+    if: needs.changes.outputs.tests == 'full'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    env:
+      # Live provider suites stay opt-in; CI never holds provider credentials.
+      CI: 'true'
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Check Linux's platform declarations once; its failure also fails the matrix result.
+      - name: Typecheck on Linux
+        if: matrix.shard == 1
+        run: npm run typecheck
+
+      - name: Unit and integration tests
+        run: npm test -- --maxWorkers=2 --shard=${{ matrix.shard }}/6
+
+  # Informational until the owner decides to require it. A skipped or failed Changed areas job
+  # must not make skipped Linux shards look green.
+  linux-result:
+    name: Linux result
+    needs: [changes, linux-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check Changed areas and every Linux shard
+        shell: bash
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          MODE: ${{ needs.changes.outputs.tests }}
+          TESTS: ${{ needs.linux-tests.result }}
+        run: |
+          if [ "$CHANGES" != "success" ]; then echo "Changed areas ended $CHANGES, so nobody decided which Linux tests to run."; exit 1; fi
+          if [ "$MODE" = "docs" ] && [ "$TESTS" = "skipped" ]; then echo "Documents only: the Linux shards were skipped."; exit 0; fi
+          if [ "$MODE" != "full" ] || [ "$TESTS" != "success" ]; then echo "Linux tests mode: $MODE. Shards ended $TESTS."; exit 1; fi
+          echo "Linux typecheck and all six test shards passed."
+
   # Main's ruleset requires this job by name. It passes only when Changed areas finished, the checks passed
   # and every test shard passed, or when Changed areas found a documents-only change and skipped the shards.
   gates:
@@ -340,6 +397,7 @@ jobs:
       - name: Real OpenSSH server journey
         env:
           SOTTO_REAL_SSHD: '1'
+          SOTTO_REAL_SSHD_REQUIRED: '1'
         run: |
           install="$RUNNER_TEMP/sotto-host"
           mkdir -p "$install"

@@ -301,6 +301,10 @@
   --tt-owl-night-control: oklch(from var(--tt-surface-sunken) l min(calc(c + .02), .045) var(--owl-night-hue));
   --tt-owl-night-control-on: oklch(from var(--tt-surface-elevated) l min(calc(c + .02), .045) var(--owl-night-hue));
   --tt-frost-owl-night: color-mix(in oklab, var(--tt-owl-night) min(100%, calc(var(--theme-frost-solid) + 8%)), transparent);
+  /* Watcher's room has no sidebar, so its night sits in the room's top-left corner (watcher/watcher.css), derived
+     from the canvas as the sidebar's is from the sidebar: the canvas is the darkest surface, so a little lighter
+     than it, chroma lifted, on the same hue. */
+  --tt-owl-room-night: oklch(from var(--tt-canvas) calc(l + .04) min(calc(c + .028), .055) var(--owl-night-hue));
 
   --tt-success: oklch(0.79 0.13 165);
   --tt-provider-codex: #d7dbe1;
@@ -381,6 +385,7 @@
   --tt-owl-star-scale: 1.2;
   --tt-owl-glow: color-mix(in srgb, var(--tt-accent) 8%, transparent);
   --tt-owl-night: color-mix(in oklab, var(--tt-sidebar) 90%, oklch(from var(--tt-accent) 1 c h));
+  --tt-owl-room-night: color-mix(in oklab, var(--tt-canvas) 90%, oklch(from var(--tt-accent) 1 c h));
   --tt-owl-night-field: var(--tt-field);
   --tt-owl-night-control: var(--tt-surface-sunken);
   --tt-owl-night-control-on: var(--tt-surface-elevated);
