@@ -405,3 +405,10 @@ artifacts/linux-window-minimum/*
 !artifacts/linux-window-minimum/proof.txt
 
 !artifacts/linux-window-minimum/shell-plumbing-proof.txt
+
+# New-thread defaults on every host (ADR-0074); retain only the captures its verification note cites.
+artifacts/new-thread-defaults-every-host/*
+!artifacts/new-thread-defaults-every-host/dark-1600.png
+!artifacts/new-thread-defaults-every-host/light-1280.png
+!artifacts/new-thread-defaults-every-host/dark-820.png
+!artifacts/new-thread-defaults-every-host/light-820.png
