@@ -843,16 +843,28 @@ import XCTest
         let added = XCTNSPredicateExpectation(predicate: NSPredicate(format: "count == 2"), object: rows)
         XCTAssertEqual(XCTWaiter.wait(for: [added], timeout: 5), .completed, "With what it did")
         // The answer's end is on screen between the header and the box, not left under the card still waiting below.
-        var seen = ""
-        let shown = NSPredicate { _, _ in
-            guard answer.exists else { seen = "the answer is missing"; return false }
-            let band = self.watcherBand, frame = answer.frame
-            seen = "answer \(frame), between \(band.top) and \(band.bottom)"
-            return frame.maxY > band.top && frame.maxY <= band.bottom + 1
+        // The band is read before the wait and again after it, and the wait reads only the answer. On CI's SE each query
+        // can take a second or two: reading the header, tab bar and box inside a ten-second wait left time for one
+        // reading, which ran past the deadline, found no answer and failed with the answer on screen.
+        func inBand(_ frame: CGRect, _ band: (top: CGFloat, bottom: CGFloat)) -> Bool {
+            frame.maxY > band.top && frame.maxY <= band.bottom + 1
         }
-        let inView = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: shown, object: nil)], timeout: 10)
+        let band = watcherBand
+        var seen = ""
+        var matches = 0
+        let shown = NSPredicate { _, _ in
+            guard answer.exists else { seen = "the answer is missing"; matches = 0; return false }
+            let frame = answer.frame
+            seen = "answer \(frame), between \(band.top) and \(band.bottom)"
+            matches = inBand(frame, band) ? matches + 1 : 0
+            return matches >= 2
+        }
+        let inView = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: shown, object: nil)], timeout: 60)
         if inView != .completed { explain("watcher-answer-not-in-view", seen) }
         XCTAssertEqual(inView, .completed, "Watcher's answer comes into view above the box (\(seen))")
+        let settled = watcherBand, rest = answer.frame
+        XCTAssertTrue(inBand(rest, settled),
+                      "Watcher's answer stays in view above the box (answer \(rest), between \(settled.top) and \(settled.bottom))")
         capture("watcher-sent-dark")
         // The keyboard can also be put away without sending, by dragging the conversation down into it.
         reply.tap()
