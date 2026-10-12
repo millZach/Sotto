@@ -273,12 +273,9 @@ export class WatcherWakeUp {
   pairedEvidence(hostId: string, facts: readonly WatcherEvidence[]): void {
     if (!this.started || this.closed) return
     const changed = new Map<string, WatcherThreadTarget>()
-    for (const { id: _id, ...fact } of facts) {
-      void _id
+    for (const fact of facts) {
       if (fact.target.hostId !== hostId) continue
-      // A source's latest fact replaces its old truth, including a return to an earlier state.
-      const slot = `host:${fact.source}:${fact.referenceId ?? fact.url ?? ''}`
-      if (this.evidence.put(slot, fact)) changed.set(targetKey(fact.target), fact.target)
+      if (this.evidence.paired(fact)) changed.set(targetKey(fact.target), fact.target)
     }
     for (const target of changed.values()) this.evidenceChanged(target)
   }

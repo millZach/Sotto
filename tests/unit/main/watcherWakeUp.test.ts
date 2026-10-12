@@ -4,7 +4,7 @@ import { EMPTY_AGENT_HOST, type AgentThread, type AgentHostSnapshot } from '../.
 import { WATCHER_QUIET_MS } from '../../../src/shared/watcherOverview'
 import type { WatcherNews } from '../../../src/shared/watcherNews'
 import { WatcherWakeUp, type WatcherWakeOptions } from '../../../src/main/agents/watcherWakeUp'
-import { observationDigest } from '../../../src/main/agents/watcherEvidence'
+import { WatcherEvidenceStore, observationDigest } from '../../../src/main/agents/watcherEvidence'
 import { foldWatcherNews, watcherNewsText } from '../../../src/main/agents/watcherNews'
 import { queuedWakeUpText, wakeUpText } from '../../../src/main/agents/wakeUp'
 import type { BabysitNews } from '../../../src/main/agents/babysitNews'
@@ -587,4 +587,34 @@ it('supersedes waiting news when a newer saved checkpoint loads after its refere
   expect(recovered.due(saved)).toBe(true)
   recovered.checkpoint({ ...read, checkpointId: 'newest-capture', changedFiles: 2 })
   expect(recovered.due(saved)).toBe(false)
+})
+
+it('keeps independent paired GitHub facts on their host and replaces only the changed fact', async () => {
+  const f = fixture(false), remoteHost = '55555555-5555-4555-8555-555555555555'
+  const target = { hostId: remoteHost, threadId: f.thread.id }, owner = new WatcherEvidenceStore()
+  f.thread.hostId = remoteHost
+  f.record.requests[0]!.participants[0]!.target = target
+  f.snapshot.threads.unshift({ ...f.thread, hostId: centerTarget.hostId })
+  const read = { url: 'https://github.com/o/r/pull/1', head: 'head', observedAt: new Date(f.now()).toISOString(), availability: 'available' as const }
+  owner.pullRequest(target, { ...read, state: 'open', checks: 'passed', checkCount: 1, reviewApproved: true, autoMerge: true })
+  f.wakes.start()
+  f.wakes.pairedEvidence(remoteHost, owner.read(target, true, f.now()))
+  await f.advance(2_000)
+  const facts = () => f.wakes.evidence.read(target, true, f.now())
+  expect(facts()).toEqual(expect.arrayContaining([
+    expect.objectContaining({ target, checksState: 'passed' }),
+    expect.objectContaining({ target, githubReviewApproved: true }),
+    expect.objectContaining({ target, githubAutoMergeEnabled: true }),
+    expect.objectContaining({ target, pullRequestState: 'open' })
+  ]))
+  expect(f.wakes.evidence.read(centerTarget)).toEqual([])
+  const newsCount = f.delivered.length
+  f.wakes.pairedEvidence(remoteHost, owner.read(target, true, f.now())); await f.advance(2_000)
+  expect(f.delivered).toHaveLength(newsCount)
+  owner.pullRequest(target, { ...read, observedAt: new Date(f.now()).toISOString(), checks: 'failed' })
+  f.wakes.pairedEvidence(remoteHost, owner.read(target, true, f.now())); await f.advance(2_000)
+  expect(facts().filter(fact => fact.checksState !== undefined)).toEqual([expect.objectContaining({ checksState: 'failed' })])
+  expect(facts().some(fact => fact.githubReviewApproved === true)).toBe(true)
+  expect(facts().some(fact => fact.githubAutoMergeEnabled === true)).toBe(true)
+  expect(f.delivered.flatMap(news => news.events).every(event => event.target.hostId === remoteHost)).toBe(true)
 })

@@ -39,8 +39,9 @@ export class WatcherEvidenceStore {
   }
   read(target: WatcherThreadTarget, connected = true, now = Date.now()): WatcherEvidence[] {
     const entries = this.entries.get(targetKey(target))
-    return [...entries?.values() ?? []].slice(-EVIDENCE_PROJECTION_MAX).map(item => {
-      const unread = item.source === 'github' && item.url ? entries?.get('pr:' + pullRequestKey(item.url)) : undefined
+    return [...entries?.entries() ?? []].slice(-EVIDENCE_PROJECTION_MAX).map(([slot, item]) => {
+      const prefix = slot.startsWith('host:github:') ? 'host:github:' : 'pr:'
+      const unread = item.source === 'github' && item.url ? entries?.get(prefix + pullRequestKey(item.url)) : undefined
       return { ...item,
         ...connected ? (['github', 'working-copy'].includes(item.source) && now - Date.parse(item.observedAt) > 5 * 60_000 ? { freshness: 'stale' as const } : {})
           : { freshness: 'stale' as const, availability: 'unavailable' as const, reason: 'disconnected' as const },
@@ -86,7 +87,25 @@ export class WatcherEvidenceStore {
     return changed
   }
   pullRequest(target: WatcherThreadTarget, read: PullRequestObservation): boolean {
-    const slot = 'pr:' + pullRequestKey(read.url), entries = this.entries.get(targetKey(target))
+    return this.observePullRequest(target, read, 'pr:')
+  }
+  /** Paired observations share fact replacement rules, but shell link summaries cannot erase owning-host facts. */
+  paired(fact: WatcherEvidence): boolean {
+    if (fact.source === 'github' && fact.url) return this.observePullRequest(fact.target, {
+      url: fact.url, head: fact.headId ?? null, observedAt: fact.observedAt,
+      availability: fact.availability === 'available' ? 'available' : 'unavailable',
+      ...(fact.reason === 'read-failed' || fact.reason === 'rate-limited' ? { reason: fact.reason } : {}),
+      ...(fact.pullRequestState !== undefined ? { state: fact.pullRequestState } : {}),
+      ...(fact.checksState !== undefined ? { checks: fact.checksState } : {}),
+      ...(fact.checkCount !== undefined ? { checkCount: fact.checkCount } : {}),
+      ...(fact.githubReviewApproved !== undefined ? { reviewApproved: fact.githubReviewApproved } : {}),
+      ...(fact.githubAutoMergeEnabled !== undefined ? { autoMerge: fact.githubAutoMergeEnabled } : {}),
+    }, 'host:github:')
+    const { id: _id, ...input } = fact; void _id
+    return this.put(`host:${fact.source}:${fact.referenceId ?? fact.url ?? ''}`, input)
+  }
+  private observePullRequest(target: WatcherThreadTarget, read: PullRequestObservation, prefix: string): boolean {
+    const slot = prefix + pullRequestKey(read.url), entries = this.entries.get(targetKey(target))
     const previous = entries?.get(slot), available = read.availability === 'available'
     const head = available ? read.head ?? undefined : previous?.headId ?? read.head ?? undefined
     // A late answer for an earlier head cannot replace the head a newer read established.
