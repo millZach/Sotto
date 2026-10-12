@@ -118,3 +118,37 @@ Free physical memory was 12,415,548 KB before the full suite and 11,592,512 KB b
 The final built-app check covers stable and Owl ordinary Send/reply, saved-kind preservation and all local-host-off room refusals. It checks dark/light, reduced motion and bounds at 1600x1000, 1280x800 and 820x560. The two linked selected captures above were refreshed from this build and visually inspected. They contain only synthetic fixture conversations. Packaging, macOS, Linux and phones were not exercised. No additional paid model turn or native provider sign-in was used.
 
 The shared room/preload contract and channel/result shapes remain unchanged. These fixes follow the settled plan and ADR-0073; finding 4 already has an explicit rule. No new domain decision was made, so CONTEXT.md, ADR-0073 and the plan need no amendment beyond the authorized main integration. No renderer or dependency file was edited by the follow-up fixes; changes from main were preserved by the merge. No push, rebase, stash, branch switch, task worktree creation, nested review, provider-configuration access, publication or extra installation occurred. Nothing remains unfinished in this follow-up.
+
+
+## Pull request #930 third follow-up
+
+Started from the supplied branch at `1b740d3cb`, retaining the lead's settings-coordinator fix `f782a665c` and its built-app check. No fetch, merge, branch switch or new task worktree ran in this follow-up.
+
+| Finding | Verified fix and regression | Local commit |
+| --- | --- | --- |
+| 1 | Reproduced saved user prompts restarting a worker while machine Stop awaited persistence or queue cleanup. Hold stopped participation in ordinary queue readiness, and carry a separate stop fence to the native writer without changing the user prompt's origin or authority. A native Codex fixture reproduced the later preparation race while Stop left the completed turn unchanged. The three failing cases now send nothing; pre-admission queues remain intact, a claimed unwritten prompt stays saved for review, explicit user review releases it, and a never-watched ordinary thread still dispatches normally. | `a43f27382` |
+| 2 | Reproduced a working-copy ID being accepted as a base and a branch ID creating failed control records when used as a working copy. Validate branch/path roles before admission and again after the native working-copy read. Both wrong-role calls now refuse without changing the durable record, provider commands or selection. A valid branch reaches creation and the effective-choice receipt. | `cb0e025a8` |
+| 3 | Reproduced expired and over-capacity unsubmitted previews remaining retained. Prune expired entries on prepare/confirm and cap retained confirmations at the newest sixteen. Both old IDs refuse without record changes or interrupts, while the newest preview still stops exactly its confirmed target. The sixty-second lifetime and room result types stay unchanged. | `1c181ba7b` |
+
+All three findings were valid. Seven new behavioral regressions were observed failing before their respective fixes; two neighboring checks cover ordinary queue behavior and a valid branch. The focused tools, native fences, recovery and ordinary follow-up suites passed 109 tests in four files in 30.32 seconds. The first readiness-only fix passed the persistence/cleanup races but failed the native preparation case; the separate writer fence was added before final gates.
+
+The first ordered run against implementation head `1c181ba7b` passed typecheck, lint, the full suite (775 files, 9,668 tests, 283 skipped, 1,296.05 seconds), notices and build. Playwright then failed both release-track capture journeys: this Windows native minimum clamped the requested 820x560 CSS content viewport to 820x562. The local-host-off and settings-coordinator checks passed. Commit `29414d573` uses the explicit fixture minimum already used by other content-size specs, retaining the exact 820x560 viewport/bounds assertions and all production window options. Its immediate focused rerun passed all four journeys in 14.0 seconds.
+
+Repeated the required commands in order against final code/test head `29414d5739d15d77cb1bcdbb1dc685ecb7eb9eb1`. The final whole-suite command returned non-zero; it is not reported as a clean pass:
+
+| Command | Real result |
+| --- | --- |
+| `npm run typecheck` | Exit 0 |
+| `npm run lint` | Exit 0 |
+| `npm test -- --maxWorkers=2` | Exit 1; 773 files passed, 2 failed, 58 skipped; 9,666 tests passed, 2 failed, 283 skipped; 1,159.37 seconds |
+| `npm run notices:verify` | Exit 0; 189 components verified |
+| `npm run build` | Exit 0; main, host, preload and renderer built |
+| `npx playwright test tests/e2e/watcher-gate.spec.ts` | Exit 0; 4 passed in 16.5 seconds |
+
+The two whole-suite failures occurred during fixture setup, before their tested assertions: `checkpointCapture` failed `git add -A` in `initializeGitRepository`; `grokAdapterFailures` reached Send without a confirmed fixture provider session. Each suite was then run alone once, sequentially, with `--maxWorkers=2`: checkpoint passed all 25 tests in 12.82 seconds, and Grok passed all 24 in 11.01 seconds. No source, test assertion, deadline or skip was changed for either failure. Both had also passed the first full run. The only intervening change was the E2E capture line, which the full suite excludes. The setup failures did not recur in isolation; their underlying environmental cause was not proved. The final whole-suite exit status remains the gate limitation.
+
+Free physical memory before the first and final full runs was 10,178,308 KB and 10,368,036 KB. Before the final Playwright run it was 10,555,568 KB. Each exceeded 3 GB. Warnings were SQLite experimental, jsdom canvas, fixture line endings and dependency directives. Gitignored `artifacts/watcher-thread-tools-gates/pr930-third.json` and `pr930-third-attempt1.json` retain real statuses and counters without prompt text, model output, tokens or protocol bodies.
+
+The final built app checks stable/Owl ordinary Send/reply, saved-kind preservation, local-host-off refusals and the lead's immediate in-flight-limit update. Dark/light, reduced motion and bounds are checked at 1600x1000, 1280x800 and 820x560 CSS pixels. The two linked selected captures above were refreshed from this final build and visually inspected. On this display the minimum PNGs are 1230x840 device pixels for the verified 820x560 CSS viewport. They contain only synthetic fixture conversations. Packaging, macOS, Linux and phones were not exercised; no additional paid model turn or real native sign-in was used.
+
+The shared room/preload contract, channel/result shapes, production dependencies, renderer and the lead's settings-coordinator change remain untouched. These fixes fulfill existing queue, choice and preview rules; they add no domain decision, so CONTEXT.md, ADR-0073 and the plan need no amendment. No push, fetch, merge, rebase, stash, branch switch, task worktree creation, nested review, provider-configuration access, publication or extra installation ran. All three review findings are resolved; the non-zero final whole-suite result and passing isolation evidence are recorded explicitly.
