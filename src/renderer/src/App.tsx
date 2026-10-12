@@ -40,6 +40,10 @@ import { SidebarChromeProvider } from './agents/SidebarFrame'
 import { ThreadWorkspace } from './agents/ThreadWorkspace'
 import { E2E_THREADS_NOW } from '../../shared/e2e'
 import { MemorySurface } from './features/memory/MemorySurface'
+import { useWatcherEnabled } from './state/watcherFeature'
+import { WatcherRoomProvider } from './watcher/watcherRoom'
+import { WatcherView } from './watcher/WatcherView'
+import type { WatcherBridge } from '../../shared/watcherRoom'
 import { ThemeEditorHost } from './features/settings/themes/ThemeEditor'
 import { appearancePreview, applyAppearance, frostAvailable, systemPrefersDark, useAppearancePreviewVersion, useSystemPrefersDark, useSystemReducesTransparency } from './state/appearance'
 
@@ -76,6 +80,8 @@ function recoveryToast(notice: RecoveryNotice, platform: SottoPlatform): ToastMe
 
 export interface AppProps {
   readonly createMicrophoneTest?: () => MicrophoneTestController
+  /** Watcher's bridge: the preload's by default, a stand-in under test. Read only while the Watcher gate is on. */
+  readonly watcherBridge?: WatcherBridge | undefined
 }
 
 /**
@@ -118,8 +124,9 @@ function FooterStatus({ navigation, settings, historyKept, speechModel }: {
   }
 }
 
-export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }: AppProps): ReactNode {
+export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), watcherBridge = window.sotto?.watcher }: AppProps): ReactNode {
   const app = useApp()
+  const watcherEnabled = useWatcherEnabled()
   const downloadSpeechModel = useCallback((): void => { void app.actions.downloadSpeechModel() }, [app.actions])
   const memoryEnabled = useMemoryEnabled()
   const [microphoneState, setMicrophoneState] = useState<MicrophoneTestState>('idle')
@@ -371,7 +378,9 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
     const navigation = app.navigation
     // Linux has no in-app updater (ADR-0062): pacman brings new versions, so the foot offers nothing to press.
     const updateControl = app.platform === 'linux' ? null : <UpdateControl status={app.update} busy={updateFlow.busy} onActivate={updateFlow.activate} />
-    const threadsPage = navigation === 'threads' || (navigation === 'memory' && !memoryEnabled)
+    // Watcher's room is reachable only while its gate is on; without it the navigation lands on Threads.
+    const watcherPage = navigation === 'watcher' && watcherEnabled
+    const threadsPage = navigation === 'threads' || (navigation === 'watcher' && !watcherEnabled) || (navigation === 'memory' && !memoryEnabled)
     const layout = layoutFor(navigation, threadsPage)
     // A capture run holds the sidebar's clocks still.
     const captureNow = window.sottoE2E?.scenario === 'design-threads' ? E2E_THREADS_NOW : undefined
@@ -390,6 +399,9 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
         break
       case 'threads':
         view = threadWorkspace
+        break
+      case 'watcher':
+        view = watcherPage ? <WatcherView updateControl={updateControl} now={captureNow} /> : threadWorkspace
         break
       case 'history':
         view = <HistoryView
@@ -513,6 +525,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
 
   return (
     <AgentProvider settings={app.settings}>
+      <WatcherRoomProvider bridge={watcherBridge}>
       {management ? content : (
         <AppShell
           navigation={null}
@@ -525,6 +538,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
           {content}
         </AppShell>
       )}
+      </WatcherRoomProvider>
       <ClientUpdateCard />
     </AgentProvider>
   )

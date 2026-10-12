@@ -1,15 +1,17 @@
-import React, { createContext, useCallback, useContext, useMemo, useLayoutEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react'
+import React, { createContext, useCallback, useContext, useMemo, useLayoutEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { Archive, ArchiveRestore, Brain, CircleHelp, Clock, FolderPlus, MessagesSquare, PanelLeftClose, PanelLeftOpen, Search, Settings, SquareTerminal, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
 import type { SottoPlatform } from '../../../shared/platform'
 import { releaseTrackName } from '../../../shared/releaseTrack'
-import { roomFor } from '../components/AppShell'
+import { appRooms, roomFor, useRoomSwitch } from '../components/AppShell'
 import { Button } from '../components/Button'
 import { SottoMark } from '../components/SottoMark'
 import { useOptionalApp, type AppNavigation } from '../state/AppContext'
 import { useMemoryEnabled } from '../state/memoryFeature'
 import { useReleaseTrack } from '../state/useReleaseTrack'
+import { useWatcherEnabled } from '../state/watcherFeature'
+import { WatcherOwl } from '../watcher/WatcherOwl'
 import type { AgentConnection } from './AgentContext'
 import { useAddProject } from './addProject'
 import { OwlSky } from './OwlSky'
@@ -76,47 +78,44 @@ export function SidebarTop({ children }: { readonly children?: ReactNode }): Rea
 }
 
 /**
- * The sidebar's foot: the Dictate | Threads room switch, the other pages as icon links, and the update control.
- * A page that carries the sidebar, or a column that wears its frame, has no app footer under it, so this is the
- * only way off the page. The switch lights the room of the open page, the way the strip's did.
+ * The room switch, drawn from the one room definition (`appRooms`): Dictate | Threads, with Watcher's owl between
+ * them while its gate is on. It lights the room of the open page and answers the keyboard as every switch does
+ * (`useRoomSwitch`): one Tab stop, arrow keys, Home and End, and focus handed to the lit tab of the switch the opened
+ * page draws. The sidebar foot and Watcher's floating switch both draw this one.
+ */
+export function RoomSwitch({ className }: { readonly className: string }): ReactNode {
+  const app = useOptionalApp()
+  const shown = app === null || app.navigation === 'onboarding' ? 'threads' : app.navigation
+  const rooms = appRooms(useWatcherEnabled())
+  const roomSwitch = useRoomSwitch(roomFor(shown), rooms, destination => app?.actions.navigate(destination))
+  return <div ref={roomSwitch.ref} className={className} role="tablist" aria-label="Page" data-rooms={rooms.length === 3 ? 3 : undefined}>
+    {rooms.map((target, index) => <button key={target.id} type="button" role="tab" className="tt-focusable" data-room={target.id} {...roomSwitch.tab(target, index)}>
+      {target.id === 'watcher' ? <WatcherOwl size={16} /> : target.label}</button>)}
+  </div>
+}
+
+/** The pages the switch does not reach, as icon links: History, Settings and Help, and Memory while memory is switched on. */
+export function PageLinks({ className, linkClassName }: { readonly className: string; readonly linkClassName: string }): ReactNode {
+  const app = useOptionalApp()
+  const memory = useMemoryEnabled()
+  const pages = memory ? PAGES : PAGES.filter(page => page.id !== 'memory')
+  return <nav className={className} aria-label="Pages">
+    {pages.map(({ id, label, Icon }) => <a key={id} href={`#${id}`} className={`${linkClassName} tt-focusable`} title={label}
+      aria-current={app?.navigation === id ? 'page' : undefined} onClick={event => { event.preventDefault(); app?.actions.navigate(id) }}>
+      <Icon size={16} aria-hidden="true" /><span className="tt-visually-hidden">{label}</span>
+    </a>)}
+  </nav>
+}
+
+/**
+ * The sidebar's foot: the room switch, the other pages as icon links, and the update control. A page that carries
+ * the sidebar, or a column that wears its frame, has no app footer under it, so this is the only way off the page.
  */
 export function SidebarFoot(): ReactNode {
-  const app = useOptionalApp()
   const { updateControl } = useContext(SidebarChromeContext)
-  const memory = useMemoryEnabled()
-  const shown = app === null || app.navigation === 'onboarding' ? 'threads' : app.navigation
-  const room = roomFor(shown)
-  const go = (destination: AppNavigation): void => { app?.actions.navigate(destination) }
-  const rooms: ReadonlyArray<{ readonly id: string; readonly label: string; readonly destination: AppNavigation }> = [
-    { id: 'dictate', label: 'Dictate', destination: 'home' },
-    { id: 'threads', label: 'Threads', destination: 'threads' },
-  ]
-  /** Arrow keys walk the switch, as they do in the strip: only the lit tab is in the Tab order, so this is how the others are reached. */
-  const onTabKey = (event: KeyboardEvent<HTMLButtonElement>, index: number): void => {
-    let next: number | null = null
-    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') next = (index + 1) % rooms.length
-    else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') next = (index - 1 + rooms.length) % rooms.length
-    else if (event.key === 'Home') next = 0
-    else if (event.key === 'End') next = rooms.length - 1
-    if (next === null) return
-    event.preventDefault()
-    event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus()
-    go(rooms[next]!.destination)
-  }
-  const pages = memory ? PAGES : PAGES.filter(page => page.id !== 'memory')
-  // Only one tab is in the Tab order: the lit one, or the first when the open page lights none (Settings, History, Help).
-  const focusable = rooms.some(({ id }) => id === room) ? room : rooms[0]!.id
   return <div className="thread-nav__foot">
-    <div className="thread-nav__seg" role="tablist" aria-label="Page">
-      {rooms.map(({ id, label, destination }, index) => <button key={id} type="button" role="tab" className="tt-focusable" aria-selected={id === room}
-        tabIndex={id === focusable ? 0 : -1} onClick={() => go(destination)} onKeyDown={event => onTabKey(event, index)}>{label}</button>)}
-    </div>
-    <nav className="thread-nav__pages" aria-label="Pages">
-      {pages.map(({ id, label, Icon }) => <a key={id} href={`#${id}`} className="thread-nav__page tt-focusable" title={label}
-        aria-current={app?.navigation === id ? 'page' : undefined} onClick={event => { event.preventDefault(); go(id) }}>
-        <Icon size={16} aria-hidden="true" /><span className="tt-visually-hidden">{label}</span>
-      </a>)}
-    </nav>
+    <RoomSwitch className="thread-nav__seg" />
+    <PageLinks className="thread-nav__pages" linkClassName="thread-nav__page" />
     {updateControl}
   </div>
 }

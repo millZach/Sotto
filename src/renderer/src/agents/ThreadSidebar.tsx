@@ -10,6 +10,8 @@ import { ProjectSettleAction, SidebarFrame, type SidebarMode } from './SidebarFr
 import { rowStatus, workingLabel, type ProjectFolder, type ThreadRow, type WorkspaceOrganization } from './threadFacts'
 import { THREAD_DRAG_TYPE } from './splitLayout'
 import { HostBadge, hostIdOf, listedHosts, type ListedHost } from './HostBadge'
+import { useWatchedThread } from '../watcher/watcherRoom'
+import { WATCHED_BY_WATCHER, WatchedBadge } from '../watcher/WatcherOwl'
 
 export { useAddProject } from './addProject'
 
@@ -32,7 +34,7 @@ function Indicators({ working, needs, id }: { readonly working: number; readonly
  * A row's clock. A working row counts up once a second and writes its own text, the way the transcript's
  * clock does, so one running thread never re-renders the sidebar every second.
  */
-function RowTime({ row, live, id }: { readonly row: ThreadRow; readonly live: boolean; readonly id?: string }): ReactNode {
+export function RowTime({ row, live, id }: { readonly row: ThreadRow; readonly live: boolean; readonly id?: string }): ReactNode {
   const ref = useRef<HTMLTimeElement>(null)
   const since = live && row.state === 'working' ? row.workingSince : Number.NaN
   useEffect(() => {
@@ -90,7 +92,8 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
   const branch = copy.status === 'ready' ? copy.branch : undefined
   const copyLabel = copy.status === 'error' ? 'Worktree not ready' : copy.status === 'pending' ? (copy.mode === 'independent' ? 'New worktree pending' : 'Project folder pending') : copy.mode === 'independent' ? 'Worktree' : copy.mode === 'shared' ? 'Project folder' : copy.label
   const branchName = branch ?? (copy.status === 'ready' && copy.repositoryRoot ? 'Detached HEAD' : copyLabel)
-  const copyDetails = [...new Set([row.thread.hostLabel, row.model?.name, branchName, copyLabel].filter(Boolean))].join(', ')
+  const watched = useWatchedThread(row.thread.id)
+  const copyDetails = [...new Set([row.thread.hostLabel, row.model?.name, branchName, copyLabel, watched ? WATCHED_BY_WATCHER : undefined].filter(Boolean))].join(', ')
   if (renaming) return <li className="thread-nav__row" data-current={current || undefined} data-open={open && !current ? true : undefined}>
     <span className="thread-nav__item thread-nav__item--renaming">
       <ThreadNameField title={title} label={`Rename ${title}`} className="thread-nav__rename tt-focusable"
@@ -112,6 +115,7 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
         {/* The mark stands for the provider's name; the status below says the name for a screen reader, and hovering says it here. */}
         <span className="thread-nav__provider" title={[row.provider, row.model?.name].filter(Boolean).join(' · ')}>
           <span className="thread-nav__mark" data-provider={row.providerId}><ProviderMark provider={row.providerId} name={row.provider} /></span>
+          {watched ? <WatchedBadge size={14} /> : null}
           <span className="thread-nav__model">{row.model?.name ?? ''}</span>
         </span>
         <span id={statusId} className="thread-nav__status" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-unseen={finished || undefined} data-babysitting={babysitting || undefined} data-disconnected={row.connected ? undefined : true} title={status + disconnectedLabel(row)}><span className="tt-visually-hidden">{row.provider}, </span>{status}{disconnectedLabel(row)}</span>

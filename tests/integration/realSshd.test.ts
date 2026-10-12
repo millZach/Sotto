@@ -8,7 +8,7 @@
  */
 import { testCredentials } from '../fixtures/testCredentials'
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
-import { cp, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { connect, createServer } from 'node:net'
 import { tmpdir, userInfo } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -28,10 +28,10 @@ import { desktopWindowClient } from '../../src/main/agents/hostService'
 import type { HostStatus } from '../../src/shared/hosts'
 
 const enabled = process.env.SOTTO_REAL_SSHD === '1'
-// The Linux CI job runs this file only to run it, and vitest passes a file whose tests all skip. A lost
-// or renamed variable there, or an install given without the switch, must turn the job red instead.
-if (!enabled && (process.env.SOTTO_REAL_SSHD_INSTALL || (process.env.CI === 'true' && process.platform === 'linux'))) {
-  throw new Error('The real-sshd journey would be skipped: set SOTTO_REAL_SSHD=1 wherever this file runs on Linux CI or with SOTTO_REAL_SSHD_INSTALL.')
+// The dedicated host journey requires this opt-in; the ordinary Linux suite does not need sshd.
+// Vitest passes a file whose tests all skip, so a lost switch in that job must turn it red instead.
+if (!enabled && (process.env.SOTTO_REAL_SSHD_INSTALL || process.env.SOTTO_REAL_SSHD_REQUIRED === '1')) {
+  throw new Error('The real-sshd journey would be skipped: set SOTTO_REAL_SSHD=1 with SOTTO_REAL_SSHD_REQUIRED or SOTTO_REAL_SSHD_INSTALL.')
 }
 // A synthetic passphrase for a throwaway key, so the real ssh asks through the askpass helper.
 const PASSPHRASE = 'synthetic-real-sshd-passphrase'
@@ -75,6 +75,11 @@ describe.skipIf(!enabled)("the SSH transport against a real OpenSSH server (requ
   beforeAll(async () => {
     root = await mkdtemp(join(tmpdir(), 'sotto-real-sshd-'))
     data = join(root, 'host-data')
+    // Add host tries the tailnet after pairing. This journey must keep using its real SSH forward,
+    // and its throwaway host must never change this machine's Tailscale Serve settings.
+    const bin = join(root, 'bin')
+    await mkdir(bin)
+    await writeFile(join(bin, 'tailscale'), '#!/bin/sh\nexit 1\n', { mode: 0o755 })
     install = process.env.SOTTO_REAL_SSHD_INSTALL ? resolve(process.env.SOTTO_REAL_SSHD_INSTALL) : await stageInstall()
     await stat(join(install, 'host', 'index.js'))
     const keygen = process.env.SOTTO_SSH_KEYGEN ?? 'ssh-keygen'
@@ -89,7 +94,7 @@ describe.skipIf(!enabled)("the SSH transport against a real OpenSSH server (requ
       `Port ${port}`, 'ListenAddress 127.0.0.1', `HostKey ${join(root, 'host_key')}`, `PidFile ${join(root, 'sshd.pid')}`,
       `AuthorizedKeysFile ${join(root, 'authorized_keys')}`, 'StrictModes no', 'UsePAM no', 'PasswordAuthentication no',
       'KbdInteractiveAuthentication no', 'PubkeyAuthentication yes', 'AllowTcpForwarding local', 'PermitTTY no', 'X11Forwarding no',
-      `AllowUsers ${userInfo().username}`, `SetEnv PATH=${dirname(process.execPath)}:/usr/local/bin:/usr/bin:/bin`, 'LogLevel VERBOSE', '',
+      `AllowUsers ${userInfo().username}`, `SetEnv PATH=${bin}:${dirname(process.execPath)}:/usr/local/bin:/usr/bin:/bin`, 'LogLevel VERBOSE', '',
     ].join('\n'))
     // The client's configuration: where localhost's port is, and a known_hosts file of the test's own.
     await writeFile(join(root, 'ssh_config'), ['Host localhost', `  Port ${port}`, `  UserKnownHostsFile ${join(root, 'known_hosts')}`,
@@ -148,7 +153,7 @@ describe.skipIf(!enabled)("the SSH transport against a real OpenSSH server (requ
     // helper, although five ssh processes (-G, launch, forward, pairing code, desktop permissions)
     // run, and the host is saved once it answers, pairs and establishes its desktop's policy.
     await manager.command({ type: 'add', host: remote })
-    expect(row(), diagnostics()).toMatchObject({ phase: 'connected', owned: true, clientId: expect.any(String), hostId: expect.any(String) })
+    expect(row(), diagnostics()).toMatchObject({ phase: 'connected', via: 'ssh', owned: true, clientId: expect.any(String), hostId: expect.any(String) })
     expect(prompts.map(prompt => prompt.kind)).toEqual(['host-key', 'passphrase'])
     expect(prompts[0]!.text).toContain(fingerprint)
     expect(spawnCount).toBe(5)
@@ -184,7 +189,7 @@ describe.skipIf(!enabled)("the SSH transport against a real OpenSSH server (requ
     await vi.waitFor(() => expect(row(), diagnostics()).toMatchObject({ phase: 'connected', reconnecting: false }), { timeout: 60_000, interval: 100 })
     expect(Date.now() - dropped).toBeGreaterThanOrEqual(reconnectDelayMs(0))
     expect(scheduled).toEqual([0])
-    expect(row()).toMatchObject({ clientId, hostId, owned: true })
+    expect(row()).toMatchObject({ clientId, hostId, via: 'ssh', owned: true })
     expect((await descriptor())!.pid).toBe(first.pid)
     expect(prompts.map(prompt => prompt.kind)).toEqual(['host-key', 'passphrase', 'passphrase'])
     await checkDesktopPermission()
