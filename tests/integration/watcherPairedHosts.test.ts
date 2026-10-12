@@ -373,3 +373,29 @@ it('resets paired quiet progress when an owning-host plan step completes without
     await vi.waitFor(() => expect(f.watcher.wakes.observations.get(observationKey)!.lastProgressAt).not.toBe(before), { timeout: 5_000 })
   } finally { clock.mockRestore() }
 }, 60_000)
+
+
+it.each(['stopped', 'closed'] as const)('fences a request %s during remote dispatch persistence before the wire', async state => {
+  const f = await master(), gate = heldOperation(), writes = vi.spyOn(f.socket, 'watcherControl')
+  const update = f.control.updateWatcher.bind(f.control)
+  let held = false
+  vi.spyOn(f.control, 'updateWatcher').mockImplementation(async mutator => {
+    const result = await update(mutator)
+    if (!held && f.watcher.state().receipts.some(item => item.deliveryState === 'dispatching' && item.target.hostId === f.pairing.hostId)) {
+      held = true; await gate.wait()
+    }
+    return result
+  })
+  const input = f.start(), start = f.call('start_thread', input)
+  try {
+    await gate.entered
+    if (state === 'stopped') await f.control.commandShell({ type: 'interrupt', threadId: f.id })
+    else await update(record => { const request = record.requests.find(item => item.id === f.requestId)!; request.state = 'closed'; request.closedAt = new Date().toISOString() })
+    expect(f.watcher.state().requests.find(item => item.id === f.requestId)?.state).toBe(state)
+    gate.release()
+    expect(await start).toMatchObject({ code: 'REQUEST_NOT_ACTIVE', receipt: { deliveryState: 'failed' } })
+    expect(writes).not.toHaveBeenCalled(); expect(f.watcher.state().inFlight).toBe(0)
+    expect((await remote.native.snapshot()).threads.some(item => item.title === input.title)).toBe(false)
+    expect(await f.call('start_thread', input)).toMatchObject({ code: 'REQUEST_NOT_ACTIVE', receipt: { deliveryState: 'failed' } })
+  } finally { gate.release(); await start }
+})

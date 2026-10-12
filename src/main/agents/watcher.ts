@@ -700,12 +700,17 @@ export class WatcherService implements WatcherControlHooks {
     if (!host?.connected) refuse('HOST_DISCONNECTED', 'That host is disconnected. Its pending slots remain held. Reconnect it to continue.', true)
     if (!host.reads || mutation && !host.control) refuse('HOST_FEATURE_UNAVAILABLE', 'Update this host before Watcher directs its threads. Nothing was sent.')
   }
-  private async executeRemote(name: WatcherToolName, operation: WatcherOperation, input: WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>): Promise<unknown> {
+  private async executeRemote(name: WatcherToolName, operation: WatcherOperation, input: WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>, confirmedStop?: () => void): Promise<unknown> {
     const request = this.record().requests.find(item => item.id === operation.requestId)!
+    const guard = () => {
+      this.checkCaller(request.watcher.threadId); this.requireRemote(operation.target.hostId, true)
+      if (confirmedStop) confirmedStop()
+      else if (this.record().requests.find(item => item.id === operation.requestId)?.state !== 'active') refuse('REQUEST_NOT_ACTIVE', 'This Watcher request has stopped. Nothing was sent.')
+    }
     try {
-      this.checkCaller(request.watcher.threadId); this.requireRemote(operation.target.hostId, true)
+      guard()
       await this.options.control.updateWatcher(record => { record.operations.find(item => item.id === operation.id)!.deliveryState = 'dispatching' })
-      this.checkCaller(request.watcher.threadId); this.requireRemote(operation.target.hostId, true)
+      guard()
       const result = await this.remote!.control(operation.target.hostId, { master: this.record().current!,
         request: { id: request.id, watcher: request.watcher, rootUserMessageId: request.rootUserMessageId, createdAt: request.createdAt },
         ceiling: request.pairedPermissionCeiling ?? this.options.control.configuration().newThreadRuntimeMode ?? 'approval-required', operation,
@@ -1026,7 +1031,7 @@ export class WatcherService implements WatcherControlHooks {
             digest: digest(['stop_thread', input]), action: 'stop', target, generation: participant.generation, deliveryState: 'queued',
             createdAt: stamp, updatedAt: stamp, receiptId: randomUUID(), cardId: randomUUID(), anchorMessageId: request.rootUserMessageId }
           await this.options.control.updateWatcher(record => record.operations.push(operation))
-          const result = await this.executeRemote('stop_thread', operation, input) as { status: string }
+          const result = await this.executeRemote('stop_thread', operation, input, guard) as { status: string }
           const state = this.operationState(target)
           results.push({ target, status: result.status === 'refused' ? 'uncertain' : state.stopped ? 'stopped' : 'requested', message: result.status === 'refused' ? 'The stop was not confirmed. Reconnect and check this thread.' : 'Stop requested.' })
           continue
