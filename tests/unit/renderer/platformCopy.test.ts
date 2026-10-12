@@ -7,7 +7,7 @@ import type { SottoPlatform } from '../../../src/shared/platform'
 const platforms: readonly SottoPlatform[] = ['win32', 'darwin', 'linux']
 
 // Every string the renderer used to hardcode, exactly as it shipped on Windows.
-const win32Strings: Omit<PlatformCopy, 'platform' | 'accessibilityHelp'> = {
+const win32Strings: Omit<PlatformCopy, 'platform' | 'accessibilityHelp' | 'settingsUpdatesByHand'> = {
   helpMicrophoneAccess:
     'If recording cannot start, open Windows Settings, then Privacy or Privacy & security, then Microphone, and allow desktop apps. Choose an available input in Sotto Settings.',
   helpPasteFallback:
@@ -30,6 +30,7 @@ const win32Strings: Omit<PlatformCopy, 'platform' | 'accessibilityHelp'> = {
   settingsLaunchAtStartupLabel: 'Launch when Windows starts',
   settingsStartupFailureNotice: 'Windows startup could not be updated.',
   settingsStartMinimizedDescription: 'Open directly in the tray when Sotto launches.',
+  settingsUpdatesLead: 'Sotto looks for new releases on GitHub and installs them itself.',
   widgetMicrophoneBlockedDetail: 'Allow microphone access in Windows Settings.',
   widgetPermissionPromptDetail: 'Approve access in Windows',
   widgetProcessingDetail: 'Transcribed on this computer, never saved',
@@ -40,6 +41,7 @@ describe('platformCopy', () => {
     expect(platformCopy('win32')).toEqual({
       platform: 'win32',
       accessibilityHelp: null,
+      settingsUpdatesByHand: null,
       ...win32Strings,
     })
   })
@@ -48,7 +50,7 @@ describe('platformCopy', () => {
     const copy = platformCopy(platform)
     expect(copy.platform).toBe(platform)
     for (const [field, value] of Object.entries(copy)) {
-      if (field === 'accessibilityHelp') continue
+      if (field === 'accessibilityHelp' || field === 'settingsUpdatesByHand') continue
       expect(value, field).toBeTypeOf('string')
       expect((value as string).trim(), field).not.toBe('')
     }
@@ -96,6 +98,17 @@ describe('platformCopy', () => {
     expect(platformCopy('linux').settingsGlobalShortcutDescription).toContain('Compositor bindings live in Hyprland')
     expect(platformCopy('linux').settingsGlobalShortcutDescription).toContain('hold F9')
     expect(platformCopy('linux').settingsGlobalShortcutDescription).toContain('Super+Ctrl+X')
+    expect(platformCopy('linux').settingsGlobalShortcutDescription).not.toContain('first')
+  })
+
+  it('sends Linux updates through pacman and leaves the other rows offering checks', () => {
+    expect(platformCopy('linux').settingsUpdatesLead).toBe('Sotto never updates itself on Linux. New versions come through pacman.')
+    expect(platformCopy('linux').settingsUpdatesByHand).toContain('sudo pacman -U')
+    expect(platformCopy('linux').settingsUpdatesByHand).toContain('omarchy update')
+    for (const platform of ['win32', 'darwin'] as const) {
+      expect(platformCopy(platform).settingsUpdatesLead).toBe('Sotto looks for new releases on GitHub and installs them itself.')
+      expect(platformCopy(platform).settingsUpdatesByHand).toBeNull()
+    }
   })
 
   it('returns the same frozen row on every call', () => {

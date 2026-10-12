@@ -97,8 +97,8 @@ export class NativeSettingsCoordinator {
     })
   }
 
-  /** Re-publish read-only appearance state without writing settings or invoking native effects. */
-  refreshAppearance(): Promise<void> {
+  /** Re-publish the read-only state main projects into settings (the Omarchy theme, the shell pill) without writing settings or invoking native effects. */
+  republish(): Promise<void> {
     return this.enqueue(async () => this.notifySettingsChanged(await this.dependencies.repository.get()))
   }
 

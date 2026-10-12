@@ -33,13 +33,19 @@ mise exec node@24.21.0 -- npm run build
 
 ## Install the bindings
 
-The snippet must run after Omarchy's defaults so it can remove Voxtype's bindings. Stock Omarchy guarantees that order for `~/.config/hypr/bindings.lua`. Copy this folder's `bindings.lua` to `~/.config/hypr/sotto-bindings.lua` and add this line to the end of your own `bindings.lua`:
+The snippet must run after Omarchy's defaults so it can remove Voxtype's bindings. Stock Omarchy guarantees that order for `~/.config/hypr/bindings.lua`. The installed package keeps the snippet at `/usr/share/sotto/bindings.lua`. Copy it beside your own bindings:
+
+```sh
+cp /usr/share/sotto/bindings.lua ~/.config/hypr/sotto-bindings.lua
+```
+
+Then add this line to the end of `~/.config/hypr/bindings.lua`:
 
 ```lua
 require("hypr.sotto-bindings")
 ```
 
-Or paste the snippet at the end of your own file. For a checkout, change `local sotto = "sotto"` to the absolute launcher path. If the path has spaces, include shell quotes inside the Lua string, for example `local sotto = "'/home/me/Sotto checkout/apps/omarchy/sotto'"`.
+From a checkout, copy this folder's `bindings.lua` instead. Or paste the snippet at the end of your own file. For a checkout, change `local sotto = "sotto"` to the absolute launcher path. If the path has spaces, include shell quotes inside the Lua string, for example `local sotto = "'/home/me/Sotto checkout/apps/omarchy/sotto'"`.
 
 The snippet uses `sh -c` and `date +%s%N` to stamp each command before the client boots: `sotto dictation start --at <epoch-ns>`. Key-up gets its own stamp. Sotto remembers the latest accepted stamped stop or cancel, including an unpaired one, and ignores a start stamped at or before it. A quick tap cannot leave the microphone open when its clients arrive reversed. Delivery is serialized when the main window must be recreated. Stamps older than 5 seconds or more than 250 ms in the future are rejected; these bounds allow client startup and a small clock skew without letting an old or future release suppress later holds. Commands without `--at` keep the hand-typed behavior above.
 
@@ -47,7 +53,7 @@ The snippet first unbinds F9 and Super+Ctrl+X, which Voxtype owns when Omarchy i
 
 To cancel from outside Sotto, choose an unused chord and bind it to `sotto dictation cancel`. Escape cancels in Sotto's window. The snippet does not take Escape from other apps.
 
-Check the saved snippet with `luac -p ~/.config/hypr/sotto-bindings.lua`, then check Hyprland's configuration after it reloads. No installer changes these files automatically. Sotto copies your text, then pastes into the focused window on Hyprland, terminals included. If paste does not get through, use Super+V, Omarchy’s universal paste for apps and terminals.
+Check the saved snippet with `luac -p ~/.config/hypr/sotto-bindings.lua`, then check Hyprland's configuration after it reloads. No installer changes these files automatically, and neither does Sotto: **Open setup steps** under Settings → Dictation opens this section in your browser. Sotto copies your text, then pastes into the focused window on Hyprland, terminals included. If paste does not get through, use Super+V, Omarchy’s universal paste for apps and terminals.
 
 ## Follow the Omarchy theme
 
