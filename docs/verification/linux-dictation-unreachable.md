@@ -4,7 +4,7 @@ October 11, 2026 (Pacific). Branch `fix/linux-dictation-unreachable`, based on `
 
 ## Notification
 
-Copy: **Sotto isn't open. Open Sotto, then press F9 again.** Toggle: **Sotto isn't open. Open Sotto, then try again.** The hotkey does not launch Sotto because a cold start that immediately opens the microphone would surprise people.
+Copy for start and toggle: **Sotto isn't open. Open Sotto, then try again.** The hotkey does not launch Sotto because a cold start that immediately opens the microphone would surprise people.
 
 The installed daemon does not group by app name. `NotificationLogic.js` snapshots `appName` and `appIcon`; `Service.qml` tracks replacement by `originalId`, inserts new IDs into `popupModel`, and renders one card per row. The old mako grouping behavior and the Quickshell regression are also described in [Omarchy #10145](https://github.com/omacom/omarchy/issues/10145). `notify-send` receives `--app-name Sotto --app-icon sotto --icon sotto`. The first real press exposed a missing icon: with libnotify 0.8.8, `--icon` is the content image and Omarchy draws `appIcon`. Adding `--app-icon` fixed the rendered card, and the unit expectation was updated. The [libnotify CLI source](https://github.com/GNOME/libnotify/blob/master/tools/notify-send.c) documents these separate fields. Sotto supplies the cooldown independently of the daemon.
 
@@ -52,7 +52,7 @@ All captures were opened and inspected. The terminal intentionally has echo off,
 - Unit coverage checks argv, fixed copy, quiet verbs, invalid runtime and endpoint, notification failure, timeouts and rejected replies.
 - Independent standards review: no findings. Independent specification review: no findings. Both read the batch through the implementation commits and the lock-recovery follow-up; neither ran suites or touched the live desktop.
 
-The final gates ran sequentially with Node 24.21.0:
+The gates for the lock-recovery revision ran sequentially with Node 24.21.0:
 
 ```sh
 mise exec node@24.21.0 -- npm run typecheck
@@ -80,3 +80,10 @@ PR #958's review identified that a client killed between claiming the directory 
 `deb07e4af` replaces the directory lock with a Linux abstract Unix socket scoped to the runtime directory's uid/device/inode. No files hold lock ownership, and [Node 24's IPC documentation](https://github.com/nodejs/node/blob/v24.21.0/doc/api/net.md#identifying-paths-for-ipc-connections) confirms the kernel removes an abstract socket when its references close. The empty file still supplies the five-second cooldown. The fixture now verifies another client stays quiet while the owner is alive; after SIGKILL, eight concurrent clients produce exactly one notification. It passed with the fix. An older client's abandoned directory also no longer prevents a notice, and is left intact.
 
 The build, all four live paste cases, real F9 proof and affected Playwright spec were repeated against this follow-up. All passed, and the refreshed observations name the implementation commit. Both review axes checked it again with no findings.
+
+
+## Shared copy
+
+A later review noted that a custom start binding could name a different key. `6316d2511` gives start the same neutral next step as toggle: **Open Sotto, then try again.** The guide's general instructions still apply. The Omarchy README, copy preview and exact-argv tests match the final copy.
+
+**VERIFIED after this copy refinement:** 88 focused tests passed; typecheck, lint, build and notices passed. Both independent reviews found no issue. Two more real F9 taps with the rebuilt client and Sotto closed produced one notice with Sotto's icon. The refreshed capture and notification observations above are from this revision, and the exact served image URL returned HTTP 200 and was opened and inspected. The full-suite counts above are from the lock-recovery revision; the final copy change was checked with these focused tests and the real press. The clipboard script and paste path did not change in this refinement.

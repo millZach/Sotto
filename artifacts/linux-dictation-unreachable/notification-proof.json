@@ -1,5 +1,5 @@
 {
-  "commit": "deb07e4afbc80192acaaa8c2e2a751f7962efda6",
+  "commit": "6316d251135c67db9425554a5c86f59acc9150ce",
   "locked": false,
   "input": [
     "ydotool",
@@ -12,7 +12,7 @@
   "appName": "Sotto",
   "appIcon": "sotto",
   "summary": "Sotto isn't open.",
-  "body": "Open Sotto, then press F9 again.",
+  "body": "Open Sotto, then try again.",
   "sottoClosedBeforeAndAfter": true,
   "bindingsUnchanged": true,
   "capture": "f9-notification.png",
