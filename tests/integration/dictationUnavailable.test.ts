@@ -17,6 +17,18 @@ describe.skipIf(process.platform !== 'linux')('unreachable dictation command not
     mkdirSync(bin)
     // No live notification daemon is contacted. Record the exact argv instead.
     writeFileSync(join(bin, 'notify-send'), `#!${process.execPath}\nrequire('node:fs').appendFileSync(process.env.NOTICE_LOG, JSON.stringify(process.argv.slice(2)) + '\\n')\n`, { mode: 0o700 })
+    // Stop a real client after it owns the lock, before it writes the cooldown stamp.
+    writeFileSync(join(root, 'hold-notice.cjs'), `
+const fs = require('node:fs')
+const write = fs.writeFileSync
+fs.writeFileSync = function (path, ...args) {
+  if (path === process.env.NOTICE_STAMP) {
+    fs.writeSync(1, 'claimed\\n')
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0)
+  }
+  return write.call(this, path, ...args)
+}
+`)
     await build({ configFile: false, logLevel: 'silent', build: {
       ssr: resolve('src/main/hotkeys/dictationClient.ts'), target: 'node24', outDir: root, emptyOutDir: false,
       rollupOptions: { external: id => isBuiltin(id), output: { format: 'cjs', entryFileNames: 'client.cjs' } },
@@ -60,6 +72,31 @@ describe.skipIf(process.platform !== 'linux')('unreachable dictation command not
     })
     expect(await run(runtime, 'start')).toBe(1)
     expect(notifications(runtime)).toHaveLength(1)
+  })
+  it('keeps a live lock owner intact and recovers after it is killed', async () => {
+    const runtime = mkdtempSync(join(root, 'runtime-'))
+    const owner = spawn(process.execPath, ['--require', join(root, 'hold-notice.cjs'), join(root, 'client.cjs'), 'dictation', 'start'], {
+      env: { ...process.env, PATH: bin, XDG_RUNTIME_DIR: runtime, NOTICE_LOG: join(runtime, 'notices'), NOTICE_STAMP: join(runtime, 'sotto-dictation-notice') },
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+    const exited = new Promise<void>(resolve => owner.once('exit', () => resolve()))
+    try {
+      await new Promise<void>((resolve, reject) => {
+        owner.once('error', reject)
+        owner.once('exit', () => reject(new Error('Lock owner exited before claiming the stamp')))
+        owner.stdout!.once('data', data => data.toString() === 'claimed\n' ? resolve() : reject(new Error('Unexpected fixture signal')))
+      })
+      expect(await run(runtime, 'toggle')).toBe(1)
+      expect(notifications(runtime)).toEqual([])
+      expect(owner.exitCode).toBeNull()
+      owner.kill('SIGKILL')
+      await exited
+      expect(await Promise.all(Array.from({ length: 8 }, () => run(runtime, 'start')))).toEqual(Array(8).fill(1))
+      expect(notifications(runtime)).toHaveLength(1)
+    } finally {
+      owner.kill('SIGKILL')
+      await exited
+    }
   })
   it('does not notify when the running app accepts or rejects a command', async () => {
     const runtime = mkdtempSync(join(root, 'runtime-'))

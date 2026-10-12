@@ -28,7 +28,7 @@ if (request === null) {
       console.error('Sotto could not receive the dictation command. Open Sotto in this desktop session, then try again.')
       process.exitCode = 1
       socket.destroy()
-      if (error?.code === 'ENOENT' || error?.code === 'ECONNREFUSED') notifyDictationUnavailable(request.command)
+      if (error?.code === 'ENOENT' || error?.code === 'ECONNREFUSED') void notifyDictationUnavailable(request.command)
     }
     socket.setTimeout(1_000, fail)
     socket.once('error', fail)
@@ -48,6 +48,6 @@ if (request === null) {
   } catch (error) {
     console.error(guidance)
     process.exitCode = 1
-    if (runtimeValid && (error as NodeJS.ErrnoException).code === 'ENOENT') notifyDictationUnavailable(request.command)
+    if (runtimeValid && (error as NodeJS.ErrnoException).code === 'ENOENT') void notifyDictationUnavailable(request.command)
   }
 }
