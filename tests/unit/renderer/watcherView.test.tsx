@@ -411,6 +411,21 @@ describe("Watcher's room", () => {
     expect(button).toHaveFocus()
   })
 
+  it('shows a settled thread the filter matches without unfolding Settled, and folds it again once the filter is cleared', async () => {
+    renderRoom(stateWithWatcher(), roomState())
+    await paneReady()
+    fireEvent.click(screen.getByRole('button', { name: 'All threads, 9. Show the list' }))
+    const list = within(screen.getByRole('dialog', { name: 'All threads' }))
+    const filter = list.getByRole('searchbox', { name: 'Filter threads' })
+    fireEvent.change(filter, { target: { value: 'benchmark' } })
+    // As in the Threads sidebar, a search reaches into Settled: the match shows, and the fold says it is open.
+    expect(list.getByRole('button', { name: 'Open Benchmark rerun beside Watcher' })).toBeInTheDocument()
+    expect(list.getByRole('button', { name: 'Settled, 1 thread' })).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.change(filter, { target: { value: '' } })
+    expect(list.queryByRole('button', { name: 'Open Benchmark rerun beside Watcher' })).toBeNull()
+    expect(list.getByRole('button', { name: 'Settled, 4 threads' })).toHaveAttribute('aria-expanded', 'false')
+  })
+
   it('opens a thread beside Watcher at what it waits on, reads it while it shows, and Escape closes it back to its opener', async () => {
     const { command } = renderRoom(stateWithWatcher(), roomState())
     await paneReady()

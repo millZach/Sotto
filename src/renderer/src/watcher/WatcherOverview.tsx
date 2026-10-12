@@ -128,14 +128,18 @@ function OverviewRow({ entry, watched, current, liveClock, onOpen }: {
   </li>
 }
 
-/** A group: its name and count, then its rows. Settled and archived threads stay reachable, folded at the end of Idle. */
-function OverviewGroupList({ group, entries, watched, besideId, liveClock, onOpen }: {
+/**
+ * A group: its name and count, then its rows. Settled and archived threads stay reachable, folded at the end of Idle;
+ * while the filter holds text, the fold shows what it matches, as the Threads sidebar's Settled shelf does.
+ */
+function OverviewGroupList({ group, entries, watched, besideId, liveClock, searching, onOpen }: {
   readonly group: WatcherGroup; readonly entries: readonly OverviewEntry[]; readonly watched: ReadonlySet<string>; readonly besideId: string | null
-  readonly liveClock: boolean; readonly onOpen: OpenThread
+  readonly liveClock: boolean; readonly searching: boolean; readonly onOpen: OpenThread
 }): ReactNode {
   const settledId = useId()
   const headingId = useId()
   const [settledOpen, setSettledOpen] = useState(false)
+  const settledShown = settledOpen || searching
   const settled = group === 'Idle' ? entries.filter(entry => entry.facts.settledBy !== null) : []
   const shown = group === 'Idle' ? entries.filter(entry => entry.facts.settledBy === null) : entries
   const row = (entry: OverviewEntry): ReactNode => <OverviewRow key={entry.overview.thread.id} entry={entry} watched={watched.has(entry.overview.thread.id)}
@@ -146,11 +150,11 @@ function OverviewGroupList({ group, entries, watched, besideId, liveClock, onOpe
     </h3>
     {shown.length ? <ul className="watcher-group__rows">{shown.map(row)}</ul> : null}
     {settled.length ? <>
-      <button type="button" className="watcher-group__settled tt-focusable" aria-expanded={settledOpen} aria-controls={settledId}
+      <button type="button" className="watcher-group__settled tt-focusable" aria-expanded={settledShown} aria-controls={settledId}
         aria-label={`Settled, ${plural(settled.length, 'thread')}`} onClick={() => setSettledOpen(value => !value)}>
         <ChevronRight size={13} aria-hidden="true" className="watcher-group__chevron" /><span>Settled</span><span className="watcher-group__count" aria-hidden="true">{settled.length}</span>
       </button>
-      {settledOpen ? <ul className="watcher-group__rows" id={settledId}>{settled.map(row)}</ul> : null}
+      {settledShown ? <ul className="watcher-group__rows" id={settledId}>{settled.map(row)}</ul> : null}
     </> : null}
   </section>
 }
@@ -225,7 +229,7 @@ export function WatcherOverviewList({ groups, watched, besideId, liveClock, anch
         <input ref={filter} className="tt-focusable" type="search" value={query} placeholder="Filter threads" autoComplete="off" onChange={event => setQuery(event.currentTarget.value)} />
       </label>
       <div className="watcher-list__scroll">
-        {shown.map(({ group, entries }) => <OverviewGroupList key={group} group={group} entries={entries} watched={watched} besideId={besideId} liveClock={liveClock} onOpen={open} />)}
+        {shown.map(({ group, entries }) => <OverviewGroupList key={group} group={group} entries={entries} watched={watched} besideId={besideId} liveClock={liveClock} searching={needle !== ''} onOpen={open} />)}
         {groups.length === 0 ? <p className="watcher-list__none">No other threads yet. Threads you or Watcher start show here.</p>
           : shown.length === 0 ? <p className="watcher-list__none">No thread matches “{query.trim()}”.</p> : null}
       </div>
