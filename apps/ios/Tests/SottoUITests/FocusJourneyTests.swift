@@ -710,12 +710,23 @@ import XCTest
         XCTAssertTrue(byID("watcher-state").waitForExistence(timeout: 10), "Watcher's page opens with its state")
         return tab
     }
-    /// Puts the keyboard away by dragging the conversation, so the tab bar can be reached again.
+    /// Puts the keyboard away the way Watcher's conversation lets it go, as a thread's does: a drag that starts in the
+    /// conversation and carries on down into the keyboard, which follows it off the screen. A swipe that ends above the
+    /// keyboard leaves it up, which is how the journey's first swipe failed on CI.
     private func dismissKeyboard() {
         let keyboard = app.keyboards.firstMatch
         guard keyboard.exists else { return }
-        app.scrollViews.firstMatch.swipeDown()
-        XCTAssertTrue(waitUntilGone(keyboard), "Dragging the conversation puts the keyboard away")
+        let window = app.windows.firstMatch
+        let origin = window.coordinate(withNormalizedOffset: .zero)
+        let x = window.frame.width - 8
+        for _ in 0..<3 where keyboard.exists {
+            let band = watcherBand
+            let from = origin.withOffset(CGVector(dx: x, dy: (band.top + band.bottom) / 2 - window.frame.minY))
+            let to = origin.withOffset(CGVector(dx: x, dy: window.frame.height - 24))
+            from.press(forDuration: 0.05, thenDragTo: to, withVelocity: .default, thenHoldForDuration: 0)
+            if keyboard.waitForNonExistence(timeout: 5) { break }
+        }
+        XCTAssertTrue(waitUntilGone(keyboard), "Dragging the conversation down into the keyboard puts it away")
     }
     /// Turns this iPhone to light in Settings and comes back to the Watcher tab.
     private func watcherInLight() {
@@ -808,21 +819,39 @@ import XCTest
         XCTAssertTrue(reply.waitForExistence(timeout: 5))
         XCTAssertEqual(reply.label, "Ask Watcher")
         reply.tap()
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), "The box opens the keyboard, with its own dictation key")
+        let keyboard = app.keyboards.firstMatch
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5), "The box opens the keyboard, with its own dictation key")
         reply.typeText("How is the release notes thread doing?")
         let send = app.buttons["watcher-send"]
         XCTAssertTrue(send.isEnabled)
         send.tap()
+        XCTAssertTrue(waitUntilGone(keyboard), "Sending puts the keyboard away, as the design does, so the answer has room")
         XCTAssertTrue(text("How is the release notes thread doing?").waitForExistence(timeout: 5), "The message joins the conversation")
-        XCTAssertTrue(text("On it.").waitForExistence(timeout: 10), "Watcher's answer arrives under it")
+        let answer = text("On it.")
+        XCTAssertTrue(answer.waitForExistence(timeout: 10), "Watcher's answer arrives under it")
         // The page already had a row for the release notes thread; Watcher's answer carries one more.
         let rows = app.buttons.matching(identifier: "watcher-receipt-\(laptop)/notes845")
         let added = XCTNSPredicateExpectation(predicate: NSPredicate(format: "count == 2"), object: rows)
         XCTAssertEqual(XCTWaiter.wait(for: [added], timeout: 5), .completed, "With what it did")
+        // The answer's end is on screen between the header and the box, not left under the card still waiting below.
+        var seen = ""
+        let shown = NSPredicate { _, _ in
+            guard answer.exists else { seen = "the answer is missing"; return false }
+            let band = self.watcherBand, frame = answer.frame
+            seen = "answer \(frame), between \(band.top) and \(band.bottom)"
+            return frame.maxY > band.top && frame.maxY <= band.bottom + 1
+        }
+        let inView = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: shown, object: nil)], timeout: 10)
+        if inView != .completed { explain("watcher-answer-not-in-view", seen) }
+        XCTAssertEqual(inView, .completed, "Watcher's answer comes into view above the box (\(seen))")
         capture("watcher-sent-dark")
+        // The keyboard can also be put away without sending, by dragging the conversation down into it.
+        reply.tap()
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5), "The box opens the keyboard again")
         dismissKeyboard()
         watcherInLight()
-        XCTAssertTrue(text("On it.").waitForExistence(timeout: 5))
+        XCTAssertTrue(answer.waitForExistence(timeout: 5))
+        revealInWatcher(answer)
         capture("watcher-sent-light")
         // Last, so the rest of the journey reports first if the tab bar doesn't carry it.
         let working = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@", "Working"), object: tab)

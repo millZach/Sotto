@@ -212,6 +212,7 @@ private struct WatcherConversationPane: View {
     @Environment(\.sottoDensity) private var density
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private static let end = "watcher-end"
+    private static let sendingID = "watcher-sending"
 
     var body: some View {
         let page = model.watcherPage(hostID)
@@ -222,13 +223,16 @@ private struct WatcherConversationPane: View {
                     notes(page)
                     if let page {
                         ForEach(WatcherConversation.items(page)) { item in
-                            switch item {
-                            case .message(let message): WatcherMessage(message: message)
-                            case .receipts(let group, _): ReceiptCard(hostID: hostID, group: group)
+                            Group {
+                                switch item {
+                                case .message(let message): WatcherMessage(message: message)
+                                case .receipts(let group, _): ReceiptCard(hostID: hostID, group: group)
+                                }
                             }
+                            .id(item.id)
                         }
                     }
-                    if let sending { SendingBubble(text: sending) }
+                    if let sending { SendingBubble(text: sending).id(Self.sendingID) }
                     if let page { cards(page) }
                     if model.online(hostID), page?.working == true {
                         HStack(spacing: Space.s2) {
@@ -248,9 +252,13 @@ private struct WatcherConversationPane: View {
             .scrollDismissesKeyboard(.interactively)
             .refreshable { await model.readWatcher(hostID) }
             .safeAreaInset(edge: .bottom, spacing: 0) { WatcherDock(hostID: hostID) }
-            // New words at the end, the user's own or Watcher's, are scrolled to.
+            // New words, the user's own or Watcher's, are scrolled to just above the box. Cards waiting on the user sit
+            // after the whole conversation, where the page opens, so scrolling to the end would leave the new words
+            // under the header on a small phone.
             .onChange(of: (page?.conversation.revision ?? 0) * 2 + (sending == nil ? 0 : 1)) { _, _ in
-                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.3)) { proxy.scrollTo(Self.end, anchor: .bottom) }
+                let newest: String? = model.watcherSending[hostID] != nil ? Self.sendingID
+                    : model.watcherPage(hostID).flatMap { WatcherConversation.items($0).last?.id }
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.3)) { proxy.scrollTo(newest ?? Self.end, anchor: .bottom) }
             }
         }
     }
@@ -750,7 +758,8 @@ private struct WatcherDock: View {
                 .padding(.leading, Space.s3)
                 .accessibilityLabel("Ask Watcher")
                 .accessibilityIdentifier("watcher-reply")
-            Button { Task { await model.sendToWatcher(hostID) } } label: {
+            // Sending puts the keyboard away, as the design does, so Watcher's answer has room on a small phone.
+            Button { focused = false; Task { await model.sendToWatcher(hostID) } } label: {
                 Image(systemName: "arrow.up").font(.system(size: 17, weight: .semibold))
                     .frame(width: 44, height: 44)
                     .foregroundStyle(canSend ? Palette.onAccent : Palette.muted)
