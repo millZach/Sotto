@@ -207,29 +207,52 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     babysitter ? wakeUpPartDue(news, babysitter.list(threadId), options.babysitting?.agentTool?.() !== false) : true
   // Given before start, so a wake-up restored from the queue is asked about too, even when taking it back failed.
   if (babysitter) agentControl.useBabysitting(babysitter, { due: wakeUpDue, tool: babysitTool })
+  let closingWatcherTools: Promise<void> | undefined
+  let watcherStopped = false
+  const stopWatcher = (): void => {
+    if (watcherStopped) return
+    watcherStopped = true
+    watcher?.close()
+    closingWatcherTools = watcherTools?.close()
+  }
+  let stoppingProviders: Promise<void> | undefined
+  const stopProviders = (): Promise<void> => {
+    if (stoppingProviders) return stoppingProviders
+    stopWatcher()
+    agentControl.dispose()
+    stoppingProviders = (async () => {
+      const results = await Promise.allSettled([reasoner.close?.(), shortTextWriter.close(), ...Object.values(providers).map(provider => provider.closed?.()), ...(closingWatcherTools ? [closingWatcherTools] : [])])
+      await agentControl.closed()
+      // A connection already starting when stop was requested has now settled. Stop and drain
+      // once more so it cannot leave a late child outside the first provider closure snapshot.
+      agentHost.disconnect()
+      const finalClosures = await Promise.allSettled(Object.values(providers).map(provider => provider.closed?.()))
+      results.push(...finalClosures)
+      await threadRegistry?.flush()
+      const failure = results.find(result => result.status === 'rejected')
+      if (failure?.status === 'rejected') throw failure.reason
+    })()
+    return stoppingProviders
+  }
+  let preparingForShutdown: Promise<void> | undefined
+  /** Linux's delay inhibitor is short: stop providers and save now, retaining stores for a sweep already running. */
+  const prepareForShutdown = (): Promise<void> => {
+    if (preparingForShutdown) return preparingForShutdown
+    worktreeCleanup.dispose()
+    void babysitter?.close().catch(() => undefined)
+    preparingForShutdown = stopProviders().finally(() => agentHost.flush())
+    return preparingForShutdown
+  }
   let closing: Promise<void> | undefined
   const close = (): Promise<void> => {
     closing ??= (async () => {
       // A sweep in progress finishes its current worktree, and takes no other, before the host it asks is closed.
       // A babysitting pass finishes the pull request it is on, and records what it told, the same way.
-      watcher?.close()
-      const closingWatcherTools = watcherTools?.close()
+      stopWatcher()
       await worktreeCleanup.close()
       if (babysitter) await babysitter.close()
       toolReads.dispose()
-      agentControl.dispose()
-      try {
-        const results = await Promise.allSettled([reasoner.close?.(), shortTextWriter.close(), ...Object.values(providers).map(provider => provider.closed?.()), ...(closingWatcherTools ? [closingWatcherTools] : [])])
-        await agentControl.closed()
-        // A connection already starting when stop was requested has now settled. Stop and drain
-        // once more so it cannot leave a late child outside the first provider closure snapshot.
-        agentHost.disconnect()
-        const finalClosures = await Promise.allSettled(Object.values(providers).map(provider => provider.closed?.()))
-        results.push(...finalClosures)
-        await threadRegistry?.flush()
-        const failure = results.find(result => result.status === 'rejected')
-        if (failure?.status === 'rejected') throw failure.reason
-      } finally { await agentHost.close() }
+      try { await stopProviders(); await preparingForShutdown } finally { await agentHost.close() }
     })()
     return closing
   }
@@ -251,5 +274,5 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   if (watcher) await watcher.recover()
   const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined })
   babysitter?.begin()
-  return { agentHost, agentControl, threadRegistry, turns, hostService, shortTextWriter, worktreeCleanup, babysitter, watcher, watcherTools, close }
+  return { agentHost, agentControl, threadRegistry, turns, hostService, shortTextWriter, worktreeCleanup, babysitter, watcher, watcherTools, prepareForShutdown, close }
 }

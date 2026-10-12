@@ -74,6 +74,7 @@ export default tseslint.config(
       'artifacts/empty-page-saved-draft/**',
       'artifacts/host-folder-browser-run/**',
       'artifacts/command-receipt/**',
+      'artifacts/linux-shutdown-drain/**',
       '.cache/**',
       'artifacts/settled-folder-new-thread/**',
       'artifacts/agents-view/**',
