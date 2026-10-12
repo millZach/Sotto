@@ -1,6 +1,6 @@
 import { execFile, spawn } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
-import { lstat, mkdir, opendir, readFile, readlink, realpath, stat } from 'node:fs/promises'
+import { lstat, mkdir, opendir, readdir, readFile, readlink, realpath, stat } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { RECLAIM_WORKTREE_NEEDS_CONFIRMATION, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentWorktree } from '../../shared/agents'
 import { nativeEnvironment } from './subscriptionCodex'
@@ -498,14 +498,18 @@ export class ThreadWorktrees {
 
   /**
    * Puts back a checkout Sotto made and then lost, on the branch it recorded (ADR-0014). Best effort: a
-   * folder that is still there, a thread with no recorded branch and a branch that no longer exists are
-   * all returned unchanged, so the caller reports the real problem. Never resets a branch, never removes
-   * a checkout, and never takes a branch another folder has.
+   * folder that is still there with anything in it, a thread with no recorded branch and a branch that no
+   * longer exists are all returned unchanged, so the caller reports the real problem. An empty folder Git
+   * no longer registers is filled like a missing one (ADR-0041). Never resets a branch, never removes a
+   * checkout or a folder, and never takes a branch another folder has.
    */
   async restore(metadata: AgentWorktree): Promise<AgentWorktree> {
     const { path, repositoryRoot, branch } = metadata
     if (metadata.mode !== 'independent' || !path || !repositoryRoot || !branch) return metadata
-    if (await lstat(path).then(() => true, (error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return false; throw error })) return metadata
+    const present = await lstat(path).then(info => info, (error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return undefined; throw error })
+    // A removal Windows could only half finish leaves the reserved folder there, empty and unregistered.
+    // Anything else at the path, a link or junction included, is not Sotto's to fill.
+    if (present && !(present.isDirectory() && !present.isSymbolicLink() && await Promise.all([realpath(path), readdir(path)]).then(([real, names]) => pathKey(real) === pathKey(path) && !names.length, () => false))) return metadata
     let allocationRoot: string
     // Sotto's own data folder and the repository have to be there before anything is put back.
     try { allocationRoot = join(await realpath(this.directory), this.home.folder); await existingWorkingDirectory(repositoryRoot) }
@@ -520,6 +524,8 @@ export class ThreadWorktrees {
       if (occupant) throw new Error(`The branch ${branch} is checked out in ${occupant.path}, so this thread’s folder cannot be put back on it. Nothing was lost or changed. Close that folder’s checkout or move it to another branch, then retry.`)
       return entries
     }
+    // An empty folder Git still registers is a checkout Git knows about, not a half-finished removal.
+    if (present && registeredWorktrees(await this.registry(repositoryRoot, ['worktree', 'list', '--porcelain', '-z'], identity)).some(entry => pathKey(entry.path) === pathKey(path))) return metadata
     const entries = await refuseAnotherFolder()
     // Remove only this missing folder's registration. Other missing checkouts may be on unplugged drives.
     if (entries.some(entry => pathKey(entry.path) === pathKey(path))) await this.registry(repositoryRoot, ['worktree', 'remove', '--', path], identity)
@@ -725,7 +731,16 @@ export class ThreadWorktrees {
         JSON.stringify(untrackedNow.split('\0').filter(Boolean).sort()) !== JSON.stringify(facts.untracked) ||
         Boolean(statusNow.length) !== facts.dirty) throw new Error('The files changed. Nothing was removed. Choose Remove worktree again to review them.')
       // Git's ordinary clean check refuses initialized submodules. Our final check covered their contents.
-      await this.git(metadata.repositoryRoot!, ['worktree', 'remove', ...(facts.dirty || facts.repositories.length || submodules.length ? ['--force'] : []), '--', facts.path])
+      try { await this.git(metadata.repositoryRoot!, ['worktree', 'remove', ...(facts.dirty || facts.repositories.length || submodules.length ? ['--force'] : []), '--', facts.path]) }
+      catch (error) {
+        // On Windows a process working in the folder, such as the thread's idle client, stops Git deleting the
+        // folder itself after it has deleted the files and its registration, and Git does not undo either.
+        // An empty or missing folder Git no longer registers is removed; anything else is the real failure.
+        const emptied = await readdir(facts.path).then(names => !names.length, (failure: NodeJS.ErrnoException) => failure.code === 'ENOENT')
+        const unregistered = emptied && await this.git(metadata.repositoryRoot!, ['worktree', 'list', '--porcelain', '-z'])
+          .then(listing => !registeredWorktrees(listing).some(entry => pathKey(entry.path) === pathKey(facts.path)), () => false)
+        if (!unregistered) throw error
+      }
       return nestedWorktrees
     })
     for (const nested of nestedWorktrees) {
