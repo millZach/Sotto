@@ -128,7 +128,7 @@ it('keeps explicit GitHub revocations and rejects late facts for an older head o
   expect(store.pullRequest(centerTarget, full)).toBe(false)
   expect(store.read(centerTarget).find(item => item.githubReviewApproved !== undefined)).toMatchObject({ githubReviewApproved: false, observedAt: later })
   expect(store.read(centerTarget).find(item => item.githubAutoMergeEnabled !== undefined)).toMatchObject({ githubAutoMergeEnabled: false, observedAt: later })
-  expect(store.pullRequest(centerTarget, { ...full, observedAt: later, head: 'head-b', reviewApproved: undefined, autoMerge: undefined })).toBe(true)
+  expect(store.pullRequest(centerTarget, { url, observedAt: later, head: 'head-b', availability: 'available' })).toBe(true)
   expect(store.pullRequest(centerTarget, full)).toBe(false)
   expect(store.read(centerTarget).every(item => item.headId === 'head-b')).toBe(true)
 })
