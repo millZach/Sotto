@@ -4,7 +4,9 @@ This folder holds configuration Omarchy reads, rather than code Sotto loads. ADR
 
 ## Dictation command
 
-Keep Sotto running in the desktop session. A compositor binding is a key Hyprland listens for and uses to run Sotto's dictation command:
+Keep Sotto running in the desktop session. If Sotto is closed, F9 shows **Sotto isn't open. Open Sotto, then press F9 again.** Super+Ctrl+X asks you to open Sotto and try again. Releasing F9 and cancelling stay quiet. Repeated presses share a five-second pause between notifications. The key never opens Sotto for you: open it yourself before dictating.
+
+A compositor binding is a key Hyprland listens for and uses to run Sotto's dictation command:
 
 ```sh
 sotto dictation start
