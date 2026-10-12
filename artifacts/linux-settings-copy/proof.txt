@@ -1,0 +1,26 @@
+Started sizing PID 2960099 in sotto-proof-b42caed44b6a44c1964af9d5311251ab-0.scope
+Owned sizing: PID 2960099, efb50993780079460b0cbed1363e2166a2de1d9f_1791777538_1654360871, wayland-2
+Started session PID 2960128 in sotto-proof-b42caed44b6a44c1964af9d5311251ab-1.scope
+Owned session: PID 2960128, efb50993780079460b0cbed1363e2166a2de1d9f_1791777538_503650264, wayland-3
+Started isolated GUI check PID 2960168 in sotto-proof-b42caed44b6a44c1964af9d5311251ab-2.scope
+
+Running 1 test using 1 worker
+
+  ✓  1 tests/e2e/linux-settings-copy.spec.ts:22:5 › Linux Settings says what applies, with and without the shell pill (12.6s)
+
+  1 passed (13.3s)
+PASS: isolated GUI check
+Stopped sizing PID 2960099
+Stopped session PID 2960128
+Stopped isolated GUI check PID 2960168
+Stopped proof slice app-sottoproofb42caed44b6a44c1964af9d5311251ab.slice
+Recorded PIDs still running: []
+Proof cgroup processes after cleanup: []
+Owned processes still running: []
+Removed owned instance efb50993780079460b0cbed1363e2166a2de1d9f_1791777538_1654360871
+Removed owned instance efb50993780079460b0cbed1363e2166a2de1d9f_1791777538_503650264
+Live /home/zach/.config/omarchy unchanged
+Live /home/zach/.config/hypr unchanged
+Live /home/zach/.local/state/omarchy unchanged
+Live /home/zach/.sotto unchanged
+Removed private root /tmp/slm-nop4ez; prior Hyprland instances preserved
