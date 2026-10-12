@@ -150,3 +150,19 @@ it('fits combined sources within the provider message limit and preserves babysi
   expect(mixed).toContain('Sotto saw changes')
   expect(mixed).toContain('Pull request #1')
 })
+
+
+it('reschedules quiet from a completed plan step at minute nineteen without copying the plan text', async () => {
+  const f = fixture()
+  f.thread.activities = [{ id: 'plan', turnId: 'turn-1', sequence: 0, kind: 'plan', status: 'running', title: 'Private plan',
+    steps: [{ text: 'private step contents', status: 'running' }] }]
+  f.wakes.observe()
+  await f.advance(19 * 60_000)
+  f.thread.activities[0]!.steps![0]!.status = 'completed'
+  f.wakes.observe()
+  await f.advance(60_000 + 2_000)
+  expect(f.delivered.flatMap(news => news.events).filter(event => event.kind === 'quiet')).toHaveLength(0)
+  await f.advance(WATCHER_QUIET_MS - 60_000)
+  expect(f.delivered.flatMap(news => news.events).filter(event => event.kind === 'quiet')).toHaveLength(1)
+  expect(JSON.stringify(f.delivered)).not.toContain('private step contents')
+})
