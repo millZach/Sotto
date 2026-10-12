@@ -645,10 +645,11 @@ export class DesktopHostRouter {
     return { connection: named, command: forwarded }
   }
   /**
-   * This computer's own new-thread defaults over whichever host is selected, so Settings shows and New thread uses
-   * the same ones on every host. With no model chosen, the one this computer inherits is resolved here from its own
-   * settings and accounts, since the selected host's reasoning provider would choose another. With no local host
-   * running, the selected host's own apply.
+   * This computer's own new-thread defaults over another selected host's, so Settings shows and New thread uses the
+   * same ones on every host. The model is resolved here from this computer's own settings and accounts, chosen or
+   * inherited, and the window takes it as it is: empty means this computer has no model to offer, never a cue to infer
+   * one from the selected host's reasoning provider. With this computer selected its settings are already the
+   * window's, as saved. With no local host running, the selected host's own apply.
    */
   private withNewThreadDefaults(state: AgentState, local: AgentState | undefined): AgentState {
     if (!local) return state

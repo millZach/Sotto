@@ -1,9 +1,9 @@
 import React, { useEffect, useState, type ReactNode } from 'react'
-import { defaultNewThreadModelId, PROVIDER_LABELS, type AgentCommand, type AgentConfiguration, type AgentRuntimeMode, type AgentState } from '../../../shared/agents'
+import { PROVIDER_LABELS, type AgentCommand, type AgentConfiguration, type AgentRuntimeMode, type AgentState } from '../../../shared/agents'
 import { resolveNewThreadPermission, RUNTIME_MODE_ORDER } from '../../../shared/newThreadDefaults'
 import { chosenModelId, resolveModel } from '../../../shared/modelCatalog'
 import { useOptionalAgents, type AgentConnection } from './AgentContext'
-import { newThreadDefaultsCatalog, newThreadOptionsOn } from './newThread'
+import { newThreadDefaultModelId, newThreadDefaultsCatalog, newThreadOptionsOn } from './newThread'
 import { ChoiceChip, effortChoices, RUNTIME_LABELS } from './ThreadOptions'
 import { EffortPicker } from './EffortPicker'
 import { ModelPicker } from './ModelPicker'
@@ -22,7 +22,7 @@ import './agents.css'
 function NewThreadDefaultsRow({ state, command }: { readonly state: AgentState; readonly command: AgentConnection['command'] }): ReactNode {
   const configuration = state.configuration
   const models = newThreadDefaultsCatalog(state)
-  const modelId = defaultNewThreadModelId(configuration, models, state.reasoningAccounts)
+  const modelId = newThreadDefaultModelId(state)
   // A long-context variant the catalog does not list (`opus[1m]`) answers from its base model's entry.
   const model = resolveModel(models, modelId)
   const reasoning = configuration.newThreadReasoningEffort || model?.defaultReasoningEffort || ''

@@ -42,15 +42,23 @@ describe('a new thread on any computer starts on this computer’s defaults (ADR
     const sent = await create(computers({ newThreadModelId: 'claude:sonnet', newThreadReasoningEffort: 'high' }, { models: [codex] }), FORGE)
     expect(sent).toMatchObject({ modelId: 'codex:gpt', reasoningEffort: 'high' })
   })
-  it('starts from the model Settings shows when none is chosen, and maps its effort by position on the host’s model', async () => {
+  it('maps the effort by its position among the default model’s levels, on the host’s model', async () => {
     const opus: AgentModel = { ...sonnet, id: 'claude:opus', name: 'Claude Opus', reasoningEfforts: ['low', 'medium', 'high', 'xhigh'] }
-    const state = computers({ provider: 'claude', newThreadReasoningEffort: 'xhigh' }, { models: [codex] })
+    // The router hands the window this computer's model already resolved, inherited or chosen.
+    const state = computers({ newThreadModelId: 'claude:opus', newThreadReasoningEffort: 'xhigh' }, { models: [codex] })
     state.host.clientHosts![0]!.models = [opus, codex]
     expect(await create(state, FORGE)).toMatchObject({ modelId: 'codex:gpt', reasoningEffort: 'high' })
     expect(await create(state, LOCAL)).toMatchObject({ modelId: 'claude:opus', reasoningEffort: 'xhigh' })
   })
   it('opens on the host’s recommended model when this computer has no model to offer', async () => {
     const state = computers({})
+    state.host.clientHosts![0]!.models = []
+    expect((await create(state, FORGE)).modelId).toBe('codex:gpt')
+  })
+  it('takes the model the router resolved while another host is selected, even an empty one', async () => {
+    const state = { ...computers({ newThreadModelId: '' }), hostId: FORGE }
+    state.host.models = [codex]
+    // This computer has no model to offer, so forge's recommended one starts the thread, never one inferred from forge's settings.
     state.host.clientHosts![0]!.models = []
     expect((await create(state, FORGE)).modelId).toBe('codex:gpt')
   })

@@ -72,6 +72,17 @@ export function newThreadDefaultsCatalog(state: AgentState): AgentModel[] {
 }
 
 /**
+ * The model the new-thread defaults name (ADR-0074). With another host selected, the router has already resolved it
+ * from this computer's own settings and accounts, chosen or inherited, and empty means this computer has no model to
+ * offer. With this computer selected, or no local host running, the window's settings are the ones that choose it.
+ */
+export function newThreadDefaultModelId(state: AgentState): string {
+  const local = state.connections?.find(connection => connection.kind === 'local')?.hostId
+  if (local !== undefined && state.hostId !== local) return state.configuration.newThreadModelId
+  return defaultNewThreadModelId(state.configuration, newThreadDefaultsCatalog(state), state.reasoningAccounts)
+}
+
+/**
  * The model a new thread starts on, on the project's host: the default, unless that is a remote host whose catalog
  * does not list it, or this computer has no model to offer, where the thread starts on that host's recommended ready
  * model instead. This computer's own host keeps the default even while its provider is away, so the thread can say
@@ -96,7 +107,7 @@ export function newThreadOptionsOn(state: AgentState, hostId: string | undefined
   const remote = state.connections?.find(connection => connection.hostId === hostId)?.kind === 'remote'
   const configuration = state.configuration
   const defaults = newThreadDefaultsCatalog(state)
-  const chosenId = defaultNewThreadModelId(configuration, defaults, state.reasoningAccounts)
+  const chosenId = newThreadDefaultModelId(state)
   const modelId = startingModelId(chosenId, projectHost.models, remote)
   // A long-context variant the catalog does not list (`opus[1m]`) answers from its base model's entry.
   const selectedModel = resolveModel(projectHost.models, modelId)

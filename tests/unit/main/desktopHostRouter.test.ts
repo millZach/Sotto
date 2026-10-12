@@ -862,6 +862,13 @@ describe('settings on several computers (ADR-0074)', () => {
     Object.assign(local.state.configuration, { provider: 'claude', reasoning: 'none', newThreadModelId: '' })
     Object.assign(remote.state.configuration, { provider: 'codex', reasoning: 'none', newThreadModelId: '' })
     expect(router.shell().configuration.newThreadModelId).toBe('claude:sonnet')
+    // With this computer selected, its settings reach the window as saved, and the window resolves the model itself.
+    router.select(LOCAL)
+    expect(router.shell().configuration).toEqual(local.state.configuration)
+    // With no model to offer here, the window is told so, rather than left to infer one from forge's settings.
+    local.state.host.models = []
+    router.select(REMOTE)
+    expect(router.shell().configuration.newThreadModelId).toBe('')
     router.dispose()
   })
   it('sends new-thread defaults to the selected host when this computer runs no local host', async () => {
