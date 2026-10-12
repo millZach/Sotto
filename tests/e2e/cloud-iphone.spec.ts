@@ -6,8 +6,12 @@ import { expect, test } from '@playwright/test'
 import { start as startFakeRunCloud } from '../fixtures/fakeRunCloud.mjs'
 import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
+import { settingsLayoutProblems, settingsTextContrast } from './support/settingsChecks'
 
 const SHOTS = evidenceDirectory('artifacts/cloud-iphone')
+/** What in Settings > Cloud iPhone must not be cut off, and the page's own text whose contrast is measured. */
+const CLOUD_CONTROLS = 'input,button,p,h3,li,[role="meter"]'
+const CLOUD_TEXT = '.settings-group > h3, .settings-group__note, .tt-field__label, .tt-field__description, .cloud-iphone-usage > p, .cloud-iphone-recent span'
 
 async function resize(launched: LaunchedSotto, width: number, height: number): Promise<void> {
   await resizeContentWindow(launched, width, height, [800, 540])
@@ -127,12 +131,56 @@ test('an agent asks for a cloud iPhone, the user starts it in the thread, and th
     await openPage(page, 'Settings')
     await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Cloud iPhone', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Cloud iPhone', exact: true })).toBeVisible()
-    await expect(page.getByRole('meter', { name: /minutes/u }).first()).toBeVisible()
-    for (const mode of ['dark', 'light'] as const) {
-      await page.evaluate(async appearance => window.sotto!.updateSettings({ appearance }), mode)
-      await expect(page.locator('html')).toHaveAttribute('data-theme', mode)
-      await page.screenshot({ path: join(SHOTS, `settings-${mode}.png`), animations: 'disabled' })
+    const cloudPanel = page.getByRole('tabpanel', { name: 'Cloud iPhone', exact: true })
+    await expect(cloudPanel.getByRole('meter', { name: 'Cloud iPhone minutes used this month' })).toHaveAttribute('aria-valuetext', /^\d+ of 750 minutes$/u)
+    // Grouped as Git is, every row the page's usual label on the left and control on the right.
+    await expect(cloudPanel.getByRole('heading', { level: 3 })).toHaveText(['run.cloud', 'Spending', 'Recent sessions'])
+    await expect(cloudPanel.getByLabel('Key')).toHaveAttribute('placeholder', 'Key saved')
+    await expect(cloudPanel.locator('.cloud-iphone-recent li').first()).toContainText('Workshop')
+    for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
+      await resize(launched, width, height)
+      for (const mode of ['dark', 'light'] as const) {
+        await page.evaluate(async appearance => window.sotto!.updateSettings({ appearance }), mode)
+        await expect(page.locator('html')).toHaveAttribute('data-theme', mode)
+        await page.locator('.settings-scroll').evaluate(element => { element.scrollTop = 0 })
+        expect(await settingsLayoutProblems(page, 'settings-cloud-iphone', CLOUD_CONTROLS), `${width} ${mode}`).toEqual({ pageOverflow: false, formOverflow: false, clipped: [] })
+        for (const { text, ratio } of await settingsTextContrast(page, 'settings-cloud-iphone', CLOUD_TEXT)) expect(ratio, `${text} at ${width} ${mode}`).toBeGreaterThanOrEqual(4.5)
+        await page.mouse.move(1, 1)
+        await page.screenshot({ path: join(SHOTS, `settings-${width}x${height}-${mode}.png`), animations: 'disabled', caret: 'hide' })
+        await page.locator('.settings-scroll').evaluate(element => { element.scrollTop = element.scrollHeight })
+        expect(await settingsLayoutProblems(page, 'settings-cloud-iphone', CLOUD_CONTROLS), `${width} ${mode} bottom`).toEqual({ pageOverflow: false, formOverflow: false, clipped: [] })
+        if (width === 820) await page.screenshot({ path: join(SHOTS, `settings-${width}x${height}-${mode}-bottom.png`), animations: 'disabled', caret: 'hide' })
+      }
     }
+    // The keyboard path follows the eye: from the key to its two buttons, then the cap and the idle minutes.
+    await resize(launched, 1280, 800)
+    await page.evaluate(async () => window.sotto!.updateSettings({ appearance: 'dark' }))
+    await cloudPanel.getByLabel('Key').focus()
+    const order: string[] = []
+    for (let step = 0; step < 3; step += 1) {
+      await page.keyboard.press('Tab')
+      order.push(await page.evaluate(() => { const active = document.activeElement as HTMLInputElement; return active.labels?.[0]?.textContent ?? active.textContent?.trim() ?? '' }))
+    }
+    // Replace key waits for a new key, so it is disabled and out of the path until one is typed.
+    expect(order).toEqual(['Remove key', 'Monthly cap', 'Idle sessions end after'])
+    // Reduced motion: the page arrives without moving, and nothing on it animates.
+    const sections = page.getByRole('tablist', { name: 'Settings sections' })
+    const arrivals = async (): Promise<string[]> => cloudPanel.evaluate(panel => [getComputedStyle(panel).animationName,
+      ...document.getAnimations().filter(animation => animation.effect instanceof KeyframeEffect && animation.effect.target instanceof Node && panel.contains(animation.effect.target)).map(animation => animation.playState)])
+    await page.evaluate(async () => window.sotto!.updateSettings({ reducedMotion: 'system' }))
+    await expect(page.locator('html')).not.toHaveAttribute('data-reduced-motion', 'on')
+    // Unless the computer itself asks for less motion, the page arrives as every Settings page does.
+    if (!await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+      await sections.getByRole('tab', { name: 'Phones', exact: true }).click()
+      await sections.getByRole('tab', { name: 'Cloud iPhone', exact: true }).click()
+      expect((await arrivals())[0]).toBe('settings-arrive')
+    }
+    await page.evaluate(async () => window.sotto!.updateSettings({ reducedMotion: 'on' }))
+    await expect(page.locator('html')).toHaveAttribute('data-reduced-motion', 'on')
+    await sections.getByRole('tab', { name: 'Phones', exact: true }).click()
+    await sections.getByRole('tab', { name: 'Cloud iPhone', exact: true }).click()
+    expect(await arrivals()).toEqual(['none'])
+    expect(await settingsLayoutProblems(page, 'settings-cloud-iphone', CLOUD_CONTROLS), 'reduced motion').toEqual({ pageOverflow: false, formOverflow: false, clipped: [] })
     expect(errors).toEqual([])
   } finally {
     await closeSotto(launched)

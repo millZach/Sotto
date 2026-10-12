@@ -136,6 +136,13 @@
 .settings-view .settings-updates .settings-section__heading { border: 0; padding-bottom: 4px; }
 .settings-view .settings-updates .settings-section__heading h2 { font-size: 20px; letter-spacing: -.4px; }
 .settings-view .settings-updates .settings-section__heading p { font-size: 14px; }
+/* A group of rows under a small heading with its icon (SettingsGroup), as Git and Cloud iPhone group theirs. */
+.settings-view .settings-group { margin-top: 26px; }
+.settings-view .settings-group:first-child { margin-top: 22px; }
+.settings-view .settings-group > h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; color: var(--tt-text-2); font-size: 14px; font-weight: 600; line-height: 1.35; }
+.settings-view .settings-group > h3 > svg { flex: none; color: var(--tt-text-muted); }
+.settings-view .settings-group > .settings-rows { border-top: 1px solid var(--tt-hairline); }
+.settings-view .settings-group__note { margin: 0 0 8px; color: var(--tt-text-muted); font-size: 13px; line-height: 1.45; }
 .settings-view .settings-danger-row { gap: 24px; }
 .settings-view .settings-danger-row h3 { font-size: 15px; }
 .settings-view .settings-danger-row p { font-size: 13px; line-height: 1.5; }

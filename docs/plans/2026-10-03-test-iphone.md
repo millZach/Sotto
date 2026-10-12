@@ -86,6 +86,7 @@ What Zach decided on October 3, 2026:
 ### Renderer
 
 - Settings > Cloud iPhone: the key (Save, Replace, Remove, checked against run.cloud), the cap, the idle minutes, this month's minutes and recent sessions.
+  - October 11: the page shipped in boxed cards, unlike every other Settings page. Zach compared three layouts that follow the other pages and picked **A**: the rows grouped under run.cloud, Spending and Recent sessions, under small headings as Settings → Git's are, with the intro folded into the group notes and a saved key reading "Key saved" as Cleanup's does. The three are on the tag `prototype/cloud-iphone-settings-layout`; the proof is `docs/verification/2026-10-11-cloud-iphone-settings-layout.md`.
 - The thread's request card, in the transcript after its permission requests: **Start cloud iPhone** or **Deny**, with the build, the device, the price and this month's minutes. It also says when a session is refused, starting or failed.
 - The phone player shows a running cloud session in preference to the test iPhone, with its minutes and **End session**.
 - Tools > iPhone has a Cloud iPhone card.

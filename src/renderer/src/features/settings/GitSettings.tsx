@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useId, useRef, useState, type ComponentType, type ReactNode } from 'react'
+import React, { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { FileDiff, GitCommitHorizontal, GitPullRequest, RefreshCw } from 'lucide-react'
 import {
   DEFAULT_MERGE_METHODS, GIT_FETCH_INTERVAL_SECONDS, GIT_MERGE_METHOD_LABELS, GIT_WRITING_INSTRUCTIONS_MAX_CHARACTERS, GIT_WRITING_STYLES,
@@ -8,6 +8,7 @@ import { Field } from '../../components/Field'
 import { SegmentedControl } from '../../components/SegmentedControl'
 import { Select } from '../../components/Select'
 import { Toggle } from '../../components/Toggle'
+import { SettingsGroup } from './SettingsGroup'
 import './gitSettings.css'
 
 interface GitSettingsProps {
@@ -161,18 +162,6 @@ function WritingStyle({ settings, onSave, description }: GitSettingsProps & { re
   </div>
 }
 
-type GroupIcon = ComponentType<{ size?: number; strokeWidth?: number; 'aria-hidden'?: 'true' }>
-
-function Group({ title, icon: Icon, note, children }: { readonly title: string; readonly icon: GroupIcon; readonly note?: string; readonly children: ReactNode }): ReactNode {
-  const id = useId()
-  const noteId = useId()
-  return <section className="git-settings__group" aria-labelledby={id} {...(note ? { 'aria-describedby': noteId } : {})}>
-    <h3 id={id}><Icon size={16} strokeWidth={1.7} aria-hidden="true" />{title}</h3>
-    {note ? <p className="git-settings__group-note" id={noteId}>{note}</p> : null}
-    <div className="settings-rows">{children}</div>
-  </section>
-}
-
 /**
  * Settings → Git: every Git setting in one section, grouped under the moment it acts (the owner's pick B,
  * September 23, 2026), each description saying what Sotto will do with the value shown.
@@ -180,10 +169,10 @@ function Group({ title, icon: Icon, note, children }: { readonly title: string; 
 export function GitSettings({ settings, onSave }: GitSettingsProps): ReactNode {
   const says = gitSettingDescriptions(settings)
   return <div className="git-settings">
-    <Group title="When a thread commits" icon={GitCommitHorizontal}>
+    <SettingsGroup title="When a thread commits" icon={GitCommitHorizontal}>
       <WritingStyle settings={settings} onSave={onSave} description={says.style} />
-    </Group>
-    <Group title="When a pull request is made or merged" icon={GitPullRequest}>
+    </SettingsGroup>
+    <SettingsGroup title="When a pull request is made or merged" icon={GitPullRequest}>
       <Toggle label="Follow pull request templates" checked={settings.followPullRequestTemplates} onCheckedChange={checked => void onSave({ followPullRequestTemplates: checked })} description={says.templates} />
       <Field label="Default merge method" description={says.merge}>
         <Select value={settings.defaultMergeMethod} onChange={event => void onSave({ defaultMergeMethod: event.currentTarget.value as DefaultMergeMethod })}>
@@ -191,8 +180,8 @@ export function GitSettings({ settings, onSave }: GitSettingsProps): ReactNode {
         </Select>
       </Field>
       <Toggle label="Auto-settle merged threads" checked={settings.autoSettleMergedThreads} onCheckedChange={checked => void onSave({ autoSettleMergedThreads: checked })} description={says.settle} />
-    </Group>
-    <Group title="When you read Changes" icon={FileDiff} note="These set where Changes starts. A choice made in Changes holds until one of these settings changes or Sotto restarts.">
+    </SettingsGroup>
+    <SettingsGroup title="When you read Changes" icon={FileDiff} note="These set where Changes starts. A choice made in Changes holds until one of these settings changes or Sotto restarts.">
       <Field label="Diff layout" description={says.layout}>
         <SegmentedControl label="Diff layout" value={settings.diffLayout} onChange={value => void onSave({ diffLayout: value as DiffLayout })} options={[{ value: 'stacked', label: 'Stacked' }, { value: 'split', label: 'Split' }]} />
       </Field>
@@ -201,14 +190,14 @@ export function GitSettings({ settings, onSave }: GitSettingsProps): ReactNode {
         <SegmentedControl label="Default diff file state" value={settings.diffFileState} onChange={value => void onSave({ diffFileState: value as DiffFileState })} options={[{ value: 'expanded', label: 'Expanded' }, { value: 'collapsed', label: 'Collapsed' }]} />
       </Field>
       <Toggle label="Proactive panels" checked={settings.proactivePanels} onCheckedChange={checked => void onSave({ proactivePanels: checked })} description={says.proactive} />
-    </Group>
-    <Group title="In the background" icon={RefreshCw}>
+    </SettingsGroup>
+    <SettingsGroup title="In the background" icon={RefreshCw}>
       <Field label="Git fetch interval" description={says.fetch}>
         <Select value={String(settings.gitFetchIntervalSeconds)} onChange={event => void onSave({ gitFetchIntervalSeconds: Number(event.currentTarget.value) as GitFetchIntervalSeconds })}>
           {GIT_FETCH_INTERVAL_SECONDS.map(seconds => <option key={seconds} value={String(seconds)}>{fetchIntervalLabel(seconds)}</option>)}
         </Select>
       </Field>
       <Toggle label="Automatically pull" checked={settings.gitAutoPull} onCheckedChange={checked => void onSave({ gitAutoPull: checked })} description={says.autoPull} />
-    </Group>
+    </SettingsGroup>
   </div>
 }
