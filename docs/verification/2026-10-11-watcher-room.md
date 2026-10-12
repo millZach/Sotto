@@ -19,7 +19,7 @@ Stable shows and reads none of it.
 ## Where it lives
 
 - `src/renderer/src/watcher/WatcherView.tsx` is the room: header, needs-you line, first entry, Watcher's pane and the split. `WatcherBeside.tsx` holds the beside pane, its divider and the room's own view; `WatcherOverview.tsx` the Overview's projection and the list over the room; `WatcherGlance.tsx` the needs-you line; `WatcherDock.tsx` the floating switch. `watcher.css` is on the `owned` list `themeTokens.test.ts` checks.
-- `src/renderer/src/agents/SidebarFrame.tsx` now exports `RoomSwitch` and `PageLinks`, which the sidebar foot and the floating switch both draw. The sidebar frame is back to main's shape: nothing but the Threads sidebar wears it.
+- `src/renderer/src/agents/SidebarFrame.tsx` now exports `RoomSwitch` and `PageLinks`, which the sidebar foot and the floating switch both draw. The sidebar frame is back to main's shape: nothing but the Threads sidebar wears it. How a switch answers the keyboard (the one Tab stop, arrow keys, Home and End, the owl's name, the focus hand-over) is `useRoomSwitch` in `components/AppShell.tsx`, which the strip's switch and `RoomSwitch` share; each keeps its own look.
 - `src/renderer/src/agents/OwlSky.tsx` adds `OwlRoomSky`; `tokens.css` adds `--tt-owl-room-night`, the room's night derived from the canvas (by day a faint accent wash).
 - `src/shared/watcherRoom.ts` is still ticket 3's contract, unchanged. `src/renderer/src/e2e/watcherStandIn.ts` stands in for main's bridge in an end-to-end run.
 

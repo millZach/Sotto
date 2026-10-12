@@ -6,7 +6,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { AppShell, roomFor } from '../../../src/renderer/src/components/AppShell'
+import { AppShell, appRooms, roomFor, useRoomSwitch, type AppRoom } from '../../../src/renderer/src/components/AppShell'
 
 // Memory is off for the beta the same way; its page link comes and goes with it.
 const memory = vi.hoisted(() => ({ enabled: false }))
@@ -319,5 +319,52 @@ describe('AppShell', () => {
     await user.keyboard('{Enter}')
     expect(onConfirm).not.toHaveBeenCalled()
     expect(screen.getByRole('dialog')).toBeVisible()
+  })
+})
+
+describe('useRoomSwitch', () => {
+  /** A bare switch: the hook's behaviour with nothing of any switch's look. */
+  function Switch({ room, navigate, shown }: { readonly room: AppRoom | null; readonly navigate: (destination: string) => void; readonly shown?: boolean }) {
+    const rooms = appRooms(true)
+    const roomSwitch = useRoomSwitch(room, rooms, navigate, shown)
+    return <div ref={roomSwitch.ref} role="tablist" aria-label="Rooms">
+      {rooms.map((target, index) => <button key={target.id} type="button" role="tab" {...roomSwitch.tab(target, index)}>{target.id === 'watcher' ? 'owl' : target.label}</button>)}
+    </div>
+  }
+
+  it('gives every switch one Tab stop, the arrow keys, Home and End, and the owl its name', async () => {
+    const user = userEvent.setup()
+    const navigate = vi.fn()
+    render(<Switch room="threads" navigate={navigate} />)
+    const tabs = screen.getAllByRole('tab')
+    expect(tabs.map(tab => tab.getAttribute('tabindex'))).toEqual(['-1', '-1', '0'])
+    expect(tabs.map(tab => tab.getAttribute('aria-selected'))).toEqual(['false', 'false', 'true'])
+    expect(screen.getByRole('tab', { name: 'Watcher' })).toHaveAttribute('title', 'Watcher')
+    tabs[2]!.focus()
+    await user.keyboard('{ArrowLeft}')
+    expect(tabs[1]).toHaveFocus()
+    expect(navigate).toHaveBeenLastCalledWith('watcher')
+    await user.keyboard('{Home}')
+    expect(tabs[0]).toHaveFocus()
+    expect(navigate).toHaveBeenLastCalledWith('home')
+    await user.keyboard('{End}')
+    expect(navigate).toHaveBeenLastCalledWith('threads')
+    await user.keyboard('{ArrowRight}')
+    expect(tabs[0]).toHaveFocus()
+    expect(navigate).toHaveBeenLastCalledWith('home')
+  })
+
+  it('hands focus from a press to the lit tab of the switch the opened page draws, and only to one on screen', () => {
+    const navigate = vi.fn()
+    const first = render(<Switch room="dictate" navigate={navigate} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Watcher' }))
+    expect(navigate).toHaveBeenLastCalledWith('watcher')
+    first.unmount()
+    // A switch that is not the one on screen leaves the hand-over for the one that is.
+    const hidden = render(<Switch room="watcher" navigate={navigate} shown={false} />)
+    expect(document.body).toHaveFocus()
+    hidden.unmount()
+    render(<Switch room="watcher" navigate={navigate} />)
+    expect(screen.getByRole('tab', { name: 'Watcher' })).toHaveFocus()
   })
 })

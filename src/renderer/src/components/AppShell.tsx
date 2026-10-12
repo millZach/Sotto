@@ -83,6 +83,52 @@ export function roomKeyTarget(key: string, index: number, count: number): number
   return null
 }
 
+/** What `useRoomSwitch` puts on each tab: its selection, its place in the Tab order, its name and what it answers. */
+export interface RoomTabProps {
+  readonly 'aria-selected': boolean
+  readonly 'aria-label': string | undefined
+  readonly title: string | undefined
+  readonly tabIndex: 0 | -1
+  readonly onClick: () => void
+  readonly onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => void
+}
+
+/**
+ * How every room switch behaves, whatever it looks like (the strip's, the sidebar foot's, Watcher's floating one).
+ * Only the lit tab is in the Tab order, or the first when the open page lights none; arrow keys, Home and End move
+ * and open as they go; a press that opens another room hands focus to the lit tab of the switch the opened page
+ * draws, and this switch takes it when its page is the one opened and `shown` says it is the switch on screen. The
+ * owl stands alone, so its name is its tooltip and what a screen reader says. Each switch draws its own tablist and
+ * tabs, spreading `tab(room, index)` on each.
+ */
+export function useRoomSwitch(room: AppRoom | null, rooms: ReadonlyArray<Room>, navigate: (destination: ManagementNavigation) => void, shown = true): {
+  readonly ref: React.RefObject<HTMLDivElement | null>
+  readonly tab: (target: Room, index: number) => RoomTabProps
+} {
+  const ref = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    if (shown && claimRoomFocus(room)) ref.current?.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')?.focus()
+  })
+  const focusable = rooms.some(({ id }) => id === room) ? room : rooms[0]!.id
+  // Only a press that opens another room hands focus on; the lit tab already has it.
+  const enter = (target: Room): void => { if (target.id !== room) handRoomFocus(target.id); navigate(target.destination) }
+  const tab = (target: Room, index: number): RoomTabProps => ({
+    'aria-selected': target.id === room,
+    'aria-label': target.id === 'watcher' ? target.label : undefined,
+    title: target.id === 'watcher' ? target.label : undefined,
+    tabIndex: target.id === focusable ? 0 : -1,
+    onClick: () => enter(target),
+    onKeyDown: event => {
+      const next = roomKeyTarget(event.key, index, rooms.length)
+      if (next === null) return
+      event.preventDefault()
+      ref.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus()
+      enter(rooms[next]!)
+    },
+  })
+  return { ref, tab }
+}
+
 const footerLinks: ReadonlyArray<{ id: ManagementNavigation; label: string }> = [
   { id: 'threads', label: 'Threads' },
   { id: 'history', label: 'History' },
@@ -146,30 +192,13 @@ export function AppShell({
   const rooms = appRooms(useWatcherEnabled())
   // Memory is hidden for the beta: its link goes with it.
   const links = useMemoryEnabled() ? footerLinks : footerLinks.filter(({ id }) => id !== 'memory')
-  const focusableRoom = rooms.some(({ id }) => id === room) ? room : rooms[0]!.id
-  const switchRef = useRef<HTMLDivElement>(null)
-  const stripShown = layout === 'strip' && management
-  // A switch press that opened this page's room hands focus to the strip's lit tab, when the strip is what shows.
-  useLayoutEffect(() => {
-    if (stripShown && claimRoomFocus(room)) switchRef.current?.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')?.focus()
-  })
-
   const go = (destination: ManagementNavigation): void => { onNavigate?.(destination) }
-  // Only a press that opens another room hands focus on; the lit tab already has it.
-  const enter = (target: Room): void => { if (target.id !== room) handRoomFocus(target.id); go(target.destination) }
+  // A switch press that opened this page's room hands focus to the strip's lit tab, when the strip is what shows.
+  const roomSwitch = useRoomSwitch(room, rooms, go, layout === 'strip' && management)
 
   const followLink = (event: MouseEvent<HTMLAnchorElement>, destination: ManagementNavigation): void => {
     event.preventDefault()
     go(destination)
-  }
-
-  const onTabKey = (event: KeyboardEvent<HTMLButtonElement>, index: number): void => {
-    const next = roomKeyTarget(event.key, index, rooms.length)
-    if (next === null) return
-    event.preventDefault()
-    const tabs = event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')
-    tabs?.[next]?.focus()
-    enter(rooms[next]!)
   }
 
   // One tree for all three layouts, with the strip, the sidebar, the room's edges and the footer as empty
@@ -194,7 +223,7 @@ export function AppShell({
             </div>
           )}
           {management ? (
-            <div ref={switchRef} className="app-switch" role="tablist" aria-label="Mode">
+            <div ref={roomSwitch.ref} className="app-switch" role="tablist" aria-label="Mode">
               {rooms.map((target, index) => (
                 <button
                   key={target.id}
@@ -202,13 +231,7 @@ export function AppShell({
                   role="tab"
                   className="app-switch__tab tt-focusable"
                   data-room={target.id}
-                  aria-selected={room === target.id}
-                  // Watcher's owl stands alone, so its name is its tooltip and what a screen reader says.
-                  aria-label={target.id === 'watcher' ? target.label : undefined}
-                  title={target.id === 'watcher' ? target.label : undefined}
-                  tabIndex={focusableRoom === target.id ? 0 : -1}
-                  onClick={() => enter(target)}
-                  onKeyDown={(event) => onTabKey(event, index)}
+                  {...roomSwitch.tab(target, index)}
                 >
                   {target.id === 'dictate' ? <VoiceWave stage="idle" value={0} label="" size="switch" /> : null}
                   {target.id === 'threads' ? <MessagesSquare size={16} aria-hidden="true" /> : null}

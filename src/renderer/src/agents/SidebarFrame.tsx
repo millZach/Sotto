@@ -1,10 +1,10 @@
-import React, { createContext, useCallback, useContext, useMemo, useLayoutEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react'
+import React, { createContext, useCallback, useContext, useMemo, useLayoutEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { Archive, ArchiveRestore, Brain, CircleHelp, Clock, FolderPlus, MessagesSquare, PanelLeftClose, PanelLeftOpen, Search, Settings, SquareTerminal, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
 import type { SottoPlatform } from '../../../shared/platform'
 import { releaseTrackName } from '../../../shared/releaseTrack'
-import { appRooms, claimRoomFocus, handRoomFocus, roomFor, roomKeyTarget, type Room } from '../components/AppShell'
+import { appRooms, roomFor, useRoomSwitch } from '../components/AppShell'
 import { Button } from '../components/Button'
 import { SottoMark } from '../components/SottoMark'
 import { useOptionalApp, type AppNavigation } from '../state/AppContext'
@@ -79,35 +79,17 @@ export function SidebarTop({ children }: { readonly children?: ReactNode }): Rea
 
 /**
  * The room switch, drawn from the one room definition (`appRooms`): Dictate | Threads, with Watcher's owl between
- * them while its gate is on. It lights the room of the open page. Only the lit tab is in the Tab order, or the first
- * when the open page lights none (Settings, History, Help); arrow keys, Home and End walk the others, as the strip's
- * did. Each page draws its own switch, so a press that opens another room hands focus to the lit tab of the switch
- * the opened page draws. The sidebar foot and Watcher's floating switch both draw this one.
+ * them while its gate is on. It lights the room of the open page and answers the keyboard as every switch does
+ * (`useRoomSwitch`): one Tab stop, arrow keys, Home and End, and focus handed to the lit tab of the switch the opened
+ * page draws. The sidebar foot and Watcher's floating switch both draw this one.
  */
 export function RoomSwitch({ className }: { readonly className: string }): ReactNode {
   const app = useOptionalApp()
   const shown = app === null || app.navigation === 'onboarding' ? 'threads' : app.navigation
-  const room = roomFor(shown)
   const rooms = appRooms(useWatcherEnabled())
-  const tablist = useRef<HTMLDivElement>(null)
-  useLayoutEffect(() => {
-    if (claimRoomFocus(room)) tablist.current?.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')?.focus()
-  })
-  // Only a press that opens another room hands focus on; the lit tab already has it.
-  const enter = (target: Room): void => { if (target.id !== room) handRoomFocus(target.id); app?.actions.navigate(target.destination) }
-  const onTabKey = (event: KeyboardEvent<HTMLButtonElement>, index: number): void => {
-    const next = roomKeyTarget(event.key, index, rooms.length)
-    if (next === null) return
-    event.preventDefault()
-    event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus()
-    enter(rooms[next]!)
-  }
-  const focusable = rooms.some(({ id }) => id === room) ? room : rooms[0]!.id
-  return <div ref={tablist} className={className} role="tablist" aria-label="Page" data-rooms={rooms.length === 3 ? 3 : undefined}>
-    {rooms.map((target, index) => <button key={target.id} type="button" role="tab" className="tt-focusable" aria-selected={target.id === room} data-room={target.id}
-      // Watcher's owl stands alone, so its name is its tooltip and what a screen reader says.
-      aria-label={target.id === 'watcher' ? target.label : undefined} title={target.id === 'watcher' ? target.label : undefined}
-      tabIndex={target.id === focusable ? 0 : -1} onClick={() => enter(target)} onKeyDown={event => onTabKey(event, index)}>
+  const roomSwitch = useRoomSwitch(roomFor(shown), rooms, destination => app?.actions.navigate(destination))
+  return <div ref={roomSwitch.ref} className={className} role="tablist" aria-label="Page" data-rooms={rooms.length === 3 ? 3 : undefined}>
+    {rooms.map((target, index) => <button key={target.id} type="button" role="tab" className="tt-focusable" data-room={target.id} {...roomSwitch.tab(target, index)}>
       {target.id === 'watcher' ? <WatcherOwl size={16} /> : target.label}</button>)}
   </div>
 }
