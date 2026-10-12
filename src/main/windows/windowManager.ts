@@ -450,6 +450,10 @@ export class WindowManager {
       height: 720,
       minWidth: 820,
       minHeight: 560,
+      // Electron 43's Linux frame adds resize insets to frameless size constraints.
+      // A transparent native surface clears those insets; the solid background
+      // below still paints the room opaque. Other platforms keep their options.
+      ...(this.dependencies.platform === 'linux' ? { transparent: true as const } : {}),
       show: false,
       title: this.dependencies.title ?? APP_NAME,
       ...mainWindowFrostOptions(this.frost(), this.dependencies.frostedWindow?.() ?? false),
