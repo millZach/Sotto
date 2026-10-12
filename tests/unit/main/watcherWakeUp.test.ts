@@ -426,3 +426,16 @@ it('keeps remote same-ID participants out of this host provider residency and qu
   expect(f.wakes.watchedThreadIds()).toEqual([])
   expect(f.timers.size).toBe(0)
 })
+
+it('does not wake for alternating surface and babysitting reads of unchanged GitHub facts', async () => {
+  const f = fixture(), url = 'https://github.com/o/r/pull/1'
+  f.thread.pullRequests = [{ url, number: 1, title: 'Synthetic pull request', state: 'open', draft: false, source: 'linked', linkedAt: new Date(f.now()).toISOString() }]
+  for (let n = 0; n < 6; n++) {
+    f.wakes.pullRequest({ url, head: 'same-head', observedAt: new Date(f.now()).toISOString(), availability: 'available', state: 'open',
+      checks: 'passed', checkCount: 1, ...(n % 2 ? {} : { reviewApproved: true, autoMerge: true }) })
+    await f.advance(2_000)
+  }
+  expect(f.delivered).toHaveLength(1)
+  expect(f.wakes.evidence.read(centerTarget).some(item => item.githubReviewApproved === true)).toBe(true)
+  expect(f.wakes.evidence.read(centerTarget).some(item => item.fact === 'auto-merge-observed')).toBe(true)
+})
