@@ -464,3 +464,21 @@ it.each([true, false])('retains waiting checkpoint news during incomplete restar
   expect(recovered.due(saved)).toBe(false)
   expect(deliver).toHaveBeenCalledTimes(1)
 })
+
+it('invalidates an explicitly unlinked PR during incomplete evidence recovery', async () => {
+  const f = fixture(), url = 'https://github.com/o/r/pull/1'
+  f.thread.status = 'idle'; f.thread.lastTurn!.status = 'completed'
+  f.thread.pullRequests = [{ url, number: 1, title: 'Synthetic pull request', state: 'open', draft: false, source: 'linked', linkedAt: new Date(f.now()).toISOString() }]
+  f.wakes.observe()
+  f.wakes.checkpoint({ threadId: f.thread.id, checkpointId: 'capture', observedAt: new Date(f.now()).toISOString(), availability: 'available' })
+  await f.advance(2_000); f.wakes.close()
+  const saved = f.delivered[0]!.events.find(event => event.kind === 'evidence-changed')!
+  const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, canDeliver: () => true, now: f.now,
+    restoredEvents: () => f.delivered.flatMap(news => news.events), deliver: async () => undefined, remember: async () => undefined,
+    prune: async () => undefined, schedule: () => () => undefined })
+  cleanups.push(() => recovered.close())
+  recovered.start()
+  expect(recovered.due(saved)).toBe(true)
+  f.thread.pullRequests = []; recovered.observe()
+  expect(recovered.due(saved)).toBe(false)
+})

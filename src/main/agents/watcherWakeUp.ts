@@ -210,6 +210,8 @@ export class WatcherWakeUp {
       this.observations.set(watcherObservationKey(thread), observed)
       if (connected) {
         const before = this.knownEvidenceIds(target)
+        const links = new Set([...thread.pullRequests ?? [], ...thread.worktree?.git?.pullRequest ? [thread.worktree.git.pullRequest] : []].map(pr => pullRequestKey(pr.url)))
+        before.push(...facts.filter(item => item.source === 'github' && item.url && !links.has(pullRequestKey(item.url))).map(item => item.id))
         const changedEvidence = this.evidence.observeThread(thread, target, stamp)
         if (changedEvidence) this.evidenceChanged(target, before)
         const turn = thread.lastTurn
