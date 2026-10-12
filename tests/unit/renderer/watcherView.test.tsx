@@ -19,6 +19,7 @@ import { roomView } from '../../../src/renderer/src/watcher/WatcherBeside'
 import { WatcherDock } from '../../../src/renderer/src/watcher/WatcherDock'
 import { WatcherView } from '../../../src/renderer/src/watcher/WatcherView'
 import { firstMessage } from '../../../src/renderer/src/watcher/watcherFirstMessage'
+import { toolsPanelStore } from '../../../src/renderer/src/tools/toolsPanelStore'
 import { agentContextFixture } from '../../fixtures/agentContext'
 import { threadsStateFixture } from '../../fixtures/agentState'
 import { openSidebarFolders } from '../../fixtures/renderer/liveAgentState'
@@ -373,6 +374,26 @@ describe("Watcher's room", () => {
     const beside = await screen.findByRole('region', { name: 'Streaming WAV stall' })
     fireEvent.click(within(beside).getByRole('button', { name: 'Open Streaming WAV stall in Threads' }))
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'select-thread', threadId: 'wav-stall' }))
+  })
+
+  it('takes a beside thread’s pull request badge to its pull request in Tools, on the Threads page with the thread selected', async () => {
+    toolsPanelStore.setOpen(false)
+    const state = stateWithWatcher()
+    state.host.threads.find(thread => thread.id === 'footer-links')!.worktree = { mode: 'shared', status: 'ready', path: 'C:/work/app', repositoryRoot: 'C:/work/app', branch: 'fix/footer',
+      git: { isRepository: true, branch: 'fix/footer', upstream: 'origin/fix/footer', hasRemote: true, defaultBranch: 'main', isDefaultBranch: false, dirty: false, changedFiles: 0, insertions: 0,
+        deletions: 0, ahead: 0, behind: 0, aheadOfDefault: null, fetchedAt: null, readAt: at,
+        pullRequest: { number: 12, title: 'Fix the footer links', url: 'https://github.com/o/r/pull/12', state: 'open', draft: false } } }
+    const { command, navigate } = renderRoom(state, roomState())
+    await paneReady()
+    fireEvent.click(screen.getByRole('button', { name: 'All threads, 9. Show the list' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open Footer links beside Watcher' }))
+    const beside = await screen.findByRole('region', { name: 'Footer links' })
+    // The room has no Tools panel, so the badge says where it goes.
+    fireEvent.click(within(beside).getByRole('button', { name: 'Open PR #12 - Open: Fix the footer links in Tools on the Threads page' }))
+    expect(toolsPanelStore.getSnapshot()).toMatchObject({ open: true, surface: 'pull-request' })
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith('threads'))
+    expect(command).toHaveBeenCalledWith({ type: 'select-thread', threadId: 'footer-links' })
+    toolsPanelStore.setOpen(false)
   })
 
   it('keeps Threads in flight under More Watcher actions, saves it through main and returns focus on Escape', async () => {
