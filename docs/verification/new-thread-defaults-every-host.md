@@ -76,3 +76,10 @@ Two-axis review by Sol (gpt-6.1-sol) at max reasoning, all six findings fixed:
 - Standards: the spec's captures go through `evidenceDirectory`, as `docs/ci.md` asks.
 - Standards: the prototype's held-back note promised that the next SSH connection would let this computer answer,
   which a revoked policy does not; the line is gone.
+
+On the pull request, Greptile and Sotto Bug Bot raised three things. With no model chosen, the inherited model was
+resolved from the selected host's reasoning provider and accounts; the router now resolves it from this computer's.
+With no model to offer here, a thread on a remote host could not open; it now starts on that host's recommended
+model. Both have tests. The third, that a remote host's own saved effort or permission applies where this
+computer's default is unset, is the decision in ADR-0074 point 2, as the iPhone does under ADR-0051; this computer
+never writes a host's defaults while it runs a local host.

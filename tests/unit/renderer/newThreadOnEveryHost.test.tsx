@@ -49,6 +49,11 @@ describe('a new thread on any computer starts on this computer’s defaults (ADR
     expect(await create(state, FORGE)).toMatchObject({ modelId: 'codex:gpt', reasoningEffort: 'high' })
     expect(await create(state, LOCAL)).toMatchObject({ modelId: 'claude:opus', reasoningEffort: 'xhigh' })
   })
+  it('opens on the host’s recommended model when this computer has no model to offer', async () => {
+    const state = computers({})
+    state.host.clientHosts![0]!.models = []
+    expect((await create(state, FORGE)).modelId).toBe('codex:gpt')
+  })
   it('keeps the default on this computer even while its provider is away, so the thread can say what to connect', async () => {
     const state = computers({ newThreadModelId: 'claude:opus' })
     expect((await create(state, LOCAL)).modelId).toBe('claude:opus')

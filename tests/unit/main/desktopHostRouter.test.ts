@@ -854,6 +854,16 @@ describe('settings on several computers (ADR-0074)', () => {
     expect(refused.error).toMatch(/not allowed/u)
     router.dispose()
   })
+  it('resolves the model this computer inherits from its own settings, not the selected host’s', () => {
+    const { router, local, remote } = twoComputers()
+    const models = [{ id: 'codex:gpt', provider: 'Codex', providerId: 'codex' as const, name: 'GPT', ready: true },
+      { id: 'claude:sonnet', provider: 'Claude', providerId: 'claude' as const, name: 'Sonnet', ready: true }]
+    local.state.host.models = models; remote.state.host.models = models
+    Object.assign(local.state.configuration, { provider: 'claude', reasoning: 'none', newThreadModelId: '' })
+    Object.assign(remote.state.configuration, { provider: 'codex', reasoning: 'none', newThreadModelId: '' })
+    expect(router.shell().configuration.newThreadModelId).toBe('claude:sonnet')
+    router.dispose()
+  })
   it('sends new-thread defaults to the selected host when this computer runs no local host', async () => {
     const router = new DesktopHostRouter(emptyDesktopState), remote = fixture(REMOTE, 'remote')
     router.add(remote.connection)

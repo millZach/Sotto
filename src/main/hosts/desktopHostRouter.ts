@@ -1,7 +1,7 @@
 import { visibleWatcherState } from '../../shared/watcherVisibility'
 import { WATCHER_DISABLED } from '../agents/watcherLaunchProfiles'
 import { randomUUID } from 'node:crypto'
-import { agentCommandSchema, MAX_DELIVERED_DRAFTS, HOST_CANNOT_STAGE_SCREENSHOTS, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
+import { agentCommandSchema, defaultNewThreadModelId, MAX_DELIVERED_DRAFTS, HOST_CANNOT_STAGE_SCREENSHOTS, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import { clientAgentState, hostEntityKey, mapHostReferences, parseHostEntityKey } from '../../shared/clientIdentity'
 import { desktopWindowClient, type ClientIdentity, type HostService, type RequestAnswerRecovery } from '../agents/hostService'
 import { requestDraftProvider, requestDraftQuestions, type RequestDraftOwner, type RequestDraftTarget } from '../../shared/requestDrafts'
@@ -646,15 +646,17 @@ export class DesktopHostRouter {
   }
   /**
    * This computer's own new-thread defaults over whichever host is selected, so Settings shows and New thread uses
-   * the same ones on every host. With no local host running, the selected host's own apply.
+   * the same ones on every host. With no model chosen, the one this computer inherits is resolved here from its own
+   * settings and accounts, since the selected host's reasoning provider would choose another. With no local host
+   * running, the selected host's own apply.
    */
   private withNewThreadDefaults(state: AgentState, local: AgentState | undefined): AgentState {
     if (!local) return state
     const { newThreadRuntimeMode: _mode, ...configuration } = state.configuration
     void _mode
     const own = local.configuration
-    return { ...state, configuration: { ...configuration, newThreadModelId: own.newThreadModelId, newThreadReasoningEffort: own.newThreadReasoningEffort,
-      ...(own.newThreadRuntimeMode !== undefined ? { newThreadRuntimeMode: own.newThreadRuntimeMode } : {}) } }
+    return { ...state, configuration: { ...configuration, newThreadModelId: defaultNewThreadModelId(own, local.host.models, local.reasoningAccounts),
+      newThreadReasoningEffort: own.newThreadReasoningEffort, ...(own.newThreadRuntimeMode !== undefined ? { newThreadRuntimeMode: own.newThreadRuntimeMode } : {}) } }
   }
   /**
    * Early start (#769) goes to the thread's own host and changes nothing here. It asks for nothing the user must know

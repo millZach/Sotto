@@ -73,11 +73,12 @@ export function newThreadDefaultsCatalog(state: AgentState): AgentModel[] {
 
 /**
  * The model a new thread starts on, on the project's host: the default, unless that is a remote host whose catalog
- * does not list it, where the thread starts on that host's recommended ready model instead. This computer's own host
- * keeps the default even while its provider is away, so the thread can say what to connect.
+ * does not list it, or this computer has no model to offer, where the thread starts on that host's recommended ready
+ * model instead. This computer's own host keeps the default even while its provider is away, so the thread can say
+ * what to connect.
  */
 function startingModelId(chosen: string, models: readonly AgentModel[], remote: boolean): string {
-  if (!remote || !chosen || resolveModel(models, chosen)) return chosen
+  if (!remote || (chosen && resolveModel(models, chosen))) return chosen
   const ready = models.filter(model => model.ready)
   return (ready.find(model => model.recommended) ?? ready[0])?.id ?? chosen
 }

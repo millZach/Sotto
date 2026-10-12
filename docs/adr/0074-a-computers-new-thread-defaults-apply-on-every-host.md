@@ -29,11 +29,12 @@ computer's were.
 
 **1. The new-thread defaults are this computer's own.** The desktop router sends a patch of only `newThreadModelId`,
 `newThreadReasoningEffort` and `newThreadRuntimeMode` to the local host, whichever host is selected, and shows the
-local host's values over the selected host's. Settings lists this computer's models for them. New thread sends the
+local host's values over the selected host's. With no model chosen, the model this computer inherits is resolved from
+its own settings and accounts, not the selected host's. Settings lists this computer's models for them. New thread sends the
 effort and permission a default chose with each `create-thread`, on this computer and on every connected host.
 
 **2. A default applies where the host offers it,** as the iPhone's do. A remote host whose catalog does not list the
-default model starts the thread on its recommended ready model. Effort and permission fit the model as before (#347).
+default model, or a computer with no model to offer, starts the thread on that host's recommended ready model. Effort and permission fit the model as before (#347).
 Where no default chose the effort or the permission, the host's own choice applies. This computer keeps an
 unavailable default model selected, as it did, so the thread can say what to connect.
 
