@@ -147,3 +147,52 @@ Free physical memory was 10,377,340 KB before the full suite and 4,327,632 KB be
 The app journeys check stable/Owl ordinary Send/reply, saved special-kind preservation, bridge gating, stable layout recovery, all five local-host-off room refusals, and the changed limit applying to both the running Watcher and saved settings. Dark/light, reduced motion and bounds pass at 1600 by 1000, 1280 by 800 and exactly 820 by 560 CSS pixels. Visually inspected the new [Owl dark](../../artifacts/watcher-gate/wakeups-main-owl-dark-820x560.png) and [stable light](../../artifacts/watcher-gate/wakeups-main-stable-light-820x560.png) selected captures; sidebar, transcript and composer fit. They are committed in the existing evidence folder and are not ignored. At 150% display scaling, their PNG dimensions are 1230 by 840 device pixels. Main bundle timestamp: 19:41:31 local; captures: 19:42:26 and 19:42:19.
 
 No additional room contract or shared field changed. No new domain decision was made, so CONTEXT.md, ADR-0073 and the plan need no follow-up amendment. Production dependencies remain exactly zod, node-pty and sherpa-onnx-node. This follow-up ran no push, rebase, stash, branch switch, new task worktree, nested review, publication or installation; the initial npm ci remains the worktree's own dependency install. No implementation or required check remains unfinished locally. Packaged builds, paid native-provider turns, macOS, Linux and phones were not exercised; remote delivery and the lead's review remain assigned to the lead.
+
+
+## Two-axis review fixes, October 11, 2026
+
+All eight findings were verified and fixed. The behavioral probes failed before their fixes; the callback-type and glossary probes also went red before the corresponding changes. No finding was dismissed as not a bug.
+
+| Finding | Commit | Cause and regression proof |
+| --- | --- | --- |
+| 1. Plan progress and quiet | `cac21363c` | Include plan-step status and text length in the private progress fingerprint. Completing a step at minute nineteen withdraws the old twenty-minute deadline and schedules quiet from that real progress. The old code sent one premature quiet notice; the corrected test and privacy assertion pass. |
+| 2. Comments-only reads | `9d708b818` | Pass the reader's existing checks-selection flag into the observation projection. Reuse known checks only for an unrequested read of the same URL and head; requested-but-refused, unavailable, mismatched-head and different-URL reads remain unknown. The real reader probe previously changed passing checks to unknown. Its query selection, read count and babysitting news remain unchanged. |
+| 3. Returning evidence states | `ad126f7eb` | Keep the latest fingerprint and occurrence for each request, target and generation. A failed/passed/failed sequence gets three distinct events; identical reads do not. Persist opaque digest components within the existing ID bound, accept legacy IDs for their first reconciled occurrence, canonicalize fact ordering, and reject old queued occurrences even when their state returns. Cycle, restart, ordering and legacy regressions pass. |
+| 4. Failed saves | `840402b86`, `4d9f51b29` | Retain undelivered news on the existing batching deadline. Save event IDs separately so a metadata failure does not queue saved news twice. Retain the whole pending batch behind the delivery limit: the supplemental sixty-target probes previously lost ten omitted events, and stopping twenty participants left thirty rather than forty current events. Retries now retain counts and newly fitting events while withdrawing stopped, answered or superseded news. |
+| 5. Structured checkpoint cause | `d5c924c9f` | Persist optional `unavailableReason` beside the human explanation and assign it at the capture or attribution failure. A capture error mentioning overlap now remains capture-unavailable; genuine shared-checkout overlap remains correctly attributed. Legacy records and journal/file round trips pass without interpreting prose. |
+| 6. Stored-news callback types | `c566b5181` | Remove subtype generics and downcasts from queue, withdrawal and pruning callbacks. Every callback accepts `WakeUpNews`, including mixed saved sources. The old API failed the type-equality check and accepted all three unsafe narrow callbacks, producing three unused expected-error directives. The corrected compiler checks reject those callbacks, and the mixed-source store regression passes. |
+| 7. Shared check classifier | `9d708b818` | Both GitHub babysitting observations and workspace PR observations use `summarizePullRequestChecks`. The related reader and evidence regressions preserve failed, pending, passed and unknown behavior. |
+| 8. Glossary | `0ba4a7cf4` | Broaden Wake-up, Turn and Coordinator from babysitting alone to both Sotto news sources. All three glossary checks failed against the old entries and pass after the update. |
+
+The focused runs passed fourteen quiet/wake tests after finding 1; fifty reader/evidence/babysitting tests after findings 2 and 7; eighty-one wake/tool tests after finding 3; eighty-six after the first save-retry fix; sixty checkpoint/store/integration tests after finding 5; and eighty-seven queue, callback, wake and glossary tests after findings 6 and 8. The final bounded-retry fix passes eighty-eight wake/tool tests in 32.22 seconds. These runs use fake clocks, native fake-provider children or synthetic local fixtures; no paid provider turn was required.
+
+### Gate failures and their corrections
+
+`11b3a8c92` fixes the first lint run's three fixture errors: two unused mock parameters and a path guard that threw inside finally. Explicit mock callable types and checking the temporary path before try/finally preserve the tests' behavior. Focused lint and twenty-five tests passed before restarting the ordered gates.
+
+The first full run on that head failed with 777 files passed, two failed and 58 skipped; 9,735 tests passed, two failed and 283 skipped; duration 1,754.87 seconds. Socket child Codex failed during create-thread setup with the fixed Git refusal, before any native takeover action. Devin's worktree-reuse test exceeded fifteen seconds. Both files passed separately without changes: `socketHostContract` passed 45 tests in 94.55 seconds, and `threadWorktreesNative` passed 16 in 41.02 seconds. The underlying Git refusal was not reproduced or established, so no speculative Git change is claimed; neither failure recurred in the next two complete runs.
+
+The second full run failed only the repository-wide encoding scan's fifteen-second deadline: 778 files passed, one failed and 58 skipped; 9,736 tests passed, one failed and 283 skipped; duration 1,497.09 seconds. The scan already opens each tracked file for only three bytes. `4ece14575` gives that whole-repository check a scoped sixty-second deadline; its BOM assertion and file coverage remain unchanged. It passed alone in 142 milliseconds of test time and in the final full suite. No global deadline or performance assertion was changed.
+
+### Final ordered gates
+
+All six commands ran in order on implementation `4ece14575`, after every code and regression fix. The later evidence commit changes only this note and two selected captures.
+
+| Command | Real result |
+| --- | --- |
+| `npm run typecheck` | Exit 0; all four TypeScript projects |
+| `npm run lint` | Exit 0 |
+| `npm test -- --maxWorkers=2` | Exit 0; 779 files passed, 58 skipped; 9,739 tests passed, 283 skipped; 1,162.68 seconds |
+| `npm run notices:verify` | Exit 0; 189 third-party notice components |
+| `npm run build` | Exit 0; main, host, preload and renderer |
+| `npx playwright test tests/e2e/watcher-gate.spec.ts` | Exit 0; all four journeys passed in 14.8 seconds |
+
+The prescribed memory command returned 6,498,960 KB before the first full run, 8,998,512 KB before the second and 10,709,852 KB before the final run. Each exceeded 3 GB. Free memory before the built-app checks was 12,790,696 KB. The final full run needed no isolated retry. SQLite experimental, jsdom canvas, fixture line-ending and dependency-directive warnings remain non-failing output.
+
+The built-app journeys check stable/Owl ordinary Send/reply, saved special-kind preservation, bridge gating, stable layout recovery, all five local-host-off room refusals, and the running Watcher and saved settings accepting a changed limit together. Dark/light, reduced motion and bounds pass at 1600 by 1000, 1280 by 800 and exactly 820 by 560 CSS pixels.
+
+Visually inspected this run's [Owl dark](../../artifacts/watcher-gate/wakeups-review-owl-dark-820x560.png) and [stable light](../../artifacts/watcher-gate/wakeups-review-stable-light-820x560.png) minimum-size captures. The sidebar, transcript and composer fit, and stable hides the saved Watcher rows while Owl exposes them. Both selected files match the inspected run images byte-for-byte and are not ignored. At this laptop's 150% display scaling they are 1230 by 840 device pixels. The main bundle was written at 22:19:20 local; the run captures at 22:19:57 and 22:19:52.
+
+No additional room-contract field or channel changed. The structured cause is private checkpoint storage; event IDs remain opaque strings within the existing bound and older IDs remain readable. CONTEXT.md is corrected for finding 8; these fixes settle no new domain decision, so ADR-0073 and the plan need no new amendment. Production dependencies remain exactly zod, node-pty and sherpa-onnx-node. No renderer file was edited, and existing file endings and UTF-8 without a BOM were retained.
+
+News still grants and answers nothing, and never resumes a worker Watcher stopped. Queue retries use the owned batching deadline and fetch no provider, Git or GitHub state; no Watcher poll timer was introduced. Ordinary threads and babysitting remain unchanged in their integration and gate proofs. There is no unfinished local implementation or required check. Packaged builds, paid native-provider turns, macOS, Linux and phones were not exercised. The lead owns remote delivery and the pull request; this work ran no push, rebase, stash, branch switch, new task worktree, nested review, publication or installation.
