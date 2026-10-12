@@ -245,7 +245,7 @@ export class TerminalScreenRules {
       if (work) return { detection: 'available', state: 'working', failed }
       // The default model, effort and folder row can be the footer when the shortcuts hint is hidden.
       const readyFooter = /(?:^|\s)\? for shortcuts(?:\s+\d+% context left)?(?:\s+⚠ \d+ warnings? · f2 to view)?$/iu.test(footer)
-        || /^GPT-[\p{L}\p{N}.-]+(?: (?:minimal|low|medium|high|xhigh|max))? · (?:\/|[A-Z]:[\\/]|~[\\/])\S.*$/iu.test(footer)
+        || /^GPT-[\p{L}\p{N}.-]+(?: (?:minimal|low|medium|high|xhigh|max))? · (?:~(?:[\\/]\S.*)?|(?:\/|[A-Z]:[\\/])(?:\S.*)?)(?: · \S.*)?$/iu.test(footer)
       if (bottom.slice(-4).some(line => /^›\s*(?:Ask Codex to do anything)?$/u.test(line)) && readyFooter) return { detection: 'available', state: 'idle', failed }
       const prompt = /^(?:Would you like to run the following command\?|Would you like to make the following edits\?|Would you like to apply these changes\?)$/mu.test(text)
       const choices = /^(?:›\s*)?1\.\s+Yes, proceed(?:\s|$)/mu.test(text) && /^(?:›\s*)?[2-9]\.\s+No, and tell Codex .+/mu.test(text)

@@ -33,6 +33,18 @@ describe('terminal agent run state', () => {
     expect(state.state).toBe('idle')
     expect(state.compatibility).toBe('available')
   })
+  it.each(['0.162.0', '0.162.1'].flatMap(version => ['~', '/', 'C:\\', 'C:/'].flatMap(folder => ['', ' · Say hi'].map(suffix => ({ version, folder, suffix })))))('settles Codex $version with a bare $folder folder footer$suffix', ({ version, folder, suffix }) => {
+    const state = new TerminalAgentStateMachine('run', 'codex', 120, 30)
+    const title = `OpenAI Codex (v${version})`
+    const footer = `GPT-6-Luna low · ${folder}${suffix}`
+    state.started(); state.setVisible(true)
+    state.output(redraw(`• Working (0s • esc to interrupt)\r\n› \r\n${footer}`, title))
+    expect(state.state).toBe('working')
+    state.hook(event('completed', { providerSessionId: 'session', turnId: 'turn' }))
+    state.output(redraw(`› \r\n${footer}`, title))
+    expect(state.state).toBe('idle')
+    expect(state.detection).toBe('available')
+  })
   it.each(['0.162.0', '0.162.1'])('keeps Codex %s model-footer detection bound to native readiness', version => {
     const state = new TerminalAgentStateMachine('run', 'codex', 120, 30)
     const title = `OpenAI Codex (v${version})`
