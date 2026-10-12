@@ -369,7 +369,8 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
     )
   } else {
     const navigation = app.navigation
-    const updateControl = <UpdateControl status={app.update} busy={updateFlow.busy} onActivate={updateFlow.activate} />
+    // Linux has no in-app updater (ADR-0062): pacman brings new versions, so the foot offers nothing to press.
+    const updateControl = app.platform === 'linux' ? null : <UpdateControl status={app.update} busy={updateFlow.busy} onActivate={updateFlow.activate} />
     const threadsPage = navigation === 'threads' || (navigation === 'memory' && !memoryEnabled)
     const layout = layoutFor(navigation, threadsPage)
     // A capture run holds the sidebar's clocks still.

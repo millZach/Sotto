@@ -199,6 +199,8 @@ export interface AppSettings {
   launchAtStartup: boolean
   startMinimized: boolean
   showWidgetWhenIdle: boolean
+  /** Linux-only, read-only, supplied by main: the shell pill has taken the floating widget's place. Never saved or patched. */
+  shellPillInUse?: boolean | undefined
   historyEnabled: boolean
   historyRetention: HistoryRetention
   onboardingComplete: boolean
@@ -262,7 +264,7 @@ export interface AppSettings {
 }
 
 export type SettingsPatch = Partial<
-  Omit<AppSettings, 'hotkey' | 'launchAtStartup' | 'worktreeCleanup' | 'omarchyTheme'>
+  Omit<AppSettings, 'hotkey' | 'launchAtStartup' | 'worktreeCleanup' | 'omarchyTheme' | 'shellPillInUse'>
 > & {
   /** Merge only the supplied cleanup rules with the latest saved settings. */
   worktreeCleanup?: Partial<WorktreeCleanupRules>
@@ -308,6 +310,7 @@ const fieldSchemas = {
   launchAtStartup: z.boolean(),
   startMinimized: z.boolean(),
   showWidgetWhenIdle: z.boolean(),
+  shellPillInUse: z.boolean().optional(),
   historyEnabled: z.boolean(),
   historyRetention: z.union([
     z.literal(25),

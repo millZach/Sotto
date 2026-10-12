@@ -129,6 +129,10 @@
 .settings-view .segmented-control button { padding-inline: 10px; }
 .settings-view .settings-input-action:has(> .tt-button) { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
 .settings-view .settings-input-action > .tt-button { justify-self: end; }
+/* A row whose control is a button rather than an input: Linux's compositor bindings, which open their setup steps.
+   Its label is a paragraph, not a label element, so it sheds the paragraph's margins to sit tight on its description. */
+.settings-view .settings-rows .tt-field > .tt-button { grid-area: control; justify-self: end; }
+.settings-view .settings-rows p.tt-field__label { margin: 0; }
 .settings-feedback { flex: none; padding: 16px 6vw 0; }
 .settings-view .settings-notice { width: 100%; max-width: 790px; margin: 0 auto; padding: 10px 14px; border-radius: 8px; font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
 .settings-view .settings-detail:has(.settings-feedback) .settings-scroll { padding-top: 20px; }
@@ -214,6 +218,7 @@
   [data-platform='linux'] .settings-view .settings-feedback { padding-right: 20px; }
   .settings-view .settings-rows .tt-field, .settings-view .account-rows > label, .settings-view .account-rows > .account-row, .settings-view .provider-default { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'label' 'description' 'control' 'error'; gap: 9px; }
   .settings-view .settings-rows .tt-field > .tt-input, .settings-view .settings-rows .tt-field > .tt-select { grid-area: control; }
+  .settings-view .settings-rows .tt-field > .tt-button { justify-self: start; }
   .settings-view .account-row__control { justify-content: flex-start; }
   .settings-view .providers-list { grid-template-columns: 1fr; }
 }
