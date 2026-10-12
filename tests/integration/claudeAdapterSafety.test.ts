@@ -297,6 +297,10 @@ describe('Claude recovery and safety', () => {
     { evidence: undefined, order: ['user', 'assistant'] },
     { evidence: 'result', order: ['assistant', 'user'] },
   ])('takes a slash command Claude Code answers itself without an echo (evidence: $evidence)', async ({ evidence, order }) => {
+    // These cases assert live-frame order. The transcript is written before the frames, so its
+    // automatic tail could otherwise recover the prompt first. The gated cases below cover reconciliation.
+    vi.spyOn(ClaudeSessionLog.prototype, 'poll').mockResolvedValue()
+    await f.adapter.pollSessionLogs()
     await writeFile(join(f.root, 'script.json'), JSON.stringify({ localCommand: chromeReply, evidence }))
     expect(await f.host.execute({ type: 'send', commandId: 'chrome', messageId: 'chrome', threadId: id, text: '/chrome' })).toEqual({ accepted: true })
     const messages = (await thread()).messages
@@ -306,6 +310,50 @@ describe('Claude recovery and safety', () => {
     await expect.poll(async () => (await thread()).status).toBe('idle')
     await writeFile(join(f.root, 'script.json'), '{}')
     expect(await f.host.execute({ type: 'send', commandId: 'after', messageId: 'after', threadId: id, text: 'Carry on' })).toEqual({ accepted: true })
+  })
+  it.each([
+    { evidence: undefined, transcript: 'before', order: ['user', 'assistant'] },
+    { evidence: 'result', transcript: 'before', order: ['user', 'assistant'] },
+    { evidence: undefined, transcript: 'after', order: ['user', 'assistant'] },
+    { evidence: 'result', transcript: 'after', order: ['assistant', 'user'] },
+  ])('reconciles a slash-command transcript arriving $transcript the live stream (evidence: $evidence)', async ({ evidence, transcript, order }) => {
+    const release = join(f.root, 'local-command-release')
+    const prompt = { id: 'chrome', role: 'user', text: '/chrome', commandId: 'chrome' }
+    const reply = { id: 'local-command-reply', role: 'assistant', text: chromeReply, commandId: undefined }
+    const expected = order[0] === 'user' ? [prompt, reply] : [reply, prompt]
+    const messages = async () => (await thread()).messages.map(({ id, role, text, commandId }) => ({ id, role, text, commandId }))
+    const transcriptWritten = () => expect.poll(async () => readFile(join(f.root, 'local-command-transcript-written')).then(() => true, () => false)).toBe(true)
+    await writeFile(join(f.root, 'script.json'), JSON.stringify({ localCommand: chromeReply, evidence, localCommandReplyId: reply.id,
+      ...(transcript === 'before' ? { holdLocalCommandStream: 'local-command-release' } : { holdLocalCommandTranscript: 'local-command-release' }) }))
+    const sending = f.host.execute({ type: 'send', commandId: 'chrome', messageId: 'chrome', threadId: id, text: '/chrome' })
+      .then(result => ({ result }), error => ({ error: error as Error }))
+    try {
+      if (transcript === 'before') {
+        await transcriptWritten()
+        await f.adapter.pollSessionLogs()
+        // Only transcript evidence can recover this identity while the confirming live frames are held.
+        expect(await messages()).toEqual([prompt])
+      } else {
+        expect(await sending).toEqual({ result: { accepted: true } })
+        await expect.poll(async () => (await thread()).status).toBe('idle')
+        expect(await messages()).toEqual(expected)
+      }
+      await writeFile(release, '')
+      await transcriptWritten()
+      await f.adapter.pollSessionLogs()
+      expect(await sending).toEqual({ result: { accepted: true } })
+      await expect.poll(async () => (await thread()).status).toBe('idle')
+      // Exact arrays require one prompt and one reply, with the same identities after both sources reconcile.
+      expect(await messages()).toEqual(expected)
+      expect((await f.driver.requests()).filter(record => record.method === 'user')).toHaveLength(1)
+      await writeFile(join(f.root, 'script.json'), '{}')
+      expect(await f.host.execute({ type: 'send', commandId: 'after', messageId: 'after', threadId: id, text: 'Carry on' })).toEqual({ accepted: true })
+      expect(await messages()).toEqual([...expected, { id: 'after', role: 'user', text: 'Carry on', commandId: 'after' }])
+      expect((await f.driver.requests()).filter(record => record.method === 'user')).toHaveLength(2)
+    } finally {
+      await writeFile(release, '')
+      await sending
+    }
   })
   it('reads a slash command it sent back from the transcript when nothing confirmed it', async () => {
     await writeFile(join(f.root, 'script.json'), JSON.stringify({ localCommand: chromeReply, evidence: 'none' }))
