@@ -357,11 +357,23 @@ test.describe("Watcher's room on the built app", () => {
       await threadsList(page).getByRole('button', { name: 'Open Weekly note beside Watcher' }).click()
       await expect(beside(page)).toHaveAttribute('aria-label', 'Weekly note')
       expect(await page.evaluate(async () => (await window.sotto!.agents!.get()).activeThreadId)).toBeNull()
-      // The room is as it was left after a trip to another room.
+      // The room is as it was left after a trip to another room, Watcher's reading position included, given a
+      // conversation long enough to scroll.
+      await page.evaluate(async master => {
+        await window.sottoE2E!.agentEvent!({ type: 'history', threadId: master, text: '', messages: Array.from({ length: 40 }, (_, index) => ({
+          id: `watcher-long-${index}`, role: index % 2 ? 'assistant' as const : 'user' as const, text: `Watcher history ${index}`,
+          createdAt: new Date(Date.UTC(2026, 6, 12, 18, index)).toISOString() })) })
+      }, CURRENT)
+      await expect(pane.getByText('Watcher history 39', { exact: true })).toBeVisible()
+      const watcherLog = pane.getByRole('log', { name: 'Thread transcript' })
+      await watcherLog.evaluate(element => { element.scrollTop = 300 })
+      await expect(pane.getByRole('button', { name: 'Jump to latest' })).toBeVisible()
       await switchTab(page, 'Threads').click()
       await expect(page.getByRole('complementary', { name: 'Thread sidebar' })).toBeVisible()
       await switchTab(page, 'Watcher').click()
       await expect(beside(page)).toHaveAttribute('aria-label', 'Weekly note')
+      await expect.poll(() => watcherLog.evaluate(element => element.scrollTop)).toBe(300)
+      await expect(pane.getByRole('button', { name: 'Jump to latest' })).toBeVisible()
       // Open in Threads takes the thread to the Threads room, selected.
       await beside(page).getByRole('button', { name: 'Open Weekly note in Threads' }).click()
       await expect(page.getByRole('complementary', { name: 'Thread sidebar' })).toBeVisible()

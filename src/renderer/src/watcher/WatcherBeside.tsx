@@ -30,10 +30,37 @@ export const roomView = {
 }
 export function useRoomView(): RoomView { return useSyncExternalStore(roomView.subscribe, roomView.get, roomView.get) }
 
-/** Where each beside thread's reader had scrolled to, when that was not its newest message: reopening it goes back there. */
+/**
+ * Where each reader in the room had scrolled to, Watcher's own and each beside thread's, when that was not its newest
+ * message: coming back to the room, or reopening a thread beside Watcher, goes back there.
+ */
 const readPositions = new Map<string, number>()
 /** Within this many pixels of the end, a transcript reads as at its newest message and follows what comes next. */
 const AT_END_PX = 24
+
+/**
+ * Keeps the reading position of the transcript in the pane `paneId` across that pane leaving the screen, for as long
+ * as the window lasts. It runs after the transcript's own first scroll to its newest message, which comes first
+ * because the transcript is deeper in the tree, and tells the transcript at once that its reader is not at the end,
+ * so nothing arriving pulls the reader away.
+ */
+export function useKeptReadingPosition(threadId: string, paneId: string): void {
+  useLayoutEffect(() => {
+    const transcript = document.getElementById(paneId)?.querySelector<HTMLElement>('.thread-workspace__transcript')
+    if (transcript == null) return
+    const saved = readPositions.get(threadId)
+    if (saved !== undefined) {
+      transcript.scrollTop = saved
+      transcript.dispatchEvent(new Event('scroll'))
+    }
+    const remember = (): void => {
+      if (transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight <= AT_END_PX) readPositions.delete(threadId)
+      else readPositions.set(threadId, transcript.scrollTop)
+    }
+    transcript.addEventListener('scroll', remember, { passive: true })
+    return () => transcript.removeEventListener('scroll', remember)
+  }, [threadId, paneId])
+}
 
 /** The widest share Watcher may take, and the narrowest, so that each pane keeps its minimum where the room allows it. */
 function shareRange(width: number): readonly [number, number] {
@@ -111,21 +138,8 @@ export function BesidePane({ row, state, command, store, focused, underControls,
   readonly onOpenInThreads: () => void
 }): ReactNode {
   const threadId = row.thread.id
-  const section = useRef<HTMLElement>(null)
-  // After the transcript's own first scroll to its newest message, which runs first because it is deeper in the tree.
-  useLayoutEffect(() => {
-    const transcript = section.current?.querySelector<HTMLElement>('.thread-workspace__transcript')
-    if (transcript == null) return
-    const saved = readPositions.get(threadId)
-    if (saved !== undefined) transcript.scrollTop = saved
-    const remember = (): void => {
-      if (transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight <= AT_END_PX) readPositions.delete(threadId)
-      else readPositions.set(threadId, transcript.scrollTop)
-    }
-    transcript.addEventListener('scroll', remember, { passive: true })
-    return () => transcript.removeEventListener('scroll', remember)
-  }, [threadId])
-  return <section ref={section} id={BESIDE_PANE_ID} className="thread-pane watcher-beside" data-thread-id={threadId} data-focused={focused || undefined}
+  useKeptReadingPosition(threadId, BESIDE_PANE_ID)
+  return <section id={BESIDE_PANE_ID} className="thread-pane watcher-beside" data-thread-id={threadId} data-focused={focused || undefined}
     data-under-controls={underControls || undefined} role="region" aria-label={row.thread.title}
     onFocusCapture={onFocus} onPointerDownCapture={onFocus}
     onKeyDown={event => {

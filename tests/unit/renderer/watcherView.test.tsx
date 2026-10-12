@@ -226,6 +226,53 @@ describe("Watcher's room", () => {
     expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'select-thread' }))
   })
 
+  it('keeps Watcher’s reading position, and a beside thread’s, for a trip to another room', async () => {
+    const ROW = 100
+    const VIEW = 500
+    const tops = new WeakMap<Element, number>()
+    const height = (element: HTMLElement): number => element.querySelectorAll('.thread-message').length * ROW
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function (this: HTMLElement) { return height(this) })
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(() => VIEW)
+    vi.spyOn(HTMLElement.prototype, 'scrollTop', 'get').mockImplementation(function (this: HTMLElement) { return tops.get(this) ?? 0 })
+    vi.spyOn(HTMLElement.prototype, 'scrollTop', 'set').mockImplementation(function (this: HTMLElement, value: number) { tops.set(this, Math.max(0, Math.min(value, height(this) - VIEW))) })
+    try {
+      const state = stateWithWatcher()
+      const history = (id: string) => Array.from({ length: 40 }, (_, index) => ({ id: `${id}-${index}`, role: index % 2 ? 'assistant' as const : 'user' as const, text: `${id} ${index}`, createdAt: at }))
+      state.host.threads.find(thread => thread.id === 'watcher')!.messages = history('watcher')
+      state.host.threads.find(thread => thread.id === 'footer-links')!.messages = history('footer')
+      mockApp('watcher')
+      mockAgents(state)
+      const { bridge } = fakeBridge(roomState())
+      const tree = (room: boolean) => <WatcherRoomProvider bridge={bridge}><SidebarChromeProvider updateControl={null}>
+        {room ? <WatcherView now={NOW} /> : <p>Threads</p>}
+      </SidebarChromeProvider></WatcherRoomProvider>
+      const view = render(tree(true))
+      await paneReady()
+      const transcript = (pane: string) => within(screen.getByRole('region', { name: pane })).getByRole('log', { name: 'Thread transcript' })
+      expect(transcript('Watcher').scrollTop).toBe(40 * ROW - VIEW)
+      transcript('Watcher').scrollTop = 1_200
+      fireEvent.scroll(transcript('Watcher'))
+      fireEvent.click(screen.getByRole('button', { name: 'All threads, 9. Show the list' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Open Footer links beside Watcher' }))
+      transcript('Footer links').scrollTop = 700
+      fireEvent.scroll(transcript('Footer links'))
+      // To Threads and back: both panes come back where they were read, not at their newest messages.
+      view.rerender(tree(false))
+      view.rerender(tree(true))
+      await paneReady()
+      expect(transcript('Watcher').scrollTop).toBe(1_200)
+      expect(transcript('Footer links').scrollTop).toBe(700)
+      expect(screen.getAllByRole('button', { name: 'Jump to latest' })).toHaveLength(2)
+      // A reader back at the end follows again, and the next return finds the end.
+      transcript('Watcher').scrollTop = 40 * ROW
+      fireEvent.scroll(transcript('Watcher'))
+      view.rerender(tree(false))
+      view.rerender(tree(true))
+      await paneReady()
+      expect(transcript('Watcher').scrollTop).toBe(40 * ROW - VIEW)
+    } finally { vi.restoreAllMocks() }
+  })
+
   it('keeps Watcher on its own provider before its first send, since another provider is another Watcher', async () => {
     const state = stateWithWatcher()
     state.host.threads.find(thread => thread.id === 'watcher')!.nativeSessionStarted = false

@@ -21,7 +21,7 @@ import { describeThreads, providerKey, type ThreadRow } from '../agents/threadFa
 import { effortChoices, WatcherPermission } from '../agents/ThreadOptions'
 import { ThreadPane } from '../agents/ThreadPane'
 import { useWatcherRoom, type WatcherRoom } from './watcherRoom'
-import { BESIDE_PANE_ID, BesideDivider, BesidePane, roomView, shownShare, useRoomView } from './WatcherBeside'
+import { BESIDE_PANE_ID, BesideDivider, BesidePane, roomView, shownShare, useKeptReadingPosition, useRoomView } from './WatcherBeside'
 import { firstMessage, useFirstMessage } from './watcherFirstMessage'
 import { WatcherDock } from './WatcherDock'
 import { WatcherGlance } from './WatcherGlance'
@@ -29,6 +29,7 @@ import { overviewCount, useOverview, WatcherOverviewList, type OpenThread, type 
 import { WatcherOwl } from './WatcherOwl'
 
 const WATCHER_PROMPT_ID = 'watcher-prompt'
+const WATCHER_PANE_ID = 'watcher-pane'
 const LIMITS = [1, 2, 3, 4, 5, 6, 7, 8] as const
 type WatcherProvider = WatcherOpenRequest['provider']
 const WATCHER_PROVIDERS: ReadonlySet<string> = new Set<WatcherProvider>(['codex', 'claude', 'grok'])
@@ -229,6 +230,8 @@ function WatcherPane({ state, row, header, error, focused, now }: {
   readonly now: number | undefined
 }): ReactNode {
   const agents = useAgents()
+  // Its reading position is kept for a trip to another room, as a beside thread's is for its next opening.
+  useKeptReadingPosition(row.thread.id, WATCHER_PANE_ID)
   // The first entry's composer had focus and is gone, or the room opened before Watcher's thread arrived: focus left
   // with nowhere to be goes to Watcher's own composer.
   useLayoutEffect(() => {
@@ -377,7 +380,7 @@ export function WatcherView({ now: fixedNow, updateControl }: {
       <div className="thread-workspace__body">
         <div className="thread-panes">
           <div ref={area} className="thread-panes__area" style={{ '--watcher-share': share } as CSSProperties}>
-            <section className="thread-pane watcher-pane" data-thread-id={watcherId ?? undefined} data-focused={focusedPane === 'watcher' || !beside || undefined}
+            <section id={WATCHER_PANE_ID} className="thread-pane watcher-pane" data-thread-id={watcherId ?? undefined} data-focused={focusedPane === 'watcher' || !beside || undefined}
               data-under-controls={!beside || undefined} role="region" aria-label="Watcher"
               onFocusCapture={() => setFocusedPane('watcher')} onPointerDownCapture={() => setFocusedPane('watcher')}>
               <OwlRoomSky />
