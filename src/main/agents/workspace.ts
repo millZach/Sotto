@@ -1,3 +1,4 @@
+import { summarizePullRequestChecks } from './pullRequestCheckState'
 import type { PullRequestObservation } from './watcherEvidence'
 import { threadsInCheckout } from './checkoutCandidates'
 import { CheckoutMutations, checkoutMutationRefusal, type CheckoutHolder, type CheckoutPendingWork } from './checkoutMutations'
@@ -219,9 +220,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   setWatcherPrObserver(observer: (read: PullRequestObservation) => void): void { if (this.watcherEnabled) this.watcherPrObserver = observer }
   private observePullRequest(view: GitPullRequestView): void {
     if (!this.watcherPrObserver) return
-    const checks = !view.headId || view.checksUnknown || !view.checks.length ? 'unknown'
-      : view.checks.some(check => ['failure', 'cancelled', 'action-required'].includes(check.status)) ? 'failed'
-      : view.checks.some(check => check.status === 'pending') ? 'pending' : 'passed'
+    const checks = summarizePullRequestChecks(view.headId, view.checks, view.checksUnknown)
     this.watcherPrObserver({ url: view.url, head: view.headId ?? null, observedAt: view.observedAt ?? new Date().toISOString(),
       state: view.state, availability: 'available', checks, ...(checks !== 'unknown' ? { checkCount: view.checks.length } : {}),
       reviewApproved: view.reviewDecision === 'approved', autoMerge: view.autoMerge !== null })

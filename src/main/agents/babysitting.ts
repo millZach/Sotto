@@ -415,7 +415,7 @@ export class Babysitter {
     const checksRead = checks ? detail?.checks != null : true
     const refusedChecks = !checks ? last?.refusedChecks ?? 0 : checksRead ? 0 : (last?.refusedChecks ?? 0) + 1
     const backOff = !checksRead && refusedChecks >= REFUSED_CHECKS_BEFORE_BACK_OFF
-    const observation = this.options.observed ? pullRequestObservation(fingerprint, detail, new Date(now).toISOString(), last?.observation) : undefined
+    const observation = this.options.observed ? pullRequestObservation(fingerprint, detail, new Date(now).toISOString(), last?.observation, checks) : undefined
     if (observation) this.options.observed?.(observation)
     this.lastReads.set(group.key, {
       ...(observation ? { observation } : {}),

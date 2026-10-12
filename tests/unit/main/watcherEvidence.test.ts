@@ -58,3 +58,20 @@ it('bounds the retained projection and fingerprints facts rather than repeated r
   for (let n = 0; n < 200; n++) store.put(String(n), { source: 'checkpoint', target: centerTarget, observedAt: centerTime, freshness: 'fresh', availability: 'available', fact: 'files-changed' })
   expect(store.read(centerTarget)).toHaveLength(100)
 })
+
+
+it('reuses checks only for unrequested same-URL same-head details and never for refused or mismatched reads', () => {
+  const previous = pullRequestObservation(fingerprint, { head: 'head-a', rateLimit: null,
+    checks: [{ name: 'build', status: 'success', required: true, url: null }], remarks: [] }, centerTime)
+  const remarksOnly = { head: 'head-a', rateLimit: null, checks: null, remarks: [] }
+  expect(pullRequestObservation(fingerprint, remarksOnly, centerTime, previous, false)).toMatchObject({ checks: 'passed', checkCount: 1 })
+  for (const read of [
+    pullRequestObservation(fingerprint, remarksOnly, centerTime, previous, true),
+    pullRequestObservation(fingerprint, { ...remarksOnly, head: 'other-head' }, centerTime, previous, false),
+    pullRequestObservation(fingerprint, remarksOnly, centerTime, { ...previous, url: 'https://github.com/o/r/pull/2' }, false),
+    pullRequestObservation(fingerprint, remarksOnly, centerTime, { ...previous, availability: 'unavailable' }, false),
+  ]) {
+    expect(read.checks).toBe('unknown')
+    expect(read.checkCount).toBeUndefined()
+  }
+})

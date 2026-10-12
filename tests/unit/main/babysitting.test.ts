@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { Babysitter, type BabysitEvent, type BabysitStore, type BabysitThread } from '../../../src/main/agents/babysitting'
 import { COMMENT_ONLY_LIMIT, FAILED_READ_LIMIT, wakeUpPartDue, type BabysitNews, type BabysitRecord } from '../../../src/main/agents/babysitNews'
 import { GitHubRateLimit } from '../../../src/main/agents/github'
+import type { PullRequestObservation } from '../../../src/main/agents/watcherEvidence'
 import { DETAIL_QUERY, fingerprintQuery } from '../../../src/main/agents/githubBabysitReads'
 import { pullRequestKey } from '../../../src/shared/gitPullRequests'
 import { scriptedGitHub, type ScriptedPull } from '../../fixtures/babysitGitHub'
@@ -36,20 +37,22 @@ function memoryStore(threads: Record<string, ThreadSetup>) {
   return { store, records, threads, unlink }
 }
 
-function harness(pulls: ScriptedPull[], threads: Record<string, ThreadSetup>, options: { viewer?: string } = {}) {
+function harness(pulls: ScriptedPull[], threads: Record<string, ThreadSetup>, options: { viewer?: string; observe?: boolean } = {}) {
   let now = START
   const clock = { now: () => now, advance: (minutes: number) => { now += minutes * 60_000 } }
   const github = scriptedGitHub(pulls, { now: clock.now, ...options })
   const memory = memoryStore(threads)
   const delivered: Array<{ threadId: string; news: BabysitNews }> = []
   const events: BabysitEvent[] = []
+  const observations: PullRequestObservation[] = []
   let refuse = 0
   const rateLimit = new GitHubRateLimit({ now: clock.now })
   const babysitter = new Babysitter({ store: memory.store, rateLimit, run: github.run, now: clock.now, log: event => events.push(event),
+    ...(options.observe ? { observed: (read: PullRequestObservation) => observations.push(read) } : {}),
     deliver: async (threadId, news) => { if (refuse > 0) { refuse--; throw new Error('not sent') } delivered.push({ threadId, news }) } })
   /** One pass two minutes after the last, as the timer runs them. */
   const pass = async () => { clock.advance(2); await babysitter.pass() }
-  return { babysitter, github, memory, delivered, events, clock, rateLimit, pass, refuseDeliveries: (count: number) => { refuse = count },
+  return { babysitter, github, memory, delivered, events, observations, clock, rateLimit, pass, refuseDeliveries: (count: number) => { refuse = count },
     told: (threadId: string, number = 1) => memory.records.get(threadId)?.find(record => record.number === number)?.told,
     changes: () => delivered.flatMap(item => item.news.changes) }
 }
@@ -630,4 +633,26 @@ describe('whether a part of a wake-up may still go', () => {
     expect(wakeUpPartDue(part(), [], true)).toBe(false)
     expect(wakeUpPartDue(part(), [{ ...standing[0]!, startedAt: at(5) }], true)).toBe(false)
   })
+})
+
+
+it('keeps same-head check evidence across remarks-only and unchanged reads without changing babysitting news', async () => {
+  const pull: ScriptedPull = { number: 1, head: 'same-head', checks: [{ name: 'build', state: 'SUCCESS', required: true }] }
+  const h = harness([pull], { a: { links: [url(1)] } }, { observe: true })
+  await h.babysitter.start('a', url(1), 'user')
+  await h.pass()
+  expect(h.observations.at(-1)).toMatchObject({ head: 'same-head', checks: 'passed', checkCount: 1 })
+  pull.comments = [{ id: 'new-comment', author: 'reviewer', at: at(3) }]
+  await h.pass()
+  expect(h.observations.at(-1)).toMatchObject({ head: 'same-head', checks: 'passed', checkCount: 1 })
+  await h.pass()
+  expect(h.observations.at(-1)).toMatchObject({ head: 'same-head', checks: 'passed', checkCount: 1 })
+  expect(h.changes().map(change => change.kind)).toEqual(['checks-passed', 'remarks'])
+  const details = h.github.questions.filter(question => question.kind === 'detail')
+  expect(details).toHaveLength(2)
+  expect(details[1]!.variables.checks).toBe('false')
+  pull.head = 'new-head'
+  pull.refuseChecks = 'rollup'
+  await h.pass()
+  expect(h.observations.at(-1)).toMatchObject({ head: 'new-head', checks: 'unknown' })
 })
