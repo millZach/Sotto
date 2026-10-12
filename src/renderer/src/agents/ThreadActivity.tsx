@@ -272,7 +272,9 @@ export const ActivityGroupView = memo(function ActivityGroupView({ group, live, 
   const turnError = group.turn?.error
   const canFold = !live && group.records.length > 0
   const name = [headline, summary].filter(Boolean).join(', ') || 'Activity'
+  // A failed turn's own group is where a press that opens the thread at its failed turn lands.
   return <section className="thread-activity" data-turn-id={group.turnId} data-live={live || undefined} data-expanded={expanded || undefined}
+    data-turn-outcome={group.turn?.status === 'failed' ? 'failed' : undefined}
     aria-label={name} onKeyDown={foldOnEscape(canFold && expanded, summary => { onDisclosure?.(summary); setChoice(false) })}>
     {canFold ? <button type="button" className="thread-activity__summary tt-focusable" aria-expanded={expanded} aria-controls={expanded ? listId : undefined} aria-label={name}
       onClick={event => { onDisclosure?.(event.currentTarget); setChoice(!expanded) }}>

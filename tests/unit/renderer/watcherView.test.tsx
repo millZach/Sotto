@@ -464,6 +464,48 @@ describe("Watcher's room", () => {
     expect(screen.queryByRole('region', { name: 'Grok voice previews' })).toBeNull()
   })
 
+  it('opens a thread at its failed turn on that turn’s line, not on its title', async () => {
+    const state = stateWithWatcher()
+    const stall = state.host.threads.find(thread => thread.id === 'wav-stall')!
+    stall.activities = [
+      { id: 'stall-turn', turnId: 'stall-1', sequence: 0, kind: 'turn', status: 'failed', title: 'Turn', afterMessageId: 'wav-stall-1', durationMs: 124_000, timingSource: 'provider',
+        error: 'The playback test failed again.' },
+      { id: 'stall-test', turnId: 'stall-1', sequence: 1, kind: 'command', status: 'failed', title: 'Command', afterMessageId: 'wav-stall-1', command: 'npm test -- wav', exitCode: 1 },
+    ]
+    renderRoom(state, roomState())
+    await paneReady()
+    fireEvent.click(screen.getByRole('button', { name: 'Open Streaming WAV stall at its failed turn' }))
+    const beside = await screen.findByRole('region', { name: 'Streaming WAV stall' })
+    const failed = within(beside).getByRole('button', { name: 'Failed after 2m 04s' })
+    await waitFor(() => expect(failed).toHaveFocus())
+    expect(failed.closest('[data-turn-outcome="failed"]')).toHaveTextContent('The playback test failed again.')
+  })
+
+  it('opens a failed thread with no turn record at the end of its transcript, where the failed turn ended, over a kept place', async () => {
+    layOutTranscripts()
+    try {
+      const state = stateWithWatcher()
+      state.host.threads.find(thread => thread.id === 'wav-stall')!.messages = history('stall')
+      renderRoom(state, roomState())
+      await paneReady()
+      const transcript = () => within(screen.getByRole('region', { name: 'Streaming WAV stall' })).getByRole('log', { name: 'Thread transcript' })
+      // Read earlier in it once, and close it: that place is kept for its next opening.
+      fireEvent.click(screen.getByRole('button', { name: 'All threads, 9. Show the list' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Open Streaming WAV stall beside Watcher' }))
+      await screen.findByRole('region', { name: 'Streaming WAV stall' })
+      transcript().scrollTop = 700
+      fireEvent.scroll(transcript())
+      fireEvent.click(screen.getByRole('button', { name: 'Close Streaming WAV stall pane' }))
+      // Closing hands focus back on the next turn of the event loop; let it land before the next press.
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+      // Opened at its failed turn, it shows the end, where that turn ended, with the transcript focused.
+      fireEvent.click(screen.getByRole('button', { name: 'Open Streaming WAV stall at its failed turn' }))
+      await screen.findByRole('region', { name: 'Streaming WAV stall' })
+      await waitFor(() => expect(transcript()).toHaveFocus())
+      expect(transcript().scrollTop).toBe(40 * ROW - VIEW)
+    } finally { vi.restoreAllMocks() }
+  })
+
   it('opens a thread in the Threads room, selected, with Shift or Open in Threads', async () => {
     const { command, navigate } = renderRoom(stateWithWatcher(), roomState())
     await paneReady()

@@ -338,6 +338,17 @@ test.describe("Watcher's room on the built app", () => {
       await page.keyboard.press('Escape')
       await expect(beside(page)).toHaveCount(0)
       await expect(glanceName).toBeFocused()
+      // A thread waiting after a failed turn opens at that turn: with no turn record to point at, the end of its
+      // transcript, where the failed turn ended, with the transcript focused.
+      const failedName = page.getByRole('button', { name: 'Open Streaming WAV stall at its failed turn' })
+      await failedName.click()
+      await expect(beside(page)).toHaveAttribute('aria-label', 'Streaming WAV stall')
+      const failedLog = beside(page).getByRole('log', { name: 'Thread transcript' })
+      await expect(failedLog).toBeFocused()
+      expect(await failedLog.evaluate(element => element.scrollHeight - element.scrollTop - element.clientHeight)).toBeLessThanOrEqual(1)
+      await page.keyboard.press('Escape')
+      await expect(beside(page)).toHaveCount(0)
+      await expect(failedName).toBeFocused()
 
       // From the list: the thread opens at its title; its draft is its own and survives closing.
       await allThreads(page).click()

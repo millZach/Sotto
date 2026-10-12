@@ -53,13 +53,15 @@ function ActivityGroups({ groups, context, outcome }: {
  * A finished turn's work, folded to one line above its final reply: the replies written on the way and every
  * activity group, in the order they happened. The turn's own error stays in view.
  */
-function TurnWork({ headline, error, changes, onDisclosure, children }: {
+function TurnWork({ headline, error, failed, changes, onDisclosure, children }: {
   readonly headline: string; readonly error?: string | undefined; readonly changes: readonly TurnChange[]
+  /** The turn failed: its line is where a press that opens the thread at its failed turn lands. */
+  readonly failed: boolean
   readonly onDisclosure: (element: HTMLElement) => void; readonly children: ReactNode
 }): ReactNode {
   const [open, setOpen] = useState(false)
   const bodyId = useId()
-  return <section className="thread-work" data-expanded={open || undefined} aria-label={headline}
+  return <section className="thread-work" data-expanded={open || undefined} data-turn-outcome={failed ? 'failed' : undefined} aria-label={headline}
     onKeyDown={foldOnEscape(open, summary => { onDisclosure(summary); setOpen(false) })}>
     <button type="button" className="thread-work__summary tt-focusable" aria-expanded={open} aria-controls={open ? bodyId : undefined}
       onClick={event => { onDisclosure(event.currentTarget); setOpen(value => !value) }}>
@@ -215,7 +217,7 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   const moments = [...turn.replies.map(message => message.createdAt), ...groups.flatMap(group => group.records.map(record => record.completedAt ?? record.startedAt))]
   return <>
     {turn.user ? article(turn.user) : null}
-    <TurnWork headline={workHeadline(lifecycle, context.running, turn.user?.createdAt, moments)} error={lifecycle?.error}
+    <TurnWork headline={workHeadline(lifecycle, context.running, turn.user?.createdAt, moments)} error={lifecycle?.error} failed={lifecycle?.status === 'failed'}
       changes={turnChanges(groups)} onDisclosure={context.onDisclosure}>
       {everything.filter(message => message !== final).map(message => <React.Fragment key={message.id}>
         {message === turn.user || unfolded.has(message) ? null : article(message)}

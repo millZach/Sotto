@@ -22,7 +22,7 @@ import { effortChoices, WatcherPermission } from '../agents/ThreadOptions'
 import { ThreadPane } from '../agents/ThreadPane'
 import { BrowserPageRouteContext } from '../tools/webLinks'
 import { useWatcherRoom, type WatcherRoom } from './watcherRoom'
-import { BESIDE_PANE_ID, BesideDivider, BesidePane, roomView, shownShare, useKeptReadingPosition, useRoomView } from './WatcherBeside'
+import { BESIDE_PANE_ID, BesideDivider, BesidePane, historyDrawn, roomView, shownShare, useKeptReadingPosition, useRoomView } from './WatcherBeside'
 import { firstMessage, useFirstMessage } from './watcherFirstMessage'
 import { WatcherDock } from './WatcherDock'
 import { WatcherGlance } from './WatcherGlance'
@@ -246,16 +246,40 @@ function WatcherPane({ state, row, header, error, focused, now }: {
   </BrowserPageRouteContext.Provider>
 }
 
-/** Puts focus where a thread opened beside Watcher should take it: its request card when opened at what it waits on, otherwise its title. */
+/** Room left above a failed turn's line when it is brought into view, so the line does not sit flush on the edge. */
+const FAILURE_MARGIN_PX = 12
+
+/**
+ * Puts focus where a thread opened beside Watcher should take it. Opened at what it waits on: its request card, or, for
+ * a thread that waits on the user after a failed turn, that turn's line ("Failed after …") brought into view, or the
+ * end of its transcript when no turn record says where it failed, since the failure is then its latest turn. Otherwise
+ * its title.
+ */
 function focusBeside(atRequest: boolean): void {
   const pane = document.getElementById(BESIDE_PANE_ID)
   if (pane === null) return
   const card = atRequest ? pane.querySelector<HTMLElement>('.agent-request[data-kind]') : null
+  if (atRequest && card === null && focusFailure(pane)) return
   const target = card ?? pane.querySelector<HTMLElement>('.thread-workspace__head h2')
   if (target === null) return
   if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1')
   target.focus({ preventScroll: card === null })
   card?.scrollIntoView?.({ block: 'nearest' })
+}
+
+/** Brings a beside thread's latest failed turn into view and focuses its line; false when it has no transcript. */
+function focusFailure(pane: HTMLElement): boolean {
+  const transcript = pane.querySelector<HTMLElement>('.thread-workspace__transcript')
+  if (transcript === null) return false
+  const failure = [...transcript.querySelectorAll<HTMLElement>('[data-turn-outcome="failed"]')].at(-1)
+  if (failure === undefined) transcript.scrollTop = transcript.scrollHeight
+  else transcript.scrollTop += failure.getBoundingClientRect().top - transcript.getBoundingClientRect().top - FAILURE_MARGIN_PX
+  // The transcript learns at once whether its reader is still at the end.
+  transcript.dispatchEvent(new Event('scroll'))
+  const line = failure === undefined ? transcript : failure.querySelector<HTMLElement>(':scope > button') ?? failure
+  if (!line.hasAttribute('tabindex')) line.setAttribute('tabindex', '-1')
+  line.focus({ preventScroll: true })
+  return true
 }
 
 /**
@@ -321,10 +345,12 @@ export function WatcherView({ now: fixedNow, updateControl }: {
     // Only on arrival; later renders leave focus where the user put it.
   }, [])
 
-  // A thread just opened beside Watcher takes focus once its pane is drawn.
+  // A thread just opened beside Watcher takes focus once its pane is drawn, and, opened at what it waits on, once its
+  // history is too, so that a kept reading position put back when the history arrives cannot move it off the failure.
   useEffect(() => {
     const wanted = pendingFocus.current
     if (wanted === null || besideRow?.thread.id !== wanted.threadId) return
+    if (wanted.atRequest && !historyDrawn(besideRow.thread) && besideRow.thread.historyStatus !== 'error') return
     pendingFocus.current = null
     focusBeside(wanted.atRequest)
   })
