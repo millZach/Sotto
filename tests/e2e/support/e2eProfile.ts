@@ -5,7 +5,7 @@ import { requireOwnedE2EProfile } from '../../../scripts/e2e-profile-policy.mjs'
 import type { AppSettings } from '../../../src/shared/settings'
 
 export async function removeOwnedE2EProfile(directory: string): Promise<void> {
-  await rm(requireOwnedE2EProfile(directory), { recursive: true, force: true })
+  await rm(requireOwnedE2EProfile(directory), { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
 }
 
 /** Keep the owner across relaunches; dispose only after every application using the profile closes. */
