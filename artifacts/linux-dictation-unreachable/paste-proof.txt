@@ -1,36 +1,37 @@
-Started Sotto PID 3617505 in sotto-proof-bf67e6800f6e4d1aaae027669e0e7e09-0.scope
-Started Chromium PID 3617671 in sotto-proof-bf67e6800f6e4d1aaae027669e0e7e09-1.scope
-Started foot PID 3617825 in sotto-proof-bf67e6800f6e4d1aaae027669e0e7e09-2.scope
-Started clipboard sentinel PID 3617911 in sotto-proof-bf67e6800f6e4d1aaae027669e0e7e09-3.scope
-Started wtype PID 3617935 in sotto-proof-bf67e6800f6e4d1aaae027669e0e7e09-4.scope
-PASS: Chromium after wtype; deliverOutput=pasted; received="xSotto Chromium after wtype — café 🚀 ✓"
-Started clipboard sentinel PID 3618016 in sotto-proof-bf67e6800f6e4d1aaae027669e0e7e09-5.scope
-Started ydotool PID 3618044 in sotto-proof-bf67e6800f6e4d1aaae027669e0e7e09-6.scope
-PASS: Chromium after ydotool; deliverOutput=pasted; received="xSotto Chromium after ydotool — café 🚀 ✓"
-Started clipboard sentinel PID 3618119 in sotto-proof-bf67e6800f6e4d1aaae027669e0e7e09-7.scope
-Started PRIMARY sentinel PID 3618144 in sotto-proof-bf67e6800f6e4d1aaae027669e0e7e09-8.scope
+Started Sotto PID 3778174 in sotto-proof-b8e8be530f4842339dcb3378fd89e135-0.scope
+Started Chromium PID 3778393 in sotto-proof-b8e8be530f4842339dcb3378fd89e135-1.scope
+Started foot PID 3778554 in sotto-proof-b8e8be530f4842339dcb3378fd89e135-2.scope
+Started clipboard sentinel PID 3778641 in sotto-proof-b8e8be530f4842339dcb3378fd89e135-3.scope
 Nothing is copied
-Started wtype PID 3618155 in sotto-proof-bf67e6800f6e4d1aaae027669e0e7e09-9.scope
+Started wtype PID 3778663 in sotto-proof-b8e8be530f4842339dcb3378fd89e135-4.scope
+PASS: Chromium after wtype; deliverOutput=pasted; received="xSotto Chromium after wtype — café 🚀 ✓"
+Started clipboard sentinel PID 3778736 in sotto-proof-b8e8be530f4842339dcb3378fd89e135-5.scope
+Started ydotool PID 3778765 in sotto-proof-b8e8be530f4842339dcb3378fd89e135-6.scope
+PASS: Chromium after ydotool; deliverOutput=pasted; received="xSotto Chromium after ydotool — café 🚀 ✓"
+Started clipboard sentinel PID 3778841 in sotto-proof-b8e8be530f4842339dcb3378fd89e135-7.scope
+Started PRIMARY sentinel PID 3778864 in sotto-proof-b8e8be530f4842339dcb3378fd89e135-8.scope
+Nothing is copied
+Started wtype PID 3778875 in sotto-proof-b8e8be530f4842339dcb3378fd89e135-9.scope
 PASS: foot after wtype; deliverOutput=pasted; received="xSotto foot after wtype — café 🚀 ✓"
-Started clipboard sentinel PID 3618230 in sotto-proof-bf67e6800f6e4d1aaae027669e0e7e09-10.scope
-Started PRIMARY sentinel PID 3618255 in sotto-proof-bf67e6800f6e4d1aaae027669e0e7e09-11.scope
-Started ydotool PID 3618268 in sotto-proof-bf67e6800f6e4d1aaae027669e0e7e09-12.scope
+Started clipboard sentinel PID 3778950 in sotto-proof-b8e8be530f4842339dcb3378fd89e135-10.scope
+Started PRIMARY sentinel PID 3778976 in sotto-proof-b8e8be530f4842339dcb3378fd89e135-11.scope
+Started ydotool PID 3778989 in sotto-proof-b8e8be530f4842339dcb3378fd89e135-12.scope
 PASS: foot after ydotool; deliverOutput=pasted; received="xSotto foot after ydotool — café 🚀 ✓"
 PASS: actual Sotto output reaches Chromium and stock foot after both keyboards
-Stopped Sotto PID 3617505
-Stopped Chromium PID 3617671
-Stopped foot PID 3617825
-Stopped clipboard sentinel PID 3617911
-Stopped wtype PID 3617935
-Stopped clipboard sentinel PID 3618016
-Stopped ydotool PID 3618044
-Stopped clipboard sentinel PID 3618119
-Stopped PRIMARY sentinel PID 3618144
-Stopped wtype PID 3618155
-Stopped clipboard sentinel PID 3618230
-Stopped PRIMARY sentinel PID 3618255
-Stopped ydotool PID 3618268
-Stopped proof slice app-sottoproofbf67e6800f6e4d1aaae027669e0e7e09.slice
+Stopped Sotto PID 3778174
+Stopped Chromium PID 3778393
+Stopped foot PID 3778554
+Stopped clipboard sentinel PID 3778641
+Stopped wtype PID 3778663
+Stopped clipboard sentinel PID 3778736
+Stopped ydotool PID 3778765
+Stopped clipboard sentinel PID 3778841
+Stopped PRIMARY sentinel PID 3778864
+Stopped wtype PID 3778875
+Stopped clipboard sentinel PID 3778950
+Stopped PRIMARY sentinel PID 3778976
+Stopped ydotool PID 3778989
+Stopped proof slice app-sottoproofb8e8be530f4842339dcb3378fd89e135.slice
 Recorded PIDs still running: []
 Proof cgroup processes after cleanup: []
 Owned processes still running: []

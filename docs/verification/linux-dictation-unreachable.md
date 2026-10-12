@@ -47,10 +47,10 @@ All captures were opened and inspected. The terminal intentionally has echo off,
 
 ## Automated verification
 
-- `mise exec node@24.21.0 -- npm test -- --maxWorkers=2 tests/unit/main/dictationClient.test.ts tests/unit/main/dictationUnavailableNotice.test.ts tests/integration/dictationUnavailable.test.ts tests/integration/dictationSocket.test.ts`: 87 passed.
-- Real child clients and a recording notify-send fixture prove one notification across an F9 start/stop pair, cancellation, concurrent repeats and cooldown expiry, plus refused sockets and accepted/rejected commands.
+- `mise exec node@24.21.0 -- npm test -- --maxWorkers=2 tests/unit/main/dictationClient.test.ts tests/unit/main/dictationUnavailableNotice.test.ts tests/integration/dictationUnavailable.test.ts tests/integration/dictationSocket.test.ts`: 88 passed.
+- Real child clients and a recording notify-send fixture prove one notification across an F9 start/stop pair, cancellation, concurrent repeats and cooldown expiry, plus refused sockets, accepted/rejected commands and SIGKILL recovery.
 - Unit coverage checks argv, fixed copy, quiet verbs, invalid runtime and endpoint, notification failure, timeouts and rejected replies.
-- Independent standards review: no findings. Independent specification review: no findings. Both read the batch through the implementation commits; neither ran suites or touched the live desktop.
+- Independent standards review: no findings. Independent specification review: no findings. Both read the batch through the implementation commits and the lock-recovery follow-up; neither ran suites or touched the live desktop.
 
 The final gates ran sequentially with Node 24.21.0:
 
@@ -61,7 +61,7 @@ mise exec node@24.21.0 -- npm test -- --maxWorkers=2
 mise exec node@24.21.0 -- npm run notices:verify
 ```
 
-**VERIFIED:** typecheck and lint passed; 781 test files passed and 55 were skipped, with 9,826 tests passed and 194 skipped; 189 notice components verified. The first full run had one failure in `watcherTools.test.ts` ("refunds a queued prompt after a definite reconciled failure exactly once"). Its isolated rerun passed all 57 tests, then the entire suite above passed.
+**VERIFIED:** typecheck and lint passed; 781 test files passed and 55 were skipped, with 9,827 tests passed and 194 skipped; 189 notice components verified. The first full run had one failure in `watcherTools.test.ts` ("refunds a queued prompt after a definite reconciled failure exactly once"). Its isolated rerun passed all 57 tests, then the entire suite above passed. It was repeated after the lock-recovery fix and passed with the counts shown here.
 
 After the build, the affected Playwright spec ran on an owned nested compositor:
 
@@ -72,3 +72,11 @@ mise exec node@24.21.0 -- node scripts/with-nested-hyprland.mjs .cache/dictation
 **VERIFIED:** one spec passed. It exercises compositor start/stop/toggle/cancel commands and quick taps, then checks light, dark and reduced-motion layouts at 1600×1000, 1280×800 and 820×560. The nested compositor and its owned scopes were cleaned up. No design baselines changed; Omarchy draws the notification.
 
 **PASS:** the production dependency allowlist is exactly `node-pty`, `sherpa-onnx-node` and `zod`. The built main/preload external inventories passed `verifyExternalDependencyInventories` from `scripts/release-external-dependencies.mjs`, and each dependency's installed package was present.
+
+## Review recovery
+
+PR #958's review identified that a client killed between claiming the directory lock and its cleanup could suppress every later notification. A real-client fixture reproduced it: it pauses after lock acquisition and before the stamp write, then is killed with SIGKILL. Eight subsequent clients produced no notice before the fix.
+
+`deb07e4af` replaces the directory lock with a Linux abstract Unix socket scoped to the runtime directory's uid/device/inode. No files hold lock ownership, and [Node 24's IPC documentation](https://github.com/nodejs/node/blob/v24.21.0/doc/api/net.md#identifying-paths-for-ipc-connections) confirms the kernel removes an abstract socket when its references close. The empty file still supplies the five-second cooldown. The fixture now verifies another client stays quiet while the owner is alive; after SIGKILL, eight concurrent clients produce exactly one notification. It passed with the fix. An older client's abandoned directory also no longer prevents a notice, and is left intact.
+
+The build, all four live paste cases, real F9 proof and affected Playwright spec were repeated against this follow-up. All passed, and the refreshed observations name the implementation commit. Both review axes checked it again with no findings.
