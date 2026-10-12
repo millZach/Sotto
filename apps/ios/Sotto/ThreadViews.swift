@@ -306,7 +306,7 @@ private struct Conversation: View {
         let thread = model.thread(ref)
         let state = thread.map { ThreadState($0) } ?? .done
         return VStack(alignment: .leading, spacing: 0) {
-            ThreadHero(ref: ref, thread: thread,
+            ThreadHero(ref: ref, thread: thread, watched: model.watchedByWatcher(ref),
                        topMoved: { top in follow.heroTop = top; refreshBar() },
                        titleMoved: { bottom in follow.titleBottom = bottom; refreshBar() })
                 .equatable()
@@ -488,16 +488,18 @@ private extension View {
 
 // MARK: - Title block
 
-/// The big title, where the thread runs, and its branch chips, at the top of the conversation.
+/// The big title, where the thread runs with its provider's logo and, while Watcher works with it, the owl, and its
+/// branch chips, at the top of the conversation.
 private struct ThreadHero: View, Equatable {
     @EnvironmentObject var model: AppModel
     let ref: ThreadRef
     let thread: ThreadSummary?
+    let watched: Bool
     let topMoved: (CGFloat) -> Void
     let titleMoved: (CGFloat) -> Void
     /// Drawn again only when its thread changes, not for each new revision of the conversation under it; its readers
     /// report to the same page every time.
-    static func == (a: Self, b: Self) -> Bool { a.ref == b.ref && a.thread == b.thread }
+    static func == (a: Self, b: Self) -> Bool { a.ref == b.ref && a.thread == b.thread && a.watched == b.watched }
     var body: some View {
         let chips = GitChips(thread?.worktree)
         VStack(alignment: .leading, spacing: 0) {
@@ -509,12 +511,15 @@ private struct ThreadHero: View, Equatable {
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("thread-title")
                 .background(edgeReader(\.maxY, titleMoved))
-            Text(place)
-                .font(.sotto(.small))
-                .foregroundStyle(Palette.muted)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .padding(.top, Space.s2)
+            HStack(spacing: 5) {
+                ProviderMarks(providerID: thread?.providerId, watched: watched)
+                Text(place).lineLimit(1).truncationMode(.middle)
+            }
+            .font(.sotto(.small))
+            .foregroundStyle(Palette.muted)
+            .padding(.top, Space.s2)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(place + WatchedWords.spoken(watched))
             if !chips.isEmpty {
                 GitChipRow(chips: chips).padding(.top, Space.s3)
             }
@@ -1446,11 +1451,28 @@ private struct ReplyDock: View, Equatable {
                 problemNote(problem)
             }
             FollowupStack(ref: ref)
+            if model.watchedByWatcher(ref) { takeoverLine }
             dock
         }
         .padding(.horizontal, Space.s3)
         .padding(.top, Space.s2)
         .padding(.bottom, Space.s2)
+    }
+
+    /// A direct instruction here takes the thread over from Watcher; opening it or answering its card doesn't.
+    private var takeoverLine: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            WatcherOwlMark(size: 13).accessibilityHidden(true)
+            Text(WatchedWords.takeover).fixedSize(horizontal: false, vertical: true)
+        }
+        .font(.sotto(.small))
+        .foregroundStyle(Palette.muted)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Space.s4)
+        .padding(.vertical, Space.s2)
+        .glass(in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("watched-takeover")
     }
 
     private func problemNote(_ problem: String) -> some View {
