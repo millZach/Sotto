@@ -77,6 +77,18 @@ async function canonicalCheckoutPath(folder: string): Promise<string> {
 const missing = (error: unknown): boolean => ['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')
 
 /**
+ * What is at a reserved worktree path: nothing, a real empty folder, or anything else. A link or junction is never
+ * empty here, whatever it points at. An empty folder Git does not register is filled like a missing one (ADR-0041).
+ */
+async function reservedFolder(path: string): Promise<'missing' | 'empty' | 'occupied'> {
+  const info = await lstat(path).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return undefined; throw error })
+  if (!info) return 'missing'
+  if (!info.isDirectory() || info.isSymbolicLink()) return 'occupied'
+  const empty = await Promise.all([realpath(path), readdir(path)]).then(([real, names]) => pathKey(real) === pathKey(path) && !names.length, () => false)
+  return empty ? 'empty' : 'occupied'
+}
+
+/**
  * Git's own discovery for a folder, read from the `.git` entries on disk so that asking starts no process. `root`
  * is the nearest folder, this one or above, holding a `.git` file or a `.git` directory with a HEAD, objects and
  * refs; Git passes over a `.git` directory without them, and so does this. A null root is a folder in no
@@ -249,6 +261,13 @@ export class ThreadWorktrees {
     return coordinateRegistry(identity ?? await this.registryIdentity(cwd), () => this.git(cwd, args))
   }
 
+  /** Inside the registry lane: whether the reserved folder is empty or gone and Git no longer registers it. */
+  private async emptiedAndUnregistered(repositoryRoot: string, path: string): Promise<boolean> {
+    if (await reservedFolder(path).catch(() => 'occupied' as const) === 'occupied') return false
+    return this.git(repositoryRoot, ['worktree', 'list', '--porcelain', '-z'])
+      .then(listing => !registeredWorktrees(listing).some(entry => pathKey(entry.path) === pathKey(path)), () => false)
+  }
+
   /** Only the fresh token path this add started may be cleaned up after its own deadline. */
   private async addWorktree(repositoryRoot: string, path: string, branch: string, args: string[], identity: RegistryIdentity): Promise<void> {
     await coordinateRegistry(identity, async () => {
@@ -273,7 +292,9 @@ export class ThreadWorktrees {
             throw new Error('The incomplete folder is not registered to this checkout.', { cause: error })
           }
         } catch (cleanupError) {
-          throw new Error('Worktree setup took too long. The incomplete folder was kept because it could not be safely removed. Move any local files out and restore the checkout before retrying.', { cause: cleanupError })
+          // Windows can keep a folder another process uses after Git has emptied and unregistered it. Setup and
+          // restore fill that folder, so retrying is all it needs.
+          if (!(await this.emptiedAndUnregistered(repositoryRoot, path))) throw new Error('Worktree setup took too long. The incomplete folder was kept because it could not be safely removed. Move any local files out and restore the checkout before retrying.', { cause: cleanupError })
         }
         throw new Error('Worktree setup took too long. Retry setup to continue on the same branch.', { cause: error })
       }
@@ -486,7 +507,8 @@ export class ThreadWorktrees {
       return (await this.inspectWithin({ ...metadata, status: 'ready', error: undefined }, identity)).worktree
     }
     if (!branch) throw new Error('The independent working-copy allocation is incomplete.')
-    if (await lstat(metadata.path).then(() => true, (error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return false; throw error })) throw new Error('The reserved working folder already exists but is not this thread’s Git worktree. Nothing was changed.')
+    // An empty folder here, as a half-finished removal or a timed-out add on Windows leaves, is filled (ADR-0041).
+    if (await reservedFolder(metadata.path) === 'occupied') throw new Error('The reserved working folder already exists but is not this thread’s Git worktree. Nothing was changed.')
     if (entries.some(entry => entry.branch === `refs/heads/${branch}`)) throw new Error('The reserved branch is already checked out in another folder. Nothing was changed.')
     // -b refuses any existing branch; never reset it with -B or force another checkout. A pull request's branch
     // exists already and is checked out as it stands, with no -b.
@@ -506,11 +528,11 @@ export class ThreadWorktrees {
   async restore(metadata: AgentWorktree): Promise<AgentWorktree> {
     const { path, repositoryRoot, branch } = metadata
     if (metadata.mode !== 'independent' || !path || !repositoryRoot || !branch) return metadata
-    const present = await lstat(path).then(info => info, (error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return undefined; throw error })
+    const folder = await reservedFolder(path)
     // A removal Windows could only half finish leaves the reserved folder there, empty and unregistered.
     // Anything else at the path, a link or junction included, is not Sotto's to fill. An add that times out
     // cleans up as it does for a missing folder, which can take this empty folder too; it held nothing.
-    if (present && !(present.isDirectory() && !present.isSymbolicLink() && await Promise.all([realpath(path), readdir(path)]).then(([real, names]) => pathKey(real) === pathKey(path) && !names.length, () => false))) return metadata
+    if (folder === 'occupied') return metadata
     let allocationRoot: string
     // Sotto's own data folder and the repository have to be there before anything is put back.
     try { allocationRoot = join(await realpath(this.directory), this.home.folder); await existingWorkingDirectory(repositoryRoot) }
@@ -526,7 +548,7 @@ export class ThreadWorktrees {
       return entries
     }
     // An empty folder Git still registers is a checkout Git knows about, not a half-finished removal.
-    if (present && registeredWorktrees(await this.registry(repositoryRoot, ['worktree', 'list', '--porcelain', '-z'], identity)).some(entry => pathKey(entry.path) === pathKey(path))) return metadata
+    if (folder === 'empty' && registeredWorktrees(await this.registry(repositoryRoot, ['worktree', 'list', '--porcelain', '-z'], identity)).some(entry => pathKey(entry.path) === pathKey(path))) return metadata
     const entries = await refuseAnotherFolder()
     // Remove only this missing folder's registration. Other missing checkouts may be on unplugged drives.
     if (entries.some(entry => pathKey(entry.path) === pathKey(path))) await this.registry(repositoryRoot, ['worktree', 'remove', '--', path], identity)
@@ -737,10 +759,7 @@ export class ThreadWorktrees {
         // On Windows a process working in the folder, such as the thread's idle client, stops Git deleting the
         // folder itself after it has deleted the files and its registration, and Git does not undo either.
         // An empty or missing folder Git no longer registers is removed; anything else is the real failure.
-        const emptied = await readdir(facts.path).then(names => !names.length, (failure: NodeJS.ErrnoException) => failure.code === 'ENOENT')
-        const unregistered = emptied && await this.git(metadata.repositoryRoot!, ['worktree', 'list', '--porcelain', '-z'])
-          .then(listing => !registeredWorktrees(listing).some(entry => pathKey(entry.path) === pathKey(facts.path)), () => false)
-        if (!unregistered) throw error
+        if (!(await this.emptiedAndUnregistered(metadata.repositoryRoot!, facts.path))) throw error
       }
       return nestedWorktrees
     })
