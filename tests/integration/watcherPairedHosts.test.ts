@@ -498,3 +498,34 @@ it.each(['list_projects', 'list_threads'] as const)('applies the explicit local 
   expect(rows.every(item => item.target.hostId === f.control.hostId())).toBe(true)
   expect(rows.some(item => item.target.hostId === f.pairing.hostId)).toBe(false)
 })
+
+it.each(['retention', 'project filter', 'settlement', 'protection', 'queue preservation'] as const)('keeps paired identities separate for %s when local IDs collide', async check => {
+  const f = await master()
+  const started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok') throw new Error('Synthetic remote creation was refused')
+  const hostId = f.control.hostId()!, local = f.control.watcherSnapshot()
+  const twin = { ...f.socket.shell().host.threads.find(thread => thread.id === started.target.threadId)!, hostId,
+    title: 'Local identity twin', status: 'idle' as const, messages: [], requests: [] }
+  const project = { ...f.project, hostId, title: 'Local reserved twin', path: join(f.root, 'watcher', 'workspace'), workspaceSettledAt: new Date().toISOString() }
+  vi.spyOn(f.control, 'watcherSnapshot').mockReturnValue({ ...local, threads: [...local.threads, twin], projects: [...local.projects, project] })
+  const shell = f.control.shell()
+  vi.spyOn(f.control, 'shell').mockReturnValue({ ...shell, host: { ...shell.host, projects: [...shell.host.projects, project] } })
+  if (check === 'queue preservation') {
+    await f.control.updateWatcher(record => { record.requests.find(request => request.id === f.requestId)!.participants[0]!.automationStopped = true })
+    expect(f.watcher.preserveUserQueue(twin.id)).toBe(false)
+    return
+  }
+  if (check === 'retention') {
+    expect(f.watcher.watchedThreadIds()).not.toContain(twin.id)
+    return
+  }
+  const list = await f.call('list_threads', check === 'project filter' ? { project: { hostId, projectId: f.project.id } }
+    : check === 'settlement' ? { includeSettled: false } : {})
+  if (list.status !== 'ok') throw new Error('Synthetic catalog read was refused')
+  if (check === 'project filter') expect(list.rows.map(row => row.target)).toEqual([{ hostId, threadId: twin.id }])
+  if (check === 'settlement') {
+    expect(list.rows.map(row => row.target)).toContainEqual(started.target)
+    expect(list.rows.map(row => row.target)).not.toContainEqual({ hostId, threadId: twin.id })
+  }
+  if (check === 'protection') expect(list.rows.find(row => row.target.hostId === started.target.hostId && row.target.threadId === twin.id)?.protected).toBe(false)
+})

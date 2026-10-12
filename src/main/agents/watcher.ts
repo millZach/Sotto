@@ -98,8 +98,8 @@ export class WatcherService implements WatcherControlHooks {
   subscribe(listener: (state: WatcherRoomState) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
   private publish(): void { if (!this.closed) { if (!this.options.workerHost) this.wakes.observe(); this.options.control.refreshWatcherObservation(); for (const listener of this.listeners) listener(this.state()) } }
   watchedThreadIds(): string[] {
-    return [...new Set([...this.wakes.watchedThreadIds().filter(id => this.options.control.watcherSnapshot().threads.some(thread => thread.id === id)),
-      ...this.record().requests.filter(request => request.remoteOrigin && request.state === 'active').flatMap(request => request.participants.filter(item => item.state === 'participating' && !item.automationStopped).map(item => item.target.threadId))])]
+    return [...new Set([...this.wakes.watchedThreadIds(this.hostId()).filter(id => this.options.control.watcherSnapshot().threads.some(thread => thread.id === id)),
+      ...this.record().requests.filter(request => request.remoteOrigin && request.state === 'active').flatMap(request => request.participants.filter(item => item.target.hostId === this.hostId() && item.state === 'participating' && !item.automationStopped).map(item => item.target.threadId))])]
   }
   wakeDue(event: WatcherEvent): boolean { return this.wakes.due(event) }
   wakeReady(): boolean { return this.wakes.ready() }
@@ -113,7 +113,7 @@ export class WatcherService implements WatcherControlHooks {
     return [join(this.options.directory, 'watcher', 'workspace'), join(this.options.directory, 'host-setup')].some(folder => normalized(path) === normalized(folder))
   }
   private protectedThread(thread: AgentThread): boolean {
-    return Boolean(thread.kind && thread.kind !== 'project' || this.options.control.watcherSnapshot().projects.some(project => project.id === thread.projectId && this.reservedProject(project.path)))
+    return Boolean(thread.kind && thread.kind !== 'project' || this.owningSnapshot(thread.hostId ?? this.hostId())?.projects.some(project => project.id === thread.projectId && this.reservedProject(project.path)))
   }
   private protect(thread: AgentThread): void {
     if (this.protectedThread(thread)) refuse('RESERVED_THREAD', 'This thread has a special job and cannot be directed by Watcher.')
@@ -350,7 +350,7 @@ export class WatcherService implements WatcherControlHooks {
     void this.options.control.cancelWatcherQueue(operations).catch(() => { this.recoveryNotice = 'A taken-over thread’s queued Watcher message could not be removed. It is fenced and will not be sent.'; this.publish() })
   }
   preserveUserQueue(threadId: string): boolean {
-    return this.record().requests.some(request => request.participants.some(participant => participant.target.threadId === threadId
+    return this.record().requests.some(request => request.participants.some(participant => participant.target.hostId === this.hostId() && participant.target.threadId === threadId
       && participant.state === 'participating' && (participant.automationStopped || request.state === 'stopped' && participant.startedBy === 'watcher')))
   }
   beforeDispatch(command: AgentHostCommand, _draftId: string | undefined, origin?: WatcherCommandOrigin): AgentHostCommand {
@@ -428,7 +428,7 @@ export class WatcherService implements WatcherControlHooks {
         return thread.status === 'running' || thread.lastTurn?.status === 'running' || Boolean(thread.requests.length || thread.backgroundWork?.length || thread.monitoring?.length)
       })
       for (const request of next.requests) if (request.state === 'active' && !request.participants.length && !next.operations.some(item => item.requestId === request.id)) {
-        const master = snapshot.threads.find(item => item.id === request.watcher.threadId)
+        const master = request.watcher.hostId === this.hostId() ? snapshot.threads.find(item => item.id === request.watcher.threadId) : undefined
         const head = master && lastUserMessageIdOf(master)
         if (master?.lastTurn && (head === request.rootUserMessageId || request.userFollowups?.some(item => item.messageId === head))
           && master.lastTurn.status !== 'running' && master.status !== 'running' && !this.options.control.hasPendingThreadWork(master.id)) { request.state = 'closed'; request.closedAt = now() }
@@ -436,7 +436,7 @@ export class WatcherService implements WatcherControlHooks {
       for (const request of next.requests) if (request.state === 'active' && request.participants.length
         && request.participants.every(item => item.state !== 'participating' || item.target.hostId === this.hostId() && snapshot.threads.some(thread => thread.id === item.target.threadId
           && isWorkspaceThreadSettled(thread, snapshot.projects.find(project => project.id === thread.projectId))))
-        && !this.options.control.hasPendingThreadWork(request.watcher.threadId)
+        && (request.watcher.hostId !== this.hostId() || !this.options.control.hasPendingThreadWork(request.watcher.threadId))
         && !next.operations.some(item => item.requestId === request.id && ['queued', 'dispatching', 'uncertain'].includes(item.deliveryState))) {
         request.state = 'closed'; request.closedAt = now()
       }
@@ -457,7 +457,7 @@ export class WatcherService implements WatcherControlHooks {
       const guard = this.remoteGuards.get(operation.id)
       if (!guard) refuse('HOST_DISCONNECTED', 'The master connection is unavailable. Reconcile this operation before continuing.')
       guard()
-    } else if (record.current?.target.threadId !== request.watcher.threadId) refuse('NOT_CURRENT_WATCHER', 'This operation no longer belongs to the current Watcher.')
+    } else if (!record.current || key(record.current.target) !== key(request.watcher)) refuse('NOT_CURRENT_WATCHER', 'This operation no longer belongs to the current Watcher.')
     if (operation.deliveryState === 'failed') refuse(operation.refusalCode ?? 'REQUEST_NOT_ACTIVE', 'This operation was cancelled before dispatch. Nothing was sent.')
     if (request.state !== 'active') refuse('REQUEST_NOT_ACTIVE', 'This Watcher request has stopped. Nothing was sent.')
     const participant = request.participants.find(item => key(item.target) === key(operation.target))
@@ -498,7 +498,7 @@ export class WatcherService implements WatcherControlHooks {
         let operation: WatcherOperation | undefined
         if (call.name === 'read_operation') {
           operation = this.record().operations.find(item => item.id === call.input.operationId)
-          if (!operation || !this.record().requests.some(item => item.id === operation!.requestId && item.watcher.threadId === threadId)) refuse('UNKNOWN_OPERATION', 'That operation does not belong to this Watcher request.')
+          if (!operation || !this.record().requests.some(item => item.id === operation!.requestId && key(item.watcher) === key(this.target(threadId)))) refuse('UNKNOWN_OPERATION', 'That operation does not belong to this Watcher request.')
           if (operation.target.hostId !== this.hostId()) {
             this.requireRemote(operation.target.hostId, false)
             const result = watcherToolSchemas.read_operation.output.parse(await this.remote!.read(operation.target.hostId,
@@ -523,7 +523,7 @@ export class WatcherService implements WatcherControlHooks {
       if (imported && this.closed) refuse('NOT_CURRENT_WATCHER', 'Watcher is stopping. Nothing was sent. Reopen Sotto.')
       if (!imported) this.checkCaller(threadId)
       const record = this.record(), request = record.requests.find(item => item.id === input.requestId)
-      if (!request || request.watcher.threadId !== threadId) refuse('REQUEST_NOT_ACTIVE', 'This request is not active. Only a user Send to Watcher can start a request.')
+      if (!request || request.watcher.threadId !== threadId || !imported && request.watcher.hostId !== this.hostId()) refuse('REQUEST_NOT_ACTIVE', 'This request is not active. Only a user Send to Watcher can start a request.')
       const fingerprint = digest([name, input])
       const existing = record.operations.find(item => item.requestId === input.requestId && item.retryKey === input.retryKey)
       if (existing) {
@@ -891,12 +891,12 @@ export class WatcherService implements WatcherControlHooks {
   }
   private listThreads(input: WatcherToolInput<'list_threads'>) {
     if (input.hostId && input.hostId !== this.hostId() || input.project && input.project.hostId !== this.hostId()) refuse('HOST_FEATURE_UNAVAILABLE', 'Remote Watcher thread reads are not available yet.')
-    const state = this.options.control.shell(), record = this.record(), snapshot = this.snapshot()
+    const record = this.record(), snapshot = this.snapshot()
     const rows = watcherOverview({ host: snapshot }, Date.now(), this.wakes.observations).filter(row => (!input.hostId || (row.thread.hostId ?? this.hostId()) === input.hostId)
-      && (!input.project || row.thread.projectId === input.project.projectId)
-      && (!input.group || row.group === input.group) && (input.includeSettled || !isWorkspaceThreadSettled(row.thread, state.host.projects.find(item => item.id === row.thread.projectId))))
+      && (!input.project || row.thread.projectId === input.project.projectId && (row.thread.hostId ?? this.hostId()) === input.project.hostId)
+      && (!input.group || row.group === input.group) && (input.includeSettled || !isWorkspaceThreadSettled(row.thread, this.owningSnapshot(row.thread.hostId ?? this.hostId())?.projects.find(item => item.id === row.thread.projectId))))
       .map(row => { const thread = row.thread, target = { hostId: thread.hostId ?? this.hostId(), threadId: thread.id }
-        return { target, title: thread.title, projectId: thread.projectId, provider: thread.providerId ?? resolveModel(state.host.models, thread.modelId)?.providerId,
+        return { target, title: thread.title, projectId: thread.projectId, provider: thread.providerId ?? resolveModel(this.owningSnapshot(target.hostId)?.models ?? [], thread.modelId)?.providerId,
           modelId: thread.modelId, ...(thread.reasoningEffort ? { reasoningEffort: thread.reasoningEffort } : {}), status: thread.status, group: row.group,
           waitsOn: thread.requests.map(item => ({ id: item.id, kind: item.kind, label: item.kind === 'permission' ? 'Open to answer permission' : 'Open to answer question', openTarget: target })),
           branch: thread.worktree?.branch ?? null, workingCopy: thread.worktree ? { kind: thread.worktree.mode === 'shared' ? 'shared' as const : 'new-worktree' as const } : null,

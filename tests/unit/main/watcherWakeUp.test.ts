@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterEach, expect, it, vi } from 'vitest'
-import { EMPTY_AGENT_HOST, type AgentThread } from '../../../src/shared/agents'
+import { EMPTY_AGENT_HOST, type AgentThread, type AgentHostSnapshot } from '../../../src/shared/agents'
 import { WATCHER_QUIET_MS } from '../../../src/shared/watcherOverview'
 import type { WatcherNews } from '../../../src/shared/watcherNews'
 import { WatcherWakeUp, type WatcherWakeOptions } from '../../../src/main/agents/watcherWakeUp'
@@ -18,7 +18,7 @@ function fixture(start = true, progress?: WatcherWakeOptions['progress']) {
   const record = watcherRecordFixture()
   const thread: AgentThread = { id: centerTarget.threadId, providerId: 'codex', projectId: 'project', modelId: 'model', title: 'Worker',
     status: 'running', lastTurn: { id: 'turn-1', status: 'running' }, messages: [], requests: [] }
-  const snapshot = { ...structuredClone(EMPTY_AGENT_HOST), connected: true, hostId: centerTarget.hostId,
+  const snapshot: AgentHostSnapshot = { ...structuredClone(EMPTY_AGENT_HOST), connected: true, hostId: centerTarget.hostId,
     capabilities: { ...EMPTY_AGENT_HOST.capabilities, observe: true }, threads: [thread], projects: [{ id: 'project', title: 'Project', path: 'synthetic' }] }
   const delivered: WatcherNews[] = [], prune = vi.fn(async () => undefined), failed = vi.fn()
   const deliver = vi.fn(async (news: WatcherNews) => { delivered.push(structuredClone(news)) })
@@ -343,4 +343,21 @@ it('resets the quiet deadline from paired progress while an unchanged digest sta
   f.wakes.observe()
   await f.advance(WATCHER_QUIET_MS - 60_000)
   expect(f.delivered.flatMap(news => news.events).filter(event => event.kind === 'quiet')).toHaveLength(1)
+})
+
+it.each(['thread', 'project'] as const)('keeps remote quiet news on its host when %s IDs collide', async collision => {
+  const f = fixture(false), remoteHost = '55555555-5555-4555-8555-555555555555'
+  f.thread.hostId = remoteHost
+  f.record.requests[0]!.participants[0]!.target = { hostId: remoteHost, threadId: f.thread.id }
+  const localProjectId = collision === 'project' ? f.thread.projectId : 'local-project'
+  f.snapshot.projects = [
+    { id: localProjectId, hostId: centerTarget.hostId, title: 'Local settled project', path: 'local', workspaceSettledAt: new Date(f.now()).toISOString() },
+    { id: f.thread.projectId, hostId: remoteHost, title: 'Remote project', path: 'remote' }
+  ]
+  f.snapshot.threads.unshift({ ...f.thread, id: collision === 'thread' ? f.thread.id : 'local-worker', hostId: centerTarget.hostId,
+    projectId: localProjectId, status: 'idle', lastTurn: { id: 'local-turn', status: 'completed' } })
+  f.wakes.start()
+  await f.advance(WATCHER_QUIET_MS + 2_000)
+  const quiet = f.delivered.flatMap(news => news.events).filter(event => event.kind === 'quiet')
+  expect(quiet.map(event => event.target)).toEqual([{ hostId: remoteHost, threadId: f.thread.id }])
 })

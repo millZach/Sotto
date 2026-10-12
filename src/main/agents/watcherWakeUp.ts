@@ -61,9 +61,15 @@ export class WatcherWakeUp {
     return record.requests.filter(request => (request.state === 'active' || includeClosed && request.state === 'closed') && targetKey(request.watcher) === (record.current ? targetKey(record.current.target) : ''))
       .flatMap(request => request.participants.map(participant => ({ request, participant })))
   }
-  watchedThreadIds(): string[] {
-    return [...new Set(this.workers().filter(({ participant }) => participant.state === 'participating' && !participant.automationStopped)
-      .map(({ participant }) => participant.target.threadId))]
+  private watchedTargets(): WatcherThreadTarget[] {
+    return [...new Map(this.workers().filter(({ participant }) => participant.state === 'participating' && !participant.automationStopped)
+      .map(({ participant }) => [targetKey(participant.target), participant.target])).values()]
+  }
+  watchedThreadIds(hostId: string): string[] {
+    return this.watchedTargets().filter(target => target.hostId === hostId).map(target => target.threadId)
+  }
+  private project(snapshot: AgentHostSnapshot, thread: AgentThread) {
+    return snapshot.projects.find(project => project.id === thread.projectId && (project.hostId ?? snapshot.hostId) === (thread.hostId ?? snapshot.hostId))
   }
   news(): WatcherEvent[] { return this.recent.filter(event => this.due(event)) }
   private event(kind: WatcherEvent['kind'], target: WatcherThreadTarget, identity: unknown, extra: Partial<WatcherEvent> = {}): void {
@@ -136,7 +142,7 @@ export class WatcherWakeUp {
   observe(): void {
     if (!this.started || this.closed) return
     const snapshot = this.options.snapshot(), stamp = new Date(this.now()).toISOString()
-    const targets = new Set<string>(), watched = new Set(this.watchedThreadIds())
+    const targets = new Set<string>(), watched = new Set(this.watchedTargets().map(targetKey))
     for (const thread of snapshot.threads) {
       if (thread.kind === 'watcher' || thread.kind === 'watcher-history' || !snapshot.hostId) continue
       const target = { hostId: thread.hostId ?? snapshot.hostId, threadId: thread.id }, key = targetKey(target)
@@ -165,14 +171,15 @@ export class WatcherWakeUp {
         for (const card of thread.requests) this.event('needs-user', target, [card.id, requestRevision(card)],
           { requestCardId: card.id, requestCardKind: card.kind, revision: requestRevision(card), ...(turn ? { turnId: turn.id } : {}) })
       }
-      const eligible = watched.has(thread.id) && observed.fresh && this.active(thread) && !thread.requests.length && !isThreadClosed(thread)
-        && !isWorkspaceThreadSettled(thread, snapshot.projects.find(project => project.id === thread.projectId))
+      const eligible = watched.has(key) && observed.fresh && this.active(thread) && !thread.requests.length && !isThreadClosed(thread)
+        && !isWorkspaceThreadSettled(thread, this.project(snapshot, thread))
       if (!eligible || changedProgress) { progress.cancel?.(); delete progress.cancel }
       if (eligible && !progress.quiet && !progress.cancel) progress.cancel = this.schedule(() => {
         delete progress.cancel
         // Fresh live state and ownership, not the old snapshot closed over by a timer.
-        const current = this.options.snapshot(), live = current.threads.find(item => item.id === target.threadId)
-        if (!live || !this.connected(current, live) || !this.active(live) || live.requests.length || !this.watchedThreadIds().includes(live.id)) return
+        const current = this.options.snapshot(), live = current.threads.find(item => item.id === target.threadId && (item.hostId ?? current.hostId) === target.hostId)
+        if (!live || !this.connected(current, live) || !this.active(live) || live.requests.length || isThreadClosed(live)
+          || isWorkspaceThreadSettled(live, this.project(current, live)) || !this.watchedTargets().some(item => targetKey(item) === key)) return
         progress.quiet = true
         this.event('quiet', target, progress.progressAt, { ...(live.lastTurn ? { turnId: live.lastTurn.id } : {}) })
         this.options.changed?.()
@@ -234,7 +241,7 @@ export class WatcherWakeUp {
     if (event.kind === 'taken-over') return participant.state === 'taken-over'
     if (participant.state !== 'participating') return false
     const snapshot = this.options.snapshot(), thread = snapshot.threads.find(item => item.id === event.target.threadId && (item.hostId ?? snapshot.hostId) === event.target.hostId)
-    if (!thread || isThreadClosed(thread) || isWorkspaceThreadSettled(thread, snapshot.projects.find(project => project.id === thread.projectId))) return false
+    if (!thread || isThreadClosed(thread) || isWorkspaceThreadSettled(thread, this.project(snapshot, thread))) return false
     if (event.kind === 'delivery-changed') {
       const operation = record.operations.find(item => item.id === event.operationId)
       return !!operation && event.revision === observationDigest([operation.deliveryState, operation.refusalCode, operation.creationUncertain])
