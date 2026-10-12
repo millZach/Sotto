@@ -44,12 +44,6 @@ struct WatchedOwl: View {
     }
 }
 
-enum WatchedWords {
-    static let label = "Watched by Watcher"
-    /// What a watched thread's reply box says, word for word as on the desktop.
-    static let takeover = "Watched by Watcher. If you send here, Watcher stops sending to it."
-    /// The words a row or card adds for VoiceOver after where the thread runs.
-    static func spoken(_ watched: Bool) -> String { watched ? ", watched by Watcher" : "" }
 }
 
 /// The marks before a "Codex on Laptop" line (3B): the provider's logo, then the owl on a watched thread.
