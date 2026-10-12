@@ -302,6 +302,8 @@ artifacts/omarchy-shell-plugin/*
 !artifacts/omarchy-shell-plugin/late-stop-before-fix.png
 !artifacts/omarchy-shell-plugin/nested-proof.txt
 !artifacts/omarchy-shell-plugin/notices.png
+!artifacts/omarchy-shell-plugin/owl-bar.png
+!artifacts/omarchy-shell-plugin/owl-pill.png
 !artifacts/omarchy-shell-plugin/read-failure-keeps-pill.png
 !artifacts/omarchy-shell-plugin/rule-a-after-copied.png
 !artifacts/omarchy-shell-plugin/rule-a-coalesced.png

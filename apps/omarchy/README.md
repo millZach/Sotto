@@ -67,7 +67,7 @@ To stop following it, choose another theme in the picker. To remove the template
 
 ## Shell plugin
 
-`shell-plugin/sotto.dictation/` is Sotto's dictation in the Omarchy shell (#850): Sotto's glyph in the bar and, while you dictate, a pill in the shell's own style with Stop and Cancel. When a transcription fails and the recording is kept, the pill offers Try again and Discard. It takes its colours and font from the Omarchy theme and repaints when the theme changes. While the plugin is installed and Sotto's dictation socket has started with a live state file, Sotto does not show its own floating widget on Linux. If either is unavailable, its own widget stays available.
+`shell-plugin/sotto.dictation/` is Sotto's dictation in the Omarchy shell (#850): Sotto's glyph, the owl, in the bar and, while you dictate, a pill in the shell's own style with Stop and Cancel. When a transcription fails and the recording is kept, the pill offers Try again and Discard. It takes its colours and font from the Omarchy theme and repaints when the theme changes. While the plugin is installed and Sotto's dictation socket has started with a live state file, Sotto does not show its own floating widget on Linux. If either is unavailable, its own widget stays available.
 
 Install it from your desktop session, with the Omarchy shell running:
 
