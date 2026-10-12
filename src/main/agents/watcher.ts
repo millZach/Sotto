@@ -51,6 +51,7 @@ export class WatcherService implements WatcherControlHooks {
   constructor(private readonly options: { directory: string; control: AgentControl; host: WorkspaceHost;
     limit: () => number; historyEnabled: () => boolean; revoke?: (id: string) => void }) {
     this.wakes = new WatcherWakeUp({ snapshot: () => options.control.watcherSnapshot(), record: () => this.record(),
+      restoredEvents: () => options.control.restoredWatcherEvents(),
       canDeliver: target => options.control.canDeliverWatcherNews(target),
       deliver: news => options.control.deliverWakeUp(news.watcher.threadId, news, { tool: false }),
       prune: () => options.control.pruneWatcherWakeUps(), remember: ids => options.control.updateWatcher(record => { record.wakeEventIds = [...new Set([...record.wakeEventIds ?? [], ...ids])].slice(-1_000) }),

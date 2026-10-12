@@ -439,3 +439,28 @@ it('does not wake for alternating surface and babysitting reads of unchanged Git
   expect(f.wakes.evidence.read(centerTarget).some(item => item.githubReviewApproved === true)).toBe(true)
   expect(f.wakes.evidence.read(centerTarget).some(item => item.fact === 'auto-merge-observed')).toBe(true)
 })
+
+it.each([true, false])('retains waiting checkpoint news during incomplete restart observations with saved metadata %s', async savedMetadata => {
+  const f = fixture()
+  f.thread.status = 'idle'; f.thread.lastTurn!.status = 'completed'; f.wakes.observe()
+  const checkpoint = (changedFiles: number) => ({ threadId: f.thread.id, checkpointId: 'saved-capture',
+    observedAt: new Date(f.now()).toISOString(), availability: 'available' as const, changedFiles })
+  f.wakes.checkpoint(checkpoint(1)); await f.advance(2_000)
+  const saved = f.delivered[0]!.events.find(event => event.kind === 'evidence-changed')!
+  if (!savedMetadata) f.record.wakeEventIds = []
+  f.wakes.close()
+  const retained: boolean[] = [], deliver = vi.fn<(news: WatcherNews) => Promise<void>>(async () => undefined)
+  const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, canDeliver: () => true, now: f.now,
+    restoredEvents: () => f.delivered.flatMap(news => news.events), deliver, remember: async () => undefined,
+    prune: async () => { retained.push(recovered.due(saved)) }, schedule: callback => { callback(); return () => undefined } })
+  cleanups.push(() => recovered.close())
+  recovered.start(); await recovered.drained()
+  expect(retained).toEqual([true])
+  expect(deliver).not.toHaveBeenCalled()
+  recovered.checkpoint(checkpoint(1)); await recovered.drained()
+  expect(recovered.due(saved)).toBe(true)
+  expect(deliver).not.toHaveBeenCalled()
+  recovered.checkpoint(checkpoint(2)); await recovered.drained()
+  expect(recovered.due(saved)).toBe(false)
+  expect(deliver).toHaveBeenCalledTimes(1)
+})

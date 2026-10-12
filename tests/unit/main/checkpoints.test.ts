@@ -554,3 +554,17 @@ it('attributes a capture failure by its cause even when its explanation mentions
   expect(observed).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ availability: 'unavailable', reason: 'capture-unavailable' }))
   expect(JSON.stringify(observed.mock.calls)).not.toContain('file replacement')
 })
+
+it('republishes the latest saved checkpoint facts on initialization without paths or prose', async () => {
+  const f = await fixture(), saved = await f.complete()
+  f.service.dispose()
+  const observed = vi.fn<NonNullable<CheckpointDependencies['observed']>>()
+  const restarted = new CheckpointService({ ...f.dependencies, observed })
+  cleanup.push(async () => restarted.dispose())
+  await restarted.initialize()
+  expect(observed).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ threadId: 'thread-a',
+    checkpointId: saved.checkpointId, availability: 'available', changedFiles: 2 }))
+  expect(JSON.stringify(observed.mock.calls)).not.toMatch(/app.txt|new.txt|before|after/)
+  await restarted.initialize()
+  expect(observed).toHaveBeenCalledTimes(1)
+})

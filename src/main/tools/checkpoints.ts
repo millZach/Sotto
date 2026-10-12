@@ -58,7 +58,22 @@ export class CheckpointService extends ToolOperations {
     this.recoveryNotice = `Sotto set aside a checkpoint file it could not read as ${basename(backup)} and kept the rest.`
     try { this.dependencies.report?.(this.recoveryNotice) } catch { /* Reporting cannot prevent recovery. */ }
   }
-  initialize(): Promise<void> { if (this.initialized) return Promise.resolve(); return this.serial(async () => { await this.load(); if (!this.initialized) { await this.save(); this.initialized = true } }) }
+  initialize(): Promise<void> {
+    if (this.initialized) return Promise.resolve()
+    return this.serial(async () => {
+      await this.load()
+      if (this.initialized) return
+      await this.save(); this.initialized = true
+      if (!this.dependencies.observed || this.historyOff()) return
+      const latest = new Map<string, CheckpointRecord>()
+      for (const record of this.records.values()) {
+        if (this.dependencies.preserveThread?.(record.threadId) || !['ready', 'unavailable'].includes(record.status)) continue
+        const previous = latest.get(record.threadId)
+        if (!previous || Date.parse(previous.createdAt) <= Date.parse(record.createdAt)) latest.set(record.threadId, record)
+      }
+      for (const record of latest.values()) this.publishObservation(record)
+    })
+  }
   private async refreshRecoveryNotice(): Promise<void> {
     if (!this.recoveryBackup) return
     const exists = await lstat(this.recoveryBackup).catch(error => { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; this.dependencies.report?.('checkpoint-cleanup-failed'); return true })

@@ -18,6 +18,7 @@ import type { BabysitNews } from './babysitNews'
 import { BABYSIT_REFUSALS, type Babysitter } from './babysitting'
 import { pullRequestAddress } from '../../shared/gitPullRequests'
 import { queuedWakeUpText, isWatcherNews, type WakeUpNews } from './wakeUp'
+import type { WatcherEvent } from '../../shared/watcherNews'
 import type { CheckpointObservation, PullRequestObservation } from './watcherEvidence'
 import { nearestReasoningEffort, resolveNewThreadPermission } from '../../shared/newThreadDefaults'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
@@ -1458,6 +1459,13 @@ export class AgentControl {
     const ids = JSON.stringify(this.watcherHooks?.watchedThreadIds?.() ?? [])
     if (this.watcherObservedIds === ids) return
     this.watcherObservedIds = ids; this.observe()
+  }
+  restoredWatcherEvents(): WatcherEvent[] {
+    if (this.dependencies.watcherEnabled !== true || !this.watcherHooks || !this.watcher.current) return []
+    const target = this.watcher.current.target
+    return this.followupStore.peek().items.filter(item => isWaitingWakeUp(item) && item.threadId === target.threadId)
+      .flatMap(item => item.news?.flatMap(news => isWatcherNews(news) && news.watcher.hostId === target.hostId
+        && news.watcher.threadId === target.threadId ? news.events : []) ?? []).slice(-400)
   }
   async pruneWatcherWakeUps(): Promise<void> {
     if (this.dependencies.watcherEnabled !== true || this.disposed || !this.watcherHooks?.wakeReady?.()) return

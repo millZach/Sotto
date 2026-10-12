@@ -981,3 +981,25 @@ it.each(['workspace-settled', 'archived', 'missing-hooks', 'disconnected'] as co
   expect(f.control.watcherRecord().wakeEventIds).toEqual(saved.events.map(event => event.id))
   expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'answer')).toHaveLength(0)
 })
+
+it('keeps durably waiting checkpoint news through Watcher recovery and same-fact replay', async () => {
+  const f = await fixture(), started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+  const read = { threadId: started.target.threadId, checkpointId: randomUUID(), observedAt: new Date().toISOString(),
+    availability: 'available' as const, changedFiles: 1 }
+  f.service.checkpointObserved(read)
+  await vi.waitFor(() => expect(f.control.shell().followups?.some(item => item.threadId === f.id && item.text.includes('Sotto observed changed evidence'))).toBe(true), { timeout: 15_000 })
+  await f.service.wakes.drained()
+  const waiting = f.control.shell().followups!.find(item => item.threadId === f.id && item.wakeUp)!
+  const ids = f.control.watcherRecord().wakeEventIds
+  f.service.close()
+  const restarted = new WatcherService({ directory: f.root, control: f.control, host: f.workspace.host,
+    historyEnabled: () => true, limit: () => 4 })
+  cleanups.push(async () => restarted.close())
+  await restarted.recover(); await restarted.wakes.drained()
+  expect(f.control.shell().followups!.find(item => item.id === waiting.id)?.text).toBe(waiting.text)
+  restarted.checkpointObserved({ ...read, observedAt: new Date().toISOString() }); await restarted.wakes.drained()
+  expect(f.control.shell().followups!.find(item => item.id === waiting.id)?.text).toBe(waiting.text)
+  expect(f.control.watcherRecord().wakeEventIds).toEqual(ids)
+  expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'answer')).toHaveLength(0)
+})
