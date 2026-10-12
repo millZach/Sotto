@@ -38,6 +38,7 @@ async function fixture(state: FakeSystemdState = {}) {
 }
 type Configuration = Awaited<ReturnType<typeof fixture>>
 interface Outcome { readonly messages: Record<string, unknown>[]; readonly result: Record<string, unknown> }
+const failureReason = (result: Record<string, unknown>) => [result.reason, result.cause].filter((value): value is string => typeof value === 'string').join(': ') || undefined
 /** One operation the way the desktop sends it, under the fakes. */
 async function run(configuration: Configuration, operation: LaunchOperation | Record<string, unknown>, env: NodeJS.ProcessEnv = {}): Promise<Outcome> {
   const { systemd: fake, ...settings } = configuration
@@ -69,7 +70,7 @@ async function installed(state: FakeSystemdState = {}) {
   const configuration = await fixture({ linger: true, ...state })
   await run(configuration, { op: 'launch' })
   const install = await run(configuration, { op: 'boot-install', hostId: HOST_ID })
-  expect(install.result).toEqual(expect.objectContaining({ type: 'boot-installed', installed: true, stopped: true }))
+  expect(install.result, failureReason(install.result)).toEqual(expect.objectContaining({ type: 'boot-installed', installed: true, stopped: true }))
   return configuration
 }
 /** The calls since `from`, without the state reads, which say nothing about what the script changed. */
@@ -199,7 +200,7 @@ describe.skipIf(process.platform === 'darwin')("start at boot in the launch scri
     const configuration = await fixture({ linger: false, enableLinger: 'allow' })
     await run(configuration, { op: 'launch' })
     const install = await run(configuration, { op: 'boot-install', hostId: HOST_ID })
-    expect(install.result).toMatchObject({ type: 'boot-installed', installed: true, bootStart: { linger: true, enabled: true } })
+    expect(install.result, failureReason(install.result)).toMatchObject({ type: 'boot-installed', installed: true, bootStart: { linger: true, enabled: true } })
     expect((await changes())[0]).toBe('loginctl enable-linger')
   })
 
@@ -238,10 +239,11 @@ describe.skipIf(process.platform === 'darwin')("start at boot in the launch scri
 
     it('has the unit start the host when none runs, and spawns no detached host', async () => {
       const configuration = await installed()
-      await run(configuration, { op: 'stop-host', hostId: HOST_ID })
+      const stopped = await run(configuration, { op: 'stop-host', hostId: HOST_ID })
+      expect(stopped.result, failureReason(stopped.result)).toMatchObject({ type: 'host-stopped', stopped: true })
       const before = (await systemd!.calls()).length
       const launch = await run(configuration, { op: 'launch' })
-      expect(launch.result).toMatchObject({ type: 'ready', owned: true })
+      expect(launch.result, failureReason(launch.result)).toMatchObject({ type: 'ready', owned: true })
       expect(await descriptor(configuration)).toMatchObject({ pid: launch.result.pid, startedBy: 'boot' })
       expect(await changes(before)).toEqual(['systemctl reset-failed sotto-host', 'systemctl start sotto-host'])
     })
@@ -300,12 +302,13 @@ describe.skipIf(process.platform === 'darwin')("start at boot in the launch scri
 
     it('waits for and uses a host that took the lock while the unit started, rather than calling the unit failed', async () => {
       const configuration = await installed()
-      await run(configuration, { op: 'stop-host', hostId: HOST_ID })
+      const stopped = await run(configuration, { op: 'stop-host', hostId: HOST_ID })
+      expect(stopped.result, failureReason(stopped.result)).toMatchObject({ type: 'host-stopped', stopped: true })
       await systemd!.set({ afterStart: 'lost-lock' })
       // A new lock file can exist before its lease is written. Exit 75 requires that live lease;
       // the other host then holds it for a while before listening, so the launcher must wait for it.
       const launch = await run(configuration, { op: 'launch' }, { FAKE_HOST_LOCK_WRITE_DELAY_MS: '1500', FAKE_HOST_START_DELAY_MS: '1500' })
-      expect(launch.result).toMatchObject({ type: 'ready', owned: false })
+      expect(launch.result, failureReason(launch.result)).toMatchObject({ type: 'ready', owned: false })
       expect((await descriptor(configuration)).startedBy).toBeUndefined()
     })
   })
