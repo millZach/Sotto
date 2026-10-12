@@ -571,9 +571,11 @@ test.describe("Watcher's room on the built app", () => {
         await settle(page)
         const working = page.locator('.watcher-row__ring[data-tone="working"]').first()
         await expect(working).toBeVisible()
-        expect(await working.evaluate(node => node.getAnimations().length)).toBe(0)
+        // Reduced motion cuts every transition to a millisecond (global.css) rather than removing it, and one caught in
+        // that millisecond, such as a scrollbar colour settling, is not motion. What must not run is the ring's own spin.
+        expect(await working.evaluate(node => node.getAnimations().filter(animation => animation instanceof CSSAnimation).length), `ring, ${motion}`).toBe(0)
         // The stars stop twinkling too.
-        expect(await page.locator('.watcher-room__sky .thread-nav__star[data-twinkle]').evaluateAll(stars => stars.reduce((count, star) => count + star.getAnimations().length, 0))).toBe(0)
+        expect(await page.locator('.watcher-room__sky .thread-nav__star[data-twinkle]').evaluateAll(stars => stars.reduce((count, star) => count + star.getAnimations().filter(animation => animation instanceof CSSAnimation).length, 0)), `stars, ${motion}`).toBe(0)
         await capture(launched, `room-sotto-dark-1280x800-reduced-motion-${motion === 'normal' ? 'system' : 'setting'}.png`)
       })
     })
