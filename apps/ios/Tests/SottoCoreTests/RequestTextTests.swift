@@ -66,7 +66,25 @@ final class RequestTextTests: XCTestCase {
         XCTAssertEqual(WebLinks.find(in: legacy).map(\.absoluteString), ["https://example.com/a"])
     }
 
+    /// The sheet covers the thread, so the agent's message just before the question lends it the links the question lacks.
+    func testTheAgentsLastMessageAddsTheLinksTheRequestLacks() throws {
+        let form = try request(#"{"id":"f","kind":"question","text":"Which layout?","options":[],"questions":[{"id":"q","question":"Which? See https://example.com/q","options":[{"id":"x","label":"X"}],"multiSelect":false,"allowFreeText":false}]}"#)
+        let messages = try JSONDecoder().decode([Message].self, from: Data(#"""
+        [{"id":"m1","role":"assistant","text":"Old: https://example.com/old"},
+         {"id":"m2","role":"user","text":"Mine: https://example.com/mine"},
+         {"id":"m3","role":"assistant","text":"**Review page:** http://localhost:8075/ and https://example.com/q, also [the tag](https://github.com/o/r/tree/t)."}]
+        """#.utf8))
+        XCTAssertEqual(WebLinks.find(in: form, after: messages).map(\.absoluteString),
+                       ["https://example.com/q", "http://localhost:8075/", "https://github.com/o/r/tree/t"])
+        XCTAssertEqual(WebLinks.find(in: form, after: []).map(\.absoluteString), ["https://example.com/q"])
+        XCTAssertEqual(WebLinks.find(in: form, after: Array(messages[1...1])).map(\.absoluteString), ["https://example.com/q"])
+        // A visual reaches the phone as its words alone, and those are the agent's newest (ADR-0056).
+        let visual = try JSONDecoder().decode(Message.self, from: Data(#"{"id":"visual:v1","role":"assistant","text":"A diagram, https://example.com/visual"}"#.utf8))
+        XCTAssertEqual(WebLinks.find(in: form, after: messages + [visual]).map(\.absoluteString), ["https://example.com/q", "https://example.com/visual"])
+    }
+
     func testARowShowsTheHostAndPath() throws {
+        XCTAssertEqual(WebLinks.place(try XCTUnwrap(URL(string: "http://localhost:8075/"))), "localhost:8075")
         XCTAssertEqual(WebLinks.place(try XCTUnwrap(URL(string: "https://laptop.tail5728ca.ts.net/terminal-states/"))), "laptop.tail5728ca.ts.net/terminal-states/")
         XCTAssertEqual(WebLinks.place(try XCTUnwrap(URL(string: "https://example.com/"))), "example.com")
         XCTAssertEqual(WebLinks.place(try XCTUnwrap(URL(string: "https://example.com"))), "example.com")

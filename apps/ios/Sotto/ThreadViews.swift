@@ -1696,6 +1696,9 @@ private struct FollowupCard: View {
 /// question is sent only when they press Send answer.
 private struct RequestSheet: View {
     @EnvironmentObject var model: AppModel
+    /// Watched so the agent's message, and the links the sheet lifts from it, show when the thread's history arrives
+    /// after the sheet opens: the history publishes on its own store, not on the model.
+    @EnvironmentObject var detailStore: DetailStore
     @Environment(\.dismiss) var dismiss
     let ref: ThreadRef
     let request: AgentRequest
@@ -1758,10 +1761,10 @@ private struct RequestSheet: View {
             Text(explanation).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true).padding(.top, Space.s3)
         }
-        // Every link in a question, together above its choices. Opening one answers nothing, so it shows on an iPhone
-        // that can't answer too.
+        // Every link in a question, and in the agent's message the sheet covers, together above its choices. Opening one
+        // answers nothing, so it shows on an iPhone that can't answer too.
         if !permission {
-            let links = WebLinks.find(in: current)
+            let links = WebLinks.find(in: current, after: model.shown(for: ref)?.messages ?? [])
             if !links.isEmpty { LinkRows(links: links).padding(.top, Space.s4) }
         }
         if let context = current.context {
