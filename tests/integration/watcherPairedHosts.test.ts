@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
+import { desktopWindowClient } from '../../src/main/agents/hostService'
 import { WatcherService } from '../../src/main/agents/watcher'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
@@ -95,7 +96,9 @@ it('starts, reads positions, sends, stops and settles through the owning host wi
   expect(await f.call('send_to_thread', afterSettlement)).toMatchObject({ code: 'REQUEST_NOT_ACTIVE' })
   // A stale master projection must not revive participation on the owning host.
   await f.control.updateWatcher(record => {
-    const participant = record.requests.find(item => item.id === f.requestId)!.participants[0]!
+    const request = record.requests.find(item => item.id === f.requestId)!
+    request.state = 'active'; request.closedAt = null
+    const participant = request.participants[0]!
     participant.state = 'participating'; delete participant.automationStopped
   })
   const writes = vi.spyOn(f.socket, 'watcherControl')
@@ -473,7 +476,7 @@ it.each([
 ] as const)('uses the common narrower default with desktop $desktop and host $host when permission is omitted', async defaults => {
   const f = await master()
   await f.control.commandShell({ type: 'configure', patch: { newThreadRuntimeMode: defaults.desktop } })
-  await remote.host.service.command({ type: 'configure', patch: { newThreadRuntimeMode: defaults.host } })
+  await remote.host.service.command({ type: 'configure', patch: { newThreadRuntimeMode: defaults.host } }, desktopWindowClient())
   const first = await f.call('start_thread', f.start())
   expect(first.status, first.status === 'refused' ? first.code : undefined).toBe('ok')
   expect(first).toMatchObject({ effectiveChoices: { permission: { kind: 'runtime', mode: 'approval-required' } } })
