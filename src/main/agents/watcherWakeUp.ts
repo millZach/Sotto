@@ -21,6 +21,7 @@ export class WatcherWakeUp {
   private readonly progress = new Map<string, Progress>()
   private readonly seen = new Set<string>()
   private readonly latestEvidence = new Map<string, { fingerprint: string; id: string; legacyId?: string }>()
+  private readonly rememberPending = new Set<string>()
   private pending: WatcherEvent[] = []
   private recent: WatcherEvent[] = []
   private cancelBatch: (() => void) | undefined
@@ -89,7 +90,7 @@ export class WatcherWakeUp {
     }
   }
   private batch(): void {
-    if (!this.pending.length || this.closed) return
+    if (!this.pending.length && !this.rememberPending.size || this.closed) return
     if (!this.cancelBatch) this.firstPending = this.now()
     this.cancelBatch?.()
     this.cancelBatch = this.schedule(() => { this.cancelBatch = undefined; this.flush() }, Math.max(0, Math.min(WATCHER_BATCH_MS, this.firstPending + WATCHER_BATCH_MAX_MS - this.now())))
@@ -97,14 +98,32 @@ export class WatcherWakeUp {
   private flush(): void {
     const events = this.pending.filter(event => this.due(event)), watcher = this.options.record().current?.target
     this.pending = []
-    if (!events.length || !watcher || this.closed) return
-    const news = foldWatcherNews(undefined, { source: 'watcher', watcher, events, omitted: 0 })
+    if (this.closed || !events.length && !this.rememberPending.size) return
+    const news = watcher && events.length ? foldWatcherNews(undefined, { source: 'watcher', watcher, events, omitted: 0 }) : undefined
     this.tail = this.tail.catch(() => undefined).then(async () => {
       if (this.closed) return
-      const valid = { ...news, events: news.events.filter(event => this.due(event)) }
-      if (!valid.events.length) return
-      try { await this.options.deliver(valid); await this.options.remember(valid.events.map(event => event.id)) }
-      catch { for (const event of valid.events) this.seen.delete(event.id); this.options.failed?.() }
+      const valid = news && { ...news, events: news.events.filter(event => this.due(event)) }
+      if (valid?.events.length) {
+        try {
+          await this.options.deliver(valid)
+          if (this.closed) return
+          for (const event of valid.events) this.rememberPending.add(event.id)
+          while (this.rememberPending.size > 1_000) this.rememberPending.delete(this.rememberPending.values().next().value!)
+        } catch {
+          if (this.closed) return
+          // New observations win over failed news; stopped or answered news is withdrawn.
+          this.pending = foldWatcherEvents(valid.events, this.pending).filter(event => this.due(event))
+          this.options.failed?.()
+        }
+      }
+      const ids = [...this.rememberPending]
+      if (ids.length) {
+        try {
+          await this.options.remember(ids)
+          for (const id of ids) this.rememberPending.delete(id)
+        } catch { if (!this.closed) this.options.failed?.() }
+      }
+      if (!this.closed) this.batch()
     })
   }
   observe(): void {
@@ -161,7 +180,7 @@ export class WatcherWakeUp {
       this.event('delivery-changed', operation.target, [operation.id, revision], { operationId: operation.id, revision })
     }
     this.pending = this.pending.filter(event => this.due(event))
-    if (!this.pending.length) { this.cancelBatch?.(); this.cancelBatch = undefined }
+    if (!this.pending.length && !this.rememberPending.size) { this.cancelBatch?.(); this.cancelBatch = undefined }
     // Withdrawal is advisory; the queue also rechecks before claim and at the provider writer.
     this.tail = this.tail.catch(() => undefined).then(() => this.closed ? undefined : this.options.prune()).catch(() => this.options.failed?.())
   }
@@ -215,6 +234,6 @@ export class WatcherWakeUp {
     if (event.kind === 'quiet') return !!this.progress.get(targetKey(event.target))?.quiet && this.active(thread) && !thread.requests.length
     return !!thread.lastTurn && thread.lastTurn.id === event.turnId && thread.status !== 'running' && thread.lastTurn.status === (event.kind === 'turn-failed' ? 'failed' : 'completed')
   }
-  close(): void { this.closed = true; this.cancelBatch?.(); for (const progress of this.progress.values()) progress.cancel?.(); this.pending = [] }
+  close(): void { this.closed = true; this.cancelBatch?.(); for (const progress of this.progress.values()) progress.cancel?.(); this.pending = []; this.rememberPending.clear() }
   async drained(): Promise<void> { await this.tail }
 }

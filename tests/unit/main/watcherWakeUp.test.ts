@@ -20,10 +20,12 @@ function fixture() {
     status: 'running', lastTurn: { id: 'turn-1', status: 'running' }, messages: [], requests: [] }
   const snapshot = { ...structuredClone(EMPTY_AGENT_HOST), connected: true, hostId: centerTarget.hostId,
     capabilities: { ...EMPTY_AGENT_HOST.capabilities, observe: true }, threads: [thread], projects: [{ id: 'project', title: 'Project', path: 'synthetic' }] }
-  const delivered: WatcherNews[] = [], prune = vi.fn(async () => undefined)
+  const delivered: WatcherNews[] = [], prune = vi.fn(async () => undefined), failed = vi.fn()
+  const deliver = vi.fn(async (news: WatcherNews) => { delivered.push(structuredClone(news)) })
+  const remember = vi.fn(async (ids: string[]) => { record.wakeEventIds = [...record.wakeEventIds ?? [], ...ids] })
   const wakes = new WatcherWakeUp({ now: () => clock, snapshot: () => snapshot, record: () => record, prune,
     schedule: (callback, delay) => { const timer = { at: clock + delay, callback }; timers.add(timer); return () => { timers.delete(timer) } },
-    deliver: async news => { delivered.push(structuredClone(news)) }, remember: async ids => { record.wakeEventIds = [...record.wakeEventIds ?? [], ...ids] } })
+    deliver, remember, failed })
   cleanups.push(() => wakes.close())
   wakes.start()
   const advance = async (ms: number) => {
@@ -35,7 +37,7 @@ function fixture() {
     }
     clock = end; await wakes.drained()
   }
-  return { wakes, record, snapshot, thread, timers, delivered, advance, now: () => clock }
+  return { wakes, record, snapshot, thread, timers, delivered, deliver, remember, failed, advance, now: () => clock }
 }
 
 it('batches for two seconds and never delays a sustained burst past five seconds', async () => {
@@ -238,4 +240,56 @@ it('keeps a legacy evidence ID valid only for its reconciled occurrence', async 
   recovered.checkpoint(checkpoint(1)); await recovered.drained()
   expect(recovered.due(legacy)).toBe(false)
   expect(deliver).toHaveBeenCalledTimes(2)
+})
+
+
+it('keeps undelivered checkpoint news pending through save failures without needing another observation', async () => {
+  const f = fixture()
+  f.deliver.mockRejectedValueOnce(new Error('synthetic save failure')).mockRejectedValueOnce(new Error('synthetic save failure'))
+  f.wakes.checkpoint({ threadId: f.thread.id, checkpointId: 'capture', observedAt: new Date(f.now()).toISOString(), availability: 'available', changedFiles: 1 })
+  await f.advance(2_000)
+  expect(f.delivered).toHaveLength(0)
+  await f.advance(4_000)
+  expect(f.delivered).toHaveLength(1)
+  expect(f.deliver).toHaveBeenCalledTimes(3)
+  expect(f.record.wakeEventIds).toEqual(f.delivered[0]!.events.map(event => event.id))
+  await f.advance(10_000)
+  expect(f.deliver).toHaveBeenCalledTimes(3)
+})
+
+it('retries event-ID persistence after a saved wake-up without queueing the news twice', async () => {
+  const f = fixture()
+  f.remember.mockRejectedValueOnce(new Error('synthetic metadata save failure'))
+  f.wakes.checkpoint({ threadId: f.thread.id, checkpointId: 'capture', observedAt: new Date(f.now()).toISOString(), availability: 'available', changedFiles: 1 })
+  await f.advance(4_000)
+  expect(f.deliver).toHaveBeenCalledTimes(1)
+  expect(f.remember).toHaveBeenCalledTimes(2)
+  expect(f.record.wakeEventIds).toEqual(f.delivered[0]!.events.map(event => event.id))
+})
+
+it.each(['stopped', 'answered'] as const)('withdraws %s news before retrying a failed queue save', async change => {
+  const f = fixture()
+  f.deliver.mockRejectedValueOnce(new Error('synthetic save failure'))
+  if (change === 'answered') {
+    f.thread.requests = [{ id: 'card', kind: 'question', text: 'private question', options: [] }]; f.wakes.observe()
+  } else f.wakes.checkpoint({ threadId: f.thread.id, checkpointId: 'capture', observedAt: new Date(f.now()).toISOString(), availability: 'available', changedFiles: 1 })
+  await f.advance(2_000)
+  if (change === 'answered') f.thread.requests = []
+  else f.record.requests[0]!.participants[0]!.automationStopped = true
+  f.wakes.observe()
+  await f.advance(2_000)
+  expect(f.delivered).toHaveLength(0)
+  expect(f.deliver).toHaveBeenCalledTimes(1)
+})
+
+it('folds newer evidence into a failed save retry instead of retaining its older truth', async () => {
+  const f = fixture()
+  const checkpoint = (changedFiles: number) => ({ threadId: f.thread.id, checkpointId: 'capture',
+    observedAt: new Date(f.now()).toISOString(), availability: 'available' as const, changedFiles })
+  f.deliver.mockImplementationOnce(async () => { f.wakes.checkpoint(checkpoint(2)); throw new Error('synthetic save failure') })
+  f.wakes.checkpoint(checkpoint(1))
+  await f.advance(4_000)
+  expect(f.delivered).toHaveLength(1)
+  expect(f.delivered[0]!.events[0]!.revision).toBe(observationDigest(f.wakes.evidence.read(centerTarget).map(fact => fact.id).sort()))
+  expect(f.record.wakeEventIds).toEqual(f.delivered[0]!.events.map(event => event.id))
 })
