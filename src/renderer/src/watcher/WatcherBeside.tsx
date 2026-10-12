@@ -4,6 +4,7 @@ import type { AgentState } from '../../../shared/agents'
 import type { AgentConnection } from '../agents/AgentContext'
 import { PullRequestOpenerContext, type PullRequestOpener } from '../agents/BranchToolbar'
 import { toolsPanelStore } from '../tools/toolsPanelStore'
+import { BrowserPageRouteContext, type BrowserPageRoute } from '../tools/webLinks'
 import { DIVIDER_WIDTH, MIN_PANE_WIDTH, RESIZE_STEP } from '../agents/splitLayout'
 import type { ThreadRow } from '../agents/threadFacts'
 import type { ThreadDraftStore } from '../agents/threadDraftStore'
@@ -137,8 +138,9 @@ export function shownShare(width: number, share: number): number { return clamp(
  * is answered and worked in exactly as on the Threads page. Its header adds Open in Threads, which takes the thread to
  * the Threads room selected, and Close. Closing or replacing it stops nothing. Its draft is the thread's own, and its
  * reading position is kept for when it opens beside Watcher again. Escape closes it, unless something inside it
- * (a menu, a picker, a docked card) answers Escape first. The room has no Tools panel, so its pull request badge
- * opens the thread's pull request in Tools on the Threads page, with the thread selected, and says so.
+ * (a menu, a picker, a docked card) answers Escape first. The room has no Tools panel, so what would open there goes
+ * to the Threads page, with the thread selected, as Open in Threads does: its pull request badge opens Tools on the
+ * pull request and says so, and a link that opens in Sotto's browser opens Tools on that page.
  */
 export function BesidePane({ row, state, command, store, focused, underControls, error, now, onFocus, onClose, onOpenInThreads }: {
   readonly row: ThreadRow
@@ -160,7 +162,8 @@ export function BesidePane({ row, state, command, store, focused, underControls,
     open: id => { toolsPanelStore.showPullRequest(id); onOpenInThreads() },
     where: 'in Tools on the Threads page',
   }), [onOpenInThreads])
-  return <PullRequestOpenerContext.Provider value={pullRequests}><section id={BESIDE_PANE_ID} className="thread-pane watcher-beside" data-thread-id={threadId} data-focused={focused || undefined}
+  const pages = useMemo<BrowserPageRoute>(() => page => { toolsPanelStore.showBrowserPageOf(page); onOpenInThreads(); return { ok: true } }, [onOpenInThreads])
+  return <PullRequestOpenerContext.Provider value={pullRequests}><BrowserPageRouteContext.Provider value={pages}><section id={BESIDE_PANE_ID} className="thread-pane watcher-beside" data-thread-id={threadId} data-focused={focused || undefined}
     data-under-controls={underControls || undefined} role="region" aria-label={row.thread.title}
     onFocusCapture={onFocus} onPointerDownCapture={onFocus}
     onKeyDown={event => {
@@ -177,5 +180,5 @@ export function BesidePane({ row, state, command, store, focused, underControls,
       </button>}
       notice={<ThreadWorkingCopyNotice key={`working-copy-${threadId}`} thread={row.thread} project={row.project} command={command}
         onRecovered={() => document.getElementById(BESIDE_PROMPT_ID)?.focus()} />} />
-  </section></PullRequestOpenerContext.Provider>
+  </section></BrowserPageRouteContext.Provider></PullRequestOpenerContext.Provider>
 }

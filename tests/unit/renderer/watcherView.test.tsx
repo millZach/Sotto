@@ -22,6 +22,7 @@ import { WatcherView } from '../../../src/renderer/src/watcher/WatcherView'
 import { firstMessage } from '../../../src/renderer/src/watcher/watcherFirstMessage'
 import { toolsPanelStore } from '../../../src/renderer/src/tools/toolsPanelStore'
 import { agentContextFixture } from '../../fixtures/agentContext'
+import { browserBridgeFixture, browserPage } from '../../fixtures/renderer/browserBridge'
 import { threadsStateFixture } from '../../fixtures/agentState'
 import { openSidebarFolders } from '../../fixtures/renderer/liveAgentState'
 import { promptText, setPromptText } from './helpers/promptEditor'
@@ -465,6 +466,57 @@ describe("Watcher's room", () => {
     // A lower limit than the threads in flight stops nothing; the meter says so.
     act(() => publish(roomState({ inFlightLimit: 1, observedAt: new Date(NOW + 1_000).toISOString() })))
     expect(screen.getByRole('meter', { name: 'Watched threads' })).toHaveAttribute('aria-valuetext', '2 of 1 watched')
+  })
+
+  /** A window whose Sotto browser opens `footer-links`' pages, and whose system browser opens anything. */
+  function withBrowser(): { readonly browser: ReturnType<typeof browserBridgeFixture>; readonly openExternalLink: ReturnType<typeof vi.fn>; readonly restore: () => void } {
+    const workspace = { threadId: 'footer-links', projectId: 'workshop', workingDirectory: 'D:/work/workshop', workspaceId: '0f8fad5b-d9cb-469f-a165-70867728950e' }
+    const browser = browserBridgeFixture({ workspace, commands: {
+      openLink: vi.fn(async ({ url }) => ({ ok: true as const, value: { destination: 'embedded' as const, page: browserPage(workspace, { id: '7c9e6679-7425-40de-944b-e07fc1f90ae7', url, title: 'Docs' }) } })),
+    } })
+    const openExternalLink = vi.fn(async () => ({ ok: true }))
+    Object.defineProperty(window, 'sotto', { configurable: true, value: { browser: browser.bridge, openExternalLink } })
+    return { browser, openExternalLink, restore: () => { Reflect.deleteProperty(window, 'sotto') } }
+  }
+
+  it('shows a beside thread’s page in Sotto’s browser on the Threads page, with the thread selected, since the room has no Tools', async () => {
+    toolsPanelStore.setOpen(false)
+    const { browser, restore } = withBrowser()
+    try {
+      const state = stateWithWatcher()
+      const footer = state.host.threads.find(thread => thread.id === 'footer-links')!
+      footer.messages = [...footer.messages, { id: 'footer-docs', role: 'assistant', text: 'See [the docs](https://example.com/docs).', createdAt: at }]
+      const { command, navigate } = renderRoom(state, roomState())
+      await paneReady()
+      fireEvent.click(screen.getByRole('button', { name: 'All threads, 9. Show the list' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Open Footer links beside Watcher' }))
+      const beside = await screen.findByRole('region', { name: 'Footer links' })
+      await userEvent.click(within(beside).getByRole('link', { name: 'the docs' }))
+      await waitFor(() => expect(browser.bridge.openLink).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://example.com/docs' })))
+      await waitFor(() => expect(navigate).toHaveBeenCalledWith('threads'))
+      expect(command).toHaveBeenCalledWith({ type: 'select-thread', threadId: 'footer-links' })
+      expect(toolsPanelStore.getSnapshot()).toMatchObject({ open: true, surface: 'browser' })
+      expect(toolsPanelStore.browser.thread('footer-links')?.activePageId).toBe('7c9e6679-7425-40de-944b-e07fc1f90ae7')
+    } finally { restore(); toolsPanelStore.setOpen(false) }
+  })
+
+  it('opens links in Watcher’s own conversation in the system browser, since nothing shows Watcher’s browser', async () => {
+    const { browser, openExternalLink, restore } = withBrowser()
+    try {
+      const state = stateWithWatcher()
+      const watcher = state.host.threads.find(thread => thread.id === 'watcher')!
+      watcher.messages = [...watcher.messages, { id: 'watcher-docs', role: 'assistant', text: 'See [the docs](https://example.com/docs).', createdAt: at }]
+      const { navigate } = renderRoom(state, roomState())
+      await paneReady()
+      const link = within(screen.getByRole('region', { name: 'Watcher' })).getByRole('link', { name: 'the docs' })
+      fireEvent.contextMenu(link, { clientX: 40, clientY: 60 })
+      expect(within(screen.getByRole('menu')).getAllByRole('menuitem').map(item => item.textContent)).toEqual(['Open in system browser', 'Copy link'])
+      await userEvent.keyboard('{Escape}')
+      await userEvent.click(link)
+      await waitFor(() => expect(openExternalLink).toHaveBeenCalledWith('https://example.com/docs'))
+      expect(browser.bridge.openLink).not.toHaveBeenCalled()
+      expect(navigate).not.toHaveBeenCalled()
+    } finally { restore() }
   })
 
   it('closes More Watcher actions on Escape from its button too, after Shift+Tab back to it', async () => {

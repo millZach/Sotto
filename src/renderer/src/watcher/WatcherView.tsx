@@ -20,6 +20,7 @@ import { useShared } from '../agents/stateSharing'
 import { describeThreads, providerKey, type ThreadRow } from '../agents/threadFacts'
 import { effortChoices, WatcherPermission } from '../agents/ThreadOptions'
 import { ThreadPane } from '../agents/ThreadPane'
+import { BrowserPageRouteContext } from '../tools/webLinks'
 import { useWatcherRoom, type WatcherRoom } from './watcherRoom'
 import { BESIDE_PANE_ID, BesideDivider, BesidePane, roomView, shownShare, useKeptReadingPosition, useRoomView } from './WatcherBeside'
 import { firstMessage, useFirstMessage } from './watcherFirstMessage'
@@ -237,8 +238,12 @@ function WatcherPane({ state, row, header, error, focused, now }: {
   useLayoutEffect(() => {
     if (document.activeElement === null || document.activeElement === document.body) document.getElementById(WATCHER_PROMPT_ID)?.focus()
   }, [])
-  return <ThreadPane row={row} state={state} command={agents.command} store={agents.threadDrafts} focused={focused} promptId={WATCHER_PROMPT_ID}
-    error={error} now={now} watcherHeader={header} />
+  // Watcher is not on the Threads page, so a page in its own browser could never be seen: its links open in the
+  // system browser.
+  return <BrowserPageRouteContext.Provider value={null}>
+    <ThreadPane row={row} state={state} command={agents.command} store={agents.threadDrafts} focused={focused} promptId={WATCHER_PROMPT_ID}
+      error={error} now={now} watcherHeader={header} />
+  </BrowserPageRouteContext.Provider>
 }
 
 /** Puts focus where a thread opened beside Watcher should take it: its request card when opened at what it waits on, otherwise its title. */
