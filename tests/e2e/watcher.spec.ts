@@ -382,11 +382,12 @@ test.describe("Watcher's room on the built app", () => {
       }, CURRENT)
       await expect(pane.getByText('Watcher history 39', { exact: true })).toBeVisible()
       const watcherLog = pane.getByRole('log', { name: 'Thread transcript' })
-      // The first message reaching the top of the view, and how far below the top it starts.
+      // The first message reaching the top of the view, and how far below the top it starts in whole pixels (a part of a
+      // pixel above it rounds to -0, which is the same place as 0).
       const atTop = () => watcherLog.evaluate(element => {
         const top = element.getBoundingClientRect().top
         const first = [...element.querySelectorAll('[data-message-id]')].find(item => item.getBoundingClientRect().bottom > top)
-        return { id: first?.getAttribute('data-message-id') ?? null, offset: first ? Math.round(first.getBoundingClientRect().top - top) : null }
+        return { id: first?.getAttribute('data-message-id') ?? null, offset: first ? Math.round(first.getBoundingClientRect().top - top) || 0 : null }
       })
       await pane.locator('[data-message-id="watcher-long-30"]').evaluate(element => element.scrollIntoView({ block: 'start' }))
       await expect(pane.getByRole('button', { name: 'Jump to latest' })).toBeVisible()
