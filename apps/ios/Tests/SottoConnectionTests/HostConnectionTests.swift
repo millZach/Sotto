@@ -136,6 +136,17 @@ private final class HostResponses: URLProtocol {
         try await connection.revoke(endpoint: endpoint, pairing: pairing)
         XCTAssertEqual(routes.values, ["/v1/health", "/v1/revoke"])
     }
+    /// The phone opts in to Watcher's page and its Stop all on every computer, keeping every snapshot feature it asked for
+    /// before. Only an Owl desktop that runs Watcher offers them back.
+    func testHelloOptsInToWatcherAndKeepsTheSnapshotFeatures() {
+        guard case .array(let accepts) = HostConnection.hello["accepts"],
+              case .array(let before) = Wire.snapshotHello["accepts"] else { return XCTFail("Hello has no feature opt-in") }
+        XCTAssertEqual(Array(accepts.prefix(before.count)), before, "The snapshot hello's own features come first, unchanged")
+        XCTAssertEqual(accepts.filter { $0 == .string(WatcherWire.feature) }.count, 1)
+        XCTAssertEqual(accepts.filter { $0 == .string(WatcherWire.stopFeature) }.count, 1)
+        XCTAssertEqual(HostConnection.hello["op"], .string("hello"))
+        XCTAssertEqual(HostConnection.hello["afterSeq"], Wire.snapshotHello["afterSeq"])
+    }
     func testConnectionFailureMessagesNameTheirCause() {
         XCTAssertEqual(HostConnection.requestFailure(operation: "hello"), .connectionTimedOut)
         XCTAssertEqual(HostConnection.requestFailure(operation: "command"), .uncertain)
