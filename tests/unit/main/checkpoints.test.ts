@@ -568,3 +568,18 @@ it('republishes the latest saved checkpoint facts on initialization without path
   await restarted.initialize()
   expect(observed).toHaveBeenCalledTimes(1)
 })
+
+it('offers saved captures for reference recovery before publishing the newest current fact', async () => {
+  const f = await fixture(), first = await f.complete()
+  await f.service.beforeTurn(f.state.threadId)
+  await writeFile(join(f.repo, 'later.txt'), 'later')
+  f.state.userMessageIds.push('user-2'); await f.service.afterTurn(f.state.threadId); f.service.dispose()
+  const restored: string[] = [], observed: string[] = []
+  const restarted = new CheckpointService({ ...f.dependencies, restore: read => restored.push(read.checkpointId),
+    observed: read => observed.push(read.checkpointId) })
+  cleanup.push(async () => restarted.dispose())
+  await restarted.initialize()
+  expect(restored).toHaveLength(2)
+  expect(restored[0]).toBe(first.checkpointId)
+  expect(observed).toEqual([restored[1]])
+})

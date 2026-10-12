@@ -4,6 +4,8 @@ import { pullRequestKey } from '../../shared/gitPullRequests'
 import { watcherEvidenceSchema, type WatcherEvidence, type WatcherThreadTarget } from '../../shared/watcher'
 
 export const observationDigest = (value: unknown): string => createHash('sha256').update(JSON.stringify(value)).digest('hex')
+const evidenceIdentity = (slot: string, input: Omit<WatcherEvidence, 'id'>): string =>
+  observationDigest([slot, input.target, { ...input, url: input.source === 'github' && input.url ? pullRequestKey(input.url) : input.url, observedAt: undefined, fetchedAt: undefined }])
 export const targetKey = (target: WatcherThreadTarget): string => JSON.stringify([target.hostId, target.threadId])
 export interface PullRequestObservation {
   url: string; observedAt: string; head: string | null; state?: 'open' | 'closed' | 'merged'
@@ -22,7 +24,7 @@ const EVIDENCE_PROJECTION_MAX = 100
 export class WatcherEvidenceStore {
   private readonly entries = new Map<string, Map<string, WatcherEvidence>>()
   put(slot: string, input: Omit<WatcherEvidence, 'id'>): boolean {
-    const id = observationDigest([slot, input.target, { ...input, url: input.source === 'github' && input.url ? pullRequestKey(input.url) : input.url, observedAt: undefined, fetchedAt: undefined }])
+    const id = evidenceIdentity(slot, input)
     const parsed = watcherEvidenceSchema.safeParse({ ...input, id })
     if (!parsed.success) return false
     const item = parsed.data
@@ -45,6 +47,13 @@ export class WatcherEvidenceStore {
         ...connected && unread?.availability === 'unavailable' && (unread.reason === 'read-failed' || unread.reason === 'rate-limited') ? { freshness: 'stale' as const, availability: 'unavailable' as const, ...(unread.reason ? { reason: unread.reason } : {}) } : {},
       }
     })
+  }
+  knownIdentities(target: WatcherThreadTarget): string[] {
+    return [...this.entries.get(targetKey(target))?.values() ?? []]
+      .filter(item => !(item.availability === 'unavailable' && item.reason === 'checks-unavailable')).map(item => item.id)
+  }
+  identities(target: WatcherThreadTarget): ReadonlySet<string> {
+    return new Set([...this.entries.get(targetKey(target))?.values() ?? []].map(item => item.id))
   }
   removeMissing(targets: ReadonlySet<string>): void { for (const key of this.entries.keys()) if (!targets.has(key)) this.entries.delete(key) }
   observeThread(thread: AgentThread, target: WatcherThreadTarget, observedAt: string): boolean {
@@ -109,10 +118,16 @@ export class WatcherEvidenceStore {
       ...(read.reason ? { reason: read.reason } : !available ? { reason: 'checks-unavailable' as const } : {}) })
     return changed
   }
+  checkpointIdentity(target: WatcherThreadTarget, read: CheckpointObservation): string {
+    return evidenceIdentity('checkpoint', this.checkpointFact(target, read))
+  }
   checkpoint(target: WatcherThreadTarget, read: CheckpointObservation): boolean {
-    return this.put('checkpoint', { target, source: 'checkpoint', observedAt: read.observedAt, freshness: 'fresh',
+    return this.put('checkpoint', this.checkpointFact(target, read))
+  }
+  private checkpointFact(target: WatcherThreadTarget, read: CheckpointObservation): Omit<WatcherEvidence, 'id'> {
+    return { target, source: 'checkpoint', observedAt: read.observedAt, freshness: 'fresh',
       availability: read.availability, fact: 'files-changed', checkpointId: read.checkpointId,
       ...(read.turnId ? { turnId: read.turnId } : {}), ...(read.changedFiles !== undefined && read.availability === 'available' ? { changedFiles: read.changedFiles } : {}),
-      ...(read.reason ? { reason: read.reason } : {}) })
+      ...(read.reason ? { reason: read.reason } : {}) }
   }
 }

@@ -12,6 +12,7 @@ import { CheckpointCapture } from './checkpointCapture'
 import { LINK_MESSAGE, blobName, checkpointPathSchema, isInside } from './checkpointPaths'
 import { CheckpointStore, type CheckpointRecord, type Snapshot } from './checkpointStore'
 import { CheckpointReferences } from './checkpointReferences'
+import type { CheckpointObservation } from '../agents/watcherEvidence'
 import type { CheckpointDependencies, CheckpointThread } from './checkpointTypes'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 
@@ -68,6 +69,7 @@ export class CheckpointService extends ToolOperations {
       const latest = new Map<string, CheckpointRecord>()
       for (const record of this.records.values()) {
         if (this.dependencies.preserveThread?.(record.threadId) || !['ready', 'unavailable'].includes(record.status)) continue
+        this.dependencies.restore?.(this.observation(record))
         const previous = latest.get(record.threadId)
         if (!previous || Date.parse(previous.createdAt) <= Date.parse(record.createdAt)) latest.set(record.threadId, record)
       }
@@ -352,9 +354,12 @@ export class CheckpointService extends ToolOperations {
   }) }
   private publishObservation(record: CheckpointRecord): void {
     if (!this.dependencies.observed) return
-    this.dependencies.observed({ threadId: record.threadId, checkpointId: record.id, observedAt: new Date(this.dependencies.now?.() ?? Date.now()).toISOString(),
+    this.dependencies.observed(this.observation(record))
+  }
+  private observation(record: CheckpointRecord): CheckpointObservation {
+    return { threadId: record.threadId, checkpointId: record.id, observedAt: new Date(this.dependencies.now?.() ?? Date.now()).toISOString(),
       availability: record.status === 'ready' ? 'available' : 'unavailable',
-      ...(record.status === 'ready' ? { changedFiles: this.changes(record).length } : { reason: record.unavailableReason ?? 'capture-unavailable' }) })
+      ...(record.status === 'ready' ? { changedFiles: this.changes(record).length } : { reason: record.unavailableReason ?? 'capture-unavailable' }) }
   }
   private matches(record: CheckpointRecord, thread: CheckpointThread): boolean { return record.threadId === thread.threadId && record.providerId === thread.providerId && record.bindingId === thread.bindingId }
   private changes(record: CheckpointRecord): Checkpoint['files'] {

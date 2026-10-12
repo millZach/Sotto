@@ -482,3 +482,66 @@ it('invalidates an explicitly unlinked PR during incomplete evidence recovery', 
   f.thread.pullRequests = []; recovered.observe()
   expect(recovered.due(saved)).toBe(false)
 })
+
+it('keeps waiting checkpoint news through recovery of a full evidence projection', async () => {
+  const f = fixture()
+  f.thread.status = 'idle'; f.thread.lastTurn!.status = 'completed'
+  f.thread.pullRequests = Array.from({ length: 50 }, (_, n) => ({ url: 'https://github.com/o/r/pull/' + (n + 1), number: n + 1,
+    title: 'Synthetic pull request', state: 'open' as const, draft: false, source: 'linked' as const, linkedAt: new Date(f.now()).toISOString() }))
+  f.wakes.observe()
+  for (const pr of f.thread.pullRequests) f.wakes.pullRequest({ url: pr.url, head: 'head', observedAt: new Date(f.now()).toISOString(),
+    availability: 'available', state: 'open', checks: 'passed', reviewApproved: true, autoMerge: true })
+  const checkpoint = (changedFiles: number) => ({ threadId: f.thread.id, checkpointId: 'capture',
+    observedAt: new Date(f.now()).toISOString(), availability: 'available' as const, changedFiles })
+  f.wakes.checkpoint(checkpoint(1)); await f.advance(2_000); f.wakes.close()
+  const saved = f.delivered[0]!.events.find(event => event.kind === 'evidence-changed')!
+  expect(saved.evidenceIds).toHaveLength(100)
+  const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, canDeliver: () => true, now: f.now,
+    restoredEvents: () => f.delivered.flatMap(news => news.events), deliver: async () => undefined, remember: async () => undefined,
+    prune: async () => undefined, schedule: () => () => undefined })
+  cleanups.push(() => recovered.close())
+  recovered.start()
+  expect(recovered.due(saved)).toBe(true)
+  recovered.checkpoint(checkpoint(1))
+  for (const pr of f.thread.pullRequests) recovered.pullRequest({ url: pr.url, head: 'head', observedAt: new Date(f.now()).toISOString(),
+    availability: 'available', state: 'open', checks: 'passed', reviewApproved: true, autoMerge: true })
+  expect(recovered.due(saved)).toBe(true)
+  recovered.checkpoint(checkpoint(2))
+  expect(recovered.due(saved)).toBe(false)
+})
+
+it('invalidates newly linked PR news during incomplete recovery', async () => {
+  const f = fixture()
+  f.thread.status = 'idle'; f.thread.lastTurn!.status = 'completed'; f.wakes.observe()
+  f.wakes.checkpoint({ threadId: f.thread.id, checkpointId: 'capture', observedAt: new Date(f.now()).toISOString(), availability: 'available' })
+  await f.advance(2_000); f.wakes.close()
+  const saved = f.delivered[0]!.events.find(event => event.kind === 'evidence-changed')!
+  const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, canDeliver: () => true, now: f.now,
+    restoredEvents: () => f.delivered.flatMap(news => news.events), deliver: async () => undefined, remember: async () => undefined,
+    prune: async () => undefined, schedule: () => () => undefined })
+  cleanups.push(() => recovered.close())
+  recovered.start(); expect(recovered.due(saved)).toBe(true)
+  f.thread.pullRequests = [{ url: 'https://github.com/o/r/pull/1', number: 1, title: 'Synthetic pull request',
+    state: 'open', draft: false, source: 'linked', linkedAt: new Date(f.now()).toISOString() }]
+  recovered.observe()
+  expect(recovered.due(saved)).toBe(false)
+})
+
+it('supersedes waiting news when a newer saved checkpoint loads after its referenced capture', async () => {
+  const f = fixture()
+  f.thread.status = 'idle'; f.thread.lastTurn!.status = 'completed'; f.wakes.observe()
+  const read = { threadId: f.thread.id, checkpointId: 'saved-capture', observedAt: new Date(f.now()).toISOString(), availability: 'available' as const, changedFiles: 1 }
+  f.wakes.checkpoint(read); await f.advance(2_000); f.wakes.close()
+  const saved = f.delivered[0]!.events.find(event => event.kind === 'evidence-changed')!
+  const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, canDeliver: () => true, now: f.now,
+    restoredEvents: () => f.delivered.flatMap(news => news.events), deliver: async () => undefined, remember: async () => undefined,
+    prune: async () => undefined, schedule: () => () => undefined })
+  cleanups.push(() => recovered.close())
+  recovered.start(); expect(recovered.due(saved)).toBe(true)
+  recovered.restoreCheckpoint({ ...read, checkpointId: 'unreferenced-older-capture' })
+  expect(recovered.evidence.read(centerTarget).some(item => item.source === 'checkpoint')).toBe(false)
+  recovered.restoreCheckpoint(read)
+  expect(recovered.due(saved)).toBe(true)
+  recovered.checkpoint({ ...read, checkpointId: 'newest-capture', changedFiles: 2 })
+  expect(recovered.due(saved)).toBe(false)
+})

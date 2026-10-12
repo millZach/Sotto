@@ -1452,6 +1452,7 @@ export class AgentControl {
   /** Main observers only; these carry sourced facts, never user command authority. */
   pullRequestObserved(read: PullRequestObservation): void { if (this.dependencies.watcherEnabled === true) this.watcherHooks?.pullRequestObserved?.(read) }
   watcherObservationsEnabled(): boolean { return this.dependencies.watcherEnabled === true && this.watcherHooks !== undefined }
+  restoreCheckpoint(read: CheckpointObservation): void { if (this.dependencies.watcherEnabled === true) this.watcherHooks?.restoreCheckpoint?.(read) }
   checkpointObserved(read: CheckpointObservation): void { if (this.dependencies.watcherEnabled === true) this.watcherHooks?.checkpointObserved?.(read) }
   private watcherObservedIds = ''
   refreshWatcherObservation(): void {
