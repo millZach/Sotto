@@ -161,6 +161,7 @@ export const watcherParticipantSchema = participation.extend({ target: watcherTh
   lastUserMessageId: id.nullable().optional(),
   promptCount: z.number().int().min(0).max(WATCHER_PROMPTS_PER_THREAD) }).strict()
 export const watcherRequestSchema = z.object({ id: z.uuid(), watcher: watcherThreadTargetSchema, rootUserMessageId: id,
+  phoneOrigin: z.object({ kind: z.literal('phone'), hostId: z.uuid(), clientId: id }).strict().optional(),
   pairedPermissionCeiling: agentRuntimeModeSchema.optional(),
   remoteOrigin: z.object({ clientId: id, master: watcherIdentitySchema, creationOperationId: z.uuid(), ceiling: agentRuntimeModeSchema }).strict().optional(),
   state: z.enum(['active', 'stopped', 'closed']), createdAt: time, closedAt: time.nullable(),
