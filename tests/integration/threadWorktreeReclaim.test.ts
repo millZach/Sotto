@@ -1,12 +1,13 @@
 // @vitest-environment node
 
 import { initializeGitRepository } from '../fixtures/gitRepository'
-import { lstat, mkdir, readFile, rename, rm, symlink, unlink, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, readdir, readFile, rename, rm, symlink, unlink, writeFile } from 'node:fs/promises'
 
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { runWorktreeGit as git, ThreadWorktrees } from '../../src/main/agents/threadWorktrees'
 
+import { holdFolder } from '../fixtures/folderHolder'
 import { fixture, removeTestCheckout } from '../fixtures/threadWorktreeFixture'
 
 describe("independent working-copy allocation", () => {
@@ -259,4 +260,65 @@ describe("independent working-copy allocation", () => {
     await expect(f.service.reclaim(a, { automatic: true })).rejects.toThrow('besides installed dependencies')
     expect((await f.service.reclaim(a, { confirmedItems: facts.items, confirmedIgnored: facts.ignored, confirmedRepositories: facts.repositories })).reclaimedAt).toBeTruthy()
   }, 60_000)
+
+  // What a removal Windows could only half finish leaves: no files, no registration, and the empty folder.
+  it('restores an empty, unregistered folder left at the reserved path', async () => {
+    const f = await fixture(); const a = await f.service.ensure(await f.service.allocate(f.project, 'independent'))
+    const recorded = await f.service.inspect(a)
+    await git(f.project, ['worktree', 'remove', '--', a.path!])
+    await mkdir(a.path!)
+    await expect(f.service.inspect(recorded)).rejects.toThrow('no longer this thread’s Git worktree')
+    const restored = await f.service.inspect(await f.service.restore(recorded))
+    expect(restored).toMatchObject({ status: 'ready', branch: recorded.branch, path: a.path })
+    expect(await readFile(join(a.path!, 'tracked.txt'), 'utf8')).toBe('committed baseline')
+  })
+  it('leaves an unregistered folder with anything in it as it is', async () => {
+    const f = await fixture(); const a = await f.service.ensure(await f.service.allocate(f.project, 'independent'))
+    const recorded = await f.service.inspect(a)
+    await git(f.project, ['worktree', 'remove', '--', a.path!])
+    await mkdir(a.path!); await writeFile(join(a.path!, 'notes.txt'), 'not Sotto’s')
+    expect(await f.service.restore(recorded)).toEqual(recorded)
+    expect(await readdir(a.path!)).toEqual(['notes.txt'])
+    expect(await readFile(join(a.path!, 'notes.txt'), 'utf8')).toBe('not Sotto’s')
+    await expect(f.service.inspect(recorded)).rejects.toThrow('no longer this thread’s Git worktree')
+  })
+  it('leaves an empty folder Git still registers as it is', async () => {
+    const f = await fixture(); const a = await f.service.ensure(await f.service.allocate(f.project, 'independent'))
+    const recorded = await f.service.inspect(a)
+    // Emptied with its registration intact: a checkout Git knows about, not a half-finished removal.
+    for (const name of await readdir(a.path!)) await rm(join(a.path!, name), { recursive: true, force: true })
+    expect(await f.service.restore(recorded)).toEqual(recorded)
+    expect(await readdir(a.path!)).toEqual([])
+    expect((await git(f.project, ['worktree', 'list', '--porcelain'])).match(/worktree /gu)).toHaveLength(2)
+  })
+  it('leaves an empty folder reached through a link as it is', async () => {
+    const f = await fixture(); const a = await f.service.ensure(await f.service.allocate(f.project, 'independent'))
+    const recorded = await f.service.inspect(a)
+    await git(f.project, ['worktree', 'remove', '--', a.path!])
+    const elsewhere = join(f.root, 'elsewhere'); await mkdir(elsewhere)
+    await symlink(elsewhere, a.path!, 'junction')
+    expect(await f.service.restore(recorded)).toEqual(recorded)
+    expect((await lstat(a.path!)).isSymbolicLink()).toBe(true)
+    expect(await readdir(elsewhere)).toEqual([])
+    expect((await git(f.project, ['worktree', 'list', '--porcelain'])).match(/worktree /gu)).toHaveLength(1)
+    await rm(a.path!, { recursive: false }).catch(() => unlink(a.path!))
+  })
+  it.runIf(process.platform === 'win32')('reclaims a folder another process is working in, and restore fills it again', async () => {
+    const f = await fixture(); const a = await f.service.ensure(await f.service.allocate(f.project, 'independent'))
+    const recorded = await f.service.inspect(a)
+    // The thread's idle provider client holds its worktree as its working folder.
+    const holder = await holdFolder(a.path!)
+    try {
+      const reclaimed = await f.service.reclaim(recorded, { automatic: true })
+      expect(reclaimed).toMatchObject({ status: 'ready', branch: recorded.branch, path: a.path })
+      expect(reclaimed.reclaimedAt).toBeTruthy()
+      expect(await readdir(a.path!)).toEqual([])
+      expect((await git(f.project, ['branch', '--list', recorded.branch!])).trim()).toBe(recorded.branch)
+      const restored = await f.service.inspect(await f.service.restore(reclaimed))
+      expect(restored).toMatchObject({ status: 'ready', branch: recorded.branch, reclaimedAt: undefined })
+      expect(await readFile(join(a.path!, 'tracked.txt'), 'utf8')).toBe('committed baseline')
+    } finally {
+      await holder.release()
+    }
+  })
 })
