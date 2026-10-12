@@ -399,3 +399,30 @@ it('does not shorten persistence backoff when fresh evidence or shell observatio
   expect(attempts).toEqual([2_000, 4_000, 8_000])
   expect(f.deliver.mock.calls[2]![0].events[0]!.revision).toBe(observationDigest(f.wakes.evidence.read(centerTarget).map(fact => fact.id).sort()))
 })
+
+it('owns no quiet deadline for an unwatched same-ID thread on another host', () => {
+  const f = fixture()
+  f.snapshot.threads.unshift({ ...f.thread, hostId: '55555555-5555-4555-8555-555555555555' })
+  f.wakes.observe()
+  expect(f.timers.size).toBe(1)
+})
+
+it.each(['idle', 'question', 'disconnected'] as const)('uses the watched host at quiet expiry even when another same-ID thread is %s', async state => {
+  const f = fixture()
+  const other = { ...f.thread, hostId: '55555555-5555-4555-8555-555555555555' }
+  if (state === 'idle') { other.status = 'idle'; other.lastTurn = undefined }
+  if (state === 'question') other.requests = [{ id: 'other-card', kind: 'question', text: 'private other-host question', options: [] }]
+  if (state === 'disconnected') other.clientConnected = false
+  f.snapshot.threads.unshift(other); f.wakes.observe()
+  await f.advance(WATCHER_QUIET_MS + 2_000)
+  const quiet = f.delivered.flatMap(news => news.events).filter(event => event.kind === 'quiet')
+  expect(quiet.map(event => event.target)).toEqual([centerTarget])
+})
+
+it('keeps remote same-ID participants out of this host provider residency and quiet deadlines', () => {
+  const f = fixture()
+  f.record.requests[0]!.participants[0]!.target.hostId = '55555555-5555-4555-8555-555555555555'
+  f.wakes.observe()
+  expect(f.wakes.watchedThreadIds()).toEqual([])
+  expect(f.timers.size).toBe(0)
+})
