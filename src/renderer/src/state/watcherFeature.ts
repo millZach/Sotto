@@ -1,12 +1,12 @@
 import type { UpdateStatus } from '../../../shared/contracts'
-import { useOptionalApp } from './AppContext'
+import { owlFeatureEnabledOf, useOwlFeature } from './owlFeature'
 
-/** Main reads the running build once at startup. Missing information keeps Watcher hidden. */
+/** Compatibility wrapper around the Owl feature list for Watcher branches in flight. */
 export function watcherEnabledOf(update: UpdateStatus | null | undefined): boolean {
-  return update?.watcherEnabled === true
+  return owlFeatureEnabledOf(update, 'watcher')
 }
 
-/** Watcher surfaces ask main's startup gate before they exist; saved records remain in main. */
+/** Compatibility wrapper around useOwlFeature; saved records remain in main. */
 export function useWatcherEnabled(): boolean {
-  return watcherEnabledOf(useOptionalApp()?.update)
+  return useOwlFeature('watcher')
 }

@@ -6,6 +6,10 @@ Sotto is a desktop dictation app with manual coding threads across native provid
 
 **Promoting an Owl build.** Shipping the exact source commit of the newest published Sotto Owl build as stable, with the Owl version's base set during packaging. The release body names its source commit; `release:check` requires that clean checkout. Newer commits on `main` wait for the next Owl. The `Release X.Y.Z` pull request records the shipped version afterward (ADR-0072).
 
+**Owl feature.** A feature Zach has chosen to keep in Sotto Owl until he is confident it can go to stable; Watcher is the first. Stable shows and starts none of it while keeping its saved records whole (ADR-0072).
+
+**Sending a feature to stable.** Zach's decision to make an Owl feature available on both tracks, reaching Owl first and stable at the next promotion. It is distinct from promoting an Owl build, which chooses the source of a stable release (ADR-0072).
+
 ## Threads
 
 **Watcher gate.** Whether Watcher is available in the running build: on for Sotto Owl, off for stable (ADR-0072). Stable shows and starts none of Watcher, including Watcher history, while keeping its saved records in main and settings whole for a return to Owl. Pane layout, focused pane and selected thread are renderer view state; stable treats a hidden Watcher as a missing thread and does not preserve or restore that view.
