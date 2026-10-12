@@ -61,3 +61,40 @@ The launched Electron processes were closed by the owned-profile harness. No ren
 ## Remaining scope
 
 There are no renderer or phone UI changes, no new dependency or network host, and no design baseline regeneration. The paired-host proof covers a native Windows master and Linux worker over an SSH forward, not a Tailscale TLS certificate path, macOS or installed desktop packaging. The lead owns main integration, the two-axis PR review and CI after pushing. Tickets 6–8 supply the room, receipts and phone experience.
+
+## Reviewed wakeups merge follow-up
+
+Merge `403a3a1d5` joins this branch at `f7dccc8ba` with `feat/watcher-wakeups` at `2b3a1a4e2`. The incoming branch carries the two ticket-3 review rounds, ticket 4's native-frame sizing check and its authorized main changes, including version 0.1.37. No renderer change was authored here, and no live forge check was repeated.
+
+The merge body records each conflict. `.gitignore` keeps the paired-host generated-folder exclusion and the incoming selected thread-tool evidence exceptions. `eslint.config.mjs` keeps the paired-host, `.t` and Omarchy exclusions. The first `watcher.ts` hunk combines the paired permission ceiling with page/choice expiry, validating choice IDs only on their owning host. The second keeps all paired-host methods alongside the incoming `prunePages` method.
+
+The reviewed outcome/refund helper, roster history bound, retry receipts before inactive-request refusal, working-copy snapshots, image request context, latest initial read window, restart cursors, stable Stop all ownership signature, relinquished-participant refusal, closed-service refusals and protected reads remain. Paired reads/admission now refuse a closed service with `NOT_CURRENT_WATCHER`; the desktop checks its current master and connection again before transmission. A definite pre-wire refusal retains its code and refund rules; uncertain transmission still holds its slot. No answer/grant, capacity source or phone filtering was added.
+
+The paired regressions test one-time writer refusal refunds and receipt retries, original receipts after Stop all, stale master participation after settlement, valid confirmation across Watcher progress, invalid confirmation after takeover, closed entry points with no coordinator effect, and closure before transmission with no packet. All 81 focused cases across the four Watcher/socket files passed in 36.91 seconds.
+
+### Corrections and earlier failures
+
+The first typecheck found a fixture assigning `false` to the optional `true` stopped marker. `1aeeb9869` deletes that marker to model the stale projection, without changing its schema.
+
+The first complete follow-up suite had one `THREAD_BUSY` failure in the new Stop all progress fixture: 777 files and 9,669 tests passed, 59 files and 284 tests skipped, in 1,230.66 seconds. The case passed alone but failed twice in thirty repetitions. A state probe caught sixteen cases where the desktop showed an earlier idle projection while the owning host still ran. `78f28dcc5` refreshes the owning host before the synthetic follow-up and checks both states. All thirty repetitions then passed; the temporary loop was removed. Production busy guards and deadlines were unchanged.
+
+The next full suite had one boot-launch fixture error, with the same pass/skip counts, in 1,303.88 seconds; all Watcher cases passed. Its original case passed alone and in twenty repetitions. A whole boot-file rerun failed two related installation/handoff cases, then its diagnostic rerun passed all 35 cases with one skipped in 100.71 seconds. The earlier boot cause remains unconfirmed. `f4b83f291` records stop acknowledgement and stable launcher reason/cause in assertions; it changes no startup behavior or deadline. Temporary logging and repetition were removed. Both the final full suite and the later socket suite passed the boot cases.
+
+### Final ordered gates
+
+All eight requested commands passed in order on `f4b83f291`. The final full-suite memory check returned 10,595,440 KB (earlier full runs: 9,250,536 KB and 9,767,160 KB). Actual output is retained in the ignored `followup-*.log` files in the paired-host evidence folder, normalized to UTF-8 without BOM.
+
+| Command | Result |
+| --- | --- |
+| `npm run typecheck` | Exit 0; all four projects |
+| `npm run lint` | Exit 0 |
+| `npm test -- --maxWorkers=2` | Exit 0; 778 files and 9,670 tests passed, 59 files and 284 tests skipped; 1,129.52 seconds |
+| `npm run notices:verify` | Exit 0; 189 components |
+| `npm run build` | Exit 0; main, host, preload and renderer |
+| `npm run test:socket` | Exit 0; 22 files and 466 tests passed, 10 skipped; 147.03 seconds |
+| `npm run build:host` | Exit 0; plain Node host, 203 modules; 2.05 seconds |
+| `npx playwright test tests/e2e/watcher-gate.spec.ts` | Exit 0; three journeys; 13.6 seconds |
+
+The rebuilt Electron journeys retain stable/Owl ordinary Send/reply, saved-kind and bridge gating, layout/keyboard recovery and all local-host-off refusals. Both themes and reduced motion passed at 1600x1000, 1280x800 and the exact 820x560 content size. The incoming native-frame helper changes only the disposable test window's minimum. I inspected the new [Owl dark](../../artifacts/watcher-paired-hosts/merge-owl-dark-820x560.png) and [stable light](../../artifacts/watcher-paired-hosts/merge-stable-light-820x560.png) captures: sidebar, transcript and composer fit. Their 1230x840 physical pixels reflect the laptop's 150% scaling. Main bundle timestamp was 18:02:13 local; the final host bundle was 18:06:56. These captures contain synthetic fixtures only.
+
+The owned-profile harness closed its Electron launches; a final inventory found zero Node, Electron or SSH processes with this worktree in their command line. No installed/package, macOS, Linux or phone UI proof was added. The original live proof and retained-profile limitation above remain unchanged. This merged native paired-host build was not live rechecked, as requested. Nothing was pushed; the lead still owns integration, review and CI.
