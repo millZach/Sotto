@@ -727,6 +727,66 @@ import XCTest
         XCTAssertEqual(light.value as? String, "Selected")
         openWatcher()
     }
+    /// The part of Watcher's conversation a press reaches: below its pinned glass header and above its reply box, with
+    /// anything the box carries over it. XCTest calls a row under the header hittable, but a press there lands on the
+    /// header (on CI it opened Watched instead of a card's Review question).
+    private var watcherBand: (top: CGFloat, bottom: CGFloat) {
+        let header = byID("watcher-section-conversation")
+        // The header's glass ends its bottom padding below Conversation | Watched.
+        let top = (header.exists ? header.frame.maxY : app.windows.firstMatch.frame.minY) + 12
+        let tabs = app.tabBars.firstMatch
+        var bottom = tabs.exists ? tabs.frame.minY : app.windows.firstMatch.frame.maxY
+        // The box's glass starts above its text; a held line or a message sits above the box.
+        let dock: [(XCUIElement, CGFloat)] = [(byID("watcher-reply"), 20), (byID("watcher-send-held"), 8),
+                                              (app.buttons["Dismiss message"].firstMatch, 8)]
+        for (element, gap) in dock where element.exists { bottom = min(bottom, element.frame.minY - gap) }
+        return (top, bottom)
+    }
+    /// Scrolls Watcher's conversation until `target` sits whole in `watcherBand`, or for one taller than the band, until
+    /// its top does. Each drag runs down the page's trailing margin, clear of cards and rows, and moves the page no
+    /// farther than the target needs, so it settles rather than passing back and forth.
+    private func revealInWatcher(_ target: XCUIElement) {
+        let window = app.windows.firstMatch
+        let origin = window.coordinate(withNormalizedOffset: .zero)
+        var down = true
+        var steps: [String] = []
+        func placed(_ frame: CGRect, _ band: (top: CGFloat, bottom: CGFloat)) -> Bool {
+            if frame.height <= band.bottom - band.top { return frame.minY >= band.top && frame.maxY <= band.bottom }
+            return frame.minY >= band.top && frame.minY <= band.bottom - 60
+        }
+        for attempt in 0..<40 {
+            let band = watcherBand
+            guard band.bottom - band.top > 60 else { steps.append("No room to drag: \(band.top) to \(band.bottom)"); break }
+            var needed: CGFloat = 120
+            if target.exists {
+                let frame = target.frame
+                if placed(frame, band) {
+                    if target.isHittable { return }
+                    steps.append("\(attempt): target \(frame) is in place but can't be pressed")
+                    break
+                }
+                if !frame.isEmpty {
+                    let fits = frame.height <= band.bottom - band.top
+                    if frame.minY < band.top { down = true; needed = band.top - frame.minY }
+                    else { down = false; needed = fits ? frame.maxY - band.bottom : frame.minY - (band.bottom - 60) }
+                }
+                steps.append("\(attempt): target \(frame), between \(band.top) and \(band.bottom), down \(down)")
+            } else {
+                steps.append("\(attempt): target not materialized, between \(band.top) and \(band.bottom), down \(down)")
+            }
+            let distance = min(220, (band.bottom - band.top) * 0.45, max(needed + 16, 40))
+            let direction: CGFloat = down ? 1 : -1
+            let x = window.frame.width - 8
+            let middle = (band.top + band.bottom) / 2 - window.frame.minY
+            let start = origin.withOffset(CGVector(dx: x, dy: middle - direction * distance / 2))
+            let end = origin.withOffset(CGVector(dx: x, dy: middle + direction * distance / 2))
+            start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.15)
+        }
+        let reached = target.exists && target.isHittable && placed(target.frame, watcherBand)
+        if reached { return }
+        explain("unreachable-in-watcher", steps.joined(separator: "\n"))
+        XCTAssertTrue(reached, "Scrolling Watcher's conversation must bring it clear of the header and the reply box")
+    }
 
     /// The Watcher tab sits between Threads and Computers, with a dot while Watcher works that VoiceOver reads; its page
     /// shows Watcher's model and computer, its conversation and one card of what it did for each reply. A message the
@@ -776,7 +836,7 @@ import XCTest
         for appearance in ["dark", "light"] {
             if appearance == "light" { watcherInLight() } else { openWatcher() }
             let row = app.buttons["watcher-receipt-\(laptop)/notes845"]
-            reveal(row)
+            revealInWatcher(row)
             XCTAssertTrue(row.label.contains("watched by Watcher"), "The row says Watcher works with the thread")
             row.tap()
             let title = byID("thread-title")
@@ -798,12 +858,12 @@ import XCTest
         openWatcher()
         XCTAssertTrue(text("The thread’s own card. Your answer goes to Fix login test, not to Watcher.").waitForExistence(timeout: 5))
         let choice = app.buttons["A fresh account for each run"]
-        reveal(choice)
+        revealInWatcher(choice)
         capture("watcher-card-dark")
         choice.tap()
         XCTAssertTrue(choice.isSelected, "The chosen answer is marked")
         let send = app.buttons["watcher-card-send"]
-        reveal(send, fullyVisible: true)
+        revealInWatcher(send)
         XCTAssertTrue(send.isEnabled)
         send.tap()
         XCTAssertTrue(labelled("Answer sent.").waitForExistence(timeout: 10), "The answer reached its thread")
@@ -811,7 +871,7 @@ import XCTest
         capture("watcher-card-answered-dark")
         launch(Self.watcher + ["--ui-watcher-can-answer", "--ui-light"])
         openWatcher()
-        reveal(app.buttons["A fresh account for each run"])
+        revealInWatcher(app.buttons["A fresh account for each run"])
         capture("watcher-card-light")
     }
 
@@ -822,23 +882,26 @@ import XCTest
         let tab = openWatcher()
         XCTAssertEqual(byID("watcher-state").label, "Watcher, Needs you")
         let note = text("This iPhone can’t answer on Laptop yet.")
-        reveal(note)
+        revealInWatcher(note)
         XCTAssertFalse(app.buttons["watcher-card-send"].exists, "Nothing can be sent from a card")
         XCTAssertFalse(app.buttons["Allow once"].exists)
         let own = byID("watcher-own-card")
-        reveal(own)
+        revealInWatcher(own)
         XCTAssertTrue(own.label.contains("Watcher asks each time. It can’t be given lasting permission."))
         XCTAssertTrue(byID("watcher-send-held").exists, "Watcher waits for its own request before it takes more")
         capture("watcher-cannot-answer-dark")
         let review = app.buttons["watcher-card-review"].firstMatch
-        reveal(review)
+        revealInWatcher(review)
         review.tap()
-        XCTAssertTrue(text("This iPhone can’t answer on Laptop yet. Turn on Can answer for it in Sotto on Laptop").waitForExistence(timeout: 5))
+        XCTAssertTrue(text("This iPhone can’t answer on Laptop yet. Turn on Can answer for it in Sotto on Laptop").waitForExistence(timeout: 5),
+                      "Review opens the card's own sheet, which says why it can't be answered here")
         capture("watcher-cannot-answer-sheet-dark")
-        app.buttons["Not now"].tap()
-        XCTAssertTrue(waitUntilGone(app.buttons["Not now"]))
+        let notNow = app.buttons["Not now"]
+        reveal(notNow)
+        notNow.tap()
+        XCTAssertTrue(waitUntilGone(notNow))
         watcherInLight()
-        reveal(byID("watcher-own-card"))
+        revealInWatcher(byID("watcher-own-card"))
         capture("watcher-cannot-answer-light")
         // Last, so the rest of the journey reports first if the tab bar doesn't carry it.
         let badged = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@", "1 needs you"), object: tab)
