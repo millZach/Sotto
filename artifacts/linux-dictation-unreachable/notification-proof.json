@@ -1,0 +1,21 @@
+{
+  "commit": "7097e2969bb11f6786d1c8192ce4e0a8a61ba4f2",
+  "locked": false,
+  "input": [
+    "ydotool",
+    "key",
+    "67:1",
+    "67:0"
+  ],
+  "taps": 2,
+  "notificationCount": 1,
+  "appName": "Sotto",
+  "appIcon": "sotto",
+  "summary": "Sotto isn't open.",
+  "body": "Open Sotto, then press F9 again.",
+  "sottoClosedBeforeAndAfter": true,
+  "bindingsUnchanged": true,
+  "capture": "f9-notification.png",
+  "launcher": "/home/zach/Projects/Sotto/.worktrees/dictation-unreachable/apps/omarchy/sotto",
+  "temporaryCompositorPathRestored": true
+}

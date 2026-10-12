@@ -35,6 +35,7 @@ export default tseslint.config(
       'artifacts/omarchy-shell-integration/**',
       'artifacts/linux-window-minimum/**',
       'artifacts/linux-hyprland-paste/**',
+      'artifacts/linux-dictation-unreachable/**',
       'artifacts/linux-no-window-controls/**',
       'artifacts/visuals-live/**',
       'artifacts/babysitting-surfaces-run/**',
