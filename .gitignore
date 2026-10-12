@@ -459,3 +459,14 @@ artifacts/linux-settings-copy/*
 !artifacts/linux-settings-copy/widget-with-plugin-820x560-dark.png
 !artifacts/linux-settings-copy/widget-without-plugin-1280x800-light.png
 !artifacts/linux-settings-copy/widget-without-plugin-820x560-dark.png
+
+# Linux dictation notification and paste proof; retain only cited evidence.
+artifacts/linux-dictation-unreachable/*
+!artifacts/linux-dictation-unreachable/f9-notification.png
+!artifacts/linux-dictation-unreachable/chromium-wtype.png
+!artifacts/linux-dictation-unreachable/chromium-ydotool.png
+!artifacts/linux-dictation-unreachable/foot-wtype.png
+!artifacts/linux-dictation-unreachable/foot-ydotool.png
+!artifacts/linux-dictation-unreachable/results.json
+!artifacts/linux-dictation-unreachable/paste-proof.txt
+!artifacts/linux-dictation-unreachable/notification-proof.json

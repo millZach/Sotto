@@ -195,7 +195,7 @@ try {
       if (target === 'Chromium') await cdp.evaluate('document.getElementById("t").focus(); document.getElementById("t").value = ""')
       const offset = target === 'foot' ? readFileSync(terminalFile).length : 0
       const text = `Sotto ${target} after ${keyboard} — café 🚀 ✓`
-      await seed(text)
+      await seed('Wrong clipboard: this must be replaced')
       if (target === 'foot') await seed('Wrong PRIMARY: this must be replaced', true)
       await runKeyboard(keyboard, keyboard === 'wtype' ? ['x'] : ['type', 'x'], client, child)
       const receive = async () => target === 'Chromium' ? readChromium() : readFileSync(terminalFile).subarray(offset).toString('utf8')
