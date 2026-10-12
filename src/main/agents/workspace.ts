@@ -1,3 +1,5 @@
+import { summarizePullRequestChecks } from './pullRequestCheckState'
+import type { PullRequestObservation } from './watcherEvidence'
 import { threadsInCheckout } from './checkoutCandidates'
 import { CheckoutMutations, checkoutMutationRefusal, type CheckoutHolder, type CheckoutPendingWork } from './checkoutMutations'
 import { loadHostIdentity, migrateWorkspaceHost, stampHostSnapshot } from './hostIdentity'
@@ -214,6 +216,15 @@ const WRITE_WINDOW_MS = 250
 /** Durable Sotto organization above the existing native identity/transport boundary.
  * Only an unstarted local thread can change provider. Native bindings are never rewritten. */
 export class WorkspaceHost implements AgentHost, BabysitStore {
+  private watcherPrObserver: ((read: PullRequestObservation) => void) | undefined
+  setWatcherPrObserver(observer: (read: PullRequestObservation) => void): void { if (this.watcherEnabled) this.watcherPrObserver = observer }
+  private observePullRequest(view: GitPullRequestView): void {
+    if (!this.watcherPrObserver) return
+    const checks = summarizePullRequestChecks(view.headId, view.checks, view.checksUnknown)
+    this.watcherPrObserver({ url: view.url, head: view.headId ?? null, observedAt: view.observedAt ?? new Date().toISOString(),
+      state: view.state, availability: 'available', checks, ...(checks !== 'unknown' ? { checkCount: view.checks.length } : {}),
+      reviewApproved: view.reviewDecision === 'approved', autoMerge: view.autoMerge !== null })
+  }
   private readonly launchProfiles: WatcherLaunchProfiles
   /** Disabled records are carried through saves exactly as read, outside the active projection. */
   private readonly preservedWatcherThreads = new Map<string, AgentThread>()
@@ -699,7 +710,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (!reference) return null
     let view: GitPullRequestView
     try { view = await service.view(this.threadRepositoryFolder(request.threadId, 'pull requests'), reference) }
-    catch (error) { if (error instanceof GitPullRequestLimited) return { limited: { retryAt: new Date(error.retryAt).toISOString() } }; throw error }
+    catch (error) {
+      if (this.watcherPrObserver && typeof reference === 'string' && pullRequestKey(reference)) this.watcherPrObserver({ url: reference, head: null,
+        observedAt: new Date().toISOString(), availability: 'unavailable', reason: error instanceof GitPullRequestLimited ? 'rate-limited' : 'read-failed' })
+      if (error instanceof GitPullRequestLimited) return { limited: { retryAt: new Date(error.retryAt).toISOString() } }; throw error }
+    this.observePullRequest(view)
     const current = this.thread(request.threadId)
     const key = pullRequestKey(view.url)
     const link = current.pullRequests?.find(item => pullRequestKey(item.url) === key)
@@ -720,6 +735,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (!this.knowsPullRequest(this.thread(command.threadId), command.url)) throw new GitPullRequestRefusal('Link this pull request to the thread before acting on it.')
       const after = await service.act(this.threadRepositoryFolder(command.threadId, 'pull requests'), command.url, command.action, command.method)
       const link = this.thread(command.threadId).pullRequests?.find(item => pullRequestKey(item.url) === pullRequestKey(command.url))
+      if (after) this.observePullRequest(after)
       if (after && link) { this.linkPullRequestRecord(command.threadId, after, link.source); await this.saveLinks() }
       this.invalidateGitStatus(command.threadId)
     }), () => ({ snapshot: this.workspaceSnapshot(), notice: `${PULL_REQUEST_ACTION_DONE[command.action]}.` }))

@@ -2,7 +2,8 @@ import { homedir } from 'node:os'
 import { z } from 'zod'
 import { BABYSITTING_PER_THREAD_MAX, type AgentBabysitting, type BabysitStarter } from '../../shared/babysitting'
 import { isRateLimitAnswer, refusalReading, type GitHubRateLimit, type GitHubRateLimitReading } from './github'
-import { DETAIL_QUERY, FINGERPRINT_PER_QUERY, fingerprintQuery, readDetail, readFingerprint, type DetailAnswer, type PullRequestFingerprint } from './githubBabysitReads'
+import { DETAIL_QUERY, FINGERPRINT_PER_QUERY, fingerprintQuery, readDetail, readFingerprint, pullRequestObservation, type DetailAnswer, type PullRequestFingerprint } from './githubBabysitReads'
+import type { PullRequestObservation } from './watcherEvidence'
 import { pullRequestAddress, pullRequestKey } from '../../shared/gitPullRequests'
 import { runGitStatusCommand, type RunGitCommand } from './gitStatus'
 import { FAILED_READ_LIMIT, findNews, printable, publishedBabysitting, toldAtStart, type BabysitEnding, type BabysitNews, type BabysitRecord, type BabysitTold } from './babysitNews'
@@ -109,6 +110,8 @@ export interface BabysitterOptions {
   readonly run?: RunGitCommand
   readonly now?: () => number
   readonly log?: (event: BabysitEvent) => void
+  /** Optional consumer of existing reads; never changes this service's cadence, news or authority. */
+  readonly observed?: (read: PullRequestObservation) => void
   /**
    * Told when babysitting a pull request ended, with why, once it is saved. A quiet ending (a stop, a settle, an
    * unlink, the switch) takes back that pull request's part of a wake-up still waiting; one that ended with news has
@@ -121,6 +124,7 @@ interface Target { readonly threadId: string; readonly record: BabysitRecord }
 interface Group { readonly key: string; readonly owner: string; readonly name: string; readonly number: number; readonly targets: Target[] }
 /** What the last successful read of a pull request saw, kept in memory: after a restart each is read whole once. */
 interface LastRead {
+  readonly observation?: PullRequestObservation
   /** The fingerprint's status its checks were read against; empty when the checks still need reading. */
   readonly status: string
   /** The fingerprint's remarks the remarks were read against; empty when they still need reading. */
@@ -368,7 +372,7 @@ export class Babysitter {
     const first = groups[0]!
     const answer = await this.ask(['-f', `query=${fingerprintQuery(numbers.length)}`, '-f', `owner=${first.owner}`, '-f', `name=${first.name}`,
       ...numbers.flatMap((number, index) => ['-F', `p${index}=${number}`])], text => readFingerprint(text, numbers), fingerprint => fingerprint.viewer)
-    if (answer === 'limited') return
+    if (answer === 'limited') { for (const group of groups) this.observationUnavailable(group, 'rate-limited'); return }
     for (const group of groups) {
       if (this.closed) return
       const fingerprint = answer === 'failed' ? undefined : answer.pullRequests.get(group.number)
@@ -381,6 +385,7 @@ export class Babysitter {
   private async readGroup(group: Group, fingerprint: PullRequestFingerprint, viewer: string | null): Promise<void> {
     if (fingerprint.state !== 'open') {
       // Merged or closed is in the fingerprint itself: no more to read, and babysitting ends with the news.
+      this.options.observed?.(pullRequestObservation(fingerprint, null, new Date(this.now()).toISOString()))
       this.lastReads.delete(group.key)
       for (const target of group.targets) {
         const news: BabysitNews = { pullRequest: this.pullRequestOf(target, fingerprint), startedBy: target.record.startedBy, startedAt: target.record.startedAt, head: fingerprint.head, changes: [], ended: fingerprint.state }
@@ -401,7 +406,7 @@ export class Babysitter {
       if (!this.mayRead()) return
       const answer = await this.ask(['-f', `query=${DETAIL_QUERY}`, '-f', `owner=${group.owner}`, '-f', `name=${group.name}`,
         '-F', `number=${group.number}`, '-F', `checks=${checks}`, '-F', `remarks=${remarks}`], text => readDetail(text, { checks, remarks }))
-      if (answer === 'limited') return
+      if (answer === 'limited') { this.observationUnavailable(group, 'rate-limited'); return }
       if (answer === 'failed') { this.lastReads.delete(group.key); await this.failedRead(group); return }
       detail = answer
     }
@@ -410,7 +415,10 @@ export class Babysitter {
     const checksRead = checks ? detail?.checks != null : true
     const refusedChecks = !checks ? last?.refusedChecks ?? 0 : checksRead ? 0 : (last?.refusedChecks ?? 0) + 1
     const backOff = !checksRead && refusedChecks >= REFUSED_CHECKS_BEFORE_BACK_OFF
+    const observation = this.options.observed ? pullRequestObservation(fingerprint, detail, new Date(now).toISOString(), last?.observation, checks) : undefined
+    if (observation) this.options.observed?.(observation)
     this.lastReads.set(group.key, {
+      ...(observation ? { observation } : {}),
       status: checksRead || backOff ? fingerprint.status : '',
       refusedChecks,
       checksDueAt: !checks ? last?.checksDueAt ?? null : backOff ? now + REMARKS_REREAD_MS : null,
@@ -434,7 +442,12 @@ export class Babysitter {
   }
 
   /** A pass that could not read the pull request, for a reason other than a rate limit. The eighth in a row ends it. */
+  private observationUnavailable(group: Group, reason: 'read-failed' | 'rate-limited'): void {
+    this.options.observed?.({ url: group.targets[0]!.record.url, head: this.lastReads.get(group.key)?.observation?.head ?? null,
+      availability: 'unavailable', reason, observedAt: new Date(this.now()).toISOString() })
+  }
   private async failedRead(group: Group): Promise<void> {
+    this.observationUnavailable(group, 'read-failed')
     this.options.log?.('babysit-read-failed')
     for (const target of group.targets) {
       const failedReads = target.record.told.failedReads + 1

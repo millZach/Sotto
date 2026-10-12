@@ -136,3 +136,31 @@ it('fences a saved user queue at the native writer when machine Stop arrives dur
     expect(f.control.shell().followups!.find(item => item.draftId === draftId)).toMatchObject({ status: 'failed', text: 'Synthetic held saved user prompt' })
   } finally { gate.release() }
 }, 60_000)
+
+
+it('fences a wake-up at the native writer when Watcher stops its worker during preparation', async () => {
+  const f = await fixture(), gate = heldOperation()
+  const prepare = f.native.adapter.prepareSkillInput.bind(f.native.adapter)
+  vi.spyOn(f.native.adapter, 'prepareSkillInput').mockImplementation(async (...args) => {
+    const result = await prepare(...args)
+    if (args[1].includes('https://github.com/synthetic/project/pull/4')) await gate.wait()
+    return result
+  })
+  try {
+    await f.control.deliverWakeUp(f.target.threadId, { pullRequest: { url: 'https://github.com/synthetic/project/pull/4', number: 4, title: 'Synthetic pull request' },
+      startedBy: 'user', head: null, ended: null, changes: [{ kind: 'checks-passed', count: 1, required: true }] }, { tool: false })
+    await f.native.driver.completeTurn(f.binding.sessionId, 'Synthetic completion before the wake-up')
+    await gate.entered
+    const messageId = f.control.shell().followups!.find(item => item.threadId === f.target.threadId && item.wakeUp)!.messageId
+    expect(messageId).toBeTruthy()
+    expect((await f.tools.call(f.id, 'stop_thread', { requestId: f.requestId, retryKey: randomUUID(), target: f.target })).structuredContent).toMatchObject({ status: 'ok' })
+    expect(f.service.preserveUserQueue(f.target.threadId)).toBe(true)
+    expect(f.control.watcherSnapshot().threads.find(item => item.id === f.target.threadId)?.lastTurn?.status).toBe('completed')
+    gate.release()
+    await expect.poll(() => f.control.shell().followups!.find(item => item.threadId === f.target.threadId && item.wakeUp)?.status).not.toBe('dispatching')
+    const requests = await f.native.driver.requests()
+    expect(requests.some(item => item.method === 'turn/start' && item.params?.clientUserMessageId === messageId)).toBe(false)
+    expect(requests.some(item => item.method === 'request/answer')).toBe(false)
+    expect(f.control.shell().followups!.find(item => item.threadId === f.target.threadId && item.wakeUp)).toMatchObject({ status: 'failed', wakeUp: true })
+  } finally { gate.release() }
+}, 60_000)

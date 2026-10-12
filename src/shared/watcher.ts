@@ -66,8 +66,14 @@ const pending = z.object({ id, kind: z.enum(['question', 'permission']), label: 
 export const watcherEvidenceSchema = z.object({ id, source: z.enum(['sotto-delivery', 'sotto-takeover', 'native-turn', 'github', 'checkpoint', 'working-copy']),
   observedAt: time, target: watcherThreadTargetSchema, freshness, availability,
   turnId: id.optional(), headId: id.optional(), checkpointId: id.optional(), referenceId: id.optional(),
-  fact: z.enum(['turn-finished', 'turn-failed', 'checks-passed', 'checks-failed', 'review-approved', 'merge-observed', 'auto-merge-observed', 'landing-action', 'files-changed', 'delivery-changed', 'taken-over']),
-  changedFiles: counter.optional(), insertions: counter.optional(), deletions: counter.optional() }).strict()
+  fact: z.enum(['turn-finished', 'turn-failed', 'checks-passed', 'checks-failed', 'review-approved', 'merge-observed', 'auto-merge-observed', 'landing-action', 'files-changed', 'delivery-changed', 'taken-over', 'pull-request-observed']),
+  changedFiles: counter.optional(), insertions: counter.optional(), deletions: counter.optional(),
+  reason: z.enum(['disconnected', 'read-failed', 'rate-limited', 'checks-unavailable', 'capture-unavailable', 'shared-checkout', 'unsupported']).optional(),
+  failureCategory: z.literal('provider-turn-failed').optional(), url: z.string().url().max(2_048).optional(),
+  branch: z.string().max(512).nullable().optional(), ahead: counter.optional(), behind: counter.optional(), fetchedAt: time.nullable().optional(),
+  pullRequestState: z.enum(['open', 'closed', 'merged']).optional(), checkCount: counter.optional(),
+  checksState: z.enum(['passed', 'failed', 'pending', 'unknown']).optional(), githubReviewApproved: z.boolean().optional(), githubAutoMergeEnabled: z.boolean().optional() }).strict()
+export type WatcherEvidence = z.infer<typeof watcherEvidenceSchema>
 const takeover = z.object({ reason: z.enum(['user-send', 'native-user-send', 'user-stop', 'user-settle', 'user-reconfigure']), at: time }).strict()
 const participation = z.object({ requestId: z.uuid(), startedBy: z.enum(['watcher', 'user']), generation: counter,
   state: z.enum(['participating', 'taken-over', 'relinquished']), takeover: takeover.optional(), automationStopped: z.literal(true).optional() }).strict()
@@ -173,6 +179,7 @@ export const watcherRecordSchema = z.object({ version: z.literal(1), current: wa
     reason: z.enum(['creation', 'active-turn', 'background-work', 'queued', 'dispatching', 'uncertain', 'needs-user']) }).strict()).max(8),
   reads: z.array(z.object({ target: watcherThreadTargetSchema, position: watcherPositionSchema, readAt: time,
     lastWakeEventId: id.optional() }).strict()).max(10_000),
+  wakeEventIds: z.array(id).max(1_000).optional(),
 }).strict().superRefine((record, context) => {
   const key = (target: WatcherThreadTarget) => JSON.stringify([target.hostId, target.threadId])
   const unique = (values: string[]) => new Set(values).size === values.length
