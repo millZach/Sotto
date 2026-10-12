@@ -376,3 +376,5 @@ artifacts/watcher-paired-hosts/
 artifacts/watcher-thread-tools/*
 !artifacts/watcher-thread-tools/owl-dark-820x560.png
 !artifacts/watcher-thread-tools/stable-light-820x560.png
+
+artifacts/watcher-phone-wire/

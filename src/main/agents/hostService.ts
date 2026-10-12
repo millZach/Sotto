@@ -1,6 +1,7 @@
 import { userInfo } from 'node:os'
 import type { WatcherHostControl, WatcherHostRead, WatcherHostProjection } from '../../shared/watcherHost'
 import type { WatcherService } from './watcher'
+import type { WatcherPhoneService } from './watcherPhone'
 
 import { HOST_CANNOT_STAGE_SCREENSHOTS, type ProviderId, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThread, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import type { StoredThreadEvent } from '../../shared/threadEvents'
@@ -60,6 +61,7 @@ export interface ClientIdentity {
  * rewrite. Threads are addressed by Sotto thread ID either way (ADR-0002).
  */
 export interface HostService {
+  readonly watcherPhone?: WatcherPhoneService | undefined
   readonly supportsWatcherControl?: boolean
   readonly supportsWatcherReads?: boolean
   watcherControl?(request: WatcherHostControl, client: ClientIdentity, guard: () => void): Promise<unknown>
@@ -166,6 +168,7 @@ export interface LocalHostControl {
  * boundary is the same one a socket would cross.
  */
 export class LocalHostService implements HostService {
+  get watcherPhone(): WatcherPhoneService | undefined { return this.options.watcherPhone }
   get supportsWatcherControl(): boolean { return this.options.watcher !== undefined }
   get supportsWatcherReads(): boolean { return this.options.watcher !== undefined }
   watcherControl(request: WatcherHostControl, client: ClientIdentity, guard: () => void): Promise<unknown> { return this.options.watcher!.admitRemote(request, client.clientId, guard) }
@@ -186,7 +189,7 @@ export class LocalHostService implements HostService {
   private readonly tools: HostThreadToolReads | undefined
 
   /** `tools` are the runtime's reads of its threads' Files, Changes and Agents, for a paired client (ADR-0025, October 5 amendment). */
-  constructor(private readonly options: { control: LocalHostControl; events?: ThreadEventSource; tools?: HostThreadToolReads; babysitting?: boolean; watcher?: WatcherService }) {
+  constructor(private readonly options: { control: LocalHostControl; events?: ThreadEventSource; tools?: HostThreadToolReads; babysitting?: boolean; watcher?: WatcherService; watcherPhone?: WatcherPhoneService }) {
     this.control = options.control
     this.supportsBabysitting = options.babysitting === true
     this.eventSource = options.events
@@ -200,7 +203,8 @@ export class LocalHostService implements HostService {
 
   subscribe(listener: (state: AgentState) => void): () => void {
     const off = this.control.subscribe(listener), watcherOff = this.options.watcher?.subscribe(() => listener(this.shell()))
-    return () => { off(); watcherOff?.() }
+    const phoneOff = this.watcherPhone?.subscribe(() => listener(this.shell()))
+    return () => { off(); watcherOff?.(); phoneOff?.() }
   }
   state(): AgentState { return this.control.get() }
   shell(): AgentState { return this.control.shell() }

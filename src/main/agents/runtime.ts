@@ -13,6 +13,7 @@ import { ConfiguredProviderHost } from './providerSwitch'
 import { SottoThreadHost, ThreadRegistry } from './threads'
 import { WorkspaceHost } from './workspace'
 import { WatcherService } from './watcher'
+import { WatcherPhoneService } from './watcherPhone'
 import { WatcherToolServer } from './watcherTools'
 import { AgentControl } from './control'
 import { TurnRecorder } from './turns'
@@ -254,7 +255,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   }
   if (watcher) await watcher.recover()
   const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined,
-    ...(options.runsAs === 'headless-host' && watcher ? { watcher } : {}) })
+    ...(options.runsAs === 'headless-host' && watcher ? { watcher } : {}),
+    ...(options.runsAs !== 'headless-host' && watcher ? { watcherPhone: new WatcherPhoneService(agentControl, watcher) } : {}) })
   babysitter?.begin()
   return { agentHost, agentControl, threadRegistry, turns, hostService, shortTextWriter, worktreeCleanup, babysitter, watcher, watcherTools, close }
 }

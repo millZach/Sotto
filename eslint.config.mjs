@@ -4,7 +4,7 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   {
     ignores: [
-      'artifacts/watcher-paired-hosts/**',
+      'artifacts/watcher-phone-wire/**', 'artifacts/watcher-paired-hosts/**',
       '.t/**',
       'artifacts/omarchy-theme/**',
       'artifacts/watcher-benchmark/**',
