@@ -501,14 +501,15 @@ export class ThreadWorktrees {
    * folder that is still there with anything in it, a thread with no recorded branch and a branch that no
    * longer exists are all returned unchanged, so the caller reports the real problem. An empty folder Git
    * no longer registers is filled like a missing one (ADR-0041). Never resets a branch, never removes a
-   * checkout or a folder, and never takes a branch another folder has.
+   * checkout, and never takes a branch another folder has.
    */
   async restore(metadata: AgentWorktree): Promise<AgentWorktree> {
     const { path, repositoryRoot, branch } = metadata
     if (metadata.mode !== 'independent' || !path || !repositoryRoot || !branch) return metadata
     const present = await lstat(path).then(info => info, (error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return undefined; throw error })
     // A removal Windows could only half finish leaves the reserved folder there, empty and unregistered.
-    // Anything else at the path, a link or junction included, is not Sotto's to fill.
+    // Anything else at the path, a link or junction included, is not Sotto's to fill. An add that times out
+    // cleans up as it does for a missing folder, which can take this empty folder too; it held nothing.
     if (present && !(present.isDirectory() && !present.isSymbolicLink() && await Promise.all([realpath(path), readdir(path)]).then(([real, names]) => pathKey(real) === pathKey(path) && !names.length, () => false))) return metadata
     let allocationRoot: string
     // Sotto's own data folder and the repository have to be there before anything is put back.
