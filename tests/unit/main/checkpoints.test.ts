@@ -543,3 +543,14 @@ it('publishes completed file counts without file contents and marks shared overl
   await f.service.afterTurn('thread-a'); await f.service.afterTurn('thread-b')
   expect(observed.mock.calls.flat().every(read => read.availability === 'unavailable' && read.reason === 'shared-checkout' && read.changedFiles === undefined)).toBe(true)
 })
+
+it('attributes a capture failure by its cause even when its explanation mentions overlap', async () => {
+  const f = await fixture(), observed = vi.fn<NonNullable<CheckpointDependencies['observed']>>()
+  f.dependencies.observed = observed
+  const capture = (f.service as unknown as { capture: { snapshot: (...args: unknown[]) => Promise<unknown> } }).capture
+  const spy = vi.spyOn(capture, 'snapshot').mockRejectedValueOnce(new Error('A capture read overlapped a file replacement.'))
+  try { await f.service.beforeTurn(f.state.threadId) }
+  finally { spy.mockRestore() }
+  expect(observed).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ availability: 'unavailable', reason: 'capture-unavailable' }))
+  expect(JSON.stringify(observed.mock.calls)).not.toContain('file replacement')
+})

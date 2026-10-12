@@ -12,6 +12,7 @@ const snapshotSchema = z.object({ files: z.record(fileRelativePathSchema, fileSc
 const recordSchema = z.object({ id: z.string().uuid(), threadId: z.string(), workspaceId: z.string(), cwd: z.string(), checkout: z.string().optional(), providerId: z.string(), bindingId: z.string(), createdAt: z.string().datetime(),
   beforeUsers: z.array(z.string()), afterUsers: z.array(z.string()).optional(), before: snapshotSchema, after: snapshotSchema.optional(),
   status: z.enum(['capturing', 'ready', 'reverting', 'uncertain', 'reverted', 'unavailable']), reason: z.string().optional(),
+  unavailableReason: z.enum(['shared-checkout', 'capture-unavailable']).optional(),
 }).strict()
 export type CheckpointRecord = z.infer<typeof recordSchema>
 export type Snapshot = z.infer<typeof snapshotSchema>
