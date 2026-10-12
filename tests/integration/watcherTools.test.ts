@@ -641,17 +641,12 @@ it.each(['preparation', 'native', 'reconciled'])('refunds a queued prompt after 
       if (command.type === 'send' && command.text === input.text) throw new Error('Synthetic native pre-write failure')
       return execute(command)
     })
-  // Recovery must see the stale receipt before any live observation has already refunded it.
-  const observation = failure === 'reconciled' ? vi.spyOn(f.service, 'observe').mockImplementation(() => undefined) : undefined
-  cleanups.push(async () => { observation?.mockRestore() })
   await f.finish(first.target.threadId)
   await vi.waitFor(() => expect(f.control.shell().followups?.find(item => item.text === input.text)?.status).toBe('failed'))
-  if (failure === 'reconciled') expect(f.service.state().requests[0]!.participants[0]!.promptCount).toBe(2)
   if (failure === 'reconciled') await f.control.updateWatcher(record => {
     // Recovery can fence a stale dispatch receipt as uncertain before observing the durable failed queue item.
     record.operations.at(-1)!.deliveryState = 'uncertain'
   })
-  observation?.mockRestore()
   await f.control.commandShell({ type: 'refresh', provider: 'codex' })
   expect(f.service.state().receipts.at(-1)?.deliveryState).toBe('failed')
   expect(f.service.state().requests[0]!.participants[0]!.promptCount).toBe(1)

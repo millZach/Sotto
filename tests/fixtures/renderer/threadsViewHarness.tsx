@@ -10,7 +10,6 @@ import { requestAnswerStore } from '../../../src/renderer/src/agents/requests/re
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
 import { agentContextFixture } from '../agentContext'
 import { openSidebarFolders } from './liveAgentState'
-import type { PromptEditorElement } from '../../../src/renderer/src/agents/promptSelection'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 
@@ -34,14 +33,7 @@ beforeEach(() => {
   vi.mocked(useAgents).mockReset(); connectionStores = new WeakMap()
   for (const thread of stateFixture().host.threads) requestAnswerStore.prune(thread.id, [])
 })
-afterEach(async () => {
-  // Tiptap defers destruction until after React unmounts. Keep this test's document
-  // alive until the editors have released it, rather than leaving timers to the next file.
-  const destroyed = [...document.querySelectorAll<PromptEditorElement>('.prompt-editor')].map(({ editor }) =>
-    editor.isDestroyed ? Promise.resolve() : new Promise<void>(resolve => { editor.once('destroy', () => resolve()) }))
-  cleanup()
-  await Promise.all(destroyed)
-})
+afterEach(cleanup)
 
 export { NOW, connectionStores, connection, renderThreads }
 
