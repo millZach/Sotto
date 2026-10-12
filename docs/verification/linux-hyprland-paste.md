@@ -422,3 +422,5 @@ Final local gates, all using `mise exec node@24.21.0 --` and one suite at a time
 | External-dependency inventory and production package list | `allowlist check: PASS`; exactly node-pty, sherpa-onnx-node and zod |
 | Final live keyboard proof | All four exact-text cases passed; complete process/window cleanup |
 | Forced-exit cleanup probe | Expected proof failure; all owned processes and dictation files cleaned |
+
+Greptile’s follow-up found that failed session setup could leave the temporary `run-*` folder. Creation now happens inside the cleanup guard, after the read-only session checks. A missing-Quickshell probe failed as expected and created neither an output folder nor a temporary profile. Lint and the four-way live proof passed again; the retained capture, results and log reflect this latest run.

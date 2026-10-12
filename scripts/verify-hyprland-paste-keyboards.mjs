@@ -16,8 +16,7 @@ assert.equal(process.platform, 'linux')
 const root = process.cwd()
 const out = resolve(process.argv[2] ?? '.cache/paste-keyboard/live')
 assert.ok(out.startsWith(`${root}/`), 'Keep proof files inside this checkout')
-mkdirSync(out, { recursive: true })
-const scratch = mkdtempSync(join(out, 'run-'))
+let scratch
 const shellPid = execFileSync('pgrep', ['-x', 'quickshell'], { encoding: 'utf8', timeout: 5000 }).trim().split('\n')[0]
 const session = Object.fromEntries(readFileSync(`/proc/${shellPid}/environ`, 'utf8').split('\0').filter(Boolean)
   .map(entry => [entry.slice(0, entry.indexOf('=')), entry.slice(entry.indexOf('=') + 1)]))
@@ -74,7 +73,7 @@ const lifecycle = installProofCleanup(() => terminateThenCleanup(async () => {
       hyprctl('dispatch', `hl.dsp.focus({ window = "address:${originalFocus}" })`)
     }
   },
-  () => rmSync(scratch, { recursive: true, force: true }),
+  () => { if (scratch) rmSync(scratch, { recursive: true, force: true }) },
   () => assertProofInstancesPreserved(instancesDirectory, instancesBefore),
 ]), console.log, 20000)
 
@@ -124,6 +123,8 @@ const seed = async (text, primary = false) => {
 }
 
 try {
+  mkdirSync(out, { recursive: true })
+  scratch = mkdtempSync(join(out, 'run-'))
   // Isolate settings; the real desktop runtime is needed by Hyprland and wl-clipboard.
   sotto = owned.start('Sotto', '/usr/bin/env', [
     `XDG_CONFIG_HOME=${join(scratch, 'config')}`,
