@@ -485,6 +485,38 @@ await import('./fake.mjs')\n`)
       expect(await descriptor(configuration)).toMatchObject({ startedBy: 'boot', entry: expect.stringContaining('1.0.0') })
     })
 
+    it.runIf(process.platform === 'win32')('cleans the stopped fake unit lease before a reused PID can block rollback', async () => {
+      const configuration = await installed()
+      await withVersions(configuration)
+      const oldHost = join(configuration.installPath, 'versions', '1.0.0', 'host')
+      await copyFile(join(oldHost, 'index.js'), join(oldHost, 'fake.mjs'))
+      // Windows force-stops the fake without running its SIGTERM handler. If the old lease survives, model its
+      // PID being reused by this still-live test process before the rollback host examines it.
+      await writeFile(join(oldHost, 'index.js'), `import fs from 'node:fs/promises'
+import path from 'node:path'
+const data = process.argv[process.argv.indexOf('--data') + 1]
+const lock = path.join(data, 'host-listener.lock')
+try {
+  const lease = JSON.parse(await fs.readFile(lock, 'utf8'))
+  lease.pid = ${process.pid}
+  await fs.writeFile(lock, JSON.stringify(lease))
+} catch (error) { if (error.code !== 'ENOENT') throw error }
+await import('./fake.mjs')
+`)
+      await systemd!.set({ afterStart: 'crash-loop', once: true })
+      const outcome = await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: '1.1.0' })
+      expect(outcome.result).toMatchObject({ type: 'error', reason: 'update-start-failed', restarted: true, cause: 'boot-unit-failed' })
+      expect(await descriptor(configuration)).toMatchObject({ startedBy: 'boot', entry: expect.stringContaining('1.0.0') })
+    })
+
+    it.runIf(process.platform === 'win32')('preserves a replacement lease when the fake unit stops its own host', async () => {
+      const configuration = await installed(), replacement = { pid: process.pid, nonce: 'another-owned-fixture-instance' }
+      await systemd!.set({ stopLeaseReplacement: replacement })
+      const outcome = await run(configuration, { op: 'stop-host', hostId: HOST_ID })
+      expect(outcome.result).toMatchObject({ type: 'host-stopped', stopped: true })
+      expect(JSON.parse(await readFile(join(configuration.dataDirectory, 'host-listener.lock'), 'utf8'))).toEqual(replacement)
+    })
+
     it('stops a new version the unit keeps running but that never answers, and rolls back to the old one', async () => {
       const configuration = await installed()
       await withVersions(configuration)
