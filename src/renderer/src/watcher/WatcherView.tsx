@@ -81,13 +81,13 @@ function WatcherActions({ room, limit }: { readonly room: WatcherRoom; readonly 
     // The field stays live while main saves, so it keeps focus; main's answer, or the next change, is what shows.
     try { setError(room.settle(await room.setLimit({ limit: next }))) } catch { setError('Sotto could not save the limit. It is unchanged.') }
   }
-  return <div className="watcher-actions">
+  // Escape answers on the button as well as in the panel: Shift+Tab back to the button leaves the panel open.
+  return <div className="watcher-actions" onKeyDown={event => { if (open && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close() } }}>
     <button ref={button} type="button" className="pane-action tt-focusable" aria-label="More Watcher actions" title="More Watcher actions"
       aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? panelId : undefined} onClick={() => setOpen(value => !value)}>
       <MoreHorizontal size={16} aria-hidden="true" />
     </button>
     {open ? <div ref={panel} id={panelId} className="watcher-actions__panel" role="dialog" aria-label="Watcher settings"
-      onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close() } }}
       onBlur={event => { const next = event.relatedTarget as Node | null; if (next !== null && !event.currentTarget.contains(next) && next !== button.current) setOpen(false) }}>
       <Field label="Threads in flight" description="Watcher works with at most this many threads at once. Lowering it stops nothing: new work waits until fewer are in flight.">
         <Select ref={select} value={String(limit)} onChange={event => void change(Number(event.currentTarget.value))}>

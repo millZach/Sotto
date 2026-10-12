@@ -1,5 +1,6 @@
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AgentCommand, AgentState, AgentThread } from '../../../src/shared/agents'
@@ -447,6 +448,21 @@ describe("Watcher's room", () => {
     // A lower limit than the threads in flight stops nothing; the meter says so.
     act(() => publish(roomState({ inFlightLimit: 1, observedAt: new Date(NOW + 1_000).toISOString() })))
     expect(screen.getByRole('meter', { name: 'Watched threads' })).toHaveAttribute('aria-valuetext', '2 of 1 watched')
+  })
+
+  it('closes More Watcher actions on Escape from its button too, after Shift+Tab back to it', async () => {
+    const user = userEvent.setup()
+    renderRoom(stateWithWatcher(), roomState())
+    const more = await screen.findByRole('button', { name: 'More Watcher actions' })
+    await user.click(more)
+    expect(screen.getByRole('combobox', { name: 'Threads in flight' })).toHaveFocus()
+    await user.tab({ shift: true })
+    expect(more).toHaveFocus()
+    expect(screen.getByRole('dialog', { name: 'Watcher settings' })).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog', { name: 'Watcher settings' })).toBeNull()
+    expect(more).toHaveAttribute('aria-expanded', 'false')
+    expect(more).toHaveFocus()
   })
 
   it('says a refused limit change and keeps the old limit', async () => {
