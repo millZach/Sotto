@@ -27,7 +27,7 @@ describe.skipIf(process.platform !== 'linux')('closed-app desktop notification',
   ] as const)('uses fixed Sotto copy, name and icon for %s, without a shell', (command, body) => {
     notifyDictationUnavailable(command)
     expect(exec).toHaveBeenCalledExactlyOnceWith('notify-send', [
-      '--app-name', 'Sotto', '--icon', 'sotto', '--expire-time', '5000', "Sotto isn't open.", body,
+      '--app-name', 'Sotto', '--app-icon', 'sotto', '--icon', 'sotto', '--expire-time', '5000', "Sotto isn't open.", body,
     ], { shell: false, timeout: 1_000 }, expect.any(Function))
     expect(readFileSync(stamp, 'utf8')).toBe('')
     expect(readdirSync(runtime)).toEqual(['sotto-dictation-notice'])

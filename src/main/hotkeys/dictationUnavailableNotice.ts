@@ -24,7 +24,8 @@ export function notifyDictationUnavailable(command: CompositorDictationCommand):
       }
       writeFileSync(stamp, '', { mode: 0o600 })
       execFile('notify-send', [
-        '--app-name', 'Sotto', '--icon', 'sotto', '--expire-time', '5000',
+        // libnotify separates the application icon from the optional content image.
+        '--app-name', 'Sotto', '--app-icon', 'sotto', '--icon', 'sotto', '--expire-time', '5000',
         'Sotto isn\'t open.', command === 'start' ? 'Open Sotto, then press F9 again.' : 'Open Sotto, then try again.',
       ], { shell: false, timeout: 1_000 }, () => { /* The CLI error still explains failure if notifications are unavailable. */ })
     } finally { rmdirSync(lock) }
