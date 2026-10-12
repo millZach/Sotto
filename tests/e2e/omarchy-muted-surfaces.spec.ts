@@ -5,58 +5,13 @@ import { _electron as electron, expect, test, type Locator } from '@playwright/t
 import fixtures from '../fixtures/omarchy-themes.json'
 import legacyCache from '../fixtures/omarchy-theme-cache-v0070.json'
 import { ownedE2EProfile } from './support/e2eProfile'
+import { measurePaintedPair } from './support/paintedPair'
 import { launchSotto, closeSotto, firstSottoWindow, openThreads, openPage } from './support/sottoLaunch'
 import { promptField, fillPrompt } from './support/prompt'
 import { resizeContentWindow } from './support/sottoWindow'
 import { contrastRatio } from '../../src/shared/themes/color'
 import { BUILT_IN_THEMES } from '../../src/shared/themes/library'
 import { OMARCHY_THEME_ID } from '../../src/shared/themes/omarchy'
-
-/** Read real CSS colours and composite the ancestors and the row's selection image. */
-async function measure(element: Locator) {
-  return element.evaluate(async element => {
-    await new Promise<void>(done => requestAnimationFrame(() => requestAnimationFrame(() => done())))
-    await Promise.all(document.getAnimations().filter(animation => animation.effect?.getComputedTiming().iterations !== Infinity)
-      .map(animation => animation.finished.catch(() => undefined)))
-    const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1
-    const context = canvas.getContext('2d')!
-    const color = (value: string) => {
-      if (!CSS.supports('color', value)) throw new Error(`Unsupported measured colour: ${value}`)
-      // Chromium resolves a translucent sRGB mix as color(srgb ... / alpha).
-      const srgb = /^color\(srgb ([\d.e+-]+) ([\d.e+-]+) ([\d.e+-]+)(?: \/ ([\d.e+-]+))?\)$/u.exec(value)
-      if (srgb) return { r: Number(srgb[1]) * 255, g: Number(srgb[2]) * 255, b: Number(srgb[3]) * 255, a: Number(srgb[4] ?? 1) }
-      context.clearRect(0, 0, 1, 1); context.fillStyle = value; context.fillRect(0, 0, 1, 1)
-      const data = context.getImageData(0, 0, 1, 1).data
-      return { r: data[0]!, g: data[1]!, b: data[2]!, a: data[3]! / 255 }
-    }
-    const over = (top: ReturnType<typeof color>, bottom: ReturnType<typeof color>) => ({
-      r: top.r * top.a + bottom.r * (1 - top.a), g: top.g * top.a + bottom.g * (1 - top.a),
-      b: top.b * top.a + bottom.b * (1 - top.a), a: 1,
-    })
-    const ancestors: Element[] = []
-    for (let at: Element | null = element; at; at = at.parentElement) ancestors.unshift(at)
-    let background = color('black')
-    const paint: Array<{ element: string; background: string; image: string }> = []
-    for (const ancestor of ancestors) {
-      const style = getComputedStyle(ancestor)
-      if (style.backgroundColor !== 'rgba(0, 0, 0, 0)' || style.backgroundImage !== 'none') paint.push({ element: ancestor.className, background: style.backgroundColor, image: style.backgroundImage })
-      background = over(color(style.backgroundColor), background)
-      if (style.backgroundImage.startsWith('linear-gradient(')) {
-        // The row images use two identical colours; keep nested colour commas intact.
-        const body = style.backgroundImage.slice('linear-gradient('.length)
-        let depth = 0, end = 0
-        for (; end < body.length; end++) {
-          if (body[end] === '(') depth++
-          if (body[end] === ')') depth--
-          if (body[end] === ',' && depth === 0) break
-        }
-        background = over(color(body.slice(0, end)), background)
-      }
-    }
-    const foreground = color(getComputedStyle(element).color)
-    return { foreground, background: { r: Math.round(background.r), g: Math.round(background.g), b: Math.round(background.b) }, paint }
-  })
-}
 
 test('Omarchy muted text reads on real selected rows, hover rows, bubbles and layered Changes lines', async () => {
   test.skip(process.platform !== 'linux' || process.env.SOTTO_OMARCHY_MUTED_EVIDENCE !== '1', 'Run tools/verify-omarchy-muted-surfaces.mjs in its owned nested sandbox')
@@ -121,7 +76,7 @@ test('Omarchy muted text reads on real selected rows, hover rows, bubbles and la
     const lines = panel.getByRole('grid', { name: 'Lines of colours.txt' })
     const record = async (theme: string, group: string, surface: string, element: Locator) => {
       await expect(element).toBeInViewport()
-      const pair = await measure(element)
+      const pair = await measurePaintedPair(element)
       const ratio = contrastRatio(pair.foreground, pair.background)
       measurements.push({ theme, group, surface, ...pair, ratio })
       if (group === 'Omarchy') expect(ratio, `${theme}: ${surface}`).toBeGreaterThanOrEqual(4.5)
