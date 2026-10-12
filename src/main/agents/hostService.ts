@@ -62,6 +62,7 @@ export interface ClientIdentity {
  */
 export interface HostService {
   readonly watcherPhone?: WatcherPhoneService | undefined
+  watcherPhoneExclusions?(): { threadIds: string[]; projectIds: string[] }
   readonly supportsWatcherControl?: boolean
   readonly supportsWatcherReads?: boolean
   watcherControl?(request: WatcherHostControl, client: ClientIdentity, guard: () => void): Promise<unknown>
@@ -141,6 +142,7 @@ export function desktopWindowClient(user: string = localUser()): ClientIdentity 
 /** What `LocalHostService` needs of the coordinator: the client-facing half of `AgentControl`. */
 export interface LocalHostControl {
   get(): AgentState
+  watcherPhoneExclusions?(): { threadIds: string[]; projectIds: string[] }
   shell(): AgentState
   threadKind?(threadId: string): AgentThread['kind']
   threadDetail(threadId: string): AgentThreadDetail | null
@@ -168,6 +170,7 @@ export interface LocalHostControl {
  * boundary is the same one a socket would cross.
  */
 export class LocalHostService implements HostService {
+  watcherPhoneExclusions(): { threadIds: string[]; projectIds: string[] } { return this.control.watcherPhoneExclusions?.() ?? { threadIds: [], projectIds: [] } }
   get watcherPhone(): WatcherPhoneService | undefined { return this.options.watcherPhone }
   get supportsWatcherControl(): boolean { return this.options.watcher !== undefined }
   get supportsWatcherReads(): boolean { return this.options.watcher !== undefined }

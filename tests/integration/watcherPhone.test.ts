@@ -61,6 +61,7 @@ it('offers phone Watcher only on its desktop listener and leaves old phones ordi
   expect(old.hello).toMatchObject({ ok: true, result: { features: expect.arrayContaining(['watcher-phone', 'watcher-phone-stop-all']) } })
   const oldShell = (old.hello.result as { shell: { watcher?: unknown; host: { threads: { id: string }[] } } }).shell
   expect(oldShell.watcher).toBeUndefined(); expect(oldShell.host.threads.some(row => row.id === f.target.threadId)).toBe(false)
+  expect((old.hello.result as { shell: { host: { projects: { id: string }[] } } }).shell.host.projects.some(project => project.id === f.watcher.state().current!.projectId)).toBe(false)
   expect(await old.call('no-opt', { op: 'watcher-phone-read' })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
   expect(await old.call('hidden-detail', { op: 'detail', threadId: f.target.threadId })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
   const read = await current.call('read', { op: 'watcher-phone-read' })

@@ -230,10 +230,14 @@ export async function startSocketServer(options: SocketServerOptions) {
   }
   const identity = (clientId: string): ClientIdentity => ({ clientId, user: pairing.list().find(client => client.clientId === clientId)?.name ?? 'Paired client', transport: 'socket' })
   const isPhonePeer = (peer: Peer): boolean => !peer.desktop || options.admin === false && options.watcherDesktops === undefined
-  const hiddenThread = (peer: Peer, threadId: string): boolean => isPhonePeer(peer) && ['watcher', 'watcher-history'].includes(service.threadKind?.(threadId) ?? service.shell().host.threads.find(row => row.id === threadId)?.kind ?? '')
+  const hiddenThread = (peer: Peer, threadId: string): boolean => isPhonePeer(peer) && (service.watcherPhoneExclusions?.().threadIds.includes(threadId) || ['watcher', 'watcher-history'].includes(service.threadKind?.(threadId) ?? service.shell().host.threads.find(row => row.id === threadId)?.kind ?? ''))
   const shell = (peer: Peer) => {
     const original = service.shell()
-    const state = isPhonePeer(peer) ? visibleWatcherState(original, false) : original
+    const visible = isPhonePeer(peer) ? visibleWatcherState(original, false) : original
+    const hiddenProjects = new Set([...original.host.threads.filter(thread => hiddenThread(peer, thread.id)).map(thread => thread.projectId),
+      ...isPhonePeer(peer) ? service.watcherPhoneExclusions?.().projectIds ?? [] : []])
+    const state = hiddenProjects.size ? { ...visible, host: { ...visible.host, projects: visible.host.projects.filter(project =>
+      !hiddenProjects.has(project.id) || visible.host.threads.some(thread => thread.projectId === project.id)) } } : visible
     const draft = peer.editingThreadId === peer.selectedThreadId
       ? state.threadDrafts?.find(item => item.threadId === peer.selectedThreadId) : undefined
     const composer = draft ? { composing: true, draft: draft.text, draftAttachments: draft.attachments,

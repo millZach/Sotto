@@ -254,6 +254,11 @@ export class AgentControl {
   private watcher: WatcherRecord = emptyWatcherRecord()
   private watcherHooks: WatcherControlHooks | undefined
   private readonly watcherOrigins = new WeakMap<object, WatcherCommandOrigin>()
+  watcherPhoneExclusions(): { threadIds: string[]; projectIds: string[] } {
+    const identities = [...this.watcher.current ? [this.watcher.current] : [], ...this.watcher.history,
+      ...this.watcher.creation ? [this.watcher.creation.identity] : []]
+    return { threadIds: identities.map(row => row.target.threadId), projectIds: identities.map(row => row.projectId) }
+  }
   watcherRecord(): WatcherRecord { return structuredClone(this.watcher) }
   updateWatcher(update: (record: WatcherRecord) => void): Promise<void> {
     if (this.dependencies.watcherEnabled !== true) throw new Error('Watcher is available in Sotto Owl.')
