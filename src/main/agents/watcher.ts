@@ -64,6 +64,7 @@ export class WatcherService implements WatcherControlHooks {
   private record(): WatcherRecord { return this.options.control.watcherRecord() }
   private hostId(): string { const id = this.options.control.hostId(); if (!id) refuse('HOST_DISCONNECTED', 'This computer is not ready. Reconnect its provider.', true); return id }
   private target(threadId: string): WatcherThreadTarget { return { hostId: this.hostId(), threadId } }
+  phoneSnapshot(): AgentHostSnapshot { return this.snapshot() }
   private snapshot() {
     const local = this.options.control.watcherSnapshot(), others = this.remote?.hosts().flatMap(host => this.remote?.snapshot(host.hostId) ?? []) ?? []
     return { ...local, connected: local.connected || others.some(host => host.connected),
@@ -362,7 +363,7 @@ export class WatcherService implements WatcherControlHooks {
       || _draftId && item.userFollowups?.some(followup => followup.draftId === _draftId))
     if (!request) {
       request = { id: randomUUID(), watcher: this.target(command.threadId), rootUserMessageId: command.messageId,
-        state: 'active', createdAt: now(), closedAt: null, participants: [] }
+        state: 'active', createdAt: now(), closedAt: null, participants: [], ...(origin?.phoneOrigin ? { phoneOrigin: origin.phoneOrigin } : {}) }
       const created = request
       this.options.control.mutateWatcher(next => { next.requests.push(created) })
     }
@@ -975,12 +976,13 @@ export class WatcherService implements WatcherControlHooks {
     this.confirmations.set(id, { targets, expires, signature })
     return { status: 'ok', confirmationId: id, targets, expiresAt: new Date(expires).toISOString() }
   }
-  async stopAll(confirmationId: string): Promise<WatcherStopAllResult> {
+  async stopAll(confirmationId: string, userGuard: () => void = () => undefined): Promise<WatcherStopAllResult> {
     if (this.closed) return watcherRefusal('NOT_CURRENT_WATCHER', 'Watcher is stopping. Nothing was stopped. Reopen Sotto.')
     const confirmation = this.confirmations.get(confirmationId); this.confirmations.delete(confirmationId)
     if (!confirmation || confirmation.expires < Date.now() || confirmation.signature !== this.stopAllScope().signature) {
       return watcherRefusal('TARGET_CHANGED', 'The threads to stop changed or the confirmation expired. Review Stop all again.')
     }
+    userGuard()
     const targets = confirmation.targets
     const requestIds = new Set(this.record().requests.filter(request => request.participants.some(item => targets.some(target => key(item.target) === key(target)))).map(item => item.id))
     const operationIds = new Set(this.record().operations.filter(item => requestIds.has(item.requestId)).map(item => item.id))
@@ -992,6 +994,7 @@ export class WatcherService implements WatcherControlHooks {
     const results: Extract<WatcherStopAllResult, { status: 'ok' }>['results'] = []
     for (const target of targets) {
       const guard = () => {
+        userGuard()
         if (this.closed) refuse('NOT_CURRENT_WATCHER', 'Watcher is stopping. Nothing was stopped.')
         const participant = this.record().requests.flatMap(request => request.participants).find(item => key(item.target) === key(target) && item.startedBy === 'watcher' && item.state === 'participating')
         if (!participant) refuse('THREAD_TAKEN_OVER', 'This thread was taken over and was not stopped.')

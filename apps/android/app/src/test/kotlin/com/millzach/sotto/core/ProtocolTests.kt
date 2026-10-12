@@ -58,6 +58,18 @@ class ProtocolTests {
         }
     }
 
+    @Test fun optionalWatcherFieldsDoNotBreakOrdinaryThreadAndShellDecoding() {
+        val thread = decode<ThreadSummary>("""{"id":"worker","projectId":"project","title":"Worker","status":"idle","requests":[],"kind":"project","watchedByWatcher":true,"futureParticipation":{"state":"observed"}}""")
+        assertEquals("project", thread.kind)
+        assertEquals(true, thread.watchedByWatcher)
+        val old = decode<ThreadSummary>("""{"id":"worker","projectId":"project","title":"Worker","status":"idle","requests":[]}""")
+        assertNull(old.kind)
+        assertNull(old.watchedByWatcher)
+        val shell = decode<Shell>("""{"host":{"name":"Laptop","threads":[],"projects":[],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true}},"watcher":{"futurePage":"ignored"}}""")
+        assertTrue(shell.host.threads.isEmpty())
+        assertFalse(Wire.snapshotHello.toString().contains("watcher-phone"))
+    }
+
     @Test fun unsupportedProtocolAndOversizeFramesAreRefused() {
         assertThrows(ClientError::class.java) { Wire.decode("""{"v":2,"id":"one","ok":true,"result":null}""") }
         assertThrows(ClientError::class.java) { Wire.decode(" ".repeat(Wire.MAXIMUM_FRAME_BYTES + 1)) }

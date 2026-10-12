@@ -31,6 +31,7 @@ export const watcherPhoneStateSchema = z.object({ hostId: z.uuid(),
     takenOver: z.boolean(), backgroundWorkCount: z.number().int().nonnegative() }).strict()),
   needsYou: z.array(requestCard), inFlight: z.number().int().nonnegative(), inFlightLimit: z.number().int().min(1).max(8),
   working: z.boolean(), recoveryNotice: z.string().nullable(), observedAt: z.string(),
+  draftDeliveries: z.array(z.object({ draftId: z.uuid(), status: z.enum(['queued', 'submitting', 'accepted', 'uncertain', 'failed']) }).strict()).optional(),
 }).strict()
 export const watcherPhoneResultSchema = z.union([z.object({ status: z.literal('ok'), state: watcherPhoneStateSchema }).strict(), watcherRefusalSchema])
 export const watcherPhoneSendResultSchema = z.union([z.object({ status: z.literal('ok'), draftId: z.uuid(), state: watcherPhoneStateSchema }).strict(), watcherRefusalSchema])
