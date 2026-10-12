@@ -431,6 +431,21 @@ describe("Watcher's room", () => {
     await waitFor(() => expect(name).toHaveFocus())
   })
 
+  it('stops reading a beside thread when its pane closes before Watcher exists, so main does not count it as seen', async () => {
+    const { command } = renderRoom(stateWithWatcher(), roomState({ current: null, currentOptions: null, watchedThreads: [], requests: [], inFlight: 0 }))
+    await screen.findByRole('heading', { level: 2, name: 'Start Watcher' })
+    fireEvent.click(screen.getByRole('button', { name: /^All threads, \d+\. Show the list$/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open Weekly note beside Watcher' }))
+    const beside = await screen.findByRole('region', { name: 'Weekly note' })
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'observe-threads', threadIds: ['weekly-note'] }))
+    command.mockClear()
+    // Only the pane closes; the room stays, so its unmount cleanup never runs. The empty list has to go on its own.
+    fireEvent.click(within(beside).getByRole('button', { name: 'Close Weekly note pane' }))
+    expect(screen.queryByRole('region', { name: 'Weekly note' })).toBeNull()
+    expect(screen.getByRole('heading', { level: 2, name: 'Start Watcher' })).toBeInTheDocument()
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'observe-threads', threadIds: [] }))
+  })
+
   it('folds an open disclosure on Escape in a beside thread, and the next Escape closes the pane', async () => {
     const state = stateWithWatcher()
     const previews = state.host.threads.find(thread => thread.id === 'grok-previews')!

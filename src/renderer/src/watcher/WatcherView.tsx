@@ -320,11 +320,11 @@ export function WatcherView({ now: fixedNow, updateControl }: {
   const [width, setWidth] = useState(0)
 
   // The room reads Watcher's history and the thread beside it while they are on screen, as Threads does for its
-  // panes, and lets them go after.
+  // panes, and lets them go after. An empty list goes too: closing the only pane before Watcher exists leaves the
+  // room mounted, and main would otherwise go on counting the closed thread as seen.
   const observed = JSON.stringify([watcherId, besideRow?.thread.id ?? null].filter(Boolean))
   useEffect(() => {
-    const threadIds = JSON.parse(observed) as string[]
-    if (threadIds.length) void command({ type: 'observe-threads', threadIds })
+    void command({ type: 'observe-threads', threadIds: JSON.parse(observed) as string[] })
   }, [command, observed])
   useEffect(() => () => { void command({ type: 'observe-threads', threadIds: [] }) }, [command])
 
