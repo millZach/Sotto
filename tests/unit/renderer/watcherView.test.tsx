@@ -362,6 +362,39 @@ describe("Watcher's room", () => {
     await waitFor(() => expect(name).toHaveFocus())
   })
 
+  it('folds an open disclosure on Escape in a beside thread, and the next Escape closes the pane', async () => {
+    const state = stateWithWatcher()
+    const previews = state.host.threads.find(thread => thread.id === 'grok-previews')!
+    previews.activities = [
+      { id: 'lifecycle', turnId: 'turn-1', sequence: 0, kind: 'turn', status: 'completed', title: 'Turn', afterMessageId: 'grok-previews-1', durationMs: 124_000, timingSource: 'provider' },
+      { id: 'test', turnId: 'turn-1', sequence: 1, kind: 'command', status: 'completed', title: 'Command', afterMessageId: 'grok-previews-1', command: 'npm test -- --run', output: 'PASS 12 tests' },
+    ]
+    renderRoom(state, roomState())
+    await paneReady()
+    fireEvent.click(screen.getByRole('button', { name: 'All threads, 9. Show the list' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open Grok voice previews beside Watcher' }))
+    const beside = await screen.findByRole('region', { name: 'Grok voice previews' })
+    const work = within(beside).getByRole('button', { name: 'Worked for 2m 04s' })
+    work.focus()
+    fireEvent.click(work)
+    expect(work).toHaveAttribute('aria-expanded', 'true')
+    // On its button, Escape folds what the button opened; the pane stays.
+    fireEvent.keyDown(work, { key: 'Escape' })
+    expect(work).toHaveAttribute('aria-expanded', 'false')
+    expect(work).toHaveFocus()
+    expect(screen.getByRole('region', { name: 'Grok voice previews' })).toBeInTheDocument()
+    // From inside what it shows, Escape folds it too and puts focus back on its button.
+    fireEvent.click(work)
+    const group = within(beside).getByRole('button', { name: 'Ran 1 command' })
+    group.focus()
+    fireEvent.keyDown(group, { key: 'Escape' })
+    expect(work).toHaveAttribute('aria-expanded', 'false')
+    expect(work).toHaveFocus()
+    // Nothing left open: Escape closes the pane.
+    fireEvent.keyDown(work, { key: 'Escape' })
+    expect(screen.queryByRole('region', { name: 'Grok voice previews' })).toBeNull()
+  })
+
   it('opens a thread in the Threads room, selected, with Shift or Open in Threads', async () => {
     const { command, navigate } = renderRoom(stateWithWatcher(), roomState())
     await paneReady()

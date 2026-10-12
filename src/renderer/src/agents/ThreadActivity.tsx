@@ -69,6 +69,22 @@ function Elapsed({ startedAt }: { readonly startedAt: string }): ReactNode {
 }
 
 /**
+ * Escape inside an open disclosure, on its button or anywhere in what it shows, folds it and leaves focus on its
+ * button. The innermost open one answers first; a folded one leaves Escape to whatever holds it, such as a pane beside
+ * Watcher, which closes. Set on the element whose first child is the disclosure's button.
+ */
+export function foldOnEscape(open: boolean, fold: (summary: HTMLElement) => void): (event: React.KeyboardEvent<HTMLElement>) => void {
+  return event => {
+    if (!open || event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing) return
+    const summary = event.currentTarget.querySelector<HTMLElement>(':scope > button[aria-expanded]')
+    if (summary === null) return
+    event.preventDefault()
+    summary.focus()
+    fold(summary)
+  }
+}
+
+/**
  * What a finished turn left behind. The count stays in view while the work is folded, because the files
  * a turn changed are what a reader comes back for; the diffs are the ones the provider reported.
  */
@@ -80,7 +96,7 @@ export function TurnChangedFiles({ changes, onDisclosure }: {
   const bodyId = useId()
   if (!changes.length) return null
   const label = `Changed ${changes.length} ${changes.length === 1 ? 'file' : 'files'}`
-  return <div className="thread-changes" data-expanded={open || undefined}>
+  return <div className="thread-changes" data-expanded={open || undefined} onKeyDown={foldOnEscape(open, summary => { onDisclosure?.(summary); setOpen(false) })}>
     <button type="button" className="thread-changes__summary tt-focusable" aria-expanded={open} aria-controls={open ? bodyId : undefined}
       onClick={event => { onDisclosure?.(event.currentTarget); setOpen(value => !value) }}>
       <FilePen className="thread-activity__icon" size={14} strokeWidth={1.8} aria-hidden="true" />
@@ -222,7 +238,8 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
     </span>
     {expandable ? <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" /> : null}
   </>
-  return <li className="thread-activity__row" data-kind={record.kind} data-status={record.status} data-open={open || undefined}>
+  return <li className="thread-activity__row" data-kind={record.kind} data-status={record.status} data-open={open || undefined}
+    onKeyDown={foldOnEscape(open, summary => { onDisclosure?.(summary); setOpen(false) })}>
     {expandable
       ? <button type="button" className="thread-activity__toggle tt-focusable" aria-expanded={open} aria-controls={open ? detailId : undefined} aria-label={spoken}
         onClick={event => { onDisclosure?.(event.currentTarget); setOpen(value => !value) }}>{body}</button>
@@ -256,7 +273,7 @@ export const ActivityGroupView = memo(function ActivityGroupView({ group, live, 
   const canFold = !live && group.records.length > 0
   const name = [headline, summary].filter(Boolean).join(', ') || 'Activity'
   return <section className="thread-activity" data-turn-id={group.turnId} data-live={live || undefined} data-expanded={expanded || undefined}
-    aria-label={name}>
+    aria-label={name} onKeyDown={foldOnEscape(canFold && expanded, summary => { onDisclosure?.(summary); setChoice(false) })}>
     {canFold ? <button type="button" className="thread-activity__summary tt-focusable" aria-expanded={expanded} aria-controls={expanded ? listId : undefined} aria-label={name}
       onClick={event => { onDisclosure?.(event.currentTarget); setChoice(!expanded) }}>
       <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" />

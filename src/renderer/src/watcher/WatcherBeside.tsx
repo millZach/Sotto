@@ -13,6 +13,8 @@ import { ThreadWorkingCopyNotice } from '../agents/ThreadWorkingCopy'
 /** The beside pane's composer; Watcher's own is `watcher-prompt`. */
 export const BESIDE_PROMPT_ID = 'watcher-beside-prompt'
 export const BESIDE_PANE_ID = 'watcher-beside-pane'
+/** Where Escape belongs to something inside the pane: an open popup, or the trigger of one (a picker, a menu button). */
+const POPUP_OWNS_ESCAPE = '[role="dialog"], [role="menu"], [role="listbox"], [aria-expanded="true"]:is([aria-haspopup]:not([aria-haspopup="false"]), [role="combobox"])'
 
 /**
  * Watcher's room keeps its own view, apart from the Threads page's panes and selection (the plan, section 6): the one
@@ -151,7 +153,9 @@ export function BesidePane({ row, state, command, store, focused, underControls,
     onFocusCapture={onFocus} onPointerDownCapture={onFocus}
     onKeyDown={event => {
       if (event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing) return
-      if ((event.target as Element).closest('[role="dialog"], [role="menu"], [role="listbox"], [aria-expanded="true"]')) return
+      // A popup answers Escape itself, and so does the control that owns an open one. An open disclosure folds first
+      // (`foldOnEscape`); one with nothing to answer Escape no longer stops the pane closing.
+      if ((event.target as Element).closest(POPUP_OWNS_ESCAPE)) return
       event.preventDefault()
       onClose()
     }}>

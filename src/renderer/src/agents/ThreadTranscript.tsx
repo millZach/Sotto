@@ -12,7 +12,7 @@ import { useShared } from './stateSharing'
 import { MessageContent, AttachmentPreviews } from './MessageContent'
 import { renderedPlainText, useTransientFlag, writeClipboard } from './richActions'
 import { LinkMenu, type LinkMenuItem } from '../tools/webLinks'
-import { ActivityGroupView, CompactionLine, LiveActivity, TurnChangedFiles } from './ThreadActivity'
+import { ActivityGroupView, CompactionLine, foldOnEscape, LiveActivity, TurnChangedFiles } from './ThreadActivity'
 import { isDrawableVisual, VisualCard } from './VisualCard'
 import { isWakeUpFollowup, isWakeUpMessage, wakeUpMarkdown } from './babysitting'
 import { SottoMark } from '../components/SottoMark'
@@ -59,7 +59,8 @@ function TurnWork({ headline, error, changes, onDisclosure, children }: {
 }): ReactNode {
   const [open, setOpen] = useState(false)
   const bodyId = useId()
-  return <section className="thread-work" data-expanded={open || undefined} aria-label={headline}>
+  return <section className="thread-work" data-expanded={open || undefined} aria-label={headline}
+    onKeyDown={foldOnEscape(open, summary => { onDisclosure(summary); setOpen(false) })}>
     <button type="button" className="thread-work__summary tt-focusable" aria-expanded={open} aria-controls={open ? bodyId : undefined}
       onClick={event => { onDisclosure(event.currentTarget); setOpen(value => !value) }}>
       <span className="thread-work__headline">{headline}</span>
