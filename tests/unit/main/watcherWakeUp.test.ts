@@ -194,7 +194,7 @@ it('restores the latest evidence occurrence without replaying it or suppressing 
   for (const count of [1, 2, 1]) { f.wakes.checkpoint(checkpoint(count)); await f.advance(2_000) }
   f.wakes.close()
   f.thread.status = 'idle'; f.thread.lastTurn = undefined
-  const deliver = vi.fn(async (_news: WatcherNews) => undefined)
+  const deliver = vi.fn<(news: WatcherNews) => Promise<void>>(async () => undefined)
   const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, deliver, now: f.now,
     prune: async () => undefined, remember: async () => undefined, schedule: callback => { callback(); return () => undefined } })
   cleanups.push(() => recovered.close())
@@ -229,7 +229,7 @@ it('keeps a legacy evidence ID valid only for its reconciled occurrence', async 
   const legacy = { ...current, id: legacyId }
   f.record.wakeEventIds = [legacyId]; f.wakes.close()
   f.thread.status = 'idle'; f.thread.lastTurn = undefined
-  const deliver = vi.fn(async (_news: WatcherNews) => undefined)
+  const deliver = vi.fn<(news: WatcherNews) => Promise<void>>(async () => undefined)
   const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, deliver, now: f.now,
     prune: async () => undefined, remember: async () => undefined, schedule: callback => { callback(); return () => undefined } })
   cleanups.push(() => recovered.close())

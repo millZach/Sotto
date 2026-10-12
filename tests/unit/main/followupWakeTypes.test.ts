@@ -24,6 +24,7 @@ it('requires stored-news callbacks to handle both babysitting and Watcher news',
 
 it('words, withdraws and prunes a stored queue containing both news sources', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-wake-types-'))
+  if (dirname(resolve(directory)) !== resolve(tmpdir()) || !directory.includes('sotto-wake-types-')) throw new Error('Unexpected fixture path')
   try {
     const store = new FollowupStore(directory)
     await store.load()
@@ -49,7 +50,6 @@ it('words, withdraws and prunes a stored queue containing both news sources', as
     expect(store.peek().items[0]!.news).toEqual([babysit])
     expect(store.peek().items[0]!.text).toBe(queuedWakeUpText([babysit], { tool: true }))
   } finally {
-    if (dirname(resolve(directory)) !== resolve(tmpdir()) || !directory.includes('sotto-wake-types-')) throw new Error('Unexpected fixture path')
     await rm(directory, { recursive: true, force: true })
   }
 })
