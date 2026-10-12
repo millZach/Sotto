@@ -217,6 +217,8 @@ data class ThreadSummary(
     val compaction: Compaction? = null,
     /// The computer's word that the thread finished while nothing showed it and has not been opened since (ADR-0046).
     val finishedUnread: Boolean? = null,
+    val kind: String? = null,
+    val watchedByWatcher: Boolean? = null,
 ) {
     @Serializable data class BackgroundWork(val type: String)
     @Serializable data class Compaction(val status: String)
