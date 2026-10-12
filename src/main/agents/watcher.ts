@@ -24,6 +24,9 @@ import { watcherHostControlSchema, watcherHostReadSchema, type WatcherHostContro
 const now = () => new Date().toISOString()
 const key = (target: WatcherThreadTarget) => JSON.stringify([target.hostId, target.threadId])
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
+export const watcherGuidancePrefix = (requestId: string, hostId: string): string =>
+  `[Sotto Watcher request: ${requestId}. Local host: ${hostId}. Use this requestId for sotto_threads mutations. Known project IDs: `
+export const WATCHER_GUIDANCE_SUFFIX = '. Call list_projects for choices.]'
 export function watcherRefusal(code: WatcherRefusal['code'], message: string, retryable = false): WatcherRefusal {
   return { status: 'refused', code, message, retryable }
 }
@@ -372,7 +375,7 @@ export class WatcherService implements WatcherControlHooks {
       next.requests.find(item => item.id === request!.id)!.userFollowups!.find(item => item.draftId === _draftId)!.messageId = command.messageId
     })
     const projects = this.options.control.watcherSnapshot().projects.filter(item => item.id !== record.current?.projectId)
-    return { ...command, text: `${command.text}\n\n[Sotto Watcher request: ${request.id}. Local host: ${this.hostId()}. Use this requestId for sotto_threads mutations. Known project IDs: ${projects.slice(0, 100).map(item => item.id).join(', ')}. Call list_projects for choices.]` }
+    return { ...command, text: `${command.text}\n\n${watcherGuidancePrefix(request.id, this.hostId())}${projects.slice(0, 100).map(item => item.id).join(', ')}${WATCHER_GUIDANCE_SUFFIX}` }
   }
   observe(snapshot: AgentHostSnapshot, knownUserMessages: ReadonlySet<string>): void {
     const record = this.record()
