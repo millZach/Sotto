@@ -39,16 +39,26 @@ struct WatcherView: View {
             RequestSheet(place: card.place, request: card.request)
                 .presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
         }
-        .confirmationDialog(WatcherWords.stopQuestion(stopPreview?.targets.count ?? 0),
-                            isPresented: Binding(get: { stopPreview != nil }, set: { if !$0 { stopPreview = nil } }),
-                            titleVisibility: .visible, presenting: stopPreview) { preview in
+        // Stop all asks in the middle of the screen, with Cancel beside Stop, as the design draws it. iOS 26 draws a
+        // confirmation dialog as a menu from the page and leaves its Cancel out, so this is an alert.
+        .alert(WatcherWords.stopQuestion(stopPreview?.targets.count ?? 0),
+               isPresented: Binding(get: { stopPreview != nil }, set: { if !$0 { stopPreview = nil } }),
+               presenting: stopPreview) { preview in
             Button(WatcherWords.stopButton(preview.targets.count), role: .destructive) {
                 Task { await model.confirmWatcherStop(preview, on: hostID) }
             }
             Button("Cancel", role: .cancel) {}
         } message: { preview in
-            Text(preview.targets.map(\.title).joined(separator: ", ") + ". Threads you started or took over stay as they are.")
+            Text(stopMessage(preview))
         }
+    }
+
+    /// What stays, then each thread Stop all would stop and where it runs: "Fix login test, Claude Code on Laptop".
+    private func stopMessage(_ preview: WatcherStopPreview) -> String {
+        let threads = preview.targets.map { target in
+            "\(target.title), \(AgentNames.name(target.provider)) on \(model.computerName(target.hostId) ?? "another computer")"
+        }
+        return (["Threads you started or took over keep going, and so does Watcher.", ""] + threads).joined(separator: "\n")
     }
 
     /// Stop all asks first: the computer says which threads it would stop, and nothing stops until the user confirms.
@@ -66,19 +76,23 @@ struct WatcherView: View {
 /// Watcher's name, its model and computer, its state, and Conversation | Watched, pinned over the page in glass.
 private struct WatcherHeader: View {
     @EnvironmentObject var model: AppModel
+    @Environment(\.dynamicTypeSize) private var typeSize
     let hostID: String
     @Binding var section: WatcherView.Pane
     var body: some View {
         let page = model.watcherPage(hostID)
         VStack(alignment: .leading, spacing: Space.s3) {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: Space.s3) {
-                    title
-                    Spacer(minLength: Space.s2)
-                    WatcherStatePill(hostID: hostID)
-                }
+            // The state sits beside the name, as the design draws it, and a long model line wraps under the name rather
+            // than push the state onto a row of its own. At accessibility sizes the state goes under the name.
+            if typeSize.isAccessibilitySize {
                 VStack(alignment: .leading, spacing: Space.s2) {
                     title
+                    WatcherStatePill(hostID: hostID)
+                }
+            } else {
+                HStack(spacing: Space.s3) {
+                    title
+                    Spacer(minLength: 0)
                     WatcherStatePill(hostID: hostID)
                 }
             }
@@ -96,16 +110,18 @@ private struct WatcherHeader: View {
     }
     private var title: some View {
         HStack(spacing: Space.s3) {
-            WatcherOwlMark(size: 26)
+            WatcherOwlMark(size: 24)
                 .foregroundStyle(Palette.ink)
-                .frame(width: 44, height: 44)
+                .frame(width: 40, height: 40)
                 .background(Palette.raised, in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Watcher").font(.sotto(.title, .bold)).tracking(-0.4).foregroundStyle(Palette.ink)
                     .accessibilityAddTraits(.isHeader)
-                Text(subtitle).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                // Caption size, as the design draws it: at the small one the line pushed the state off the name's row on
+                // an iPhone SE.
+                Text(subtitle).font(.sotto(.caption)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -196,6 +212,7 @@ private struct WatcherConversationPane: View {
     @Environment(\.sottoDensity) private var density
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private static let end = "watcher-end"
+    private static let sendingID = "watcher-sending"
 
     var body: some View {
         let page = model.watcherPage(hostID)
@@ -206,13 +223,16 @@ private struct WatcherConversationPane: View {
                     notes(page)
                     if let page {
                         ForEach(WatcherConversation.items(page)) { item in
-                            switch item {
-                            case .message(let message): WatcherMessage(message: message)
-                            case .receipts(let group, _): ReceiptCard(hostID: hostID, group: group)
+                            Group {
+                                switch item {
+                                case .message(let message): WatcherMessage(message: message)
+                                case .receipts(let group, _): ReceiptCard(hostID: hostID, group: group)
+                                }
                             }
+                            .id(item.id)
                         }
                     }
-                    if let sending { SendingBubble(text: sending) }
+                    if let sending { SendingBubble(text: sending).id(Self.sendingID) }
                     if let page { cards(page) }
                     if model.online(hostID), page?.working == true {
                         HStack(spacing: Space.s2) {
@@ -232,9 +252,13 @@ private struct WatcherConversationPane: View {
             .scrollDismissesKeyboard(.interactively)
             .refreshable { await model.readWatcher(hostID) }
             .safeAreaInset(edge: .bottom, spacing: 0) { WatcherDock(hostID: hostID) }
-            // New words at the end, the user's own or Watcher's, are scrolled to.
+            // New words, the user's own or Watcher's, are scrolled to just above the box. Cards waiting on the user sit
+            // after the whole conversation, where the page opens, so scrolling to the end would leave the new words
+            // under the header on a small phone.
             .onChange(of: (page?.conversation.revision ?? 0) * 2 + (sending == nil ? 0 : 1)) { _, _ in
-                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.3)) { proxy.scrollTo(Self.end, anchor: .bottom) }
+                let newest: String? = model.watcherSending[hostID] != nil ? Self.sendingID
+                    : model.watcherPage(hostID).flatMap { WatcherConversation.items($0).last?.id }
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.3)) { proxy.scrollTo(newest ?? Self.end, anchor: .bottom) }
             }
         }
     }
@@ -734,7 +758,8 @@ private struct WatcherDock: View {
                 .padding(.leading, Space.s3)
                 .accessibilityLabel("Ask Watcher")
                 .accessibilityIdentifier("watcher-reply")
-            Button { Task { await model.sendToWatcher(hostID) } } label: {
+            // Sending puts the keyboard away, as the design does, so Watcher's answer has room on a small phone.
+            Button { focused = false; Task { await model.sendToWatcher(hostID) } } label: {
                 Image(systemName: "arrow.up").font(.system(size: 17, weight: .semibold))
                     .frame(width: 44, height: 44)
                     .foregroundStyle(canSend ? Palette.onAccent : Palette.muted)
