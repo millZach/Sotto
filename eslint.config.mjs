@@ -88,6 +88,7 @@ export default tseslint.config(
       'artifacts/sidebar-question/**',
       'artifacts/tools-rail-run/**',
       'artifacts/git-settings/**',
+      'artifacts/question-message-links/**',
       'artifacts/review-comments-run/**',
       'artifacts/git-interface-run/**',
       'artifacts/worktree-origin-fallback-run/**',

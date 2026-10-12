@@ -51,17 +51,28 @@ public enum WebLinks {
     public static func find(in question: Question) -> [URL] { find(in: texts(question)) }
 
     /// Every link in a request: its own words, then each question's, then any choices it carries without questions.
-    public static func find(in request: AgentRequest) -> [URL] {
-        find(in: [request.text] + (request.questions ?? []).flatMap(texts) + request.options.flatMap { [$0.label, $0.description ?? ""] })
+    public static func find(in request: AgentRequest) -> [URL] { find(in: texts(request)) }
+
+    /// Every link a question's sheet shows: the request's own, then those in the agent's message just before it that the
+    /// request doesn't already show, which the sheet covers. A request has no place in the thread of its own, but the
+    /// agent waits on the answer, so its newest message is the one the question follows. A visual reaches a phone as its
+    /// words alone, and words alone are a reply like any other (ADR-0056).
+    public static func find(in request: AgentRequest, after messages: [Message]) -> [URL] {
+        guard let message = messages.last(where: { $0.role == "assistant" }) else { return find(in: request) }
+        return find(in: texts(request) + [message.text])
+    }
+
+    private static func texts(_ request: AgentRequest) -> [String] {
+        [request.text] + (request.questions ?? []).flatMap(texts) + request.options.flatMap { [$0.label, $0.description ?? ""] }
     }
 
     private static func texts(_ question: Question) -> [String] {
         [question.question, question.header ?? ""] + question.options.flatMap { [$0.label, $0.description ?? ""] }
     }
 
-    /// Where a link goes, as its row shows it: the host and path, without the scheme.
+    /// Where a link goes, as its row shows it: the host, its port when it names one, and the path, without the scheme.
     public static func place(_ url: URL) -> String {
-        let host = url.host ?? ""
+        let host = (url.host ?? "") + (url.port.map { ":\($0)" } ?? "")
         let path = URLComponents(url: url, resolvingAgainstBaseURL: false)?.path ?? ""
         return path.isEmpty || path == "/" ? host : host + path
     }
