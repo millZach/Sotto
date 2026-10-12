@@ -37,6 +37,7 @@ export default tseslint.config(
       'artifacts/linux-window-minimum/**',
       'artifacts/linux-hyprland-paste/**',
       'artifacts/linux-dictation-unreachable/**',
+      'artifacts/codex-terminal-state/**',
       'artifacts/linux-no-window-controls/**',
       'artifacts/visuals-live/**',
       'artifacts/babysitting-surfaces-run/**',

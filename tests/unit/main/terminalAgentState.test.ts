@@ -20,6 +20,68 @@ const event = (kind: TerminalAgentHookEvent['kind'], values: Partial<TerminalAge
 const agent = () => { const state = new TerminalAgentStateMachine('run', 'claude', 100, 30, 'session'); state.started(); state.output(idle); return state }
 
 describe('terminal agent run state', () => {
+  it.each(['0.162.0', '0.162.1'])('settles Codex %s after completion with the native model and directory footer', version => {
+    const state = new TerminalAgentStateMachine('run', 'codex', 120, 30)
+    const title = `OpenAI Codex (v${version})`
+    const ready = redraw('› Ask Codex to do anything\r\n  GPT-6-Luna low · /scratch/project', title)
+    state.started(); state.setVisible(true); state.output(ready)
+    state.input('Say hi'); state.input('\r')
+    state.output(redraw('• Working (0s • esc to interrupt)\r\n› \r\n  GPT-6-Luna low · /scratch/project', title))
+    expect(state.state).toBe('working')
+    state.hook(event('completed', { providerSessionId: 'session', turnId: 'turn' }))
+    state.output(ready)
+    expect(state.state).toBe('idle')
+    expect(state.compatibility).toBe('available')
+  })
+  it.each(['0.162.0', '0.162.1'].flatMap(version => ['~', '/', 'C:\\', 'C:/'].flatMap(folder => ['', ' · Say hi'].map(suffix => ({ version, folder, suffix })))))('settles Codex $version with a bare $folder folder footer$suffix', ({ version, folder, suffix }) => {
+    const state = new TerminalAgentStateMachine('run', 'codex', 120, 30)
+    const title = `OpenAI Codex (v${version})`
+    const footer = `GPT-6-Luna low · ${folder}${suffix}`
+    state.started(); state.setVisible(true)
+    state.output(redraw(`• Working (0s • esc to interrupt)\r\n› \r\n${footer}`, title))
+    expect(state.state).toBe('working')
+    state.hook(event('completed', { providerSessionId: 'session', turnId: 'turn' }))
+    state.output(redraw(`› \r\n${footer}`, title))
+    expect(state.state).toBe('idle')
+    expect(state.detection).toBe('available')
+  })
+  it.each(['0.162.0', '0.162.1'])('keeps Codex %s model-footer detection bound to native readiness', version => {
+    const state = new TerminalAgentStateMachine('run', 'codex', 120, 30)
+    const title = `OpenAI Codex (v${version})`
+    const footer = 'GPT-6-Luna low · C:\\scratch\\project'
+    const ready = redraw(`› \r\n${footer}`, title)
+    state.started(); state.output(ready)
+    expect(state.state).toBe('idle')
+    state.input('Say hi\r')
+    state.output(redraw(`• Working (0s • esc to interrupt)\r\n› \r\n${footer}`, title))
+    state.hook(event('completed', { turnId: 'old-turn' }))
+    expect(state.state).toBe('working')
+    state.quiet(); expect(state.state).toBe('working')
+    state.output(ready); expect(state.state).toBe('just-finished')
+    state.setVisible(true); expect(state.state).toBe('idle')
+    for (const body of [`› a draft\r\n${footer}`, `\x60\x60\x60\r\n› \r\n${footer}\r\n\x60\x60\x60`, `> › \r\n> ${footer}`]) {
+      state.output(redraw(body, title)); expect(state.detection).toBe('unavailable')
+    }
+    state.output(redraw('Would you like to run the following command?\r\n› 1. Yes, proceed (y)\r\n2. No, and tell Codex what to do differently (esc)\r\nPress enter to confirm or esc to cancel', title))
+    expect(state.state).toBe('needs-you')
+    expect(state.approvalLines()).not.toBeNull()
+    state.output(redraw(`› \r\n${footer}`, 'OpenAI Codex (v0.162.2)'))
+    expect(state.compatibility).toBe('unavailable')
+    expect(state.detection).toBe('unavailable')
+  })
+  it.each(['0.162.0', '0.162.1'])('settles Codex %s with a warning beside the native shortcuts hint', version => {
+    const state = new TerminalAgentStateMachine('run', 'codex', 120, 30)
+    const title = `OpenAI Codex (v${version})`
+    const ready = redraw('› Ask Codex to do anything\r\nGPT-6-Luna low · /scratch/project · Say hi\r\n? for shortcuts                  ⚠ 1 warning · f2 to view', title)
+    state.started(); state.setVisible(true); state.output(ready)
+    expect(state.state).toBe('idle')
+    state.input('Say hi\r'); state.output(redraw('• Working (0s • esc to interrupt)', title))
+    state.hook(event('completed', { turnId: 'turn' }))
+    state.quiet(); expect(state.state).toBe('working')
+    state.output(ready); expect(state.state).toBe('idle')
+    expect(state.detection).toBe('available')
+    expect(state.compatibility).toBe('available')
+  })
   it.each([false, true])('binds a delayed submitted hook after native readiness without restarting work (viewed %s)', viewed => {
     for (const order of ['submitted-first', 'stop-first'] as const) {
       const state = agent(); state.hook(event('session-start')); state.output(idle)
