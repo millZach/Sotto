@@ -2,7 +2,7 @@
 
 Ticket 8b of the Watcher plan, branch `feat/watcher-iphone`, built on ticket 8a's `feat/watcher-phone` (the wire contract at `3cb736fdd`, then its host and SottoCore models merged at `da592927c`). Windows 11 on LAPTOP-RUSSH2J5, October 11, 2026. The design is Zach's picks from the phone prototype of the same day (1B, 2B, 3B, 4B, 5A, 6B, 7A), recorded in ADR-0073's October 11 amendment.
 
-**Native iPhone app: NOT VERIFIED.** No Swift was compiled, run or tested on this machine: there is no Xcode or Swift toolchain here, and the brief allowed installing none. The Native iOS job has since compiled it and passed its model tests, and four of the six Watcher journeys failed there (see [The first CI run](#the-first-ci-run-october-12)); the fixes for them are again source only. Until that job is green on both phones and its `watcher-*` screenshots have been opened and inspected, the journeys are not proven.
+**Native iPhone app: NOT VERIFIED.** No Swift was compiled, run or tested on this machine: there is no Xcode or Swift toolchain here, and the brief allowed installing none. The Native iOS job has since compiled it and passed its model tests, and four of the six Watcher journeys failed there (see [The first CI run](#the-first-ci-run-october-12)); the fixes for them are again source only. The [second run](#the-second-ci-run-october-12) passed all six on both phones and failed one older journey on the Pro Max. Until that job is green on both phones and its `watcher-*` screenshots have been opened and inspected, the journeys are not proven.
 
 ## What was checked here
 
@@ -22,6 +22,14 @@ Run 38201680489 (job 114656655740, draft #946, which carries `apps/ios` from thi
 - **`testTheWatcherTabOpensAndTakesAMessage`: both.** The journey put the keyboard away with a swipe on the first scroll view, which stays above the keyboard; the conversation lets the keyboard go only when a drag carries on down into it. Its screenshot also showed that with the keyboard up on the SE, neither the message sent nor Watcher's answer was on screen: the page scrolled to its end, under the card still waiting. As the design does, sending now puts the keyboard away, and new words are scrolled to just above the box with waiting cards below them. The journey checks both, then puts the keyboard away with a drag down into it.
 
 The passing journeys' screenshots, dark and light, match the design except the header: on the SE the line under Watcher's name was set a size larger than the prototype's, which pushed the state pill onto a row of its own. It is now caption size, with the prototype's 40-point tile, and the state stays beside the name short of the accessibility sizes. The provider logos and owls draw as the desktop's, in the line's colour, and the tab's value read "Working" in the hierarchy.
+
+## The second CI run (October 12)
+
+Run 38222430368 (job 114721785239, draft #946 at `e43bc5cf6`, carrying this branch's `apps/ios` as of `08c29119b`) passed all 354 model tests. On the iPhone SE every journey passed, the six Watcher journeys among them. The iPhone 16 Pro Max (accessibility-large text, reduced motion) then ran for the first time: every Watcher journey passed there too, and one older journey failed.
+
+- **`testAOneTapQuestionIsAnsweredOnItsCard`: the journey.** At that text size the Ctrl+J chip came to rest mostly under the floating tab bar. XCTest still called it hittable, so the reveal helper stopped scrolling. The only visible point XCTest could press was the chip's top-left corner, at (37, 870.7), which is outside the chip's rounded hit shape. The press opened the card's thread instead, the thread opened its question sheet, and no Send answer on Threads was ever enabled. The recording and the tap's recorded point show this. The app is right: a chip answers when it is pressed and the card opens its thread elsewhere. The journey now scrolls the chip whole above the tab bar before pressing it, then checks that the chip is chosen before it looks for Send answer.
+
+The `watcher-*` screenshots from both phones, dark and light, match Zach's picks (1B, 2B, 3B, 4B, 6B) and the prototype's layout. The alert names each thread with Stop and Cancel, the logo comes before the owl, and the held box and the sheet use the design's words. One difference, recorded here and not changed: at the Pro Max's accessibility text size, the header's switch shortens Conversation to "Conversati…" in every capture. The prototype's larger-text captures go only one size up, where it fits.
 
 ## What waits for the Native iOS job
 
