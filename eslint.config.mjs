@@ -7,6 +7,7 @@ export default tseslint.config(
       '.t/**',
       'artifacts/omarchy-theme/**',
       'artifacts/omarchy-muted/**',
+      'artifacts/builtin-palette-contrast/**',
       'artifacts/watcher-benchmark/**',
       'artifacts/watcher-rename/**',
       'artifacts/watcher-gate/**',
