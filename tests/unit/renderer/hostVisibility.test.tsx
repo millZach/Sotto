@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { AgentCommand, AgentState } from '../../../src/shared/agents'
+import { defaultNewThreadModelId, type AgentCommand, type AgentState } from '../../../src/shared/agents'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { NewThreadDialog } from '../../../src/renderer/src/agents/NewThreadDialog'
@@ -27,6 +27,8 @@ function twoHosts(): AgentState {
   })
   state.connections = [{ hostId: LOCAL, name: 'This computer', kind: 'local', connected: true }, { hostId: FORGE, name: 'forge', kind: 'remote', connected: true }]
   state.hostId = LOCAL
+  // The router hands the window this computer's new-thread model already resolved (ADR-0074).
+  state.configuration.newThreadModelId = defaultNewThreadModelId(state.configuration, state.host.models, state.reasoningAccounts)
   return state
 }
 function mount(state: AgentState) {
@@ -140,6 +142,7 @@ describe('New thread chooses the host first', () => {
     state.hostId = FORGE
     const [localModel, forgeModel] = [state.host.models.find(model => model.ready)!, { ...state.host.models.find(model => model.ready)!, id: 'forge-only-model', name: 'Forge only' }]
     state.host.models = [forgeModel]
+    state.configuration.newThreadModelId = localModel.id
     state.host.clientHosts = [
       { hostId: LOCAL, connected: true, models: [localModel], capabilities: state.host.capabilities, ...(state.host.providers ? { providers: state.host.providers } : {}) },
       { hostId: FORGE, connected: true, models: [forgeModel], capabilities: state.host.capabilities, ...(state.host.providers ? { providers: state.host.providers } : {}) },

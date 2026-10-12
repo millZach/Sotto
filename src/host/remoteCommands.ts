@@ -71,10 +71,13 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
  */
 export const REMOTE_SIGN_IN_OPERATIONS = ['sign-in-start', 'sign-in-read', 'sign-in-code', 'sign-in-cancel'] as const
 /**
- * The account and thread defaults a paired client may change. Keys and machine paths stay on the host.
+ * The account and thread defaults a paired client may change. Keys stay on the host. The projects directory is only
+ * where a new project goes, and `create-project` already takes a path from a paired client, so a desktop sets it from
+ * its own Settings (ADR-0074). A new-thread permission default that lets threads act without asking is a grant, so it
+ * needs the same remote-answer policy a thread's own permission does (see `remoteCommandNeedsAnswerPolicy`).
  */
 export const REMOTE_CONFIGURATION_FIELDS: readonly (keyof AgentConfiguration)[] = ['provider', 'enabledProviders', 'enabled', 'defaultModelId',
-  'reasoning', 'reasoningModel', 'reasoningEffort']
+  'reasoning', 'reasoningModel', 'reasoningEffort', 'projectsDirectory', 'newThreadModelId', 'newThreadReasoningEffort', 'newThreadRuntimeMode']
 
 /**
  * Whether a remote command changes what a thread may do without asking, or discards work the user has
@@ -92,6 +95,8 @@ export function remoteCommandNeedsAnswerPolicy(command: AgentCommand, askingProv
     case 'create-thread': case 'configure-thread':
       return (command.runtimeMode !== undefined && command.runtimeMode !== 'approval-required')
         || (command.providerMode !== undefined && !askingProviderModes.includes(command.providerMode))
+    // Every new thread would start on it, so it is at least the grant one thread's own would be.
+    case 'configure': return command.patch.newThreadRuntimeMode != null && command.patch.newThreadRuntimeMode !== 'approval-required'
     case 'restore-thread-branch': return command.withUncommittedChanges === true
     case 'reclaim-thread-worktree': return command.withUncommittedChanges === true || Boolean(command.confirmedIgnored?.length)
     default: return false

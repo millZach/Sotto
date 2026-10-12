@@ -53,7 +53,7 @@
 .account-row__heading span { display: block; margin-top: 2px; color: var(--tt-text-muted); font-size: 13px; }
 .account-row__control { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; min-width: 0; border: 0; padding: 0; margin: 0; }
 .account-row__note { grid-column: 1 / -1; margin: -4px 0 0; color: var(--tt-text-muted); font-size: 12px; }
-.agent-saved-field > span { color: var(--tt-error); grid-column: 1 / -1; font-size: 13px; }
+.agent-saved-field > [role='alert'] { color: var(--tt-error); grid-column: 1 / -1; font-size: 13px; }
 .help-view { width: min(100%, 800px); margin: 0 auto; padding: 28px 40px 48px; }
 .help-view > h1 { margin: 0 0 24px; font-size: 28px; font-weight: 500; letter-spacing: -.9px; }
 .help-grid { display: flex; flex-direction: column; gap: 42px; }

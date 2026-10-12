@@ -2707,7 +2707,13 @@ export class AgentControl {
     }
     switch (command.type) {
       case 'configure': {
-        let next = agentConfigurationSchema.parse({ ...this.state.configuration, ...command.patch })
+        // A null permission default is the wire's way to unset it, back to the provider's own.
+        const { newThreadRuntimeMode, ...rest } = command.patch
+        // Every new thread would start on it, so a default that lets threads act unasked is a grant, checked here as a
+        // thread's own permission is, so a policy revoked since the host admitted the command still refuses it (ADR-0074).
+        if (newThreadRuntimeMode != null && newThreadRuntimeMode !== 'approval-required') this.guardClientGrant(client, REMOTE_PERMISSION_DENIED)
+        const patch = newThreadRuntimeMode === null ? { ...rest, newThreadRuntimeMode: undefined } : command.patch
+        let next = agentConfigurationSchema.parse({ ...this.state.configuration, ...patch })
         const before = this.state.configuration
         // Coordinator account selection has no authority over native thread connections.
         if (next.reasoning !== before.reasoning) await this.dependencies.credentials.set('reasoning', '')

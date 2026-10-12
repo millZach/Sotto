@@ -30,6 +30,7 @@ export default tseslint.config(
       'artifacts/linux-shell-plumbing/**',
       'artifacts/linux-package/**',
       'artifacts/linux-settings-copy/**',
+      'artifacts/new-thread-defaults-every-host/**',
       'apps/omarchy/src/**',
       'apps/omarchy/pkg/**',
       'artifacts/e2e-runs/**',

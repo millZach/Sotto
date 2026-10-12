@@ -489,3 +489,10 @@ artifacts/codex-terminal-state/*
 !artifacts/codex-terminal-state/packaged-idle-1280x800-dark.png
 !artifacts/codex-terminal-state/packaged-idle-820x560-light.png
 !artifacts/codex-terminal-state/packaged-result.json
+
+# New-thread defaults on every host (ADR-0074); retain only the captures its verification note cites.
+artifacts/new-thread-defaults-every-host/*
+!artifacts/new-thread-defaults-every-host/dark-1600.png
+!artifacts/new-thread-defaults-every-host/light-1280.png
+!artifacts/new-thread-defaults-every-host/dark-820.png
+!artifacts/new-thread-defaults-every-host/light-820.png

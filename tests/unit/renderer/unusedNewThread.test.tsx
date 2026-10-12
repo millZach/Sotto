@@ -96,7 +96,8 @@ describe('an unused new thread', () => {
 
 describe('a new thread shown before main confirms it', () => {
   const LOCAL = '11111111-1111-4111-8111-111111111111', REMOTE = '22222222-2222-4222-8222-222222222222'
-  const twoHosts = (): AgentState => ({ ...state([]), hostId: LOCAL, connections: [
+  // As the router publishes it, with this computer's new-thread model already resolved (ADR-0074).
+  const twoHosts = (): AgentState => ({ ...state([]), configuration: { ...defaultAgentConfiguration(), newThreadModelId: 'codex:model' }, hostId: LOCAL, connections: [
     { hostId: LOCAL, kind: 'local', name: 'This computer', connected: true }, { hostId: REMOTE, kind: 'remote', name: 'forge', connected: true }] })
   const draftFor = async (current: AgentState, hostId: string) => {
     const start = await beginNewThread(current, async () => current, { ...project, id: hostEntityKey(hostId, 'project'), hostId })
