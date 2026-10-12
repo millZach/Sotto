@@ -105,7 +105,8 @@ BarWidget {
       name: root.look.glyph
       color: root.ink
       fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
-      size: name === "sotto" || name === "retry" ? Style.space(18) : Style.bar.iconFont
+      // The owl fills the bar's icon canvas, as the shell's own icons do.
+      size: name === "sotto" ? Style.bar.iconCanvas : (name === "retry" ? Style.space(18) : Style.bar.iconFont)
     }
 
     Text {

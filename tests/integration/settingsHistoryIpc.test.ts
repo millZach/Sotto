@@ -83,6 +83,21 @@ describe('IPC validation and lifecycle', () => {
     })
   })
 
+  it.each(['win32', 'darwin', 'linux'] as const)('%s rejects the shell pill state before any write or notification', async (platform) => {
+    await onPlatform(platform, async () => {
+      const snapshot = { ...DEFAULT_SETTINGS, ...(platform === 'linux' ? { shellPillInUse: true } : {}) }
+      const { ipc, repository, changed, coordinator, dispose } = settingsMutationHarness(snapshot)
+      try {
+        await expect(ipc.invoke(SETTINGS_UPDATE, { shellPillInUse: false })).rejects.toThrow('Invalid IPC payload')
+        expect(repository.update).not.toHaveBeenCalled()
+        expect(repository.save).not.toHaveBeenCalled()
+        expect(repository.reset).not.toHaveBeenCalled()
+        expect(changed).not.toHaveBeenCalled()
+        expect(await coordinator.getSettings()).toEqual(snapshot)
+      } finally { dispose() }
+    })
+  })
+
   it.each([
     ['win32', 'lightTheme'], ['win32', 'darkTheme'],
     ['darwin', 'lightTheme'], ['darwin', 'darkTheme'],
