@@ -121,8 +121,10 @@ export class WatcherService implements WatcherControlHooks {
     return Boolean(snapshot && isThreadProviderConnected(snapshot, thread) && thread.clientConnected !== false)
   }
   private pending(thread: AgentThread): void { if (thread.requests.length) refuse('PENDING_USER_REQUEST', 'This thread needs your answer. Open its own request card. Nothing was sent.') }
-  private permission(model: AgentModel | undefined, explicit?: WatcherToolInput<'start_thread'>['permission']) {
-    const ceiling = resolveNewThreadPermission(model, this.options.control.configuration().newThreadRuntimeMode ?? 'approval-required')
+  private permission(model: AgentModel | undefined, explicit?: WatcherToolInput<'start_thread'>['permission'], pairedCeiling?: WatcherHostControl['ceiling']) {
+    const configured = this.options.control.configuration().newThreadRuntimeMode ?? 'approval-required'
+    const desired = pairedCeiling && RUNTIME_MODE_ORDER.indexOf(pairedCeiling) < RUNTIME_MODE_ORDER.indexOf(configured) ? pairedCeiling : configured
+    const ceiling = resolveNewThreadPermission(model, desired)
     if (ceiling.providerMode !== undefined) {
       const mode = model?.providerModes?.find(item => item.id === ceiling.providerMode)
       if (mode?.allows !== 'nothing' || explicit && (explicit.kind !== 'provider' || explicit.choiceId !== ceiling.providerMode)) {
@@ -543,7 +545,7 @@ export class WatcherService implements WatcherControlHooks {
         const model = resolveModel(snapshot.models, create.modelId)
         if (!model?.ready) refuse('PROVIDER_UNAVAILABLE', 'Choose a ready worker model. Sotto will not switch accounts.')
         if (create.reasoningEffort && !model.reasoningEfforts?.includes(create.reasoningEffort)) refuse('INVALID_INPUT', 'Choose an effort this worker model offers.')
-        const permission = this.permission(model, create.permission)
+        const permission = this.permission(model, create.permission, request.remoteOrigin?.ceiling)
         this.checkRemoteCeiling(request.id, permission.kind === 'runtime' ? permission.mode : undefined)
         this.prunePages()
         if (!remote && (create.workingCopy.kind === 'existing-worktree' && !this.copyChoices.get(create.workingCopy.choiceId)?.path
@@ -608,10 +610,11 @@ export class WatcherService implements WatcherControlHooks {
       if (name === 'start_thread') {
         const create = input as WatcherToolInput<'start_thread'>
         const choices = await this.resolveCopies(create)
-        const permission = this.permission(resolveModel(this.options.control.watcherSnapshot().models, create.modelId), create.permission)
+        const pairedCeiling = this.record().requests.find(item => item.id === operation.requestId)?.remoteOrigin?.ceiling
+        const permission = this.permission(resolveModel(this.options.control.watcherSnapshot().models, create.modelId), create.permission, pairedCeiling)
         const createOrigin: WatcherCommandOrigin = { operationId: operation.id, guard: () => {
           origin.guard()
-          this.permission(resolveModel(this.options.control.watcherSnapshot().models, create.modelId), permission)
+          this.permission(resolveModel(this.options.control.watcherSnapshot().models, create.modelId), permission, pairedCeiling)
           this.checkRemoteCeiling(operation.requestId, permission.kind === 'runtime' ? permission.mode : undefined)
         } }
         const created = await this.options.control.commandFromWatcher({ type: 'create-thread', threadId: operation.target.threadId,

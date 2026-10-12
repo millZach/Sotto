@@ -465,3 +465,18 @@ it('keeps operation-specific restart fences when another receipt or a new operat
   expect(code(fresh.operation.id)).toBeUndefined()
   expect(code(queued.operation.id)).toBe('HOST_DISCONNECTED')
 })
+
+
+it.each([
+  { desktop: 'approval-required', host: 'full-access' },
+  { desktop: 'full-access', host: 'approval-required' },
+] as const)('uses the common narrower default with desktop $desktop and host $host when permission is omitted', async defaults => {
+  const f = await master()
+  await f.control.commandShell({ type: 'configure', patch: { newThreadRuntimeMode: defaults.desktop } })
+  await remote.host.service.command({ type: 'configure', patch: { newThreadRuntimeMode: defaults.host } })
+  const first = await f.call('start_thread', f.start())
+  expect(first.status, first.status === 'refused' ? first.code : undefined).toBe('ok')
+  expect(first).toMatchObject({ effectiveChoices: { permission: { kind: 'runtime', mode: 'approval-required' } } })
+  if (first.status !== 'ok') throw new Error('start-refused')
+  expect(f.socket.shell().host.threads.find(item => item.id === first.target.threadId)?.runtimeMode).toBe('approval-required')
+})
