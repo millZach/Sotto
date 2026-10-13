@@ -401,6 +401,11 @@ artifacts/watcher-paired-hosts/
 artifacts/watcher-thread-tools/*
 !artifacts/watcher-thread-tools/owl-dark-820x560.png
 !artifacts/watcher-thread-tools/stable-light-820x560.png
+
+artifacts/watcher-phone-wire/*
+!artifacts/watcher-phone-wire/review-owl-dark-minimum.png
+!artifacts/watcher-phone-wire/review-owl-light-worker-card.png
+!artifacts/watcher-phone-wire/review-stable-dark-minimum.png
 # Watcher's room evidence; retain only the captures and readings the verification note cites.
 artifacts/watcher-room/*
 !artifacts/watcher-room/beside-sotto-dark-1280x800.png

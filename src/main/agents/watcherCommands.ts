@@ -1,3 +1,4 @@
+import type { WatcherPhoneOrigin } from '../../shared/watcherPhone'
 import type { AgentCommand, AgentHostSnapshot } from '../../shared/agents'
 import type { AgentHostCommand } from './host'
 import type { WatcherEvent } from '../../shared/watcherNews'
@@ -5,6 +6,7 @@ import type { CheckpointObservation, PullRequestObservation } from './watcherEvi
 
 /** Main-owned capability. This object never crosses IPC or a socket. */
 export interface WatcherCommandOrigin {
+  readonly phoneOrigin?: WatcherPhoneOrigin
   readonly operationId?: string
   readonly guard: () => void
 }

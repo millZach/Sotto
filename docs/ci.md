@@ -530,3 +530,5 @@ Run `sh apps/ios/Scripts/verify-ui.sh` on a Mac with Xcode selected. The script 
 ## Native test launch
 
 The Sotto scheme runs its Test action without attaching LLDB. Two consecutive macOS CI attempts stalled at `XCUIApplication.launch()` on the large simulator while Xcode reported `DebuggerVersionStore.StoreError` and no debugger version; subsequent tests in the same app could run. The process launcher removes that debugger dependency from unattended tests. The normal Run action retains LLDB for interactive debugging. No UI tests, assertions, device sizes, accessibility settings or timeouts are skipped or shortened. The macOS gate remains the end-to-end check of this launch configuration.
+
+The existing socket gate also runs `watcherPhone.test.ts`: opt-in v1 phone projections, stable/desktop listener feature absence, explicit phone-origin admission, exact user card answers, takeover and Stop all confirmation. Swift Watcher wire cases belong to the Native iOS gate; Android core decoding remains outside npm.

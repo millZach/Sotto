@@ -303,6 +303,8 @@ export const AGENT_WORKING_COPY_OPTIONS = 'sotto:agents:working-copy-options'
 export const agentWorkingCopyOptionsRequestSchema = z.string().min(1).max(512)
 
 export const agentThreadSchema = z.object({
+  /** Optional phone projection mark; absent unless the client accepts watcher-phone. */
+  watchedByWatcher: z.boolean().optional(),
   hostLabel: z.string().max(80).optional(), remoteHost: z.boolean().optional(), clientConnected: z.boolean().optional(),
   /** Set by the desktop while this thread's host restarts for an update and the desktop reconnects to it (ADR-0040). */
   clientReconnecting: z.boolean().optional(),

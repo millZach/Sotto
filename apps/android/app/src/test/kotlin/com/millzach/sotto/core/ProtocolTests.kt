@@ -29,6 +29,12 @@ class ProtocolTests {
         },
     )
 
+    @Test fun optionalWatcherStopOutcomeKeepsOrdinaryReceiptDecoding() {
+        val receipt = decode<Receipt>("""{"status":"completed","watcherStop":{"status":"ok","results":[{"target":{"hostId":"host","threadId":"worker"},"status":"uncertain","message":"Check this worker."}]}}""")
+        assertEquals("completed", receipt.status)
+        assertFalse(receipt.confirmsAnswer)
+    }
+
     @Test fun privateTLSRouteIsRequired() {
         val endpoint = HostEndpoint.parse("https://forge.example.ts.net")
         assertEquals("wss://forge.example.ts.net/v1/socket", endpoint.route("/v1/socket", socket = true))
@@ -56,6 +62,18 @@ class ProtocolTests {
         for (port in listOf(80, 444, 8080, 8444, 3000, 4319)) {
             assertThrows("port $port", ClientError::class.java) { HostEndpoint.parse("https://forge.example.ts.net:$port") }
         }
+    }
+
+    @Test fun optionalWatcherFieldsDoNotBreakOrdinaryThreadAndShellDecoding() {
+        val thread = decode<ThreadSummary>("""{"id":"worker","projectId":"project","title":"Worker","status":"idle","requests":[],"kind":"project","watchedByWatcher":true,"futureParticipation":{"state":"observed"}}""")
+        assertEquals("project", thread.kind)
+        assertEquals(true, thread.watchedByWatcher)
+        val old = decode<ThreadSummary>("""{"id":"worker","projectId":"project","title":"Worker","status":"idle","requests":[]}""")
+        assertNull(old.kind)
+        assertNull(old.watchedByWatcher)
+        val shell = decode<Shell>("""{"host":{"name":"Laptop","threads":[],"projects":[],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true}},"watcher":{"futurePage":"ignored"}}""")
+        assertTrue(shell.host.threads.isEmpty())
+        assertFalse(Wire.snapshotHello.toString().contains("watcher-phone"))
     }
 
     @Test fun unsupportedProtocolAndOversizeFramesAreRefused() {
