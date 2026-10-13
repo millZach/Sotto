@@ -1,6 +1,6 @@
 # Muse provider: what was checked
 
-October 12, 2026. ADR-0076. Everything below is either a probe against the installed Muse client on this machine or the scripted fake the contract runs against; the two are never blurred.
+October 12–13, 2026. [ADR-0076](../adr/0076-muse-is-a-thread-provider.md). Native probes, scripted protocol checks and the running desktop journey are recorded separately below. The original native probes were not repeated during the review fixes.
 
 ## The real client (Muse 1.1.1, MSP schema 1, over `muse serve`)
 
@@ -12,18 +12,47 @@ Driven over stdio with newline-delimited JSON-RPC from a throwaway script, in a 
 - `session/read` and `view/page` answer `methodNotFound` in 1.1.1, so history is read by resuming. The view cursor still reads `pending:seam-c-session-view-fold` on lifecycle notices; the adapter treats cursors as opaque.
 - `session/setModel` answers an asynchronous `accepted` ack, not the new model, and later notifies `session/modelChanged`; the adapter confirms a model change by resuming, never from the ack. `session/compact` on a session with no run is refused (`missing_run`). `turn/interrupt` ends the turn as cancelled.
 - Under this machine's own Muse policy, a file write inside the workspace and a shell command ran without an approval prompt (the policy matched them), so the approval and structured-question flows are verified against the published MSP schema and the scripted fake, not live. The adapter maps both from the schema's typed notifications and never answers one itself.
-- `muse exec` was not used: it speaks the raw session log, which MSP's own contract reserves for forensics. Threads and side calls both ride `muse serve`; side calls use `--no-session-log` so nothing durable is left behind.
+- `muse exec` was not used: it speaks the raw session log, which MSP's own contract reserves for forensics. Threads ride `muse serve`. Review removed side writing: `denyUnmatched` can still allow policy-matched tools, and the checked floor has no independently enforced all-tools disable control. Side writing returns no text before starting a process or sending material; titles and Git drafts retain Sotto's fallback text.
 
 ## The adapter, through its contract
 
-`tests/fixtures/fakeMuseAgent.mjs` is a scripted MSP host. `tests/integration/museAdapter.test.ts` runs the shared adapter contract (`tests/integration/adapterContract.ts`) against it — connect, create, send and stream, takeover, restart, questions, permissions both ways, interrupt and disconnect never approving, uncertain reconciliation, lazy sessions and the reaper, settings results, images, side writing, and the client-update section — plus Muse-specific cases: probed permission modes under a ceiling, effort sent per turn, steering, refusal of an old client and of another MSP version, `META_API_KEY` kept out of the client's environment, question answers by label and as free text, and side writing leaving no thread. The contract skips are the fixture's, as with Grok's: no background-work driver, no live-settings driver, no lost-confirmation driver.
+`tests/fixtures/fakeMuseAgent.mjs` is a scripted MSP host. `tests/integration/museAdapter.test.ts` runs the shared adapter contract (`tests/integration/adapterContract.ts`) against it: connect, create, stream, takeover, restart, questions, explicit permissions, interrupt, uncertain reconciliation, lazy sessions, settings, images and client handoff. Muse-specific tests cover probed modes, effort per turn, steering, version refusal, environment isolation and side writing that starts nothing. The contract skips are the fixture's: no background-work, live-settings or lost-confirmation driver.
+
+Request regressions cover optional omissions, duplicate and long labels, staged approvals, stale requirements, invalid answers that send nothing, and lost acknowledgements. Recovery tests script immediate resume replies, repeated gaps, newer turns and pending requests arriving during a read, and old reply snapshots arriving after live words. They check visible and SQLite history, continued streaming, no duplicate messages, prompt guards after process death, and creation replay retaining its original approval-mode envelope.
 
 `tests/integration/museAdapterLive.test.ts` repeats the core journey against the real client under `SOTTO_MUSE_LIVE=1`. It was not run for this change: on this machine the Windows `muse` is a shim into WSL (and reports 1.4.6 there), so the Windows app has no native Muse binary to spawn. It needs a machine with a native Muse install.
 
 ## The Owl gate
 
-With the feature off, the runtime registers a stand-in host: no models, no threads, nothing started, and the renderer asks `useOwlFeature('muse')` before showing the provider in Settings → Providers, a host's tiles, or first-run setup. The saved adapter records are untouched. This is covered by construction (the stand-in is the only host stable can build) and by the existing Owl gate tests for the list itself; the running app was not driven for this change.
+The immutable startup gate is checked in desktop/headless construction, discovery, cached workspace reads, coordinator dispatch, routing and direct socket commands. Stable neither probes nor starts Muse and exposes no Muse models, projects or threads. Saved defaults, organization, history, activities, answer ownership, drafts, follow-ups and attachments stay dormant through history-off and return in Owl. Legacy remote drafts are preserved without exposure until their provider is known. The desktop journey below also checks a stable restart and Owl return.
+
+Host setup and visual admission share tool eligibility: Muse and Devin are excluded, and a stale Muse setup selection is refused before dispatch. Browser tools, Watcher, skills and side writing remain unavailable.
+
+## Discovery, updates and Settings
+
+The maker's [Windows installer](https://dev.meta.ai/install.ps1), [POSIX installer](https://dev.meta.ai/install.sh), [installation guide](https://dev.meta.ai/docs/muse-code) and [stable feed](https://api.meta.ai/muse-code/channels/muse-stable) were inspected read-only. Discovery/update tests use owned native-install fixtures and a scripted downloader/runner; they do not install Muse.
+
+Tests check bounded version records, native executable signatures, configured/default roots, manager priority, stable/canary channels, stale records and outside-directory links. Discovery starts the versioned native binary directly, avoiding the launcher's automatic updater. A full-build version is accepted only when identification and the exact resolved binary agree.
+
+Update tests check fixed feeds, bounded reads, unknown results on failure, version comparison and manual instructions. The fixed maker script is downloaded to a fresh temporary file, run into the same recognized maker-owned directory with login and PATH changes disabled, and cleaned afterward. Manager and unknown ownership are not replaced; keys and URL overrides are excluded. Empty catalogs and failed handoff retain the working client.
+
+Zach selected prototype A and required the actual logo. The unchanged [product squiggle](https://muse.ai/images/favicon/app-squiggle.svg) appears in Settings and Threads. The [selected prototype](https://github.com/millZach/Sotto/blob/a495286160a60a4e29f409a80f4a773ecfa8a2d2/docs/prototypes/muse-provider-settings.prototype.html) is captured under `prototype/muse-provider-settings-973`, outside the implementation branch. Renderer tests cover version checks, queued/updating/failure/manual states, sign-in copying, gates and asynchronous errors.
+
+## Running desktop
+
+Built with `npm run build`, then driven with `npx playwright test tests/e2e/muse-provider.spec.ts` on Windows. The journey uses the real renderer, preload, coordinator and Muse adapter over the scripted MSP child in an owned fresh profile. It is not a native Muse install.
+
+- Settings selection/connection, sign-in command copying, installed version and Check again, keyboard tabs, model selection and Escape/focus restoration.
+- Light/dark at 1600x1000, 1280x800 and 820x560, reduced motion on, no horizontal overflow. Measured sign-in text contrast is at least 6.71:1; Allow once is at least 15.74:1.
+- Deny and Allow once reach the exact native choices. A required answer plus a blank optional answer reaches the wire unchanged.
+- The steer is confirmed in provider history before completion, keeps the opening-message turn identity and reaches Done. Repeated gaps preserve one copy of missed words; streaming, cancellation and malformed-process restart settle correctly.
+- Stable starts zero Muse processes and exposes none of its saved work. History-off keeps its records; Owl restores the same thread ID and conversation, including the steer.
+- No renderer page errors or fixture protocol violations.
+
+The captures were opened and inspected: [Settings dark](../../artifacts/muse-provider/settings-1600-dark.png), [minimum light](../../artifacts/muse-provider/settings-820-light.png), [connected client](../../artifacts/muse-provider/settings-connected-1280-dark.png), [permission minimum](../../artifacts/muse-provider/permission-820-light.png), [optional answer](../../artifacts/muse-provider/optional-question-820-light.png), [completed steer](../../artifacts/muse-provider/steered-thread-complete.png) and [Owl restoration](../../artifacts/muse-provider/owl-restored-thread.png). [Contrast measurements](../../artifacts/muse-provider/contrast.json) and [journey facts](../../artifacts/muse-provider/journey.json) retain the assertions. Ordinary reruns write ignored intermediate captures under `artifacts/e2e-runs/muse-provider/`.
 
 ## Gates
 
-In the worktree on Windows: `npm run typecheck`, `npm run lint` and `npm run notices:verify` pass, and `npm test -- --maxWorkers=2` passes 9,808 of 10,115 tests (306 skipped). The one failure, `agentTargetRefresh`'s manual-prompt deadline race, is in a file this change does not touch and passes on its own in under a second; it lost its race under full-suite load on a mounted worktree. Every test that names the provider set or the Owl list was updated for the fifth provider and the second feature, and each passes. The iPhone and Android provider names were updated in source; neither was compiled here (the iPhone client builds only on macOS CI, and Android has no CI job yet). Muse has no drawn provider mark yet — its product mark is not in the repository — so it shows its initial, `M`, where the other providers draw theirs; the settings test says so beside the assertion it relaxes.
+Typecheck, lint, notices verification and build pass locally. Final full-suite and packaged-build results are recorded in PR 973 after those gates finish. Independent Standards and Spec reviews have no unresolved findings after their closure checks.
+
+**Not verified with native Muse on Windows:** the installed command is a WSL shim. No native installation, sign-in, installer update or live handoff was performed. Update UI states are covered by renderer tests and the prototype, and installer behavior by fixtures. Native iOS compile/tests run in macOS CI, not locally; Android was not built. Linux/macOS desktop journeys were not driven here. Design baselines were not regenerated.

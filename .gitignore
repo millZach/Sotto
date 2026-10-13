@@ -496,3 +496,15 @@ artifacts/new-thread-defaults-every-host/*
 !artifacts/new-thread-defaults-every-host/light-1280.png
 !artifacts/new-thread-defaults-every-host/dark-820.png
 !artifacts/new-thread-defaults-every-host/light-820.png
+
+# Muse provider review evidence; retain only the cited captures and measurements.
+artifacts/muse-provider/*
+!artifacts/muse-provider/settings-1600-dark.png
+!artifacts/muse-provider/settings-820-light.png
+!artifacts/muse-provider/settings-connected-1280-dark.png
+!artifacts/muse-provider/permission-820-light.png
+!artifacts/muse-provider/optional-question-820-light.png
+!artifacts/muse-provider/steered-thread-complete.png
+!artifacts/muse-provider/owl-restored-thread.png
+!artifacts/muse-provider/contrast.json
+!artifacts/muse-provider/journey.json

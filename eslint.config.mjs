@@ -126,6 +126,7 @@ export default tseslint.config(
       'artifacts/issue-146/**',
       'artifacts/codex-connection-recovery/**',
       'artifacts/devin-local-provider/**',
+      'artifacts/muse-provider/**',
       'node_modules/**',
       'out/**',
       'playwright-report/**',

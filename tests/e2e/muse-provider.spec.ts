@@ -37,6 +37,14 @@ async function providerPanel(page: Page): Promise<Locator> {
   return page.getByRole('region', { name: 'Provider configuration', exact: true })
 }
 
+/** Keyboard activation waits for the previous command's lane to release before taking focus. */
+async function activate(page: Page, button: Locator): Promise<void> {
+  await expect(button).toBeEnabled()
+  await button.focus()
+  await expect(button).toBeFocused()
+  await page.keyboard.press('Enter')
+}
+
 test('uses Muse in Owl, settles requests and steered activity, and preserves it through stable', async () => {
   test.setTimeout(240_000)
   const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-muse-' })).directory
@@ -93,6 +101,13 @@ test('uses Muse in Owl, settles requests and steered activity, and preserves it 
     await panel.getByRole('button', { name: 'Connect Muse' }).focus()
     await page.keyboard.press('Enter')
     await expect(panel.getByRole('button', { name: 'Disconnect Muse' })).toBeVisible()
+    await panel.getByRole('button', { name: 'Check again', exact: true }).focus()
+    await page.keyboard.press('Enter')
+    await expect(panel.locator('.provider-client')).toContainText('1.1.1')
+    await expect(panel.getByRole('button', { name: 'Check again', exact: true })).toBeInViewport()
+    await page.screenshot({ animations: 'disabled', path: join(evidence, 'settings-connected-1280-dark.png') })
+    const deferUpdates = page.getByRole('button', { name: 'Not now', exact: true })
+    if (await deferUpdates.count()) await deferUpdates.click()
     await panel.getByRole('tab', { name: 'Configuration' }).focus()
     await page.keyboard.press('ArrowRight')
     await expect(panel.getByRole('tab', { name: 'Models' })).toBeFocused()
@@ -100,30 +115,35 @@ test('uses Muse in Owl, settles requests and steered activity, and preserves it 
     await page.keyboard.press('ArrowLeft')
     await expect(panel.getByRole('tab', { name: 'Configuration' })).toBeFocused()
 
-    // Providers are connected through Settings first. The folder chooser is then supplied an owned
-    // fixture folder, as in the Devin journey, before creating and sending from the real thread UI.
+    // Supply an owned fixture folder, then use the current instant-creation flow and composer picker.
     const prepared = await page.evaluate(async path => {
       await window.sotto!.agents!.command({ type: 'connect', provider: 'codex' })
+      const state = await window.sotto!.agents!.get()
+      const modelId = state.host.models.find(model => model.providerId === 'muse')!.id
+      await window.sotto!.agents!.command({ type: 'configure', patch: { newThreadModelId: modelId } })
       return window.sotto!.agents!.command({ type: 'create-project', provider: 'muse', title: 'Muse project', path, useExisting: true })
     }, projectPath)
     expect(prepared.error).toBeNull()
     await openThreads(page)
     await page.getByRole('button', { name: 'New thread in Muse project', exact: true }).click()
-    const dialog = page.getByRole('dialog', { name: 'New thread', exact: true })
-    await dialog.getByText('Thread options', { exact: false }).click()
-    await dialog.getByRole('textbox', { name: 'Thread name' }).fill('Muse UI check')
-    await dialog.getByRole('combobox', { name: 'Thread model' }).click()
+    await expect(page.getByRole('heading', { name: 'New thread', exact: true })).toBeVisible()
+    const projects = page.getByRole('region', { name: 'Projects' })
+    await projects.getByRole('button', { name: 'New thread', exact: true }).hover()
+    await projects.getByRole('button', { name: 'Rename New thread', exact: true }).click()
+    await page.getByLabel('Rename New thread').fill('Muse UI check')
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('heading', { name: 'Muse UI check', exact: true })).toBeVisible()
+    const model = page.getByRole('combobox', { name: 'Thread model', exact: true })
+    await model.click()
     await expect(page.getByRole('dialog', { name: 'Choose model' })).toBeVisible()
     await page.keyboard.press('Escape')
     await expect(page.getByRole('dialog', { name: 'Choose model' })).toHaveCount(0)
-    await expect(dialog.getByRole('combobox', { name: 'Thread model' })).toBeFocused()
-    await dialog.getByRole('combobox', { name: 'Thread model' }).click()
+    await expect(model).toBeFocused()
+    await model.click()
     const picker = page.getByRole('dialog', { name: 'Choose model' })
     await picker.getByRole('tab', { name: 'Muse', exact: true }).click()
     await picker.getByRole('option', { name: 'Fixture Muse', exact: true }).click()
-    await expect(dialog.getByRole('combobox', { name: 'Thread model' })).toContainText('Fixture Muse')
-    await dialog.getByRole('button', { name: 'Create thread' }).click()
-    await expect(dialog).toHaveCount(0)
+    await expect(model).toContainText('Fixture Muse')
     const prompt = promptField(page)
     await fillPrompt(prompt, 'Synthetic Muse UI prompt')
     await prompt.press('Enter')
@@ -132,7 +152,9 @@ test('uses Muse in Owl, settles requests and steered activity, and preserves it 
     const state = async () => page.evaluate(async id => (await window.sotto!.agents!.get()).host.threads.find(thread => thread.id === id)!, threadId)
     const detail = async () => page.evaluate(async id => (await window.sotto!.agents!.threadDetail!(id))!, threadId)
     await expect.poll(async () => (await state()).status).toBe('running')
-    const originalTurn = (await state()).lastTurn!.id
+    await expect.poll(async () => (await detail()).messages.some(message => message.text === 'Synthetic Muse UI prompt')).toBe(true)
+    const originalTurn = (await detail()).messages.find(message => message.text === 'Synthetic Muse UI prompt')!.id
+    await expect.poll(async () => (await state()).lastTurn?.id).toBe(originalTurn)
     const aliases = JSON.parse(await readFile(join(profile, 'muse-threads.json'), 'utf8')) as Record<string, { title: string; museSessionId: string }>
     const nativeId = Object.values(aliases).find(alias => alias.title === 'Muse UI check')!.museSessionId
     const action = (type: string, text = '', extra: Record<string, unknown> = {}) => writeFile(join(root, 'control.json'), JSON.stringify({ id: randomUUID(), type, text, sessionId: nativeId, ...extra }))
@@ -158,13 +180,13 @@ test('uses Muse in Owl, settles requests and steered activity, and preserves it 
         await page.screenshot({ animations: 'disabled', path: join(evidence, `permission-${width}-${appearance}.png`) })
       }
     }
-    await page.getByRole('button', { name: 'Deny', exact: true }).focus()
-    await page.keyboard.press('Enter')
+    await activate(page, page.getByRole('button', { name: 'Deny', exact: true }))
     await expect.poll(async () => (await state()).requests.length).toBe(0)
     expect((await frames()).filter(frame => frame.method === 'approval/decide').at(-1)?.params?.choiceId).toBe('no')
+    await expect(page.getByRole('button', { name: 'Deny', exact: true })).toHaveCount(0)
     await action('permission', 'Run approved synthetic check?')
-    await page.getByRole('button', { name: 'Allow once', exact: true }).focus()
-    await page.keyboard.press('Enter')
+    await expect(page.locator('.agent-request')).toContainText('Run approved synthetic check?')
+    await activate(page, page.getByRole('button', { name: 'Allow once', exact: true }))
     await expect.poll(async () => (await state()).requests.length).toBe(0)
     expect((await frames()).filter(frame => frame.method === 'approval/decide').at(-1)?.params?.choiceId).toBe('yes')
 
@@ -174,8 +196,7 @@ test('uses Muse in Owl, settles requests and steered activity, and preserves it 
     await expect(optional).toHaveValue('')
     await expect(page.locator('.agent-request__optional')).toHaveText('Optional')
     await page.screenshot({ animations: 'disabled', path: join(evidence, 'optional-question-820-light.png') })
-    await page.getByRole('button', { name: 'Send answers', exact: true }).focus()
-    await page.keyboard.press('Enter')
+    await activate(page, page.getByRole('button', { name: 'Send answers', exact: true }))
     await expect.poll(async () => (await state()).requests.length).toBe(0)
     expect((await frames()).filter(frame => frame.method === 'userInput/answer').at(-1)?.params?.answers).toEqual([
       { questionId: 'q1', freeText: 'Blue' }, { questionId: 'q2', freeText: '' },
@@ -184,17 +205,18 @@ test('uses Muse in Owl, settles requests and steered activity, and preserves it 
     await page.evaluate(() => window.sotto!.updateSettings({ appearance: 'dark' }))
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await fillPrompt(prompt, 'Also check the tests')
-    await page.getByRole('button', { name: 'Steer now', exact: true }).focus()
-    await page.keyboard.press('Enter')
+    await activate(page, page.getByRole('button', { name: 'Steer now', exact: true }))
     await expectPromptText(prompt, '')
     await expect(page.getByLabel('Thread transcript')).toContainText('Also check the tests')
+    await expect.poll(async () => (await detail()).messages.some(message => message.text === 'Also check the tests')).toBe(true)
+    expect((await frames()).filter(frame => frame.method === 'turn/steer')).toHaveLength(1)
     expect((await state()).lastTurn?.id).toBe(originalTurn)
     await action('complete', 'Synthetic Muse steered reply complete')
     await expect(page.getByLabel('Thread transcript')).toContainText('Synthetic Muse steered reply complete')
     await expect.poll(async () => (await state()).status).toBe('idle')
     await expect.poll(async () => (await detail()).activities?.filter(activity => activity.kind === 'turn' && activity.status === 'running').length ?? 0).toBe(0)
     expect((await state()).lastTurn).toMatchObject({ id: originalTurn, status: 'completed' })
-    await expect(page.getByRole('button', { name: 'Muse UI check', exact: true }).locator('.thread-nav__status')).toContainText('Idle')
+    await expect(page.getByRole('button', { name: 'Muse UI check', exact: true }).locator('.thread-nav__status')).toContainText('Done')
     await page.screenshot({ animations: 'disabled', path: join(evidence, 'steered-thread-complete.png') })
 
     await fillPrompt(prompt, 'Synthetic gap recovery prompt')
@@ -209,8 +231,7 @@ test('uses Muse in Owl, settles requests and steered activity, and preserves it 
     await fillPrompt(prompt, 'Synthetic cancellation prompt')
     await prompt.press('Enter')
     await expect.poll(async () => (await state()).status).toBe('running')
-    await page.getByRole('button', { name: 'Stop agent', exact: true }).focus()
-    await page.keyboard.press('Enter')
+    await activate(page, page.getByRole('button', { name: 'Stop agent', exact: true }))
     await expect.poll(async () => (await state()).status).toBe('idle')
     await fillPrompt(prompt, 'Synthetic process recovery prompt')
     await prompt.press('Enter')
