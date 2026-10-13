@@ -487,6 +487,13 @@ enum RequestPlace: Equatable {
         case .watcher(let hostID, _): return hostID
         }
     }
+    /// The thread that asked.
+    var asker: ThreadRef {
+        switch self {
+        case .thread(let ref): return ref
+        case .watcher(_, let target): return target
+        }
+    }
 }
 
 // The request sheet reads and answers a request wherever it waits.

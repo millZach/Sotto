@@ -1790,7 +1790,7 @@ struct RequestSheet: View {
         // Every link in a question, and in the agent's message the sheet covers, together above its choices. Opening one
         // answers nothing, so it shows on an iPhone that can't answer too.
         if !permission {
-            let links = WebLinks.find(in: current, after: model.shown(for: ref)?.messages ?? [])
+            let links = WebLinks.find(in: current, after: model.shown(for: place.asker)?.messages ?? [])
             if !links.isEmpty { LinkRows(links: links).padding(.top, Space.s4) }
         }
         if let context = current.context {
