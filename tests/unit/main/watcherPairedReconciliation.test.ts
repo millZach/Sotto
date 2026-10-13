@@ -114,3 +114,22 @@ it('keeps uncertainty when the owning absence-fence store is full', async () => 
   expect(await f.watcher.readRemote({ master, call: { name: 'read_operation', input: { operationId: randomUUID() } } }, 'synthetic')).toMatchObject({ code: 'DELIVERY_UNCERTAIN' })
   expect(f.control.watcherRecord().remoteAbsences).toHaveLength(1_000)
 })
+
+it('does not treat an unknown receipt in another client scope as proof of non-admission', async () => {
+  const f = await fixture(), record = f.control.watcherRecord()
+  f.read.mockImplementation(async (_id, request) => request.call ? { status: 'refused', code: 'UNKNOWN_OPERATION', message: 'Synthetic different scope', retryable: false }
+    : { hostId: f.hostId, master: record.current!, revision: 'other-scope', observedAt: new Date().toISOString(), requests: [], operations: [], evidence: [] })
+  await f.reconcile()
+  expect(f.control.watcherRecord().operations[0]!.deliveryState).toBe('uncertain')
+  expect(f.watcher.state().inFlight).toBe(1)
+})
+
+it.each(['removed', 'reads-unavailable'])('holds an uncertain slot when its host is %s', async unavailable => {
+  const f = await fixture()
+  if (unavailable === 'removed') f.hosts.splice(0)
+  else f.hosts[0]!.reads = false
+  await f.reconcile(); f.watcher.observe(f.control.watcherSnapshot(), new Set())
+  expect(f.control.watcherRecord().operations[0]!.deliveryState).toBe('uncertain')
+  expect(f.watcher.state().inFlight).toBe(1)
+  expect(f.control.watcherRecord().requests[0]!.participants[0]!.promptCount).toBe(1)
+})

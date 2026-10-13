@@ -533,7 +533,7 @@ export class WatcherService implements WatcherControlHooks {
   }
   private async mutate(threadId: string, name: WatcherToolName, input: WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>, imported?: WatcherOperation): Promise<unknown> {
     const admitted = await this.transaction(async () => {
-      if (imported && this.record().remoteAbsences?.some(item => item.operationId === imported.id)) refuse('UNKNOWN_OPERATION', 'An exact read fenced this unrecorded operation. Nothing was sent.')
+      if (imported && this.record().remoteAbsences?.some(item => item.operationId === imported.id)) refuse('OPERATION_NOT_RECORDED', 'An exact read fenced this unrecorded operation. Nothing was sent.')
       if (imported && this.closed) refuse('NOT_CURRENT_WATCHER', 'Watcher is stopping. Nothing was sent. Reopen Sotto.')
       if (!imported) this.checkCaller(threadId)
       const record = this.record(), request = record.requests.find(item => item.id === input.requestId)
@@ -812,7 +812,7 @@ export class WatcherService implements WatcherControlHooks {
           && ['dispatching', 'uncertain'].includes(item.deliveryState) && !this.active.has(item.id) && !projected.has(item.id))) {
           try {
             const result = watcherToolSchemas.read_operation.output.parse(await this.remote.read(host.hostId, { master, call: { name: 'read_operation', input: { operationId: operation.id } } }))
-            if (result.status === 'refused' && result.code === 'UNKNOWN_OPERATION') exact.set(operation.id, null)
+            if (result.status === 'refused' && result.code === 'OPERATION_NOT_RECORDED') exact.set(operation.id, null)
             else if (result.status === 'ok' && result.receipt.operationId === operation.id && result.receipt.requestId === operation.requestId
               && key(result.receipt.target) === key(operation.target)) exact.set(operation.id, result.receipt)
           } catch { this.recoveryNotice = 'An exact host receipt could not be read. Its pending slot remains held.' }
@@ -822,7 +822,7 @@ export class WatcherService implements WatcherControlHooks {
             const own = record.operations.find(item => item.id === id)!
             if (this.active.has(id) || !['dispatching', 'uncertain'].includes(own.deliveryState)) continue
             if (receipt) this.copyRemoteReceipt(record, own, { ...receipt, updatedAt: now() })
-            else this.recordRemoteRefusal(record, id, 'UNKNOWN_OPERATION')
+            else this.recordRemoteRefusal(record, id, 'OPERATION_NOT_RECORDED')
           }
           for (const remoteRequest of projection.requests) {
             const request = record.requests.find(item => item.id === remoteRequest.id && key(item.watcher) === key(master.target))
@@ -891,7 +891,7 @@ export class WatcherService implements WatcherControlHooks {
         || operation.expectedTurnId !== ('expectedTurnId' in call.input ? call.input.expectedTurnId : undefined)
         || operation.expectedLastUserMessageId !== ('expectedLastUserMessageId' in call.input ? call.input.expectedLastUserMessageId : undefined)) refuse('INVALID_INPUT', 'The machine operation does not match its request and target. Nothing was sent.')
       await this.transaction(async () => {
-        if (this.record().remoteAbsences?.some(item => item.operationId === operation.id)) refuse('UNKNOWN_OPERATION', 'An exact read fenced this unrecorded operation. Nothing was sent.')
+        if (this.record().remoteAbsences?.some(item => item.operationId === operation.id)) refuse('OPERATION_NOT_RECORDED', 'An exact read fenced this unrecorded operation. Nothing was sent.')
         const existing = this.record().requests.find(item => item.id === request.id)
         if (existing && (key(existing.watcher) !== key(master.target) || existing.rootUserMessageId !== request.rootUserMessageId
           || existing.createdAt !== request.createdAt || existing.remoteOrigin?.clientId !== clientId
@@ -941,7 +941,8 @@ export class WatcherService implements WatcherControlHooks {
           const record = this.record(), operation = record.operations.find(item => item.id === call.input.operationId)
           const request = record.requests.find(item => item.id === operation?.requestId && key(item.watcher) === key(master.target)
             && item.remoteOrigin?.clientId === clientId && item.remoteOrigin.creationOperationId === master.creationOperationId)
-          if (operation) return request ? operation : undefined
+          if (operation && !request) refuse('UNKNOWN_OPERATION', 'That operation does not belong to this desktop.')
+          if (operation) return operation
           if (!record.remoteAbsences?.some(item => item.operationId === call.input.operationId)) {
             if ((record.remoteAbsences?.length ?? 0) >= 1_000) refuse('DELIVERY_UNCERTAIN', 'This host cannot retain another absence fence. The pending slot remains held.')
             await this.options.control.updateWatcher(next => { (next.remoteAbsences ??= []).push({ operationId: call.input.operationId, master, clientId, observedAt: now() }) })
@@ -949,7 +950,7 @@ export class WatcherService implements WatcherControlHooks {
           guard?.()
           return undefined
         })
-        if (!operation) refuse('UNKNOWN_OPERATION', 'That operation does not belong to this desktop. Unrecorded identities are fenced against later admission.')
+        if (!operation) refuse('OPERATION_NOT_RECORDED', 'That operation was not recorded. Its identity is fenced against later admission.')
       }
       return await this.dispatchRead(call, operation)
     } catch (error) { return error instanceof Refusal ? error.result : watcherRefusal('INVALID_INPUT', 'This Watcher read could not be completed.') }
