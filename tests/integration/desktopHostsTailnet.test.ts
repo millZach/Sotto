@@ -518,6 +518,21 @@ describe('a tailnet connection (ADR-0053)', () => {
     vi.restoreAllMocks()
   })
 
+  it('still stops at an approval nobody gave when Connect is pressed while a retry waits, trying SSH inside the first minute', async () => {
+    await add()
+    await onTailnet()
+    retryMs = 60_000
+    stand.answer(502)
+    stand.cut()
+    await vi.waitFor(() => expect(first()).toMatchObject({ phase: 'connecting', reconnecting: true }), { timeout: 20_000 })
+    launchers.length = 0
+    vi.spyOn(FixtureSsh.prototype, 'connect').mockRejectedValue(new SshFailure('tailscale-unapproved'))
+    await manager.command({ type: 'connect', id: first().id })
+    await vi.waitFor(() => expect(first()).toMatchObject({ phase: 'error', reconnecting: false, step: 'tailscale' }), { timeout: 20_000 })
+    expect(launchers).toHaveLength(1)
+    vi.restoreAllMocks()
+  })
+
   it('goes over SSH, sending the tailnet nothing of its pairing, when the tailnet answers as another host', async () => {
     await add()
     stand.answer('impostor')

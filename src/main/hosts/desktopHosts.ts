@@ -99,6 +99,11 @@ interface Retry { timer: ReturnType<typeof setTimeout> | undefined; attempt: num
   first?: boolean
   /** Set for the first attempt after Edit connection's save, which goes over SSH so the saved route is what it tries. */
   edited?: boolean
+  /**
+   * Set while an attempt the user pressed for runs: Connect, a switch-on or an edit. It tries the tailnet and SSH both, and
+   * an approval nobody gave stops it, since the user is there to approve. Sotto's own retries after it carry no mark.
+   */
+  pressed?: boolean
   /** When the drop that began these retries happened, for the tailnet-only first minute (ADR-0053). */
   since?: number }
 /**
@@ -603,6 +608,9 @@ export class DesktopHosts {
     if (command.type === 'forget') return this.forget(host)
     if (command.type === 'set-connection') { await this.setConnection(host, command.prefer); return this.get() }
     if (this.closed) return this.get()
+    // Connect pressed while a retry waits is the user's attempt, not Sotto's.
+    const pending = this.retries.get(host.id)
+    if (pending) pending.pressed = true
     await this.open(host)
     return this.get()
   }
@@ -873,7 +881,7 @@ export class DesktopHosts {
   private keepConnected(host: SavedHost, atLaunch = false, edited = false): Promise<void> {
     if (this.closed) return Promise.resolve()
     this.clearRetry(host.id)
-    this.retries.set(host.id, { timer: undefined, attempt: 0, active: undefined, ...(atLaunch ? {} : { first: true }), ...(edited ? { edited: true } : {}) })
+    this.retries.set(host.id, { timer: undefined, attempt: 0, active: undefined, ...(atLaunch ? {} : { first: true, pressed: true }), ...(edited ? { edited: true } : {}) })
     return this.open(host).catch(() => undefined)
   }
   private async open(host: SavedHost): Promise<void> {
@@ -887,7 +895,7 @@ export class DesktopHosts {
     // The order of a connect (ADR-0053): the tailnet first when the owner prefers it and this computer can use it.
     const retry = this.retries.get(host.id), entry = this.tailnet.get(host.id)
     const order = connectOrder({ prefer: entry.prefer, address: entry.address, adding, paired: this.paired(host), edited: retry?.edited,
-      lastVia: this.lastVia.get(host.id), retryingForMs: retry?.since === undefined ? undefined : this.now() - retry.since })
+      lastVia: this.lastVia.get(host.id), retryingForMs: retry?.since === undefined || retry.pressed ? undefined : this.now() - retry.since })
     let miss: TailnetMiss = {}
     if (order[0] === 'tailnet' && entry.address) {
       const outcome = await this.openTailnet(host, entry.address)
@@ -1113,7 +1121,7 @@ export class DesktopHosts {
    * the user is there to approve, and it stays final.
    */
   private final(error: Error, host: SavedHost, miss: TailnetMiss): boolean {
-    if (error instanceof SshFailure && error.code === 'tailscale-unapproved' && miss.tried && !this.retries.get(host.id)?.first) return false
+    if (error instanceof SshFailure && error.code === 'tailscale-unapproved' && miss.tried && !this.retries.get(host.id)?.pressed) return false
     return error instanceof FinalHostError || (error instanceof SshFailure && FINAL_SSH_FAILURES.has(error.code)) || (error instanceof HostConnectionError && error.code === 'version_mismatch')
   }
   private clearRetry(id: string): void { const entry = this.retries.get(id); if (entry) { clearTimeout(entry.timer); this.retries.delete(id) } }

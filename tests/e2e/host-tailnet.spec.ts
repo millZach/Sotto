@@ -142,7 +142,8 @@ test('forge is reached over its tailnet after Add host, with no ssh at the next 
     // The tailnet goes silent: Serve answers 502, and the connection drops. Sotto reconnects over SSH and says why.
     stand.answer(502)
     stand.cut()
-    await expect(row().getByText(/^SSH forge · Connected · Tailnet did not answer/u)).toBeVisible({ timeout: 60_000 })
+    // The first minute of retries tries the tailnet alone (ADR-0053, October 13 amendment), so SSH comes after it.
+    await expect(row().getByText(/^SSH forge · Connected · Tailnet did not answer/u)).toBeVisible({ timeout: 150_000 })
     await expect(row().getByText('Sotto tries it again every 5 minutes.')).toBeVisible()
     await capture(launched, 'ssh-fallback', async () => { await row().scrollIntoViewIfNeeded(); expect(await inside(row().getByText('Sotto tries it again every 5 minutes.'))).toBe(true) })
     expect(errors).toEqual([])
