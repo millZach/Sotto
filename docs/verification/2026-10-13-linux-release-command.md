@@ -1,6 +1,6 @@
 # Linux stable release command
 
-VERIFIED on forge (Omarchy, x64), October 13, 2026, with Node 24.21.0 and Electron 43.1.0. The complete `0.1.38` rehearsal used clean source commit `262b31b65fd1210fafaf524074b65a4f00b286a8` on `chore/linux-stable-package`. These are rehearsal artifacts: **not publishable**. Nothing was installed, uploaded, published or merged.
+VERIFIED on forge (Omarchy, x64), October 13, 2026, with Node 24.21.0 and Electron 43.1.0. The complete `0.1.38` rehearsal used clean source commit `02026faccaff42048ebd2cd39e7e5c74f0a77d9e` on `chore/linux-stable-package`, after the external review fixes. These are rehearsal artifacts: **not publishable**. Nothing was installed, uploaded, published or merged.
 
 ## The two commands
 
@@ -17,7 +17,7 @@ Both commands passed. `release/` contains `Sotto-0.1.38-linux-x64.tar.gz`, `sott
 
 The packaged-resource probe compared all 288 shipped files with the tarball, verified provenance and notices, loaded SQLite 3.53.1 with migration 4 and FTS5, ran the packaged PTY, loaded the speech engine, and checked normal startup and the audio worklet. Main and preload imports passed `verifyExternalDependencyInventories` against the reviewed allowlist. The packaged module roots were `node-addon-api`, `node-pty`, `sherpa-onnx-linux-x64`, `sherpa-onnx-node` and `zod`.
 
-The [Owl feature answers](../../artifacts/linux-release-command/owl-features-stable-package-status.json) report stable `0.1.38`, packaged and isolated, with Watcher off even though both development overrides were set to 1. The [onboarding capture](../../artifacts/linux-release-command/owl-features-stable-package.png) was inspected: the Sotto mark, text and Get started action render clearly. A stale image preview was checked against the actual PNG bytes; the original capture was retained, with no screenshot implementation change.
+The [Owl feature answers](../../artifacts/linux-release-command/owl-features-stable-package-status.json) report stable `0.1.38`, packaged and isolated, with Watcher off even though both development overrides were set to 1. The [onboarding capture](../../artifacts/linux-release-command/owl-features-stable-package.png) was inspected: the Sotto mark, text and Get started action render clearly.
 
 ## Pacman and extracted launcher
 
@@ -36,11 +36,13 @@ The first rehearsal exposed two older probe assumptions. Its fixed seven-step lo
 `npm run package:linux:stable` exited 1 before packaging. The retained [command output](../../artifacts/linux-release-command/stable-rejection.txt) says:
 
 ```text
-This checkout is 262b31b65fd1210fafaf524074b65a4f00b286a8. Check out 99cb180b0201a0ada48a6bd88ae12ceb7411fd37, the commit Sotto Owl 0.1.37-owl.20261011.2 carried, or publish an Owl build of this commit first.
+This checkout is 02026faccaff42048ebd2cd39e7e5c74f0a77d9e. Check out 99cb180b0201a0ada48a6bd88ae12ceb7411fd37, the commit Sotto Owl 0.1.37-owl.20261011.2 carried, or publish an Owl build of this commit first.
 ```
 
-The focused release tests passed: 59 tests in six files. The Linux platform-profile Playwright spec passed all three journeys in nested Hyprland: clipboard failure recovery, Settings key storage and platform copy, and retained transcript after paste failure. Two independent session-model reviewers, routed by Zach's Codex models setting, reviewed standards and brief coverage separately, including both probe fixes and the later editor cleanup fix. Neither axis reported an unresolved finding.
+The focused release tests passed: 66 tests in seven files. The Linux platform-profile Playwright spec passed all three journeys in nested Hyprland: clipboard failure recovery, Settings key storage and platform copy, and retained transcript after paste failure. Two independent session-model reviewers, routed by Zach's Codex models setting, reviewed standards and brief coverage separately, including the probe fixes, editor cleanup fix and external review fixes. Neither axis reported an unresolved finding.
 
-The first full suite passed 10,160 cases but exited with one unhandled Tiptap teardown error in `threadActivity.test.tsx`. Its prompt editor was still alive after cleanup; a lifecycle assertion reproduced that deterministically. The test now closes its owned editors before jsdom releases `document`. All 29 targeted cleanup/release checks passed. The clean rerun passed: 800 test files and 10,160 cases, with 56 files and 197 cases skipped and no unhandled errors. `npm run typecheck` and `npm run lint` passed; `npm run notices:verify` verified 189 components. CI and external review are recorded in the PR.
+The external review found that a failed finish left earlier recipes and checksum records behind. Reproduced this by finishing `0.1.39` after a successful `0.1.38` rehearsal: the missing tarball error left the old finishing records present. After the fix, the same command gave the matching-packaging retry instruction and removed those records while preserving the tarball input. Both stages now invalidate prior finishing outputs; the finish stages its bundle and moves the completion record last. Regression tests also cover missing receipt/archive guidance, a saved promotion changed during the probe, and a failed build that also changes the source manifest. The last case retains both errors. Repeated the full rehearsal after all four fixes.
+
+The first full suite passed 10,160 cases but exited with one unhandled Tiptap teardown error in `threadActivity.test.tsx`. Its prompt editor was still alive after cleanup; a lifecycle assertion reproduced that deterministically. The test now closes its owned editors before jsdom releases `document`. All 29 targeted cleanup/release checks passed. The final full rerun after the review fixes passed: 801 test files and 10,167 cases, with 56 files and 197 cases skipped and no unhandled errors. `npm run typecheck` and `npm run lint` passed; `npm run notices:verify` verified 189 components. CI and external review are recorded in the PR.
 
 Installation, dictation into real applications and live provider threads are outside this task: installation and publication were explicitly prohibited. Windows packaging and desktop behavior are checked by the PR's Package and Desktop jobs; macOS execution was not tested on forge. Shared electron-builder settings and the Windows/macOS targets are unchanged.
