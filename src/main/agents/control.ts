@@ -3377,7 +3377,7 @@ export class AgentControl {
         if (prompt && isUsageProviderId(provider)) {
           try { this.dependencies.usage?.submitPrompt({ providerId: provider, threadId: prompt.threadId,
             messageId: prompt.messageId, modelId: this.thread(prompt.threadId).modelId, at: new Date().toISOString(),
-            kind: wakeUp ? 'wake-up' : origin ? 'watcher' : 'user', inputKind: command.type === 'steer' ? 'steer' : 'send' }) }
+            kind: wakeUp ? 'wake-up' : origin?.operationId ? 'watcher' : 'user', inputKind: command.type === 'steer' ? 'steer' : 'send' }) }
           catch { /* A usage failure cannot refuse or resend the user's message. */ }
         }
         result = await (writeGuard && this.dependencies.host.executeFromWatcher
