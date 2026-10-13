@@ -220,6 +220,8 @@ private final class WatcherFollow {
     var top: CGFloat = 0
     var dockTop: CGFloat = .greatestFiniteMagnitude
     /// The reader sees the newest words, or the page's end where it opens, so the page follows Watcher's new words.
+    /// Decided where the user lets go of the page, or the box moves, never as the content grows: new words judged by
+    /// where they pushed the page would stop it following them.
     var following = true
     /// The user is dragging the page or letting a flick run out, so it never moves under them.
     var userScrolling = false
@@ -268,6 +270,7 @@ private struct WatcherConversationPane: View {
         let page = model.watcherPage(hostID)
         let sending = model.watcherSending[hostID]
         let items = page.map { WatcherConversation.items($0) } ?? []
+        let newest = sending != nil ? Self.sendingID : items.last?.id ?? Self.end
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: Space.dense(Space.s5, density)) {
@@ -313,16 +316,17 @@ private struct WatcherConversationPane: View {
             .refreshable { await model.readWatcher(hostID) }
             .onUserScrolling { scrolling in
                 follow.userScrolling = scrolling
-                guard !scrolling, follow.missedFollow else { return }
-                follow.missedFollow = false
-                // What arrived while they moved the page is followed once they let go where it follows. A page moved to
-                // earlier messages is left where they put it.
+                guard !scrolling else { return }
+                // Where they let go decides whether the page follows. What arrived while they moved it is followed then,
+                // if they let go where it follows; a page moved to earlier messages is left where they put it.
                 follow.settle()
-                if follow.following { toNewest(proxy) }
+                guard follow.missedFollow else { return }
+                follow.missedFollow = false
+                if follow.following { toNewest(proxy, to: newest) }
             }
             .background(barReader)
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                WatcherDock(hostID: hostID).background(dockReader(proxy))
+                WatcherDock(hostID: hostID).background(dockReader(proxy, newest: newest))
             }
             // New words, the user's own or Watcher's, are scrolled to just above the box, for a reader who sees the newest
             // words or the page's end. Cards waiting on the user sit after the whole conversation, where the page opens,
@@ -330,17 +334,17 @@ private struct WatcherConversationPane: View {
             // messages is left there, and the user's own words are always shown as they send them (ADR-0051).
             .onChange(of: WatcherTail(revision: page?.conversation.revision ?? 0, sending: sending != nil)) { before, after in
                 if after.sending && !before.sending { follow.following = true }
-                if follow.following { toNewest(proxy) }
+                if follow.following { toNewest(proxy, to: newest) }
             }
         }
     }
 
-    /// Reads a frame, in global coordinates, as it moves, and settles where the page stands. Nothing redraws for it.
+    /// Reads a frame, in global coordinates, as it moves. Nothing redraws for it, and nothing is decided by it.
     private func reader(_ moved: @escaping (CGRect) -> Void) -> some View {
         GeometryReader { proxy in
             Color.clear
-                .onAppear { moved(proxy.frame(in: .global)); follow.settle() }
-                .onChange(of: proxy.frame(in: .global)) { _, frame in moved(frame); follow.settle() }
+                .onAppear { moved(proxy.frame(in: .global)) }
+                .onChange(of: proxy.frame(in: .global)) { _, frame in moved(frame) }
         }
     }
     /// The bottom of the header, which sits over the page's top.
@@ -354,36 +358,33 @@ private struct WatcherConversationPane: View {
     }
     /// The top of the box, which moves when it changes height or the keyboard opens or closes. A reader who saw the newest
     /// words before it moved still sees them after.
-    private func dockReader(_ scroll: ScrollViewProxy) -> some View {
+    private func dockReader(_ scroll: ScrollViewProxy, newest: String) -> some View {
         GeometryReader { proxy in
             Color.clear
-                .onAppear { follow.dockTop = proxy.frame(in: .global).minY; follow.settle() }
+                .onAppear { follow.dockTop = proxy.frame(in: .global).minY }
                 .onChange(of: proxy.frame(in: .global).minY) { _, value in
                     let wasFollowing = follow.following
                     follow.dockTop = value
-                    if wasFollowing { toNewest(scroll) } else { follow.settle() }
+                    if wasFollowing { toNewest(scroll, to: newest) } else { follow.settle() }
                 }
         }
     }
-    /// The newest words: those on their way, or the conversation's last item.
-    private var newestID: String {
-        if model.watcherSending[hostID] != nil { return Self.sendingID }
-        return model.watcherPage(hostID).flatMap { WatcherConversation.items($0).last?.id } ?? Self.end
-    }
-    /// Scrolls the newest words to just above the box once the new layout is in. Requests made in the same moment scroll
-    /// once. None scrolls while the user moves the page; the page owes it to them for when they let go.
-    private func toNewest(_ scroll: ScrollViewProxy) {
+    /// Scrolls the newest words, `target`, to just above the box once the new layout is in, and once more after that
+    /// scroll has run, for words whose height settled after it. Requests made in the same moment scroll once, and only the
+    /// latest looks again. None scrolls while the user moves the page; the page owes it to them for when they let go.
+    private func toNewest(_ scroll: ScrollViewProxy, to target: String) {
         let box = follow
         guard !box.userScrolling else { box.missedFollow = true; return }
         box.followRequests += 1
         let request = box.followRequests
-        let target = newestID
         let still = reduceMotion
         Task { @MainActor in
             await Task.yield()
             guard box.followRequests == request else { return }
             guard !box.userScrolling else { box.missedFollow = true; return }
             withAnimation(still ? nil : .easeOut(duration: 0.3)) { scroll.scrollTo(target, anchor: .bottom) }
+            try? await Task.sleep(nanoseconds: still ? 120_000_000 : 360_000_000)
+            if box.followRequests == request, box.following, !box.userScrolling { scroll.scrollTo(target, anchor: .bottom) }
         }
     }
 
