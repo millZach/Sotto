@@ -416,6 +416,31 @@ final class WatcherModelTests: XCTestCase {
         XCTAssertEqual(drafts.unresolved.count, WatcherDrafts.limit, "Never more than the limit")
     }
 
+    @MainActor func testThePageReadAfterALostAcknowledgementSettlesTheWords() async throws {
+        let model = try await fixture(spec: Spec(workerCard: false))
+        var sends = 0
+        var sentDraft = ""
+        HostConnection.watcherHandler = { op, operation, _ in
+            if op == "watcher-phone-send" {
+                sends += 1
+                guard let request = operation["request"] else { throw ClientError.invalidRequest }
+                sentDraft = request["draftId"].string ?? ""
+                throw ClientError.uncertain
+            }
+            // Watcher took the words before their acknowledgement was lost, and the page read after it says so.
+            return try self.ok(self.page(Spec(workerCard: false, observedAt: "2026-10-11T09:05:00.000Z", deliveries: [sentDraft: "accepted"])))
+        }
+        let key = model.watcherDraftKey(laptop)
+        model.drafts[key] = "Stop the webhook thread"
+        await model.sendToWatcher(laptop)
+        XCTAssertTrue(try connection.operations.contains("watcher-phone-read"), "The page is read after the lost acknowledgement")
+        XCTAssertEqual(model.watcherPage(laptop)?.delivery(of: sentDraft), "accepted")
+        XCTAssertEqual(model.drafts[key], "", "That page says Watcher took the words, so they leave the box")
+        XCTAssertNil(model.feedback, "Nothing is left to check")
+        XCTAssertEqual(sends, 1, "Nothing was sent again")
+        model.phase(.background)
+    }
+
     @MainActor func testWatcherWaitsForItsOwnRequestBeforeTakingMore() async throws {
         let model = try await fixture(spec: Spec(ownCard: true))
         model.drafts[model.watcherDraftKey(laptop)] = "And the webhook thread?"

@@ -307,7 +307,12 @@ extension AppModel {
         let text = drafts[key] ?? ""
         let draftID = watcherDrafts[hostID, default: WatcherDrafts()].id(for: text)
         watcherSending[hostID] = text; drafts[key] = ""
-        defer { watcherSending[hostID] = nil }
+        defer {
+            watcherSending[hostID] = nil
+            // The page read after a lost acknowledgement came while the words were still on their way, and may say
+            // Watcher took them: settled now, they leave the box.
+            if let page = watcherPage(hostID) { settleWatcherDraft(page, on: hostID) }
+        }
         #if DEBUG && os(iOS)
         if isUIFixture { await sendToFixtureWatcher(text, on: hostID); watcherDrafts[hostID]?.resolve(draftID); return }
         #endif
