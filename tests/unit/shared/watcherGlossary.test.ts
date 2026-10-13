@@ -19,3 +19,14 @@ it('describes the coordinator as sending both sources of wake-up', () => {
   expect(entry('Coordinator')).toMatch(/babysitting/iu)
   expect(entry('Coordinator')).toMatch(/Watcher/u)
 })
+
+it('documents the shipped owning-host Watcher tools without the obsolete local-only restriction', () => {
+  const guide = readFileSync(new URL('../../../docs/agent-control.md', import.meta.url), 'utf8')
+  const tools = guide.split('## Watcher tools')[1]?.split('\n## ')[0]
+  expect(tools).toBeDefined()
+  expect(tools).toContain('watcher-control')
+  expect(tools).toContain('watcher-reads')
+  expect(tools).toContain('explicit owning-host and Sotto thread identities')
+  expect(guide).not.toContain('Paired-host tools wait for the owning-host feature ticket')
+  expect(guide).not.toContain('explicit local host and Sotto identities')
+})
