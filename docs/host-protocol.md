@@ -62,6 +62,9 @@ The conversation projection removes only Sotto's exact native tool-routing foote
 
 October 12 review correction: Stop all records a pending and completed command receipt under the authenticated phone's original request ID. Optional receipt.watcherStop is either {status:"ok",results:[{target,status,message}]} (including partial, refused and uncertain target results) or the original WatcherRefusal. It carries no page snapshot. Read that receipt and watcher-phone-read after a lost acknowledgement; never retry automatically. An explicit retry with the same ID and confirmation returns that retained outcome with fresh state and performs no second stop; changing the confirmation under the same ID refuses invalid_request. Another pairing sees unknown. These in-memory transport receipts share the existing bounded five-minute settled replay window and do not survive a listener restart; unknown still requires a fresh read and user review of a new preview. No feature name, request shape or stop reply changes. SottoCore Receipt.watcherStop decodes WatcherStopReceipt; old clients ignore this optional field.
 
+October 13 Bugbot correction: both preview stores share a 64-preview cap. Capacity refuses a new preview with the existing IN_FLIGHT_LIMIT code and "Too many Stop all previews are open. Wait a minute and review again." Existing live previews are never evicted for space, including by another phone or desktop. Expiration or consumption releases capacity. No refusal code, feature name or wire shape changes.
+
+
 ## Versions and features
 
 Every host advertises two things beside `v`:

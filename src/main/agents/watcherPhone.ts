@@ -4,6 +4,7 @@ import { watcherPhoneStateSchema, type WatcherPhoneState, type WatcherPhoneSend,
 import { watcherRefusal, watcherGuidancePrefix, WATCHER_GUIDANCE_SUFFIX, type WatcherService } from './watcher'
 import type { AgentControl } from './control'
 import type { ClientIdentity } from './hostService'
+import { WATCHER_STOP_ALL_PREVIEW_LIMIT } from '../../shared/watcherRoom'
 
 /** A phone reads the room, never the persisted control record or the desktop's aggregate shell. */
 export class WatcherPhoneService {
@@ -99,7 +100,7 @@ export class WatcherPhoneService {
   }
   prepareStop(client: ClientIdentity): WatcherPhonePrepareStopResult {
     for (const [id, preview] of this.previews) if (preview.expires < Date.now()) this.previews.delete(id)
-    if (this.previews.size >= 64) return watcherRefusal('IN_FLIGHT_LIMIT', 'Too many Stop all previews are open. Wait a minute and review again.', true)
+    if (this.previews.size >= WATCHER_STOP_ALL_PREVIEW_LIMIT) return watcherRefusal('IN_FLIGHT_LIMIT', 'Too many Stop all previews are open. Wait a minute and review again.', true)
     const preview = this.watcher.prepareStopAll()
     if (preview.status === 'refused') return preview
     this.previews.set(preview.confirmationId, { clientId: client.clientId, expires: Date.parse(preview.expiresAt) })

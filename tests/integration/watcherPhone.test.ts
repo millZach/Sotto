@@ -9,6 +9,7 @@ import { PairedClients } from '../../src/main/agents/pairing'
 import { startSocketServer } from '../../src/host/socketServer'
 import { watcherPhoneResultSchema, watcherPhoneSendResultSchema } from '../../src/shared/watcherPhone'
 import { hostReceiptSchema } from '../../src/shared/hostProtocol'
+import { WATCHER_STOP_ALL_PREVIEW_LIMIT } from '../../src/shared/watcherRoom'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
 import { rawPeer } from '../fixtures/rawHostPeer'
@@ -279,3 +280,28 @@ it('marks workers watched only for active requests belonging to the current host
   await f.control.updateWatcher(record => { const request = record.requests.at(-1)!; request.state = 'active'; request.closedAt = null })
   expect(watched()).toBe(true)
 })
+
+it('keeps a phone Stop all preview valid when another phone opens seventeen previews', async () => {
+  const f = await fixture(), first = await f.pair(), other = await f.pair()
+  await first.call('send', f.send(first.paired.clientId)); const worker = await f.start()
+  const preview = await first.call('preview', { op: 'watcher-phone-prepare-stop-all' })
+  expect(preview).toMatchObject({ ok: true, result: { status: 'ok' } })
+  for (let index = 0; index < 17; index++) {
+    expect(await other.call(`preview-${index}`, { op: 'watcher-phone-prepare-stop-all' })).toMatchObject({ ok: true, result: { status: 'ok' } })
+  }
+  for (let index = 17; index < WATCHER_STOP_ALL_PREVIEW_LIMIT - 1; index++) {
+    expect(await other.call(`preview-${index}`, { op: 'watcher-phone-prepare-stop-all' })).toMatchObject({ ok: true, result: { status: 'ok' } })
+  }
+  expect(await other.call('full', { op: 'watcher-phone-prepare-stop-all' })).toMatchObject({ ok: true, result: {
+    status: 'refused', code: 'IN_FLIGHT_LIMIT', message: 'Too many Stop all previews are open. Wait a minute and review again.' } })
+  expect(f.watcher.prepareStopAll()).toMatchObject({ status: 'refused', code: 'IN_FLIGHT_LIMIT' })
+  expect(await first.call('stop', { op: 'watcher-phone-stop-all', confirmationId: (preview.result as { confirmationId: string }).confirmationId }))
+    .toMatchObject({ ok: true, result: { status: 'ok', results: [{ target: worker, status: 'stopped' }] } })
+  // Expiration releases capacity in both layers without replacing another live confirmation.
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 60_001)
+  try {
+    expect(f.watcher.prepareStopAll()).toMatchObject({ status: 'ok' })
+    expect(await other.call('after-expiry', { op: 'watcher-phone-prepare-stop-all' })).toMatchObject({ ok: true, result: { status: 'ok' } })
+  } finally { clock.mockRestore() }
+})
+

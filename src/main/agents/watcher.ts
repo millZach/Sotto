@@ -10,7 +10,7 @@ import { watcherOverview, type WatcherObservation } from '../../shared/watcherOv
 import { WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_READ_BYTES_MAX, watcherToolSchemas,
   type WatcherIdentity, type WatcherOperation, type WatcherRecord, type WatcherRefusal, type WatcherThreadTarget,
   type WatcherToolInput, type WatcherToolName } from '../../shared/watcher'
-import { watcherOpenRequestSchema, type WatcherOpenRequest, type WatcherRoomResult, type WatcherRoomState,
+import { watcherOpenRequestSchema, WATCHER_STOP_ALL_PREVIEW_LIMIT, type WatcherOpenRequest, type WatcherRoomResult, type WatcherRoomState,
   type WatcherPrepareStopAllResult, type WatcherStopAllResult } from '../../shared/watcherRoom'
 import type { AgentHostCommand } from './host'
 import type { AgentControl } from './control'
@@ -1202,14 +1202,13 @@ export class WatcherService implements WatcherControlHooks {
   }
   private pruneConfirmations(): void {
     for (const [id, confirmation] of this.confirmations) if (confirmation.expires < Date.now()) this.confirmations.delete(id)
-    while (this.confirmations.size > 16) this.confirmations.delete(this.confirmations.keys().next().value!)
   }
   prepareStopAll(): WatcherPrepareStopAllResult {
     if (this.closed) return watcherRefusal('NOT_CURRENT_WATCHER', 'Watcher is stopping. Nothing was stopped. Reopen Sotto.')
     this.pruneConfirmations()
+    if (this.confirmations.size >= WATCHER_STOP_ALL_PREVIEW_LIMIT) return watcherRefusal('IN_FLIGHT_LIMIT', 'Too many Stop all previews are open. Wait a minute and review again.', true)
     const { targets, signature } = this.stopAllScope(), id = randomUUID(), expires = Date.now() + 60_000
     this.confirmations.set(id, { targets, expires, signature })
-    this.pruneConfirmations()
     return { status: 'ok', confirmationId: id, targets, expiresAt: new Date(expires).toISOString() }
   }
   async stopAll(confirmationId: string, userGuard: () => void = () => undefined): Promise<WatcherStopAllResult> {
