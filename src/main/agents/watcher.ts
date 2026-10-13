@@ -10,7 +10,7 @@ import { watcherOverview, type WatcherObservation } from '../../shared/watcherOv
 import { WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_READ_BYTES_MAX, watcherToolSchemas,
   type WatcherIdentity, type WatcherOperation, type WatcherRecord, type WatcherRefusal, type WatcherThreadTarget,
   type WatcherToolInput, type WatcherToolName } from '../../shared/watcher'
-import { watcherOpenRequestSchema, type WatcherOpenRequest, type WatcherRoomResult, type WatcherRoomState,
+import { watcherOpenRequestSchema, WATCHER_STOP_ALL_PREVIEW_LIMIT, type WatcherOpenRequest, type WatcherRoomResult, type WatcherRoomState,
   type WatcherPrepareStopAllResult, type WatcherStopAllResult } from '../../shared/watcherRoom'
 import type { AgentHostCommand } from './host'
 import type { AgentControl } from './control'
@@ -24,6 +24,9 @@ import { watcherHostControlSchema, watcherHostReadSchema, type WatcherHostContro
 const now = () => new Date().toISOString()
 const key = (target: WatcherThreadTarget) => JSON.stringify([target.hostId, target.threadId])
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
+export const watcherGuidancePrefix = (requestId: string, hostId: string): string =>
+  `[Sotto Watcher request: ${requestId}. Local host: ${hostId}. Use this requestId for sotto_threads mutations. Known project IDs: `
+export const WATCHER_GUIDANCE_SUFFIX = '. Call list_projects for choices.]'
 export function watcherRefusal(code: WatcherRefusal['code'], message: string, retryable = false): WatcherRefusal {
   return { status: 'refused', code, message, retryable }
 }
@@ -44,7 +47,7 @@ export class WatcherService implements WatcherControlHooks {
   private changing = false
   private readonly dispatchRefusals = new Map<string, Refusal>()
   private readonly nativeHeads = new Map<string, string | null>()
-  private readonly confirmations = new Map<string, { targets: WatcherThreadTarget[]; signature: string; expires: number }>()
+  private readonly confirmations = new Map<string, { targets: WatcherThreadTarget[]; signature: string; expires: number; phoneClientId: string | undefined }>()
   private readonly pages = new Map<string, { kind: string; rows: unknown[]; expires: number; workingCopies?: { revision: string; baseRefs: { choiceId: string; name: string }[] } }>()
   private readonly copyChoices = new Map<string, { projectId: string; path?: string; branch?: string; revision: string; snapshotId: string }>()
   private closed = false
@@ -68,6 +71,7 @@ export class WatcherService implements WatcherControlHooks {
   private record(): WatcherRecord { return this.options.control.watcherRecord() }
   private hostId(): string { const id = this.options.control.hostId(); if (!id) refuse('HOST_DISCONNECTED', 'This computer is not ready. Reconnect its provider.', true); return id }
   private target(threadId: string): WatcherThreadTarget { return { hostId: this.hostId(), threadId } }
+  phoneSnapshot(): AgentHostSnapshot { return this.snapshot() }
   private owningSnapshot(hostId: string): AgentHostSnapshot | undefined {
     return hostId === this.hostId() ? this.options.control.watcherSnapshot() : this.remote?.snapshot(hostId)
   }
@@ -305,6 +309,10 @@ export class WatcherService implements WatcherControlHooks {
     await this.options.control.updateWatcher(next => { if (next.creation?.identity.target.threadId === identity.target.threadId) next.creation = null })
   }
 
+  guardPhoneSend(threadId: string): void {
+    this.checkCaller(threadId)
+    if (this.changing) refuse('THREAD_BUSY', 'Wait for Watcher’s provider change before sending an instruction.', true)
+  }
   userCommand(command: AgentCommand, threadId: string | undefined, answersQuestion: boolean): void {
     if (!threadId || answersQuestion) return
     if (threadId === this.record().current?.target.threadId && this.changing) refuse('THREAD_BUSY', 'Wait for Watcher’s provider change before sending an instruction.', true)
@@ -358,6 +366,7 @@ export class WatcherService implements WatcherControlHooks {
       && participant.state === 'participating' && (participant.automationStopped || request.state === 'stopped' && participant.startedBy === 'watcher')))
   }
   beforeDispatch(command: AgentHostCommand, _draftId: string | undefined, origin?: WatcherCommandOrigin): AgentHostCommand {
+    if (origin?.phoneOrigin && command.type === 'send') this.guardPhoneSend(command.threadId)
     if (origin?.operationId) {
       this.options.control.mutateWatcher(record => {
         const operation = record.operations.find(item => item.id === origin.operationId)!
@@ -373,7 +382,7 @@ export class WatcherService implements WatcherControlHooks {
       || _draftId && item.userFollowups?.some(followup => followup.draftId === _draftId))
     if (!request) {
       request = { id: randomUUID(), watcher: this.target(command.threadId), rootUserMessageId: command.messageId,
-        state: 'active', createdAt: now(), closedAt: null, participants: [] }
+        state: 'active', createdAt: now(), closedAt: null, participants: [], ...(origin?.phoneOrigin ? { phoneOrigin: origin.phoneOrigin } : {}) }
       const created = request
       this.options.control.mutateWatcher(next => { next.requests.push(created) })
     }
@@ -382,7 +391,7 @@ export class WatcherService implements WatcherControlHooks {
       next.requests.find(item => item.id === request!.id)!.userFollowups!.find(item => item.draftId === _draftId)!.messageId = command.messageId
     })
     const projects = this.options.control.watcherSnapshot().projects.filter(item => item.id !== record.current?.projectId)
-    return { ...command, text: `${command.text}\n\n[Sotto Watcher request: ${request.id}. Local host: ${this.hostId()}. Use this requestId for sotto_threads mutations. Known project IDs: ${projects.slice(0, 100).map(item => item.id).join(', ')}. Call list_projects for choices.]` }
+    return { ...command, text: `${command.text}\n\n${watcherGuidancePrefix(request.id, this.hostId())}${projects.slice(0, 100).map(item => item.id).join(', ')}${WATCHER_GUIDANCE_SUFFIX}` }
   }
   observe(snapshot: AgentHostSnapshot, knownUserMessages: ReadonlySet<string>): void {
     const record = this.record()
@@ -1193,23 +1202,28 @@ export class WatcherService implements WatcherControlHooks {
   }
   private pruneConfirmations(): void {
     for (const [id, confirmation] of this.confirmations) if (confirmation.expires < Date.now()) this.confirmations.delete(id)
-    while (this.confirmations.size > 16) this.confirmations.delete(this.confirmations.keys().next().value!)
   }
-  prepareStopAll(): WatcherPrepareStopAllResult {
+  /** Omitting the authenticated phone ID selects the desktop room's separate client. */
+  prepareStopAll(phoneClientId?: string): WatcherPrepareStopAllResult {
     if (this.closed) return watcherRefusal('NOT_CURRENT_WATCHER', 'Watcher is stopping. Nothing was stopped. Reopen Sotto.')
     this.pruneConfirmations()
     const { targets, signature } = this.stopAllScope(), id = randomUUID(), expires = Date.now() + 60_000
-    this.confirmations.set(id, { targets, expires, signature })
-    this.pruneConfirmations()
+    this.confirmations.set(id, { targets, expires, signature, phoneClientId })
+    const clientPreviews = [...this.confirmations].filter(([, confirmation]) => confirmation.phoneClientId === phoneClientId)
+    for (const [oldest] of clientPreviews.slice(0, -WATCHER_STOP_ALL_PREVIEW_LIMIT)) this.confirmations.delete(oldest)
     return { status: 'ok', confirmationId: id, targets, expiresAt: new Date(expires).toISOString() }
   }
-  async stopAll(confirmationId: string): Promise<WatcherStopAllResult> {
+  async stopAll(confirmationId: string, userGuard: () => void = () => undefined, phoneClientId?: string): Promise<WatcherStopAllResult> {
     if (this.closed) return watcherRefusal('NOT_CURRENT_WATCHER', 'Watcher is stopping. Nothing was stopped. Reopen Sotto.')
     this.pruneConfirmations()
-    const confirmation = this.confirmations.get(confirmationId); this.confirmations.delete(confirmationId)
-    if (!confirmation || confirmation.expires < Date.now() || confirmation.signature !== this.stopAllScope().signature) {
+    const confirmation = this.confirmations.get(confirmationId)
+    if (!confirmation) return watcherRefusal('TARGET_CHANGED', 'That Stop all preview expired, was replaced by a newer one, or is unavailable. Review Stop all again. Nothing was stopped.')
+    if (confirmation.phoneClientId !== phoneClientId) return watcherRefusal('TARGET_CHANGED', 'That Stop all preview was opened somewhere else. Review Stop all again here. Nothing was stopped.')
+    this.confirmations.delete(confirmationId)
+    if (confirmation.expires < Date.now() || confirmation.signature !== this.stopAllScope().signature) {
       return watcherRefusal('TARGET_CHANGED', 'The threads to stop changed or the confirmation expired. Review Stop all again.')
     }
+    userGuard()
     const targets = confirmation.targets
     const requestIds = new Set(this.record().requests.filter(request => request.participants.some(item => targets.some(target => key(item.target) === key(target)))).map(item => item.id))
     const operationIds = new Set(this.record().operations.filter(item => requestIds.has(item.requestId)).map(item => item.id))
@@ -1222,6 +1236,7 @@ export class WatcherService implements WatcherControlHooks {
     const results: Extract<WatcherStopAllResult, { status: 'ok' }>['results'] = []
     for (const target of targets) {
       const guard = () => {
+        userGuard()
         if (this.closed) refuse('NOT_CURRENT_WATCHER', 'Watcher is stopping. Nothing was stopped.')
         const participant = this.record().requests.flatMap(request => request.participants).find(item => key(item.target) === key(target) && item.startedBy === 'watcher' && item.state === 'participating')
         if (!participant) refuse('THREAD_TAKEN_OVER', 'This thread was taken over and was not stopped.')

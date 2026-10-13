@@ -5,6 +5,11 @@ import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { desktopWindowClient } from '../../src/main/agents/hostService'
 import { WatcherService } from '../../src/main/agents/watcher'
+import { WatcherPhoneService } from '../../src/main/agents/watcherPhone'
+import { LocalHostService } from '../../src/main/agents/hostService'
+import { PairedClients } from '../../src/main/agents/pairing'
+import { startSocketServer } from '../../src/host/socketServer'
+import { rawPeer } from '../fixtures/rawHostPeer'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
@@ -367,6 +372,35 @@ it('enforces the narrower owning-host default and keeps a confirmed remote Stop 
   expect(await f.call('start_thread', acceptedInput)).toMatchObject({ status: 'ok', receipt: { operationId: first.receipt.operationId } })
   expect(writes).not.toHaveBeenCalled()
   expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'now', text: 'Synthetic stopped request refusal' })).toMatchObject({ code: 'REQUEST_NOT_ACTIVE' })
+})
+
+it.each(['queued', 'dispatching'])('rechecks a revoked phone after remote Stop all %s persistence', async phase => {
+  const f = await master(), started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok') throw new Error('start-refused')
+  const phone = new WatcherPhoneService(f.control, f.watcher), pairing = new PairedClients(f.workspace.root)
+  await pairing.load()
+  const server = await startSocketServer({ service: new LocalHostService({ control: f.control, watcherPhone: phone }), pairing, admin: false })
+  cleanups.push(() => server.close())
+  const paired = await pairing.redeem(pairing.issuePairingCode().code, 'Synthetic phone')
+  const peer = await rawPeer(server.descriptor.port, pairing.signSession(paired.clientId, Date.now()))
+  cleanups.push(async () => peer.frames.close())
+  await peer.call('hello', { op: 'hello', accepts: ['watcher-phone', 'watcher-phone-stop-all'] })
+  const preview = await peer.call('preview', { op: 'watcher-phone-prepare-stop-all' })
+  const held = heldOperation(), original = f.control.updateWatcher.bind(f.control)
+  let paused = false
+  vi.spyOn(f.control, 'updateWatcher').mockImplementation(async update => {
+    await original(update)
+    if (!paused && f.control.watcherRecord().operations.some(operation => operation.action === 'stop' && operation.deliveryState === phase)) {
+      paused = true; await held.wait()
+    }
+  })
+  const writes = vi.spyOn(f.socket, 'watcherControl')
+  const stopping = peer.call('stop', { op: 'watcher-phone-stop-all', confirmationId: (preview.result as { confirmationId: string }).confirmationId })
+  try { await held.entered; await pairing.revoke(paired.clientId) } finally { held.release() }
+  // Revocation may lose the phone's reply; the owning host must still receive no stop.
+  await stopping.catch(() => undefined)
+  expect(writes).not.toHaveBeenCalled()
+  expect((await remote.native.snapshot()).threads.find(thread => thread.title === 'Synthetic remote worker')?.status).toBe('running')
 })
 
 it('refuses closed remote entry points with the same code as local tools and no coordinator effects', async () => {

@@ -23,6 +23,8 @@ import { hostPhonesCommandSchema, type HostPhonesCommand, type PhonesState } fro
 import { CommandReceipts, type CommandReceipt } from './commandReceipts'
 import type { PhoneTerminals } from '../shared/phoneTerminals'
 import type { WatcherHostRead } from '../shared/watcherHost'
+import type { WatcherThreadTarget } from '../shared/watcher'
+import { visibleWatcherState } from '../shared/watcherVisibility'
 
 const errors: Record<HostErrorCode, string> = {
   unauthenticated: HOST_SESSION_REJECTED,
@@ -73,7 +75,7 @@ class Refusal extends Error { constructor(readonly code: HostErrorCode, message 
  * `desktop` is whether the launch script recorded this client as a desktop (ADR-0053), read when its socket opened and
  * again at its hello. On a listener that tells desktops apart, only a desktop is offered the desktop-only features.
  */
-interface Peer { watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; activitySummaries: boolean; catalogRevisions: boolean; catalogSent: number | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>; terminals: boolean; terminalPreviews: Map<string, string> }
+interface Peer { watcherPhone: boolean; watcherPhoneStop: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; activitySummaries: boolean; catalogRevisions: boolean; catalogSent: number | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>; terminals: boolean; terminalPreviews: Map<string, string> }
 /** A shell ready to write to one peer, and the catalog revision it carries whole, if any, to record once it is written. */
 interface WireShell { state: HostWireShell; carries: number | null }
 export interface SocketServerOptions {
@@ -185,6 +187,7 @@ export async function startSocketServer(options: SocketServerOptions) {
   const hostId = service.shell().hostId
   if (!hostId) throw new Error('The host must have an identity before listening.')
   const features = HOST_FEATURES.filter(feature => (feature !== 'provider-sign-in' || options.signIns !== undefined)
+    && (!feature.startsWith('watcher-phone') || service.watcherPhone !== undefined && options.admin === false && options.watcherDesktops === undefined)
     && (feature !== 'watcher-control' || service.supportsWatcherControl === true && options.watcherDesktops !== undefined)
     && (feature !== 'watcher-reads' || service.supportsWatcherReads === true && options.watcherDesktops !== undefined)
     && (feature !== 'terminals' || options.terminals !== undefined)
@@ -196,7 +199,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'pull-request-babysit' || service.supportsBabysitting === true))
   /** What this listener offers a client: every feature to a desktop, and to a phone all but the desktop-only ones (ADR-0053). */
   const featuresFor = (peer: Peer): string[] => (peer.desktop ? [...features] : features.filter(feature => !HOST_DESKTOP_FEATURES.includes(feature)))
-    .filter(feature => !feature.startsWith('watcher-') || options.watcherDesktops?.has(peer.client.clientId))
+    .filter(feature => !feature.startsWith('watcher-') || feature.startsWith('watcher-phone') || options.watcherDesktops?.has(peer.client.clientId))
   const watcherScopes = new WeakMap<Peer, WatcherHostRead>()
   const watcherRevisions = new WeakMap<Peer, string>()
   const offers = (peer: Peer, feature: (typeof HOST_FEATURES)[number]): boolean => featuresFor(peer).includes(feature)
@@ -229,8 +232,15 @@ export async function startSocketServer(options: SocketServerOptions) {
     return () => { entry.count-- }
   }
   const identity = (clientId: string): ClientIdentity => ({ clientId, user: pairing.list().find(client => client.clientId === clientId)?.name ?? 'Paired client', transport: 'socket' })
+  const isPhonePeer = (peer: Peer): boolean => !peer.desktop || options.admin === false && options.watcherDesktops === undefined
+  const hiddenThread = (peer: Peer, threadId: string): boolean => isPhonePeer(peer) && (service.watcherPhoneExclusions?.().threadIds.includes(threadId) || ['watcher', 'watcher-history'].includes(service.threadKind?.(threadId) ?? service.shell().host.threads.find(row => row.id === threadId)?.kind ?? ''))
   const shell = (peer: Peer) => {
-    const state = service.shell()
+    const original = service.shell()
+    const visible = isPhonePeer(peer) ? visibleWatcherState(original, false) : original
+    const hiddenProjects = isPhonePeer(peer) ? new Set([...original.host.threads.filter(thread => hiddenThread(peer, thread.id)).map(thread => thread.projectId),
+      ...service.watcherPhoneExclusions?.().projectIds ?? []]) : new Set<string>()
+    const state = hiddenProjects.size ? { ...visible, host: { ...visible.host, projects: visible.host.projects.filter(project =>
+      !hiddenProjects.has(project.id) || visible.host.threads.some(thread => thread.projectId === project.id)) } } : visible
     const draft = peer.editingThreadId === peer.selectedThreadId
       ? state.threadDrafts?.find(item => item.threadId === peer.selectedThreadId) : undefined
     const composer = draft ? { composing: true, draft: draft.text, draftAttachments: draft.attachments,
@@ -242,7 +252,10 @@ export async function startSocketServer(options: SocketServerOptions) {
       clientCapabilities: { mayAnswer: options.mayAnswer?.(peer.client) ?? false } })
     // A client from before #480 reads the client updates' channel and state against the values it knows, and one it
     // does not know would make it refuse the whole shell: it is sent them as it knew them.
-    const rows = peer.terminals && options.terminals ? { ...own, terminals: options.terminals.phoneRows() } : own
+    const phoneState = peer.watcherPhone && service.watcherPhone ? service.watcherPhone.state(options.mayAnswer?.(peer.client) ?? false) : undefined
+    const projected = phoneState ? { ...own, watcher: phoneState, host: { ...own.host, threads: own.host.threads.map(thread => ({ ...thread,
+      watchedByWatcher: phoneState.watchedThreads.some(row => row.target.hostId === hostId && row.target.threadId === thread.id && row.watched) })) } } : own
+    const rows = peer.terminals && options.terminals ? { ...projected, terminals: options.terminals.phoneRows() } : projected
     return peer.clientUpdates || !state.clientUpdates ? rows : { ...rows, clientUpdates: state.clientUpdates.map(clientUpdateForOlderClient) }
   }
   /**
@@ -283,16 +296,16 @@ export async function startSocketServer(options: SocketServerOptions) {
   const push = (peer: Peer, value: HostPush): boolean => { if (!authenticated(peer)) { peer.frames.close(); return false } return deliver(peer, value, value.event === 'detail' || value.event === 'detail-delta' ? 'thread' : 'list') }
   const events = (peer: Peer, afterSeq: number, threadId?: string) => {
     const all = service.events(afterSeq, threadId, HOST_EVENT_PAGE_SIZE + 1), page = all.slice(0, HOST_EVENT_PAGE_SIZE)
-    return { events: peer.messageAliases ? page : page.filter(row => row.event.kind !== 'message-aliased'), latestSeq: page.at(-1)?.seq ?? afterSeq, hasMore: all.length > page.length }
+    return { events: page.filter(row => !hiddenThread(peer, row.threadId) && (peer.messageAliases || row.event.kind !== 'message-aliased')), latestSeq: page.at(-1)?.seq ?? afterSeq, hasMore: all.length > page.length }
   }
   const observe = async (): Promise<void> => {
-    const ids = [...new Set([...peers].flatMap(peer => [...peer.observed]))]
+    const ids = [...new Set([...peers].flatMap(peer => [...peer.observed, ...peer.watcherPhone && service.watcherPhone?.currentThreadId() ? [service.watcherPhone.currentThreadId()!] : []]))]
     await service.command({ type: 'observe-threads', threadIds: ids }, { clientId: observationKey, user: '', transport: 'socket' })
   }
   const track = <T>(task: Promise<T>): Promise<T> => { operations.add(task); void task.finally(() => operations.delete(task)).catch(() => undefined); return task }
   /** A thread let go is no longer kept current for this client, so it starts over when it is observed again. */
   const setObserved = (peer: Peer, threadIds: readonly string[]): void => {
-    peer.observed = new Set(threadIds)
+    peer.observed = new Set(threadIds.filter(id => !hiddenThread(peer, id)))
     for (const id of peer.held.keys()) if (!peer.observed.has(id)) peer.held.delete(id)
     for (const id of peer.opening) if (!peer.observed.has(id)) peer.opening.delete(id)
   }
@@ -452,17 +465,26 @@ export async function startSocketServer(options: SocketServerOptions) {
     const modelId = input.modelId ?? (input.type === 'configure-thread' ? host.threads.find(thread => thread.id === input.threadId)?.modelId : undefined)
     return resolveModel(host.models, modelId)?.providerModes?.filter(mode => mode.allows === 'nothing').map(mode => mode.id) ?? []
   }
-  const command = async (peer: Peer, request: Extract<HostRequest, { op: 'command' }>): Promise<unknown> => {
-    const digest = createHash('sha256').update(JSON.stringify(request.command)).digest('hex')
+  const command = async (peer: Peer, request: Extract<HostRequest, { op: 'command' }>, ownCard?: WatcherThreadTarget): Promise<HostClientShell> => {
+    const digest = createHash('sha256').update(JSON.stringify(ownCard ? ['watcher-phone-answer', ownCard, request.command] : request.command)).digest('hex')
     const previous = receipts.get(peer.client.clientId, request.id)
     if (previous) {
       if (previous.digest !== digest) throw new Refusal('invalid_request')
       await previous.task
       if (previous.receipt.error) throw new Refusal(previous.receipt.error.code)
-      return shell(peer)
+      const state = shell(peer)
+      return ownCard ? { ...state, error: null } : state
     }
     if (managementCommandRefusal(request.command)) throw new Refusal('forbidden')
     const input = commandFromProtocolV1(request.command)
+    if (ownCard) {
+      if (ownCard.hostId !== hostId || input.type !== 'answer' || input.threadId !== ownCard.threadId) throw new Refusal('forbidden')
+      const state = service.watcherPhone!.state(options.mayAnswer?.(peer.client) ?? false)
+      if (!state.needsYou.some(card => card.target.hostId === ownCard.hostId && card.target.threadId === ownCard.threadId && card.request.id === input.requestId)) throw new Refusal('stale_request')
+      if (!options.mayAnswer?.(peer.client)) throw new Refusal('forbidden')
+    }
+    const explicitOwner = 'threadId' in input ? input.threadId : input.type === 'send' ? input.draft?.threadId : peer.selectedThreadId
+    if (!ownCard && explicitOwner && hiddenThread(peer, explicitOwner)) throw new Refusal('forbidden')
     if ((input.type === 'send' && input.draft || input.type === 'compose' && input.threadId !== undefined)
       && !offers(peer, 'atomic-send')) throw new Refusal('invalid_request')
     if ((input.type === 'compose' && input.draftId !== undefined || input.type === 'send' && input.draft?.draftId !== undefined
@@ -511,7 +533,10 @@ export async function startSocketServer(options: SocketServerOptions) {
           if (input.type === 'compose') peer.editingThreadId = peer.selectedThreadId
           const client = { ...peer.client, selectedThreadId: peer.selectedThreadId }
           const result = input.type === 'answer'
-            ? await service.command(input, client, answerDecisionId(peer.client.clientId, request.id))
+            ? ownCard ? await service.watcherPhone!.answer(input, client, answerDecisionId(peer.client.clientId, request.id), () => {
+              if (!authenticated(peer) || peer.frames.isClosed || closing || !admits(peer.client.clientId)) throw new Refusal('unauthenticated')
+              if (!options.mayAnswer?.(peer.client)) throw new Refusal('forbidden')
+            }) : await service.command(input, client, answerDecisionId(peer.client.clientId, request.id))
             : await service.command(input, client)
           if (input.type === 'compose' && result.error) peer.editingThreadId = previousEditor
           if (['cancel-draft', 'send'].includes(input.type) && !result.error) peer.editingThreadId = null
@@ -554,6 +579,74 @@ export async function startSocketServer(options: SocketServerOptions) {
       if (!request.request.call && peer.watcherReads) watcherScopes.set(peer, request.request)
       return service.watcherRead!(request.request, peer.client, guard)
     }
+    if (request.op.startsWith('watcher-phone-')) {
+      if (!peer.ready || !peer.watcherPhone || !offers(peer, 'watcher-phone') || !service.watcherPhone) throw new Refusal('invalid_request')
+      const guard = () => {
+        if (closing || peer.frames.isClosed || !authenticated(peer) || !admits(peer.client.clientId)) throw new Refusal('unauthenticated')
+      }
+      const mayAnswer = () => options.mayAnswer?.(peer.client) ?? false
+      guard()
+      switch (request.op) {
+        case 'watcher-phone-read': await observe(); return service.watcherPhone.get(mayAnswer())
+        case 'watcher-phone-send': {
+          const digest = createHash('sha256').update(JSON.stringify([request.op, request.request])).digest('hex')
+          const previous = receipts.get(peer.client.clientId, request.id)
+          if (previous) {
+            if (previous.digest !== digest) throw new Refusal('invalid_request')
+            await previous.task
+            if (previous.receipt.error) throw new Refusal(previous.receipt.error.code)
+            return { status: 'ok', draftId: request.request.draftId, state: service.watcherPhone.state(mayAnswer()) }
+          }
+          if (!receipts.makeRoom()) throw new Refusal('busy')
+          const receipt: HostReceipt = { status: 'pending' }
+          const task = service.watcherPhone.send(request.request, peer.client, guard, mayAnswer).then(result => {
+            receipt.status = 'completed'
+            if (result.status === 'refused') receipt.error = { code: 'unavailable', message: result.message }
+            return result
+          }).catch(() => { receipt.status = 'completed'; receipt.error = { code: 'unavailable', message: errors.unavailable }; throw new Refusal('unavailable') })
+          receipts.record(peer.client.clientId, request.id, { digest, receipt, task })
+          return task
+        }
+        case 'watcher-phone-prepare-stop-all':
+          if (!peer.watcherPhoneStop || !offers(peer, 'watcher-phone-stop-all')) throw new Refusal('invalid_request')
+          return service.watcherPhone.prepareStop(peer.client)
+        case 'watcher-phone-stop-all': {
+          if (!peer.watcherPhoneStop || !offers(peer, 'watcher-phone-stop-all')) throw new Refusal('invalid_request')
+          const digest = createHash('sha256').update(JSON.stringify([request.op, request.confirmationId])).digest('hex')
+          const previous = receipts.get(peer.client.clientId, request.id)
+          if (previous) {
+            if (previous.digest !== digest) throw new Refusal('invalid_request')
+            await previous.task
+            guard()
+            if (previous.receipt.error) throw new Refusal(previous.receipt.error.code)
+            const outcome = previous.receipt.watcherStop!
+            return outcome.status === 'refused' ? outcome : { ...outcome, state: service.watcherPhone.state(mayAnswer()) }
+          }
+          if (!receipts.makeRoom()) throw new Refusal('busy')
+          const receipt: HostReceipt = { status: 'pending' }
+          const task = service.watcherPhone.stop(request.confirmationId, peer.client, guard, mayAnswer).then(result => {
+            receipt.watcherStop = result.status === 'refused' ? result : { status: 'ok', results: result.results }
+            receipt.status = 'completed'
+            return result
+          }).catch(() => {
+            receipt.status = 'completed'; receipt.error = { code: 'unavailable', message: errors.unavailable }
+            throw new Refusal('unavailable')
+          })
+          receipts.record(peer.client.clientId, request.id, { digest, receipt, task })
+          return task
+        }
+        case 'watcher-phone-answer': {
+          const { target, command: input } = request.request
+          // Receipt replay comes before fresh-card admission, retaining the authenticated user and exact target.
+          const result = await command(peer, { ...request, op: 'command', command: input }, target)
+          guard()
+          if (result.error) throw new Refusal('unavailable')
+          return service.watcherPhone.get(mayAnswer())
+        }
+      }
+    }
+    if ('threadId' in request && request.threadId && hiddenThread(peer, request.threadId)) throw new Refusal('forbidden')
+    if ('request' in request && request.request && 'threadId' in request.request && hiddenThread(peer, request.request.threadId as string)) throw new Refusal('forbidden')
     switch (request.op) {
       case 'hello': {
         await options.watcherDesktops?.refresh()
@@ -569,9 +662,12 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.clientUpdates = (request.accepts?.includes('client-updates') ?? false) && offers(peer, 'client-updates')
         peer.catalogRevisions = request.accepts?.includes('model-catalog-revision') ?? false
         peer.activitySummaries = request.accepts?.includes('activity-summaries') ?? false
+        peer.watcherPhone = (request.accepts?.includes('watcher-phone') ?? false) && offers(peer, 'watcher-phone')
+        peer.watcherPhoneStop = peer.watcherPhone && (request.accepts?.includes('watcher-phone-stop-all') ?? false) && offers(peer, 'watcher-phone-stop-all')
         peer.watcherReads = (request.accepts?.includes('watcher-reads') ?? false) && offers(peer, 'watcher-reads'); peer.answerReceipts = (request.accepts?.includes('answer-receipts') ?? false) && offers(peer, 'answer-receipts')
         peer.terminals = (request.accepts?.includes('terminals') ?? false) && offers(peer, 'terminals')
         if (!peer.terminals) { peer.terminalPreviews.clear(); options.terminals?.withdrawVisibility(peer) }
+        if (peer.watcherPhone) await observe()
         const phoneAccess = peer.desktop ? options.phoneAccess?.() : undefined
         return { hostId, clientId: peer.client.clientId, shell: shell(peer), capabilities: { mayAnswer: options.mayAnswer?.(peer.client) ?? false }, sottoVersion, features: featuresFor(peer),
           ...about(), ...(phoneAccess ? { phoneAccess } : {}), ...events(peer, peer.afterSeq) }
@@ -884,7 +980,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     const accept = createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64')
     stream.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + accept + '\r\n\r\n')
     const frames = new SocketFrames(stream, false, text => onMessage(peer, text))
-    const peer: Peer = { watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), held: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, activitySummaries: false, catalogRevisions: false, catalogSent: null, answerReceipts: false, answerWatches: new Map(), terminals: false, terminalPreviews: new Map() }
+    const peer: Peer = { watcherPhone: false, watcherPhoneStop: false, watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), held: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, activitySummaries: false, catalogRevisions: false, catalogSent: null, answerReceipts: false, answerWatches: new Map(), terminals: false, terminalPreviews: new Map() }
     peers.add(peer)
     frames.startHeartbeat()
     frames.onClose(() => { peer.answerWatches.clear(); peer.terminalPreviews.clear(); options.terminals?.withdrawVisibility(peer); peers.delete(peer); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })

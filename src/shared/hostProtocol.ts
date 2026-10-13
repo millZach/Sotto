@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { watcherPhoneStateSchema, watcherPhoneSendSchema, watcherPhoneAnswerSchema, watcherPhoneStopOutcomeSchema, type WatcherPhoneStopOutcome, type WatcherPhoneState } from './watcherPhone'
 import { watcherHostControlSchema, watcherHostReadSchema, watcherHostProjectionSchema } from './watcherHost'
 import { AGENT_IMAGE_MIME_TYPES, agentAttachmentDimensionsSchema, agentAttachmentPreviewRequestSchema, attachmentDigestSchema, agentConfigurationSchema, agentCommandSchema, agentHostSnapshotSchema, agentStateSchema, agentThreadDetailDeltaSchema, agentThreadDetailResultSchema, type AgentMessage, type AgentModel, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta } from './agents'
 import { threadEventSchema, type StoredThreadEvent } from './threadEvents'
@@ -106,6 +107,7 @@ export function shellForProtocolV1<T extends AgentState>(state: T) {
  */
 const hostClientShellSchema = agentStateSchema.extend({ clientCapabilities: z.object({ mayAnswer: z.boolean() }).optional(),
   terminals: phoneTerminalListSchema.optional(),
+  watcher: watcherPhoneStateSchema.optional(),
   host: agentHostSnapshotSchema.extend({ modelsRevision: z.number().int().positive().optional() }) })
 /** Older hosts carry retired fields; strip them before the strict domain schemas read them. */
 export const protocolAgentStateSchema = z.preprocess(value => {
@@ -162,7 +164,7 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * `terminal-approval` reads a bounded live approval preview, `observe-terminals` reports foreground details, and
  * `answer-terminal` delivers one exact reviewed answer through the local hook (ADR-0066). No screen stream or input.
  */
-export const HOST_FEATURES = ['terminals', 'client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard'] as const
+export const HOST_FEATURES = ['terminals', 'client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
@@ -281,6 +283,11 @@ export const hostAttachmentContentSchema = z.object({ mimeType: z.enum(AGENT_IMA
 /** Just enough of a request to answer it: a request the host cannot otherwise read is refused by its id. */
 export const hostRequestEnvelopeSchema = z.object(base)
 export const hostRequestSchema = z.discriminatedUnion('op', [
+  z.object({ ...base, op: z.literal('watcher-phone-read') }).strict(),
+  z.object({ ...base, op: z.literal('watcher-phone-send'), request: watcherPhoneSendSchema }).strict(),
+  z.object({ ...base, op: z.literal('watcher-phone-answer'), request: watcherPhoneAnswerSchema }).strict(),
+  z.object({ ...base, op: z.literal('watcher-phone-prepare-stop-all') }).strict(),
+  z.object({ ...base, op: z.literal('watcher-phone-stop-all'), confirmationId: z.uuid() }).strict(),
   z.object({ ...base, op: z.literal('watcher-control'), request: watcherHostControlSchema }).strict(),
   z.object({ ...base, op: z.literal('watcher-read'), request: watcherHostReadSchema }).strict(),
   z.object({ ...base, op: z.literal('hello'), afterSeq: z.number().int().nonnegative().optional(), accepts: featureList.optional() }).strict(),
@@ -336,7 +343,7 @@ export type HostErrorCode = 'unauthenticated' | 'invalid_request' | 'stale_reque
 export interface HostProtocolError { code: HostErrorCode; message: string }
 export type HostResponse = { v: 1; id: string; ok: true; result: unknown } | { v: 1; id: string; ok: false; error: HostProtocolError }
 /** `error` stands in for a push that would not fit in one frame, instead of the host closing the socket. */
-export type HostClientShell = AgentState & { clientCapabilities?: { mayAnswer: boolean } | undefined; terminals?: PhoneTerminal[] | undefined }
+export type HostClientShell = AgentState & { watcher?: WatcherPhoneState | undefined; clientCapabilities?: { mayAnswer: boolean } | undefined; terminals?: PhoneTerminal[] | undefined }
 /**
  * A shell as it crosses the socket. To a client that accepts `model-catalog-revision` its `host` names the
  * catalog's revision and leaves `models` out when this connection was already sent that revision; to every
@@ -375,6 +382,8 @@ export interface HostReceipt {
   answerDelivered?: boolean | undefined
   /** Acceptance of this authenticated client's exact answer attempt and original questions. */
   acceptedAnswer?: (HostAnswerTarget & { decisionId: string }) | undefined
+  /** Exact Stop all outcome, including partial results, for this authenticated phone's request ID. */
+  watcherStop?: WatcherPhoneStopOutcome | undefined
 }
 /** Written to host-listener.json and served, with `status`, as /v1/health. */
 export interface HostDescriptor extends HostAbout { v: 1; pid: number; hostId: string; port: number; sottoVersion: string; features: string[] }
@@ -425,4 +434,5 @@ export const hostPushSchema = z.discriminatedUnion('event', [
   z.object({ v: z.literal(1), event: z.literal('error'), threadId: id.optional(), error: hostProtocolErrorSchema }),
 ])
 export const hostReceiptSchema = z.object({ status: z.enum(['pending', 'completed', 'unknown']), error: hostProtocolErrorSchema.optional(),
-  answerDelivered: z.boolean().optional(), acceptedAnswer: hostAnswerTargetSchema.extend({ decisionId: id }).optional() })
+  answerDelivered: z.boolean().optional(), acceptedAnswer: hostAnswerTargetSchema.extend({ decisionId: id }).optional(),
+  watcherStop: watcherPhoneStopOutcomeSchema.optional().catch(undefined) })
