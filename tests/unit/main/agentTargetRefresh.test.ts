@@ -13,13 +13,18 @@ import { SottoThreadHost, ThreadRegistry } from '../../../src/main/agents/thread
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 import { testCredentials } from '../../fixtures/testCredentials'
 import { createAgentControl } from '../../fixtures/agentControlFixture'
-import { deferred } from '../../fixtures/deferred'
+import { deferred, heldOperation } from '../../fixtures/deferred'
 
 class TargetHost extends E2EAgentHost {
   blocked: Promise<void> | undefined
+  targetRead: ReturnType<typeof heldOperation> | undefined
   readonly reads: string[] = []
   override async snapshot(): Promise<AgentHostSnapshot> { await this.blocked; return super.snapshot() }
-  async refreshThread(id: string): Promise<AgentHostSnapshot> { this.reads.push(id); return super.snapshot() }
+  async refreshThread(id: string): Promise<AgentHostSnapshot> {
+    this.reads.push(id)
+    await this.targetRead?.wait()
+    return super.snapshot()
+  }
 }
 
 it.each(['manual', 'saved'] as const)('confirms a %s prompt without waiting for unrelated background history', async mode => {
@@ -30,7 +35,10 @@ it.each(['manual', 'saved'] as const)('confirms a %s prompt without waiting for 
     reasoner: {},
   })
   let release!: () => void
+  let releaseTarget: (() => void) | undefined
   let sending: ReturnType<AgentControl['command']> | undefined
+  let background: Promise<AgentHostSnapshot> | undefined
+  let backgroundSettled = false
   try {
     await control.start(); await control.command({ type: 'connect' })
     if (mode === 'saved') {
@@ -41,17 +49,22 @@ it.each(['manual', 'saved'] as const)('confirms a %s prompt without waiting for 
     const pending1 = deferred<void>();
     release = pending1.resolve;
     host.blocked = pending1.promise
-    const background = host.snapshot()
+    background = host.snapshot().then(snapshot => { backgroundSettled = true; return snapshot })
+    const targetRead = heldOperation()
+    host.targetRead = targetRead; releaseTarget = targetRead.release
     sending = control.command(mode === 'manual' ? { type: 'manual-send', threadId: 'workshop', text: 'Selected thread prompt', draftId: 'selected-draft' } : { type: 'send' })
-    const result = await Promise.race([sending, new Promise<'blocked'>(resolve => setTimeout(() => resolve('blocked'), 200))])
-    expect(result, 'unrelated history must not gate target delivery confirmation').not.toBe('blocked')
-    if (result === 'blocked') return
+    await targetRead.entered
+    // A target read may take time. It must enter and finish without releasing the unrelated history read.
+    expect(backgroundSettled).toBe(false)
+    targetRead.release()
+    const result = await sending
     expect(result.error).toBeNull()
+    expect(backgroundSettled, 'target delivery must finish while unrelated history is still held').toBe(false)
     if (mode === 'manual') expect(result.deliveredDrafts).toContainEqual({ threadId: 'workshop', draftId: 'selected-draft' })
     expect(result.draft).toBe('')
     expect(host.reads).toEqual(['workshop'])
     release(); await background
-  } finally { release?.(); await sending; control.dispose(); await rm(root, { recursive: true, force: true }) }
+  } finally { releaseTarget?.(); release?.(); await Promise.allSettled([background, sending]); control.dispose(); await rm(root, { recursive: true, force: true }) }
 })
 
 it('maps a targeted read through provider selection and durable Sotto identity without a broad snapshot', async () => {
