@@ -1,6 +1,8 @@
 import { spawn } from 'node:child_process'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
+import { stripTypeScriptTypes } from 'node:module'
+import { Buffer } from 'node:buffer'
 import { join, resolve } from 'node:path'
 import process from 'node:process'
 import { setTimeout, clearTimeout } from 'node:timers'
@@ -9,8 +11,17 @@ import { verifyHostArchive } from './verify-host-archive.mjs'
 
 const PROVIDERS = ['codex', 'claude', 'grok', 'devin']
 
-export async function smokeHostArchive(directory) {
-  await verifyHostArchive(directory)
+/** Read the app's one feature list, including later graduation, rather than keep a second switch in packaging. */
+export async function hostArchiveUsageExpected(version, featureSource) {
+  const source = stripTypeScriptTypes(featureSource ?? await readFile(resolve(import.meta.dirname, '../src/shared/owlFeatures.ts'), 'utf8'))
+  const { isOwlFeatureEnabled } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)
+  const track = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)-owl\.[1-9]\d{7}\.[1-9]\d*$/u.test(version) ? 'owl' : 'stable'
+  return isOwlFeatureEnabled('usage', track)
+}
+
+export async function smokeHostArchive(directory, { expectedVersion, expectedSourceCommit, expectedUsage } = {}) {
+  const { manifest } = await verifyHostArchive(directory, { expectedVersion, expectedSourceCommit })
+  const usageEnabled = expectedUsage ?? await hostArchiveUsageExpected(manifest.sottoVersion)
   const data = await mkdtemp(join(tmpdir(), 'sotto-host-smoke-'))
   // A host connects every provider installed and signed in on its machine (ADR-0036). The smoke runs on the release
   // machines and in CI, beside real clients and accounts, so every provider starts turned off and none is started.
@@ -46,7 +57,10 @@ export async function smokeHostArchive(directory) {
       const descriptor = await ready
       const response = await globalThis.fetch('http://127.0.0.1:' + descriptor.port + '/v1/health', { signal: globalThis.AbortSignal.timeout(5000) })
       const health = await response.json()
-      if (!response.ok || health.hostId !== descriptor.hostId || health.pid !== child.pid || health.status !== 'ready') throw new Error('Packaged host health identity did not match')
+      if (!response.ok || health.hostId !== descriptor.hostId || health.pid !== child.pid || health.status !== 'ready' ||
+        descriptor.sottoVersion !== manifest.sottoVersion || health.sottoVersion !== manifest.sottoVersion) throw new Error('Packaged host health identity or version did not match')
+      if (!Array.isArray(health.features) || !Array.isArray(descriptor.features) ||
+        health.features.includes('usage-dashboard') !== usageEnabled || descriptor.features.includes('usage-dashboard') !== usageEnabled) throw new Error('Packaged host Usage capability did not match its own release')
       if (process.platform === 'win32') child.send('SIGTERM')
       else child.kill('SIGTERM')
       const result = await exited

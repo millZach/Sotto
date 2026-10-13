@@ -1,6 +1,6 @@
 import { getReleaseTrack } from '../../shared/releaseTrack'
 
-/** Stable promotion overrides the source manifest; Owl keeps its existing stable host version. */
-export function hostReleaseVersion(runningVersion: string, sourceVersion: string): string {
-  return getReleaseTrack(runningVersion) === 'owl' ? sourceVersion : runningVersion
+/** An enabled Usage dashboard asks for its matching Owl host; other clients keep the stable target. */
+export function hostReleaseVersion(runningVersion: string, sourceVersion: string, usageEnabled = false): string {
+  return getReleaseTrack(runningVersion) === 'owl' && !usageEnabled ? sourceVersion : runningVersion
 }

@@ -100,6 +100,35 @@ it('downloads, checks and installs a version beside a flat install, then restart
   expect(await readdir(join(configuration.installPath, 'versions'))).toEqual(expect.not.arrayContaining(['.update-lock']))
 })
 
+it('receives and installs a full Owl archive, reuses identical retries and never replaces different published version files', async () => {
+  const configuration = await fixture(), version = '9.9.9-owl.20261012.10', file = localArchiveName(version)
+  const entry = await fakeHost(), archive = tarGz(hostRelease(version, entry))
+  const install = () => run(configuration, { op: 'update-install', version, file, sha256: sha256(archive) })
+  expect(last(await receive(configuration, file, archive))).toMatchObject({ type: 'update-received' })
+  expect(last(await install())).toMatchObject({ type: 'update-installed', version })
+  expect(last(await receive(configuration, file, archive))).toMatchObject({ type: 'update-received' })
+  expect(last(await install())).toMatchObject({ type: 'update-installed', version })
+  const changed = tarGz(hostRelease(version, 'changed build under published version'))
+  expect(last(await receive(configuration, file, changed))).toMatchObject({ type: 'update-received' })
+  expect(last(await run(configuration, { op: 'update-install', version, file, sha256: sha256(changed) }))).toMatchObject({ type: 'error', reason: 'archive-invalid' })
+  expect(await readFile(join(configuration.installPath, 'versions', version, 'host', 'index.js'), 'utf8')).toBe(entry)
+  await writeFile(join(configuration.installPath, 'current'), version + '\n')
+  const ready = await launch(configuration)
+  expect(ready).toMatchObject({ type: 'ready', owned: true })
+  expect((await descriptor(configuration)).entry).toContain(version)
+  await writeFile(join(configuration.installPath, 'versions', version, 'runtime-manifest.json'), JSON.stringify({ sottoVersion: version, node: '>=99 <100' }))
+  expect(spawnSync(process.execPath, ['-e', NODE_CHECK_SOURCE, JSON.stringify({ installPath: configuration.installPath })], { encoding: 'utf8', windowsHide: true })).toMatchObject({ status: 3 })
+})
+
+it('refuses an Owl archive whose package and runtime manifest versions disagree', async () => {
+  const configuration = await fixture(), version = '9.9.9-owl.20261012.1', file = localArchiveName(version)
+  const files = hostRelease(version, await fakeHost()); files['runtime-manifest.json'] = JSON.stringify({ sottoVersion: '9.9.9', node: '>=24 <25' })
+  const archive = tarGz(files)
+  await receive(configuration, file, archive)
+  expect(last(await run(configuration, { op: 'update-install', version, file, sha256: sha256(archive) }))).toMatchObject({ type: 'error', reason: 'archive-invalid' })
+  await expect(readFile(join(configuration.installPath, 'versions', version, 'package.json'))).rejects.toMatchObject({ code: 'ENOENT' })
+})
+
 it('starts the old version again, and points back at it, when the new one does not start', async () => {
   const configuration = await fixture()
   await launch(configuration)

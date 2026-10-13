@@ -11,6 +11,7 @@ export interface OwlFeature {
 /** Zach marks a feature here; sending it to stable changes only sentToStable (ADR-0072). */
 export const OWL_FEATURES = [
   { id: 'watcher', name: 'Watcher', owlSince: '2026-10-10', owner: 'docs/adr/0073-watcher-coordinates-threads-with-its-providers-own-tools.md', sentToStable: false },
+  { id: 'usage', name: 'Usage', owlSince: '2026-10-12', owner: 'docs/adr/0075-usage-keeps-numeric-history-on-its-own-host.md', sentToStable: false },
 ] as const satisfies readonly OwlFeature[]
 
 export type OwlFeatureId = typeof OWL_FEATURES[number]['id']

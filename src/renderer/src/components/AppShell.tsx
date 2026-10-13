@@ -7,6 +7,7 @@ import type { AppNavigation } from '../state/AppContext'
 import { useMemoryEnabled } from '../state/memoryFeature'
 import { useReleaseTrack } from '../state/useReleaseTrack'
 import { useWatcherEnabled } from '../state/watcherFeature'
+import { useOwlFeature } from '../state/owlFeature'
 import { WatcherOwl } from '../watcher/WatcherOwl'
 import { SottoMark } from './SottoMark'
 import { VoiceWave } from './VoiceWave'
@@ -132,6 +133,7 @@ export function useRoomSwitch(room: AppRoom | null, rooms: ReadonlyArray<Room>, 
 const footerLinks: ReadonlyArray<{ id: ManagementNavigation; label: string }> = [
   { id: 'threads', label: 'Threads' },
   { id: 'history', label: 'History' },
+  { id: 'usage', label: 'Usage' },
   { id: 'memory', label: 'Memory' },
   { id: 'settings', label: 'Settings' },
   { id: 'help', label: 'Help' },
@@ -153,7 +155,7 @@ export function roomFor(navigation: ManagementNavigation | null): AppRoom | null
  */
 export function layoutFor(navigation: AppNavigation, threadsPage: boolean): AppLayout {
   if (threadsPage || navigation === 'settings' || navigation === 'watcher') return 'page'
-  if (navigation === 'home' || navigation === 'history' || navigation === 'help') return 'sidebar'
+  if (navigation === 'home' || navigation === 'history' || navigation === 'usage' || navigation === 'help') return 'sidebar'
   return 'strip'
 }
 
@@ -191,7 +193,9 @@ export function AppShell({
   const room = roomFor(navigation)
   const rooms = appRooms(useWatcherEnabled())
   // Memory is hidden for the beta: its link goes with it.
-  const links = useMemoryEnabled() ? footerLinks : footerLinks.filter(({ id }) => id !== 'memory')
+  const memory = useMemoryEnabled()
+  const usage = useOwlFeature('usage')
+  const links = footerLinks.filter(({ id }) => (id !== 'memory' || memory) && (id !== 'usage' || usage))
   const go = (destination: ManagementNavigation): void => { onNavigate?.(destination) }
   // A switch press that opened this page's room hands focus to the strip's lit tab, when the strip is what shows.
   const roomSwitch = useRoomSwitch(room, rooms, go, layout === 'strip' && management)

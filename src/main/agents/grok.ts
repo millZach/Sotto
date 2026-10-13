@@ -4,12 +4,14 @@ import { BROWSER_MCP_SERVER, type BrowserAgentTools } from './browserAgentServer
 import { scopedThreadServers, type ScopedThreadTools } from './threadToolServer'
 import { existingWorkingDirectory } from './threadWorktrees'
 import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
-import { NativeUsage } from './nativeUsage'
+import { NativeUsage, type NativeUsageContext } from './nativeUsage'
+import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
+import { parseGrokQuota, unavailableProviderQuota } from './providerQuota'
 import { createHash } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
-import { agentProjectSchema, type AgentHostSnapshot, type AgentThread, type AgentMessage, type AgentRuntimeMode } from '../../shared/agents'
+import { agentProjectSchema, type AgentHostSnapshot, type AgentThread, type AgentMessage, type AgentRuntimeMode, type ProviderId } from '../../shared/agents'
 import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, WatcherLaunchProfile, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft } from './host'
@@ -148,6 +150,7 @@ function freshHistory(history?: HistoryRead): HistoryRead {
 }
 
 export interface GrokAcpOptions {
+  usageEnabled?: boolean
   executable?: string; args?: string[]; environment?: NodeJS.ProcessEnv; requestTimeoutMs?: number; pollIntervalMs?: number
   /** Session reaper cadence and idle threshold; see `sessionReaper.ts`. */
   reaperSweepMs?: number; sessionIdleMs?: number
@@ -156,6 +159,14 @@ export interface GrokAcpOptions {
 
 /** Grok owns credentials, tools and durable sessions. Only alias/origin metadata belongs to Sotto. */
 export class GrokAcpHost implements AgentHost {
+  readonly subscribeUsage?: (listener: (record: UsageTokenObservation) => void) => () => void
+  readonly visitUsage?: (id: string, visitor: (record: UsageTokenObservation) => void) => void
+  readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean) => Promise<UsageQuotaRead>
+  private quota: UsageQuotaRead | undefined
+  private quotaReading: Promise<UsageQuotaRead> | undefined
+  private quotaProbe: GrokRpc | undefined
+  private readonly usagePromptStarts = new Map<string, string>()
+  private readonly usageEnabled: boolean
   private launchProfiles: ThreadLaunchProfiles | undefined
   /** Last supplied endpoint, used only to revoke when main can no longer resolve the profile. */
   private readonly knownLaunchProfiles = new Map<string, WatcherLaunchProfile>()
@@ -330,7 +341,19 @@ export class GrokAcpHost implements AgentHost {
   private generation = 0
   private state: AgentHostSnapshot = { connected: false, name: 'Grok', version: '', projects: [], models: [], threads: [], capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true, configureThreadModel: false, skills: true } }
   constructor(private readonly userDataDirectory: string, private readonly options: GrokAcpOptions = {}) {
-    this.usage = new NativeUsage(userDataDirectory, 'grok')
+    this.usageEnabled = options.usageEnabled === true
+    this.usage = new NativeUsage(userDataDirectory, 'grok', options.usageEnabled)
+    if (options.usageEnabled) {
+      this.subscribeUsage = listener => this.usage.subscribeUsage(listener)
+      this.visitUsage = (id, visitor) => this.usage.visitUsage(id, visitor)
+      this.readProviderQuota = async (providerId, refresh) => {
+        if (providerId !== 'grok') return unavailableProviderQuota(providerId, 'unsupported')
+        if (!this.state.connected || !this.executable) return unavailableProviderQuota('grok', 'not-connected')
+        if (!refresh) return this.quota ?? unavailableProviderQuota('grok', 'not-read', true)
+        this.quotaReading ??= this.readQuota().finally(() => { this.quotaReading = undefined })
+        return this.quotaReading
+      }
+    }
     this.aliasStore = new AtomicJsonStore(join(userDataDirectory, 'grok-threads.json'), preserveLegacyAliases(z.record(z.string(), aliasSchema).parse), () => ({}))
     this.projectStore = new AtomicJsonStore(join(userDataDirectory, 'grok-projects.json'), z.array(agentProjectSchema).parse, () => [])
     this.reaper = new SessionReaper({
@@ -341,6 +364,40 @@ export class GrokAcpHost implements AgentHost {
       isReading: id => this.historyReads.has(id),
       stop: id => this.stopSession(id),
     })
+  }
+  private async readQuota(): Promise<UsageQuotaRead> {
+    const generation = this.generation, executable = this.executable
+    if (!executable) return unavailableProviderQuota('grok', 'not-connected')
+    // The existing signed-in account is asked for metadata. No session/new, load or prompt is sent.
+    const probe = this.spawn(executable, () => undefined)
+    this.quotaProbe = probe
+    try {
+      const client = await this.identify(probe)
+      if (generation !== this.generation || !this.state.connected) return unavailableProviderQuota('grok', 'not-connected')
+      if (clientRefusal(client)) return unavailableProviderQuota('grok', 'read-failed', true)
+      await this.authenticate(probe)
+      if (generation !== this.generation || !this.state.connected) return unavailableProviderQuota('grok', 'not-connected')
+      let answer = unavailableProviderQuota('grok', 'not-reported', true)
+      await probe.request('_x.ai/billing', {}, value => { answer = parseGrokQuota(value, new Date().toISOString()) })
+      if (generation !== this.generation || !this.state.connected) return unavailableProviderQuota('grok', 'not-connected')
+      this.quota = answer; return answer
+    } catch {
+      if (generation !== this.generation || !this.state.connected) return unavailableProviderQuota('grok', 'not-connected')
+      return { ...(this.quota ?? unavailableProviderQuota('grok', 'read-failed', true)), status: 'error', reason: 'read-failed' }
+    } finally { if (this.quotaProbe === probe) this.quotaProbe = undefined; probe.close() }
+  }
+  private usageContext(id: string, params: z.infer<typeof updateSchema>, replay: boolean, at?: string): NativeUsageContext {
+    const prompt = typeof params.update.prompt_id === 'string' ? params.update.prompt_id : params._meta?.promptId
+    const key = prompt ? JSON.stringify([id, prompt]) : undefined
+    if (key && params.update.sessionUpdate === 'user_message_chunk' && !this.usagePromptStarts.has(key)) {
+      const stamp = params._meta?.agentTimestampMs
+      if (typeof stamp === 'number' && Number.isFinite(stamp) && stamp >= 0) this.usagePromptStarts.set(key, new Date(stamp).toISOString())
+      else if (at) this.usagePromptStarts.set(key, at)
+      else if (!replay) this.usagePromptStarts.set(key, new Date().toISOString())
+    }
+    const startedAt = key ? this.usagePromptStarts.get(key) : undefined
+    return { phase: replay ? 'replay' : 'live', ...(at ? { at } : {}),
+      ...(startedAt ? { groupStartedAt: startedAt } : {}) }
   }
   /**
    * A thread being created, a send on its way to Grok, a prompt in flight, a running turn or an unanswered request
@@ -584,6 +641,7 @@ export class GrokAcpHost implements AgentHost {
   }
   private id(nativeId: string): string | undefined { return Object.keys(this.aliases).find(id => this.aliases[id]!.grokSessionId === nativeId) }
   async connect(): Promise<AgentHostSnapshot> {
+    if (this.usageEnabled) { this.quota = undefined; this.usagePromptStarts.clear() }
     this.disconnect(); await this.closed()
     const generation = this.generation
     await this.usage.load()
@@ -862,7 +920,7 @@ export class GrokAcpHost implements AgentHost {
           if (this.loaded.has(id)) this.reaper.touch(id)
           const createdAt = new Date(parsed.data._meta?.agentTimestampMs ?? (typeof entry.timestamp === 'number' ? entry.timestamp * 1000 : entry.timestamp)).toISOString()
           const update = parsed.data.update; const content = object(update.content)
-          this.usage.grok(id, this.thread(id).modelId, parsed.data); this.thread(id)
+          this.usage.grok(id, this.thread(id).modelId, parsed.data, this.usageEnabled ? this.usageContext(id, parsed.data, true, createdAt) : undefined); this.thread(id)
           if (['tool_call', 'tool_call_update'].includes(update.sessionUpdate)) delete history.assistant
           // A prompt after a turn with no recorded end follows a turn its process cut off, and that cut off its thought too.
           if (update.sessionUpdate === 'user_message_chunk' && history.lastTurn?.status === 'running') history.activities = cutThinking(history.activities, false)
@@ -1257,7 +1315,7 @@ export class GrokAcpHost implements AgentHost {
         if (this.seenUpdates.size > 20000) this.seenUpdates.delete(this.seenUpdates.values().next().value!)
       }
       const update = parsed.data.update; const content = object(update.content); const thread = this.thread(id)
-      this.usage.grok(id, thread.modelId, parsed.data); thread.usage = this.usage.get(id)
+      this.usage.grok(id, thread.modelId, parsed.data, this.usageEnabled ? this.usageContext(id, parsed.data, false) : undefined); thread.usage = this.usage.get(id)
       const activities = grokActivities(update, { turnId: this.log.lastUserMessageId(id) ?? 'native-history', afterMessageId: this.log.lastMessageId(id), cwd: this.aliases[id]!.cwd }, thread.activities, true, parsed.data._meta)
       if (activities.length) thread.activities = mergeAgentActivities(thread.activities, activities)
       if (update.sessionUpdate === 'model_changed' && typeof update.model_id === 'string') this.selections.set(parsed.data.sessionId, { model: update.model_id, effort: typeof update.reasoning_effort === 'string' ? update.reasoning_effort : undefined })
@@ -1329,6 +1387,7 @@ export class GrokAcpHost implements AgentHost {
   }
   private finishDisconnect(): void {
     this.generation++; clearInterval(this.pollTimer); this.reaper.dispose(); this.loaded.clear(); this.loading.clear()
+    this.quotaProbe?.close(); this.quotaProbe = undefined
     for (const pending of this.pending.values()) { if (pending.answering) continue; try { pending.rpc.write({ jsonrpc: '2.0', id: pending.wireId, result: this.refusal(pending) }) } catch { /* Closed pipes never grant permission. */ } }
     this.pending.clear(); for (const thread of this.threads.values()) thread.requests = []
     for (const delivery of this.deliveries.values()) delivery.reject(new GrokUncertain('Grok disconnected before acknowledgement.'))

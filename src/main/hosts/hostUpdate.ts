@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { hostIsNewer, hostIsOlder, LEGACY_MANAGEMENT_UPDATE } from '../../shared/hostProtocol'
-import { HOST_ARCHIVE_PATTERN, HOST_RELEASES_URL, hostArchiveName, type HostUpdateAction, type HostUpdateFailure, type HostUpdatePhase, type HostUpdateRoute, type HostUpdateState, type HostUpdateStep } from '../../shared/hostUpdates'
+import { HOST_ARCHIVE_PATTERN, HOST_VERSION_PATTERN, HOST_RELEASES_URL, hostArchiveName, type HostUpdateAction, type HostUpdateFailure, type HostUpdatePhase, type HostUpdateRoute, type HostUpdateState, type HostUpdateStep } from '../../shared/hostUpdates'
+import { getReleaseTrack } from '../../shared/releaseTrack'
 import { HOST_ARCHIVE_LIMIT_BYTES, HOST_DOWNLOAD_TIMEOUT_MS } from './launchScript'
 import { SshFailure } from './sshFailure'
 import type { SshHostUpdateOperation, SshHostUpdateOptions, SshHostUpdateResult } from './sshLauncher'
@@ -67,6 +68,17 @@ class UpdateStopped extends Error {
 }
 const STEP_VERBS: Readonly<Record<HostUpdateStep, (to: string) => string>> = {
   download: to => `download ${to}`, check: () => 'check the download', install: to => `install ${to}`, restart: () => 'restart the host',
+}
+/** Full Owl build order for the explicit host target; protocol v1's general version comparison stays unchanged. */
+export function compareOwlHostTarget(hostVersion: string, targetVersion: string): number | undefined {
+  if (getReleaseTrack(targetVersion) !== 'owl' || !HOST_VERSION_PATTERN.test(hostVersion)) return undefined
+  const parts = (value: string): bigint[] => value.split(/\.|-owl\./u).map(value => BigInt(value))
+  const host = parts(hostVersion), target = parts(targetVersion)
+  for (let i = 0; i < 3; i++) { if (host[i]! < target[i]!) return -1; if (host[i]! > target[i]!) return 1 }
+  // A same-core stable host can be explicitly moved to this chosen Owl build.
+  if (host.length === 3) return -1
+  for (let i = 3; i < 5; i++) { if (host[i]! < target[i]!) return -1; if (host[i]! > target[i]!) return 1 }
+  return 0
 }
 /** A path for a POSIX shell: as it is when it is plain, quoted otherwise, with a leading `~/` left for the shell to expand. */
 function shellPath(value: string): string {
@@ -254,7 +266,7 @@ export class HostUpdates {
     const kept = `${name} still runs ${from}. Nothing was lost.`
     const byHand = `Try again, or update it by hand on ${name} with the commands below.`
     const say = (message: string, next = byHand, keptNow = kept): HostUpdateFailure => ({ step: stopped.step, message, kept: keptNow, next })
-    const platform = (stopped.detail.file ?? entry.file)?.replace(/^Sotto-host-[\d.]+-/u, '').replace(/\.tar\.gz$/u, '')
+    const platform = (stopped.detail.file ?? entry.file)?.replace(/^Sotto-host-\d+\.\d+\.\d+(?:-owl\.\d{8}\.[1-9]\d*)?-/u, '').replace(/\.tar\.gz$/u, '')
     switch (stopped.reason) {
       case 'desktop-unreachable': return say(`${name} could not download ${to} from GitHub, and this computer could not download it either.`, `Check that this computer and ${name} are online, then try again, or update it by hand on ${name}.`)
       case 'copy-incomplete': return say(`${name} could not reach GitHub, so this computer downloaded ${to}, but copying it to ${name} over SSH stopped partway.`, `Check that ${name} is online, then try again, or update it by hand on ${name}.`)
@@ -307,6 +319,10 @@ export class HostUpdates {
     if (entry.phase !== 'done') entry.from = candidate.version
   }
   private needsUpdate(candidate: HostUpdateCandidate): boolean {
+    if (getReleaseTrack(this.options.version) === 'owl') {
+      const comparison = compareOwlHostTarget(candidate.version, this.options.version)
+      return comparison !== undefined && (comparison < 0 || comparison === 0 && this.options.requiresManagementUpdate?.(candidate.hostId) === true)
+    }
     return hostIsOlder(candidate.version, this.options.version)
       || !hostIsNewer(candidate.version, this.options.version) && this.options.requiresManagementUpdate?.(candidate.hostId) === true
   }

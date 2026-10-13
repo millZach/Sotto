@@ -39,7 +39,7 @@ export const localArchiveName = (version: string): string => `Sotto-host-${versi
 export function hostRelease(version: string, entry: string, options: { readonly nodeRange?: string; readonly commonjs?: boolean } = {}): Record<string, string> {
   const major = Number(process.versions.node.split('.')[0])
   return { 'package.json': JSON.stringify({ name: 'sotto-host', version, ...(options.commonjs ? {} : { type: 'module' }) }),
-    'runtime-manifest.json': JSON.stringify({ node: options.nodeRange ?? `>=${major} <${major + 1}` }), 'host/index.js': entry }
+    'runtime-manifest.json': JSON.stringify({ sottoVersion: version, node: options.nodeRange ?? `>=${major} <${major + 1}` }), 'host/index.js': entry }
 }
 
 /**

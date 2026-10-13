@@ -1,5 +1,6 @@
 import type { HostSetupStep } from '../../shared/hosts'
 import { HOST_NODE_MAJOR } from './sshFailure'
+import { getReleaseTrack, releaseTrackName } from '../../shared/releaseTrack'
 
 /** What the brief says about the device: everything Add host was given for it, and nothing else. */
 export interface HostSetupBriefInput {
@@ -31,17 +32,18 @@ export function hostSetupBrief(input: HostSetupBriefInput): string {
   const port = input.sshPort ? `port ${input.sshPort}` : 'the port from this computer\'s SSH configuration'
   const ssh = `ssh ${input.sshPort ? `-p ${input.sshPort} ` : ''}${input.target}`
   const archive = `Sotto-host-${input.version}-linux-x64.tar.gz`
+  const name = releaseTrackName(getReleaseTrack(input.version))
   const failure = input.failure
     ? `\nAdd host already tried this device and stopped at ${STEP_NAMES[input.failure.step]}${input.failure.reason ? ` (reason code ${input.failure.reason})` : ''}. Start there.\n`
     : ''
-  return `Set up the Sotto host on ${input.name}, so this computer can add it as a host in Sotto.
+  return `Set up the ${name} host on ${input.name}, so this computer can add it as a host in Sotto.
 
 The device
 - Name: ${input.name}
 - SSH target: ${input.target}, on ${port}. Reach it from this computer with \`${ssh}\`.
 - Host installation folder: ${input.installPath}
 - Host data folder: ${input.dataDirectory}
-- The host must be Sotto ${input.version}, the same version as this computer.
+- The host must be ${name} ${input.version}, the same version as this computer.
 ${failure}
 What the host needs on ${input.name} (from Sotto's guide)
 1. Node ${HOST_NODE_MAJOR} for the SSH account. Sotto looks for it on the account's path, then through its login shell, then where nvm, fnm, mise, asdf, Volta and Homebrew keep it. A newer or older major does not work.

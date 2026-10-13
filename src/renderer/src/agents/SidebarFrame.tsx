@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useMemo, useLayoutEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import { Archive, ArchiveRestore, Brain, CircleHelp, Clock, FolderPlus, MessagesSquare, PanelLeftClose, PanelLeftOpen, Search, Settings, SquareTerminal, X } from 'lucide-react'
+import { Archive, ArchiveRestore, BarChart3, Brain, CircleHelp, Clock, FolderPlus, MessagesSquare, PanelLeftClose, PanelLeftOpen, Search, Settings, SquareTerminal, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
 import type { SottoPlatform } from '../../../shared/platform'
@@ -11,6 +11,7 @@ import { useOptionalApp, type AppNavigation } from '../state/AppContext'
 import { useMemoryEnabled } from '../state/memoryFeature'
 import { useReleaseTrack } from '../state/useReleaseTrack'
 import { useWatcherEnabled } from '../state/watcherFeature'
+import { useOwlFeature } from '../state/owlFeature'
 import { WatcherOwl } from '../watcher/WatcherOwl'
 import type { AgentConnection } from './AgentContext'
 import { useAddProject } from './addProject'
@@ -26,9 +27,10 @@ const MODES: ReadonlyArray<{ readonly id: SidebarMode; readonly label: string; r
 ]
 
 /** The page links in the foot, in the order the app footer listed them. Threads is the room switch's own tab; Memory joins only while memory is switched on. */
-type FootPage = Extract<AppNavigation, 'history' | 'memory' | 'settings' | 'help'>
+type FootPage = Extract<AppNavigation, 'history' | 'usage' | 'memory' | 'settings' | 'help'>
 const PAGES: ReadonlyArray<{ readonly id: FootPage; readonly label: string; readonly Icon: LucideIcon }> = [
   { id: 'history', label: 'History', Icon: Clock },
+  { id: 'usage', label: 'Usage', Icon: BarChart3 },
   { id: 'memory', label: 'Memory', Icon: Brain },
   { id: 'settings', label: 'Settings', Icon: Settings },
   { id: 'help', label: 'Help', Icon: CircleHelp },
@@ -98,7 +100,8 @@ export function RoomSwitch({ className }: { readonly className: string }): React
 export function PageLinks({ className, linkClassName }: { readonly className: string; readonly linkClassName: string }): ReactNode {
   const app = useOptionalApp()
   const memory = useMemoryEnabled()
-  const pages = memory ? PAGES : PAGES.filter(page => page.id !== 'memory')
+  const usage = useOwlFeature('usage')
+  const pages = PAGES.filter(page => (page.id !== 'memory' || memory) && (page.id !== 'usage' || usage))
   return <nav className={className} aria-label="Pages">
     {pages.map(({ id, label, Icon }) => <a key={id} href={`#${id}`} className={`${linkClassName} tt-focusable`} title={label}
       aria-current={app?.navigation === id ? 'page' : undefined} onClick={event => { event.preventDefault(); app?.actions.navigate(id) }}>

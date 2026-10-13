@@ -23,7 +23,8 @@ import { DesktopClients } from './desktopClients'
 import { CommandReceipts } from './commandReceipts'
 import type { PhoneAccessTailscale } from '../main/phones/phoneAccess'
 import { version as packageVersion } from '../../package.json'
-import { getReleaseTrack, isWatcherEnabled } from '../shared/releaseTrack'
+import { getReleaseTrack } from '../shared/releaseTrack'
+import { owlFeaturesForTrack } from '../shared/owlFeatures'
 import { startedBySotto, type HostStartedBy } from '../shared/hostConnection'
 
 export interface HeadlessHostOptions {
@@ -85,7 +86,9 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   await mkdir(directory, { recursive: true, mode: 0o700 })
   const credentials = await openHostCredentials(directory, options.keyFile)
   const recovery = new RecoveryNoticeCenter()
-  const watcherEnabled = isWatcherEnabled(getReleaseTrack(options.sottoVersion ?? packageVersion))
+  const owlFeatures = owlFeaturesForTrack(getReleaseTrack(options.sottoVersion ?? packageVersion))
+  const watcherEnabled = owlFeatures.watcher
+  const usageEnabled = owlFeatures.usage
   const repositories = createStorageRepositories(directory, recovery, Date.now, undefined, undefined, watcherEnabled)
   const settings = new SecureSettings(repositories.settings, credentials)
   if ((await repositories.settings.get()).llmApiKey && !credentials.available()) {
@@ -104,7 +107,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     // A paired client with an open socket is the host's window in front: while none is connected, no remote is fetched.
     let peersConnected = (): boolean => false
     const runtime = await createAgentRuntime({
-      observeActiveThread: false, directory, credentials, watcherEnabled, settings: () => startup, writingSettings: () => settings.get(),
+      observeActiveThread: false, directory, credentials, watcherEnabled, usageEnabled, settings: () => startup, writingSettings: () => settings.get(),
       historyEnabled: () => startup.historyEnabled,
       gitStatus: { fetchIntervalMs: () => startup.gitFetchIntervalSeconds * 1000, foreground: () => peersConnected(), log: event => options.log?.(event) },
       ...(policy ? { authority: policy } : {}),

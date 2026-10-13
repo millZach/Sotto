@@ -42,6 +42,22 @@ const conversation = (count: number): AgentMessage[] => Array.from({ length: cou
 ]).flat()
 
 describe('thread store', () => {
+  it('keeps exact user-message evidence after words are cleared or history is rewound', async () => {
+    const f = await store()
+    f.store.appendMany('usage', [
+      { kind: 'message-added', at, message: message('accepted', 'user', 'Private words') },
+      { kind: 'message-added', at, message: message('reply', 'assistant', 'Private reply') },
+    ])
+    expect(f.store.hasRecordedUserMessage('usage', 'accepted')).toBe(true)
+    expect(f.store.hasRecordedUserMessage('usage', 'reply')).toBe(false)
+    expect(f.store.hasRecordedUserMessage('another-thread', 'accepted')).toBe(false)
+    f.store.append('usage', { kind: 'messages-reset', at, historyEpoch: 'after-rewind' })
+    expect(f.store.hasMessage('usage', 'accepted')).toBe(false)
+    expect(f.store.hasRecordedUserMessage('usage', 'accepted')).toBe(true)
+    f.store.redactAll()
+    expect(f.store.hasRecordedUserMessage('usage', 'accepted')).toBe(true)
+    expect(await onDisk(f.root)).not.toContain('Private words')
+  })
   it('reads bounded forward positions independently of the pane window', async () => {
     const f = await store()
     f.store.appendMany('forward', conversation(4).map(message => ({ kind: 'message-added', at, message })))

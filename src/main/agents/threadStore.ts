@@ -570,6 +570,13 @@ export class ThreadStore {
     return this.statement('SELECT 1 AS found FROM messages WHERE thread_id = ? AND message_id = ? LIMIT 1').get(threadId, messageId) !== undefined
   }
 
+  /** Exact user-message evidence, including an event whose words were removed or rewound. */
+  hasRecordedUserMessage(threadId: string, messageId: string): boolean {
+    return this.statement(`SELECT 1 FROM events WHERE thread_id = ? AND kind IN ('message-added', 'message-replaced')
+      AND json_extract(payload, '$.message.id') = ? AND json_extract(payload, '$.message.role') = 'user' LIMIT 1`)
+      .get(threadId, messageId) !== undefined
+  }
+
   messageCount(threadId: string): number {
     return Number(this.statement('SELECT COUNT(*) AS count FROM messages WHERE thread_id = ?').get(threadId)!.count)
   }

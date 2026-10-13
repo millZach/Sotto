@@ -8,6 +8,7 @@ import { Card } from './components/Card'
 import { DictateRoom } from './features/dictate/DictateRoom'
 import { HelpView } from './features/help/HelpView'
 import { HistoryView } from './features/history/HistoryView'
+import { UsageView } from './features/usage/UsageView'
 import { Onboarding } from './features/onboarding/Onboarding'
 import { ThreadsTour } from './features/onboarding/ThreadsTour'
 import { UpdateControl } from './features/updates/UpdateControl'
@@ -41,6 +42,7 @@ import { ThreadWorkspace } from './agents/ThreadWorkspace'
 import { E2E_THREADS_NOW } from '../../shared/e2e'
 import { MemorySurface } from './features/memory/MemorySurface'
 import { useWatcherEnabled } from './state/watcherFeature'
+import { useOwlFeature } from './state/owlFeature'
 import { WatcherRoomProvider } from './watcher/watcherRoom'
 import { WatcherView } from './watcher/WatcherView'
 import type { WatcherBridge } from '../../shared/watcherRoom'
@@ -117,6 +119,7 @@ function FooterStatus({ navigation, settings, historyKept, speechModel }: {
 }): ReactNode {
   switch (navigation) {
     case 'history': return settings.historyEnabled ? 'Kept on this computer only.' : historyKept ? 'History is off. Older transcripts are still here.' : 'History is off.'
+    case 'usage': return 'Numeric usage stays on each computer.'
     case 'memory': return 'Your preferences, with their history.'
     case 'settings': return 'Changes save as you make them.'
     case 'help': return 'Shortcuts, privacy, and troubleshooting.'
@@ -127,6 +130,7 @@ function FooterStatus({ navigation, settings, historyKept, speechModel }: {
 export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), watcherBridge = window.sotto?.watcher }: AppProps): ReactNode {
   const app = useApp()
   const watcherEnabled = useWatcherEnabled()
+  const usageEnabled = useOwlFeature('usage')
   const downloadSpeechModel = useCallback((): void => { void app.actions.downloadSpeechModel() }, [app.actions])
   const memoryEnabled = useMemoryEnabled()
   const [microphoneState, setMicrophoneState] = useState<MicrophoneTestState>('idle')
@@ -380,7 +384,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
     const updateControl = app.platform === 'linux' ? null : <UpdateControl status={app.update} busy={updateFlow.busy} onActivate={updateFlow.activate} />
     // Watcher's room is reachable only while its gate is on; without it the navigation lands on Threads.
     const watcherPage = navigation === 'watcher' && watcherEnabled
-    const threadsPage = navigation === 'threads' || (navigation === 'watcher' && !watcherEnabled) || (navigation === 'memory' && !memoryEnabled)
+    const threadsPage = navigation === 'threads' || (navigation === 'watcher' && !watcherEnabled) || (navigation === 'memory' && !memoryEnabled) || (navigation === 'usage' && !usageEnabled)
     const layout = layoutFor(navigation, threadsPage)
     // A capture run holds the sidebar's clocks still.
     const captureNow = window.sottoE2E?.scenario === 'design-threads' ? E2E_THREADS_NOW : undefined
@@ -418,6 +422,9 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
           onDelete={app.actions.deleteHistory}
           onClear={app.actions.clearHistory}
         />
+        break
+      case 'usage':
+        view = usageEnabled ? <UsageView /> : threadWorkspace
         break
       case 'settings':
         view = <SettingsView

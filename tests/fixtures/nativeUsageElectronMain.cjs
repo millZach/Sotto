@@ -12,6 +12,7 @@ const childProcess = require('node:child_process')
 
 if (app.isPackaged || !process.env.SOTTO_USAGE_FIXTURE_ROOT || !process.env.SOTTO_USAGE_FIXTURE_NODE) throw new Error('An isolated usage fixture is required.')
 const root = fs.realpathSync(process.env.SOTTO_USAGE_FIXTURE_ROOT)
+const dashboard = process.env.SOTTO_USAGE_DASHBOARD_FIXTURE === '1'
 if (dirname(root) !== fs.realpathSync(os.tmpdir()) || !/^sotto-e2e-usage-[A-Za-z0-9_-]+$/.test(basename(root))) throw new Error('Unsafe usage fixture root.')
 const node = fs.realpathSync(process.env.SOTTO_USAGE_FIXTURE_NODE)
 for (const name of ['profile', 'project', 'home', 'client']) {
@@ -29,6 +30,10 @@ const keep = new Set(['systemroot', 'windir', 'comspec', 'temp', 'tmp', 'lang', 
 for (const key of Object.keys(process.env)) if (!keep.has(key.toLowerCase())) delete process.env[key]
 Object.assign(process.env, { HOME: home, USERPROFILE: home, APPDATA: join(home, 'appdata'), LOCALAPPDATA: join(home, 'localappdata'),
   XDG_CONFIG_HOME: join(home, 'config'), XDG_CACHE_HOME: join(home, 'cache'), XDG_DATA_HOME: join(home, 'data'), PATH: dirname(executable) })
+if (dashboard) {
+  process.env.SOTTO_OWL_FEATURES = 'usage=1,watcher=0'
+  app.getVersion = () => '0.1.38-owl.20261012.1'
+}
 os.homedir = () => home
 app.setPath('userData', profile)
 // A missing fake must fail closed: this placeholder is never executed as a real native client.

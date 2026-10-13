@@ -66,9 +66,9 @@ export function hostArchiveName(version: string, platform = 'linux', arch = 'x64
   return `Sotto-host-${version}-${platform}-${arch}.tar.gz`
 }
 /** A release number, the only form a version folder or the `current` pointer may take. */
-export const HOST_VERSION_PATTERN = /^\d+\.\d+\.\d+$/u
+export const HOST_VERSION_PATTERN = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-owl\.[1-9]\d{7}\.[1-9]\d*)?$/u
 /** An archive name as `hostArchiveName` writes it, for a name a host reports back. */
-export const HOST_ARCHIVE_PATTERN = /^Sotto-host-\d+\.\d+\.\d+-[a-z0-9]+-[a-z0-9]+\.tar\.gz$/u
+export const HOST_ARCHIVE_PATTERN = /^Sotto-host-(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-owl\.[1-9]\d{7}\.[1-9]\d*)?-[a-z0-9]+-[a-z0-9]+\.tar\.gz$/u
 
 /**
  * Whether a thread keeps its host busy for an update: a turn running, context compacting, or background work its turn

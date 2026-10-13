@@ -19,7 +19,7 @@ export async function inventoryFiles(root, directory = root) {
   return result.sort((a, b) => a.path.localeCompare(b.path, 'en'))
 }
 
-export async function verifyHostArchive(directory) {
+export async function verifyHostArchive(directory, { expectedVersion, expectedSourceCommit, requireClean = false } = {}) {
   const root = resolve(directory)
   const json = async path => JSON.parse(await readFile(join(root, path), 'utf8'))
   const manifest = await json('runtime-manifest.json'), pkg = await json('package.json')
@@ -27,6 +27,7 @@ export async function verifyHostArchive(directory) {
       pkg.engines?.node !== manifest.node || pkg.main !== 'host/index.js' || pkg.type !== 'commonjs' || pkg.version !== manifest.sottoVersion) {
     throw new Error('Invalid host runtime manifest')
   }
+  if (expectedVersion !== undefined && manifest.sottoVersion !== expectedVersion) throw new Error('Host archive version does not match the requested release')
   verifyHostExternalDependencies(await json('host/external-dependencies.json'), pkg.dependencies)
   if (JSON.stringify(manifest.dependencies) !== JSON.stringify(pkg.dependencies)) throw new Error('Host dependencies differ from runtime manifest')
   const bundled = await json('host/bundled-dependencies.json')
@@ -36,6 +37,8 @@ export async function verifyHostArchive(directory) {
   const dependency = await json('node_modules/zod/package.json')
   if (dependency.version !== pkg.dependencies.zod || Object.keys(dependency.dependencies ?? {}).length || Object.keys(dependency.optionalDependencies ?? {}).length) throw new Error('Host dependency closure changed')
   const provenance = await json('build-provenance.json')
+  if (expectedSourceCommit !== undefined && provenance.sourceCommit !== expectedSourceCommit) throw new Error('Host archive source does not match the requested release')
+  if (requireClean && provenance.sourceDirty !== false) throw new Error('Host archive must come from a clean source checkout')
   const artifacts = (await inventoryFiles(root)).filter(file => file.path !== 'build-provenance.json')
   if (provenance.version !== 1 || !/^[a-f0-9]{40}$/u.test(provenance.sourceCommit) ||
       !/^[a-f0-9]{64}$/u.test(provenance.buildInputsRevision) ||

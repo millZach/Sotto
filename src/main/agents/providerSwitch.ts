@@ -11,6 +11,8 @@ import { EMPTY_AGENT_HOST, PROVIDER_LABELS, parsePublicProviderEntityId, provide
 import { resolveModel } from '../../shared/modelCatalog'
 import { ProviderUnavailable, providerProblemOf } from './providerProblem'
 import { sameSnapshot } from './sameSnapshot'
+import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
+import { unavailableProviderQuota } from './providerQuota'
 import { confirmedSettingsSnapshot, type ActivitySubscriptionOptions, type AgentHost, type AgentHostCommand, type AgentHostResult, type AgentSkillScope, type RestoredThreadHistory, type ShortTextPrompt, type ThreadHistorySource, type ThreadHostEvent, type ThreadReadPurpose, type ThreadSessionDraft, type ThreadLaunchProfiles } from './host'
 
 /** Public IDs are opaque to callers and reversible only at the provider boundary. */
@@ -28,7 +30,7 @@ export function providerTakesNoSkills(provider: ProviderId): Error {
 }
 function folderKey(path: string): string { const key = resolve(path); return process.platform === 'win32' ? key.toLowerCase() : key }
 type Slot = { snapshot: AgentHostSnapshot; status: AgentProviderStatus; wanted: boolean; epoch: number; connecting?: Promise<void> | undefined;
-  unsubscribeSnapshot?: (() => void) | undefined; unsubscribeEvents?: (() => void) | undefined
+  unsubscribeSnapshot?: (() => void) | undefined; unsubscribeEvents?: (() => void) | undefined; unsubscribeUsage?: (() => void) | undefined
   /** What this connection's activity subscription asked the provider: to leave its messages out, or not. */
   historyFromEvents?: boolean | undefined }
 
@@ -62,8 +64,12 @@ export class ConfiguredProviderHost implements AgentHost {
   /** Each activity subscriber, and whether it keeps history from the providers' events. */
   private readonly activityListeners = new ActivitySubscribers()
   private readonly eventListeners = new Set<(event: ThreadHostEvent) => void>()
+  private readonly usageListeners = new Set<(record: UsageTokenObservation) => void>()
   /** Thread events from whichever provider owns the thread. Absent when no provider publishes any. */
   readonly subscribeEvents?: (listener: (event: ThreadHostEvent) => void) => () => void
+  readonly subscribeUsage?: (listener: (record: UsageTokenObservation) => void) => () => void
+  readonly visitUsage?: (threadId: string, visitor: (record: UsageTokenObservation) => void) => void
+  readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean) => Promise<UsageQuotaRead>
   constructor(private readonly options: {
     hosts: Record<ProviderId, AgentHost>; provider: () => ProviderId
     directory?: string
@@ -77,6 +83,25 @@ export class ConfiguredProviderHost implements AgentHost {
     }
     if (providerIdSchema.options.some(id => options.hosts[id].subscribeEvents)) {
       this.subscribeEvents = listener => { this.eventListeners.add(listener); return () => this.eventListeners.delete(listener) }
+    }
+    if (providerIdSchema.options.some(id => options.hosts[id].subscribeUsage)) {
+      this.subscribeUsage = listener => {
+        this.usageListeners.add(listener)
+        return () => this.usageListeners.delete(listener)
+      }
+    }
+    if (providerIdSchema.options.some(id => options.hosts[id].visitUsage)) this.visitUsage = (threadId, visitor) => {
+      for (const id of providerIdSchema.options) options.hosts[id].visitUsage?.(threadId, record => visitor({ ...record, providerId: id,
+        modelId: providerEntityId(id, 'model', record.modelId) }))
+    }
+    if (providerIdSchema.options.some(id => options.hosts[id].readProviderQuota)) this.readProviderQuota = async (providerId, refresh) => {
+      const slot = this.slots.get(providerId), epoch = slot?.epoch
+      if (slot?.status.connection !== 'connected') return unavailableProviderQuota(providerId, 'not-connected')
+      const quota = await options.hosts[providerId].readProviderQuota?.(providerId, refresh)
+        ?? unavailableProviderQuota(providerId, 'unsupported')
+      if (slot.epoch !== epoch || slot.status.connection !== 'connected') return unavailableProviderQuota(providerId, 'not-connected')
+      return { ...quota, windows: quota.windows.map(window => ({ ...window,
+        ...(window.modelId ? { modelId: providerEntityId(providerId, 'model', window.modelId) } : {}) })) }
     }
   }
   /** Each provider asks the store about the threads it owns; a thread it does not own answers nothing. */
@@ -193,13 +218,18 @@ export class ConfiguredProviderHost implements AgentHost {
     if (slot.connecting) return slot.connecting
     if (slot.status.connection === 'connected') return
     slot.wanted = true; const epoch = ++slot.epoch
-    slot.unsubscribeSnapshot?.(); slot.unsubscribeEvents?.()
+    slot.unsubscribeSnapshot?.(); slot.unsubscribeEvents?.(); slot.unsubscribeUsage?.()
     slot.status = { ...slot.status, connection: 'connecting' }; delete slot.status.error; delete slot.status.problem; delete slot.status.requiredVersion
     this.watchActivity(id, slot, epoch)
     // A thread belongs to one provider. Its events keep that provider's connection epoch.
     slot.unsubscribeEvents = this.options.hosts[id].subscribeEvents?.(event => {
       if (!slot.wanted || slot.epoch !== epoch) return
       for (const listener of this.eventListeners) listener(event)
+    })
+    slot.unsubscribeUsage = this.options.hosts[id].subscribeUsage?.(record => {
+      if (!slot.wanted || slot.epoch !== epoch) return
+      const projected = { ...record, providerId: id, modelId: providerEntityId(id, 'model', record.modelId) }
+      for (const listener of this.usageListeners) listener(projected)
     })
     this.publish()
     if (this.observed) this.options.hosts[id].observeThreads?.(this.observed)
@@ -443,8 +473,8 @@ export class ConfiguredProviderHost implements AgentHost {
   disconnect(provider?: ProviderId): void {
     for (const id of provider ? [provider] : providerIdSchema.options) {
       const slot = this.slots.get(id)!; slot.wanted = false; ++slot.epoch; slot.connecting = undefined
-      slot.unsubscribeSnapshot?.(); slot.unsubscribeEvents?.()
-      slot.unsubscribeSnapshot = undefined; slot.unsubscribeEvents = undefined
+      slot.unsubscribeSnapshot?.(); slot.unsubscribeEvents?.(); slot.unsubscribeUsage?.()
+      slot.unsubscribeSnapshot = undefined; slot.unsubscribeEvents = undefined; slot.unsubscribeUsage = undefined
       this.options.hosts[id].disconnect(); slot.snapshot.connected = false
       slot.status = { ...slot.status, connection: 'disconnected' }; delete slot.status.error; delete slot.status.problem; delete slot.status.requiredVersion; delete slot.status.account
     }
