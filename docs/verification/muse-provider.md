@@ -1,6 +1,6 @@
 # Muse provider: what was checked
 
-October 12, 2026. ADR-0075. Everything below is either a probe against the installed Muse client on this machine or the scripted fake the contract runs against; the two are never blurred.
+October 12, 2026. ADR-0076. Everything below is either a probe against the installed Muse client on this machine or the scripted fake the contract runs against; the two are never blurred.
 
 ## The real client (Muse 1.1.1, MSP schema 1, over `muse serve`)
 

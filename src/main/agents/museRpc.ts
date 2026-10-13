@@ -2,11 +2,12 @@ import { stderrRateExceeded } from './stderrRate'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { z } from 'zod'
-import { findCli, withCliPath, type CliLookupOptions } from './cliLookup'
+import { withCliPath, type CliLookupOptions } from './cliLookup'
+import { findMuseNativeExecutable } from './museClientInstall'
 
 /**
  * Muse's floor: the oldest client Sotto connects (ADR-0042), and what a host's tile says an update needs
- * (ADR-0035). 1.1.1 is the client this adapter was checked against (ADR-0075): MSP envelope schema 1 over
+ * (ADR-0035). 1.1.1 is the client this adapter was checked against (ADR-0076): MSP envelope schema 1 over
  * `muse serve`, with `session/resume` serving folded history and the view stream carrying turns live.
  * Move it only after checking a newer client against the adapter contract.
  */
@@ -31,14 +32,14 @@ const safeEnvironment = new Set(['path', 'pathext', 'systemroot', 'windir', 'tem
 /**
  * The environment a Muse process gets: the shared allow-list and nothing else. `META_API_KEY` is not on it, so a
  * thread always runs on the sign-in Muse itself holds (`muse login`, or credentials stored with `muse auth`),
- * never on a key that happened to be in Sotto's own environment (ADR-0075).
+ * never on a key that happened to be in Sotto's own environment (ADR-0076).
  */
 export function museEnvironment(environment: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   return Object.fromEntries(Object.entries(environment).filter(([key]) => safeEnvironment.has(key.toLowerCase())))
 }
-/** Where Muse is: the shared CLI lookup, the same way as every other client (ADR-0036). */
+/** The shared lookup order, resolving maker launchers to their current native binary (ADR-0076). */
 export async function findMuseExecutable(environment: NodeJS.ProcessEnv = process.env, lookup: Omit<CliLookupOptions, 'environment'> = {}): Promise<string | undefined> {
-  return findCli({ name: 'muse' }, { ...lookup, environment })
+  return findMuseNativeExecutable(environment, lookup)
 }
 /** A UUIDv7, which every MSP command carries as its idempotency handle. Time-ordered, so retries sort after the first try. */
 export function museCommandId(): string {

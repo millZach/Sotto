@@ -49,6 +49,8 @@ Codex model, effort and permission changes use its native settings update and wa
 
 After you type directly in the Claude CLI, the next message from Sotto restarts its client to load the updated native history, even while background work runs. Any work stopped by the restart is named in the notice.
 
+In Owl, **Settings → Providers → Muse** shows Muse's own mark, connection, installed and published versions, and model list. Install Muse and run `muse login` in a terminal before connecting; **Copy Muse login command** copies that command. **Update** uses the installer that owns the existing copy. For Meta's own installation it updates the same folder without changing PATH or signing you in. Working threads keep their current client until they finish. An unidentified installation has **Open Muse installation guide** instead. Sotto checks Muse's own release channel when client update checks are on. Muse threads support questions and approvals, but cannot receive Sotto's browser or thread tools, skills, or automatic title and Git drafts in this version.
+
 ### Memory (off for the beta)
 
 Memory remains a separate gated feature. When enabled, open **Memory** and choose **Set working preferences** to start its questionnaire. The store, saved preferences and permission policies keep their existing behavior.

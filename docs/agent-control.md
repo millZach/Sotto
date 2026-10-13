@@ -1,6 +1,6 @@
 # Sotto agent control
 
-Sotto opens coding threads and routes manual commands through the installed Codex, Claude Code, Grok Build and Devin clients, and, in Sotto Owl, Muse (ADR-0075). Threads have Sotto-owned identities; each native client keeps its own sign-in, model catalog and conversation history. The providers can be connected together. You send prompts, answer requests and stop work from each thread. Explicit pull request babysitting can send wake-ups but answers no request.
+Sotto opens coding threads and routes manual commands through the installed Codex, Claude Code, Grok Build and Devin clients, and, in Sotto Owl, Muse (ADR-0076). Threads have Sotto-owned identities; each native client keeps its own sign-in, model catalog and conversation history. The providers can be connected together. You send prompts, answer requests and stop work from each thread. Explicit pull request babysitting can send wake-ups but answers no request.
 
 ## Terminal mode
 

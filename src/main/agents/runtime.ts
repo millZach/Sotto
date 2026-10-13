@@ -41,7 +41,7 @@ export interface AgentRuntimeOptions {
   directory: string
   /** Immutable release-track gate, read once by the process owner. Absent fails closed. */
   watcherEnabled?: boolean
-  /** Immutable Muse-provider Owl gate, read once by the process owner (ADR-0075). Absent fails closed. */
+  /** Immutable Muse-provider Owl gate, read once by the process owner (ADR-0076). Absent fails closed. */
   museEnabled?: boolean
   claudeHistoryModulePath?: string
   credentials: ControlDependencies['credentials']

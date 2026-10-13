@@ -71,7 +71,11 @@ test('uses Muse in Owl, settles requests and steered activity, and preserves it 
     await page.getByRole('button', { name: 'Muse', exact: true }).focus()
     await page.keyboard.press('Enter')
     await expect(page.getByRole('switch', { name: 'Enable Muse' })).toHaveAttribute('aria-checked', 'false')
-    await expect(panel).toContainText('Uses your sign-in in Muse on this computer.')
+    await expect(panel).toContainText('Uses your Muse sign-in on this computer.')
+    await expect(panel.locator('svg[data-provider="muse"]')).toBeVisible()
+    await page.getByRole('button', { name: 'Copy Muse login command' }).focus()
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('button', { name: 'Copy Muse login command' })).toHaveText('Copied')
     for (const [width, height] of sizes) {
       await resizeWindow(launched, width, height)
       for (const appearance of ['dark', 'light'] as const) {
