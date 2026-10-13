@@ -69,6 +69,42 @@ describe('Usage figures', () => {
 })
 
 describe('Usage view', () => {
+  it('reuses recent quota readings across repeated page opens and still refreshes on a press', async () => {
+    const data = dashboard()
+    data.hosts[0]!.quotas[0]!.observedAt = '2026-10-12T15:59:31Z'
+    const api = bridge(data)
+    for (let open = 0; open < 5; open++) {
+      const view = render(<UsageView {...props} bridge={api} />)
+      await screen.findByRole('heading', { name: 'Prompts' })
+      expect(api.refresh).not.toHaveBeenCalled()
+      view.unmount()
+    }
+    render(<UsageView {...props} bridge={api} />)
+    await screen.findByRole('heading', { name: 'Prompts' })
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Refresh subscription limits' }))
+    expect(api.refresh).toHaveBeenCalledOnce()
+    expect(api.refresh).toHaveBeenCalledWith({})
+  })
+  it('automatically refreshes only stale provider readings on their owning computer', async () => {
+    const data = dashboard()
+    data.hosts[0]!.quotas[0]!.observedAt = '2026-10-12T15:59:31Z'
+    data.hosts.push({ hostId: 'forge', status: 'ready', activity: activity(), quotas: [
+      { providerId: 'grok', status: 'available', refreshable: true, observedAt: '2026-10-12T15:59:00Z', windows: [] },
+      { providerId: 'claude', status: 'unavailable', refreshable: false, windows: [] },
+    ] })
+    const api = bridge(data)
+    render(<UsageView {...props} bridge={api} />)
+    await waitFor(() => expect(api.refresh).toHaveBeenCalledOnce())
+    expect(api.refresh).toHaveBeenCalledWith({ hostIds: ['forge'], providerIds: ['grok'] })
+  })
+  it('requests a first native reading once when a connected provider has no cached observation', async () => {
+    const data = dashboard()
+    data.hosts[0]!.quotas[0] = { providerId: 'grok', status: 'unavailable', refreshable: true, reason: 'not-read', windows: [] }
+    const api = bridge(data)
+    render(<UsageView {...props} bridge={api} />)
+    await waitFor(() => expect(api.refresh).toHaveBeenCalledOnce())
+    expect(api.refresh).toHaveBeenCalledWith({ hostIds: ['laptop'], providerIds: ['grok'] })
+  })
   it('does not claim an exact most-used model from an incomplete host ranking', async () => {
     const data = dashboard()
     data.hosts[0]!.activity!.modelsTruncated = true
@@ -82,7 +118,7 @@ describe('Usage view', () => {
     render(<UsageView {...props} bridge={api} />)
     await screen.findByRole('heading', { name: 'Prompts' })
     expect(api.read).toHaveBeenCalledWith({ from: '2026-09-13', to: '2026-10-12', timeZone: 'America/Los_Angeles', includeDaily: true })
-    expect(api.refresh).toHaveBeenCalledWith({})
+    expect(api.refresh).toHaveBeenCalledWith({ hostIds: ['laptop'], providerIds: ['grok'] })
     expect(screen.getByRole('tab', { name: /Prompts 3 accepted prompts from you/ })).toBeVisible()
     await user.click(screen.getByRole('tab', { name: 'Subscriptions' }))
     const grok = screen.getByRole('region', { name: 'Grok Build on Laptop' })

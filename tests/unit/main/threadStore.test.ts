@@ -42,6 +42,30 @@ const conversation = (count: number): AgentMessage[] => Array.from({ length: cou
 ]).flat()
 
 describe('thread store', () => {
+  it('recovers a bounded batch of exact user identities in one numeric SQL read after rewind and redaction', async () => {
+    const f = await store()
+    f.store.appendMany('batch-a', conversation(130).map(message => ({ kind: 'message-added', at, message })))
+    f.store.appendMany('batch-b', [
+      { kind: 'message-added', at, message: message('u0', 'user', 'Private other thread') },
+      { kind: 'message-added', at, message: message('u1', 'assistant', 'Private reply') },
+    ])
+    f.store.append('batch-a', { kind: 'messages-reset', at, historyEpoch: 'after-rewind' })
+    f.store.redactAll()
+    const prepare = vi.spyOn(DatabaseSync.prototype, 'prepare')
+    const result = f.store.recordedUserMessages([
+      { threadId: 'batch-a', messageId: 'u0' }, { threadId: 'batch-a', messageId: 'a0' },
+      { threadId: 'batch-b', messageId: 'u0' }, { threadId: 'batch-b', messageId: 'u1' },
+      { threadId: 'missing-thread', messageId: 'u0' }, { threadId: 'batch-a', messageId: 'u0' },
+    ])
+    expect(result).toEqual([{ threadId: 'batch-a', messageId: 'u0' }, { threadId: 'batch-b', messageId: 'u0' }])
+    expect(prepare).toHaveBeenCalledOnce()
+    const batch = Array.from({ length: 128 }, (_, index) => ({ threadId: 'batch-a', messageId: `u${index}` }))
+    expect(f.store.recordedUserMessages(batch)).toHaveLength(128)
+    expect(() => f.store.recordedUserMessages([...batch, batch[0]!])).toThrow('Too many message identities')
+    expect(f.store.recordedUserMessages([])).toEqual([])
+    expect(await onDisk(f.root)).not.toContain('Private other thread')
+  })
+
   it('keeps exact user-message evidence after words are cleared or history is rewound', async () => {
     const f = await store()
     f.store.appendMany('usage', [

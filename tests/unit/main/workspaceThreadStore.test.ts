@@ -53,6 +53,28 @@ async function onDisk(directory: string): Promise<string> {
 }
 
 describe('thread messages in the store rather than the workspace cache', () => {
+  it('flushes once for a bounded numeric acceptance lookup outside the pane window', async () => {
+    const directory = await root()
+    const adapter = new FakeProviderHost()
+    const host = await opened(directory, adapter)
+    await host.connect()
+    adapter.state.threads[0]!.messages = conversation('batch', 130)
+    adapter.emit(); await host.snapshot()
+    host.observeThreads([])
+    const flush = vi.spyOn(host as unknown as { writeEvents(): void }, 'writeEvents')
+    const read = vi.spyOn(ThreadStore.prototype, 'recordedUserMessages')
+    const identities = Array.from({ length: 128 }, (_, index) => ({ threadId: 'session-workshop', messageId: `batch-u${index}` }))
+    try {
+      expect(host.recordedUserMessages(identities)).toEqual(identities)
+      expect(flush).toHaveBeenCalledOnce()
+      expect(read).toHaveBeenCalledOnce()
+      expect(host.recordedUserMessages([
+        { threadId: 'session-workshop', messageId: 'batch-a0' }, { threadId: 'missing-thread', messageId: 'batch-u0' },
+      ])).toEqual([])
+      expect(() => host.recordedUserMessages([...identities, identities[0]!])).toThrow('Too many message identities')
+    } finally { flush.mockRestore(); read.mockRestore() }
+  })
+
   it('keeps messages out of workspace.json and gives a watched pane a window it can widen', async () => {
     const directory = await root()
     const adapter = new FakeProviderHost()
@@ -158,6 +180,9 @@ describe('thread messages in the store rather than the workspace cache', () => {
     adapter.emit()
     await host.snapshot()
     expect(host.workspaceSnapshot().threads.find(thread => thread.id === 'session-workshop')?.messages.map(message => message.text)).toContain('Prompt secret 0')
+    expect(host.recordedUserMessages([
+      { threadId: 'session-workshop', messageId: 'secret-u0' }, { threadId: 'session-workshop', messageId: 'secret-a0' },
+    ])).toEqual([{ threadId: 'session-workshop', messageId: 'secret-u0' }])
     expect(await onDisk(directory)).not.toContain('Prompt secret 0')
   })
 

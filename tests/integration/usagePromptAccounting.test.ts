@@ -14,7 +14,7 @@ async function fixture() {
   const f = await workspaceFixture()
   const credentials = await testCredentials(join(f.root, 'vault'), { mode: 'unavailable' })
   const usage = new UsageService({ directory: f.root, host: f.host,
-    hasAcceptedPrompt: (threadId, messageId) => f.host.hasRecordedUserMessage(threadId, messageId) })
+    acceptedPromptIdentities: identities => f.host.recordedUserMessages(identities) })
   usage.start()
   const control = createAgentControl({ directory: f.root, host: f.host, credentials, usage })
   cleanup.push(async () => { control.dispose(); await control.privacyChanged(); usage.close(); await f.stop(); await f.remove() })

@@ -434,6 +434,33 @@ describe('native subscription metadata seam', () => {
     expect(await host.readProviderQuota!('codex', true)).toMatchObject({ status: 'available', windows: [{ usedPercent: 0, durationMinutes: 300 }] })
     await host.readProviderQuota!('codex', false); expect(methods).toEqual(['account/rateLimits/read'])
   })
+  it('merges Codex bucket notifications but lets a complete native read replace all buckets', async () => {
+    const { root } = await fixture('codex')
+    const host = new CodexAppServerHost({ userDataPath: root, usageEnabled: true })
+    const methods: string[] = []
+    const native = host as unknown as { state: AgentHostSnapshot; provider: unknown;
+      frame(server: unknown, frame: { method: string; params: unknown }): Promise<void> }
+    let response: unknown = { rateLimitsByLimitId: {
+      codex: { limitId: 'codex', primary: { usedPercent: 20, resetsAt: 1_900_000_000 } },
+      codex_other: { limitId: 'codex_other', primary: { usedPercent: 30, resetsAt: 1_900_500_000 } },
+    } }
+    native.state.connected = true
+    native.provider = { alive: true, rpc: async (method: string, _params: unknown, apply: (value: unknown) => void) => {
+      methods.push(method); apply(response)
+    } }
+    const before = await host.readProviderQuota!('codex', true)
+    await native.frame(native.provider, { method: 'account/rateLimits/updated', params: {
+      rateLimits: { primary: { usedPercent: 0, resetsAt: 1_900_000_000 }, secondary: null },
+    } })
+    const merged = await host.readProviderQuota!('codex', false)
+    expect(merged.windows).toHaveLength(2)
+    expect(merged.windows.find(window => window.id === before.windows[0]?.id)?.usedPercent).toBe(0)
+    expect(merged.windows.find(window => window.id === before.windows[1]?.id)).toEqual(before.windows[1])
+    expect(methods).toEqual(['account/rateLimits/read'])
+    response = { rateLimits: { primary: { usedPercent: 0 } } }
+    expect((await host.readProviderQuota!('codex', true)).windows).toHaveLength(1)
+    expect(methods).toEqual(['account/rateLimits/read', 'account/rateLimits/read'])
+  })
   it('keeps Claude passive, merges windows and offers no inference refresh', async () => {
     const { root } = await fixture('claude')
     const host = new ClaudeStreamJsonHost({ userDataPath: root, usageEnabled: true })
@@ -441,8 +468,16 @@ describe('native subscription metadata seam', () => {
     native.state.connected = true; native.aliases.thread = { sessionId: 'native-session' }; native.threads.set('thread', new FakeProviderHost().state.threads[0]); native.runtimes.set('thread', {})
     native.frameAfterProfileCheck('thread', { type: 'rate_limit_event', rate_limit_info: { rateLimitType: 'five_hour', utilization: 0.4, status: 'allowed', resetsAt: 1_900_000_000 } })
     native.frameAfterProfileCheck('thread', { type: 'rate_limit_event', rate_limit_info: { rateLimitType: 'seven_day', utilization: 0.2, status: 'allowed', resetsAt: 1_900_500_000 } })
+    const before = await host.readProviderQuota!('claude', false)
+    native.frameAfterProfileCheck('thread', { type: 'rate_limit_event', rate_limit_info: { rateLimitType: 'five_hour', status: 'allowed_warning' } })
     const quota = await host.readProviderQuota!('claude', true)
     expect(quota.refreshable).toBe(false); expect(quota.windows.map(window => window.usedPercent)).toEqual([40, 20])
+    expect(quota.windows[0]).toMatchObject({ status: 'warning', observedAt: before.windows[0]?.observedAt,
+      resetsAt: '2030-03-17T17:46:40.000Z' })
+    native.frameAfterProfileCheck('thread', { type: 'rate_limit_event', rate_limit_info: {
+      rateLimitType: 'five_hour', status: 'allowed', resetsAt: 1_900_000_300,
+    } })
+    expect((await host.readProviderQuota!('claude', false)).windows[0]).not.toHaveProperty('usedPercent')
   })
   it('asks Grok for the exact billing extension with no session operations, preserving unknown percent', async () => {
     const { root } = await fixture('grok')

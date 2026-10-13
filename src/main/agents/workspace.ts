@@ -19,7 +19,7 @@ import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDa
 import { threadEventSchema, type AnswerGivenEvent, type StoredThreadEvent, type ThreadEvent } from '../../shared/threadEvents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { confirmedSettingsSnapshot, type AgentHost, type AgentHostCommand, type AgentHostResult, type ShortTextPrompt, type StoredMessageIdentity, type ThreadReadPurpose, type ThreadRenameSource } from './host'
-import { FIRST_WINDOW_TURNS, LATER_WINDOW_TURNS, ThreadStore, type StoredVisual } from './threadStore'
+import { FIRST_WINDOW_TURNS, LATER_WINDOW_TURNS, RECORDED_USER_MESSAGES_MAX, ThreadStore, type RecordedUserMessageIdentity, type StoredVisual } from './threadStore'
 import { placeVisuals } from './visualPlacement'
 import { visualFromInput, VISUALS_PER_THREAD_MAX, VISUALS_PER_TURN_MAX, type AgentVisual, type VisualInput } from '../../shared/visuals'
 import { SubagentStore, subagentActivityClassification } from './subagentStore'
@@ -1909,6 +1909,41 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
     if (thread?.messages.some(message => message.id === messageId && message.role === 'user')) return true
     return !this.storeUnavailable && this.threadStore.hasRecordedUserMessage(threadId, messageId)
+  }
+
+  /** Flush once and recover exact numeric identities without reading a transcript for each pending intent. */
+  recordedUserMessages(identities: readonly RecordedUserMessageIdentity[]): RecordedUserMessageIdentity[] {
+    if (identities.length > RECORDED_USER_MESSAGES_MAX) throw new RangeError('Too many message identities')
+    if (!this.ready || identities.length === 0) return []
+    this.writeEvents()
+    const requested = new Map<string, Set<string>>()
+    for (const { threadId, messageId } of identities) {
+      let ids = requested.get(threadId)
+      if (ids === undefined) { ids = new Set(); requested.set(threadId, ids) }
+      ids.add(messageId)
+    }
+    const accepted = new Map<string, Set<string>>()
+    for (const [threadId, ids] of requested) {
+      if (!this.threadVisible(threadId)) { requested.delete(threadId); continue }
+      const found = new Set<string>()
+      for (const event of this.pendingEvents.get(threadId) ?? []) {
+        if ((event.kind === 'message-added' || event.kind === 'message-replaced')
+          && event.message.role === 'user' && ids.has(event.message.id)) found.add(event.message.id)
+      }
+      for (const message of this.state.snapshot.threads.find(thread => thread.id === threadId)?.messages ?? []) {
+        if (message.role === 'user' && ids.has(message.id)) found.add(message.id)
+      }
+      accepted.set(threadId, found)
+    }
+    const unresolved = identities.filter(({ threadId, messageId }) => requested.has(threadId) && !accepted.get(threadId)?.has(messageId))
+    if (!this.storeUnavailable) {
+      for (const { threadId, messageId } of this.threadStore.recordedUserMessages(unresolved)) accepted.get(threadId)!.add(messageId)
+    }
+    const result: RecordedUserMessageIdentity[] = []
+    for (const identity of identities) {
+      if (accepted.get(identity.threadId)?.delete(identity.messageId)) result.push({ threadId: identity.threadId, messageId: identity.messageId })
+    }
+    return result
   }
   /** One thread's whole history, whatever window is loaded: the store is the record, not the pane. */
   threadMessages(threadId: string): readonly AgentMessage[] {

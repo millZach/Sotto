@@ -15,6 +15,7 @@ type SqlRow = Record<string, SQLOutputValue>
 interface CalendarParts { day: string; weekday: number; hour: number }
 const CALENDAR_FORMATTERS_MAX = 8
 const CALENDAR_INSTANTS_MAX = 512
+export const USAGE_PENDING_RECONCILIATION_BATCH_MAX = 128
 const fields = ['input', 'output', 'cached', 'cacheWrite', 'cacheWrite5m', 'cacheWrite1h'] as const
 const columns = ['input', 'output', 'cached', 'cache_write', 'cache_write_5m', 'cache_write_1h'] as const
 const sqlFields: Record<UsageTokenField, string> = {
@@ -45,6 +46,7 @@ export class UsageStore {
   private db: DatabaseSync | undefined
   private readonly calendarFormatters = new Map<string, Intl.DateTimeFormat>()
   private readonly calendarInstants = new Map<string, CalendarParts>()
+  private queryCache: { key: string; revision: number; result: UsageLocalRead } | undefined
 
   constructor(private readonly path: string, private readonly now: () => string = () => new Date().toISOString()) {}
 
@@ -103,6 +105,7 @@ export class UsageStore {
     this.db = undefined
     this.calendarFormatters.clear()
     this.calendarInstants.clear()
+    this.queryCache = undefined
   }
 
   metadata(): UsageMetadata {
@@ -249,6 +252,22 @@ export class UsageStore {
     }
   }
 
+  /** Freeze a recovery pass before reading bounded numeric identity batches. New intents wait for their exact echo. */
+  pendingPromptReconciliationEnd(): UsagePromptIdentity | undefined {
+    const row = this.requireOpen().prepare('SELECT thread_id,message_id FROM pending_prompt_rows ORDER BY thread_id DESC,message_id DESC LIMIT 1').get()
+    return row === undefined ? undefined : usagePromptIdentitySchema.parse({ threadId: row.thread_id, messageId: row.message_id })
+  }
+
+  pendingPromptIdentities(after: UsagePromptIdentity | undefined, through: UsagePromptIdentity): UsagePromptIdentity[] {
+    usagePromptIdentitySchema.parse(through)
+    if (after !== undefined) usagePromptIdentitySchema.parse(after)
+    return this.requireOpen().prepare(`SELECT thread_id,message_id FROM pending_prompt_rows
+      WHERE (thread_id,message_id)<=(?,?) ${after === undefined ? '' : 'AND (thread_id,message_id)>(?,?)'}
+      ORDER BY thread_id,message_id LIMIT ?`)
+      .all(through.threadId, through.messageId, ...(after === undefined ? [] : [after.threadId, after.messageId]), USAGE_PENDING_RECONCILIATION_BATCH_MAX)
+      .map(row => usagePromptIdentitySchema.parse({ threadId: row.thread_id, messageId: row.message_id }))
+  }
+
   markLegacySeedCompleted(): UsageWriteResult {
     return this.transaction(db => {
       const metadata = this.metadata()
@@ -289,20 +308,29 @@ export class UsageStore {
     const query = usageLocalQuerySchema.parse(input)
     const timeZone = query.timeZone ?? 'UTC'
     const db = this.requireOpen()
+    const metadata = this.metadata()
+    const key = JSON.stringify(query)
+    if (this.queryCache?.key === key && this.queryCache.revision === metadata.revision) return structuredClone(this.queryCache.result)
     const filters = queryFilters(query)
+    // UTC date indexes discard unrelated history before invoking Intl. One adjacent UTC day
+    // on either side covers named-zone offsets; the exact calendar predicate still handles DST.
+    const indexedFilters = queryFilters({ ...query,
+      ...(query.from === undefined ? {} : { from: adjacentDay(query.from, -1) }),
+      ...(query.to === undefined ? {} : { to: adjacentDay(query.to, 1) }),
+    })
     const source = `WITH records AS (
       SELECT provider,model_id,thread_id,at,1 AS is_token,partial,${columns.join(',')},
         CASE WHEN input IS NOT NULL AND output IS NOT NULL THEN input+output END AS token_total,
-        NULL AS kind,NULL AS input_kind FROM token_rows
+        NULL AS kind,NULL AS input_kind FROM token_rows ${indexedFilters.sql}
       UNION ALL
       SELECT provider,model_id,thread_id,at,0 AS is_token,0 AS partial,${columns.map(() => 'NULL').join(',')},NULL AS token_total,
-        kind,input_kind FROM prompt_rows
-    ), dated AS (
+        kind,input_kind FROM prompt_rows ${indexedFilters.sql}
+    ), dated AS MATERIALIZED (
       SELECT *,usage_day(at,?) AS day FROM records
     ), activity AS (
       SELECT * FROM dated ${filters.sql}
     )`
-    const parameters = [timeZone, ...filters.parameters]
+    const parameters = [...indexedFilters.parameters, ...indexedFilters.parameters, timeZone, ...filters.parameters]
     const totalRow = db.prepare(`${source} SELECT ${aggregateSql()} FROM activity`).get(...parameters)
     if (totalRow === undefined) throw new Error('Usage totals are unavailable')
     const providers = db.prepare(`${source} SELECT provider,${aggregateSql()} FROM activity GROUP BY provider ORDER BY provider`).all(...parameters)
@@ -323,11 +351,14 @@ export class UsageStore {
       FROM activity WHERE is_token=0 GROUP BY weekday,hour ORDER BY weekday,hour LIMIT ?`)
       .all(...parameters, timeZone, timeZone, USAGE_HOURLY_CELLS_MAX)
       .map(row => ({ weekday: safeCount(row.weekday), hour: safeCount(row.hour), prompts: promptTotals(row) }))
-    return {
-      metadata: this.metadata(), totals: aggregate(totalRow), providers, timeZone,
+    const result: UsageLocalRead = {
+      metadata, totals: aggregate(totalRow), providers, timeZone,
       models: modelRows.map(row => ({ ...aggregate(row), providerId: usageProviderIdSchema.parse(row.provider), modelId: String(row.model_id) })),
       modelCount, modelsTruncated: modelCount > USAGE_MODEL_ROWS_MAX, daily, dailyCoverage, hourly,
     }
+    // Readers may own and mutate their response. Never expose the retained numeric cache.
+    this.queryCache = { key, revision: metadata.revision, result: structuredClone(result) }
+    return result
   }
 
   /** Missing breakdown cannot revive a retired aggregate or silently certify its old model vectors. */
@@ -443,6 +474,11 @@ function queryFilters(query: UsageLocalQuery): { sql: string; parameters: SQLInp
   if (query.from !== undefined) { conditions.push('day>=?'); parameters.push(query.from) }
   if (query.to !== undefined) { conditions.push('day<=?'); parameters.push(query.to) }
   return { sql: conditions.length === 0 ? '' : `WHERE ${conditions.join(' AND ')}`, parameters }
+}
+
+function adjacentDay(day: string, direction: -1 | 1): string {
+  const shifted = new Date(Date.parse(`${day}T00:00:00Z`) + direction * 86_400_000).toISOString()
+  return shifted.startsWith('-') ? '0000-01-01' : shifted.startsWith('+') ? '9999-12-31' : shifted.slice(0, 10)
 }
 
 function aggregateSql(): string {

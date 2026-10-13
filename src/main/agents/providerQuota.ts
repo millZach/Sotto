@@ -33,6 +33,20 @@ function unixTimestamp(value: unknown): string | undefined {
 function windowId(provider: string, identity: string, kind: string): string {
   return `${provider}-${createHash('sha256').update(identity).digest('hex').slice(0, 24)}-${kind}`
 }
+function codexPayload(value: unknown): Record<string, unknown> | undefined {
+  const envelope = object(value)
+  return envelope?.method === 'account/rateLimits/updated' ? object(envelope.params)
+    : object(envelope?.result) ?? envelope
+}
+function codexRows(payload: Record<string, unknown> | undefined): Array<readonly [string, unknown]> {
+  const multiple = object(payload?.rateLimitsByLimitId)
+  return multiple !== undefined ? Object.entries(multiple).slice(0, 64)
+    : object(payload?.rateLimits) ? [['codex', payload!.rateLimits]] : []
+}
+function codexIdentity(key: string, bucket: Record<string, unknown>): string {
+  return typeof bucket.limitId === 'string' && bucket.limitId.trim() && bucket.limitId.length <= 512
+    ? bucket.limitId.trim() : key.length <= 512 ? key : 'unknown'
+}
 function read(providerId: UsageQuotaRead['providerId'], windows: UsageQuotaWindow[], observedAt: string, refreshable: boolean): UsageQuotaRead {
   const at = timestamp(observedAt)
   return usageQuotaReadSchema.parse({ providerId, status: windows.length ? 'available' : 'unavailable', windows,
@@ -48,19 +62,14 @@ export function unavailableProviderQuota(providerId: UsageQuotaRead['providerId'
 
 /** Read result or account/rateLimits/updated payload; never publish native bucket IDs, names or account details. */
 export function parseCodexQuota(value: unknown, observedAt: string): UsageQuotaRead {
-  const envelope = object(value)
-  const payload = envelope?.method === 'account/rateLimits/updated' ? object(envelope.params)
-    : object(envelope?.result) ?? envelope
+  const payload = codexPayload(value)
   const multiple = object(payload?.rateLimitsByLimitId)
-  const rows = multiple !== undefined ? Object.entries(multiple).slice(0, 64)
-    : object(payload?.rateLimits) ? [['single', payload!.rateLimits] as const] : []
   const windows = new Map<string, UsageQuotaWindow>()
   const at = timestamp(observedAt)
-  for (const [key, raw] of rows) {
+  for (const [key, raw] of codexRows(payload)) {
     const bucket = object(raw)
     if (!bucket) continue
-    const nativeId = typeof bucket.limitId === 'string' && bucket.limitId.trim() && bucket.limitId.length <= 512
-      ? bucket.limitId.trim() : key.length <= 512 ? key : 'unknown'
+    const nativeId = codexIdentity(key, bucket)
     const label = nativeId === 'codex' ? 'Codex' : nativeId === 'codex_other' ? 'Other Codex limit' : 'Codex limit'
     for (const kind of ['primary', 'secondary'] as const) {
       if (windows.size === USAGE_QUOTA_WINDOWS_MAX) break
@@ -84,6 +93,42 @@ export function parseCodexQuota(value: unknown, observedAt: string): UsageQuotaR
   return read('codex', [...windows.values()], observedAt, true)
 }
 
+/** A notification replaces its reported buckets; a full account/rateLimits/read remains a separate snapshot. */
+export function mergeCodexQuota(previous: UsageQuotaRead | undefined, value: unknown, observedAt: string): UsageQuotaRead {
+  const update = parseCodexQuota(value, observedAt)
+  if (previous?.providerId !== 'codex') return update
+  const payload = codexPayload(value)
+  // Match the parser's legacy fallback when a malformed map accompanies a usable single bucket.
+  const rows = update.windows.length && object(payload?.rateLimitsByLimitId) &&
+    !parseCodexQuota({ rateLimitsByLimitId: payload?.rateLimitsByLimitId }, observedAt).windows.length
+    ? codexRows({ rateLimits: payload?.rateLimits }) : codexRows(payload)
+  const replaced = new Set<string>()
+  for (const [key, raw] of rows) {
+    const bucket = object(raw)
+    if (!bucket) continue
+    const nativeId = codexIdentity(key, bucket)
+    for (const kind of ['primary', 'secondary']) replaced.add(windowId('codex', nativeId, kind))
+  }
+  if (!replaced.size) return previous
+  const windows = new Map(previous.windows.map(window => [window.id, window]))
+  const olderThan = (window: UsageQuotaWindow | undefined): boolean => {
+    const oldAt = window?.observedAt ?? (window ? previous.observedAt : undefined)
+    return !!oldAt && (!update.observedAt || Date.parse(update.observedAt) < Date.parse(oldAt))
+  }
+  for (const id of replaced) if (!olderThan(windows.get(id))) windows.delete(id)
+  for (const window of update.windows) {
+    if (!olderThan(windows.get(window.id))) windows.set(window.id, window)
+  }
+  const at = previous.observedAt && (!update.observedAt || Date.parse(previous.observedAt) > Date.parse(update.observedAt))
+    ? previous.observedAt : update.observedAt
+  const combined = [...windows.values()]
+  const reported = new Set(update.windows.map(window => window.id))
+  const bounded = combined.length <= USAGE_QUOTA_WINDOWS_MAX ? combined : [
+    ...combined.filter(window => reported.has(window.id)), ...combined.filter(window => !reported.has(window.id)),
+  ].slice(0, USAGE_QUOTA_WINDOWS_MAX)
+  return read('codex', bounded, at ?? '', true)
+}
+
 const claudeWindows: Record<string, Pick<UsageQuotaWindow, 'id' | 'label' | 'kind' | 'durationMinutes'>> = {
   five_hour: { id: 'claude-five-hour', label: 'Claude five-hour limit', kind: 'primary', durationMinutes: 300 },
   seven_day: { id: 'claude-seven-day', label: 'Claude weekly limit', kind: 'weekly', durationMinutes: 10_080 },
@@ -91,6 +136,9 @@ const claudeWindows: Record<string, Pick<UsageQuotaWindow, 'id' | 'label' | 'kin
   seven_day_sonnet: { id: 'claude-seven-day-sonnet', label: 'Claude Sonnet weekly limit', kind: 'model', durationMinutes: 10_080 },
   overage: { id: 'claude-overage', label: 'Claude extra usage limit', kind: 'other' },
 }
+// Numeric observation age can predate a status-only event. Keep ordering private to the adapter cache;
+// it is neither a new quota field nor saved account metadata, and expires with each discarded read.
+const claudeQuotaEventTimes = new WeakMap<UsageQuotaRead, ReadonlyMap<string, string>>()
 function claudeStatus(value: unknown): UsageQuotaWindow['status'] {
   return value === 'allowed' ? 'allowed' : value === 'allowed_warning' ? 'warning' : value === 'rejected' ? 'limited' : undefined
 }
@@ -125,22 +173,44 @@ export function parseClaudeQuota(value: unknown, observedAt: string): UsageQuota
 }
 
 /**
- * Replace only windows the event reported. Older events cannot regress a known window; unrelated windows
- * keep their own observed-at time. A failed/unreported read preserves figures as stale evidence, not fresh data.
+ * Merge only windows the event reported. Missing fields can retain unexpired evidence from the same reset;
+ * rollover or an expired window cannot acquire old utilization. Retained figures keep their original age.
+ * Older events cannot regress a window; unrelated windows and unavailable reads keep their own times.
  */
 export function mergeClaudeQuota(previous: UsageQuotaRead | undefined, update: UsageQuotaRead): UsageQuotaRead {
   if (update.providerId !== 'claude' || previous?.providerId !== 'claude') return update
-  if (update.status !== 'available') return usageQuotaReadSchema.parse({ ...update, windows: previous.windows, observedAt: previous.observedAt })
+  const eventTimes = new Map(claudeQuotaEventTimes.get(previous))
+  for (const window of previous.windows) {
+    const at = window.observedAt ?? previous.observedAt
+    if (!eventTimes.has(window.id) && at) eventTimes.set(window.id, at)
+  }
+  if (update.status !== 'available') {
+    const result = usageQuotaReadSchema.parse({ ...update, windows: previous.windows,
+      ...(previous.observedAt ? { observedAt: previous.observedAt } : {}) })
+    claudeQuotaEventTimes.set(result, eventTimes)
+    return result
+  }
   const windows = new Map(previous.windows.map(window => [window.id, { ...window }]))
   for (const window of update.windows) {
     const old = windows.get(window.id)
-    const oldAt = old?.observedAt ?? previous.observedAt
-    const nextAt = window.observedAt ?? update.observedAt
-    if (oldAt && (!nextAt || Date.parse(nextAt) < Date.parse(oldAt))) continue
-    windows.set(window.id, { ...window })
+    const numericAt = old?.observedAt ?? previous.observedAt
+    const eventAt = eventTimes.get(window.id)
+    const nextAt = claudeQuotaEventTimes.get(update)?.get(window.id) ?? window.observedAt ?? update.observedAt
+    if (eventAt && (!nextAt || Date.parse(nextAt) < Date.parse(eventAt))) continue
+    const sameReset = window.resetsAt === undefined || window.resetsAt === old?.resetsAt
+    const unexpired = old?.resetsAt && nextAt && Date.parse(old.resetsAt) > Date.parse(nextAt)
+    const retained = old && sameReset && unexpired ? old : undefined
+    const merged = { ...retained, ...window }
+    if (retained?.usedPercent !== undefined && window.usedPercent === undefined && numericAt) merged.observedAt = numericAt
+    else if (retained?.resetsAt && window.usedPercent === undefined && window.resetsAt === undefined && numericAt) merged.observedAt = numericAt
+    windows.set(window.id, merged)
+    if (nextAt) eventTimes.set(window.id, nextAt)
   }
   const observedAt = previous.observedAt && (!update.observedAt || Date.parse(previous.observedAt) > Date.parse(update.observedAt)) ? previous.observedAt : update.observedAt
-  return usageQuotaReadSchema.parse({ ...update, windows: [...windows.values()].slice(0, USAGE_QUOTA_WINDOWS_MAX), observedAt })
+  const result = usageQuotaReadSchema.parse({ ...update, windows: [...windows.values()].slice(0, USAGE_QUOTA_WINDOWS_MAX),
+    ...(observedAt ? { observedAt } : {}) })
+  claudeQuotaEventTimes.set(result, eventTimes)
+  return result
 }
 
 /** Only legacy Cent objects establish the same USD-cent dimension; arbitrary amount objects do not. */

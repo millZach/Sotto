@@ -116,7 +116,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     threadProvider: threadId => threadRegistry?.byThread(threadId)?.provider,
   }), directory, options.historyEnabled, undefined, options.watcherEnabled ?? false)
   const usage = options.usageEnabled === true ? new UsageService({ directory, host: agentHost,
-    hasAcceptedPrompt: (threadId, messageId) => agentHost.hasRecordedUserMessage(threadId, messageId) }) : undefined
+    acceptedPromptIdentities: identities => agentHost.recordedUserMessages(identities) }) : undefined
   usage?.start()
   agentHost.setWorkingCopyDefaults(projectId => options.settings().projectThreadWorkingCopyDefaults[projectId] ?? options.settings().threadWorkingCopyDefault)
   let gitStatus: GitStatusReader | undefined

@@ -573,8 +573,6 @@ const installUpdate = async () => {
   try { bytes = await fs.readFile(archive); } catch { throw new Error('update-missing'); }
   if (sha256(bytes) !== cfg.sha256) { await fs.rm(archive, { force: true }); return { type: 'error', reason: 'checksum-mismatch' }; }
   await say({ type: 'update-step', step: 'install' });
-  // Already the version current names, and so perhaps the one running: there is nothing to unpack.
-  if ((await currentVersion()) === version && await exists(entryOf(version))) { await fs.rm(archive, { force: true }); return { type: 'update-installed', version }; }
   const target = path.join(versionsPath, version), partial = target + '.partial';
   await fs.rm(partial, { recursive: true, force: true });
   await fs.mkdir(partial, { recursive: true });
@@ -609,7 +607,7 @@ const installUpdate = async () => {
     let same = false;
     try { same = JSON.stringify(await inventory(target)) === JSON.stringify(await inventory(partial)); } catch {}
     await discard('archive-invalid');
-    if (!same) throw new Error('archive-invalid');
+    if (!same) throw new Error('update-version-conflict');
     await fs.rm(archive, { force: true });
     return { type: 'update-installed', version };
   }
@@ -754,7 +752,7 @@ const runUpdate = async () => {
   } catch (error) {
     const allowed = ['archive-missing', 'descriptor-invalid', 'port-taken', 'host-busy', 'host-start-failed', 'host-timeout',
       'boot-start-refused', 'boot-unit-failed', 'boot-install-failed', 'boot-remove-failed',
-      'update-busy', 'update-invalid', 'update-missing', 'unpack-failed', 'archive-invalid'];
+      'update-busy', 'update-invalid', 'update-missing', 'unpack-failed', 'archive-invalid', 'update-version-conflict'];
     await finish({ type: 'error', reason: allowed.includes(error && error.message) ? error.message : updating ? 'update-failed' : booting ? 'boot-failed' : 'host-start-failed' });
   }
 })();

@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import {
-  mergeClaudeQuota, parseClaudeQuota, parseCodexQuota, parseGrokQuota, unavailableProviderQuota,
+  mergeClaudeQuota, mergeCodexQuota, parseClaudeQuota, parseCodexQuota, parseGrokQuota, unavailableProviderQuota,
 } from '../../../src/main/agents/providerQuota'
 import { usageQuotaReadSchema } from '../../../src/shared/usageDashboard'
 
@@ -35,6 +35,59 @@ describe('native Codex quota', () => {
     expect(parseCodexQuota({ method: 'account/rateLimits/updated', params: { rateLimitsByLimitId: null,
       rateLimits: codexBucket(12) } }, observedAt).windows[0]?.usedPercent).toBe(12)
     expect(parseCodexQuota({ result: { rateLimits: codexBucket(13) } }, observedAt).windows[0]?.usedPercent).toBe(13)
+  })
+  it('uses the default Codex identity when the legacy bucket omits its limit ID', () => {
+    const explicit = parseCodexQuota({ rateLimits: codexBucket(10) }, observedAt)
+    const implicit = parseCodexQuota({ rateLimits: { primary: codexBucket(0).primary } }, later)
+    expect(implicit.windows[0]?.id).toBe(explicit.windows[0]?.id)
+    expect(implicit.windows[0]?.label).toBe('Codex primary window')
+    const merged = mergeCodexQuota(explicit, { rateLimits: { primary: codexBucket(0).primary } }, later)
+    expect(merged.windows).toHaveLength(1)
+    expect(merged.windows[0]).toMatchObject({ usedPercent: 0, observedAt: later })
+  })
+  it('replaces only a notification bucket while preserving other identities and their observation times', () => {
+    const before = parseCodexQuota({ rateLimitsByLimitId: {
+      codex: { ...codexBucket(20), secondary: { usedPercent: 30, windowDurationMins: 10_080, resetsAt: resetSeconds + 100 } },
+      codex_other: { limitId: 'codex_other', primary: { usedPercent: 40, windowDurationMins: 60 } },
+    } }, observedAt)
+    const merged = mergeCodexQuota(before, { method: 'account/rateLimits/updated', params: {
+      rateLimits: codexBucket(0),
+    } }, later)
+    expect(merged.windows).toHaveLength(2)
+    expect(merged.windows.find(window => window.label === 'Codex primary window')).toMatchObject({ usedPercent: 0, observedAt: later })
+    expect(merged.windows.find(window => window.label === 'Other Codex limit primary window')).toEqual(before.windows[2])
+    expect(merged.windows.some(window => window.kind === 'secondary')).toBe(false)
+    expect(before.windows).toHaveLength(3)
+    // A subsequent complete read may legitimately omit the other bucket.
+    expect(parseCodexQuota({ rateLimits: codexBucket(0) }, later).windows).toHaveLength(1)
+  })
+  it('retains unrelated buckets when a reported bucket becomes unknown without inventing zero', () => {
+    const before = parseCodexQuota({ rateLimitsByLimitId: {
+      codex: codexBucket(20), codex_other: { limitId: 'codex_other', primary: { usedPercent: 40 } },
+    } }, observedAt)
+    const merged = mergeCodexQuota(before, { rateLimits: { primary: { resetsAt: resetSeconds }, secondary: null } }, later)
+    expect(merged.windows).toHaveLength(2)
+    const changed = merged.windows.find(window => window.label === 'Codex primary window')
+    expect(changed).toMatchObject({ resetsAt: '2026-10-12T23:00:00.000Z', observedAt: later })
+    expect(changed).not.toHaveProperty('usedPercent')
+    expect(mergeCodexQuota(merged, { rateLimits: { primary: null, secondary: null } }, later).windows)
+      .toEqual([before.windows[1]])
+    expect(mergeCodexQuota(before, {}, later)).toBe(before)
+  })
+  it('does not let an older notification remove or regress a newer bucket', () => {
+    const before = parseCodexQuota({ rateLimits: { ...codexBucket(20), secondary: { usedPercent: 30 } } }, later)
+    const merged = mergeCodexQuota(before, { rateLimits: codexBucket(1) }, observedAt)
+    expect(merged.windows).toEqual(before.windows)
+    expect(merged.observedAt).toBe(later)
+  })
+  it('keeps a newly reported bucket inside the bounded projection when earlier buckets filled it', () => {
+    const before = parseCodexQuota({ rateLimitsByLimitId: Object.fromEntries(Array.from({ length: 8 }, (_, index) => [
+      `bucket-${index}`, { primary: { usedPercent: index } },
+    ])) }, observedAt)
+    const merged = mergeCodexQuota(before, { rateLimits: codexBucket(0) }, later)
+    expect(merged.windows).toHaveLength(8)
+    expect(merged.windows.find(window => window.label === 'Codex primary window'))
+      .toMatchObject({ usedPercent: 0, observedAt: later })
   })
   it('falls back to a valid single bucket when a present multi-bucket map has no usable windows', () => {
     expect(parseCodexQuota({ rateLimits: codexBucket(99), rateLimitsByLimitId: {} }, observedAt).windows[0]?.usedPercent).toBe(99)
@@ -111,6 +164,81 @@ describe('passive Claude quota events', () => {
     expect(merged.windows[0]?.usedPercent).toBe(70)
     expect(mergeClaudeQuota(merged, before).windows[0]?.usedPercent).toBe(70)
     expect(mergeClaudeQuota(merged, before).observedAt).toBe(later)
+  })
+  it('retains unexpired utilization and reset through status-only events without refreshing their age', () => {
+    for (const utilization of [0, 0.2]) {
+      const before = parseClaudeQuota(claudeEvent('five_hour', utilization), observedAt)
+      const next = parseClaudeQuota({ type: 'rate_limit_event', rate_limit_info: {
+        rateLimitType: 'five_hour', status: 'allowed_warning',
+      } }, later)
+      const merged = mergeClaudeQuota(before, next)
+      expect(merged.windows[0]).toMatchObject({ usedPercent: utilization * 100, status: 'warning',
+        resetsAt: '2026-10-12T23:00:00.000Z', observedAt })
+      expect(merged.observedAt).toBe(later)
+    }
+  })
+  it('keeps status ordering separate from retained numeric age through delayed events and unavailable reads', () => {
+    const before = parseClaudeQuota(claudeEvent('five_hour', 0.82), observedAt)
+    const warning = mergeClaudeQuota(before, parseClaudeQuota({ type: 'rate_limit_event', rate_limit_info: {
+      rateLimitType: 'five_hour', status: 'allowed_warning',
+    } }, later))
+    const stale = mergeClaudeQuota(warning, unavailableProviderQuota('claude', 'refresh-unavailable', false, later))
+    const delayedAt = '2026-10-12T18:03:00.000Z'
+    for (const update of [
+      { rateLimitType: 'five_hour', status: 'allowed' },
+      { rateLimitType: 'five_hour', status: 'allowed', utilization: 0.1, resetsAt: resetSeconds + 300 },
+    ]) {
+      const merged = mergeClaudeQuota(stale, parseClaudeQuota({ type: 'rate_limit_event', rate_limit_info: update }, delayedAt))
+      expect(merged.windows[0]).toMatchObject({ status: 'warning', usedPercent: 82,
+        resetsAt: '2026-10-12T23:00:00.000Z', observedAt })
+      expect(merged.observedAt).toBe(later)
+      expect(usageQuotaReadSchema.safeParse(merged).success).toBe(true)
+      expect(Object.keys(merged.windows[0]!)).not.toContain('eventAt')
+    }
+    // A separate window's event is not older than an existing observation of that window.
+    const independent = mergeClaudeQuota(warning, parseClaudeQuota(claudeEvent('seven_day', 0.1), delayedAt))
+    expect(independent.windows.find(window => window.id === 'claude-seven-day'))
+      .toMatchObject({ usedPercent: 10, observedAt: delayedAt })
+    expect(independent.windows.find(window => window.id === 'claude-five-hour'))
+      .toMatchObject({ status: 'warning', usedPercent: 82, observedAt })
+    const newestAt = '2026-10-12T18:06:00.000Z'
+    const newest = mergeClaudeQuota(independent, parseClaudeQuota(claudeEvent('five_hour', 0.5), newestAt))
+    expect(newest.windows.find(window => window.id === 'claude-five-hour'))
+      .toMatchObject({ status: 'allowed', usedPercent: 50, observedAt: newestAt })
+    expect(newest.windows.find(window => window.id === 'claude-seven-day')?.observedAt).toBe(delayedAt)
+  })
+  it('drops expired numeric evidence on a status-only event, including exactly at the reset', () => {
+    const before = parseClaudeQuota(claudeEvent('five_hour', 0.2), observedAt)
+    for (const at of ['2026-10-12T23:00:00.000Z', '2026-10-12T23:01:00.000Z']) {
+      const merged = mergeClaudeQuota(before, parseClaudeQuota({ type: 'rate_limit_event', rate_limit_info: {
+        rateLimitType: 'five_hour', status: 'allowed',
+      } }, at))
+      expect(merged.windows[0]).toMatchObject({ status: 'allowed', observedAt: at })
+      expect(merged.windows[0]).not.toHaveProperty('usedPercent')
+      expect(merged.windows[0]).not.toHaveProperty('resetsAt')
+    }
+  })
+  it('supersedes prior utilization when a different reset identifies a new window', () => {
+    const before = parseClaudeQuota(claudeEvent('five_hour', 0.2), observedAt)
+    const rollover = { type: 'rate_limit_event', rate_limit_info: {
+      rateLimitType: 'five_hour', status: 'allowed', resetsAt: resetSeconds + 300,
+    } }
+    const unknown = mergeClaudeQuota(before, parseClaudeQuota(rollover, later))
+    expect(unknown.windows[0]).toMatchObject({ resetsAt: '2026-10-12T23:05:00.000Z', observedAt: later })
+    expect(unknown.windows[0]).not.toHaveProperty('usedPercent')
+    const zero = mergeClaudeQuota(before, parseClaudeQuota({ ...rollover,
+      rate_limit_info: { ...rollover.rate_limit_info, utilization: 0 },
+    }, later))
+    expect(zero.windows[0]).toMatchObject({ usedPercent: 0, resetsAt: '2026-10-12T23:05:00.000Z', observedAt: later })
+  })
+  it('does not attach undated utilization to a later status event without a known unexpired reset', () => {
+    const before = parseClaudeQuota({ type: 'rate_limit_event', rate_limit_info: {
+      rateLimitType: 'five_hour', utilization: 0.2,
+    } }, observedAt)
+    const merged = mergeClaudeQuota(before, parseClaudeQuota({ type: 'rate_limit_event', rate_limit_info: {
+      rateLimitType: 'five_hour', status: 'allowed',
+    } }, later))
+    expect(merged.windows[0]).not.toHaveProperty('usedPercent')
   })
   it('keeps prior figures as stale evidence after an unavailable read', () => {
     const before = parseClaudeQuota(claudeEvent('five_hour', 0.2), observedAt)

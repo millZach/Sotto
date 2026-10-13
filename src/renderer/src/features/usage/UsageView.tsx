@@ -20,6 +20,7 @@ type Focus = typeof FOCUS[number]
 const TAB_NAMES: Record<Tab, string> = { overview: 'Overview', subscriptions: 'Subscriptions', models: 'Models' }
 const FOCUS_NAMES: Record<Focus, string> = { room: 'Room left', prompts: 'Prompts', tokens: 'Tokens', cache: 'From cache', models: 'Most used model', rhythm: 'Busiest hour' }
 const EMPTY: UsageDashboardRead = { hosts: [] }
+const QUOTA_FRESH_MS = 60_000
 const currentDate = (): Date => new Date()
 
 export interface UsageViewProps {
@@ -52,6 +53,7 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
   const [indexOrientation, setIndexOrientation] = useState<'horizontal' | 'vertical'>('vertical')
   const generation = useRef(0)
   const mounted = useRef(true)
+  const refreshedOnOpen = useRef<UsageBridge | undefined>(undefined)
   const id = useId()
   const query = useMemo<UsageQuery>(() => ({
     timeZone, includeDaily: true,
@@ -90,15 +92,26 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
     return () => observer?.disconnect()
   }, [])
   useEffect(() => { setRead(null); void load() }, [load])
-  // The page refreshes native metadata once when it opens; it never sends an inference prompt.
+  // Reuse recent native metadata across page opens. The button still asks for a fresh reading.
   useEffect(() => {
-    if (bridge === undefined) return
+    if (bridge === undefined || read === null || refreshedOnOpen.current === bridge) return
+    refreshedOnOpen.current = bridge
+    const stamp = now().getTime()
+    const requests = read.hosts.filter(host => host.status === 'ready').map(host => ({
+      hostIds: [host.hostId],
+      providerIds: host.quotas.filter(quota => {
+        if (!quota.refreshable) return false
+        const observed = Date.parse(quota.observedAt ?? '')
+        return !Number.isFinite(observed) || Math.abs(stamp - observed) >= QUOTA_FRESH_MS
+      }).map(quota => quota.providerId),
+    })).filter(request => request.providerIds.length > 0)
+    if (requests.length === 0) return
     let current = true
-    void bridge.refresh({}).then(() => { if (current) void loadRef.current() }).catch(() => {
+    void Promise.all(requests.map(request => bridge.refresh(request))).then(() => { if (current) void loadRef.current() }).catch(() => {
       if (current) setNotice('Subscription limits could not be refreshed. Saved activity is still available.')
     })
     return () => { current = false }
-  }, [bridge])
+  }, [bridge, read, now])
   useEffect(() => {
     const interval = setInterval(() => {
       if (document.visibilityState === 'hidden' || clearRead !== null) return

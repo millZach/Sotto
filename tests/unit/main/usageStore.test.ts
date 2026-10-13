@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { UsageStore } from '../../../src/main/agents/usageStore'
 import { usageLocalReadSchema, type UsagePromptSubmission, type UsageTokenObservation } from '../../../src/shared/usageDashboard'
 
@@ -32,6 +32,7 @@ function pendingIdentities(store: UsageStore) {
 }
 
 afterEach(async () => {
+  vi.restoreAllMocks()
   for (const store of stores.splice(0)) store.close()
   for (const root of roots.splice(0)) {
     if (dirname(resolve(root)) !== resolve(tmpdir()) || !root.includes('sotto-usage-store-')) throw new Error('Unexpected test directory')
@@ -419,6 +420,61 @@ describe('host numeric usage store', () => {
     expect(all.hourly.reduce((total, cell) => total + cell.prompts.total, 0)).toBe(all.totals.prompts.total)
     const db = new DatabaseSync(first.path)
     try { expect(db.prepare('SELECT at FROM token_rows WHERE record_key=?').get(hash('before-midnight'))?.at).toBe('2026-10-12T06:59:59.000Z') } finally { db.close() }
+  })
+
+  it.each([
+    { timeZone: 'Pacific/Kiritimati', first: '2026-10-11T10:00:00.000Z', last: '2026-10-12T09:59:59.000Z' },
+    { timeZone: 'Pacific/Pago_Pago', first: '2026-10-12T11:00:00.000Z', last: '2026-10-13T10:59:59.000Z' },
+  ])('filters UTC history before converting the full local day in $timeZone', async ({ timeZone, first, last }) => {
+    const f = await fixture()
+    // A real archive larger than the instant cache exposes any full-history Intl pass.
+    const db = new DatabaseSync(f.path)
+    try {
+      const insert = db.prepare('INSERT INTO token_rows (provider,thread_id,record_key,model_id,at,day,partial,input,output) VALUES (?,?,?,?,?,?,0,100,20)')
+      const insertPrompt = db.prepare("INSERT INTO prompt_rows VALUES (?,?,?,?,?,?,'user','send')")
+      db.exec('BEGIN')
+      for (let index = 0; index < 1_024; index++) {
+        const instant = new Date(Date.parse('2024-01-01T00:00:00Z') + index * 60_000).toISOString()
+        insert.run('claude', 'archive-thread', hash(`archive-${index}`), 'archive-model', instant, instant.slice(0, 10))
+        insertPrompt.run('archive-thread', `archive-${index}`, 'claude', 'archive-model', instant, instant.slice(0, 10))
+      }
+      db.exec('COMMIT')
+    } finally { db.close() }
+    const instants = [new Date(Date.parse(first) - 1_000).toISOString(), first, last, new Date(Date.parse(last) + 1_000).toISOString()]
+    for (const [index, instant] of instants.entries()) {
+      f.store.observeTokens(token({ recordKey: hash(`edge-${index}`), at: instant }))
+      accepted(f.store, prompt({ messageId: `edge-${index}`, at: instant }))
+    }
+    f.store.observeTokens(token({ recordKey: hash('undated'), at: undefined, phase: 'seed' }))
+    const formatted = vi.spyOn(Intl.DateTimeFormat.prototype, 'formatToParts')
+    const result = f.store.query({ timeZone, from: '2026-10-12', to: '2026-10-12' })
+    expect(result.totals).toMatchObject({ tokenRecords: 2, undatedTokenRecords: 0, prompts: { total: 2 }, tokens: { total: { value: 240 } } })
+    expect(result.daily.map(row => row.day)).toEqual(['2026-10-12'])
+    expect(formatted).toHaveBeenCalled()
+    expect(formatted.mock.calls.every(([instant]) => instant instanceof Date && instant.getUTCFullYear() === 2026)).toBe(true)
+  })
+
+  it('reuses unchanged numeric queries defensively and invalidates them for writes, Clear and reopening', async () => {
+    const f = await fixture()
+    f.store.observeTokens(token())
+    const formatted = vi.spyOn(Intl.DateTimeFormat.prototype, 'formatToParts')
+    const query = { timeZone: 'America/Los_Angeles' }
+    const first = f.store.query(query)
+    const calls = formatted.mock.calls.length
+    first.totals.tokens.total.value = 1
+    first.models.length = 0
+    expect(f.store.query(query)).toMatchObject({ totals: { tokens: { total: { value: 120 } } }, models: [{ modelId: 'observed-sonnet' }] })
+    expect(formatted).toHaveBeenCalledTimes(calls)
+    f.store.observeTokens(token({ tokens: { input: 100, output: 25 } }))
+    expect(f.store.query(query).totals.tokens.total.value).toBe(125)
+    f.store.clear(f.store.metadata().revision)
+    expect(f.store.query(query).totals.tokenRecords).toBe(0)
+    f.store.observeTokens(token({ recordKey: hash('new-cache-record'), groupKey: hash('new-cache-group'), liveNewGroup: true }))
+    expect(f.store.query(query).totals.tokens.total.value).toBe(120)
+    const beforeReopen = formatted.mock.calls.length
+    f.store.close(); f.store.open()
+    expect(f.store.query(query).totals.tokens.total.value).toBe(120)
+    expect(formatted.mock.calls.length).toBeGreaterThan(beforeReopen)
   })
 
   it.each([

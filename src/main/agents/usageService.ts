@@ -5,16 +5,18 @@ import {
   usageTokenObservationSchema, usagePromptSubmissionSchema, usagePromptIdentitySchema,
   type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery,
   type UsagePromptSubmission, type UsageQuotaRead, type UsageTokenObservation,
+  type UsagePromptIdentity,
 } from '../../shared/usageDashboard'
 import type { AgentHost } from './host'
 import { subscribeActivitySnapshots } from './activitySnapshots'
 import { unavailableProviderQuota } from './providerQuota'
-import { UsageStore } from './usageStore'
+import { UsageStore, USAGE_PENDING_RECONCILIATION_BATCH_MAX } from './usageStore'
 
 const PROVIDERS: readonly ProviderId[] = ['codex', 'claude', 'grok', 'devin']
 const BUFFER_MAX = 4_096
 const FLUSH_MS = 1_000
 const RETRY_MS = 5_000
+const RECONCILE_MS = 5_000
 
 /** Numeric-only callbacks at the coordinator's durable intent and exact echo boundaries. */
 export interface UsagePromptRecorder {
@@ -24,7 +26,7 @@ export interface UsagePromptRecorder {
 }
 
 type Store = Pick<UsageStore, 'open' | 'close' | 'metadata' | 'observeTokens' | 'submitPrompt' | 'acceptSubmittedPrompt' |
-  'discardSubmittedPrompt' | 'visitPendingPromptIdentities' | 'markLegacySeedCompleted' | 'query' | 'clear'>
+  'discardSubmittedPrompt' | 'pendingPromptReconciliationEnd' | 'pendingPromptIdentities' | 'markLegacySeedCompleted' | 'query' | 'clear'>
 interface PromptWrite { submission?: UsagePromptSubmission; action?: 'accept' | 'discard' }
 
 /** Created only by an owning host whose startup Usage answer is on. Never sends a provider prompt. */
@@ -38,6 +40,12 @@ export class UsageService implements UsagePromptRecorder {
   private readonly subscriptions: (() => void)[] = []
   private readonly refreshing = new Map<ProviderId, Promise<UsageQuotaRead>>()
   private timer: ReturnType<typeof setTimeout> | undefined
+  private reconcileTimer: ReturnType<typeof setTimeout> | undefined
+  private reconciliation: { after?: UsagePromptIdentity; through: UsagePromptIdentity } | undefined
+  private reconciliationRequested = true
+  private reconciling = false
+  private started = false
+  private receivedSnapshot = false
   private opened = false
   private failed = false
   private lost = false
@@ -49,9 +57,12 @@ export class UsageService implements UsagePromptRecorder {
     directory: string; host: AgentHost; store?: Store
     /** Exact role/ID evidence from the owning host's event store; reads no words. */
     hasAcceptedPrompt?: (threadId: string, messageId: string) => boolean
+    /** Preferred bounded recovery lookup: one host flush and event scan for the whole batch. */
+    acceptedPromptIdentities?: (identities: readonly UsagePromptIdentity[]) => readonly UsagePromptIdentity[]
   }) { this.store = options.store ?? new UsageStore(join(options.directory, 'usage.sqlite')) }
 
   start(): void {
+    if (this.started || this.closed) return
     if (!this.open()) this.schedule(RETRY_MS)
     if (this.options.host.subscribeUsage) {
       this.subscriptions.push(this.options.host.subscribeUsage(record => this.observeTokens(record)))
@@ -64,6 +75,7 @@ export class UsageService implements UsagePromptRecorder {
         }
       }))
     }
+    this.started = true
     this.reconcilePending()
   }
 
@@ -98,7 +110,6 @@ export class UsageService implements UsagePromptRecorder {
   async read(input: UsageLocalQuery = {}): Promise<UsageLocalHostRead> {
     const query = usageLocalQuerySchema.parse(input)
     this.flush()
-    this.reconcilePending()
     const quotas = await this.readQuotas(query.providerIds, false)
     try {
       if (!this.opened) throw new Error('Usage store is unavailable')
@@ -123,6 +134,10 @@ export class UsageService implements UsagePromptRecorder {
     // The revision includes every flushed row. A changed revision requires another user confirmation.
     const result = this.store.clear(request.expectedRevision)
     if (result.status === 'cleared') this.lost = false
+    if (result.status === 'cleared') {
+      this.reconciliation = undefined
+      clearTimeout(this.reconcileTimer); this.reconcileTimer = undefined
+    }
     return result
   }
 
@@ -142,6 +157,7 @@ export class UsageService implements UsagePromptRecorder {
       if (this.seedPending) { this.store.markLegacySeedCompleted(); this.seedPending = false; this.seedMarked = true }
       this.failed = false
     } catch { this.failed = true; this.schedule(RETRY_MS) }
+    if (this.started && this.reconciliationRequested) this.reconcilePending()
   }
 
   close(): void {
@@ -150,6 +166,7 @@ export class UsageService implements UsagePromptRecorder {
     this.flush()
     this.closed = true
     clearTimeout(this.timer); this.timer = undefined
+    clearTimeout(this.reconcileTimer); this.reconcileTimer = undefined
     try { this.store.close() } catch { /* Usage never holds provider shutdown open. */ }
     this.opened = false
   }
@@ -172,6 +189,9 @@ export class UsageService implements UsagePromptRecorder {
   }
 
   private acceptSnapshot(snapshot: AgentHostSnapshot): void {
+    const firstSnapshot = !this.receivedSnapshot
+    this.receivedSnapshot = true
+    const previouslyConnected = new Set(this.connected)
     this.connected.clear()
     for (const provider of snapshot.providers ?? []) if (provider.connection === 'connected') this.connected.add(provider.id)
     if (!snapshot.providers && snapshot.connected) {
@@ -187,17 +207,42 @@ export class UsageService implements UsagePromptRecorder {
         } catch { this.failed = true }
       }
     }
-    this.reconcilePending()
+    if (this.started && (firstSnapshot || [...this.connected].some(provider => !previouslyConnected.has(provider)))) {
+      this.reconciliationRequested = true
+      this.reconcilePending()
+    }
     if (this.connected.size && !this.seedMarked) { this.seedPending = true; this.schedule(FLUSH_MS) }
   }
 
   private reconcilePending(): void {
-    if (!this.opened || !this.options.hasAcceptedPrompt) return
+    if (!this.opened || (!this.options.acceptedPromptIdentities && !this.options.hasAcceptedPrompt) || this.closed || this.reconciling) return
+    this.reconciling = true
     try {
-      this.store.visitPendingPromptIdentities(({ threadId, messageId }) => {
-        if (this.options.hasAcceptedPrompt?.(threadId, messageId)) this.acceptPrompt(threadId, messageId)
-      })
+      if (this.reconciliationRequested) {
+        const through = this.store.pendingPromptReconciliationEnd()
+        this.reconciliation = through === undefined ? undefined : { through }
+        this.reconciliationRequested = false
+      }
+      const pass = this.reconciliation
+      if (pass === undefined) return
+      const identities = this.store.pendingPromptIdentities(pass.after, pass.through)
+      const accepted = new Set((identities.length === 0 ? [] : this.options.acceptedPromptIdentities
+        ? this.options.acceptedPromptIdentities(identities)
+        : identities.filter(identity => this.options.hasAcceptedPrompt!(identity.threadId, identity.messageId)))
+        .map(identity => promptKey(identity.threadId, identity.messageId)))
+      for (const identity of identities) {
+        if (accepted.has(promptKey(identity.threadId, identity.messageId))) this.acceptPrompt(identity.threadId, identity.messageId)
+        pass.after = identity
+      }
+      const last = identities.at(-1)
+      if (identities.length < USAGE_PENDING_RECONCILIATION_BATCH_MAX
+        || (last?.threadId === pass.through.threadId && last.messageId === pass.through.messageId)) this.reconciliation = undefined
     } catch { this.failed = true; this.schedule(RETRY_MS) }
+    finally { this.reconciling = false }
+    if ((this.reconciliation !== undefined || this.reconciliationRequested) && this.reconcileTimer === undefined) {
+      this.reconcileTimer = setTimeout(() => { this.reconcileTimer = undefined; this.reconcilePending() }, RECONCILE_MS)
+      this.reconcileTimer.unref?.()
+    }
   }
 
   private async readQuotas(providerIds: readonly ProviderId[] | undefined, refresh: boolean): Promise<UsageQuotaRead[]> {
@@ -232,7 +277,7 @@ export class UsageService implements UsagePromptRecorder {
 
   private schedule(delay: number): void {
     if (this.timer || this.closed) return
-    this.timer = setTimeout(() => { this.timer = undefined; this.flush(); this.reconcilePending() }, delay)
+    this.timer = setTimeout(() => { this.timer = undefined; this.flush() }, delay)
     this.timer.unref?.()
   }
 }

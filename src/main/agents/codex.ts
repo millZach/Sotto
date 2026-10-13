@@ -7,7 +7,7 @@ import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotP
 import { randomUUID } from 'node:crypto'
 import { NativeUsage } from './nativeUsage'
 import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
-import { parseCodexQuota, unavailableProviderQuota } from './providerQuota'
+import { mergeCodexQuota, parseCodexQuota, unavailableProviderQuota } from './providerQuota'
 import { bracketCompaction } from './compactionActivity'
 import { compactionPending, compactionSchema } from '../../shared/compaction'
 import { stat } from 'node:fs/promises'
@@ -1596,7 +1596,7 @@ export class CodexAppServerHost implements AgentHost {
   /** A notification or request from `server`; its responses to Sotto's own requests were settled by the process. */
   private async frame(server: CodexProcess, frame: RpcFrame): Promise<void> {
     if (this.usageEnabled && frame.method === 'account/rateLimits/updated') {
-      this.quota = parseCodexQuota(frame.params, new Date().toISOString()); return
+      this.quota = mergeCodexQuota(this.quota, frame.params, new Date().toISOString()); return
     }
     if (frame.method === 'skills/changed' || frame.method === 'account/updated') {
       if (frame.method === 'account/updated' && this.usageEnabled) this.quota = undefined

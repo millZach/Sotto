@@ -276,6 +276,7 @@ export class HostUpdates {
       case 'desktop-checksum-mismatch': return say(`The download on this computer did not match the release's checksum, so Sotto installed nothing on ${name}.`, `Try again to download it fresh, or update it by hand on ${name}.`)
       case 'unpack-failed': return say(`Sotto ${to} could not be unpacked on ${name}, so nothing was installed.`)
       case 'archive-invalid': return say(`The archive on the releases page is not the Sotto ${to} host, so nothing was installed on ${name}.`, `Keep using ${from}, and tell whoever publishes Sotto's releases.`)
+      case 'update-version-conflict': return say(`The existing versions/${to} folder on ${name} differs from the release. Sotto kept it unchanged.`, `Use a newer Sotto build, or stop the host on ${name}, keep that folder as a backup and move it aside before trying again.`)
       case 'node-unsupported': return say(`Sotto ${to}'s host needs Node ${stopped.detail.range ?? 'another version'}, and ${name} runs Node ${stopped.detail.node ?? 'another version'}, so nothing was installed.`, `Install that Node for the SSH account on ${name}, then try again.`)
       case 'update-busy': return say(`Another Sotto is updating the host on ${name} right now, so this one stopped before changing anything.`, 'Wait a minute, then try again.')
       case 'update-not-owned': return say(`Sotto did not start the host now running on ${name}, so it did not restart it. ${to} is installed beside ${from}.`, `Stop the host on ${name}, then connect to it again from Settings > Hosts, and Sotto starts ${to}.`)
@@ -298,6 +299,12 @@ export class HostUpdates {
     const to = this.options.version, install = shellPath(entry.installPath), data = shellPath(entry.dataDirectory)
     if (entry.reason === 'update-start-failed') {
       return [`# On ${entry.name}, with its host stopped, to see what ${to} says:`, `cd ${install}/versions/${to}`, `node host/index.js --data ${data}`].join('\n')
+    }
+    if (entry.reason === 'update-version-conflict') {
+      return [`# On ${entry.name}, inspect the existing folder before changing it:`, `cd ${install}`, `ls -ld versions/${to}`,
+        `cat versions/${to}/package.json`, `cat versions/${to}/runtime-manifest.json`,
+        '# Keep this folder as a backup. Do not unpack a different build over it.',
+        '# Use a newer Sotto build, or stop the host and move this folder aside before pressing Try again.'].join('\n')
     }
     const file = entry.file ?? hostArchiveName(to)
     const url = `${this.releasesUrl.replace(/\/+$/u, '')}/v${to}/${file}`

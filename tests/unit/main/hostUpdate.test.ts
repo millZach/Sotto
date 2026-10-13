@@ -263,6 +263,23 @@ describe('an update', () => {
       kept: 'forge\'s threads are back. Nothing was lost.' } })
     expect(one().commands).toBe(`# On forge, with its host stopped, to see what ${DESKTOP} says:\ncd ~/.local/share/sotto-host/versions/${DESKTOP}\nnode host/index.js --data ~/.sotto`)
   })
+  it('names a conflicting installed folder and offers inspection commands without overwriting it', async () => {
+    const { hosts, updates, one, settled } = setup()
+    hosts.list = [forge({ installPath: "~/installed host's $(literal)" })]; hosts.emit()
+    hosts.steps['update-install'] = async () => ({ type: 'error', reason: 'update-version-conflict' })
+    await updates.command(ID, 'update')
+    await settled()
+    expect(one()).toMatchObject({ phase: 'failed', failure: { step: 'install',
+      message: `The existing versions/${DESKTOP} folder on forge differs from the release. Sotto kept it unchanged.`,
+      kept: 'forge still runs 0.1.22. Nothing was lost.',
+      next: 'Use a newer Sotto build, or stop the host on forge, keep that folder as a backup and move it aside before trying again.' } })
+    expect(one().commands).toBe([
+      '# On forge, inspect the existing folder before changing it:', "cd ~/'installed host'\\''s $(literal)'", `ls -ld versions/${DESKTOP}`,
+      `cat versions/${DESKTOP}/package.json`, `cat versions/${DESKTOP}/runtime-manifest.json`,
+      '# Keep this folder as a backup. Do not unpack a different build over it.',
+      '# Use a newer Sotto build, or stop the host and move this folder aside before pressing Try again.'].join('\n'))
+    expect(hosts.operations.map(operation => operation.op)).toEqual(['update-fetch', 'update-install'])
+  })
   it('says what it knows when the connection is lost during the restart, by the version the host reconnects with', async () => {
     const { hosts, updates, one, settled } = setup()
     hosts.steps['update-restart'] = async () => { throw new SshFailure('update-failed') }
