@@ -1,0 +1,280 @@
+<!doctype html>
+<!-- PROTOTYPE, throwaway. Before/after review of the Settings wording. Not shipped; captured as tag prototype/settings-copy. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings wording, before and after</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { color-scheme: dark; --bg: #121315; --panel: #1a1b1e; --line: #2a2c30; --text: #e8e8ea; --muted: #9a9ca3; --faint: #6d7078; --accent: #8fb4ff; --good: #7fd4a0; --warn: #f0c27a; }
+  @media (prefers-color-scheme: light) { :root { color-scheme: light; --bg: #f6f6f4; --panel: #ffffff; --line: #e2e2de; --text: #1c1d20; --muted: #5d6068; --faint: #8a8d94; --accent: #2f5fd0; --good: #1d7a45; --warn: #9a6200; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 Figtree, system-ui, sans-serif; }
+  header.top { position: sticky; top: 0; z-index: 2; background: var(--bg); border-bottom: 1px solid var(--line); padding: 14px 24px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  header.top h1 { font-size: 16px; font-weight: 600; margin: 0; }
+  header.top .stats { color: var(--muted); font-size: 13px; }
+  header.top .spacer { flex: 1; }
+  button { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+  button:hover { border-color: var(--faint); }
+  button:focus-visible, textarea:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .layout { display: grid; grid-template-columns: 190px 1fr; gap: 0; }
+  nav.pages { position: sticky; top: 57px; align-self: start; padding: 20px 12px 20px 24px; max-height: calc(100vh - 57px); overflow: auto; }
+  nav.pages a { display: flex; justify-content: space-between; color: var(--muted); text-decoration: none; padding: 5px 8px; border-radius: 6px; font-size: 14px; }
+  nav.pages a:hover { color: var(--text); background: var(--panel); }
+  nav.pages a small { color: var(--faint); }
+  main { padding: 20px 24px 80px; max-width: 1180px; min-width: 0; }
+  .pair > * { min-width: 0; overflow-wrap: anywhere; }
+  .intro { color: var(--muted); max-width: 760px; margin: 0 0 24px; }
+  .intro b { color: var(--text); font-weight: 600; }
+  section.page { margin-bottom: 36px; }
+  section.page > h2 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+  section.page > .sub { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
+  .row { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 10px; }
+  .row[data-verdict="ok"] { border-color: color-mix(in srgb, var(--good) 55%, var(--line)); }
+  .row[data-verdict="change"] { border-color: color-mix(in srgb, var(--warn) 60%, var(--line)); }
+  .row-head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; margin-bottom: 10px; }
+  .row-head h3 { font-size: 15px; font-weight: 600; margin: 0; }
+  .tag { font-size: 12px; color: var(--faint); border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .col .label { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); margin-bottom: 4px; display: flex; justify-content: space-between; }
+  .before p { color: var(--muted); margin: 0 0 6px; }
+  .after p { margin: 0 0 6px; }
+  .var { color: var(--accent); font-style: italic; }
+  .moved { margin-top: 8px; font-size: 13px; color: var(--faint); }
+  .moved b { color: var(--muted); font-weight: 500; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; margin-top: 12px; }
+  .actions textarea { min-width: 200px; }
+  .actions button[aria-pressed="true"][data-v="ok"] { border-color: var(--good); color: var(--good); }
+  .actions button[aria-pressed="true"][data-v="change"] { border-color: var(--warn); color: var(--warn); }
+  textarea { flex: 1; min-height: 34px; resize: vertical; font: inherit; font-size: 14px; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+  .kept { color: var(--muted); font-size: 14px; }
+  .kept summary { cursor: pointer; color: var(--muted); }
+  .kept ul { margin: 8px 0 0; padding-left: 18px; }
+  .kept li { margin-bottom: 4px; }
+  .kept li b { color: var(--text); font-weight: 500; }
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 14px; display: none; }
+  @media (max-width: 820px) { .layout { grid-template-columns: 1fr; } nav.pages { display: none; } .pair { grid-template-columns: 1fr; } main, header.top { padding-left: 14px; padding-right: 14px; } header.top { position: static; } }
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+  html { scroll-padding-top: 70px; }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>Settings wording, before and after</h1>
+  <span class="stats" id="stats"></span>
+  <span class="spacer"></span>
+  <button type="button" id="copy">Copy my notes</button>
+</header>
+<div class="layout">
+  <nav class="pages" id="nav" aria-label="Settings pages"></nav>
+  <main>
+    <p class="intro">Each row is one piece of text on a settings page. <b>Before</b> is what Sotto says today and <b>After</b> is my rewrite. Where a detail was dropped, the line under the rewrite says where it moves, usually <b>docs/guide.md</b>. Mark a row <b>Looks good</b> or <b>Change</b>, add a note if you like, then press <b>Copy my notes</b> and paste the result back to me. Rows I left alone are listed at the end of each page. Notes are not saved, so copy them before you close this page.<br><br>Not in this pass: error and status messages (they follow the error rule: what happened, what was lost, what to do), and dialogs that open from Settings. <span class="var">Blue italic</span> marks a name filled in when Sotto runs.</p>
+    <div id="pages"></div>
+  </main>
+</div>
+<div class="toast" id="toast" role="status"></div>
+<script>
+// {name} is filled in at run time and shown as a variable.
+const PAGES = [
+  { title: 'Dictation', sub: 'Microphone & recording', rows: [
+    { label: 'Global shortcut', tag: 'Windows', before: 'Used anywhere in Windows to start and stop dictation.', after: 'Starts and stops dictation from anywhere in Windows.' },
+    { label: 'Global shortcut', tag: 'macOS', before: 'Used anywhere in macOS to start and stop dictation.', after: 'Starts and stops dictation from anywhere in macOS.' },
+    { label: 'Compositor bindings', tag: 'Linux', before: 'Compositor bindings live in Hyprland, not in Sotto. Once Sotto’s bindings are installed, hold F9 to talk, or press Super+Ctrl+X to start and stop.', after: 'These are set in Hyprland, not here. Once installed, hold F9 to talk or press Super+Ctrl+X to start and stop.' },
+  ], kept: [
+    ['Microphone test', 'Check that Sotto can hear you. Access is asked for only while the test runs.'],
+    ['Sound cues', 'A short sound when recording starts and stops.'],
+  ] },
+  { title: 'Transcription', sub: 'Speech to text, on this computer', rows: [
+    { label: 'Parakeet v3', tag: 'model statement', before: 'Speech recognition by {NVIDIA}, on this computer. Understands {25} European languages and works out which one you speak.', after: 'By {NVIDIA}. Runs on this computer and recognises which of {25} European languages you speak.' },
+    { label: 'Whitespace formatting', before: 'Trim and normalize repeated whitespace without changing words.', after: 'Trims extra spaces without changing any words.' },
+    { label: 'Privacy line', tag: 'privacy', before: 'Your audio is transcribed on this computer and never leaves it. Only AI cleanup, when it is on, sends the transcript text to OpenRouter.', after: 'Your audio never leaves this computer. Only AI cleanup, when on, sends the text to OpenRouter.' },
+  ], kept: [] },
+  { title: 'Cleanup', sub: 'Formatting, vocabulary & writing', rows: [
+    { label: 'AI formatting', tag: 'privacy', before: 'Send transcript text, never audio, to OpenRouter for cleanup. Falls back to the raw transcript if the network is slow or offline.', after: 'Sends the text, never audio, to OpenRouter to tidy it up. Offline, you get the raw transcript.' },
+    { label: 'OpenRouter API key', before: 'Only used for AI cleanup. Stored in your operating system credential store.', after: 'Used only for AI cleanup and kept in your system’s credential store.' },
+    { label: 'Personal dictionary', before: 'One word or name per line. Used during AI cleanup to spell names and terms the way you do.', after: 'One word or name per line, so AI cleanup spells them your way.' },
+    { label: 'Generated thread titles', tag: 'privacy', before: 'Name a new thread from the opening words of its first message as soon as you send it, then ask the thread’s own model to name it from its first exchange, and a new worktree branch from its first prompt, only while local history is kept. Names you choose are never replaced.', after: 'The thread’s own model names new threads and worktree branches from their first message, while local history is on. Names you choose are kept.', moved: 'The two steps (opening words first, then the model’s name) go to docs/guide.md.' },
+    { label: 'Generated commit messages', tag: 'privacy', before: 'When the commit dialog’s message is left empty, ask the thread’s own model to write it in the Commit and pull request style chosen under Git. It is sent the staged diff, the staged file names, the repository’s last twenty commit subjects, its AGENTS.md, and your custom instructions when that style is chosen. Off, the commit takes the subject “Update project files”.', after: 'Leave a commit message empty and the thread’s own model writes it from the staged diff, recent commits and AGENTS.md. Off, it reads “Update project files”.', moved: 'The full list of what is sent (file names, twenty subjects, custom instructions) goes to docs/guide.md.' },
+    { label: 'Generated pull request text', tag: 'privacy', before: 'Ask the thread’s own model to write a pull request’s title and body when a Git action creates one, in the Commit and pull request style chosen under Git. It is sent the branch’s commit subjects and a capped diff against the base, and your custom instructions when that style is chosen; a Git action also sends the changed files, and the repository’s pull request template when Sotto finds one and Follow pull request templates is on.', after: 'The thread’s own model writes a new pull request’s title and body from the branch’s commits and diff.', moved: 'Custom instructions, changed files and the template go to docs/guide.md; the template has its own switch under Git.' },
+  ], kept: [] },
+  { title: 'Providers', sub: 'Accounts & connections', rows: [
+    { label: 'Local connection', before: 'Uses your sign-in in {Codex} on this computer.', after: 'Uses your {Codex} sign-in on this computer.' },
+    { label: 'Devin note', tag: 'privacy', before: 'Uses your Devin account and credits. Devin keeps its own history and usage analytics; Sotto’s local history setting does not control them.', after: 'Uses your Devin account and credits. Devin keeps its own history and analytics, outside Sotto’s control.' },
+    { label: 'New threads note', before: 'New threads use the agent selected in Settings → Agents.', after: 'Choose what new threads start with under Agents.' },
+    { label: 'Check for client updates', tag: 'privacy', before: 'Asks the npm registry, at most once an hour for each client, which version it publishes. Only a package name is sent. Off, Sotto says nothing about versions and never offers to install one.', after: 'Asks the npm registry for each client’s latest version, at most hourly. Only the package name is sent.' },
+  ], kept: [
+    ['Local connection (Devin)', 'Install Devin CLI and run devin auth login before connecting.'],
+  ] },
+  { title: 'Hosts', sub: 'Local & remote hosts', rows: [
+    { label: 'This computer', before: 'Runs threads on this computer beside your remote hosts. A change takes effect after you restart Sotto. Saved data stays.', after: 'Runs threads here as well as on remote hosts. Changes apply after a restart, and saved data stays.' },
+    { label: 'Dictation note', before: 'Dictation and automatic paste always use this computer. They do not paste into a remote host.', after: 'Dictation and paste always happen on this computer, never on a remote host.' },
+    { label: 'Remote hosts', before: 'Connect to machines on your tailnet or over SSH. Sotto signs in with your SSH setup to add one, starts the host if needed and pairs this computer. Hosts that are on reconnect when Sotto starts, over your tailnet when they can, and a host Sotto started keeps running until you stop it.', after: 'Run threads on other machines over your tailnet or SSH. Sotto sets each one up with your SSH access, and a host it starts keeps running until you stop it.', moved: 'Reconnecting at start, tailnet first, goes to docs/guide.md.' },
+    { label: 'Tailscale, not installed', before: 'Not installed. Any machine you reach over SSH works without it, and Sotto connects to it over SSH each time.', after: 'Not installed. Hosts still work over SSH without it.' },
+    { label: 'Providers on a host', before: '{forge} connects each provider that is signed in when its host starts. A provider you disconnect stays off.', after: 'Signed-in providers connect when {forge}’s host starts. One you disconnect stays off.' },
+    { label: 'Start at boot', tag: 'needs linger, host would restart', before: 'Then {forge}’s threads come back after {forge} restarts, without this computer signing in over SSH. Sotto adds a systemd user unit for {zach} on {forge} and turns on linger for that account; the host restarts once now, which stops turns running there. If {forge} asks for an administrator, nothing changes there, and Sotto shows the command to run.', after: 'Brings {forge}’s threads back after it restarts. Sotto adds a systemd user unit for {zach} and turns on linger; the host restarts once now, stopping turns in progress.', moved: 'The administrator case is already explained in the dialog that opens, so it is dropped here.' },
+    { label: 'Start at boot', tag: 'linger already on, host keeps running', before: 'Then {forge}’s threads come back after {forge} restarts, without this computer signing in over SSH. Sotto adds a systemd user unit for {zach} on {forge}; the host running there keeps running, and the unit takes over the next time {forge} starts.', after: 'Brings {forge}’s threads back after it restarts. Sotto adds a systemd user unit for {zach}, which takes over the next time {forge} starts.' },
+  ], kept: [
+    ['Tailscale, off', 'Off on this computer. Connect to reach your other machines.'],
+  ] },
+  { title: 'Phones', sub: 'Sotto on your iPhone, reaching this computer', rows: [
+    { label: 'Let phones connect', tag: 'privacy', before: 'Sotto adds this computer to Tailscale Serve on port 8443, or 10000 when another app uses 8443, so phones on your tailnet can find it. Only phones you pair can connect. Turning this off removes the setting.', after: 'Adds this computer to Tailscale Serve, on port 8443 or 10000, until you turn it off. Only phones you pair can connect.' },
+    { label: 'Name on phones', before: 'Phones list this computer’s threads under this name. Leave it empty to use {Zach’s laptop}.', after: 'How this computer appears on phones. Leave it empty to use {Zach’s laptop}.' },
+    { label: 'Local host is off', before: 'Phone access needs the local host, which is off. Phones reach the threads this computer runs. Turn on Run the local host under Hosts, then restart Sotto.', after: 'Phone access needs the local host. Turn on Run the local host under Hosts, then restart Sotto.' },
+    { label: 'Pair a phone note', before: 'A paired phone reads threads and replies. It answers questions and permissions only after you turn on Can answer for it.', after: 'A paired phone can read and reply. It answers questions and permissions only once you turn on Can answer.' },
+  ], kept: [
+    ['Pairing code', 'A code works once, for five minutes.'],
+    ['Setup steps', 'Checked when you turn this on. (and the other step lines, which are status)'],
+  ] },
+  { title: 'Cloud iPhone', sub: 'Native iOS builds on a run.cloud simulator', rows: [
+    { label: 'run.cloud group note', tag: 'privacy', before: 'Agents test native iOS builds on a run.cloud simulator, and each session asks you first. The build is uploaded to run.cloud, in the EU, and deleted when the session ends.', after: 'Agents test iOS builds on a run.cloud simulator, and ask you before each session. Builds go to run.cloud in the EU and are deleted afterwards.' },
+    { label: 'Idle sessions end after', before: 'Minutes with no tap, typing or agent action, 1 to 60.', after: 'Minutes without any activity, 1 to 60.' },
+  ], kept: [
+    ['Key', 'Checked with run.cloud before it is saved.'],
+    ['Spending note', 'About $0.02 a minute; your first $15 each month is free.'],
+    ['Monthly cap', 'Minutes a month, 10 to 100000.'],
+  ] },
+  { title: 'Agents', sub: 'New threads & projects', rows: [
+    { label: 'New threads', tag: 'one computer', before: 'A new thread in a project opens straight away with these. Change them for one thread under its composer.', after: 'New threads start with these. Change them for one thread in its composer.' },
+    { label: 'New threads', tag: 'hosts connected', before: 'A new thread in a project opens straight away with these, on every connected computer. Change them for one thread under its composer.', after: 'New threads start with these on every connected computer. Change them for one thread in its composer.' },
+    { label: 'New threads start with', before: 'Model, reasoning effort and permissions, as the composer shows them.', after: 'Model, reasoning effort and permissions.' },
+  ], kept: [
+    ['Projects', 'Where a new project goes. Each computer has its own folder.'],
+  ] },
+  { title: 'Output', sub: 'Clipboard & automatic paste', rows: [
+    { label: 'Automatic clipboard copy', before: 'Always enabled for every successful non-empty transcript.', after: 'Always on. Every transcript is copied.' },
+    { label: 'Automatic paste', tag: 'Windows', before: 'Best-effort Ctrl+V into the previously focused application.', after: 'Presses Ctrl+V in the app you were using. Some apps block it.' },
+    { label: 'Automatic paste', tag: 'macOS', before: 'Best-effort ⌘V into the previously focused application.', after: 'Presses ⌘V in the app you were using. Some apps block it.' },
+    { label: 'Automatic paste', tag: 'Linux', before: 'Paste into the focused window on Hyprland, terminals included. If it does not get through, use Super+V, Omarchy’s universal paste.', after: 'Pastes into the focused window, terminals included. If it doesn’t arrive, press Super+V.' },
+    { label: 'Paste delay', before: 'Milliseconds to wait before attempting paste (50-1000).', after: 'How long to wait before pasting, in milliseconds (50 to 1000).' },
+    { label: 'Success message duration', before: 'Milliseconds the success state remains visible (500-5000).', after: 'How long the success message stays up, in milliseconds (500 to 5000).' },
+  ], kept: [] },
+  { title: 'Appearance', sub: 'Themes & interface', rows: [
+    { label: 'Themes', before: 'Choose one theme for light mode and one for dark. Sotto wears the one for the mode it is in.', after: 'Choose one theme for light mode and one for dark.' },
+    { label: 'Frosted window', tag: 'Windows', before: 'Let the desktop show through the window, blurred and tinted by your theme. Windows draws it solid while another window is in front.', after: 'Shows the desktop through the window, blurred and tinted by your theme. It turns solid while another window is in front.' },
+    { label: 'Frosted window', tag: 'system reduces transparency', before: 'Let the desktop show through the window, blurred and tinted by your theme. Your system is set to reduce transparency, so the window stays solid.', after: 'Shows the desktop through the window, blurred and tinted by your theme. Stays solid while your system reduces transparency.' },
+    { label: 'See-through', before: 'How much of the desktop shows through the room. The sidebar and a pane’s terminal drawer stay a little more solid, and messages, the composer and menus keep their own colour.', after: 'How much of the desktop shows through. Messages, menus and the composer keep their own colour.' },
+  ], kept: [
+    ['Effort color', 'The color a thread’s effort control turns at its highest level.'],
+    ['Contrast', 'Color and border intensity.'],
+    ['Glass opacity', 'Higher values make menus, dialogs and the composer more solid.'],
+    ['Frosted window (Linux / old Windows)', 'Frosted windows are unavailable on Linux. / Needs Windows 11 version 22H2 or later.'],
+  ] },
+  { title: 'Application', sub: 'Startup, privacy & updates', rows: [
+    { label: 'Web links in threads', before: 'Where a link in a thread opens when you click it. Right-click a link, or press Shift+F10, to choose for that link.', after: 'Where links in threads open. To choose for one link, right-click it or press Shift+F10.' },
+    { label: 'Show the browser when an agent opens a page', before: 'When an agent opens a page, its thread’s browser player opens over the thread, and the test iPhone does the same when an agent uses it. When off, both stay closed and Tools still shows the work.', after: 'Opens the browser or test iPhone over the thread when an agent uses it. Off, the work still shows in Tools.' },
+    { label: 'Let agents use the browser without asking', tag: 'privacy', before: 'Agents can open pages, click and type in Sotto’s browser without asking first. They can see every page in their thread’s browser, including pages you open and sites you are signed in to there. Stop sharing one page, or stop it for one thread, in Tools > Browser.', after: 'Agents can open pages, click and type in Sotto’s browser, and see every page there, signed-in sites included. Stop it for a page or thread in Tools > Browser.' },
+    { label: 'Let agents draw visuals in threads', tag: 'privacy', before: 'An agent can draw a diagram, or a small interactive page sealed from the network, in its thread to show how something works. Visuals are made on this computer and contact no one. When off, agents explain in text instead, and visuals already in threads stay.', after: 'Agents can draw diagrams and small interactive pages in a thread. Visuals are made on this computer and never go online.' },
+    { label: 'Let agents babysit pull requests', tag: 'on', before: 'An agent can ask Sotto to babysit its pull request and stop checking GitHub itself. Sotto sends its thread a wake-up when the pull request needs it.', after: 'An agent can hand its pull request to Sotto, which wakes the thread when the pull request needs it.' },
+    { label: 'Let agents babysit pull requests', tag: 'off', before: 'Agents cannot start babysitting, and Sotto stops what they started. You can still babysit a pull request from the Pull request surface.', after: 'Agents can’t start babysitting, and Sotto stops any they started. You can still babysit one yourself.' },
+    { label: 'Replies in threads', before: 'Stream a reply word by word as the agent writes it, or show it once it is finished. Commands and tool calls always appear as they run.', after: 'Show replies as they are written or once finished. Commands and tool calls always show as they run.' },
+    { label: 'New threads work in', before: 'Project defaults can override this. Existing threads keep their working folder.', after: 'Project defaults below can override this. Existing threads keep their folder.' },
+    { label: 'Remove idle worktrees after', before: 'A thread’s own worktree folder goes when the thread has been idle this long. The branch stays and sending puts the folder back. Only a folder with no uncommitted changes and nothing but installed dependencies in its ignored files is removed.', after: 'Removes a thread’s worktree folder once it has been idle this long. The branch stays, sending brings the folder back, and uncommitted work is never removed.', moved: 'The ignored-files rule goes to docs/guide.md.' },
+    { label: 'Remove a worktree when its thread is settled', before: 'Settle removes a clean worktree folder without asking. A folder with uncommitted changes still asks.', after: 'Settling removes a clean worktree without asking. One with uncommitted changes still asks.' },
+    { label: 'Remove a worktree once its commits are in the default branch', before: 'Checked against the local copy of the repository’s default branch, once an hour.', after: 'Checked hourly against your local copy of the default branch.' },
+    { label: 'Remove a worktree when its pull request is merged', tag: 'privacy', before: 'Once an hour, asks GitHub through gh, on your own sign-in, whether the worktree’s branch has a merged pull request.', after: 'Checked hourly with GitHub through gh, using your own sign-in.' },
+    { label: 'Show floating widget when idle', tag: 'Omarchy', before: 'On Omarchy, Sotto’s owl in the bar takes the floating widget’s place. Remove the shell plugin to bring the widget back.', after: 'On Omarchy, the owl in the bar replaces the widget. Remove the shell plugin to bring it back.' },
+    { label: 'Keep local history', before: 'Store transcript text locally for search and reuse. Turning this off also deletes saved checkpoints at once.', after: 'Saves transcripts on this computer to search and reuse. Turning it off deletes saved checkpoints right away.' },
+    { label: 'History retention', before: 'Maximum saved entries when history is enabled.', after: 'How many transcripts to keep.' },
+    { label: 'Check for updates automatically', tag: 'privacy', before: 'Asks GitHub whether a newer Sotto has been released. GitHub sees an ordinary web request from this computer — your IP address, the time, and the version you are running. No audio, transcripts, settings, or identifiers are sent, and turning this off stops the request entirely.', after: 'Asks GitHub whether a newer Sotto is out. GitHub sees your IP address and version, and nothing else is sent.' },
+    { label: 'Reset settings', before: 'Restore defaults and reopen setup. Your saved OpenRouter key, the speech model and history remain in place.', after: 'Restore defaults and reopen setup. Your OpenRouter key, speech model and history stay.' },
+  ], kept: [
+    ['Reduced motion', 'Follow Windows or minimize non-essential motion.'],
+    ['Show floating widget when idle', 'Keep the small dictation sliver on screen between sessions. Click it to dictate.'],
+    ['Start minimized', 'Open directly in the tray when Sotto launches.'],
+    ['Updates', 'Sotto looks for new releases on GitHub and installs them itself.'],
+    ['Updates (Linux)', 'Install the next sotto-bin package with sudo pacman -U. Once sotto-bin is in a package repository, omarchy update brings it.'],
+    ['Clear transcript history', 'Remove saved text without changing settings or models.'],
+    ['Project defaults, empty', 'Add a project in Threads to set its default working copy.'],
+  ] },
+  { title: 'Git', sub: 'Commits, pull requests, Changes & fetching', rows: [
+    { label: 'Commit and pull request style', tag: 'Repository conventions', before: 'The thread’s own model writes commit messages and pull request text the way each repository’s recent commits and AGENTS.md do.', after: 'Follows each repository’s recent commits and AGENTS.md.' },
+    { label: 'Commit and pull request style', tag: 'Conventional', before: 'Each commit subject and pull request title starts with a type and scope, like feat(threads):.', after: 'Subjects and titles start with a type and scope, like feat(threads):.' },
+    { label: 'Commit and pull request style', tag: 'Custom', before: 'Sotto sends your instructions to the thread’s own model with every commit message and pull request draft; they take precedence over the repository’s style.', after: 'Your instructions go to the thread’s own model with every draft and win over the repository’s style.' },
+    { label: 'Commit and pull request style', tag: 'added when drafting is off', before: '… Nothing is drafted while Generated commit messages and Generated pull request text are off under Cleanup.', after: '… Drafting is off under Cleanup.' },
+    { label: 'Follow pull request templates', tag: 'on', before: 'When a Git action drafts a pull request, the thread’s own model follows the repository’s pull request template, if Sotto finds one.', after: 'Drafted pull requests follow the repository’s template when it has one.' },
+    { label: 'Follow pull request templates', tag: 'off', before: 'When a Git action drafts a pull request, it skips the template and uses Sotto’s own sections.', after: 'Drafted pull requests use Sotto’s own sections.' },
+    { label: 'Default merge method', tag: 'Last used', before: 'The merge in the pull request checklist starts on the method you used last, Merge the first time.', after: 'The pull request checklist starts on the method you used last, or Merge the first time.' },
+    { label: 'Default merge method', tag: 'a fixed method', before: 'The merge in the pull request checklist starts on {Squash}.', after: 'The pull request checklist starts on {Squash}.' },
+    { label: 'Auto-settle merged threads', tag: 'on', before: 'Once a thread’s pull request is merged, Sotto settles the thread. It asks GitHub through gh once an hour and removes no folder unless a worktree rule under Application says so.', after: 'Settles a thread once its pull request merges, checking GitHub through gh hourly. Folders follow the worktree rules under Application.' },
+    { label: 'Auto-settle merged threads', tag: 'off', before: 'A thread stays where it is after its pull request merges, until you settle it.', after: 'A merged thread stays put until you settle it.' },
+    { label: 'When you read Changes', tag: 'group note', before: 'These set where Changes starts. A choice made in Changes holds until one of these settings changes or Sotto restarts.', after: 'How Changes first opens. A choice made in Changes lasts until Sotto restarts.' },
+    { label: 'Diff layout', tag: 'Stacked / Split', before: 'Changes starts with each diff stacked, removed lines above added ones. / Changes starts with each diff split, old on the left and new on the right.', after: 'Removed lines above added ones. / Old on the left, new on the right.' },
+    { label: 'Hide whitespace changes', tag: 'on / off', before: 'Changes starts with edits that only change spacing hidden. / Changes starts showing every edit, spacing included.', after: 'Edits that only change spacing are hidden. / Every edit shows, spacing included.' },
+    { label: 'Default diff file state', tag: 'Collapsed / Expanded', before: 'Files in Changes start collapsed to their headers. Press one to read it. / Files in Changes start expanded.', after: 'Files start as headers; press one to read it. / Files start open.' },
+    { label: 'Proactive panels', tag: 'on', before: 'Changes opens on its own if Tools is closed and a turn leaves its folder with at least 3 more changed files or 50 more changed lines. It counts only while the Threads page is open.', after: 'Changes opens on its own after a turn changes 3 or more files or 50 or more lines.', moved: 'The Tools-closed and Threads-page-open conditions go to docs/guide.md.' },
+    { label: 'Git fetch interval', tag: 'Never', before: 'Sotto never fetches, not even on a refresh or before a Git action. Ahead and behind compare with the remote as it was last fetched, and the pull request updates when you refresh.', after: 'Sotto never fetches, even before a Git action. Ahead and behind use the last fetch.' },
+    { label: 'Git fetch interval', tag: 'every N', before: 'Sotto asks origin every {5 minutes} whether a thread’s branch is ahead or behind, while this window is in front.', after: 'Checks origin every {5 minutes} for ahead and behind, while this window is in front.' },
+    { label: 'Automatically pull', tag: 'on', before: 'Sotto pulls a thread’s folder on the default branch when it is clean and only behind. Fast-forward only; nothing is merged or rebased.', after: 'Fast-forwards a clean folder on the default branch when it falls behind. Nothing is merged or rebased.' },
+    { label: 'Automatically pull', tag: 'off', before: 'Sotto shows when the default branch is behind and leaves the pull to you.', after: 'Shows when the default branch is behind and leaves the pull to you.' },
+  ], kept: [
+    ['Proactive panels, off', 'Changes opens only when you open it.'],
+  ] },
+]
+
+const esc = s => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))
+const fill = s => esc(s).replace(/\{([^}]+)\}/g, '<span class="var">$1</span>')
+const words = s => s.replace(/[{}]/g, '').split(/\s+/).filter(Boolean).length
+const verdicts = new Map(), notes = new Map()
+
+let total = 0, before = 0, after = 0
+const nav = document.getElementById('nav'), host = document.getElementById('pages')
+PAGES.forEach((page, p) => {
+  const id = `page-${p}`
+  nav.insertAdjacentHTML('beforeend', `<a href="#${id}">${page.title}<small>${page.rows.length}</small></a>`)
+  const rows = page.rows.map((row, r) => {
+    const key = `${p}-${r}`
+    total++; before += words(row.before); after += words(row.after)
+    return `<div class="row" data-key="${key}">
+      <div class="row-head"><h3>${esc(row.label)}</h3>${row.tag ? `<span class="tag">${esc(row.tag)}</span>` : ''}</div>
+      <div class="pair">
+        <div class="col before"><div class="label"><span>Before</span><span>${words(row.before)} words</span></div><p>${fill(row.before)}</p></div>
+        <div class="col after"><div class="label"><span>After</span><span>${words(row.after)} words</span></div><p>${fill(row.after)}</p>${row.moved ? `<p class="moved"><b>Moves:</b> ${fill(row.moved)}</p>` : ''}</div>
+      </div>
+      <div class="actions">
+        <button type="button" data-v="ok" aria-pressed="false">Looks good</button>
+        <button type="button" data-v="change" aria-pressed="false">Change</button>
+        <textarea aria-label="Note on ${esc(row.label)}" placeholder="Note (optional)" rows="1"></textarea>
+      </div>
+    </div>`
+  }).join('')
+  const kept = page.kept.length ? `<details class="kept"><summary>Left as is (${page.kept.length})</summary><ul>${page.kept.map(([l, t]) => `<li><b>${esc(l)}:</b> ${esc(t)}</li>`).join('')}</ul></details>` : ''
+  host.insertAdjacentHTML('beforeend', `<section class="page" id="${id}" aria-labelledby="${id}-h"><h2 id="${id}-h">${page.title}</h2><p class="sub">${page.sub}</p>${rows}${kept}</section>`)
+})
+const stats = () => {
+  const ok = [...verdicts.values()].filter(v => v === 'ok').length, ch = [...verdicts.values()].filter(v => v === 'change').length
+  document.getElementById('stats').textContent = `${total} rewrites · ${before} words → ${after} words · ${ok} good · ${ch} to change`
+}
+stats()
+if (location.hash) document.querySelector(location.hash)?.scrollIntoView()
+
+host.addEventListener('click', event => {
+  const button = event.target.closest('button[data-v]'); if (!button) return
+  const row = button.closest('.row'), key = row.dataset.key, v = button.dataset.v
+  const next = verdicts.get(key) === v ? null : v
+  if (next) verdicts.set(key, next); else verdicts.delete(key)
+  row.dataset.verdict = next ?? ''
+  row.querySelectorAll('button[data-v]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === next)))
+  stats()
+})
+host.addEventListener('input', event => {
+  if (event.target.tagName !== 'TEXTAREA') return
+  notes.set(event.target.closest('.row').dataset.key, event.target.value)
+})
+document.getElementById('copy').addEventListener('click', async () => {
+  const lines = []
+  PAGES.forEach((page, p) => page.rows.forEach((row, r) => {
+    const key = `${p}-${r}`, v = verdicts.get(key), note = (notes.get(key) ?? '').trim()
+    if (!v && !note) return
+    lines.push(`- ${page.title} › ${row.label}${row.tag ? ` (${row.tag})` : ''}: ${v === 'ok' ? 'looks good' : v === 'change' ? 'CHANGE' : 'note'}${note ? ` — ${note}` : ''}`)
+  }))
+  const text = lines.length ? `Settings wording notes:\n${lines.join('\n')}` : 'Settings wording: no notes, all rewrites look good.'
+  const toast = document.getElementById('toast')
+  try { await navigator.clipboard.writeText(text); toast.textContent = 'Notes copied. Paste them back in the thread.' }
+  catch { toast.textContent = 'Could not copy. Select the notes by hand.'; console.log(text) }
+  toast.style.display = 'block'; setTimeout(() => { toast.style.display = 'none' }, 2500)
+})
+</script>
+</body>
+</html>
