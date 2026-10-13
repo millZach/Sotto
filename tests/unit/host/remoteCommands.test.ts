@@ -6,6 +6,8 @@ import { hostRequestSchema, commandFromProtocolV1, protocolAgentCommandSchema } 
 
 /** Commands that stay on the host machine. A new command type must land here or in REMOTE_COMMANDS. */
 const HOST_LOCAL = ['credential', 'check-reasoning', 'update-client', 'open-thread-folder']
+/** Fields only the desktop window sends, which its router reads and never forwards to a host (ADR-0074). */
+const WINDOW_ONLY: Partial<Record<AgentCommand['type'], string[]>> = { configure: ['hostId'] }
 type Option = { shape: { type: { value?: string; options?: string[] } } & Record<string, unknown> }
 const schemaFields = new Map((agentCommandSchema.options as unknown as Option[]).flatMap(option => {
   const types = option.shape.type.options ?? [option.shape.type.value!]
@@ -39,16 +41,28 @@ describe('remote command allow-list', () => {
     }
   })
   it('lets a paired client change only the coordinator settings decided on purpose, none of them a key, endpoint or voice engine', () => {
-    expect([...REMOTE_CONFIGURATION_FIELDS].sort()).toEqual(['defaultModelId', 'enabled', 'enabledProviders', 'provider',
-      'reasoning', 'reasoningEffort', 'reasoningModel'])
+    expect([...REMOTE_CONFIGURATION_FIELDS].sort()).toEqual(['defaultModelId', 'enabled', 'enabledProviders', 'newThreadModelId', 'newThreadReasoningEffort',
+      'newThreadRuntimeMode', 'projectsDirectory', 'provider', 'reasoning', 'reasoningEffort', 'reasoningModel'])
     for (const patch of [{ speak: false }, { followupLimit: 3 }]) expect(() => commandFromProtocolV1(protocolAgentCommandSchema.parse({ type: 'configure', patch })), Object.keys(patch)[0]).toThrow()
     for (const patch of [{ speechVoice: 'F2' }, { speechProvider: 'grok' }, { wakeModelDirectory: '/tmp' }])
       expect(refuse({ type: 'configure', patch } as AgentCommand, true), Object.keys(patch)[0]).toBe('forbidden')
   })
+  it('takes a host’s projects directory and new-thread defaults, and a permission default that grants only with the answer policy (ADR-0074)', () => {
+    for (const patch of [{ projectsDirectory: '/home/zach/projects' }, { newThreadModelId: 'claude:sonnet' }, { newThreadReasoningEffort: 'high' },
+      { newThreadRuntimeMode: 'approval-required' }, { newThreadRuntimeMode: null }] as const)
+      expect(refuse({ type: 'configure', patch } as AgentCommand), Object.keys(patch)[0]).toBeNull()
+    for (const mode of ['auto-accept-edits', 'auto', 'full-access'] as const) {
+      expect(refuse({ type: 'configure', patch: { newThreadRuntimeMode: mode } }), mode).toBe('forbidden')
+      expect(refuse({ type: 'configure', patch: { newThreadRuntimeMode: mode } }, true), mode).toBeNull()
+    }
+    // The desktop's router reads which host a patch is for; a paired client never names one.
+    expect(refuse({ type: 'configure', patch: { projectsDirectory: '/srv' }, hostId: '11111111-1111-4111-8111-111111111111' }, true)).toBe('forbidden')
+  })
   it('decides every command type and every field the schema knows, so nothing new is remote by default', () => {
     for (const [type, fields] of schemaFields) {
       if (HOST_LOCAL.includes(type)) { expect(REMOTE_COMMANDS[type as AgentCommand['type']], type).toBeUndefined(); continue }
-      expect([...(REMOTE_COMMANDS[type as AgentCommand['type']] ?? ['(missing)'])].sort(), type).toEqual(fields)
+      const own = WINDOW_ONLY[type as AgentCommand['type']] ?? []
+      expect([...(REMOTE_COMMANDS[type as AgentCommand['type']] ?? ['(missing)'])].sort(), type).toEqual(fields.filter(field => !own.includes(field)))
     }
     expect([...schemaFields.keys()].sort()).toEqual([...new Set([...HOST_LOCAL, ...Object.keys(REMOTE_COMMANDS)])].sort())
   })

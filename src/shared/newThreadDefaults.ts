@@ -1,7 +1,13 @@
-import { agentRuntimeModeSchema, type AgentModel, type AgentRuntimeMode } from './agents'
+import { agentRuntimeModeSchema, type AgentConfiguration, type AgentModel, type AgentRuntimeMode } from './agents'
 
 /** Sotto's four runtime modes, least to most permissive (issue #347's nearest fit reads positions in this order). */
 export const RUNTIME_MODE_ORDER: readonly AgentRuntimeMode[] = agentRuntimeModeSchema.options
+
+/**
+ * The settings that make up the new-thread defaults. On the desktop they are this computer's own and apply to a new thread
+ * on every host it opens one on, so the router keeps them on the local host whichever host is selected (ADR-0074).
+ */
+export const NEW_THREAD_DEFAULT_FIELDS = ['newThreadModelId', 'newThreadReasoningEffort', 'newThreadRuntimeMode'] as const satisfies readonly (keyof AgentConfiguration)[]
 
 /**
  * The offered mode nearest a desired one a provider does not have: the closest one at or below it (safer), or,
@@ -42,6 +48,19 @@ export function resolveNewThreadPermission(model: AgentModel | undefined, defaul
   // `offered` is non-empty here, so `nearestRuntimeMode` always returns one of its modes.
   const nearest = nearestRuntimeMode(defaultMode, offered) ?? defaultMode
   return { runtimeMode: nearest, nearestFit: nearest !== defaultMode }
+}
+
+/**
+ * `resolveNewThreadPermission` for a thread on a host that may not let this computer answer. A runtime mode that lets
+ * the thread act without asking is a grant, so there it is held back: the thread starts on "Ask for approval" where the
+ * model offers it, or on the host's own choice where it does not (ADR-0004, ADR-0074). `heldBack` says it was.
+ */
+export function hostNewThreadPermission(model: AgentModel | undefined, defaultMode: AgentRuntimeMode | undefined, mayAnswer: boolean): ResolvedNewThreadPermission & { readonly heldBack: boolean } {
+  const resolved = resolveNewThreadPermission(model, defaultMode)
+  if (mayAnswer || resolved.runtimeMode === undefined || resolved.runtimeMode === 'approval-required') return { ...resolved, heldBack: false }
+  return model?.runtimeModes?.includes('approval-required')
+    ? { runtimeMode: 'approval-required', nearestFit: false, heldBack: true }
+    : { nearestFit: false, heldBack: true }
 }
 
 /**

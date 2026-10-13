@@ -5,7 +5,14 @@ import { PromptEditor, promptSelection, type PromptEditorElement } from '../../.
 import { promptDocText } from '../../../src/renderer/src/agents/promptDocument'
 import { promptText, setPromptSelection, setPromptText } from './helpers/promptEditor'
 
-afterEach(cleanup)
+afterEach(async () => {
+  const editor = (screen.getByRole('textbox', { name: 'Prompt' }) as PromptEditorElement).editor
+  // Tiptap defers destruction after unmount; keep jsdom alive until the editor releases its DOM.
+  const destroyed = new Promise<void>(resolve => editor.on('destroy', () => resolve()))
+  cleanup()
+  await destroyed
+  expect(editor.isDestroyed).toBe(true)
+})
 const skills = [{ name: 'review', path: '/review' }]
 function Field({ initial = '$review next\n\n', external, onChange = vi.fn() }: { initial?: string; external?: string; onChange?: (text: string) => void }) {
   const field = useRef<PromptEditorElement>(null)
