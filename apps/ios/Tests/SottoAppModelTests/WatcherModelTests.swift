@@ -2,6 +2,17 @@ import XCTest
 import Combine
 import SottoCore
 
+/// Holds the model between two receipt reads while a test says so. Otherwise it lets other work run, as the real wait
+/// does, without waiting.
+private final class ReceiptPause: @unchecked Sendable {
+    var holding = false
+    var held: CheckedContinuation<Void, Never>?
+    func wait() async {
+        guard holding else { await Task.yield(); return }
+        await withCheckedContinuation { held = $0 }
+    }
+}
+
 /// The Watcher tab on the real AppModel, against a scripted computer that runs Watcher (ADR-0073, amended October 11,
 /// 2026): only a computer that offers it gets a tab, the tab's dot and badge, answers that go to the thread that asked
 /// under Can answer, Stop all that asks first, the box's one draft ID per exact text, and Watcher's own alerts.
@@ -9,6 +20,7 @@ final class WatcherModelTests: XCTestCase {
     private let laptop = "00000000-0000-4000-8000-000000000001"
     private let forge = "00000000-0000-4000-8000-000000000009"
     private static let watcherFeatures = ["host-folders", "watcher-phone", "watcher-phone-stop-all"]
+    private let receiptPause = ReceiptPause()
     private var suites: [String] = []
     override func tearDown() {
         for suite in suites { UserDefaults().removePersistentDomain(forName: suite) }
@@ -113,8 +125,9 @@ final class WatcherModelTests: XCTestCase {
             try store.write(SavedComputer(address: "https://forge.example.ts.net:8443", pairing: paired, reportedName: "Forge"),
                             account: ComputerStore.account(forge))
         }
-        // Between receipt reads the model lets other work run, as the real wait does, without waiting.
-        let model = AppModel(keychain: store, receiptSleep: { _ in await Task.yield() })
+        // Between receipt reads the model lets other work run, as the real wait does, without waiting, unless a test holds it.
+        let pause = receiptPause
+        let model = AppModel(keychain: store, receiptSleep: { _ in await pause.wait() })
         if let alerts {
             let suite = "sotto-watcher-tests-" + UUID().uuidString
             suites.append(suite)
@@ -514,6 +527,48 @@ final class WatcherModelTests: XCTestCase {
         let reads = try connection.operations.filter { $0 == "receipt" }.count - firstReads
         XCTAssertEqual(reads, firstReads, "A second read of the same Stop all's receipt while one runs reads nothing")
         XCTAssertEqual(model.feedback, "Stop all isn’t confirmed. Check Watched before you stop anything again.")
+        model.phase(.background)
+    }
+
+    @MainActor func testAReconnectReadsStopAllsReceiptWhileTheOldConnectionsReadWaits() async throws {
+        let model = try await fixture()
+        var stopID = ""
+        HostConnection.watcherHandler = { op, _, id in
+            switch op {
+            case "watcher-phone-prepare-stop-all":
+                return try self.json(#"{"status":"ok","confirmationId":"cccccccc-0000-4000-8000-000000000004","targets":[{"hostId":"\#(self.laptop)","threadId":"t","title":"Fix login test","provider":"claude"}],"expiresAt":"2026-10-11T09:10:00.000Z"}"#)
+            case "watcher-phone-stop-all":
+                stopID = id
+                HostConnection.receipts[id] = .object(["status": .string("pending")])
+                throw ClientError.uncertain
+            default:
+                return try self.ok(self.page())
+            }
+        }
+        let prepared = await model.prepareWatcherStop(laptop)
+        let preview = try XCTUnwrap(prepared)
+        await model.confirmWatcherStop(preview, on: laptop)
+        // A read of its receipt waits between two reads when the connection drops.
+        let host = laptop
+        let link = try connection
+        receiptPause.holding = true
+        let reading = Task { await model.recoverWatcherStop(host) }
+        await until { self.receiptPause.held != nil }
+        receiptPause.holding = false
+        let before = link.operations.filter { $0 == "receipt" }.count
+        link.onDisconnect?()
+        await model.connect(host)
+        XCTAssertEqual(model.status(host), .online, "The computer is reached again, over a new connection")
+        await until { link.operations.filter { $0 == "receipt" }.count > before }
+        XCTAssertGreaterThan(link.operations.filter { $0 == "receipt" }.count, before,
+                             "The new connection reads the receipt while the old connection's read still waits")
+        // Stop all finishes on the computer: the new connection's read says what it did.
+        HostConnection.receipts[stopID] = try json(#"{"status":"completed","watcherStop":{"status":"ok","results":[{"target":{"hostId":"\#(laptop)","threadId":"t"},"status":"stopped","message":"Stopped."}]}}"#)
+        await until { model.feedback == "Stopped 1 thread Watcher started." }
+        XCTAssertEqual(model.feedback, "Stopped 1 thread Watcher started.")
+        receiptPause.held?.resume()
+        await reading.value
+        XCTAssertEqual(model.feedback, "Stopped 1 thread Watcher started.", "The old connection's read stops at its next read and says nothing")
         model.phase(.background)
     }
 
