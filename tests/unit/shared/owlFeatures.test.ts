@@ -8,8 +8,8 @@ describe('Owl feature list', () => {
     expect(OWL_FEATURES[0]).toMatchObject({ id: 'watcher', name: 'Watcher', owlSince: '2026-10-10', sentToStable: false })
     expect(new Set(OWL_FEATURES.map(feature => feature.id)).size).toBe(OWL_FEATURES.length)
     for (const feature of OWL_FEATURES) expect(existsSync(feature.owner)).toBe(true)
-    expect(owlFeaturesForTrack('stable')).toEqual({ watcher: false })
-    expect(owlFeaturesForTrack('owl')).toEqual({ watcher: true })
+    expect(owlFeaturesForTrack('stable')).toEqual({ watcher: false, 'resume-after-restart': false, 'update-all': false })
+    expect(owlFeaturesForTrack('owl')).toEqual({ watcher: true, 'resume-after-restart': true, 'update-all': true })
   })
 
   it('keeps a second feature in Owl until its single stable flag changes', () => {

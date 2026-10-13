@@ -1,5 +1,5 @@
 import { HostConnectionError, WrongHostError } from '../agents/socketHostService'
-import type { HostConnectionName, HostStartedBy } from '../../shared/hostConnection'
+import type { HostConnectionName } from '../../shared/hostConnection'
 
 /**
  * The order of a connect to a saved host (ADR-0053, "The order of a connect"), as a small pure table so each row can be
@@ -28,8 +28,11 @@ export type TailnetFailure = 'tailnet-unreachable' | 'tailnet-wrong-host' | 'tai
 export const TAILNET_RETURN_MS = 5 * 60_000
 /** How long a tailnet connection's health check may take before the tailnet counts as not answering. */
 export const TAILNET_HEALTH_MS = 5_000
-/** How long the retries of a host that starts at boot try the tailnet alone after a drop from it. */
-export const BOOT_TAILNET_ONLY_MS = 60_000
+/**
+ * How long the retries after a drop from the tailnet try the tailnet alone. The host outlives the connection, so a drop
+ * is most often this computer's network, back in moments; an SSH attempt would ask Tailscale for an approval for nothing.
+ */
+export const TAILNET_ONLY_MS = 60_000
 
 /** What a connect knows about a saved host before it starts. */
 export interface ConnectFacts {
@@ -45,8 +48,6 @@ export interface ConnectFacts {
    * now reaches another machine ends in the host identity error rather than going unnoticed behind the tailnet.
    */
   readonly edited?: boolean | undefined
-  /** Who started the host, as it last said. `boot` is a host its start at boot unit started (ADR-0054). */
-  readonly startedBy?: HostStartedBy | undefined
   /** The connection the host was last on. */
   readonly lastVia?: HostVia | undefined
   /** How long this run of retries has gone on, from the drop that began it; absent when this is not a retry. */
@@ -55,20 +56,18 @@ export interface ConnectFacts {
 
 /**
  * The connections a connect tries, in order. The tailnet comes first when the owner prefers it, an address is known and
- * this computer is paired; SSH follows it, except in the first minute of retries for a host that starts at boot whose
- * last connection was a tailnet connection, since that host restarts by itself and an SSH attempt would ask for an
- * approval for nothing.
+ * this computer is paired; SSH follows it, except in the first minute of retries for a host whose last connection was a
+ * tailnet connection (ADR-0053, October 13 amendment).
  */
 export function connectOrder(facts: ConnectFacts): readonly HostVia[] {
   if (facts.adding || facts.edited || facts.prefer !== 'tailnet' || !facts.address || !facts.paired) return ['ssh']
-  const bootRetry = facts.startedBy === 'boot' && facts.lastVia === 'tailnet' && facts.retryingForMs !== undefined && facts.retryingForMs < BOOT_TAILNET_ONLY_MS
-  return bootRetry ? ['tailnet'] : ['tailnet', 'ssh']
+  const tailnetOnly = facts.lastVia === 'tailnet' && facts.retryingForMs !== undefined && facts.retryingForMs < TAILNET_ONLY_MS
+  return tailnetOnly ? ['tailnet'] : ['tailnet', 'ssh']
 }
 
 /**
- * What a failed tailnet connection leads to (ADR-0053, step 2 and the October 6 amendment). In the tailnet-only first
- * minute of a host that starts at boot, a tailnet that did not answer is tried again on the backoff, with no SSH, since
- * the host is coming back by itself; every other failure goes to SSH, which mends it. `note` is what the row says while
+ * What a failed tailnet connection leads to (ADR-0053, step 2 and the October 6 and 13 amendments). In the tailnet-only
+ * first minute of retries, a tailnet that did not answer is tried again on the backoff, with no SSH; every other failure goes to SSH, which mends it. `note` is what the row says while
  * the host is on SSH: only a tailnet that did not answer, or answered as another host, is something SSH cannot mend, so
  * only those wait for the 5-minute check rather than being tried again as soon as the SSH connection is up.
  */

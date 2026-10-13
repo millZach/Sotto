@@ -197,7 +197,7 @@ export type TranscriptPolishAsrContext = z.infer<typeof transcriptPolishAsrConte
 export type TranscriptPolishRequest = z.infer<typeof transcriptPolishRequestSchema>
 export type TranscriptPolishResult = z.infer<typeof transcriptPolishResultSchema>
 
-export const TRANSCRIPTION_PRIVACY_NOTICE = 'Your audio is transcribed on this computer and never leaves it. Only AI cleanup, when it is on, sends the transcript text to OpenRouter.' as const
+export const TRANSCRIPTION_PRIVACY_NOTICE = 'Your audio never leaves this computer. Only AI cleanup, when on, sends the text to OpenRouter.' as const
 
 /** The recorder's own ceiling as PCM16 bytes, plus the WAV header. */
 const MAX_TRANSCRIPTION_AUDIO_BYTES = MAX_TRANSCRIPTION_SAMPLES * 2 + 44
@@ -242,7 +242,7 @@ export type TranscriptionRequest = z.infer<typeof transcriptionRequestSchema>
 export type TranscriptionResult = z.infer<typeof transcriptionResultSchema>
 export type OpenRouterKeyCheck = z.infer<typeof openRouterKeyCheckSchema>
 
-export const UPDATE_CHECK_PRIVACY_NOTICE = 'Asks GitHub whether a newer Sotto has been released. GitHub sees an ordinary web request from this computer — your IP address, the time, and the version you are running. No audio, transcripts, settings, or identifiers are sent, and turning this off stops the request entirely.' as const
+export const UPDATE_CHECK_PRIVACY_NOTICE = 'Asks GitHub whether a newer Sotto is out. GitHub sees your IP address, your version and a random ID for this install.' as const
 
 const updateVersionSchema = z.string().min(1).max(64)
 /** One sentence from the updater, already trimmed to something a tooltip can hold. */

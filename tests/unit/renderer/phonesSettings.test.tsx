@@ -170,7 +170,7 @@ it('local host off: says phone access needs it, disables the switch and offers H
   const { openHosts } = show({ ...OFF, enabled: true, localHostRunning: false })
   await userEvent.setup().click(await screen.findByRole('button', { name: 'Go to Hosts' }))
   expect(openHosts).toHaveBeenCalled()
-  expect(screen.getByText(/Phone access needs the local host, which is off\./u)).toBeTruthy()
+  expect(screen.getByText(/Phone access needs the local host\. Turn on Run the local host under Hosts/u)).toBeTruthy()
   // Still on from before, so it can be turned off; it cannot be turned on until the local host runs.
   expect((screen.getByRole('switch', { name: 'Let phones connect' }) as HTMLButtonElement).disabled).toBe(false)
   cleanup()
