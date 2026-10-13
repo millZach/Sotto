@@ -188,4 +188,6 @@ In Owl, Watcher's thread tools can start, read, brief, queue, steer, stop and se
 
 In Owl, Watcher receives batched news when its watched threads finish, need your answer, fail, go quiet, or gain observed evidence. News uses the existing queue after your prompts and grants no permission. Pull request, checkpoint, working-copy and failure facts name their source; worker replies remain separate. Watcher adds no GitHub poll.
 
+Your Watcher messages show what you wrote; Sotto's added routing text still reaches the provider. Older desktop messages without a saved boundary can still show it. User-authored text and later native edits stay whole.
+
 In Owl, the Update all card in the corner updates Sotto, this computer's provider clients and every connected host in one press, through the same GitHub releases and npm registry checks Sotto already makes, and then asks to restart. With **Resume threads after a restart** on, a thread working when Sotto closed is sent a short note from Sotto when it opens again; your own message is never sent twice. See the [guide](docs/guide.md#update-all).

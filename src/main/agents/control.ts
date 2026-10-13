@@ -1,4 +1,5 @@
 import { modelsWithoutMuse } from './museGate'
+import { WatcherMessageDisplay } from './watcherMessageDisplay'
 import { CheckoutSendRefusal, type CheckoutPendingWork } from './checkoutMutations'
 import type { ShortTextPurpose, ShortTextFailureReason } from '../llm/shortTextWriter'
 import type { AgentSkillReference } from '../../shared/agentSkills'
@@ -275,6 +276,7 @@ export class AgentControl {
   private state: AgentState
   private outbox: Saved['outbox'] = []
   private watcher: WatcherRecord = emptyWatcherRecord()
+  private readonly watcherMessageDisplay: WatcherMessageDisplay | undefined
   private watcherHooks: WatcherControlHooks | undefined
   private readonly watcherOrigins = new WeakMap<object, WatcherCommandOrigin>()
   watcherPhoneExclusions(): { threadIds: string[]; projectIds: string[] } {
@@ -290,6 +292,7 @@ export class AgentControl {
   }
   mutateWatcher(update: (record: WatcherRecord) => void): void {
     const next = this.watcherRecord(); update(next); this.watcher = watcherRecordSchema.parse(next)
+    this.watcherMessageDisplay?.update(this.watcher.requests)
   }
   useWatcher(hooks: WatcherControlHooks): () => void {
     if (this.dependencies.watcherEnabled === true) this.watcherHooks = hooks
@@ -480,6 +483,7 @@ export class AgentControl {
     /** Native CLIs present on this machine. Absent in tests that script the host themselves. */
     installedProviders?: () => Promise<readonly ProviderId[]>
   }) {
+    this.watcherMessageDisplay = dependencies.watcherEnabled === true ? new WatcherMessageDisplay() : undefined
     this.followupStore = new FollowupStore(dependencies.directory, () => dependencies.historyEnabled?.() !== false, id => this.dependencies.watcherEnabled === true && [this.watcher.current, this.watcher.creation?.identity, ...this.watcher.history].some(item => item?.target.threadId === id), () => this.dependencies.watcherEnabled === true)
     this.finishedUnread = new FinishedUnread([], id => !this.threadAvailable(id))
     this.clients = dependencies.clients ?? new ProviderClients()
@@ -534,6 +538,7 @@ export class AgentControl {
     }
     const saved = await this.store.read()
     this.watcher = saved.watcher
+    this.watcherMessageDisplay?.update(this.watcher.requests)
     if (this.dependencies.watcherEnabled !== true) {
       const identities = [saved.watcher.current, saved.watcher.creation?.identity, ...saved.watcher.history]
       for (const identity of identities) if (identity) { this.dormantThreadIds.add(identity.target.threadId); this.dormantWatcherIds.add(identity.target.threadId) }
@@ -700,7 +705,10 @@ export class AgentControl {
     const state = structuredClone(this.state)
     if (this.migrationSaveFailure) state.error = this.migrationSaveFailure
     state.obsoleteDrafts = structuredClone(this.persistedObsoleteDrafts)
-    state.host.threads = state.host.threads.map(thread => this.finishedUnread.publish(thread))
+    state.host.threads = state.host.threads.map(thread => {
+      const presented = this.presentedMessages(thread)
+      return this.finishedUnread.publish(presented === thread.messages ? thread : { ...thread, messages: [...presented] })
+    })
     state.hostId = state.host.hostId
     state.threadDraftPersistence = this.draftPersistence()
     state.historyEnabled = this.dependencies.historyEnabled?.() !== false
@@ -806,14 +814,15 @@ export class AgentControl {
   /** The whole of a thread's history at a revision, which becomes the base the next delta is measured from. */
   private wholeDetail(thread: AgentThread, revision: number): AgentThreadDetail {
     const threadId = thread.id
-    const messages = structuredClone(thread.messages)
+    const presented = this.presentedMessages(thread)
+    const messages = structuredClone([...presented])
     // Nothing decorates or edits an activity record on either side of the bridge, so the snapshot and the
     // detail share one copy of it. Messages cannot be shared: decoration rewrites their attachments.
     const pane = this.paneActivities(thread)
     const activities = pane === undefined ? undefined : structuredClone(pane) as AgentActivity[]
     // The snapshot is the undecorated history: decoration is a fact about the preview store rather than
     // about the thread, and diffing decorated against live would report every image message as changed.
-    this.detailSnapshots.set(threadId, { threadId, revision, messages: structuredClone(thread.messages),
+    this.detailSnapshots.set(threadId, { threadId, revision, messages: structuredClone([...presented]),
       ...(activities === undefined ? {} : { activities }) })
     this.publishedDetail.set(threadId, revision)
     this.attachmentPreviews.decorate({ ...this.state.host, threads: [{ ...thread, messages }] })
@@ -827,6 +836,11 @@ export class AgentControl {
   private paneActivities(thread: AgentThread): readonly AgentActivity[] | undefined {
     if (thread.activities === undefined) return undefined
     return this.dependencies.host.paneActivities?.(thread.id, thread.activities) ?? thread.activities
+  }
+  /** Display only; every native state, receipt and history reader keeps the complete provider message. */
+  private presentedMessages(thread: AgentThread): readonly AgentMessage[] {
+    if (thread.kind !== 'watcher' && thread.kind !== 'watcher-history') return thread.messages
+    return this.watcherMessageDisplay?.project(this.state.host.hostId, thread.id, thread.messages) ?? thread.messages
   }
   /** Which threads main pushes detail for: what the window says it is looking at, plus work it must see land. */
   private detailTargets(): string[] {
@@ -850,8 +864,9 @@ export class AgentControl {
       activitySignature = (activities ?? []).map(record => `${record.id}:${agentActivitySignature(record)}`).join(',')
       if (activities && isImmutableActivities(activities)) this.activityDetailSignatures.set(activities, activitySignature)
     }
+    const presented = this.presentedMessages(thread)
     const signature = `${thread.historyEpoch ?? ''}|${thread.messages.length}|` + thread.messages
-      .map(message => `${message.id}:${message.text.length}:${message.attachments?.length ?? 0}`).join(',')
+      .map((message, index) => `${message.id}:${message.text.length}:${presented[index]!.text.length}:${message.attachments?.length ?? 0}`).join(',')
       + `|${activitySignature}`
     const held = this.detailRevisions.get(thread.id)
     if (held && held.signature === signature) return held.revision
@@ -1246,7 +1261,7 @@ export class AgentControl {
   private detailUpdate(thread: AgentThread, revision: number): AgentThreadDetailUpdate | null {
     const held = this.detailSnapshots.get(thread.id)
     if (held !== undefined) {
-      const delta = diffAgentThreadDetail(held, { messages: thread.messages, activities: this.paneActivities(thread) }, revision)
+      const delta = diffAgentThreadDetail(held, { messages: this.presentedMessages(thread), activities: this.paneActivities(thread) }, revision)
       const advanced = delta === null ? null : applyAgentThreadDetailDelta(held, delta)
       if (delta !== null && advanced !== null) {
         this.detailSnapshots.set(thread.id, advanced)
