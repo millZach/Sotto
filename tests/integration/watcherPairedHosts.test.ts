@@ -105,7 +105,12 @@ it('starts, reads positions, sends, stops and settles through the owning host wi
   expect(settled.status, settled.status === 'refused' ? settled.code : undefined).toBe('ok')
   const afterSettlement = { requestId: f.requestId, retryKey: randomUUID(), target: first.target, text: 'Synthetic settled refusal', delivery: 'now' }
   expect(await f.call('send_to_thread', afterSettlement)).toMatchObject({ code: 'REQUEST_NOT_ACTIVE' })
-  // A stale master projection must not revive participation on the owning host.
+  // A stale master projection must not revive participation on the owning host. The host's background reconcile
+  // would correct the stale record before the send reads it, so it is held back and drained first: the refusal
+  // asserted below must come from the owning host.
+  vi.spyOn(f.watcher as unknown as { scheduleRemote: () => void }, 'scheduleRemote').mockImplementation(() => undefined)
+  const background = f.watcher as unknown as { remoteTimer?: unknown; remoteFlushing: boolean; reconciling?: Promise<void> }
+  await expect.poll(() => !background.remoteTimer && !background.remoteFlushing && !background.reconciling).toBe(true)
   await f.control.updateWatcher(record => {
     const request = record.requests.find(item => item.id === f.requestId)!
     request.state = 'active'; request.closedAt = null
