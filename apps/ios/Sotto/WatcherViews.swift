@@ -147,8 +147,8 @@ private struct WatcherHeader: View {
                     .accessibilityHidden(true)
             }
         }
-        .accessibilityLabel(subtitle)
-        .accessibilityHint("Shows Watcher on another computer")
+        .accessibilityLabel("Choose Watcher's computer")
+        .accessibilityValue(model.name(hostID))
         .accessibilityIdentifier("watcher-computer-menu")
     }
     /// "Codex · GPT-6.1 Sol on Laptop".
