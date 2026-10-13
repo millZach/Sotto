@@ -1,6 +1,6 @@
 # Usage keeps numeric history on its own host
 
-Accepted by Zach on October 12, 2026. Number provisional until merge. Usage is an Owl feature (ADR-0072): stable opens no Usage store, starts no new collection or limit readings and preserves the dormant records. Existing thread usage accounting remains available as before.
+Accepted by Zach on October 12, 2026. Usage is an Owl feature (ADR-0072): stable opens no Usage store, starts no new collection or limit readings and preserves the dormant records. Existing thread usage accounting remains available as before.
 
 Zach chose both native account limits and activity Sotto has observed, covering every connected computer. They measure different things. Account limits can include other clients and side calls; they are displayed per provider and computer, never added together or inferred from token counts. Codex and Grok can read native account metadata without inference. Claude supplies passive native limit events; an idle refresh cannot manufacture an observation. Devin's unverified token and limit capabilities remain unavailable. No second key, private credential reader, paid refresh prompt or new network host is introduced. [The source study](../research/2026-10-12-provider-usage-dashboard.md) records verified wire capabilities.
 

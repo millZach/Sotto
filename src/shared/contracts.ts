@@ -321,6 +321,8 @@ export type OutputDeliveryRequest = z.infer<typeof outputDeliveryRequestSchema>
 
 export interface SottoBridge {
   readonly usage?: import('./usageDashboard').UsageBridge
+
+  readonly omarchySetup?: import('./omarchySetup').OmarchySetupBridge
   readonly watcher?: import('./watcherRoom').WatcherBridge
   readonly hosts?: import('./hosts').HostsBridge
   readonly phones?: import('./phones').PhonesBridge

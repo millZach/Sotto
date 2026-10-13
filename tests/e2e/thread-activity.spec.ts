@@ -3,12 +3,11 @@ import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { _electron as electron, expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { evidenceDirectory } from '../fixtures/evidence'
+import type { Scenario } from '../fixtures/threadActivity/scenarios'
 
 // Real Windows Electron renders of the Threads page transcript with Codex activity records (#48).
 // The fixture mounts the real ThreadsView, transcript, composer and tokens; only the agent connection is stubbed.
 const shots = evidenceDirectory('artifacts/thread-activity')
-type Scenario = 'settled' | 'live' | 'disconnected' | 'restored'
-declare global { interface Window { activityFixture?: { show: (scenario: Scenario) => void } } }
 
 test.describe.configure({ mode: 'serial' })
 
@@ -210,5 +209,26 @@ test('the shipped minimum width and reduced motion keep rows readable without si
     await transcript(page).evaluate(element => { element.scrollTop = element.scrollHeight })
     expect(await overflow(page)).toBeLessThanOrEqual(0)
     await page.screenshot({ path: resolve(shots, 'live-820-reduced-motion-light.png') })
+  } finally { await app.close() }
+})
+
+test('a turn a steer cut reads as steered, not stopped, at the minimum window', async () => {
+  const { app, page } = await launch({ width: 820, height: 560 })
+  try {
+    await show(page, 'steered')
+    const log = transcript(page)
+    const steered = log.getByRole('button', { name: 'Steered after 1m 05s' })
+    await expect(steered).toHaveAttribute('aria-expanded', 'false')
+    await expect(log.getByRole('button', { name: /^Stopped/ })).toHaveCount(0)
+    await expect(log.getByRole('button', { name: 'Worked for 9.0s' })).toBeVisible()
+    expect(await overflow(page)).toBeLessThanOrEqual(0)
+    for (const mode of ['dark', 'light'] as const) {
+      await theme(page, mode)
+      await scrollTo(page, steered, 120)
+      await page.screenshot({ path: resolve(shots, `steered-820-${mode}.png`) })
+    }
+    await steered.focus()
+    await page.keyboard.press('Enter')
+    await expect(steered).toHaveAttribute('aria-expanded', 'true')
   } finally { await app.close() }
 })

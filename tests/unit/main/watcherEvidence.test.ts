@@ -10,8 +10,8 @@ const fingerprint: PullRequestFingerprint = { url, number: 1, title: 'private ti
   status: 'private fingerprint', remarks: 'private remarks', checksRunning: false, reviewThreads: 0 }
 it('publishes only sourced, bounded facts from GitHub and invalidates checks on a changed head or failed read', () => {
   const store = new WatcherEvidenceStore()
-  const read = pullRequestObservation(fingerprint, { head: 'head-a', rateLimit: null,
-    checks: [{ name: 'private check command', status: 'success', required: true, url: null }], remarks: [] }, centerTime)
+  const read = pullRequestObservation(fingerprint, { head: 'head-a', rateLimit: null, requiredChecks: null, checksComplete: true,
+    checks: [{ name: 'private check command', context: 'private check command', status: 'success', required: true, url: null }], remarks: [] }, centerTime)
   store.pullRequest(centerTarget, read)
   expect(store.read(centerTarget).find(item => item.checksState)).toMatchObject({ source: 'github', target: centerTarget, headId: 'head-a', fact: 'checks-passed', checkCount: 1 })
   store.pullRequest(centerTarget, pullRequestObservation({ ...fingerprint, head: 'head-b' }, null, centerTime, read))
@@ -23,7 +23,7 @@ it('publishes only sourced, bounded facts from GitHub and invalidates checks on 
 })
 it('does not infer passing checks from a zero-check or refused result, or a review from worker words', () => {
   for (const checks of [null, []]) {
-    const read = pullRequestObservation(fingerprint, { head: 'head-a', rateLimit: null, checks, remarks: [] }, centerTime)
+    const read = pullRequestObservation(fingerprint, { head: 'head-a', rateLimit: null, requiredChecks: null, checksComplete: true, checks, remarks: [] }, centerTime)
     expect(read.checks).toBe('unknown')
   }
   const store = new WatcherEvidenceStore()
@@ -61,9 +61,9 @@ it('bounds the retained projection and fingerprints facts rather than repeated r
 
 
 it('reuses checks only for unrequested same-URL same-head details and never for refused or mismatched reads', () => {
-  const previous = pullRequestObservation(fingerprint, { head: 'head-a', rateLimit: null,
-    checks: [{ name: 'build', status: 'success', required: true, url: null }], remarks: [] }, centerTime)
-  const remarksOnly = { head: 'head-a', rateLimit: null, checks: null, remarks: [] }
+  const previous = pullRequestObservation(fingerprint, { head: 'head-a', rateLimit: null, requiredChecks: null, checksComplete: true,
+    checks: [{ name: 'build', context: 'build', status: 'success', required: true, url: null }], remarks: [] }, centerTime)
+  const remarksOnly = { head: 'head-a', rateLimit: null, requiredChecks: null, checksComplete: true, checks: null, remarks: [] }
   expect(pullRequestObservation(fingerprint, remarksOnly, centerTime, previous, false)).toMatchObject({ checks: 'passed', checkCount: 1 })
   for (const read of [
     pullRequestObservation(fingerprint, remarksOnly, centerTime, previous, true),
@@ -110,10 +110,10 @@ it('keeps approval and auto-merge evidence at their own time across checks-only 
 })
 
 it('does not refresh check freshness when babysitting carries unrequested known checks forward', () => {
-  const initial = pullRequestObservation(fingerprint, { head: fingerprint.head, rateLimit: null,
-    checks: [{ name: 'build', status: 'success', required: true, url: null }], remarks: [] }, centerTime)
+  const initial = pullRequestObservation(fingerprint, { head: fingerprint.head, rateLimit: null, requiredChecks: null, checksComplete: true,
+    checks: [{ name: 'build', context: 'build', status: 'success', required: true, url: null }], remarks: [] }, centerTime)
   const later = '2026-10-12T10:00:00.000Z'
-  const read = pullRequestObservation(fingerprint, { head: fingerprint.head, rateLimit: null, checks: null, remarks: [] }, later, initial, false)
+  const read = pullRequestObservation(fingerprint, { head: fingerprint.head, rateLimit: null, requiredChecks: null, checksComplete: true, checks: null, remarks: [] }, later, initial, false)
   const store = new WatcherEvidenceStore()
   store.pullRequest(centerTarget, initial); store.pullRequest(centerTarget, read)
   expect(store.read(centerTarget, true, Date.parse(later)).find(item => item.checksState === 'passed'))

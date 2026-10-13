@@ -1,8 +1,8 @@
 # Usage in Sotto Owl
 
-October 13, 2026. Ready for local review of [issue #976](https://github.com/millZach/Sotto/issues/976) on `feat/usage-dashboard`. The final reviewed implementation and fixture fixes are committed locally at `1b013f26ea4a7fdaa4f9b2932203464f447ad8e2`, following the integrated implementation at `c745c6e4a90193aa238ce9d97a9f97557066e327`. All four required gates and actual Windows package checks passed; both final review verdicts have zero unresolved findings. Nothing has been installed, published, pushed as an implementation PR or merged.
+October 13, 2026. Local verification of [issue #976](https://github.com/millZach/Sotto/issues/976) on `feat/usage-dashboard`. The reviewed implementation and fixture fixes are at `1b013f26ea4a7fdaa4f9b2932203464f447ad8e2`, following the integrated implementation at `c745c6e4a90193aa238ce9d97a9f97557066e327`. All four required gates and actual Windows package checks passed on that feature revision; both final review verdicts had zero unresolved findings. No installer or host was installed or published.
 
-Zach chose both native subscription limits and Sotto activity, Overview first, numeric history independent of conversation history, a separate Clear action and all connected computers. He selected **C: Focus** from the Opus 5.5 pass launched at xhigh. The [plan](../plans/2026-10-12-usage-dashboard.md) records the accepted prototype and archive; [ADR-0075](../adr/0075-usage-keeps-numeric-history-on-its-own-host.md) records the numeric and authority boundaries.
+Zach chose both native subscription limits and Sotto activity, Overview first, numeric history independent of conversation history, a separate Clear action and all connected computers. He selected **C: Focus** from the Opus 5.5 pass launched at xhigh. The [plan](../plans/2026-10-12-usage-dashboard.md) records the accepted prototype and archive; [ADR-0076](../adr/0076-usage-keeps-numeric-history-on-its-own-host.md) records the numeric and authority boundaries.
 
 ## Production Windows journey
 
@@ -56,3 +56,7 @@ The package probes used isolated PATH, HOME and profile directories. Owl's local
 A Windows fake-systemd run does not establish Linux behavior. The read-only forge SSH attempt timed out; a single bounded noninteractive retry also returned no platform metadata before its 12-second timeout. Real Linux and macOS surfaces and a remote host installation remain unverified. Codex and Grok metadata reads were researched and safely probed separately; this desktop journey proves the scripted Claude path, not current live account allowances for every provider.
 
 The final evidence additions also passed `tests/unit/release` and `tests/unit/scripts`: 257 tests passed and 10 skipped across 33 passing files and one skipped file. The owned verification checkout was removed after retaining the cited evidence. This note and those artifacts close local verification; no release or remote installation was performed.
+
+## Integration for merge
+
+Zach authorized merge after the local verification. Latest main `2ff23cc1db51c9a33c13a6f7d9f6ab08b1717b99` overlapped the implementation, so it was integrated before opening the PR. The resolution keeps both Usage and Omarchy bridges and both sets of release and evidence records. Usage's ADR becomes 0076 because main's Claude steering decision uses 0075. A read-only seam check found no semantic conflict in Claude exact acceptance, token contexts, wake-up guards or Omarchy startup. Typecheck, lint and notices passed on the combined tree; the full suite, affected Electron journeys and independent review are being repeated for this integration. The earlier package receipts retain their exact source identity and do not claim to be packages of the later merge commit.

@@ -119,6 +119,9 @@ test-results/
 artifacts/e2e-runs/
 .vite/
 .cache/
+
+# Omarchy setup proof: selected captures and results are added explicitly.
+artifacts/omarchy-setup/*
 *.log
 *.local
 .DS_Store
@@ -506,3 +509,29 @@ artifacts/usage-dashboard/*
 !artifacts/usage-dashboard/verified.json
 !artifacts/usage-dashboard/usage-owl-package.png
 !artifacts/usage-dashboard/package-verification.json
+
+# Full Omarchy test findings; commit only evidence cited in the verification note.
+artifacts/linux-test-findings/*
+
+!artifacts/linux-test-findings/built-results.json
+!artifacts/linux-test-findings/packaged-results.json
+!artifacts/linux-test-findings/packaged-resources.json
+!artifacts/linux-test-findings/launch-environments.json
+!artifacts/linux-test-findings/built-outside-change-1280x800-dark.png
+!artifacts/linux-test-findings/packaged-onboarding-1280x800-light.png
+!artifacts/linux-test-findings/packaged-onboarding-820x560-dark.png
+!artifacts/linux-test-findings/packaged-onboarding-820x560-light.png
+!artifacts/linux-test-findings/packaged-removing-1280x800-dark.png
+!artifacts/linux-test-findings/packaged-removing-820x560-light.png
+!artifacts/linux-test-findings/packaged-inspection-retry-820x560-light.png
+!artifacts/linux-test-findings/packaged-terminal-1280x800-dark.png
+!artifacts/linux-test-findings/packaged-terminal-820x560-light.png
+
+# Linux stable release command; retain only the cited rehearsal evidence.
+artifacts/linux-release-command/*
+!artifacts/linux-release-command/owl-features-stable-package.png
+!artifacts/linux-release-command/owl-features-stable-package-status.json
+!artifacts/linux-release-command/linux-desktop-package.json
+!artifacts/linux-release-command/linux-release-verification.json
+!artifacts/linux-release-command/SHA256SUMS.txt
+!artifacts/linux-release-command/stable-rejection.txt

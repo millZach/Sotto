@@ -1565,7 +1565,7 @@ struct HeldDetail {
             await dispatch(command, operation: operation)
         } catch { feedback = error.localizedDescription }
     }
-    /// Sends a queued message into the running turn now. Like a stop, it is marked before it goes and never resent.
+    /// Sends a queued message now instead of after the running turn. Like a stop, it is marked before it goes and never resent.
     func steer(_ item: Followup, in ref: ThreadRef) async {
         guard canSteer(item, in: ref) else { return }
         await act(on: ref, kind: "steer") { try Commands.steerFollowup(threadID: ref.threadID, itemID: item.id) }
