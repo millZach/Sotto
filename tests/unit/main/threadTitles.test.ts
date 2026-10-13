@@ -56,6 +56,12 @@ const workshop = (control: AgentControl): AgentThread =>
   ?? control.get().host.threads.find(thread => thread.providerId === 'codex')!
 const titled = (control: AgentControl, threadId: string): AgentThread => control.get().host.threads.find(thread => thread.id === threadId)!
 
+/** Waits until a coordinator has written what it knows, so one opened on the same folder reads the same records. Without
+ * it the second can load before the first has saved that it saw the thread. The test's cleanup disposes both. */
+async function savedForReopening(f: { control: AgentControl }): Promise<void> {
+  await f.control.closed()
+}
+
 /** The provider answers the thread's first prompt; the coordinator sees the exchange on the next frame. */
 function reply(adapter: { state: { threads: AgentThread[] }; emit: () => void }, index = 0, prompt = 'The palette is unreadable in dark mode.', answer = 'I raised the foreground contrast on both dark themes.'): void {
   const thread = adapter.state.threads[index]!
@@ -137,6 +143,7 @@ describe('naming a thread from its first exchange', () => {
     expect(titled(f.control, threadId)).toMatchObject({ title: 'Dark theme contrast', titleSource: 'generated' })
     expect(f.titles).toHaveBeenCalledTimes(1)
 
+    await savedForReopening(f)
     const reopened = await coordinator({ root: f.root })
     expect(titled(reopened.control, threadId)).toMatchObject({ title: 'Dark theme contrast', titleSource: 'generated' })
     expect(reopened.titles).not.toHaveBeenCalled()
@@ -318,6 +325,7 @@ describe('naming a thread from its first message while the first turn runs', () 
     send(f.adapters.codex, 'The palette is unreadable in dark mode.', 'Light mode too.')
     await vi.waitFor(() => expect(titled(f.control, threadId)).toMatchObject({ title: 'The palette is unreadable in dark mode.', titledFromFirstMessage: true }))
 
+    await savedForReopening(f)
     const reopened = await coordinator({ root: f.root, firstMessageTitles: DEFAULT_SETTINGS })
     const thread = reopened.adapters.codex.state.threads[0]!
     const at = new Date().toISOString()
@@ -337,6 +345,7 @@ describe('naming a thread from its first message while the first turn runs', () 
     reply(before.adapters.codex)
     await vi.waitFor(() => expect(before.titles).toHaveBeenCalledOnce())
 
+    await savedForReopening(before)
     const reopened = await coordinator({ root: before.root, firstMessageTitles: DEFAULT_SETTINGS, writeThreadTitle: async () => null })
     reply(reopened.adapters.codex)
     await reopened.control.command({ type: 'refresh' })
