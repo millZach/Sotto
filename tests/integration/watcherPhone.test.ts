@@ -217,7 +217,7 @@ it('fences phone instructions at admission and dispatch while Watcher changes pr
     const late = await f.control.commandFromWatcherPhone({ type: 'send', draft: {
       threadId: f.target.threadId, draftId: packet.request.draftId, text: packet.request.text, attachments: [],
       binding: { requestId: null, questionsDigest: null } } }, { phoneOrigin: { ...packet.request.origin, kind: 'phone' }, guard: () => undefined },
-    { clientId: peer.paired.clientId, transport: 'socket', selectedThreadId: f.target.threadId })
+    { clientId: peer.paired.clientId, transport: 'socket', user: 'synthetic-user', selectedThreadId: f.target.threadId })
     expect(late.error).toContain('provider change')
     expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'send')).toHaveLength(0)
   } finally { release.resolve(); await changing }
