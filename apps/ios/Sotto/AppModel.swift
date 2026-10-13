@@ -598,6 +598,9 @@ extension AppModel {
     /// computer is reached again. Nothing is stopped again.
     func recoverWatcherStop(_ hostID: String) async {
         guard let request = watcherStops[hostID], online(hostID), let connection = connections[hostID], let epoch = generations[hostID] else { return }
+        // One read of a Stop all receipt at a time on each computer: a reconnect during one doesn't start a second.
+        guard watcherStopRecoveries.insert(hostID).inserted else { return }
+        defer { watcherStopRecoveries.remove(hostID) }
         let marked = watcherStopping.insert(hostID).inserted
         defer { if marked { watcherStopping.remove(hostID) } }
         var receipt: Receipt?
@@ -952,6 +955,8 @@ struct HeldDetail {
     @Published private(set) var watcherReadProblems: [String: String] = [:]
     /// A Stop all whose outcome its computer hasn't told this iPhone yet, by computer.
     private var watcherStops: [String: WatcherStopRequest] = [:]
+    /// Computers whose Stop all receipt is being read now.
+    private var watcherStopRecoveries: Set<String> = []
     /// Computers whose Stop all is being checked or carried out.
     @Published private(set) var watcherStopping: Set<String> = []
     /// Whether the Watcher tab is on screen, so its own alerts stay quiet there.
