@@ -760,6 +760,17 @@ export class WatcherService implements WatcherControlHooks {
     }
     record.reservations = record.reservations.filter(item => item.operationId !== operationId)
   }
+  private copyRemoteReceipt(record: WatcherRecord, own: WatcherOperation, receipt: Pick<WatcherOperation, 'deliveryState' | 'refusalCode' | 'commandId' | 'itemId' | 'updatedAt' | 'creationUncertain'>): void {
+    const wasFailed = own.deliveryState === 'failed'
+    if (own.deliveryState !== 'accepted') own.deliveryState = receipt.deliveryState
+    if (receipt.refusalCode) own.refusalCode = receipt.refusalCode
+    if (receipt.commandId) own.commandId = receipt.commandId
+    if (receipt.itemId) own.itemId = receipt.itemId
+    if (receipt.creationUncertain) own.creationUncertain = true
+    else delete own.creationUncertain
+    own.updatedAt = receipt.updatedAt
+    if (!wasFailed && own.deliveryState === 'failed') this.refundPrompt(record, own, own.refusalCode ?? 'PROVIDER_UNAVAILABLE')
+  }
   private reconciling: Promise<void> | undefined
   private reconcileAgain = false
   private reconcileRemote(hostId?: string): Promise<void> {
@@ -778,15 +789,26 @@ export class WatcherService implements WatcherControlHooks {
       await this.options.control.updateWatcher(record => {
         for (const remoteRequest of projection.requests) {
           const request = record.requests.find(item => item.id === remoteRequest.id && key(item.watcher) === key(master.target))
-          if (!request) continue
+          if (!request || key(remoteRequest.watcher) !== key(master.target)
+            || remoteRequest.rootUserMessageId !== request.rootUserMessageId || remoteRequest.createdAt !== request.createdAt) continue
           for (const participant of remoteRequest.participants) {
+            if (participant.target.hostId !== host.hostId) continue
             const own = request.participants.find(item => key(item.target) === key(participant.target))
-            if (own) Object.assign(own, participant)
+            if (!own) continue
+            // The master owns prompt counts; only an exact failed receipt can refund one.
+            if (participant.generation < own.generation || own.state !== 'participating') continue
+            own.generation = participant.generation; own.state = participant.state
+            if (participant.automationStopped) own.automationStopped = true
+            if (participant.takeover) own.takeover = participant.takeover
+            if (participant.lastUserMessageId !== undefined) own.lastUserMessageId = participant.lastUserMessageId
           }
         }
         for (const receipt of projection.operations) {
-          const own = record.operations.find(item => item.id === receipt.id && item.digest === receipt.digest && key(item.target) === key(receipt.target))
-          if (own) Object.assign(own, receipt)
+          if (receipt.target.hostId !== host.hostId) continue
+          const own = record.operations.find(item => item.id === receipt.id && item.requestId === receipt.requestId
+            && item.digest === receipt.digest && key(item.target) === key(receipt.target))
+          if (!own) continue
+          this.copyRemoteReceipt(record, own, receipt)
         }
         record.reservations = record.reservations.filter(reservation => {
           if (reservation.target.hostId !== host.hostId) return true
