@@ -1245,8 +1245,10 @@ export class AgentControl {
    * window is diffed once, at the end, because the diff is taken here rather than as each event lands.
    */
   private broadcastDetail(): void {
-    if (!this.detailListeners.size) return
+    if (!this.detailListeners.size && !this.watcherMessageDisplay) return
     const targets = this.detailTargets()
+    this.watcherMessageDisplay?.retain(this.state.host.hostId, targets)
+    if (!this.detailListeners.size) return
     for (const threadId of this.publishedDetail.keys()) if (!targets.includes(threadId)) this.publishedDetail.delete(threadId)
     for (const threadId of this.detailSnapshots.keys()) if (!targets.includes(threadId)) this.detailSnapshots.delete(threadId)
     for (const threadId of targets) {
@@ -3838,6 +3840,7 @@ export class AgentControl {
     this.listeners.clear()
     this.detailListeners.clear()
     this.detailSnapshots.clear()
+    this.watcherMessageDisplay?.retain(undefined, [])
   }
 }
 

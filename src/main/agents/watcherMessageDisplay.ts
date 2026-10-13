@@ -25,7 +25,14 @@ const sameProof = (left: WatcherDisplayPrompt | null | undefined, right: Watcher
 /** Private to the coordinator. Metadata updates never copy history; read paths never scan its control archive. */
 export class WatcherMessageDisplay {
   private index = new Map<string, Proofs>()
+  private retained = new Set<string>()
   private readonly cache = new Map<string, Map<string, { wire: string; proof: WatcherDisplayPrompt; text: string }>>()
+
+  /** Text belongs only to the windows still held; closing one keeps its text-free presentation evidence. */
+  retain(hostId: string | undefined, threadIds: readonly string[]): void {
+    this.retained = new Set(hostId === undefined ? [] : threadIds.map(threadId => ownerKey(hostId, threadId)))
+    for (const key of this.cache.keys()) if (!this.retained.has(key)) this.cache.delete(key)
+  }
 
   update(requests: readonly WatcherRequest[]): void {
     const next = new Map<string, Proofs>()
@@ -51,7 +58,7 @@ export class WatcherMessageDisplay {
     this.cache.clear()
   }
 
-  /** The only text cache is the current presented window. Exact native edits and proof changes invalidate it. */
+  /** Held windows share exact verification; an offscreen read never retains its text. */
   project(hostId: string | undefined, threadId: string, messages: readonly AgentMessage[]): readonly AgentMessage[] {
     if (hostId === undefined) return messages
     const key = ownerKey(hostId, threadId), proofs = this.index.get(key)
@@ -59,24 +66,24 @@ export class WatcherMessageDisplay {
       this.cache.delete(key)
       return messages
     }
-    let cached = this.cache.get(key)
-    if (!cached) { cached = new Map(); this.cache.set(key, cached) }
+    let cached = this.retained.has(key) ? this.cache.get(key) : undefined
+    if (!cached && this.retained.has(key)) { cached = new Map(); this.cache.set(key, cached) }
     const seen = new Set<string>()
     let projected: AgentMessage[] | undefined
     for (const [index, message] of messages.entries()) {
       const proof = message.role === 'user' ? proofs.get(message.id) : undefined
       if (!proof) continue
       seen.add(message.id)
-      const previous = cached.get(message.id)
+      const previous = cached?.get(message.id)
       const text = previous && previous.wire === message.text && sameProof(previous.proof, proof)
         ? previous.text : originalText(message.text, proof)
-      cached.set(message.id, { wire: message.text, proof, text })
+      cached?.set(message.id, { wire: message.text, proof, text })
       if (text !== message.text) {
         projected ??= [...messages]
         projected[index] = { ...message, text }
       }
     }
-    for (const id of cached.keys()) if (!seen.has(id)) cached.delete(id)
+    if (cached) for (const id of cached.keys()) if (!seen.has(id)) cached.delete(id)
     return projected ?? messages
   }
 }

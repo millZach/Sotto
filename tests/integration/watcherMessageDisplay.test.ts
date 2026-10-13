@@ -12,6 +12,15 @@ import type { AgentThreadDetail, AgentThreadDetailUpdate } from '../../src/share
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
 
+vi.mock('node:crypto', async importActual => {
+  const actual = await importActual<typeof import('node:crypto')>()
+  return { ...actual, createHash: vi.fn((...args: Parameters<typeof actual.createHash>) => {
+    const hash = actual.createHash(...args)
+    vi.spyOn(hash, 'update')
+    return hash
+  }) }
+})
+
 const cleanups: (() => Promise<unknown>)[] = []
 afterEach(async () => { for (const close of cleanups.splice(0).reverse()) await close(); vi.restoreAllMocks() })
 async function fixture() {
@@ -129,6 +138,58 @@ describe('real Watcher user message display', () => {
     expect(held.messages.find(message => message.id === request.rootUserMessageId)?.text).toBe(original)
     expect(invalid).toEqual([])
     expect(f.native().messages[0]!.text).toBe(wire)
+  })
+
+  it('releases retired history text on public close and verifies fresh wire on offscreen reads and reopen', async () => {
+    const f = await fixture(), original = 'Synthetic retained original', request = await f.send(original)
+    const wire = f.native().messages.find(message => message.id === request.rootUserMessageId)!.text
+    await f.finish(); await f.control.commandShell({ type: 'connect', provider: 'claude' })
+    const nextModel = f.control.shell().host.models.find(model => model.providerId === 'claude')!
+    expect(await f.service.open({ provider: 'claude', modelId: nextModel.id })).toMatchObject({ status: 'ok' })
+    expect(f.control.watcherSnapshot().threads.find(thread => thread.id === f.target.threadId)?.kind).toBe('watcher-history')
+    const ordinary = f.control.shell().host.threads.find(thread => thread.kind !== 'watcher' && thread.kind !== 'watcher-history')!
+    expect(ordinary).toBeTruthy()
+    expect((await f.control.commandShell({ type: 'select-thread', threadId: ordinary.id })).error).toBeNull()
+    expect(f.control.shell().deliveries?.some(delivery => delivery.status !== 'accepted')).toBeFalsy()
+    expect(f.control.shell().followups?.length ?? 0).toBe(0)
+    await f.control.commandShell({ type: 'observe-threads', threadIds: [f.target.threadId] })
+    vi.mocked(createHash).mockClear()
+    const verifications = () => vi.mocked(createHash).mock.results.filter(result => result.type === 'return'
+      && vi.mocked(result.value.update).mock.calls.some(([input]) => input === wire)).length
+    const detailText = () => f.control.threadDetail(f.target.threadId)!.messages.find(message => message.id === request.rootUserMessageId)?.text
+    const stateText = () => f.control.get().host.threads.find(thread => thread.id === f.target.threadId)!.messages.find(message => message.id === request.rootUserMessageId)?.text
+    expect(detailText()).toBe(original)
+    const warm = verifications()
+    for (let chunk = 0; chunk < 3; chunk++) {
+      const native = f.native()
+      if (chunk === 0) native.messages.push({ id: 'retired-reply', role: 'assistant', text: 'Reply', createdAt: new Date().toISOString() })
+      else native.messages.find(message => message.id === 'retired-reply')!.text += ' more'
+      await f.refresh()
+      expect(detailText()).toBe(original)
+    }
+    expect(verifications()).toBe(warm)
+    // No detail subscriber: closing still releases the memo rather than waiting for a provider frame.
+    await f.control.commandShell({ type: 'observe-threads', threadIds: [] })
+    expect((await f.control.commandShell({ type: 'load-earlier-messages', threadId: f.target.threadId })).error).toBeNull()
+    expect(stateText()).toBe(original)
+    expect(verifications()).toBe(warm + 1)
+    expect(detailText()).toBe(original)
+    const afterTransientDetail = verifications()
+    expect(afterTransientDetail).toBeGreaterThan(warm + 1)
+    expect(stateText()).toBe(original)
+    expect(verifications()).toBe(afterTransientDetail + 1)
+    await f.control.commandShell({ type: 'observe-threads', threadIds: [f.target.threadId] })
+    const beforeReopen = verifications()
+    expect(detailText()).toBe(original)
+    expect(verifications()).toBe(beforeReopen + 1)
+    expect(detailText()).toBe(original)
+    expect(verifications()).toBe(beforeReopen + 1)
+    expect(f.control.watcherRecord().requests.find(item => item.id === request.id)!.displayPrompt).toEqual(request.displayPrompt)
+    expect(f.native().messages.find(message => message.id === request.rootUserMessageId)!.text).toBe(wire)
+    await f.workspace.host.flush()
+    const db = new DatabaseSync(join(f.root, 'threads.sqlite'), { readOnly: true })
+    try { expect(db.prepare('SELECT text FROM messages WHERE thread_id=? AND message_id=?').get(f.target.threadId, request.rootUserMessageId)?.text).toBe(wire) }
+    finally { db.close() }
   })
 
   it('restores and retires proven conversations while old unverified desktop history stays raw and phone legacy behavior stays explicit', async () => {
