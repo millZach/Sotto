@@ -7,7 +7,7 @@ import { findMuseNativeExecutable } from './museClientInstall'
 
 /**
  * Muse's floor: the oldest client Sotto connects (ADR-0042), and what a host's tile says an update needs
- * (ADR-0035). 1.1.1 is the client this adapter was checked against (ADR-0078): MSP envelope schema 1 over
+ * (ADR-0035). 1.1.1 is the client this adapter was checked against (ADR-0079): MSP envelope schema 1 over
  * `muse serve`, with `session/resume` serving folded history and the view stream carrying turns live.
  * Move it only after checking a newer client against the adapter contract.
  */
@@ -32,12 +32,12 @@ const safeEnvironment = new Set(['path', 'pathext', 'systemroot', 'windir', 'tem
 /**
  * The environment a Muse process gets: the shared allow-list and nothing else. `META_API_KEY` is not on it, so a
  * thread always runs on the sign-in Muse itself holds (`muse login`, or credentials stored with `muse auth`),
- * never on a key that happened to be in Sotto's own environment (ADR-0078).
+ * never on a key that happened to be in Sotto's own environment (ADR-0079).
  */
 export function museEnvironment(environment: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   return Object.fromEntries(Object.entries(environment).filter(([key]) => safeEnvironment.has(key.toLowerCase())))
 }
-/** The shared lookup order, resolving maker launchers to their current native binary (ADR-0078). */
+/** The shared lookup order, resolving maker launchers to their current native binary (ADR-0079). */
 export async function findMuseExecutable(environment: NodeJS.ProcessEnv = process.env, lookup: Omit<CliLookupOptions, 'environment'> = {}): Promise<string | undefined> {
   return findMuseNativeExecutable(environment, lookup)
 }

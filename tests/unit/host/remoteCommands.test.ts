@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { REMOTE_COMMANDS, REMOTE_CONFIGURATION_FIELDS, REMOTE_SIGN_IN_OPERATIONS, remoteCommandRefusal } from '../../../src/host/remoteCommands'
+import { REMOTE_COMMANDS, REMOTE_CONFIGURATION_FIELDS, REMOTE_SIGN_IN_OPERATIONS, REMOTE_USAGE_OPERATIONS, remoteCommandRefusal, remoteUsageRefusal } from '../../../src/host/remoteCommands'
 import { agentCommandSchema, type AgentCommand } from '../../../src/shared/agents'
 import { hostRequestSchema, commandFromProtocolV1, protocolAgentCommandSchema } from '../../../src/shared/hostProtocol'
 
@@ -67,10 +67,13 @@ describe('remote command allow-list', () => {
     }
     expect([...schemaFields.keys()].sort()).toEqual([...new Set([...HOST_LOCAL, ...Object.keys(REMOTE_COMMANDS)])].sort())
   })
-  it('decides every host request: reads and the session, commands through their own list, and the sign-in requests (ADR-0037)', () => {
+  it('decides every host request: reads and the session, commands through their own list, sign-in and Usage requests', () => {
     expect([...REMOTE_SIGN_IN_OPERATIONS]).toEqual(['sign-in-start', 'sign-in-read', 'sign-in-code', 'sign-in-cancel'])
+    expect([...REMOTE_USAGE_OPERATIONS]).toEqual(['usage-read', 'usage-refresh', 'usage-clear'])
     const decided = ['hello', 'shell', 'detail', 'events', 'observe', 'command', 'preview', 'receipt', 'git-refs', 'git-changed-files', 'git-pull-request',
       'stage-attachment', 'attachment-content', 'host-folders', ...REMOTE_SIGN_IN_OPERATIONS,
+      // Numeric Usage reads grant nothing; Clear requires the client's current remote-answer policy (ADR-0078).
+      ...REMOTE_USAGE_OPERATIONS,
       // Explicit native recovery requires answer-check and current remote-answer authority; it sends no answer.
       'check-answer',
       // Only an advertised and accepted desktop terminal feature admits these operations (ADR-0066).
@@ -83,6 +86,24 @@ describe('remote command allow-list', () => {
       'thread-files', 'thread-file-preview', 'thread-changes', 'thread-changes-review', 'subagent-page', 'subagent-assignments']
     const ops = (hostRequestSchema.options as unknown as { shape: { op: { value: string } } }[]).map(option => option.shape.op.value)
     expect(ops.sort()).toEqual([...decided].sort())
+  })
+  it('admits numeric Usage reads and refreshes, and requires the answer policy for Clear', () => {
+    for (const operation of ['usage-read', 'usage-refresh'] as const) {
+      for (const mayAnswer of [false, true]) expect(remoteUsageRefusal(operation, mayAnswer), operation).toBeNull()
+    }
+    expect(remoteUsageRefusal('usage-clear', false)).toBe('forbidden')
+    expect(remoteUsageRefusal('usage-clear', true)).toBeNull()
+    const base = { v: 1, id: 'usage', session: 'session' }
+    for (const request of [
+      { ...base, op: 'usage-read', query: { providerIds: ['claude'] } },
+      { ...base, op: 'usage-refresh', providerIds: ['claude'] },
+      { ...base, op: 'usage-clear', request: { expectedRevision: 1 } },
+    ]) {
+      expect(hostRequestSchema.safeParse(request).success, request.op).toBe(true)
+      expect(hostRequestSchema.safeParse({ ...request, approved: true }).success, request.op).toBe(false)
+    }
+    expect(hostRequestSchema.safeParse({ ...base, op: 'usage-read', query: { hostIds: ['other-host'] } }).success).toBe(false)
+    expect(hostRequestSchema.safeParse({ ...base, op: 'usage-clear', request: { expectedRevision: 1, approved: true } }).success).toBe(false)
   })
   it('takes the client update line only on a listener that offers client-updates, and the waiting update-client nowhere (#480)', () => {
     for (const command of [{ type: 'queue-client-updates', providers: ['codex', 'grok'] }, { type: 'cancel-client-updates', providers: ['codex'] }] as AgentCommand[]) {

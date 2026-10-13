@@ -117,7 +117,7 @@ function clientRefusal(client: MuseClient): MuseUnsupported | undefined {
   return undefined
 }
 
-/** How Sotto spawns the native client: one MSP host per thread (`muse serve`, ADR-0038, ADR-0078). */
+/** How Sotto spawns the native client: one MSP host per thread (`muse serve`, ADR-0038, ADR-0079). */
 export function museServeArguments(): string[] { return ['serve'] }
 
 interface ThreadProcess { rpc: MuseRpc; ready: Promise<ThreadProcess>; clientRevision: number; turnRevision: number; closing: boolean; lost: boolean; sessionId?: string; resync?: Promise<void> }
@@ -159,7 +159,7 @@ export class MuseMspHost implements AgentHost {
   }
   /**
    * Muse cannot host Watcher: MSP v1 has no way to attach Sotto's thread tools to a session, so a Watcher
-   * thread is refused before its process starts rather than started without its tools (ADR-0078).
+   * thread is refused before its process starts rather than started without its tools (ADR-0079).
    */
   private async refuseWatcher(id: string, rpc?: MuseRpc): Promise<void> {
     const generation = this.generation, entry = this.processes.get(id)
@@ -1380,7 +1380,7 @@ export class MuseMspHost implements AgentHost {
       this.markTurn(id, 'running', messageId ?? session.activeTurnId)
     } else if (!this.activePrompts.has(id)) thread.status = this.aliases[id]?.settingsConfirmed ? 'idle' : 'error'
   }
-  /** MSP cannot disable all tools independently of native policy, so side writing stays unavailable (ADR-0078). */
+  /** MSP cannot disable all tools independently of native policy, so side writing stays unavailable (ADR-0079). */
   async writeShortText(id: string, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
     void id; void prompt; void signal
     return null
@@ -1413,7 +1413,7 @@ export class MuseMspHost implements AgentHost {
 }
 
 /**
- * Muse while its Owl feature is off (ADR-0072, ADR-0078): nothing is shown or started, and the real
+ * Muse while its Owl feature is off (ADR-0072, ADR-0079): nothing is shown or started, and the real
  * adapter's saved records stay on disk untouched for a return to Owl. The provider keeps its place in the
  * switch so a thread bound to it is refused in words rather than taken for another provider's.
  */

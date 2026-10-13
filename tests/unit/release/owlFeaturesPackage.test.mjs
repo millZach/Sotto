@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { URL } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { assertPackagedFeatureStatus } from '../../../scripts/verify-owl-features-package.mjs'
+import { OWL_FEATURES } from '../../../src/shared/owlFeatures'
 
 const features = [
   { id: 'watcher', name: 'Watcher', sentToStable: false },
@@ -25,12 +26,21 @@ describe('packaged Owl feature protection', () => {
     expect(() => assertPackagedFeatureStatus(status('owl'), 'stable', features)).toThrow('stable track')
     expect(() => assertPackagedFeatureStatus(status('owl', { watcherEnabled: false }), 'owl', features)).toThrow('compatibility answer')
   })
-  it.each(['stable', 'owl'])('checks all four real feature answers in %s by default', track => {
-    const enabled = track === 'owl'
-    expect(() => assertPackagedFeatureStatus({ releaseTrack: track, owlFeatures: { watcher: enabled, muse: enabled, 'resume-after-restart': enabled, 'update-all': enabled }, watcherEnabled: enabled }, track)).not.toThrow()
+  it.each(['stable', 'owl'])('checks every real Owl feature by default in %s', track => {
+    const owlFeatures = Object.fromEntries(OWL_FEATURES.map(feature => [feature.id, track === 'owl' || feature.sentToStable]))
+    const realStatus = { releaseTrack: track, owlFeatures, watcherEnabled: owlFeatures.watcher }
+    expect(() => assertPackagedFeatureStatus(realStatus, track)).not.toThrow()
+    for (const feature of OWL_FEATURES) {
+      const missing = { ...owlFeatures }
+      delete missing[feature.id]
+      const incorrect = { ...owlFeatures, [feature.id]: !owlFeatures[feature.id] }
+      const problem = `${feature.name} must be ${owlFeatures[feature.id] ? 'on' : 'off'}`
+      expect(() => assertPackagedFeatureStatus({ ...realStatus, owlFeatures: missing }, track)).toThrow(problem)
+      expect(() => assertPackagedFeatureStatus({ ...realStatus, owlFeatures: incorrect, watcherEnabled: incorrect.watcher }, track)).toThrow(problem)
+    }
   })
   it('refuses a Muse leak in the real stable list', () => {
-    expect(() => assertPackagedFeatureStatus({ releaseTrack: 'stable', owlFeatures: { watcher: false, muse: true, 'resume-after-restart': false, 'update-all': false }, watcherEnabled: false }, 'stable')).toThrow('Muse provider must be off')
+    expect(() => assertPackagedFeatureStatus({ releaseTrack: 'stable', owlFeatures: { watcher: false, muse: true, usage: false, 'resume-after-restart': false, 'update-all': false }, watcherEnabled: false }, 'stable')).toThrow('Muse provider must be off')
   })
   it('runs only during stable and Owl release packaging, leaving the directory and Linux commands alone', async () => {
     const stable = await readFile(new URL('../../../scripts/package-stable.mjs', import.meta.url), 'utf8')

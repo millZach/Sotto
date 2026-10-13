@@ -836,7 +836,7 @@ export function summarizeThread(thread: Pick<AgentThread, 'messages' | 'activiti
 /**
  * Whether a thread's provider writes Sotto's short text for it: its title, its branch name and its Git
  * drafts, each in a side call (ADR-0026). Devin has no one-off call that keeps out of its own session
- * list; Muse cannot yet disable every tool in one (ADR-0078). Those threads keep their first-message title
+ * list; Muse cannot yet disable every tool in one (ADR-0079). Those threads keep their first-message title
  * or stand-in and are offered no Regenerate that could do nothing.
  */
 export function providerWritesShortText(providerId: ProviderId | undefined): boolean {

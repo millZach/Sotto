@@ -41,7 +41,7 @@ function runUnit(mark = 'boot') {
   if (process.platform === 'win32') {
     const values = Object.fromEntries(readFileSync(script, 'utf8').split(/\r?\n/u).flatMap(line => { const match = /^(node|install|data|port)=('.*')$/u.exec(line); return match ? [[match[1], unquote(match[2])]] : [] }))
     let entry = join(values.install, 'host', 'index.js')
-    try { const version = readFileSync(join(values.install, 'current'), 'utf8').trim(); if (/^\d+\.\d+\.\d+$/u.test(version) && existsSync(join(values.install, 'versions', version, 'host', 'index.js'))) entry = join(values.install, 'versions', version, 'host', 'index.js') } catch { /* a flat install */ }
+    try { const version = readFileSync(join(values.install, 'current'), 'utf8').trim(); if (/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-owl\.[1-9]\d{7}\.[1-9]\d*)?$/u.test(version) && existsSync(join(values.install, 'versions', version, 'host', 'index.js'))) entry = join(values.install, 'versions', version, 'host', 'index.js') } catch { /* a flat install */ }
     child = spawn(values.node, [entry, '--data', values.data, '--port', values.port], { detached: true, stdio: 'ignore', windowsHide: true, env })
   } else child = spawn('/bin/sh', [script], { detached: true, stdio: 'ignore', env })
   child.unref()

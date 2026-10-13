@@ -26,6 +26,7 @@ import { requestQuestionsDigest } from './requestDrafts'
 import { version as sourceVersion } from '../../../package.json'
 import { RetainedDraftStore, type RetainedDraft } from './retainedDraftStore'
 import { clientUpdateEnumerationUsesMuse, commandUsesMuse, museWatcherRefusal, threadUsesMuse, watcherRequestUsesMuse } from './museGate'
+import { usageLocalClearRequestSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageProviderIdSchema, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery } from '../../shared/usageDashboard'
 
 export const REMOTE_COMPOSE_UNSAVED = 'This host cannot save this draft yet. Your draft is kept on this computer and has not been saved on the host. Update the host.'
 const REMOTE_SEND_UNCERTAIN = 'This draft may already have been sent. Your copy is kept on this computer. Check the original thread before sending again.'
@@ -376,7 +377,7 @@ export class SocketHostService implements HostService {
     this.catchup = task
     void task.finally(() => { if (this.catchup === task) this.catchup = undefined }).catch(() => undefined)
   }
-  private call(operation: HostOperation, id: string = randomUUID(), onPlacement?: () => void): Promise<unknown> {
+  private call(operation: HostOperation, id: string = randomUUID(), onPlacement?: () => void, timeoutMs = 120000): Promise<unknown> {
     if ((operation.op === 'watcher-read' || operation.op === 'watcher-control') && this.museWatcherHeld(operation.request)) return Promise.resolve(museWatcherRefusal())
     if (operation.op === 'command') {
       // An unknown wire command is the host's to refuse, with its version and unsupported-request wording.
@@ -394,7 +395,7 @@ export class SocketHostService implements HostService {
     if (this.pending.has(id) || this.pending.size >= 32) return Promise.reject(new HostConnectionError('Wait for the pending host request to finish.', 'busy'))
     return new Promise((resolve, reject) => {
       const command = operation.op === 'command'
-      const timer = setTimeout(() => { this.pending.delete(id); reject(new HostConnectionError(command ? 'The host has not confirmed this command. Refresh before deciding what to do next.' : 'The host did not answer in time. Try refreshing.', 'disconnected', command ? id : undefined)) }, 120000)
+      const timer = setTimeout(() => { this.pending.delete(id); reject(new HostConnectionError(command ? 'The host has not confirmed this command. Refresh before deciding what to do next.' : 'The host did not answer in time. Try refreshing.', 'disconnected', command ? id : undefined)) }, timeoutMs)
       this.pending.set(id, { resolve, reject, timer, command })
       onPlacement?.()
       if (!frames.send({ v: 1, id, session: session.session, ...operation })) { clearTimeout(timer); this.pending.delete(id); reject(new HostConnectionError('The connection closed before this request could be confirmed.', 'disconnected', command ? id : undefined)) }
@@ -1007,6 +1008,21 @@ export class SocketHostService implements HostService {
   async subagentPage(request: SubagentPageRequest): Promise<SubagentPage> {
     this.offers('subagents')
     return this.read(subagentPageSchema, await this.call({ op: 'subagent-page', request }))
+  }
+  get supportsUsage(): boolean { return this.features.includes('usage-dashboard') }
+  async usageRead(query: UsageLocalQuery): Promise<UsageLocalHostRead> {
+    this.offers('usage-dashboard')
+    return this.read(usageLocalHostReadSchema, await this.call({ op: 'usage-read', query: usageLocalQuerySchema.parse(query) }, undefined, undefined, 15000))
+  }
+  async usageRefresh(providerIds?: ProviderId[]): Promise<UsageLocalHostRead> {
+    this.offers('usage-dashboard')
+    const parsed = providerIds === undefined ? undefined : usageProviderIdSchema.array().max(4).parse(providerIds)
+    return this.read(usageLocalHostReadSchema, await this.call({ op: 'usage-refresh', ...(parsed ? { providerIds: parsed } : {}) }, undefined, undefined, 15000))
+  }
+  async usageClear(request: UsageLocalClearRequest, client: ClientIdentity): Promise<UsageLocalClearResult> {
+    void client // This socket's authenticated pairing supplies its own host authority.
+    this.offers('usage-dashboard')
+    return this.read(usageLocalClearResultSchema, await this.call({ op: 'usage-clear', request: usageLocalClearRequestSchema.parse(request) }, undefined, undefined, 15000))
   }
   async subagentAssignments(request: SubagentAssignmentsRequest): Promise<SubagentAssignmentsPage> {
     this.offers('subagents')

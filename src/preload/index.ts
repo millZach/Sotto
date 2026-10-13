@@ -13,6 +13,7 @@ import { REQUEST_DRAFT_GET, REQUEST_DRAFT_STATUS, REQUEST_DRAFT_SAVE, REQUEST_DR
 import { contextBridge, ipcRenderer } from 'electron'
 import { VISUAL_PAGE_OPEN, visualPageRequestSchema, visualPageResultSchema, type VisualPagesBridge } from '../shared/visualPages'
 import { SUBAGENTS_PAGE, SUBAGENTS_ASSIGNMENTS, SUBAGENTS_CHANGED, subagentPageRequestSchema, subagentAssignmentsRequestSchema, subagentPageSchema, subagentAssignmentsPageSchema, subagentChangeSchema, type SubagentsBridge } from '../shared/subagents'
+import { USAGE_READ, USAGE_REFRESH, USAGE_CLEAR, USAGE_RENDERER_ARGUMENT, USAGE_HOSTS_MAX, usageQuerySchema, usageRefreshQuerySchema, usageClearQuerySchema, usageDashboardReadSchema, usageClearResultSchema, type UsageBridge } from '../shared/usageDashboard'
 import { createToolsBridges } from './tools'
 import { createCloudIphoneBridge } from './cloudIphone'
 import { createTerminalWorkspaceBridge } from './terminals'
@@ -289,6 +290,7 @@ export function createSottoBridge(
   platform: SottoPlatform,
   canFrostWindow = false,
   watcherEnabled = false,
+  usageEnabled = false,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(
     renderer,
@@ -321,6 +323,11 @@ export function createSottoBridge(
     1,
   )
   const bridge: SottoBridge = {
+    ...(usageEnabled ? { usage: Object.freeze<UsageBridge>({
+      read: query => invokeParsed(renderer, USAGE_READ, usageDashboardReadSchema, usageQuerySchema.parse(query)),
+      refresh: query => invokeParsed(renderer, USAGE_REFRESH, usageDashboardReadSchema, usageRefreshQuerySchema.parse(query)),
+      clear: query => invokeParsed(renderer, USAGE_CLEAR, usageClearResultSchema.array().max(USAGE_HOSTS_MAX), usageClearQuerySchema.parse(query)),
+    }) } : {}),
     ...(watcherEnabled ? { watcher: Object.freeze<WatcherBridge>({
       get: () => invokeParsed(renderer, WATCHER_GET, watcherRoomResultSchema),
       open: request => invokeParsed(renderer, WATCHER_OPEN, watcherRoomResultSchema, watcherOpenRequestSchema.parse(request)),
@@ -522,7 +529,7 @@ export function exposeRendererBridge(
   const rendererRole = parseRendererRoleArgument(arguments_)
   const platform = parsePlatformArgument(arguments_)
   if (rendererRole === 'main') {
-    context.exposeInMainWorld('sotto', createSottoBridge(renderer, platform, arguments_.includes(WINDOW_FROST_ARGUMENT), arguments_.includes(WATCHER_RENDERER_ARGUMENT)))
+    context.exposeInMainWorld('sotto', createSottoBridge(renderer, platform, arguments_.includes(WINDOW_FROST_ARGUMENT), arguments_.includes(WATCHER_RENDERER_ARGUMENT), arguments_.includes(USAGE_RENDERER_ARGUMENT)))
     return true
   }
   if (rendererRole === 'widget') {

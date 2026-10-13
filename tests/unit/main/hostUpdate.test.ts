@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { createHash } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
-import { HostUpdates, type HostUpdateCandidate, type HostUpdateHosts, type HostUpdateThreads } from '../../../src/main/hosts/hostUpdate'
+import { compareOwlHostTarget, HostUpdates, type HostUpdateCandidate, type HostUpdateHosts, type HostUpdateThreads } from '../../../src/main/hosts/hostUpdate'
 import type { SshHostUpdateOperation, SshHostUpdateOptions, SshHostUpdateResult } from '../../../src/main/hosts/sshLauncher'
 import { SshFailure } from '../../../src/main/hosts/sshFailure'
 import type { HostUpdateState } from '../../../src/shared/hostUpdates'
@@ -67,6 +67,21 @@ function setup(options: { download?: (url: string, limit: number, signal: AbortS
 }
 
 describe('which hosts need an update', () => {
+  it('offers the explicitly selected Owl target to stable or older Owl hosts without downgrading newer hosts', () => {
+    const target = '0.1.38-owl.20261012.10'
+    for (const [running, expected] of [
+      ['0.1.37', true], ['0.1.38', true], ['0.1.38-owl.20261012.2', true], ['0.1.38-owl.20261011.100', true],
+      [target, false], ['0.1.38-owl.20261012.11', false], ['0.1.38-owl.20261013.1', false], ['0.1.39', false], ['unknown', false], ['0.1.38-beta.1', false],
+    ] as const) {
+      const hosts = new Hosts(), threads = new Threads(); hosts.list = [forge({ version: running })]
+      const updates = new HostUpdates({ hosts, threads, version: target })
+      expect(updates.state().length > 0, running).toBe(expected)
+      updates.dispose()
+    }
+    expect(compareOwlHostTarget('0.1.38-owl.20261012.2', target)).toBe(-1)
+    expect(compareOwlHostTarget(target, '0.1.38-owl.20261012.2')).toBe(1)
+    expect(compareOwlHostTarget('0.1.38', '0.1.38')).toBeUndefined()
+  })
   it('offers and runs the existing update action while a same-version host reports legacy management', async () => {
     const hosts = new Hosts(), threads = new Threads()
     hosts.list = [forge({ version: DESKTOP })]
@@ -247,6 +262,23 @@ describe('an update', () => {
       message: `${DESKTOP} installed on forge, but its host did not start, so Sotto started 0.1.22 again.`,
       kept: 'forge\'s threads are back. Nothing was lost.' } })
     expect(one().commands).toBe(`# On forge, with its host stopped, to see what ${DESKTOP} says:\ncd ~/.local/share/sotto-host/versions/${DESKTOP}\nnode host/index.js --data ~/.sotto`)
+  })
+  it('names a conflicting installed folder and offers inspection commands without overwriting it', async () => {
+    const { hosts, updates, one, settled } = setup()
+    hosts.list = [forge({ installPath: "~/installed host's $(literal)" })]; hosts.emit()
+    hosts.steps['update-install'] = async () => ({ type: 'error', reason: 'update-version-conflict' })
+    await updates.command(ID, 'update')
+    await settled()
+    expect(one()).toMatchObject({ phase: 'failed', failure: { step: 'install',
+      message: `The existing versions/${DESKTOP} folder on forge differs from the release. Sotto kept it unchanged.`,
+      kept: 'forge still runs 0.1.22. Nothing was lost.',
+      next: 'Use a newer Sotto build, or stop the host on forge, keep that folder as a backup and move it aside before trying again.' } })
+    expect(one().commands).toBe([
+      '# On forge, inspect the existing folder before changing it:', "cd ~/'installed host'\\''s $(literal)'", `ls -ld versions/${DESKTOP}`,
+      `cat versions/${DESKTOP}/package.json`, `cat versions/${DESKTOP}/runtime-manifest.json`,
+      '# Keep this folder as a backup. Do not unpack a different build over it.',
+      '# Use a newer Sotto build, or stop the host and move this folder aside before pressing Try again.'].join('\n'))
+    expect(hosts.operations.map(operation => operation.op)).toEqual(['update-fetch', 'update-install'])
   })
   it('says what it knows when the connection is lost during the restart, by the version the host reconnects with', async () => {
     const { hosts, updates, one, settled } = setup()

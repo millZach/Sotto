@@ -41,11 +41,13 @@ Stable release packaging on Windows and Mac, and Owl packaging on Windows, launc
 
 **The following Owl-first timing clause is superseded by the October 13 switch rule below.** Sending a feature to stable changes only its entry's `sentToStable: false` to `sentToStable: true`. The change passes through Owl before the next stable promotion. Once stable has carried the feature, its code's switches can be removed in a later change; keep the sent entry as the record of the decision.
 
+October 12, 2026: Zach chose Usage (ADR-0078) for every connected computer in its first Owl version. This extends the preview distribution to plain Node **host archives** built from the desktop Owl's exact source and full version, attached to the same prerelease. Each host gates its own features from its packaged version; a client cannot activate a stable collector. Desktop preview builds and their updater remain Windows only. macOS and Linux can run matching Owl headless hosts without gaining an Owl desktop release or updater.
+
 ## October 13, 2026: Linux stable uses the promoted source too
 
 **Superseded in part by “October 13, 2026: the switch is the rule” below.** The Owl source, version and promotion requirements are historical. Linux artifact checks, nested Hyprland isolation and the non-publishable rehearsal remain in force.
 
-Linux still has no Owl build. `package:linux:stable` checks the newest published Windows Owl’s exact source and packages its stable base version, as Windows and Mac do. It checks the tarball and the real stable Owl feature answers in an isolated nested Hyprland session. The unchecked `package:linux` stays available for offline verification.
+Linux still has no Owl desktop build. `package:linux:stable` checks the newest published Windows Owl’s exact source and packages its stable base version, as Windows and Mac do. It checks the tarball and the real stable Owl feature answers in an isolated nested Hyprland session. The unchecked `package:linux` stays available for offline verification.
 
 `release-linux.mjs` finishes the pacman package, recipe, `.SRCINFO` and checksum lines without installation or publication. The generated recipe and `.SRCINFO` are recorded in the later Release PR after publication. An explicit rehearsal version runs the same checks from any clean commit while skipping promotion; its artifacts are marked not publishable and cannot be consumed by the stable finishing command.
 

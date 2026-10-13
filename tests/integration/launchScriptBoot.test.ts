@@ -434,6 +434,24 @@ describe.skipIf(process.platform === 'darwin')("start at boot in the launch scri
   })
 
   describe('an update of a host the unit runs', () => {
+    it('restarts into an Owl current pointer and prunes older Owl versions with the same rules as stable', async () => {
+      const configuration = await installed()
+      const previous = '1.1.0-owl.20261011.2', next = '1.1.0-owl.20261012.10', obsolete = '1.1.0-owl.20261010.1'
+      for (const version of [previous, next, obsolete]) {
+        await mkdir(join(configuration.installPath, 'versions', version, 'host'), { recursive: true })
+        await writeFile(join(configuration.installPath, 'versions', version, 'package.json'), JSON.stringify({ type: 'module' }))
+        await copyFile(resolve('tests/fixtures/fakeSshHost.mjs'), join(configuration.installPath, 'versions', version, 'host/index.js'))
+      }
+      await writeFile(join(configuration.installPath, 'current'), previous + '\n')
+      const restarted = await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: next })
+      expect(restarted.result).toMatchObject({ type: 'ready', owned: true, bootStart: { active: true } })
+      expect(await descriptor(configuration)).toMatchObject({ startedBy: 'boot', entry: expect.stringContaining(next) })
+      expect(await readFile(join(configuration.installPath, 'current'), 'utf8')).toBe(next + '\n')
+      await expect(readFile(join(configuration.installPath, 'versions', previous, 'host/index.js'))).resolves.toBeTruthy()
+      await expect(readFile(join(configuration.installPath, 'versions', obsolete, 'host/index.js'))).rejects.toMatchObject({ code: 'ENOENT' })
+      const script = await readFile(join(configuration.installPath, 'boot-start.sh'), 'utf8')
+      expect(script).toContain('-owl'); expect(script).toContain('require(')
+    })
     async function withVersions(configuration: Configuration) {
       for (const version of ['1.0.0', '1.1.0']) {
         await mkdir(join(configuration.installPath, 'versions', version, 'host'), { recursive: true })

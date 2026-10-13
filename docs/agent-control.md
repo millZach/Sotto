@@ -1,6 +1,6 @@
 # Sotto agent control
 
-Sotto opens coding threads and routes manual commands through the installed Codex, Claude Code, Grok Build and Devin clients, and, in Sotto Owl, Muse (ADR-0078). Threads have Sotto-owned identities; each native client keeps its own sign-in, model catalog and conversation history. The providers can be connected together. You send prompts, answer requests and stop work from each thread. Explicit pull request babysitting can send wake-ups but answers no request.
+Sotto opens coding threads and routes manual commands through the installed Codex, Claude Code, Grok Build and Devin clients, and, in Sotto Owl, Muse (ADR-0079). Threads have Sotto-owned identities; each native client keeps its own sign-in, model catalog and conversation history. The providers can be connected together. You send prompts, answer requests and stop work from each thread. Explicit pull request babysitting can send wake-ups but answers no request.
 
 ## Terminal mode
 
@@ -75,7 +75,7 @@ Stop has independent admission through the coordinator and workspace, so a pendi
 
 In Owl, with **Resume threads after a restart** on (ADR-0076), the local host's coordinator records each thread a connected provider reports running in `restart-resume.json`: its Sotto thread ID, when the turn started and how many times in a row it has been resumed. A turn that ends while Sotto runs, however it ends, takes the thread out. The record stops changing as soon as Sotto starts closing, so a quit, an update restart and a crash all leave the threads that were working. On the next start each one is sent the resume note as a wake-up, through its own follow-up queue, once its provider is back and reports it idle. A thread is resumed at most three times in a row; settled and archived threads, and records older than seven days, are cleared unsent. A headless host takes its Owl list from its own version, so hosts resume once the feature reaches stable.
 
-A dormant Muse thread keeps its resume record unchanged while Muse is held, including when the setting is off or the record is old. Returning to an available Muse build applies the normal resume limits; keeping the record grants no permission and sends nothing while the thread is dormant (ADR-0078).
+A dormant Muse thread keeps its resume record unchanged while Muse is held, including when the setting is off or the record is old. Returning to an available Muse build applies the normal resume limits; keeping the record grants no permission and sends nothing while the thread is dormant (ADR-0079).
 
 ## Working copies and Git
 

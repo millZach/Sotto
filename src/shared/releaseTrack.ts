@@ -6,7 +6,7 @@ export type ReleaseTrack = 'stable' | 'owl'
 /** Compatibility wrapper around the Owl feature list for Watcher branches in flight. */
 export function isWatcherEnabled(track: ReleaseTrack): boolean { return isOwlFeatureEnabled('watcher', track) }
 
-/** Whether Muse threads may be shown or started on this track at all (ADR-0078). */
+/** Whether Muse threads may be shown or started on this track at all (ADR-0079). */
 export function isMuseProviderEnabled(track: ReleaseTrack): boolean { return isOwlFeatureEnabled('muse', track) }
 
 /** Owl is a versioned preview track, independent of the app's identity. */

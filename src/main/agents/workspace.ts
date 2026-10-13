@@ -16,10 +16,11 @@ import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { z } from 'zod'
 import { agentHostSnapshotSchema, dropLiveThreadState, EMPTY_AGENT_HOST, NO_LIVE_THREAD_STATE, isThreadProviderConnected, providerTakesSottoTools, PROVIDER_LABELS, isVisualMessage, parsePublicProviderEntityId, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, WAKE_UP_MESSAGE_IDS_MAX, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentModel, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
 import type { AgentSkillReference } from '../../shared/agentSkills'
+import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
 import { threadEventSchema, type AnswerGivenEvent, type StoredThreadEvent, type ThreadEvent } from '../../shared/threadEvents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { confirmedSettingsSnapshot, type AgentHost, type AgentHostCommand, type AgentHostResult, type ShortTextPrompt, type StoredMessageIdentity, type ThreadReadPurpose, type ThreadRenameSource } from './host'
-import { FIRST_WINDOW_TURNS, LATER_WINDOW_TURNS, ThreadStore, type StoredVisual } from './threadStore'
+import { FIRST_WINDOW_TURNS, LATER_WINDOW_TURNS, RECORDED_USER_MESSAGES_MAX, ThreadStore, type RecordedUserMessageIdentity, type StoredVisual } from './threadStore'
 import { placeVisuals } from './visualPlacement'
 import { visualFromInput, VISUALS_PER_THREAD_MAX, VISUALS_PER_TURN_MAX, type AgentVisual, type VisualInput } from '../../shared/visuals'
 import { SubagentStore, subagentActivityClassification } from './subagentStore'
@@ -268,6 +269,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   useBrowserTools(tools: BrowserAgentTools): void { this.inner.useBrowserTools?.(tools) }
   useThreadTools(tools: readonly ScopedThreadTools[]): void { this.inner.useThreadTools?.(this.watcherEnabled ? tools : tools.filter(tool => tool.name !== 'sotto_threads')) }
   readonly concurrentProviders: boolean
+  readonly subscribeUsage?: (listener: (record: UsageTokenObservation) => void) => () => void
+  readonly visitUsage?: (threadId: string, visitor: (record: UsageTokenObservation) => void) => void
+  readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean) => Promise<UsageQuotaRead>
   private state: Workspace = { snapshot: structuredClone(EMPTY_AGENT_HOST), creations: [], projectAliases: [] }
   /**
    * What each thread babysits, with what it was last told, by thread (ADR-0061 decision 10). Saved on the thread's record
@@ -1288,6 +1292,13 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   constructor(private readonly inner: AgentHost, private readonly directory: string, private readonly historyEnabled: () => boolean = () => true,
     private readonly worktreeRefreshDelayMs: number = WORKTREE_REFRESH_DELAY_MS, private readonly watcherEnabled = false, private readonly museEnabled = false) {
     this.concurrentProviders = inner.concurrentProviders === true
+    if (inner.subscribeUsage) this.subscribeUsage = listener => inner.subscribeUsage!(record => {
+      if (this.ready && this.threadVisible(record.threadId)) listener(record)
+    })
+    if (inner.visitUsage) this.visitUsage = (threadId, visitor) => {
+      if (this.ready && this.threadVisible(threadId)) inner.visitUsage!(threadId, visitor)
+    }
+    if (inner.readProviderQuota) this.readProviderQuota = (providerId, refresh) => inner.readProviderQuota!(providerId, refresh)
     this.launchProfiles = new WatcherLaunchProfiles(directory, () => this.hostId,
       id => this.state.snapshot.threads.find(thread => thread.id === id), watcherEnabled)
     inner.useLaunchProfiles?.({ profileFor: async id => { await this.initialize(); return this.launchProfiles.profileFor(id) } })
@@ -1897,6 +1908,52 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (event.kind === 'message-added' && entry.answers.get(event.message.id) === false) { entry.answers.set(event.message.id, true); changed = true }
     }
     if (changed) entry.generation = ++this.anchorGeneration
+  }
+  /** Exact text-free acceptance evidence, including the current unwritten native echo. */
+  hasRecordedUserMessage(threadId: string, messageId: string): boolean {
+    if (!this.ready || !this.threadVisible(threadId)) return false
+    this.writeEvents()
+    const pending = this.pendingEvents.get(threadId)
+    if (pending?.some(event => (event.kind === 'message-added' || event.kind === 'message-replaced')
+      && event.message.id === messageId && event.message.role === 'user')) return true
+    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    if (thread?.messages.some(message => message.id === messageId && message.role === 'user')) return true
+    return !this.storeUnavailable && this.threadStore.hasRecordedUserMessage(threadId, messageId)
+  }
+
+  /** Flush once and recover exact numeric identities without reading a transcript for each pending intent. */
+  recordedUserMessages(identities: readonly RecordedUserMessageIdentity[]): RecordedUserMessageIdentity[] {
+    if (identities.length > RECORDED_USER_MESSAGES_MAX) throw new RangeError('Too many message identities')
+    if (!this.ready || identities.length === 0) return []
+    this.writeEvents()
+    const requested = new Map<string, Set<string>>()
+    for (const { threadId, messageId } of identities) {
+      let ids = requested.get(threadId)
+      if (ids === undefined) { ids = new Set(); requested.set(threadId, ids) }
+      ids.add(messageId)
+    }
+    const accepted = new Map<string, Set<string>>()
+    for (const [threadId, ids] of requested) {
+      if (!this.threadVisible(threadId)) { requested.delete(threadId); continue }
+      const found = new Set<string>()
+      for (const event of this.pendingEvents.get(threadId) ?? []) {
+        if ((event.kind === 'message-added' || event.kind === 'message-replaced')
+          && event.message.role === 'user' && ids.has(event.message.id)) found.add(event.message.id)
+      }
+      for (const message of this.state.snapshot.threads.find(thread => thread.id === threadId)?.messages ?? []) {
+        if (message.role === 'user' && ids.has(message.id)) found.add(message.id)
+      }
+      accepted.set(threadId, found)
+    }
+    const unresolved = identities.filter(({ threadId, messageId }) => requested.has(threadId) && !accepted.get(threadId)?.has(messageId))
+    if (!this.storeUnavailable) {
+      for (const { threadId, messageId } of this.threadStore.recordedUserMessages(unresolved)) accepted.get(threadId)!.add(messageId)
+    }
+    const result: RecordedUserMessageIdentity[] = []
+    for (const identity of identities) {
+      if (accepted.get(identity.threadId)?.delete(identity.messageId)) result.push({ threadId: identity.threadId, messageId: identity.messageId })
+    }
+    return result
   }
   /** One thread's whole history, whatever window is loaded: the store is the record, not the pane. */
   threadMessages(threadId: string): readonly AgentMessage[] {

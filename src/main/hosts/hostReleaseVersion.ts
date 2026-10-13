@@ -1,6 +1,6 @@
 import { getReleaseTrack } from '../../shared/releaseTrack'
 
-/** Stable packaging overrides the source manifest; Owl keeps its existing stable host version. */
-export function hostReleaseVersion(runningVersion: string, sourceVersion: string): string {
-  return getReleaseTrack(runningVersion) === 'owl' ? sourceVersion : runningVersion
+/** Stable uses its packaged version; Owl needs its matching host while Muse or Usage is enabled. */
+export function hostReleaseVersion(runningVersion: string, sourceVersion: string, requiresOwlHost = false): string {
+  return getReleaseTrack(runningVersion) === 'owl' && !requiresOwlHost ? sourceVersion : runningVersion
 }

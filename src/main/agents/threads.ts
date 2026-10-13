@@ -7,6 +7,7 @@ import type { AgentHostSnapshot, ProviderId } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose, ThreadSessionDraft, ThreadLaunchProfiles } from './host'
 import { subscribeActivitySnapshots } from './activitySnapshots'
+import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
 
 const bindingSchema = z.object({
   threadId: z.string().min(1), provider: z.string().min(1), sessionId: z.string().min(1),
@@ -127,6 +128,9 @@ export class SottoThreadHost implements AgentHost {
   /** Thread events cross this boundary the way snapshots do: under Sotto's own thread ID (ADR-0002).
    * Absent when the adapter inside publishes none, so the host above knows to read its arrays instead. */
   readonly subscribeEvents?: (listener: (event: ThreadHostEvent) => void) => () => void
+  readonly subscribeUsage?: (listener: (record: UsageTokenObservation) => void) => () => void
+  readonly visitUsage?: (threadId: string, visitor: (record: UsageTokenObservation) => void) => void
+  readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean) => Promise<UsageQuotaRead>
 
   constructor(private readonly provider: string, private readonly inner: AgentHost,
     private readonly registry: ThreadRegistry) {
@@ -136,6 +140,25 @@ export class SottoThreadHost implements AgentHost {
       const binding = this.registry.bySession(this.provider, threadId)
       if (binding) listener({ threadId: binding.threadId, event })
     })
+    if (inner.subscribeUsage) this.subscribeUsage = listener => {
+      let off: (() => void) | undefined, cancelled = false
+      const install = (): void => {
+        if (cancelled) return
+        off = inner.subscribeUsage!(record => {
+          const binding = this.registry.bySession(this.provider, record.threadId)
+          if (binding) listener({ ...record, threadId: binding.threadId })
+        })
+      }
+      if (this.registry.loaded) install()
+      else void this.registry.load().then(install).catch(() => undefined)
+      return () => { cancelled = true; off?.() }
+    }
+    if (inner.visitUsage) this.visitUsage = (threadId, visitor) => {
+      if (!this.registry.loaded) return
+      const binding = this.registry.byThread(threadId)
+      if (binding?.provider === this.provider) inner.visitUsage!(binding.sessionId, record => visitor({ ...record, threadId }))
+    }
+    if (inner.readProviderQuota) this.readProviderQuota = (providerId, refresh) => inner.readProviderQuota!(providerId, refresh)
   }
 
   useBrowserTools(tools: BrowserAgentTools): void {

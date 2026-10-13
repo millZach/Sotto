@@ -1,6 +1,6 @@
 # Muse provider: what was checked
 
-October 12–13, 2026. [ADR-0078](../adr/0078-muse-is-a-thread-provider.md). Native probes, scripted protocol checks and the running desktop journey are recorded separately below. The original native probes were not repeated during the review fixes.
+October 12–13, 2026. [ADR-0079](../adr/0079-muse-is-a-thread-provider.md). Native probes, scripted protocol checks and the running desktop journey are recorded separately below. The original native probes were not repeated during the review fixes.
 
 ## The real client (Muse 1.1.1, MSP schema 1, over `muse serve`)
 
@@ -33,6 +33,8 @@ Host setup and visual admission share tool eligibility: Muse and Devin are exclu
 The restart observer keeps dormant Muse resume records before setting, age, count, absence and capacity pruning. The workspace is initialized before that observer starts. A controlled real-runtime check using the old snapshot accessor deleted the saved Muse row in all three setting-off, expired and capped cases; the corrected runtime and neighboring resume files pass all 50 tests. The actual stores retain the exact Muse record, ordinary counterparts are pruned, and no Muse connect, command or side call occurs. Separate observer/follow-up/gate neighbors pass all 82 tests, including capacity bounds and one resume after Muse becomes available again.
 
 Update all keeps Muse's native updater. A held Muse desktop checks the raw target before a wildcard client-version request can enumerate connected Muse, including a direct socket caller. The old omission reached both actual command recorders; both intended refusal assertions failed. Corrected gateway, named-host routing and Update all neighbors pass all 159 tests, including 67 gate cases. Local and remote client-host readings hide Muse without changing the saved readings, and an ordinary named queue reaches its chosen machine with the desktop-only host ID stripped.
+
+The later Usage integration keeps its four-provider numeric contract separate from Muse. A regression uses the real runtime, coordinator, workspace and numeric store: Muse sends normally, no Muse numeric row or native quota read occurs, and an ordinary Codex prompt still counts. Restoring only the old unconditional Usage submission guard made the accepted Muse send falsely report failed numeric persistence; restoring the supported-provider guard passes that same case. Other cases cover dormant saved Muse messages with Usage on and off and provider-switch token, replay and quota boundaries. The latest PR records the complete neighboring, full-suite and packaged results separately from this controlled check. All five Owl features remain held; Muse and Usage independently select a matching Owl headless host while that host gates itself from its own version.
 
 ## Discovery, updates and Settings
 

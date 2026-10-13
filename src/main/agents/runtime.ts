@@ -34,6 +34,8 @@ import { pullRequestTextWriter } from '../llm/pullRequestText'
 import { WorktreeCleanup, type WorktreeCleanupDependencies } from './worktreeCleanup'
 import { RestartResume } from './restartResume'
 import type { AgentHost } from './host'
+import { UsageService } from './usageService'
+import { mayGrantLocally } from './authority'
 
 type ControlDependencies = ConstructorParameters<typeof AgentControl>[0]
 type NativeHost = AgentHost & { closed?: () => Promise<void> }
@@ -42,8 +44,10 @@ export interface AgentRuntimeOptions {
   directory: string
   /** Immutable release-track gate, read once by the process owner. Absent fails closed. */
   watcherEnabled?: boolean
-  /** Immutable Muse-provider Owl gate, read once by the process owner (ADR-0078). Absent fails closed. */
+  /** Immutable Muse-provider Owl gate, read once by the process owner (ADR-0079). Absent fails closed. */
   museEnabled?: boolean
+  /** Immutable Owl feature answer; absent fails closed and leaves saved usage untouched. */
+  usageEnabled?: boolean
   /** The Owl list's answer for resuming threads after a restart (ADR-0076), read once by the process owner. Absent fails closed. */
   resumeAfterRestart?: boolean
   claudeHistoryModulePath?: string
@@ -99,10 +103,10 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const { directory, credentials } = options
   const threadRegistry = options.host ? null : new ThreadRegistry(directory)
   const providers: Partial<Record<ProviderId, NativeHost>> = options.host ? {} : {
-    codex: options.providers?.codex ?? new CodexAppServerHost({ userDataPath: directory }),
-    claude: options.providers?.claude ?? new ClaudeStreamJsonHost({ userDataPath: directory, ...(options.claudeHistoryModulePath ? { historyModulePath: options.claudeHistoryModulePath } : {}),
+    codex: options.providers?.codex ?? new CodexAppServerHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true }),
+    claude: options.providers?.claude ?? new ClaudeStreamJsonHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true, ...(options.claudeHistoryModulePath ? { historyModulePath: options.claudeHistoryModulePath } : {}),
       ...(options.claudeSettingsLog ? { logEvent: options.claudeSettingsLog } : {}) }),
-    grok: options.providers?.grok ?? new GrokAcpHost(directory),
+    grok: options.providers?.grok ?? new GrokAcpHost(directory, { usageEnabled: options.usageEnabled === true }),
     devin: options.providers?.devin ?? new DevinAcpHost(directory),
     muse: options.museEnabled === true ? options.providers?.muse ?? new MuseMspHost(directory) : new MuseDisabledHost(),
   }
@@ -119,6 +123,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     enabledProviders: () => { const configuration = agentControl.configuration(); return configuration.enabledProviders ?? [configuration.provider] },
     threadProvider: threadId => threadRegistry?.byThread(threadId)?.provider,
   }), directory, options.historyEnabled, undefined, options.watcherEnabled ?? false, options.museEnabled ?? false)
+  const usage = options.usageEnabled === true ? new UsageService({ directory, host: agentHost,
+    acceptedPromptIdentities: identities => agentHost.recordedUserMessages(identities) }) : undefined
+  usage?.start()
   agentHost.setWorkingCopyDefaults(projectId => options.settings().projectThreadWorkingCopyDefaults[projectId] ?? options.settings().threadWorkingCopyDefault)
   let gitStatus: GitStatusReader | undefined
   let gitHubRateLimit: GitHubRateLimit | undefined
@@ -158,7 +165,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       grok: new GrokSubscriptionClient(join(directory, 'reasoning', 'grok')),
     })
   const agentControl: AgentControl = new AgentControl({
-    directory, host: agentHost, credentials, turns, watcherEnabled: options.watcherEnabled ?? false, museEnabled: options.museEnabled ?? false,
+    directory, host: agentHost, credentials, turns, watcherEnabled: options.watcherEnabled ?? false, museEnabled: options.museEnabled ?? false, ...(usage ? { usage } : {}),
     historyEnabled: options.historyEnabled,
     ...(options.observeActiveThread === undefined ? {} : { observeActiveThread: options.observeActiveThread }),
     ...(options.authority ? { authority: options.authority } : {}),
@@ -253,6 +260,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       const finalClosures = await Promise.allSettled(Object.values(providers).map(provider => provider.closed?.()))
       results.push(...finalClosures)
       await threadRegistry?.flush()
+      usage?.flush()
       const failure = results.find(result => result.status === 'rejected')
       if (failure?.status === 'rejected') throw failure.reason
     })()
@@ -276,7 +284,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       await worktreeCleanup.close()
       if (babysitter) await babysitter.close()
       toolReads.dispose()
-      try { await stopProviders(); await preparingForShutdown } finally { await agentHost.close() }
+      try { await stopProviders(); await preparingForShutdown } finally { usage?.close(); await agentHost.close() }
     })()
     return closing
   }
@@ -296,11 +304,13 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     agentControl.dispose()
     await Promise.allSettled([reasoner.close?.(), shortTextWriter.close(), ...Object.values(providers).map(provider => provider.closed?.()), ...(closingWatcherTools ? [closingWatcherTools] : [])])
     agentHost.dispose()
+    usage?.close()
     throw error
   }
   if (watcher) await watcher.recover()
   const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined,
+    ...(usage ? { usage, mayClearUsage: client => (options.authority?.mayGrant(client) ?? mayGrantLocally(client)).allowed } : {}),
     ...(options.runsAs === 'headless-host' && watcher ? { watcher } : {}) })
   babysitter?.begin()
-  return { agentHost, agentControl, threadRegistry, turns, hostService, shortTextWriter, worktreeCleanup, babysitter, watcher, watcherTools, prepareForShutdown, close }
+  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, worktreeCleanup, babysitter, watcher, watcherTools, prepareForShutdown, close }
 }

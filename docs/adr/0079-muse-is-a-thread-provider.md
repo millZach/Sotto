@@ -10,6 +10,8 @@ Muse is an Owl feature (`muse` in `src/shared/owlFeatures.ts`). On stable, main 
 
 The restart-resume record stays dormant with its thread too (ADR-0076): a hidden Muse thread is not a deleted one. Resuming cannot prune or send its saved note while Muse is held. Update all (ADR-0077) uses Muse's existing native-feed updater when Muse is available; a client-version check from a Muse-held desktop refuses a target that would enumerate connected Muse rather than contacting its feed.
 
+Usage's retained numeric history and native account limits (ADR-0078) cover Codex, Claude Code, Grok Build and Devin. Muse remains outside that contract in this version. Sending or steering a Muse thread retains its ordinary per-thread accounting without creating a Usage row or querying account limits. An Owl desktop with Muse enabled targets a matching Owl headless host, as one with Usage enabled does; the host still decides whether Muse is available from its own packaged version.
+
 ## Sign-in and the floor
 
 Muse keeps its own sign-in (`muse login`, or credentials it stores itself); Sotto stores no key for it, and the environment its processes get is the shared allow-list without `META_API_KEY`, so a thread always runs on the account Muse holds, never on a key that happened to be in Sotto's environment. A host tile shows `muse login` as Devin's shows its command, because the sign-in runs on the host itself. The floor is Muse 1.1.1 speaking MSP 1 (ADR-0042): an older client or another MSP version is refused at connect with the version it reported. A client with no sign-in resolves no model catalog, which is the refusal the tile offers the sign-in command for.
