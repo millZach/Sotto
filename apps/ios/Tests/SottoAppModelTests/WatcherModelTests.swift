@@ -1,4 +1,5 @@
 import XCTest
+import Combine
 import SottoCore
 
 /// The Watcher tab on the real AppModel, against a scripted computer that runs Watcher (ADR-0073, amended October 11,
@@ -35,6 +36,8 @@ final class WatcherModelTests: XCTestCase {
         var observedAt = "2026-10-11T09:00:00.000Z"
         /// Where drafts this iPhone sent stand, by draft ID, as the computer says.
         var deliveries: [String: String] = [:]
+        /// Watcher's answer so far, after its first reply.
+        var answer: String?
     }
     private static let workerRequest = #"{"id":"q1","kind":"question","text":"Which account?","options":[{"id":"a","label":"A fresh account"},{"id":"b","label":"The seeded user"}]}"#
     private static let ownRequest = #"{"id":"p1","kind":"permission","text":"Wants to run gh pr checks 845.","options":[]}"#
@@ -53,9 +56,10 @@ final class WatcherModelTests: XCTestCase {
             cards.append(#"{"target":{"hostId":"\#(laptop)","threadId":"w"},"title":"Watcher","provider":"codex","request":\#(Self.ownRequest),"connected":true,"mayAnswer":\#(spec.mayAnswer)}"#)
         }
         let deliveries = spec.deliveries.map { draft, status in #"{"draftId":"\#(draft)","status":"\#(status)"}"# }.joined(separator: ",")
+        let answer = spec.answer.map { #",{"id":"more","role":"assistant","text":"\#($0)","createdAt":"2026-10-11T08:02:00.000Z"}"# } ?? ""
         return #"""
         {"hostId":"\#(laptop)","current":{"target":{"hostId":"\#(laptop)","threadId":"w"},"provider":"codex","modelId":"m","reasoningEffort":"high","status":"\#(spec.status)","connected":true},
-         "conversation":{"messages":[{"id":"ask","role":"user","text":"Fix the login test.","createdAt":"2026-10-11T08:00:00.000Z"},{"id":"started","role":"assistant","text":"Started it.","createdAt":"2026-10-11T08:01:00.000Z"}],"earlierAvailable":false,"revision":2},
+         "conversation":{"messages":[{"id":"ask","role":"user","text":"Fix the login test.","createdAt":"2026-10-11T08:00:00.000Z"},{"id":"started","role":"assistant","text":"Started it.","createdAt":"2026-10-11T08:01:00.000Z"}\#(answer)],"earlierAvailable":false,"revision":\#(spec.answer == nil ? 2 : 3)},
          "receiptGroups":[{"replyMessageId":"started","requestId":"aaaaaaaa-0000-4000-8000-000000000001","rows":[{"operationId":"bbbbbbbb-0000-4000-8000-000000000001","target":{"hostId":"\#(laptop)","threadId":"t"},"title":"Fix login test","provider":"claude","action":"start","deliveryState":"accepted","createdAt":"2026-10-11T08:01:00.000Z","updatedAt":"2026-10-11T08:01:00.000Z"}]}],
          "watchedThreads":[{"target":{"hostId":"\#(laptop)","threadId":"t"},"title":"Fix login test","provider":"claude","status":"running","connected":true,"watched":\#(spec.watched),"takenOver":\#(spec.takenOver),"backgroundWorkCount":0}],
          "needsYou":[\#(cards.joined(separator: ","))],"inFlight":1,"inFlightLimit":4,"working":\#(spec.working),"observedAt":"\#(spec.observedAt)",
@@ -208,6 +212,28 @@ final class WatcherModelTests: XCTestCase {
         XCTAssertFalse(model.watchedByWatcher(worker), "A thread the user took over loses the owl and the line")
         XCTAssertEqual(model.watcherPage(laptop)?.noLongerWatched.map(\.title), ["Fix login test"])
         XCTAssertEqual(WatcherWords.left(try XCTUnwrap(model.watcherPage(laptop)?.noLongerWatched.first)), "You took it over")
+        model.phase(.background)
+    }
+
+    @MainActor func testWatchersGrowingConversationPublishesOnlyOnItsStore() async throws {
+        let model = try await fixture(spec: Spec(workerCard: false))
+        var onModel = 0, onStore = 0
+        let watchingModel = model.objectWillChange.sink { onModel += 1 }
+        let watchingStore = model.watcherStore.objectWillChange.sink { onStore += 1 }
+        defer { watchingModel.cancel(); watchingStore.cancel() }
+        // Watcher's answer grows with each shell its computer sends.
+        try push(Spec(workerCard: false, observedAt: "2026-10-11T09:01:00.000Z", answer: "Checking"))
+        try push(Spec(workerCard: false, observedAt: "2026-10-11T09:01:01.000Z", answer: "Checking the release notes"))
+        await until { model.watcherPage(laptop)?.conversation.messages.last?.text == "Checking the release notes" }
+        XCTAssertEqual(model.watcherPage(laptop)?.conversation.messages.last?.text, "Checking the release notes")
+        XCTAssertGreaterThan(onStore, 0)
+        XCTAssertEqual(onModel, 0, "Watcher's conversation growing redraws the Watcher tab, not every view that watches the model")
+        XCTAssertTrue(try connection.watcherCalls.isEmpty, "The page came with the shells")
+        // What the rest of the app reads still publishes on the model when it changes.
+        try push(Spec(working: false, status: "idle", workerCard: false, observedAt: "2026-10-11T09:01:02.000Z"))
+        await until { !model.watcherTab.working }
+        XCTAssertGreaterThan(onModel, 0)
+        XCTAssertFalse(model.watcherTab.working)
         model.phase(.background)
     }
 

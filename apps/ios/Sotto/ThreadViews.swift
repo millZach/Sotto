@@ -1722,6 +1722,9 @@ struct RequestSheet: View {
     /// Watched so the agent's message, and the links the sheet lifts from it, show when the thread's history arrives
     /// after the sheet opens: the history publishes on its own store, not on the model.
     @EnvironmentObject var detailStore: DetailStore
+    /// Watched so a card in Watcher's page that is answered or changes elsewhere shows here: Watcher's page publishes on
+    /// its own store.
+    @EnvironmentObject var watcherStore: WatcherStore
     @Environment(\.dismiss) var dismiss
     let place: RequestPlace
     let request: AgentRequest

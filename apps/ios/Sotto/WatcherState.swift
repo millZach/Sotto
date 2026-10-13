@@ -92,6 +92,20 @@ struct WatcherSetAside: Equatable, Sendable {
 
 // MARK: - The tab
 
+/// What the rest of the app reads of Watcher's page: whether Watcher works, the threads with a card waiting on the user,
+/// and the threads Watcher works with, by `ThreadRef.id`. It changes far less often than the page, whose conversation
+/// grows with every shell while Watcher answers, so the model publishes it only when it changes (ADR-0051).
+struct WatcherSummary: Equatable, Sendable {
+    let working: Bool
+    let waiting: [ThreadRef]
+    let watched: Set<String>
+    init(_ page: WatcherPage) {
+        working = page.working
+        waiting = page.needsYou.map(\.target.ref)
+        watched = Set(page.watched.map(\.target.ref.id))
+    }
+}
+
 /// What the Watcher tab says on its icon: a dot while Watcher works, and a count of what needs the user that only
 /// Watcher's page shows: Watcher's own requests, and workers on computers this iPhone doesn't list. A worker's request
 /// that Threads already shows is counted there, not twice.
@@ -99,9 +113,9 @@ struct WatcherTabState: Equatable {
     let working: Bool
     let needs: Int
     init(working: Bool, needs: Int) { self.working = working; self.needs = needs }
-    init(page: WatcherPage?, listed: (ThreadRef) -> Bool) {
-        working = page?.working ?? false
-        needs = page?.needsYou.filter { !listed($0.target.ref) }.count ?? 0
+    init(summary: WatcherSummary?, listed: (ThreadRef) -> Bool) {
+        working = summary?.working ?? false
+        needs = summary?.waiting.filter { !listed($0) }.count ?? 0
     }
     /// What VoiceOver says after the tab's name, for the dot and the badge.
     var spoken: String {

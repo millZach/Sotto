@@ -205,20 +205,24 @@ extension AppModel {
     /// The computer whose Watcher the Watcher tab shows: the first paired computer that runs one. With none, there is no
     /// tab, and nothing else in the app changes.
     var watcherHostID: String? { computers.first { offersWatcher($0.hostID) }?.hostID }
-    func watcherPage(_ hostID: String) -> WatcherPage? { offersWatcher(hostID) ? live[hostID]?.watcher : nil }
+    /// Watcher's page, from `watcherStore`. A view that reads it watches that store, which publishes on its own: the
+    /// page's conversation grows with every shell while Watcher answers, and only the Watcher tab reads it.
+    func watcherPage(_ hostID: String) -> WatcherPage? { offersWatcher(hostID) ? watcherStore.pages[hostID] : nil }
+    /// What the rest of the app reads of Watcher's page, published on the model only when it changes.
+    private func watcherSummary(_ hostID: String) -> WatcherSummary? { offersWatcher(hostID) ? live[hostID]?.watcherSummary : nil }
     /// The tab's dot and badge. A computer that can't be reached claims neither.
     var watcherTab: WatcherTabState {
         guard let hostID = watcherHostID, online(hostID) else { return WatcherTabState(working: false, needs: 0) }
         let listed = Set(lists.flatMap { list in list.threads.map { ThreadRef(hostID: list.hostID, threadID: $0.id).id } })
-        return WatcherTabState(page: watcherPage(hostID), listed: { listed.contains($0.id) })
+        return WatcherTabState(summary: watcherSummary(hostID), listed: { listed.contains($0.id) })
     }
     /// Whether Watcher works with this thread now: the owl after its provider's logo, and the line in its reply box.
     func watchedByWatcher(_ ref: ThreadRef) -> Bool {
-        computers.contains { watcherPage($0.hostID)?.isWatched(ref) == true }
+        computers.contains { watcherSummary($0.hostID)?.watched.contains(ref.id) == true }
     }
     /// Every thread Watcher works with now, by `ThreadRef.id`, for a list to read once.
     var watchedThreadIDs: Set<String> {
-        Set(computers.flatMap { computer in (watcherPage(computer.hostID)?.watched ?? []).map(\.target.ref.id) })
+        Set(computers.flatMap { computer in watcherSummary(computer.hostID)?.watched ?? [] })
     }
     /// The name a thread's computer goes by here, or nil for a computer this iPhone isn't paired with.
     func computerName(_ hostID: String) -> String? { computer(hostID)?.name }
@@ -274,8 +278,8 @@ extension AppModel {
     @discardableResult private func applyWatcher(_ page: WatcherPage, from hostID: String) -> Bool {
         guard offersWatcher(hostID), (try? page.validate(hostID: hostID)) != nil else { return false }
         setWatcherReadProblem(nil, on: hostID)
-        if let shown = live[hostID]?.watcher, page.isOlder(than: shown) { return true }
-        update(hostID) { $0.watcher = page }
+        if let shown = watcherStore.pages[hostID], page.isOlder(than: shown) { return true }
+        showWatcher(page, on: hostID)
         noticeWatcher(page, from: hostID)
         settleWatcherDraft(page, on: hostID)
         // A card that left the page settles the answer this iPhone sent it, unless that answer is still being checked.
@@ -284,6 +288,12 @@ extension AppModel {
             do { try settle(item, shell: live[hostID]?.shell) } catch { feedback = error.localizedDescription }
         }
         return true
+    }
+    /// Shows a page: the whole page on its own store, and only what the rest of the app reads on the model, so a growing
+    /// conversation redraws the Watcher tab and nothing else.
+    private func showWatcher(_ page: WatcherPage, on hostID: String) {
+        if watcherStore.pages[hostID] != page { watcherStore.pages[hostID] = page; publishOnModelIfComparing() }
+        update(hostID) { $0.watcherSummary = WatcherSummary(page) }
     }
     /// Watcher's own requests and errors alert under the switches every thread uses; its finished turns never do.
     private func noticeWatcher(_ page: WatcherPage, from hostID: String) {
@@ -698,8 +708,9 @@ struct Live: Equatable {
     var features: [String] = []
     /// Why the last connection ended, for the computer's own page.
     var problem: String?
-    /// Watcher's page, from a computer that runs Watcher and offers it to this iPhone (`watcher-phone`).
-    var watcher: WatcherPage?
+    /// What the rest of the app reads of Watcher's page, from a computer that runs Watcher and offers it to this iPhone
+    /// (`watcher-phone`). The page itself is in `WatcherStore`.
+    var watcherSummary: WatcherSummary?
 }
 
 /// Where a photo comes from: a name for it and its original bytes, read when its turn comes.
@@ -765,6 +776,13 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
     @Published var held: HeldDetail?
 }
 
+/// Watcher's pages, by computer. A store of its own for the same reason: while Watcher answers, its conversation changes
+/// with every shell its computer sends, and only the Watcher tab reads it. The tab's dot and badge and the owl on watched
+/// threads read a summary on the model, which changes far less often.
+@MainActor final class WatcherStore: ObservableObject {
+    @Published var pages: [String: WatcherPage] = [:]
+}
+
 /// A thread's history as it was last read, and the thread it belongs to.
 struct HeldDetail {
     let ref: ThreadRef
@@ -819,6 +837,8 @@ struct HeldDetail {
     }
     /// The open thread's history, in `detailStore`, which publishes on its own in the same way.
     let detailStore = DetailStore()
+    /// Watcher's pages, in `watcherStore`, which publishes on its own in the same way.
+    let watcherStore = WatcherStore()
     private var openDetail: ThreadDetail? {
         get { detailStore.detail }
         set { detailStore.detail = newValue; publishOnModelIfComparing() }
@@ -1105,7 +1125,7 @@ struct HeldDetail {
             let page = Self.fixtureWatcherPage(laptop: laptop, studio: studio, mayAnswer: watcherAnswers,
                                                asks: arguments.contains("--ui-watcher-asks"), at: at)
             fixtureWatcher = page
-            live[laptop]?.watcher = decode(WatcherPage.self, page)
+            showWatcher(decode(WatcherPage.self, page), on: laptop)
         }
         storageReady = true
         if arguments.contains("--ui-streaming") { streamFixture(host: laptop) }
@@ -1327,7 +1347,7 @@ struct HeldDetail {
         page["observedAt"] = ISO8601DateFormatter().string(from: Date())
         fixtureWatcher = page
         if let decoded = try? JSONDecoder().decode(WatcherPage.self, from: JSONSerialization.data(withJSONObject: page)) {
-            update(hostID) { $0.watcher = decoded }
+            showWatcher(decoded, on: hostID)
         }
     }
     private func appendFixtureWatcherMessage(_ message: [String: Any], on hostID: String, receipts: [String: Any]? = nil) {
@@ -1920,7 +1940,7 @@ struct HeldDetail {
         generations[hostID] = UUID(); connecting.remove(hostID)
         connections[hostID]?.close(); connections[hostID] = nil
         let gone = Set(pending.filter { $0.hostID == hostID }.map(\.id))
-        computers = rest; live[hostID] = nil; pending = markers; watches[hostID] = nil; watcherWatches[hostID] = nil
+        computers = rest; live[hostID] = nil; pending = markers; watches[hostID] = nil; watcherWatches[hostID] = nil; watcherStore.pages[hostID] = nil
         watcherDrafts[hostID] = nil; watcherSending[hostID] = nil; watcherSetAside[hostID] = nil; watcherStops[hostID] = nil; watcherReadProblems[hostID] = nil
         if selected?.hostID == hostID { cancelDetailReload(); selected = nil; openDetail = nil; detailProblem = nil }
         if detailStore.held?.ref.hostID == hostID { detailStore.held = nil }
@@ -2422,7 +2442,7 @@ struct HeldDetail {
         // longer waiting. The thread may not be in this iPhone's list at all, Watcher's own included.
         if item.kind == "watcher-answer" {
             let confirmed = receipt?.confirmsAnswer == true
-            let page = live[item.hostID]?.watcher
+            let page = watcherStore.pages[item.hostID]
             let gone = page.map { page in !page.needsYou.contains { $0.target.threadId == item.threadID && $0.request.id == item.requestID } } ?? false
             guard confirmed || gone else { return }
             if confirmed, let request = item.requestID { confirmedAnswers.insert(item.hostID + "/" + item.threadID + "/" + request) }
@@ -2693,8 +2713,12 @@ struct HeldDetail {
         guard sequence > (shellSequences[hostID] ?? 0) else { return }
         shellSequences[hostID] = sequence
         let previousTerminals = live[hostID]?.shell?.terminals ?? []
+        // Watcher's page is taken from `next` below, into its own store. The shell kept here leaves it out, so Watcher's
+        // conversation growing doesn't change the computer's state, which nearly every view watches.
+        var kept = next
+        kept.watcher = nil
         update(hostID) {
-            $0.shell = next
+            $0.shell = kept
             if let allowed = next.clientCapabilities?.mayAnswer { $0.mayAnswer = allowed }
         }
         noticeChanges(next, from: hostID)

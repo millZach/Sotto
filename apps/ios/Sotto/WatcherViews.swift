@@ -76,6 +76,8 @@ struct WatcherView: View {
 /// Watcher's name, its model and computer, its state, and Conversation | Watched, pinned over the page in glass.
 private struct WatcherHeader: View {
     @EnvironmentObject var model: AppModel
+    /// Watched for Watcher's page, which publishes on its own store, not on the model.
+    @EnvironmentObject var watcherStore: WatcherStore
     @Environment(\.dynamicTypeSize) private var typeSize
     let hostID: String
     @Binding var section: WatcherView.Pane
@@ -136,6 +138,8 @@ private struct WatcherHeader: View {
 /// Watcher's state in a word, as a thread's bar says its own.
 private struct WatcherStatePill: View {
     @EnvironmentObject var model: AppModel
+    /// Watched for Watcher's page, which publishes on its own store, not on the model.
+    @EnvironmentObject var watcherStore: WatcherStore
     let hostID: String
     var body: some View {
         let state = self.state
@@ -207,6 +211,8 @@ private struct SectionSwitch: View {
 
 private struct WatcherConversationPane: View {
     @EnvironmentObject var model: AppModel
+    /// Watched for Watcher's page, which publishes on its own store, not on the model.
+    @EnvironmentObject var watcherStore: WatcherStore
     let hostID: String
     let review: (ReviewedCard) -> Void
     @Environment(\.sottoDensity) private var density
@@ -499,6 +505,8 @@ private struct ReceiptRow: View {
 /// the thread's own page would send it. Anything more opens the request sheet. Watcher answers nothing.
 private struct WatcherRequestCard: View {
     @EnvironmentObject var model: AppModel
+    /// Watched for Watcher's page, which publishes on its own store, not on the model.
+    @EnvironmentObject var watcherStore: WatcherStore
     let hostID: String
     let card: WatcherPage.RequestCard
     let own: Bool
@@ -724,6 +732,8 @@ private struct WatcherRequestCard: View {
 /// Asking Watcher: the box in glass over the conversation's end. The keyboard's own microphone key dictates into it.
 private struct WatcherDock: View {
     @EnvironmentObject var model: AppModel
+    /// Watched for Watcher's page, which publishes on its own store, not on the model.
+    @EnvironmentObject var watcherStore: WatcherStore
     /// The box's words, watched here alone, so a keystroke redraws the box and nothing else.
     @EnvironmentObject var draftStore: DraftStore
     let hostID: String
@@ -828,6 +838,8 @@ private struct WatcherDock: View {
 /// ones it no longer watches.
 private struct WatchedPane: View {
     @EnvironmentObject var model: AppModel
+    /// Watched for Watcher's page, which publishes on its own store, not on the model.
+    @EnvironmentObject var watcherStore: WatcherStore
     let hostID: String
     let stopAll: () -> Void
     var body: some View {
