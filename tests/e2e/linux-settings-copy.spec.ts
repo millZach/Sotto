@@ -3,7 +3,7 @@
 // scripts/verify-linux-window-minimum.mjs --exec, it also floats its own window there and captures it with grim,
 // into the shared evidence folder (tests/fixtures/evidence.ts).
 import { execFile } from 'node:child_process'
-import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -31,7 +31,10 @@ test('Linux Settings says what applies, with and without the shell pill', async 
     await mkdir(output, { recursive: true })
     await run('hyprctl', ['dismissnotify'])
   }
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-'))
+  // The native listener adds its PID and nonce to this path. A worktree-local
+  // temporary root needs a short, exclusively created profile to stay below 108 bytes.
+  const profile = join(tmpdir(), 'sotto-e2e-s')
+  await mkdir(profile, { mode: 0o700 })
   const home = join(profile, 'home')
   const plugin = join(home, '.config/omarchy/plugins/sotto.dictation')
   const statePath = join(profile, 'sotto/dictation-state.json')

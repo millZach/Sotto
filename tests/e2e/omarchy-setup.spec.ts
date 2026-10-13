@@ -64,7 +64,12 @@ test('set up Omarchy, handle every decision, undo and update through the real wi
   expect(home).toContain(resolve('.cache'))
   await mkdir(evidence, { recursive: true })
   const profile = await ownedE2EProfile({ prefix: 'sotto-e2e-omarchy-setup-' })
-  if (!packaged) await cp(resolve('apps/omarchy'), join(profile.directory, 'omarchy'), { recursive: true, filter: path => !/[\\/](?:pkg|src)$/.test(path) })
+  if (!packaged) {
+    await mkdir(join(profile.directory, 'omarchy'))
+    for (const piece of ['bindings.lua', 'sotto.json.tpl', 'install-theme.sh', 'shell-plugin']) {
+      await cp(resolve('apps/omarchy', piece), join(profile.directory, 'omarchy', piece), { recursive: true })
+    }
+  }
   const resources = packaged ? resolve('release/linux-unpacked/resources/omarchy') : join(profile.directory, 'omarchy')
   const launch = () => launchSotto('success', profile.directory, {
     createProfile: async () => profile.directory, removeProfile: async () => undefined, firstWindow: firstSottoWindow,
@@ -249,6 +254,7 @@ test('set up Omarchy, handle every decision, undo and update through the real wi
     if (app) await closeSotto(app)
     await profile.dispose()
     await writeFile(join(evidence, `${packaged ? 'packaged' : 'built'}-results.json`), JSON.stringify({ timestamp: new Date().toISOString(), home, root,
-      sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), proofs }, null, 2))
+      sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+      worktreeChanges: execFileSync('git', ['diff', '--name-only', 'HEAD'], { encoding: 'utf8' }).trim().split('\n').filter(Boolean), proofs }, null, 2))
   }
 })
