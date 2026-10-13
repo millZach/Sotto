@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { afterTailnetFailure, BOOT_TAILNET_ONLY_MS, classifyTailnetFailure, connectOrder, tryTailnetAfterSsh, type ConnectFacts } from '../../../src/main/hosts/hostConnectionPlan'
+import { afterTailnetFailure, TAILNET_ONLY_MS, classifyTailnetFailure, connectOrder, tryTailnetAfterSsh, type ConnectFacts } from '../../../src/main/hosts/hostConnectionPlan'
 import { isTailnetAddress } from '../../../src/shared/hostConnection'
 import { HostConnectionError, WrongHostError } from '../../../src/main/agents/socketHostService'
 
@@ -23,15 +23,15 @@ describe('connectOrder', () => {
   it('goes over SSH for the first connect after Edit connection is saved, which tries the saved route', () => {
     expect(connectOrder(facts({ edited: true }))).toEqual(['ssh'])
   })
-  it('tries only the tailnet for the first minute of retries of a host that starts at boot and was on its tailnet', () => {
-    expect(connectOrder(facts({ startedBy: 'boot', lastVia: 'tailnet', retryingForMs: 0 }))).toEqual(['tailnet'])
-    expect(connectOrder(facts({ startedBy: 'boot', lastVia: 'tailnet', retryingForMs: BOOT_TAILNET_ONLY_MS - 1 }))).toEqual(['tailnet'])
-    expect(connectOrder(facts({ startedBy: 'boot', lastVia: 'tailnet', retryingForMs: BOOT_TAILNET_ONLY_MS }))).toEqual(['tailnet', 'ssh'])
+  it('tries only the tailnet for the first minute of retries of a host that was on its tailnet', () => {
+    expect(connectOrder(facts({ lastVia: 'tailnet', retryingForMs: 0 }))).toEqual(['tailnet'])
+    expect(connectOrder(facts({ lastVia: 'tailnet', retryingForMs: TAILNET_ONLY_MS - 1 }))).toEqual(['tailnet'])
+    expect(connectOrder(facts({ lastVia: 'tailnet', retryingForMs: TAILNET_ONLY_MS }))).toEqual(['tailnet', 'ssh'])
   })
-  it('tries SSH after the tailnet for every other host, and for a boot host that was on SSH or is not retrying', () => {
-    expect(connectOrder(facts({ startedBy: 'launch-script', lastVia: 'tailnet', retryingForMs: 0 }))).toEqual(['tailnet', 'ssh'])
-    expect(connectOrder(facts({ startedBy: 'boot', lastVia: 'ssh', retryingForMs: 0 }))).toEqual(['tailnet', 'ssh'])
-    expect(connectOrder(facts({ startedBy: 'boot', lastVia: 'tailnet' }))).toEqual(['tailnet', 'ssh'])
+  it('tries SSH after the tailnet for a host that was on SSH, and for a connect that is not a retry', () => {
+    expect(connectOrder(facts({ lastVia: 'ssh', retryingForMs: 0 }))).toEqual(['tailnet', 'ssh'])
+    expect(connectOrder(facts({ lastVia: undefined, retryingForMs: 0 }))).toEqual(['tailnet', 'ssh'])
+    expect(connectOrder(facts({ lastVia: 'tailnet' }))).toEqual(['tailnet', 'ssh'])
   })
 })
 
@@ -43,7 +43,7 @@ describe('afterTailnetFailure', () => {
   it('sends what SSH mends to SSH with no note, so the tailnet is tried again as soon as SSH is up', () => {
     for (const failure of ['tailnet-not-desktop', 'pairing-required', 'version-mismatch'] as const) expect(afterTailnetFailure(failure, ['tailnet', 'ssh'])).toEqual({ next: 'ssh' })
   })
-  it('retries the tailnet alone in the first minute of a boot host when it did not answer, and sends anything SSH mends to SSH', () => {
+  it('retries the tailnet alone in the first minute of retries when it did not answer, and sends anything SSH mends to SSH', () => {
     expect(afterTailnetFailure('tailnet-unreachable', ['tailnet'])).toEqual({ next: 'retry-tailnet' })
     expect(afterTailnetFailure('pairing-required', ['tailnet'])).toEqual({ next: 'ssh' })
     expect(afterTailnetFailure('tailnet-wrong-host', ['tailnet'])).toEqual({ next: 'ssh', note: 'unreachable' })

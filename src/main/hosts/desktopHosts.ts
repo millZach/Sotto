@@ -13,7 +13,7 @@ import { TailnetStore } from './tailnetStore'
 import { hostTailnetSetting, retryTailnetServe, settingAddress, settingNote, type HostTailnetSetting } from './hostTailnetSetting'
 import { HostAdminRefused } from './hostAdminRequest'
 import { hostHealthSchema, type HostHello } from '../../shared/hostProtocol'
-import { isTailnetAddress, startedBySotto, type HostStartedBy } from '../../shared/hostConnection'
+import { isTailnetAddress, startedBySotto } from '../../shared/hostConnection'
 import type { BootStatus } from '../../shared/bootStart'
 import { validateSshHost } from './sshConfiguration'
 import { SshFailure, SshHostLauncher, type SshBootResult, type SshCallbacks, type SshFailureCode, type SshHostConnection, type SshHostUpdateOperation, type SshHostUpdateOptions, type SshHostUpdateResult } from './sshLauncher'
@@ -99,7 +99,7 @@ interface Retry { timer: ReturnType<typeof setTimeout> | undefined; attempt: num
   first?: boolean
   /** Set for the first attempt after Edit connection's save, which goes over SSH so the saved route is what it tries. */
   edited?: boolean
-  /** When the drop that began these retries happened, for the first minute of a host that starts at boot (ADR-0053). */
+  /** When the drop that began these retries happened, for the tailnet-only first minute (ADR-0053). */
   since?: number }
 /**
  * Failures only the user can resolve stop the reconnect backoff instead of retrying: SSH refused this
@@ -115,8 +115,11 @@ const FINAL_SSH_FAILURES: ReadonlySet<SshFailureCode> = new Set<SshFailureCode>(
 class FinalHostError extends Error {}
 /** A move to the tailnet that gave way to an update before it took the threads' place: the host stays on SSH, as it was. */
 class MoveWaits extends Error {}
-/** Why a connect went to SSH past the tailnet: what the row says, and the address that just failed, which waits for the 5-minute check. */
-interface TailnetMiss { readonly note?: HostStatus['tailnetNote']; readonly failed?: string | undefined }
+/**
+ * Why a connect went to SSH past the tailnet: what the row says, the address that just failed, which waits for the 5-minute
+ * check, and whether the tailnet was tried first at all.
+ */
+interface TailnetMiss { readonly note?: HostStatus['tailnetNote']; readonly failed?: string | undefined; readonly tried?: boolean }
 /** What Add host's tailnet step found: the host's setting once it is on, or why the host stays on its SSH connection. */
 type StayedOnSsh = 'no-tailscale' | 'old-host' | 'not-reached' | 'refused'
 /** Add host's tailnet step: the setting once it is on, or why the host stays on SSH, with the host's sentence when it gave one. */
@@ -202,10 +205,8 @@ export class DesktopHosts {
   private readonly tailnet: TailnetStore
   /** Each host on its SSH connection that prefers the tailnet, and its next try of the tailnet, every 5 minutes. */
   private readonly returns = new Map<string, ReturnType<typeof setTimeout>>()
-  /** The connection each saved host was last on, in memory: a host that starts at boot retries the tailnet alone at first. */
+  /** The connection each saved host was last on, in memory: a host dropped from its tailnet retries the tailnet alone at first. */
   private readonly lastVia = new Map<string, HostVia>()
-  /** Who started each saved host, as its last hello said, in memory, for the same first minute. */
-  private readonly startedBy = new Map<string, HostStartedBy>()
   /** SSH connections a move to the tailnet left while a press still ran on them; each closes when its last press ends, or at quit. */
   private readonly leaving = new Set<LiveHost>()
   /**
@@ -231,7 +232,7 @@ export class DesktopHosts {
     resolveTailnet?: (address: string) => string;
     /** How long a host on its SSH connection waits before it tries the tailnet again; 5 minutes unless a test says. */
     tailnetReturnMs?: number;
-    /** The clock that times a boot host's tailnet-only first minute of retries; the system clock unless a test moves it. */
+    /** The clock that times the tailnet-only first minute of retries; the system clock unless a test moves it. */
     now?: () => number;
   }) {
     this.retainedDrafts = options.retainedDrafts ?? new RetainedDraftStore({ watcherEnabled: options.watcherEnabled === true })
@@ -410,8 +411,8 @@ export class DesktopHosts {
         active.closing = false
         if (registered) { this.held.delete(id); active.registeredHostId = registered; this.options.router.setReconnecting(registered, false) }
       } else if (!this.closed && this.saved.includes(host) && host.enabled !== false) {
-        // A reconnect, with the backoff behind it: the row reads Reconnecting…, as it does after a drop. A host that starts at
-        // boot is back by itself, so its first minute tries the tailnet alone, as after a drop (ADR-0053, step 6).
+        // A reconnect, with the backoff behind it: the row reads Reconnecting…, as it does after a drop. Its first minute tries
+        // the tailnet alone, as after a drop (ADR-0053, step 6).
         this.retries.set(id, { timer: undefined, attempt: 0, active: undefined, since: this.now() })
         await this.open(host).catch(() => undefined)
       } else this.releaseHeld(id)
@@ -730,7 +731,7 @@ export class DesktopHosts {
   }
   /** What this computer kept about reaching a host over its tailnet goes with the host. */
   private async forgetTailnet(id: string): Promise<void> {
-    this.lastVia.delete(id); this.startedBy.delete(id); this.grantPending.delete(id); this.clearReturn(id)
+    this.lastVia.delete(id); this.grantPending.delete(id); this.clearReturn(id)
     await this.tailnet.delete(id).catch(() => undefined)
   }
   /**
@@ -886,15 +887,15 @@ export class DesktopHosts {
     // The order of a connect (ADR-0053): the tailnet first when the owner prefers it and this computer can use it.
     const retry = this.retries.get(host.id), entry = this.tailnet.get(host.id)
     const order = connectOrder({ prefer: entry.prefer, address: entry.address, adding, paired: this.paired(host), edited: retry?.edited,
-      startedBy: this.startedBy.get(host.id), lastVia: this.lastVia.get(host.id), retryingForMs: retry?.since === undefined ? undefined : this.now() - retry.since })
+      lastVia: this.lastVia.get(host.id), retryingForMs: retry?.since === undefined ? undefined : this.now() - retry.since })
     let miss: TailnetMiss = {}
     if (order[0] === 'tailnet' && entry.address) {
       const outcome = await this.openTailnet(host, entry.address)
       if (outcome === 'connected' || outcome === 'superseded' || gone()) return
       const next = afterTailnetFailure(outcome, order)
-      // A host that starts at boot is back by itself in a moment: its first minute of retries asks SSH nothing.
+      // A host dropped from its tailnet is most often back in a moment: its first minute of retries asks SSH nothing.
       if (next.next === 'retry-tailnet') { this.update(host.id, { phase: 'connecting', reconnecting: true, error: undefined }); this.scheduleReconnect(host, undefined); return }
-      if (next.note) miss = { note: next.note, failed: entry.address }
+      miss = { ...(next.note ? { note: next.note, failed: entry.address } : {}), tried: true }
     }
     await this.openSsh(host, adding, miss)
   }
@@ -1014,7 +1015,7 @@ export class DesktopHosts {
       }
       // A host forgotten or edited while it connected has no row left for this attempt to report to.
       if (!this.saved.includes(host) || !current) return
-      if (this.retries.has(host.id) && !this.final(failure) && !this.status.get(host.id)?.prompt) {
+      if (this.retries.has(host.id) && !this.final(failure, host, miss) && !this.status.get(host.id)?.prompt) {
         this.update(host.id, { phase: 'connecting', reconnecting: true, error: undefined })
         this.scheduleReconnect(host, undefined)
       } else {
@@ -1105,8 +1106,14 @@ export class DesktopHosts {
     host.hostId = pairing.hostId; host.clientId = pairing.clientId
     if (this.saved.includes(host)) { await this.save(); this.retainedDrafts.allowHost(host.hostId, host.id) }
   }
-  /** Final by its code: a failure on this side, an SSH failure only the user can fix, or a host of another Sotto version. */
-  private final(error: Error): boolean {
+  /**
+   * Final by its code: a failure on this side, an SSH failure only the user can fix, or a host of another Sotto version.
+   * A Tailscale approval nobody gave is not final for Sotto's own retry of a host it tried on the tailnet first: the
+   * tailnet asks for no approval, and the next retry tries it again (ADR-0053, October 13 amendment). After a press,
+   * the user is there to approve, and it stays final.
+   */
+  private final(error: Error, host: SavedHost, miss: TailnetMiss): boolean {
+    if (error instanceof SshFailure && error.code === 'tailscale-unapproved' && miss.tried && !this.retries.get(host.id)?.first) return false
     return error instanceof FinalHostError || (error instanceof SshFailure && FINAL_SSH_FAILURES.has(error.code)) || (error instanceof HostConnectionError && error.code === 'version_mismatch')
   }
   private clearRetry(id: string): void { const entry = this.retries.get(id); if (entry) { clearTimeout(entry.timer); this.retries.delete(id) } }
@@ -1210,7 +1217,6 @@ export class DesktopHosts {
     this.clearRetry(host.id)
     // A host on its tailnet connection says itself whether the launch script started it, which Stop host needs.
     const owned = active.ssh ? active.ssh.owned === true : startedBySotto(hello.startedBy)
-    if (startedBySotto(hello.startedBy)) this.startedBy.set(host.id, hello.startedBy); else this.startedBy.delete(host.id)
     // Start at boot comes with a launch; a tailnet connection has none, and shows what the last launch or boot change said.
     this.update(host.id, { phase: 'connected', reconnecting: false, hostId: hello.hostId, clientId: hello.clientId, owned, via: active.via,
       phoneAccess: active.ssh ? undefined : hello.phoneAccess, bootStart: active.ssh ? active.ssh.bootStart : this.tailnet.get(host.id).bootStart })
