@@ -49,7 +49,7 @@ export const PROVIDER_INSTALL_GUIDES: Readonly<Record<ProviderId, string>> = {
   claude: 'https://code.claude.com/docs/en/setup',
   grok: 'https://docs.x.ai/build/overview',
   devin: 'https://docs.devin.ai/cli',
-  muse: 'https://api.meta.ai/muse-launcher.sh',
+  muse: 'https://dev.meta.ai/docs/muse-code',
 }
 
 /**

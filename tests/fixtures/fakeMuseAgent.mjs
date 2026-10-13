@@ -119,6 +119,8 @@ function check() {
   rmSync(path('control.json'), { force: true })
   if (action.type === 'takeover') openTurn(session, undefined, action.text)
   else if (action.type === 'complete') completeReply(session, action.text)
+  else if (action.type === 'reply-start') addItem(session, { itemId: `item-${randomUUID()}`, kind: 'agentMessage', status: 'inProgress', revision: 1,
+    turnId: session.activeTurnId ?? null, recordedAt: stamp(), text: action.text })
   else if (action.type === 'exit') process.exit(0)
   else if (action.type === 'malformed') notify('item/delta', { sessionId: session.sessionId, itemId: 1 })
   else if (action.type === 'gap') {
@@ -184,7 +186,19 @@ createInterface({ input: process.stdin }).on('line', line => {
     const pendingRequests = [...(session.pendingApprovals ?? []).map(item => ({ kind: 'approval', approvalId: item.approvalId })),
       ...(session.pendingInputs ?? []).map(item => ({ kind: 'userInput', userInputId: item.userInputId }))]
     const snapshot = globalThis.structuredClone({ session: view(session), history: { mode: 'inline', items: p.excludeItems ? null : session.items, totalItemCount: session.items.length, nextCursor: null, snapshot: null }, pendingRequests, viewCursor: cursor(session) })
-    if (script.resumeTurnRace) {
+    if (script.resumeReplyRace) {
+      writeFileSync(path('script.json'), JSON.stringify({ ...script, resumeReplyRace: undefined }))
+      const item = session.items.findLast(candidate => candidate.kind === 'agentMessage' && candidate.status === 'inProgress')
+      const suffix = script.resumeReplyRace.suffix
+      notify('item/delta', { sessionId: session.sessionId, itemId: item.itemId, delta: suffix, field: 'text', viewCursor: cursor(session) })
+      const updated = { ...item, text: item.text + suffix }
+      if (script.resumeReplyRace.complete) {
+        addItem(session, { ...updated, status: 'completed', revision: item.revision + 1 })
+        endTurn(session)
+      } else addItem(session, updated, false)
+      result(snapshot)
+      notify('session/contextUsage', { sessionId: session.sessionId, usedTokens: 655 })
+    } else if (script.resumeTurnRace) {
       writeFileSync(path('script.json'), JSON.stringify({ ...script, resumeTurnRace: undefined }))
       if (script.resumeTurnRace === 'start') openTurn(session, undefined, 'A newer native turn')
       else if (script.resumeTurnRace === 'complete') completeReply(session, 'Finished after the resume snapshot')

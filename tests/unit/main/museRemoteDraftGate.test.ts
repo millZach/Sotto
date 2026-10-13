@@ -7,7 +7,8 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { RetainedDraftStore, type RetainedDraft } from '../../../src/main/agents/retainedDraftStore'
 import { SocketHostService } from '../../../src/main/agents/socketHostService'
 import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
-import type { AgentState } from '../../../src/shared/agents'
+import { publicProviderEntityId, type AgentCommand, type AgentState } from '../../../src/shared/agents'
+import type { HostRequest } from '../../../src/shared/hostProtocol'
 
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close() })
@@ -113,4 +114,69 @@ it('preserves gated and unidentified remote recovery copies while erasing identi
   await store.load(); await store.close()
   expect(JSON.parse(await readFile(mixed, 'utf8'))).toEqual([muse, unknown])
   expect(await readFile(broken, 'utf8')).toBe(cutOff)
+})
+
+/** A paired Owl socket records every protocol frame without running any provider or client updater. */
+function pairedOwlSocket(museEnabled = false) {
+  const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'synthetic-pairing', expectedHostId: hostId,
+    watcherEnabled: true, museEnabled, catchUpEvents: false })
+  const snapshot = state('codex', 'ordinary'), frames: HostRequest[] = []
+  snapshot.host.models = [
+    { id: 'native-muse', providerId: 'muse', provider: 'Muse', name: 'Muse model', ready: true },
+    { id: publicProviderEntityId('muse', 'model', 'scoped-muse'), providerId: 'muse', provider: 'Muse', name: 'Scoped Muse', ready: true },
+    { id: 'codex-model', providerId: 'codex', provider: 'Codex', name: 'Ordinary model', ready: true },
+  ]
+  snapshot.host.projects = [{ id: 'native-muse-project', providerId: 'muse', title: 'Muse project', path: '/synthetic/muse' },
+    { id: publicProviderEntityId('muse', 'project', 'scoped-muse-project'), providerId: 'muse', title: 'Scoped Muse', path: '/synthetic/scoped' },
+    { id: 'ordinary-project', providerId: 'codex', title: 'Ordinary project', path: '/synthetic/codex' }]
+  const internal = client as unknown as { receive(text: string): void }
+  Object.assign(client, { features: ['draft-revisions', 'client-updates'], cached: snapshot, frames: {
+    send: (frame: HostRequest) => { frames.push(structuredClone(frame)); return true }, close: () => undefined },
+    session: { session: 'synthetic-paired-session', hostId } })
+  cleanup.push(() => client.close())
+  const reply = (frame: HostRequest) => internal.receive(JSON.stringify({ v: 1, id: frame.id, ok: true, result: snapshot }))
+  return { client, frames, reply }
+}
+const gatedProviderCommands: { name: string; command: AgentCommand }[] = [
+  ...(['connect', 'disconnect', 'refresh', 'update-client'] as const).map(type => ({ name: type, command: { type, provider: 'muse' as const } })),
+  { name: 'create Muse project', command: { type: 'create-project', provider: 'muse', title: 'Synthetic project' } },
+  { name: 'queue Muse client update', command: { type: 'queue-client-updates', providers: ['muse'] } },
+  { name: 'queue mixed client updates', command: { type: 'queue-client-updates', providers: ['codex', 'muse'] } },
+  { name: 'cancel Muse client update', command: { type: 'cancel-client-updates', providers: ['muse'] } },
+  { name: 'cancel mixed client updates', command: { type: 'cancel-client-updates', providers: ['muse', 'codex'] } },
+  { name: 'Muse default provider', command: { type: 'configure', patch: { provider: 'muse' } } },
+  { name: 'Muse enabled provider', command: { type: 'configure', patch: { enabledProviders: ['codex', 'muse'] } } },
+  { name: 'Muse disconnected provider', command: { type: 'configure', patch: { disconnectedProviders: ['muse'] } } },
+  { name: 'native Muse default model', command: { type: 'configure', patch: { defaultModelId: 'native-muse' } } },
+  { name: 'native Muse new-thread default', command: { type: 'configure', patch: { newThreadModelId: 'native-muse' } } },
+  { name: 'scoped Muse new-thread default', command: { type: 'configure', patch: { newThreadModelId: publicProviderEntityId('muse', 'model', 'scoped-muse') } } },
+  { name: 'unscoped Muse model reference', command: { type: 'create-thread', title: 'Synthetic thread', projectId: 'ordinary-project', modelId: 'scoped-muse' } },
+  { name: 'native Muse model creation', command: { type: 'create-thread', title: 'Synthetic thread', projectId: 'ordinary-project', modelId: 'native-muse' } },
+  { name: 'scoped Muse model creation', command: { type: 'create-thread', title: 'Synthetic thread', projectId: 'ordinary-project', modelId: publicProviderEntityId('muse', 'model', 'scoped-muse') } },
+  { name: 'native Muse project creation', command: { type: 'create-thread', title: 'Synthetic thread', projectId: 'native-muse-project', modelId: 'codex-model' } },
+  { name: 'scoped Muse project creation', command: { type: 'create-thread', title: 'Synthetic thread', projectId: publicProviderEntityId('muse', 'project', 'scoped-muse-project'), modelId: 'codex-model' } },
+  { name: 'unscoped Muse project reference', command: { type: 'select-project', projectId: 'scoped-muse-project' } },
+]
+it.each(gatedProviderCommands)('refuses direct paired-host $name before writing any remote command with Muse off', async ({ command }) => {
+  const f = pairedOwlSocket()
+  await expect(f.client.command(command)).rejects.toThrow('Muse is available in Sotto Owl')
+  expect(f.frames).toEqual([])
+})
+it.each([
+  { name: 'ordinary provider action', command: { type: 'refresh', provider: 'codex' } },
+  { name: 'ordinary client update', command: { type: 'queue-client-updates', providers: ['codex', 'claude'] } },
+  { name: 'ordinary new-thread default', command: { type: 'configure', patch: { newThreadModelId: 'codex-model' } } },
+] satisfies { name: string; command: AgentCommand }[])('keeps direct $name available while Muse is off', async ({ command }) => {
+  const f = pairedOwlSocket()
+  const answer = f.client.command(command)
+  await vi.waitFor(() => expect(f.frames).toHaveLength(1))
+  expect(f.frames[0]).toMatchObject({ op: 'command', command })
+  f.reply(f.frames[0]!); await answer
+})
+it('allows an explicit Muse provider command when the immutable gate is on', async () => {
+  const f = pairedOwlSocket(true), command: AgentCommand = { type: 'refresh', provider: 'muse' }
+  const answer = f.client.command(command)
+  await vi.waitFor(() => expect(f.frames).toHaveLength(1))
+  expect(f.frames[0]).toMatchObject({ op: 'command', command })
+  f.reply(f.frames[0]!); await answer
 })

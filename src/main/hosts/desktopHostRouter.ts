@@ -1,4 +1,4 @@
-import { modelsWithoutMuse } from '../agents/museGate'
+import { commandUsesMuse, modelsWithoutMuse } from '../agents/museGate'
 import { visibleWatcherState, withoutThreads } from '../../shared/watcherVisibility'
 import { parsePublicProviderEntityId } from '../../shared/agents'
 import { WATCHER_DISABLED } from '../agents/watcherLaunchProfiles'
@@ -650,15 +650,15 @@ export class DesktopHostRouter {
     mapHostReferences(input, value => { const key = parseHostEntityKey(value); if (key) references.add(key.hostId); return value })
     if (references.size > 1) throw new Error('This action includes items from different hosts. Select items from one host.')
     const command = agentCommandSchema.parse(mapHostReferences(input, id => parseHostEntityKey(id)?.id ?? id))
-    if (this.options.museEnabled !== true && ('provider' in command && command.provider === 'muse'
-      || command.type === 'create-thread' && parsePublicProviderEntityId(command.modelId ?? '')?.provider === 'muse'
-      || command.type === 'configure' && (command.patch.provider === 'muse' || command.patch.enabledProviders?.includes('muse')
-        || parsePublicProviderEntityId(command.patch.defaultModelId ?? '')?.provider === 'muse'
-        || parsePublicProviderEntityId(command.patch.newThreadModelId ?? '')?.provider === 'muse')
-      || (command.type === 'queue-client-updates' || command.type === 'cancel-client-updates') && command.providers.includes('muse'))) throw new Error('Muse is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
-    if (command.type === 'configure') return this.configurationRoute(command)
+    if (this.options.museEnabled !== true && commandUsesMuse(command)) throw new Error('Muse is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
+    if (command.type === 'configure') {
+      const routed = this.configurationRoute(command)
+      if (this.options.museEnabled !== true && commandUsesMuse(routed.command, routed.connection.service.shell().host)) throw new Error('Muse is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
+      return routed
+    }
     const hostId = [...references][0] ?? this.selectedHostId
     const { connection } = this.target(hostId ? hostEntityKey(hostId, '_') : undefined)
+    if (this.options.museEnabled !== true && commandUsesMuse(command, connection.service.shell().host)) throw new Error('Muse is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
     const threadId = 'threadId' in command ? command.threadId ?? undefined : command.type === 'send' ? command.draft?.threadId : undefined
     const defaultThread = command.type === 'send' || command.type === 'compose' ? connection.service.shell().draftThreadId ?? connection.service.shell().activeThreadId ?? undefined : undefined
     if (!this.watcherAvailable(connection, threadId ?? defaultThread)) throw new Error(WATCHER_DISABLED)

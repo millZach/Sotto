@@ -12,6 +12,7 @@ import { ThreadStore } from '../../src/main/agents/threadStore'
 import { SubagentStore } from '../../src/main/agents/subagentStore'
 import { startHeadlessHost } from '../../src/host'
 import { DesktopHostRouter, type DesktopHostConnection } from '../../src/main/hosts/desktopHostRouter'
+import { desktopWindowClient } from '../../src/main/agents/hostService'
 import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
 import { defaultAgentConfiguration, EMPTY_AGENT_HOST, publicProviderEntityId, type AgentHostSnapshot } from '../../src/shared/agents'
 import { hostEntityKey } from '../../src/shared/clientIdentity'
@@ -185,9 +186,10 @@ it('a stable desktop hides Muse from a paired Owl host and refuses its provider 
   expect(shell.host.clientHosts?.[0]?.models.some(model => model.providerId === 'muse')).toBe(false)
   expect(shell.draft).toBe(''); expect(shell.configuration.provider).toBe('codex')
   expect(router.preservesDormantThread(hostEntityKey(hostId, MUSE))).toBe(true)
-  await expect(router.command({ type: 'connect', provider: 'muse' })).rejects.toThrow('Sotto Owl')
-  await expect(router.command({ type: 'queue-client-updates', providers: ['muse'] })).rejects.toThrow('Sotto Owl')
-  await expect(router.command({ type: 'cancel-client-updates', providers: ['muse'] })).rejects.toThrow('Sotto Owl')
+  const client = desktopWindowClient('synthetic-muse-gate')
+  await expect(router.command({ type: 'connect', provider: 'muse' }, client)).rejects.toThrow('Sotto Owl')
+  await expect(router.command({ type: 'queue-client-updates', providers: ['muse'] }, client)).rejects.toThrow('Sotto Owl')
+  await expect(router.command({ type: 'cancel-client-updates', providers: ['muse'] }, client)).rejects.toThrow('Sotto Owl')
   await expect(router.threadDetail(hostEntityKey(hostId, MUSE))).rejects.toThrow('Sotto Owl')
   expect(command).not.toHaveBeenCalled(); expect(detail).not.toHaveBeenCalled()
   router.dispose()

@@ -732,13 +732,13 @@ export class MuseMspHost implements AgentHost {
   /**
    * One item into what the thread said. This is the adapter's one append path: resume history and the live
    * stream both come through here, and the log works out what is new, so reading the same history twice
-   * records nothing twice. A revision no newer than the one folded is not folded again.
+   * records nothing twice. Older revisions are ignored; an equal-revision reply may still restate its stream.
    */
   private foldItem(id: string, item: MuseItem): void {
     const alias = this.aliases[id]; if (!alias) return
     const fold = this.fold(id)
     const previous = fold.items.get(item.itemId)
-    if (previous && previous.revision >= item.revision && item.kind !== 'agentMessage') return
+    if (previous && (previous.revision > item.revision || previous.revision === item.revision && item.kind !== 'agentMessage')) return
     // A streamed reply's item is re-stated whole at its end; the stream's accumulated words are the newer copy.
     const stream = fold.streams.get(item.itemId)
     const merged: MuseItem = stream && item.kind === 'agentMessage' && (item.text ?? '').length < stream.text.length && stream.text.startsWith(item.text ?? '')

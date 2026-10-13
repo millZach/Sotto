@@ -9,7 +9,7 @@ vi.mock('../../../src/main/agents/museRpc', () => ({ findMuseExecutable: probes.
 import { detectInstalledProviders } from '../../../src/main/agents/installedProviders'
 beforeEach(() => { for (const probe of Object.values(probes)) probe.mockReset().mockResolvedValue('/synthetic/client') })
 it.each([undefined, false])('does not even probe Muse installation when the startup gate is %s', async museEnabled => {
-  expect(await detectInstalledProviders({ museEnabled })).toEqual(['codex', 'claude', 'grok', 'devin'])
+  expect(await detectInstalledProviders(museEnabled === undefined ? {} : { museEnabled })).toEqual(['codex', 'claude', 'grok', 'devin'])
   expect(probes.muse).not.toHaveBeenCalled()
 })
 it('includes an installed Muse only in Owl while preserving ordinary native detection', async () => {

@@ -16,13 +16,14 @@ import { subagentAssignmentsPageSchema, subagentPageSchema, type SubagentAssignm
 import { toolsResultSchema, type ToolListRequest, type ToolsResult } from '../../shared/tools'
 import { hostSignInSchema, type HostSignIn } from '../../shared/hostProviders'
 import type { AgentThread, ProviderId } from '../../shared/agents'
-import { protocolAgentStateSchema, managementCommandRefusal, LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, HOST_BUSY, hostAttachmentContentSchema, hostIsNewer, hostVersionMismatch, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema } from '../../shared/hostProtocol'
+import { commandFromProtocolV1, protocolAgentStateSchema, managementCommandRefusal, LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, HOST_BUSY, hostAttachmentContentSchema, hostIsNewer, hostVersionMismatch, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema } from '../../shared/hostProtocol'
 import type { HostFeature, HostAnswerTarget, HostHello, HostOperation, HostPairing, HostSession, HostResponse, HostPush, HostEventPage, HostReceipt, HostErrorCode } from '../../shared/hostProtocol'
 import type { HostService, ClientIdentity, RequestAnswerRecovery } from './hostService'
 import { requestDraftProvider, requestDraftQuestions } from '../../shared/requestDrafts'
 import { requestQuestionsDigest } from './requestDrafts'
 import { version as sourceVersion } from '../../../package.json'
 import { RetainedDraftStore, type RetainedDraft } from './retainedDraftStore'
+import { commandUsesMuse } from './museGate'
 
 export const REMOTE_COMPOSE_UNSAVED = 'This host cannot save this draft yet. Your draft is kept on this computer and has not been saved on the host. Update the host.'
 const REMOTE_SEND_UNCERTAIN = 'This draft may already have been sent. Your copy is kept on this computer. Check the original thread before sending again.'
@@ -141,6 +142,11 @@ export class SocketHostService implements HostService {
   private threadRefusal(threadId: string | null | undefined): string {
     const thread = this.cached?.host.threads.find(thread => thread.id === threadId)
     return `${thread && requestDraftProvider(this.cached!.host, thread, this.cached!.configuration.provider) === 'muse' ? 'Muse' : 'Watcher'} is available in Sotto Owl. Nothing was sent.`
+  }
+  private requireCommandAvailable(command: AgentCommand): void {
+    if (this.options.museEnabled !== true && commandUsesMuse(command, this.cached?.host)) throw new Error('Muse is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
+    const threadId = this.commandThreadId(command)
+    if (!this.threadAvailable(threadId)) throw new Error(this.threadRefusal(threadId))
   }
   private commandThreadId(command: { type: string }): string | null | undefined {
     if ('threadId' in command && typeof command.threadId === 'string') return command.threadId
@@ -355,6 +361,10 @@ export class SocketHostService implements HostService {
     void task.finally(() => { if (this.catchup === task) this.catchup = undefined }).catch(() => undefined)
   }
   private call(operation: HostOperation, id: string = randomUUID(), onPlacement?: () => void): Promise<unknown> {
+    if (operation.op === 'command') {
+      try { this.requireCommandAvailable(commandFromProtocolV1(operation.command)) }
+      catch (error) { return Promise.reject(error) }
+    }
     const threadId = 'threadId' in operation ? operation.threadId : 'request' in operation && 'threadId' in operation.request ? operation.request.threadId
       : 'answer' in operation && operation.answer && 'threadId' in operation.answer ? operation.answer.threadId : operation.op === 'command' ? this.commandThreadId(operation.command) : undefined
     if (!this.threadAvailable(threadId)) return Promise.reject(new Error(this.threadRefusal(threadId)))
@@ -502,8 +512,7 @@ export class SocketHostService implements HostService {
   /** The host lists `pull-request-babysit`: it babysits and takes the user's Babysit pull request (ADR-0061 decision 11). */
   get supportsBabysitting(): boolean { return this.features.includes('pull-request-babysit') }
   async command(command: AgentCommand, _client?: ClientIdentity, commandId?: string): Promise<AgentState> {
-    const threadId = this.commandThreadId(command)
-    if (!this.threadAvailable(threadId)) throw new Error(this.threadRefusal(threadId))
+    this.requireCommandAvailable(command)
     const refusal = managementCommandRefusal(command)
     if (refusal) throw new HostConnectionError(refusal, 'forbidden')
     if (this.shell().legacyManagement && !LEGACY_MANAGEMENT_ALLOWED_COMMANDS.has(command.type)) {
@@ -753,7 +762,7 @@ export class SocketHostService implements HostService {
     this.recoverDrafts()
   }
   private async commandNow(command: AgentCommand, _client?: ClientIdentity, commandId?: string, retainedId?: string, admission: Promise<void> | null | undefined = this.wireAdmission, onPlacement?: () => void): Promise<AgentState> {
-    if (!this.threadAvailable(this.commandThreadId(command))) throw new Error(this.threadRefusal(this.commandThreadId(command)))
+    this.requireCommandAvailable(command)
     const admittedGeneration = this.generation
     if (admission) await admission
     this.sameGeneration(admittedGeneration)

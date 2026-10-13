@@ -39,6 +39,13 @@ it('reconciles a missed turn ending without inventing its outcome and restores a
     await f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'first', text: 'Synthetic prompt' })
     await f.script({ suppressQuestion: true })
     await f.driver.raiseQuestion(id, 'A question missed by the stream')
+    // The hidden request must exist natively before the next control-file action replaces it.
+    await expect.poll(async () => {
+      const saved = JSON.parse(await readFile(join(f.root, 'native-sessions.json'), 'utf8')) as {
+        sessions: Record<string, { pendingInputs?: { text: string }[] }>
+      }
+      return saved.sessions[await f.realId(id)]?.pendingInputs?.some(input => input.text === 'A question missed by the stream')
+    }).toBe(true)
     expect((await thread(f, id)).requests).toHaveLength(0)
     await f.action(id, { type: 'gap' })
     await expect.poll(async () => (await thread(f, id)).requests[0]?.text).toBe('A question missed by the stream')
