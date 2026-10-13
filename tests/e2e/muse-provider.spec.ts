@@ -216,7 +216,7 @@ test('uses Muse in Owl, settles requests and steered activity, and preserves it 
     await expect.poll(async () => (await state()).status).toBe('idle')
     await expect.poll(async () => (await detail()).activities?.filter(activity => activity.kind === 'turn' && activity.status === 'running').length ?? 0).toBe(0)
     expect((await state()).lastTurn).toMatchObject({ id: originalTurn, status: 'completed' })
-    await expect(page.getByRole('button', { name: 'Muse UI check', exact: true }).locator('.thread-nav__status')).toContainText('Done')
+    await expect(page.getByRole('button', { name: 'Muse UI check', exact: true }).locator('.thread-nav__status')).toHaveAttribute('data-state', 'done')
     await page.screenshot({ animations: 'disabled', path: join(evidence, 'steered-thread-complete.png') })
 
     await fillPrompt(prompt, 'Synthetic gap recovery prompt')

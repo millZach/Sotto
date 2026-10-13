@@ -47,7 +47,7 @@ Built with `npm run build`, then driven with `npx playwright test tests/e2e/muse
 - Settings selection/connection, sign-in command copying, installed version and Check again, keyboard tabs, model selection and Escape/focus restoration.
 - Light/dark at 1600x1000, 1280x800 and 820x560, reduced motion on, no horizontal overflow. Measured sign-in text contrast is at least 6.71:1; Allow once is at least 15.74:1.
 - Deny and Allow once reach the exact native choices. A required answer plus a blank optional answer reaches the wire unchanged.
-- The steer is confirmed in provider history before completion, keeps the opening-message turn identity and reaches Done. Repeated gaps preserve one copy of missed words; streaming, cancellation and malformed-process restart settle correctly.
+- The steer is confirmed in provider history before completion, keeps the opening-message turn identity and reaches the completed state. Repeated gaps preserve one copy of missed words; streaming, cancellation and malformed-process restart settle correctly.
 - Stable starts zero Muse processes and exposes none of its saved work. History-off keeps its records; Owl restores the same thread ID and conversation, including the steer.
 - No renderer page errors or fixture protocol violations.
 
