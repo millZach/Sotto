@@ -298,18 +298,18 @@ extension AppModel {
             && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && text.utf16.count <= 20_000
     }
     /// Sends the box's words to Watcher as the user's own instruction, from this iPhone. Refused or unconfirmed, the words
-    /// go back in the box and nothing is sent again on its own. The same words keep the same draft ID, so sending them
-    /// again after an unconfirmed send can't deliver them twice, and a later page that says Watcher took them clears them.
+    /// go back in the box and nothing is sent again on its own. The same words keep the same draft ID until Watcher's
+    /// computer says it took them, through any other words sent in between, so sending them again after an unconfirmed
+    /// send can't deliver them twice, and a later page that says Watcher took them clears them.
     func sendToWatcher(_ hostID: String) async {
         guard canSendToWatcher(hostID), let computer = computer(hostID), let current = watcherPage(hostID)?.current else { return }
         let key = watcherDraftKey(hostID)
         let text = drafts[key] ?? ""
-        let draftID = watcherDraftIDs[hostID].flatMap { $0.text == text ? $0.draftID : nil } ?? UUID().uuidString.lowercased()
-        watcherDraftIDs[hostID] = (text, draftID)
+        let draftID = watcherDrafts[hostID, default: WatcherDrafts()].id(for: text)
         watcherSending[hostID] = text; drafts[key] = ""
         defer { watcherSending[hostID] = nil }
         #if DEBUG && os(iOS)
-        if isUIFixture { await sendToFixtureWatcher(text, on: hostID); watcherDraftIDs[hostID] = nil; return }
+        if isUIFixture { await sendToFixtureWatcher(text, on: hostID); watcherDrafts[hostID]?.resolve(draftID); return }
         #endif
         guard let connection = connections[hostID], let epoch = generations[hostID] else { restoreWatcherDraft(text, on: hostID); return }
         let operation = WatcherWire.send(target: current.target, clientID: computer.pairing.clientId, draftID: draftID, text: text)
@@ -318,7 +318,7 @@ extension AppModel {
             guard generations[hostID] == epoch else { restoreWatcherDraft(text, on: hostID); return }
             switch reply {
             case .ok(_, let state):
-                watcherDraftIDs[hostID] = nil
+                watcherDrafts[hostID]?.resolve(draftID)
                 applyWatcher(state, from: hostID)
             case .refused(let refusal):
                 restoreWatcherDraft(text, on: hostID)
@@ -331,7 +331,7 @@ extension AppModel {
             // Lost on its way, perhaps after Watcher took it. A page that already says so settles it; otherwise the words
             // go back in the box and the page is read again.
             if watcherPage(hostID)?.delivery(of: draftID) == "accepted" {
-                watcherDraftIDs[hostID] = nil
+                watcherDrafts[hostID]?.resolve(draftID)
             } else {
                 restoreWatcherDraft(text, on: hostID)
                 feedback = Self.watcherUnconfirmed
@@ -347,10 +347,12 @@ extension AppModel {
     }
     /// Words put back after an unconfirmed send leave the box once Watcher's computer says it took them.
     private func settleWatcherDraft(_ page: WatcherPage, on hostID: String) {
-        guard watcherSending[hostID] == nil, let sent = watcherDraftIDs[hostID], page.delivery(of: sent.draftID) == "accepted" else { return }
-        watcherDraftIDs[hostID] = nil
+        guard watcherSending[hostID] == nil, let taken = watcherDrafts[hostID]?.taken(in: page), !taken.isEmpty else { return }
         let key = watcherDraftKey(hostID)
-        if drafts[key] == sent.text { drafts[key] = "" }
+        for sent in taken {
+            watcherDrafts[hostID]?.resolve(sent.draftID)
+            if drafts[key] == sent.text { drafts[key] = "" }
+        }
         if feedback == Self.watcherUnconfirmed { feedback = nil }
     }
 
@@ -772,9 +774,10 @@ struct HeldDetail {
     @Published private(set) var watcherStopping: Set<String> = []
     /// Whether the Watcher tab is on screen, so its own alerts stay quiet there.
     var watcherOnScreen = false
-    /// The draft ID each computer's Watcher box last sent with, and the exact words: the same words sent again after an
-    /// unconfirmed send go with the same ID, so the computer can't deliver them twice. Other words get a new one.
-    private var watcherDraftIDs: [String: (text: String, draftID: String)] = [:]
+    /// The draft IDs each computer's Watcher box sent with that Watcher hasn't been confirmed to take, with their exact
+    /// words: the same words sent again go with the same ID, even after other words, so the computer can't deliver them
+    /// twice. Other words get a new one.
+    private var watcherDrafts: [String: WatcherDrafts] = [:]
     /// Computers whose page is being read, and ones asked to read again once that read is done.
     private var watcherReads: Set<String> = []
     private var watcherRereads: Set<String> = []
@@ -1786,7 +1789,7 @@ struct HeldDetail {
         connections[hostID]?.close(); connections[hostID] = nil
         let gone = Set(pending.filter { $0.hostID == hostID }.map(\.id))
         computers = rest; live[hostID] = nil; pending = markers; watches[hostID] = nil; watcherWatches[hostID] = nil
-        watcherDraftIDs[hostID] = nil; watcherSending[hostID] = nil
+        watcherDrafts[hostID] = nil; watcherSending[hostID] = nil
         if selected?.hostID == hostID { cancelDetailReload(); selected = nil; openDetail = nil; detailProblem = nil }
         if detailStore.held?.ref.hostID == hostID { detailStore.held = nil }
         if show == .only(hostID) { show = .all }

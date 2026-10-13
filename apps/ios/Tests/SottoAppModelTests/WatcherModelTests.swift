@@ -380,6 +380,42 @@ final class WatcherModelTests: XCTestCase {
         model.phase(.background)
     }
 
+    @MainActor func testUnconfirmedWordsKeepTheirDraftIDThroughOtherWords() async throws {
+        let model = try await fixture(spec: Spec(workerCard: false))
+        var requests: [JSONValue] = []
+        var reply = "lose"
+        HostConnection.watcherHandler = { op, operation, _ in
+            guard op == "watcher-phone-send", let request = operation["request"] else { return try self.ok(self.page(Spec(workerCard: false))) }
+            requests.append(request)
+            if reply == "lose" { throw ClientError.uncertain }
+            return try self.json(#"{"status":"refused","code":"TARGET_CHANGED","message":"Watcher changed. Nothing new was sent.","retryable":true}"#)
+        }
+        let key = model.watcherDraftKey(laptop)
+        // The first words' acknowledgement is lost: Watcher may have taken them.
+        model.drafts[key] = "Stop the webhook thread"
+        await model.sendToWatcher(laptop)
+        XCTAssertEqual(model.drafts[key], "Stop the webhook thread")
+        // The user writes something else instead, and the computer refuses it.
+        reply = "refuse"
+        model.drafts[key] = "Check the webhook thread first"
+        await model.sendToWatcher(laptop)
+        XCTAssertNotEqual(requests[1]["draftId"], requests[0]["draftId"], "Other words get a new draft ID")
+        // Back to the first words: they go with their first ID, so the computer can't deliver them twice.
+        model.drafts[key] = "Stop the webhook thread"
+        await model.sendToWatcher(laptop)
+        XCTAssertEqual(requests.count, 3, "Nothing is sent again on its own")
+        XCTAssertEqual(requests[2]["draftId"], requests[0]["draftId"], "Unconfirmed words keep their draft ID through other words")
+        model.phase(.background)
+
+        var drafts = WatcherDrafts()
+        let first = drafts.id(for: "One")
+        for index in 0..<WatcherDrafts.limit - 1 { _ = drafts.id(for: "Other \(index)") }
+        XCTAssertEqual(drafts.id(for: "One"), first, "Kept while fewer than the limit went unconfirmed after it")
+        drafts.resolve(first.uppercased())
+        XCTAssertNotEqual(drafts.id(for: "One"), first, "Taken, the same words get a new ID")
+        XCTAssertEqual(drafts.unresolved.count, WatcherDrafts.limit, "Never more than the limit")
+    }
+
     @MainActor func testWatcherWaitsForItsOwnRequestBeforeTakingMore() async throws {
         let model = try await fixture(spec: Spec(ownCard: true))
         model.drafts[model.watcherDraftKey(laptop)] = "And the webhook thread?"
