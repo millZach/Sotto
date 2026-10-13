@@ -65,7 +65,7 @@ it('keeps a validated accepted control receipt when its follow-up projection rea
   const receipt = { operationId: operation.id, target: operation.target, requestId: operation.requestId, deliveryState: 'accepted', receiptId: operation.receiptId, cardId: operation.cardId }
   vi.mocked(f.remote.control).mockResolvedValue({ status: 'ok', receipt, limits: { inFlight: 1, inFlightLimit: 4, promptCount: 1, promptLimit: 4 }, delivery: 'now' })
   f.read.mockRejectedValue(new Error('synthetic-read-failed'))
-  const result = await (f.watcher as unknown as { executeRemote(name: string, operation: typeof operation, input: unknown): Promise<unknown> }).executeRemote('send_to_thread', operation, input)
+  const result = await (f.watcher as unknown as { executeRemote(name: string, saved: typeof operation, input: unknown): Promise<unknown> }).executeRemote('send_to_thread', operation, input)
   expect(result).toMatchObject({ status: 'ok', receipt: { deliveryState: 'accepted' } })
   expect(f.control.watcherRecord().operations[0]!.deliveryState).toBe('accepted')
 })
