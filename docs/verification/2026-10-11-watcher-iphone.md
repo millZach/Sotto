@@ -2,7 +2,7 @@
 
 Ticket 8b of the Watcher plan, branch `feat/watcher-iphone`, built on ticket 8a's `feat/watcher-phone` (the wire contract at `3cb736fdd`, then its host and SottoCore models merged at `da592927c`). Windows 11 on LAPTOP-RUSSH2J5, October 11, 2026. The design is Zach's picks from the phone prototype of the same day (1B, 2B, 3B, 4B, 5A, 6B, 7A), recorded in ADR-0073's October 11 amendment.
 
-**Native iPhone app: NOT VERIFIED.** No Swift was compiled, run or tested on this machine: there is no Xcode or Swift toolchain here, and the brief allowed installing none. The Native iOS job has since compiled it and passed its model tests, and four of the six Watcher journeys failed there (see [The first CI run](#the-first-ci-run-october-12)); the fixes for them are again source only. The [second run](#the-second-ci-run-october-12) passed all six on both phones and failed one older journey on the Pro Max. The [third](#the-third-ci-run-october-12) failed one Watcher journey on the SE because of the journey's own wait, not the app. The [review round](#the-review-round-october-13) changed the app again, source only. Until that job is green on both phones and its `watcher-*` screenshots have been opened and inspected, the journeys are not proven.
+**Native iPhone app: NOT VERIFIED.** No Swift was compiled, run or tested on this machine: there is no Xcode or Swift toolchain here, and the brief allowed installing none. The Native iOS job has since compiled it and passed its model tests, and four of the six Watcher journeys failed there (see [The first CI run](#the-first-ci-run-october-12)); the fixes for them are again source only. The [second run](#the-second-ci-run-october-12) passed all six on both phones and failed one older journey on the Pro Max. The [third](#the-third-ci-run-october-12) failed one Watcher journey on the SE because of the journey's own wait, not the app. The [review round](#the-review-round-october-13) changed the app again, source only, and the [fourth run](#the-fourth-ci-run-october-13) failed only its new journey, whose pull was too short to refresh. Until that job is green on both phones and its `watcher-*` screenshots have been opened and inspected, the journeys are not proven.
 
 ## What was checked here
 
@@ -59,6 +59,13 @@ A second reviewer then read the Swift diff against the real declarations, since 
 - The draft-limit test goes past the limit.
 - Words set aside after a connection changed mid-send say so.
 
+## The fourth CI run (October 13)
+
+Run 38434517864 (job 115425151496, draft #946 at `9df5f627b`) compiled the review round and passed its model tests. On the iPhone SE, 25 of its 26 journeys passed (11 CPU measurements are skipped), so the Pro Max did not run.
+
+- **`testWatchersNewWordsLeaveAReaderOfEarlierMessagesWhereTheyAre`: the journey.** Its first swipe reached the conversation's start, with the first message at 174 points under a band that starts at 146. Its pulls past the start were XCTest's default swipe, 200 points in under a fifth of a second. The recording shows each one only bouncing the page, with no refresh starting. The hierarchy afterwards has no new words, so Watcher's page was never read again, and the journey waited for words that couldn't come. The app wasn't at fault: nothing pulled far enough to ask it.
+- **The fix.** The journey now pulls from just under the header to near the foot of the screen, slowly, down the trailing margin, and holds a moment before letting go. It waits ten seconds for the new words and pulls up to three times. It now also checks the other half of what it proves: once the reader scrolls back down, Watcher's new words are in view above the box (`watcher-back-at-newest-dark`).
+
 ## What waits for the Native iOS job
 
 `sh apps/ios/Scripts/verify.sh` must compile the app and its tests and pass:
@@ -76,7 +83,7 @@ A second reviewer then read the Swift diff against the real declarations, since 
 | `testAPhoneWithoutCanAnswerSaysSoInWatchersPage` | Without Can answer: the badge and its spoken value, both cards read only, Watcher's own card, the held box, the sheet's own words | `watcher-cannot-answer-dark`, `watcher-cannot-answer-sheet-dark`, `watcher-cannot-answer-light` |
 | `testStopAllAsksFirst` | 3 of 4 watched; Stop all asks first in an alert naming each thread; Cancel stops nothing; confirming stops the three Watcher started | `watcher-watched-dark`, `watcher-stop-all-dark`, `watcher-stopped-dark`, `watcher-stopped-light` |
 | `testAOneTapQuestionIsAnsweredOnItsCard` | A fix found on the way: a Threads card's chip for one structured question now goes as that question's answer | `threads-glow-card-answered` |
-| `testWatchersNewWordsLeaveAReaderOfEarlierMessagesWhereTheyAre` | Reading from the conversation's start, a pull to refresh brings Watcher's new words at the end, and the first message stays in view | `watcher-reading-earlier-dark` |
+| `testWatchersNewWordsLeaveAReaderOfEarlierMessagesWhereTheyAre` | Reading from the conversation's start, a pull to refresh brings Watcher's new words at the end, the first message stays in view, and scrolling back down shows the new words above the box | `watcher-reading-earlier-dark`, `watcher-back-at-newest-dark` |
 
 `testThreadsAndComputersInTheGlowLook` also checks that a computer without Watcher gives no Watcher tab.
 
