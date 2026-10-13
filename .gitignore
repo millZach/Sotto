@@ -511,3 +511,20 @@ artifacts/muse-provider/*
 !artifacts/muse-provider/owl-restored-thread.png
 !artifacts/muse-provider/contrast.json
 !artifacts/muse-provider/journey.json
+
+# Full Omarchy test findings; commit only evidence cited in the verification note.
+artifacts/linux-test-findings/*
+
+!artifacts/linux-test-findings/built-results.json
+!artifacts/linux-test-findings/packaged-results.json
+!artifacts/linux-test-findings/packaged-resources.json
+!artifacts/linux-test-findings/launch-environments.json
+!artifacts/linux-test-findings/built-outside-change-1280x800-dark.png
+!artifacts/linux-test-findings/packaged-onboarding-1280x800-light.png
+!artifacts/linux-test-findings/packaged-onboarding-820x560-dark.png
+!artifacts/linux-test-findings/packaged-onboarding-820x560-light.png
+!artifacts/linux-test-findings/packaged-removing-1280x800-dark.png
+!artifacts/linux-test-findings/packaged-removing-820x560-light.png
+!artifacts/linux-test-findings/packaged-inspection-retry-820x560-light.png
+!artifacts/linux-test-findings/packaged-terminal-1280x800-dark.png
+!artifacts/linux-test-findings/packaged-terminal-820x560-light.png
