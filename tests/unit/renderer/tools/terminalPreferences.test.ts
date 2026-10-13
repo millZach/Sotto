@@ -4,6 +4,21 @@ import { followTerminalFontSize, setTerminalPreferences, terminalFontSize, termi
 
 beforeEach(() => setTerminalPreferences(DEFAULT_SETTINGS, async () => true))
 
+it.each(['win32', 'darwin', 'linux'] as const)('accepts Plus as well as Equals on %s while respecting the actual dictation chord', platform => {
+  const modifiers = platform === 'darwin' ? { metaKey: true } : { ctrlKey: true }
+  for (const [key, code, shiftKey] of [['+', 'Equal', true], ['=', 'Equal', true], ['+', 'NumpadAdd', false]] as const) {
+    const event = new KeyboardEvent('keydown', { key, code, shiftKey, ...modifiers })
+    expect(terminalShortcut(event, platform)).toBe('larger')
+    expect(terminalShortcut(new KeyboardEvent('keydown', { key, code, shiftKey, altKey: true, ...modifiers }), platform)).toBeNull()
+  }
+  const mod = platform === 'darwin' ? 'Command' : 'Control'
+  setTerminalPreferences({ ...DEFAULT_SETTINGS, hotkey: `${mod}+Shift+=` }, async () => true)
+  expect(terminalShortcut(new KeyboardEvent('keydown', { key: '+', code: 'Equal', shiftKey: true, ...modifiers }), platform)).toBeNull()
+  expect(terminalShortcut(new KeyboardEvent('keydown', { key: '=', ...modifiers }), platform)).toBe('larger')
+  setTerminalPreferences({ ...DEFAULT_SETTINGS, hotkey: `${mod}+numadd` }, async () => true)
+  expect(terminalShortcut(new KeyboardEvent('keydown', { key: '+', code: 'NumpadAdd', ...modifiers }), platform)).toBeNull()
+})
+
 it.each(['win32', 'darwin', 'linux'] as const)('claims only terminal chords on %s and leaves a conflicting dictation hotkey alone', platform => {
   const modifiers = platform === 'darwin' ? { metaKey: true } : { ctrlKey: true }
   for (const [key, action] of [['f', 'search'], ['=', 'larger'], ['-', 'smaller'], ['0', 'reset']] as const) {

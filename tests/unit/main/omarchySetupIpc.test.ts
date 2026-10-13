@@ -8,9 +8,20 @@ import { ipcRegistry } from '../../fixtures/ipcHarness'
 describe('Omarchy setup IPC', () => {
   it.each(['win32', 'darwin'] as const)('registers nothing and performs no detection on %s', platform => {
     const registry = ipcRegistry(), engine = { get: vi.fn(), command: vi.fn() }
-    registerOmarchySetupIpc(registry.ipc, platform, engine as unknown as OmarchySetup, registry.trustedSenders)()
+    const focus = vi.fn()
+    registerOmarchySetupIpc(registry.ipc, platform, engine as unknown as OmarchySetup, registry.trustedSenders, focus)()
     expect(registry.handlers.size).toBe(0)
     expect(engine.get).not.toHaveBeenCalled()
+    expect(focus).not.toHaveBeenCalled()
+  })
+  it('rechecks on native main-window focus and stops following it during cleanup', () => {
+    const registry = ipcRegistry(), engine = { get: vi.fn(async () => 'state'), command: vi.fn() }
+    let focus: (() => void) | undefined
+    const unsubscribe = vi.fn(() => { focus = undefined })
+    const cleanup = registerOmarchySetupIpc(registry.ipc, 'linux', engine as unknown as OmarchySetup, registry.trustedSenders,
+      listener => { focus = listener; return unsubscribe })
+    focus!(); expect(engine.get).toHaveBeenCalledOnce()
+    cleanup(); expect(focus).toBeUndefined(); expect(unsubscribe).toHaveBeenCalledOnce()
   })
   it('accepts only a trusted main frame, exact arguments and the bounded command schema', async () => {
     const r = ipcRegistry(), engine = { get: vi.fn(async () => 'state'), command: vi.fn(async () => 'state') }

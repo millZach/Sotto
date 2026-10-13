@@ -48,6 +48,13 @@ export async function zoomTerminal(action: 'larger' | 'smaller' | 'reset'): Prom
 /** Only the focused terminal takes these chords, and a configured dictation chord always wins. */
 export function terminalShortcut(event: KeyboardEvent, platform: SottoPlatform): 'search' | 'larger' | 'smaller' | 'reset' | null {
   if (event.isComposing || event.defaultPrevented) return null
+  // Plus is Shift+Equals on most keyboards; keypad Plus has no Shift.
+  if (event.key === '+' || event.key === '=' && event.shiftKey && event.code === 'Equal') {
+    const chord = event.shiftKey ? 'mod+shift+=' : 'mod+='
+    const hotkey = event.code === 'NumpadAdd' ? confirmed.hotkey.replace(/\+\s*numadd\s*$/iu, '+=') : confirmed.hotkey
+    if (chordClaimed(chord, hotkey, platform) && chordMatches({ key: '=', ctrlKey: event.ctrlKey, metaKey: event.metaKey, altKey: event.altKey, shiftKey: event.shiftKey }, chord, platform)) return 'larger'
+    return null
+  }
   // Electron names keypad accelerators differently from the DOM key; compare the actual keypad press.
   const hotkey = event.code === 'NumpadSubtract' ? confirmed.hotkey.replace(/\+\s*numsub\s*$/iu, '+-')
     : event.code === 'Numpad0' ? confirmed.hotkey.replace(/\+\s*num0\s*$/iu, '+0') : confirmed.hotkey

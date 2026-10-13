@@ -19,27 +19,44 @@ export function useOmarchySetup(enabled: boolean, bridge = typeof window === 'un
   const [state, setState] = useState<OmarchySetupState | null>(null)
   const [error, setError] = useState(false)
   const [pending, setPending] = useState(false)
+  const [removing, setRemoving] = useState(false)
   const pendingRef = useRef(false)
+  const busyRef = useRef(false)
+  const changesRef = useRef(0)
+  const refreshRef = useRef<(() => Promise<void>) | null>(null)
   useEffect(() => {
     if (!enabled || !bridge) return
-    let active = true, changes = 0
-    const unsubscribe = bridge.onChanged(next => { changes++; if (active) { setState(next); setError(false) } })
-    void bridge.get().then(next => { if (active && !changes) setState(next) }).catch(() => { if (active) setError(true) })
-    return () => { active = false; unsubscribe() }
+    let active = true, reading = false
+    const unsubscribe = bridge.onChanged(next => { changesRef.current++; if (active) { busyRef.current = next.busy; setState(next); setError(false) } })
+    const refresh = async (shown = false): Promise<void> => {
+      // After a hidden interval, main's get returns current progress without inspecting changing files.
+      if (reading || pendingRef.current || busyRef.current && !shown) return
+      reading = true
+      const before = changesRef.current
+      try {
+        const next = await bridge.get()
+        if (active && before === changesRef.current) { busyRef.current = next.busy; setState(next); setError(false) }
+      } catch { if (active && before === changesRef.current) setError(true) }
+      finally { reading = false }
+    }
+    const focus = (): void => { void refresh() }
+    refreshRef.current = refresh
+    void refresh(true)
+    window.addEventListener('focus', focus)
+    return () => { active = false; refreshRef.current = null; unsubscribe(); window.removeEventListener('focus', focus) }
   }, [bridge, enabled])
   const command = async (command: OmarchySetupCommand): Promise<void> => {
-    if (!bridge || pendingRef.current) return
-    pendingRef.current = true; setPending(true); setError(false)
-    try { setState(await bridge.command(command)) }
+    if (!bridge || pendingRef.current || busyRef.current) return
+    changesRef.current++
+    pendingRef.current = true; setPending(true); setRemoving(command.type === 'remove'); setError(false)
+    try { const next = await bridge.command(command); changesRef.current++; busyRef.current = next.busy; setState(next) }
     catch { setError(true) }
-    finally { pendingRef.current = false; setPending(false) }
+    finally { pendingRef.current = false; setPending(false); setRemoving(false) }
   }
   const retryRead = async (): Promise<void> => {
-    if (!bridge) return
-    setError(false)
-    try { setState(await bridge.get()) } catch { setError(true) }
+    await refreshRef.current?.()
   }
-  return { state, error, busy: pending || state?.busy === true, available: !!bridge, command, retryRead }
+  return { state, error, busy: pending || state?.busy === true, removing: removing || !!state && Object.values(state.pieces).some(piece => piece.status === 'working' && piece.message === 'Removing'), available: !!bridge, command, retryRead }
 }
 export type OmarchySetupController = ReturnType<typeof useOmarchySetup>
 
@@ -127,7 +144,7 @@ export function OmarchySetupPanel({ surface = 'settings', controller, bridge }: 
       <p>{surface === 'first-run' ? 'You’ll try F9 in the Shortcut step, once the speech model is downloaded.' : 'Hold F9 anywhere to talk.'}</p></div> : null}
     <div className="omarchy-setup__actions">
       {todo.length > 0 || busy ? <Button data-next disabled={busy} onClick={() => void install(todo)}>
-        {busy ? 'Setting up' : todo.length === 3 ? 'Set up all three' : `Set up ${todo.map(piece => PIECES[piece].short).join(' and ')}`}
+        {busy ? setup.removing ? 'Removing' : 'Setting up' : todo.length === 3 ? 'Set up all three' : `Set up ${todo.map(piece => PIECES[piece].short).join(' and ')}`}
       </Button> : null}
       <Button ref={filesButton} variant="ghost" aria-expanded={files} onClick={() => setFiles(!files)}>{files ? 'Hide the files it changes' : 'Show the files it changes'}</Button>
     </div>

@@ -45,6 +45,20 @@ describe('Omarchy setup in main', () => {
     expect(await readFile(f.bindings, 'utf8')).toBe('-- My keys\n')
     expect(await readdir(join(f.home, '.config/hypr'))).toEqual(['bindings.lua'])
   })
+  it('returns current progress to focus reads without inspecting while keys change', async () => {
+    const reached = Promise.withResolvers<void>(), resume = Promise.withResolvers<void>()
+    const engine = f.make(async (command, args) => {
+      if (command === 'luac') { reached.resolve(); await resume.promise }
+      return f.run(command, args)
+    })
+    const installing = engine.command({ type: 'setup', pieces: ['keys'], keys: 'give' })
+    try {
+      await reached.promise
+      const calls = f.calls.length
+      expect(await engine.get()).toMatchObject({ busy: true, pieces: { keys: { status: 'working' } } })
+      expect(f.calls).toHaveLength(calls)
+    } finally { resume.resolve(); await installing }
+  })
   it('sets up all three, backs up keys, selects both Appearance columns and skips a second run', async () => {
     const engine = f.make(), beforeAppearance = f.settings().appearance
     const result = await engine.command({ type: 'setup', pieces: [...OMARCHY_PIECES], keys: 'give' })

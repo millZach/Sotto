@@ -9,6 +9,7 @@ import { OMARCHY_PIECES, type OmarchyPiece, type OmarchyPieceState, type Omarchy
 import type { AppSettings, SettingsPatch } from '../../shared/settings'
 import { OMARCHY_THEME_ID, parseOmarchyTheme } from '../../shared/themes/omarchy'
 import { atomicWrite, contents, digest, exclusiveWrite, plainPath, treeDigest } from './files'
+import { omarchySetupEnvironment } from './environment'
 
 const ID = 'sotto.dictation'
 const REQUIRE = '-- Sotto Omarchy setup\nrequire("hypr.sotto-bindings")\n-- End Sotto Omarchy setup\n'
@@ -103,7 +104,7 @@ export class OmarchySetup {
     this.rendered = join(options.home, '.local/state/omarchy/current/theme/sotto.json')
     this.shellConfig = join(options.home, '.config/omarchy/shell.json')
     this.run = options.run ?? ((command, args) => new Promise(resolveRun => {
-      execFile(command, [...args], { env: { ...process.env, ...options.environment, HOME: options.home }, timeout: 30_000, maxBuffer: 128 * 1024 },
+      execFile(command, [...args], { env: omarchySetupEnvironment({ ...process.env, ...options.environment }, options.home), timeout: 30_000, maxBuffer: 128 * 1024 },
         (error, stdout, stderr) => resolveRun({ ok: !error, stdout: String(stdout), stderr: String(stderr) }))
     }))
   }

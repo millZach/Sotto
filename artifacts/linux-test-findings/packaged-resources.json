@@ -1,0 +1,39 @@
+{
+  "platform": "linux",
+  "target": "linux-unpacked",
+  "asarBytes": 24225847,
+  "asarSha256": "6f3bcb86979c50298bea8d1f54341dcb2dab4c3e7cdbad1d2e5faaf9ff2b5e11",
+  "executableBytes": 219811064,
+  "provenance": {
+    "sourceCommit": "8ed4cb9d897d5c66c91df896a16eb359e8db3552",
+    "buildInputsRevision": "a480f4909fd31f295ebae0d8a81116b4241bec0a33f8d4e74786fd9f83131381",
+    "buildSha256": "1584c337e7a8acb391bf43538238ac34a51df56ff7804f711eaaa26e5b03c1e8",
+    "artifactCount": 90
+  },
+  "installer": {
+    "name": "Sotto-0.1.37-linux-x64.tar.gz",
+    "bytes": 24225847,
+    "sha256": "6f3bcb86979c50298bea8d1f54341dcb2dab4c3e7cdbad1d2e5faaf9ff2b5e11",
+    "filesChecked": 288
+  },
+  "memoryStore": {
+    "sqliteVersion": "3.53.1",
+    "migrationVersion": 4,
+    "matchedId": "memory-probe",
+    "fts5": true,
+    "terminal": {
+      "modules": "148",
+      "napi": "10",
+      "exitCode": 0,
+      "output": "SOTTO_PTY_PACKAGE_OK"
+    },
+    "speechEngine": {
+      "recognizer": true,
+      "onnxruntime": "1.28.2"
+    }
+  },
+  "smoke": {
+    "speechModel": "downloading",
+    "workletUrl": "file:///home/zach/Projects/Sotto/.worktrees/linux-test-fixes/release/linux-unpacked/resources/app.asar/out/renderer/audio-capture-worklet.js"
+  }
+}
