@@ -289,8 +289,8 @@ import XCTest
         add(diagnostic)
     }
 
-    /// Scrolls the open thread's conversation until `target` can be pressed. Each drag runs down the page's trailing
-    /// margin, clear of messages, code blocks and the back gesture's edge, between the bar and the reply box.
+    /// Scrolls the open thread's conversation until `target` can be pressed. Each drag stays inside the page, clear of
+    /// the native scrollbar and the back gesture's edge, between the bar and the reply box.
     private func scrollThread(to target: XCUIElement, towardStart: Bool) {
         let window = app.windows.firstMatch
         let origin = window.coordinate(withNormalizedOffset: .zero)
@@ -314,7 +314,7 @@ import XCTest
             // Shorter than the space it drags in, so nothing can pass from below that space to above it unseen.
             let distance = min(220, (bottom - top) * 0.45)
             let direction: CGFloat = down ? 1 : -1
-            let x = window.frame.width - 8
+            let x = window.frame.width - 32
             let middle = (top + bottom) / 2 - window.frame.minY
             let start = origin.withOffset(CGVector(dx: x, dy: middle - direction * distance / 2))
             let end = origin.withOffset(CGVector(dx: x, dy: middle + direction * distance / 2))
