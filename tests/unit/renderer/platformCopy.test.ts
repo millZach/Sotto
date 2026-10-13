@@ -95,7 +95,7 @@ describe('platformCopy', () => {
     expect(platformCopy('linux').helpPasteFallback).toContain('Super+V')
     expect(platformCopy('linux').helpPasteFallback).toContain('apps and terminals')
     expect(platformCopy('linux').settingsAutoPasteDescription).toContain('focused window, terminals included')
-    expect(platformCopy('linux').settingsGlobalShortcutDescription).toContain('These are set in Hyprland, not here')
+    expect(platformCopy('linux').settingsGlobalShortcutDescription).toContain('Compositor bindings live in Hyprland')
     expect(platformCopy('linux').settingsGlobalShortcutDescription).toContain('hold F9')
     expect(platformCopy('linux').settingsGlobalShortcutDescription).toContain('Super+Ctrl+X')
     expect(platformCopy('linux').settingsGlobalShortcutDescription).not.toContain('first')

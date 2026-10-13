@@ -85,7 +85,7 @@ const PLATFORM_COPY: Readonly<Record<SottoPlatform, PlatformCopy>> = Object.free
     settingsMicrophoneUnavailable: 'Microphones are unavailable. Check your input device, then test again.',
     settingsMicrophoneDenied: 'Microphone access is blocked. Allow access if asked, then test again.',
     settingsMicrophoneDefaultOption: 'System default',
-    settingsGlobalShortcutDescription: 'These are set in Hyprland, not here. Once installed, hold F9 to talk or press Super+Ctrl+X to start and stop.',
+    settingsGlobalShortcutDescription: 'Compositor bindings live in Hyprland, not in Sotto. Once Sotto’s bindings are installed, hold F9 to talk, or press Super+Ctrl+X to start and stop.',
     settingsAutoPasteDescription: 'Pastes into the focused window, terminals included. If it doesn’t arrive, press Super+V.',
     settingsLaunchAtStartupLabel: 'Launch when you sign in',
     settingsStartupFailureNotice: 'Launch at sign-in could not be updated.',
@@ -132,7 +132,7 @@ const PLATFORM_COPY: Readonly<Record<SottoPlatform, PlatformCopy>> = Object.free
   }),
 })
 
-/** Where Settings sends a Linux user to install the compositor bindings; Sotto never edits Hyprland's files itself. */
+/** Manual compositor-binding instructions, also linked from Linux help. */
 export const LINUX_BINDINGS_GUIDE_URL = 'https://github.com/millZach/Sotto/blob/main/apps/omarchy/README.md#install-the-bindings'
 
 export function platformCopy(platform: SottoPlatform): PlatformCopy {

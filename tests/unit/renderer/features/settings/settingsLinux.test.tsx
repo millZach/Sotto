@@ -4,7 +4,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SettingsView } from '../../../../../src/renderer/src/features/settings/SettingsView'
-import { LINUX_BINDINGS_GUIDE_URL, platformCopy } from '../../../../../src/renderer/src/platformCopy'
+import { setupBridgeFixture } from '../../../../fixtures/renderer/omarchySetup'
 import { UPDATE_CHECK_PRIVACY_NOTICE } from '../../../../../src/shared/contracts'
 import { DEFAULT_SETTINGS } from '../../../../../src/shared/settings'
 
@@ -73,26 +73,28 @@ describe('Settings on Linux', () => {
     expect(toggle).toHaveAccessibleDescription(WIDGET_DESCRIPTION)
   })
 
-  it('opens the bindings setup steps in the browser and never edits Hyprland itself', async () => {
-    const openExternalLink = vi.fn(async () => ({ ok: true as const }))
-    vi.stubGlobal('sotto', { openExternalLink })
+  it('offers the three Omarchy pieces and asks main to set them up only on a press', async () => {
+    const f = setupBridgeFixture()
+    vi.stubGlobal('sotto', { omarchySetup: f.bridge })
     render(<SettingsView {...baseProps({ platform: 'linux' })} />)
 
-    expect(screen.getByText('Compositor bindings')).toBeVisible()
-    expect(screen.getByText(platformCopy('linux').settingsGlobalShortcutDescription)).toBeVisible()
+    expect(await screen.findByRole('button', { name: 'Set up all three' })).toBeVisible()
+    expect(screen.getByText('F9 and Super+Ctrl+X')).toBeVisible()
+    expect(screen.getByText('The owl in the bar')).toBeVisible()
+    expect(screen.getByText('The Omarchy theme')).toBeVisible()
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Open setup steps in your browser' }))
-    expect(openExternalLink).toHaveBeenCalledExactlyOnceWith(LINUX_BINDINGS_GUIDE_URL)
-    expect(LINUX_BINDINGS_GUIDE_URL).toBe('https://github.com/millZach/Sotto/blob/main/apps/omarchy/README.md#install-the-bindings')
+    expect(f.calls).toEqual([])
+    await userEvent.click(screen.getByRole('button', { name: 'Set up all three' }))
+    expect(f.calls).toEqual([{ type: 'setup', pieces: ['keys', 'owl', 'theme'], keys: 'unconfirmed' }])
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
-  it('says where the setup steps are when the browser cannot open them', async () => {
-    vi.stubGlobal('sotto', { openExternalLink: vi.fn(async () => ({ ok: false as const, reason: 'unavailable' as const })) })
+  it('explains an unavailable setup bridge without offering a write', async () => {
+    vi.stubGlobal('sotto', {})
     render(<SettingsView {...baseProps({ platform: 'linux' })} />)
 
-    await userEvent.click(screen.getByRole('button', { name: 'Open setup steps in your browser' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent(`The setup steps could not open in your browser. They are at ${LINUX_BINDINGS_GUIDE_URL}`)
+    expect(await screen.findByRole('alert')).toHaveTextContent('Your files were left alone')
+    expect(screen.queryByRole('button', { name: 'Set up all three' })).not.toBeInTheDocument()
   })
 
   it.each(['win32', 'darwin'] as const)('keeps the %s global shortcut field and offers no setup steps', async (platform) => {

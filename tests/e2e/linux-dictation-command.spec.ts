@@ -99,7 +99,7 @@ test('compositor commands reach Linux dictation and Settings explains the bindin
     await openPage(page, 'Settings')
     await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Dictation', exact: true }).click()
     await expect(page.getByText('Compositor bindings', { exact: true })).toBeVisible()
-    await expect(page.getByText(/These are set in Hyprland, not here/)).toBeVisible()
+    await expect(page.getByText(/Compositor bindings live in Hyprland/)).toBeVisible()
     await expect(page.getByLabel('Global shortcut', { exact: true })).toHaveCount(0)
     await page.getByRole('tab', { name: 'Output', exact: true }).click()
     await expect(page.getByText(/Pastes into the focused window, terminals included/)).toBeVisible()
@@ -110,7 +110,7 @@ test('compositor commands reach Linux dictation and Settings explains the bindin
         // Hyprland owns the native tiled window's bounds; check the renderer at each required size.
         await page.setViewportSize({ width, height })
         expect(await page.evaluate(() => innerWidth)).toBe(width)
-        await expect(page.getByText(/These are set in Hyprland, not here/)).toBeVisible()
+        await expect(page.getByText(/Compositor bindings live in Hyprland/)).toBeVisible()
         await page.getByRole('tab', { name: 'Output', exact: true }).click()
         await expect(page.getByText(/Pastes into the focused window, terminals included/)).toBeVisible()
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)

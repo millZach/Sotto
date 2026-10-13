@@ -1,6 +1,8 @@
 -- Load after Omarchy's defaults, from ~/.config/hypr/bindings.lua.
 -- For ~/.config/hypr/sotto-bindings.lua, use require("hypr.sotto-bindings").
 -- hl.unbind removes every occurrence, including Voxtype's F9 release binding.
+-- When the package is removed, Omarchy's Voxtype defaults keep these keys.
+if o.cmd_present("sotto") then
 hl.unbind("F9")
 hl.unbind("SUPER + CTRL + X")
 
@@ -11,6 +13,7 @@ local sotto = "sotto"
 local function dictation(command)
   return "sh -c " .. o.shell_quote(sotto .. " dictation " .. command .. ' --at "$(date +%s%N)"')
 end
-o.bind("F9", "Start dictation (push-to-talk)", dictation("start"))
-o.bind("F9", "Stop dictation (push-to-talk)", dictation("stop"), { release = true })
-o.bind("SUPER + CTRL + X", "Toggle dictation", dictation("toggle"))
+o.bind("F9", "Start Sotto dictation (push-to-talk)", dictation("start"))
+o.bind("F9", "Stop Sotto dictation (push-to-talk)", dictation("stop"), { release = true })
+o.bind("SUPER + CTRL + X", "Toggle Sotto dictation", dictation("toggle"))
+end
