@@ -6,13 +6,14 @@ import { _electron as electron, expect, test, type Page } from '@playwright/test
 import { AGENT_STATE } from '../../src/shared/agents'
 import { closeSotto, firstRunForwardButton, firstSottoWindow, openPage, skipThreadsTour, type LaunchedSotto } from './support/sottoLaunch'
 import { forceDomTerminalRenderer } from './support/terminal'
+import { evidenceDirectory } from '../fixtures/evidence'
 import type { OmarchySetupState } from '../../src/shared/omarchySetup'
 
 const enabled = process.platform === 'linux' && process.env.SOTTO_LINUX_FINDINGS_PROOF === '1'
 const packaged = process.env.SOTTO_SETUP_PROOF_PACKAGE === '1'
 const home = process.env.SOTTO_SETUP_PROOF_HOME ?? ''
 const root = process.env.SOTTO_SETUP_PROOF_ROOT ?? ''
-const evidence = resolve('artifacts/linux-test-findings')
+const evidence = evidenceDirectory('artifacts/linux-test-findings')
 const prefix = packaged ? 'packaged' : 'built'
 const hypr = (args: string[]) => execFileSync('hyprctl', args, { encoding: 'utf8', timeout: 15000 })
 const setup = (page: Page): Promise<OmarchySetupState> => page.evaluate(() => window.sotto!.omarchySetup!.get())
@@ -194,6 +195,14 @@ test('outside changes, removal, corner notice, launch environments and terminal 
     }
     await rm(join(root, 'hold-keys'))
     await expect(page.getByRole('button', { name: 'Set up the keys', exact: true })).toBeEnabled()
+    await page.getByRole('button', { name: 'Set up the keys', exact: true }).click()
+    await expect.poll(async () => (await setup(page)).busy).toBe(false)
+    // Settings retains hidden panels. Returning through the actual tabs must inspect again without a window focus change.
+    await page.getByRole('tab', { name: 'Application', exact: true }).click()
+    await writeFile(bindings, '-- My bindings\n'); await rm(join(home, '.config/hypr/sotto-bindings.lua')); hypr(['reload'])
+    await page.getByRole('tab', { name: 'Dictation', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'Set up the keys', exact: true })).toBeVisible()
+    await writeFile(bindings, installedBindings)
     await page.getByRole('button', { name: 'Set up the keys', exact: true }).click()
     await expect.poll(async () => (await setup(page)).busy).toBe(false)
     // Focus refresh after outside removal; do not call setup.get(), which would hide a missing refresh.

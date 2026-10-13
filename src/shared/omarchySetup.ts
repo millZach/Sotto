@@ -16,6 +16,7 @@ export type OmarchyPieceState = z.infer<typeof omarchyPieceStateSchema>
 export const omarchySetupStateSchema = z.object({
   pieces: z.object({ keys: omarchyPieceStateSchema, owl: omarchyPieceStateSchema, theme: omarchyPieceStateSchema }).strict(),
   busy: z.boolean(),
+  operation: z.enum(['setup', 'remove', 'update-owl']).optional(),
   keyConflicts: z.array(z.string().max(1000)).max(100),
   voxtype: z.boolean(),
   shellRunning: z.boolean(),

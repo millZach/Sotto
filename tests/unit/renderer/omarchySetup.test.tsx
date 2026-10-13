@@ -6,9 +6,25 @@ import { OmarchySetupPanel, useOmarchySetup } from '../../../src/renderer/src/fe
 import { Onboarding, type OnboardingProps } from '../../../src/renderer/src/features/onboarding/Onboarding'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
 import { setupBridgeFixture, setupState } from '../../fixtures/renderer/omarchySetup'
+import { SettingsView } from '../../../src/renderer/src/features/settings/SettingsView'
+import { baseProps } from '../../fixtures/renderer/settingsViewHarness'
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 describe('Omarchy setup rows', () => {
+  it('re-detects outside changes when the actual Settings tabs return to Dictation', async () => {
+    const f = setupBridgeFixture(setupState('manual')), user = userEvent.setup()
+    const get = vi.spyOn(f.bridge, 'get')
+    vi.stubGlobal('sotto', { omarchySetup: f.bridge })
+    render(<SettingsView {...baseProps({ platform: 'linux' })} />)
+    await user.click(screen.getByRole('tab', { name: 'Dictation' }))
+    await screen.findAllByText('Set up by hand')
+    const reads = get.mock.calls.length
+    await user.click(screen.getByRole('tab', { name: 'Application' }))
+    get.mockResolvedValue(setupState())
+    await user.click(screen.getByRole('tab', { name: 'Dictation' }))
+    await screen.findByRole('button', { name: 'Set up all three' })
+    expect(get.mock.calls.length).toBeGreaterThan(reads)
+  })
   it('refreshes external changes on focus without clearing the visible rows, and ignores a read overtaken by progress', async () => {
     const f = setupBridgeFixture(setupState('manual'))
     const get = vi.spyOn(f.bridge, 'get')
@@ -21,7 +37,7 @@ describe('Omarchy setup rows', () => {
     expect(get).toHaveBeenCalledTimes(2)
     expect(screen.getAllByText('Set up by hand')).toHaveLength(3)
     expect(screen.queryByText('Checking')).toBeNull()
-    const working = setupState('done'); working.busy = true
+    const working = setupState('done'); working.busy = true; working.operation = 'remove'
     working.pieces.owl = { status: 'working', owned: true, message: 'Removing' }
     act(() => f.change(working))
     await act(async () => read.resolve(setupState()))
@@ -76,6 +92,17 @@ describe('Omarchy setup rows', () => {
     expect(get).toHaveBeenCalledTimes(1)
     await act(async () => removed.resolve(setupState()))
     await screen.findByRole('button', { name: 'Set up all three' })
+  })
+  it('uses the operation for both removal labels even when the progress message changes', async () => {
+    const f = setupBridgeFixture()
+    render(<OmarchySetupPanel bridge={f.bridge} />)
+    await screen.findByRole('button', { name: 'Set up all three' })
+    const working = { ...setupState('done'), busy: true, operation: 'remove' as const }
+    working.pieces.keys = { status: 'working', owned: true, message: 'Taking the keys out' }
+    act(() => f.change(working))
+    expect(screen.getByRole('button', { name: 'Removing' })).toBeDisabled()
+    expect(screen.getAllByText('Removing')).toHaveLength(2)
+    expect(screen.queryByText('Setting up')).toBeNull()
   })
   it('shows exactly what is left and removes only owned pieces', async () => {
     const initial = setupState('done')

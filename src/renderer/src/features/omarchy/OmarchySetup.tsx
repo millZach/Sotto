@@ -56,16 +56,17 @@ export function useOmarchySetup(enabled: boolean, bridge = typeof window === 'un
   const retryRead = async (): Promise<void> => {
     await refreshRef.current?.()
   }
-  return { state, error, busy: pending || state?.busy === true, removing: removing || !!state && Object.values(state.pieces).some(piece => piece.status === 'working' && piece.message === 'Removing'), available: !!bridge, command, retryRead }
+  return { state, error, busy: pending || state?.busy === true, removing: removing || state?.operation === 'remove', available: !!bridge, command, retryRead }
 }
 export type OmarchySetupController = ReturnType<typeof useOmarchySetup>
 
-export function OmarchySetupPanel({ surface = 'settings', controller, bridge }: {
+export function OmarchySetupPanel({ surface = 'settings', visible = true, controller, bridge }: {
   readonly surface?: 'settings' | 'first-run'
+  readonly visible?: boolean
   readonly controller?: OmarchySetupController
   readonly bridge?: OmarchySetupBridge
 }): ReactNode {
-  const local = useOmarchySetup(!controller, bridge ?? window.sotto?.omarchySetup)
+  const local = useOmarchySetup(!controller && visible, bridge ?? window.sotto?.omarchySetup)
   const setup = controller ?? local
   const { state, busy } = setup
   const [keyChoice, setKeyChoice] = useState<'give' | 'keep'>('give')
@@ -99,7 +100,7 @@ export function OmarchySetupPanel({ surface = 'settings', controller, bridge }: 
     const current = state?.pieces[piece]
     if (!current) return 'Checking'
     return { missing: 'Not set up', failed: 'Not set up', done: 'Done', manual: 'Set up by hand', stale: 'Update ready',
-      conflict: 'Needs your choice', skipped: 'Left alone', queued: 'Waiting', working: current.message === 'Removing' ? 'Removing' : 'Setting up' }[current.status]
+      conflict: 'Needs your choice', skipped: 'Left alone', queued: 'Waiting', working: state?.operation === 'remove' ? 'Removing' : 'Setting up' }[current.status]
   }
 
   return <div className="omarchy-setup" ref={root} tabIndex={-1} aria-label="Omarchy setup" aria-busy={busy}

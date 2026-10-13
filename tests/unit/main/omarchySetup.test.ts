@@ -55,9 +55,10 @@ describe('Omarchy setup in main', () => {
     try {
       await reached.promise
       const calls = f.calls.length
-      expect(await engine.get()).toMatchObject({ busy: true, pieces: { keys: { status: 'working' } } })
+      expect(await engine.get()).toMatchObject({ busy: true, operation: 'setup', pieces: { keys: { status: 'working' } } })
       expect(f.calls).toHaveLength(calls)
     } finally { resume.resolve(); await installing }
+    expect((await installing).operation).toBeUndefined()
   })
   it('sets up all three, backs up keys, selects both Appearance columns and skips a second run', async () => {
     const engine = f.make(), beforeAppearance = f.settings().appearance

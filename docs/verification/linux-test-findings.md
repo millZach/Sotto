@@ -8,7 +8,7 @@ Built and packaged Sotto 0.1.37 were driven on forge in owned nested Hyprland se
 
 ## What was checked
 
-- Outside deletion of the keys is noticed after Back → Get started, and after focus leaves for another owned native window and returns. Unit tests also cover hand-installed rows, Settings block re-entry, coalesced focus reads, stale acknowledgements and hidden progress. A read during an operation returns current progress without inspecting changing files. The rows are retained during inspection.
+- Outside deletion of the keys is noticed after Back → Get started, and after focus leaves for another owned native window and returns. The real Settings tabs also recheck after Application → Dictation while the window stays focused. Unit tests cover this retained-panel path, hand-installed rows, coalesced focus reads, stale acknowledgements and hidden progress. A read during an operation returns current progress without inspecting changing files. The rows are retained during inspection.
 - Remove reads **Removing** in both the row and the main action, including the interval before a progress event arrives. A held private `luac` wrapper keeps the real removal visible for capture. No ownership rule was relaxed: repairing an externally removed owned key snippet requires restoring its known require line first.
 - The real shell answers from a terminal, the public launcher layout, the executable in the sign-in entry written by Settings, and an absolute-display bridge environment with OMARCHY_PATH absent. For packaged launcher verification, the checked-in public wrapper is placed beside links to this worktree's extracted runtime and resources, matching the PKGBUILD layout without installing anything on forge.
 - A scripted client-update reading is delivered through main's state channel. The coding-agent step keeps **Continue** fully in view and hit-testable at 1600×1000, 1280×800 and 820×560, in light and dark with reduced motion. The notice is deferred until setup finishes, then appears and can be dismissed. The built proof supplies a ready provider status; the packaged proof uses the existing scripted Claude CLI only for account/model checks and project ownership. No real account or agent turn is used. The local speech model is copied into the private profile to avoid downloading it into /tmp.
@@ -30,7 +30,7 @@ Windows and Linux both retain Electron's default application menu: the caller ne
 - Removing: [packaged, 1280×800 dark](../../artifacts/linux-test-findings/packaged-removing-1280x800-dark.png), [packaged, 820×560 light](../../artifacts/linux-test-findings/packaged-removing-820x560-light.png).
 - Terminal: [packaged, 1280×800 dark](../../artifacts/linux-test-findings/packaged-terminal-1280x800-dark.png), [packaged, 820×560 light](../../artifacts/linux-test-findings/packaged-terminal-820x560-light.png).
 
-The approved Omarchy prototype's A layout remains the reference. The throwaway copy, with its removal action corrected, is retained outside main on `prototype/linux-test-findings-20261013` at `bdcd1687b39a0ddbf2844728101eb43a4bcb75d3` (`docs/prototypes/linux-test-findings-throwaway.html`). No new layout or design baseline was introduced.
+The approved Omarchy prototype's A layout remains the reference. The throwaway copy, with its removal action corrected, is retained outside main on `prototype/linux-test-findings-20261013` at `bdcd1687b39a0ddbf2844728101eb43a4bcb75d3` (`docs/prototypes/linux-test-findings-throwaway.html`). No new layout or design baseline was introduced. The result records retain measurements for all sizes; only the images linked here are committed.
 
 ## Repeat
 
@@ -43,7 +43,7 @@ mise exec node@24.21.0 -- node scripts/with-nested-hyprland.mjs .cache/findings-
 
 The second command requires a current `release/linux-unpacked` and tarball. It runs the same desktop journey plus `verify-packaged-resources.mjs`, including the external dependency allowlist, memory store, native PTY and speech module, and the extracted tarball's ordinary startup. Tests use the normal temporary folder; models and retained proof data stay in `.cache/`.
 
-Local gates and the independent review are recorded in the pull request after they finish. Native macOS desktop input was not available on forge; macOS shortcut matching is covered by unit cases.
+The two independent Sol reviews (gpt-6.1-sol, xhigh per the configured reviewer routing) found one Standards violation (evidence-directory overrides), one possible Standards smell (progress inferred from copy), and one Spec omission (Settings retains hidden panels). All three were fixed: the proof uses the shared evidence helper, progress carries a typed operation, and actual Settings tab visibility activates inspection. The omitted tab path and copy-independent removal labels were reproduced as failing tests before their fixes. Local gates and the final review results are recorded in the pull request. Native macOS desktop input was not available on forge; macOS shortcut matching is covered by unit cases.
 
 ## Out of scope
 

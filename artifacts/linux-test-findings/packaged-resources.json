@@ -1,19 +1,19 @@
 {
   "platform": "linux",
   "target": "linux-unpacked",
-  "asarBytes": 24225847,
-  "asarSha256": "6f3bcb86979c50298bea8d1f54341dcb2dab4c3e7cdbad1d2e5faaf9ff2b5e11",
+  "asarBytes": 24226121,
+  "asarSha256": "ee353bf300d15a5570611e912acae53952a6c196d57d779b39f6a1267241d39c",
   "executableBytes": 219811064,
   "provenance": {
-    "sourceCommit": "8ed4cb9d897d5c66c91df896a16eb359e8db3552",
-    "buildInputsRevision": "a480f4909fd31f295ebae0d8a81116b4241bec0a33f8d4e74786fd9f83131381",
-    "buildSha256": "1584c337e7a8acb391bf43538238ac34a51df56ff7804f711eaaa26e5b03c1e8",
+    "sourceCommit": "9f7aa0d42f64602ebe24784896e40832dad0e900",
+    "buildInputsRevision": "5ee4df33cf94d78038f932fe7a7da37fed42875ebf6b7134d02ce64e26f020c2",
+    "buildSha256": "a2ec79e7365d34c5e9406cffb1aceac8cd44d7cd8da3213df11ccda4ce0c470e",
     "artifactCount": 90
   },
   "installer": {
     "name": "Sotto-0.1.37-linux-x64.tar.gz",
-    "bytes": 24225847,
-    "sha256": "6f3bcb86979c50298bea8d1f54341dcb2dab4c3e7cdbad1d2e5faaf9ff2b5e11",
+    "bytes": 24226121,
+    "sha256": "ee353bf300d15a5570611e912acae53952a6c196d57d779b39f6a1267241d39c",
     "filesChecked": 288
   },
   "memoryStore": {

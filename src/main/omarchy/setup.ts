@@ -255,6 +255,7 @@ export class OmarchySetup {
       const pieces = command.type === 'update-owl' ? ['owl'] as const : OMARCHY_PIECES.filter(piece => command.pieces.includes(piece))
       const keyBackup = command.type === 'remove' ? this.receipt.pieces.keys?.backup : undefined
       this.snapshot.busy = true
+      this.snapshot.operation = command.type
       this.snapshot.notice = ''
       this.publish()
       try {
@@ -287,6 +288,7 @@ export class OmarchySetup {
         }
       } finally {
         this.snapshot.busy = false
+        delete this.snapshot.operation
         await this.detect()
       }
       if (command.type === 'remove' && pieces.length === 3 && keyBackup && !this.receipt.pieces.keys && this.notes.keys?.status === 'missing' &&
