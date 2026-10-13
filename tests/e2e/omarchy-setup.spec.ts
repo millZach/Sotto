@@ -134,6 +134,20 @@ test('set up Omarchy, handle every decision, undo and update through the real wi
     expect(await readFile(bindings, 'utf8')).toBe(before)
     proofs.push({ journey: 'fresh setup with Voxtype; first use; repeated setup; all sizes and modes', passed: true })
     await size(app, 1280, 800)
+    const shellConfig = join(home, '.config/omarchy/shell.json')
+    const serviceOnly = JSON.parse(await readFile(shellConfig, 'utf8'))
+    serviceOnly.plugins = [{ id: 'sotto.dictation' }]
+    for (const section of Object.keys(serviceOnly.bar.layout)) {
+      serviceOnly.bar.layout[section] = serviceOnly.bar.layout[section].filter((entry: string | { id: string }) =>
+        (typeof entry === 'string' ? entry : entry.id) !== 'sotto.dictation')
+    }
+    await writeFile(shellConfig, JSON.stringify(serviceOnly))
+    await expect.poll(async () => (await state(page)).pieces.owl.status).toBe('missing')
+    await capture(page, 'service-only-1280x800-light')
+    await page.getByRole('button', { name: 'Set up the owl', exact: true }).click()
+    await expect.poll(async () => (await state(page)).pieces.owl.status).toBe('done')
+    expect(JSON.parse(await readFile(shellConfig, 'utf8')).bar.layout.center).toContainEqual({ id: 'sotto.dictation' })
+    proofs.push({ journey: 'service-only owned plugin is incomplete; setup restores its owl to the bar', passed: true })
     for (const piece of ['keys', 'owl', 'theme']) {
       await page.getByRole('button', { name: `Remove the ${piece === 'keys' ? 'keys' : piece}` }).click()
       await expect.poll(async () => (await state(page)).pieces[piece as 'keys' | 'owl' | 'theme'].status).toBe('missing')

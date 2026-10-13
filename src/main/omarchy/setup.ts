@@ -144,9 +144,10 @@ export class OmarchySetup {
   private async onBar(): Promise<boolean> {
     const value = await contents(this.shellConfig)
     if (value === null) return false
-    const config = z.object({ bar: z.object({ layout: z.record(z.string(), z.array(z.unknown())).optional() }).optional(),
-      plugins: z.array(z.unknown()).optional() }).passthrough().parse(JSON.parse(value))
-    return [...Object.values(config.bar?.layout ?? {}).flat(), ...(config.plugins ?? [])].some(entry =>
+    const config = z.object({ bar: z.object({ layout: z.record(z.string(), z.array(z.unknown())).optional() }).optional() })
+      .passthrough().parse(JSON.parse(value))
+    // Top-level plugins enable services; only a bar layout entry places the owl.
+    return Object.values(config.bar?.layout ?? {}).flat().some(entry =>
       entry === ID || (typeof entry === 'object' && entry !== null && 'id' in entry && entry.id === ID))
   }
 

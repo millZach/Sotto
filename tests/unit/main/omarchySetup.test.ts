@@ -154,6 +154,17 @@ describe('Omarchy setup in main', () => {
     expect((await engine.command({ type: 'update-owl' })).pieces.owl.status).toBe('done')
     expect(f.desktop.restartCount).toBe(1)
   })
+  it('repairs an owl enabled only as a service without counting it as on the bar', async () => {
+    const engine = f.make()
+    await engine.command({ type: 'setup', pieces: ['owl'], keys: 'give' })
+    const config = JSON.parse(await readFile(f.config, 'utf8'))
+    config.plugins = [{ id: 'sotto.dictation' }]
+    config.bar.layout.center = [{ id: 'omarchy.indicators' }]
+    await writeFile(f.config, JSON.stringify(config))
+    expect((await engine.get()).pieces.owl).toMatchObject({ status: 'missing', owned: true })
+    expect((await engine.command({ type: 'setup', pieces: ['owl'], keys: 'unconfirmed' })).pieces.owl.status).toBe('done')
+    expect(JSON.parse(await readFile(f.config, 'utf8')).bar.layout.center).toContainEqual({ id: 'sotto.dictation' })
+  })
   it('asks about new conflicts on owned keys after an update', async () => {
     const engine = f.make()
     await engine.command({ type: 'setup', pieces: ['keys'], keys: 'give' })
