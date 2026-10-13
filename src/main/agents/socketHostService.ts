@@ -16,7 +16,7 @@ import { subagentAssignmentsPageSchema, subagentPageSchema, type SubagentAssignm
 import { toolsResultSchema, type ToolListRequest, type ToolsResult } from '../../shared/tools'
 import { hostSignInSchema, type HostSignIn } from '../../shared/hostProviders'
 import type { AgentThread, ProviderId } from '../../shared/agents'
-import { commandFromProtocolV1, protocolAgentStateSchema, managementCommandRefusal, LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, HOST_BUSY, hostAttachmentContentSchema, hostIsNewer, hostVersionMismatch, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema } from '../../shared/hostProtocol'
+import { commandFromProtocolV1, protocolAgentCommandSchema, protocolAgentStateSchema, managementCommandRefusal, LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, HOST_BUSY, hostAttachmentContentSchema, hostIsNewer, hostVersionMismatch, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema } from '../../shared/hostProtocol'
 import type { HostFeature, HostAnswerTarget, HostHello, HostOperation, HostPairing, HostSession, HostResponse, HostPush, HostEventPage, HostReceipt, HostErrorCode } from '../../shared/hostProtocol'
 import type { HostService, ClientIdentity, RequestAnswerRecovery } from './hostService'
 import { requestDraftProvider, requestDraftQuestions } from '../../shared/requestDrafts'
@@ -362,8 +362,12 @@ export class SocketHostService implements HostService {
   }
   private call(operation: HostOperation, id: string = randomUUID(), onPlacement?: () => void): Promise<unknown> {
     if (operation.op === 'command') {
-      try { this.requireCommandAvailable(commandFromProtocolV1(operation.command)) }
-      catch (error) { return Promise.reject(error) }
+      // An unknown wire command is the host's to refuse, with its version and unsupported-request wording.
+      const parsed = protocolAgentCommandSchema.safeParse(operation.command)
+      if (parsed.success) {
+        try { this.requireCommandAvailable(commandFromProtocolV1(parsed.data)) }
+        catch (error) { return Promise.reject(error) }
+      }
     }
     const threadId = 'threadId' in operation ? operation.threadId : 'request' in operation && 'threadId' in operation.request ? operation.request.threadId
       : 'answer' in operation && operation.answer && 'threadId' in operation.answer ? operation.answer.threadId : operation.op === 'command' ? this.commandThreadId(operation.command) : undefined
