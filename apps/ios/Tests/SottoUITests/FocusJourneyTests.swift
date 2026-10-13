@@ -902,6 +902,37 @@ import XCTest
         }
     }
 
+    /// Watcher's new words leave a reader of earlier messages where they are. The page follows them only for a reader who
+    /// sees the newest words or the page's end, and never while the user moves it (ADR-0051). Here a pull to refresh at the
+    /// conversation's start reads the page again, and the fixture's Watcher says something new at its end.
+    func testWatchersNewWordsLeaveAReaderOfEarlierMessagesWhereTheyAre() {
+        launch(Self.watcher + ["--ui-watcher-refresh-news"])
+        openWatcher()
+        let first = text("The login test fails about one run in five")
+        XCTAssertTrue(first.waitForExistence(timeout: 5), "Watcher's conversation starts with the user's first message")
+        // The header and the box don't move here; where the band begins and ends is read once.
+        let band = watcherBand
+        let conversation = app.scrollViews.firstMatch
+        for _ in 0..<8 where first.frame.minY < band.top { conversation.swipeDown(velocity: .fast) }
+        XCTAssertGreaterThanOrEqual(first.frame.minY, band.top, "The conversation's start is in view")
+        // A pull past the start reads Watcher's page again.
+        let news = text("Nothing new needs you.")
+        for _ in 0..<3 where !news.exists {
+            conversation.swipeDown()
+            _ = news.waitForExistence(timeout: 5)
+        }
+        XCTAssertTrue(news.exists, "Pulling down read the page again, and Watcher said something new at its end")
+        // A scroll that shouldn't happen is given time to happen; then the reader is still where they were.
+        _ = XCTWaiter.wait(for: [XCTestExpectation(description: "The page settles")], timeout: 2)
+        let frame = first.frame
+        if !(frame.minY >= band.top - 1 && frame.minY < band.bottom) {
+            explain("watcher-reader-moved", "first message \(frame), between \(band.top) and \(band.bottom)")
+        }
+        XCTAssertTrue(frame.minY >= band.top - 1 && frame.minY < band.bottom,
+                      "Watcher's new words leave the reader at the conversation's start (first message \(frame), between \(band.top) and \(band.bottom))")
+        capture("watcher-reading-earlier-dark")
+    }
+
     /// A worker's own question sits in Watcher's page and is answered there, as the user's own answer to that thread.
     func testAWorkersCardIsAnsweredInWatchersPage() {
         launch(Self.watcher + ["--ui-watcher-can-answer"])

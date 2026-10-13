@@ -240,7 +240,7 @@ extension AppModel {
     /// during a read asks for one more after it. A read that fails says so, on the page and in the box, until one works.
     func readWatcher(_ hostID: String) async {
         #if DEBUG && os(iOS)
-        if isUIFixture { return }
+        if isUIFixture { refreshFixtureWatcher(on: hostID); return }
         #endif
         guard offersWatcher(hostID), online(hostID) else { return }
         guard watcherReads.insert(hostID).inserted else { watcherRereads.insert(hostID); return }
@@ -1349,6 +1349,14 @@ struct HeldDetail {
         if let decoded = try? JSONDecoder().decode(WatcherPage.self, from: JSONSerialization.data(withJSONObject: page)) {
             showWatcher(decoded, on: hostID)
         }
+    }
+    /// A pull to refresh reads nothing new from the fixture's computer, except in the journey that checks a reader of
+    /// earlier messages keeps their place: there Watcher says something new each time.
+    private func refreshFixtureWatcher(on hostID: String) {
+        guard ProcessInfo.processInfo.arguments.contains("--ui-watcher-refresh-news") else { return }
+        appendFixtureWatcherMessage(["id": "refresh-" + UUID().uuidString, "role": "assistant",
+                                     "createdAt": ISO8601DateFormatter().string(from: Date()),
+                                     "text": "Nothing new needs you. Babysit #845 release notes is still waiting for its checks."], on: hostID)
     }
     private func appendFixtureWatcherMessage(_ message: [String: Any], on hostID: String, receipts: [String: Any]? = nil) {
         changeFixtureWatcher(on: hostID) { page in

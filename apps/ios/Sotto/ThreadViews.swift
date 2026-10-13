@@ -473,7 +473,7 @@ private struct Conversation: View {
     }
 }
 
-private extension View {
+extension View {
     /// Says whether the user is moving the page: dragging it or letting a flick run out. A finger that rests or taps is
     /// not moving it, so pressing a run of steps at the bottom still keeps the page there. iOS 17 can't say, so there the
     /// page follows as it did before.
