@@ -19,7 +19,7 @@ describe('SettingsView', () => {
 
     const toggle = screen.getByRole('switch', { name: 'Let agents babysit pull requests' })
     expect(toggle).toBeChecked()
-    expect(toggle).toHaveAccessibleDescription('An agent can ask Sotto to babysit its pull request and stop checking GitHub itself. Sotto sends its thread a wake-up when the pull request needs it.')
+    expect(toggle).toHaveAccessibleDescription('An agent can hand its pull request to Sotto, which wakes the thread when the pull request needs it.')
     // It sits with the switches that let agents act on their own, after the visuals one.
     const switches = screen.getAllByRole('switch').map(item => item.getAttribute('aria-label'))
     expect(switches.indexOf('Let agents babysit pull requests')).toBe(switches.indexOf('Let agents draw visuals in threads') + 1)
@@ -28,7 +28,7 @@ describe('SettingsView', () => {
 
     view.rerender(<SettingsView {...baseProps({ onUpdateSettings: update, settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, babysitPullRequests: false } })} />)
     expect(screen.getByRole('switch', { name: 'Let agents babysit pull requests' })).toHaveAccessibleDescription(
-      'Agents cannot start babysitting, and Sotto stops what they started. You can still babysit a pull request from the Pull request surface.')
+      'Agents can’t start babysitting, and Sotto stops any they started. You can still babysit one yourself.')
   })
 
   it('exposes exactly one category at a time with keyboard navigation into its controls', async () => {

@@ -84,7 +84,7 @@ export function CloudIphoneSettings({ settings, onUpdateSettings, bridge = bridg
   const used = `${monthMinutes} of ${capMinutes} minutes`
 
   return <div className="cloud-iphone-settings">
-    <SettingsGroup title="run.cloud" icon={KeyRound} note="Agents test native iOS builds on a run.cloud simulator, and each session asks you first. The build is uploaded to run.cloud, in the EU, and deleted when the session ends.">
+    <SettingsGroup title="run.cloud" icon={KeyRound} note="Agents test iOS builds on a run.cloud simulator, and ask you before each session. Builds go to run.cloud in the EU and are deleted afterwards.">
       {/* The key and its verdict are one row, its buttons at the right under the field as Verify key sits on Cleanup. */}
       <div className="key-field">
         <Field label="Key" description="Checked with run.cloud before it is saved.">
@@ -114,7 +114,7 @@ export function CloudIphoneSettings({ settings, onUpdateSettings, bridge = bridg
           <i style={{ width: `${meterPercent}%` }} />
         </div>
       </div>
-      <Field label="Idle sessions end after" description="Minutes with no tap, typing or agent action, 1 to 60." {...(idle.error === undefined ? {} : { error: idle.error })}>
+      <Field label="Idle sessions end after" description="Minutes without any activity, 1 to 60." {...(idle.error === undefined ? {} : { error: idle.error })}>
         <input className="tt-input" inputMode="numeric" value={idle.draft} onBlur={() => void idle.commit()} onChange={event => idle.setDraft(event.target.value)} />
       </Field>
     </SettingsGroup>

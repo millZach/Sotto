@@ -25,8 +25,8 @@ const win32Strings: Omit<PlatformCopy, 'platform' | 'accessibilityHelp' | 'setti
   settingsMicrophoneUnavailable: 'Microphones are unavailable. Check Windows privacy settings.',
   settingsMicrophoneDenied: 'Microphones are unavailable. Check Windows privacy settings.',
   settingsMicrophoneDefaultOption: 'Windows default',
-  settingsGlobalShortcutDescription: 'Used anywhere in Windows to start and stop dictation.',
-  settingsAutoPasteDescription: 'Best-effort Ctrl+V into the previously focused application.',
+  settingsGlobalShortcutDescription: 'Starts and stops dictation from anywhere in Windows.',
+  settingsAutoPasteDescription: 'Presses Ctrl+V in the app you were using. Some apps block it.',
   settingsLaunchAtStartupLabel: 'Launch when Windows starts',
   settingsStartupFailureNotice: 'Windows startup could not be updated.',
   settingsStartMinimizedDescription: 'Open directly in the tray when Sotto launches.',
@@ -94,7 +94,7 @@ describe('platformCopy', () => {
   it('tells Linux users to paste and set compositor bindings in Hyprland', () => {
     expect(platformCopy('linux').helpPasteFallback).toContain('Super+V')
     expect(platformCopy('linux').helpPasteFallback).toContain('apps and terminals')
-    expect(platformCopy('linux').settingsAutoPasteDescription).toContain('Hyprland, terminals included')
+    expect(platformCopy('linux').settingsAutoPasteDescription).toContain('focused window, terminals included')
     expect(platformCopy('linux').settingsGlobalShortcutDescription).toContain('Compositor bindings live in Hyprland')
     expect(platformCopy('linux').settingsGlobalShortcutDescription).toContain('hold F9')
     expect(platformCopy('linux').settingsGlobalShortcutDescription).toContain('Super+Ctrl+X')
