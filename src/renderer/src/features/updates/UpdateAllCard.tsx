@@ -179,7 +179,8 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts }: { re
   }, [refuse])
 
   const start = useCallback((): void => {
-    const offered = latest.current.view.items.filter(item => item.state === 'offered')
+    // A Sotto download that failed goes again too, as Settings' Download did before Update all took its place.
+    const offered = latest.current.view.items.filter(item => item.state === 'offered' || item.kind === 'app' && item.state === 'failed')
     if (!offered.length) return
     const hostOf = (item: UpdateAllItem): string | undefined => item.machine.kind === 'host' ? item.machine.id : undefined
     const clients = offered.filter(item => item.kind === 'client')

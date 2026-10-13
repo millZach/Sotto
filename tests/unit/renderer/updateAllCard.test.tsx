@@ -150,6 +150,17 @@ describe('the Update all card', () => {
     expect(screen.getByRole('button', { name: 'Stop 2 threads on forge and update its host now' })).toBeTruthy()
   })
 
+  it('tries a failed Sotto download again when Settings asks, as its Download did (Sotto Bug Bot)', async () => {
+    const actions = provideApp(available)
+    actions.downloadUpdate.mockResolvedValueOnce(false)
+    provideAgents(agentState())
+    render(<UpdateAllCard hosts={hostsBridge({ hosts: [], localHostEnabled: true, localHostRunning: true }).asBridge} />)
+    fireEvent.click(screen.getByRole('button', { name: /^Update all/u }))
+    await screen.findByText('The download did not finish. Nothing was installed. Try again.')
+    act(() => requestUpdateAll())
+    await waitFor(() => expect(actions.downloadUpdate).toHaveBeenCalledTimes(2))
+  })
+
   it('runs the same press when Settings asks for it', async () => {
     const actions = provideApp(available)
     provideAgents(agentState())
