@@ -132,7 +132,7 @@ const PLATFORM_COPY: Readonly<Record<SottoPlatform, PlatformCopy>> = Object.free
   }),
 })
 
-/** Where Settings sends a Linux user to install the compositor bindings; Sotto never edits Hyprland's files itself. */
+/** Manual compositor-binding instructions, also linked from Linux help. */
 export const LINUX_BINDINGS_GUIDE_URL = 'https://github.com/millZach/Sotto/blob/main/apps/omarchy/README.md#install-the-bindings'
 
 export function platformCopy(platform: SottoPlatform): PlatformCopy {

@@ -1,5 +1,5 @@
 #!/bin/bash
-# omarchy:summary=Install Sotto and offer its dictation bindings and shell plugin
+# omarchy:summary=Install Sotto and open its setup
 # omarchy:requires-sudo=true
 set -euo pipefail
 
@@ -19,17 +19,4 @@ fi
 
 echo
 echo 'Sotto has been installed. Open it from the application menu.'
-read -r -p 'Show the dictation bindings setup? [y/N] ' answer || answer=
-if [[ $answer =~ ^[Yy]$ ]]; then
-  cat <<'BINDINGS'
-Copy /usr/share/sotto/bindings.lua to ~/.config/hypr/sotto-bindings.lua.
-Add require("hypr.sotto-bindings") at the end of ~/.config/hypr/bindings.lua.
-This gives Sotto F9 and Super+Ctrl+X, replacing Voxtype's bindings.
-Check with luac -p ~/.config/hypr/sotto-bindings.lua.
-BINDINGS
-fi
-read -r -p 'Show the shell plugin setup? [y/N] ' answer || answer=
-if [[ $answer =~ ^[Yy]$ ]]; then
-  echo 'The shell plugin is separate. Follow apps/omarchy/shell-plugin/README.md in the Sotto source checkout.'
-  echo 'Install it in ~/.config/omarchy/plugins/ using that guide.'
-fi
+echo 'Press Set up all three in first-run setup, or open Settings → Dictation to finish Omarchy setup.'

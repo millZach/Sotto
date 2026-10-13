@@ -53,7 +53,7 @@ for (const skip of [false, true]) {
       await expect(page.getByRole('heading', { name: 'Check your microphone' })).toBeFocused()
       await firstRunForwardButton(page).click()
       await firstRunForwardButton(page).click()
-      await expect(page.getByRole('heading', { name: 'One shortcut from speech to text' })).toBeFocused()
+      await expect(page.getByRole('heading', { name: process.platform === 'linux' ? 'Speak, then paste into any window' : 'One shortcut from speech to text' })).toBeFocused()
       await finishFirstRunSetupFrom(page, 'shortcut')
       expect(await page.evaluate(async () => {
         const settings = await window.sotto!.getSettings()

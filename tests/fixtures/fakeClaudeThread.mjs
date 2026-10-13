@@ -80,13 +80,27 @@ const released = name => new Promise(resolve => { const timer = setInterval(() =
  * script.json `steering`: a prompt sent while a turn runs, as Claude Code 2.1.295 takes it. It goes into the CLI's own
  * queue, said at once with a `queued` lifecycle frame, and is read into the running turn at its next model step (`say`):
  * its echo, then `started`. One still queued when the turn ends runs as the next turn, and a stop leaves it queued
- * (`still_queued`) to run next the same way.
+ * (`still_queued`) to run next the same way. Unless `steering` is `'queue'`, a prompt sent `priority: 'now'` cuts the
+ * turn instead, as Claude Code 2.1.296 does: once queued, the turn ends at once with the result a cut mid-reply leaves,
+ * or with `cutAfterTools` the one a cut after a command leaves, then `cancelled` for the turn's prompt, and the steer
+ * runs as the next turn.
  */
 let turnOpen = false
+let turnPrompt
+// Each cut drops the reply being written, so a reply held mid-thought (`complete`) never goes on once its turn is cut.
+let cuts = 0
 const steered = []
 const lifecycleOf = (uuid, state) => output({ type: 'command_lifecycle', command_uuid: uuid, state, uuid: randomUUID(), session_id: session })
 const readSteered = () => { for (const frame of steered.splice(0)) { output(persist(frame)); lifecycleOf(frame.uuid, 'started') } }
-const turnEnded = () => { turnOpen = steered.length > 0; readSteered() }
+const turnEnded = () => { turnOpen = steered.length > 0; turnPrompt = steered[0]?.uuid; readSteered() }
+const cut = afterTools => {
+  cuts++
+  output(afterTools
+    ? { type: 'result', subtype: 'success', session_id: session, is_error: false, result: '', terminal_reason: 'aborted_tools', user_message_uuid: turnPrompt }
+    : { type: 'result', subtype: 'error_during_execution', session_id: session, is_error: true, terminal_reason: 'aborted_streaming', user_message_uuid: turnPrompt })
+  if (turnPrompt) lifecycleOf(turnPrompt, 'cancelled')
+  turnEnded()
+}
 /**
  * A finished reply. With `thinking` it opens on a thinking block, streamed the way Claude Code 2.1.289 streams one
  * (start, thinking deltas, a signature delta, stop), and written to the transcript as its own line with
@@ -96,6 +110,7 @@ const turnEnded = () => { turnOpen = steered.length > 0; readSteered() }
  * thinking arrived.
  */
 async function complete(action) {
+  const turn = cuts
   const id = randomUUID()
   // A turn that leaves a subagent running launches it from a root tool call, as Claude 2.1.280 does with
   // `run_in_background`. The task_started follows the tool call inside the turn, as in a live capture, and
@@ -110,7 +125,7 @@ async function complete(action) {
       content_block: action.redacted ? { type: 'redacted_thinking', data: 'cmVkYWN0ZWQ=' } : { type: 'thinking', thinking: '', signature: '' } } })
     const middle = Math.ceil(words.length / 2)
     for (const [index, part] of [words.slice(0, middle), words.slice(middle)].entries()) {
-      if (index === 1 && action.holdInThinking) await released(action.holdInThinking)
+      if (index === 1 && action.holdInThinking) { await released(action.holdInThinking); if (cuts !== turn) return }
       if (part) output({ type: 'stream_event', session_id: session, parent_tool_use_id: null, event: { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: part } } })
     }
     if (!action.redacted) output({ type: 'stream_event', session_id: session, parent_tool_use_id: null, event: { type: 'content_block_delta', index: 0, delta: { type: 'signature_delta', signature: 'c2lnbmF0dXJl' } } })
@@ -119,7 +134,7 @@ async function complete(action) {
     const line = { type: 'assistant', uuid: randomUUID(), session_id: session, message: { id, role: 'assistant', content: [block] } }
     persist({ ...line, apiBlockIndex: 0, thinkingDurationMs: Date.now() - started })
     output(line)
-    if (action.holdAfterThinking) await released(action.holdAfterThinking)
+    if (action.holdAfterThinking) { await released(action.holdAfterThinking); if (cuts !== turn) return }
   }
   if (agent) output({ type: 'stream_event', session_id: session, parent_tool_use_id: null, event: { type: 'content_block_start', index: thinking ? 1 : 0, content_block: { type: 'tool_use', id: agent.tool, name: 'Agent', input: {} } } })
   output({ type: 'stream_event', session_id: session, event: { type: 'content_block_delta', ...(thinking ? { index: 1 } : {}), delta: { type: 'text_delta', text: action.text } } })
@@ -145,6 +160,12 @@ const act = () => {
   // Consume before delivery so a resumed process cannot replay this as a new live event.
   unlinkSync(control)
   if (action.type === 'exit') { process.exit(1) }
+  // A turn Claude Code gives itself, as 2.1.283 reports finished background work: a query and a model request, no prompt.
+  if (action.type === 'self-turn') {
+    turnOpen = true; turnPrompt = undefined
+    output({ type: 'system', subtype: 'init', session_id: session })
+    output({ type: 'system', subtype: 'status', status: 'requesting', uuid: randomUUID(), session_id: session }); return
+  }
   // `persist` also writes the burst to the session log first, as the CLI records what it streams.
   if (action.type === 'raw-burst') {
     const frames = action.persist ? action.frames.map(persist) : action.frames
@@ -314,8 +335,12 @@ lines.on('line', async line => {
       }
       return
     }
-    if (script.steering && turnOpen) { steered.push(frame); lifecycleOf(frame.uuid, 'queued'); return }
-    turnOpen = true
+    if (script.steering && turnOpen) {
+      steered.push(frame); lifecycleOf(frame.uuid, 'queued')
+      if (frame.priority === 'now' && script.steering !== 'queue') cut(script.cutAfterTools === true)
+      return
+    }
+    turnOpen = true; turnPrompt = frame.uuid
     const reply = persist(frame)
     if (script.writeCwd) writeFileSync(join(process.cwd(), 'native-cwd-proof.txt'), typeof frame.message.content === 'string' ? frame.message.content : frame.message.content.find(item => item.type === 'text')?.text ?? '')
     if (script.delay) { writeFileSync(scriptPath, '{}'); setTimeout(() => output(reply), script.delay) } else output(reply)

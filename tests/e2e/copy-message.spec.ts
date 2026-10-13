@@ -8,7 +8,6 @@ import { evidenceDirectory } from '../fixtures/evidence'
 // on each finished message's top-right corner. Same fixture as thread-activity.spec.ts; copies are
 // recorded in main at globalThis.activityFixture.copied.
 const shots = evidenceDirectory('artifacts/copy-message')
-declare global { interface Window { activityFixture?: { show: (scenario: 'settled' | 'live' | 'disconnected' | 'restored') => void } } }
 
 test.describe.configure({ mode: 'serial' })
 

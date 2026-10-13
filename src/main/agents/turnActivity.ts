@@ -14,6 +14,8 @@ export interface TurnMark {
   readonly status: AgentActivity['status']
   readonly afterMessageId?: string | undefined
   readonly error?: string | undefined
+  /** An interrupted turn ended by a steer rather than by Stop. */
+  readonly steered?: boolean | undefined
   /** Milliseconds since the epoch; defaults to now. */
   readonly at?: number | undefined
 }
@@ -29,11 +31,13 @@ export function markTurnActivity(previous: readonly AgentActivity[] | undefined,
   const old = records.find(record => record.id === id)
   if (old && isTerminalActivity(old.status)) return [...records]
   const now = new Date(mark.at ?? Date.now()).toISOString()
+  const steered = mark.steered === true && mark.status === 'interrupted'
   return mergeAgentActivities(records, [{
-    id, turnId: mark.turnId, sequence: 0, kind: 'turn', status: mark.status, title: TITLES[mark.status],
+    id, turnId: mark.turnId, sequence: 0, kind: 'turn', status: mark.status, title: steered ? 'Turn steered' : TITLES[mark.status],
     startedAt: old?.startedAt ?? now, timingSource: 'observed',
     ...(mark.afterMessageId !== undefined ? { afterMessageId: mark.afterMessageId } : {}),
     ...(isTerminalActivity(mark.status) ? { completedAt: now } : {}),
     ...(mark.error !== undefined ? { error: mark.error } : {}),
+    ...(steered ? { steered: true } : {}),
   }])
 }

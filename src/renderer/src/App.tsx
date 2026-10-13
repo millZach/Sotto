@@ -539,7 +539,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
         </AppShell>
       )}
       </WatcherRoomProvider>
-      <ClientUpdateCard />
+      {management ? <ClientUpdateCard /> : null}
     </AgentProvider>
   )
 }
