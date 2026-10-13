@@ -10,7 +10,7 @@ import { watcherOverview, type WatcherObservation } from '../../shared/watcherOv
 import { WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_READ_BYTES_MAX, watcherToolSchemas,
   type WatcherIdentity, type WatcherOperation, type WatcherRecord, type WatcherRefusal, type WatcherThreadTarget,
   type WatcherToolInput, type WatcherToolName } from '../../shared/watcher'
-import { watcherOpenRequestSchema, type WatcherOpenRequest, type WatcherRoomResult, type WatcherRoomState,
+import { watcherOpenRequestSchema, WATCHER_STOP_ALL_PREVIEW_LIMIT, type WatcherOpenRequest, type WatcherRoomResult, type WatcherRoomState,
   type WatcherPrepareStopAllResult, type WatcherStopAllResult } from '../../shared/watcherRoom'
 import type { AgentHostCommand } from './host'
 import type { AgentControl } from './control'
@@ -47,7 +47,7 @@ export class WatcherService implements WatcherControlHooks {
   private changing = false
   private readonly dispatchRefusals = new Map<string, Refusal>()
   private readonly nativeHeads = new Map<string, string | null>()
-  private readonly confirmations = new Map<string, { targets: WatcherThreadTarget[]; signature: string; expires: number }>()
+  private readonly confirmations = new Map<string, { targets: WatcherThreadTarget[]; signature: string; expires: number; phoneClientId: string | undefined }>()
   private readonly pages = new Map<string, { kind: string; rows: unknown[]; expires: number; workingCopies?: { revision: string; baseRefs: { choiceId: string; name: string }[] } }>()
   private readonly copyChoices = new Map<string, { projectId: string; path?: string; branch?: string; revision: string; snapshotId: string }>()
   private closed = false
@@ -1202,21 +1202,25 @@ export class WatcherService implements WatcherControlHooks {
   }
   private pruneConfirmations(): void {
     for (const [id, confirmation] of this.confirmations) if (confirmation.expires < Date.now()) this.confirmations.delete(id)
-    while (this.confirmations.size > 16) this.confirmations.delete(this.confirmations.keys().next().value!)
   }
-  prepareStopAll(): WatcherPrepareStopAllResult {
+  /** Omitting the authenticated phone ID selects the desktop room's separate client. */
+  prepareStopAll(phoneClientId?: string): WatcherPrepareStopAllResult {
     if (this.closed) return watcherRefusal('NOT_CURRENT_WATCHER', 'Watcher is stopping. Nothing was stopped. Reopen Sotto.')
     this.pruneConfirmations()
     const { targets, signature } = this.stopAllScope(), id = randomUUID(), expires = Date.now() + 60_000
-    this.confirmations.set(id, { targets, expires, signature })
-    this.pruneConfirmations()
+    this.confirmations.set(id, { targets, expires, signature, phoneClientId })
+    const clientPreviews = [...this.confirmations].filter(([, confirmation]) => confirmation.phoneClientId === phoneClientId)
+    for (const [oldest] of clientPreviews.slice(0, -WATCHER_STOP_ALL_PREVIEW_LIMIT)) this.confirmations.delete(oldest)
     return { status: 'ok', confirmationId: id, targets, expiresAt: new Date(expires).toISOString() }
   }
-  async stopAll(confirmationId: string, userGuard: () => void = () => undefined): Promise<WatcherStopAllResult> {
+  async stopAll(confirmationId: string, userGuard: () => void = () => undefined, phoneClientId?: string): Promise<WatcherStopAllResult> {
     if (this.closed) return watcherRefusal('NOT_CURRENT_WATCHER', 'Watcher is stopping. Nothing was stopped. Reopen Sotto.')
     this.pruneConfirmations()
-    const confirmation = this.confirmations.get(confirmationId); this.confirmations.delete(confirmationId)
-    if (!confirmation || confirmation.expires < Date.now() || confirmation.signature !== this.stopAllScope().signature) {
+    const confirmation = this.confirmations.get(confirmationId)
+    if (!confirmation) return watcherRefusal('TARGET_CHANGED', 'That Stop all preview expired, was replaced by a newer one, or is unavailable. Review Stop all again. Nothing was stopped.')
+    if (confirmation.phoneClientId !== phoneClientId) return watcherRefusal('TARGET_CHANGED', 'That Stop all preview was opened somewhere else. Review Stop all again here. Nothing was stopped.')
+    this.confirmations.delete(confirmationId)
+    if (confirmation.expires < Date.now() || confirmation.signature !== this.stopAllScope().signature) {
       return watcherRefusal('TARGET_CHANGED', 'The threads to stop changed or the confirmation expired. Review Stop all again.')
     }
     userGuard()

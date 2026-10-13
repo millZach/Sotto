@@ -455,7 +455,7 @@ test.describe("Watcher's room on the built app", () => {
       expect(indexOf(/^Open Visual gate flake to answer/)).toBeGreaterThan(indexOf('More Watcher actions'))
       expect(indexOf('Watcher message')).toBeGreaterThan(indexOf(/^Open Streaming WAV stall/))
       expect(indexOf('History')).toBeGreaterThan(indexOf('Watcher message'))
-      expect(order.slice(indexOf('History'), indexOf('History') + 5)).toEqual(['History', 'Settings', 'Help', 'Watcher', 'Check for updates'])
+      expect(order.slice(indexOf('History'), indexOf('History') + 6)).toEqual(['History', 'Usage', 'Settings', 'Help', 'Watcher', 'Check for updates'])
       for (const name of ['Settings', 'Help', 'History'] as const) {
         await openPage(page, name)
         await expect(switchTab(page, 'Dictate')).toHaveAttribute('tabindex', '0')

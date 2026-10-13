@@ -9,6 +9,7 @@ import { PairedClients } from '../../src/main/agents/pairing'
 import { startSocketServer } from '../../src/host/socketServer'
 import { watcherPhoneResultSchema, watcherPhoneSendResultSchema } from '../../src/shared/watcherPhone'
 import { hostReceiptSchema } from '../../src/shared/hostProtocol'
+import { WATCHER_STOP_ALL_PREVIEW_LIMIT } from '../../src/shared/watcherRoom'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
 import { rawPeer } from '../fixtures/rawHostPeer'
@@ -278,4 +279,93 @@ it('marks workers watched only for active requests belonging to the current host
   expect(watched()).toBe(false)
   await f.control.updateWatcher(record => { const request = record.requests.at(-1)!; request.state = 'active'; request.closedAt = null })
   expect(watched()).toBe(true)
+})
+
+it('keeps a phone Stop all preview valid when another phone opens many previews', async () => {
+  const f = await fixture(), first = await f.pair(), other = await f.pair()
+  await first.call('send', f.send(first.paired.clientId)); const worker = await f.start()
+  const preview = await first.call('preview', { op: 'watcher-phone-prepare-stop-all' })
+  expect(preview).toMatchObject({ ok: true, result: { status: 'ok' } })
+  const otherOldest = await other.call('other-oldest', { op: 'watcher-phone-prepare-stop-all' })
+  for (let index = 0; index < WATCHER_STOP_ALL_PREVIEW_LIMIT * 5; index++) {
+    expect(await other.call(`preview-${index}`, { op: 'watcher-phone-prepare-stop-all' })).toMatchObject({ ok: true, result: { status: 'ok' } })
+  }
+  const retained = (f.watcher as unknown as { confirmations: ReadonlyMap<string, unknown> }).confirmations
+  expect(retained.size).toBe(WATCHER_STOP_ALL_PREVIEW_LIMIT + 1)
+  expect(await other.call('replaced', { op: 'watcher-phone-stop-all', confirmationId: (otherOldest.result as { confirmationId: string }).confirmationId }))
+    .toMatchObject({ ok: true, result: { status: 'refused', code: 'TARGET_CHANGED', message: expect.stringContaining('replaced by a newer one') } })
+  const confirmationId = (preview.result as { confirmationId: string }).confirmationId
+  expect(await other.call('stolen', { op: 'watcher-phone-stop-all', confirmationId })).toMatchObject({ ok: true, result: { status: 'refused', code: 'TARGET_CHANGED' } })
+  expect(await f.watcher.stopAll(confirmationId)).toMatchObject({ status: 'refused', code: 'TARGET_CHANGED' })
+  expect(await first.call('stop', { op: 'watcher-phone-stop-all', confirmationId: (preview.result as { confirmationId: string }).confirmationId }))
+    .toMatchObject({ ok: true, result: { status: 'ok', results: [{ target: worker, status: 'stopped' }] } })
+  // Expiration releases each client's retained previews.
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 60_001)
+  try {
+    expect(f.watcher.prepareStopAll()).toMatchObject({ status: 'ok' })
+    expect(await other.call('after-expiry', { op: 'watcher-phone-prepare-stop-all' })).toMatchObject({ ok: true, result: { status: 'ok' } })
+    expect(retained.size).toBe(2)
+  } finally { clock.mockRestore() }
+})
+
+it.each(['existing', 'newest'])('keeps the desktop room\'s %s Stop all preview usable when a phone opens many previews', async choice => {
+  const f = await fixture(), peer = await f.pair()
+  await peer.call('send', f.send(peer.paired.clientId)); const worker = await f.start()
+  const existing = f.watcher.prepareStopAll()
+  if (existing.status !== 'ok') throw new Error('desktop preview refused')
+  let phonePreview
+  // Cross the former shared cap as well as the per-client cap.
+  for (let index = 0; index < 80; index++) phonePreview = await peer.call(`preview-${index}`, { op: 'watcher-phone-prepare-stop-all' })
+  const newest = f.watcher.prepareStopAll()
+  expect(newest).toMatchObject({ status: 'ok' })
+  if (newest.status !== 'ok') throw new Error('new desktop preview refused')
+  expect(phonePreview).toMatchObject({ ok: true, result: { status: 'ok' } })
+  const phoneConfirmationId = (phonePreview!.result as { confirmationId: string }).confirmationId
+  expect(await f.watcher.stopAll(phoneConfirmationId)).toMatchObject({ status: 'refused', code: 'TARGET_CHANGED' })
+  expect(await peer.call('desktop-preview', { op: 'watcher-phone-stop-all', confirmationId: existing.confirmationId }))
+    .toMatchObject({ ok: true, result: { status: 'refused', code: 'TARGET_CHANGED' } })
+  const retained = (f.watcher as unknown as { confirmations: ReadonlyMap<string, unknown> }).confirmations
+  expect(retained.size).toBe(WATCHER_STOP_ALL_PREVIEW_LIMIT + 2)
+  expect(retained.has(phoneConfirmationId)).toBe(true)
+  expect(await f.watcher.stopAll(choice === 'existing' ? existing.confirmationId : newest.confirmationId))
+    .toMatchObject({ status: 'ok', results: [{ target: worker, status: 'stopped' }] })
+  expect(f.workspace.adapters.codex.commands.filter(row => row.type === 'interrupt')).toHaveLength(1)
+})
+
+it('replays a phone worker answer after reconnect without answering again or requiring a new grant', async () => {
+  const f = await fixture(), peer = await f.pair()
+  await peer.call('send', f.send(peer.paired.clientId)); const worker = await f.start()
+  f.native(worker.threadId).requests = [{ id: 'permission', kind: 'permission', text: 'Synthetic worker permission', options: [] }]
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' }); f.canAnswer(true)
+  const answer = { op: 'watcher-phone-answer', request: { target: worker, command: { type: 'answer', threadId: worker.threadId,
+    requestId: 'permission', answer: 'Allow', approved: true } } }
+  expect(await peer.call('ans-1', answer)).toMatchObject({ ok: true, result: { status: 'ok' } })
+  expect(f.phone.state(true).needsYou.some(card => card.request.id === 'permission')).toBe(false)
+  peer.messages.splice(peer.messages.findIndex(message => message.id === 'ans-1'), 1); peer.frames.close()
+  const resumed = await rawPeer(f.server.descriptor.port, f.pairing.signSession(peer.paired.clientId, Date.now()))
+  cleanups.push(async () => resumed.frames.close())
+  await resumed.call('hello', { op: 'hello', accepts: ['watcher-phone'] })
+  expect(await resumed.call('receipt', { op: 'receipt', commandId: 'ans-1' })).toMatchObject({ ok: true, result: { status: 'completed', answerDelivered: true } })
+  expect(await resumed.call('ans-1', answer)).toMatchObject({ ok: true, result: { status: 'ok' } })
+  resumed.messages.splice(resumed.messages.findIndex(message => message.id === 'ans-1'), 1); f.canAnswer(false)
+  // An unrelated error in the fresh shell cannot change the original answer's successful outcome.
+  await f.control.commandShell({ type: 'manual-send', threadId: 'missing-thread', text: 'Synthetic unknown thread' })
+  expect(f.control.shell().error).toBeTruthy()
+  expect(await resumed.call('ans-1', answer)).toMatchObject({ ok: true, result: { status: 'ok' } })
+  for (const changed of [
+    { ...answer, request: { ...answer.request, command: { ...answer.request.command, approved: false } } },
+    { ...answer, request: { ...answer.request, target: { ...worker, hostId: randomUUID() } } },
+  ]) {
+    resumed.messages.splice(resumed.messages.findIndex(message => message.id === 'ans-1'), 1)
+    expect(await resumed.call('ans-1', changed)).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+  }
+  const other = await f.pair()
+  expect(await other.call('receipt', { op: 'receipt', commandId: 'ans-1' })).toMatchObject({ ok: true, result: { status: 'unknown' } })
+  expect(await other.call('ans-1', answer)).toMatchObject({ ok: false, error: { code: 'stale_request' } })
+  f.native(worker.threadId).requests = [{ id: 'new-permission', kind: 'permission', text: 'Synthetic later permission', options: [] }]
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect(await resumed.call('ans-new', { ...answer, request: { ...answer.request, command: { ...answer.request.command, requestId: 'new-permission' } } }))
+    .toMatchObject({ ok: false, error: { code: 'forbidden' } })
+  expect(f.native(worker.threadId).requests).toHaveLength(1)
+  expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'answer')).toHaveLength(1)
 })

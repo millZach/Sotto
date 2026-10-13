@@ -1,0 +1,109 @@
+{
+  "verifiedAt": "2026-10-13T16:22:12.261Z",
+  "sourceCommit": "77b19c0965f5616413b3a1b410ad74fe6cf14f22",
+  "platform": "win32",
+  "arch": "x64",
+  "buildInputsRevision": "c318b67811062a0c54d58745e0683473804554eb03d0aab985fce7fa46e8e302",
+  "buildSha256": "a9c971078d6c2cdbb29a622026c9ab40e74c3ffa49667e469653d3e639df43dd",
+  "host": {
+    "version": 1,
+    "kind": "sotto-owl-host",
+    "sottoVersion": "0.1.38-owl.20261013.1",
+    "sourceCommit": "77b19c0965f5616413b3a1b410ad74fe6cf14f22",
+    "archive": "Sotto-host-0.1.38-owl.20261013.1-win32-x64.tar.gz",
+    "sha256": "e20cc21524621101cfa30fb4a45f6d3ea75c29d60fad8bc613ebcb45ffe14443",
+    "platform": "win32",
+    "arch": "x64",
+    "archiveChecksumRechecked": true,
+    "extractedArchiveSmokePassed": true
+  },
+  "owl": {
+    "version": "0.1.38-owl.20261013.1",
+    "track": "owl",
+    "packaged": true,
+    "isolatedProfile": true,
+    "providerClientsExcludedFromPath": true,
+    "providersExplicitlyDisconnected": true,
+    "productTestBridgeAbsent": true,
+    "usageFeatureEnabled": true,
+    "figures": {
+      "tokens": {
+        "input": {
+          "knownRows": 0,
+          "rows": 0,
+          "partial": false
+        },
+        "output": {
+          "knownRows": 0,
+          "rows": 0,
+          "partial": false
+        },
+        "cached": {
+          "knownRows": 0,
+          "rows": 0,
+          "partial": false
+        },
+        "cacheWrite": {
+          "knownRows": 0,
+          "rows": 0,
+          "partial": false
+        },
+        "cacheWrite5m": {
+          "knownRows": 0,
+          "rows": 0,
+          "partial": false
+        },
+        "cacheWrite1h": {
+          "knownRows": 0,
+          "rows": 0,
+          "partial": false
+        },
+        "total": {
+          "knownRows": 0,
+          "rows": 0,
+          "partial": false
+        }
+      },
+      "prompts": {
+        "user": 0,
+        "watcher": 0,
+        "wakeUp": 0,
+        "total": 0,
+        "steered": 0
+      },
+      "tokenRecords": 0,
+      "partialTokenRecords": 0,
+      "undatedTokenRecords": 0,
+      "activeThreads": 0,
+      "activeDays": 0
+    },
+    "pageErrors": 0,
+    "screenshot": "usage-owl-watcher-merge-package.png",
+    "installerSha256": "c1415dc5bbecbfe7734ee3a12d131bd1524ab7d9324003ffeb12fc2a0dd71410"
+  },
+  "stable": {
+    "version": "0.1.37",
+    "track": "stable",
+    "packaged": true,
+    "isolatedProfile": true,
+    "providerClientsExcludedFromPath": true,
+    "providersExplicitlyDisconnected": true,
+    "productTestBridgeAbsent": true,
+    "usageFeatureEnabled": false,
+    "dormantPreserved": true,
+    "pageErrors": 0
+  },
+  "commands": [
+    "npm run package:host:owl -- --version 0.1.38-owl.20261013.1 --source 77b19c0965f5616413b3a1b410ad74fe6cf14f22",
+    "npm run package:owl -- --date 20261013 --number 1",
+    "node tools/verify-usage-package.mjs release/win-unpacked owl 0.1.38-owl.20261013.1",
+    "npm run package:dir",
+    "node scripts/verify-owl-features-package.mjs release/win-unpacked stable",
+    "node tools/verify-usage-package.mjs release/win-unpacked stable 0.1.37"
+  ],
+  "installed": false,
+  "published": false,
+  "remoteInstallationVerified": false,
+  "macOSVerified": false,
+  "linuxVerified": false
+}

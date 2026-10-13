@@ -15,13 +15,15 @@ import { resolveModel } from '../shared/modelCatalog'
 import { version as packageVersion } from '../../package.json'
 import { REMOTE_PERMISSION_DENIED } from '../main/agents/authority'
 import { commandFromProtocolV1, managementCommandRefusal } from '../shared/hostProtocol'
-import { REMOTE_SIGN_IN_OPERATIONS, remoteCommandRefusal } from './remoteCommands'
+import { REMOTE_SIGN_IN_OPERATIONS, remoteCommandRefusal, remoteUsageRefusal } from './remoteCommands'
+import { usageLocalClearResultSchema, usageLocalHostReadSchema } from '../shared/usageDashboard'
 import { ProviderSignInRefusal, type ProviderSignIns } from './providerSignIn'
 import { SocketFrames } from './socketFrames'
 import { hostPhonesCommandSchema, type HostPhonesCommand, type PhonesState } from '../shared/phones'
 import { CommandReceipts, type CommandReceipt } from './commandReceipts'
 import type { PhoneTerminals } from '../shared/phoneTerminals'
 import type { WatcherHostRead } from '../shared/watcherHost'
+import type { WatcherThreadTarget } from '../shared/watcher'
 import { visibleWatcherState } from '../shared/watcherVisibility'
 
 const errors: Record<HostErrorCode, string> = {
@@ -193,6 +195,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'atomic-send' || service.supportsAtomicSend === true)
     && (feature !== 'draft-revisions' || service.supportsDraftRevisions === true)
     && (feature !== 'client-updates' || options.clientUpdates === true)
+    && (feature !== 'usage-dashboard' || (service.supportsUsage === true && service.usageRead !== undefined && service.usageRefresh !== undefined && service.usageClear !== undefined))
     && (feature !== 'pull-request-babysit' || service.supportsBabysitting === true))
   /** What this listener offers a client: every feature to a desktop, and to a phone all but the desktop-only ones (ADR-0053). */
   const featuresFor = (peer: Peer): string[] => (peer.desktop ? [...features] : features.filter(feature => !HOST_DESKTOP_FEATURES.includes(feature)))
@@ -462,17 +465,24 @@ export async function startSocketServer(options: SocketServerOptions) {
     const modelId = input.modelId ?? (input.type === 'configure-thread' ? host.threads.find(thread => thread.id === input.threadId)?.modelId : undefined)
     return resolveModel(host.models, modelId)?.providerModes?.filter(mode => mode.allows === 'nothing').map(mode => mode.id) ?? []
   }
-  const command = async (peer: Peer, request: Extract<HostRequest, { op: 'command' }>, ownCard = false): Promise<HostClientShell> => {
-    const digest = createHash('sha256').update(JSON.stringify(request.command)).digest('hex')
+  const command = async (peer: Peer, request: Extract<HostRequest, { op: 'command' }>, ownCard?: WatcherThreadTarget): Promise<HostClientShell> => {
+    const digest = createHash('sha256').update(JSON.stringify(ownCard ? ['watcher-phone-answer', ownCard, request.command] : request.command)).digest('hex')
     const previous = receipts.get(peer.client.clientId, request.id)
     if (previous) {
       if (previous.digest !== digest) throw new Refusal('invalid_request')
       await previous.task
       if (previous.receipt.error) throw new Refusal(previous.receipt.error.code)
-      return shell(peer)
+      const state = shell(peer)
+      return ownCard ? { ...state, error: null } : state
     }
     if (managementCommandRefusal(request.command)) throw new Refusal('forbidden')
     const input = commandFromProtocolV1(request.command)
+    if (ownCard) {
+      if (ownCard.hostId !== hostId || input.type !== 'answer' || input.threadId !== ownCard.threadId) throw new Refusal('forbidden')
+      const state = service.watcherPhone!.state(options.mayAnswer?.(peer.client) ?? false)
+      if (!state.needsYou.some(card => card.target.hostId === ownCard.hostId && card.target.threadId === ownCard.threadId && card.request.id === input.requestId)) throw new Refusal('stale_request')
+      if (!options.mayAnswer?.(peer.client)) throw new Refusal('forbidden')
+    }
     const explicitOwner = 'threadId' in input ? input.threadId : input.type === 'send' ? input.draft?.threadId : peer.selectedThreadId
     if (!ownCard && explicitOwner && hiddenThread(peer, explicitOwner)) throw new Refusal('forbidden')
     if ((input.type === 'send' && input.draft || input.type === 'compose' && input.threadId !== undefined)
@@ -627,12 +637,8 @@ export async function startSocketServer(options: SocketServerOptions) {
         }
         case 'watcher-phone-answer': {
           const { target, command: input } = request.request
-          if (target.hostId !== hostId || input.threadId !== target.threadId) throw new Refusal('forbidden')
-          const state = service.watcherPhone.state(mayAnswer())
-          if (!state.needsYou.some(card => card.target.hostId === target.hostId && card.target.threadId === target.threadId && card.request.id === input.requestId)) throw new Refusal('stale_request')
-          if (!mayAnswer()) throw new Refusal('forbidden')
-          // Reuse the ordinary phone answer path and receipt identity, retaining the authenticated user.
-          const result = await command(peer, { ...request, op: 'command', command: input }, true)
+          // Receipt replay comes before fresh-card admission, retaining the authenticated user and exact target.
+          const result = await command(peer, { ...request, op: 'command', command: input }, target)
           guard()
           if (result.error) throw new Refusal('unavailable')
           return service.watcherPhone.get(mayAnswer())
@@ -768,6 +774,16 @@ export async function startSocketServer(options: SocketServerOptions) {
       case 'subagent-assignments':
         if (!service.subagentAssignments) throw new Refusal('invalid_request')
         return toolRead(() => service.subagentAssignments!(request.request))
+      case 'usage-read':
+        if (!offers(peer, 'usage-dashboard') || !service.usageRead) throw new Refusal('invalid_request')
+        try { return usageLocalHostReadSchema.parse(await service.usageRead(request.query)) } catch { throw new Refusal('unavailable') }
+      case 'usage-refresh':
+        if (!offers(peer, 'usage-dashboard') || !service.usageRefresh) throw new Refusal('invalid_request')
+        try { return usageLocalHostReadSchema.parse(await service.usageRefresh(request.providerIds)) } catch { throw new Refusal('unavailable') }
+      case 'usage-clear':
+        if (!offers(peer, 'usage-dashboard') || !service.usageClear) throw new Refusal('invalid_request')
+        if (remoteUsageRefusal(request.op, options.mayAnswer?.(peer.client) ?? false)) throw new Refusal('forbidden')
+        try { return usageLocalClearResultSchema.parse(await service.usageClear(request.request, peer.client)) } catch { throw new Refusal('unavailable') }
       case 'stage-attachment': {
         if (!service.stageAttachment) throw new Refusal('invalid_request')
         // Up to about 14 MB of base64 in, and 10 MiB held until it is kept: one at a time per peer, on the preview's guard.

@@ -45,7 +45,7 @@ describe('Settings > Cloud iPhone', () => {
     setup()
     await screen.findByLabelText('Key')
     expect(screen.getAllByRole('heading', { level: 3 }).map(heading => heading.textContent)).toEqual(['run.cloud', 'Spending', 'Recent sessions'])
-    expect(screen.getByRole('region', { name: 'run.cloud' })).toHaveAccessibleDescription('Agents test native iOS builds on a run.cloud simulator, and each session asks you first. The build is uploaded to run.cloud, in the EU, and deleted when the session ends.')
+    expect(screen.getByRole('region', { name: 'run.cloud' })).toHaveAccessibleDescription('Agents test iOS builds on a run.cloud simulator, and ask you before each session. Builds go to run.cloud in the EU and are deleted afterwards.')
     expect(screen.getByRole('region', { name: 'Spending' })).toHaveAccessibleDescription('About $0.02 a minute; your first $15 each month is free.')
     for (const label of ['Key', 'Monthly cap', 'Idle sessions end after']) expect(screen.getByLabelText(label).closest('.settings-group')).not.toBeNull()
   })

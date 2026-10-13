@@ -86,6 +86,15 @@ export function planSteps(steps: readonly { text: unknown; status: unknown }[]):
  * and both are drawn by the same row.
  */
 export const THINKING_TITLE = 'Thinking'
+/** The title of a Codex reasoning summary record. */
+export const REASONING_SUMMARY_TITLE = 'Reasoning summary'
+/**
+ * A Codex reasoning summary with no words: Codex reports one for every step a model that keeps its reasoning to itself
+ * takes, and it has nothing to show. Sotto keeps none; an earlier Sotto saved them, and they go when activity is next
+ * merged. Thinking without words is different: it still shows, as the row that says the model thought.
+ */
+export const wordlessReasoningSummary = (record: AgentActivity): boolean =>
+  record.kind === 'reasoning' && record.title === REASONING_SUMMARY_TITLE && !record.text?.trim()
 
 /**
  * Thinking text as a record keeps it. It grows as it streams and stops at the record's detail budget, marked as cut,

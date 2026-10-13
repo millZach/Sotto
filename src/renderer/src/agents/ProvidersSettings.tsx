@@ -96,7 +96,7 @@ export function ProvidersSettings(): ReactNode {
           tabIndex={tab === value ? 0 : -1} onClick={() => setTab(value)} onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); const next = value === 'configuration' ? 'models' : 'configuration'; setTab(next); document.getElementById(`${tabId}-${next}`)?.focus() } }}>{value === 'configuration' ? 'Configuration' : 'Models'}</button>)}</div>
         <div key={`${selected}-${tab}`} id={`${tabId}-panel`} role="tabpanel" aria-labelledby={`${tabId}-${tab}`} className="provider-detail__body">
           {tab === 'configuration' ? <>
-            <div className="provider-connection"><div><h4>Local connection</h4><p>{selected === 'devin' ? 'Install Devin CLI and run devin auth login before connecting.' : `Uses your sign-in in ${CLIENT_NAMES[selected]} on this computer.`}</p></div>
+            <div className="provider-connection"><div><h4>Local connection</h4><p>{selected === 'devin' ? 'Install Devin CLI and run devin auth login before connecting.' : `Uses your ${CLIENT_NAMES[selected]} sign-in on this computer.`}</p></div>
               <Button variant={connected ? 'secondary' : 'primary'} disabled={Boolean(working)} aria-label={`${connected ? 'Disconnect' : status.connection === 'error' ? 'Retry' : 'Connect'} ${label}`}
                 onClick={() => void perform(selected, connected ? 'disconnect' : 'connect')}>{working ? pending[selected] === 'disconnect' ? 'Disconnecting…' : pending[selected] === 'refresh' ? 'Refreshing…' : 'Connecting…' : connected ? 'Disconnect' : status.connection === 'error' ? 'Retry connection' : 'Connect'}</Button>
             </div>
@@ -113,8 +113,8 @@ export function ProvidersSettings(): ReactNode {
                 <Button variant="secondary" disabled={updating || !state.configuration.checkClientUpdates} onClick={() => void check()}>Check again</Button>
               </div>
             </div>
-            {selected === 'devin' && <p className="provider-models__empty">Uses your Devin account and credits. Devin keeps its own history and usage analytics; Sotto's local history setting does not control them.</p>}
-            <p className="provider-models__empty">New threads use the agent selected in Settings → Agents.</p>
+            {selected === 'devin' && <p className="provider-models__empty">Uses your Devin account and credits. Devin keeps its own history and analytics, outside Sotto's control.</p>}
+            <p className="provider-models__empty">Choose what new threads start with under Agents.</p>
           </> : models.length ? <ul className="provider-models" aria-label={`${label} available models`}>{models.map(model => <li key={model.id}><span><strong>{model.name}</strong>{model.reasoningEfforts?.length ? <small>{model.reasoningEfforts.join(' · ')}</small> : null}</span><small>{model.ready ? model.id === inheritedEntryId ? 'Agent setting' : 'Available' : 'Unavailable'}</small></li>)}</ul> : <p className="provider-models__empty">{connected ? 'No models were returned. Refresh this provider to check again.' : `Connect ${label} to load its models.`}</p>}
           {detailError && <p role="alert" className="provider-detail__error">{detailError}</p>}
         </div>
@@ -123,7 +123,7 @@ export function ProvidersSettings(): ReactNode {
     <div className="providers-updates">
       <div>
         <h4>Check for client updates</h4>
-        <p>Asks the npm registry, at most once an hour for each client, which version it publishes. Only a package name is sent. Off, Sotto says nothing about versions and never offers to install one.</p>
+        <p>Asks the npm registry for each client’s latest version, at most hourly. Only the package name is sent.</p>
       </div>
       <Toggle label="Check for client updates" checked={state.configuration.checkClientUpdates}
         onCheckedChange={value => void command({ type: 'configure', patch: { checkClientUpdates: value } })} />

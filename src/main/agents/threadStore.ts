@@ -13,6 +13,8 @@ import { agentVisualSchema, type AgentVisual } from '../../shared/visuals'
 /** The first window a pane is given, and what each later request adds, both counted in turns. */
 export const FIRST_WINDOW_TURNS = 10
 export const LATER_WINDOW_TURNS = 20
+export const RECORDED_USER_MESSAGES_MAX = 128
+export interface RecordedUserMessageIdentity { readonly threadId: string; readonly messageId: string }
 
 /**
  * The projection's shape. A change here means the `messages` table is rebuilt from `events` on the next
@@ -568,6 +570,27 @@ export class ThreadStore {
   /** Whether the thread holds this message: one indexed lookup, never a read of the thread. */
   hasMessage(threadId: string, messageId: string): boolean {
     return this.statement('SELECT 1 AS found FROM messages WHERE thread_id = ? AND message_id = ? LIMIT 1').get(threadId, messageId) !== undefined
+  }
+
+  /** Exact user-message evidence, including an event whose words were removed or rewound. */
+  hasRecordedUserMessage(threadId: string, messageId: string): boolean {
+    return this.statement(`SELECT 1 FROM events WHERE thread_id = ? AND kind IN ('message-added', 'message-replaced')
+      AND json_extract(payload, '$.message.id') = ? AND json_extract(payload, '$.message.role') = 'user' LIMIT 1`)
+      .get(threadId, messageId) !== undefined
+  }
+
+  /** One text-free event scan for a bounded recovery batch, including redacted and rewound messages. */
+  recordedUserMessages(identities: readonly RecordedUserMessageIdentity[]): RecordedUserMessageIdentity[] {
+    if (identities.length > RECORDED_USER_MESSAGES_MAX) throw new RangeError('Too many message identities')
+    if (identities.length === 0) return []
+    return this.statement(`WITH requested(thread_id,message_id) AS (VALUES ${identities.map(() => '(?,?)').join(',')})
+      SELECT DISTINCT thread_id,json_extract(payload,'$.message.id') AS message_id FROM events
+      WHERE thread_id IN (SELECT thread_id FROM requested) AND kind IN ('message-added','message-replaced')
+        AND json_extract(payload,'$.message.role')='user'
+        AND (thread_id,json_extract(payload,'$.message.id')) IN (SELECT thread_id,message_id FROM requested)
+      ORDER BY thread_id,message_id`)
+      .all(...identities.flatMap(identity => [identity.threadId, identity.messageId]))
+      .map(row => ({ threadId: String(row.thread_id), messageId: String(row.message_id) }))
   }
 
   messageCount(threadId: string): number {

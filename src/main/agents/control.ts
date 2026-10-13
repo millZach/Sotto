@@ -17,7 +17,8 @@ import {
 import type { BabysitNews } from './babysitNews'
 import { BABYSIT_REFUSALS, type Babysitter } from './babysitting'
 import { pullRequestAddress } from '../../shared/gitPullRequests'
-import { queuedWakeUpText, isWatcherNews, type WakeUpNews } from './wakeUp'
+import { queuedWakeUpText, isRestartNews, isWatcherNews, type WakeUpNews } from './wakeUp'
+import type { UsagePromptRecorder } from './usageService'
 import type { WatcherEvent } from '../../shared/watcherNews'
 import type { CheckpointObservation, PullRequestObservation } from './watcherEvidence'
 import { nearestReasoningEffort, resolveNewThreadPermission } from '../../shared/newThreadDefaults'
@@ -145,6 +146,15 @@ class WakeUpNoLongerDue extends Error {
  * What the coordinator asks of babysitting before a wake-up goes (ADR-0061 decision 9): whether each part may still go,
  * and whether the thread has Sotto's tool, which the wording names.
  */
+/** What the coordinator asks of resuming after a restart, and tells it (ADR-0076). */
+export interface RestartResumeHooks {
+  /** Whether a resume note may still go: the feature and its setting are on. */
+  due(): boolean
+  /** A thread's resume note is going to its provider now. */
+  sending(threadId: string): void
+  /** It did not go after all. */
+  unsent(threadId: string): void
+}
 export interface WakeUpGuard {
   /** False once the babysitting the news is of ended quietly or by the switch; a last wake-up for an ending still goes. */
   due(threadId: string, news: BabysitNews): boolean
@@ -242,6 +252,8 @@ export class AgentControl {
   private readonly followupStore: FollowupStore
   private babysitting: Pick<Babysitter, 'start' | 'stop'> | undefined
   private wakeUpGuard: WakeUpGuard | undefined
+  /** Resuming after a restart (ADR-0076): whether a note may still go, and who hears that one is going. Absent where the Owl list keeps it off. */
+  private restartHooks: RestartResumeHooks | undefined
   private readonly threadActions = new Map<string, Promise<unknown>>()
   /** How many lanes of each thread's own work are running; ephemeral, like the global lane's own flag. */
   private readonly busyThreads = new Map<string, number>()
@@ -415,6 +427,8 @@ export class AgentControl {
     historyEnabled?: () => boolean
     /** Release gate only; the saved Watcher record is retained on either track. */
     watcherEnabled?: boolean
+    /** Numeric-only Owl history. It never gates or retries a provider send. */
+    usage?: UsagePromptRecorder
     observeActiveThread?: boolean
     turns?: TurnRecorder
     authority?: Authority
@@ -1858,20 +1872,26 @@ export class AgentControl {
    * wake-up goes. Given before `start`, so no wake-up restored from the queue can go unasked.
    */
   useBabysitting(babysitting: Pick<Babysitter, 'start' | 'stop'>, guard?: WakeUpGuard): void { this.babysitting = babysitting; this.wakeUpGuard = guard }
+  /** Resuming after a restart (ADR-0076): given before start, so a resume note restored from the queue is asked about too. */
+  useRestartResume(hooks: RestartResumeHooks): void { this.restartHooks = hooks }
   /**
    * Whether a wake-up holds news that may no longer go: the last line of defence behind withdrawal, so that whatever
    * order a stop, the switch and the queue run in, a babysitting ended quietly or by the switch sends nothing after.
    */
   private wakeUpOutdated(threadId: string, item: Pick<QueuedFollowup, 'wakeUp' | 'news'>): boolean {
     const guard = this.wakeUpGuard
+    // A resume note goes only while the feature and its setting are on (ADR-0076), so one saved in the queue goes nowhere else.
     return item.wakeUp === true && (item.news ?? []).some(news => isWatcherNews(news)
       ? this.dependencies.watcherEnabled !== true || news.events.some(event => !this.watcherHooks?.wakeDue?.(event))
-      : guard !== undefined && (!guard.due(threadId, news) || (guard.current !== undefined && JSON.stringify(guard.current(threadId, news)) !== JSON.stringify(news))))
+      : isRestartNews(news) ? this.restartHooks?.due() !== true
+        : guard !== undefined && (!guard.due(threadId, news) || (guard.current !== undefined && JSON.stringify(guard.current(threadId, news)) !== JSON.stringify(news))))
   }
   private pruneWakeUp(threadId: string, id: string): Promise<void> {
     const guard = this.wakeUpGuard
-    return this.followupStore.pruneWakeUp(id, news => isWatcherNews(news) ? news.events.length > 0 : !guard || guard.due(threadId, news),
+    return this.followupStore.pruneWakeUp(id, news => isWatcherNews(news) ? news.events.length > 0 : isRestartNews(news) ? this.restartHooks?.due() === true : !guard || guard.due(threadId, news),
       items => queuedWakeUpText(items, { tool: guard?.tool(threadId) ?? false }), news => {
+        // A resume note is no pull request's news: babysitting has nothing to say of it (ADR-0076).
+        if (isRestartNews(news)) return news
         if (!isWatcherNews(news)) return guard?.current ? guard.current(threadId, news) : news
         const events = news.events.filter(event => this.dependencies.watcherEnabled === true && this.watcherHooks?.wakeDue?.(event))
         return events.length ? { ...news, events } : undefined
@@ -2497,12 +2517,15 @@ export class AgentControl {
           } : undefined
           // News freshness and stopped participation both reach the native writer without changing origin.
           const writeGuard = item.news?.some(isWatcherNews) ? () => { validate(); queueGuard?.() } : queueGuard
+          // The turn this starts is the resumed one, which counts the resumes before it (ADR-0076 decision 6).
+          if (item.news?.some(isRestartNews)) this.restartHooks?.sending(threadId)
           await this.dispatch({ type: 'send', commandId: item.commandId!, threadId, messageId: item.messageId!, text: item.text.trim(), attachments: item.attachments, ...(item.skills ? { skills: item.skills } : {}), ...(item.files ? { files: item.files } : {}),
             expectedLastUserMessageId: lastUserMessageIdOf(this.thread(threadId)), ...(item.wakeUp ? { wakeUp: true as const } : {}) }, turn, validate, item.wakeUp ? undefined : item.draftId,
             this.localClient, undefined, undefined, writeGuard)
           await this.followupStore.settle(item.id, 'accepted')
         } catch (error) {
           failure = error instanceof CheckoutSendRefusal ? error.queuedMessage() : error instanceof Error ? error.message : first.wakeUp ? 'Could not send this wake-up.' : 'Could not dispatch this follow-up.'
+          if (first.news?.some(isRestartNews)) this.restartHooks?.unsent(threadId)
           if (claimed && error instanceof WakeUpNoLongerDue) { await this.pruneWakeUp(threadId, first.id); requeued = true }
           else if (claimed || first.watcherOperationId) {
             const item = this.followupStore.get().items.find(i => i.id === first.id)
@@ -3287,6 +3310,12 @@ export class AgentControl {
           endLoan = lendSendStages(command.commandId, stages)
         }
         writeGuard?.()
+        if (prompt && provider) {
+          try { this.dependencies.usage?.submitPrompt({ providerId: provider, threadId: prompt.threadId,
+            messageId: prompt.messageId, modelId: this.thread(prompt.threadId).modelId, at: new Date().toISOString(),
+            kind: wakeUp ? 'wake-up' : origin ? 'watcher' : 'user', inputKind: command.type === 'steer' ? 'steer' : 'send' }) }
+          catch { /* A usage failure cannot refuse or resend the user's message. */ }
+        }
         result = await (writeGuard && this.dependencies.host.executeFromWatcher
           ? this.dependencies.host.executeFromWatcher(hostCommand, writeGuard) : this.dependencies.host.execute(hostCommand)).catch(error => {
           if (turn) turn.failureCode = 'provider-failed'
@@ -3300,6 +3329,10 @@ export class AgentControl {
         if (endLoan && !result?.accepted) stages?.close()
       }
     } catch (error) {
+      if (prompt) {
+        try { this.dependencies.usage?.discardPrompt(prompt.threadId, prompt.messageId) }
+        catch { /* Only usage metadata is affected. */ }
+      }
       this.outbox = this.outbox.filter(o => o.id !== command.commandId)
       if ((prompt || atomicDigest) && draftId && threadId) this.setDelivery(threadId, draftId, 'failed')
       await this.persist()
@@ -3372,6 +3405,10 @@ export class AgentControl {
       if (!result.uncertain && answerIntent) { this.recordAnsweredRequest(answerIntent); this.recordAtomicDelivery(answerIntent) }
     }
     this.outbox = this.outbox.filter(o => o.id !== command.commandId)
+    if (prompt && !result.accepted && !result.uncertain) {
+      try { this.dependencies.usage?.discardPrompt(prompt.threadId, prompt.messageId) }
+      catch { /* Only a definitive refusal removes pending numeric evidence. */ }
+    }
     await this.persist()
     if (!result.accepted && !result.uncertain) {
       if (turn) turn.failureCode = 'provider-failed'
@@ -3591,6 +3628,10 @@ export class AgentControl {
             ? thread !== undefined && isThreadProviderConnected(snapshot, thread) && thread.historyStatus !== 'loading' && thread.historyStatus !== 'error'
               && !thread.requests.some(r => r.id === item.requestId) : thread?.status === 'idle'
       if (!confirmed) continue
+      if (message && item.threadId && item.messageId) {
+        try { this.dependencies.usage?.acceptPrompt(item.threadId, item.messageId) }
+        catch { /* The exact echo still settles native delivery. Numeric evidence can recover separately. */ }
+      }
       if (item.type === 'configure-thread' && this.settingsDispatching.has(item.id)) this.settledSettings.add(item.id)
       // A disappeared question does not prove that our answer was accepted.
       // Only the exact adapter acknowledgement above can retire retained content.

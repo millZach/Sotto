@@ -38,6 +38,7 @@ const customSettings = {
   browserWithoutAsking: false,
   visualsInThreads: false,
   babysitPullRequests: false,
+  resumeThreadsAfterRestart: false,
   watcherInFlightLimit: 6,
   reducedMotion: 'on',
   microphoneId: 'microphone-1',
@@ -117,6 +118,11 @@ describe('settings', () => {
     expect(parseSettings({}).babysitPullRequests).toBe(true)
     expect(parseSettings({ babysitPullRequests: false }).babysitPullRequests).toBe(false)
     expect(parseSettings({ babysitPullRequests: 'no' }).babysitPullRequests).toBe(true)
+  })
+  it('resumes threads after a restart for older profiles, keeps it off once turned off, and recovers an unusable value (ADR-0076)', () => {
+    expect(parseSettings({}).resumeThreadsAfterRestart).toBe(true)
+    expect(parseSettings({ resumeThreadsAfterRestart: false }).resumeThreadsAfterRestart).toBe(false)
+    expect(parseSettings({ resumeThreadsAfterRestart: 'no' }).resumeThreadsAfterRestart).toBe(true)
   })
   it('defaults watcher capacity to four and accepts only integers from one to eight', () => {
     expect(parseSettings({}).watcherInFlightLimit).toBe(4)
@@ -299,6 +305,7 @@ describe('settings', () => {
       browserWithoutAsking: true,
       visualsInThreads: true,
       babysitPullRequests: true,
+      resumeThreadsAfterRestart: true,
       version: 1,
       theme: 'system',
       appearance: 'dark',

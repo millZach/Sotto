@@ -38,7 +38,7 @@ test('new threads inherit Agents despite a saved Grok override and wait if that 
     await page.reload()
     await openPage(page, 'Settings')
     await page.getByRole('tab', { name: 'Providers', exact: true }).click()
-    await expect(page.getByText('New threads use the agent selected in Settings → Agents.')).toBeVisible()
+    await expect(page.getByText('Choose what new threads start with under Agents.')).toBeVisible()
     await expect(page.getByRole('combobox', { name: /default thread model/ })).toHaveCount(0)
     await mkdir(evidence, { recursive: true })
     await page.screenshot({ path: join(evidence, 'providers-inherit-agent.png'), animations: 'disabled' })

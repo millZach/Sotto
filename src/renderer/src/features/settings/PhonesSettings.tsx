@@ -45,7 +45,7 @@ function NameField({ name, defaultName, onSave }: { readonly name: string; reado
     if (next !== name) void onSave(next).then(saved => setFailed(!saved))
     else { setDraft(name); setFailed(false) }
   }
-  return <Field label="Name on phones" {...(failed ? { error: 'The name could not be saved. Phones still use the previous name. Try again.' } : {})} description={`Phones list this computer’s threads under this name. Leave it empty to use ${defaultName}.`}>
+  return <Field label="Name on phones" {...(failed ? { error: 'The name could not be saved. Phones still use the previous name. Try again.' } : {})} description={`How this computer appears on phones. Leave it empty to use ${defaultName}.`}>
     <input className="tt-input" value={draft} placeholder={defaultName} maxLength={63} spellCheck={false}
       onChange={event => setDraft(event.target.value)} onBlur={save}
       onKeyDown={event => { if (isCompositionKey(event.nativeEvent)) { event.stopPropagation(); return } if (event.key === 'Enter') { event.preventDefault(); save() } else if (event.key === 'Escape' && draft !== name) { event.preventDefault(); event.stopPropagation(); setDraft(name) } }} />
@@ -151,13 +151,13 @@ export function PhonesSettings({ phoneAccess, phoneAccessName, onUpdateSettings,
   return <div className="hosts-settings phones-settings">
     {!localHostRunning ? <div className="hosts-notice phones-needs-host">
       <Info size={16} aria-hidden="true" />
-      <p>Phone access needs the local host, which is off. Phones reach the threads this computer runs. Turn on Run the local host under Hosts, then restart Sotto.</p>
+      <p>Phone access needs the local host. Turn on Run the local host under Hosts, then restart Sotto.</p>
       <Button variant="secondary" onClick={onOpenHosts}>Go to Hosts</Button>
     </div> : null}
     <div className="phones-switch">
       <Toggle label="Let phones connect" checked={phoneAccess} disabled={!bridge || (!localHostRunning && !phoneAccess)}
         onCheckedChange={enabled => { setError(null); void onUpdateSettings({ phoneAccess: enabled }).then(saved => setAccessSaveFailed(!saved)) }}
-        description={`Sotto adds this computer to Tailscale Serve on port 8443, or 10000 when another app uses 8443, so phones on your tailnet can find it. Only phones you pair can connect. Turning this off removes the setting.`} />
+        description="Adds this computer to Tailscale Serve, on port 8443 or 10000, while this is on and Sotto is open. Only phones you pair can connect." />
       {accessSaveFailed ? <p className="tt-field__error" role="alert">Phone access could not be saved. Nothing was changed. Try again.</p> : null}
     </div>
     <ol className="phones-steps" aria-label="Setup" aria-busy={starting || undefined}>

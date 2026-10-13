@@ -62,6 +62,12 @@ The conversation projection removes only Sotto's exact native tool-routing foote
 
 October 12 review correction: Stop all records a pending and completed command receipt under the authenticated phone's original request ID. Optional receipt.watcherStop is either {status:"ok",results:[{target,status,message}]} (including partial, refused and uncertain target results) or the original WatcherRefusal. It carries no page snapshot. Read that receipt and watcher-phone-read after a lost acknowledgement; never retry automatically. An explicit retry with the same ID and confirmation returns that retained outcome with fresh state and performs no second stop; changing the confirmation under the same ID refuses invalid_request. Another pairing sees unknown. These in-memory transport receipts share the existing bounded five-minute settled replay window and do not survive a listener restart; unknown still requires a fresh read and user review of a new preview. No feature name, request shape or stop reply changes. SottoCore Receipt.watcherStop decodes WatcherStopReceipt; old clients ignore this optional field.
 
+October 13 Stop all client-isolation correction: the main-owned confirmation store retains at most sixteen previews per client. The desktop room is its own client; each paired phone uses its authenticated client ID, including after reconnect. Opening another preview always retains the newest and prunes only that client's oldest; no phone can block or evict the desktop room's or another phone's previews. Confirmation checks the client before consuming its preview, as well as expiry, scope, ownership and the live connection guards. Pruned IDs keep the existing TARGET_CHANGED code because v1 has no dedicated preview-replacement refusal. Unavailable-preview wording names expiry or replacement by a newer preview, rather than claiming the threads changed; actual scope changes still name the changed threads. Total retained previews are bounded by the number of clients, and expiration or consumption releases space. This replaces the shared-capacity refusal design. No refusal code, feature name or wire shape changes.
+
+October 13 answer replay correction: an authenticated, opted-in phone can explicitly retry the same watcher-phone-answer request ID, owning target and exact command to read the recorded outcome with fresh state. Receipt lookup and digest comparison happen before checking the current card or Can answer; replay performs no second answer and needs no new answer grant. A changed target or command under the same ID refuses invalid_request. A new request still checks its owning target, current card and Can answer at admission and the writer. No refusal code, feature name or wire shape changes, and unconfirmed mutations are never retried automatically.
+
+
+
 ## Versions and features
 
 Every host advertises two things beside `v`:
@@ -113,6 +119,16 @@ Every other client keeps host pings every 25 seconds. Host pings and Node deskto
 The phone allows ten seconds per liveness round and requires two consecutive silent rounds before closing. A pong, received message or growth in URLSession's received-byte counter resets silence; an outstanding request within its deadline prevents a silent round. Detail and observe requests have 120-second deadlines, so pending large reads do not depend on the byte counter. URLSession does not guarantee partial-frame counter updates; a slow unsolicited push without such updates remains a physical-device verification limitation. With no request or progress, the phone closes at about 60 seconds after opening. An unanswered detail expires at 120 seconds and the next two silent checks close by about 160 seconds.
 
 ### Requests
+
+The optional `usage-dashboard` feature is advertised only when the owning host's startup Usage gate is enabled and its service implements all three operations. A stable host cannot be enabled by a client's hello. Older hosts remain usable without this capability.
+
+| Usage operation | Fields | Result |
+| --- | --- | --- |
+| `usage-read` | `query`: bounded `UsageLocalQuery`, with optional calendar dates, IANA time zone, provider/model filters and daily buckets | Strict `UsageLocalHostRead`: aggregate activity, metadata, bounded model/daily/hourly rows, cached native limits and persistence status. |
+| `usage-refresh` | `providerIds?` | Strict `UsageLocalHostRead` containing native account limits. It sends no model prompt. |
+| `usage-clear` | `request: { expectedRevision }` | Strict `UsageLocalClearResult`, cleared or stale. Requires the authenticated client's existing remote-answer policy and a fresh revision. |
+
+Queries contain no desktop host ID; the paired connection owns that scope, and the desktop annotates each answer with its host ID. Numeric Usage payloads contain no prompt or reply text, native session IDs, titles, folders, account addresses, keys or protocol bodies. Read and refresh grant nothing. Clear affects the host's numeric history only and never answers a provider permission.
 
 Each request is `{ v: 1, id, session, op, ... }`: `id` is the client's own (at most 512 characters) and comes back on the response, and `session` is the one the socket opened with. Requests are strict: a field the host does not know makes the request unreadable.
 

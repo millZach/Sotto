@@ -876,8 +876,12 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('check-reasoning'), provider: subscriptionProviderSchema }).strict(),
   z.object({ type: z.literal('check-client-updates') }).strict(),
   z.object({ type: z.literal('update-client'), provider: providerIdSchema, force: z.boolean().optional() }).strict(),
-  /** Puts clients in the machine's one-at-a-time update line and answers at once; each client's reading says how it went. */
-  z.object({ type: z.literal('queue-client-updates'), providers: z.array(providerIdSchema).min(1).max(4) }).strict(),
+  /**
+   * Puts clients in the machine's one-at-a-time update line and answers at once; each client's reading says how it went.
+   * `hostId` names the machine for Update all (ADR-0077), which need not be the selected one; the desktop's router reads it
+   * and never sends it on.
+   */
+  z.object({ type: z.literal('queue-client-updates'), providers: z.array(providerIdSchema).min(1).max(4), hostId: z.uuid().optional() }).strict(),
   /** Takes clients that are still waiting out of the update line. One already running is left to finish. */
   z.object({ type: z.literal('cancel-client-updates'), providers: z.array(providerIdSchema).min(1).max(4) }).strict(),
   z.object({ type: z.literal('dismiss-client-updates') }).strict(),

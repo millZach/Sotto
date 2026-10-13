@@ -1,10 +1,10 @@
 # Sotto Owl is a Windows preview release track
 
-Accepted by Zach on October 9, 2026. Amended October 10, 2026, when Zach made Owl the stage every change passes through, and when Zach picked the night sky (below). **Number provisional until merge:** 0072 is free on `origin/main` at `1d6295c7a`, where 0071 is local transcription, and the open #906 claims 0070; Watcher's decision moved to 0073 for the same reason. Recheck and renumber all references before merging (docs/agents/domain.md).
+Accepted by Zach on October 9, 2026. Amended October 10, 2026 for the now-superseded promotion rule and the night sky, October 12 for the feature list, and October 13 for stable releases from main (below). **Number provisional until merge:** 0072 is free on `origin/main` at `1d6295c7a`, where 0071 is local transcription, and the open #906 claims 0070; Watcher's decision moved to 0073 for the same reason. Recheck and renumber all references before merging (docs/agents/domain.md).
 
 Zach chose [T3 Code's nightly model](https://github.com/pingdotgg/t3code/blob/main/docs/operations/release.md) to run Watcher before it reaches main. **Sotto Owl** is the preview release track and its builds. **Watcher** is the coordinating thread, a separate thing. Owl replaces Sotto on a machine: app ID, product name, executable, installer identity, shortcuts and data directory stay Sotto's. Of the release artifacts, only the installer filename and release title say Sotto Owl. The running build says it from the version-derived track: its window title, tray tooltip and version lines read "Sotto Owl", and the sidebar's top row and the strip show the Sotto mark alone as a 24-pixel tile where stable shows the mark beside "Sotto" (Zach's choice, from the approved mock-up). Sentences in which Sotto is the app or the speaker, and the window controls' names, keep "Sotto".
 
-An Owl version is `<next stable patch>-owl.<UTC YYYYMMDD>.<positive daily number>`. Package version `0.1.36` produces `0.1.37-owl.20261011.1`. The release lead chooses the day's next number. `package:owl` overrides packaged metadata without changing either source package manifest. Builds come from `main` (see October 10 below).
+An Owl version is `<next stable patch>-owl.<UTC YYYYMMDD>.<positive daily number>`. Package version `0.1.36` produces `0.1.37-owl.20261011.1`. The release lead chooses the day's next number. `package:owl` overrides packaged metadata without changing either source package manifest. Builds come from `main` (see October 13 below).
 
 Windows Owl releases are GitHub prereleases on the existing public `millZach/Sotto-releases` repository, never marked latest, with `owl.yml` and NSIS blockmaps. The installed electron-updater GitHub provider selects the `owl` prerelease identifier from Atom tags, ignoring stable tags even when GitHub marks old stable releases as prereleases. A validating provider requires an Owl manifest version matching that tag before an offer can become downloadable, including the upstream provider's `latest.yml` fallback within the selected Owl release. Setting a channel enables downgrades upstream, so Owl explicitly disables them. The normal semantic-version gate admits only a strictly newer build. Stable keeps its existing `allowPrerelease = false`, GitHub latest release and `latest.yml` behavior. Owl is never made GitHub's latest release and receives no stable manifest for publication.
 
@@ -15,6 +15,8 @@ This track is Windows only. macOS still has no updater (ADR-0001); a later Owl M
 Installing a stable installer switches back to its stable feed. Before Watcher reached `main`, stable dropped Watcher's records when it saved the shared profile; [the verification note](../verification/2026-10-09-sotto-owl.md) records those load and save paths. With Watcher's code on `main` behind the gate below, stable reads and keeps those records, so the profile moves between the two tracks without losing them.
 
 ## October 10, 2026: every change reaches Owl before Sotto
+
+**Superseded in part by “October 13, 2026: the switch is the rule” below.** The stable-source promotion requirement, Mac source rule and subsequent-stable-release statement are historical. The daily Windows Owl track and Watcher gate remain in force.
 
 Zach chose to make Owl the stage every change passes through, the way T3 Code's stable releases promote a nightly its users already ran:
 
@@ -37,10 +39,26 @@ Unpackaged development, e2e and design runs may use comma-separated `SOTTO_OWL_F
 
 Stable release packaging on Windows and Mac, and Owl packaging on Windows, launch the packaged app on an owned throwaway profile with all feature overrides set to 1. `scripts/verify-owl-features-package.mjs` reads the real startup answers and fails stable packaging if a held feature is on or a sent feature is off, and Owl packaging if any listed feature is off. The profile is removed after the check. Directory packaging, Linux packaging and CI's Package (Windows) are unchanged.
 
-Sending a feature to stable changes only its entry's `sentToStable: false` to `sentToStable: true`. The change passes through Owl before the next stable promotion. Once stable has carried the feature, its code's switches can be removed in a later change; keep the sent entry as the record of the decision.
+**The following Owl-first timing clause is superseded by the October 13 switch rule below.** Sending a feature to stable changes only its entry's `sentToStable: false` to `sentToStable: true`. The change passes through Owl before the next stable promotion. Once stable has carried the feature, its code's switches can be removed in a later change; keep the sent entry as the record of the decision.
+
+October 12, 2026: Zach chose Usage (ADR-0078) for every connected computer in its first Owl version. This extends the preview distribution to plain Node **host archives** built from the desktop Owl's exact source and full version, attached to the same prerelease. Each host gates its own features from its packaged version; a client cannot activate a stable collector. Desktop preview builds and their updater remain Windows only. macOS and Linux can run matching Owl headless hosts without gaining an Owl desktop release or updater.
 
 ## October 13, 2026: Linux stable uses the promoted source too
 
-Linux still has no Owl build. `package:linux:stable` checks the newest published Windows Owl’s exact source and packages its stable base version, as Windows and Mac do. It checks the tarball and the real stable Owl feature answers in an isolated nested Hyprland session. The unchecked `package:linux` stays available for offline verification.
+**Superseded in part by “October 13, 2026: the switch is the rule” below.** The Owl source, version and promotion requirements are historical. Linux artifact checks, nested Hyprland isolation and the non-publishable rehearsal remain in force.
+
+Linux still has no Owl desktop build. `package:linux:stable` checks the newest published Windows Owl’s exact source and packages its stable base version, as Windows and Mac do. It checks the tarball and the real stable Owl feature answers in an isolated nested Hyprland session. The unchecked `package:linux` stays available for offline verification.
 
 `release-linux.mjs` finishes the pacman package, recipe, `.SRCINFO` and checksum lines without installation or publication. The generated recipe and `.SRCINFO` are recorded in the later Release PR after publication. An explicit rehearsal version runs the same checks from any clean commit while skipping promotion; its artifacts are marked not publishable and cannot be consumed by the stable finishing command.
+
+## October 13, 2026: the switch is the rule
+
+Zach corrected the release rule: “there is a switch for Owl, so Owl features sit behind a switch other features go straight to stable.” This supersedes the October 10 stable promotion rule, its Mac source requirement, the October 12 Owl-first sending clause and the October 13 Linux promotion note. Their history remains above.
+
+Owl features in `src/shared/owlFeatures.ts` are on in Owl and off in stable until Zach sends them by setting `sentToStable: true`. Every part still asks the list before it exists. Stable keeps held features' saved records whole. Everything else goes straight to stable.
+
+Stable is cut from a clean commit on `origin/main` whose required Gates (Windows) and Package result CI checks succeeded for that exact commit. `release:check` refreshes main, reads the public GitHub check-runs and release APIs without credentials, and records the source, checks and version in the ignored release file. The default version is the next patch of the source `package.json`; an explicit plain stable version is allowed. Either must exceed every published plain stable version, including superseded stable releases now marked prerelease. Packaging rechecks the clean source, main membership and saved evidence, overrides only packaged metadata and guards both source manifests.
+
+Windows, Apple silicon Mac, Linux desktop and release host archives use that checked source and stable version. Stable desktop packaging still launches the real packaged app and verifies held Owl features off and sent features on. Linux's rehearsal skips stable eligibility and is clearly marked not publishable; stable finishing refuses it.
+
+Owl stays a Windows preview track built from main once a day when it has changed, with Owl features on and the next-patch version rule unchanged. A published Owl build is no prerequisite for stable on any platform.

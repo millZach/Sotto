@@ -183,6 +183,8 @@ import { AgentCredentials } from './agents/credentials'
 import { migrateDesktopKey } from './settings/migrateDesktopKey'
 import { SecureSettings } from './agents/secureSettings'
 import { registerSubagentIpc } from './agents/subagentIpc'
+import { registerUsageIpc } from './agents/usageIpc'
+import { USAGE_RENDERER_ARGUMENT } from '../shared/usageDashboard'
 import { SUBAGENTS_CHANGED } from '../shared/subagents'
 import { coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from './agents/control'
 import { AgentStateBroadcaster } from './agents/agentStateBroadcast'
@@ -579,11 +581,12 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     : join(__dirname, platform === 'linux' ? '../../build/icon.png' : '../../build/icon.ico')
   // Packaging can override the version without editing the source manifest, so it is read from the app (ADR-0072).
   const appRunningVersion = runningVersion(app.getVersion(), process.versions.electron, appVersion)
-  const hostVersion = hostReleaseVersion(appRunningVersion, appVersion)
   const owlFeatures = owlFeaturesForRun({ version: appRunningVersion, isPackaged: app.isPackaged,
     overrides: process.env.SOTTO_OWL_FEATURES, watcherOverride: process.env.SOTTO_WATCHER_ENABLED })
   // Existing Watcher options wrap the Owl feature list for branches in flight.
   const watcherEnabled = owlFeatures.watcher
+  const usageEnabled = owlFeatures.usage
+  const hostVersion = hostReleaseVersion(appRunningVersion, appVersion, usageEnabled)
   let repaintOmarchy: () => void = () => undefined
   const omarchyTheme = new OmarchyThemeMonitor(platform, homedir(),
     () => repaintOmarchy(), logOperational)
@@ -639,8 +642,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const windows = new WindowManager({
     title: buildName,
     createWindow: options => {
-      const window = new BrowserWindow(watcherEnabled && options.webPreferences?.additionalArguments?.includes('--sotto-renderer-role=main')
-        ? { ...options, webPreferences: { ...options.webPreferences, additionalArguments: [...options.webPreferences.additionalArguments, WATCHER_RENDERER_ARGUMENT] } } : options)
+      const mainRenderer = options.webPreferences?.additionalArguments?.includes('--sotto-renderer-role=main')
+      const featureArguments = mainRenderer ? [...(watcherEnabled ? [WATCHER_RENDERER_ARGUMENT] : []), ...(usageEnabled ? [USAGE_RENDERER_ARGUMENT] : [])] : []
+      const window = new BrowserWindow(featureArguments.length
+        ? { ...options, webPreferences: { ...options.webPreferences, additionalArguments: [...(options.webPreferences?.additionalArguments ?? []), ...featureArguments] } } : options)
       window.webContents.on('before-input-event', (_event, input) => {
         window.webContents.setIgnoreMenuShortcuts(terminalTakesMenuShortcut(input, terminalFocus.has(window.webContents), platform))
       })
@@ -700,7 +705,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const windowInFront = (): boolean => BrowserWindow.getAllWindows().some(window => window.getTitle() === buildName && window.isVisible() && !window.isMinimized()
     && (window.isFocused() || (windowBlurredAt !== 0 && Date.now() - windowBlurredAt < 45_000)))
   const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
-    directory: userDataPath, credentials, watcherEnabled,
+    directory: userDataPath, credentials, watcherEnabled, usageEnabled, resumeAfterRestart: owlFeatures['resume-after-restart'],
     ...(app.isPackaged ? { claudeHistoryModulePath: join(process.resourcesPath, 'claude-sdk', 'sdk.mjs') } : {}),
     settings: () => workingCopySettings, writingSettings: () => settings.get(),
     historyEnabled: () => agentHistoryEnabled,
@@ -1339,6 +1344,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         copyPath: async request => copyHostPath(await hostRouter.threadFilePath(request)),
       })
       const cleanupSubagents = registerSubagentIpc(ipcMain, agentHost, () => windows.getTrustedRenderers(), change => windows.sendToMain(SUBAGENTS_CHANGED, change), hostRouter)
+      const cleanupUsage = registerUsageIpc(ipcMain, { read: query => hostRouter.usageRead(query),
+        refresh: query => hostRouter.usageRefresh(query), clear: query => hostRouter.usageClear(query) }, () => windows.getTrustedRenderers(), usageEnabled)
       const checkpointIntegration = connectCheckpoints({ historyEnabled: () => agentHistoryEnabled, files, directory: userDataPath, host: agentHost, control: agentControl, registry: threadRegistry,
         report: () => { logOperational('checkpoint-unavailable') } })
       agentHost.setMutationGuard(checkpointIntegration.canMutate)
@@ -1524,6 +1531,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         cleanupRequestDrafts()
         cleanupFiles()
         cleanupSubagents()
+        cleanupUsage()
         cleanupTerminals()
         worktreeCleanup?.dispose()
         cleanupTools()

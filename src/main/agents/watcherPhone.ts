@@ -7,7 +7,6 @@ import type { ClientIdentity } from './hostService'
 
 /** A phone reads the room, never the persisted control record or the desktop's aggregate shell. */
 export class WatcherPhoneService {
-  private readonly previews = new Map<string, { clientId: string; expires: number }>()
   constructor(private readonly control: AgentControl, private readonly watcher: WatcherService) {}
   state(mayAnswer: boolean): WatcherPhoneState {
     const room = this.watcher.state(), snapshot = this.watcher.phoneSnapshot()
@@ -98,21 +97,16 @@ export class WatcherPhoneService {
     return this.control.answerWatcherPhoneCard(command, client, decisionId, guard)
   }
   prepareStop(client: ClientIdentity): WatcherPhonePrepareStopResult {
-    for (const [id, preview] of this.previews) if (preview.expires < Date.now()) this.previews.delete(id)
-    if (this.previews.size >= 64) return watcherRefusal('IN_FLIGHT_LIMIT', 'Too many Stop all previews are open. Wait a minute and review again.', true)
-    const preview = this.watcher.prepareStopAll()
+    const preview = this.watcher.prepareStopAll(client.clientId)
     if (preview.status === 'refused') return preview
-    this.previews.set(preview.confirmationId, { clientId: client.clientId, expires: Date.parse(preview.expiresAt) })
     const state = this.state(false)
     return { ...preview, targets: preview.targets.map(target => ({ ...target,
       title: state.watchedThreads.find(row => row.target.hostId === target.hostId && row.target.threadId === target.threadId)?.title ?? 'Unavailable thread',
       provider: state.watchedThreads.find(row => row.target.hostId === target.hostId && row.target.threadId === target.threadId)?.provider ?? null })) }
   }
   async stop(confirmationId: string, client: ClientIdentity, guard: () => void, mayAnswer: () => boolean): Promise<WatcherPhoneStopResult> {
-    const preview = this.previews.get(confirmationId)
-    if (!preview || preview.clientId !== client.clientId || preview.expires < Date.now()) return watcherRefusal('TARGET_CHANGED', 'Review Stop all again on this phone. Nothing was stopped.')
-    guard(); this.previews.delete(confirmationId)
-    const result = await this.watcher.stopAll(confirmationId, guard)
+    guard()
+    const result = await this.watcher.stopAll(confirmationId, guard, client.clientId)
     return result.status === 'refused' ? result : { status: 'ok', state: this.state(mayAnswer()), results: result.results }
   }
   currentThreadId(): string | undefined { return this.watcher.state().current?.target.threadId }
