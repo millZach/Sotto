@@ -66,6 +66,17 @@ Run 38434517864 (job 115425151496, draft #946 at `9df5f627b`) compiled the revie
 - **`testWatchersNewWordsLeaveAReaderOfEarlierMessagesWhereTheyAre`: the journey.** Its first swipe reached the conversation's start, with the first message at 174 points under a band that starts at 146. Its pulls past the start were XCTest's default swipe, 200 points in under a fifth of a second. The recording shows each one only bouncing the page, with no refresh starting. The hierarchy afterwards has no new words, so Watcher's page was never read again, and the journey waited for words that couldn't come. The app wasn't at fault: nothing pulled far enough to ask it.
 - **The fix.** The journey now pulls from just under the header to near the foot of the screen, slowly, down the trailing margin, and holds a moment before letting go. It waits ten seconds for the new words and pulls up to three times. It now also checks the other half of what it proves: once the reader scrolls back down, Watcher's new words are in view above the box (`watcher-back-at-newest-dark`).
 
+## Sotto Bug Bot on #1005 (October 13)
+
+With the fourth run's fix, CI was green on #1005, every journey included. Sotto Bug Bot then found four things. Each was checked against the code, and all four were real. Each has a SottoAppModel test that fails without its fix. Source only again:
+
+- **A Watcher alert from a second computer opened the first one's Watcher.** The tab always showed the first computer that runs Watcher. An alert dropped its computer, and alerts stayed quiet for every computer while the tab was open. The model now keeps which computer's Watcher the tab shows. An alert chooses its own computer, and alerts stay quiet only for the Watcher on screen. With Watcher on more than one computer, the line naming the computer under Watcher's name opens a menu of them. Test: `testAWatcherAlertFromAnotherComputerShowsThatComputersWatcher`.
+- **A queued read was lost after a failed or stale read.** The read loop returned before checking for a read asked for meanwhile. It now falls through to that read. Test: `testAReadAskedForDuringAFailedReadStillRuns`.
+- **The same words reused a draft ID the desktop may already have delivered.** The desktop lists a draft from the moment it reads its send until Watcher took it or it failed, and won't take again one whose result it doesn't know. So the box now lets go of a draft ID once a page asked for after its send ended no longer shows it on its way. That page is the read after a lost acknowledgement, a later pull to refresh, or a later connection's hello. A page pushed with a shell is no proof, since the desktop may have made it before it read the send. Neither is a page that says nothing of drafts. Words resent while the draft may still be on its way keep its ID. Test: `testTheSameWordsGoAsANewMessageOnceAPageSaysTheFirstIsNoLongerOnItsWay`.
+- **Two reads of one Stop all receipt could poll together.** Only one now runs over each connection to a computer. A read over a newer connection still runs while an older one waits, since the older one stops at its next read. Tests: `testOneStopAllReceiptIsReadAtATime`, `testAReconnectReadsStopAllsReceiptWhileTheOldConnectionsReadWaits`.
+
+A second reviewer read this round's Swift against the real declarations. It found two problems in the first versions of the draft and receipt fixes: pushed pages retired draft IDs, and a reconnect could skip the receipt read. It also found a side effect inside `removeAll` and the menu's accessible name. All four are fixed, as described above. On a second read it found a defect in the fix. The read after a lost acknowledgement had re-enabled Send. It also found that a page asked for before the same words went again could let go of their ID. The box now waits through that read, and each draft counts how many times its words have gone with its ID, so an older page can't speak for a later send.
+
 ## What waits for the Native iOS job
 
 `sh apps/ios/Scripts/verify.sh` must compile the app and its tests and pass:
@@ -100,7 +111,7 @@ A live Owl desktop running Watcher with a real iPhone: the shell's page arriving
 
 ## Decisions made here
 
-- With several computers running Watcher, the tab shows the first in the order they were added.
+- With several computers running Watcher, the tab shows the first in the order they were added, until a Watcher alert or the menu on the line naming the computer chooses another (October 13, after Sotto Bug Bot on #1005).
 - A worker's brief from Watcher is not labelled From Watcher in the worker's own thread, as the prototype showed: the wire marks no message as Watcher's.
 - Watcher's own requests are not on Threads; the Watcher tab's badge counts them, with any card for a thread this iPhone doesn't list.
 - The Watcher box keeps no saved marker for a send. One draft ID per exact text makes sending again safe, and the page's `draftDeliveries` clears words Watcher took.
