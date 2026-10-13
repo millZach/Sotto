@@ -561,15 +561,13 @@ export async function startSocketServer(options: SocketServerOptions) {
       if (!options.watcherDesktops?.has(peer.client.clientId)) throw new Refusal('forbidden')
       const feature = request.op === 'watcher-control' ? 'watcher-control' : 'watcher-reads'
       if (!peer.ready || !offers(peer, feature)) throw new Refusal('invalid_request')
-      if (request.op === 'watcher-control') {
-        const guard = () => {
-          if (closing || peer.frames.isClosed || !authenticated(peer) || !options.watcherDesktops?.has(peer.client.clientId)) throw new Error('Watcher master connection is unavailable.')
-        }
-        guard()
-        return service.watcherControl!(request.request, peer.client, guard)
+      const guard = () => {
+        if (closing || peer.frames.isClosed || !authenticated(peer) || !options.watcherDesktops?.has(peer.client.clientId)) throw new Error('Watcher master connection is unavailable.')
       }
+      guard()
+      if (request.op === 'watcher-control') return service.watcherControl!(request.request, peer.client, guard)
       if (!request.request.call && peer.watcherReads) watcherScopes.set(peer, request.request)
-      return service.watcherRead!(request.request, peer.client)
+      return service.watcherRead!(request.request, peer.client, guard)
     }
     if (request.op.startsWith('watcher-phone-')) {
       if (!peer.ready || !peer.watcherPhone || !offers(peer, 'watcher-phone') || !service.watcherPhone) throw new Refusal('invalid_request')

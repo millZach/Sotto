@@ -530,7 +530,10 @@ export function turnHeadline(turn: AgentActivity | undefined, threadRunning: boo
   switch (turn.status) {
     case 'completed': return took ? `Worked for ${took}` : 'Worked'
     case 'failed': return took ? `Failed after ${took}` : 'Failed'
-    case 'interrupted': return took ? `Stopped after ${took}` : 'Stopped'
+    case 'interrupted': {
+      const ended = turn.steered === true ? 'Steered' : 'Stopped'
+      return took ? `${ended} after ${took}` : ended
+    }
     case 'running': return threadRunning ? 'Working' : 'Last seen working'
     default: return 'Outcome unknown'
   }

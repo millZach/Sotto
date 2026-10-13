@@ -28,7 +28,7 @@ import type { CodexAppServerHost } from '../../src/main/agents/codex'
 
 const remote = useSocketHostFixture()
 const cleanups: (() => Promise<void>)[] = []
-afterEach(async () => { vi.restoreAllMocks(); for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
+afterEach(async () => { try { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() } finally { vi.restoreAllMocks() } })
 
 async function pairedDesktop(record = true, gate = true) {
   const pairing = await SocketHostService.pair(remote.url, remote.host.pairing.issuePairingCode().code, 'Synthetic desktop')
@@ -54,7 +54,7 @@ async function master(native?: CodexAppServerHost) {
   const connection = { hostId: paired.pairing.hostId, name: 'Synthetic remote', kind: 'remote' as const, service: paired.socket,
     detail: (id: string) => paired.socket.readThreadDetail(id), preview: () => null }
   router.add(connection); watcher.useRemoteHosts(router.watcherHosts())
-  cleanups.push(async () => { watcher.close(); await tools.close(); f.control.dispose(); await f.control.closed(); await workspace.stop(); await workspace.remove() })
+  cleanups.push(async () => { watcher.close(); await (watcher as unknown as { reconciling?: Promise<void> }).reconciling?.catch(() => undefined); router.dispose(); await tools.close(); f.control.dispose(); await f.control.closed(); await workspace.stop(); await workspace.remove() })
   await f.control.start(); await f.control.commandShell({ type: 'connect', provider: 'codex' }); await watcher.recover()
   const model = f.control.shell().host.models.find(item => item.providerId === 'codex')!
   expect(await watcher.open({ provider: 'codex', modelId: model.id })).toMatchObject({ status: 'ok' })
@@ -63,7 +63,18 @@ async function master(native?: CodexAppServerHost) {
   const requestId = watcher.state().requests.at(-1)!.id
   const start = () => ({ requestId, retryKey: randomUUID(), project: { hostId: paired.pairing.hostId, projectId: paired.project.id },
     modelId: paired.model.id, title: 'Synthetic remote worker', workingCopy: { kind: 'shared' as const }, firstPrompt: 'host_private_prompt_19cb' })
-  const call = async <N extends WatcherToolName>(name: N, input: unknown): Promise<WatcherToolOutput<N>> => watcherToolSchemas[name].output.parse(await watcher.invoke(id, name, input)) as WatcherToolOutput<N>
+  const call = async <N extends WatcherToolName>(name: N, input: unknown): Promise<WatcherToolOutput<N>> => {
+    const result = watcherToolSchemas[name].output.parse(await watcher.invoke(id, name, input)) as WatcherToolOutput<N>
+    if ('receipt' in result && result.receipt) {
+      const receipt = result.receipt
+      await expect.poll(() => f.control.watcherRecord().operations.find(item => item.id === receipt.operationId)).toMatchObject({ requestId: receipt.requestId, target: receipt.target })
+    }
+    if (name === 'start_thread' && result.status === 'ok' && 'target' in result) {
+      const target = result.target
+      await expect.poll(() => paired.socket.shell().host.threads.some(thread => thread.id === target.threadId)).toBe(true)
+    }
+    return result
+  }
   return { ...f, ...paired, watcher, router, connection, workspace, id, requestId, start, call }
 }
 
@@ -99,7 +110,12 @@ it('starts, reads positions, sends, stops and settles through the owning host wi
   expect(settled.status, settled.status === 'refused' ? settled.code : undefined).toBe('ok')
   const afterSettlement = { requestId: f.requestId, retryKey: randomUUID(), target: first.target, text: 'Synthetic settled refusal', delivery: 'now' }
   expect(await f.call('send_to_thread', afterSettlement)).toMatchObject({ code: 'REQUEST_NOT_ACTIVE' })
-  // A stale master projection must not revive participation on the owning host.
+  // A stale master projection must not revive participation on the owning host. The host's background reconcile
+  // would correct the stale record before the send reads it, so it is held back and drained first: the refusal
+  // asserted below must come from the owning host.
+  vi.spyOn(f.watcher as unknown as { scheduleRemote: () => void }, 'scheduleRemote').mockImplementation(() => undefined)
+  const background = f.watcher as unknown as { remoteTimer?: unknown; remoteFlushing: boolean; reconciling?: Promise<void> }
+  await expect.poll(() => !background.remoteTimer && !background.remoteFlushing && !background.reconciling).toBe(true)
   await f.control.updateWatcher(record => {
     const request = record.requests.find(item => item.id === f.requestId)!
     request.state = 'active'; request.closedAt = null
@@ -349,6 +365,14 @@ it('attributes returning paired evidence to its host, queues news after user wor
   const f = await master(), first = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start-refused')
   let checks: 'failed' | 'passed' = 'failed'
+  const shell = f.socket.shell.bind(f.socket)
+  // The synthetic evidence belongs to a PR the owning roster still links.
+  vi.spyOn(f.socket, 'shell').mockImplementation(() => {
+    const state = shell()
+    return { ...state, host: { ...state.host, threads: state.host.threads.map(thread => thread.id !== first.target.threadId ? thread
+      : { ...thread, pullRequests: [{ url: 'https://github.com/synthetic/project/pull/5', number: 5, title: 'Synthetic PR',
+        state: 'open' as const, draft: false, source: 'linked' as const, linkedAt: new Date().toISOString() }] }) } }
+  })
   const original = f.socket.watcherRead.bind(f.socket)
   vi.spyOn(f.socket, 'watcherRead').mockImplementation(async packet => {
     const result = await original(packet)
@@ -515,7 +539,7 @@ it.each([
   expect(first.status, first.status === 'refused' ? first.code : undefined).toBe('ok')
   expect(first).toMatchObject({ effectiveChoices: { permission: { kind: 'runtime', mode: 'approval-required' } } })
   if (first.status !== 'ok') throw new Error('start-refused')
-  expect(f.socket.shell().host.threads.find(item => item.id === first.target.threadId)?.runtimeMode).toBe('approval-required')
+  await expect.poll(() => f.socket.shell().host.threads.find(item => item.id === first.target.threadId)?.runtimeMode).toBe('approval-required')
 })
 
 
@@ -537,6 +561,8 @@ it.each(['retention', 'project filter', 'settlement', 'protection', 'queue prese
   const f = await master()
   const started = await f.call('start_thread', f.start())
   if (started.status !== 'ok') throw new Error('Synthetic remote creation was refused')
+  // The paired host's new thread reaches this computer's copy of the host a moment after the start returns.
+  await expect.poll(() => f.socket.shell().host.threads.some(thread => thread.id === started.target.threadId)).toBe(true)
   const hostId = f.control.hostId()!, local = f.control.watcherSnapshot()
   const twin = { ...f.socket.shell().host.threads.find(thread => thread.id === started.target.threadId)!, hostId,
     title: 'Local identity twin', status: 'idle' as const, messages: [], requests: [] }
@@ -562,4 +588,120 @@ it.each(['retention', 'project filter', 'settlement', 'protection', 'queue prese
     expect(list.rows.map(row => row.target)).not.toContainEqual({ hostId, threadId: twin.id })
   }
   if (check === 'protection') expect(list.rows.find(row => row.target.hostId === started.target.hostId && row.target.threadId === twin.id)?.protected).toBe(false)
+})
+
+it.each([
+  { desired: 'high', expected: 'high' },
+  { desired: 'thorough', expected: 'max' },
+])("freezes this computer's $desired effort before hashing and preserves the omitted call on retry", async ({ desired, expected }) => {
+  const f = await master()
+  if (desired === 'thorough') {
+    f.workspace.adapters.codex.state.models[0]!.reasoningEfforts = ['brief', 'thorough']
+    await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  }
+  await f.control.commandShell({ type: 'configure', patch: { newThreadModelId: f.control.shell().host.models[0]!.id, newThreadReasoningEffort: desired, newThreadRuntimeMode: 'full-access' } })
+  await remote.host.service.command({ type: 'configure', patch: { newThreadReasoningEffort: 'low', newThreadRuntimeMode: 'approval-required' } }, desktopWindowClient())
+  await vi.waitFor(() => expect(f.socket.shell().configuration.newThreadReasoningEffort).toBe('low'))
+  const wire = vi.spyOn(f.socket, 'watcherControl'), input = f.start()
+  const first = await f.call('start_thread', input)
+  expect(first).toMatchObject({ status: 'ok', effectiveChoices: { reasoningEffort: expected, permission: { kind: 'runtime', mode: 'approval-required' } } })
+  if (first.status !== 'ok') throw new Error('start-refused')
+  const packet = wire.mock.calls[0]![0]
+  expect(packet.call.input).toMatchObject({ reasoningEffort: expected, permission: { kind: 'runtime', mode: 'approval-required' } })
+  expect(packet.operation.digest).toBe(createHash('sha256').update(JSON.stringify([packet.call.name, packet.call.input])).digest('hex'))
+  await f.control.commandShell({ type: 'configure', patch: { newThreadReasoningEffort: 'low', newThreadRuntimeMode: 'approval-required' } })
+  expect(await f.call('start_thread', input)).toMatchObject({ receipt: { operationId: first.receipt.operationId } })
+  expect(wire).toHaveBeenCalledOnce()
+  expect(await f.call('start_thread', { ...input, firstPrompt: 'Synthetic changed retry' })).toMatchObject({ code: 'RETRY_KEY_CONFLICT' })
+  const receipt = await f.socket.watcherControl(packet)
+  expect(receipt).toMatchObject({ receipt: { operationId: first.receipt.operationId } })
+  expect(remote.host.service.state().host.threads.filter(thread => thread.title === input.title)).toHaveLength(1)
+  await expect.poll(() => f.socket.shell().host.threads.find(thread => thread.id === first.target.threadId)?.reasoningEffort).toBe(expected)
+})
+
+it('uses a fresh scoped connection for an admitted queue without renewing a restart fence', async () => {
+  const native = await codexFixture(undefined, false); cleanups.push(native.cleanup)
+  const f = await master(native.adapter), input = f.start(), first = await f.call('start_thread', input)
+  if (first.status !== 'ok') throw new Error('start-refused')
+  await vi.waitFor(() => expect(f.socket.shell().host.threads.some(thread => thread.id === first.target.threadId)).toBe(true))
+  const queued = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, text: 'Synthetic reconnect queue', delivery: 'queue' })
+  expect(queued).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
+  const codexId = (await native.driver.requests()).findLast(item => item.method === 'turn/start')!.params!.threadId as string
+  const aliases = JSON.parse(await readFile(join(native.root, 'codex-threads.json'), 'utf8')) as Record<string, { codexThreadId: string }>
+  const nativeId = Object.entries(aliases).find(([, value]) => value.codexThreadId === codexId)![0]
+  await f.socket.close()
+  const socket = new SocketHostService({ url: remote.url, token: f.pairing.token, watcherEnabled: true }); remote.clients.push(socket)
+  await socket.connect()
+  await socket.watcherRead({ master: f.control.watcherRecord().current! })
+  const worker = (remote.host.service as unknown as { options: { watcher: WatcherService } }).options.watcher
+  expect(() => worker.guardOperation(queued.receipt!.operationId)).not.toThrow()
+  await native.driver.completeTurn(nativeId, 'Synthetic reconnect completion')
+  await socket.command({ type: 'refresh', provider: 'codex' })
+  await vi.waitFor(async () => expect((await native.driver.requests()).filter(item => item.method === 'turn/start')).toHaveLength(2))
+  const receipt = await socket.watcherRead({ master: f.control.watcherRecord().current!, call: { name: 'read_operation', input: { operationId: queued.receipt!.operationId } } })
+  expect(receipt).toMatchObject({ receipt: { deliveryState: 'accepted' } })
+  await vi.waitFor(() => expect((worker as unknown as { remoteGuards: Map<string, unknown> }).remoteGuards.size).toBe(0))
+})
+
+it('refunds only an exact fenced absence and rejects a late packet for that operation', async () => {
+  const f = await master(), original = f.socket.watcherControl.bind(f.socket)
+  let packet: WatcherHostControl | undefined
+  vi.spyOn(f.socket, 'watcherControl').mockImplementation(async input => { packet = input; throw new Error('synthetic-before-admission') })
+  expect(await f.call('start_thread', f.start())).toMatchObject({ code: 'DELIVERY_UNCERTAIN' })
+  expect(f.watcher.state().inFlight).toBe(1)
+  await (f.watcher as unknown as { reconcileRemote(): Promise<void> }).reconcileRemote()
+  expect(f.control.watcherRecord().operations.find(item => item.id === packet!.operation.id)).toMatchObject({ deliveryState: 'failed', refusalCode: 'OPERATION_NOT_RECORDED' })
+  expect(f.watcher.state().inFlight).toBe(0)
+  expect(f.control.watcherRecord().requests[0]!.participants[0]!.promptCount).toBe(0)
+  expect(await original(packet!)).toMatchObject({ code: 'OPERATION_NOT_RECORDED' })
+  expect(remote.host.service.state().host.threads.some(thread => thread.title === 'Synthetic remote worker')).toBe(false)
+  await f.socket.close(); await remote.host.close()
+  remote.host = await startFixtureHeadlessHost({ dataDirectory: remote.root, port: 0, providers: { codex: remote.native } })
+  remote.url = 'http://127.0.0.1:' + remote.host.descriptor!.port
+  const socket = new SocketHostService({ url: remote.url, token: f.pairing.token, watcherEnabled: true }); remote.clients.push(socket)
+  await socket.connect()
+  expect(await socket.watcherControl(packet!)).toMatchObject({ code: 'OPERATION_NOT_RECORDED' })
+})
+
+it.each(['Stop', 'Stop all'])('%s fences the owning request and removes its admitted machine queue', async action => {
+  const native = await codexFixture(undefined, false); cleanups.push(native.cleanup)
+  const f = await master(native.adapter), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok') throw new Error('start-refused')
+  await vi.waitFor(() => expect(f.socket.shell().host.threads.some(thread => thread.id === first.target.threadId)).toBe(true))
+  const queued = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'queue', text: 'Synthetic stopped machine queue' })
+  expect(queued).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
+  if (action === 'Stop') await f.control.commandShell({ type: 'interrupt', threadId: f.id })
+  else {
+    const preview = f.watcher.prepareStopAll()
+    if (preview.status !== 'ok') throw new Error('stop-preview-refused')
+    expect(await f.watcher.stopAll(preview.confirmationId)).toMatchObject({ status: 'ok' })
+  }
+  const worker = (remote.host.service as unknown as { options: { watcher: WatcherService } }).options.watcher
+  await vi.waitFor(() => expect(worker.remoteProjection(f.control.watcherRecord().current!, f.pairing.clientId).requests.find(request => request.id === f.requestId)?.state).toBe('stopped'))
+  expect(remote.host.service.state().followups?.some(item => item.draftId === queued.receipt!.draftId)).toBe(false)
+  expect(worker.remoteProjection(f.control.watcherRecord().current!, f.pairing.clientId).operations.find(item => item.id === queued.receipt!.operationId)).toMatchObject({ deliveryState: 'failed', refusalCode: 'REQUEST_NOT_ACTIVE' })
+  expect((await native.driver.requests()).filter(item => item.method === 'turn/start')).toHaveLength(1)
+})
+
+it('rechecks the owning stopped request just before a prepared paired provider write', async () => {
+  const native = await codexFixture(undefined, false); cleanups.push(native.cleanup)
+  const f = await master(native.adapter), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok') throw new Error('start-refused')
+  const codexId = (await native.driver.requests()).findLast(item => item.method === 'turn/start')!.params!.threadId as string
+  const aliases = JSON.parse(await readFile(join(native.root, 'codex-threads.json'), 'utf8')) as Record<string, { codexThreadId: string }>
+  const nativeId = Object.entries(aliases).find(([, value]) => value.codexThreadId === codexId)![0]
+  await native.driver.completeTurn(nativeId, 'Synthetic completed turn')
+  await vi.waitFor(() => expect(f.socket.shell().host.threads.find(thread => thread.id === first.target.threadId)?.lastTurn?.status).toBe('completed'))
+  const gate = heldOperation(), prepare = native.adapter.prepareSkillInput.bind(native.adapter)
+  vi.spyOn(native.adapter, 'prepareSkillInput').mockImplementation(async (...args) => { const result = await prepare(...args); if (args[1] === 'Synthetic held stopped send') await gate.wait(); return result })
+  const send = f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'now', text: 'Synthetic held stopped send' })
+  try {
+    await gate.entered
+    await f.control.commandShell({ type: 'interrupt', threadId: f.id })
+    const worker = (remote.host.service as unknown as { options: { watcher: WatcherService } }).options.watcher
+    await vi.waitFor(() => expect(worker.remoteProjection(f.control.watcherRecord().current!, f.pairing.clientId).requests.find(request => request.id === f.requestId)?.state).toBe('stopped'))
+    gate.release()
+    expect(await send).toMatchObject({ code: 'REQUEST_NOT_ACTIVE' })
+    expect((await native.driver.requests()).filter(item => item.method === 'turn/start')).toHaveLength(1)
+  } finally { gate.release(); await send }
 })

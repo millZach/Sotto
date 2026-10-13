@@ -38,7 +38,7 @@ describe('a wake-up', () => {
 
   it('tells a thread with no tool that the user stops it from the Pull request surface', () => {
     const text = wakeUpText([news({ changes: [{ kind: 'checks-passed', count: 3, required: true }] })], { tool: false })
-    expect(text).toContain('- The required checks passed (3) on the newest commit.')
+    expect(text).toContain('- The required checks passed (3) on commit abc.')
     expect(text).toContain('The user can stop it from the Pull request surface.')
     expect(text).not.toContain('stop_babysitting')
   })
@@ -59,6 +59,14 @@ describe('a wake-up', () => {
     const unreadable = wakeUpText([news({ ended: 'unreadable', pullRequest: { ...pull, title: null } })], { tool: false })
     expect(unreadable).toContain('Pull request #42: https://github.com/o/r/pull/42')
     expect(unreadable).toContain('GitHub could not be read for it eight times in a row')
+    expect(unreadable).not.toMatch(/sixteen minutes|gh auth status/u)
+    // What GitHub kept answering says what to do, and only a refused sign-in points at gh auth status.
+    expect(wakeUpText([news({ ended: 'unreadable', unreadable: 'sign-in' })], { tool: true })).toContain('GitHub refused the sign-in eight times in a row, so Sotto has stopped babysitting it: nothing was being checked. Check the GitHub sign-in with gh auth status.')
+    expect(wakeUpText([news({ ended: 'unreadable', unreadable: 'not-found' })], { tool: true })).toContain('it may have been deleted, or the sign-in may have lost access to it.')
+    expect(wakeUpText([news({ ended: 'unreadable', unreadable: 'answer' })], { tool: true })).not.toContain('gh auth status')
+    // Folded onto news still waiting, the ending keeps what GitHub kept answering.
+    const folded = foldNews(foldNews([], news({ changes: [{ kind: 'checks-passed', count: 1, required: true }] })), news({ ended: 'unreadable', unreadable: 'sign-in' }))
+    expect(folded[0]).toMatchObject({ ended: 'unreadable', unreadable: 'sign-in' })
     expect(unreadable).toContain('The user can start it again from the Pull request surface')
     expect(unreadable).not.toContain('Sotto keeps babysitting')
   })
@@ -67,7 +75,9 @@ describe('a wake-up', () => {
     const text = wakeUpText([news({ changes: [{ kind: 'checks-passed', count: 2, required: false }] }),
       news({ pullRequest: { url: 'https://github.com/o/r/pull/43', number: 43, title: 'Second' }, ended: 'merged' })], { tool: true })
     expect(text.split('\n')[0]).toBe('Sotto has news of 2 pull requests this thread babysits.')
-    expect(text).toContain('- All 2 checks passed on the newest commit.')
+    expect(text).toContain('- All 2 checks passed on commit abc.')
+    expect(wakeUpText([news({ head: '444b9cceb0123', changes: [{ kind: 'checks-passed', count: 3, required: true }] })], { tool: true })).toContain('- The required checks passed (3) on commit 444b9cc.')
+    expect(wakeUpText([news({ head: null, changes: [{ kind: 'checks-passed', count: 3, required: true }] })], { tool: true })).toContain('passed (3) on the newest commit.')
     expect(text).toContain('Pull request #43 "Second": https://github.com/o/r/pull/43\nIt merged')
     expect(text).toContain('Sotto keeps babysitting #42 and will wake you again')
   })

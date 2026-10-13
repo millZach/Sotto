@@ -35,7 +35,8 @@ import { SegmentedControl } from '../../components/SegmentedControl'
 import { Toggle } from '../../components/Toggle'
 import { SpeechModelStatus as SpeechModelStatusView } from '../../components/SpeechModelStatus'
 import { SPEECH_MODEL, type SpeechModelStatus } from '../../../../shared/speechModel'
-import { LINUX_BINDINGS_GUIDE_URL, platformCopy } from '../../platformCopy'
+import { platformCopy } from '../../platformCopy'
+import { OmarchySetupPanel } from '../omarchy/OmarchySetup'
 import { OpenRouterKeyField } from '../../components/OpenRouterKeyField'
 import { AgentSetupFields } from '../../agents/AgentAccountSettings'
 import { ProvidersSettings } from '../../agents/ProvidersSettings'
@@ -391,11 +392,6 @@ export function SettingsView({
     }
   }
 
-  const openBindingsGuide = async (): Promise<void> => {
-    const result = await window.sotto?.openExternalLink?.(LINUX_BINDINGS_GUIDE_URL).catch(() => null)
-    if (result?.ok !== true) setNotice({ text: `The setup steps could not open in your browser. They are at ${LINUX_BINDINGS_GUIDE_URL}`, error: true })
-  }
-
   const selectSection = (id: SettingsSectionId): void => {
     if (id !== 'settings-capture') stopMicrophoneTest()
     setActiveSection(id)
@@ -493,12 +489,7 @@ export function SettingsView({
                     </div>
                   </Field>
                   <div className="settings-input-action">
-                    {platform === 'linux' ? <div className="tt-field">
-                      <p className="tt-field__label">Compositor bindings</p>
-                      <p className="tt-field__description">{copy.settingsGlobalShortcutDescription}</p>
-                      {/* Sotto never writes Hyprland's files; the steps are the user's to follow. */}
-                      <Button variant="secondary" aria-label="Open setup steps in your browser" onClick={() => void openBindingsGuide()}>Open setup steps<ArrowUpRight size={15} aria-hidden="true" /></Button>
-                    </div> : <Field label="Global shortcut" description={copy.settingsGlobalShortcutDescription}>
+                    {platform === 'linux' ? <OmarchySetupPanel visible={activeSection === 'settings-capture'} /> : <Field label="Global shortcut" description={copy.settingsGlobalShortcutDescription}>
                       <input className="tt-input" value={hotkeyDraft.value} onBlur={() => void saveHotkey()} onChange={(event) => {
                         const value = event.currentTarget.value
                         hotkeyDraft.edit(value)

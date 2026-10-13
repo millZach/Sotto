@@ -31,6 +31,7 @@ import { LookStep } from './LookStep'
 import { MICROPHONE_HEARD_LEVEL, type MicrophoneTestState } from './microphoneTest'
 import { PhoneStep } from './PhoneStep'
 import { ProjectStep } from './ProjectStep'
+import { OmarchySetupPanel, useOmarchySetup } from '../omarchy/OmarchySetup'
 import './onboarding.css'
 
 export interface OnboardingProps {
@@ -58,7 +59,7 @@ export interface OnboardingProps {
   ) => boolean | void | Promise<boolean | void>
 }
 
-type StepId = 'welcome' | 'look' | 'microphone' | 'speech-model' | 'shortcut' | 'agents' | 'project' | 'computers' | 'phone'
+type StepId = 'welcome' | 'omarchy' | 'look' | 'microphone' | 'speech-model' | 'shortcut' | 'agents' | 'project' | 'computers' | 'phone'
 
 interface SetupStep {
   readonly id: StepId
@@ -79,6 +80,7 @@ const STEPS: readonly SetupStep[] = [
   { id: 'phone', group: 'Elsewhere', title: 'iPhone' },
 ]
 const GROUPS = [...new Set(STEPS.map(step => step.group))]
+const LINUX_STEPS: readonly SetupStep[] = [STEPS[0]!, { id: 'omarchy', group: 'Start', title: 'Omarchy' }, ...STEPS.slice(1)]
 
 /**
  * The microphone test passes once Sotto hears a voice, the level Settings' test counts as one, for this long in all,
@@ -127,7 +129,10 @@ export function Onboarding({
   onComplete,
 }: OnboardingProps): ReactNode {
   const [index, setIndex] = useState(0)
-  const step = STEPS[index]!
+  const steps = platform === 'linux' ? LINUX_STEPS : STEPS
+  const step = steps[index]!
+  const omarchy = useOmarchySetup(platform === 'linux' && step.id === 'omarchy')
+  const keysSet = omarchy.state && ['done', 'manual'].includes(omarchy.state.pieces.keys.status)
 
   // Main starts the download when Sotto opens; this step starts it too if nothing has yet.
   const speechModelMissing = speechModel?.state === 'missing'
@@ -235,6 +240,7 @@ export function Onboarding({
   // Whether a step's own task is done, which decides whether moving on is Continue or Skip for now.
   const stepDone = (id: StepId): boolean => {
     switch (id) {
+      case 'omarchy': return !!omarchy.state && Object.values(omarchy.state.pieces).some(piece => ['done', 'manual'].includes(piece.status))
       case 'microphone': return microphoneHeard
       // Once the download is under way setup can go on; dictation works as soon as it finishes.
       case 'speech-model': return speechModel !== null && speechModel.state !== 'missing' && speechModel.state !== 'failed'
@@ -252,7 +258,7 @@ export function Onboarding({
   const advance = (): void => {
     if (step.id === 'microphone' && microphoneState !== 'ready') setSkipRequested(true)
     setMicrophoneOpen(false)
-    setIndex(current => Math.min(STEPS.length - 1, current + 1))
+    setIndex(current => Math.min(steps.length - 1, current + 1))
   }
 
   // A picker change records the choice and retires the previous input's test:
@@ -290,18 +296,18 @@ export function Onboarding({
   const heading = (title: string, lead: ReactNode): ReactNode =>
     <StepHeading title={title} lead={lead} headingRef={headingRef} />
 
-  const last = index === STEPS.length - 1
+  const last = index === steps.length - 1
   const done = stepDone(step.id)
 
   return (
     <main className="onboarding-shell" aria-labelledby="onboarding-heading">
-      <nav className="onboarding-progress" aria-label={`Setup progress: step ${index + 1} of ${STEPS.length}`}>
+      <nav className="onboarding-progress" aria-label={`Setup progress: step ${index + 1} of ${steps.length}`}>
         <span className="onboarding-progress__text" aria-live="polite" aria-atomic="true">
-          Step {index + 1} of {STEPS.length} · {step.title}
+          Step {index + 1} of {steps.length} · {step.title}
         </span>
         <ol aria-hidden="true">
           {GROUPS.map(group => {
-            const members = STEPS.map((member, at) => ({ member, at })).filter(({ member }) => member.group === group)
+            const members = steps.map((member, at) => ({ member, at })).filter(({ member }) => member.group === group)
             return (
               <li key={group} data-current={step.group === group} style={{ flexGrow: members.length }}>
                 <span className="onboarding-progress__bars">
@@ -322,7 +328,7 @@ export function Onboarding({
               <SottoMark className="onboarding-welcome__mark" />
               <p className="onboarding-eyebrow">Welcome to Sotto</p>
               {heading('Talk to your computer and your coding agents', platform === 'linux'
-                ? 'Hold F9 to talk after installing Sotto’s compositor bindings in Hyprland, and Sotto copies your words, then pastes them into the focused app or terminal. Sotto also runs Codex, Claude Code, Grok Build and Devin threads in one window, on this computer or another.'
+                ? 'Set up Sotto in Omarchy in the next step, then hold F9 to talk. Sotto copies your words, then pastes them into the focused app or terminal. Sotto also runs Codex, Claude Code, Grok Build and Devin threads in one window, on this computer or another.'
                 : 'Press a shortcut and speak, and your words arrive as text wherever you were typing. Sotto also runs Codex, Claude Code, Grok Build and Devin threads in one window, on this computer or another.')}
               <div className="onboarding-assurances">
                 <p><Check aria-hidden="true" size={18} /> Transcribed on this computer by {SPEECH_MODEL.name}</p>
@@ -333,6 +339,11 @@ export function Onboarding({
               <p className="onboarding-aside">Every step after this one can be skipped and finished later in Settings.</p>
             </section>
           ) : null}
+
+          {step.id === 'omarchy' ? <section aria-labelledby="onboarding-heading">
+            {heading('Set up Sotto in Omarchy', 'Three changes to your Omarchy settings. Remove any of them later in Settings › Dictation.')}
+            <OmarchySetupPanel surface="first-run" controller={omarchy} />
+          </section> : null}
 
           {step.id === 'look' ? (
             <LookStep settings={settings} platform={platform} onUpdateSettings={onUpdateSettings}
@@ -407,7 +418,9 @@ export function Onboarding({
           {step.id === 'shortcut' ? (
             <section aria-labelledby="onboarding-heading">
               {platform === 'linux'
-                ? heading('Speak, then paste into any window', 'Install Sotto’s compositor bindings in Hyprland. Hold F9 to talk, or press Super+Ctrl+X to start and stop. Sotto copies your text, then pastes into the focused app or terminal. If paste does not get through, use Super+V, Omarchy’s universal paste.')
+                ? heading(keysSet ? 'Hold F9 to try it' : 'Speak, then paste into any window', keysSet
+                  ? 'Hold F9 to talk, then release it. Sotto copies your text, then pastes into the focused app or terminal. If paste does not get through, use Super+V, Omarchy’s universal paste.'
+                  : 'Set up the keys in Settings › Dictation when you’re ready. You can still dictate with Sotto’s button. If paste does not get through, use Super+V, Omarchy’s universal paste.')
                 : heading('One shortcut from speech to text', 'Press it to start and again to finish. Your text is always copied before Sotto pastes it.')}
               <div className="onboarding-shortcut">{platform === 'linux'
                 ? <><span>Omarchy defaults</span><span>F9 · Super+Ctrl+X</span></>
@@ -450,9 +463,9 @@ export function Onboarding({
         </div>
 
         <footer className="onboarding-actions">
-          {index > 0 ? <Button variant="ghost" onClick={goBack} disabled={finishing}>Back</Button> : <span />}
+          {index > 0 ? <Button variant="ghost" onClick={goBack} disabled={finishing || step.id === 'omarchy' && omarchy.busy}>Back</Button> : <span />}
           {step.id === 'welcome' ? <Button onClick={advance}>Get started</Button> : null}
-          {step.id !== 'welcome' && !last ? <Button variant={done ? 'primary' : 'secondary'} onClick={advance}>{done ? 'Continue' : 'Skip for now'}</Button> : null}
+          {step.id !== 'welcome' && !last ? <Button variant={done ? 'primary' : 'secondary'} disabled={step.id === 'omarchy' && omarchy.busy} onClick={advance}>{done ? 'Continue' : 'Skip for now'}</Button> : null}
           {last ? (
             <Button onClick={() => void finish()} disabled={(microphoneState !== 'ready' && !microphoneSkipped) || finishing}>
               {finishing ? 'Saving setup...' : 'Finish setup'}

@@ -4,6 +4,8 @@
 
 Accepted October 9, 2026, by the owner's choice. The owner asked to steer Claude threads right away rather than only queue for them, and for the iPhone to compact and steer. Shown three directions for the iPhone in `docs/prototypes/iphone-steer-compact-prototype.html`, they chose B, "Queue, then steer", which matches the desktop. Asked what Enter does while a Claude turn runs, they kept it queueing, with **Steer now** as the way into the turn, as for Codex. Changes no earlier decision: the iPhone still speaks host protocol version 1, and every command it adds was already on the remote command list (ADR-0025).
 
+Decision 2 amended October 11, 2026, by ADR-0075: a steer that lands while Claude thinks or writes cuts that step, and the steer runs as the next turn. One that lands while a tool call runs is still read into the turn once the call returns.
+
 ## Context
 
 Steering is the user's explicit submission of new input into a provider's running turn through a native mechanism (`CONTEXT.md`). Only Codex had one, `turn/steer` (ADR-0005). The Claude adapter refused a steer outright and wrote prompts only between turns (ADR-0038: one Claude Code CLI per thread over stream-json).

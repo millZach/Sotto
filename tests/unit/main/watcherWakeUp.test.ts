@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterEach, expect, it, vi } from 'vitest'
 import { EMPTY_AGENT_HOST, type AgentThread, type AgentHostSnapshot } from '../../../src/shared/agents'
-import { WATCHER_QUIET_MS } from '../../../src/shared/watcherOverview'
+import { WATCHER_QUIET_MS, watcherOverview } from '../../../src/shared/watcherOverview'
 import type { WatcherNews } from '../../../src/shared/watcherNews'
 import { WatcherWakeUp, type WatcherWakeOptions } from '../../../src/main/agents/watcherWakeUp'
 import { WatcherEvidenceStore, observationDigest } from '../../../src/main/agents/watcherEvidence'
@@ -651,4 +651,38 @@ it('supersedes partially restored paired news only when a known owning-host fact
   expect(recovered.due(saved)).toBe(false)
   expect(deliver).toHaveBeenCalledTimes(1)
   expect(deliver.mock.calls[0]![0].events.every(event => event.target.hostId === remoteHost)).toBe(true)
+})
+
+it('removes paired PR facts and Landing only after the connected owning roster explicitly unlinks it', async () => {
+  const f = fixture(false), remoteHost = '55555555-5555-4555-8555-555555555555'
+  const target = { hostId: remoteHost, threadId: f.thread.id }, owner = new WatcherEvidenceStore()
+  const url = 'https://github.com/o/r/pull/1', linkedAt = new Date(f.now()).toISOString()
+  f.thread.hostId = remoteHost; f.thread.status = 'idle'; f.thread.lastTurn = undefined
+  f.thread.pullRequests = [{ url, number: 1, title: 'Synthetic PR', state: 'open', draft: false, source: 'linked', linkedAt }]
+  f.record.requests[0]!.participants[0]!.target = target
+  const localTwin = { ...structuredClone(f.thread), hostId: centerTarget.hostId }
+  f.snapshot.threads.unshift(localTwin)
+  owner.pullRequest(target, { url, head: 'head', observedAt: linkedAt, availability: 'available', state: 'open', checks: 'passed', reviewApproved: true, autoMerge: true })
+  f.wakes.start(); f.wakes.pairedEvidence(remoteHost, owner.read(target, true, f.now())); f.wakes.observe()
+  f.wakes.pullRequest({ url, head: 'head', observedAt: linkedAt, availability: 'available', checks: 'passed', reviewApproved: true, autoMerge: true })
+  await f.advance(2_000)
+  const saved = f.delivered.flatMap(news => news.events).findLast(event => event.kind === 'evidence-changed')!
+  const facts = () => f.wakes.evidence.read(target, true, f.now())
+  const group = () => watcherOverview({ host: f.snapshot }, f.now(), f.wakes.observations).find(row => row.thread === f.thread)!.group
+  expect(group()).toBe('Landing')
+  f.wakes.pairedEvidence(remoteHost, []); f.wakes.observe()
+  expect(facts().some(fact => fact.githubReviewApproved)).toBe(true)
+  expect(facts().some(fact => fact.githubAutoMergeEnabled)).toBe(true)
+  expect(f.wakes.due(saved)).toBe(true)
+  // A disconnected shell is not confirmation of removal, even if its links are absent.
+  f.thread.clientConnected = false; f.thread.pullRequests = []
+  f.wakes.pairedEvidence(remoteHost, []); f.wakes.observe()
+  expect(facts().some(fact => fact.githubAutoMergeEnabled)).toBe(true)
+  f.thread.clientConnected = true; f.wakes.observe()
+  expect(facts().filter(fact => fact.source === 'github')).toEqual([])
+  expect(group()).toBe('Idle')
+  expect(f.wakes.due(saved)).toBe(false)
+  expect(f.wakes.evidence.read(centerTarget, true, f.now()).some(fact => fact.githubAutoMergeEnabled)).toBe(true)
+  await f.advance(2_000)
+  expect(f.delivered.at(-1)!.events).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'evidence-changed', target })]))
 })

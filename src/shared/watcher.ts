@@ -45,7 +45,7 @@ export const WATCHER_REFUSAL_CODES = [
   'PERMISSION_NOT_COMPARABLE', 'RESERVED_THREAD', 'CURSOR_EXPIRED', 'HISTORY_RESET', 'HISTORY_UNAVAILABLE',
   'WORKING_COPY_UNAVAILABLE', 'WORKING_COPY_CHANGED', 'THREAD_BUSY', 'STEER_UNAVAILABLE', 'TURN_CHANGED',
   'BACKGROUND_WORK_RUNNING', 'PATH_OUTSIDE_PROJECT', 'UNSAFE_PATH', 'SENSITIVE_FILE', 'SCAN_LIMIT', 'SEARCH_TOO_BROAD',
-  'BINARY_FILE', 'FILE_TOO_LARGE', 'FILE_CHANGED', 'UNKNOWN_OPERATION',
+  'BINARY_FILE', 'FILE_TOO_LARGE', 'FILE_CHANGED', 'UNKNOWN_OPERATION', 'OPERATION_NOT_RECORDED',
 ] as const
 export const watcherRefusalCodeSchema = z.enum(WATCHER_REFUSAL_CODES)
 export const watcherDeliveryStateSchema = z.enum(['queued', 'dispatching', 'accepted', 'failed', 'uncertain'])
@@ -169,11 +169,14 @@ export const watcherRequestSchema = z.object({ id: z.uuid(), watcher: watcherThr
   userFollowups: z.array(z.object({ draftId: z.uuid(), messageId: id.optional() }).strict()).max(1_000).optional(),
   participants: z.array(watcherParticipantSchema).max(1_000) }).strict()
 export const watcherOperationSchema = z.object({ id: z.uuid(), requestId: z.uuid(), retryKey: z.uuid(), digest: z.string().regex(/^[a-f0-9]{64}$/u),
+  // The caller's original choices, before fitting defaults. Retries never resolve new defaults or dispatch again.
+  inputDigest: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
   action: z.enum(['start', 'send', 'stop', 'settle']), target: watcherThreadTargetSchema, generation: counter,
   delivery: deliveryMode.optional(), deliveryState: watcherDeliveryStateSchema, createdAt: time, updatedAt: time,
   receiptId: id, cardId: id, creationReceiptId: id.optional(), firstPromptReceiptId: id.optional(), commandId: id.optional(),
   draftId: z.uuid().optional(), messageId: id.optional(), itemId: id.optional(), expectedTurnId: id.optional(), expectedLastUserMessageId: id.optional(), anchorMessageId: id.optional(), toolCallId: id.optional(),
-  creationUncertain: z.literal(true).optional(), refusalCode: watcherRefusalCodeSchema.optional() }).strict()
+  confirmedStop: z.literal(true).optional(),
+  creationUncertain: z.literal(true).optional(), refusalCode: watcherRefusalCodeSchema.optional() }).strict().refine(item => !item.confirmedStop || item.action === 'stop', 'Only an explicit confirmed Stop can carry this marker.')
 export const watcherRecordSchema = z.object({ version: z.literal(1), current: watcherIdentitySchema.nullable(),
   creation: z.object({ identity: watcherIdentitySchema, modelId: entityId.optional(), reasoningEffort: z.string().max(64).optional(), phase: z.enum(['intent', 'created', 'bound', 'ready']),
     replaces: watcherThreadTargetSchema.nullable() }).strict().nullable(),
@@ -183,6 +186,8 @@ export const watcherRecordSchema = z.object({ version: z.literal(1), current: wa
     reason: z.enum(['creation', 'active-turn', 'background-work', 'queued', 'dispatching', 'uncertain', 'needs-user']) }).strict()).max(8),
   reads: z.array(z.object({ target: watcherThreadTargetSchema, position: watcherPositionSchema, readAt: time,
     lastWakeEventId: id.optional() }).strict()).max(10_000),
+  // Exact negative reads fence late admission. These are scoped identities only, never protocol bodies.
+  remoteAbsences: z.array(z.object({ operationId: z.uuid(), master: watcherIdentitySchema, clientId: id, observedAt: time }).strict()).max(1_000).optional(),
   wakeEventIds: z.array(id).max(1_000).optional(),
 }).strict().superRefine((record, context) => {
   const key = (target: WatcherThreadTarget) => JSON.stringify([target.hostId, target.threadId])

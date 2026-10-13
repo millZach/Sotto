@@ -29,6 +29,8 @@
     "release:owl": "node scripts/release-owl.mjs",
     "package:dir:mac": "npm run assets:verify && npm run build && node scripts/write-build-provenance.mjs && electron-builder --dir --mac --arm64 --config.npmRebuild=true --publish never && node scripts/verify-packaged-resources.mjs release/mac-arm64",
     "package:mac": "npm run release:check && node scripts/package-stable.mjs mac",
+    "package:linux:stable": "npm run release:check && node scripts/package-stable.mjs linux",
+    "package:linux:rehearse": "node scripts/package-stable.mjs linux --rehearse",
     "build:host": "node scripts/build-host.mjs",
     "package:host": "node scripts/package-host.mjs",
     "package:host:release": "npm run release:check && node scripts/package-stable-host.mjs",

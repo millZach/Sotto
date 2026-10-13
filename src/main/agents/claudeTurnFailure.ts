@@ -61,6 +61,11 @@ function resetTime(text: string): string | undefined {
   return said ? [said[1]!.replace(/\s+/gu, ''), said[2] ? `(${said[2]})` : undefined].filter(Boolean).join(' ') : undefined
 }
 
+/** A turn Claude Code cut short, by a stop or a prompt sent now, rather than one it finished or failed. */
+export function claudeTurnAborted(frame: ClaudeFrame): boolean {
+  return frame.terminal_reason === 'aborted_streaming' || frame.terminal_reason === 'aborted_tools'
+}
+
 /**
  * The provider error for a result Claude Code ended in error, or null for a turn the user stopped, which is no
  * failure. `assistantError` is the classification on the turn's last assistant message, when it had one. Only a
@@ -68,7 +73,7 @@ function resetTime(text: string): string | undefined {
  * lists it is only matched against, never shown.
  */
 export function claudeTurnFailure(frame: ClaudeFrame, assistantError?: string): string | null {
-  if (frame.terminal_reason === 'aborted_streaming' || frame.terminal_reason === 'aborted_tools') return null
+  if (claudeTurnAborted(frame)) return null
   const said = frame.subtype === 'success' ? [frame.result] : Array.isArray(frame.errors) ? frame.errors : []
   const text = said.filter((item): item is string => typeof item === 'string').join('\n')
   const reason = reasonOf(frame, assistantError, text)

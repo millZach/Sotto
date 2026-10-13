@@ -72,7 +72,11 @@ export class WatcherEvidenceStore {
     const prs = [...thread.pullRequests ?? [], ...git?.pullRequest ? [git.pullRequest] : []]
     const links = new Set(prs.map(pr => pullRequestKey(pr.url)))
     const entries = this.entries.get(targetKey(target))
-    for (const slot of entries?.keys() ?? []) if (slot.startsWith('pr:') && ![...links].some(link => slot === 'pr:' + link || slot.startsWith('pr:' + link + ':'))) { entries!.delete(slot); changed = true }
+    // Only a connected owning roster calls this. A bounded fact projection alone never removes a link.
+    for (const slot of entries?.keys() ?? []) {
+      const prefix = slot.startsWith('host:github:') ? 'host:github:' : slot.startsWith('pr:') ? 'pr:' : undefined
+      if (prefix && ![...links].some(link => slot === prefix + link || slot.startsWith(prefix + link + ':'))) { entries!.delete(slot); changed = true }
+    }
     for (const pr of prs) {
       const slot = `pr:${pullRequestKey(pr.url)}`
       const branchObserved = !!git?.pullRequest && pullRequestKey(git.pullRequest.url) === pullRequestKey(pr.url)

@@ -1,6 +1,6 @@
 # Sotto on Omarchy
 
-This folder holds configuration Omarchy reads, rather than code Sotto loads. ADR-0062 assigns Omarchy's compositor bindings, shell integration, themes and packaging here. It includes the dictation launcher and bindings, the shell plugin, the `sotto-bin` package recipe, desktop entry, icons and install helper.
+This folder holds the Omarchy pieces that Sotto bundles on Linux and installs on your press. ADR-0062 assigns Omarchy's compositor bindings, shell integration, themes and packaging here. It includes the dictation launcher and bindings, the shell plugin, the `sotto-bin` package recipe, desktop entry, icons and install helper.
 
 ## Dictation command
 
@@ -33,33 +33,29 @@ mise exec node@24.21.0 -- npm run build
 /absolute/path/to/Sotto/apps/omarchy/sotto dictation stop
 ```
 
-## Install the bindings
+## Set up all three
 
-The snippet must run after Omarchy's defaults so it can remove Voxtype's bindings. Stock Omarchy guarantees that order for `~/.config/hypr/bindings.lua`. The installed package keeps the snippet at `/usr/share/sotto/bindings.lua`. Copy it beside your own bindings:
+Open Sotto. The Omarchy step follows Welcome in first-run setup. Press **Set up all three** to give Sotto F9 and Super+Ctrl+X, put the owl in the bar and follow Omarchy’s theme. An existing install has the same three rows in **Settings → Dictation**. **Show the files it changes** lists each path before you press.
 
-```sh
-cp /usr/share/sotto/bindings.lua ~/.config/hypr/sotto-bindings.lua
-```
+Setup checks each piece first. Files set up by hand count as done; Sotto never replaces, updates or removes them. Voxtype keeps running without the two keys. If a different action holds F9 or Super+Ctrl+X, choose **Give F9 to Sotto** or **Leave my keys alone**. Leaving the keys alone still lets the owl and theme be installed. No key picker is added.
 
-Then add this line to the end of `~/.config/hypr/bindings.lua`:
+Sotto saves `bindings.lua.bak.<epoch>` beside your keys, copies its snippet to `~/.config/hypr/sotto-bindings.lua` and adds its require once. It checks both Lua files with `luac -p`, reloads Hyprland and compares configuration errors. A new error restores your files and shows Hyprland’s line in the row. That line never enters a log. Fix it, then press **Try again**. The snippet runs only while `sotto` is on PATH: after package removal, Voxtype’s defaults keep F9 and Super+Ctrl+X.
 
-```lua
-require("hypr.sotto-bindings")
-```
+With the Omarchy shell stopped, owl setup copies nothing. Start the shell, then retry that row. Running setup twice skips completed pieces. The button names only what is left, such as **Set up the owl**.
 
-From a checkout, copy this folder's `bindings.lua` instead. Or paste the snippet at the end of your own file. For a checkout, change `local sotto = "sotto"` to the absolute launcher path. If the path has spaces, include shell quotes inside the Lua string, for example `local sotto = "'/home/me/Sotto checkout/apps/omarchy/sotto'"`.
+Each owned piece has **Remove**, and **Remove all** undoes the pieces Sotto installed. Removing keys takes out only Sotto’s line, preserving later edits and keeping the backup. Removing the owl takes it off the bar before deleting its folder. Removing the theme restores the Appearance choices from before setup; a later choice you made stays yours.
 
-The snippet uses `sh -c` and `date +%s%N` to stamp each command before the client boots: `sotto dictation start --at <epoch-ns>`. Key-up gets its own stamp. Sotto remembers the latest accepted stamped stop or cancel, including an unpaired one, and ignores a start stamped at or before it. A quick tap cannot leave the microphone open when its clients arrive reversed. Delivery is serialized when the main window must be recreated. Stamps older than 5 seconds or more than 250 ms in the future are rejected; these bounds allow client startup and a small clock skew without letting an old or future release suppress later holds. Commands without `--at` keep the hand-typed behavior above.
+If Sotto closes mid-operation, its saved record keeps the piece removable. **Try again** finishes the interrupted setup or removal. Updates retain the first key backup and existing file permissions. A bindings file created by setup is removed again only if it has no later edits.
 
-The snippet first unbinds F9 and Super+Ctrl+X, which Voxtype owns when Omarchy installed it. Hyprland's [`hl.unbind`](https://wiki.hypr.land/configuring/core/binds/#unbind) removes every occurrence of the key, including F9's release binding. It then binds Sotto's start on F9 key-down, stop on F9 key-up, and toggle on Super+Ctrl+X. Voxtype's engine stays installed for the later local-transcription option (#845).
+After a package update, Sotto refreshes its own unchanged keys and theme quietly and says so in Settings. **Update the owl** asks first because it restarts the bar. A file changed outside Sotto is left alone. The Linux tarball carries all three pieces in `resources/omarchy/`; `sotto-bin` also keeps copies under `/usr/share/sotto/`.
 
-To cancel from outside Sotto, choose an unused chord and bind it to `sotto dictation cancel`. Escape cancels in Sotto's window. The snippet does not take Escape from other apps.
+**Press Remove all before `pacman -R`**. pacman cannot clean files in your home. Without that press, the guarded keys fall back to Voxtype and the owl hides itself when `sotto` is no longer on PATH, but the files stay.
 
-Check the saved snippet with `luac -p ~/.config/hypr/sotto-bindings.lua`, then check Hyprland's configuration after it reloads. No installer changes these files automatically, and neither does Sotto: **Open setup steps** under Settings → Dictation opens this section in your browser. Sotto copies your text, then pastes into the focused window on Hyprland, terminals included. If paste does not get through, use Super+V, Omarchy’s universal paste for apps and terminals.
+The snippet stamps key presses before Electron’s dictation client starts. A reversed quick press and release cannot leave the microphone open. For a checkout, put its `apps/omarchy/sotto` launcher on PATH before setup. A manual installation remains possible: copy this folder’s `bindings.lua` to `~/.config/hypr/sotto-bindings.lua` and add `require("hypr.sotto-bindings")` after Omarchy’s defaults. Sotto then calls it **Set up by hand**.
 
 ## Follow the Omarchy theme
 
-From the source checkout, install the theme separately, without sudo:
+The setup button installs the template and chooses Omarchy in both Appearance columns. For a manual installation from the checkout, without sudo:
 
 ```sh
 apps/omarchy/install-theme.sh
@@ -77,7 +73,7 @@ To stop following it, choose another theme in the picker. To remove the template
 
 `shell-plugin/sotto.dictation/` is Sotto's dictation in the Omarchy shell (#850): Sotto's glyph, the owl, in the bar and, while you dictate, a pill in the shell's own style with Stop and Cancel. When a transcription fails and the recording is kept, the pill offers Try again and Discard. It takes its colours and font from the Omarchy theme and repaints when the theme changes. While the plugin is installed and Sotto's dictation socket has started with a live state file, Sotto does not show its own floating widget on Linux. If either is unavailable, its own widget stays available.
 
-Install it from your desktop session, with the Omarchy shell running:
+The setup button installs the owl while the Omarchy shell is running. To install it by hand, from your desktop session:
 
 ```sh
 apps/omarchy/install-shell-plugin.sh              # runs `sotto` from PATH
@@ -112,7 +108,9 @@ This takes the glyph off the bar, checks that `shell.json` no longer names it, a
 `scripts/verify-omarchy-shell-plugin.sh <out-dir>`, from the checkout's root, checks all of this in an owned, nested copy of the Omarchy shell without touching the running desktop. `docs/verification/omarchy-shell-plugin.md` records a run.
 ## Build and install the package
 
-`PKGBUILD` makes `sotto-bin` for x86_64, using Sotto's own Electron. The first Linux release and AUR publication are pending; the recipe's initial archive checksum belongs to the local verification build. For a published release, update `pkgver` and the SHA-256 from its verified `SHA256SUMS.txt`, then run:
+`PKGBUILD` makes `sotto-bin` for x86_64, using Sotto's own Electron. The first Linux release and AUR publication are pending; the recipe's initial archive checksum belongs to the local verification build. Release owners use `npm run package:linux:stable` followed by `node scripts/release-linux.mjs` on forge from the promoted Owl source. Those commands build and check the tarball and pacman package, then write the updated recipe, `.SRCINFO` and checksum lines into `release/`; they never install or publish. The [release guide](../../docs/release/releasing.md#linux-desktop-package) includes the explicit rehearsal mode.
+
+To build from the recipe recorded for a published release, run:
 
 ```sh
 cd apps/omarchy
@@ -130,7 +128,7 @@ pacman -Qlp "$(makepkg --packagelist)"
 bsdtar -tvf "$(makepkg --packagelist)"
 ```
 
-Builds need no root. Installation does. `install.sh path/to/package.pkg.tar.zst` installs the local package with pacman and offers the bindings and shell plugin instructions; it does not change your desktop configuration. Without a path it uses `omarchy-pkg-add sotto-bin` when a package repository carries it, or `yay -S --needed sotto-bin` for the AUR. Do not use that form before publication. The shell plugin is installed separately; follow the shell plugin instructions above.
+Builds need no root. Installation does. `install.sh path/to/package.pkg.tar.zst` installs the local package with pacman and tells you to open Sotto for setup; it does not change your desktop configuration. Without a path it uses `omarchy-pkg-add sotto-bin` when a package repository carries it, or `yay -S --needed sotto-bin` for the AUR. Do not use that form before publication. The app bundles the keys, the shell plugin and the theme; press Set up all three after opening it.
 
 Regenerate the hicolor icons from `build/icon.svg` with `mise exec node@24.21.0 -- node scripts/generate-brand-assets.mjs --linux` at the repository root. This leaves Windows, macOS and phone outputs alone. Refresh the three icon checksums and run `makepkg --printsrcinfo > .SRCINFO` afterward.
 
