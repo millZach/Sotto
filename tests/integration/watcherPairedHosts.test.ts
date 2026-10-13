@@ -612,3 +612,46 @@ it('refunds only an exact fenced absence and rejects a late packet for that oper
   await socket.connect()
   expect(await socket.watcherControl(packet!)).toMatchObject({ code: 'OPERATION_NOT_RECORDED' })
 })
+
+it.each(['Stop', 'Stop all'])('%s fences the owning request and removes its admitted machine queue', async action => {
+  const native = await codexFixture(undefined, false); cleanups.push(native.cleanup)
+  const f = await master(native.adapter), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok') throw new Error('start-refused')
+  await vi.waitFor(() => expect(f.socket.shell().host.threads.some(thread => thread.id === first.target.threadId)).toBe(true))
+  const queued = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'queue', text: 'Synthetic stopped machine queue' })
+  expect(queued).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
+  if (action === 'Stop') await f.control.commandShell({ type: 'interrupt', threadId: f.id })
+  else {
+    const preview = f.watcher.prepareStopAll()
+    if (preview.status !== 'ok') throw new Error('stop-preview-refused')
+    expect(await f.watcher.stopAll(preview.confirmationId)).toMatchObject({ status: 'ok' })
+  }
+  const worker = (remote.host.service as unknown as { options: { watcher: WatcherService } }).options.watcher
+  await vi.waitFor(() => expect(worker.remoteProjection(f.control.watcherRecord().current!, f.pairing.clientId).requests.find(request => request.id === f.requestId)?.state).toBe('stopped'))
+  expect(remote.host.service.state().followups?.some(item => item.watcherOperationId === queued.receipt!.operationId)).toBe(false)
+  expect(worker.remoteProjection(f.control.watcherRecord().current!, f.pairing.clientId).operations.find(item => item.id === queued.receipt!.operationId)).toMatchObject({ deliveryState: 'failed', refusalCode: 'REQUEST_NOT_ACTIVE' })
+  expect((await native.driver.requests()).filter(item => item.method === 'turn/start')).toHaveLength(1)
+})
+
+it('rechecks the owning stopped request just before a prepared paired provider write', async () => {
+  const native = await codexFixture(undefined, false); cleanups.push(native.cleanup)
+  const f = await master(native.adapter), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok') throw new Error('start-refused')
+  const codexId = (await native.driver.requests()).findLast(item => item.method === 'turn/start')!.params!.threadId as string
+  const aliases = JSON.parse(await readFile(join(native.root, 'codex-threads.json'), 'utf8')) as Record<string, { codexThreadId: string }>
+  const nativeId = Object.entries(aliases).find(([, value]) => value.codexThreadId === codexId)![0]
+  await native.driver.completeTurn(nativeId, 'Synthetic completed turn')
+  await vi.waitFor(() => expect(f.socket.shell().host.threads.find(thread => thread.id === first.target.threadId)?.lastTurn?.status).toBe('completed'))
+  const gate = heldOperation(), prepare = native.adapter.prepareSkillInput.bind(native.adapter)
+  vi.spyOn(native.adapter, 'prepareSkillInput').mockImplementation(async (...args) => { const result = await prepare(...args); if (args[1] === 'Synthetic held stopped send') await gate.wait(); return result })
+  const send = f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'now', text: 'Synthetic held stopped send' })
+  try {
+    await gate.entered
+    await f.control.commandShell({ type: 'interrupt', threadId: f.id })
+    const worker = (remote.host.service as unknown as { options: { watcher: WatcherService } }).options.watcher
+    await vi.waitFor(() => expect(worker.remoteProjection(f.control.watcherRecord().current!, f.pairing.clientId).requests.find(request => request.id === f.requestId)?.state).toBe('stopped'))
+    gate.release()
+    expect(await send).toMatchObject({ code: 'REQUEST_NOT_ACTIVE' })
+    expect((await native.driver.requests()).filter(item => item.method === 'turn/start')).toHaveLength(1)
+  } finally { gate.release(); await send }
+})

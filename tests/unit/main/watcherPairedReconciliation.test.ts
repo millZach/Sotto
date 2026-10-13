@@ -133,3 +133,23 @@ it.each(['removed', 'reads-unavailable'])('holds an uncertain slot when its host
   expect(f.watcher.state().inFlight).toBe(1)
   expect(f.control.watcherRecord().requests[0]!.participants[0]!.promptCount).toBe(1)
 })
+
+it.each(['owner', 'foreign'])('stopped request feedback from %s preserves user queues and rejects other clients', async caller => {
+  const f = await fixture(), thread = f.control.watcherSnapshot().threads[0]!
+  await f.control.commandShell({ type: 'queue-followup', threadId: thread.id, draftId: randomUUID(), text: 'Synthetic retained user queue' })
+  const userIds = f.control.shell().followups!.filter(item => !item.watcherOperationId).map(item => item.id)
+  expect(userIds.length).toBeGreaterThan(0)
+  const master = { ...f.control.watcherRecord().current!, target: { hostId: randomUUID(), threadId: 'remote-master' } }
+  await f.control.updateWatcher(record => {
+    const request = record.requests[0]!
+    request.watcher = master.target; request.remoteOrigin = { clientId: 'owner', master, creationOperationId: master.creationOperationId, ceiling: 'approval-required' }
+    request.participants[0]!.target = { hostId: f.local, threadId: thread.id }; request.participants[0]!.startedBy = 'user'
+    record.operations[0]!.target = request.participants[0]!.target; record.operations[0]!.deliveryState = 'queued'
+    record.reservations[0]!.target = request.participants[0]!.target
+  })
+  const request = f.control.watcherRecord().requests[0]!
+  const result = await f.watcher.readRemote({ master, stoppedRequests: [{ request: { id: request.id, watcher: request.watcher, rootUserMessageId: request.rootUserMessageId, createdAt: request.createdAt }, ceiling: 'approval-required' }] }, caller)
+  expect(f.control.watcherRecord().requests[0]!.state).toBe(caller === 'owner' ? 'stopped' : 'active')
+  if (caller === 'foreign') expect(result).toMatchObject({ code: 'RETRY_KEY_CONFLICT' })
+  expect(f.control.shell().followups!.filter(item => !item.watcherOperationId).map(item => item.id)).toEqual(userIds)
+})

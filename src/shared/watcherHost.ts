@@ -14,6 +14,7 @@ export const watcherHostControlSchema = z.object({ master: watcherHostScopeSchem
     z.object({ name: z.literal('settle_thread'), input: watcherToolSchemas.settle_thread.input }).strict(),
   ]) }).strict()
 export const watcherHostReadSchema = z.object({ master: watcherHostScopeSchema,
+  stoppedRequests: z.array(z.object({ request: watcherRequestSchema.pick({ id: true, watcher: true, rootUserMessageId: true, createdAt: true }), ceiling: agentRuntimeModeSchema }).strict()).max(1_000).optional(),
   call: z.discriminatedUnion('name', [
     z.object({ name: z.literal('list_threads'), input: watcherToolSchemas.list_threads.input }).strict(),
     z.object({ name: z.literal('list_projects'), input: watcherToolSchemas.list_projects.input }).strict(),
