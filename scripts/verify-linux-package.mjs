@@ -75,7 +75,14 @@ try {
   assert.ok(mainClient, 'Packaged window must belong to the nested compositor')
   if (!mainClient.floating) execFileSync('hyprctl', ['dispatch', `hl.dsp.window.float({ window = "address:${mainClient.address}", action = "toggle" })`])
   await page.getByRole('button', { name: 'Get started', exact: true }).click()
-  for (let step = 0; step < 7; step++) await page.locator('.onboarding-actions').getByRole('button', { name: /^(Continue|Skip for now)$/u }).click()
+  const progress = page.locator('.onboarding-progress')
+  const total = Number((await progress.getAttribute('aria-label'))?.match(/of (\d+)$/u)?.[1])
+  assert.ok(total >= 2, 'First-run setup must report its step count')
+  for (let step = 2; step < total; step++) {
+    await page.locator('.onboarding-actions').getByRole('button', { name: /^(Continue|Skip for now)$/u }).click()
+    await page.waitForFunction(expected => document.querySelector('.onboarding-progress')?.getAttribute('aria-label') === expected,
+      `Setup progress: step ${step + 1} of ${total}`)
+  }
   await page.getByRole('button', { name: 'Finish setup', exact: true }).click()
   await page.getByRole('button', { name: 'Skip tour', exact: true }).click()
   await page.getByRole('link', { name: 'Settings', exact: true }).click()
