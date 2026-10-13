@@ -78,6 +78,9 @@ describe('remote command allow-list', () => {
       // Only an advertised and accepted desktop terminal feature admits these operations (ADR-0066).
       // Reading a preview and observing a detail grant nothing; hook dispatch rechecks current Can answer.
       'terminal-approval', 'observe-terminals', 'answer-terminal',
+      // Optional Watcher paths require an SSH-recorded desktop and use their own owning-host guards.
+      // Neither becomes an ordinary remote command or grants answer authority.
+      'watcher-control', 'watcher-read',
       // A thread's Files, Changes and Agents: reads only, never commands (ADR-0025, October 5 amendment).
       'thread-files', 'thread-file-preview', 'thread-changes', 'thread-changes-review', 'subagent-page', 'subagent-assignments']
     const ops = (hostRequestSchema.options as unknown as { shape: { op: { value: string } } }[]).map(option => option.shape.op.value)

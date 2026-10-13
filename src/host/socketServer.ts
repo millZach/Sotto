@@ -22,6 +22,7 @@ import { SocketFrames } from './socketFrames'
 import { hostPhonesCommandSchema, type HostPhonesCommand, type PhonesState } from '../shared/phones'
 import { CommandReceipts, type CommandReceipt } from './commandReceipts'
 import type { PhoneTerminals } from '../shared/phoneTerminals'
+import type { WatcherHostRead } from '../shared/watcherHost'
 
 const errors: Record<HostErrorCode, string> = {
   unauthenticated: HOST_SESSION_REJECTED,
@@ -72,10 +73,12 @@ class Refusal extends Error { constructor(readonly code: HostErrorCode, message 
  * `desktop` is whether the launch script recorded this client as a desktop (ADR-0053), read when its socket opened and
  * again at its hello. On a listener that tells desktops apart, only a desktop is offered the desktop-only features.
  */
-interface Peer { desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; activitySummaries: boolean; catalogRevisions: boolean; catalogSent: number | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>; terminals: boolean; terminalPreviews: Map<string, string> }
+interface Peer { watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; activitySummaries: boolean; catalogRevisions: boolean; catalogSent: number | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>; terminals: boolean; terminalPreviews: Map<string, string> }
 /** A shell ready to write to one peer, and the catalog revision it carries whole, if any, to record once it is written. */
 interface WireShell { state: HostWireShell; carries: number | null }
 export interface SocketServerOptions {
+  /** SSH-recorded desktops, required even on the administrative listener for machine origin. */
+  watcherDesktops?: TailnetAdmission['desktops']
   service: HostService; pairing: PairedClients; port?: number; origins?: readonly string[]
   mayAnswer?: (client: ClientIdentity) => boolean
   /** Desktop-owned Terminal mode only, on its paired phone listener. No shell input or screen stream. */
@@ -182,6 +185,8 @@ export async function startSocketServer(options: SocketServerOptions) {
   const hostId = service.shell().hostId
   if (!hostId) throw new Error('The host must have an identity before listening.')
   const features = HOST_FEATURES.filter(feature => (feature !== 'provider-sign-in' || options.signIns !== undefined)
+    && (feature !== 'watcher-control' || service.supportsWatcherControl === true && options.watcherDesktops !== undefined)
+    && (feature !== 'watcher-reads' || service.supportsWatcherReads === true && options.watcherDesktops !== undefined)
     && (feature !== 'terminals' || options.terminals !== undefined)
     && (feature !== 'answer-check' || service.checkRequestAnswer !== undefined)
     && (feature !== 'atomic-send' || service.supportsAtomicSend === true)
@@ -190,7 +195,10 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'usage-dashboard' || (service.supportsUsage === true && service.usageRead !== undefined && service.usageRefresh !== undefined && service.usageClear !== undefined))
     && (feature !== 'pull-request-babysit' || service.supportsBabysitting === true))
   /** What this listener offers a client: every feature to a desktop, and to a phone all but the desktop-only ones (ADR-0053). */
-  const featuresFor = (peer: Peer): string[] => peer.desktop ? [...features] : features.filter(feature => !HOST_DESKTOP_FEATURES.includes(feature))
+  const featuresFor = (peer: Peer): string[] => (peer.desktop ? [...features] : features.filter(feature => !HOST_DESKTOP_FEATURES.includes(feature)))
+    .filter(feature => !feature.startsWith('watcher-') || options.watcherDesktops?.has(peer.client.clientId))
+  const watcherScopes = new WeakMap<Peer, WatcherHostRead>()
+  const watcherRevisions = new WeakMap<Peer, string>()
   const offers = (peer: Peer, feature: (typeof HOST_FEATURES)[number]): boolean => featuresFor(peer).includes(feature)
   const { tailnet } = options
   const isDesktop = (clientId: string): boolean => !tailnet || tailnet.desktops.has(clientId)
@@ -325,6 +333,11 @@ export async function startSocketServer(options: SocketServerOptions) {
   const owedShell = new WeakSet<Peer>()
   const sendShell = (peer: Peer): void => {
     if (!authenticated(peer)) { peer.frames.close(); return }
+    const scope = watcherScopes.get(peer)
+    if (scope && offers(peer, 'watcher-reads') && service.watcherProjection) {
+      const projection = service.watcherProjection(scope, peer.client)
+      if (watcherRevisions.get(peer) !== projection.revision && push(peer, { v: 1, event: 'watcher-state', projection })) watcherRevisions.set(peer, projection.revision)
+    }
     if (peer.frames.backlogged) {
       if (owedShell.has(peer)) return
       owedShell.add(peer)
@@ -528,8 +541,22 @@ export async function startSocketServer(options: SocketServerOptions) {
   const dispatch = async (peer: Peer, request: HostRequest): Promise<unknown> => {
     if (closing) throw new Refusal('unavailable')
     if (request.session !== peer.session || !authenticated(peer)) throw new Refusal('unauthenticated')
+    if (request.op === 'watcher-control' || request.op === 'watcher-read') {
+      await options.watcherDesktops?.refresh()
+      if (!options.watcherDesktops?.has(peer.client.clientId)) throw new Refusal('forbidden')
+      const feature = request.op === 'watcher-control' ? 'watcher-control' : 'watcher-reads'
+      if (!peer.ready || !offers(peer, feature)) throw new Refusal('invalid_request')
+      const guard = () => {
+        if (closing || peer.frames.isClosed || !authenticated(peer) || !options.watcherDesktops?.has(peer.client.clientId)) throw new Error('Watcher master connection is unavailable.')
+      }
+      guard()
+      if (request.op === 'watcher-control') return service.watcherControl!(request.request, peer.client, guard)
+      if (!request.request.call && peer.watcherReads) watcherScopes.set(peer, request.request)
+      return service.watcherRead!(request.request, peer.client, guard)
+    }
     switch (request.op) {
       case 'hello': {
+        await options.watcherDesktops?.refresh()
         // Whether this client is a desktop is read afresh: the launch script may have recorded it since the socket opened.
         if (tailnet) {
           await tailnet.desktops.refresh().catch(() => undefined)
@@ -542,7 +569,7 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.clientUpdates = (request.accepts?.includes('client-updates') ?? false) && offers(peer, 'client-updates')
         peer.catalogRevisions = request.accepts?.includes('model-catalog-revision') ?? false
         peer.activitySummaries = request.accepts?.includes('activity-summaries') ?? false
-        peer.answerReceipts = (request.accepts?.includes('answer-receipts') ?? false) && offers(peer, 'answer-receipts')
+        peer.watcherReads = (request.accepts?.includes('watcher-reads') ?? false) && offers(peer, 'watcher-reads'); peer.answerReceipts = (request.accepts?.includes('answer-receipts') ?? false) && offers(peer, 'answer-receipts')
         peer.terminals = (request.accepts?.includes('terminals') ?? false) && offers(peer, 'terminals')
         if (!peer.terminals) { peer.terminalPreviews.clear(); options.terminals?.withdrawVisibility(peer) }
         const phoneAccess = peer.desktop ? options.phoneAccess?.() : undefined
@@ -857,7 +884,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     const accept = createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64')
     stream.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + accept + '\r\n\r\n')
     const frames = new SocketFrames(stream, false, text => onMessage(peer, text))
-    const peer: Peer = { desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), held: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, activitySummaries: false, catalogRevisions: false, catalogSent: null, answerReceipts: false, answerWatches: new Map(), terminals: false, terminalPreviews: new Map() }
+    const peer: Peer = { watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), held: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, activitySummaries: false, catalogRevisions: false, catalogSent: null, answerReceipts: false, answerWatches: new Map(), terminals: false, terminalPreviews: new Map() }
     peers.add(peer)
     frames.startHeartbeat()
     frames.onClose(() => { peer.answerWatches.clear(); peer.terminalPreviews.clear(); options.terminals?.withdrawVisibility(peer); peers.delete(peer); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })

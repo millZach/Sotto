@@ -1,4 +1,7 @@
 import { userInfo } from 'node:os'
+import type { WatcherHostControl, WatcherHostRead, WatcherHostProjection } from '../../shared/watcherHost'
+import type { WatcherIdentity } from '../../shared/watcher'
+import type { WatcherService } from './watcher'
 
 import { HOST_CANNOT_STAGE_SCREENSHOTS, type ProviderId, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThread, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import type { StoredThreadEvent } from '../../shared/threadEvents'
@@ -64,6 +67,13 @@ export interface HostService {
   usageRead?(query: UsageLocalQuery): Promise<UsageLocalHostRead>
   usageRefresh?(providerIds?: ProviderId[]): Promise<UsageLocalHostRead>
   usageClear?(request: UsageLocalClearRequest, client: ClientIdentity): Promise<UsageLocalClearResult>
+  readonly supportsWatcherControl?: boolean
+  readonly supportsWatcherReads?: boolean
+  subscribeWatcher?(listener: (projection: WatcherHostProjection) => void): () => void
+  cachedWatcherProjection?(master: WatcherIdentity): WatcherHostProjection | undefined
+  watcherControl?(request: WatcherHostControl, client: ClientIdentity, guard: () => void): Promise<unknown>
+  watcherRead?(request: WatcherHostRead, client: ClientIdentity, guard?: () => void): Promise<unknown>
+  watcherProjection?(request: WatcherHostRead, client: ClientIdentity): WatcherHostProjection
   /** This service admits and sends an optional `send.draft` payload together, and saves a targeted Compose. */
   readonly supportsAtomicSend?: boolean
   /** Stable draft IDs, exact recovery revision guards and private socket save outcomes. */
@@ -173,6 +183,11 @@ export interface LocalHostControl {
  */
 export class LocalHostService implements HostService {
   readonly supportsUsage: boolean
+  get supportsWatcherControl(): boolean { return this.options.watcher !== undefined }
+  get supportsWatcherReads(): boolean { return this.options.watcher !== undefined }
+  watcherControl(request: WatcherHostControl, client: ClientIdentity, guard: () => void): Promise<unknown> { return this.options.watcher!.admitRemote(request, client.clientId, guard) }
+  watcherRead(request: WatcherHostRead, client: ClientIdentity, guard?: () => void): Promise<unknown> { return this.options.watcher!.readRemote(request, client.clientId, guard) }
+  watcherProjection(request: WatcherHostRead, client: ClientIdentity): WatcherHostProjection { return this.options.watcher!.remoteProjection(request.master, client.clientId) }
   readonly supportsAtomicSend = true
   readonly supportsDraftRevisions = true
   readonly supportsBabysitting: boolean
@@ -190,7 +205,7 @@ export class LocalHostService implements HostService {
   private readonly mayClearUsage: (client: ClientIdentity) => boolean
 
   /** `tools` are the runtime's reads of its threads' Files, Changes and Agents, for a paired client (ADR-0025, October 5 amendment). */
-  constructor(options: { control: LocalHostControl; events?: ThreadEventSource; tools?: HostThreadToolReads; babysitting?: boolean; usage?: HostUsageReads; mayClearUsage?: (client: ClientIdentity) => boolean }) {
+  constructor(private readonly options: { control: LocalHostControl; events?: ThreadEventSource; tools?: HostThreadToolReads; babysitting?: boolean; usage?: HostUsageReads; mayClearUsage?: (client: ClientIdentity) => boolean; watcher?: WatcherService }) {
     this.control = options.control
     this.supportsBabysitting = options.babysitting === true
     this.eventSource = options.events
@@ -219,7 +234,10 @@ export class LocalHostService implements HostService {
     return this.eventSource?.eventsAfter(afterSeq, threadId, limit) ?? []
   }
 
-  subscribe(listener: (state: AgentState) => void): () => void { return this.control.subscribe(listener) }
+  subscribe(listener: (state: AgentState) => void): () => void {
+    const off = this.control.subscribe(listener), watcherOff = this.options.watcher?.subscribe(() => listener(this.shell()))
+    return () => { off(); watcherOff?.() }
+  }
   state(): AgentState { return this.control.get() }
   shell(): AgentState { return this.control.shell() }
   threadKind(threadId: string): AgentThread['kind'] {

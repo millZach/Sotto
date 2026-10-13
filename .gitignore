@@ -388,6 +388,7 @@ artifacts/watcher-rename/*
 artifacts/watcher-gate/*
 !artifacts/watcher-gate/*.png
 !artifacts/watcher-gate/profile.json
+artifacts/watcher-paired-hosts/
 !artifacts/watcher-gate/owl-features-package-status.json
 !artifacts/watcher-gate/owl-features-design-comparison.json
 

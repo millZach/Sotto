@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { watcherHostControlSchema, watcherHostReadSchema, watcherHostProjectionSchema } from './watcherHost'
 import { AGENT_IMAGE_MIME_TYPES, agentAttachmentDimensionsSchema, agentAttachmentPreviewRequestSchema, attachmentDigestSchema, agentConfigurationSchema, agentCommandSchema, agentHostSnapshotSchema, agentStateSchema, agentThreadDetailDeltaSchema, agentThreadDetailResultSchema, type AgentMessage, type AgentModel, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta } from './agents'
 import { threadEventSchema, type StoredThreadEvent } from './threadEvents'
 import { gitRefsRequestSchema } from './gitRefs'
@@ -161,13 +162,13 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * `terminal-approval` reads a bounded live approval preview, `observe-terminals` reports foreground details, and
  * `answer-terminal` delivers one exact reviewed answer through the local hook (ADR-0066). No screen stream or input.
  */
-export const HOST_FEATURES = ['terminals', 'client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'usage-dashboard'] as const
+export const HOST_FEATURES = ['terminals', 'client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
  * (ADR-0053). Its health lists them; a phone's hello does not, and their requests are refused for a phone.
  */
-export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['provider-sign-in', 'client-updates']
+export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['provider-sign-in', 'client-updates', 'watcher-control', 'watcher-reads']
 /**
  * A client update as a client that does not accept `client-updates` can read it: the mise channel, which such a client
  * does not know, reads as one it will not drive, and a client waiting in the update line reads as not started. Every
@@ -280,6 +281,8 @@ export const hostAttachmentContentSchema = z.object({ mimeType: z.enum(AGENT_IMA
 /** Just enough of a request to answer it: a request the host cannot otherwise read is refused by its id. */
 export const hostRequestEnvelopeSchema = z.object(base)
 export const hostRequestSchema = z.discriminatedUnion('op', [
+  z.object({ ...base, op: z.literal('watcher-control'), request: watcherHostControlSchema }).strict(),
+  z.object({ ...base, op: z.literal('watcher-read'), request: watcherHostReadSchema }).strict(),
   z.object({ ...base, op: z.literal('hello'), afterSeq: z.number().int().nonnegative().optional(), accepts: featureList.optional() }).strict(),
   z.object({ ...base, op: z.literal('shell') }).strict(),
   z.object({ ...base, op: z.literal('detail'), threadId: id }).strict(),
@@ -343,6 +346,7 @@ export type HostWireShell = Omit<HostClientShell, 'host'> & {
   host: Omit<AgentState['host'], 'models'> & { models?: AgentModel[] | undefined; modelsRevision?: number | undefined }
 }
 export type HostPush = { v: 1; event: 'shell'; state: HostWireShell; eventPage?: HostEventPage | undefined } | { v: 1; event: 'detail'; detail: AgentThreadDetail | null; threadId: string }
+  | { v: 1; event: 'watcher-state'; projection: z.infer<typeof watcherHostProjectionSchema> }
   | { v: 1; event: 'detail-delta'; threadId: string; delta: AgentThreadDetailDelta }
   | { v: 1; event: 'answer-receipt'; acceptedAnswer: HostAnswerTarget & { decisionId: string } }
   | { v: 1; event: 'error'; threadId?: string | undefined; error: HostProtocolError }
@@ -413,6 +417,7 @@ export const hostResponseSchema = z.discriminatedUnion('ok', [
   z.object({ v: z.literal(1), id, ok: z.literal(false), error: hostProtocolErrorSchema }),
 ])
 export const hostPushSchema = z.discriminatedUnion('event', [
+  z.object({ v: z.literal(1), event: z.literal('watcher-state'), projection: watcherHostProjectionSchema }),
   z.object({ v: z.literal(1), event: z.literal('shell'), state: protocolAgentStateSchema, eventPage: hostEventPageSchema.optional() }),
   z.object({ v: z.literal(1), event: z.literal('detail'), threadId: id, detail: agentThreadDetailResultSchema }),
   z.object({ v: z.literal(1), event: z.literal('detail-delta'), threadId: id, delta: agentThreadDetailDeltaSchema }),

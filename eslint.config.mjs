@@ -4,6 +4,7 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   {
     ignores: [
+      'artifacts/watcher-paired-hosts/**',
       'artifacts/linux-test-findings/**',
       'artifacts/omarchy-setup/**',
       '.t/**',

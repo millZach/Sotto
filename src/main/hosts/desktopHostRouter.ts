@@ -1,4 +1,5 @@
 import { visibleWatcherState } from '../../shared/watcherVisibility'
+import type { WatcherRemoteHosts } from '../../shared/watcherHost'
 import { WATCHER_DISABLED } from '../agents/watcherLaunchProfiles'
 import { randomUUID } from 'node:crypto'
 import { agentCommandSchema, defaultNewThreadModelId, MAX_DELIVERED_DRAFTS, HOST_CANNOT_STAGE_SCREENSHOTS, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
@@ -25,7 +26,7 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   hostId: string
   name: string
   kind: 'local' | 'remote'
-  service: Pick<HostService, 'shell' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear'>
+  service: Pick<HostService, 'shell' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead'>
   refreshRequestAnswer?(decisionId: string, target: HostAnswerTarget): Promise<void>
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
@@ -97,6 +98,34 @@ export const REQUEST_DRAFT_PASS_INTERVAL_MS = 500
 export class DesktopHostRouter {
   /** Saved host identities keep an offline computer visible when it has no live thread connection. */
   private usageSavedHostIds: readonly string[] = []
+  private readonly watcherListeners = new Set<(hostId?: string, force?: boolean) => void>()
+  watcherHosts(): WatcherRemoteHosts {
+    const allowed = () => { if (this.options.watcherEnabled !== true) throw new Error(WATCHER_DISABLED) }
+    const connection = (id: string) => {
+      allowed()
+      const entry = this.hosts.get(id)?.connection
+      if (!entry || entry.kind !== 'remote' || this.reconnecting.has(id) || entry.available?.() === false) throw new Error('Watcher host is disconnected.')
+      return entry
+    }
+    return {
+      hosts: () => this.options.watcherEnabled !== true ? [] : [...this.hosts.values()].filter(item => item.connection.kind === 'remote').map(({ connection: host }) => ({
+        hostId: host.hostId, control: host.service.supportsWatcherControl === true, reads: host.service.supportsWatcherReads === true,
+        connected: !this.reconnecting.has(host.hostId) && host.available?.() !== false,
+        permissionCeiling: host.service.shell().configuration.newThreadRuntimeMode ?? 'approval-required' })),
+      snapshot: id => {
+        allowed(); const entry = this.hosts.get(id)?.connection
+        if (!entry || entry.kind !== 'remote') return undefined
+        const snapshot = entry.service.shell().host, connected = !this.reconnecting.has(id) && entry.available?.() !== false
+        return { ...snapshot, hostId: id, connected: snapshot.connected && connected,
+          threads: snapshot.threads.map(thread => ({ ...thread, hostId: id, ...!connected ? { clientConnected: false } : {} })) }
+      },
+      projection: (id, master) => connection(id).service.cachedWatcherProjection?.(master),
+      read: async (id, request) => { const host = connection(id); if (!host.service.supportsWatcherReads) throw new Error('Watcher reads are unavailable.'); return host.service.watcherRead!(request, desktopWindowClient()) },
+      control: async (id, request) => { const host = connection(id); if (!host.service.supportsWatcherControl || !host.service.supportsWatcherReads) throw new Error('Watcher control is unavailable.'); return host.service.watcherControl!(request, desktopWindowClient(), () => { connection(id) }) },
+      subscribe: listener => { this.watcherListeners.add(listener); return () => this.watcherListeners.delete(listener) },
+    }
+  }
+  private watcherChanged(hostId?: string, force = true): void { for (const listener of this.watcherListeners) listener(hostId, force) }
   private readonly hosts = new Map<string, { connection: DesktopHostConnection; off: (() => void)[] }>()
   private readonly listeners = new Set<(state: AgentState) => void>()
   private readonly changeListeners = new Set<() => void>()
@@ -210,7 +239,14 @@ export class DesktopHostRouter {
    * has cached, so it is read afresh.
    */
   private watch(connection: DesktopHostConnection): (() => void)[] {
-    const off = [connection.service.subscribe(state => this.emit(connection.kind === 'local' ? { hostId: connection.hostId, state } : undefined))]
+    const signature = (state: AgentState) => JSON.stringify([state.stale === true, state.host.connected, connection.service.supportsWatcherControl, connection.service.supportsWatcherReads])
+    let last = signature(connection.service.shell())
+    const off = [connection.service.subscribe(state => {
+      this.emit(connection.kind === 'local' ? { hostId: connection.hostId, state } : undefined)
+      const next = signature(state)
+      if (connection.kind === 'remote' && next !== last) { last = next; this.watcherChanged(connection.hostId) }
+    })]
+    if (connection.kind === 'remote' && connection.service.subscribeWatcher) off.push(connection.service.subscribeWatcher(() => this.watcherChanged(connection.hostId, false)))
     if (connection.subscribeDetail) off.push(connection.subscribeDetail(detail => {
       if (!this.watcherAvailable(connection, detail.threadId)) return
       const scoped = mapHostReferences(detail, id => hostEntityKey(connection.hostId, id))
@@ -222,6 +258,7 @@ export class DesktopHostRouter {
     if (this.hosts.has(connection.hostId)) throw new Error('This host is already connected.')
     const off = this.watch(connection)
     this.hosts.set(connection.hostId, { connection, off })
+    this.watcherChanged(connection.hostId)
     this.selectedHostId ??= connection.hostId
     this.emit()
   }
@@ -236,17 +273,20 @@ export class DesktopHostRouter {
     const off = this.watch(connection)
     this.hosts.set(connection.hostId, { connection, off })
     this.reconnecting.delete(connection.hostId)
+    this.watcherChanged(connection.hostId)
     this.emit()
   }
   /** Marks a connected host's threads as reconnecting, or no longer: while it is set they read Reconnecting, not Disconnected. */
   setReconnecting(hostId: string, value: boolean): void {
     if (value === this.reconnecting.has(hostId) || !this.hosts.has(hostId)) return
     if (value) this.reconnecting.add(hostId); else this.reconnecting.delete(hostId)
+    this.watcherChanged(hostId)
     this.emit()
   }
   remove(hostId: string): void {
     this.hosts.get(hostId)?.off.forEach(off => off())
     this.hosts.delete(hostId)
+    this.watcherChanged(hostId)
     this.reconnecting.delete(hostId)
     if (this.selectedHostId === hostId) this.selectedHostId = this.hosts.keys().next().value
     if (this.selectedThreadId && parseHostEntityKey(this.selectedThreadId)?.hostId === hostId) this.selectedThreadId = null
