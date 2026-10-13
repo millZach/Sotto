@@ -49,7 +49,7 @@ describe('explicit native Owl host package', () => {
     const { scripts } = JSON.parse(await readFile(new URL('../../../package.json', import.meta.url), 'utf8'))
     expect(scripts['package:host:owl']).toBe('node scripts/package-owl-host.mjs')
     expect(scripts['package:host']).toBe('node scripts/package-host.mjs')
-    expect(scripts['package:host:release']).toBe('npm run release:check && node scripts/package-stable-host.mjs')
+    expect(scripts['package:host:release']).toBe('node scripts/package-stable-host.mjs')
   })
   it('checks the clean source before and after packaging and records verified native bytes', async () => {
     const root = await directory(), checkout = vi.fn(() => ({ sourceCommit, clean: true }))

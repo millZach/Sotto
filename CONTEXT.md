@@ -4,11 +4,11 @@ Sotto is a desktop dictation app with manual coding threads across native provid
 
 **Sotto Owl.** Sotto's preview release track and its builds, installed in place of Sotto with the same local data. An Owl build calls itself Sotto Owl where the running build is named (its window title, the tray's tooltip and the version lines in Help and Settings) and shows the Sotto mark alone, as a larger tile, where stable shows the mark beside the wordmark, under its night sky in the Threads sidebar. Sentences in which Sotto is the app or the speaker keep "Sotto". Watcher is the coordinating thread's name, a different thing. Avoid: "Owl app" for a separate installation, "Owl" for the coordinating thread.
 
-**Promoting an Owl build.** Shipping the exact source commit of the newest published Sotto Owl build as stable, with the Owl version's base set during packaging. The release body names its source commit; `release:check` requires that clean checkout. Newer commits on `main` wait for the next Owl. The `Release X.Y.Z` pull request records the shipped version afterward (ADR-0072).
+**Stable release.** A release from a clean, CI-green commit on main. Owl features remain behind their switch until Zach sends them to stable; everything else goes straight to stable. The version advances past the newest published stable, normally by the next patch. The Release pull request records the shipped version afterward (ADR-0072).
 
 **Owl feature.** A feature Zach has chosen to keep in Sotto Owl until he is confident it can go to stable; Watcher is the first. Stable shows and starts none of it while keeping its saved records whole (ADR-0072).
 
-**Sending a feature to stable.** Zach's decision to make an Owl feature available on both tracks, reaching Owl first and stable at the next promotion. It is distinct from promoting an Owl build, which chooses the source of a stable release (ADR-0072).
+**Sending a feature to stable.** Zach's decision to make an Owl feature available on both tracks. The next stable release carrying that decision turns the feature on (ADR-0072).
 
 ## Threads
 

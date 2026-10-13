@@ -5,6 +5,7 @@ import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
 import { SocketHostService } from '../../../src/main/agents/socketHostService'
 import type { HostOperation } from '../../../src/shared/hostProtocol'
 import { hostIsNewer, hostVersionMismatch } from '../../../src/shared/hostProtocol'
+import { hostReleaseVersion } from '../../../src/main/hosts/hostReleaseVersion'
 import { hostId } from '../../fixtures/socketHostService'
 
 describe('quiet remote connections', () => {
@@ -158,6 +159,23 @@ describe('explicit socket answer checks', () => {
 })
 
 describe('the version sentence', () => {
+  it('keeps Owl on the published host version through a stable cut until an Owl rebuild follows the Release PR', () => {
+    const sourceVersion = '0.1.37'
+    const owlHost = hostReleaseVersion('0.1.38-owl.20261013.1', sourceVersion)
+    const stableHost = hostReleaseVersion('0.1.38', sourceVersion)
+    const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: '', clientVersion: owlHost, owned: true })
+    const internals = client as unknown as { skewed(): boolean; mismatch(): string }
+    Object.assign(client, { hostVersion: sourceVersion })
+    expect(internals.skewed()).toBe(false)
+    Object.assign(client, { hostVersion: stableHost })
+    expect(internals.skewed()).toBe(true)
+    expect(client.hostIsNewer()).toBe(true)
+    expect(internals.mismatch()).toContain('Update Sotto on this computer')
+    const rebuiltOwl = new SocketHostService({ url: 'http://127.0.0.1:4319', token: '',
+      clientVersion: hostReleaseVersion('0.1.39-owl.20261014.1', stableHost), owned: true })
+    Object.assign(rebuiltOwl, { hostVersion: stableHost })
+    expect((rebuiltOwl as unknown as { skewed(): boolean }).skewed()).toBe(false)
+  })
   it('uses the running promoted version for host skew and update guidance', () => {
     const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: '', clientVersion: '0.1.37', owned: true })
     Object.assign(client, { hostVersion: '0.1.37' })

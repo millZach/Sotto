@@ -46,7 +46,7 @@ export class WrongHostError extends HostConnectionError {
 export interface SocketHostServiceOptions {
   url: string; token: string; expectedHostId?: string
   watcherEnabled?: boolean
-  /** The running packaged version, which may override the source manifest during promotion. */
+  /** The running packaged version, which may override the source manifest during stable packaging. */
   clientVersion?: string
   retainedDrafts?: RetainedDraftStore
   retainedRegistrationId?: string

@@ -749,7 +749,7 @@ mise exec node@24.21.0 -- npm run assets:verify
 mise exec node@24.21.0 -- npm run package:linux
 ```
 
-`package:linux` is an offline, unchecked source-version verification command. Stable release owners instead run `npm run package:linux:stable` and `node scripts/release-linux.mjs` on forge from the promoted Owl source; the [release procedure](release/releasing.md#linux-desktop-package) also covers a rehearsal on any clean commit.
+`package:linux` is an offline, unchecked source-version verification command. Stable release owners instead run `npm run package:linux:stable` and `node scripts/release-linux.mjs` on forge from a clean, CI-green main commit; the [release procedure](release/releasing.md#linux-desktop-package) also covers a rehearsal on any clean commit.
 
 This builds `release/linux-unpacked` and `release/Sotto-<version>-linux-x64.tar.gz`, rebuilding node-pty for bundled Electron only on Linux. Verification checks both outputs, including every external resource and native helper in the tarball. Smoke probes use an isolated profile and `--password-store=basic` to leave the release machine's keyring alone. Real keyring and tray checks are a separate forge pass. Build the pacman package with the [Omarchy recipe](../apps/omarchy/README.md); the [release procedure](release/releasing.md#linux-desktop-package) covers checksums and publication.
 
