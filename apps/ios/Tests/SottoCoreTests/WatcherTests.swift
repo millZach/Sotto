@@ -60,6 +60,21 @@ final class WatcherTests: XCTestCase {
         else { XCTFail("Missing stop result") }
         XCTAssertThrowsError(try decode(WatcherPhoneResult.self, #"{"status":"automatic"}"#))
     }
+    func testEveryResultRejectsUnknownStatusAndDecodesARefusal() throws {
+        let decoders: [(String) throws -> Void] = [
+            { _ = try self.decode(WatcherPhoneResult.self, $0) },
+            { _ = try self.decode(WatcherSendResult.self, $0) },
+            { _ = try self.decode(WatcherStopPreviewResult.self, $0) },
+            { _ = try self.decode(WatcherStopResult.self, $0) },
+            { _ = try self.decode(WatcherStopReceipt.self, $0) }
+        ]
+        for decodeResult in decoders {
+            for invalid in [#"{"status":"future"}"#, #"{"status":true}"#, #"{}"#] {
+                XCTAssertThrowsError(try decodeResult(invalid))
+            }
+            XCTAssertNoThrow(try decodeResult(#"{"status":"refused","code":"TARGET_CHANGED","message":"Refresh Watcher.","retryable":true}"#))
+        }
+    }
     func testStopReceiptKeepsPartialResultsWithoutAStalePage() throws {
         XCTAssertNil(try decode(Receipt.self, #"{"status":"completed"}"#).watcherStop)
         let text = #"{"status":"completed","watcherStop":{"status":"ok","results":[{"target":{"hostId":"host","threadId":"worker"},"status":"uncertain","message":"Check this worker."}]}}"#

@@ -57,42 +57,46 @@ public struct WatcherPhoneState: Decodable, Equatable, Sendable {
 public struct WatcherRefusal: Decodable, Equatable, Sendable {
     public let status: String; public let code: String; public let message: String; public let retryable: Bool
 }
+private enum WatcherResultStatus: String {
+    case ok, refused
+    private enum Keys: String, CodingKey { case status }
+    static func decode(from decoder: Decoder) throws -> Self {
+        let c = try decoder.container(keyedBy: Keys.self)
+        guard let status = Self(rawValue: try c.decode(String.self, forKey: .status)) else { throw ClientError.invalidProtocol }
+        return status
+    }
+}
 public enum WatcherPhoneResult: Decodable, Sendable {
     case ok(WatcherPhoneState)
     case refused(WatcherRefusal)
-    private enum Keys: String, CodingKey { case status, state }
+    private enum Keys: String, CodingKey { case state }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
-        switch try c.decode(String.self, forKey: .status) {
-        case "ok": self = .ok(try c.decode(WatcherPhoneState.self, forKey: .state))
-        case "refused": self = .refused(try WatcherRefusal(from: decoder))
-        default: throw ClientError.invalidProtocol
+        switch try WatcherResultStatus.decode(from: decoder) {
+        case .ok: self = .ok(try c.decode(WatcherPhoneState.self, forKey: .state))
+        case .refused: self = .refused(try WatcherRefusal(from: decoder))
         }
     }
 }
 public enum WatcherSendResult: Decodable, Sendable {
     case ok(draftID: String, state: WatcherPhoneState)
     case refused(WatcherRefusal)
-    private enum Keys: String, CodingKey { case status, draftId, state }
+    private enum Keys: String, CodingKey { case draftId, state }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
-        switch try c.decode(String.self, forKey: .status) {
-        case "ok": self = .ok(draftID: try c.decode(String.self, forKey: .draftId), state: try c.decode(WatcherPhoneState.self, forKey: .state))
-        case "refused": self = .refused(try WatcherRefusal(from: decoder))
-        default: throw ClientError.invalidProtocol
+        switch try WatcherResultStatus.decode(from: decoder) {
+        case .ok: self = .ok(draftID: try c.decode(String.self, forKey: .draftId), state: try c.decode(WatcherPhoneState.self, forKey: .state))
+        case .refused: self = .refused(try WatcherRefusal(from: decoder))
         }
     }
 }
 public enum WatcherStopPreviewResult: Decodable, Sendable {
     case ok(WatcherStopPreview)
     case refused(WatcherRefusal)
-    private enum Keys: String, CodingKey { case status }
     public init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: Keys.self)
-        switch try c.decode(String.self, forKey: .status) {
-        case "ok": self = .ok(try WatcherStopPreview(from: decoder))
-        case "refused": self = .refused(try WatcherRefusal(from: decoder))
-        default: throw ClientError.invalidProtocol
+        switch try WatcherResultStatus.decode(from: decoder) {
+        case .ok: self = .ok(try WatcherStopPreview(from: decoder))
+        case .refused: self = .refused(try WatcherRefusal(from: decoder))
         }
     }
 }
@@ -105,16 +109,15 @@ public struct WatcherStopPreview: Decodable, Equatable, Sendable {
 public enum WatcherStopResult: Decodable, Sendable {
     case ok(WatcherPhoneState, [StoppedTarget])
     case refused(WatcherRefusal)
-    private enum Keys: String, CodingKey { case status, state, results }
+    private enum Keys: String, CodingKey { case state, results }
     public struct StoppedTarget: Decodable, Equatable, Sendable {
         public let target: WatcherTarget; public let status: String; public let message: String
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
-        switch try c.decode(String.self, forKey: .status) {
-        case "ok": self = .ok(try c.decode(WatcherPhoneState.self, forKey: .state), try c.decode([StoppedTarget].self, forKey: .results))
-        case "refused": self = .refused(try WatcherRefusal(from: decoder))
-        default: throw ClientError.invalidProtocol
+        switch try WatcherResultStatus.decode(from: decoder) {
+        case .ok: self = .ok(try c.decode(WatcherPhoneState.self, forKey: .state), try c.decode([StoppedTarget].self, forKey: .results))
+        case .refused: self = .refused(try WatcherRefusal(from: decoder))
         }
     }
 }
@@ -122,13 +125,12 @@ public enum WatcherStopResult: Decodable, Sendable {
 public enum WatcherStopReceipt: Decodable, Sendable {
     case ok([WatcherStopResult.StoppedTarget])
     case refused(WatcherRefusal)
-    private enum Keys: String, CodingKey { case status, results }
+    private enum Keys: String, CodingKey { case results }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
-        switch try c.decode(String.self, forKey: .status) {
-        case "ok": self = .ok(try c.decode([WatcherStopResult.StoppedTarget].self, forKey: .results))
-        case "refused": self = .refused(try WatcherRefusal(from: decoder))
-        default: throw ClientError.invalidProtocol
+        switch try WatcherResultStatus.decode(from: decoder) {
+        case .ok: self = .ok(try c.decode([WatcherStopResult.StoppedTarget].self, forKey: .results))
+        case .refused: self = .refused(try WatcherRefusal(from: decoder))
         }
     }
 }

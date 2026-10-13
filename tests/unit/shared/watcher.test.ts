@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { watcherRecordSchema, watcherRefusalSchema, watcherToolSchemas, WATCHER_REFUSAL_CODES,
   WATCHER_PROMPT_BYTES_MAX, WATCHER_READ_BYTES_MAX } from '../../../src/shared/watcher'
 import { agentThreadKindSchema } from '../../../src/shared/agents'
+import { watcherPhoneSendSchema } from '../../../src/shared/watcherPhone'
 import { watcherToolFixtures, watcherRecordFixture, centerTarget } from '../../fixtures/watcher'
 
 const escapes = ['answer', 'approved', 'permissionChoice', 'runtimeMode', 'providerMode', 'requestBinding', 'command', 'workingDirectory', 'providerSessionId', 'token', 'tools']
@@ -17,6 +18,18 @@ function withUnknownFields(value: unknown): unknown[] {
 }
 
 describe('closed watcher contracts', () => {
+  it('keeps persisted phone origins and send origins equally bounded and closed', () => {
+    const record = watcherRecordFixture(), origin = { kind: 'phone' as const, hostId: record.current!.target.hostId, clientId: 'phone' }
+    const input = { origin, target: record.current!.target, draftId: record.requests[0]!.id, text: 'Synthetic phone request' }
+    record.requests[0]!.phoneOrigin = origin
+    expect(watcherRecordSchema.safeParse(record).success).toBe(true)
+    expect(watcherPhoneSendSchema.safeParse(input).success).toBe(true)
+    for (const invalid of [{ ...origin, clientId: '' }, { ...origin, clientId: 'x'.repeat(513) },
+      { ...origin, hostId: 'wrong-host' }, { ...origin, kind: 'desktop' }, { ...origin, approved: true }]) {
+      expect(watcherRecordSchema.safeParse({ ...record, requests: [{ ...record.requests[0], phoneOrigin: invalid }] }).success).toBe(false)
+      expect(watcherPhoneSendSchema.safeParse({ ...input, origin: invalid }).success).toBe(false)
+    }
+  })
   it('offers exactly the twelve bounded tools', () => {
     expect(Object.keys(watcherToolSchemas)).toEqual(['list_threads', 'read_thread', 'start_thread', 'send_to_thread', 'stop_thread', 'settle_thread',
       'list_projects', 'list_working_copies', 'read_operation'])

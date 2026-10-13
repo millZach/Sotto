@@ -1,13 +1,12 @@
 import { z } from 'zod'
 import { agentMessageSchema, agentRequestSchema, agentQuestionAnswersSchema, providerIdSchema } from './agents'
-import { watcherRefusalSchema, watcherThreadTargetSchema } from './watcher'
+import { watcherRefusalSchema, watcherThreadTargetSchema, watcherPhoneOriginSchema } from './watcher'
+export { watcherPhoneOriginSchema } from './watcher'
 import { watcherStopAllPreviewSchema } from './watcherRoom'
 
 /** Optional host-v1 phone features, offered only by the Owl desktop running Watcher. */
 export const WATCHER_PHONE_FEATURE = 'watcher-phone' as const
 export const WATCHER_PHONE_STOP_FEATURE = 'watcher-phone-stop-all' as const
-export const watcherPhoneOriginSchema = z.object({ kind: z.literal('phone'), hostId: z.uuid(),
-  clientId: z.string().min(1).max(512) }).strict()
 export const watcherPhoneSendSchema = z.object({ origin: watcherPhoneOriginSchema, target: watcherThreadTargetSchema,
   draftId: z.uuid(), text: z.string().min(1).max(20_000).refine(text => text.trim().length > 0) }).strict()
 const id = z.string().min(1).max(512)
