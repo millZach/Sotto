@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
-import { MAX_ACTIVITY_TEXT, MAX_AGENT_ACTIVITIES, compactAgentIdentity, mergeAgentActivities, isTerminalActivity, planSteps, type AgentActivity, type ObservedAgent } from '../../shared/agentActivity'
+import { MAX_ACTIVITY_TEXT, MAX_AGENT_ACTIVITIES, REASONING_SUMMARY_TITLE, compactAgentIdentity, wordlessReasoningSummary, mergeAgentActivities, isTerminalActivity, planSteps, type AgentActivity, type ObservedAgent } from '../../shared/agentActivity'
 import type { AgentThread } from '../../shared/agents'
 type ActivityConversation = Pick<AgentThread, 'id' | 'messages' | 'activities'> & { runtimeMode?: AgentThread['runtimeMode'] }
 
@@ -169,7 +169,7 @@ export class CodexActivityProjection {
     const kinds: Record<string, [AgentActivity['kind'], string]> = {
       commandExecution: ['command', 'Command'], fileChange: ['file-change', 'File changes'],
       mcpToolCall: ['tool', item.computerUse ? 'Computer Use' : [item.server, item.tool].filter(Boolean).join(' / ') || 'Tool'],
-      dynamicToolCall: ['tool', item.tool ?? 'Tool'], reasoning: ['reasoning', 'Reasoning summary'],
+      dynamicToolCall: ['tool', item.tool ?? 'Tool'], reasoning: ['reasoning', REASONING_SUMMARY_TITLE],
       plan: ['plan', 'Plan'], collabAgentToolCall: ['subagent', item.tool ?? 'Subagent'],
       webSearch: ['tool', 'Web search'], contextCompaction: ['compaction', 'Context compacted'],
     }
@@ -177,6 +177,18 @@ export class CodexActivityProjection {
     if (!kind) return
     const id = codexActivityId(context.turnId, item.id)
     const previous = thread.activities?.find(record => record.id === id)
+    // Reasoning with no summary words has nothing to show (`wordlessReasoningSummary`), and each would be an empty
+    // row holding a place in the bounded list. A row an earlier read kept for one goes here; the workspace drops its
+    // own saved copy when it next merges. Streamed words make the row (`delta`).
+    const summarized = item.type === 'reasoning' && !!item.summary?.some(part => part.trim())
+    if (item.type === 'reasoning' && !summarized && (!previous || wordlessReasoningSummary(previous))) {
+      if (previous) {
+        const ordered = this.installed.get(thread) === thread.activities
+        thread.activities = thread.activities!.filter(record => record !== previous)
+        if (ordered) this.installed.set(thread, thread.activities)
+      }
+      return
+    }
     const status = mappedStatus(item.status, context.phase === 'started' ? 'running' : context.phase === 'completed' || context.terminal ? 'completed' : 'unknown')
     if (this.terminalTurns.get(thread)?.has(context.turnId) && status === 'running') return
     if (previous && isTerminalActivity(previous.status) && !isTerminalActivity(status)) return
@@ -195,7 +207,7 @@ export class CodexActivityProjection {
     if (item.exitCode != null) activity.exitCode = item.exitCode
     if (item.error) activity.error = item.error.message
     if (item.changes) activity.changes = item.changes.map(change => ({ path: change.path, kind: change.kind?.type ?? 'change', ...(change.diff !== undefined ? { diff: change.diff } : {}) }))
-    if (item.type === 'reasoning' && item.summary) activity.text = item.summary.join('\n\n')
+    if (summarized) activity.text = item.summary!.join('\n\n')
     if (item.type === 'plan') activity.text = item.text ?? ''
     if (item.type === 'webSearch') activity.text = item.query
     const output = contentText(item.result?.content ?? item.contentItems)
@@ -241,8 +253,10 @@ export class CodexActivityProjection {
     if (previous && isTerminalActivity(previous.status)) return
     const kind = method === 'item/reasoning/summaryTextDelta' ? 'reasoning' : method === 'item/plan/delta' ? 'plan'
       : method === 'item/fileChange/outputDelta' ? 'file-change' : method === 'item/mcpToolCall/progress' ? 'tool' : 'command'
-    const record: AgentActivity = { id, turnId: params.turnId, sequence: 0, kind, title: kind === 'reasoning' ? 'Reasoning summary' : kind === 'plan' ? 'Plan' : kind === 'tool' ? 'Tool' : kind === 'file-change' ? 'File changes' : 'Command',
-      status: 'running', afterMessageId: thread.messages.at(-1)?.id, ...previous }
+    const record: AgentActivity = { id, turnId: params.turnId, sequence: 0, kind, title: kind === 'reasoning' ? REASONING_SUMMARY_TITLE : kind === 'plan' ? 'Plan' : kind === 'tool' ? 'Tool' : kind === 'file-change' ? 'File changes' : 'Command',
+      status: 'running', afterMessageId: thread.messages.at(-1)?.id,
+      // Reasoning's row starts with its first words, since the item that opened it had none.
+      ...(kind === 'reasoning' && !previous ? { startedAt: iso(this.now())!, timingSource: 'observed' as const } : {}), ...previous }
     if (method === 'item/reasoning/summaryTextDelta') {
       const index = params.summaryIndex
       if (index === undefined || !Number.isInteger(index) || index < 0 || index >= 200) return
@@ -250,6 +264,7 @@ export class CodexActivityProjection {
       parts.set(index, ((parts.get(index) ?? '') + (params.delta ?? '')).slice(0, MAX_ACTIVITY_TEXT))
       this.summaries.set(id, parts)
       record.text = [...parts].sort(([a], [b]) => a - b).map(([, text]) => text).join('\n\n')
+      if (!record.text.trim() && !previous) return
     } else if (method === 'item/mcpToolCall/progress') record.text = params.message
     else if (kind === 'plan') record.text = (record.text ?? '') + (params.delta ?? '')
     else record.output = (record.output ?? '') + (params.delta ?? '')

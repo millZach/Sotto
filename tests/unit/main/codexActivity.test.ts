@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { CodexActivityProjection, codexItemSchema } from '../../../src/main/agents/codexActivity'
 import { immutableActivities } from '../../../src/main/agents/activitySnapshots'
@@ -49,6 +50,28 @@ describe('Codex activity projection', () => {
     projection.item(t, codexItemSchema.parse(activityItems.reasoning), { ...context, phase: 'completed' })
     expect(t.activities?.[0]?.text).toBe('Checking the public interface.')
     expect(JSON.stringify(t)).not.toContain('PRIVATE_REASONING')
+  })
+
+  it('shows no row for reasoning that came without a summary, and drops one an earlier read kept', () => {
+    const t = thread(); const projection = new CodexActivityProjection()
+    const wordless = { ...activityItems.reasoning, id: 'wordless', summary: [] }
+    projection.item(t, codexItemSchema.parse(wordless), context)
+    projection.item(t, codexItemSchema.parse(wordless), { ...context, phase: 'completed' })
+    projection.item(t, codexItemSchema.parse(activityItems.command), context)
+    expect(t.activities?.map(record => record.kind)).toEqual(['command'])
+
+    // A row streamed summary words keeps them when the finished item carries none.
+    projection.delta(t, 'item/reasoning/summaryTextDelta', { turnId: context.turnId, itemId: activityItems.reasoning.id, summaryIndex: 0, delta: 'Streamed' })
+    projection.item(t, codexItemSchema.parse({ ...activityItems.reasoning, summary: [] }), { ...context, phase: 'completed' })
+    expect(t.activities?.find(record => record.kind === 'reasoning')).toMatchObject({ status: 'completed', text: 'Streamed' })
+
+    // A wordless row an earlier Sotto saved goes when native history is read again.
+    const saved = thread(); const reread = new CodexActivityProjection()
+    const id = `codex-activity-${createHash('sha256').update(JSON.stringify(['old', 'wordless'])).digest('hex')}`
+    // An earlier Sotto kept an empty summary's parts as blank text.
+    saved.activities = [{ id, turnId: 'old', sequence: 0, kind: 'reasoning', title: 'Reasoning summary', status: 'completed', text: '\n\n' }]
+    reread.item(saved, codexItemSchema.parse(wordless), { turnId: 'old', phase: 'history', terminal: true })
+    expect(saved.activities).toEqual([])
   })
 
   it('retains repeated output chunks, bounds detail, and marks truncation', () => {

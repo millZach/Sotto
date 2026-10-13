@@ -17,7 +17,8 @@ import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
 import { SshHostLauncher, type SshBootResult, type SshConnectOptions, type SshHostConnection } from '../../src/main/hosts/sshLauncher'
 import { TAILNET_STORE_FILE } from '../../src/main/hosts/tailnetStore'
 import { hostTailnetSetting } from '../../src/main/hosts/hostTailnetSetting'
-import { BOOT_TAILNET_ONLY_MS } from '../../src/main/hosts/hostConnectionPlan'
+import { TAILNET_ONLY_MS } from '../../src/main/hosts/hostConnectionPlan'
+import { SshFailure } from '../../src/main/hosts/sshFailure'
 
 import { hostEntityKey } from '../../src/shared/clientIdentity'
 import type { RemoteHost } from '../../src/shared/hosts'
@@ -481,9 +482,55 @@ describe('a tailnet connection (ADR-0053)', () => {
     await vi.waitFor(() => expect(stand.requests.filter(item => item === 'GET /v1/health').length).toBeGreaterThan(3), { timeout: 20_000 })
     expect(launchers).toEqual([])
     expect(first()).toMatchObject({ phase: 'connecting', reconnecting: true })
-    clock += BOOT_TAILNET_ONLY_MS
+    clock += TAILNET_ONLY_MS
     await vi.waitFor(() => expect(first()).toMatchObject({ phase: 'connected', via: 'ssh', tailnetNote: 'unreachable' }), { timeout: 20_000 })
     expect(launchers).toHaveLength(1)
+  })
+
+  it('keeps reconnecting a dropped tailnet host when Tailscale SSH holds its SSH fallback and nobody approves it', async () => {
+    // forge on October 13: a launch-script host on its tailnet drops, the tailnet is slow to come back, and the
+    // check period has lapsed, so Tailscale holds the SSH fallback until it gives up. The tailnet answers later.
+    await add()
+    await onTailnet()
+    launchers.length = 0
+    retryMs = 20
+    vi.spyOn(FixtureSsh.prototype, 'connect').mockRejectedValue(new SshFailure('tailscale-unapproved'))
+    stand.answer(502)
+    stand.cut()
+    await vi.waitFor(() => expect(stand.requests.filter(item => item === 'GET /v1/health').length).toBeGreaterThan(3), { timeout: 20_000 })
+    expect(launchers).toEqual([])
+    clock += TAILNET_ONLY_MS
+    await vi.waitFor(() => expect(launchers.length).toBeGreaterThan(1), { timeout: 20_000 })
+    expect(first()).toMatchObject({ phase: 'connecting', reconnecting: true })
+    expect(first().error).toBeUndefined()
+    stand.answer('proxy')
+    await onTailnet()
+    vi.restoreAllMocks()
+  })
+
+  it('still stops at an approval nobody gave after Connect is pressed, since the user is there to approve it', async () => {
+    await add()
+    await onTailnet()
+    vi.spyOn(FixtureSsh.prototype, 'connect').mockRejectedValue(new SshFailure('tailscale-unapproved'))
+    stand.answer(502)
+    await manager.command({ type: 'connect', id: first().id })
+    await vi.waitFor(() => expect(first()).toMatchObject({ phase: 'error', reconnecting: false, step: 'tailscale' }), { timeout: 20_000 })
+    vi.restoreAllMocks()
+  })
+
+  it('still stops at an approval nobody gave when Connect is pressed while a retry waits, trying SSH inside the first minute', async () => {
+    await add()
+    await onTailnet()
+    retryMs = 60_000
+    stand.answer(502)
+    stand.cut()
+    await vi.waitFor(() => expect(first()).toMatchObject({ phase: 'connecting', reconnecting: true }), { timeout: 20_000 })
+    launchers.length = 0
+    vi.spyOn(FixtureSsh.prototype, 'connect').mockRejectedValue(new SshFailure('tailscale-unapproved'))
+    await manager.command({ type: 'connect', id: first().id })
+    await vi.waitFor(() => expect(first()).toMatchObject({ phase: 'error', reconnecting: false, step: 'tailscale' }), { timeout: 20_000 })
+    expect(launchers).toHaveLength(1)
+    vi.restoreAllMocks()
   })
 
   it('goes over SSH, sending the tailnet nothing of its pairing, when the tailnet answers as another host', async () => {

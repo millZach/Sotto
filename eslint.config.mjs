@@ -7,6 +7,7 @@ export default tseslint.config(
       'artifacts/watcher-phone-wire/**',
       'artifacts/stable-from-main/**',
       'artifacts/watcher-paired-hosts/**',
+      'artifacts/codex-reasoning-rows/**',
       'artifacts/linux-test-findings/**',
       'artifacts/omarchy-setup/**',
       '.t/**',

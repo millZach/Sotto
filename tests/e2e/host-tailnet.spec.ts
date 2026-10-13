@@ -142,9 +142,56 @@ test('forge is reached over its tailnet after Add host, with no ssh at the next 
     // The tailnet goes silent: Serve answers 502, and the connection drops. Sotto reconnects over SSH and says why.
     stand.answer(502)
     stand.cut()
-    await expect(row().getByText(/^SSH forge · Connected · Tailnet did not answer/u)).toBeVisible({ timeout: 60_000 })
+    // The first minute of retries tries the tailnet alone (ADR-0053, October 13 amendment), so SSH comes after it.
+    await expect(row().getByText(/^SSH forge · Connected · Tailnet did not answer/u)).toBeVisible({ timeout: 150_000 })
     await expect(row().getByText('Sotto tries it again every 5 minutes.')).toBeVisible()
     await capture(launched, 'ssh-fallback', async () => { await row().scrollIntoViewIfNeeded(); expect(await inside(row().getByText('Sotto tries it again every 5 minutes.'))).toBe(true) })
+    expect(errors).toEqual([])
+  } finally {
+    await cleanup(launched)
+  }
+})
+
+test('forge keeps reconnecting after a drop from its tailnet when Tailscale SSH holds the SSH fallback and nobody approves it', async () => {
+  test.setTimeout(300_000)
+  const { profile, modeFile, record, stand, spawned, cleanup } = await forgeHost('free')
+  let launched: LaunchedSotto | undefined
+  const errors: string[] = []
+  const held = async (): Promise<number> => (await readFile(record, 'utf8').catch(() => '')).split('\n').filter(line => line.includes('"tailscale-held"')).length
+  try {
+    launched = await launchSotto('success', profile)
+    page(launched).on('pageerror', error => errors.push(error.message))
+    await openPage(page(launched), 'Settings')
+    await page(launched).getByRole('tab', { name: 'Hosts', exact: true }).click()
+    await page(launched).getByRole('button', { name: 'Add host', exact: true }).click()
+    const form = page(launched).getByRole('dialog', { name: 'Add host' })
+    await expect(form.getByRole('combobox', { name: 'Device' })).toBeFocused()
+    await page(launched).keyboard.press('End')
+    await page(launched).keyboard.press('Enter')
+    await form.getByRole('textbox', { name: 'SSH host' }).fill('forge')
+    await page(launched).keyboard.press('Enter')
+    await expect(page(launched).getByRole('dialog', { name: 'forge is connected' })).toBeVisible({ timeout: 90_000 })
+    await page(launched).keyboard.press('Enter')
+    const row = () => page(launched!).getByRole('region', { name: 'forge', exact: true })
+    await expect(row().getByText(/^Tailnet · Connected/u)).toBeVisible({ timeout: 30_000 })
+
+    // forge's check period has run out, so Tailscale SSH holds every sign-in until it times out, and the tailnet drops.
+    await writeFile(modeFile, 'run+tailscale-timeout')
+    await writeFile(record, '')
+    stand.answer(502)
+    stand.cut()
+    // For the first minute Sotto tries the tailnet alone and asks SSH nothing.
+    await expect(row().getByText(/Reconnecting/u)).toBeVisible({ timeout: 30_000 })
+    await page(launched).waitForTimeout(20_000)
+    expect(await spawned()).toEqual([])
+    // After it, SSH is tried and held, and nobody approves. Sotto keeps trying instead of stopping.
+    await expect.poll(held, { timeout: 120_000 }).toBeGreaterThanOrEqual(2)
+    await expect(row().getByText(/Needs attention/u)).toHaveCount(0)
+    await capture(launched, 'unapproved-keeps-reconnecting', async () => { await row().scrollIntoViewIfNeeded(); expect(await inside(row())).toBe(true) })
+    // The tailnet answers again, and forge is back with nothing pressed.
+    stand.answer('proxy')
+    await expect(row().getByText(/^Tailnet · Connected/u)).toBeVisible({ timeout: 90_000 })
+    await capture(launched, 'unapproved-back-on-tailnet', async () => { await row().scrollIntoViewIfNeeded(); expect(await inside(row())).toBe(true) })
     expect(errors).toEqual([])
   } finally {
     await cleanup(launched)

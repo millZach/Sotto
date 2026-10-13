@@ -26,7 +26,7 @@ describe('packaged Owl feature protection', () => {
     expect(() => assertPackagedFeatureStatus(status('owl', { watcherEnabled: false }), 'owl', features)).toThrow('compatibility answer')
   })
   it('checks the real Watcher list by default', () => {
-    expect(() => assertPackagedFeatureStatus({ releaseTrack: 'stable', owlFeatures: { watcher: false }, watcherEnabled: false }, 'stable')).not.toThrow()
+    expect(() => assertPackagedFeatureStatus({ releaseTrack: 'stable', owlFeatures: { watcher: false, 'resume-after-restart': false, 'update-all': false }, watcherEnabled: false }, 'stable')).not.toThrow()
   })
   it('runs only during stable and Owl release packaging, leaving the directory and Linux commands alone', async () => {
     const stable = await readFile(new URL('../../../scripts/package-stable.mjs', import.meta.url), 'utf8')
