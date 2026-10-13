@@ -902,9 +902,23 @@ import XCTest
         }
     }
 
-    /// Watcher's new words leave a reader of earlier messages where they are. The page follows them only for a reader who
-    /// sees the newest words or the page's end, and never while the user moves it (ADR-0051). Here a pull to refresh at the
-    /// conversation's start reads the page again, and the fixture's Watcher says something new at its end.
+    /// Pulls Watcher's conversation down from just under its header, far and slowly enough for iOS to refresh it, and holds
+    /// it there a moment. On CI a quick 200-point swipe at the conversation's start only bounced the page, short of where
+    /// iOS starts a refresh: no refresh showed in the recording, and the page was never read again.
+    private func pullWatcherToRefresh(_ band: (top: CGFloat, bottom: CGFloat)) {
+        let window = app.windows.firstMatch
+        let origin = window.coordinate(withNormalizedOffset: .zero)
+        // Down the trailing margin, clear of bubbles and cards, from under the header to near the screen's foot.
+        let x = window.frame.width - 8
+        let from = origin.withOffset(CGVector(dx: x, dy: band.top + 8 - window.frame.minY))
+        let to = origin.withOffset(CGVector(dx: x, dy: window.frame.height - 40))
+        from.press(forDuration: 0.1, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.6)
+    }
+
+    /// Watcher's new words leave a reader of earlier messages where they are, and are there when the reader comes back to
+    /// the newest words. The page follows them only for a reader who sees the newest words or the page's end, and never
+    /// while the user moves it (ADR-0051). Here a pull to refresh at the conversation's start reads the page again, and the
+    /// fixture's Watcher says something new at its end.
     func testWatchersNewWordsLeaveAReaderOfEarlierMessagesWhereTheyAre() {
         launch(Self.watcher + ["--ui-watcher-refresh-news"])
         openWatcher()
@@ -916,12 +930,13 @@ import XCTest
         let conversation = app.scrollViews.containing(NSPredicate(format: "label BEGINSWITH %@", "The login test fails")).firstMatch
         for _ in 0..<8 where first.frame.minY < band.top { conversation.swipeDown(velocity: .fast) }
         XCTAssertGreaterThanOrEqual(first.frame.minY, band.top, "The conversation's start is in view")
-        // A pull past the start reads Watcher's page again.
+        // A pull past the start reads Watcher's page again. A pull iOS doesn't take for a refresh is tried again.
         let news = text("Nothing new needs you.")
         for _ in 0..<3 where !news.exists {
-            conversation.swipeDown()
-            _ = news.waitForExistence(timeout: 5)
+            pullWatcherToRefresh(band)
+            _ = news.waitForExistence(timeout: 10)
         }
+        if !news.exists { explain("watcher-refresh-not-read", "first message \(first.frame), band \(band.top) to \(band.bottom)") }
         XCTAssertTrue(news.exists, "Pulling down read the page again, and Watcher said something new at its end")
         // A scroll that shouldn't happen is given time to happen; then the reader is still where they were.
         _ = XCTWaiter.wait(for: [XCTestExpectation(description: "The page settles")], timeout: 2)
@@ -932,6 +947,12 @@ import XCTest
         XCTAssertTrue(frame.minY >= band.top - 1 && frame.minY < band.bottom,
                       "Watcher's new words leave the reader at the conversation's start (first message \(frame), between \(band.top) and \(band.bottom))")
         capture("watcher-reading-earlier-dark")
+        // The reader comes back down when they choose to, and Watcher's new words are there, above the box.
+        revealInWatcher(news)
+        let shown = news.frame
+        XCTAssertTrue(shown.minY >= band.top - 1 && shown.maxY <= band.bottom + 1,
+                      "Back at the newest words, Watcher's new words are in view (\(shown), between \(band.top) and \(band.bottom))")
+        capture("watcher-back-at-newest-dark")
     }
 
     /// A worker's own question sits in Watcher's page and is answered there, as the user's own answer to that thread.
