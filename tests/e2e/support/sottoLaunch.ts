@@ -105,7 +105,12 @@ function threadSidebar(page: Page): Locator {
 
 /** First-run setup's nine steps, in the order the footer walks them. */
 const FIRST_RUN_STEPS = ['welcome', 'look', 'microphone', 'speech-model', 'shortcut', 'agents', 'project', 'computers', 'phone'] as const
-export type FirstRunStepId = typeof FIRST_RUN_STEPS[number]
+export type FirstRunStepId = typeof FIRST_RUN_STEPS[number] | 'omarchy'
+
+async function firstRunSteps(page: Page): Promise<readonly FirstRunStepId[]> {
+  const linux = await page.evaluate(() => window.sotto?.platform === 'linux')
+  return linux ? ['welcome', 'omarchy', ...FIRST_RUN_STEPS.slice(1)] : FIRST_RUN_STEPS
+}
 
 export interface FirstRunSetupOptions {
   /** 'test' runs the microphone test and waits for it to hear a voice before leaving that step; 'skip' (the default) leaves it untested. */
@@ -140,8 +145,8 @@ async function advanceFirstRunStep(page: Page, step: FirstRunStepId, options: Fi
 
 /** Walks first-run setup up to, but not through, the named step: that step's own heading is showing and nothing past it has been touched. */
 export async function reachFirstRunStep(page: Page, step: FirstRunStepId, options: FirstRunSetupOptions = {}): Promise<void> {
-  const stop = FIRST_RUN_STEPS.indexOf(step)
-  for (const current of FIRST_RUN_STEPS.slice(0, stop)) await advanceFirstRunStep(page, current, options)
+  const steps = await firstRunSteps(page), stop = steps.indexOf(step)
+  for (const current of steps.slice(0, stop)) await advanceFirstRunStep(page, current, options)
 }
 
 /** Ends the Threads tour that first-run setup opens with, from whichever stop it is showing. */
@@ -163,7 +168,8 @@ export async function finishFirstRunSetupFrom(
   from: FirstRunStepId = 'welcome',
   options: FirstRunSetupOptions = {},
 ): Promise<void> {
-  for (const step of FIRST_RUN_STEPS.slice(FIRST_RUN_STEPS.indexOf(from))) await advanceFirstRunStep(page, step, options)
+  const steps = await firstRunSteps(page)
+  for (const step of steps.slice(steps.indexOf(from))) await advanceFirstRunStep(page, step, options)
   await expect(threadSidebar(page)).toBeVisible()
   await skipThreadsTour(page)
 }

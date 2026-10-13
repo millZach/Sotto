@@ -118,6 +118,16 @@ linux:
   executableName: sotto
   icon: build/icon.png
   category: Utility
+  extraResources:
+    - from: apps/omarchy
+      to: omarchy
+      filter:
+        - bindings.lua
+        - sotto.json.tpl
+        - install-theme.sh
+        - install-shell-plugin.sh
+        - shell-plugin/sotto.dictation/**
+        - '!**/*.d.mts'
   target:
     - target: tar.gz
       arch:

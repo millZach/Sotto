@@ -248,6 +248,14 @@ export async function verifyPackagedResources(input, options = {}) {
     ...(profile.key === 'darwin'
       ? [join(resources, 'tray', 'sottoTemplate.png'), join(resources, 'tray', 'sottoTemplate@2x.png')]
       : []),
+    ...(profile.key === 'linux' ? [
+      join(resources, 'omarchy', 'bindings.lua'),
+      join(resources, 'omarchy', 'sotto.json.tpl'),
+      join(resources, 'omarchy', 'install-theme.sh'),
+      join(resources, 'omarchy', 'install-shell-plugin.sh'),
+      ...['manifest.json', 'BarWidget.qml', 'Service.qml', 'Pill.qml', 'PillCard.qml', 'DictationState.qml', 'Commands.qml', 'CommandAvailable.qml', 'Glyph.qml', 'LevelBars.qml', 'Model.mjs']
+        .map(name => join(resources, 'omarchy', 'shell-plugin', 'sotto.dictation', name)),
+    ] : []),
   ]) {
     if (!existsSync(required)) fail(`missing ${relative(target, required)}`)
   }
