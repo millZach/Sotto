@@ -73,7 +73,7 @@ export function ThemeGallery({ shown, resolved, system, onChooseMode, onSelect, 
           </Button>
         </div>
       </div>
-      <p className="theme-settings__assignment-hint">Choose one theme for light mode and one for dark. Sotto wears the one for the mode it is in.</p>
+      <p className="theme-settings__assignment-hint">Choose one theme for light mode and one for dark.</p>
 
       <div className="theme-halves" role="group" aria-labelledby={headingId}>
         {(['light', 'dark'] as const).map(half => (

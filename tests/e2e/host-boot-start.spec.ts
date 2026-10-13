@@ -67,7 +67,7 @@ test('starts a host at boot from Add host’s card once linger is on, stops it a
     await form.getByRole('button', { name: 'Add host', exact: true }).click()
     const connected = page.getByRole('dialog', { name: 'forge is connected' })
     await expect(connected).toBeVisible({ timeout: 90_000 })
-    await expect(connected).toContainText('Sotto adds a systemd user unit for zach on forge and turns on linger for that account; the host restarts once now, which stops turns running there.')
+    await expect(connected).toContainText('Sotto adds a systemd user unit for zach and turns on linger; the host restarts once now, stopping turns in progress.')
     const offer = connected.getByRole('button', { name: 'Start forge’s host at boot' })
     await capture(launched, 'card-offer', async () => { expect(await inside(connected)).toBe(true) })
 

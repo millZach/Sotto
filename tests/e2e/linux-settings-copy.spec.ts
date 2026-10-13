@@ -15,7 +15,7 @@ import { evidenceDirectory } from '../fixtures/evidence'
 
 const run = promisify(execFile)
 const SIZES = [[1600, 1000], [1280, 800], [820, 560]] as const
-const SHELL_PILL = 'On Omarchy, Sotto’s owl in the bar takes the floating widget’s place. Remove the shell plugin to bring the widget back.'
+const SHELL_PILL = 'On Omarchy, the owl in the bar replaces the widget. Remove the shell plugin to bring it back.'
 const WIDGET = 'Keep the small dictation sliver on screen between sessions. Click it to dictate.'
 
 interface HyprClient { readonly address: string; readonly pid: number; readonly mapped: boolean; readonly at: [number, number]; readonly size: [number, number] }

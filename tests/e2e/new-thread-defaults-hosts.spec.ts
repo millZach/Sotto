@@ -71,7 +71,7 @@ test('one set of new-thread defaults applies on every host, and each computer ke
     await openPage(page, 'Settings')
     await page.getByRole('tab', { name: 'Agents', exact: true }).click()
     const section = page.locator('#settings-agents')
-    await expect(section.getByText('A new thread in a project opens straight away with these, on every connected computer. Change them for one thread under its composer.')).toBeVisible()
+    await expect(section.getByText('New threads start with these on every connected computer. Change them for one thread in its composer.')).toBeVisible()
     await section.getByRole('combobox', { name: 'Default permissions for new threads' }).click()
     await page.getByRole('option', { name: 'Auto', exact: true }).click()
     await expect.poll(async () => (await agents(page)).configuration.newThreadRuntimeMode).toBe('auto')

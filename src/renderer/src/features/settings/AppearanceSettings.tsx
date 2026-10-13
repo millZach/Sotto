@@ -126,7 +126,7 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings }: 
             {shown.frostedWindow && canFrost
               ? <AppearanceSlider
                   label="See-through"
-                  description="How much of the desktop shows through the room. The sidebar and a pane's terminal drawer stay a little more solid, and messages, the composer and menus keep their own colour."
+                  description="How much of the desktop shows through. Messages, menus and the composer keep their own colour."
                   bounds={FROST_SEE_THROUGH}
                   value={shown.frostSeeThrough}
                   onPreview={value => appearancePreview.choose({ frostSeeThrough: value })}
@@ -151,9 +151,9 @@ interface SliderBounds { readonly min: number; readonly max: number; readonly st
 function frostDescription(platform: SottoPlatform, canFrost: boolean, on: boolean): string {
   if (platform === 'linux') return 'Frosted windows are unavailable on Linux.'
   if (!canFrost) return 'Needs Windows 11 version 22H2 or later.'
-  const what = 'Let the desktop show through the window, blurred and tinted by your theme.'
-  if (on && !frostAvailable()) return `${what} Your system is set to reduce transparency, so the window stays solid.`
-  return platform === 'win32' ? `${what} Windows draws it solid while another window is in front.` : what
+  const what = 'Shows the desktop through the window, blurred and tinted by your theme.'
+  if (on && !frostAvailable()) return `${what} Stays solid while your system reduces transparency.`
+  return platform === 'win32' ? `${what} It turns solid while another window is in front.` : what
 }
 
 /**

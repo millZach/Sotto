@@ -65,7 +65,7 @@ describe('independent provider settings', () => {
     expect(screen.getByRole('switch', { name: 'Enable Devin' })).toHaveAttribute('aria-checked', 'false')
     fireEvent.click(screen.getByRole('button', { name: 'Devin' }))
     expect(screen.getByText(/Install Devin CLI and run devin auth login/)).toBeVisible()
-    expect(screen.getByText(/Devin keeps its own history and usage analytics/)).toBeVisible()
+    expect(screen.getByText(/Devin keeps its own history and analytics, outside Sotto.s control/)).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: 'Connect Devin' }))
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect', provider: 'devin', notice: false }))
     expect(state.configuration.reasoning).toBe('claude')
