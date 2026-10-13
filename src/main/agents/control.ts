@@ -291,6 +291,7 @@ export class AgentControl {
     this.watcherOrigins.set(parsed, { guard: () => { if (this.disposed) throw new Error('Sotto is stopping.') } })
     return this.admitCommandShell(parsed)
   }
+  hasWatcherQueue(operationIds: ReadonlySet<string>): boolean { return this.followupStore.peek().items.some(item => item.watcherOperationId && operationIds.has(item.watcherOperationId)) }
   async cancelWatcherQueue(operationIds: ReadonlySet<string>): Promise<void> {
     await this.followupStore.cancelWatcher(operationIds); this.syncFollowups(); this.observe(); await this.persist(); this.publish()
   }

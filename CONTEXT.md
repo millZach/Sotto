@@ -56,6 +56,8 @@ Sotto is a desktop dictation app with manual coding threads across native provid
 
 **Host ID.** The permanent identity of the Sotto host that owns a workspace. Together with a Sotto thread ID, it distinguishes a thread from threads on every other host.
 
+**Paired Watcher origin.** A Watcher request and operation attributed to the paired desktop that runs the master, while the worker's owning host keeps its ownership and receipt. It carries no permission answer or grant; uncertain remote work remains in the master's shared capacity until reconciled. Avoid: an ordinary privileged desktop command as an automation fallback.
+
 **Sotto thread ID.** An opaque ID, unique within its host, that Sotto assigns the first time it sees or creates a thread, normally a fresh UUID. It outlives any provider session. Agent state, drafts and follow-up queue items refer to this ID; a client pairs it with the Host ID when it shows more than one host.
 
 **Provider.** The installed native client that runs the agent for a thread: Codex, Claude Code, Grok Build, Devin, or Muse in Sotto Owl (ADR-0076). Providers keep their own sign-ins and may be connected together; each thread's chosen model belongs to one provider. Claude Code, Codex, Grok Build and Muse each run a process per thread (ADR-0038), so one ending on its own affects only that thread: the provider stays connected, a reply it was writing is marked failed with a line saying it may be cut short, and the process starts again the next time the thread is opened or sent to. Codex also keeps one **provider process** that holds no thread, for the model list, the account, skills and settings reads; Grok Build keeps none between connects.

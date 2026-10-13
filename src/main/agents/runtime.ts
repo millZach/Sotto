@@ -172,10 +172,13 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     reasoner,
   })
   let watcherTools: WatcherToolServer | undefined
-  const watcher = options.watcherEnabled === true && options.runsAs !== 'headless-host'
+  const watcher = options.watcherEnabled === true
     ? new WatcherService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled,
-      limit: () => options.settings().watcherInFlightLimit, revoke: id => watcherTools?.revoke(id) }) : undefined
-  if (watcher) { agentHost.setWatcherPrObserver(read => watcher.pullRequestObserved(read)); watcherTools = new WatcherToolServer(watcher); agentHost.useWatcherTools(watcherTools) }
+      limit: () => options.settings().watcherInFlightLimit, workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id) }) : undefined
+  if (watcher) {
+    agentHost.setWatcherPrObserver(read => watcher.pullRequestObserved(read))
+    if (options.runsAs !== 'headless-host') { watcherTools = new WatcherToolServer(watcher); agentHost.useWatcherTools(watcherTools) }
+  }
   agentHost.setPendingThreadWork(threadId => agentControl.hasPendingThreadWork(threadId), threadId => agentControl.pendingThreadWorkReason(threadId))
   // Reclaims worktrees only under the rules the user turned on (ADR-0041); every rule starts off. The desktop's
   // local host and a headless host both own worktrees, so both get it. Its owner starts it once the owner's own
@@ -278,7 +281,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     throw error
   }
   if (watcher) await watcher.recover()
-  const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined })
+  const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined,
+    ...(options.runsAs === 'headless-host' && watcher ? { watcher } : {}) })
   babysitter?.begin()
   return { agentHost, agentControl, threadRegistry, turns, hostService, shortTextWriter, worktreeCleanup, babysitter, watcher, watcherTools, prepareForShutdown, close }
 }

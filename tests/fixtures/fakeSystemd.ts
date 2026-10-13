@@ -16,6 +16,8 @@ export interface FakeSystemdState {
   /** `afterStart` holds for the next start alone; the unit runs the host from the one after. */
   once?: boolean
   mainPid?: number
+  /** Script another holder replacing the unit host's lease after stop, before owned-instance cleanup. */
+  stopLeaseReplacement?: { pid: number; nonce: string }
   unit?: { ActiveState: string; SubState: string; Result: string; NRestarts: string; ExecMainStatus: string }
   /** The host's data folder, where `lost-lock` waits for the other host's lock. */
   data?: string

@@ -26,6 +26,8 @@ Request regressions cover optional omissions, duplicate and long labels, staged 
 
 The immutable startup gate is checked in desktop/headless construction, discovery, cached workspace reads, coordinator dispatch, routing and direct socket commands. Stable neither probes nor starts Muse and exposes no Muse models, projects or threads. Saved defaults, organization, history, activities, answer ownership, drafts, follow-ups and attachments stay dormant through history-off and return in Owl. Legacy remote drafts are preserved without exposure until their provider is known. The desktop journey below also checks a stable restart and Owl return.
 
+The paired Watcher integration keeps that gate on its remote snapshots and read/control paths. Held Muse requests are refused before transport; mixed lists that cannot hide Muse at their owning host are refused without rewriting pages or counts. Ordinary Codex scopes and Muse-enabled Owl calls retain their complete responses. Regressions cover native and qualified model/project IDs, legacy Muse labels, distinct qualified Codex projects with the same short name, initial ownership without a UI subscriber, and a known Muse thread omitted by a later snapshot. Text-free receipt reconciliation and stored records stay intact. Headless Watcher worker admission follows ADR-0073 independently of the Muse gate and creates no headless master.
+
 Host setup and visual admission share tool eligibility: Muse and Devin are excluded, and a stale Muse setup selection is refused before dispatch. Browser tools, Watcher, skills and side writing remain unavailable.
 
 ## Discovery, updates and Settings

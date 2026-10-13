@@ -48,6 +48,8 @@ A job that is not needed reports as skipped, not failed. A change that should ha
 | Unit and integration tests | `npm test -- --maxWorkers=2 --shard=N/6` on six Windows and six Linux runners | `vitest run` — test files under `tests/` only, excluding `tests/e2e/`. Ignored cache and backup suites outside `tests/` are never collected. The worker cap keeps the jsdom and child-process heavy files inside a small runner's memory; unpinned parallelism has produced "Worker exited unexpectedly" crashes on a loaded machine. Main-process and integration files run under node rather than jsdom, declared by a `@vitest-environment node` header on each file; a file in those folders that needs a DOM says `jsdom` instead. |
 | Third-party notices | `npm run notices:verify` | Checks `THIRD_PARTY_NOTICES.md` against the installed dependency tree. |
 
+The renderer activity tests keep handles to their mounted prompt editors, finish Tiptap’s deferred destruction during cleanup and assert that each editor is destroyed before jsdom removes `document`. This prevents a late dependency callback from making an otherwise passing full suite fail; no test deadline or sleep is changed.
+
 `tests/unit/release/trackedFileEncoding.test.ts` checks every Git-tracked file for a UTF-8 byte order mark in the normal test gate. Files stay UTF-8 without a BOM.
 
 Each gate is its own named step, so a red check names the gate that failed. Locally, `npm test -- --maxWorkers=2` still runs the whole suite in one go; while iterating, `npx vitest related <changed files> --run` runs only the tests that import them.

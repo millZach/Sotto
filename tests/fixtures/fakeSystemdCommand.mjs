@@ -50,8 +50,13 @@ function runUnit(mark = 'boot') {
 }
 async function stopUnit(state) {
   if (state.mainPid && alive(state.mainPid)) {
-    const pid = state.mainPid
+    const pid = state.mainPid, lock = state.data ? join(state.data, 'host-listener.lock') : undefined
     try { process.kill(pid, 'SIGTERM') } catch { /* already gone */ }
+    // Replace before native liveness confirms exit, so the shared signal helper must preserve this new lease.
+    if (state.stopLeaseReplacement && lock) {
+      writeFileSync(lock, JSON.stringify(state.stopLeaseReplacement))
+      delete state.stopLeaseReplacement
+    }
     for (let tries = 0; tries < 200 && alive(pid); tries++) await delay(50)
     // What a test reads instead of probing the PID afterwards, which Windows may already have handed to another process.
     record({ stopped: pid, exited: !alive(pid) })

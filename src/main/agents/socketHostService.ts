@@ -2,6 +2,8 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import type { z } from 'zod'
+import { watcherHostProjectionSchema, type WatcherHostControl, type WatcherHostRead, type WatcherHostProjection } from '../../shared/watcherHost'
+import { type WatcherIdentity, watcherToolSchemas } from '../../shared/watcher'
 import { SocketFrames } from '../../host/socketFrames'
 import { PROVIDER_CONNECTION_NOTICES, providerConnectionNotice, agentAttachmentHandleSchema, agentThreadDetailResultSchema, agentAttachmentPreviewResultSchema, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import { applyAgentThreadDetailDelta } from '../../shared/agentThreadDetail'
@@ -23,7 +25,7 @@ import { requestDraftProvider, requestDraftQuestions } from '../../shared/reques
 import { requestQuestionsDigest } from './requestDrafts'
 import { version as sourceVersion } from '../../../package.json'
 import { RetainedDraftStore, type RetainedDraft } from './retainedDraftStore'
-import { commandUsesMuse } from './museGate'
+import { commandUsesMuse, museWatcherRefusal, threadUsesMuse, watcherRequestUsesMuse } from './museGate'
 
 export const REMOTE_COMPOSE_UNSAVED = 'This host cannot save this draft yet. Your draft is kept on this computer and has not been saved on the host. Update the host.'
 const REMOTE_SEND_UNCERTAIN = 'This draft may already have been sent. Your copy is kept on this computer. Check the original thread before sending again.'
@@ -108,6 +110,10 @@ export class SocketHostService implements HostService {
   private readonly resyncing = new Set<string>()
   /** Threads the host said are too large to send. No delta asks for one again until it is observed again or arrives whole. */
   private readonly tooLarge = new Set<string>()
+  private cachedWatcher: WatcherHostProjection | undefined
+  /** Native ownership is immutable; an omitted later shell must not reopen a held thread. */
+  private readonly dormantMuseThreads = new Map<string, string>()
+  private readonly watcherListeners = new Set<(projection: WatcherHostProjection) => void>()
   private readonly listeners = new Set<(state: AgentState) => void>()
   private readonly detailListeners = new Set<(detail: AgentThreadDetailUpdate) => void>()
   private readonly pending = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout>; command: boolean }>()
@@ -135,13 +141,14 @@ export class SocketHostService implements HostService {
   }
   private threadAvailable(threadId: string | null | undefined): boolean {
     if (!threadId) return true
+    if (this.options.museEnabled !== true && this.dormantMuseThreads.has(threadId)) return false
     const thread = this.cached?.host.threads.find(thread => thread.id === threadId)
     if (thread && this.options.museEnabled !== true && requestDraftProvider(this.cached!.host, thread, this.cached!.configuration.provider) === 'muse') return false
     return this.options.watcherEnabled === true || thread?.kind !== 'watcher' && thread?.kind !== 'watcher-history'
   }
   private threadRefusal(threadId: string | null | undefined): string {
     const thread = this.cached?.host.threads.find(thread => thread.id === threadId)
-    return `${thread && requestDraftProvider(this.cached!.host, thread, this.cached!.configuration.provider) === 'muse' ? 'Muse' : 'Watcher'} is available in Sotto Owl. Nothing was sent.`
+    return `${threadId && this.dormantMuseThreads.has(threadId) || thread && requestDraftProvider(this.cached!.host, thread, this.cached!.configuration.provider) === 'muse' ? 'Muse' : 'Watcher'} is available in Sotto Owl. Nothing was sent.`
   }
   private requireCommandAvailable(command: AgentCommand): void {
     if (this.options.museEnabled !== true && commandUsesMuse(command, this.cached?.host)) throw new Error('Muse is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
@@ -233,7 +240,7 @@ export class SocketHostService implements HostService {
     })
     if (generation !== this.generation) { this.frames.close(); throw new HostConnectionError('This host connection was closed.', 'disconnected') }
     try {
-      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'answer-receipts'] as const).filter(feature => health.features.includes(feature))
+      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'answer-receipts', ...this.options.watcherEnabled === true ? ['watcher-reads'] : []] as const).filter(feature => health.features.includes(feature))
       const accepts = { accepts: [...accepted] }
       const hello = this.read(hostHelloSchema, await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER, ...accepts }))
       if (hello.hostId !== session.hostId) throw new HostConnectionError('The host identity changed. Connect again.', 'unauthenticated')
@@ -257,6 +264,7 @@ export class SocketHostService implements HostService {
     } catch (error) { this.frames?.close(); throw error }
   }
   private disconnected(frames: SocketFrames): void {
+    this.cachedWatcher = undefined
     if (this.frames !== frames) return
     this.frames = undefined
     this.resetComposeQueue()
@@ -278,6 +286,13 @@ export class SocketHostService implements HostService {
       if ('event' in message) {
         if (message.event === 'shell') { if (message.eventPage && this.catchesUp) { this.cacheEvents(message.eventPage); if (message.eventPage.hasMore) this.catchUp() } this.publish(this.read(protocolAgentStateSchema, message.state), true) }
         else if (message.event === 'answer-receipt') { if (this.cacheAcceptedAnswer(message.acceptedAnswer) && this.cached) this.notifyState() }
+        else if (message.event === 'watcher-state') {
+          if (this.options.watcherEnabled === true && this.supportsWatcherReads && this.cached) {
+            this.cachedWatcher = message.projection
+            for (const listener of this.watcherListeners) listener(message.projection)
+            this.notifyState()
+          }
+        }
         else if (message.event === 'detail') this.cacheDetail(message.threadId, agentThreadDetailResultSchema.parse(message.detail))
         else if (message.event === 'detail-delta') this.applyDelta(message.threadId, message.delta)
         else { this.pushErrorThread = message.threadId ?? null; if (message.threadId) this.tooLarge.add(message.threadId); this.options.onPushError?.(message.error.message) }
@@ -361,6 +376,7 @@ export class SocketHostService implements HostService {
     void task.finally(() => { if (this.catchup === task) this.catchup = undefined }).catch(() => undefined)
   }
   private call(operation: HostOperation, id: string = randomUUID(), onPlacement?: () => void): Promise<unknown> {
+    if ((operation.op === 'watcher-read' || operation.op === 'watcher-control') && this.museWatcherHeld(operation.request)) return Promise.resolve(museWatcherRefusal())
     if (operation.op === 'command') {
       // An unknown wire command is the host's to refuse, with its version and unsupported-request wording.
       const parsed = protocolAgentCommandSchema.safeParse(operation.command)
@@ -392,6 +408,9 @@ export class SocketHostService implements HostService {
   }
   private publish(state: AgentState, authoritative = false): void {
     this.validateState(state)
+    if (this.options.museEnabled !== true) for (const thread of state.host.threads) {
+      if (threadUsesMuse(thread, state.host)) this.dormantMuseThreads.set(thread.id, thread.projectId)
+    }
     if (!this.quietConnectionNotices.has(state.notice)) this.preserveConnectionFeedback(state.notice)
     delete state.clientScoped; delete state.connections
     if (authoritative) this.snapshotEpoch++
@@ -512,6 +531,32 @@ export class SocketHostService implements HostService {
   /** Observing a thread again lets one the host found too large be tried again: the host sends whole each observed thread this client does not hold. */
   async observe(threadIds: string[]): Promise<void> { threadIds = threadIds.filter(id => this.threadAvailable(id)); this.observed = [...threadIds]; for (const id of threadIds) this.tooLarge.delete(id); await this.call({ op: 'observe', threadIds }) }
   get supportsAtomicSend(): boolean { return this.features.includes('atomic-send') }
+  get supportsWatcherControl(): boolean { return this.options.watcherEnabled === true && this.features.includes('watcher-control') }
+  get supportsWatcherReads(): boolean { return this.options.watcherEnabled === true && this.features.includes('watcher-reads') }
+  private museWatcherHeld(request: WatcherHostRead | WatcherHostControl): boolean {
+    return this.options.museEnabled !== true && watcherRequestUsesMuse(request, this.cached?.host, this.dormantMuseThreads)
+  }
+  async watcherControl(request: WatcherHostControl, _client?: ClientIdentity, guard?: () => void): Promise<unknown> {
+    void _client // The socket's authenticated pairing supplies authority on the host.
+    if (!this.supportsWatcherControl || !this.supportsWatcherReads) throw new HostConnectionError('Update this host before Watcher directs its threads. Nothing was sent.', 'invalid_request')
+    if (this.museWatcherHeld(request)) return museWatcherRefusal()
+    guard?.()
+    return watcherToolSchemas[request.call.name].output.parse(await this.call({ op: 'watcher-control', request }))
+  }
+  subscribeWatcher(listener: (projection: WatcherHostProjection) => void): () => void { this.watcherListeners.add(listener); return () => this.watcherListeners.delete(listener) }
+  cachedWatcherProjection(master: WatcherIdentity): WatcherHostProjection | undefined {
+    const projection = this.cachedWatcher
+    return this.options.watcherEnabled === true && projection && projection.hostId === this.cached?.host.hostId
+      && JSON.stringify(projection.master) === JSON.stringify(master) ? projection : undefined
+  }
+  async watcherRead(request: WatcherHostRead): Promise<unknown> {
+    if (!this.supportsWatcherReads) throw new HostConnectionError('Update this host before Watcher reads its threads.', 'invalid_request')
+    if (this.museWatcherHeld(request)) return museWatcherRefusal()
+    const result = await this.call({ op: 'watcher-read', request })
+    if (request.call) return watcherToolSchemas[request.call.name].output.parse(result)
+    this.cachedWatcher = watcherHostProjectionSchema.parse(result)
+    return this.cachedWatcher
+  }
   get supportsDraftRevisions(): boolean { return this.features.includes('draft-revisions') }
   /** The host lists `pull-request-babysit`: it babysits and takes the user's Babysit pull request (ADR-0061 decision 11). */
   get supportsBabysitting(): boolean { return this.features.includes('pull-request-babysit') }
@@ -994,5 +1039,5 @@ export class SocketHostService implements HostService {
     if (!response.ok) throw refusal(response.status, 'The host could not forget this device. Connect again and retry.', 'unavailable')
     await this.close()
   }
-  async close(): Promise<void> { this.resetComposeQueue(); this.generation++; this.opening?.abort(); this.frames?.close() }
+  async close(): Promise<void> { this.cachedWatcher = undefined; this.watcherListeners.clear(); this.resetComposeQueue(); this.generation++; this.opening?.abort(); this.frames?.close() }
 }

@@ -56,6 +56,18 @@ const workshop = (control: AgentControl): AgentThread =>
   ?? control.get().host.threads.find(thread => thread.providerId === 'codex')!
 const titled = (control: AgentControl, threadId: string): AgentThread => control.get().host.threads.find(thread => thread.id === threadId)!
 
+/** Shuts a coordinator down before another opens its folder, so the second reads everything the first knew and the
+ * first can write nothing after it. Its title writes land and are saved first; then it closes in the app's own quit
+ * order. Disposing with a title write still in flight drops that title, which is #980, not what these tests check. */
+async function savedForReopening(f: { control: AgentControl; stop: () => Promise<void> }): Promise<void> {
+  await f.control.closed()
+  const entry = opened.findIndex(item => item.control === f.control)
+  if (entry >= 0) opened.splice(entry, 1)
+  f.control.dispose()
+  await f.control.closed()
+  await f.stop()
+}
+
 /** The provider answers the thread's first prompt; the coordinator sees the exchange on the next frame. */
 function reply(adapter: { state: { threads: AgentThread[] }; emit: () => void }, index = 0, prompt = 'The palette is unreadable in dark mode.', answer = 'I raised the foreground contrast on both dark themes.'): void {
   const thread = adapter.state.threads[index]!
@@ -69,7 +81,7 @@ function reply(adapter: { state: { threads: AgentThread[] }; emit: () => void },
 }
 
 afterEach(async () => {
-  for (const { control, stop } of opened.splice(0).reverse()) { control.dispose(); await stop() }
+  for (const { control, stop } of opened.splice(0).reverse()) { control.dispose(); await control.closed(); await stop() }
   for (const remove of removals.splice(0)) await remove()
 })
 
@@ -137,6 +149,7 @@ describe('naming a thread from its first exchange', () => {
     expect(titled(f.control, threadId)).toMatchObject({ title: 'Dark theme contrast', titleSource: 'generated' })
     expect(f.titles).toHaveBeenCalledTimes(1)
 
+    await savedForReopening(f)
     const reopened = await coordinator({ root: f.root })
     expect(titled(reopened.control, threadId)).toMatchObject({ title: 'Dark theme contrast', titleSource: 'generated' })
     expect(reopened.titles).not.toHaveBeenCalled()
@@ -318,6 +331,7 @@ describe('naming a thread from its first message while the first turn runs', () 
     send(f.adapters.codex, 'The palette is unreadable in dark mode.', 'Light mode too.')
     await vi.waitFor(() => expect(titled(f.control, threadId)).toMatchObject({ title: 'The palette is unreadable in dark mode.', titledFromFirstMessage: true }))
 
+    await savedForReopening(f)
     const reopened = await coordinator({ root: f.root, firstMessageTitles: DEFAULT_SETTINGS })
     const thread = reopened.adapters.codex.state.threads[0]!
     const at = new Date().toISOString()
@@ -337,6 +351,7 @@ describe('naming a thread from its first message while the first turn runs', () 
     reply(before.adapters.codex)
     await vi.waitFor(() => expect(before.titles).toHaveBeenCalledOnce())
 
+    await savedForReopening(before)
     const reopened = await coordinator({ root: before.root, firstMessageTitles: DEFAULT_SETTINGS, writeThreadTitle: async () => null })
     reply(reopened.adapters.codex)
     await reopened.control.command({ type: 'refresh' })
