@@ -58,3 +58,14 @@ it('accepts only owning-host state fields and never lets a projection lower budg
   expect(after.operations[0]).toMatchObject({ requestId: operation.requestId, receiptId: operation.receiptId })
   expect(after.operations[0]!.anchorMessageId).toBe(operation.anchorMessageId)
 })
+
+it('keeps a validated accepted control receipt when its follow-up projection read fails', async () => {
+  const f = await fixture(), operation = f.control.watcherRecord().operations[0]!
+  const input = { requestId: operation.requestId, retryKey: operation.retryKey, target: operation.target, delivery: 'now' as const, text: 'Synthetic send' }
+  const receipt = { operationId: operation.id, target: operation.target, requestId: operation.requestId, deliveryState: 'accepted', receiptId: operation.receiptId, cardId: operation.cardId }
+  vi.mocked(f.remote.control).mockResolvedValue({ status: 'ok', receipt, limits: { inFlight: 1, inFlightLimit: 4, promptCount: 1, promptLimit: 4 }, delivery: 'now' })
+  f.read.mockRejectedValue(new Error('synthetic-read-failed'))
+  const result = await (f.watcher as unknown as { executeRemote(name: string, operation: typeof operation, input: unknown): Promise<unknown> }).executeRemote('send_to_thread', operation, input)
+  expect(result).toMatchObject({ status: 'ok', receipt: { deliveryState: 'accepted' } })
+  expect(f.control.watcherRecord().operations[0]!.deliveryState).toBe('accepted')
+})

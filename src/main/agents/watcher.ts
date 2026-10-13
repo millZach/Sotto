@@ -738,7 +738,14 @@ export class WatcherService implements WatcherControlHooks {
       if (parsed.status === 'refused' && !parsed.receipt) await this.options.control.updateWatcher(record => {
         this.recordRemoteRefusal(record, operation.id, parsed.code)
       })
-      else await this.reconcileRemote(operation.target.hostId)
+      else {
+        if (parsed.receipt.operationId !== operation.id || parsed.receipt.requestId !== operation.requestId
+          || key(parsed.receipt.target) !== key(operation.target)) refuse('INVALID_INPUT', 'The host returned another operation receipt. Nothing was reconciled.')
+        await this.options.control.updateWatcher(record => this.copyRemoteReceipt(record, record.operations.find(item => item.id === operation.id)!, { ...parsed.receipt, updatedAt: now() }))
+        await this.reconcileRemote(operation.target.hostId).catch(() => {
+          this.recoveryNotice = 'The host confirmed the operation, but its latest state could not be read. Reconnect to refresh it.'
+        })
+      }
       return parsed.status === 'ok' ? { ...parsed, limits: this.limits(this.record().operations.find(item => item.id === operation.id)!) } : parsed
     } catch (error) {
       if (error instanceof Refusal) {
