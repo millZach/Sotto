@@ -5,6 +5,7 @@ export default tseslint.config(
   {
     ignores: [
       'artifacts/watcher-phone-wire/**',
+      'artifacts/stable-from-main/**',
       'artifacts/watcher-paired-hosts/**',
       'artifacts/linux-test-findings/**',
       'artifacts/omarchy-setup/**',

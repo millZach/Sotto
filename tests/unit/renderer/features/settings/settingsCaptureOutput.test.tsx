@@ -270,7 +270,7 @@ describe('SettingsView', () => {
     await user.click(screen.getByRole('switch', { name: 'Whitespace formatting' }))
     await selectCategory('Application')
     await user.click(screen.getByRole('switch', { name: 'Start minimized' }))
-    expect(screen.getByText('Store transcript text locally for search and reuse. Turning this off also deletes saved checkpoints at once.')).toBeInTheDocument()
+    expect(screen.getByText('Saves transcripts on this computer to search and reuse. Turning it off deletes saved checkpoints right away.')).toBeInTheDocument()
     await user.click(screen.getByRole('switch', { name: 'Keep local history' }))
     expect(update).toHaveBeenCalledWith({ reducedMotion: 'on' })
     expect(update).toHaveBeenCalledWith({ maxRecordingSeconds: 120 })
