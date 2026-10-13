@@ -45,6 +45,7 @@ export const babysitNewsSchema = z.object({
   head: z.string().max(100).nullable(),
   changes: z.array(changeSchema).max(8),
   ended: z.enum(['merged', 'closed', 'comment-limit', 'unreadable']).nullable(),
+  unreadable: z.enum(['sign-in', 'not-found', 'no-answer', 'answer']).optional(),
 })
 
 /** Old queue files remain readable; neither Watcher nor a restart ever impersonates a pull request. */
@@ -106,6 +107,7 @@ function foldPart(earlier: BabysitNews, later: BabysitNews): BabysitNews {
       ...conflicting ? [conflicting] : [],
     ],
     ended: later.ended,
+    ...later.ended === 'unreadable' && later.unreadable ? { unreadable: later.unreadable } : {},
   }
 }
 
@@ -142,23 +144,36 @@ function remarkLine(remark: BabysitRemarkNews): string {
 }
 
 const CHECK_STATUS: Record<'failure' | 'cancelled' | 'action-required', string> = { failure: 'failed', cancelled: 'was cancelled', 'action-required': 'needs someone to act' }
-function changeLines(change: BabysitChange): string[] {
+/** The commit checks were read on, as T3 names it, so an agent can tell news of a commit it has pushed past. */
+const commitOf = (head: string | null): string => head && /^[0-9a-f]{7,64}$/iu.test(head) ? `commit ${head.slice(0, 7)}` : head ? `commit ${printable(head, 40)}` : 'the newest commit'
+function changeLines(change: BabysitChange, head: string | null): string[] {
   switch (change.kind) {
     case 'checks-failed': return change.checks.map(check => `Check ${printable(check.name)} ${CHECK_STATUS[check.status]}${link(check.url)}`)
     case 'checks-passed': return [change.required
-      ? `The required checks passed (${change.count}) on the newest commit.`
-      : `All ${change.count === 1 ? 'the one check' : `${change.count} checks`} passed on the newest commit.`]
+      ? `The required checks passed (${change.count}) on ${commitOf(head)}.`
+      : `All ${change.count === 1 ? 'the one check' : `${change.count} checks`} passed on ${commitOf(head)}.`]
     case 'remarks': return change.remarks.map(remarkLine)
     case 'conflicting': return [`The branch now conflicts with ${printable(change.base, 300)}. It needs the conflicts resolved before it can merge.`]
   }
 }
 
-const ENDING: Record<NonNullable<BabysitNews['ended']>, string> = {
+const ENDING: Record<Exclude<NonNullable<BabysitNews['ended']>, 'unreadable'>, string> = {
   merged: 'It merged, so Sotto has stopped babysitting it.',
   closed: 'It was closed without merging, so Sotto has stopped babysitting it.',
   'comment-limit': 'It has brought only comments for ten wake-ups in a row, so Sotto has stopped babysitting it rather than keep waking you for them.',
-  unreadable: 'GitHub could not be read for it eight times in a row, about sixteen minutes, so Sotto has stopped babysitting it: nothing was being checked. Check the GitHub sign-in with gh auth status.',
 }
+/**
+ * Why GitHub could not be read, as it kept answering: never this computer being offline or asleep, which ends nothing
+ * (ADR-0061 decision 9). News queued before the answer was kept says only that it could not be read.
+ */
+const UNREADABLE: Record<NonNullable<BabysitNews['unreadable']> | 'unknown', string> = {
+  'sign-in': 'GitHub refused the sign-in eight times in a row, so Sotto has stopped babysitting it: nothing was being checked. Check the GitHub sign-in with gh auth status.',
+  'not-found': 'GitHub did not show it to this sign-in eight times in a row, so Sotto has stopped babysitting it: it may have been deleted, or the sign-in may have lost access to it.',
+  'no-answer': 'GitHub stopped answering for it eight times in a row, so Sotto has stopped babysitting it: nothing was being checked.',
+  answer: 'GitHub answered with something Sotto could not read eight times in a row, so Sotto has stopped babysitting it: nothing was being checked.',
+  unknown: 'GitHub could not be read for it eight times in a row, so Sotto has stopped babysitting it: nothing was being checked.',
+}
+const endingOf = (news: BabysitNews): string => news.ended === 'unreadable' ? UNREADABLE[news.unreadable ?? 'unknown'] : ENDING[news.ended!]
 const RESTART = (tool: boolean): string => tool
   ? `Call ${BABYSIT_TOOL} to start again if you still need it.`
   : 'The user can start it again from the Pull request surface if it is still needed.'
@@ -166,10 +181,10 @@ const RESTART = (tool: boolean): string => tool
 /** One pull request's part of a wake-up: which, what changed and, when it ended, why. */
 function pullRequestPart(news: BabysitNews, options: WakeUpOptions, linesMax: number): string {
   const title = news.pullRequest.title === null ? '' : ` "${printable(news.pullRequest.title, 500)}"`
-  const lines = news.changes.flatMap(changeLines)
+  const lines = news.changes.flatMap(change => changeLines(change, news.head))
   const shown = lines.slice(0, linesMax).map(item => `- ${item}`)
   if (lines.length > shown.length) shown.push(`- And ${lines.length - shown.length} ${shown.length ? 'more' : lines.length === 1 ? 'change' : 'changes'}; read the pull request with gh for ${shown.length ? 'the rest' : 'them'}.`)
-  const ending = news.ended === null ? [] : [ENDING[news.ended], ...news.ended === 'comment-limit' || news.ended === 'unreadable' ? [RESTART(options.tool)] : []]
+  const ending = news.ended === null ? [] : [endingOf(news), ...news.ended === 'comment-limit' || news.ended === 'unreadable' ? [RESTART(options.tool)] : []]
   return [`Pull request #${news.pullRequest.number}${title}: ${news.pullRequest.url}`, ...shown, ...ending.length ? [ending.join(' ')] : []].join('\n')
 }
 

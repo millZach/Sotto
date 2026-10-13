@@ -542,8 +542,8 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
         </AppShell>
       )}
       </WatcherRoomProvider>
-      {/* On Owl, Update all takes the corner and speaks for clients too (ADR-0077). */}
-      {updateAll ? <UpdateAllCard /> : <ClientUpdateCard />}
+      {/* Neither card speaks before first-run setup ends; on Owl, Update all takes the corner and speaks for clients too (ADR-0077). */}
+      {management ? updateAll ? <UpdateAllCard /> : <ClientUpdateCard /> : null}
     </AgentProvider>
   )
 }
