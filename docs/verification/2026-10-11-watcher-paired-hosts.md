@@ -232,3 +232,33 @@ The built app passed first-entry model choice and Send, a real main-owned Watche
 No renderer change was authored beyond the incoming room/Owl merge and no baseline was regenerated. Production dependencies remain exactly zod, node-pty and sherpa-onnx-node. The protocol note describes paired fact retention and partial recovery; the incoming CONTEXT, ADR-0073 and plan already describe the same contracts and remain accurate. Phone projections keep Watcher. No new answer, approval, widening, capacity or permission policy is introduced.
 
 The final inventory found no worktree Node, Electron or SSH process; the owned idle-sleep helper is stopped. No live forge check was repeated, and the original live proof and retained-profile cleanup limitation remain unchanged. This run adds local fake-provider/socket and built Windows evidence, with no new paid-provider, packaged, macOS, Linux or phone UI proof. Nothing was pushed, rebased, stashed, switched, published or installed and no workspace worktree or nested review was created. The requested integration, conflict resolutions, fixes and gates are complete; the lead owns the pull request.
+
+## Second paired-host review fixes (October 12, 2026)
+
+The work resumed on the lead's clean main merge `3b3a9ac3f`, including #949's computer-owned new-thread defaults. Both Spec findings in `t5-review-fixes-2.md` were reproduced against the real modules and fixed separately.
+
+- `957a6e6a7` resolves omitted worker effort from this computer's configuration and fits it to the explicitly chosen owning-host model before hashing the transmitted start. Permission is also fixed to the common narrower default before hashing, with both hosts' live ceilings still enforced. The model was already required explicitly. An optional text-free `inputDigest` binds the original tool call, so retries after defaults change return the original operation; imported retries check the resolved wire digest, and older saved operations keep their original digest check. The socket regression failed with host effort `low` instead of desktop effort `high`. The matching-level and differently named nearest-fit cases now pass, check the wire digest, reject changed retry content, return the same receipt on both computers and leave one worker. All 122 neighboring paired-host, tool and schema cases passed.
+- `93af76c52` removes both `pr:` and `host:github:` facts when the connected owning roster no longer links the PR. Landing is classified after removal so it clears in that observation. Empty or bounded evidence projections and disconnected rosters retain the independent facts. The regression failed with approval and auto-merge still present; it now verifies retained omissions, disconnect/reconnect, removed checks/approval/auto-merge, immediate Idle classification, invalidated older news and retained evidence on a same-ID local thread. The synthetic socket evidence fixture now includes the owning roster's PR link. All 91 neighboring evidence, wake-up, recovery and paired-host cases passed.
+
+Definitive failing output is in ignored `artifacts/watcher-paired-hosts/r2-defaults-red.log` and `r2-unlink-red-final.log`; passing focused output is `r2-defaults-neighbors.log` and `r2-unlink-neighbors-final.log`. Development drafts and their failures remain separately named. No gate failed or required a retry after these commits.
+
+The required gates ran in this order on Windows, at code commit `93af76c52`, with real output retained under the ignored `artifacts/watcher-paired-hosts/r2-*.log` prefix:
+
+| Command | Result |
+| --- | --- |
+| `npm run typecheck` | Exit 0; all four projects |
+| `npm run lint` | Exit 0 |
+| `npm test -- --maxWorkers=2` | Exit 0; 786 files and 9,974 tests passed; 61 files and 300 tests skipped; 1,559.98 seconds |
+| `npm run notices:verify` | Exit 0; 189 components |
+| `npm run build` | Exit 0; main, host, preload and renderer |
+| `npm run test:socket` | Exit 0; 22 files and 469 tests passed; ten skipped; 228.09 seconds |
+| `npm run build:host` | Exit 0; 204 modules; plain Node host; 2.60 seconds |
+| `npx playwright test tests/e2e/watcher-gate.spec.ts tests/e2e/watcher.spec.ts tests/e2e/new-thread-defaults-hosts.spec.ts` | Exit 0; all 18 journeys; 1.6 minutes |
+
+Immediately before the full suite, `powershell -c "(Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory"` returned **8,540,980 KB**, above 3 GB. The temporary thread execution-state helper prevented idle sleep without changing a power-plan setting; its owned PID 82168 was stopped afterward and confirmed absent. Final process inventory found no Node, Electron or SSH process referring to this worktree. Completed output files are UTF-8 without a BOM. SQLite, jsdom canvas, dependency directive and Playwright color warnings did not fail their gates.
+
+The built app checks cover release gating and preserved special records, first entry and Send, main's own Watcher over fake Codex, Overview and beside-thread keyboard/focus behavior, saved drafts, capacity, long titles, disconnected hosts, Sotto and Tropic dark/light, reduced motion, contrast and all three room sizes. The added defaults journey uses scripted SSH and a separate local headless host with synthetic providers: local defaults save while that host is selected, the computers keep separate project folders and thread creation applies this computer's permission choice.
+
+Visually inspected and retained byte-identical captures from this run: the [dark Watcher room](../../artifacts/watcher-paired-hosts/r2-room-sotto-dark-820x560.png), [light beside thread](../../artifacts/watcher-paired-hosts/r2-beside-sotto-light-820x560.png) and [dark defaults screen](../../artifacts/watcher-paired-hosts/r2-defaults-dark-820.png). Headers, transcript, permission card, composers and switch fit in the room captures at 820x560 pixels. The defaults controls and separate computer folders fit its minimum-size capture, 1230x843 device pixels at the laptop's 150% scaling.
+
+The protocol note now describes frozen desktop defaults and explicit owning-roster PR removal. ADR-0073, ADR-0074 and CONTEXT already describe these rules; no domain or authority decision changed. No renderer file or dependency was changed, no baseline was regenerated and no phone surface was built or filtered. No live forge check or paid model turn was repeated. The original live proof and its retained-profile cleanup limitation remain unchanged. No push, rebase, stash, branch switch, new worktree, install, publication or nested review occurred. Both requested findings and all gates are complete; the lead owns further integration and the pull request.
