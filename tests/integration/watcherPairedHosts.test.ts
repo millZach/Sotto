@@ -529,3 +529,32 @@ it.each(['retention', 'project filter', 'settlement', 'protection', 'queue prese
   }
   if (check === 'protection') expect(list.rows.find(row => row.target.hostId === started.target.hostId && row.target.threadId === twin.id)?.protected).toBe(false)
 })
+
+it.each([
+  { desired: 'high', expected: 'high' },
+  { desired: 'thorough', expected: 'max' },
+])("freezes this computer's $desired effort before hashing and preserves the omitted call on retry", async ({ desired, expected }) => {
+  const f = await master()
+  if (desired === 'thorough') {
+    f.workspace.adapters.codex.state.models[0]!.reasoningEfforts = ['brief', 'thorough']
+    await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  }
+  await f.control.commandShell({ type: 'configure', patch: { newThreadModelId: f.control.shell().host.models[0]!.id, newThreadReasoningEffort: desired, newThreadRuntimeMode: 'full-access' } })
+  await remote.host.service.command({ type: 'configure', patch: { newThreadReasoningEffort: 'low', newThreadRuntimeMode: 'approval-required' } }, desktopWindowClient())
+  await vi.waitFor(() => expect(f.socket.shell().configuration.newThreadReasoningEffort).toBe('low'))
+  const wire = vi.spyOn(f.socket, 'watcherControl'), input = f.start()
+  const first = await f.call('start_thread', input)
+  expect(first).toMatchObject({ status: 'ok', effectiveChoices: { reasoningEffort: expected, permission: { kind: 'runtime', mode: 'approval-required' } } })
+  if (first.status !== 'ok') throw new Error('start-refused')
+  const packet = wire.mock.calls[0]![0]
+  expect(packet.call.input).toMatchObject({ reasoningEffort: expected, permission: { kind: 'runtime', mode: 'approval-required' } })
+  expect(packet.operation.digest).toBe(createHash('sha256').update(JSON.stringify([packet.call.name, packet.call.input])).digest('hex'))
+  await f.control.commandShell({ type: 'configure', patch: { newThreadReasoningEffort: 'low', newThreadRuntimeMode: 'approval-required' } })
+  expect(await f.call('start_thread', input)).toMatchObject({ receipt: { operationId: first.receipt.operationId } })
+  expect(wire).toHaveBeenCalledOnce()
+  expect(await f.call('start_thread', { ...input, firstPrompt: 'Synthetic changed retry' })).toMatchObject({ code: 'RETRY_KEY_CONFLICT' })
+  const receipt = await f.socket.watcherControl(packet)
+  expect(receipt).toMatchObject({ receipt: { operationId: first.receipt.operationId } })
+  expect(remote.host.service.state().host.threads.filter(thread => thread.title === input.title)).toHaveLength(1)
+  expect(f.socket.shell().host.threads.find(thread => thread.id === first.target.threadId)?.reasoningEffort).toBe(expected)
+})

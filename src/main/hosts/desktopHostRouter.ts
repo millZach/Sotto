@@ -99,7 +99,8 @@ export class DesktopHostRouter {
     return {
       hosts: () => this.options.watcherEnabled !== true ? [] : [...this.hosts.values()].filter(item => item.connection.kind === 'remote').map(({ connection: host }) => ({
         hostId: host.hostId, control: host.service.supportsWatcherControl === true, reads: host.service.supportsWatcherReads === true,
-        connected: !this.reconnecting.has(host.hostId) && host.available?.() !== false })),
+        connected: !this.reconnecting.has(host.hostId) && host.available?.() !== false,
+        permissionCeiling: host.service.shell().configuration.newThreadRuntimeMode ?? 'approval-required' })),
       snapshot: id => {
         allowed(); const entry = this.hosts.get(id)?.connection
         if (!entry || entry.kind !== 'remote') return undefined

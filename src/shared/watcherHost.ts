@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { agentRuntimeModeSchema, type AgentHostSnapshot } from './agents'
+import { agentRuntimeModeSchema, type AgentHostSnapshot, type AgentRuntimeMode } from './agents'
 import { watcherIdentitySchema, watcherOperationSchema, watcherRequestSchema, watcherToolSchemas, watcherEvidenceSchema, watcherThreadTargetSchema } from './watcher'
 
 /** Text-free attribution, bound by the host to its authenticated SSH-recorded desktop. No local tool token travels. */
@@ -32,7 +32,7 @@ export type WatcherHostProjection = z.infer<typeof watcherHostProjectionSchema>
 
 /** Main-only routing seam. All IDs are owning-host IDs, never client UI keys. */
 export interface WatcherRemoteHosts {
-  hosts(): { hostId: string; control: boolean; reads: boolean; connected: boolean }[]
+  hosts(): { hostId: string; control: boolean; reads: boolean; connected: boolean; permissionCeiling: AgentRuntimeMode }[]
   read(hostId: string, request: WatcherHostRead): Promise<unknown>
   control(hostId: string, request: WatcherHostControl): Promise<unknown>
   snapshot(hostId: string): AgentHostSnapshot | undefined
