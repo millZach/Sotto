@@ -125,3 +125,31 @@ The required ordered run passed typecheck and lint. The full suite has not start
 Real output is retained in ignored artifacts/watcher-phone-wire/bugbot-red.log, bugbot-preview-green.log, bugbot-answer-green.log, bugbot-focused.log, bugbot-typecheck.log and bugbot-lint.log. bugbot-gates.json records completed commands only. The active resource watcher is bugbot-resume-gates.ps1, PID 38444, exec session 63853; it will record the remaining results in bugbot-*.log and bugbot-gates.json. No complete-run, built-app or new screenshot claim is made. The final verification table and desktop inspection must be completed after those gates finish; no gate is waived.
 
 Swift and Android are unverified locally. This Windows laptop has no Swift compiler, Java/Gradle executable or JAVA_HOME; no additional software was installed. Actual phones and live providers are also unverified. No native file changed in these Bugbot fixes. Both requested code corrections are implemented and committed; the six remaining gates and final desktop proof remain unfinished. These commits are local and unpushed; the lead owns PR #986 and integration.
+
+## October 13, 2026: Stop all previews per client
+
+This correction replaces 920dcc904's shared refuse-at-capacity approach, on the lead's merged base bf5c1b6bf. The shared pool was wrong: it could block the desktop room's emergency Stop all and failed the existing desktop capacity regression. The new brief explicitly delegates the full suite to the lead's CI while other agents run full suites on this laptop. No local full suite was started, and the former queued launcher PID 38444 is no longer alive.
+
+Before changing production code, the unchanged watcherTools.test.ts pruning test reproduced the reported line-255 failure: the expiry case passed, and the capacity case failed. The revised two-phone regression and both new desktop-room cases also failed before the fix. Both desktop cases reproduced a refused new desktop preview after a phone opened eighty previews. The socket fixture exercises authenticated paired phones and the real Watcher service, with fake native providers.
+
+The main-owned confirmation store now retains sixteen previews per client. The desktop room uses its own identity; a phone supplies only its authenticated client ID, retained across reconnect. A new preview always survives and prunes only that client's oldest. The duplicate phone pool is removed. The backend checks ownership before consuming the confirmation, so another phone or the desktop cannot steal or invalidate it. Expiry, exact worker scope and dispatch guards remain. Total live storage is bounded by sixteen times the number of clients, rather than a global capacity that can block Stop all.
+
+No dedicated preview-replacement refusal exists in protocol v1, so a pruned ID keeps TARGET_CHANGED. Its words mention replacement by a newer preview or expiry/unavailability, rather than incorrectly claiming the worker set changed. Actual scope changes still use their existing changed-thread refusal. Feature names, wire request/reply shapes, authority policy and answer replay are unchanged. docs/host-protocol.md and the run folder's phone-contract.md replace the shared-limit sentence with this behavior.
+
+The five selected cases passed after the fix: the existing expiry/capacity cases, the two-phone case, and both the existing and newest desktop confirmations after eighty phone previews. The two-phone case also checks replacement wording, per-client storage bounds, expiry cleanup and cross-client submissions without consuming the owner's preview. The desktop cases check that the phone cannot use the desktop's preview and the desktop cannot consume the phone's, before one real worker stop. watcherTools.test.ts is unchanged; no assertion or deadline was weakened. The selected loop passed five cases in two files in 17.92 seconds (exit 0).
+
+The first ordered run stopped at typecheck's exactOptionalPropertyTypes check. The internal owner marker is now explicitly string | undefined: undefined identifies the desktop, and a paired ID identifies its phone. The complete four-command sequence was restarted. No production debug logging was added, and no prompt, tool argument or protocol body was logged.
+
+
+The complete required sequence passed on the final implementation. The Watcher wildcard was expanded to all five matching unit files, alongside both named integration files, with two workers. The existing watcherTools.test.ts file is unchanged from bf5c1b6bf. No flaky rerun was needed. Sampled free memory before these local gates was 5,800,284 KB. No local full suite ran: the latest brief explicitly leaves that to the lead's CI and supersedes the previous queued eight-gate plan.
+
+| Command | Observed result | Seconds |
+| --- | --- | --- |
+| `npm run typecheck` | Exit 0; all four TypeScript projects | 54.27 |
+| `npm run lint` | Exit 0; ESLint | 25.47 |
+| `npx vitest run tests/integration/watcherTools.test.ts tests/integration/watcherPhone.test.ts tests/unit/main/watcher* --maxWorkers=2` | Exit 0; 7 files / 163 tests passed | 54.77 |
+| `npm run test:socket` | Exit 0; 23 files / 485 tests passed; 10 tests skipped | 196.53 |
+
+Real output is retained in ignored artifacts/watcher-phone-wire/stop-previews-*.log and stop-previews-gates.json. stop-previews-red.log records the unchanged desktop failure; stop-previews-new-red.log records the three new failures before production edits; stop-previews-green.log records the five selected passing cases. The initial typecheck failure is retained in stop-previews-typecheck-first.log. No temporary production instrumentation or prototype was added.
+
+The wire fixture is real socket/host verification with fake providers. No new desktop rendering, packaged app, real phone or live-provider claim is made. Swift/Android compilation and native device checks remain unverified locally; no native file changed. Full-suite Windows/Linux CI is delegated to the lead. No requested local check or code correction remains unfinished. Production dependencies remain exactly zod, node-pty and sherpa-onnx-node. No renderer edit, push, merge, rebase, stash, branch switch, new worktree, installation or nested review occurred, and no other worktree was touched.

@@ -281,28 +281,55 @@ it('marks workers watched only for active requests belonging to the current host
   expect(watched()).toBe(true)
 })
 
-it('keeps a phone Stop all preview valid when another phone opens seventeen previews', async () => {
+it('keeps a phone Stop all preview valid when another phone opens many previews', async () => {
   const f = await fixture(), first = await f.pair(), other = await f.pair()
   await first.call('send', f.send(first.paired.clientId)); const worker = await f.start()
   const preview = await first.call('preview', { op: 'watcher-phone-prepare-stop-all' })
   expect(preview).toMatchObject({ ok: true, result: { status: 'ok' } })
-  for (let index = 0; index < 17; index++) {
+  const otherOldest = await other.call('other-oldest', { op: 'watcher-phone-prepare-stop-all' })
+  for (let index = 0; index < WATCHER_STOP_ALL_PREVIEW_LIMIT * 5; index++) {
     expect(await other.call(`preview-${index}`, { op: 'watcher-phone-prepare-stop-all' })).toMatchObject({ ok: true, result: { status: 'ok' } })
   }
-  for (let index = 17; index < WATCHER_STOP_ALL_PREVIEW_LIMIT - 1; index++) {
-    expect(await other.call(`preview-${index}`, { op: 'watcher-phone-prepare-stop-all' })).toMatchObject({ ok: true, result: { status: 'ok' } })
-  }
-  expect(await other.call('full', { op: 'watcher-phone-prepare-stop-all' })).toMatchObject({ ok: true, result: {
-    status: 'refused', code: 'IN_FLIGHT_LIMIT', message: 'Too many Stop all previews are open. Wait a minute and review again.' } })
-  expect(f.watcher.prepareStopAll()).toMatchObject({ status: 'refused', code: 'IN_FLIGHT_LIMIT' })
+  const retained = (f.watcher as unknown as { confirmations: ReadonlyMap<string, unknown> }).confirmations
+  expect(retained.size).toBe(WATCHER_STOP_ALL_PREVIEW_LIMIT + 1)
+  expect(await other.call('replaced', { op: 'watcher-phone-stop-all', confirmationId: (otherOldest.result as { confirmationId: string }).confirmationId }))
+    .toMatchObject({ ok: true, result: { status: 'refused', code: 'TARGET_CHANGED', message: expect.stringContaining('replaced by a newer one') } })
+  const confirmationId = (preview.result as { confirmationId: string }).confirmationId
+  expect(await other.call('stolen', { op: 'watcher-phone-stop-all', confirmationId })).toMatchObject({ ok: true, result: { status: 'refused', code: 'TARGET_CHANGED' } })
+  expect(await f.watcher.stopAll(confirmationId)).toMatchObject({ status: 'refused', code: 'TARGET_CHANGED' })
   expect(await first.call('stop', { op: 'watcher-phone-stop-all', confirmationId: (preview.result as { confirmationId: string }).confirmationId }))
     .toMatchObject({ ok: true, result: { status: 'ok', results: [{ target: worker, status: 'stopped' }] } })
-  // Expiration releases capacity in both layers without replacing another live confirmation.
+  // Expiration releases each client's retained previews.
   const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 60_001)
   try {
     expect(f.watcher.prepareStopAll()).toMatchObject({ status: 'ok' })
     expect(await other.call('after-expiry', { op: 'watcher-phone-prepare-stop-all' })).toMatchObject({ ok: true, result: { status: 'ok' } })
+    expect(retained.size).toBe(2)
   } finally { clock.mockRestore() }
+})
+
+it.each(['existing', 'newest'])('keeps the desktop room\'s %s Stop all preview usable when a phone opens many previews', async choice => {
+  const f = await fixture(), peer = await f.pair()
+  await peer.call('send', f.send(peer.paired.clientId)); const worker = await f.start()
+  const existing = f.watcher.prepareStopAll()
+  if (existing.status !== 'ok') throw new Error('desktop preview refused')
+  let phonePreview
+  // Cross the former shared cap as well as the per-client cap.
+  for (let index = 0; index < 80; index++) phonePreview = await peer.call(`preview-${index}`, { op: 'watcher-phone-prepare-stop-all' })
+  const newest = f.watcher.prepareStopAll()
+  expect(newest).toMatchObject({ status: 'ok' })
+  if (newest.status !== 'ok') throw new Error('new desktop preview refused')
+  expect(phonePreview).toMatchObject({ ok: true, result: { status: 'ok' } })
+  const phoneConfirmationId = (phonePreview!.result as { confirmationId: string }).confirmationId
+  expect(await f.watcher.stopAll(phoneConfirmationId)).toMatchObject({ status: 'refused', code: 'TARGET_CHANGED' })
+  expect(await peer.call('desktop-preview', { op: 'watcher-phone-stop-all', confirmationId: existing.confirmationId }))
+    .toMatchObject({ ok: true, result: { status: 'refused', code: 'TARGET_CHANGED' } })
+  const retained = (f.watcher as unknown as { confirmations: ReadonlyMap<string, unknown> }).confirmations
+  expect(retained.size).toBe(WATCHER_STOP_ALL_PREVIEW_LIMIT + 2)
+  expect(retained.has(phoneConfirmationId)).toBe(true)
+  expect(await f.watcher.stopAll(choice === 'existing' ? existing.confirmationId : newest.confirmationId))
+    .toMatchObject({ status: 'ok', results: [{ target: worker, status: 'stopped' }] })
+  expect(f.workspace.adapters.codex.commands.filter(row => row.type === 'interrupt')).toHaveLength(1)
 })
 
 it('replays a phone worker answer after reconnect without answering again or requiring a new grant', async () => {

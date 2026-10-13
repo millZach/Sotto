@@ -11,7 +11,8 @@ export const WATCHER_PREPARE_STOP_ALL = 'sotto:watcher:prepare-stop-all'
 export const WATCHER_STOP_ALL = 'sotto:watcher:stop-all'
 export const WATCHER_SET_LIMIT = 'sotto:watcher:set-limit'
 export const WATCHER_RENDERER_ARGUMENT = '--sotto-watcher-enabled'
-export const WATCHER_STOP_ALL_PREVIEW_LIMIT = 64
+/** Retained previews per desktop room or authenticated paired phone, never a shared capacity. */
+export const WATCHER_STOP_ALL_PREVIEW_LIMIT = 16
 
 const timestamp = z.iso.datetime({ offset: true })
 const pending = z.object({ id: z.string(), kind: z.enum(['question', 'permission']),
