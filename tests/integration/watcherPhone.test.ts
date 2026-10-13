@@ -134,7 +134,7 @@ it('projects grouped replies with one row per thread and keeps remote owning car
   const remoteId = randomUUID(), remoteTarget = { hostId: remoteId, threadId: 'remote-worker' }
   const remoteSnapshot = { ...f.control.watcherSnapshot(), hostId: remoteId, threads: [{ ...f.control.watcherSnapshot().threads.find(row => row.id === worker.threadId)!,
     id: remoteTarget.threadId, hostId: remoteId, providerId: 'claude' as const, title: 'Forge worker', requests: [{ id: 'remote-question', kind: 'question' as const, text: 'Synthetic remote question', options: [] }] }] }
-  f.watcher.useRemoteHosts({ hosts: () => [{ hostId: remoteId, reads: false, control: false, connected: true }], snapshot: () => remoteSnapshot,
+  f.watcher.useRemoteHosts({ hosts: () => [{ hostId: remoteId, reads: false, control: false, connected: true, permissionCeiling: 'approval-required' as const }], snapshot: () => remoteSnapshot,
     read: async () => null, control: async () => null, subscribe: () => () => undefined })
   await f.control.updateWatcher(record => { record.requests.at(-1)!.participants.push({ target: remoteTarget, requestId: record.requests.at(-1)!.id,
     startedBy: 'user', generation: 0, state: 'participating', promptCount: 0 }) })
