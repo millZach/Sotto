@@ -518,13 +518,14 @@ private struct WatcherRequestCard: View {
     }
 
     /// Where the answer goes, or nil for a thread on a computer this iPhone isn't paired with.
-    private var place: RequestPlace? {
-        if card.target.hostId == hostID { return .watcher(hostID: hostID, target: card.target.ref) }
-        if model.thread(card.target.ref) != nil { return .thread(card.target.ref) }
-        return nil
+    private var place: RequestPlace? { model.watcherCardPlace(card, on: hostID) }
+    /// Whether it can be answered from here now: only while the computer that holds the request still has it.
+    private var route: WatcherCardRoute { model.watcherCardRoute(card, on: hostID) }
+    /// The request as its computer holds it now, or as Watcher's page shows it when this iPhone can't read that.
+    private var request: AgentRequest {
+        if case .answer(_, let current) = route { return current }
+        return card.request
     }
-    /// The request as its computer holds it now.
-    private var request: AgentRequest { place.flatMap { model.waitingRequest(card.request.id, at: $0) } ?? card.request }
     private var isPermission: Bool { request.kind == "permission" }
     private var tag: String { isPermission ? "Permission" : "Question" }
     private var ask: String { isPermission ? request.text : (request.questions?.first?.question ?? request.text) }
@@ -616,22 +617,26 @@ private struct WatcherRequestCard: View {
         }
     }
 
+    /// Answers are offered only once the computer that holds the request has it, as the card shows it; otherwise the card
+    /// says why there are none.
     @ViewBuilder private var idleActions: some View {
-        if let place, request.supported {
-            let ready = model.canAnswer(request, at: place) && !model.answering(place.hostID)
-            if !model.mayAnswer(at: place) {
+        switch route {
+        case .note(let words):
+            note(words, reviews: false)
+        case .answer(let place, let current):
+            if !current.supported {
+                note("Answer this one in Sotto on \(model.name(place.hostID)).", reviews: false)
+            } else if !model.mayAnswer(at: place) {
                 note("This iPhone can’t answer on \(model.name(place.hostID)) yet.", reviews: true)
             } else if !card.connected {
                 note("\(AgentNames.name(card.provider)) isn’t connected on \(model.computerName(card.target.hostId) ?? computer). Answer once it’s back.", reviews: false)
             } else if isPermission {
-                permissionActions(enabled: ready)
-            } else if let options = request.oneTapOptions {
-                questionActions(options, enabled: ready)
+                permissionActions(enabled: model.canAnswer(current, at: place) && !model.answering(place.hostID))
+            } else if let options = current.oneTapOptions {
+                questionActions(options, enabled: model.canAnswer(current, at: place) && !model.answering(place.hostID))
             } else {
                 note(nil, reviews: true)
             }
-        } else {
-            note("Answer this one in Sotto on \(computer).", reviews: false)
         }
     }
 

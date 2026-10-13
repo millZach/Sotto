@@ -72,12 +72,17 @@ final class WatcherModelTests: XCTestCase {
         return try json(#"{"hostId":"\#(laptop)","clientCapabilities":{"mayAnswer":\#(mayAnswer)},"host":{"hostId":"\#(laptop)","name":"Laptop","threads":[{"id":"t","projectId":"p","title":"Fix login test","providerId":"claude","status":"running","requests":[\#(requests)]}],"projects":[],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true}}\#(watcher)}"#)
     }
     private func ok(_ page: String) throws -> JSONValue { try json(#"{"status":"ok","state":\#(page)}"#) }
+    /// Forge's shell, when this iPhone is paired with it too: Add Android share sheet, waiting on these requests.
+    private func forgeShell(_ requests: String) throws -> JSONValue {
+        try json(#"{"hostId":"\#(forge)","clientCapabilities":{"mayAnswer":true},"host":{"hostId":"\#(forge)","name":"Forge","threads":[{"id":"r","projectId":"p","title":"Add Android share sheet","providerId":"claude","status":"running","requests":[\#(requests)]}],"projects":[],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true}}}"#)
+    }
     private func refusal(_ code: String, _ message: String) throws -> HostRefusal {
         HostRefusal(failure: try json(#"{"code":"\#(code)","message":"\#(message)"}"#).decode(WireFailure.self))
     }
 
+    /// With `forge`, this iPhone is paired with forge too, and forge's thread waits on those requests.
     @MainActor private func fixture(features: [String] = WatcherModelTests.watcherFeatures, mayAnswer: Bool = true, spec: Spec? = Spec(),
-                                    alerts: FakeAlerts? = nil, switches: [String: Bool] = [:]) async throws -> AppModel {
+                                    alerts: FakeAlerts? = nil, switches: [String: Bool] = [:], forge forgeRequests: String? = nil) async throws -> AppModel {
         TestKeychain.items = [:]; HostConnection.instances = []; HostConnection.afterGreeting = nil
         HostConnection.failDetail = false; HostConnection.failConnect = false; HostConnection.holdDetail = false
         HostConnection.connectAttempts = 0
@@ -90,10 +95,16 @@ final class WatcherModelTests: XCTestCase {
         HostConnection.detail = try json(#"{"threadId":"t","revision":1,"messages":[]}"#)
         HostConnection.shells[laptop] = try shell(spec.map { page($0) }, mayAnswer: mayAnswer)
         let store = TestKeychain.store
-        try store.write([laptop], account: ComputerStore.indexAccount)
+        try store.write(forgeRequests == nil ? [laptop] : [laptop, forge], account: ComputerStore.indexAccount)
         let pairing = try json(#"{"v":1,"hostId":"\#(laptop)","clientId":"phone","token":"fixture"}"#).decode(Pairing.self)
         try store.write(SavedComputer(address: "https://laptop.example.ts.net:8443", pairing: pairing, reportedName: "Laptop"),
                         account: ComputerStore.account(laptop))
+        if let forgeRequests {
+            HostConnection.shells[forge] = try forgeShell(forgeRequests)
+            let paired = try json(#"{"v":1,"hostId":"\#(forge)","clientId":"phone","token":"fixture"}"#).decode(Pairing.self)
+            try store.write(SavedComputer(address: "https://forge.example.ts.net:8443", pairing: paired, reportedName: "Forge"),
+                            account: ComputerStore.account(forge))
+        }
         let model = AppModel(keychain: store, receiptSleep: { _ in })
         if let alerts {
             let suite = "sotto-watcher-tests-" + UUID().uuidString
@@ -281,6 +292,33 @@ final class WatcherModelTests: XCTestCase {
         XCTAssertEqual(remote.hostID, laptop, "Its answer would go to the computer that runs Watcher")
         XCTAssertNil(model.waitingRequest("gone", at: own))
         XCTAssertEqual(model.waitingRequest("q1", at: .thread(worker))?.id, "q1", "A thread's own request reads as before")
+        model.phase(.background)
+    }
+
+    @MainActor func testACardForAThreadOnAnotherComputerIsAnsweredOnlyWhileThatComputerHoldsIt() async throws {
+        let remote = #"{"id":"q2","kind":"question","text":"Which device?","options":[{"id":"x","label":"Pixel"}]}"#
+        let model = try await fixture(spec: Spec(remoteCard: true), forge: remote)
+        let ref = ThreadRef(hostID: forge, threadID: "r")
+        await until { model.thread(ref) != nil }
+        let card = try XCTUnwrap(model.watcherPage(laptop)?.needsYou.first { $0.target.hostId == forge })
+        XCTAssertEqual(model.watcherCardPlace(card, on: laptop), .thread(ref), "Its answer goes to its own computer")
+        guard case .answer(let place, let request) = model.watcherCardRoute(card, on: laptop) else {
+            return XCTFail("Forge holds the request, so the card can be answered")
+        }
+        XCTAssertEqual(place, .thread(ref))
+        XCTAssertEqual(request.id, "q2", "With forge's own copy of the request")
+
+        // Forge no longer holds it, though Watcher's page still shows the card: nothing is offered, and the card says why.
+        let forgeConnection = try XCTUnwrap(HostConnection.instances.last { $0.hostID == forge })
+        let answered = try forgeShell("")
+        HostConnection.shells[forge] = answered
+        forgeConnection.push(.shell(try answered.decode(Shell.self)))
+        await until { model.thread(ref)?.requests.isEmpty == true }
+        XCTAssertNotNil(model.watcherPage(laptop)?.card(ref, requestID: "q2"), "Watcher's page still shows its card")
+        XCTAssertEqual(model.watcherCardRoute(card, on: laptop), .note("This request is no longer waiting on Forge. Nothing was answered."))
+        // A computer this iPhone can't reach now can't say it still holds it.
+        forgeConnection.onDisconnect?()
+        XCTAssertEqual(model.watcherCardRoute(card, on: laptop), .note("Reconnect to Forge to answer this one."))
         model.phase(.background)
     }
 

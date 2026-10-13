@@ -405,6 +405,31 @@ extension AppModel {
 
     // MARK: Cards in Watcher's page (4B)
 
+    /// Where the answer to a card in Watcher's page goes, whether or not it can be answered now: through Watcher's page
+    /// for a thread on the computer that runs Watcher, or to the thread's own computer when this iPhone is paired with
+    /// it. Nil for a thread on a computer this iPhone isn't paired with.
+    func watcherCardPlace(_ card: WatcherPage.RequestCard, on hostID: String) -> RequestPlace? {
+        if card.target.hostId == hostID { return .watcher(hostID: hostID, target: card.target.ref) }
+        return computer(card.target.hostId) != nil ? .thread(card.target.ref) : nil
+    }
+    /// Whether a card in Watcher's page can be answered from here, with the request as the computer that holds it has it
+    /// now. A card for a thread on another computer is Watcher's copy, not that computer's word: it is answered only
+    /// while that computer, reached now, still holds the same request in that thread. Otherwise the card says why.
+    func watcherCardRoute(_ card: WatcherPage.RequestCard, on hostID: String) -> WatcherCardRoute {
+        guard let place = watcherCardPlace(card, on: hostID) else { return .note("Answer this one in Sotto on \(name(hostID)).") }
+        switch place {
+        case .watcher:
+            guard let request = waitingRequest(card.request.id, at: place) else { return .note(Self.requestNoLongerWaiting) }
+            return .answer(place, request)
+        case .thread(let ref):
+            let computer = name(ref.hostID)
+            guard online(ref.hostID) else { return .note("Reconnect to \(computer) to answer this one.") }
+            guard let request = waitingRequest(card.request.id, at: place), request.kind == card.request.kind else {
+                return .note("This request is no longer waiting on \(computer). Nothing was answered.")
+            }
+            return .answer(place, request)
+        }
+    }
     /// Whether a card in Watcher's page can take an answer through Watcher's computer now. The computer checks Can answer
     /// again. A card for a thread on another computer is answered there, through that computer's own pairing.
     func canAnswerWatcherCard(_ card: WatcherPage.RequestCard, on hostID: String) -> Bool {
@@ -558,6 +583,14 @@ extension AppModel {
         }
         await readWatcher(hostID)
     }
+}
+
+/// Whether a card in Watcher's page can be answered from here.
+enum WatcherCardRoute: Equatable {
+    /// Answered at this place, with the request as its computer holds it now.
+    case answer(RequestPlace, AgentRequest)
+    /// Not answered from here now, and why, in a sentence.
+    case note(String)
 }
 
 /// Where a waiting request lives, and so where its answer goes: its own thread, on its own computer, or a card in
