@@ -166,6 +166,44 @@ function retainedActivities(activities: AgentActivity[]): AgentActivity[] {
   return retained
 }
 
+/** Where the serialized catalog goes in a saved workspace built without it, spliced back from its cache. */
+const CATALOG_PLACEHOLDER = 'sotto-catalog-placeholder-v1'
+const modelProviderKey = (model: AgentModel): string => model.providerId ?? model.provider
+/**
+ * The catalog as `workspace.json` keeps it with cheaper publish windows on: a provider's permission
+ * modes are the same list on every one of its models (Devin's, today), so they are stored once, on
+ * the first model that carries them, and read back onto the rest. A model whose modes differ from
+ * its provider's first keeps its own.
+ */
+function catalogModelsForSave(models: readonly AgentModel[]): AgentModel[] {
+  const first = new Map<string, string>()
+  return models.map(model => {
+    if (model.providerModes === undefined) return model
+    const key = modelProviderKey(model)
+    const modes = JSON.stringify(model.providerModes)
+    if (first.get(key) === modes) {
+      const { providerModes, ...rest } = model
+      void providerModes
+      return rest
+    }
+    if (!first.has(key)) first.set(key, modes)
+    return model
+  })
+}
+/** Give every model its provider's stored modes back, sharing the one list, as the adapters publish it. */
+function expandProviderModes(models: AgentModel[]): void {
+  const byProvider = new Map<string, NonNullable<AgentModel['providerModes']>>()
+  for (const model of models) {
+    if (model.providerModes?.length && !byProvider.has(modelProviderKey(model))) byProvider.set(modelProviderKey(model), model.providerModes)
+  }
+  for (const model of models) {
+    if (model.providerModes === undefined) {
+      const modes = byProvider.get(modelProviderKey(model))
+      if (modes) model.providerModes = modes
+    }
+  }
+}
+
 function organizationOnly(thread: AgentThread, keepActivities = false): AgentThread {
   const { summary, earlierAvailable, monitoring, backgroundWork, subagentSummary, activities, lastUserMessageId, providerSessionOpen, ...rest } = thread
   void summary; void earlierAvailable; void monitoring; void backgroundWork; void subagentSummary; void lastUserMessageId; void providerSessionOpen
@@ -319,6 +357,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private saveError: string | undefined
   /** Only a successfully committed organization snapshot can suppress another write. */
   private savedOrganization: Workspace | undefined
+  /** The same, as the compact text the cheaper flush last wrote; comparing text replaces cloning. */
+  private savedOrganizationText: string | undefined
+  /** The catalog's serialized form, kept while the certified catalog array itself is unchanged. */
+  private catalogTextCache: { readonly models: readonly AgentModel[]; readonly text: string } | undefined
   /** A failed activity migration keeps the legacy JSON payload recoverable this run. */
   private activityStoreUnavailable = false
   /** Once retention is disabled, the live timeline must never become a plaintext fallback. */
@@ -1326,13 +1368,19 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const preserveThread = watcherEnabled && museEnabled ? undefined : (id: string): boolean => !this.threadVisible(id)
     this.threadStore = new ThreadStore(join(directory, 'threads.sqlite'), preserveThread)
     this.subagentStore = new SubagentStore(join(directory, 'subagents.sqlite'), preserveThread)
-    this.store = new AtomicJsonStore(join(directory, 'workspace.json'), input => { this.babysitRecords = savedBabysitting(input); this.wakeUpRecords = savedWakeUps(input); const parsed = workspaceSchema.parse(input);
+    const parseWorkspace = (input: unknown): Workspace => { this.babysitRecords = savedBabysitting(input); this.wakeUpRecords = savedWakeUps(input); const parsed = workspaceSchema.parse(input);
+      // Whichever track wrote the file, every model reads back with its provider's modes on it.
+      expandProviderModes(parsed.snapshot.models)
       if (!this.watcherEnabled || !this.museEnabled) {
         const original = input as { snapshot: AgentHostSnapshot }
         this.preservedDormantThreads.clear()
         for (const thread of original.snapshot.threads) if (!this.visible(thread)) this.preservedDormantThreads.set(thread.id, structuredClone(thread))
       }
-      return parsed }, () => this.state)
+      return parsed }
+    // With cheaper publish windows on, the file is written compact; every reader parses either form.
+    this.store = this.streamingPublishCostEnabled
+      ? AtomicJsonStore.compact(join(directory, 'workspace.json'), parseWorkspace, () => this.state)
+      : new AtomicJsonStore(join(directory, 'workspace.json'), parseWorkspace, () => this.state)
     // A host that says what changed is believed: its events are this thread's history, and the array
     // comparison below is left for a host that publishes whole histories and nothing else. Such a host
     // is asked to leave the messages out of its snapshots, since none would be read (#322).
@@ -2512,6 +2560,17 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     void pending.finally(() => { if (lanes.get(key) === pending) lanes.delete(key) }).catch(() => undefined)
     return pending
   }
+  /**
+   * The catalog's serialized form, remade only when the certified catalog array itself changes, so a
+   * flush that changed nothing about it never serializes it again (#991).
+   */
+  private catalogText(): string {
+    const models = this.state.snapshot.models
+    if (this.catalogTextCache?.models === models) return this.catalogTextCache.text
+    const text = JSON.stringify(catalogModelsForSave(models))
+    this.catalogTextCache = { models, text }
+    return text
+  }
   /** Drain accepted history writes without closing stores still used by shutdown cleanup. */
   flush(): Promise<void> {
     // The write window is where held appends commit; a caller who asks for a flush gets them too.
@@ -2535,20 +2594,35 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
             // The coordinator holds the lists it was last handed, so a release is published for it to let them go too.
             if (this.releaseIdleActivities()) this.publishSoon()
           } catch (error) { this.dirty = true; throw error }
-          const saved = structuredClone({ ...this.state,
-            snapshot: { ...this.state.snapshot, threads: this.state.snapshot.threads.map(thread => this.preservedDormantThreads.get(thread.id) ?? this.withBabysitting(organizationOnly(thread, this.activityJsonFallbackAllowed && (this.storeUnavailable || this.activityStoreUnavailable)))) } })
-          if (!this.historyEnabled()) for (const thread of saved.snapshot.threads.filter(thread => this.visible(thread))) {
-            thread.requests = []
-            delete thread.activities
-            if (thread.nativeSessionStarted) {
-              thread.historyStatus = 'loading'
-              delete thread.historyError
+          const built: Workspace = { ...this.state,
+            snapshot: { ...this.state.snapshot,
+              ...(this.streamingPublishCostEnabled ? { models: CATALOG_PLACEHOLDER as unknown as AgentModel[] } : {}),
+              threads: this.state.snapshot.threads.map(thread => this.preservedDormantThreads.get(thread.id) ?? this.withBabysitting(organizationOnly(thread, this.activityJsonFallbackAllowed && (this.storeUnavailable || this.activityStoreUnavailable)))) } }
+          const scrub = (saved: Workspace): void => {
+            if (!this.historyEnabled()) for (const thread of saved.snapshot.threads.filter(thread => this.visible(thread))) {
+              thread.requests = []
+              delete thread.activities
+              if (thread.nativeSessionStarted) {
+                thread.historyStatus = 'loading'
+                delete thread.historyError
+              }
             }
           }
           try {
-            if (!isDeepStrictEqual(this.savedOrganization, saved)) {
-              await this.store.write(saved)
-              this.savedOrganization = saved
+            if (this.streamingPublishCostEnabled) {
+              scrub(built)
+              const text = JSON.stringify(built).replace(`"models":"${CATALOG_PLACEHOLDER}"`, `"models":${this.catalogText()}`)
+              if (text !== this.savedOrganizationText) {
+                await this.store.writeSerialized(text)
+                this.savedOrganizationText = text
+              }
+            } else {
+              const saved = structuredClone(built)
+              scrub(saved)
+              if (!isDeepStrictEqual(this.savedOrganization, saved)) {
+                await this.store.write(saved)
+                this.savedOrganization = saved
+              }
             }
             if (!this.storeUnavailable && !this.subagentUnavailable && !this.activityStoreUnavailable) this.saveError = undefined
           }
