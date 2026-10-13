@@ -76,10 +76,14 @@ final class WatcherModelTests: XCTestCase {
         return try json(#"{"hostId":"\#(laptop)","clientCapabilities":{"mayAnswer":\#(mayAnswer)},"host":{"hostId":"\#(laptop)","name":"Laptop","threads":[{"id":"t","projectId":"p","title":"Fix login test","providerId":"claude","status":"running","requests":[\#(requests)]}],"projects":[],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true}}\#(watcher)}"#)
     }
     private func ok(_ page: String) throws -> JSONValue { try json(#"{"status":"ok","state":\#(page)}"#) }
-    /// Forge's shell, when this iPhone is paired with it too: Add Android share sheet, waiting on these requests.
-    private func forgeShell(_ requests: String) throws -> JSONValue {
-        try json(#"{"hostId":"\#(forge)","clientCapabilities":{"mayAnswer":true},"host":{"hostId":"\#(forge)","name":"Forge","threads":[{"id":"r","projectId":"p","title":"Add Android share sheet","providerId":"claude","status":"running","requests":[\#(requests)]}],"projects":[],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true}}}"#)
+    /// Forge's shell, when this iPhone is paired with it too: Add Android share sheet, waiting on these requests, and with
+    /// `watcher`, forge's own Watcher page.
+    private func forgeShell(_ requests: String, watcher: String? = nil) throws -> JSONValue {
+        let page = watcher.map { #","watcher":\#($0)"# } ?? ""
+        return try json(#"{"hostId":"\#(forge)","clientCapabilities":{"mayAnswer":true},"host":{"hostId":"\#(forge)","name":"Forge","threads":[{"id":"r","projectId":"p","title":"Add Android share sheet","providerId":"claude","status":"running","requests":[\#(requests)]}],"projects":[],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true}}\#(page)}"#)
     }
+    /// Watcher's page as forge sends it when forge runs Watcher too: the laptop's page, with forge in the laptop's place.
+    private func forgePage(_ spec: Spec) -> String { page(spec).replacingOccurrences(of: laptop, with: forge) }
     private func refusal(_ code: String, _ message: String) throws -> HostRefusal {
         HostRefusal(failure: try json(#"{"code":"\#(code)","message":"\#(message)"}"#).decode(WireFailure.self))
     }
@@ -219,6 +223,36 @@ final class WatcherModelTests: XCTestCase {
 
         XCTAssertEqual(WatcherTabState(working: true, needs: 0).spoken, "Working")
         XCTAssertEqual(WatcherTabState(working: false, needs: 1).spoken, "1 needs you")
+    }
+
+    @MainActor func testAWatcherAlertFromAnotherComputerShowsThatComputersWatcher() async throws {
+        let alerts = FakeAlerts()
+        let model = try await fixture(alerts: alerts, switches: [PhonePreferenceKey.notifyNeedsYou: true], forge: "")
+        XCTAssertEqual(model.watcherHostIDs, [laptop, forge], "Both computers run Watcher")
+        XCTAssertEqual(model.watcherHostID, laptop, "The first that runs Watcher shows until another is chosen")
+        // The Watcher tab is on screen, showing the laptop's Watcher. Forge's Watcher reads its page, then asks something.
+        model.watcherOnScreen = true
+        let forgeConnection = try XCTUnwrap(HostConnection.instances.last { $0.hostID == forge })
+        let quiet = try forgeShell("", watcher: forgePage(Spec(observedAt: "2026-10-11T09:01:00.000Z")))
+        forgeConnection.push(.shell(try quiet.decode(Shell.self)))
+        let asking = try forgeShell("", watcher: forgePage(Spec(ownCard: true, observedAt: "2026-10-11T09:02:00.000Z")))
+        forgeConnection.push(.shell(try asking.decode(Shell.self)))
+        await until { !alerts.posted.isEmpty }
+        XCTAssertEqual(alerts.posted.map(\.alert.body), ["Watcher is asking for permission on Forge."],
+                       "Another computer's Watcher still alerts while the tab shows the laptop's")
+        // Its alert opens forge's Watcher.
+        let alert = try XCTUnwrap(alerts.posted.first?.alert)
+        model.openFromAlert(alert.ref, watcher: true)
+        XCTAssertEqual(model.watcherAlertOpened, forge)
+        XCTAssertEqual(model.watcherHostID, forge, "The alert's computer's Watcher is the one the tab shows")
+        // With forge's on screen, the laptop's Watcher alerts.
+        try push(Spec(ownCard: true, observedAt: "2026-10-11T09:03:00.000Z"))
+        await until { alerts.posted.count == 2 }
+        XCTAssertEqual(alerts.posted.map(\.alert.body).last, "Watcher is asking for permission on Laptop.")
+        // The header's menu goes back.
+        model.chooseWatcher(laptop)
+        XCTAssertEqual(model.watcherHostID, laptop)
+        model.phase(.background)
     }
 
     // MARK: The owl and the takeover line

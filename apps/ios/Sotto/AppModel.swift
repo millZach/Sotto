@@ -202,9 +202,20 @@ extension AppModel {
     /// Whether this computer runs Watcher and shows it to this iPhone: an Owl desktop, after this iPhone opted in.
     func offersWatcher(_ hostID: String) -> Bool { live[hostID]?.features.contains(Self.watcherFeature) == true }
     func offersWatcherStop(_ hostID: String) -> Bool { offersWatcher(hostID) && live[hostID]?.features.contains(Self.watcherStopFeature) == true }
-    /// The computer whose Watcher the Watcher tab shows: the first paired computer that runs one. With none, there is no
+    /// The computer whose Watcher the Watcher tab shows: the one last chosen, by a Watcher alert or the menu in the tab's
+    /// header, while it still runs Watcher, and otherwise the first paired computer that runs one. With none, there is no
     /// tab, and nothing else in the app changes.
-    var watcherHostID: String? { computers.first { offersWatcher($0.hostID) }?.hostID }
+    var watcherHostID: String? {
+        if let chosen = chosenWatcherHost, offersWatcher(chosen) { return chosen }
+        return computers.first { offersWatcher($0.hostID) }?.hostID
+    }
+    /// Every paired computer whose Watcher this iPhone can show, in the order they were added.
+    var watcherHostIDs: [String] { computers.filter { offersWatcher($0.hostID) }.map(\.hostID) }
+    /// Shows this computer's Watcher on the Watcher tab.
+    func chooseWatcher(_ hostID: String) {
+        guard offersWatcher(hostID), chosenWatcherHost != hostID else { return }
+        chosenWatcherHost = hostID
+    }
     /// Watcher's page, from `watcherStore`. A view that reads it watches that store, which publishes on its own: the
     /// page's conversation grows with every shell while Watcher answers, and only the Watcher tab reads it.
     func watcherPage(_ hostID: String) -> WatcherPage? { offersWatcher(hostID) ? watcherStore.pages[hostID] : nil }
@@ -304,7 +315,9 @@ extension AppModel {
         #endif
         var watch = watcherWatches[hostID] ?? WatcherWatch()
         let switches = AlertSwitches(needsYou: preferences.notifyNeedsYou, finished: preferences.notifyFinished, failed: preferences.notifyFailed)
-        let news = watch.observe(page, hostID: hostID, computer: name(hostID), onScreen: foreground && watcherOnScreen, switches: switches)
+        // Quiet only for the Watcher on screen; another computer's Watcher still alerts while the tab is open.
+        let onScreen = foreground && watcherOnScreen && watcherHostID == hostID
+        let news = watch.observe(page, hostID: hostID, computer: name(hostID), onScreen: onScreen, switches: switches)
         watcherWatches[hostID] = watch
         guard let alerts, !news.isEmpty else { return }
         for alert in news { alerts.post(alert, sound: preferences.notifySound) }
@@ -918,6 +931,8 @@ struct HeldDetail {
     @Published var alertOpened: ThreadRef?
     /// A computer whose Watcher alert was tapped, for the tabs to open the Watcher tab. Set back to nil once it is open.
     @Published var watcherAlertOpened: String?
+    /// The computer whose Watcher was last chosen for the Watcher tab, by its alert or the header's menu.
+    @Published private var chosenWatcherHost: String?
     /// Words on their way to Watcher, by computer, shown under the conversation until Watcher takes them.
     @Published private(set) var watcherSending: [String: String] = [:]
     /// Words that didn't reach Watcher, or that it didn't confirm, while newer words were in its box, by computer, oldest
@@ -1959,6 +1974,7 @@ struct HeldDetail {
         connections[hostID]?.close(); connections[hostID] = nil
         let gone = Set(pending.filter { $0.hostID == hostID }.map(\.id))
         computers = rest; live[hostID] = nil; pending = markers; watches[hostID] = nil; watcherWatches[hostID] = nil; watcherStore.pages[hostID] = nil
+        if chosenWatcherHost == hostID { chosenWatcherHost = nil }
         watcherDrafts[hostID] = nil; watcherSending[hostID] = nil; watcherSetAside[hostID] = nil; watcherStops[hostID] = nil; watcherReadProblems[hostID] = nil
         if selected?.hostID == hostID { cancelDetailReload(); selected = nil; openDetail = nil; detailProblem = nil }
         if detailStore.held?.ref.hostID == hostID { detailStore.held = nil }
@@ -2705,7 +2721,8 @@ struct HeldDetail {
     /// A tapped alert opens its thread, on a computer this iPhone still holds. Watcher's own alert opens the Watcher tab.
     func openFromAlert(_ ref: ThreadRef, watcher: Bool = false) {
         guard computer(ref.hostID) != nil else { return }
-        if watcher { watcherAlertOpened = ref.hostID } else { alertOpened = ref }
+        // Watcher's alert opens the Watcher tab on the computer it came from.
+        if watcher { chooseWatcher(ref.hostID); watcherAlertOpened = ref.hostID } else { alertOpened = ref }
     }
     /// Alerts for what is new in a computer's thread list: never for the first list after connecting, the thread
     /// on screen, a switch that is off, or the UI fixture. Nothing about a thread but its title reaches an alert.

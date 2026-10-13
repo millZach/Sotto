@@ -35,6 +35,8 @@ struct WatcherView: View {
         .toolbar(.hidden, for: .navigationBar)
         .onAppear { model.watcherOnScreen = true }
         .onDisappear { model.watcherOnScreen = false }
+        // Another computer's Watcher opens on its own Conversation, with nothing of this one's open over it.
+        .onChange(of: hostID) { _, _ in section = .conversation; stopPreview = nil; reviewing = nil }
         .sheet(item: $reviewing) { card in
             RequestSheet(place: card.place, request: card.request)
                 .presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
@@ -123,9 +125,31 @@ private struct WatcherHeader: View {
                     .accessibilityAddTraits(.isHeader)
                 // Caption size, as the design draws it: at the small one the line pushed the state off the name's row on
                 // an iPhone SE.
-                Text(subtitle).font(.sotto(.caption)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                if model.watcherHostIDs.count > 1 { computerMenu } else { subtitleText }
             }
         }
+    }
+    private var subtitleText: some View {
+        Text(subtitle).font(.sotto(.caption)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+    }
+    /// With Watcher on more than one paired computer, the line naming the computer opens a menu of them.
+    private var computerMenu: some View {
+        Menu {
+            ForEach(model.watcherHostIDs, id: \.self) { id in
+                Button { model.chooseWatcher(id) } label: {
+                    if id == hostID { Label(model.name(id), systemImage: "checkmark") } else { Text(model.name(id)) }
+                }
+            }
+        } label: {
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                subtitleText
+                Image(systemName: "chevron.up.chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(Palette.muted)
+                    .accessibilityHidden(true)
+            }
+        }
+        .accessibilityLabel(subtitle)
+        .accessibilityHint("Shows Watcher on another computer")
+        .accessibilityIdentifier("watcher-computer-menu")
     }
     /// "Codex · GPT-6.1 Sol on Laptop".
     private var subtitle: String {
