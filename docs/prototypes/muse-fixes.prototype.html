@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Muse behavior prototype</title>
+<style>
+  :root { color-scheme: dark; --tt-background:#141619; --tt-surface:#1d2025; --tt-text:#eef0f3; --tt-muted:#b9c0ca; --tt-line:#454c56; --tt-accent:#a8c9ff; }
+  * { box-sizing:border-box; }
+  body { margin:0; color:var(--tt-text); background:var(--tt-background); font:16px/1.5 "Figtree",system-ui,sans-serif; }
+  header { padding:12px 28px; border-bottom:1px solid var(--tt-line); color:var(--tt-muted); font-size:13px; }
+  main { max-width:1020px; padding:36px 28px 60px; margin:auto; }
+  h1 { margin:0 0 12px; font-size:28px; font-weight:550; }
+  h2 { margin:28px 0 14px; font-size:18px; font-weight:550; }
+  p { color:var(--tt-muted); max-width:75ch; }
+  .state { background:var(--tt-surface); padding:20px 24px; border-radius:12px; }
+  dl { display:grid; grid-template-columns:minmax(150px,1fr) 2fr; margin:0; gap:9px 22px; }
+  dt { color:var(--tt-muted); } dd { margin:0; overflow-wrap:anywhere; }
+  button { border:1px solid var(--tt-line); border-radius:8px; padding:9px 13px; color:var(--tt-text); background:var(--tt-surface); font:inherit; cursor:pointer; }
+  button:hover,button[aria-selected="true"] { border-color:var(--tt-accent); }
+  button:focus-visible { outline:2px solid var(--tt-accent); outline-offset:3px; }
+  button:disabled { opacity:.55; cursor:default; }
+  .actions,.tabs { display:flex; flex-wrap:wrap; gap:10px; }
+  .actions button { font-size:14px; }
+  #change { color:var(--tt-accent); min-height:24px; margin-bottom:0; }
+  .walkthrough { margin-top:18px; }
+  .steps { display:flex; flex-direction:column; align-items:flex-start; gap:9px; }
+  .answer { border-top:1px solid var(--tt-line); padding-top:18px; margin-top:32px; }
+  @media(max-width:620px) { main { padding:24px 18px; } dl { grid-template-columns:1fr; gap:3px; } dd { margin-bottom:10px; } }
+</style>
+<header>Sotto · Throwaway behavior prototype · No saved data</header>
+<main>
+  <h1>Muse follows the user's choices</h1>
+  <p>Does the existing Threads behavior stay clear when Muse is hidden in stable, a permission has only a wider choice, a question is optional, or a running turn is steered? This demo checks those corrections in memory. It keeps the existing quiet look; it proposes no new production layout.</p>
+  <h2>Current state</h2>
+  <section class="state" aria-label="Current state"><dl id="state"></dl><p id="change" aria-live="polite"></p></section>
+  <h2>Try any action</h2>
+  <div class="actions" id="actions"></div>
+  <h2>Walk through a case</h2>
+  <div class="tabs" id="tabs" role="tablist" aria-label="Cases"></div>
+  <section class="walkthrough" id="walkthrough" role="tabpanel"></section>
+  <p class="answer">Settled behavior: stable hides Muse and keeps its saved records. Only an explicit wider permission choice grants wider authority. An optional question may stay empty. Completing a steered turn ends its original activity.</p>
+</main>
+<script>
+// Pure, portable state reducer. It has no DOM or persistence dependencies.
+const initialState = () => ({ track:'Owl', savedThread:true, connected:false, permission:null, authority:'None', question:null, answer:null, turn:'Idle', turnAnchor:null, steer:null, activity:'None', change:'Ready to try a case.' });
+function reduce(state, action) {
+  switch(action) {
+    case 'owl': return { ...state, track:'Owl', change:'Muse is visible again. Its saved thread is kept.' };
+    case 'stable': return { ...state, track:'Stable', connected:false, change:'Muse is hidden. Its saved thread remains on disk.' };
+    case 'connect': return state.track === 'Owl' ? { ...state, connected:true, change:'Muse connected on your own account.' } : { ...state, change:'Stable cannot connect Muse. Nothing started.' };
+    case 'permission-once': return { ...state, permission:'Once and deny', change:'Muse asks for this action only.' };
+    case 'permission-wider': return { ...state, permission:'Session and deny', change:'Muse offers a session choice. A plain allow cannot choose it.' };
+    case 'allow': return state.permission === 'Once and deny' ? { ...state, permission:null, authority:'This action only', change:'The user allowed this action once.' } : { ...state, change:'Nothing approved. Choose the wider permission explicitly.' };
+    case 'allow-session': return state.permission === 'Session and deny' ? { ...state, permission:null, authority:'This session, explicitly chosen', change:'The user explicitly chose the session permission.' } : { ...state, change:'Muse did not offer this wider choice. Nothing approved.' };
+    case 'deny': return { ...state, permission:null, authority:'None', change:'The user denied the action.' };
+    case 'question': return { ...state, question:'Required color; optional extra note', answer:null, change:'The color needs an answer. The extra note may stay empty.' };
+    case 'answer': return state.question ? { ...state, question:null, answer:'Color: Blue · Extra note: empty', change:'Both fields were sent in Muse’s form. The optional field is empty.' } : { ...state, change:'No question is waiting.' };
+    case 'start': return state.track === 'Owl' && state.connected ? { ...state, turn:'Running', turnAnchor:'Original prompt', steer:null, activity:'Working', change:'The original prompt owns this turn’s activity.' } : { ...state, change:'Connect Muse in Owl first. Nothing sent.' };
+    case 'steer': return state.turn === 'Running' ? { ...state, steer:'Also check the tests', change:'The steer joins the existing turn. Its original activity stays attached.' } : { ...state, change:'No running turn to steer.' };
+    case 'complete': return state.turn === 'Running' ? { ...state, turn:'Idle', activity:'Completed', change:'The turn and its original activity are complete.' } : { ...state, change:'No running turn to complete.' };
+    default: return initialState();
+  }
+}
+const actions = [ ['owl','Return to Owl'], ['stable','Open stable'], ['connect','Connect Muse'], ['permission-once','Ask for one action'], ['permission-wider','Offer session permission'], ['allow','Allow'], ['allow-session','Allow for this session'], ['deny','Deny'], ['question','Ask a question'], ['answer','Send color; skip optional note'], ['start','Send original prompt'], ['steer','Steer the turn'], ['complete','Complete the reply'], ['reset','Reset'] ];
+const cases = [
+  { name:'Stable and Owl', description:'A saved Muse thread stays available for a return to Owl. Stable should show and start none of it.', steps:['connect','stable','connect','owl','connect'] },
+  { name:'Explicit permission', description:'Try a plain Allow when only session permission is offered. Nothing should be approved until that wider choice is selected explicitly.', steps:['permission-wider','allow','allow-session','permission-once','allow'] },
+  { name:'Optional question', description:'Answer the required color and leave the optional note empty. Sending should succeed with an empty extra field.', steps:['question','answer'] },
+  { name:'Steer and finish', description:'Add a steer to a running turn, then complete its reply. The original activity should end with the same turn.', steps:['connect','start','steer','complete'] }
+];
+let state = initialState(), selectedCase = 0, nextStep = 0;
+const stateFields = () => [ ['Build',state.track], ['Muse in provider lists',state.track === 'Owl' ? 'Visible' : 'Hidden'], ['Saved Muse thread',state.savedThread ? 'Preserved' : 'None'], ['Muse connection',state.connected ? 'Connected' : 'Disconnected'], ['Pending permission',state.permission ?? 'None'], ['Granted authority',state.authority], ['Question',state.question ?? 'None'], ['Last answer',state.answer ?? 'None'], ['Turn',state.turn], ['Activity belongs to',state.turnAnchor ?? 'None'], ['Steering message',state.steer ?? 'None'], ['Activity',state.activity] ];
+function render() {
+  const fields = document.getElementById('state'); fields.replaceChildren();
+  for(const [label,value] of stateFields()) { const dt=document.createElement('dt'),dd=document.createElement('dd'); dt.textContent=label;dd.textContent=value;fields.append(dt,dd); }
+  document.getElementById('change').textContent=state.change;
+  document.querySelectorAll('[role="tab"]').forEach((button,index) => { button.setAttribute('aria-selected',String(index === selectedCase));button.tabIndex=index === selectedCase ? 0 : -1; });
+  const panel=document.getElementById('walkthrough'),description=document.createElement('p'),steps=document.createElement('div');
+  description.textContent=cases[selectedCase].description; steps.className='steps'; panel.replaceChildren(description,steps);
+  cases[selectedCase].steps.forEach((action,index) => { const button=document.createElement('button'); button.textContent=`${index + 1}. ${actions.find(entry=>entry[0] === action)[1]}`; button.disabled=index !== nextStep; button.addEventListener('click',()=>{ state=reduce(state,action);nextStep++;render();document.querySelector('.steps button:not(:disabled)')?.focus(); });steps.append(button); });
+}
+for(const [action,label] of actions) { const button=document.createElement('button');button.textContent=label;button.addEventListener('click',()=>{state=reduce(state,action);render();});document.getElementById('actions').append(button); }
+function selectCase(index) { selectedCase=index;nextStep=0;state=initialState();render(); }
+cases.forEach((scenario,index)=>{ const tab=document.createElement('button');tab.textContent=scenario.name;tab.setAttribute('role','tab');tab.addEventListener('click',()=>selectCase(index));tab.addEventListener('keydown',event=>{if(event.key === 'ArrowRight' || event.key === 'ArrowLeft'){event.preventDefault();const next=(index+(event.key === 'ArrowRight' ? 1 : -1)+cases.length)%cases.length;selectCase(next);document.querySelectorAll('[role="tab"]')[next].focus();}});document.getElementById('tabs').append(tab); });
+render();
+</script>
+</html>
