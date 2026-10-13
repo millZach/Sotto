@@ -1900,7 +1900,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       // the workspace's write window, so an advanced cursor first asks for that flush, and one the
       // store could not take is written as it last was saved while its thread keeps the newer one
       // in memory for the next write (ADR-0016). Everything else in the record writes as it is.
-      const heldBack: { alias: Alias; cursor: NonNullable<Alias['transcriptCursor']> }[] = []
+      const heldBack: { alias: Alias; cursor: NonNullable<Alias['transcriptCursor']>; written: Alias['transcriptCursor'] }[] = []
       if (this.history?.flushEvents) {
         for (const [id, alias] of Object.entries(this.aliases)) {
           const cursor = alias.transcriptCursor
@@ -1909,18 +1909,25 @@ export class ClaudeStreamJsonHost implements AgentHost {
           const saved = this.savedCursors.get(id)
           if (saved) alias.transcriptCursor = saved
           else delete alias.transcriptCursor
-          heldBack.push({ alias, cursor })
+          heldBack.push({ alias, cursor, written: saved })
         }
       }
+      // The store serializes what it is handed before the write waits, so the cursors this write
+      // carries are the ones named here. A transcript read during the wait can advance a live
+      // alias further; that newer cursor was not written, must not count as saved, and must not
+      // be put back to the held one it replaced.
+      const writing = new Map(Object.entries(this.aliases).map(([id, alias]) => [id, alias.transcriptCursor]))
       try {
         await this.writeWhole(this.aliases)
-        for (const [id, alias] of Object.entries(this.aliases)) {
-          if (alias.transcriptCursor) this.savedCursors.set(id, alias.transcriptCursor)
+        for (const [id, cursor] of writing) {
+          if (cursor) this.savedCursors.set(id, cursor)
           else this.savedCursors.delete(id)
         }
         for (const id of this.savedCursors.keys()) if (!(id in this.aliases)) this.savedCursors.delete(id)
       } finally {
-        for (const { alias, cursor } of heldBack) alias.transcriptCursor = cursor
+        for (const { alias, cursor, written } of heldBack) {
+          if (alias.transcriptCursor === written) alias.transcriptCursor = cursor
+        }
       }
     })
     this.queuedAliasWrite = queued
