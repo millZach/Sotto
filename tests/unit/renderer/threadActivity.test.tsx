@@ -8,6 +8,7 @@ import type { AgentState, AgentThread } from '../../../src/shared/agents'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
+import type { PromptEditorElement } from '../../../src/renderer/src/agents/promptSelection'
 import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
@@ -16,6 +17,7 @@ const NOW = E2E_THREADS_NOW
 const THREAD = 'grok-previews'
 const iso = (offsetMs: number): string => new Date(NOW + offsetMs).toISOString()
 let sequence = 0
+const mountedEditors = new Set<PromptEditorElement['editor']>()
 const activity = (patch: Partial<AgentActivity> & Pick<AgentActivity, 'id'>): AgentActivity =>
   ({ turnId: 'turn-1', sequence: sequence++, kind: 'command', status: 'completed', title: 'Command', afterMessageId: `${THREAD}-1`, ...patch })
 const lifecycle = (patch: Partial<AgentActivity> = {}): AgentActivity => activity({ id: `lifecycle-${patch.turnId ?? 'turn-1'}`, kind: 'turn', title: 'Turn', ...patch })
@@ -34,11 +36,21 @@ function mount(state: AgentState) {
   const live = liveAgentState(state)
   vi.mocked(useAgents).mockImplementation(live.useLive)
   render(<ThreadsView now={NOW} />)
+  for (const field of document.querySelectorAll<PromptEditorElement>('.prompt-editor')) mountedEditors.add(field.editor)
   return { live, transcript: screen.getByRole('log', { name: 'Thread transcript' }) }
 }
 
 beforeEach(() => { sequence = 0; vi.mocked(useAgents).mockReset() })
-afterEach(() => { cleanup(); vi.useRealTimers() })
+afterEach(() => {
+  cleanup()
+  // Tiptap defers destruction by a tick; release the DOM before Vitest removes document.
+  for (const editor of mountedEditors) {
+    if (!editor.isDestroyed) editor.destroy()
+    expect(editor.isDestroyed).toBe(true)
+  }
+  mountedEditors.clear()
+  vi.useRealTimers()
+})
 
 describe('settled activity in the transcript', () => {
   const settled = (): AgentActivity[] => [

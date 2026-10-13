@@ -19,36 +19,55 @@ export function useOmarchySetup(enabled: boolean, bridge = typeof window === 'un
   const [state, setState] = useState<OmarchySetupState | null>(null)
   const [error, setError] = useState(false)
   const [pending, setPending] = useState(false)
+  const [removing, setRemoving] = useState(false)
   const pendingRef = useRef(false)
+  const busyRef = useRef(false)
+  const changesRef = useRef(0)
+  const refreshRef = useRef<((recover?: boolean) => Promise<void>) | null>(null)
   useEffect(() => {
     if (!enabled || !bridge) return
-    let active = true, changes = 0
-    const unsubscribe = bridge.onChanged(next => { changes++; if (active) { setState(next); setError(false) } })
-    void bridge.get().then(next => { if (active && !changes) setState(next) }).catch(() => { if (active) setError(true) })
-    return () => { active = false; unsubscribe() }
+    let active = true, reading = false
+    const unsubscribe = bridge.onChanged(next => { changesRef.current++; if (active) { busyRef.current = next.busy; setState(next); setError(false) } })
+    const refresh = async (recover = false): Promise<void> => {
+      // A shown panel or retry may recover cached busy state. Main returns progress during an operation.
+      if (reading || pendingRef.current || busyRef.current && !recover) return
+      reading = true
+      const before = changesRef.current
+      try {
+        const next = await bridge.get()
+        if (active && before === changesRef.current) { busyRef.current = next.busy; setState(next); setError(false) }
+      } catch { if (active && before === changesRef.current) setError(true) }
+      finally { reading = false }
+    }
+    const focus = (): void => { void refresh() }
+    const unsubscribeFocus = bridge.onFocus(focus)
+    refreshRef.current = refresh
+    void refresh(true)
+    window.addEventListener('focus', focus)
+    return () => { active = false; refreshRef.current = null; unsubscribe(); unsubscribeFocus(); window.removeEventListener('focus', focus) }
   }, [bridge, enabled])
   const command = async (command: OmarchySetupCommand): Promise<void> => {
-    if (!bridge || pendingRef.current) return
-    pendingRef.current = true; setPending(true); setError(false)
-    try { setState(await bridge.command(command)) }
-    catch { setError(true) }
-    finally { pendingRef.current = false; setPending(false) }
+    if (!bridge || pendingRef.current || busyRef.current) return
+    changesRef.current++
+    pendingRef.current = true; setPending(true); setRemoving(command.type === 'remove'); setError(false)
+    try { const next = await bridge.command(command); changesRef.current++; busyRef.current = next.busy; setState(next) }
+    catch { busyRef.current = false; setError(true) }
+    finally { pendingRef.current = false; setPending(false); setRemoving(false) }
   }
   const retryRead = async (): Promise<void> => {
-    if (!bridge) return
-    setError(false)
-    try { setState(await bridge.get()) } catch { setError(true) }
+    await refreshRef.current?.(true)
   }
-  return { state, error, busy: pending || state?.busy === true, available: !!bridge, command, retryRead }
+  return { state, error, busy: pending || state?.busy === true, removing: removing || state?.operation === 'remove', available: !!bridge, command, retryRead }
 }
 export type OmarchySetupController = ReturnType<typeof useOmarchySetup>
 
-export function OmarchySetupPanel({ surface = 'settings', controller, bridge }: {
+export function OmarchySetupPanel({ surface = 'settings', visible = true, controller, bridge }: {
   readonly surface?: 'settings' | 'first-run'
+  readonly visible?: boolean
   readonly controller?: OmarchySetupController
   readonly bridge?: OmarchySetupBridge
 }): ReactNode {
-  const local = useOmarchySetup(!controller, bridge ?? window.sotto?.omarchySetup)
+  const local = useOmarchySetup(!controller && visible, bridge ?? window.sotto?.omarchySetup)
   const setup = controller ?? local
   const { state, busy } = setup
   const [keyChoice, setKeyChoice] = useState<'give' | 'keep'>('give')
@@ -62,9 +81,10 @@ export function OmarchySetupPanel({ surface = 'settings', controller, bridge }: 
     (piece === 'keys' && (state.pieces.keys.status === 'conflict' && !state.pieces.keys.owned && state.keyConflicts.length > 0 ||
       state.pieces.keys.status === 'stale' && state.keyConflicts.length > 0 || state.pieces.keys.status === 'skipped' && keyChoice === 'give'))) : []
   const owned = state ? OMARCHY_PIECES.filter(piece => state.pieces[piece].owned && ['done', 'stale', 'missing', 'failed', 'skipped'].includes(state.pieces[piece].status)) : []
-  const act = async (command: OmarchySetupCommand): Promise<void> => {
+  const act = async (action: OmarchySetupCommand | { type: 'inspect' }): Promise<void> => {
     const focused = document.activeElement
-    await setup.command(command)
+    if (action.type === 'inspect') await setup.retryRead()
+    else await setup.command(action)
     // A vanished Set up or Remove gives focus to the action that carries on.
     requestAnimationFrame(() => {
       if (surface === 'first-run' && root.current?.querySelector('.omarchy-setup__done')) {
@@ -82,7 +102,7 @@ export function OmarchySetupPanel({ surface = 'settings', controller, bridge }: 
     const current = state?.pieces[piece]
     if (!current) return 'Checking'
     return { missing: 'Not set up', failed: 'Not set up', done: 'Done', manual: 'Set up by hand', stale: 'Update ready',
-      conflict: 'Needs your choice', skipped: 'Left alone', queued: 'Waiting', working: current.message === 'Removing' ? 'Removing' : 'Setting up' }[current.status]
+      conflict: 'Needs your choice', skipped: 'Left alone', queued: 'Waiting', working: state?.operation === 'remove' ? 'Removing' : 'Setting up' }[current.status]
   }
 
   return <div className="omarchy-setup" ref={root} tabIndex={-1} aria-label="Omarchy setup" aria-busy={busy}
@@ -92,7 +112,7 @@ export function OmarchySetupPanel({ surface = 'settings', controller, bridge }: 
     </div>{owned.length > 0 ? <Button variant="ghost" disabled={busy} onClick={() => void act({ type: 'remove', pieces: owned })}>Remove all</Button> : null}</div> : null}
     {state?.notice ? <p className="omarchy-setup__notice" role="status">{state.notice}</p> : null}
     {setup.error || !setup.available ? <p role="alert">Sotto could not check Omarchy setup. Your files were left alone. Try again.
-      {setup.available ? <Button variant="secondary" onClick={() => void setup.retryRead()}>Try again</Button> : null}</p> : null}
+      {setup.available ? <Button variant="secondary" onClick={() => void act({ type: 'inspect' })}>Try again</Button> : null}</p> : null}
     <ul className="omarchy-setup__pieces">
       {OMARCHY_PIECES.map(piece => {
         const current = state?.pieces[piece], definition = PIECES[piece]
@@ -117,7 +137,7 @@ export function OmarchySetupPanel({ surface = 'settings', controller, bridge }: 
           {piece === 'keys' && state?.voxtype && current?.status === 'missing' ? <p className="omarchy-setup__detail">Voxtype has these keys now. Sotto takes them over; Voxtype stays installed.</p> : null}
           {current?.message && current.status !== 'working' ? <div className="omarchy-setup__detail" role={current.status === 'failed' ? 'alert' : undefined}><p>{current.message}</p>
             {current.status === 'failed' ? <Button data-next variant="secondary" disabled={busy} aria-label={`Try ${definition.short} again`}
-              onClick={() => void (current.retry === 'remove' ? act({ type: 'remove', pieces: [piece] }) : install([piece]))}>Try again</Button> : null}
+              onClick={() => void (current.retry === 'inspect' ? act({ type: 'inspect' }) : current.retry === 'remove' ? act({ type: 'remove', pieces: [piece] }) : install([piece]))}>Try again</Button> : null}
           </div> : null}
           {files ? <ul className="omarchy-setup__files">{definition.files.map(file => <li key={file}>{file}</li>)}</ul> : null}
         </li>
@@ -127,7 +147,7 @@ export function OmarchySetupPanel({ surface = 'settings', controller, bridge }: 
       <p>{surface === 'first-run' ? 'You’ll try F9 in the Shortcut step, once the speech model is downloaded.' : 'Hold F9 anywhere to talk.'}</p></div> : null}
     <div className="omarchy-setup__actions">
       {todo.length > 0 || busy ? <Button data-next disabled={busy} onClick={() => void install(todo)}>
-        {busy ? 'Setting up' : todo.length === 3 ? 'Set up all three' : `Set up ${todo.map(piece => PIECES[piece].short).join(' and ')}`}
+        {busy ? setup.removing ? 'Removing' : 'Setting up' : todo.length === 3 ? 'Set up all three' : `Set up ${todo.map(piece => PIECES[piece].short).join(' and ')}`}
       </Button> : null}
       <Button ref={filesButton} variant="ghost" aria-expanded={files} onClick={() => setFiles(!files)}>{files ? 'Hide the files it changes' : 'Show the files it changes'}</Button>
     </div>

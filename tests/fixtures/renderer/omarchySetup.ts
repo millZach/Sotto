@@ -8,6 +8,8 @@ export function setupBridgeFixture(initial = setupState()) {
   let state = initial
   const listeners = new Set<(state: OmarchySetupState) => void>()
   const change = (next: OmarchySetupState) => { state = next; for (const listener of listeners) listener(next) }
+  const focusListeners = new Set<() => void>()
+  const focus = () => { for (const listener of focusListeners) listener() }
   const calls: unknown[] = []
   const bridge: OmarchySetupBridge = {
     get: async () => state,
@@ -22,7 +24,8 @@ export function setupBridgeFixture(initial = setupState()) {
       change(next)
       return next
     },
+    onFocus: listener => { focusListeners.add(listener); return () => { focusListeners.delete(listener) } },
     onChanged: listener => { listeners.add(listener); return () => { listeners.delete(listener) } },
   }
-  return { bridge, change, calls }
+  return { bridge, change, calls, focus }
 }

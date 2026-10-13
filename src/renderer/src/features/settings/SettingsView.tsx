@@ -489,7 +489,7 @@ export function SettingsView({
                     </div>
                   </Field>
                   <div className="settings-input-action">
-                    {platform === 'linux' ? <OmarchySetupPanel /> : <Field label="Global shortcut" description={copy.settingsGlobalShortcutDescription}>
+                    {platform === 'linux' ? <OmarchySetupPanel visible={activeSection === 'settings-capture'} /> : <Field label="Global shortcut" description={copy.settingsGlobalShortcutDescription}>
                       <input className="tt-input" value={hotkeyDraft.value} onBlur={() => void saveHotkey()} onChange={(event) => {
                         const value = event.currentTarget.value
                         hotkeyDraft.edit(value)
