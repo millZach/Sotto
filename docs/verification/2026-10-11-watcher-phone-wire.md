@@ -93,3 +93,35 @@ New commits, in order:
 - 5061d1b94 Complete the synthetic phone identity in the dispatch regression
 
 No requested host/wire review fix remains unfinished. Native compilation/tests, actual phones and live providers remain unverified as described above. The branch is local and unpushed; the lead owns integration and the pull request.
+
+## October 13, 2026: ticket 8a Bugbot corrections
+
+Base: 5353df2a8 on feat/watcher-phone, with the lead's main/ticket 5 merge and test ceiling correction. PR #986 is owned by the lead. No push, merge, rebase, stash, branch switch, new worktree, extra software installation or nested review occurred. No apps/ios file, desktop renderer file or watcher-iphone worktree was touched.
+
+Both reports were reproduced over the real socket integration fixture before changing production code: one phone's unchanged Stop all preview refused after another phone opened seventeen previews, and the exact answer retry after reconnect refused despite its receipt reporting completed and answerDelivered true. bugbot-red.log records both failing cases.
+
+920dcc904 Keep live Stop all previews when another client opens more fixes the mismatched 16/64 caps with one shared 64-preview limit. Both stores refuse a new preview at capacity instead of evicting a live one. Expiration and consumption release space. The existing IN_FLIGHT_LIMIT refusal says too many previews are open; no live preview is dropped for space, so none can be misreported as changed or expired. The regression verifies seventeen previews by a second phone, full-capacity refusal in both layers, the first phone's confirmed stop and recovered capacity after expiry. It passed in 5.50 seconds of test execution.
+
+cf4678f7e Replay Watcher phone answers before checking fresh cards moves the existing target/card/Can answer admission behind receipt lookup. The receipt digest binds the operation, owning target and exact answer. Replay reads the completed outcome with fresh state without a new answer or a new grant; an unrelated fresh-shell error cannot replace that outcome. New requests retain target, card, policy and writer checks. The regression verifies discarded acknowledgement, reconnect, removed card, revoked Can answer, changed target/answer conflicts, client isolation and a denied fresh card. The native adapter receives exactly one answer. It passed in 2.31 seconds of test execution.
+
+The combined phone, client-isolation and answer-recovery run passed 39 cases in three files (22.02 seconds, exit 0). No production debug logging was added. The implementation remains behind the existing Owl gate, and production dependencies remain exactly zod, node-pty and sherpa-onnx-node. The six changed text files were checked for UTF-8 without a BOM and consistent line endings.
+
+No refusal code, feature name, operation or wire shape changed. phone-contract.md and docs/host-protocol.md have dated behavior notes for capacity and answer replay; unconfirmed mutations are still never retried automatically. Reading a prior answer outcome grants no new authority and answers no new card.
+
+
+The required ordered run passed typecheck and lint. The full suite has not started: it has waited more than an hour while new full runs continually start on the shared laptop. The machines skill says "Run one heavy job at a time per machine." The existing resource watcher continues waiting for active full suites and will check FreePhysicalMemory with the required command before starting; under 3 GB it waits. Two leftover Vitest processes have no Node workers and negligible CPU over more than ten minutes, so the queue excludes them only while they remain idle. Only this branch's waiting launcher was restarted to make that distinction; typecheck/lint results were retained. No other process was stopped. At the last observation, active full-suite PIDs 74660, 31176 and 49436 still held the queue. This is pending validation, not a completed gate run.
+
+| Command | Observed result | Seconds |
+| --- | --- | --- |
+| `npm run typecheck` | Exit 0; all four TypeScript projects | 105.10 |
+| `npm run lint` | Exit 0; ESLint | 29.69 |
+| `npm test -- --maxWorkers=2` | Pending; queued in this order | - |
+| `npm run notices:verify` | Pending; queued in this order | - |
+| `npm run build` | Pending; queued in this order | - |
+| `npm run test:socket` | Pending; queued in this order | - |
+| `npm run build:host` | Pending; queued in this order | - |
+| `npx playwright test tests/e2e/watcher-gate.spec.ts tests/e2e/watcher.spec.ts` | Pending; queued in this order | - |
+
+Real output is retained in ignored artifacts/watcher-phone-wire/bugbot-red.log, bugbot-preview-green.log, bugbot-answer-green.log, bugbot-focused.log, bugbot-typecheck.log and bugbot-lint.log. bugbot-gates.json records completed commands only. The active resource watcher is bugbot-resume-gates.ps1, PID 38444, exec session 63853; it will record the remaining results in bugbot-*.log and bugbot-gates.json. No complete-run, built-app or new screenshot claim is made. The final verification table and desktop inspection must be completed after those gates finish; no gate is waived.
+
+Swift and Android are unverified locally. This Windows laptop has no Swift compiler, Java/Gradle executable or JAVA_HOME; no additional software was installed. Actual phones and live providers are also unverified. No native file changed in these Bugbot fixes. Both requested code corrections are implemented and committed; the six remaining gates and final desktop proof remain unfinished. These commits are local and unpushed; the lead owns PR #986 and integration.
