@@ -568,3 +568,27 @@ it.each([
   expect(remote.host.service.state().host.threads.filter(thread => thread.title === input.title)).toHaveLength(1)
   await expect.poll(() => f.socket.shell().host.threads.find(thread => thread.id === first.target.threadId)?.reasoningEffort).toBe(expected)
 })
+
+it('uses a fresh scoped connection for an admitted queue without renewing a restart fence', async () => {
+  const native = await codexFixture(undefined, false); cleanups.push(native.cleanup)
+  const f = await master(native.adapter), input = f.start(), first = await f.call('start_thread', input)
+  if (first.status !== 'ok') throw new Error('start-refused')
+  await vi.waitFor(() => expect(f.socket.shell().host.threads.some(thread => thread.id === first.target.threadId)).toBe(true))
+  const queued = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, text: 'Synthetic reconnect queue', delivery: 'queue' })
+  expect(queued).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
+  const codexId = (await native.driver.requests()).findLast(item => item.method === 'turn/start')!.params!.threadId as string
+  const aliases = JSON.parse(await readFile(join(native.root, 'codex-threads.json'), 'utf8')) as Record<string, { codexThreadId: string }>
+  const nativeId = Object.entries(aliases).find(([, value]) => value.codexThreadId === codexId)![0]
+  await f.socket.close()
+  const socket = new SocketHostService({ url: remote.url, token: f.pairing.token, watcherEnabled: true }); remote.clients.push(socket)
+  await socket.connect()
+  await socket.watcherRead({ master: f.control.watcherRecord().current! })
+  const worker = (remote.host.service as unknown as { options: { watcher: WatcherService } }).options.watcher
+  expect(() => worker.guardOperation(queued.receipt!.operationId)).not.toThrow()
+  await native.driver.completeTurn(nativeId, 'Synthetic reconnect completion')
+  await socket.command({ type: 'refresh', provider: 'codex' })
+  await vi.waitFor(async () => expect((await native.driver.requests()).filter(item => item.method === 'turn/start')).toHaveLength(2))
+  const receipt = await socket.watcherRead({ master: f.control.watcherRecord().current!, call: { name: 'read_operation', input: { operationId: queued.receipt!.operationId } } })
+  expect(receipt).toMatchObject({ receipt: { deliveryState: 'accepted' } })
+  await vi.waitFor(() => expect((worker as unknown as { remoteGuards: Map<string, unknown> }).remoteGuards.size).toBe(0))
+})

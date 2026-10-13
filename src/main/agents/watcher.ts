@@ -449,6 +449,11 @@ export class WatcherService implements WatcherControlHooks {
         request.state = 'closed'; request.closedAt = now()
       }
     })
+    this.pruneRemoteGuards()
+  }
+  private pruneRemoteGuards(): void {
+    const live = new Set(this.record().operations.filter(item => this.active.has(item.id) || ['queued', 'dispatching', 'uncertain'].includes(item.deliveryState)).map(item => item.id))
+    for (const id of this.remoteGuards.keys()) if (!live.has(id)) this.remoteGuards.delete(id)
   }
   guardOperation(operationId: string): void {
     try { this.checkOperation(operationId) } catch (error) {
@@ -619,7 +624,7 @@ export class WatcherService implements WatcherControlHooks {
     if (admitted.retry) { const active = this.active.get(admitted.operation.id); if (active) return await active; return this.operationResult(name, admitted.operation, input) }
     const running = admitted.operation.target.hostId !== this.hostId() ? this.executeRemote(name, admitted.operation, input) : this.executeOperation(name, admitted.operation, input)
     this.active.set(admitted.operation.id, running)
-    try { return await running } finally { this.active.delete(admitted.operation.id); this.dispatchRefusals.delete(admitted.operation.id); this.publish() }
+    try { return await running } finally { this.active.delete(admitted.operation.id); this.dispatchRefusals.delete(admitted.operation.id); this.pruneRemoteGuards(); this.publish() }
   }
   private async executeOperation(name: WatcherToolName, operation: WatcherOperation, input: WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>): Promise<unknown> {
     let dispatchRefusal: Refusal | undefined
@@ -876,7 +881,7 @@ export class WatcherService implements WatcherControlHooks {
         if (retry && (retry.id !== operation.id || retry.digest !== operation.digest || key(retry.target) !== key(operation.target))) refuse('RETRY_KEY_CONFLICT', 'This operation identity changed. Read the original receipt.')
         if (!existing) await this.options.control.updateWatcher(record => { record.requests.push({ ...request, state: 'active', closedAt: null,
           participants: [], remoteOrigin: { clientId, master, creationOperationId: master.creationOperationId, ceiling: packet.ceiling } }) })
-        if (!retry && !this.remoteGuards.has(operation.id)) this.remoteGuards.set(operation.id, guard)
+        if (!retry || this.remoteGuards.has(operation.id) && ['queued', 'dispatching', 'uncertain'].includes(retry.deliveryState)) this.remoteGuards.set(operation.id, guard)
       })
       return await this.mutate(master.target.threadId, call.name, call.input, operation)
     } catch (error) { return error instanceof Refusal ? error.result : watcherRefusal('INVALID_INPUT', 'This machine request could not be admitted. Nothing was sent.') }
@@ -896,10 +901,18 @@ export class WatcherService implements WatcherControlHooks {
     return { hostId: this.hostId(), master, requests, operations, evidence, progress,
       revision: digest([requests, operations, evidence, progress]), observedAt: now() }
   }
-  async readRemote(raw: WatcherHostRead, clientId: string): Promise<unknown> {
+  async readRemote(raw: WatcherHostRead, clientId: string, guard?: () => void): Promise<unknown> {
     try {
       if (this.closed) refuse('NOT_CURRENT_WATCHER', 'Watcher is stopping. Reopen Sotto before reading its threads.')
       const { master, call } = watcherHostReadSchema.parse(raw)
+      guard?.()
+      if (guard) for (const operation of this.record().operations) {
+        const request = this.record().requests.find(item => item.id === operation.requestId)
+        if (this.remoteGuards.has(operation.id) && request?.remoteOrigin?.clientId === clientId
+          && key(request.watcher) === key(master.target) && request.remoteOrigin.creationOperationId === master.creationOperationId
+          && ['queued', 'dispatching', 'uncertain'].includes(operation.deliveryState)) this.remoteGuards.set(operation.id, guard)
+      }
+      this.pruneRemoteGuards()
       if (!call) return this.remoteProjection(master, clientId)
       let operation: WatcherOperation | undefined
       if (call.name === 'read_operation') {

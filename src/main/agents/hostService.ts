@@ -63,7 +63,7 @@ export interface HostService {
   readonly supportsWatcherControl?: boolean
   readonly supportsWatcherReads?: boolean
   watcherControl?(request: WatcherHostControl, client: ClientIdentity, guard: () => void): Promise<unknown>
-  watcherRead?(request: WatcherHostRead, client: ClientIdentity): Promise<unknown>
+  watcherRead?(request: WatcherHostRead, client: ClientIdentity, guard?: () => void): Promise<unknown>
   watcherProjection?(request: WatcherHostRead, client: ClientIdentity): WatcherHostProjection
   /** This service admits and sends an optional `send.draft` payload together, and saves a targeted Compose. */
   readonly supportsAtomicSend?: boolean
@@ -169,7 +169,7 @@ export class LocalHostService implements HostService {
   get supportsWatcherControl(): boolean { return this.options.watcher !== undefined }
   get supportsWatcherReads(): boolean { return this.options.watcher !== undefined }
   watcherControl(request: WatcherHostControl, client: ClientIdentity, guard: () => void): Promise<unknown> { return this.options.watcher!.admitRemote(request, client.clientId, guard) }
-  watcherRead(request: WatcherHostRead, client: ClientIdentity): Promise<unknown> { return this.options.watcher!.readRemote(request, client.clientId) }
+  watcherRead(request: WatcherHostRead, client: ClientIdentity, guard?: () => void): Promise<unknown> { return this.options.watcher!.readRemote(request, client.clientId, guard) }
   watcherProjection(request: WatcherHostRead, client: ClientIdentity): WatcherHostProjection { return this.options.watcher!.remoteProjection(request.master, client.clientId) }
   readonly supportsAtomicSend = true
   readonly supportsDraftRevisions = true
