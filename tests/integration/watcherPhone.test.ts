@@ -305,3 +305,40 @@ it('keeps a phone Stop all preview valid when another phone opens seventeen prev
   } finally { clock.mockRestore() }
 })
 
+it('replays a phone worker answer after reconnect without answering again or requiring a new grant', async () => {
+  const f = await fixture(), peer = await f.pair()
+  await peer.call('send', f.send(peer.paired.clientId)); const worker = await f.start()
+  f.native(worker.threadId).requests = [{ id: 'permission', kind: 'permission', text: 'Synthetic worker permission', options: [] }]
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' }); f.canAnswer(true)
+  const answer = { op: 'watcher-phone-answer', request: { target: worker, command: { type: 'answer', threadId: worker.threadId,
+    requestId: 'permission', answer: 'Allow', approved: true } } }
+  expect(await peer.call('ans-1', answer)).toMatchObject({ ok: true, result: { status: 'ok' } })
+  expect(f.phone.state(true).needsYou.some(card => card.request.id === 'permission')).toBe(false)
+  peer.messages.splice(peer.messages.findIndex(message => message.id === 'ans-1'), 1); peer.frames.close()
+  const resumed = await rawPeer(f.server.descriptor.port, f.pairing.signSession(peer.paired.clientId, Date.now()))
+  cleanups.push(async () => resumed.frames.close())
+  await resumed.call('hello', { op: 'hello', accepts: ['watcher-phone'] })
+  expect(await resumed.call('receipt', { op: 'receipt', commandId: 'ans-1' })).toMatchObject({ ok: true, result: { status: 'completed', answerDelivered: true } })
+  expect(await resumed.call('ans-1', answer)).toMatchObject({ ok: true, result: { status: 'ok' } })
+  resumed.messages.splice(resumed.messages.findIndex(message => message.id === 'ans-1'), 1); f.canAnswer(false)
+  // An unrelated error in the fresh shell cannot change the original answer's successful outcome.
+  await f.control.commandShell({ type: 'manual-send', threadId: 'missing-thread', text: 'Synthetic unknown thread' })
+  expect(f.control.shell().error).toBeTruthy()
+  expect(await resumed.call('ans-1', answer)).toMatchObject({ ok: true, result: { status: 'ok' } })
+  for (const changed of [
+    { ...answer, request: { ...answer.request, command: { ...answer.request.command, approved: false } } },
+    { ...answer, request: { ...answer.request, target: { ...worker, hostId: randomUUID() } } },
+  ]) {
+    resumed.messages.splice(resumed.messages.findIndex(message => message.id === 'ans-1'), 1)
+    expect(await resumed.call('ans-1', changed)).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+  }
+  const other = await f.pair()
+  expect(await other.call('receipt', { op: 'receipt', commandId: 'ans-1' })).toMatchObject({ ok: true, result: { status: 'unknown' } })
+  expect(await other.call('ans-1', answer)).toMatchObject({ ok: false, error: { code: 'stale_request' } })
+  f.native(worker.threadId).requests = [{ id: 'new-permission', kind: 'permission', text: 'Synthetic later permission', options: [] }]
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect(await resumed.call('ans-new', { ...answer, request: { ...answer.request, command: { ...answer.request.command, requestId: 'new-permission' } } }))
+    .toMatchObject({ ok: false, error: { code: 'forbidden' } })
+  expect(f.native(worker.threadId).requests).toHaveLength(1)
+  expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'answer')).toHaveLength(1)
+})

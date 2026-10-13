@@ -64,6 +64,9 @@ October 12 review correction: Stop all records a pending and completed command r
 
 October 13 Bugbot correction: both preview stores share a 64-preview cap. Capacity refuses a new preview with the existing IN_FLIGHT_LIMIT code and "Too many Stop all previews are open. Wait a minute and review again." Existing live previews are never evicted for space, including by another phone or desktop. Expiration or consumption releases capacity. No refusal code, feature name or wire shape changes.
 
+October 13 answer replay correction: an authenticated, opted-in phone can explicitly retry the same watcher-phone-answer request ID, owning target and exact command to read the recorded outcome with fresh state. Receipt lookup and digest comparison happen before checking the current card or Can answer; replay performs no second answer and needs no new answer grant. A changed target or command under the same ID refuses invalid_request. A new request still checks its owning target, current card and Can answer at admission and the writer. No refusal code, feature name or wire shape changes, and unconfirmed mutations are never retried automatically.
+
+
 
 ## Versions and features
 
