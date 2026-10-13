@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { z } from 'zod'
 import { isThreadProviderConnected, type AgentState, type AgentThread } from '../../shared/agents'
-import { RESUMES_IN_A_ROW_MAX, type RestartNews } from '../../shared/restartResume'
+import { isResumeNoteText, RESUMES_IN_A_ROW_MAX, type RestartNews } from '../../shared/restartResume'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 
@@ -53,6 +53,8 @@ export class RestartResume {
   private readonly delivering = new Set<string>()
   /** Hand-overs under way, which closing waits for, so a note saved in the queue is recorded as queued. */
   private readonly handing = new Set<Promise<void>>()
+  /** Threads whose resume note the coordinator is sending, with the resumes the turn it starts counts. */
+  private readonly sending = new Map<string, number>()
   private readonly now: () => number
   private off: (() => void) | undefined
   private frozen = false
@@ -96,10 +98,26 @@ export class RestartResume {
     await this.writing
   }
 
+  /** The coordinator is sending this thread's resume note now: the turn that starts next is the resumed one. */
+  noteSending(threadId: string): void {
+    const record = this.working.get(threadId)
+    if (!this.frozen && record?.queued) this.sending.set(threadId, record.resumes)
+  }
+  /** The note did not go after all; the next turn is not its own. */
+  noteUnsent(threadId: string): void { this.sending.delete(threadId) }
+
   private observe(state: AgentState): void {
     if (this.frozen) return
     const host = state.host
     let changed = false
+    // A thread gone from a connected host was deleted: nothing will ever resume it.
+    if (host.connected) {
+      const listed = new Set(host.threads.map(thread => thread.id))
+      for (const id of [...this.working.keys()]) {
+        if (listed.has(id) || this.delivering.has(id)) continue
+        this.working.delete(id); this.pending.delete(id); this.sending.delete(id); changed = true
+      }
+    }
     for (const thread of host.threads) {
       const connected = host.connected && isThreadProviderConnected(host, thread)
       // Native idle can come before the turn's completion, so a turn still reported running counts as working.
@@ -113,9 +131,14 @@ export class RestartResume {
         continue
       }
       if (running) {
-        // The turn the resume note started counts the resumes before it; any other starts again from none.
-        if (!record || record.queued) { this.working.set(thread.id, this.started(thread.id, record?.resumes ?? 0)); changed = true }
+        // The turn the resume note started counts the resumes before it; any other, the user's own, starts again from none.
+        if (!record || record.queued) {
+          this.working.set(thread.id, this.started(thread.id, this.sending.get(thread.id) ?? 0)); this.sending.delete(thread.id); changed = true
+        }
       } else if (record && !record.queued && !this.delivering.has(thread.id)) { this.working.delete(thread.id); changed = true }
+      // A queued note that left the queue without going, taken out or dropped with the setting, leaves nothing to resume.
+      else if (record?.queued && connected && !this.sending.has(thread.id) && !this.delivering.has(thread.id) && !(state.followups ?? []).some(item =>
+        item.threadId === thread.id && item.wakeUp === true && isResumeNoteText(item.text))) { this.working.delete(thread.id); changed = true }
     }
     if (changed) this.save()
   }

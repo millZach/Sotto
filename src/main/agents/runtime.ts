@@ -219,7 +219,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const restartResume = options.resumeAfterRestart === true
     ? new RestartResume({ directory, control: agentControl, enabled: () => options.settings().resumeThreadsAfterRestart, tool: babysitTool }) : undefined
   // A note already waiting in a queue goes only while both are still on; without the feature, none goes.
-  if (restartResume) agentControl.useRestartResume(() => options.settings().resumeThreadsAfterRestart)
+  if (restartResume) agentControl.useRestartResume({ due: () => options.settings().resumeThreadsAfterRestart,
+    sending: threadId => restartResume.noteSending(threadId), unsent: threadId => restartResume.noteUnsent(threadId) })
   let closingWatcherTools: Promise<void> | undefined
   let watcherStopped = false
   const stopWatcher = (): void => {

@@ -60,8 +60,10 @@ message is told as a resume note by its text only after the host's own record ha
 never makes a message Sotto's.
 
 **6. Three in a row.** A thread is resumed at most three times before a turn of its own finishes. A fourth stop
-leaves it for the user, so a crash that recurs cannot keep restarting work. The count resets whenever a turn ends
-while Sotto runs.
+leaves it for the user, so a crash that recurs cannot keep restarting work. Only the turn the note itself starts, which
+the coordinator reports as it sends the note, carries the count; any other turn, the user's own included, starts again
+from none, and the count resets whenever a turn ends while Sotto runs. A record goes when its note leaves the queue
+unsent, and when its thread is deleted.
 
 **7. Nothing is sent twice and nothing is approved.** The user's message is never re-sent. A delivery left uncertain
 stays uncertain and still holds the thread (ADR-0058). A permission request open when Sotto closed was declined then;

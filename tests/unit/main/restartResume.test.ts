@@ -11,7 +11,7 @@ import { RESUME_RECORD_MAX_AGE_MS, RestartResume } from '../../../src/main/agent
 import { foldWakeUpNews, queuedWakeUpText } from '../../../src/main/agents/wakeUp'
 import { FollowupStore } from '../../../src/main/agents/followups'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
-import type { AgentHostSnapshot, AgentThread } from '../../../src/shared/agents'
+import type { AgentHostSnapshot, AgentState, AgentThread } from '../../../src/shared/agents'
 import { RESUME_NOTE, RESUMES_IN_A_ROW_MAX, isResumeNoteText, type RestartNews } from '../../../src/shared/restartResume'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 import { testCredentials } from '../../fixtures/testCredentials'
@@ -60,7 +60,7 @@ async function fixture(options: { saved?: Saved['working']; enabled?: boolean; h
   const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner }); controls.push(control)
   const resume = new RestartResume({ directory: root, control, enabled: () => options.enabled ?? true, tool: () => false }); resumes.push(resume)
   // As the runtime does; a test of the gate leaves it out, as a build without the feature does.
-  if (options.gate !== false) control.useRestartResume(() => options.enabled ?? true)
+  if (options.gate !== false) control.useRestartResume({ due: () => options.enabled ?? true, sending: id => resume.noteSending(id), unsent: id => resume.noteUnsent(id) })
   await resume.start()
   await control.start(); await control.command({ type: 'connect' })
   return { root, host, control, resume }
@@ -118,12 +118,11 @@ describe('resuming threads after a restart', () => {
     expect(sends(f.host)).toEqual([])
   })
 
-  it('does not hand a note over twice when it is already waiting in the queue', async () => {
+  it('forgets a queued note’s record once the queue no longer holds the note, and sends nothing for it', async () => {
     const f = await fixture({ saved: [{ ...stopped(2), queued: true }] })
+    await expect.poll(() => saved(f.root)).toEqual([])
     await new Promise(resolve => setTimeout(resolve, 20))
     expect(sends(f.host)).toEqual([])
-    run(f.host)
-    await expect.poll(() => saved(f.root)).toEqual([{ threadId: 'workshop', since: expect.any(String), resumes: 2 }])
   })
 
   it('sends nothing to a thread archived while Sotto was closed', async () => {
@@ -133,6 +132,60 @@ describe('resuming threads after a restart', () => {
     const f = await fixture({ saved: [stopped()], host })
     await expect.poll(() => saved(f.root)).toEqual([])
     expect(sends(f.host)).toEqual([])
+  })
+})
+
+/** A coordinator the test drives by hand: its threads, its queue, and when a note goes. */
+function scripted(threads: { id: string; status: 'idle' | 'running' }[], followups: { threadId: string; text: string }[] = []) {
+  const listeners = new Set<(state: AgentState) => void>()
+  let state = {} as AgentState
+  const set = (next: typeof threads, queue = followups): void => {
+    state = { host: { connected: true, projects: [], threads: next.map(thread => ({ id: thread.id, projectId: 'project', title: thread.id, modelId: 'm', status: thread.status,
+      messages: [], requests: [] })) }, followups: queue.map(item => ({ id: randomUUID(), draftId: randomUUID(), attachments: [], status: 'queued', wakeUp: true,
+      createdAt: '2026-10-13T00:00:00.000Z', updatedAt: '2026-10-13T00:00:00.000Z', ...item })) } as unknown as AgentState
+    for (const listener of listeners) listener(state)
+  }
+  set(threads)
+  const control = { get: () => state, subscribe: (listener: (state: AgentState) => void) => { listeners.add(listener); return () => listeners.delete(listener) },
+    deliverWakeUp: async () => undefined }
+  return { control, set }
+}
+
+describe('what the record counts', () => {
+  it('starts a turn of the user’s own again from none, even while a resume note waits (Sotto Bug Bot)', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-restart-resume-')); roots.push(root)
+    await writeFile(join(root, 'restart-resume.json'), JSON.stringify({ version: 1, working: [{ ...stopped(RESUMES_IN_A_ROW_MAX), queued: true }] }))
+    const coordinator = scripted([{ id: 'workshop', status: 'idle' }], [{ threadId: 'workshop', text: RESUME_NOTE }])
+    const resume = new RestartResume({ directory: root, control: coordinator.control, enabled: () => true, tool: () => false }); resumes.push(resume)
+    await resume.start()
+    // The note still waits, so the record stays; then the user's own turn runs before it.
+    expect(await saved(root)).toEqual([expect.objectContaining({ resumes: RESUMES_IN_A_ROW_MAX, queued: true })])
+    coordinator.set([{ id: 'workshop', status: 'running' }])
+    await resume.freeze()
+    expect(await saved(root)).toEqual([{ threadId: 'workshop', since: expect.any(String), resumes: 0 }])
+  })
+
+  it('counts the resumes before it for the turn the note itself starts', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-restart-resume-')); roots.push(root)
+    await writeFile(join(root, 'restart-resume.json'), JSON.stringify({ version: 1, working: [{ ...stopped(2), queued: true }] }))
+    const coordinator = scripted([{ id: 'workshop', status: 'idle' }], [{ threadId: 'workshop', text: RESUME_NOTE }])
+    const resume = new RestartResume({ directory: root, control: coordinator.control, enabled: () => true, tool: () => false }); resumes.push(resume)
+    await resume.start()
+    resume.noteSending('workshop')
+    coordinator.set([{ id: 'workshop', status: 'running' }], [])
+    await resume.freeze()
+    expect(await saved(root)).toEqual([{ threadId: 'workshop', since: expect.any(String), resumes: 2 }])
+  })
+
+  it('drops the record of a thread that is no longer on the host', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-restart-resume-')); roots.push(root)
+    await writeFile(join(root, 'restart-resume.json'), JSON.stringify({ version: 1, working: [{ ...stopped(), threadId: 'deleted' }] }))
+    const coordinator = scripted([{ id: 'workshop', status: 'running' }])
+    const resume = new RestartResume({ directory: root, control: coordinator.control, enabled: () => true, tool: () => false }); resumes.push(resume)
+    await resume.start()
+    await expect.poll(() => saved(root)).toEqual([expect.objectContaining({ threadId: 'workshop', resumes: 0 })])
+    coordinator.set([])
+    await expect.poll(() => saved(root)).toEqual([])
   })
 })
 
