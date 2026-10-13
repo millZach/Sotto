@@ -4,7 +4,7 @@ import console from 'node:console'
 import process from 'node:process'
 import { execFile, spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { setTimeout as wait } from 'node:timers/promises'
@@ -157,14 +157,33 @@ export function createOwnedProofProcesses(report) {
         return current?.start === record.start && isProofProcessAlive(record.pid)
       }).map(record => record.pid)
       const remainingMembers = members()
+      const cgroupFile = (directory, name) => {
+        try { return readFileSync(join(directory, name), 'utf8') }
+        catch (error) {
+          // systemd may collect one of this run's empty cgroups between discovery and reading.
+          if (error.code === 'ENOENT') return undefined
+          throw error
+        }
+      }
       const cgroupPids = directory => {
-        if (!existsSync(directory)) return []
-        const pids = readFileSync(join(directory, 'cgroup.procs'), 'utf8').trim().split('\n').filter(Boolean).map(Number)
-        for (const entry of readdirSync(directory, { withFileTypes: true })) if (entry.isDirectory()) pids.push(...cgroupPids(join(directory, entry.name)))
+        const procs = cgroupFile(directory, 'cgroup.procs')
+        if (procs === undefined) return []
+        const pids = procs.trim().split('\n').filter(Boolean).map(Number)
+        let entries
+        try { entries = readdirSync(directory, { withFileTypes: true }) }
+        catch (error) {
+          if (error.code !== 'ENOENT') throw error
+          // Do not discard PIDs already observed just because enumeration lost its directory.
+          return pids
+        }
+        for (const entry of entries) if (entry.isDirectory()) pids.push(...cgroupPids(join(directory, entry.name)))
         return pids
       }
       const remainingCgroup = [...cgroups].flatMap(cgroupPids)
-      for (const directory of cgroups) if (existsSync(directory)) assert.match(readFileSync(join(directory, 'cgroup.events'), 'utf8'), /^populated 0$/mu)
+      for (const directory of cgroups) {
+        const events = cgroupFile(directory, 'cgroup.events')
+        if (events !== undefined) assert.match(events, /^populated 0$/mu)
+      }
       for (const command of commands) report(`Stopped ${command.name} PID ${command.pid}`)
       report(`Stopped proof slice ${slice}`)
       report(`Recorded PIDs still running: ${JSON.stringify(remainingPids)}`)
