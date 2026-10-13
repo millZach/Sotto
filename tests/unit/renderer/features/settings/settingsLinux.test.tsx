@@ -8,7 +8,7 @@ import { setupBridgeFixture } from '../../../../fixtures/renderer/omarchySetup'
 import { UPDATE_CHECK_PRIVACY_NOTICE } from '../../../../../src/shared/contracts'
 import { DEFAULT_SETTINGS } from '../../../../../src/shared/settings'
 
-const SHELL_PILL_DESCRIPTION = 'On Omarchy, Sotto’s owl in the bar takes the floating widget’s place. Remove the shell plugin to bring the widget back.'
+const SHELL_PILL_DESCRIPTION = 'On Omarchy, the owl in the bar replaces the widget. Remove the shell plugin to bring it back.'
 const WIDGET_DESCRIPTION = 'Keep the small dictation sliver on screen between sessions. Click it to dictate.'
 
 afterEach(() => { vi.unstubAllGlobals() })

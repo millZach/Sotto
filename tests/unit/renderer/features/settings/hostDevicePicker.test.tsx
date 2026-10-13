@@ -219,7 +219,7 @@ it('says in words when Tailscale does not connect, and offers Get Tailscale when
   const missing = fixture([], undefined, { tailscale: { state: 'missing' } })
   settings(missing.bridge)
   const missingRow = await screen.findByRole('region', { name: 'Tailscale' })
-  await waitFor(() => expect(missingRow.textContent).toContain('Not installed. Any machine you reach over SSH works without it, and Sotto connects to it over SSH each time.'))
+  await waitFor(() => expect(missingRow.textContent).toContain('Not installed. Hosts still work over SSH without it.'))
   await user.click(within(missingRow).getByRole('button', { name: 'Get Tailscale' }))
   expect(missing.openTailscaleDownload).toHaveBeenCalledTimes(1)
   const { dialog } = await openAddHost(user)

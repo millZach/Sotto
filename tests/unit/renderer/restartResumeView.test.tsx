@@ -60,13 +60,13 @@ describe('Resume threads after a restart in Settings', () => {
     await selectCategory('Application')
     const toggle = screen.getByRole('switch', { name: 'Resume threads after a restart' })
     expect(toggle).toBeChecked()
-    expect(toggle).toHaveAccessibleDescription('When Sotto closes while a thread is working, for an update, a quit, a crash or a restart of this computer, the thread carries on when Sotto opens again. Sotto sends it a short note, shown in the thread, saying it was stopped.')
+    expect(toggle).toHaveAccessibleDescription('A thread working when Sotto closes, for an update, a quit, a crash or a restart, carries on when Sotto opens again, with a short note from Sotto in the thread.')
     const switches = screen.getAllByRole('switch').map(item => item.getAttribute('aria-label'))
     expect(switches.indexOf('Resume threads after a restart')).toBe(switches.indexOf('Let agents babysit pull requests') + 1)
     await user.click(toggle)
     expect(update).toHaveBeenCalledWith({ resumeThreadsAfterRestart: false })
     view.rerender(<SettingsView {...baseProps({ onUpdateSettings: update, settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, resumeThreadsAfterRestart: false } })} />)
-    expect(screen.getByRole('switch', { name: 'Resume threads after a restart' })).toHaveAccessibleDescription('A thread that was working when Sotto closed waits for you to send it a message.')
+    expect(screen.getByRole('switch', { name: 'Resume threads after a restart' })).toHaveAccessibleDescription('A thread working when Sotto closes waits for your next message.')
   })
 
   it('is not there where the Owl list keeps the feature off', async () => {
