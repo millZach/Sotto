@@ -1,0 +1,223 @@
+<!doctype html>
+<!-- THROWAWAY PROTOTYPE. Three layouts for an Owl Usage page inside Sotto's existing sidebar shell.
+     Question: should Overview lead with activity, subscriptions, or models? Switch with ?variant=A|B|C.
+     Sample data only; nothing contacts a provider, reads a real account, or persists activity. -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sotto Owl · Usage prototype</title>
+<style>
+@font-face { font-family:Figtree; font-style:normal; font-weight:300 900; font-display:swap; src:url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'); }
+:root { color-scheme:dark; --tt-canvas:oklch(0.115 0.008 265); --tt-sidebar:oklch(0.235 0.003 265); --tt-sidebar-control:oklch(0.295 0.003 265); --tt-surface:oklch(0.145 0.008 265); --tt-raised:oklch(0.215 0.008 265); --tt-text:oklch(0.985 0.005 280); --tt-text-muted:oklch(0.72 0.014 265); --tt-border:oklch(0.305 0.02 265); --tt-sidebar-border:oklch(0.355 0.012 265); --tt-accent:oklch(0.714403 0.104089 183.092); --tt-accent-foreground:oklch(0.16 0.012 190); --tt-accent-surface:oklch(0.32 0.05 185); --tt-warning:oklch(0.829017 0.171221 81.038); --tt-night:oklch(0.215 0.012 260); --tt-cache:oklch(0.62 0.06 183); --tt-output:oklch(0.81 0.024 265); --tt-shadow:rgb(0 0 0 / 35%); }
+:root[data-theme=light] { color-scheme:light; --tt-canvas:oklch(0.978 0.004 85); --tt-sidebar:oklch(0.955 0.008 85); --tt-sidebar-control:oklch(0.995 0.002 85); --tt-surface:oklch(0.99 0.003 85); --tt-raised:oklch(0.945 0.007 85); --tt-text:oklch(0.235 0.014 75); --tt-text-muted:oklch(0.5 0.014 75); --tt-border:oklch(0.86 0.012 80); --tt-sidebar-border:oklch(0.87 0.012 82); --tt-accent:oklch(0.53 0.095 186); --tt-accent-foreground:oklch(0.99 0.003 85); --tt-accent-surface:oklch(0.92 0.03 186); --tt-warning:oklch(0.530927 0.155556 45.359); --tt-night:oklch(0.935 0.014 185); --tt-cache:oklch(0.68 0.065 183); --tt-output:oklch(0.38 0.024 265); --tt-shadow:rgb(0 0 0 / 14%); }
+* { box-sizing:border-box; }
+body { margin:0; width:100%; height:100vh; overflow:hidden; background:var(--tt-canvas); color:var(--tt-text); font:14px/1.45 Figtree,"Segoe UI",system-ui,sans-serif; }
+button,input,select { font:inherit; color:inherit; }
+button,a,select { -webkit-app-region:no-drag; }
+button { cursor:pointer; }
+button,a,select,input { outline-offset:3px; }
+:focus-visible { outline:2px solid var(--tt-accent); }
+button { border:0; background:transparent; }
+svg { display:block; }
+.app { display:grid; grid-template-columns:264px minmax(0,1fr); height:100%; }
+.sidebar { position:relative; display:flex; flex-direction:column; min-height:0; border-right:1px solid var(--tt-sidebar-border); background:linear-gradient(var(--tt-night) 76px,var(--tt-sidebar) 92px); }
+.sidebar-top { display:flex; flex:none; align-items:center; gap:2px; height:44px; padding:0 6px 0 14px; -webkit-app-region:drag; }
+.owl-mark { width:24px; height:24px; margin-right:auto; }
+.seg { display:flex; padding:2px; border-radius:8px; background:var(--tt-sidebar-control); }
+.seg button { height:24px; padding:0 9px; font-size:12.5px; color:var(--tt-text-muted); border-radius:6px; }
+.seg button.on { background:var(--tt-raised); color:var(--tt-text); }
+.icon-button { width:28px; height:28px; display:grid; place-items:center; border-radius:7px; color:var(--tt-text-muted); }
+.icon-button:hover { color:var(--tt-text); background:var(--tt-sidebar-control); }
+.search { display:flex; align-items:center; gap:9px; height:32px; margin:0 8px 8px; padding:0 10px; border:1px solid var(--tt-sidebar-border); border-radius:8px; color:var(--tt-text-muted); font-size:13px; }
+.search input { width:100%; min-width:0; padding:0; border:0; outline:none; background:transparent; }
+.search input::placeholder { color:var(--tt-text-muted); }
+.sidebar-scroll { flex:1; min-height:0; overflow:auto; padding:4px 5px 12px; }
+.project-label { display:flex; align-items:center; gap:8px; padding:10px 10px 6px; color:var(--tt-text-muted); font-size:12px; }
+.thread { display:flex; align-items:center; gap:9px; width:100%; min-height:31px; padding:4px 10px; text-align:left; font-size:13px; border-radius:7px; }
+.thread span:nth-child(2) { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.thread:hover { background:var(--tt-sidebar-control); }
+.ring { width:10px; height:10px; border:1.5px solid var(--tt-text-muted); border-radius:50%; flex:none; }
+.thread time { color:var(--tt-text-muted); font-size:12px; }
+.sidebar-foot { flex:none; display:flex; flex-wrap:wrap; gap:6px 2px; padding:8px 6px 10px; border-top:1px solid var(--tt-sidebar-border); }
+.sidebar-foot .seg { flex:1 0 100%; }
+.sidebar-foot .seg button { flex:1; }
+.page-links { display:flex; align-items:center; }
+.page-links a { width:30px; height:30px; display:grid; place-items:center; color:var(--tt-text-muted); border-radius:7px; text-decoration:none; }
+.page-links a:hover,.page-links a[aria-current] { background:var(--tt-sidebar-control); color:var(--tt-text); }
+.update { margin-left:auto; color:var(--tt-text-muted); font-size:11px; padding:5px; }
+.room { display:flex; flex-direction:column; min-width:0; min-height:0; }
+.window-strip { height:36px; flex:none; display:flex; align-items:center; justify-content:flex-end; padding-right:6px; -webkit-app-region:drag; }
+.window-strip button { width:34px; height:28px; border-radius:6px; color:var(--tt-text-muted); }
+.scroll { flex:1; min-height:0; overflow:auto; padding:14px clamp(24px,3.2vw,52px) 86px; }
+.page { max-width:1200px; margin:0 auto; }
+.page-header { display:flex; align-items:flex-start; gap:16px; justify-content:space-between; flex-wrap:wrap; }
+h1 { margin:0; font-size:30px; font-weight:550; line-height:1.15; letter-spacing:-.7px; }
+.page-header p { margin:8px 0 0; color:var(--tt-text-muted); }
+.sample { display:flex; align-items:center; gap:7px; color:var(--tt-warning); font-size:12px; white-space:nowrap; padding-top:5px; }
+.sample::before { content:''; width:6px; height:6px; background:var(--tt-warning); border-radius:50%; }
+.toolbar { display:flex; justify-content:space-between; align-items:center; gap:14px; flex-wrap:wrap; border-bottom:1px solid var(--tt-border); margin-top:22px; }
+.tabs { display:flex; gap:24px; }
+.tabs button { padding:0 0 13px; color:var(--tt-text-muted); border-bottom:2px solid transparent; }
+.tabs button[aria-selected=true] { border-color:var(--tt-accent); color:var(--tt-text); }
+.filters { display:flex; align-items:center; gap:8px; padding-bottom:10px; }
+.filters select { height:30px; max-width:180px; background:var(--tt-surface); border:1px solid var(--tt-border); border-radius:7px; padding:0 24px 0 10px; font-size:12px; }
+.content { padding-top:22px; }
+h2 { font-size:16px; font-weight:550; letter-spacing:-.2px; margin:0; }
+h3 { font-size:14px; font-weight:550; margin:0; }
+p { margin:0; }
+.muted,.note { color:var(--tt-text-muted); }
+.note { font-size:12px; line-height:1.5; }
+.section-heading { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:16px; }
+.link { padding:0; color:var(--tt-accent); font-size:12px; }
+.metric-strip { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:20px; padding:2px 0 25px; border-bottom:1px solid var(--tt-border); margin-bottom:24px; }
+.metric-label { color:var(--tt-text-muted); font-size:12px; }
+.metric-value { display:block; font-size:31px; font-weight:500; letter-spacing:-.8px; font-variant-numeric:tabular-nums; line-height:1.35; margin:4px 0; }
+.metric-note { color:var(--tt-text-muted); font-size:12px; }
+.overview-grid { display:grid; grid-template-columns:minmax(0,1.45fr) minmax(240px,1fr); gap:34px; }
+.chart { padding-top:10px; }
+.chart-y { display:flex; justify-content:space-between; margin-bottom:10px; color:var(--tt-text-muted); font-size:11px; }
+.bars { position:relative; display:flex; align-items:flex-end; gap:clamp(3px,.45vw,8px); height:148px; border-bottom:1px solid var(--tt-border); background:repeating-linear-gradient(to top,transparent 0,transparent calc(33.33% - 1px),var(--tt-border) calc(33.33% - 1px),var(--tt-border) 33.33%); }
+.bar { flex:1; min-width:0; border-radius:3px 3px 0 0; background:var(--tt-accent); opacity:.86; transition:height .2s; }
+.bar:hover { opacity:1; }
+.axis { display:flex; justify-content:space-between; color:var(--tt-text-muted); font-size:11px; margin-top:8px; }
+.chart-summary { margin-top:17px; display:flex; flex-wrap:wrap; gap:8px 22px; font-size:12px; color:var(--tt-text-muted); }
+.chart-summary strong { color:var(--tt-text); font-weight:500; }
+.model-list { display:flex; flex-direction:column; gap:14px; }
+.model-row-top { display:flex; gap:10px; justify-content:space-between; font-size:13px; margin-bottom:6px; }
+.model-row-top span { color:var(--tt-text-muted); white-space:nowrap; font-variant-numeric:tabular-nums; }
+.model-track { height:5px; border-radius:5px; background:var(--tt-raised); overflow:hidden; }
+.model-track i { display:block; height:100%; background:var(--tt-accent); border-radius:5px; }
+.tokens { margin-top:26px; padding-top:22px; border-top:1px solid var(--tt-border); }
+.token-meter { display:flex; height:9px; border-radius:5px; overflow:hidden; margin:15px 0; gap:2px; }
+.token-meter i:nth-child(1) { background:var(--tt-accent); }
+.token-meter i:nth-child(2) { background:var(--tt-cache); }
+.token-meter i:nth-child(3) { background:var(--tt-border); }
+.token-meter i:nth-child(4) { background:var(--tt-output); }
+.token-details { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px; }
+.token-details dt { font-size:12px; color:var(--tt-text-muted); }
+.token-details dd { font-size:18px; margin:5px 0 0; font-variant-numeric:tabular-nums; }
+.token-details small { display:block; color:var(--tt-text-muted); font-size:11px; margin-top:3px; }
+.subscriptions-preview { margin-top:26px; padding-top:22px; border-top:1px solid var(--tt-border); }
+.quota-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px 28px; }
+.quota-row { display:grid; grid-template-columns:28px minmax(0,1fr) auto; gap:11px; padding:12px 0; }
+.provider-mark { width:28px; height:28px; display:grid; place-items:center; font-size:12px; border:1px solid var(--tt-border); border-radius:7px; color:var(--tt-text); font-weight:600; }
+.quota-row .note { margin-top:4px; }
+.remaining { text-align:right; font-size:13px; white-space:nowrap; }
+.remaining .note { font-size:11px; }
+.mini-meter { height:4px; border-radius:4px; background:var(--tt-raised); margin-top:8px; }
+.mini-meter i { display:block; height:100%; background:var(--tt-accent); border-radius:4px; }
+.source-note { margin-top:24px; padding-top:14px; border-top:1px solid var(--tt-border); font-size:12px; color:var(--tt-text-muted); }
+.provider-layout { display:grid; grid-template-columns:180px minmax(0,1fr); gap:28px; }
+.provider-picker { display:flex; flex-direction:column; gap:6px; padding-right:20px; border-right:1px solid var(--tt-border); }
+.provider-picker button { display:flex; align-items:center; gap:10px; padding:9px; text-align:left; border-radius:8px; font-size:13px; }
+.provider-picker button[aria-pressed=true] { background:var(--tt-accent-surface); }
+.provider-picker .note { margin:12px 8px 0; }
+.provider-detail .section-heading { margin-bottom:22px; }
+.provider-title { display:flex; gap:12px; align-items:center; }
+.provider-title h2 { font-size:22px; }
+.quota-window { padding:18px 0; border-top:1px solid var(--tt-border); }
+.quota-window:first-of-type { border-top:0; }
+.quota-window .section-heading { margin-bottom:10px; }
+.quota-window strong { font-size:23px; font-weight:500; }
+.quota-window .mini-meter { height:7px; }
+.quota-window .note { margin-top:9px; }
+.quota-legend { display:flex; justify-content:space-between; font-size:11px; color:var(--tt-text-muted); margin-top:6px; }
+.workload { padding-top:22px; border-top:1px solid var(--tt-border); margin-top:18px; }
+.workload .metric-strip { grid-template-columns:repeat(3,minmax(0,1fr)); border-bottom:0; padding-bottom:0; margin:15px 0; }
+.workload .metric-value { font-size:25px; }
+.subscription-list { margin-top:22px; border-top:1px solid var(--tt-border); }
+.subscription-list .quota-row { border-bottom:1px solid var(--tt-border); padding:18px 0; }
+.analysis-layout { display:grid; grid-template-columns:minmax(0,1fr) 190px; gap:28px; }
+.analysis-aside { border-left:1px solid var(--tt-border); padding-left:24px; }
+.analysis-aside .metric { margin:0 0 24px; }
+.table-scroll { overflow:auto; }
+table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; font-size:12px; }
+th { text-align:right; color:var(--tt-text-muted); font-weight:400; padding:0 11px 12px; white-space:nowrap; }
+th:first-child,td:first-child { text-align:left; padding-left:0; }
+th button { color:inherit; padding:0; white-space:nowrap; }
+td { padding:15px 11px; text-align:right; border-top:1px solid var(--tt-border); white-space:nowrap; }
+td:last-child,th:last-child { padding-right:0; }
+td:first-child { min-width:150px; font-weight:500; }
+td:first-child small { display:block; color:var(--tt-text-muted); font-size:11px; font-weight:400; margin-top:3px; }
+.table-total td { font-weight:550; }
+.table-explanation { padding-top:16px; max-width:720px; }
+.compact-metrics { display:flex; gap:28px; flex-wrap:wrap; padding-bottom:22px; margin-bottom:24px; border-bottom:1px solid var(--tt-border); }
+.compact-metrics strong { display:block; font-size:23px; font-weight:500; margin-top:3px; }
+.subheading { font-size:12px; color:var(--tt-text-muted); margin:22px 0 12px; }
+.unsupported { padding:28px 0 18px; }
+.unsupported h3 { font-size:18px; margin-bottom:9px; }
+.unsupported p { max-width:500px; }
+.room-foot { flex:none; height:24px; border-top:1px solid var(--tt-border); padding:3px 16px; color:var(--tt-text-muted); font-size:11px; }
+.proto-bar { position:fixed; left:calc(50% + 132px); bottom:14px; transform:translateX(-50%); display:flex; align-items:center; gap:7px; border:1px solid var(--tt-accent); padding:6px 8px; border-radius:12px; background:var(--tt-raised); box-shadow:0 6px 22px var(--tt-shadow); z-index:100; white-space:nowrap; }
+.proto-bar button { height:28px; border-radius:6px; padding:0 8px; color:var(--tt-text-muted); }
+.proto-bar button:hover { background:var(--tt-accent-surface); color:var(--tt-text); }
+.proto-bar .arrow { font-size:19px; color:var(--tt-accent); }
+.proto-bar output { min-width:166px; font-size:12px; text-align:center; }
+.proto-bar .divider { width:1px; height:18px; background:var(--tt-border); margin:0 2px; }
+.proto-bar .small { font-size:11px; }
+.sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+@media (max-width:1100px) { .app { grid-template-columns:230px minmax(0,1fr); } .sidebar-top { padding-left:10px; } .sidebar-top .seg button { padding:0 6px; } .scroll { padding:14px 24px 86px; } .overview-grid { gap:24px; grid-template-columns:minmax(0,1.2fr) minmax(190px,1fr); } .metric-strip { gap:12px; } .metric-value { font-size:27px; } .quota-grid { gap:6px 20px; } .provider-layout { grid-template-columns:145px minmax(0,1fr); gap:20px; } .provider-picker { padding-right:12px; } .analysis-layout { grid-template-columns:minmax(0,1fr); } .analysis-aside { display:flex; flex-wrap:wrap; gap:16px 30px; padding-left:0; padding-top:18px; border-left:0; border-top:1px solid var(--tt-border); } .analysis-aside .metric { margin:0; } .proto-bar { left:calc(50% + 115px); } }
+@media (max-width:900px) { .app { grid-template-columns:210px minmax(0,1fr); } .sidebar-top .seg button { padding:0 5px; } .sidebar-top .icon-button.add-project { display:none; } .scroll { padding:12px 22px 82px; } .toolbar { gap:4px; margin-top:18px; } .tabs { gap:22px; } .filters { width:100%; padding:3px 0 12px; } .page-header { gap:10px; } h1 { font-size:27px; } .page-header p { font-size:13px; } .sample { font-size:11px; } .metric-strip { grid-template-columns:repeat(2,minmax(0,1fr)); row-gap:18px; } .overview-grid { grid-template-columns:minmax(0,1fr); gap:28px; } .bars { height:128px; } .model-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:13px 20px; } .token-details { grid-template-columns:repeat(2,minmax(0,1fr)); } .quota-grid { grid-template-columns:minmax(0,1fr); } .provider-layout { grid-template-columns:minmax(0,1fr); gap:20px; } .provider-picker { flex-direction:row; overflow-x:auto; border-right:0; border-bottom:1px solid var(--tt-border); padding:0 0 14px; gap:6px; } .provider-picker button { padding:6px; white-space:nowrap; } .provider-picker .provider-mark { width:24px; height:24px; } .provider-picker .note { display:none; } .proto-bar { left:calc(50% + 105px); gap:2px; padding:5px; } .proto-bar output { min-width:154px; } .proto-bar .small { padding:0 6px; } }
+@media (prefers-reduced-motion:reduce) { *,*::before,*::after { transition:none!important; animation:none!important; } }
+:root[data-reduced-motion=on] *, :root[data-reduced-motion=on] *::before,:root[data-reduced-motion=on] *::after { transition:none!important; animation:none!important; }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar" aria-label="Thread sidebar">
+    <div class="sidebar-top"><img class="owl-mark" src="../../build/icon.svg" alt="Sotto Owl"><div class="seg"><button class="on" type="button">Threads</button><button type="button">Terminal</button></div><button class="icon-button add-project" type="button" aria-label="Add project" title="Add project"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor"><path d="M2 13V4h5l2 2h5v7H2Z"/><path d="M8 7v4M6 9h4"/></svg></button><button class="icon-button" type="button" aria-label="New thread" title="New thread">＋</button><button class="icon-button" type="button" aria-label="Collapse sidebar" title="Collapse sidebar">‹</button></div>
+    <label class="search"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor"><circle cx="6.7" cy="6.7" r="4.5"/><path d="m10 10 4 4"/></svg><input placeholder="Find a thread" aria-label="Find a thread" id="thread-search"></label>
+    <div class="sidebar-scroll" id="threads"><div class="project-label">⌄ <span>Sotto</span></div><button type="button" class="thread"><span class="ring"></span><span>Add usage tracking</span><time>Now</time></button><button type="button" class="thread"><span class="ring"></span><span>Repair the thread picker</span><time>2 h</time></button><button type="button" class="thread"><span class="ring"></span><span>Check Owl on Windows</span><time>4 h</time></button><div class="project-label">⌄ <span>Traffic simulation</span></div><button type="button" class="thread"><span class="ring"></span><span>Make intersections clearer</span><time>1 d</time></button><button type="button" class="thread"><span class="ring"></span><span>Tune the signal timing</span><time>2 d</time></button><div class="project-label">⌄ <span>Settled</span></div><button type="button" class="thread"><span class="ring"></span><span>Organize the release notes</span><time>3 d</time></button></div>
+    <div class="sidebar-foot"><div class="seg"><button type="button">Dictate</button><button type="button" aria-label="Watcher">♧</button><button type="button">Threads</button></div><nav class="page-links" aria-label="Pages"><a href="#history" title="History" aria-label="History"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor"><circle cx="8" cy="8" r="5.5"/><path d="M8 4v4l3 2"/></svg></a><a href="#usage" title="Usage" aria-label="Usage" aria-current="page"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 13h12M4 10V7M8 10V3M12 10V5"/></svg></a><a href="#settings" title="Settings" aria-label="Settings"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor"><path d="m6 2 .4-1h3.2l.4 1 1.4.8 1.1-.1 1.6 2.8-.6.9v1.6l.6.9-1.6 2.8-1.1-.1-1.4.8-.4 1H6.4L6 12.2l-1.4-.8-1.1.1-1.6-2.8.6-.9V6.2l-.6-.9 1.6-2.8 1.1.1Z"/><circle cx="8" cy="7" r="2"/></svg></a><a href="#help" title="Help" aria-label="Help"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor"><circle cx="8" cy="8" r="6"/><path d="M6 6a2 2 0 1 1 3 1.7L8 8.5V10M8 12v.3"/></svg></a></nav><button class="update" type="button">Owl · up to date</button></div>
+  </aside>
+  <div class="room"><div class="window-strip" aria-label="Window controls"><button type="button" aria-label="Minimize window">−</button><button type="button" aria-label="Maximize window">□</button><button type="button" aria-label="Close window">×</button></div><main class="scroll"><div class="page"><header class="page-header"><div><h1>Usage</h1><p>Your subscriptions and the work you do in Sotto.</p></div><span class="sample">Prototype · sample data</span></header><div class="toolbar"><div class="tabs" role="tablist" aria-label="Usage view"><button type="button" role="tab" data-tab="overview" aria-selected="true">Overview</button><button type="button" role="tab" data-tab="subscriptions" aria-selected="false" tabindex="-1">Subscriptions</button><button type="button" role="tab" data-tab="models" aria-selected="false" tabindex="-1">Models</button></div><div class="filters"><label class="sr-only" for="date-range">Activity date range</label><select id="date-range"><option value="30">Last 30 days</option><option value="7">Last 7 days</option><option value="all">All tracked activity</option></select><label class="sr-only" for="provider-filter">Activity provider</label><select id="provider-filter"><option value="all">All providers</option><option value="codex">Codex</option><option value="claude">Claude Code</option><option value="grok">Grok Build</option><option value="devin">Devin</option></select></div></div><div class="content" id="content" role="tabpanel" tabindex="0"></div></div></main><footer class="room-foot">Sample activity stays in this prototype. No accounts are connected.</footer></div>
+</div>
+<div class="proto-bar" role="toolbar" aria-label="Prototype controls"><button type="button" class="arrow" id="previous" aria-label="Previous layout">←</button><output id="variant-label"></output><button type="button" class="arrow" id="next" aria-label="Next layout">→</button><span class="divider"></span><button type="button" class="small" id="appearance">Use light</button><button type="button" class="small" id="motion" aria-pressed="false">Reduce motion</button></div>
+<script>
+const layouts={A:'Activity first',B:'Subscriptions first',C:'Models first'};
+const params=new URLSearchParams(location.search);
+const state={variant:(params.get('variant')||'A').toUpperCase(),tab:params.get('tab')||'overview',range:'30',provider:'all',selectedProvider:'codex',sort:'prompts',appearance:params.get('appearance')==='light'?'light':'dark'};
+if(!layouts[state.variant])state.variant='A';
+if(!['overview','subscriptions','models'].includes(state.tab))state.tab='overview';
+const providers=[{id:'codex',name:'Codex',mark:'O',account:'ChatGPT subscription',short:63,weekly:31,reset:'in 2 h 16 min',weeklyReset:'Friday, 9:00 AM'},{id:'claude',name:'Claude Code',mark:'✳',account:'Claude subscription',short:46,weekly:62,reset:'in 1 h 42 min',weeklyReset:'Thursday, 11:30 AM'},{id:'grok',name:'Grok Build',mark:'G',account:'Connected subscription',short:null,weekly:null,status:'Not read yet'},{id:'devin',name:'Devin',mark:'D',account:'Connected account',short:null,weekly:null,status:'Unavailable'}];
+const models=[{name:'GPT-6 Astra',provider:'codex',prompts:284,input:13400000,output:1200000,read:10200000,write:null,threads:18},{name:'Claude Sonnet',provider:'claude',prompts:188,input:7200000,output:900000,read:5100000,write:800000,threads:14},{name:'Claude Opus',provider:'claude',prompts:62,input:3100000,output:400000,read:1800000,write:300000,threads:7},{name:'Grok Build model',provider:'grok',prompts:41,input:null,output:null,read:null,write:null,threads:4},{name:'Devin model',provider:'devin',prompts:19,input:null,output:null,read:null,write:null,threads:2}];
+const days=[0,0,0,22,27,38,18,0,40,21,24,29,38,0,19,28,23,18,0,39,38,21,29,0,17,24,30,20,0,31];
+const fmt=n=>n===null?'Unreported':n>=1000000?`${(n/1000000).toFixed(1)}m`:n>=1000?`${(n/1000).toFixed(1)}k`:Math.round(n).toLocaleString();
+const scale=()=>state.range==='7'?.26:state.range==='all'?1.4:1;
+const activeDays=()=>dailyPromptValues().filter(v=>v>0).length;
+const selectedModels=()=>models.filter(m=>state.provider==='all'||m.provider===state.provider).map(m=>({...m,prompts:Math.round(m.prompts*scale()),input:m.input===null?null:m.input*scale(),output:m.output===null?null:m.output*scale(),read:m.read===null?null:m.read*scale(),write:m.write===null?null:m.write*scale()}));
+const summary=()=>{const rows=selectedModels();return{rows,prompts:rows.reduce((n,m)=>n+m.prompts,0),input:rows.reduce((n,m)=>n+(m.input||0),0),output:rows.reduce((n,m)=>n+(m.output||0),0),read:rows.reduce((n,m)=>n+(m.read||0),0),write:rows.reduce((n,m)=>n+(m.write||0),0),partial:rows.some(m=>m.input===null),writePartial:rows.some(m=>m.write===null),threads:Math.round((state.provider==='all'?37:rows.reduce((n,m)=>n+m.threads,0))*Math.min(1,scale()))}};
+function dailyPromptValues(){const prompts=summary().prompts;const base=days.slice(state.range==='7'?-7:0);const baseTotal=base.reduce((n,v)=>n+v,0);if(!baseTotal||!prompts)return base.map(()=>0);const values=base.map(d=>Math.floor(d/baseTotal*prompts));let remaining=prompts-values.reduce((n,v)=>n+v,0);for(let i=0;remaining>0;i=(i+1)%values.length){if(base[i]){values[i]++;remaining--;}}return values;}
+const providerMark=p=>`<span class="provider-mark" aria-hidden="true">${p.mark}</span>`;
+const sourceNote=()=>`<p class="source-note">Sample data, not your accounts. Sotto activity counts work in Sotto; account limits can include work elsewhere. Dated activity starts when tracking is enabled. Older usage can appear as undated.</p>`;
+function metrics(){const s=summary();const has=s.input+s.output>0;return `<div class="metric-strip"><div class="metric"><span class="metric-label">Prompts sent</span><strong class="metric-value">${fmt(s.prompts)}</strong><span class="metric-note">User messages in Sotto</span></div><div class="metric"><span class="metric-label">${s.partial?'Reported tokens':'Total tokens'}</span><strong class="metric-value">${has?fmt(s.input+s.output):'—'}</strong><span class="metric-note">${has?`${fmt(s.input)} input · ${fmt(s.output)} output`:'Provider has not reported tokens'}</span></div><div class="metric"><span class="metric-label">Input from cache reads</span><strong class="metric-value">${has?Math.round(s.read/s.input*100)+'%':'—'}</strong><span class="metric-note">${has?fmt(s.read)+' read tokens':'Cache reads are unreported'}</span></div><div class="metric"><span class="metric-label">Active threads</span><strong class="metric-value">${s.threads}</strong><span class="metric-note">${activeDays()} active days in the sample</span></div></div>`;}
+function chart(){const s=summary();const count=state.range==='7'?7:30;const values=dailyPromptValues();const active=values.filter(v=>v>0).length;const maximum=Math.max(10,Math.ceil(Math.max(...values)/10)*10);return `<section><div class="section-heading"><h2>Prompts over time</h2><span class="note">${state.range==='7'?'Oct 6–12':'Sep 13–Oct 12'}</span></div><div class="chart"><div class="chart-y"><span>Prompts sent</span><span>${maximum}</span></div><div class="bars" role="img" aria-label="Sample daily prompt counts. ${active} active days, ${s.prompts} prompts.">${values.map((v,i)=>`<div class="bar" style="height:${v/maximum*100}%" title="Day ${i+1}: ${v} prompts"></div>`).join('')}</div><div class="axis"><span>${count===7?'Oct 6':'Sep 13'}</span><span>${count===7?'Oct 9':'Sep 28'}</span><span>Oct 12</span></div><div class="chart-summary"><span><strong>${active}</strong> active days</span><span><strong>${active?Math.round(s.prompts/active):0}</strong> prompts per active day</span><span>Earlier activity: <strong>undated</strong></span></div></div></section>`;}
+function modelBars(){const s=summary();return `<section><div class="section-heading"><h2>Models you use most</h2><button class="link" type="button" data-open-tab="models">See model details</button></div><div class="model-list">${s.rows.map(m=>`<div><div class="model-row-top"><b style="font-weight:500">${m.name}</b><span>${m.prompts} · ${Math.round(m.prompts/s.prompts*100)}%</span></div><div class="model-track"><i style="width:${m.prompts/s.prompts*100}%"></i></div></div>`).join('')}</div><p class="note" style="margin-top:15px">Share of Sotto prompts. Account limits use their own measures.</p></section>`;}
+function tokens(){const s=summary();if(!s.input)return `<section class="tokens"><h2>Tokens</h2><p class="note" style="margin-top:10px">This provider has not reported token counts in the sample. Prompts and active threads are still counted.</p></section>`;const total=s.input+s.output;const other=s.input-s.read-s.write;return `<section class="tokens"><div class="section-heading"><h2>Where the tokens go</h2><span class="note">Total = input + output</span></div><div class="token-meter" role="img" aria-label="Input includes cache read and write tokens; output is separate."><i style="width:${s.read/total*100}%"></i><i style="width:${s.write/total*100}%"></i><i style="width:${other/total*100}%"></i><i style="width:${s.output/total*100}%"></i></div><dl class="token-details"><div><dt>Cache read</dt><dd>${fmt(s.read)}</dd><small>Included in input</small></div><div><dt>Cache write</dt><dd>${s.writePartial?'≥ ':''}${fmt(s.write)}</dd><small>${s.writePartial?'Some providers do not report writes':'Included in input'}</small></div><div><dt>Other input</dt><dd>${fmt(other)}</dd><small>${s.writePartial?'Includes unreported cache writes':'Input outside the cache'}</small></div><div><dt>Output</dt><dd>${fmt(s.output)}</dd><small>Generated tokens</small></div></dl>${s.partial?'<p class="note" style="margin-top:15px">Token totals cover Codex and Claude Code in this sample. Grok Build and Devin tokens are unreported.</p>':''}</section>`;}
+function quotaRow(p){return `<div class="quota-row">${providerMark(p)}<div><h3>${p.name}</h3><p class="note">${p.short===null?(p.id==='grok'?'Account limits have not been read in this sample.':'Account limits are not available in this sample.'):`5-hour window · resets ${p.reset}`}</p>${p.short===null?'':`<div class="mini-meter"><i style="width:${p.short}%"></i></div>`}</div><div class="remaining">${p.short===null?p.status:`${p.short}% left`}<p class="note">${p.short===null?'Connected':`${p.weekly}% weekly left`}</p></div></div>`;}
+function preview(){const ps=providers.filter(p=>state.provider==='all'||p.id===state.provider);return `<section class="subscriptions-preview"><div class="section-heading"><h2>Subscription limits</h2><button class="link" type="button" data-open-tab="subscriptions">See subscriptions</button></div><div class="quota-grid">${ps.map(quotaRow).join('')}</div><p class="note" style="margin-top:8px">Account-wide sample snapshots · read 2 minutes ago. These limits are separate from the activity date range.</p></section>`;}
+function providerDetail(){const p=providers.find(p=>p.id===state.selectedProvider);const ms=models.filter(m=>m.provider===p.id);const prompts=ms.reduce((n,m)=>n+m.prompts,0);const input=ms.reduce((n,m)=>n+(m.input||0),0);const output=ms.reduce((n,m)=>n+(m.output||0),0);return `<div class="provider-detail"><div class="section-heading"><div class="provider-title">${providerMark(p)}<div><h2>${p.name}</h2><p class="note">${p.account} · sample account</p></div></div><span class="note">Read 2 minutes ago</span></div>${p.short!==null?`<div class="quota-window"><div class="section-heading"><h3>5-hour window</h3><strong>${p.short}% left</strong></div><div class="mini-meter"><i style="width:${p.short}%"></i></div><div class="quota-legend"><span>Used ${100-p.short}%</span><span>Remaining ${p.short}%</span></div><p class="note">Resets ${p.reset} · account-wide</p></div><div class="quota-window"><div class="section-heading"><h3>Weekly window</h3><strong>${p.weekly}% left</strong></div><div class="mini-meter"><i style="width:${p.weekly}%"></i></div><div class="quota-legend"><span>Used ${100-p.weekly}%</span><span>Remaining ${p.weekly}%</span></div><p class="note">Resets ${p.weeklyReset} · account-wide</p></div>`:`<div class="unsupported"><h3>${p.status}</h3><p class="note">${p.id==='grok'?'Grok Build account limits have not been read in this sample. A connected account alone does not tell Sotto how much remains.':'This sample has no Devin account-limit source. Sotto activity is still available below.'}</p></div>`}<div class="workload"><h3>Sotto activity · last 30 days</h3><div class="metric-strip"><div><span class="metric-label">Prompts</span><strong class="metric-value">${fmt(prompts)}</strong></div><div><span class="metric-label">Reported input</span><strong class="metric-value">${input?fmt(input):'—'}</strong></div><div><span class="metric-label">Reported output</span><strong class="metric-value">${output?fmt(output):'—'}</strong></div></div><p class="note">${input?'Activity here is one part of your account usage.':'Token counts are unreported. Sotto still records prompts and active threads.'}</p></div></div>`;}
+function subscriptions(){return `<div class="section-heading"><h2>Your connected subscriptions</h2><span class="note">Account-wide limits · sample snapshots</span></div><div class="provider-layout"><nav class="provider-picker" aria-label="Choose a subscription">${providers.map(p=>`<button type="button" data-provider="${p.id}" aria-pressed="${p.id===state.selectedProvider}">${providerMark(p)}${p.name}</button>`).join('')}<p class="note">Choose an account to see its limits and Sotto activity.</p></nav>${providerDetail()}</div>${sourceNote()}`;}
+function modelTable(){const s=summary();let rows=[...s.rows].sort((a,b)=>(b[state.sort]||0)-(a[state.sort]||0));const totals=[s.prompts,s.input||null,s.output||null,s.read||null,s.write||null];return `<div class="table-scroll"><table><caption class="sr-only">Sample model usage in Sotto, with unreported token fields shown explicitly</caption><thead><tr><th>Model</th><th><button type="button" data-sort="prompts">Prompts ${state.sort==='prompts'?'↓':''}</button></th><th><button type="button" data-sort="input">Input ${state.sort==='input'?'↓':''}</button></th><th><button type="button" data-sort="output">Output ${state.sort==='output'?'↓':''}</button></th><th>Cache read</th><th>Cache write</th></tr></thead><tbody>${rows.map(m=>`<tr><td>${m.name}<small>${providers.find(p=>p.id===m.provider).name}</small></td><td>${fmt(m.prompts)}</td><td>${fmt(m.input)}</td><td>${fmt(m.output)}</td><td>${fmt(m.read)}</td><td>${fmt(m.write)}</td></tr>`).join('')}<tr class="table-total"><td>Reported total</td>${totals.map((n,i)=>`<td>${i===4&&s.writePartial&&n?'≥ ':''}${fmt(n)}</td>`).join('')}</tr></tbody></table></div><p class="note table-explanation">Input includes cache read and cache write tokens. Add input and output for total tokens. Unreported fields remain unknown. These counts describe activity in Sotto, not your subscription bill.</p>`;}
+function modelAnalysis(){const s=summary();return `<div class="section-heading"><h2>Model usage</h2><span class="note">Sorted by ${state.sort} · click a heading to change</span></div><div class="analysis-layout"><section>${modelTable()}${tokens()}</section><aside class="analysis-aside"><div class="metric"><span class="metric-label">Prompts sent</span><strong class="metric-value">${fmt(s.prompts)}</strong><span class="metric-note">Across ${s.rows.length} models</span></div><div class="metric"><span class="metric-label">Reported tokens</span><strong class="metric-value">${s.input?fmt(s.input+s.output):'—'}</strong><span class="metric-note">${s.partial?'Some models are unreported':'Input + output'}</span></div><div class="metric"><span class="metric-label">Active threads</span><strong class="metric-value">${s.threads}</strong></div></aside></div>${sourceNote()}`;}
+function activityFirst(){return `${metrics()}<div class="overview-grid">${chart()}${modelBars()}</div>${tokens()}${preview()}${sourceNote()}`;}
+function subscriptionsFirst(){const s=summary();return `<div class="compact-metrics"><div class="metric-label">Sotto prompts<strong>${fmt(s.prompts)}</strong></div><div class="metric-label">Reported tokens<strong>${s.input?fmt(s.input+s.output):'—'}</strong></div><div class="metric-label">Active threads<strong>${s.threads}</strong></div></div><div class="section-heading"><h2>How much room is left?</h2><button class="link" type="button" data-open-tab="subscriptions">See account details</button></div><p class="note">Current account-wide limits. Your Sotto activity appears below.</p><div class="subscription-list">${providers.filter(p=>state.provider==='all'||p.id===state.provider).map(quotaRow).join('')}</div><section style="margin-top:28px"><div class="overview-grid">${modelBars()}${chart()}</div></section>${tokens()}${sourceNote()}`;}
+function modelsFirst(){return `<div class="section-heading"><h2>What did you use?</h2><button class="link" type="button" data-open-tab="models">See the token breakdown</button></div>${modelTable()}<section style="margin-top:28px">${chart()}</section>${preview()}${sourceNote()}`;}
+function render(){document.documentElement.dataset.theme=state.appearance;document.querySelectorAll('[data-tab]').forEach(b=>{const on=b.dataset.tab===state.tab;b.setAttribute('aria-selected',on);b.tabIndex=on?0:-1;});document.getElementById('content').innerHTML=state.tab==='subscriptions'?subscriptions():state.tab==='models'?modelAnalysis():state.variant==='A'?activityFirst():state.variant==='B'?subscriptionsFirst():modelsFirst();document.getElementById('variant-label').textContent=`${state.variant} · ${layouts[state.variant]}`;document.getElementById('variant-label').title=`Prototype state: layout ${state.variant}; ${state.tab}; range ${state.range}; ${state.provider}; ${state.appearance}`;document.getElementById('appearance').textContent=state.appearance==='dark'?'Use light':'Use dark';document.querySelector('.filters').style.visibility=state.tab==='subscriptions'?'hidden':'visible';const u=new URL(location.href);u.searchParams.set('variant',state.variant);u.searchParams.set('tab',state.tab);u.searchParams.set('appearance',state.appearance);history.replaceState(null,'',u);}
+function cycle(delta){const keys=Object.keys(layouts);state.variant=keys[(keys.indexOf(state.variant)+delta+keys.length)%keys.length];render();}
+function openTab(tab){state.tab=tab;render();}
+document.getElementById('previous').addEventListener('click',()=>cycle(-1));document.getElementById('next').addEventListener('click',()=>cycle(1));
+document.getElementById('appearance').addEventListener('click',()=>{state.appearance=state.appearance==='dark'?'light':'dark';render();});
+document.getElementById('motion').addEventListener('click',e=>{const on=e.currentTarget.getAttribute('aria-pressed')!=='true';e.currentTarget.setAttribute('aria-pressed',on);document.documentElement.dataset.reducedMotion=on?'on':'off';});
+document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>openTab(b.dataset.tab)));
+document.querySelector('.tabs').addEventListener('keydown',e=>{const keys=['overview','subscriptions','models'];let i=keys.indexOf(state.tab);if(e.key==='ArrowRight')i=(i+1)%3;else if(e.key==='ArrowLeft')i=(i+2)%3;else if(e.key==='Home')i=0;else if(e.key==='End')i=2;else return;e.preventDefault();e.stopPropagation();openTab(keys[i]);document.querySelector(`[data-tab="${state.tab}"]`).focus();});
+document.getElementById('date-range').addEventListener('change',e=>{state.range=e.target.value;render();});document.getElementById('provider-filter').addEventListener('change',e=>{state.provider=e.target.value;render();});
+document.getElementById('content').addEventListener('click',e=>{const tab=e.target.closest('[data-open-tab]');if(tab){openTab(tab.dataset.openTab);document.querySelector(`[data-tab="${state.tab}"]`).focus();return;}const p=e.target.closest('[data-provider]');if(p){state.selectedProvider=p.dataset.provider;render();document.querySelector(`[data-provider="${state.selectedProvider}"]`).focus();return;}const sort=e.target.closest('[data-sort]');if(sort){state.sort=sort.dataset.sort;render();document.querySelector(`[data-sort="${state.sort}"]`).focus();}});
+document.addEventListener('keydown',e=>{if(e.defaultPrevented||e.altKey||e.ctrlKey||e.metaKey||e.shiftKey)return;if(e.target.closest('input,textarea,select,[contenteditable],.tabs,.provider-picker'))return;if(e.key==='ArrowLeft'){e.preventDefault();cycle(-1);}if(e.key==='ArrowRight'){e.preventDefault();cycle(1);}});
+document.querySelectorAll('a[href^="#"]').forEach(a=>a.addEventListener('click',e=>e.preventDefault()));
+document.getElementById('thread-search').addEventListener('input',e=>document.querySelectorAll('.thread').forEach(b=>b.hidden=!b.textContent.toLowerCase().includes(e.target.value.toLowerCase())));
+render();
+</script>
+</body>
+</html>
