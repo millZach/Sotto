@@ -43,3 +43,53 @@ The first complete corrected-source suite had one failure in sendWrites.test.ts:
 The main bundle timestamp was 20:16:07 local and the final host bundle was rebuilt at 20:19:44. No design baseline changed. The build is local output, not a package, installation or deployment. The lead owns the two-axis PR review and native CI after pushing. Ticket 8b still owns the native tab, alerts, provider logos, owning-host answer routing and device/simulator proof; Android UI is later. Busy Watcher sends refuse and retain their draft; this contract adds no phone queue operation.
 
 A final process inventory found no worktree-owned test, provider, Electron or SSH process remaining. Codex's own tool-runtime kernels were left alone. No persistent server was started and no installed app was changed.
+
+## October 12, 2026: ticket 8a review corrections
+
+Native validation remains unverified: Swift cannot be compiled on this Windows laptop; no Swift executable is available. Android has no Java or Gradle executable, JAVA_HOME is unset, and the usual JDK/JBR directories are absent. No native test result is claimed and no additional software was installed. Ticket 8b still owns the iPhone UI and device proof.
+
+Merged 3b3a9ac3f with a merge commit, 2b0c5355d. Four content conflicts were resolved and named in its body: .gitignore retains both evidence rule sets; ADR-0073 retains the phone decisions plus restart, held-news and GitHub fact fixes; host-protocol.md retains the phone wire and owning-host sourced facts/progress; watcher.ts retains phoneSnapshot alongside owningSnapshot and its host-qualified lookup. The automatic merges retain the private phone paths alongside ticket 5 identities and #949 host defaults. No watcher-hosts files were changed. The two pending ticket 5 review fixes remain for the lead to integrate later as directed.
+
+Finding 1 is fixed by a provider-change check at phone admission and dispatch, retained in the writer guard. A real held provider change reproduced an accepted socket send before the fix. The regression now refuses at admission and independently checks an already tagged phone command at dispatch, with no native send.
+
+Finding 2 is fixed by a client-bound pending/completed Stop all receipt. Optional receipt.watcherStop retains the exact outcome and partial results without a stale page snapshot. The regression reproduced unknown while pending, then verified recovery after discarding the acknowledgement and reconnecting, no repeated stop, another pairing seeing unknown, and changed confirmations refusing. The receipt uses the existing bounded five-minute settled in-memory replay window; it does not survive a listener restart. The dated phone-contract.md and host-protocol.md update describes this optional shape. Feature names and operation/request/reply shapes stay unchanged. SottoCore decodes the optional outcome; Android continues ignoring it safely, with an unrun decoder case added.
+
+Finding 3 is fixed by deriving watched marks from participating workers in active requests owned by the current host-qualified Watcher. Its regression failed after a real Stop all before the fix. It now checks the page and ordinary worker row, stopped/closed requests, and another host with the same master thread ID while preserving historical participation.
+
+Finding 4 was already fixed in the requested ticket 5 merge: Stop all forwards its guard into executeRemote, which checks it before and after persistence. Two new regressions revoke a real phone pairing while queued and dispatching remote stop persistence is held. Both pass and send no stop to the owning host; disabling the forwarded guard makes both fail with an owning-host control call. No duplicate production correction was added.
+
+Findings 5 and 6 share a commit: one private Swift status validator serves all typed Watcher results and the new receipt; one strict phone origin schema serves the send wire and persisted request. XCTest covers unknown/missing/invalid statuses and refusals across all five decoder forms. The shared schema case covers invalid hosts, client ID bounds, kinds and extra authority fields. The focused phone/shared suite passed 37 cases in two files; the two remote guard cases passed separately.
+
+The first ordered run stopped at typecheck because the new synthetic ClientIdentity lacked user. Commit 5061d1b94 fixes the test fixture; the complete sequence was restarted. Commit fb01454a4 corrects a PowerShell apostrophe substitution in wording. No source assertion or deadline was weakened. UTF-8/no-BOM and consistent line endings were checked for the 14 implementation/test/contract files before this verification update, and the final text files were checked again. Production dependencies remain exactly zod, node-pty and sherpa-onnx-node. No manual renderer edit, push, rebase, stash, branch switch, new worktree, publishing or additional software installation occurred.
+
+
+
+The complete required sequence passed on implementation commit 5061d1b94. The full-suite memory check recorded 5,725,616 KB, above the 3 GB threshold. Other suites were allowed to finish before this full suite began. The waiting launcher was stopped only after test/notices passed to remove its overly broad queue for the remaining smaller gates; their order and real output were preserved. No failing full-suite/socket case needed a flaky rerun.
+
+| Command | Observed result | Seconds |
+| --- | --- | --- |
+| `npm run typecheck` | Exit 0; All four TypeScript projects | 72.24 |
+| `npm run lint` | Exit 0; ESLint | 33.06 |
+| `npm test -- --maxWorkers=2` | Exit 0; 787 files / 9,985 tests passed; 61 files / 300 tests skipped | 1526.84 |
+| `npm run notices:verify` | Exit 0; 189 notice components | 0.49 |
+| `npm run build` | Exit 0; Main, host, preload and renderer | 51.16 |
+| `npm run test:socket` | Exit 0; 23 files / 480 tests passed; 10 tests skipped | 271.31 |
+| `npm run build:host` | Exit 0; Plain Node host | 3.94 |
+| `npx playwright test tests/e2e/watcher-gate.spec.ts tests/e2e/watcher.spec.ts` | Exit 0; 17 built-app journeys passed | 101.42 |
+
+Real output is retained in ignored artifacts/watcher-phone-wire/review-*.log and normalized review-gates.json (the original PowerShell array nesting is retained in review-gates-raw.json). The initial typecheck failure and each failing/passing regression are retained separately.
+
+The Playwright journeys ran the current built Electron app and covered Owl/stable gating, saved records, ordinary worker actions, the private room with its host off, dynamic in-flight limits, first send, Overview focus/Escape, the beside pane, badges, keyboard order, both themes and appearances at three sizes, reduced motion, long/disconnected/empty cases, and main's own Watcher over the fake Codex app server. Three inspected desktop captures are retained: artifacts/watcher-phone-wire/review-owl-dark-minimum.png, review-owl-light-worker-card.png and review-stable-dark-minimum.png. The Owl room and worker permission pane remain usable at minimum size; stable shows ordinary threads and no Watcher. These are desktop smoke checks, not iPhone or live-provider proof. No design baseline was regenerated.
+
+New commits, in order:
+
+- 2b0c5355d Merge ticket 5 into the Watcher phone branch
+- f7215eac1 Fence phone instructions during Watcher provider changes
+- 13ed63b4d Retain Stop all outcomes for phone receipt recovery
+- 3d74a392c Clear watched badges when Watcher requests stop
+- b80ce9892 Prove revoked phones cannot stop remote workers
+- d7fdd234b Share Watcher result status and phone origin validation
+- fb01454a4 Correct the provider-change refusal and receipt note encoding
+- 5061d1b94 Complete the synthetic phone identity in the dispatch regression
+
+No requested host/wire review fix remains unfinished. Native compilation/tests, actual phones and live providers remain unverified as described above. The branch is local and unpushed; the lead owns integration and the pull request.
