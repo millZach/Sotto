@@ -6,6 +6,8 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, expect, it, vi } from 'vitest'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
+import { createAgentRuntime } from '../../src/main/agents/runtime'
+import { RESUME_RECORD_MAX_AGE_MS } from '../../src/main/agents/restartResume'
 import { immutableModels, isImmutableModels } from '../../src/main/agents/activitySnapshots'
 import { modelsWithoutMuse } from '../../src/main/agents/museGate'
 import { ThreadStore } from '../../src/main/agents/threadStore'
@@ -15,9 +17,11 @@ import { DesktopHostRouter, type DesktopHostConnection } from '../../src/main/ho
 import { desktopWindowClient } from '../../src/main/agents/hostService'
 import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
 import { defaultAgentConfiguration, EMPTY_AGENT_HOST, publicProviderEntityId, type AgentHostSnapshot } from '../../src/shared/agents'
+import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { hostEntityKey } from '../../src/shared/clientIdentity'
 import { FakeProviderHost } from '../fixtures/fakeProviderHost'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
+import { testCredentials } from '../fixtures/testCredentials'
 
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { vi.restoreAllMocks(); for (const close of cleanup.splice(0).reverse()) await close() })
@@ -102,6 +106,35 @@ async function owlProfile(root: string) {
   } finally { threads.close(); subagents.close() }
   return { saved, draft, followup }
 }
+
+it.each(['off', 'expired', 'capped'] as const)('loads dormant Muse ownership before real runtime resume %s pruning', async scenario => {
+  const root = await directory()
+  await owlProfile(root)
+  const file = join(root, 'agents.json'), saved = JSON.parse(await readFile(file, 'utf8'))
+  saved.configuration.checkClientUpdates = false
+  await writeFile(file, JSON.stringify(saved))
+  const since = new Date(Date.now() - (scenario === 'expired' ? RESUME_RECORD_MAX_AGE_MS + 60_000 : 0)).toISOString()
+  const row = { threadId: MUSE, since, resumes: scenario === 'capped' ? 3 : 1, ...(scenario === 'off' ? { queued: true as const } : {}) }
+  const ordinary = { ...row, threadId: CODEX }, resumeFile = join(root, 'restart-resume.json')
+  await writeFile(resumeFile, JSON.stringify({ version: 1, working: [row, ordinary] }))
+  const settings = { ...DEFAULT_SETTINGS, threadTitles: false, resumeThreadsAfterRestart: scenario !== 'off' }
+  const providers = { codex: new FakeProviderHost(), claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost() }
+  const credentials = await testCredentials(root, { mode: 'unavailable' })
+  const runtime = await createAgentRuntime({ directory: root, credentials, providers, reasoner: {},
+    watcherEnabled: false, museEnabled: false, resumeAfterRestart: true,
+    settings: () => settings, writingSettings: async () => settings, historyEnabled: () => true, openExternal: async () => undefined,
+    installedProviders: async () => ['codex', 'muse'] })
+  cleanup.push(runtime.close)
+  await expect.poll(() => runtime.agentControl.shell().host.providers?.find(provider => provider.id === 'codex')?.connection).toBe('connected')
+  expect(runtime.agentHost.preservesDormantThread(MUSE)).toBe(true)
+  expect(runtime.agentControl.shell().host.threads.some(thread => thread.providerId === 'muse')).toBe(false)
+  await runtime.close()
+  expect(JSON.parse(await readFile(resumeFile, 'utf8'))).toEqual({ version: 1, working: [row] })
+  expect(providers.muse.connectCalls).toBe(0)
+  expect(providers.muse.commands).toEqual([])
+  expect(providers.muse.sideWrites).toEqual([])
+  expect(providers.codex.commands.some(command => command.type === 'send')).toBe(false)
+})
 
 it.each(['startup', 'privacy-change'] as const)('hides cached Muse everywhere and preserves its records through stable history-off %s and Owl return', async scenario => {
   const root = await directory(), original = await owlProfile(root)

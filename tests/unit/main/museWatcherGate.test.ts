@@ -2,10 +2,11 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { SocketHostService } from '../../../src/main/agents/socketHostService'
 import { immutableModels, isImmutableModels } from '../../../src/main/agents/activitySnapshots'
-import { modelsWithoutMuse } from '../../../src/main/agents/museGate'
+import { clientUpdateEnumerationUsesMuse, commandUsesMuse, modelsWithoutMuse } from '../../../src/main/agents/museGate'
+import { desktopWindowClient } from '../../../src/main/agents/hostService'
 import { DesktopHostRouter, type DesktopHostConnection } from '../../../src/main/hosts/desktopHostRouter'
 import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
-import { publicProviderEntityId, type AgentState } from '../../../src/shared/agents'
+import { publicProviderEntityId, type AgentCommand, type AgentState, type ProviderClientUpdate } from '../../../src/shared/agents'
 import type { HostRequest } from '../../../src/shared/hostProtocol'
 import { watcherHostControlSchema, watcherHostReadSchema, type WatcherHostControl, type WatcherHostRead, type WatcherHostProjection } from '../../../src/shared/watcherHost'
 import { watcherToolSchemas } from '../../../src/shared/watcher'
@@ -58,8 +59,10 @@ function fixture(boundary: 'router' | 'socket', museEnabled = false, mixed = tru
   let guard: (() => void) | undefined
   if (boundary === 'router') {
     let shellListener: ((value: AgentState) => void) | undefined
+    const command = vi.fn(async (_input: AgentCommand) => { void _input; return state })
     const connection: DesktopHostConnection = { hostId: centerHostId, kind: 'remote', name: 'Paired Owl', detail: () => null, preview: () => null,
-      service: { shell: () => state, subscribe: listener => { shellListener = listener; return () => { shellListener = undefined } }, command: vi.fn(), supportsWatcherReads: true, supportsWatcherControl: true,
+      offersClientUpdates: () => true,
+      service: { shell: () => state, subscribe: listener => { shellListener = listener; return () => { shellListener = undefined } }, command, supportsWatcherReads: true, supportsWatcherControl: true,
         cachedWatcherProjection: () => projection,
         watcherRead: async value => { calls.push(value); return response(value.call) },
         watcherControl: async (value, _client, dispatchGuard) => { void _client; guard = dispatchGuard; calls.push(value); return response(value.call) } } }
@@ -67,6 +70,7 @@ function fixture(boundary: 'router' | 'socket', museEnabled = false, mixed = tru
     router.add(connection); cleanup.push(() => router.dispose())
     const remote = router.watcherHosts()
     return { state, calls, wireFrames, client: undefined, projection, setResponse, snapshot: () => remote.snapshot(centerHostId), cachedProjection: () => remote.projection!(centerHostId, master),
+      execute: (input: AgentCommand) => router.command(input, desktopWindowClient()), command,
       read: (value: WatcherHostRead) => remote.read(centerHostId, value), control: (value: WatcherHostControl) => remote.control(centerHostId, value),
       publish: () => shellListener?.(state), dispatchGuard: () => guard!() }
   }
@@ -86,6 +90,7 @@ function fixture(boundary: 'router' | 'socket', museEnabled = false, mixed = tru
     } }, session: { session: 'synthetic', hostId: centerHostId } })
   internal.publish(state); cleanup.push(() => client.close())
   return { state, calls, wireFrames, client, projection, setResponse, snapshot: () => client.shell().host, cachedProjection: () => client.cachedWatcherProjection(master),
+    execute: (input: AgentCommand) => client.command(input), command: undefined,
     read: (value: WatcherHostRead) => client.watcherRead(value), control: (value: WatcherHostControl) => client.watcherControl(value),
     publish: () => internal.publish(state), dispatchGuard: () => undefined }
 }
@@ -216,4 +221,94 @@ it('rechecks the router Muse gate in the existing control dispatch guard', async
   f.state.host.models[0]!.providerId = 'muse'; f.state.host.models[0]!.provider = 'Muse'
   expect(() => f.dispatchGuard()).toThrow('Muse is available in Sotto Owl')
   expect(f.calls).toHaveLength(1)
+})
+
+const checkedClient = (id: 'codex' | 'muse'): ProviderClientUpdate => ({ id, installed: '1.1.1', published: '1.1.2', behind: true,
+  channel: id === 'muse' ? 'self-update' : 'npm', canInstall: true, checkedAt: centerTime, state: 'idle' })
+function clientProviders(state: AgentState, museConnection: 'connected' | 'disconnected' = 'connected'): void {
+  state.host.providers = [
+    { id: 'codex', name: 'Codex', connection: 'connected', version: '1.1.1', capabilities: state.host.capabilities },
+    { id: 'muse', name: 'Muse', connection: museConnection, version: '1.1.1', capabilities: state.host.capabilities },
+  ]
+}
+for (const boundary of ['router', 'socket'] as const) {
+  it(`refuses ${boundary} wildcard checks of connected Muse before dispatch`, async () => {
+    const f = fixture(boundary)
+    clientProviders(f.state); f.publish()
+    const before = structuredClone(f.state), projectionBefore = structuredClone(f.projection)
+    await expect(f.execute({ type: 'check-client-updates' })).rejects.toThrow('Muse is available in Sotto Owl')
+    expect(f.command?.mock.calls ?? []).toEqual([])
+    expect(f.wireFrames).toEqual([])
+    expect(f.state).toEqual(before)
+    expect(f.projection).toEqual(projectionBefore)
+  })
+  it(`refuses ${boundary} explicit Muse queues without changing the ordinary update line`, async () => {
+    const f = fixture(boundary)
+    f.state.clientUpdates = [checkedClient('codex'), checkedClient('muse')]
+    f.state.clientUpdateRun = { total: 1, done: 0, line: ['codex'] }; f.publish()
+    const before = structuredClone(f.state)
+    await expect(f.execute({ type: 'queue-client-updates', providers: ['codex', 'muse'] })).rejects.toThrow('Muse is available in Sotto Owl')
+    expect(f.command?.mock.calls ?? []).toEqual([])
+    expect(f.wireFrames).toEqual([])
+    expect(f.state).toEqual(before)
+  })
+  it.each(['ordinary only', 'disconnected Muse', 'legacy no providers'] as const)(`keeps ${boundary} %s checks and ordinary queues available`, async kind => {
+    const f = fixture(boundary)
+    clientProviders(f.state, 'disconnected')
+    if (kind === 'ordinary only') f.state.host.providers = f.state.host.providers!.filter(provider => provider.id !== 'muse')
+    if (kind === 'legacy no providers') delete f.state.host.providers
+    f.publish()
+    const before = structuredClone(f.state)
+    const commands: AgentCommand[] = [{ type: 'check-client-updates' }, { type: 'queue-client-updates', providers: ['codex'] }]
+    for (const input of commands) await f.execute(input)
+    if (f.command) expect(f.command.mock.calls.map(([input]) => input)).toEqual(commands)
+    else expect(f.wireFrames.map(frame => frame.op === 'command' ? frame.command : null)).toEqual(commands)
+    expect(f.state).toEqual(before)
+  })
+  it(`passes ${boundary} Muse-enabled wildcard checks and queues unchanged`, async () => {
+    const f = fixture(boundary, true)
+    clientProviders(f.state); f.publish()
+    const commands: AgentCommand[] = [{ type: 'check-client-updates' }, { type: 'queue-client-updates', providers: ['codex', 'muse'] }]
+    for (const input of commands) await f.execute(input)
+    if (f.command) expect(f.command.mock.calls.map(([input]) => input)).toEqual(commands)
+    else expect(f.wireFrames.map(frame => frame.op === 'command' ? frame.command : null)).toEqual(commands)
+  })
+}
+it('keeps the initial gate explicit-only while unknown raw wildcard enumeration refuses', () => {
+  expect(commandUsesMuse({ type: 'check-client-updates' })).toBe(false)
+  expect(clientUpdateEnumerationUsesMuse({ type: 'check-client-updates' })).toBe(true)
+  expect(clientUpdateEnumerationUsesMuse({ type: 'queue-client-updates', providers: ['codex'] })).toBe(false)
+})
+it('hides held Muse updates on every clientHosts entry and sends a named ordinary queue to its own machine', async () => {
+  const localId = '22222222-2222-4222-8222-222222222222'
+  const local = emptyDesktopState(localId), remote = emptyDesktopState(centerHostId)
+  for (const state of [local, remote]) {
+    state.host.connected = true; state.connection = 'connected'; clientProviders(state)
+    state.clientUpdates = [checkedClient('codex'), checkedClient('muse')]
+    state.clientUpdateRun = { total: 2, done: 0, line: ['codex', 'muse'] }
+  }
+  const localCommand = vi.fn(async (_input: AgentCommand) => { void _input; return local })
+  const remoteCommand = vi.fn(async (_input: AgentCommand) => { void _input; return remote })
+  const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: true, museEnabled: false })
+  cleanup.push(() => router.dispose())
+  router.add({ hostId: localId, kind: 'local', name: 'This computer', detail: () => null, preview: () => null,
+    service: { shell: () => local, subscribe: () => () => undefined, command: localCommand } })
+  router.add({ hostId: centerHostId, kind: 'remote', name: 'Paired Owl', offersClientUpdates: () => true, detail: () => null, preview: () => null,
+    service: { shell: () => remote, subscribe: () => () => undefined, command: remoteCommand } })
+  router.select(centerHostId)
+  const before = structuredClone([local, remote]), shown = router.shell()
+  expect(shown.clientUpdates).toBeUndefined()
+  for (const host of shown.host.clientHosts!) {
+    expect(host.clientUpdates).toEqual([checkedClient('codex')])
+    expect(host.clientUpdateRun).toEqual({ total: 2, done: 0, line: ['codex'] })
+    expect(host.providers?.map(provider => provider.id)).toEqual(['codex'])
+  }
+  await expect(router.command({ type: 'queue-client-updates', providers: ['muse'], hostId: localId }, desktopWindowClient())).rejects.toThrow('Muse is available in Sotto Owl')
+  expect(localCommand).not.toHaveBeenCalled(); expect(remoteCommand).not.toHaveBeenCalled()
+  await router.command({ type: 'queue-client-updates', providers: ['codex'], hostId: localId }, desktopWindowClient())
+  expect(localCommand).toHaveBeenCalledExactlyOnceWith({ type: 'queue-client-updates', providers: ['codex'] }, desktopWindowClient())
+  expect(remoteCommand).not.toHaveBeenCalled()
+  await router.command({ type: 'queue-client-updates', providers: ['codex'], hostId: centerHostId }, desktopWindowClient())
+  expect(remoteCommand).toHaveBeenCalledExactlyOnceWith({ type: 'queue-client-updates', providers: ['codex'] }, desktopWindowClient())
+  expect([local, remote]).toEqual(before)
 })

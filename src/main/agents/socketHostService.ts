@@ -25,7 +25,7 @@ import { requestDraftProvider, requestDraftQuestions } from '../../shared/reques
 import { requestQuestionsDigest } from './requestDrafts'
 import { version as sourceVersion } from '../../../package.json'
 import { RetainedDraftStore, type RetainedDraft } from './retainedDraftStore'
-import { commandUsesMuse, museWatcherRefusal, threadUsesMuse, watcherRequestUsesMuse } from './museGate'
+import { clientUpdateEnumerationUsesMuse, commandUsesMuse, museWatcherRefusal, threadUsesMuse, watcherRequestUsesMuse } from './museGate'
 
 export const REMOTE_COMPOSE_UNSAVED = 'This host cannot save this draft yet. Your draft is kept on this computer and has not been saved on the host. Update the host.'
 const REMOTE_SEND_UNCERTAIN = 'This draft may already have been sent. Your copy is kept on this computer. Check the original thread before sending again.'
@@ -47,7 +47,7 @@ export interface SocketHostServiceOptions {
   url: string; token: string; expectedHostId?: string
   watcherEnabled?: boolean
   museEnabled?: boolean
-  /** The running packaged version, which may override the source manifest during promotion. */
+  /** The running packaged version, which may override the source manifest during stable packaging. */
   clientVersion?: string
   retainedDrafts?: RetainedDraftStore
   retainedRegistrationId?: string
@@ -151,7 +151,8 @@ export class SocketHostService implements HostService {
     return `${threadId && this.dormantMuseThreads.has(threadId) || thread && requestDraftProvider(this.cached!.host, thread, this.cached!.configuration.provider) === 'muse' ? 'Muse' : 'Watcher'} is available in Sotto Owl. Nothing was sent.`
   }
   private requireCommandAvailable(command: AgentCommand): void {
-    if (this.options.museEnabled !== true && commandUsesMuse(command, this.cached?.host)) throw new Error('Muse is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
+    if (this.options.museEnabled !== true && (commandUsesMuse(command, this.cached?.host)
+      || clientUpdateEnumerationUsesMuse(command, this.cached?.host))) throw new Error('Muse is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
     const threadId = this.commandThreadId(command)
     if (!this.threadAvailable(threadId)) throw new Error(this.threadRefusal(threadId))
   }

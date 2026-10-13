@@ -25,6 +25,8 @@ import { WORKTREE_CLEANUP_DAYS } from '../../../../shared/settings'
 import { UPDATES_UNSUPPORTED_MESSAGE } from '../updates/updateControlLogic'
 import { releaseTrackName } from '../../../../shared/releaseTrack'
 import { releaseTrackOf } from '../../state/useReleaseTrack'
+import { useOwlFeature } from '../../state/owlFeature'
+import { requestUpdateAll } from '../updates/UpdateAllCard'
 import { Button } from '../../components/Button'
 import { OpenSystemSettingsButton } from '../../components/OpenSystemSettingsButton'
 import { Card } from '../../components/Card'
@@ -190,6 +192,8 @@ export function SettingsView({
   const [dictionaryPasteCut, setDictionaryPasteCut] = useState(false)
   const llmDictionaryDraft = useRevisionDraft(settings.llmDictionary, settings.llmDictionary)
   const [updateBusy, setUpdateBusy] = useState(false)
+  const resumeAfterRestart = useOwlFeature('resume-after-restart')
+  const updateAll = useOwlFeature('update-all')
   const [clearFailure, setClearFailure] = useState<string | null>(null)
   const [resetFailure, setResetFailure] = useState<string | null>(null)
   const [resetOpen, setResetOpen] = useState(false)
@@ -580,6 +584,11 @@ export function SettingsView({
                     description={settings.babysitPullRequests
                       ? 'An agent can hand its pull request to Sotto, which wakes the thread when the pull request needs it.'
                       : 'Agents can’t start babysitting, and Sotto stops any they started. You can still babysit one yourself.'} />
+                  {/* ADR-0076: an Owl feature, read when Sotto next starts. */}
+                  {resumeAfterRestart ? <Toggle label="Resume threads after a restart" checked={settings.resumeThreadsAfterRestart} onCheckedChange={checked => void save({ resumeThreadsAfterRestart: checked })}
+                    description={settings.resumeThreadsAfterRestart
+                      ? 'A thread working when Sotto closes, for an update, a quit, a crash or a restart, carries on when Sotto opens again, with a short note from Sotto in the thread.'
+                      : 'A thread working when Sotto closes waits for your next message.'} /> : null}
                   <Field label="Replies in threads" description="Show replies as they are written or once finished. Commands and tool calls always show as they run."><SegmentedControl label="Replies in threads" value={settings.responseStreaming} onChange={value => void save({ responseStreaming: value as AppSettings['responseStreaming'] })} options={[{ value: 'live', label: 'As written' }, { value: 'complete', label: 'When finished' }]} /></Field>
                   <Field label="New threads work in" description="Project defaults below can override this. Existing threads keep their folder."><Select value={settings.threadWorkingCopyDefault} onChange={event => void save({ threadWorkingCopyDefault: event.currentTarget.value as AppSettings['threadWorkingCopyDefault'] })}><option value="shared">Project folder</option><option value="independent">New worktree</option></Select></Field>
                   <Field label="Remove idle worktrees after" description="Removes a thread's worktree folder once it has been idle this long. The branch stays, sending brings the folder back, and uncommitted work is never removed."><Select value={String(settings.worktreeCleanup.afterDays ?? 'never')} onChange={event => { const value = event.currentTarget.value; void save({ worktreeCleanup: { afterDays: value === 'never' ? null : Number(value) as WorktreeCleanupDays } }) }}><option value="never">Never</option>{WORKTREE_CLEANUP_DAYS.map(days => <option key={days} value={String(days)}>{days} days</option>)}</Select></Field>
@@ -617,7 +626,10 @@ export function SettingsView({
                         : <p className="settings-update-status">{copy.settingsUpdatesByHand}</p>}
                     </div>
                     {copy.settingsUpdatesByHand === null ? <div className="settings-update-actions">
-                      {updateStatus?.phase.phase === 'available' ? <Button variant="secondary" disabled={updateBusy} onClick={() => void runUpdateAction(onDownloadUpdate)}>Download</Button> : null}
+                      {/* On Owl, Update all runs the corner card's press: Sotto, its clients and its hosts (ADR-0077). */}
+                      {updateStatus?.phase.phase === 'available' ? updateAll
+                        ? <Button variant="secondary" disabled={updateBusy} aria-label="Update all: Sotto, its clients and its hosts" onClick={requestUpdateAll}>Update all</Button>
+                        : <Button variant="secondary" disabled={updateBusy} onClick={() => void runUpdateAction(onDownloadUpdate)}>Download</Button> : null}
                       {updateStatus?.phase.phase === 'downloaded' ? <Button variant="secondary" disabled={updateBusy} onClick={() => void runUpdateAction(onInstallUpdate)}>Restart and install</Button> : null}
                       <Button variant="secondary" disabled={updateBusy} onClick={() => void runUpdateAction(onCheckForUpdates)}>{updateBusy ? 'Working...' : 'Check now'}</Button>
                     </div> : null}

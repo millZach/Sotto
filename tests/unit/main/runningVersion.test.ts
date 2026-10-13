@@ -31,7 +31,17 @@ describe('Owl feature startup answers', () => {
     ['0.1.36', false, ' watcher = 1 ,watcher=0,watcher=bad', undefined, false],
     ['0.1.36', false, undefined, '1', true],
   ] as const)('reads %s once (packaged %s, overrides %s, alias %s)', (version, isPackaged, overrides, watcherOverride, expected) => {
-    expect(owlFeaturesForRun({ version, isPackaged, overrides, watcherOverride })).toEqual({ watcher: expected, muse: version.includes('-owl.') })
+    // The other features follow the track: overrides here name only Watcher.
+    const track = getReleaseTrack(version) === 'owl'
+    expect(owlFeaturesForRun({ version, isPackaged, overrides, watcherOverride })).toEqual({ watcher: expected, muse: track, 'resume-after-restart': track, 'update-all': track })
+  })
+
+  it.each([
+    ['0.1.36', 'watcher=1,muse=1,resume-after-restart=1,update-all=1', false, true],
+    ['0.1.37-owl.20261011.1', 'watcher=0,muse=0,resume-after-restart=0,update-all=0', true, false],
+  ] as const)('keeps all packaged %s answers on their track despite overrides', (version, overrides, packaged, development) => {
+    expect(owlFeaturesForRun({ version, isPackaged: true, overrides })).toEqual({ watcher: packaged, muse: packaged, 'resume-after-restart': packaged, 'update-all': packaged })
+    expect(owlFeaturesForRun({ version, isPackaged: false, overrides })).toEqual({ watcher: development, muse: development, 'resume-after-restart': development, 'update-all': development })
   })
 
   it('passes a snapshot of every answer through update status and keeps the Watcher alias consistent', async () => {

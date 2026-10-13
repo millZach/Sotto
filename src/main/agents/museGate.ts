@@ -47,6 +47,14 @@ export function commandUsesMuse(command: AgentCommand, snapshot?: AgentHostSnaps
     || modelUsesMuse(command.patch.defaultModelId, snapshot) || modelUsesMuse(command.patch.newThreadModelId, snapshot))
 }
 
+/** A wildcard version check reads every connected client; ask the raw target before sending it. */
+export function clientUpdateEnumerationUsesMuse(command: AgentCommand, snapshot?: AgentHostSnapshot): boolean {
+  if (command.type !== 'check-client-updates') return false
+  if (!snapshot) return true
+  // Legacy snapshots omit providers; the coordinator's check then iterates an empty list.
+  return snapshot.providers?.some(provider => provider.id === 'muse' && provider.connection === 'connected') === true
+}
+
 export function threadUsesMuse(thread: AgentThread, snapshot: AgentHostSnapshot): boolean {
   return thread.providerId === 'muse' || !thread.providerId && modelUsesMuse(thread.modelId, snapshot)
 }

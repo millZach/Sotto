@@ -131,7 +131,7 @@ it('fails a prompt whose host ends after the turn acknowledgement and before mes
   } finally { await f.cleanup() }
 })
 
-it('offers the permission modes the client let a probe select, and only those (ADR-0076)', async () => {
+it('offers the permission modes the client let a probe select, and only those (ADR-0078)', async () => {
   const openF = await museFixture()
   try {
     await openF.script({ ceiling: true })

@@ -836,7 +836,7 @@ export function summarizeThread(thread: Pick<AgentThread, 'messages' | 'activiti
 /**
  * Whether a thread's provider writes Sotto's short text for it: its title, its branch name and its Git
  * drafts, each in a side call (ADR-0026). Devin has no one-off call that keeps out of its own session
- * list; Muse cannot yet disable every tool in one (ADR-0076). Those threads keep their first-message title
+ * list; Muse cannot yet disable every tool in one (ADR-0078). Those threads keep their first-message title
  * or stand-in and are offered no Regenerate that could do nothing.
  */
 export function providerWritesShortText(providerId: ProviderId | undefined): boolean {
@@ -879,8 +879,12 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('check-reasoning'), provider: subscriptionProviderSchema }).strict(),
   z.object({ type: z.literal('check-client-updates') }).strict(),
   z.object({ type: z.literal('update-client'), provider: providerIdSchema, force: z.boolean().optional() }).strict(),
-  /** Puts clients in the machine's one-at-a-time update line and answers at once; each client's reading says how it went. */
-  z.object({ type: z.literal('queue-client-updates'), providers: z.array(providerIdSchema).min(1).max(5) }).strict(),
+  /**
+   * Puts clients in the machine's one-at-a-time update line and answers at once; each client's reading says how it went.
+   * `hostId` names the machine for Update all (ADR-0077), which need not be the selected one; the desktop's router reads it
+   * and never sends it on.
+   */
+  z.object({ type: z.literal('queue-client-updates'), providers: z.array(providerIdSchema).min(1).max(5), hostId: z.uuid().optional() }).strict(),
   /** Takes clients that are still waiting out of the update line. One already running is left to finish. */
   z.object({ type: z.literal('cancel-client-updates'), providers: z.array(providerIdSchema).min(1).max(5) }).strict(),
   z.object({ type: z.literal('dismiss-client-updates') }).strict(),

@@ -4,6 +4,7 @@ import { babysitStarterSchema } from '../../shared/babysitting'
 import { printable, type BabysitChange, type BabysitCheckNews, type BabysitNews, type BabysitRemarkNews } from './babysitNews'
 import { pullRequestKey } from '../../shared/gitPullRequests'
 import { watcherNewsSchema, type WatcherNews } from '../../shared/watcherNews'
+import { RESUME_NOTE, restartNewsSchema, type RestartNews } from '../../shared/restartResume'
 import { foldWatcherNews, watcherNewsText } from './watcherNews'
 
 /**
@@ -47,19 +48,29 @@ export const babysitNewsSchema = z.object({
   unreadable: z.enum(['sign-in', 'not-found', 'no-answer', 'answer']).optional(),
 })
 
-/** Old queue files remain readable; Watcher never impersonates a pull request. */
-export const wakeUpNewsSchema = z.union([babysitNewsSchema, watcherNewsSchema])
-export type WakeUpNews = BabysitNews | WatcherNews
+/** Old queue files remain readable; neither Watcher nor a restart ever impersonates a pull request. */
+export const wakeUpNewsSchema = z.union([babysitNewsSchema, watcherNewsSchema, restartNewsSchema])
+export type WakeUpNews = BabysitNews | WatcherNews | RestartNews
 export const isWatcherNews = (news: WakeUpNews): news is WatcherNews => 'source' in news && news.source === 'watcher'
+/** A resume note's news (ADR-0076): Sotto closing stopped the thread's turn. */
+export const isRestartNews = (news: WakeUpNews): news is RestartNews => 'source' in news && news.source === 'restart'
+export const isBabysitNews = (news: WakeUpNews): news is BabysitNews => !isWatcherNews(news) && !isRestartNews(news)
+/**
+ * Later news folded into a waiting wake-up's: one resume note, the newest, first, then each pull request's part, then
+ * Watcher's. The note opens the message, which is how a thread tells a resume from a wake-up about something else.
+ */
 export function foldWakeUpNews(earlier: readonly WakeUpNews[], later: WakeUpNews): WakeUpNews[] {
-  const workers = earlier.filter(isWatcherNews), prs = earlier.filter((news): news is BabysitNews => !isWatcherNews(news))
-  if (isWatcherNews(later)) return [...prs, foldWatcherNews(workers[0], later)]
-  return [...foldNews(prs, later), ...workers]
+  const restart = earlier.filter(isRestartNews), workers = earlier.filter(isWatcherNews), prs = earlier.filter(isBabysitNews)
+  if (isRestartNews(later)) return [later, ...prs, ...workers]
+  if (isWatcherNews(later)) return [...restart, ...prs, foldWatcherNews(workers[0], later)]
+  return [...restart, ...foldNews(prs, later), ...workers]
 }
 export function queuedWakeUpText(news: readonly WakeUpNews[], options: WakeUpOptions): string {
-  const prs = news.filter((item): item is BabysitNews => !isWatcherNews(item))
+  const restart = news.some(isRestartNews) ? RESUME_NOTE : ''
+  const prs = news.filter(isBabysitNews)
   const watcher = news.filter(isWatcherNews).map(watcherNewsText).join('\n\n')
-  return [...prs.length ? [wakeUpText(prs, options, AGENT_TEXT_MAX - watcher.length - (watcher ? 2 : 0))] : [], ...watcher ? [watcher] : []].join('\n\n')
+  const room = AGENT_TEXT_MAX - [restart, watcher].reduce((used, part) => used + (part ? part.length + 2 : 0), 0)
+  return [...restart ? [restart] : [], ...prs.length ? [wakeUpText(prs, options, room)] : [], ...watcher ? [watcher] : []].join('\n\n')
 }
 
 const sameAddress = (left: string, right: string): boolean => (pullRequestKey(left) ?? left) === (pullRequestKey(right) ?? right)

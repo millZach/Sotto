@@ -47,7 +47,7 @@ describe('independent provider settings', () => {
     state.configuration.defaultModelId = 'grok:same-native-model'
     const { command } = provide(state)
     render(<ProvidersSettings />)
-    // Muse is an Owl feature: with no Owl answers it is not offered at all (ADR-0076).
+    // Muse is an Owl feature: with no Owl answers it is not offered at all (ADR-0078).
     expect(screen.queryByRole('button', { name: 'Muse' })).toBeNull()
     for (const provider of providerIdSchema.options.filter(id => id !== 'muse')) {
       fireEvent.click(screen.getByRole('button', { name: PROVIDER_LABELS[provider] }))
@@ -82,7 +82,7 @@ describe('independent provider settings', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Grok Build' }))
     expect(container.querySelector('.provider-detail__header svg.provider-mark[data-provider="grok"]')).not.toBeNull()
   })
-  it('offers Muse in Sotto Owl with its own sign-in guidance (ADR-0076)', async () => {
+  it('offers Muse in Sotto Owl with its own sign-in guidance (ADR-0078)', async () => {
     provide()
     render(<AppProvider bridge={createBridge({ getUpdateStatus: async () => ({ currentVersion: '0.1.37-owl.20261012.1', releaseTrack: 'owl', owlFeatures: { watcher: false, muse: true }, phase: { phase: 'unsupported' }, checkedAt: null }) as never })} createController={createController}><ProvidersSettings /></AppProvider>)
     const muse = await screen.findByRole('button', { name: 'Muse' })

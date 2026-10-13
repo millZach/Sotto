@@ -25,8 +25,12 @@ describe('packaged Owl feature protection', () => {
     expect(() => assertPackagedFeatureStatus(status('owl'), 'stable', features)).toThrow('stable track')
     expect(() => assertPackagedFeatureStatus(status('owl', { watcherEnabled: false }), 'owl', features)).toThrow('compatibility answer')
   })
-  it('checks the real Watcher list by default', () => {
-    expect(() => assertPackagedFeatureStatus({ releaseTrack: 'stable', owlFeatures: { watcher: false, muse: false }, watcherEnabled: false }, 'stable')).not.toThrow()
+  it.each(['stable', 'owl'])('checks all four real feature answers in %s by default', track => {
+    const enabled = track === 'owl'
+    expect(() => assertPackagedFeatureStatus({ releaseTrack: track, owlFeatures: { watcher: enabled, muse: enabled, 'resume-after-restart': enabled, 'update-all': enabled }, watcherEnabled: enabled }, track)).not.toThrow()
+  })
+  it('refuses a Muse leak in the real stable list', () => {
+    expect(() => assertPackagedFeatureStatus({ releaseTrack: 'stable', owlFeatures: { watcher: false, muse: true, 'resume-after-restart': false, 'update-all': false }, watcherEnabled: false }, 'stable')).toThrow('Muse provider must be off')
   })
   it('runs only during stable and Owl release packaging, leaving the directory and Linux commands alone', async () => {
     const stable = await readFile(new URL('../../../scripts/package-stable.mjs', import.meta.url), 'utf8')

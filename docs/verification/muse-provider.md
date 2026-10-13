@@ -1,6 +1,6 @@
 # Muse provider: what was checked
 
-October 12–13, 2026. [ADR-0076](../adr/0076-muse-is-a-thread-provider.md). Native probes, scripted protocol checks and the running desktop journey are recorded separately below. The original native probes were not repeated during the review fixes.
+October 12–13, 2026. [ADR-0078](../adr/0078-muse-is-a-thread-provider.md). Native probes, scripted protocol checks and the running desktop journey are recorded separately below. The original native probes were not repeated during the review fixes.
 
 ## The real client (Muse 1.1.1, MSP schema 1, over `muse serve`)
 
@@ -29,6 +29,10 @@ The immutable startup gate is checked in desktop/headless construction, discover
 The paired Watcher integration keeps that gate on its remote snapshots and read/control paths. Held Muse requests are refused before transport; mixed lists that cannot hide Muse at their owning host are refused without rewriting pages or counts. Ordinary Codex scopes and Muse-enabled Owl calls retain their complete responses. Regressions cover native and qualified model/project IDs, legacy Muse labels, distinct qualified Codex projects with the same short name, initial ownership without a UI subscriber, and a known Muse thread omitted by a later snapshot. Text-free receipt reconciliation and stored records stay intact. Headless Watcher worker admission follows ADR-0073 independently of the Muse gate and creates no headless master.
 
 Host setup and visual admission share tool eligibility: Muse and Devin are excluded, and a stale Muse setup selection is refused before dispatch. Browser tools, Watcher, skills and side writing remain unavailable.
+
+The restart observer keeps dormant Muse resume records before setting, age, count, absence and capacity pruning. The workspace is initialized before that observer starts. A controlled real-runtime check using the old snapshot accessor deleted the saved Muse row in all three setting-off, expired and capped cases; the corrected runtime and neighboring resume files pass all 50 tests. The actual stores retain the exact Muse record, ordinary counterparts are pruned, and no Muse connect, command or side call occurs. Separate observer/follow-up/gate neighbors pass all 82 tests, including capacity bounds and one resume after Muse becomes available again.
+
+Update all keeps Muse's native updater. A held Muse desktop checks the raw target before a wildcard client-version request can enumerate connected Muse, including a direct socket caller. The old omission reached both actual command recorders; both intended refusal assertions failed. Corrected gateway, named-host routing and Update all neighbors pass all 159 tests, including 67 gate cases. Local and remote client-host readings hide Muse without changing the saved readings, and an ordinary named queue reaches its chosen machine with the desktop-only host ID stripped.
 
 ## Discovery, updates and Settings
 

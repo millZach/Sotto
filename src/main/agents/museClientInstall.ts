@@ -3,7 +3,7 @@ import { homedir, tmpdir } from 'node:os'
 import { dirname, isAbsolute, join } from 'node:path'
 import { findCli, type CliLookupOptions } from './cliLookup'
 
-/** Only these public release tracks are accepted by the maker's launchers (ADR-0076). */
+/** Only these public release tracks are accepted by the maker's launchers (ADR-0078). */
 export type MuseChannel = 'muse-stable' | 'muse-canary'
 export const MUSE_INSTALL_GUIDE = 'https://dev.meta.ai/docs/muse-code/'
 const MUSE_VERSION = /^(\d+)\.(\d+)\.(\d+)-R(\d+)(?:\.(\d+))?$/u

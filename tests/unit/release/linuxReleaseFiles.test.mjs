@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { clearLinuxFinishOutputs, readLinuxPackageInputs, readLinuxPromotion } from '../../../scripts/linux-release-files.mjs'
+import { cleanStableCheckout as checkout, stableReleaseRecord as promotion } from '../../fixtures/stableReleaseFixture.mjs'
 import { withStableManifestGuard } from '../../../scripts/stable-package.mjs'
 
 const roots = []
@@ -50,16 +51,25 @@ describe('Linux finish output lifecycle', () => {
     expect(inputs.receipt.version).toBe('0.1.38')
     expect(inputs.archiveHash).toMatchObject({ bytes: 12, sha256: expect.stringMatching(/^[a-f0-9]{64}$/u) })
   })
-  it('rereads the checked promotion and refuses a changed Owl even at the same clean source', async () => {
+  it('rereads the checked promotion and refuses a changed release check even at the same clean source', async () => {
     const root = await fixture()
-    const checkout = { sourceCommit: 'a'.repeat(40), clean: true }
-    const promotion = { owlVersion: '0.1.38-owl.20261013.1', stableVersion: '0.1.38', sourceCommit: checkout.sourceCommit }
     await expect(readLinuxPromotion(root, checkout)).rejects.toThrow('Run npm run package:linux:stable')
     await writeFile(join(root, 'stable-promotion.json'), JSON.stringify(promotion))
     expect(await readLinuxPromotion(root, checkout, promotion)).toEqual(promotion)
-    await writeFile(join(root, 'stable-promotion.json'), JSON.stringify({ ...promotion, owlVersion: '0.1.38-owl.20261013.2' }))
-    await expect(readLinuxPromotion(root, checkout, promotion)).rejects.toThrow('promotion changed')
+    await writeFile(join(root, 'stable-promotion.json'), JSON.stringify({ ...promotion, checkedAt: '2026-10-13T12:00:00Z' }))
+    await expect(readLinuxPromotion(root, checkout, promotion)).rejects.toThrow('release check changed')
     await expect(readLinuxPromotion(root, { ...checkout, clean: false })).rejects.toThrow('uncommitted changes')
+  })
+  it('refuses branch-only sources, missing or red CI and a stable version already published', async () => {
+    const root = await fixture()
+    await writeFile(join(root, 'stable-promotion.json'), JSON.stringify(promotion))
+    await expect(readLinuxPromotion(root, { ...checkout, onMain: false })).rejects.toThrow('not on origin/main')
+    for (const checks of [[], [{ ...promotion.checks[0], conclusion: 'failure' }, promotion.checks[1]]]) {
+      await writeFile(join(root, 'stable-promotion.json'), JSON.stringify({ ...promotion, checks }))
+      await expect(readLinuxPromotion(root, checkout)).rejects.toThrow('CI check')
+    }
+    await writeFile(join(root, 'stable-promotion.json'), JSON.stringify({ ...promotion, explicitVersion: true, stableVersion: promotion.latestStableVersion }))
+    await expect(readLinuxPromotion(root, checkout)).rejects.toThrow('not newer')
   })
 })
 
