@@ -183,6 +183,8 @@ export const watcherRecordSchema = z.object({ version: z.literal(1), current: wa
     reason: z.enum(['creation', 'active-turn', 'background-work', 'queued', 'dispatching', 'uncertain', 'needs-user']) }).strict()).max(8),
   reads: z.array(z.object({ target: watcherThreadTargetSchema, position: watcherPositionSchema, readAt: time,
     lastWakeEventId: id.optional() }).strict()).max(10_000),
+  // Exact negative reads fence late admission. These are scoped identities only, never protocol bodies.
+  remoteAbsences: z.array(z.object({ operationId: z.uuid(), master: watcherIdentitySchema, clientId: id, observedAt: time }).strict()).max(1_000).optional(),
   wakeEventIds: z.array(id).max(1_000).optional(),
 }).strict().superRefine((record, context) => {
   const key = (target: WatcherThreadTarget) => JSON.stringify([target.hostId, target.threadId])

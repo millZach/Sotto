@@ -24,7 +24,7 @@ async function fixture() {
   const localSnapshot = f.control.watcherSnapshot(), native = localSnapshot.threads[0]!
   const snapshot: AgentHostSnapshot = { ...localSnapshot, hostId, connected: true, threads: [{ ...native, id: 'worker', hostId, status: 'running' }] }
   let projection: WatcherHostProjection = { hostId, master: record.current!, revision: 'initial', observedAt: new Date().toISOString(), requests: [], operations: [], evidence: [] }
-  const read = vi.fn(async (_hostId: string, _request: unknown) => { void _hostId; void _request; return structuredClone(projection) })
+  const read = vi.fn<WatcherRemoteHosts['read']>(async (_hostId, _request) => { void _hostId; void _request; return structuredClone(projection) })
   const hosts: ReturnType<WatcherRemoteHosts['hosts']> = [{ hostId, connected: true, reads: true, control: true, permissionCeiling: 'approval-required' }]
   const remote: WatcherRemoteHosts = { hosts: () => hosts, snapshot: id => id === hostId ? snapshot : undefined, read, control: vi.fn(), subscribe: () => () => undefined }
   const reconcile = () => (watcher as unknown as { reconcileRemote(): Promise<void> }).reconcileRemote()
@@ -94,4 +94,23 @@ it('closes a request when its connected owning-host worker is settled', async ()
   f.snapshot.connected = true
   await f.reconcile()
   expect(f.control.watcherRecord().requests[0]!.state).toBe('closed')
+})
+
+it('keeps a bounded omitted operation until an exact owning receipt answers', async () => {
+  const f = await fixture(), record = f.control.watcherRecord(), operation = record.operations[0]!
+  f.read.mockImplementation(async (_id, request) => request.call ? { status: 'ok', action: 'send',
+    receipt: { operationId: operation.id, requestId: operation.requestId, target: operation.target, receiptId: operation.receiptId, cardId: operation.cardId, deliveryState: 'accepted' },
+    limits: { inFlight: 1, inFlightLimit: 4, promptCount: 1, promptLimit: 4 }, state: { status: 'running', stopped: false, settled: false, backgroundWorkCount: 0, observedAt: new Date().toISOString(), freshness: 'fresh' } }
+    : { hostId: f.hostId, master: record.current!, revision: 'bounded', observedAt: new Date().toISOString(), requests: [], operations: [], evidence: [] })
+  await f.reconcile()
+  expect(f.control.watcherRecord().operations[0]!.deliveryState).toBe('accepted')
+  expect(f.control.watcherRecord().requests[0]!.participants[0]!.promptCount).toBe(1)
+  expect(f.control.watcherRecord().reservations).toHaveLength(1)
+})
+
+it('keeps uncertainty when the owning absence-fence store is full', async () => {
+  const f = await fixture(), master = f.control.watcherRecord().current!
+  await f.control.updateWatcher(record => { record.remoteAbsences = Array.from({ length: 1_000 }, () => ({ operationId: randomUUID(), master, clientId: 'synthetic', observedAt: new Date().toISOString() })) })
+  expect(await f.watcher.readRemote({ master, call: { name: 'read_operation', input: { operationId: randomUUID() } } }, 'synthetic')).toMatchObject({ code: 'DELIVERY_UNCERTAIN' })
+  expect(f.control.watcherRecord().remoteAbsences).toHaveLength(1_000)
 })

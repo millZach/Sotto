@@ -592,3 +592,23 @@ it('uses a fresh scoped connection for an admitted queue without renewing a rest
   expect(receipt).toMatchObject({ receipt: { deliveryState: 'accepted' } })
   await vi.waitFor(() => expect((worker as unknown as { remoteGuards: Map<string, unknown> }).remoteGuards.size).toBe(0))
 })
+
+it('refunds only an exact fenced absence and rejects a late packet for that operation', async () => {
+  const f = await master(), original = f.socket.watcherControl.bind(f.socket)
+  let packet: WatcherHostControl | undefined
+  vi.spyOn(f.socket, 'watcherControl').mockImplementation(async input => { packet = input; throw new Error('synthetic-before-admission') })
+  expect(await f.call('start_thread', f.start())).toMatchObject({ code: 'DELIVERY_UNCERTAIN' })
+  expect(f.watcher.state().inFlight).toBe(1)
+  await (f.watcher as unknown as { reconcileRemote(): Promise<void> }).reconcileRemote()
+  expect(f.control.watcherRecord().operations.find(item => item.id === packet!.operation.id)).toMatchObject({ deliveryState: 'failed', refusalCode: 'UNKNOWN_OPERATION' })
+  expect(f.watcher.state().inFlight).toBe(0)
+  expect(f.control.watcherRecord().requests[0]!.participants[0]!.promptCount).toBe(0)
+  expect(await original(packet!)).toMatchObject({ code: 'UNKNOWN_OPERATION' })
+  expect(remote.host.service.state().host.threads.some(thread => thread.title === 'Synthetic remote worker')).toBe(false)
+  await f.socket.close(); await remote.host.close()
+  remote.host = await startFixtureHeadlessHost({ dataDirectory: remote.root, port: 0, providers: { codex: remote.native } })
+  remote.url = 'http://127.0.0.1:' + remote.host.descriptor!.port
+  const socket = new SocketHostService({ url: remote.url, token: f.pairing.token, watcherEnabled: true }); remote.clients.push(socket)
+  await socket.connect()
+  expect(await socket.watcherControl(packet!)).toMatchObject({ code: 'UNKNOWN_OPERATION' })
+})
