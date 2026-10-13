@@ -778,27 +778,11 @@ private struct WatcherRequestCard: View {
     }
 
     private func questionActions(_ options: [RequestOption], enabled: Bool) -> some View {
-        VStack(alignment: .leading, spacing: Space.s3) {
-            FlowLayout(spacing: Space.s2) {
-                ForEach(options) { option in
-                    Button { picked = picked == option.id ? nil : option.id } label: { Text(option.label) }
-                        .buttonStyle(ChipStyle(selected: picked == option.id))
-                        .accessibilityAddTraits(picked == option.id ? .isSelected : [])
-                }
-            }
-            .disabled(!enabled)
-            HStack(spacing: Space.s2) {
-                Button(request.questions?.first?.allowFreeText == true ? "Write your own" : reviewWords, action: openReview)
-                    .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
-                Spacer(minLength: 0)
-                Button("Send answer") {
-                    guard let picked else { return }
-                    send(choice: picked, answers: ThreadsView.oneTapAnswers(request, choice: picked))
-                }
-                .buttonStyle(PillButtonStyle(kind: .primary, compact: true))
-                .disabled(!enabled || picked == nil)
-                .accessibilityIdentifier("watcher-card-send")
-            }
+        OneTapQuestion(options: options, enabled: enabled, picked: $picked, sendID: "watcher-card-send") { choice in
+            send(choice: choice, answers: ThreadsView.oneTapAnswers(request, choice: choice))
+        } more: {
+            Button(request.questions?.first?.allowFreeText == true ? "Write your own" : reviewWords, action: openReview)
+                .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
         }
     }
 
@@ -823,22 +807,8 @@ private struct WatcherRequestCard: View {
     }
 
     /// Deny, then Allow once, in the provider's own words. A request with no choices of its own takes Deny and Allow.
-    @ViewBuilder private func permissionButtons(enabled: Bool) -> some View {
-        if let choices = request.cardPermissionChoices {
-            let ordered: [PermissionChoice] = choices.sorted { $0.kind == "deny" && $1.kind != "deny" }
-            ForEach(ordered) { choice in
-                Button(choice.label) { send(choice: choice.id) }
-                    .buttonStyle(PillButtonStyle(kind: choice.kind == "deny" ? .soft : .primary, compact: true))
-                    .disabled(!enabled)
-            }
-        } else if request.permissionChoices == nil {
-            Button("Deny") { send(choice: "deny") }
-                .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
-                .disabled(!enabled)
-            Button("Allow") { send(choice: "allow") }
-                .buttonStyle(PillButtonStyle(kind: .primary, compact: true))
-                .disabled(!enabled)
-        }
+    private func permissionButtons(enabled: Bool) -> some View {
+        CardPermissionButtons(request: request, enabled: enabled) { choice, _ in send(choice: choice) }
     }
 }
 

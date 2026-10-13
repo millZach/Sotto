@@ -900,25 +900,11 @@ private struct RequestCard: View {
 
     private func questionActions(_ options: [RequestOption], enabled: Bool) -> some View {
         let ownWords = request.questions?.first?.allowFreeText == true ? "Write your own" : reviewWords
-        return VStack(alignment: .leading, spacing: Space.s3) {
-            FlowLayout(spacing: Space.s2) {
-                ForEach(options) { option in
-                    Button { picked = picked == option.id ? nil : option.id } label: { Text(option.label) }
-                        .buttonStyle(ChipStyle(selected: picked == option.id))
-                        .accessibilityAddTraits(picked == option.id ? .isSelected : [])
-                }
-            }
-            .disabled(!enabled)
-            HStack(spacing: Space.s2) {
-                NavigationLink(value: ThreadRoute(ref: row.ref)) { Text(ownWords) }
-                    .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
-                Spacer(minLength: 0)
-                Button("Send answer") {
-                    if let picked { send(picked, "Sending…", "Answered") }
-                }
-                .buttonStyle(PillButtonStyle(kind: .primary, compact: true))
-                .disabled(!enabled || picked == nil)
-            }
+        return OneTapQuestion(options: options, enabled: enabled, picked: $picked) { choice in
+            send(choice, "Sending…", "Answered")
+        } more: {
+            NavigationLink(value: ThreadRoute(ref: row.ref)) { Text(ownWords) }
+                .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
         }
     }
 
@@ -942,22 +928,74 @@ private struct RequestCard: View {
     private var moreWords: String { request.cardPermissionChoices == nil && request.permissionChoices != nil ? reviewWords : "More choices" }
 
     /// Deny, then Allow once, on the computer's own words. A request with no choices of its own takes Allow and Deny.
-    @ViewBuilder private func permissionButtons(enabled: Bool) -> some View {
+    private func permissionButtons(enabled: Bool) -> some View {
+        CardPermissionButtons(request: request, enabled: enabled) { choice, allows in
+            send(choice, allows ? "Allowing…" : "Denying…", allows ? "Allowed" : "Denied")
+        }
+    }
+}
+
+/// A card's one-tap answer to a question with a few choices: the choices as chips, then the card's own way to say more
+/// and Send answer, which stays off until a chip is chosen. Threads and Watcher's page share it, and each says where the
+/// chosen answer goes.
+struct OneTapQuestion<More: View>: View {
+    let options: [RequestOption]
+    let enabled: Bool
+    @Binding var picked: String?
+    let sendID: String?
+    let send: (String) -> Void
+    let more: More
+    init(options: [RequestOption], enabled: Bool, picked: Binding<String?>, sendID: String? = nil,
+         send: @escaping (String) -> Void, @ViewBuilder more: () -> More) {
+        self.options = options
+        self.enabled = enabled
+        self._picked = picked
+        self.sendID = sendID
+        self.send = send
+        self.more = more()
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            FlowLayout(spacing: Space.s2) {
+                ForEach(options) { option in
+                    Button { picked = picked == option.id ? nil : option.id } label: { Text(option.label) }
+                        .buttonStyle(ChipStyle(selected: picked == option.id))
+                        .accessibilityAddTraits(picked == option.id ? .isSelected : [])
+                }
+            }
+            .disabled(!enabled)
+            HStack(spacing: Space.s2) {
+                more
+                Spacer(minLength: 0)
+                let button = Button("Send answer") { if let picked { send(picked) } }
+                    .buttonStyle(PillButtonStyle(kind: .primary, compact: true))
+                    .disabled(!enabled || picked == nil)
+                if let sendID { button.accessibilityIdentifier(sendID) } else { button }
+            }
+        }
+    }
+}
+
+/// A card's permission buttons: Deny, then Allow once, in the provider's own words, and Deny and Allow for a request with
+/// no choices of its own. Each press hands over the choice and whether it allows; where it goes is the card's.
+struct CardPermissionButtons: View {
+    let request: AgentRequest
+    let enabled: Bool
+    let send: (_ choice: String, _ allows: Bool) -> Void
+    var body: some View {
         if let choices = request.cardPermissionChoices {
             let ordered: [PermissionChoice] = choices.sorted { $0.kind == "deny" && $1.kind != "deny" }
             ForEach(ordered) { choice in
                 let allows = choice.kind != "deny"
-                Button(choice.label) {
-                    send(choice.id, allows ? "Allowing…" : "Denying…", allows ? "Allowed" : "Denied")
-                }
-                .buttonStyle(PillButtonStyle(kind: allows ? .primary : .soft, compact: true))
-                .disabled(!enabled)
+                Button(choice.label) { send(choice.id, allows) }
+                    .buttonStyle(PillButtonStyle(kind: allows ? .primary : .soft, compact: true))
+                    .disabled(!enabled)
             }
         } else if request.permissionChoices == nil {
-            Button("Deny") { send("deny", "Denying…", "Denied") }
+            Button("Deny") { send("deny", false) }
                 .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
                 .disabled(!enabled)
-            Button("Allow") { send("allow", "Allowing…", "Allowed") }
+            Button("Allow") { send("allow", true) }
                 .buttonStyle(PillButtonStyle(kind: .primary, compact: true))
                 .disabled(!enabled)
         }
