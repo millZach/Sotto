@@ -745,18 +745,21 @@ final class WatcherModelTests: XCTestCase {
         // lets go of a draft it doesn't show on its way, and a page that says nothing of drafts lets go of nothing.
         var drafts = WatcherDrafts()
         let onItsWay = drafts.id(for: "One"), took = drafts.id(for: "Two"), failed = drafts.id(for: "Three")
-        let unasked = drafts.id(for: "Four"), unlisted = drafts.id(for: "Five")
-        for id in [onItsWay, took, failed, unlisted] { drafts.end(id) }
-        let proof = drafts.endedIDs
+        let unasked = drafts.id(for: "Four"), unlisted = drafts.id(for: "Five"), resent = drafts.id(for: "Six")
+        for id in [onItsWay, took, failed, unlisted, resent] { drafts.end(id) }
+        let proof = drafts.endedSends
         drafts.end(unasked)
+        // Six goes again after the page was asked for, with its own ID: the page can't speak for that send.
+        XCTAssertEqual(drafts.id(for: "Six"), resent)
+        drafts.end(resent)
         let page = try decoded(Spec(deliveries: [onItsWay: "submitting", took: "accepted", failed: "failed"]))
         let silent = try JSONDecoder().decode(WatcherPage.self, from: Data(self.page(Spec()).replacingOccurrences(of: #""draftDeliveries":[]"#, with: #""recoveryNotice":null"#).utf8))
         XCTAssertNil(silent.draftDeliveries)
         XCTAssertTrue(drafts.retire(after: silent, proof: proof).isEmpty)
-        XCTAssertEqual(drafts.unresolved.count, 5, "A page that says nothing of drafts lets go of nothing")
+        XCTAssertEqual(drafts.unresolved.count, 6, "A page that says nothing of drafts lets go of nothing")
         XCTAssertEqual(drafts.retire(after: page, proof: proof).map(\.text), ["Two"], "Watcher took Two")
-        XCTAssertEqual(drafts.unresolved.map(\.text), ["One", "Four"],
-                       "One is still on its way, Three failed, Five never arrived, and Four ended after the page was asked for")
+        XCTAssertEqual(drafts.unresolved.map(\.text), ["One", "Four", "Six"],
+                       "One is still on its way, Three failed, Five never arrived, Four ended and Six went again after the page was asked for")
     }
 
     @MainActor func testThePageReadAfterALostAcknowledgementSettlesTheWords() async throws {

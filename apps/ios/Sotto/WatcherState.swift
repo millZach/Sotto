@@ -61,8 +61,10 @@ struct WatcherDrafts: Equatable, Sendable {
     struct Sent: Equatable, Sendable {
         let text: String
         let draftID: String
-        /// Its send has ended, so a page read from now on says where it stands.
+        /// Its send has ended, so a page asked for from now on says where it stands.
         var ended = false
+        /// How many times these words have gone with this ID. A page asked for before the last of them can't speak for it.
+        var sends = 1
     }
     /// The most kept for one computer. Past it the oldest is let go, after this many other messages went unconfirmed.
     static let limit = 32
@@ -73,6 +75,7 @@ struct WatcherDrafts: Equatable, Sendable {
     mutating func id(for text: String, minting: () -> String = { UUID().uuidString.lowercased() }) -> String {
         if let index = unresolved.firstIndex(where: { $0.text == text }) {
             unresolved[index].ended = false
+            unresolved[index].sends += 1
             return unresolved[index].draftID
         }
         let draftID = minting()
@@ -84,25 +87,29 @@ struct WatcherDrafts: Equatable, Sendable {
     mutating func resolve(_ draftID: String) {
         unresolved.removeAll { $0.draftID.lowercased() == draftID.lowercased() }
     }
-    /// The drafts whose send has ended, by lowercased ID: a page asked for from now on says where they stand.
-    var endedIDs: Set<String> { Set(unresolved.filter(\.ended).map { $0.draftID.lowercased() }) }
+    /// The drafts whose send has ended, by lowercased ID, with how many times each has gone: a page asked for from now on
+    /// says where they stand, until one of them is sent again.
+    var endedSends: [String: Int] {
+        Dictionary(unresolved.filter(\.ended).map { ($0.draftID.lowercased(), $0.sends) }, uniquingKeysWith: { first, _ in first })
+    }
     /// This draft's send ended: a page asked for from now on says where it stands.
     mutating func end(_ draftID: String) {
         for index in unresolved.indices where unresolved[index].draftID.lowercased() == draftID.lowercased() {
             unresolved[index].ended = true
         }
     }
-    /// Lets go of the drafts a page says Watcher took, and returns them, oldest first. With `proof`, the IDs whose send had
-    /// ended when the page was asked for, it also lets go of those it no longer shows on their way. Watcher's computer lists
+    /// Lets go of the drafts a page says Watcher took, and returns them, oldest first. With `proof`, the drafts whose send
+    /// had ended when the page was asked for (`endedSends`), it also lets go of those it no longer shows on their way,
+    /// unless they have been sent again since. Watcher's computer lists
     /// a draft from the moment it reads its send until Watcher took it or it failed, and won't take again one whose result
     /// it doesn't know, so a draft such a page shows neither queued, submitting nor uncertain was taken, failed or never
     /// reached it: the same words sent again can't arrive twice. A page pushed with a shell is no proof, since the computer
     /// may have made it before it read the send, and a page that says nothing of drafts is no proof either.
-    mutating func retire(after page: WatcherPage, proof: Set<String>) -> [Sent] {
+    mutating func retire(after page: WatcherPage, proof: [String: Int]) -> [Sent] {
         guard page.draftDeliveries != nil else { return [] }
         let taken = unresolved.filter { page.delivery(of: $0.draftID) == "accepted" }
         let gone = unresolved.filter { sent in
-            guard proof.contains(sent.draftID.lowercased()) else { return false }
+            guard sent.ended, proof[sent.draftID.lowercased()] == sent.sends else { return false }
             switch page.delivery(of: sent.draftID) {
             case "queued", "submitting", "uncertain": return false
             default: return true

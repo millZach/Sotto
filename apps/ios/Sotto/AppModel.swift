@@ -261,7 +261,7 @@ extension AppModel {
             watcherRereads.remove(hostID)
             guard online(hostID), let connection = connections[hostID], let epoch = generations[hostID] else { return }
             // Drafts whose send has ended before this read is asked for: its page says where they stand.
-            let proof = watcherDrafts[hostID]?.endedIDs ?? []
+            let proof = watcherDrafts[hostID]?.endedSends ?? [:]
             do {
                 let reply = try await connection.call(WatcherWire.read, as: WatcherPhoneResult.self)
                 // Over a connection that has since changed: its page is left, and a read asked for meanwhile still runs.
@@ -291,7 +291,7 @@ extension AppModel {
     /// Takes a page from its computer, unless it names another computer or is older than the one shown. False when the
     /// page doesn't belong to the computer that sent it.
     /// `proof` holds the draft IDs whose send had ended when this page was asked for (see `WatcherDrafts.retire`).
-    @discardableResult private func applyWatcher(_ page: WatcherPage, from hostID: String, proof: Set<String> = []) -> Bool {
+    @discardableResult private func applyWatcher(_ page: WatcherPage, from hostID: String, proof: [String: Int] = [:]) -> Bool {
         guard offersWatcher(hostID), (try? page.validate(hostID: hostID)) != nil else { return false }
         setWatcherReadProblem(nil, on: hostID)
         if let shown = watcherStore.pages[hostID], page.isOlder(than: shown) { return true }
@@ -362,7 +362,7 @@ extension AppModel {
             watcherDrafts[hostID]?.end(draftID)
             // The page read after a lost acknowledgement came while the words were still on their way, and may say
             // Watcher took them: settled now, they leave the box.
-            if let page = watcherPage(hostID) { settleWatcherDraft(page, on: hostID, proof: []) }
+            if let page = watcherPage(hostID) { settleWatcherDraft(page, on: hostID, proof: [:]) }
         }
         #if DEBUG && os(iOS)
         if isUIFixture { await sendToFixtureWatcher(text, on: hostID); watcherDrafts[hostID]?.resolve(draftID); return }
@@ -388,11 +388,11 @@ extension AppModel {
             restoreWatcherDraft(text, on: hostID, unconfirmed: false)
             feedback = refusal.localizedDescription
         } catch {
-            // Lost on its way, perhaps after Watcher took it. The send has ended either way, so the page read now, after it
-            // on the same connection, says where the draft stands. A page that already says Watcher took it settles it;
-            // otherwise the words go back in the box, or under the conversation, and the page is read again.
+            // Lost on its way, perhaps after Watcher took it. Its part on the wire has ended either way, so the page read
+            // now, after it on the same connection, says where the draft stands; the box waits until that read is done.
+            // A page that already says Watcher took it settles it; otherwise the words go back in the box, or under the
+            // conversation, and the page is read again.
             watcherDrafts[hostID]?.end(draftID)
-            watcherSending[hostID] = nil
             if watcherPage(hostID)?.delivery(of: draftID) == "accepted" {
                 watcherDrafts[hostID]?.resolve(draftID)
             } else {
@@ -426,9 +426,10 @@ extension AppModel {
     }
     /// Words put back after an unconfirmed send leave the box once Watcher's computer says it took them. A page asked for
     /// after their send ended (`proof`) also lets go of draft IDs it no longer shows on their way, so the same words sent
-    /// again later go as a new message.
-    private func settleWatcherDraft(_ page: WatcherPage, on hostID: String, proof: Set<String>) {
-        guard watcherSending[hostID] == nil, watcherDrafts[hostID] != nil else { return }
+    /// again later go as a new message. It runs while a send is on its way too: that send's draft hasn't ended, so no page
+    /// lets go of it, and the read after a lost acknowledgement is how its draft is settled.
+    private func settleWatcherDraft(_ page: WatcherPage, on hostID: String, proof: [String: Int]) {
+        guard watcherDrafts[hostID] != nil else { return }
         let taken = watcherDrafts[hostID]?.retire(after: page, proof: proof) ?? []
         guard !taken.isEmpty else { return }
         let key = watcherDraftKey(hostID)
@@ -1773,7 +1774,7 @@ struct HeldDetail {
         if selected?.hostID == hostID { cancelDetailReload(); holdDetail(); detailProblem = nil }
         var helloCarriedWatcher = false
         // Hello's page is made after every send over an earlier connection ended: it says where their drafts stand.
-        let proof = watcherDrafts[hostID]?.endedIDs ?? []
+        let proof = watcherDrafts[hostID]?.endedSends ?? [:]
         do {
             guard let endpoint = saved.endpoint else { throw ClientError.invalidHost }
             let greeting = try await connection(hostID).connect(endpoint: endpoint, pairing: saved.pairing)
