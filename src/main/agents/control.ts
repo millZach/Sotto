@@ -18,6 +18,7 @@ import type { BabysitNews } from './babysitNews'
 import { BABYSIT_REFUSALS, type Babysitter } from './babysitting'
 import { pullRequestAddress } from '../../shared/gitPullRequests'
 import { queuedWakeUpText, isRestartNews, isWatcherNews, type WakeUpNews } from './wakeUp'
+import type { UsagePromptRecorder } from './usageService'
 import type { WatcherEvent } from '../../shared/watcherNews'
 import type { CheckpointObservation, PullRequestObservation } from './watcherEvidence'
 import { nearestReasoningEffort, resolveNewThreadPermission } from '../../shared/newThreadDefaults'
@@ -268,6 +269,11 @@ export class AgentControl {
   private watcher: WatcherRecord = emptyWatcherRecord()
   private watcherHooks: WatcherControlHooks | undefined
   private readonly watcherOrigins = new WeakMap<object, WatcherCommandOrigin>()
+  watcherPhoneExclusions(): { threadIds: string[]; projectIds: string[] } {
+    const identities = [...this.watcher.current ? [this.watcher.current] : [], ...this.watcher.history,
+      ...this.watcher.creation ? [this.watcher.creation.identity] : []]
+    return { threadIds: identities.map(row => row.target.threadId), projectIds: identities.map(row => row.projectId) }
+  }
   watcherRecord(): WatcherRecord { return structuredClone(this.watcher) }
   updateWatcher(update: (record: WatcherRecord) => void): Promise<void> {
     if (this.dependencies.watcherEnabled !== true) throw new Error('Watcher is available in Sotto Owl.')
@@ -287,6 +293,20 @@ export class AgentControl {
     }
     const parsed = agentCommandSchema.parse(command); origin.guard(); this.watcherOrigins.set(parsed, origin)
     return this.admitCommandShell(parsed)
+  }
+  /** Authenticated phone user input; its origin stays private to this command and the main-owned request. */
+  commandFromWatcherPhone(command: Extract<AgentCommand, { type: 'send' }>, origin: WatcherCommandOrigin, client: ClientIdentity): Promise<AgentState> {
+    if (!this.watcherHooks || !origin.phoneOrigin || client.transport !== 'socket'
+      || client.clientId !== origin.phoneOrigin.clientId || this.hostId() !== origin.phoneOrigin.hostId) throw new Error('Watcher phone input is unavailable.')
+    const parsed = agentCommandSchema.parse(command); origin.guard(); this.watcherOrigins.set(parsed, origin)
+    return this.commandShell(parsed, client)
+  }
+  /** A user's explicit phone card answer, with the same grant checks plus a private writer guard. */
+  answerWatcherPhoneCard(command: Extract<AgentCommand, { type: 'answer' }>, client: ClientIdentity, decisionId: string, connectionGuard: () => void): Promise<AgentState> {
+    if (!this.watcherHooks || client.transport !== 'socket') throw new Error('Watcher phone cards are unavailable.')
+    const guard = () => { connectionGuard(); this.guardClientGrant(client) }
+    const parsed = agentCommandSchema.parse(command); guard(); this.watcherOrigins.set(parsed, { guard })
+    return this.commandShell(parsed, client, decisionId)
   }
   /** User-requested setup only, never exposed as a tool. */
   commandForWatcherRoom(command: Extract<AgentCommand, { type: 'create-project' | 'create-thread' | 'configure-thread' }>): Promise<AgentState> {
@@ -407,6 +427,8 @@ export class AgentControl {
     historyEnabled?: () => boolean
     /** Release gate only; the saved Watcher record is retained on either track. */
     watcherEnabled?: boolean
+    /** Numeric-only Owl history. It never gates or retries a provider send. */
+    usage?: UsagePromptRecorder
     observeActiveThread?: boolean
     turns?: TurnRecorder
     authority?: Authority
@@ -2027,6 +2049,8 @@ export class AgentControl {
     // Admission refuses a dormant owner before the atomic wrapper can alter any delivery ledger.
     if (command.type !== 'send' || !command.draft?.draftId || this.disposed || !this.watcherAvailable(command.draft.threadId)) return this.admitCommandShell(command, client, answerDecisionId)
     const packet = structuredClone(command)
+    const watcherOrigin = this.watcherOrigins.get(command)
+    if (watcherOrigin) this.watcherOrigins.set(packet, watcherOrigin)
     const threadId = packet.draft!.threadId, draftId = packet.draft!.draftId!
     const digest = this.atomicDraftDigest(packet.draft!)
     const key = JSON.stringify([threadId, draftId])
@@ -2689,7 +2713,7 @@ export class AgentControl {
       this.activateComposition(composer, client)
       const staged = await this.stageThreadDraft(composer.composition, composer.order, true, undefined, composer.atomicDigest !== undefined)
       await this.sendDraft(turn, composer.retryId, selectionRevision, client,
-        client.transport === 'socket' ? command.draft.threadId : undefined, staged, composer)
+        client.transport === 'socket' ? command.draft.threadId : undefined, staged, composer, origin)
       return
     }
     if (command.type === 'compose' && composer) {
@@ -3037,7 +3061,7 @@ export class AgentControl {
           this.say(`Answered ${thread.title}.`)
           return
         }
-        await this.dispatch({ type: 'answer', commandId: answerDecisionId ?? randomUUID(), threadId: command.threadId, requestId: command.requestId, answer: command.answer, ...(command.approved === undefined ? {} : { approved: command.approved }), ...(command.questionAnswers ? { questionAnswers: command.questionAnswers } : {}), ...(command.permissionChoice ? { permissionChoice: command.permissionChoice } : {}) }, turn, composer ? () => this.validateComposerQuestion(composer) : undefined, composer?.atomicDigest ? answerDraft?.draftId : undefined, client, composer?.atomicDigest)
+        await this.dispatch({ type: 'answer', commandId: answerDecisionId ?? randomUUID(), threadId: command.threadId, requestId: command.requestId, answer: command.answer, ...(command.approved === undefined ? {} : { approved: command.approved }), ...(command.questionAnswers ? { questionAnswers: command.questionAnswers } : {}), ...(command.permissionChoice ? { permissionChoice: command.permissionChoice } : {}) }, turn, composer ? () => this.validateComposerQuestion(composer) : undefined, composer?.atomicDigest ? answerDraft?.draftId : undefined, client, composer?.atomicDigest, origin)
         if (answerDraft) {
           this.state.deliveredDrafts = this.trimReceipts([...(this.state.deliveredDrafts ?? []).filter(item => item.threadId !== command.threadId || item.draftId !== answerDraft.draftId),
             { threadId: command.threadId, draftId: answerDraft.draftId }])
@@ -3286,6 +3310,12 @@ export class AgentControl {
           endLoan = lendSendStages(command.commandId, stages)
         }
         writeGuard?.()
+        if (prompt && provider) {
+          try { this.dependencies.usage?.submitPrompt({ providerId: provider, threadId: prompt.threadId,
+            messageId: prompt.messageId, modelId: this.thread(prompt.threadId).modelId, at: new Date().toISOString(),
+            kind: wakeUp ? 'wake-up' : origin ? 'watcher' : 'user', inputKind: command.type === 'steer' ? 'steer' : 'send' }) }
+          catch { /* A usage failure cannot refuse or resend the user's message. */ }
+        }
         result = await (writeGuard && this.dependencies.host.executeFromWatcher
           ? this.dependencies.host.executeFromWatcher(hostCommand, writeGuard) : this.dependencies.host.execute(hostCommand)).catch(error => {
           if (turn) turn.failureCode = 'provider-failed'
@@ -3299,6 +3329,10 @@ export class AgentControl {
         if (endLoan && !result?.accepted) stages?.close()
       }
     } catch (error) {
+      if (prompt) {
+        try { this.dependencies.usage?.discardPrompt(prompt.threadId, prompt.messageId) }
+        catch { /* Only usage metadata is affected. */ }
+      }
       this.outbox = this.outbox.filter(o => o.id !== command.commandId)
       if ((prompt || atomicDigest) && draftId && threadId) this.setDelivery(threadId, draftId, 'failed')
       await this.persist()
@@ -3371,6 +3405,10 @@ export class AgentControl {
       if (!result.uncertain && answerIntent) { this.recordAnsweredRequest(answerIntent); this.recordAtomicDelivery(answerIntent) }
     }
     this.outbox = this.outbox.filter(o => o.id !== command.commandId)
+    if (prompt && !result.accepted && !result.uncertain) {
+      try { this.dependencies.usage?.discardPrompt(prompt.threadId, prompt.messageId) }
+      catch { /* Only a definitive refusal removes pending numeric evidence. */ }
+    }
     await this.persist()
     if (!result.accepted && !result.uncertain) {
       if (turn) turn.failureCode = 'provider-failed'
@@ -3458,7 +3496,7 @@ export class AgentControl {
     this.observe()
   }
   private async sendDraft(turn?: ActiveTurn, retryId?: string, selectionRevision = this.selectionRevision, client = this.localClient, selectedThreadId?: string,
-    staged?: AgentThreadDraft, composer?: ComposerContext): Promise<void> {
+    staged?: AgentThreadDraft, composer?: ComposerContext, phoneOrigin?: WatcherCommandOrigin): Promise<void> {
     const scoped = selectedThreadId !== undefined
     const draftThreadId = staged?.threadId ?? selectedThreadId ?? this.state.draftThreadId
     if (!staged && (!scoped || this.state.draftThreadId === draftThreadId)) this.syncLegacyDraft()
@@ -3506,7 +3544,7 @@ export class AgentControl {
     if (thread.requests.length) throw new Error('Answer the pending question or permission explicitly before sending a new prompt.')
     if (thread.status === 'running') throw new Error('This thread is still working. Your draft is saved; wait for it to finish or explicitly stop the agent.')
     this.sendStages(turn)?.addRead(readMs)
-    await this.dispatch({ type: 'send', commandId: randomUUID(), threadId: thread.id, messageId, text, ...(skills ? { skills } : {}), ...(files ? { files } : {}), ...(attachments.length ? { attachments } : {}), expectedLastUserMessageId: lastUserMessageIdOf(thread) }, turn, undefined, draftId, client, composer?.atomicDigest)
+    await this.dispatch({ type: 'send', commandId: randomUUID(), threadId: thread.id, messageId, text, ...(skills ? { skills } : {}), ...(files ? { files } : {}), ...(attachments.length ? { attachments } : {}), expectedLastUserMessageId: lastUserMessageIdOf(thread) }, turn, undefined, draftId, client, composer?.atomicDigest, phoneOrigin)
     this.clearEmptyDraftBinding(thread.id, draftId)
     if (this.manualDraftId === draftId && this.state.draftThreadId === thread.id) this.clearDraft()
     else this.state.threadDrafts = (this.state.threadDrafts ?? []).filter(draft => draft.threadId !== thread.id || draft.draftId !== draftId)
@@ -3590,6 +3628,10 @@ export class AgentControl {
             ? thread !== undefined && isThreadProviderConnected(snapshot, thread) && thread.historyStatus !== 'loading' && thread.historyStatus !== 'error'
               && !thread.requests.some(r => r.id === item.requestId) : thread?.status === 'idle'
       if (!confirmed) continue
+      if (message && item.threadId && item.messageId) {
+        try { this.dependencies.usage?.acceptPrompt(item.threadId, item.messageId) }
+        catch { /* The exact echo still settles native delivery. Numeric evidence can recover separately. */ }
+      }
       if (item.type === 'configure-thread' && this.settingsDispatching.has(item.id)) this.settledSettings.add(item.id)
       // A disappeared question does not prove that our answer was accepted.
       // Only the exact adapter acknowledgement above can retire retained content.

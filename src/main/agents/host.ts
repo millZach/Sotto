@@ -10,6 +10,7 @@ import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 import type { GitPullRequestAction, GitPullRequestLink, GitPullRequestRead, GitPullRequestMergeMethod, GitPullRequestRequest } from '../../shared/gitPullRequests'
 import type { ThreadEvent } from '../../shared/threadEvents'
+import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
 
 /**
  * A staged image as an adapter receives it (ADR-0031): its handle, and its bytes read from this host's attachment
@@ -174,6 +175,10 @@ export interface ActivitySubscriptionOptions {
  * prompt = execute send; cancel = execute interrupt; status = snapshot; events = subscribe.
  */
 export interface AgentHost {
+  /** Owl-only numeric observations. Adapters own native IDs; wrappers translate to Sotto IDs. */
+  subscribeUsage?(listener: (record: UsageTokenObservation) => void): () => void
+  visitUsage?(threadId: string, visitor: (record: UsageTokenObservation) => void): void
+  readProviderQuota?(providerId: ProviderId, refresh: boolean): Promise<UsageQuotaRead>
   /** Private main capability; never a serialized AgentCommand field. */
   executeFromWatcher?(command: AgentHostCommand, guard: () => void): Promise<AgentHostResult>
   /** Main-only launch capabilities. Wrappers translate identity before handing them to an adapter. */

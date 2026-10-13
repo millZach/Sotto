@@ -58,8 +58,8 @@ const lockPath = path.join(data, 'host-listener.lock');
 const desktopsPath = path.join(data, ${JSON.stringify(DESKTOP_CLIENTS_FILE)});
 // Only an address the host's Serve setting could carry, on the owner's tailnet: https on a MagicDNS name, with its port.
 const TAILNET_ADDRESS = /^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)*\.ts\.net:\d{1,5}$/;
-const RELEASE = /^\d+\.\d+\.\d+$/;
-const ARCHIVE = /^Sotto-host-\d+\.\d+\.\d+-[a-z0-9]+-[a-z0-9]+\.tar\.gz$/;
+const RELEASE = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-owl\.[1-9]\d{7}\.[1-9]\d*)?$/;
+const ARCHIVE = /^Sotto-host-(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-owl\.[1-9]\d{7}\.[1-9]\d*)?-[a-z0-9]+-[a-z0-9]+\.tar\.gz$/;
 const versionsPath = path.join(install, 'versions');
 const incomingPath = path.join(versionsPath, '.incoming');
 const pointerPath = path.join(install, 'current');
@@ -228,11 +228,8 @@ const bootScriptText = () => ['#!/bin/sh',
   'node=' + shellQuote(process.execPath), 'install=' + shellQuote(install), 'data=' + shellQuote(data), 'port=' + shellQuote(String(cfg.remotePort)),
   ...(keyFile ? ['SOTTO_HOST_KEY_FILE=' + shellQuote(keyFile), 'export SOTTO_HOST_KEY_FILE'] : []),
   'entry="$install/host/index.js"',
-  'version=$(cat "$install/current" 2>/dev/null)',
-  'case $version in',
-  "  ''|*[!0-9.]*) ;;",
-  '  *) if [ -f "$install/versions/$version/host/index.js" ]; then entry="$install/versions/$version/host/index.js"; fi ;;',
-  'esac',
+  'version=$("$node" -e ' + shellQuote("try { const v=require('fs').readFileSync(require('path').join(process.argv[1],'current'),'utf8').trim(); if (/^(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)(?:-owl\\.[1-9]\\d{7}\\.[1-9]\\d*)?$/.test(v)) process.stdout.write(v); } catch {}") + ' "$install")',
+  'if [ -n "$version" ] && [ -f "$install/versions/$version/host/index.js" ]; then entry="$install/versions/$version/host/index.js"; fi',
   'exec "$node" "$entry" --data "$data" --port "$port"', ''].join('\n');
 const writeBootScript = async () => { await writeAtomically(bootScriptPath, bootScriptText()); await fs.chmod(bootScriptPath, 0o700).catch(() => undefined); };
 const readBootScript = async () => { try { return await fs.readFile(bootScriptPath, 'utf8'); } catch { return null; } };
@@ -576,8 +573,6 @@ const installUpdate = async () => {
   try { bytes = await fs.readFile(archive); } catch { throw new Error('update-missing'); }
   if (sha256(bytes) !== cfg.sha256) { await fs.rm(archive, { force: true }); return { type: 'error', reason: 'checksum-mismatch' }; }
   await say({ type: 'update-step', step: 'install' });
-  // Already the version current names, and so perhaps the one running: there is nothing to unpack.
-  if ((await currentVersion()) === version && await exists(entryOf(version))) { await fs.rm(archive, { force: true }); return { type: 'update-installed', version }; }
   const target = path.join(versionsPath, version), partial = target + '.partial';
   await fs.rm(partial, { recursive: true, force: true });
   await fs.mkdir(partial, { recursive: true });
@@ -592,12 +587,30 @@ const installUpdate = async () => {
   try { release = JSON.parse(await fs.readFile(path.join(partial, 'package.json'), 'utf8')); } catch {}
   try { manifest = JSON.parse(await fs.readFile(path.join(partial, 'runtime-manifest.json'), 'utf8')); } catch {}
   // The archive is the release it was asked for, and has a host in it.
-  if (release.version !== version || !(await exists(path.join(partial, 'host', 'index.js')))) throw new Error(await discard('archive-invalid'));
+  if (release.version !== version || manifest.sottoVersion !== version || !(await exists(path.join(partial, 'host', 'index.js')))) throw new Error(await discard('archive-invalid'));
   if (typeof manifest.node === 'string' && !satisfies(process.versions.node, manifest.node)) {
     await discard('node-unsupported');
     return { type: 'error', reason: 'node-unsupported', range: manifest.node.slice(0, 64), node: process.versions.node };
   }
-  await fs.rm(target, { recursive: true, force: true });
+  // Published version folders are immutable. A retry may reuse identical files, never replace a different build.
+  if (await exists(target)) {
+    const inventory = async (directory, prefix = '') => {
+      const rows = [];
+      for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
+        const relative = prefix + entry.name, filePath = path.join(directory, entry.name);
+        if (entry.isDirectory()) rows.push(...await inventory(filePath, relative + '/'));
+        else if (entry.isFile()) rows.push([relative, sha256(await fs.readFile(filePath))]);
+        else throw new Error('archive-invalid');
+      }
+      return rows.sort((a, b) => a[0].localeCompare(b[0], 'en'));
+    };
+    let same = false;
+    try { same = JSON.stringify(await inventory(target)) === JSON.stringify(await inventory(partial)); } catch {}
+    await discard('archive-invalid');
+    if (!same) throw new Error('update-version-conflict');
+    await fs.rm(archive, { force: true });
+    return { type: 'update-installed', version };
+  }
   await fs.rename(partial, target);
   await fs.rm(archive, { force: true });
   return { type: 'update-installed', version };
@@ -739,7 +752,7 @@ const runUpdate = async () => {
   } catch (error) {
     const allowed = ['archive-missing', 'descriptor-invalid', 'port-taken', 'host-busy', 'host-start-failed', 'host-timeout',
       'boot-start-refused', 'boot-unit-failed', 'boot-install-failed', 'boot-remove-failed',
-      'update-busy', 'update-invalid', 'update-missing', 'unpack-failed', 'archive-invalid'];
+      'update-busy', 'update-invalid', 'update-missing', 'unpack-failed', 'archive-invalid', 'update-version-conflict'];
     await finish({ type: 'error', reason: allowed.includes(error && error.message) ? error.message : updating ? 'update-failed' : booting ? 'boot-failed' : 'host-start-failed' });
   }
 })();
@@ -757,7 +770,7 @@ const os = require('node:os');
 const cfg = JSON.parse(process.argv[process.argv[1] === '-' ? 2 : 1]);
 const say = event => process.stdout.write(JSON.stringify(event) + '\n');
 const file = String(cfg.file);
-if (!/^Sotto-host-\d+\.\d+\.\d+-[a-z0-9]+-[a-z0-9]+\.tar\.gz$/.test(file) || !Number.isInteger(cfg.size) || cfg.size < 1 || cfg.size > cfg.archiveLimit) { say({ type: 'error', reason: 'update-invalid' }); process.exit(0); }
+if (!/^Sotto-host-(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-owl\.[1-9]\d{7}\.[1-9]\d*)?-[a-z0-9]+-[a-z0-9]+\.tar\.gz$/.test(file) || !Number.isInteger(cfg.size) || cfg.size < 1 || cfg.size > cfg.archiveLimit) { say({ type: 'error', reason: 'update-invalid' }); process.exit(0); }
 const install = path.resolve(cfg.installPath.startsWith('~/') ? path.join(os.homedir(), cfg.installPath.slice(2)) : cfg.installPath);
 const incoming = path.join(install, 'versions', '.incoming');
 fs.mkdirSync(incoming, { recursive: true });
@@ -791,7 +804,7 @@ process.stdin.on('end', () => output.end(() => {
 export const NODE_CHECK_SOURCE = String.raw`var v = process.versions.node, c = {}, r = '';
 try { c = JSON.parse(process.argv[1]); r = String(c.nodeRange || ''); } catch (e) {}
 try { var path = require('path'), fs = require('fs'), p = String(c.installPath || ''); if (p.slice(0, 2) === '~/') p = path.join(require('os').homedir(), p.slice(2));
-  try { var n = String(fs.readFileSync(path.join(p, 'current'), 'utf8')).trim(); if (/^\d+\.\d+\.\d+$/.test(n) && fs.existsSync(path.join(p, 'versions', n, 'host', 'index.js'))) p = path.join(p, 'versions', n); } catch (e) {}
+  try { var n = String(fs.readFileSync(path.join(p, 'current'), 'utf8')).trim(); if (/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-owl\.[1-9]\d{7}\.[1-9]\d*)?$/.test(n) && fs.existsSync(path.join(p, 'versions', n, 'host', 'index.js'))) p = path.join(p, 'versions', n); } catch (e) {}
   var m = JSON.parse(fs.readFileSync(path.join(p, 'runtime-manifest.json'), 'utf8')); if (typeof m.node === 'string') r = m.node; } catch (e) {}
 function parts(s) { var a = String(s).split('.'); return [parseInt(a[0], 10) || 0, parseInt(a[1], 10) || 0, parseInt(a[2], 10) || 0]; }
 function compare(a, b) { for (var i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] - b[i]; return 0; }

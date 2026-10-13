@@ -39,12 +39,16 @@ off. Everything else runs side by side, each in the updater that already owned i
 command to run. A host Sotto did not start shows that it cannot be restarted from here and offers its commands to
 copy. Neither counts toward the press.
 
-**4. A host's working threads finish first.** Restarting a host stops its threads, and a host runs a stable host build
-that cannot resume them yet (ADR-0076 decision 8). So a host with working threads updates once they finish, the way
+**4. A host's working threads finish first.** Restarting a host stops its threads. Stable hosts cannot resume them yet;
+matching Owl hosts follow their own feature list and setting (ADR-0076 decision 8, ADR-0078). On either track a host
+with working threads updates once they finish, the way
 Update when they finish does (ADR-0040), and the card offers Stop N threads and update for anyone who would rather not
 wait, and Cancel update, as the pill did, while the host waits or downloads. The restart of Sotto does not wait for such
 a host. The wait lives in this running Sotto, so the restart prompt says that if Sotto restarts first, Update all offers
 that host again.
+
+October 13, 2026 amendment: matching Owl host archives extend the original stable-only host distribution. The busy-host
+wait, explicit Stop N threads and update choice, and Cancel update stay the same on both tracks.
 
 **5. Restart now, last.** Once Sotto's download is ready, nothing the press started is still running and nothing is
 left to offer, the card asks to restart; Sotto downloaded from the update control waits behind what is still offered. It says how many threads on this computer are working, and whether they carry on after (ADR-0076). Restart

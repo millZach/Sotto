@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { hostIsNewer, hostIsOlder, LEGACY_MANAGEMENT_UPDATE } from '../../shared/hostProtocol'
-import { HOST_ARCHIVE_PATTERN, HOST_RELEASES_URL, hostArchiveName, type HostUpdateAction, type HostUpdateFailure, type HostUpdatePhase, type HostUpdateRoute, type HostUpdateState, type HostUpdateStep } from '../../shared/hostUpdates'
+import { HOST_ARCHIVE_PATTERN, HOST_VERSION_PATTERN, HOST_RELEASES_URL, hostArchiveName, type HostUpdateAction, type HostUpdateFailure, type HostUpdatePhase, type HostUpdateRoute, type HostUpdateState, type HostUpdateStep } from '../../shared/hostUpdates'
+import { getReleaseTrack } from '../../shared/releaseTrack'
 import { HOST_ARCHIVE_LIMIT_BYTES, HOST_DOWNLOAD_TIMEOUT_MS } from './launchScript'
 import { SshFailure } from './sshFailure'
 import type { SshHostUpdateOperation, SshHostUpdateOptions, SshHostUpdateResult } from './sshLauncher'
@@ -67,6 +68,17 @@ class UpdateStopped extends Error {
 }
 const STEP_VERBS: Readonly<Record<HostUpdateStep, (to: string) => string>> = {
   download: to => `download ${to}`, check: () => 'check the download', install: to => `install ${to}`, restart: () => 'restart the host',
+}
+/** Full Owl build order for the explicit host target; protocol v1's general version comparison stays unchanged. */
+export function compareOwlHostTarget(hostVersion: string, targetVersion: string): number | undefined {
+  if (getReleaseTrack(targetVersion) !== 'owl' || !HOST_VERSION_PATTERN.test(hostVersion)) return undefined
+  const parts = (value: string): bigint[] => value.split(/\.|-owl\./u).map(value => BigInt(value))
+  const host = parts(hostVersion), target = parts(targetVersion)
+  for (let i = 0; i < 3; i++) { if (host[i]! < target[i]!) return -1; if (host[i]! > target[i]!) return 1 }
+  // A same-core stable host can be explicitly moved to this chosen Owl build.
+  if (host.length === 3) return -1
+  for (let i = 3; i < 5; i++) { if (host[i]! < target[i]!) return -1; if (host[i]! > target[i]!) return 1 }
+  return 0
 }
 /** A path for a POSIX shell: as it is when it is plain, quoted otherwise, with a leading `~/` left for the shell to expand. */
 function shellPath(value: string): string {
@@ -254,7 +266,7 @@ export class HostUpdates {
     const kept = `${name} still runs ${from}. Nothing was lost.`
     const byHand = `Try again, or update it by hand on ${name} with the commands below.`
     const say = (message: string, next = byHand, keptNow = kept): HostUpdateFailure => ({ step: stopped.step, message, kept: keptNow, next })
-    const platform = (stopped.detail.file ?? entry.file)?.replace(/^Sotto-host-[\d.]+-/u, '').replace(/\.tar\.gz$/u, '')
+    const platform = (stopped.detail.file ?? entry.file)?.replace(/^Sotto-host-\d+\.\d+\.\d+(?:-owl\.\d{8}\.[1-9]\d*)?-/u, '').replace(/\.tar\.gz$/u, '')
     switch (stopped.reason) {
       case 'desktop-unreachable': return say(`${name} could not download ${to} from GitHub, and this computer could not download it either.`, `Check that this computer and ${name} are online, then try again, or update it by hand on ${name}.`)
       case 'copy-incomplete': return say(`${name} could not reach GitHub, so this computer downloaded ${to}, but copying it to ${name} over SSH stopped partway.`, `Check that ${name} is online, then try again, or update it by hand on ${name}.`)
@@ -264,6 +276,7 @@ export class HostUpdates {
       case 'desktop-checksum-mismatch': return say(`The download on this computer did not match the release's checksum, so Sotto installed nothing on ${name}.`, `Try again to download it fresh, or update it by hand on ${name}.`)
       case 'unpack-failed': return say(`Sotto ${to} could not be unpacked on ${name}, so nothing was installed.`)
       case 'archive-invalid': return say(`The archive on the releases page is not the Sotto ${to} host, so nothing was installed on ${name}.`, `Keep using ${from}, and tell whoever publishes Sotto's releases.`)
+      case 'update-version-conflict': return say(`The existing versions/${to} folder on ${name} differs from the release. Sotto kept it unchanged.`, `Use a newer Sotto build, or stop the host on ${name}, keep that folder as a backup and move it aside before trying again.`)
       case 'node-unsupported': return say(`Sotto ${to}'s host needs Node ${stopped.detail.range ?? 'another version'}, and ${name} runs Node ${stopped.detail.node ?? 'another version'}, so nothing was installed.`, `Install that Node for the SSH account on ${name}, then try again.`)
       case 'update-busy': return say(`Another Sotto is updating the host on ${name} right now, so this one stopped before changing anything.`, 'Wait a minute, then try again.')
       case 'update-not-owned': return say(`Sotto did not start the host now running on ${name}, so it did not restart it. ${to} is installed beside ${from}.`, `Stop the host on ${name}, then connect to it again from Settings > Hosts, and Sotto starts ${to}.`)
@@ -287,6 +300,12 @@ export class HostUpdates {
     if (entry.reason === 'update-start-failed') {
       return [`# On ${entry.name}, with its host stopped, to see what ${to} says:`, `cd ${install}/versions/${to}`, `node host/index.js --data ${data}`].join('\n')
     }
+    if (entry.reason === 'update-version-conflict') {
+      return [`# On ${entry.name}, inspect the existing folder before changing it:`, `cd ${install}`, `ls -ld versions/${to}`,
+        `cat versions/${to}/package.json`, `cat versions/${to}/runtime-manifest.json`,
+        '# Keep this folder as a backup. Do not unpack a different build over it.',
+        '# Use a newer Sotto build, or stop the host and move this folder aside before pressing Try again.'].join('\n')
+    }
     const file = entry.file ?? hostArchiveName(to)
     const url = `${this.releasesUrl.replace(/\/+$/u, '')}/v${to}/${file}`
     return [`# On ${entry.name}:`, `cd ${install}`, `curl -fLO ${url}`, `curl -fLO ${url}.sha256`, `${file.includes('-darwin-') ? 'shasum -a 256 -c' : 'sha256sum -c'} ${file}.sha256`,
@@ -307,6 +326,10 @@ export class HostUpdates {
     if (entry.phase !== 'done') entry.from = candidate.version
   }
   private needsUpdate(candidate: HostUpdateCandidate): boolean {
+    if (getReleaseTrack(this.options.version) === 'owl') {
+      const comparison = compareOwlHostTarget(candidate.version, this.options.version)
+      return comparison !== undefined && (comparison < 0 || comparison === 0 && this.options.requiresManagementUpdate?.(candidate.hostId) === true)
+    }
     return hostIsOlder(candidate.version, this.options.version)
       || !hostIsNewer(candidate.version, this.options.version) && this.options.requiresManagementUpdate?.(candidate.hostId) === true
   }

@@ -4,12 +4,14 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   {
     ignores: [
+      'artifacts/watcher-phone-wire/**',
       'artifacts/stable-from-main/**',
       'artifacts/watcher-paired-hosts/**',
       'artifacts/codex-reasoning-rows/**',
       'artifacts/linux-test-findings/**',
       'artifacts/omarchy-setup/**',
       '.t/**',
+      '.zstack/**',
       'artifacts/omarchy-theme/**',
       'artifacts/omarchy-muted/**',
       'artifacts/builtin-palette-contrast/**',
@@ -36,6 +38,7 @@ export default tseslint.config(
       'artifacts/linux-package/**',
       'artifacts/linux-settings-copy/**',
       'artifacts/new-thread-defaults-every-host/**',
+      'artifacts/usage-dashboard/**',
       'apps/omarchy/src/**',
       'apps/omarchy/pkg/**',
       'artifacts/e2e-runs/**',

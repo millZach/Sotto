@@ -6,7 +6,7 @@ import { expect, test, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { evidenceDirectory } from '../fixtures/evidence'
-import { onReleaseTrack } from './support/releaseTrack'
+import { onReleaseTrack, OWL_E2E_VERSION } from './support/releaseTrack'
 import { closeSotto, launchSotto, openPage, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
 
 /**
@@ -35,7 +35,10 @@ test('Update all lists what is behind on every machine and updates it with one p
   const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-update-all-' })).directory
   const root = join(profile, 'ssh-root')
   await mkdir(join(root, '~', 'code'), { recursive: true })
-  await buildSshHost(join(root, '~', '.local', 'share', 'sotto-host', 'host'))
+  const install = join(root, '~', '.local', 'share', 'sotto-host')
+  await buildSshHost(join(install, 'host'))
+  // This journey updates clients only. The real host reads its matching Owl version from its installation metadata.
+  await writeFile(join(install, 'package.json'), `${JSON.stringify({ name: 'sotto-host', version: OWL_E2E_VERSION })}\n`)
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, localHostEnabled: false, reducedMotion: 'on' }))
   const modeFile = join(root, 'mode')
   const steering = join(root, 'client-updates')
@@ -68,6 +71,10 @@ test('Update all lists what is behind on every machine and updates it with one p
       await expect(page.getByRole('dialog', { name: 'forge is connected' })).toBeVisible({ timeout: 90_000 })
       await page.keyboard.press('Enter')
       await expect.poll(() => updates(page), { timeout: 30_000 }).toEqual({ claude: 'idle 2.1.281', codex: 'idle 0.155.1', grok: 'idle 1.0.41' })
+      const hostState = await page.evaluate(() => window.sotto!.hosts!.get())
+      expect(hostState.hosts).toHaveLength(1)
+      expect(hostState.hosts[0]).toMatchObject({ name: 'forge', phase: 'connected', version: OWL_E2E_VERSION })
+      expect(hostState.updates ?? []).toEqual([])
 
       // The card lists forge's three clients, from any page.
       await openThreads(page)

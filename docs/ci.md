@@ -383,6 +383,12 @@ The five CI-flake files passed five complete runs on two logical CPUs, each with
 
 The job limit is still needed: run 38175246742 attempt 2 spent 1,574.59 s in the suite alone, and run 38111370270 attempt 1 was cancelled after 30 minutes 6 seconds. The **40-minute job limit** leaves room for cold dependencies and load variation while the individual test deadlines continue to catch a hang. The worker cap stays two, and only Gates (Windows)'s limit changed. Local savings are not a new Windows-runner timing claim; the lead's pushed run must establish that.
 
+## Owl Usage dashboard verification
+
+After `npm run build`, run `npx playwright test tests/e2e/usage-dashboard.spec.ts tests/e2e/native-usage-persistence.spec.ts tests/e2e/host-update.spec.ts`. The Usage journeys drive production Electron main, preload, the coordinator and the native Claude adapter with a scripted external client in an isolated profile. They check accepted prompts, input/output/cache figures, model attribution, keyboard and date filters, the minimum-size annual chart, revision-guarded clear, history-off retention, replay, restart and stable database preservation. They send no live model prompt and expose no product test bridge.
+
+Ordinary Usage runs save ignored evidence under `artifacts/e2e-runs/usage-dashboard/`. Set `SOTTO_E2E_EVIDENCE=publish` to refresh the five selected captures and numeric `verified.json` under `artifacts/usage-dashboard/` deliberately. The JSON records requested and actual content sizes, the Windows display's two-pixel rounding tolerance, visible-text contrast and the scripted numeric source. Inspect the screenshots before retaining them. This is local verification, not an additional CI gate or live-provider claim.
+
 ## Native usage archive writes
 
 Native usage archive write bounds run in `tests/unit/main/nativeUsagePersistence.test.ts`, beside the accounting cases in `nativeUsage.test.ts`. They check unchanged replay, coalescing, latest-total drain and observable persistence failures without stopwatch assertions. The isolated before/after benchmark in `tests/perf/nativeUsageWrites.perf.test.ts` requires `SOTTO_PERF_BENCH=1`; run it alone with one worker. See [the workload and verification state](perf/2026-09-27-native-usage-writes.md); since #767 the ledger is also written at most once a second while a reply streams ([the note](perf/2026-10-06-send-writes.md)).
@@ -524,3 +530,5 @@ Run `sh apps/ios/Scripts/verify-ui.sh` on a Mac with Xcode selected. The script 
 ## Native test launch
 
 The Sotto scheme runs its Test action without attaching LLDB. Two consecutive macOS CI attempts stalled at `XCUIApplication.launch()` on the large simulator while Xcode reported `DebuggerVersionStore.StoreError` and no debugger version; subsequent tests in the same app could run. The process launcher removes that debugger dependency from unattended tests. The normal Run action retains LLDB for interactive debugging. No UI tests, assertions, device sizes, accessibility settings or timeouts are skipped or shortened. The macOS gate remains the end-to-end check of this launch configuration.
+
+The existing socket gate also runs `watcherPhone.test.ts`: opt-in v1 phone projections, stable/desktop listener feature absence, explicit phone-origin admission, exact user card answers, takeover and Stop all confirmation. Swift Watcher wire cases belong to the Native iOS gate; Android core decoding remains outside npm.
