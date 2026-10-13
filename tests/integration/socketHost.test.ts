@@ -19,6 +19,18 @@ const fixture = useSocketHostFixture()
 
 const { pair } = fixture
 
+function holdReasoningConfiguration() {
+  const control = (fixture.host.service as unknown as { control: { execute(command: AgentCommand, ...args: unknown[]): Promise<void> } }).control
+  const execute = control.execute.bind(control)
+  const { promise: gate, resolve: release } = deferred<void>()
+  const { promise: started, resolve: entered } = deferred<void>()
+  const held = vi.spyOn(control, 'execute').mockImplementation(async (...args) => {
+    await execute(...args)
+    if (args[0].type === 'configure' && args[0].patch.reasoningEffort === 'high') { entered(); await gate }
+  })
+  return { started, release, held }
+}
+
 describe('authenticated host socket', () => {
   it('acknowledges a targeted draft save over the real socket without reading history or reporting a read failure', async () => {
     const onPushError = vi.fn(), { client } = await pair('Autosave client', onPushError)
@@ -84,7 +96,7 @@ describe('authenticated host socket', () => {
     } finally { release(); await Promise.allSettled(pending); spy.mockRestore() }
   })
 
-  it('recovers the latest null-bound edit after saturated Compose and exact-binding Send are refused', async () => {
+  it.each([false, true])('recovers the latest null-bound edit after saturated Compose and exact-binding Send are refused (background history: %s)', async backgroundHistory => {
     const { client, result } = await pair('Full autosave slots')
     await client.command({ type: 'configure', patch: { provider: 'codex', enabledProviders: ['codex'] } })
     await client.command({ type: 'connect', provider: 'codex' })
@@ -94,21 +106,19 @@ describe('authenticated host socket', () => {
     expect((await fetch(fixture.url + '/v1/admin/allow-answers', { method: 'POST', headers: { Authorization: 'Bearer ' + descriptor.adminToken,
       'Content-Type': 'application/json' }, body: JSON.stringify({ clientId: result.clientId }) })).status).toBe(200)
     const image = await client.stageAttachment({ name: 'Synthetic.png', mimeType: 'image/png', bytes: PIXEL_PNG })
-    const control = (fixture.host.service as unknown as { control: { persist(): Promise<void> } }).control
-    const persist = control.persist.bind(control)
-    const { promise: gate, resolve: release } = deferred<void>()
-
-    const { promise: started, resolve: entered } = deferred<void>()
-    const held = vi.spyOn(control, 'persist').mockImplementationOnce(async () => { entered(); await gate; await persist() })
+    const { started, release, held } = holdReasoningConfiguration()
     const actual = fixture.host.service.command.bind(fixture.host.service), admitted: AgentCommand[] = []
     const command = vi.spyOn(fixture.host.service, 'command').mockImplementation((...args) => {
       const operation = actual(...args); admitted.push(structuredClone(args[0])); return operation
     })
     const nativeWrites = vi.spyOn(fixture.native, 'execute'), pending: Promise<unknown>[] = []
+    let configureSettled = false
     try {
-      pending.push(client.command({ type: 'configure', patch: { reasoningEffort: 'high' } })); await started
+      if (backgroundHistory) fixture.native.event({ type: 'history', threadId: 'workshop', text: '', messages: [] })
+      pending.push(client.command({ type: 'configure', patch: { reasoningEffort: 'high' } }).then(result => { configureSettled = true; return result })); await started
       pending.push(client.command({ type: 'compose', threadId, text: 'First prompt', attachments: [image] }, undefined, 'first-save'))
       await expect.poll(() => admitted.filter(input => input.type === 'compose').length).toBe(1)
+      expect(configureSettled).toBe(false)
       fixture.native.event({ type: 'question', threadId: 'workshop', text: 'New question', request: {
         id: 'new-question', kind: 'question', text: 'New question', options: [{ id: 'native:blue', label: 'Blue' }] } })
       await expect.poll(() => client.shell().host.threads.find(thread => thread.id === threadId)?.requests.some(request => request.id === 'new-question')).toBe(true)
@@ -133,28 +143,26 @@ describe('authenticated host socket', () => {
     } finally { release(); await Promise.allSettled(pending); command.mockRestore(); held.mockRestore(); nativeWrites.mockRestore() }
   })
 
-  it('keeps a queued null-bound prompt save outside answer policy when its preceding save establishes that binding', async () => {
+  it.each([false, true])('keeps a queued null-bound prompt save outside answer policy when its preceding save establishes that binding (background history: %s)', async backgroundHistory => {
     const { client } = await pair('Queued plain intent')
     await client.command({ type: 'configure', patch: { provider: 'codex', enabledProviders: ['codex'] } })
     await client.command({ type: 'connect', provider: 'codex' })
     const threadId = client.shell().host.threads.find(thread => thread.title === 'Workshop')!.id
     await client.command({ type: 'select-thread', threadId })
     const image = await client.stageAttachment({ name: 'Synthetic.png', mimeType: 'image/png', bytes: PIXEL_PNG })
-    const control = (fixture.host.service as unknown as { control: { persist(): Promise<void> } }).control
-    const persist = control.persist.bind(control)
-    const { promise: gate, resolve: release } = deferred<void>()
-
-    const { promise: started, resolve: entered } = deferred<void>()
-    const held = vi.spyOn(control, 'persist').mockImplementationOnce(async () => { entered(); await gate; await persist() })
+    const { started, release, held } = holdReasoningConfiguration()
     const actual = fixture.host.service.command.bind(fixture.host.service), admitted: AgentCommand[] = []
     const command = vi.spyOn(fixture.host.service, 'command').mockImplementation((...args) => {
       const operation = actual(...args); admitted.push(structuredClone(args[0])); return operation
     })
     const pending: Promise<unknown>[] = []
+    let configureSettled = false
     try {
-      pending.push(client.command({ type: 'configure', patch: { reasoningEffort: 'high' } })); await started
+      if (backgroundHistory) fixture.native.event({ type: 'history', threadId: 'workshop', text: '', messages: [] })
+      pending.push(client.command({ type: 'configure', patch: { reasoningEffort: 'high' } }).then(result => { configureSettled = true; return result })); await started
       pending.push(client.command({ type: 'compose', threadId, text: 'First plain intent', attachments: [image] }))
       await expect.poll(() => admitted.some(input => input.type === 'compose')).toBe(true)
+      expect(configureSettled).toBe(false)
       fixture.native.event({ type: 'question', threadId: 'workshop', text: 'New question', request: {
         id: 'new-question', kind: 'question', text: 'New question', options: [{ id: 'native:blue', label: 'Blue' }] } })
       await expect.poll(() => client.shell().host.threads.find(thread => thread.id === threadId)?.requests.length).toBe(1)
