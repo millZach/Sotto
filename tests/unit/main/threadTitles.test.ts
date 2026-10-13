@@ -56,10 +56,16 @@ const workshop = (control: AgentControl): AgentThread =>
   ?? control.get().host.threads.find(thread => thread.providerId === 'codex')!
 const titled = (control: AgentControl, threadId: string): AgentThread => control.get().host.threads.find(thread => thread.id === threadId)!
 
-/** Waits until a coordinator has written what it knows, so one opened on the same folder reads the same records. Without
- * it the second can load before the first has saved that it saw the thread. The test's cleanup disposes both. */
-async function savedForReopening(f: { control: AgentControl }): Promise<void> {
+/** Shuts a coordinator down before another opens its folder, so the second reads everything the first knew and the
+ * first can write nothing after it. Its title writes land and are saved first; then it closes in the app's own quit
+ * order. Disposing with a title write still in flight drops that title, which is #980, not what these tests check. */
+async function savedForReopening(f: { control: AgentControl; stop: () => Promise<void> }): Promise<void> {
   await f.control.closed()
+  const entry = opened.findIndex(item => item.control === f.control)
+  if (entry >= 0) opened.splice(entry, 1)
+  f.control.dispose()
+  await f.control.closed()
+  await f.stop()
 }
 
 /** The provider answers the thread's first prompt; the coordinator sees the exchange on the next frame. */
@@ -75,7 +81,7 @@ function reply(adapter: { state: { threads: AgentThread[] }; emit: () => void },
 }
 
 afterEach(async () => {
-  for (const { control, stop } of opened.splice(0).reverse()) { control.dispose(); await stop() }
+  for (const { control, stop } of opened.splice(0).reverse()) { control.dispose(); await control.closed(); await stop() }
   for (const remove of removals.splice(0)) await remove()
 })
 
