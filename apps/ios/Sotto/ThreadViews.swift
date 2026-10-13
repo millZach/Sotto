@@ -1637,8 +1637,8 @@ private struct FollowupStack: View {
     }
 }
 
-/// One queued message: where it stands, its words on one line, and what can be done with it. Steer now sends it at once
-/// instead of after the running turn, where the provider takes that; Remove takes it out unsent. Neither answers
+/// One queued message: where it stands, its words on one line, and what can be done with it. Steer now sends it into
+/// the running turn instead of after it, where the provider takes that; Remove takes it out unsent. Neither answers
 /// anything for the user, and neither is sent again on its own.
 private struct FollowupCard: View {
     @EnvironmentObject var model: AppModel
@@ -1670,7 +1670,7 @@ private struct FollowupCard: View {
                         }
                         .buttonStyle(PillButtonStyle(kind: .primary))
                         .disabled(!model.canSteer(item, in: ref))
-                        .accessibilityHint("Sends this message now instead of after the turn.")
+                        .accessibilityHint("Sends this message into the running turn instead of after it.")
                     }
                     if removable {
                         Button("Remove") { Task { await model.removeFollowup(item, in: ref) } }
