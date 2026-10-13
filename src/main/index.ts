@@ -196,6 +196,9 @@ import { FilesService } from './files/service'
 import { registerToolsIpc } from './tools/ipc'
 import { registerThemesIpc } from './themes/ipc'
 import { OmarchyThemeMonitor, initializeOmarchySelection } from './themes/omarchy'
+import { OmarchySetup, findOmarchyResources } from './omarchy/setup'
+import { registerOmarchySetupIpc } from './omarchy/ipc'
+import { OMARCHY_SETUP_CHANGED } from '../shared/omarchySetup'
 import { OpenVsxClient } from './themes/openVsx'
 import { createOpenVsxFixtureFetch } from './themes/openVsxFixture'
 import { TerminalService } from './tools/terminal'
@@ -611,6 +614,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   await plainSettings.save(await plainSettings.get()).catch(() => console.warn('retired-voice-settings-save-failed'))
   await plainSettings.migrateProjectWorkingCopyDefaults(await loadHostIdentity(userDataPath))
   const startupSettings = await settings.get()
+  const omarchyResources = platform === 'linux' ? await findOmarchyResources(e2eConfiguration ? userDataPath : process.resourcesPath, join(__dirname, '../..')) : null
   let agentHistoryEnabled = startupSettings.historyEnabled
   const retiredChatHistory = new RetiredChatHistory(userDataPath, () => agentHistoryEnabled)
   let workingCopySettings = startupSettings
@@ -1395,6 +1399,16 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       }, () => windows.getTrustedRenderers())
       repaintOmarchy = () => { void settingsCoordinator.republish().catch(() => logOperational('omarchy-theme-refresh-failed')) }
       omarchyTheme.start()
+      const omarchySetup = platform === 'linux' ? new OmarchySetup({
+        home: homedir(), data: userDataPath,
+        resources: omarchyResources!,
+        version: appRunningVersion,
+        settings: { get: () => settingsCoordinator.getSettings(), update: patch => settingsCoordinator.updateSettings(patch) },
+        onChanged: state => windows.sendToMain(OMARCHY_SETUP_CHANGED, state),
+      }) : null
+      const cleanupOmarchySetup = registerOmarchySetupIpc(ipcMain, platform, omarchySetup, () => windows.getTrustedRenderers())
+      // No shell restart at startup. Files changed by hand are never refreshed.
+      void omarchySetup?.refreshAtStart().catch(() => undefined)
       // Theme export and Open VSX (ADR-0011). End-to-end runs use an offline Open VSX and a fixed export folder.
       const cleanupThemes = registerThemesIpc(ipcMain, {
         openVsx: new OpenVsxClient(e2eConfiguration === null ? undefined : createOpenVsxFixtureFetch()),
@@ -1527,6 +1541,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         cloudIphoneService = undefined
         void browserAgentServer.close()
         cleanupThemes()
+        cleanupOmarchySetup()
         cleanupMemory()
         unsubscribeRecoveryNotices()
         // No renderer is left to receive them, so drop what is still being transcribed.

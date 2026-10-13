@@ -17,6 +17,15 @@ const OWL_PATH =
   + 'M53.88 53.4C53.88 48.6 55.2 46.56 58.8 45.6L70.56 43.2C73.68 42.6 75.12 45.6 75.12 51.6C75.24 60 73.2 62.76 64.2 62.76C57.6 62.76 53.88 60 53.88 53.4Z'
   + 'M45.6 59.88C47.04 59.52 48.96 59.52 50.4 59.88C51.6 60.12 51.72 61.08 51.12 61.8L48.6 65.64C48.24 66.24 47.76 66.24 47.4 65.64L44.88 61.8C44.28 61.08 44.4 60.12 45.6 59.88Z'
 
+/** The same owl without its tile, inheriting the text colour around it. */
+export function SottoGlyph(): ReactNode {
+  return <svg viewBox="8 12 80 72" aria-hidden="true" focusable="false">
+    <path d={OWL_PATH} fill="currentColor" fillRule="evenodd" />
+    <circle cx="36" cy="48.96" r="3.12" fill="currentColor" />
+    <circle cx="60.36" cy="51.84" r="3.12" fill="currentColor" />
+  </svg>
+}
+
 /**
  * The Sotto mark, the owl. Its geometry is kept in step with build/icon.svg;
  * its colours follow the window's theme: the tile is the accent and the owl

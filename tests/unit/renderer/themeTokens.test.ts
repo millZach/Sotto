@@ -227,6 +227,7 @@ describe('main-window theme tokens', () => {
 
   it('keeps raw colours out of the main-window stylesheets', () => {
     const owned = [
+      'src/renderer/src/features/omarchy/omarchySetup.css',
       'src/renderer/src/features/onboarding/onboarding.css',
       'src/renderer/src/features/onboarding/threadsTour.css',
       'src/renderer/src/agents/threadsChrome.css',
