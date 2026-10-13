@@ -23,7 +23,7 @@ import type { CodexAppServerHost } from '../../src/main/agents/codex'
 
 const remote = useSocketHostFixture()
 const cleanups: (() => Promise<void>)[] = []
-afterEach(async () => { vi.restoreAllMocks(); for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
+afterEach(async () => { try { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() } finally { vi.restoreAllMocks() } })
 
 async function pairedDesktop(record = true, gate = true) {
   const pairing = await SocketHostService.pair(remote.url, remote.host.pairing.issuePairingCode().code, 'Synthetic desktop')
@@ -49,7 +49,7 @@ async function master(native?: CodexAppServerHost) {
   const connection = { hostId: paired.pairing.hostId, name: 'Synthetic remote', kind: 'remote' as const, service: paired.socket,
     detail: (id: string) => paired.socket.readThreadDetail(id), preview: () => null }
   router.add(connection); watcher.useRemoteHosts(router.watcherHosts())
-  cleanups.push(async () => { watcher.close(); await tools.close(); f.control.dispose(); await f.control.closed(); await workspace.stop(); await workspace.remove() })
+  cleanups.push(async () => { watcher.close(); await (watcher as unknown as { reconciling?: Promise<void> }).reconciling?.catch(() => undefined); router.dispose(); await tools.close(); f.control.dispose(); await f.control.closed(); await workspace.stop(); await workspace.remove() })
   await f.control.start(); await f.control.commandShell({ type: 'connect', provider: 'codex' }); await watcher.recover()
   const model = f.control.shell().host.models.find(item => item.providerId === 'codex')!
   expect(await watcher.open({ provider: 'codex', modelId: model.id })).toMatchObject({ status: 'ok' })
@@ -58,7 +58,18 @@ async function master(native?: CodexAppServerHost) {
   const requestId = watcher.state().requests.at(-1)!.id
   const start = () => ({ requestId, retryKey: randomUUID(), project: { hostId: paired.pairing.hostId, projectId: paired.project.id },
     modelId: paired.model.id, title: 'Synthetic remote worker', workingCopy: { kind: 'shared' as const }, firstPrompt: 'host_private_prompt_19cb' })
-  const call = async <N extends WatcherToolName>(name: N, input: unknown): Promise<WatcherToolOutput<N>> => watcherToolSchemas[name].output.parse(await watcher.invoke(id, name, input)) as WatcherToolOutput<N>
+  const call = async <N extends WatcherToolName>(name: N, input: unknown): Promise<WatcherToolOutput<N>> => {
+    const result = watcherToolSchemas[name].output.parse(await watcher.invoke(id, name, input)) as WatcherToolOutput<N>
+    if ('receipt' in result && result.receipt) {
+      const receipt = result.receipt
+      await expect.poll(() => f.control.watcherRecord().operations.find(item => item.id === receipt.operationId)).toMatchObject({ requestId: receipt.requestId, target: receipt.target })
+    }
+    if (name === 'start_thread' && result.status === 'ok' && 'target' in result) {
+      const target = result.target
+      await expect.poll(() => paired.socket.shell().host.threads.some(thread => thread.id === target.threadId)).toBe(true)
+    }
+    return result
+  }
   return { ...f, ...paired, watcher, router, connection, workspace, id, requestId, start, call }
 }
 
