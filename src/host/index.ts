@@ -88,11 +88,12 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   const recovery = new RecoveryNoticeCenter()
   // Headless hosts enforce admitted workers on either release track; they never create a master.
   const watcherEnabled = true
-  // A host reads its features from its own packaged version; a paired desktop cannot turn them on.
+  // A host reads its features from its own packaged version; a paired desktop cannot turn any on.
   const owlFeatures = owlFeaturesForTrack(getReleaseTrack(options.sottoVersion ?? packageVersion))
   const usageEnabled = owlFeatures.usage
   const museEnabled = owlFeatures.muse
   const resumeAfterRestart = owlFeatures['resume-after-restart']
+  const streamingPublishCost = owlFeatures['streaming-publish-cost']
   const repositories = createStorageRepositories(directory, recovery, Date.now, undefined, undefined, watcherEnabled)
   const settings = new SecureSettings(repositories.settings, credentials)
   if ((await repositories.settings.get()).llmApiKey && !credentials.available()) {
@@ -111,7 +112,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     // A paired client with an open socket is the host's window in front: while none is connected, no remote is fetched.
     let peersConnected = (): boolean => false
     const runtime = await createAgentRuntime({
-      observeActiveThread: false, directory, credentials, watcherEnabled, museEnabled, usageEnabled, resumeAfterRestart, settings: () => startup, writingSettings: () => settings.get(),
+      observeActiveThread: false, directory, credentials, watcherEnabled, museEnabled, usageEnabled, resumeAfterRestart, streamingPublishCost, settings: () => startup, writingSettings: () => settings.get(),
       historyEnabled: () => startup.historyEnabled,
       gitStatus: { fetchIntervalMs: () => startup.gitFetchIntervalSeconds * 1000, foreground: () => peersConnected(), log: event => options.log?.(event) },
       ...(policy ? { authority: policy } : {}),

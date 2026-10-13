@@ -14,7 +14,7 @@ import { cloneActivitySnapshot, immutableActivities, immutableModels, isImmutabl
 import { readdir, unlink } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { z } from 'zod'
-import { agentHostSnapshotSchema, dropLiveThreadState, EMPTY_AGENT_HOST, NO_LIVE_THREAD_STATE, isThreadProviderConnected, providerTakesSottoTools, PROVIDER_LABELS, isVisualMessage, parsePublicProviderEntityId, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, WAKE_UP_MESSAGE_IDS_MAX, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentModel, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
+import { AGENT_THREAD_EXCERPT_MAX, agentHostSnapshotSchema, dropLiveThreadState, EMPTY_AGENT_HOST, NO_LIVE_THREAD_STATE, isThreadProviderConnected, providerTakesSottoTools, PROVIDER_LABELS, isVisualMessage, parsePublicProviderEntityId, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, WAKE_UP_MESSAGE_IDS_MAX, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentModel, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
 import type { AgentSkillReference } from '../../shared/agentSkills'
 import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
 import { threadEventSchema, type AnswerGivenEvent, type StoredThreadEvent, type ThreadEvent } from '../../shared/threadEvents'
@@ -50,6 +50,24 @@ import { WatcherLaunchProfiles, WATCHER_DISABLED } from './watcherLaunchProfiles
 import { WatcherProfileRefusal } from './watcherProfile'
 import { assertWatcherPermission } from './watcherProviderTools'
 import type { WatcherProfileTools } from './host'
+
+/**
+ * Fold a run of appends to one message into the first of them, so a reply streamed over one write
+ * window is one event rather than one per chunk (#991). An event that is not an append, an append to
+ * another message, a change in redaction, or the stored events' own text limit ends the run.
+ */
+function foldAppends(events: readonly ThreadEvent[]): ThreadEvent[] {
+  const folded: ThreadEvent[] = []
+  for (const event of events) {
+    const last = folded.at(-1)
+    if (event.kind === 'message-text-appended' && last?.kind === 'message-text-appended'
+      && last.messageId === event.messageId && last.redacted === event.redacted
+      && last.appendText.length + event.appendText.length <= 100_000) {
+      folded[folded.length - 1] = { ...last, appendText: last.appendText + event.appendText }
+    } else folded.push(event)
+  }
+  return folded
+}
 
 /** Keep a Unicode character whole at an event boundary so SQLite preserves its text. */
 function historyTextChunks(text: string): string[] {
@@ -403,7 +421,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     readonly watched: boolean; readonly status: AgentThread['status']; readonly generation: number; readonly records: readonly AgentActivity[] }>()
   /** True when the provider host says what changed rather than publishing a whole history to compare. */
   private readonly eventSourced: boolean
-  /** Events waiting to be written, so a streamed reply costs one transaction per publish, not per word. */
+  /** Events waiting to be written: everything but trailing text appends at the next publish, those at the write window. */
   private readonly pendingEvents = new Map<string, ThreadEvent[]>()
   /** A failed privacy transition must not later promote these pending words to durable history. */
   private pendingEventsPrivate = false
@@ -1191,7 +1209,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (!this.threadVisible(threadId)) return { added: false, reason: 'unknown-thread' }
     await this.initialize()
     if (!this.ready || this.stopping || !this.state.snapshot.threads.some(thread => thread.id === threadId)) return { added: false, reason: 'unknown-thread' }
-    this.writeEvents()
+    this.writeEvents(false, true)
     if (!this.historyWritable() || this.failedEventThreads.has(threadId) || this.pendingEvents.has(threadId)) return { added: false, reason: 'history-unavailable' }
     let stored: StoredVisual
     try {
@@ -1290,7 +1308,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
 
   constructor(private readonly inner: AgentHost, private readonly directory: string, private readonly historyEnabled: () => boolean = () => true,
-    private readonly worktreeRefreshDelayMs: number = WORKTREE_REFRESH_DELAY_MS, private readonly watcherEnabled = false, private readonly museEnabled = false) {
+    private readonly worktreeRefreshDelayMs: number = WORKTREE_REFRESH_DELAY_MS, private readonly watcherEnabled = false, private readonly museEnabled = false,
+    /** The Owl list's answer for cheaper publish windows (#991), read once by the process owner. Absent fails closed. */
+    private readonly streamingPublishCostEnabled = false) {
     this.concurrentProviders = inner.concurrentProviders === true
     if (inner.subscribeUsage) this.subscribeUsage = listener => inner.subscribeUsage!(record => {
       if (this.ready && this.threadVisible(record.threadId)) listener(record)
@@ -1578,8 +1598,47 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private readWindow(threadId: string, turns?: number) {
     if (this.storeUnavailable) return undefined
     this.writeEvents()
-    try { return this.threadStore.readMessages(threadId, turns === undefined ? {} : { turns }) }
+    try { return this.withWaitingAppends(threadId, this.threadStore.readMessages(threadId, turns === undefined ? {} : { turns })) }
     catch { this.saveError = HISTORY_SAVE_ERROR; return undefined }
+  }
+  /**
+   * The stored window with the appends still waiting for the write window laid over it, so a pane
+   * shows a streamed reply at publish cadence while its commit rides the slower one (#991). Only
+   * appends at the head of what waits can lie over stored messages: anything else waiting — an
+   * event that opens a message, a batch a failed write left behind — is not the store's to show
+   * from, exactly as it was when every publish committed first.
+   */
+  private withWaitingAppends<T extends { messages: AgentMessage[] }>(threadId: string, window: T): T {
+    if (!this.streamingPublishCostEnabled) return window
+    const waiting = this.pendingEvents.get(threadId)
+    if (!waiting?.length || this.failedEventThreads.has(threadId)) return window
+    let messages: AgentMessage[] | undefined
+    for (const event of waiting) {
+      if (event.kind !== 'message-text-appended') break
+      const index = (messages ?? window.messages).findIndex(message => message.id === event.messageId)
+      if (index < 0) continue
+      messages ??= [...window.messages]
+      const held = messages[index]!
+      messages[index] = { ...held, text: held.text + event.appendText }
+    }
+    return messages ? { ...window, messages } : window
+  }
+  /** The sidebar's excerpts with the same waiting appends laid over them, capped as excerpts are. */
+  private withWaitingExcerpts(threadId: string, summary: AgentThreadSummary): AgentThreadSummary {
+    if (!this.streamingPublishCostEnabled) return summary
+    const waiting = this.pendingEvents.get(threadId)
+    if (!waiting?.length || this.failedEventThreads.has(threadId)) return summary
+    let out = summary
+    for (const event of waiting) {
+      if (event.kind !== 'message-text-appended') break
+      for (const key of ['lastUser', 'lastAssistant'] as const) {
+        const excerpt = out[key]
+        if (excerpt && excerpt.id === event.messageId && excerpt.text.length < AGENT_THREAD_EXCERPT_MAX) {
+          out = { ...out, [key]: { ...excerpt, text: (excerpt.text + event.appendText).slice(0, AGENT_THREAD_EXCERPT_MAX) } }
+        }
+      }
+    }
+    return out
   }
   /**
    * The sidebar's facts about a thread. With the history in hand they come from it; without it they come
@@ -1590,8 +1649,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (messages !== undefined) return this.withStoredCount(thread, summarizeThread({ messages: [...messages], activities: thread.activities }))
     if (this.storeUnavailable) return beside
     this.writeEvents()
-    try { return { ...this.threadStore.summary(thread.id), activityCount: beside.activityCount,
-      ...(beside.runningTurnStartedAt === undefined ? {} : { runningTurnStartedAt: beside.runningTurnStartedAt }) } }
+    try { return this.withWaitingExcerpts(thread.id, { ...this.threadStore.summary(thread.id), activityCount: beside.activityCount,
+      ...(beside.runningTurnStartedAt === undefined ? {} : { runningTurnStartedAt: beside.runningTurnStartedAt }) }) }
     catch { return beside }
   }
   /** A stored thread's records are counted where they are kept (#918). None of them is running. */
@@ -1646,12 +1705,20 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     this.eventChanged.add(threadId)
     if (this.ready) this.publishSoon(event.kind === 'message-added' && this.inView(threadId))
   }
-  /** Write what the events said. Called before anything reads the store, and at every publish. */
-  private writeEvents(force = false): void {
+  /**
+   * Write what the events said. Called before anything reads the store, and at every publish.
+   * Everything due goes in one transaction for the window, a savepoint per thread, so several
+   * streaming threads pay one fsync (#991). Unless asked to include them, a thread's trailing text
+   * appends wait for the write window instead: the pane reads them laid over its stored window
+   * (readWindow), and any reader of the store itself asks first. Any other event kind commits at once,
+   * with the appends ahead of it, and folds its thread's append run into single events.
+   */
+  private writeEvents(force = false, includeAppends = force): void {
     if (this.pendingEvents.size === 0 || !this.ready || this.storeUnavailable) return
     // Another store may have stopped privacyChanged before this connection could be replaced.
     // The setting already forbids durable text, including a timer or shutdown retry.
     if (!this.historyWritable()) return
+    const due = new Map<string, ThreadEvent[]>()
     for (const [threadId, pending] of this.pendingEvents) {
       const events: ThreadEvent[] = []
       for (const event of pending) {
@@ -1672,23 +1739,54 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
           console.warn('thread-history-event-invalid')
         }
       }
-      this.pendingEvents.set(threadId, events)
+      // With the feature off, nothing folds and nothing waits: stable writes as it always has.
+      const folded = this.streamingPublishCostEnabled ? foldAppends(events) : events
+      // A batch validation emptied has nothing left to write; keeping it would wait forever.
+      if (folded.length === 0) { this.pendingEvents.delete(threadId); continue }
+      this.pendingEvents.set(threadId, folded)
       if (!force && this.historyRetryTimer && this.failedEventThreads.has(threadId)) continue
-      try {
-        // appendMany commits the entire transaction or rolls it back. Remove only a committed batch.
-        this.threadStore.appendMany(threadId, events)
-        this.pendingEvents.delete(threadId)
+      let take = folded.length
+      // A failed thread's batch is one retry unit, trailing appends included, as it was when it failed.
+      if (this.streamingPublishCostEnabled && !includeAppends && !this.failedEventThreads.has(threadId)) {
+        take = 0
+        for (let index = folded.length - 1; index >= 0; index--) {
+          if (folded[index]!.kind !== 'message-text-appended') { take = index + 1; break }
+        }
+      }
+      if (take > 0) due.set(threadId, folded.slice(0, take))
+    }
+    if (due.size > 0) {
+      let failed: Set<string>
+      if (this.streamingPublishCostEnabled) {
+        try { failed = this.threadStore.appendBatches(due).failed }
+        catch { failed = new Set(due.keys()) }
+      } else {
+        failed = new Set<string>()
+        for (const [threadId, events] of due) {
+          try { this.threadStore.appendMany(threadId, events) } catch { failed.add(threadId) }
+        }
+      }
+      for (const [threadId, events] of due) {
+        if (failed.has(threadId)) {
+          this.failedEventThreads.add(threadId)
+          this.storedAnchors.delete(threadId)
+          continue
+        }
+        // Remove only a committed batch; appends held for the write window stay waiting behind it.
+        const waiting = (this.pendingEvents.get(threadId) ?? []).slice(events.length)
+        if (waiting.length > 0) this.pendingEvents.set(threadId, waiting)
+        else this.pendingEvents.delete(threadId)
         this.failedEventThreads.delete(threadId)
         this.noteWritten(threadId, events)
         this.eventChanged.add(threadId)
         this.known.delete(threadId)
         if (events.some(event => event.kind === 'messages-reset')) this.hidden.delete(threadId)
         this.dirty = true
-      } catch {
-        this.failedEventThreads.add(threadId)
-        this.storedAnchors.delete(threadId)
       }
     }
+    // Appends left waiting still need their write: the write window's flush includes them. A batch
+    // a failed write left behind keeps its own retry's pace instead (#378).
+    if (this.streamingPublishCostEnabled && !includeAppends && !this.stopping && [...this.pendingEvents.keys()].some(threadId => !this.failedEventThreads.has(threadId))) this.writeSoon()
     if (this.failedEventThreads.size === 0) {
       clearTimeout(this.historyRetryTimer)
       this.historyRetryTimer = undefined
@@ -1720,17 +1818,30 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   messageIdentities(threadId: string): readonly StoredMessageIdentity[] {
     if (!this.threadVisible(threadId)) return []
     if (this.storeUnavailable) return []
-    this.writeEvents()
+    this.writeEvents(false, true)
     try { return this.threadStore.messageIdentities(threadId) }
     catch { return [] }
   }
   message(threadId: string, messageId: string): AgentMessage | undefined {
     if (!this.threadVisible(threadId)) return undefined
     if (this.storeUnavailable) return undefined
-    this.writeEvents()
+    this.writeEvents(false, true)
     if (this.pendingEvents.has(threadId)) return undefined
     try { return this.threadStore.message(threadId, messageId) }
     catch { return undefined }
+  }
+  /**
+   * Commit everything waiting for this thread and say whether the store now holds it all. A
+   * provider saves no transcript cursor past text this has not committed, so a crash cannot make
+   * a saved cursor skip words the store never received (ADR-0016).
+   */
+  flushEvents(threadId: string): boolean {
+    // With the feature off nothing waits past a publish, so no cursor is held back, as before.
+    if (!this.streamingPublishCostEnabled) return true
+    if (!this.threadVisible(threadId)) return true
+    if (this.storeUnavailable) return !this.pendingEvents.has(threadId)
+    this.writeEvents(false, true)
+    return !this.pendingEvents.has(threadId)
   }
   /** Indexed historical task classification, never live monitoring or task/result text. */
   activity(threadId: string, activityId: string, historyEpoch?: string): AgentActivity | undefined {
@@ -1958,7 +2069,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /** One thread's whole history, whatever window is loaded: the store is the record, not the pane. */
   threadMessages(threadId: string): readonly AgentMessage[] {
     if (!this.threadVisible(threadId)) return []
-    this.writeEvents()
+    this.writeEvents(false, true)
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
     if (this.storeUnavailable) return thread?.messages ?? []
     if (thread && thread.messages.length > 0 && !thread.earlierAvailable) return thread.messages
@@ -1972,13 +2083,15 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   recordAnswer(threadId: string, event: AnswerGivenEvent): void {
     if (!this.threadVisible(threadId)) return
     if (this.storeUnavailable) return
+    // The answer lands in the log after the words it answered, held appends included.
+    if (this.streamingPublishCostEnabled) this.writeEvents(false, true)
     try { this.threadStore.append(threadId, event) }
     catch { this.saveError = HISTORY_SAVE_ERROR }
   }
   /** What a client reads to catch up: every thread event after `seq`, with anything still buffered written first (ADR-0016). */
   eventsAfter(seq: number, threadId?: string, limit?: number): StoredThreadEvent[] {
     if (this.storeUnavailable) return []
-    this.writeEvents()
+    this.writeEvents(false, true)
     return this.threadStore.eventsAfter(seq, threadId, limit, this.dormantThreadIds())
   }
   private stopDelivery(): void {
@@ -2230,7 +2343,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (this.writeTimer) return
     this.writeTimer = setTimeout(() => {
       this.writeTimer = undefined
-      void this.flush().catch(() => { this.saveError = 'Workspace history could not be saved. Restore access to local storage and refresh.'; this.publish() })
+      void this.flush()
+        // A commit this flush made for a stream that has since gone quiet still owes its publish.
+        .then(() => { if (this.streamingPublishCostEnabled && this.eventChanged.size > 0) this.publishSoon() })
+        .catch(() => { this.saveError = 'Workspace history could not be saved. Restore access to local storage and refresh.'; this.publish() })
     }, WRITE_WINDOW_MS)
     this.writeTimer.unref?.()
   }
@@ -2398,7 +2514,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   /** Drain accepted history writes without closing stores still used by shutdown cleanup. */
   flush(): Promise<void> {
-    this.writeEvents()
+    // The write window is where held appends commit; a caller who asks for a flush gets them too.
+    this.writeEvents(false, true)
     // This write covers whatever a waiting one would have written, so it takes its place.
     if (this.writeTimer) { clearTimeout(this.writeTimer); this.writeTimer = undefined }
     this.flushWanted = true

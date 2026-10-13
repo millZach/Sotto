@@ -372,6 +372,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
   /** The assistant message a stream has opened per thread, so its deltas are recorded as appends. */
   private readonly streaming = new Map<string, string>()
   private cursorTimer: ReturnType<typeof setTimeout> | undefined
+  /** The transcript cursor each thread's saved record last carried, so a write can hold an advanced one back. */
+  private readonly savedCursors = new Map<string, NonNullable<Alias['transcriptCursor']>>()
   private executable = ''
   private generation = 0
   /** Which client new CLIs start from, moved on by each client update; a thread's CLI keeps the one it started with. */
@@ -500,6 +502,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
     // compared against what its channel publishes (ADR-0042).
     this.state.version = await this.client.version(executable) || this.state.version
     this.executable = executable; this.aliases = aliases; this.state.projects = projects
+    this.savedCursors.clear()
+    for (const [id, alias] of Object.entries(aliases)) if (alias.transcriptCursor) this.savedCursors.set(id, alias.transcriptCursor)
     for (const alias of Object.values(this.aliases)) if (alias.kind !== 'personal' && alias.compaction?.status === 'running') alias.compaction = { ...alias.compaction, status: 'uncertain', error: 'Native compaction was interrupted by disconnection. Reconnecting observes its result without retrying.' }
     // Reconnecting keeps what this process already projected, so its stored cursor stays usable.
     const held = new Map([...this.threads].map(([id, thread]) => [id, {
@@ -1926,7 +1930,39 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (this.queuedAliasWrite) return this.queuedAliasWrite
     const queued = this.inAliasOrder(async () => {
       if (this.queuedAliasWrite === queued) this.queuedAliasWrite = undefined
-      await this.writeWhole(this.aliases)
+      // No cursor is saved past text the event store has not committed: streamed appends commit on
+      // the workspace's write window, so an advanced cursor first asks for that flush, and one the
+      // store could not take is written as it last was saved while its thread keeps the newer one
+      // in memory for the next write (ADR-0016). Everything else in the record writes as it is.
+      const heldBack: { alias: Alias; cursor: NonNullable<Alias['transcriptCursor']>; written: Alias['transcriptCursor'] }[] = []
+      if (this.history?.flushEvents) {
+        for (const [id, alias] of Object.entries(this.aliases)) {
+          const cursor = alias.transcriptCursor
+          if (!cursor || cursor === this.savedCursors.get(id)) continue
+          if (this.history.flushEvents(id)) continue
+          const saved = this.savedCursors.get(id)
+          if (saved) alias.transcriptCursor = saved
+          else delete alias.transcriptCursor
+          heldBack.push({ alias, cursor, written: saved })
+        }
+      }
+      // The store serializes what it is handed before the write waits, so the cursors this write
+      // carries are the ones named here. A transcript read during the wait can advance a live
+      // alias further; that newer cursor was not written, must not count as saved, and must not
+      // be put back to the held one it replaced.
+      const writing = new Map(Object.entries(this.aliases).map(([id, alias]) => [id, alias.transcriptCursor]))
+      try {
+        await this.writeWhole(this.aliases)
+        for (const [id, cursor] of writing) {
+          if (cursor) this.savedCursors.set(id, cursor)
+          else this.savedCursors.delete(id)
+        }
+        for (const id of this.savedCursors.keys()) if (!(id in this.aliases)) this.savedCursors.delete(id)
+      } finally {
+        for (const { alias, cursor, written } of heldBack) {
+          if (alias.transcriptCursor === written) alias.transcriptCursor = cursor
+        }
+      }
     })
     this.queuedAliasWrite = queued
     return queued

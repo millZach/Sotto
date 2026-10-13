@@ -136,14 +136,17 @@ it.each(['off', 'expired', 'capped'] as const)('loads dormant Muse ownership bef
   expect(providers.codex.commands.some(command => command.type === 'send')).toBe(false)
 })
 
-it.each(['startup', 'privacy-change'] as const)('hides cached Muse everywhere and preserves its records through stable history-off %s and Owl return', async scenario => {
+it.each([
+  { scenario: 'startup', streaming: false }, { scenario: 'startup', streaming: true },
+  { scenario: 'privacy-change', streaming: false }, { scenario: 'privacy-change', streaming: true },
+])('hides cached Muse and preserves its records through history-off $scenario and Owl return (streaming $streaming)', async ({ scenario, streaming }) => {
   const root = await directory(), original = await owlProfile(root)
   const beforeThread = databaseRows(root, 'threads.sqlite', threadTables, MUSE)
   const beforeSubagents = databaseRows(root, 'subagents.sqlite', subagentTables, MUSE)
   const originalWorkspace = JSON.parse(await readFile(join(root, 'workspace.json'), 'utf8'))
   let history = scenario !== 'startup'
   const inner = new FakeProviderHost({ ...structuredClone(EMPTY_AGENT_HOST), connected: true })
-  const stable = new WorkspaceHost(inner, root, () => history, undefined, true, false)
+  const stable = new WorkspaceHost(inner, root, () => history, undefined, true, false, streaming)
   cleanup.push(() => stable.close())
   await stable.initialize()
   const control = await agentControlFixture({ directory: root, host: stable, credentialOptions: { mode: 'unavailable' },
@@ -158,6 +161,8 @@ it.each(['startup', 'privacy-change'] as const)('hides cached Muse everywhere an
     expect(read.providers?.some(provider => provider.id === 'muse')).not.toBe(true)
   }
   expect(stable.eventsAfter(0).some(event => event.threadId === MUSE)).toBe(false)
+  expect(stable.eventsAfter(0, MUSE)).toEqual([])
+  expect(stable.flushEvents(MUSE)).toBe(true)
   expect(stable.threadMessages(MUSE)).toEqual([])
   await expect(stable.execute({ type: 'send', commandId: randomUUID(), threadId: MUSE, messageId: randomUUID(), text: 'Refused prompt' })).rejects.toThrow('Muse is available in Sotto Owl')
   expect(inner.commands).toEqual([])
