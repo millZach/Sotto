@@ -1,0 +1,359 @@
+{
+  "surface": "production Electron main and native Claude adapter, scripted external client",
+  "version": "0.1.38-owl.20261012.1",
+  "syntheticOnly": true,
+  "networkDisabled": true,
+  "productTestBridgeAbsent": true,
+  "contentSizeTolerance": 2,
+  "contrastVisibleOnly": true,
+  "openedAboutContrast": [
+    {
+      "text": "Usage keeps numeric counts, da",
+      "ratio": 6.72
+    },
+    {
+      "text": "Prompts count only accepted So",
+      "ratio": 6.72
+    },
+    {
+      "text": "1 token records; 0 partial and",
+      "ratio": 6.72
+    }
+  ],
+  "selectedModel": "claude-sonnet-4-6",
+  "reportedModel": "claude-opus-5-5",
+  "initial": {
+    "tokens": {
+      "input": {
+        "value": 3500,
+        "knownRows": 1,
+        "rows": 1,
+        "partial": false
+      },
+      "output": {
+        "value": 100,
+        "knownRows": 1,
+        "rows": 1,
+        "partial": false
+      },
+      "cached": {
+        "value": 2000,
+        "knownRows": 1,
+        "rows": 1,
+        "partial": false
+      },
+      "cacheWrite": {
+        "value": 500,
+        "knownRows": 1,
+        "rows": 1,
+        "partial": false
+      },
+      "cacheWrite5m": {
+        "value": 0,
+        "knownRows": 1,
+        "rows": 1,
+        "partial": false
+      },
+      "cacheWrite1h": {
+        "value": 500,
+        "knownRows": 1,
+        "rows": 1,
+        "partial": false
+      },
+      "total": {
+        "value": 3600,
+        "knownRows": 1,
+        "rows": 1,
+        "partial": false
+      }
+    },
+    "prompts": {
+      "user": 1,
+      "watcher": 0,
+      "wakeUp": 0,
+      "total": 1,
+      "steered": 0
+    },
+    "tokenRecords": 1,
+    "partialTokenRecords": 0,
+    "undatedTokenRecords": 0,
+    "activeThreads": 1,
+    "activeDays": 1
+  },
+  "afterClear": {
+    "tokens": {
+      "input": {
+        "knownRows": 0,
+        "rows": 0,
+        "partial": false
+      },
+      "output": {
+        "knownRows": 0,
+        "rows": 0,
+        "partial": false
+      },
+      "cached": {
+        "knownRows": 0,
+        "rows": 0,
+        "partial": false
+      },
+      "cacheWrite": {
+        "knownRows": 0,
+        "rows": 0,
+        "partial": false
+      },
+      "cacheWrite5m": {
+        "knownRows": 0,
+        "rows": 0,
+        "partial": false
+      },
+      "cacheWrite1h": {
+        "knownRows": 0,
+        "rows": 0,
+        "partial": false
+      },
+      "total": {
+        "knownRows": 0,
+        "rows": 0,
+        "partial": false
+      }
+    },
+    "prompts": {
+      "user": 0,
+      "watcher": 0,
+      "wakeUp": 0,
+      "total": 0,
+      "steered": 0
+    },
+    "tokenRecords": 0,
+    "partialTokenRecords": 0,
+    "undatedTokenRecords": 0,
+    "activeThreads": 0,
+    "activeDays": 0
+  },
+  "newTurn": {
+    "tokens": {
+      "input": {
+        "value": 3500,
+        "knownRows": 1,
+        "rows": 1,
+        "partial": false
+      },
+      "output": {
+        "value": 100,
+        "knownRows": 1,
+        "rows": 1,
+        "partial": false
+      },
+      "cached": {
+        "value": 2000,
+        "knownRows": 1,
+        "rows": 1,
+        "partial": false
+      },
+      "cacheWrite": {
+        "value": 500,
+        "knownRows": 1,
+        "rows": 1,
+        "partial": false
+      },
+      "cacheWrite5m": {
+        "value": 0,
+        "knownRows": 1,
+        "rows": 1,
+        "partial": false
+      },
+      "cacheWrite1h": {
+        "value": 500,
+        "knownRows": 1,
+        "rows": 1,
+        "partial": false
+      },
+      "total": {
+        "value": 3600,
+        "knownRows": 1,
+        "rows": 1,
+        "partial": false
+      }
+    },
+    "prompts": {
+      "user": 1,
+      "watcher": 0,
+      "wakeUp": 0,
+      "total": 1,
+      "steered": 0
+    },
+    "tokenRecords": 1,
+    "partialTokenRecords": 0,
+    "undatedTokenRecords": 0,
+    "activeThreads": 1,
+    "activeDays": 1
+  },
+  "afterRestart": {
+    "tokens": {
+      "input": {
+        "value": 3500,
+        "knownRows": 1,
+        "rows": 1,
+        "partial": false
+      },
+      "output": {
+        "value": 100,
+        "knownRows": 1,
+        "rows": 1,
+        "partial": false
+      },
+      "cached": {
+        "value": 2000,
+        "knownRows": 1,
+        "rows": 1,
+        "partial": false
+      },
+      "cacheWrite": {
+        "value": 500,
+        "knownRows": 1,
+        "rows": 1,
+        "partial": false
+      },
+      "cacheWrite5m": {
+        "value": 0,
+        "knownRows": 1,
+        "rows": 1,
+        "partial": false
+      },
+      "cacheWrite1h": {
+        "value": 500,
+        "knownRows": 1,
+        "rows": 1,
+        "partial": false
+      },
+      "total": {
+        "value": 3600,
+        "knownRows": 1,
+        "rows": 1,
+        "partial": false
+      }
+    },
+    "prompts": {
+      "user": 1,
+      "watcher": 0,
+      "wakeUp": 0,
+      "total": 1,
+      "steered": 0
+    },
+    "tokenRecords": 1,
+    "partialTokenRecords": 0,
+    "undatedTokenRecords": 0,
+    "activeThreads": 1,
+    "activeDays": 1
+  },
+  "afterReplay": {
+    "tokens": {
+      "input": {
+        "value": 3500,
+        "knownRows": 1,
+        "rows": 1,
+        "partial": false
+      },
+      "output": {
+        "value": 100,
+        "knownRows": 1,
+        "rows": 1,
+        "partial": false
+      },
+      "cached": {
+        "value": 2000,
+        "knownRows": 1,
+        "rows": 1,
+        "partial": false
+      },
+      "cacheWrite": {
+        "value": 500,
+        "knownRows": 1,
+        "rows": 1,
+        "partial": false
+      },
+      "cacheWrite5m": {
+        "value": 0,
+        "knownRows": 1,
+        "rows": 1,
+        "partial": false
+      },
+      "cacheWrite1h": {
+        "value": 500,
+        "knownRows": 1,
+        "rows": 1,
+        "partial": false
+      },
+      "total": {
+        "value": 3600,
+        "knownRows": 1,
+        "rows": 1,
+        "partial": false
+      }
+    },
+    "prompts": {
+      "user": 1,
+      "watcher": 0,
+      "wakeUp": 0,
+      "total": 1,
+      "steered": 0
+    },
+    "tokenRecords": 1,
+    "partialTokenRecords": 0,
+    "undatedTokenRecords": 0,
+    "activeThreads": 1,
+    "activeDays": 1
+  },
+  "captures": [
+    {
+      "name": "overview-dark-1600.png",
+      "width": 1600,
+      "height": 1000,
+      "targetWidth": 1600,
+      "targetHeight": 1000,
+      "appearance": "dark",
+      "minimumContrast": 6.97
+    },
+    {
+      "name": "tokens-dark-1280.png",
+      "width": 1280,
+      "height": 800,
+      "targetWidth": 1280,
+      "targetHeight": 800,
+      "appearance": "dark",
+      "minimumContrast": 6.97
+    },
+    {
+      "name": "subscriptions-light-820.png",
+      "width": 820,
+      "height": 562,
+      "targetWidth": 820,
+      "targetHeight": 560,
+      "appearance": "light",
+      "minimumContrast": 5.11
+    },
+    {
+      "name": "models-light-1280.png",
+      "width": 1280,
+      "height": 800,
+      "targetWidth": 1280,
+      "targetHeight": 800,
+      "appearance": "light",
+      "minimumContrast": 5.11
+    },
+    {
+      "name": "overview-dark-820.png",
+      "width": 820,
+      "height": 562,
+      "targetWidth": 820,
+      "targetHeight": 560,
+      "appearance": "dark",
+      "minimumContrast": 6.97
+    }
+  ],
+  "historyOffRetained": true,
+  "staleClearRefused": true,
+  "activeAndReplayedGroupsSuppressed": true,
+  "pageErrorCount": 0
+}

@@ -72,6 +72,11 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
  * the same trust as `connect`, which pairing already gives, and the iPhone client does not send them.
  */
 export const REMOTE_SIGN_IN_OPERATIONS = ['sign-in-start', 'sign-in-read', 'sign-in-code', 'sign-in-cancel'] as const
+/** Usage reads grant nothing. Clearing numeric history takes the authenticated client's remote-answer policy. */
+export const REMOTE_USAGE_OPERATIONS = ['usage-read', 'usage-refresh', 'usage-clear'] as const
+export function remoteUsageRefusal(operation: typeof REMOTE_USAGE_OPERATIONS[number], mayAnswer: boolean): 'forbidden' | null {
+  return operation === 'usage-clear' && !mayAnswer ? 'forbidden' : null
+}
 /**
  * The account and thread defaults a paired client may change. Keys stay on the host. The projects directory is only
  * where a new project goes, and `create-project` already takes a path from a paired client, so a desktop sets it from

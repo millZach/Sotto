@@ -4,6 +4,17 @@ import { z } from 'zod'
 import { threadUsageSchema, usageTokensSchema, type ThreadUsage, type UsageTokens } from '../../shared/threadUsage'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { estimateUsage, USAGE_RATE_VERSION } from './usageRates'
+import type { UsageTokenObservation } from '../../shared/usageDashboard'
+
+/** Facts supplied by the adapter, never inferred from a ledger's latest update. */
+export interface NativeUsageContext {
+  readonly phase: 'live' | 'replay'
+  readonly at?: string | undefined
+  readonly groupId?: string | undefined
+  readonly groupStartedAt?: string | undefined
+  readonly liveNewGroup?: boolean | undefined
+}
+const dated = (value: unknown): string | undefined => typeof value === 'string' && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : undefined
 
 const entrySchema = z.object({ tokens: usageTokensSchema, model: z.string(), usd: z.number().optional(), lowerBound: z.boolean().optional(), rate: z.string() })
 const ledgerSchema = z.object({ view: threadUsageSchema, entries: z.record(z.string(), entrySchema),
@@ -63,7 +74,12 @@ export class NativeUsage {
   /** A turn ended while a write was running: the next one goes as soon as it finishes. */
   private urgent = false
   private draining = 0
-  constructor(directory: string, private readonly provider: 'codex' | 'claude' | 'grok') {
+  private readonly usageListeners = new Set<(record: UsageTokenObservation) => void>()
+  /** Numeric-only current projections. The stable ledger's format remains unchanged. */
+  private readonly projections = new Map<string, Map<string, UsageTokenObservation>>()
+  private readonly detailedGrokGroups = new Set<string>()
+  private readonly ambiguousGrokGroups = new Set<string>()
+  constructor(directory: string, private readonly provider: 'codex' | 'claude' | 'grok', private readonly usageEnabled = false) {
     // Compact, as `serialized` writes it: the ledger is rewritten whole while a reply streams.
     this.store = AtomicJsonStore.compact(join(directory, `${provider}-usage.json`), z.record(z.string(), ledgerSchema).parse, () => ({}))
   }
@@ -101,6 +117,108 @@ export class NativeUsage {
     } finally { this.draining -= 1 }
   }
   get(id: string): ThreadUsage | undefined { return this.data[id]?.view }
+  subscribeUsage(listener: (record: UsageTokenObservation) => void): () => void {
+    if (!this.usageEnabled) return () => undefined
+    this.usageListeners.add(listener)
+    return () => this.usageListeners.delete(listener)
+  }
+  private key(kind: 'row' | 'group', id: string, identity: string): string {
+    return createHash('sha256').update(JSON.stringify(['sotto-usage', this.provider, kind, id, identity])).digest('hex')
+  }
+  private grokRecord(identity: string, model?: string): string {
+    return JSON.stringify(model === undefined ? ['aggregate', identity] : ['model', identity, model])
+  }
+  private projected(id: string, key: string, model: string, tokens: UsageTokens, context?: NativeUsageContext, partial = false, group?: string): UsageTokenObservation {
+    const groupId = context?.groupId ?? group
+    return { providerId: this.provider, threadId: id, recordKey: this.key('row', id, key),
+      ...(groupId ? { groupKey: this.key('group', id, groupId) } : {}), modelId: model || 'unknown', tokens: { ...tokens },
+      ...(dated(context?.at) ? { at: dated(context?.at) } : {}),
+      ...(dated(context?.groupStartedAt) ? { groupStartedAt: dated(context?.groupStartedAt) } : {}),
+      phase: context?.phase ?? 'seed', partial: partial || tokens.input === undefined || tokens.output === undefined,
+      ...(context?.phase === 'live' && context.liveNewGroup && groupId ? { liveNewGroup: true } : {}) }
+  }
+  private publishUsage(id: string, key: string, model: string, tokens: UsageTokens, context?: NativeUsageContext, partial = false, group?: string, ambiguous = false, removed = false, groupRecordsHash?: string): void {
+    if (!this.usageEnabled || model === SYNTHETIC || !ambiguous && !removed && !Object.values(tokens).some(value => value !== undefined)) return
+    const rows = this.projections.get(id) ?? new Map<string, UsageTokenObservation>(); this.projections.set(id, rows)
+    const current = this.projected(id, key, model, tokens, context, partial, group)
+    if (removed) current.removed = true
+    if (removed && groupRecordsHash !== undefined) current.groupRecordsHash = groupRecordsHash
+    const previous = rows.get(key)
+    if (previous?.removed && !removed) return
+    if (this.provider === 'grok' && !ambiguous && !removed && previous?.modelId === current.modelId) {
+      for (const field of Object.keys(previous.tokens) as (keyof UsageTokens)[]) {
+        const known = previous.tokens[field]
+        if (known !== undefined && (current.tokens[field] === undefined || current.tokens[field]! < known)) current.tokens[field] = known
+      }
+    }
+    if (previous?.at && (!current.at || previous.at < current.at)) current.at = previous.at
+    if (previous?.groupStartedAt && (!current.groupStartedAt || previous.groupStartedAt < current.groupStartedAt)) current.groupStartedAt = previous.groupStartedAt
+    if (!current.groupKey && previous?.groupKey) current.groupKey = previous.groupKey
+    rows.set(key, current)
+    for (const listener of this.usageListeners) {
+      try { listener({ ...current, tokens: { ...current.tokens } }) } catch { /* Accounting never changes native delivery. */ }
+    }
+  }
+  /** Already-loaded rows only; reading usage never starts native sessions. */
+  visitUsage(id: string, visitor: (record: UsageTokenObservation) => void): void {
+    if (!this.usageEnabled) return
+    const ledger = this.data[id]
+    if (!ledger) return
+    const projected = this.projections.get(id)
+    const emitted = new Set<string>()
+    if (this.provider === 'grok') {
+      const grokProjected = projected ?? new Map<string, UsageTokenObservation>()
+      const identities = new Set(ledger.seen)
+      for (const [key, entry] of Object.entries(ledger.entries)) {
+        const aggregate = identities.has(key)
+        // Legacy per-model entries are prompt identity + ':' + the exact saved model.
+        const candidate = key.endsWith(`:${entry.model}`) ? key.slice(0, -entry.model.length - 1) : undefined
+        const identity = aggregate ? key : candidate && identities.has(candidate) ? candidate : undefined
+        if (!identity) continue
+        const record = this.grokRecord(identity, aggregate ? undefined : entry.model)
+        if (!aggregate) {
+          this.detailedGrokGroups.add(JSON.stringify([id, identity]))
+          const aggregateKey = this.grokRecord(identity)
+          const retirement = grokProjected.get(aggregateKey)?.removed ? grokProjected.get(aggregateKey)!
+            : { ...this.projected(id, aggregateKey, 'unknown', {}, undefined, true, identity), removed: true as const }
+          grokProjected.set(aggregateKey, retirement); this.projections.set(id, grokProjected)
+          if (!emitted.has(aggregateKey)) {
+            const seed = { ...retirement, tokens: { ...retirement.tokens } }; delete seed.liveNewGroup
+            visitor(seed); emitted.add(aggregateKey)
+          }
+        }
+        if (emitted.has(record)) continue
+        const existing = grokProjected.get(record)
+        const row = existing ?? this.projected(id, record, aggregate ? 'unknown' : entry.model, entry.tokens, undefined,
+          ledger.incomplete || aggregate, identity)
+        if (!aggregate && !existing) { grokProjected.set(record, row); this.projections.set(id, grokProjected) }
+        emitted.add(record)
+        const seed = { ...row, tokens: { ...row.tokens } }; delete seed.liveNewGroup
+        visitor(seed)
+      }
+      for (const [key, row] of grokProjected) {
+        if (emitted.has(key)) continue
+        const seed = { ...row, tokens: { ...row.tokens } }; delete seed.liveNewGroup
+        visitor(seed)
+      }
+      return
+    }
+    for (const [key, entry] of Object.entries(ledger.entries)) {
+      if (entry.model === SYNTHETIC) continue
+      const anchor = key
+      const existing = projected?.get(anchor)
+      const row = existing ?? this.projected(id, anchor, entry.model, entry.tokens, undefined, ledger.incomplete,
+        this.provider === 'claude' ? key : undefined)
+      emitted.add(anchor)
+      const seed = { ...row, tokens: { ...row.tokens } }; delete seed.liveNewGroup
+      visitor(seed)
+    }
+    for (const [key, row] of projected ?? []) {
+      if (emitted.has(key)) continue
+      const seed = { ...row, tokens: { ...row.tokens } }; delete seed.liveNewGroup
+      visitor(seed)
+    }
+  }
   compacted(id: string, used: unknown, updatedAt = new Date().toISOString()): void {
     const ledger = this.ledger(id)
     const changed = ledger.view.contextUsed !== count(used) || ledger.view.contextUpdatedAt !== updatedAt || ledger.contextCompacted !== true
@@ -120,7 +238,7 @@ export class NativeUsage {
     ledger.view.partial = ledger.incomplete || entries.some(entry => entry.usd === undefined || entry.lowerBound === true)
     // Every recorded request, so the thread's tokens add up rather than showing only the latest request.
     const total: UsageTokens = {}
-    for (const field of ['input', 'output', 'cached'] as const) {
+    for (const field of ['input', 'output', 'cached', 'cacheWrite', 'cacheWrite5m', 'cacheWrite1h'] as const) {
       const reported = entries.filter(entry => entry.tokens[field] !== undefined)
       if (reported.length) total[field] = reported.reduce((sum, entry) => sum + entry.tokens[field]!, 0)
     }
@@ -192,14 +310,18 @@ export class NativeUsage {
     ledger.entries[key] = { tokens, model, usd: estimate?.usd, ...(estimate?.lowerBound ? { lowerBound: true } : {}), rate: USAGE_RATE_VERSION }
     return true
   }
-  codex(id: string, model: string, value: unknown): void {
+  codex(id: string, model: string, value: unknown, context?: NativeUsageContext): void {
     const params = object(value); const usage = object(params.tokenUsage)
     if (!params.turnId || !usage.total || !usage.last) return
     const total = codexTokens(usage.total); const last = codexTokens(usage.last)
     if (!Object.values(last).some(value => value !== undefined)) return
     const ledger = this.ledger(id)
     const key = createHash('sha256').update(JSON.stringify([params.turnId, total])).digest('hex')
-    if (ledger.seen.includes(key)) { this.writePending(); return }
+    if (ledger.seen.includes(key)) {
+      const entry = ledger.entries[key]
+      if (entry) this.publishUsage(id, key, entry.model, entry.tokens, context, ledger.incomplete, String(params.turnId))
+      this.writePending(); return
+    }
     ledger.seen.push(key)
     const previous = ledger.total
     let delta = last
@@ -218,6 +340,7 @@ export class NativeUsage {
         cacheWrite: total.cacheWrite !== undefined && previous.cacheWrite !== undefined ? total.cacheWrite - previous.cacheWrite : undefined }
     } else if (previous || total.input !== last.input || total.output !== last.output) ledger.incomplete = true
     this.record(ledger, key, model, delta)
+    if (ledger.entries[key]) this.publishUsage(id, key, model, delta, context, ledger.incomplete, String(params.turnId))
     if (!reset) { ledger.total = total; ledger.model = model }
     ledger.view.latest = last
     ledger.view.modelId = model
@@ -227,7 +350,7 @@ export class NativeUsage {
     ledger.view.contextUpdatedAt = ledger.view.updatedAt
     this.save(id)
   }
-  claude(id: string, value: unknown, selectedModel?: string): void {
+  claude(id: string, value: unknown, selectedModel?: string, context?: NativeUsageContext): void {
     const frame = object(value)
     // Native child usage is not projected as parent activity or silently double-billed.
     if (frame.parent_tool_use_id || frame.isSidechain === true) return
@@ -236,7 +359,7 @@ export class NativeUsage {
       if (event.type === 'message_start') {
         const message = object(event.message)
         if (typeof message.id === 'string') this.streaming.set(id, message.id)
-        this.claude(id, { type: 'assistant', message }, selectedModel); return
+        this.claude(id, { type: 'assistant', message, timestamp: frame.timestamp }, selectedModel, context); return
       }
       if (event.type === 'message_stop') this.streaming.delete(id)
       if (event.type === 'message_delta') {
@@ -245,6 +368,7 @@ export class NativeUsage {
         if (ledger && key && entry && output !== undefined && output >= (entry.tokens.output ?? 0)) {
           const tokens = { ...entry.tokens, output }
           const changed = this.record(ledger, key, entry.model, tokens)
+          this.publishUsage(id, key, entry.model, tokens, context, ledger.incomplete, key)
           if (changed && ledger.latestId === key) ledger.view.latest = tokens
           this.save(id, changed)
         }
@@ -263,6 +387,8 @@ export class NativeUsage {
       if (old !== undefined && (merged[field] === undefined || merged[field]! < old)) merged[field] = old
     }
     const changed = this.record(ledger, message.id, typeof message.model === 'string' ? message.model : '', merged)
+    this.publishUsage(id, message.id, typeof message.model === 'string' ? message.model : '', merged,
+      { phase: context?.phase ?? 'replay', ...context, at: dated(frame.timestamp) ?? context?.at }, ledger.incomplete, message.id)
     const before = JSON.stringify([ledger.view, ledger.latestId, ledger.contextCompacted])
     const isNew = !previous
     const older = typeof frame.timestamp === 'string' && Number.isFinite(Date.parse(frame.timestamp)) && Date.parse(frame.timestamp) < Math.max(Date.parse(ledger.view.updatedAt), Date.parse(ledger.view.contextUpdatedAt ?? ledger.view.updatedAt))
@@ -295,7 +421,7 @@ export class NativeUsage {
     const model = ledger?.latestId ? ledger.entries[ledger.latestId]?.model : undefined
     this.elapsed(id, frame.duration_ms, model ? object(claudeModelUsage(frame.modelUsage, model)).contextWindow : undefined)
   }
-  grok(id: string, selectedModel: string, value: unknown): void {
+  grok(id: string, selectedModel: string, value: unknown, context?: NativeUsageContext): void {
     const params = object(value); const update = object(params.update); const usage = object(update.usage)
     if (update.sessionUpdate !== 'turn_completed' || !update.usage) return
     const meta = object(params._meta)
@@ -303,6 +429,59 @@ export class NativeUsage {
       : typeof meta.eventId === 'string' && count(meta.agentTimestampMs) !== undefined ? `${meta.eventId}:${meta.agentTimestampMs}` : undefined
     const tokens = (row: Record<string, unknown>): UsageTokens => ({ input: count(row.inputTokens), output: count(row.outputTokens), cached: count(row.cachedReadTokens), cacheWrite: count(row.cacheCreationTokens) })
     const ledger = this.ledger(id)
+    if (identity && this.usageEnabled) {
+      const models = Object.entries(object(usage.modelUsage)).sort(([a], [b]) => a.localeCompare(b))
+      const rows = models.filter(([, row]) => Object.values(tokens(object(row))).some(value => value !== undefined))
+      const at = count(meta.agentTimestampMs)
+      const facts = { phase: context?.phase ?? 'replay', ...context,
+        at: at !== undefined ? new Date(at).toISOString() : context?.at, groupId: identity } satisfies NativeUsageContext
+      // Aggregate fallback and each exact model have independent identities. The aggregate retires
+      // before exact rows arrive; a model's identity never depends on which model was observed first.
+      // Reported aggregate cost remains exclusively in the old ledger.
+      const detailedKey = JSON.stringify([id, identity])
+      if (rows.length) {
+        this.detailedGrokGroups.add(detailedKey)
+        const groupRecordsHash = createHash('sha256').update(JSON.stringify(rows.map(([model]) =>
+          this.key('row', id, this.grokRecord(identity, model))).sort())).digest('hex')
+        this.publishUsage(id, this.grokRecord(identity), 'unknown', {}, facts, true, identity, false, true, groupRecordsHash)
+        const aggregate = tokens(usage)
+        // Cost-bearing legacy rows retain the whole turn, even when exact model projections were lost
+        // on restart. A lower native aggregate is contradictory evidence, not a complete replacement.
+        const legacyAggregate = ledger.entries[identity]?.tokens
+        const aggregateRegresses = legacyAggregate !== undefined && (Object.keys(legacyAggregate) as (keyof UsageTokens)[]).some(field =>
+          legacyAggregate[field] !== undefined && aggregate[field] !== undefined && aggregate[field]! < legacyAggregate[field]!)
+        const priorRows = [...(this.projections.get(id) ?? [])].filter(([, row]) => !row.removed && row.modelId !== 'unknown' && row.groupKey === this.key('group', id, identity))
+        const reportedModels = new Set(rows.map(([model]) => model))
+        const missingKnownModel = priorRows.some(([, row]) => row.modelId !== 'unknown' && !reportedModels.has(row.modelId))
+        const regresses = rows.some(([model, source]) => {
+          const previous = this.projections.get(id)?.get(this.grokRecord(identity, model))?.tokens
+          const reported = tokens(object(source))
+          return previous !== undefined && (Object.keys(previous) as (keyof UsageTokens)[]).some(field =>
+            previous[field] !== undefined && reported[field] !== undefined && reported[field]! < previous[field]!)
+        })
+        const incomplete = ledger.incomplete || (Object.keys(aggregate) as (keyof UsageTokens)[]).some(field => {
+          if (aggregate[field] === undefined) return false
+          const values = rows.map(([, row]) => tokens(object(row))[field])
+          return values.some(value => value === undefined) || values.reduce<number>((sum, value) => sum + (value ?? 0), 0) !== aggregate[field]
+        })
+        if (missingKnownModel || regresses || aggregateRegresses || this.ambiguousGrokGroups.has(detailedKey) && incomplete) this.ambiguousGrokGroups.add(detailedKey)
+        else this.ambiguousGrokGroups.delete(detailedKey)
+        const ambiguous = this.ambiguousGrokGroups.has(detailedKey)
+        if (ambiguous) for (const [key, row] of priorRows) this.publishUsage(id, key, row.modelId, {}, facts, true, identity, true)
+        for (const [model, row] of rows) {
+          this.publishUsage(id, this.grokRecord(identity, model),
+            model, ambiguous ? {} : tokens(object(row)), facts, ambiguous || incomplete, identity, ambiguous)
+        }
+      } else if (this.detailedGrokGroups.has(detailedKey)) {
+        // An aggregate without model evidence cannot replace any individual model's count.
+        this.ambiguousGrokGroups.add(detailedKey)
+        for (const [key, row] of this.projections.get(id) ?? []) {
+          if (!row.removed && row.modelId !== 'unknown' && row.groupKey === this.key('group', id, identity)) this.publishUsage(id, key, row.modelId, {}, facts, true, identity, true)
+        }
+      } else if (!this.detailedGrokGroups.has(detailedKey)) {
+        this.publishUsage(id, this.grokRecord(identity), 'unknown', tokens(usage), facts, true, identity)
+      }
+    }
     if (identity && ledger.seen.includes(identity)) { this.writePending(); return }
     const before = JSON.stringify([ledger.view, ledger.incomplete])
     if (identity) {

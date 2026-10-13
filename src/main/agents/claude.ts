@@ -5,7 +5,9 @@ import { ClaudeHistory } from './claudeHistory'
 import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
 import { isDeepStrictEqual } from 'node:util'
 import { existingWorkingDirectory } from './threadWorktrees'
-import { NativeUsage } from './nativeUsage'
+import { NativeUsage, type NativeUsageContext } from './nativeUsage'
+import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
+import { mergeClaudeQuota, parseClaudeQuota, unavailableProviderQuota } from './providerQuota'
 import { compactionPending, compactionSchema } from '../../shared/compaction'
 import { randomUUID } from 'node:crypto'
 import { readdir, rm, writeFile } from 'node:fs/promises'
@@ -13,7 +15,7 @@ import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
-import { agentAttachmentReferenceSchema, agentProjectSchema, agentRuntimeModeSchema, PROVIDER_LABELS, type AgentHostSnapshot, type AgentMessage, type AgentRuntimeMode, type AgentThread } from '../../shared/agents'
+import { agentAttachmentReferenceSchema, agentProjectSchema, agentRuntimeModeSchema, PROVIDER_LABELS, type AgentHostSnapshot, type AgentMessage, type AgentRuntimeMode, type AgentThread, type ProviderId } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { ClaudeOriginJournal } from './claudeOriginJournal'
 import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, WatcherLaunchProfile, ThreadLaunchProfiles, RestoredThreadHistory, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose, ThreadSessionDraft } from './host'
@@ -151,6 +153,7 @@ function toolAllowance(servers: readonly { server: Pick<ThreadMcpServer, 'name'>
   return names.length ? ['--allowedTools', ...names] : []
 }
 export interface ClaudeStreamJsonHostOptions {
+  usageEnabled?: boolean
   /** Test-only admission override. Production wiring never supplies it. */
   userDataPath: string; executable?: string; args?: string[]; claudeHome?: string; environment?: NodeJS.ProcessEnv; requestTimeoutMs?: number; pollIntervalMs?: number
   /** Desktop supplies its packaged SDK resource; Node resolves the installed development SDK. */
@@ -200,6 +203,12 @@ interface Replay {
 
 /** One native coding CLI per thread. Credentials and transcript persistence remain native. */
 export class ClaudeStreamJsonHost implements AgentHost {
+  readonly subscribeUsage?: (listener: (record: UsageTokenObservation) => void) => () => void
+  readonly visitUsage?: (id: string, visitor: (record: UsageTokenObservation) => void) => void
+  readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean) => Promise<UsageQuotaRead>
+  private quota: UsageQuotaRead | undefined
+  private readonly usageGroups = new Map<string, { id: string; startedAt?: string | undefined }>()
+  private readonly usageEnabled: boolean
   private launchProfiles: ThreadLaunchProfiles | undefined
   private readonly resolvedWatcherProfiles = new Map<string, WatcherLaunchProfile>()
   private readonly checkingProfileRequests = new WeakMap<Runtime, Set<string>>()
@@ -381,7 +390,15 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private state: AgentHostSnapshot = { connected: false, name: 'Claude Code', version: '', models: [], projects: [], threads: [],
     capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true, skills: true, steer: true, compact: true } }
   constructor(private readonly options: ClaudeStreamJsonHostOptions) {
-    this.usage = new NativeUsage(options.userDataPath, 'claude')
+    this.usageEnabled = options.usageEnabled === true
+    this.usage = new NativeUsage(options.userDataPath, 'claude', options.usageEnabled)
+    if (options.usageEnabled) {
+      this.subscribeUsage = listener => this.usage.subscribeUsage(listener)
+      this.visitUsage = (id, visitor) => this.usage.visitUsage(id, visitor)
+      this.readProviderQuota = async providerId => providerId !== 'claude' ? unavailableProviderQuota(providerId, 'unsupported')
+        : !this.state.connected ? unavailableProviderQuota('claude', 'not-connected')
+          : this.quota ?? unavailableProviderQuota('claude', 'refresh-unavailable')
+    }
     // Compact: it holds every thread's record and every origin, and is rewritten whole.
     this.aliasStore = AtomicJsonStore.compact(join(options.userDataPath, 'claude-threads.json'), preserveLegacyAliases(z.record(z.string(), aliasSchema).parse), () => ({}))
     const journalLine = z.object({ threadId: z.string(), origin: originSchema, generation: z.number().int().nonnegative().optional() })
@@ -460,6 +477,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.trackClosure(this.persist().catch(() => undefined))
   }
   async connect(): Promise<AgentHostSnapshot> {
+    if (this.usageEnabled) { this.quota = undefined; this.usageGroups.clear() }
     this.disconnect(); await this.closed()
     const generation = this.generation
     await this.removeLeftoverConfigs()
@@ -870,6 +888,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
         thread.status = 'running'; thread.lastTurn = { id: origin.uuid, status: 'running' }
         try {
           markSendStage(command.commandId, 'written')
+          if (this.usageEnabled) this.usageGroups.set(id, { id: origin.uuid, startedAt: new Date().toISOString() })
           const delivery = runtime.protocol.write({ type: 'user', uuid: origin.uuid, session_id: alias.sessionId, parent_tool_use_id: null, message: { role: 'user', content } })
           this.emit(); await delivery
         }
@@ -1416,6 +1435,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.reaper.touch(id)
     const runtime = this.runtimes.get(id)!; const thread = this.threads.get(id)!; const alias = this.aliases[id]!
     if (typeof frame.session_id === 'string' && frame.session_id !== alias.sessionId) return
+    if (this.usageEnabled && frame.type === 'rate_limit_event') {
+      this.quota = mergeClaudeQuota(this.quota, parseClaudeQuota(frame, new Date().toISOString())); return
+    }
     let monitoring = this.monitoring.get(id)
     if (!monitoring) { monitoring = new ClaudeMonitoring(); this.monitoring.set(id, monitoring) }
     monitoring.apply(frame); thread.monitoring = monitoring.current
@@ -1494,7 +1516,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       this.message(id, frame, false)
     }
     if (frame.type === 'stream_event') {
-      this.usage.claude(id, frame, thread.modelId); thread.usage = this.usage.get(id)
+      this.usage.claude(id, frame, thread.modelId, this.usageContext(id, frame, false)); thread.usage = this.usage.get(id)
       const event = object(frame.event)
       if (event?.type === 'message_start') {
         const message = object(event.message)
@@ -1577,7 +1599,13 @@ export class ClaudeStreamJsonHost implements AgentHost {
   }
   private message(id: string, frame: ClaudeFrame, fromLog: boolean): void {
     if (typeof frame.uuid === 'string' && this.aliases[id]?.compactInputIds?.includes(frame.uuid)) return
-    this.usage.claude(id, frame, this.threads.get(id)!.modelId)
+    if (this.usageEnabled && frame.type === 'user' && authoredClaudeUser(frame) && typeof frame.uuid === 'string') {
+      const at = typeof frame.timestamp === 'string' && Number.isFinite(Date.parse(frame.timestamp)) ? new Date(frame.timestamp).toISOString()
+        : this.aliases[id]?.origins.find(origin => origin.uuid === frame.uuid)?.createdAt
+          ?? (this.usageGroups.get(id)?.id === frame.uuid ? this.usageGroups.get(id)?.startedAt : undefined)
+      this.usageGroups.set(id, { id: frame.uuid, startedAt: at })
+    }
+    this.usage.claude(id, frame, this.threads.get(id)!.modelId, this.usageContext(id, frame, fromLog))
     this.threads.get(id)!.usage = this.usage.get(id)
     if (frame.parent_tool_use_id || frame.isSidechain === true) return
     const message = object(frame.message); let text = claudeText(message?.content)
@@ -1600,6 +1628,12 @@ export class ClaudeStreamJsonHost implements AgentHost {
     }
     this.addMessage(id, { id: origin?.messageId ?? alias.forkMessageIds?.[uuid] ?? providerId, role: frame.type as 'user' | 'assistant', text,
       createdAt: origin?.createdAt ?? (typeof frame.timestamp === 'string' ? frame.timestamp : new Date().toISOString()), ...(origin ? { commandId: origin.commandId, ...(origin.attachments ? { attachments: origin.attachments } : {}) } : {}) })
+  }
+  private usageContext(id: string, frame: ClaudeFrame, replay: boolean): NativeUsageContext {
+    const group = this.usageGroups.get(id)
+    return { phase: replay ? 'replay' : 'live',
+      ...(typeof frame.timestamp === 'string' && Number.isFinite(Date.parse(frame.timestamp)) ? { at: new Date(frame.timestamp).toISOString() } : {}),
+      ...(group ? { groupId: group.id, ...(group.startedAt ? { groupStartedAt: group.startedAt } : {}) } : {}) }
   }
   private log(id: string): ClaudeSessionLog {
     let log = this.logs.get(id)

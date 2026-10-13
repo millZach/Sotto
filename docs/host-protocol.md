@@ -98,6 +98,16 @@ The phone allows ten seconds per liveness round and requires two consecutive sil
 
 ### Requests
 
+The optional `usage-dashboard` feature is advertised only when the owning host's startup Usage gate is enabled and its service implements all three operations. A stable host cannot be enabled by a client's hello. Older hosts remain usable without this capability.
+
+| Usage operation | Fields | Result |
+| --- | --- | --- |
+| `usage-read` | `query`: bounded `UsageLocalQuery`, with optional calendar dates, IANA time zone, provider/model filters and daily buckets | Strict `UsageLocalHostRead`: aggregate activity, metadata, bounded model/daily/hourly rows, cached native limits and persistence status. |
+| `usage-refresh` | `providerIds?` | Strict `UsageLocalHostRead` containing native account limits. It sends no model prompt. |
+| `usage-clear` | `request: { expectedRevision }` | Strict `UsageLocalClearResult`, cleared or stale. Requires the authenticated client's existing remote-answer policy and a fresh revision. |
+
+Queries contain no desktop host ID; the paired connection owns that scope, and the desktop annotates each answer with its host ID. Numeric Usage payloads contain no prompt or reply text, native session IDs, titles, folders, account addresses, keys or protocol bodies. Read and refresh grant nothing. Clear affects the host's numeric history only and never answers a provider permission.
+
 Each request is `{ v: 1, id, session, op, ... }`: `id` is the client's own (at most 512 characters) and comes back on the response, and `session` is the one the socket opened with. Requests are strict: a field the host does not know makes the request unreadable.
 
 | `op` | Fields | Result |

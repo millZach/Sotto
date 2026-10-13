@@ -69,10 +69,15 @@ unsent, and when its thread is deleted.
 stays uncertain and still holds the thread (ADR-0058). A permission request open when Sotto closed was declined then;
 the resumed agent asks again, and the user answers it (ADR-0004).
 
-**8. Hosts follow their own Owl list.** The record lives in the runtime the desktop and a headless host share, but a
-host reads its Owl list from its own version, and a host runs a stable host build. A host's threads keep running when
-the desktop quits (ADR-0025), so only a restart of the host itself stops them; those resume once this feature is sent
-to stable. Until then Update all waits for a host's working threads before restarting it (ADR-0077).
+**8. Hosts follow their own Owl list.** The record lives in the runtime the desktop and a headless host share. A
+host reads its Owl list from its own version. A host's threads keep running when the desktop quits (ADR-0025), so only
+a restart of the host itself stops them. Stable hosts resume once this feature is sent to stable. Matching Owl hosts
+(ADR-0078) can record and resume their own threads when their feature list and setting enable it. Update all still
+waits for a host's working threads before restarting it (ADR-0077).
+
+October 13, 2026 amendment: Usage's matching Owl host archives extend the original stable-only host distribution.
+The host's own-version rule applies to those archives too; remote collection, restart records and update permission
+remain on the computer that owns them.
 
 ## Consequences
 

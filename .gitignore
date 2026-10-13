@@ -505,6 +505,27 @@ artifacts/new-thread-defaults-every-host/*
 !artifacts/new-thread-defaults-every-host/light-1280.png
 !artifacts/new-thread-defaults-every-host/dark-820.png
 !artifacts/new-thread-defaults-every-host/light-820.png
+
+artifacts/usage-dashboard/*
+!artifacts/usage-dashboard/overview-dark-1600.png
+!artifacts/usage-dashboard/tokens-dark-1280.png
+!artifacts/usage-dashboard/subscriptions-light-820.png
+!artifacts/usage-dashboard/overview-dark-820.png
+!artifacts/usage-dashboard/models-light-1280.png
+!artifacts/usage-dashboard/verified.json
+!artifacts/usage-dashboard/usage-owl-package.png
+!artifacts/usage-dashboard/package-verification.json
+!artifacts/usage-dashboard/usage-owl-integration-package.png
+!artifacts/usage-dashboard/package-integration-verification.json
+!artifacts/usage-dashboard/usage-owl-watcher-merge-package.png
+!artifacts/usage-dashboard/package-watcher-merge-verification.json
+!artifacts/usage-dashboard/usage-owl-review-fixes-package.png
+!artifacts/usage-dashboard/package-review-fixes-verification.json
+!artifacts/usage-dashboard/usage-owl-stable-main-package.png
+!artifacts/usage-dashboard/package-stable-main-verification.json
+!artifacts/usage-dashboard/host-version-conflict-dark-1600.png
+!artifacts/usage-dashboard/host-version-conflict-light-820.png
+
 # Full Omarchy test findings; commit only evidence cited in the verification note.
 artifacts/linux-test-findings/*
 

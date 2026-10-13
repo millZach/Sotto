@@ -37,8 +37,9 @@ async function pairedDesktop(record = true, gate = true) {
   return { socket, pairing, hello, project: socket.shell().host.projects.find(item => item.path === path)!,
     model: socket.shell().host.models.find(item => item.providerId === 'codex' && item.ready)! }
 }
-async function master(native?: CodexAppServerHost) {
-  if (native) { await remote.host.close(); remote.host = await startFixtureHeadlessHost({ dataDirectory: remote.root, port: 0, providers: { codex: native } }); remote.url = 'http://127.0.0.1:' + remote.host.descriptor!.port }
+async function master(native?: CodexAppServerHost, usage = false) {
+  if (native || usage) { await remote.host.close(); remote.host = await startFixtureHeadlessHost({ dataDirectory: remote.root, port: 0, providers: { codex: native ?? remote.native },
+    ...(usage ? { sottoVersion: '0.1.38-owl.20261013.1' } : {}) }); remote.url = 'http://127.0.0.1:' + remote.host.descriptor!.port }
   const paired = await pairedDesktop()
   const workspace = await workspaceFixture(undefined, { history: false })
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host,
@@ -141,6 +142,85 @@ it('holds a lost acknowledgement through disconnection and reconciles without an
   f.router.setReconnecting(f.pairing.hostId, false)
   expect(await f.call('read_operation', { operationId: admitted!.operation.id })).toMatchObject({ receipt: { deliveryState: 'accepted' } })
   expect(remote.host.service.state().host.threads.filter(item => item.title === input.title)).toHaveLength(1)
+})
+
+it('counts paired Watcher writes once in the owning Owl archive and keeps user sends under their selected model', async () => {
+  const native = await codexFixture(undefined, false, 10_000); cleanups.push(native.cleanup)
+  await native.script({ models: [
+    { id: 'first', model: 'fixture-model', displayName: 'First model', isDefault: true, defaultReasoningEffort: 'low', supportedReasoningEfforts: [{ reasoningEffort: 'low' }] },
+    { id: 'later', model: 'later-model', displayName: 'Later model', isDefault: false, defaultReasoningEffort: 'low', supportedReasoningEfforts: [{ reasoningEffort: 'low' }] },
+  ] })
+  const f = await master(native.adapter, true), input = f.start()
+  expect(f.hello.features).toContain('usage-dashboard')
+  const activity = async () => {
+    const read = await f.socket.usageRead({ providerIds: ['codex'], timeZone: 'UTC' })
+    expect(read).toMatchObject({ status: 'ready', persistence: 'saved' })
+    return read.activity!
+  }
+  const original = f.socket.watcherControl.bind(f.socket)
+  const reads = vi.spyOn(f.socket, 'watcherRead').mockRejectedValue(new Error('Synthetic lost projection'))
+  let admitted: WatcherHostControl | undefined
+  const writes = vi.spyOn(f.socket, 'watcherControl').mockImplementation(async packet => { admitted = packet; await original(packet); throw new Error('Synthetic lost acknowledgement') })
+  expect(await f.call('start_thread', input)).toMatchObject({ code: 'DELIVERY_UNCERTAIN' })
+  const packet = admitted!, target = packet.operation.target
+  await expect.poll(async () => (await activity()).totals.prompts).toEqual({ user: 0, watcher: 1, wakeUp: 0, total: 1, steered: 0 })
+  expect(await f.call('start_thread', input)).toMatchObject({ receipt: { operationId: packet.operation.id } })
+  expect(await original(packet)).toMatchObject({ receipt: { operationId: packet.operation.id } })
+  reads.mockRestore(); writes.mockRestore()
+  expect(await f.call('read_operation', { operationId: packet.operation.id })).toMatchObject({ receipt: { deliveryState: 'accepted' } })
+  expect((await activity()).totals.prompts.total).toBe(1)
+
+  await expect.poll(() => f.socket.shell().host.threads.find(thread => thread.id === target.threadId)?.lastTurn?.status).toBe('running')
+  const turnId = f.socket.shell().host.threads.find(thread => thread.id === target.threadId)!.lastTurn!.id
+  const codexId = (await native.driver.requests()).findLast(item => item.method === 'turn/start')!.params!.threadId as string
+  const aliases = JSON.parse(await readFile(join(native.root, 'codex-threads.json'), 'utf8')) as Record<string, { codexThreadId: string }>
+  const nativeId = Object.entries(aliases).find(([, value]) => value.codexThreadId === codexId)![0]
+  const steer = { requestId: f.requestId, retryKey: randomUUID(), target, delivery: 'steer', expectedTurnId: turnId, text: 'Synthetic counted steer' }
+  expect(await f.call('send_to_thread', steer)).toMatchObject({ status: 'ok' })
+  expect(await f.call('send_to_thread', steer)).toMatchObject({ status: 'ok' })
+  await expect.poll(async () => (await activity()).totals.prompts).toEqual({ user: 0, watcher: 2, wakeUp: 0, total: 2, steered: 1 })
+  const queue = { requestId: f.requestId, retryKey: randomUUID(), target, delivery: 'queue', text: 'Synthetic counted queue' }
+  const queued = await f.call('send_to_thread', queue)
+  expect(queued).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
+  expect(await f.call('send_to_thread', queue)).toMatchObject({ receipt: queued.receipt })
+  expect((await activity()).totals.prompts.total).toBe(2)
+  await native.driver.completeTurn(nativeId, 'Synthetic first completion')
+  await expect.poll(async () => (await activity()).totals.prompts.watcher).toBe(3)
+  await expect.poll(async () => (await native.driver.requests()).filter(item => item.method === 'turn/start').length).toBe(2)
+  await expect.poll(() => f.socket.shell().host.threads.find(thread => thread.id === target.threadId)?.lastTurn?.id).not.toBe(turnId)
+  await expect.poll(() => f.socket.shell().host.threads.find(thread => thread.id === target.threadId)?.lastTurn?.status).toBe('running')
+  await native.driver.completeTurn(nativeId, 'Synthetic queue completion')
+  await expect.poll(() => f.socket.shell().host.threads.find(thread => thread.id === target.threadId)).toMatchObject({ status: 'idle', lastTurn: { status: 'completed' } })
+  const now = { requestId: f.requestId, retryKey: randomUUID(), target, delivery: 'now', text: 'Synthetic counted send' }
+  const sentNow = await f.call('send_to_thread', now)
+  expect(sentNow.status, sentNow.status === 'refused' ? sentNow.code : undefined).toBe('ok')
+  expect(await f.call('send_to_thread', now)).toMatchObject({ status: 'ok' })
+  await expect.poll(async () => (await activity()).totals.prompts.watcher).toBe(4)
+  await expect.poll(() => f.socket.shell().host.threads.find(thread => thread.id === target.threadId)?.lastTurn?.status).toBe('running')
+  await native.driver.completeTurn(nativeId, 'Synthetic final machine completion')
+  await expect.poll(() => f.socket.shell().host.threads.find(thread => thread.id === target.threadId)).toMatchObject({ status: 'idle', lastTurn: { status: 'completed' } })
+  const laterModel = f.socket.shell().host.models.find(model => model.providerId === 'codex' && model.id !== f.model.id && model.ready)!
+  expect((await f.socket.command({ type: 'configure-thread', threadId: target.threadId, modelId: laterModel.id })).error).toBeNull()
+  expect((await f.socket.command({ type: 'manual-send', threadId: target.threadId, draftId: randomUUID(), text: 'Synthetic user continuation' })).error).toBeNull()
+  await expect.poll(async () => (await activity()).totals.prompts.total).toBe(5)
+  const final = await activity()
+  expect(final.totals.prompts).toEqual({ user: 1, watcher: 4, wakeUp: 0, total: 5, steered: 1 })
+  expect(final.models).toEqual(expect.arrayContaining([
+    expect.objectContaining({ modelId: f.model.id, prompts: { user: 0, watcher: 4, wakeUp: 0, total: 4, steered: 1 } }),
+    expect.objectContaining({ modelId: laterModel.id, prompts: { user: 1, watcher: 0, wakeUp: 0, total: 1, steered: 0 } }),
+  ]))
+  const beforeRestart = await native.driver.requests()
+  expect(beforeRestart.filter(item => item.method === 'turn/start')).toHaveLength(4)
+  expect(beforeRestart.filter(item => item.method === 'turn/steer')).toHaveLength(1)
+
+  await f.socket.close(); await remote.host.close()
+  remote.host = await startFixtureHeadlessHost({ dataDirectory: remote.root, port: 0, providers: { codex: native.adapter }, sottoVersion: '0.1.38-owl.20261013.1' })
+  remote.url = 'http://127.0.0.1:' + remote.host.descriptor!.port
+  const socket = new SocketHostService({ url: remote.url, token: f.pairing.token, watcherEnabled: true }); remote.clients.push(socket)
+  await socket.connect()
+  expect(await socket.watcherControl(packet)).toMatchObject({ receipt: { operationId: packet.operation.id } })
+  expect((await socket.usageRead({ providerIds: ['codex'], timeZone: 'UTC' })).activity!.totals.prompts).toEqual(final.totals.prompts)
+  expect((await native.driver.requests()).filter(item => item.method === 'turn/start')).toHaveLength(4)
 })
 
 it('refuses start before the wire when the owning-host path is missing', async () => {

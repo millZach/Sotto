@@ -18,6 +18,7 @@ import type { BabysitNews } from './babysitNews'
 import { BABYSIT_REFUSALS, type Babysitter } from './babysitting'
 import { pullRequestAddress } from '../../shared/gitPullRequests'
 import { queuedWakeUpText, isRestartNews, isWatcherNews, type WakeUpNews } from './wakeUp'
+import type { UsagePromptRecorder } from './usageService'
 import type { WatcherEvent } from '../../shared/watcherNews'
 import type { CheckpointObservation, PullRequestObservation } from './watcherEvidence'
 import { nearestReasoningEffort, resolveNewThreadPermission } from '../../shared/newThreadDefaults'
@@ -407,6 +408,8 @@ export class AgentControl {
     historyEnabled?: () => boolean
     /** Release gate only; the saved Watcher record is retained on either track. */
     watcherEnabled?: boolean
+    /** Numeric-only Owl history. It never gates or retries a provider send. */
+    usage?: UsagePromptRecorder
     observeActiveThread?: boolean
     turns?: TurnRecorder
     authority?: Authority
@@ -3286,6 +3289,12 @@ export class AgentControl {
           endLoan = lendSendStages(command.commandId, stages)
         }
         writeGuard?.()
+        if (prompt && provider) {
+          try { this.dependencies.usage?.submitPrompt({ providerId: provider, threadId: prompt.threadId,
+            messageId: prompt.messageId, modelId: this.thread(prompt.threadId).modelId, at: new Date().toISOString(),
+            kind: wakeUp ? 'wake-up' : origin ? 'watcher' : 'user', inputKind: command.type === 'steer' ? 'steer' : 'send' }) }
+          catch { /* A usage failure cannot refuse or resend the user's message. */ }
+        }
         result = await (writeGuard && this.dependencies.host.executeFromWatcher
           ? this.dependencies.host.executeFromWatcher(hostCommand, writeGuard) : this.dependencies.host.execute(hostCommand)).catch(error => {
           if (turn) turn.failureCode = 'provider-failed'
@@ -3299,6 +3308,10 @@ export class AgentControl {
         if (endLoan && !result?.accepted) stages?.close()
       }
     } catch (error) {
+      if (prompt) {
+        try { this.dependencies.usage?.discardPrompt(prompt.threadId, prompt.messageId) }
+        catch { /* Only usage metadata is affected. */ }
+      }
       this.outbox = this.outbox.filter(o => o.id !== command.commandId)
       if ((prompt || atomicDigest) && draftId && threadId) this.setDelivery(threadId, draftId, 'failed')
       await this.persist()
@@ -3371,6 +3384,10 @@ export class AgentControl {
       if (!result.uncertain && answerIntent) { this.recordAnsweredRequest(answerIntent); this.recordAtomicDelivery(answerIntent) }
     }
     this.outbox = this.outbox.filter(o => o.id !== command.commandId)
+    if (prompt && !result.accepted && !result.uncertain) {
+      try { this.dependencies.usage?.discardPrompt(prompt.threadId, prompt.messageId) }
+      catch { /* Only a definitive refusal removes pending numeric evidence. */ }
+    }
     await this.persist()
     if (!result.accepted && !result.uncertain) {
       if (turn) turn.failureCode = 'provider-failed'
@@ -3590,6 +3607,10 @@ export class AgentControl {
             ? thread !== undefined && isThreadProviderConnected(snapshot, thread) && thread.historyStatus !== 'loading' && thread.historyStatus !== 'error'
               && !thread.requests.some(r => r.id === item.requestId) : thread?.status === 'idle'
       if (!confirmed) continue
+      if (message && item.threadId && item.messageId) {
+        try { this.dependencies.usage?.acceptPrompt(item.threadId, item.messageId) }
+        catch { /* The exact echo still settles native delivery. Numeric evidence can recover separately. */ }
+      }
       if (item.type === 'configure-thread' && this.settingsDispatching.has(item.id)) this.settledSettings.add(item.id)
       // A disappeared question does not prove that our answer was accepted.
       // Only the exact adapter acknowledgement above can retire retained content.

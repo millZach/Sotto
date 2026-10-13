@@ -15,7 +15,7 @@ import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings
 import { deferred } from '../../fixtures/deferred'
 
 /** Stable answers every Owl feature off. */
-const STABLE_FEATURES = { watcher: false, 'resume-after-restart': false, 'update-all': false }
+const STABLE_FEATURES = { watcher: false, usage: false, 'resume-after-restart': false, 'update-all': false }
 
 type Emit = (event: UpdaterEvent) => void
 
