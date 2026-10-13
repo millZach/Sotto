@@ -9,6 +9,7 @@ import { CodexAppServerHost } from './codex'
 import { ClaudeStreamJsonHost, type ClaudeAdapterEvent } from './claude'
 import { GrokAcpHost } from './grok'
 import { DevinAcpHost } from './devin'
+import { MuseDisabledHost, MuseMspHost } from './muse'
 import { ConfiguredProviderHost } from './providerSwitch'
 import { SottoThreadHost, ThreadRegistry } from './threads'
 import { WorkspaceHost } from './workspace'
@@ -40,6 +41,8 @@ export interface AgentRuntimeOptions {
   directory: string
   /** Immutable release-track gate, read once by the process owner. Absent fails closed. */
   watcherEnabled?: boolean
+  /** Immutable Muse-provider Owl gate, read once by the process owner (ADR-0075). Absent fails closed. */
+  museEnabled?: boolean
   claudeHistoryModulePath?: string
   credentials: ControlDependencies['credentials']
   settings: () => AppSettings
@@ -98,6 +101,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       ...(options.claudeSettingsLog ? { logEvent: options.claudeSettingsLog } : {}) }),
     grok: options.providers?.grok ?? new GrokAcpHost(directory),
     devin: options.providers?.devin ?? new DevinAcpHost(directory),
+    muse: options.providers?.muse ?? (options.museEnabled === true ? new MuseMspHost(directory) : new MuseDisabledHost()),
   }
   const agentHost = new WorkspaceHost(options.host ?? new ConfiguredProviderHost({
     directory,
@@ -106,6 +110,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       claude: new SottoThreadHost('claude', providers.claude!, threadRegistry!),
       grok: new SottoThreadHost('grok', providers.grok!, threadRegistry!),
       devin: new SottoThreadHost('devin', providers.devin!, threadRegistry!),
+      muse: new SottoThreadHost('muse', providers.muse!, threadRegistry!),
     },
     provider: () => agentControl.configuration().provider,
     enabledProviders: () => { const configuration = agentControl.configuration(); return configuration.enabledProviders ?? [configuration.provider] },

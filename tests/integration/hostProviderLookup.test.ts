@@ -92,7 +92,7 @@ describe('a headless host and its providers', () => {
     const host = await start(data, providers)
     expect(host.service.shell().host.connected).toBe(false)
     expect(Object.values(providers).map(provider => provider.connects)).toEqual([0, 0, 0, 0])
-    expect((await configuration(data)).disconnectedProviders).toEqual(['codex', 'claude', 'grok', 'devin'])
+    expect((await configuration(data)).disconnectedProviders).toEqual(['codex', 'claude', 'grok', 'devin', 'muse'])
   })
 
   it('turns off every provider on Disconnect, and a changed enabled set records what it left out', async () => {
@@ -100,11 +100,11 @@ describe('a headless host and its providers', () => {
     let host = await start(data)
     await expect.poll(() => connections(host)).toEqual({ codex: 'connected', claude: 'connected', grok: 'connected', devin: 'connected' })
     await host.service.command({ type: 'configure', patch: { enabledProviders: ['codex', 'claude'] } }, client)
-    expect((await configuration(data)).disconnectedProviders).toEqual(['grok', 'devin'])
+    expect((await configuration(data)).disconnectedProviders).toEqual(['grok', 'devin', 'muse'])
     await host.service.command({ type: 'configure', patch: { enabledProviders: ['codex', 'claude', 'grok'] } }, client)
-    expect((await configuration(data)).disconnectedProviders).toEqual(['devin'])
+    expect((await configuration(data)).disconnectedProviders).toEqual(['devin', 'muse'])
     await host.service.command({ type: 'disconnect' }, client)
-    expect((await configuration(data)).disconnectedProviders).toEqual(['codex', 'claude', 'grok', 'devin'])
+    expect((await configuration(data)).disconnectedProviders).toEqual(['codex', 'claude', 'grok', 'devin', 'muse'])
     await host.close(); hosts.splice(hosts.indexOf(host), 1)
 
     const restarted = counted()

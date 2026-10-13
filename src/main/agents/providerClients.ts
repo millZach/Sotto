@@ -8,6 +8,7 @@ import { PROVIDER_LABELS, type ClientChannel, type ClientUpdateFailure, type Pro
 import { compareClientVersions, isComparableVersion } from './clientVersions'
 import { installerDetail, installerOutput } from './installerDetail'
 import { findDevinExecutable } from './devinRpc'
+import { findMuseExecutable } from './museRpc'
 import { findGrokExecutable } from './grokRpc'
 import { findClaudeExecutable } from './subscriptionClaude'
 import { findCli, miseDataFolder, withCliPath } from './cliLookup'
@@ -483,5 +484,6 @@ export async function locateClient(provider: ProviderId): Promise<string | undef
     case 'codex': return (await findCodexExecutable()) ?? undefined
     case 'grok': return findGrokExecutable()
     case 'devin': return findDevinExecutable()
+    case 'muse': return findMuseExecutable()
   }
 }

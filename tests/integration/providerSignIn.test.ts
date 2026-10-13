@@ -164,7 +164,7 @@ describe('signing a host\'s provider in from a paired client', () => {
       expect(desktop.offersSignIn()).toBe(true)
       const providers = () => Object.fromEntries((desktop.shell().host.providers ?? []).map(status => [status.id, [status.connection, status.problem ?? null]]))
       // The host tried every provider when it started (ADR-0036), and says why each is not connected.
-      await expect.poll(providers).toEqual({ codex: ['error', 'signed-out'], claude: ['error', 'signed-out'], grok: ['error', 'signed-out'], devin: ['error', 'not-installed'] })
+      await expect.poll(providers).toEqual({ codex: ['error', 'signed-out'], claude: ['error', 'signed-out'], grok: ['error', 'signed-out'], devin: ['error', 'not-installed'], muse: ['error', 'signed-out'] })
 
       // Device code: the code comes back to the client that asked and to no other, and the host connects Codex itself.
       const codex = await desktop.signIn({ op: 'sign-in-start', provider: 'codex' }) as HostSignIn

@@ -42,7 +42,7 @@ export function BrowserSurface({ threadId, store, bridge, onStatus, onFloat }: B
   const agents = useOptionalAgents()
   const owningThread = agents?.state?.host.threads.find(item => item.id === threadId)
   const owningModel = resolveModel(agents?.state?.host.models ?? [], owningThread?.modelId)
-  const agentToolsUnavailable = owningThread?.providerId === 'devin' || owningModel?.providerId === 'devin'
+  const agentToolsUnavailable = owningThread?.providerId === 'devin' || owningModel?.providerId === 'devin' || owningThread?.providerId === 'muse' || owningModel?.providerId === 'muse'
   const [feedback, setFeedback] = useState<BrowserCapture | null>(null)
   const [reviewBusy, setReviewBusy] = useState(false)
   const [stoppingGrant, setStoppingGrant] = useState(false)
@@ -211,7 +211,7 @@ export function BrowserSurface({ threadId, store, bridge, onStatus, onFloat }: B
       <span>This page is private. The agent cannot see it</span><span aria-hidden="true">·</span>
       <button type="button" className="browser-review-link tt-focusable" disabled={reviewBusy} onClick={() => void reviewPage('share').then(() => requestAnimationFrame(() => shareButton.current?.focus()))}>Share with agent</button>
     </div> : null}
-    {active && !newPage && agentToolsUnavailable ? <p className="browser-review-unavailable">This Devin client does not support Sotto browser tools.</p> : null}
+    {active && !newPage && agentToolsUnavailable ? <p className="browser-review-unavailable">This provider does not support Sotto browser tools.</p> : null}
     {pageTasks.length > 1 && !feedback && !newPage ? <label className="browser-task-picker">Browser checks<select aria-label="Browser check" className="tt-focusable" value={task?.id ?? ''} onChange={event => setSelectedTask(event.currentTarget.value)}>{pageTasks.map(item => <option key={item.id} value={item.id}>{item.description} - {item.status}</option>)}</select></label> : null}
     {task && !feedback && !newPage ? <BrowserTaskDetails key={task.id} task={task} store={store} bridge={bridge} /> : null}
     {problem ? <p className="browser-problem" id="browser-address-problem" role="alert">{problem}</p> : null}

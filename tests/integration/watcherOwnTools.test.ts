@@ -226,7 +226,7 @@ for (const provider of ['codex', 'grok'] as const) it(`${provider} refuses remem
 for (const provider of ['codex', 'grok'] as const) it(`${provider} keeps the workspace session and card after refusing a remembered grant`, async () => {
   const f = await factories[provider](); cleanups.push(f.cleanup)
   const native = new ConfiguredProviderHost({ directory: f.root, provider: () => provider, enabledProviders: () => [provider],
-    threadProvider: () => provider, hosts: { codex: new FakeProviderHost(), claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), [provider]: f.host } })
+    threadProvider: () => provider, hosts: { codex: new FakeProviderHost(), claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(), [provider]: f.host } })
   const workspace = new WorkspaceHost(native, f.root, () => true, undefined, true)
   cleanups.push(() => workspace.close())
   await workspace.initialize()

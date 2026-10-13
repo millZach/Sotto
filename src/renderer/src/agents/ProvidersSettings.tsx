@@ -5,11 +5,12 @@ import { catalogEntry } from '../../../shared/modelCatalog'
 import { Button } from '../components/Button'
 import { Toggle } from '../components/Toggle'
 import { useOptionalAgents } from './AgentContext'
+import { useOwlFeature } from '../state/owlFeature'
 import { newestModelsFirst } from './ModelPicker'
 import { ProviderMark } from './ProviderMark'
 import './providers.css'
 
-const CLIENT_NAMES: Record<ProviderId, string> = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin CLI' }
+const CLIENT_NAMES: Record<ProviderId, string> = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin CLI', muse: 'Muse' }
 
 /** What Sotto knows about the installed client, in one sentence, whichever way the check went. */
 function clientLine(update: ProviderClientUpdate | undefined, verified: string | undefined, checking: boolean, connected = false): string {
@@ -30,6 +31,7 @@ function clientLine(update: ProviderClientUpdate | undefined, verified: string |
 
 export function ProvidersSettings(): ReactNode {
   const agents = useOptionalAgents()
+  const museEnabled = useOwlFeature('muse')
   const [selected, setSelected] = useState<ProviderId>('codex')
   const [tab, setTab] = useState<'configuration' | 'models'>('configuration')
   const [pending, setPending] = useState<Partial<Record<ProviderId, 'connect' | 'disconnect' | 'refresh'>>>({})
@@ -76,7 +78,7 @@ export function ProvidersSettings(): ReactNode {
   const inheritedEntryId = catalogEntry(models, inheritedModelId)?.id
   return <div className="providers-settings">
     <div className="providers-workspace">
-      <nav className="providers-list" aria-label="Thread providers">{providerIdSchema.options.map(provider => {
+      <nav className="providers-list" aria-label="Thread providers">{providerIdSchema.options.filter(provider => provider !== 'muse' || museEnabled).map(provider => {
         const current = statusFor(provider)
         const active = enabled.includes(provider)
         const connecting = current.connection === 'connecting' || pending[provider]

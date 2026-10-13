@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useRef, useState, type ReactNode } from 
 import type { AgentProviderStatus, ProviderId } from '../../../../shared/agents'
 import { PROVIDER_INSTALL_GUIDES } from '../../../../shared/hostProviders'
 import { useOptionalAgents } from '../../agents/AgentContext'
+import { useOwlFeature } from '../../state/owlFeature'
 import { ProviderMark } from '../../agents/ProviderMark'
 import { Button } from '../../components/Button'
 import { shownVersion } from '../settings/HostProviders'
@@ -55,6 +56,7 @@ function rowFor(status: AgentProviderStatus | undefined, working: boolean, insta
  */
 export function AgentsStep({ heading, onOpenLink }: AgentsStepProps): ReactNode {
   const agents = useOptionalAgents()
+  const museEnabled = useOwlFeature('muse')
   const state = liveAgentState(agents?.state)
   const providers = state ? localProviders(state) : []
   const [checking, setChecking] = useState(false)
@@ -129,7 +131,7 @@ export function AgentsStep({ heading, onOpenLink }: AgentsStepProps): ReactNode 
   }, [state, check])
 
   const choices = state ? localProviderChoices(state) : null
-  const rows = SETUP_PROVIDERS.map(id => {
+  const rows = SETUP_PROVIDERS.filter(id => id !== 'muse' || museEnabled).map(id => {
     const status = providers.find(provider => provider.id === id)
     const working = connecting.has(id) || (checking && status?.connection !== 'connected' && status?.connection !== 'error')
     return { id, row: rowFor(status, working, choices?.installed?.includes(id), choices?.off.includes(id) === true) }

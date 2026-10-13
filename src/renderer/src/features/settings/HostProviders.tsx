@@ -3,7 +3,8 @@ import { Check, Copy } from 'lucide-react'
 import { writeClipboard } from '../../agents/richActions'
 import { PROVIDER_LABELS, type AgentProviderStatus, type ClientUpdateRun, type ProviderClientUpdate, type ProviderId } from '../../../../shared/agents'
 import type { HostSetupChoice, HostsBridge, HostStatus } from '../../../../shared/hosts'
-import { DEVIN_SIGN_IN_COMMAND, HOST_PROVIDER_JOB_WORDS, hostProviderJobCase, PROVIDER_SIGN_IN_SHAPES, type HostProviderAction, type HostProviderJobCase, type HostProviderJobState } from '../../../../shared/hostProviders'
+import { HOST_PROVIDER_JOB_WORDS, hostProviderJobCase, PROVIDER_SIGN_IN_COMMANDS, PROVIDER_SIGN_IN_SHAPES, type HostProviderAction, type HostProviderJobCase, type HostProviderJobState } from '../../../../shared/hostProviders'
+import { useOwlFeature } from '../../state/owlFeature'
 import { Button } from '../../components/Button'
 import { ProviderMark } from '../../agents/ProviderMark'
 import { useOptionalAgents } from '../../agents/AgentContext'
@@ -15,7 +16,7 @@ import type { HostClientUpdatesView } from './hostClientUpdateWords'
 import './hostProviders.css'
 
 /** The order the tiles are in: the providers the prototype drew, in its order (ADR-0037). */
-export const HOST_PROVIDER_ORDER: readonly ProviderId[] = ['claude', 'codex', 'grok', 'devin']
+export const HOST_PROVIDER_ORDER: readonly ProviderId[] = ['claude', 'codex', 'grok', 'devin', 'muse']
 
 /**
  * What one tile says. `kind` decides its dot and its actions: Disconnect when connected, Connect when turned off, Sign in
@@ -54,15 +55,16 @@ export function connectedProvidersLabel(providers: readonly AgentProviderStatus[
 type Pending = HostProviderAction['action']
 const PENDING_LABEL: Readonly<Record<Pending, string>> = { connect: 'Connecting…', disconnect: 'Disconnecting…', refresh: 'Checking…' }
 
-/** Devin signs in from a terminal on the host: its tile shows the command, with Copy, instead of Sign in. */
-function SignInCommand({ host }: { readonly host: string }): ReactNode {
+/** Devin and Muse sign in on the host itself: their tiles show the command, with Copy, instead of Sign in. */
+function SignInCommand({ host, provider }: { readonly host: string; readonly provider: ProviderId }): ReactNode {
+  const command = PROVIDER_SIGN_IN_COMMANDS[provider] ?? ''
   const [copied, setCopied] = useState<'copied' | 'failed' | null>(null)
   useEffect(() => { if (!copied) return; const timer = setTimeout(() => setCopied(null), 1500); return () => clearTimeout(timer) }, [copied])
-  const copy = async (): Promise<void> => { try { await writeClipboard(DEVIN_SIGN_IN_COMMAND); setCopied('copied') } catch { setCopied('failed') } }
+  const copy = async (): Promise<void> => { try { await writeClipboard(command); setCopied('copied') } catch { setCopied('failed') } }
   return <div className="host-provider__command">
     <p>Sign in on {host} with:</p>
-    <code>{DEVIN_SIGN_IN_COMMAND}</code>
-    <Button variant="secondary" aria-label="Copy the Devin sign-in command" onClick={() => void copy()}>
+    <code>{command}</code>
+    <Button variant="secondary" aria-label={`Copy the ${PROVIDER_LABELS[provider]} sign-in command`} onClick={() => void copy()}>
       {copied === 'copied' ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}{copied === 'copied' ? 'Copied' : 'Copy'}
     </Button>
     {copied === 'failed' ? <p>The command could not be copied. Select it and copy it yourself.</p> : null}
@@ -195,7 +197,7 @@ function ProviderTile({ host, provider, status, bridge, job, onSignIn, onAgent, 
     }
     if (tile.kind === 'off') return <Button variant="secondary" disabled={pending !== null} aria-label={`Connect ${name} on ${host.name}`} onClick={() => void act('connect')}>{pending ? PENDING_LABEL[pending] : 'Connect'}</Button>
     if (tile.kind === 'signed-out') {
-      if (!PROVIDER_SIGN_IN_SHAPES[provider]) return <SignInCommand host={host.name} />
+      if (!PROVIDER_SIGN_IN_SHAPES[provider]) return <SignInCommand host={host.name} provider={provider} />
       return <Button variant="primary" aria-label={`Sign in to ${name} on ${host.name} from this computer`} onClick={() => onSignIn(provider)}>Sign in</Button>
     }
     if (jobCase) {
@@ -223,7 +225,7 @@ function ProviderTile({ host, provider, status, bridge, job, onSignIn, onAgent, 
 
 /**
  * A connected host's providers, under its row in Settings > Hosts (ADR-0037, layout B of `prototype/host-providers`):
- * Show providers opens a tile for each of the four, and each tile acts on that host alone. Sign in opens a small dialog
+ * Show providers opens a tile for each provider this build offers, and each tile acts on that host alone. Sign in opens a small dialog
  * that runs the provider's own sign-in on the host and finishes it in this computer's browser. A provider the host cannot
  * use offers an agent to install, update or fix it (ADR-0035), and its tile follows that agent while it works.
  */
@@ -237,6 +239,7 @@ export function HostProviders({ host, providers, bridge, job, choice, updates, r
   /** The models an agent can run on, shared with Have my agent set this up. */
   readonly choice?: HostSetupChoice | undefined
 }): ReactNode {
+  const museEnabled = useOwlFeature('muse')
   const [open, setOpen] = useState(false)
   const [signingIn, setSigningIn] = useState<ProviderId | null>(null)
   const [agent, setAgent] = useState<{ readonly provider: ProviderId; readonly jobCase: HostProviderJobCase } | null>(null)
@@ -282,7 +285,7 @@ export function HostProviders({ host, providers, bridge, job, choice, updates, r
     </div>
     {open ? <div id={gridId} className="host-providers__panel">
       <ul ref={grid} className="host-providers__grid" aria-label={`Providers on ${host.name}`}>
-        {HOST_PROVIDER_ORDER.map(provider => <ProviderTile key={provider} host={host} provider={provider} bridge={bridge}
+        {HOST_PROVIDER_ORDER.filter(provider => provider !== 'muse' || museEnabled).map(provider => <ProviderTile key={provider} host={host} provider={provider} bridge={bridge}
           status={providers.find(item => item.id === provider)} job={own?.provider === provider ? own : undefined}
           onSignIn={setSigningIn} onAgent={(id, jobCase) => setAgent({ provider: id, jobCase })} updates={tileUpdates} />)}
       </ul>

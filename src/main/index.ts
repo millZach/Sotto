@@ -581,6 +581,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     overrides: process.env.SOTTO_OWL_FEATURES, watcherOverride: process.env.SOTTO_WATCHER_ENABLED })
   // Existing Watcher options wrap the Owl feature list for branches in flight.
   const watcherEnabled = owlFeatures.watcher
+  const museEnabled = owlFeatures.muse
   let repaintOmarchy: () => void = () => undefined
   const omarchyTheme = new OmarchyThemeMonitor(platform, homedir(),
     () => repaintOmarchy(), logOperational)
@@ -696,7 +697,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const windowInFront = (): boolean => BrowserWindow.getAllWindows().some(window => window.getTitle() === buildName && window.isVisible() && !window.isMinimized()
     && (window.isFocused() || (windowBlurredAt !== 0 && Date.now() - windowBlurredAt < 45_000)))
   const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
-    directory: userDataPath, credentials, watcherEnabled,
+    directory: userDataPath, credentials, watcherEnabled, museEnabled,
     ...(app.isPackaged ? { claudeHistoryModulePath: join(process.resourcesPath, 'claude-sdk', 'sdk.mjs') } : {}),
     settings: () => workingCopySettings, writingSettings: () => settings.get(),
     historyEnabled: () => agentHistoryEnabled,

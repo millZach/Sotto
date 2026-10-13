@@ -56,7 +56,7 @@ import com.millzach.sotto.core.ThreadState
 
 object Words {
     fun provider(id: String?): String =
-        mapOf("claude" to "Claude Code", "codex" to "Codex", "grok" to "Grok Build", "devin" to "Devin")[id ?: ""] ?: "The agent"
+        mapOf("claude" to "Claude Code", "codex" to "Codex", "grok" to "Grok Build", "devin" to "Devin", "muse" to "Muse")[id ?: ""] ?: "The agent"
 
     // "4 min. ago", or nothing when the host did not say.
     fun ago(iso: String?): String? {

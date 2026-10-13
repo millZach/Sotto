@@ -33,7 +33,7 @@ async function fixture(provider: keyof typeof factories, committed = true, neste
   const registry = new ThreadRegistry(f.root)
   const native = new ConfiguredProviderHost({ directory: f.root, provider: () => provider,
     threadProvider: id => registry.byThread(id)?.provider,
-    hosts: { codex: new FakeProviderHost(), claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), [provider]: new SottoThreadHost(provider, f.host, registry) } })
+    hosts: { codex: new FakeProviderHost(), claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(), [provider]: new SottoThreadHost(provider, f.host, registry) } })
   const workspace = new WorkspaceHost(native, f.root)
   cleanup.push(async () => { workspace.disconnect(); await f.adapter.closed(); await workspace.close(); await registry.flush(); await f.cleanup() })
   await workspace.connect(provider)

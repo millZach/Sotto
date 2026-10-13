@@ -73,7 +73,7 @@ export function IPhoneSurface({ threadId, store, bridge, phoneStore = phonePlaye
   const agents = useOptionalAgents()
   const owningThread = agents?.state?.host.threads.find(item => item.id === threadId)
   const owningModel = resolveModel(agents?.state?.host.models ?? [], owningThread?.modelId)
-  const agentToolsUnavailable = owningThread?.providerId === 'devin' || owningModel?.providerId === 'devin'
+  const agentToolsUnavailable = owningThread?.providerId === 'devin' || owningModel?.providerId === 'devin' || owningThread?.providerId === 'muse' || owningModel?.providerId === 'muse'
   const showing = usePhonePlayerOpen(phoneStore, threadId)
   const page = phonePage(browser)
   const pageId = page?.id ?? null
@@ -159,7 +159,7 @@ export function IPhoneSurface({ threadId, store, bridge, phoneStore = phonePlaye
         {browser.notice ? <p className="terminal-notice" role="alert">{browser.notice}</p> : null}
         <dl className="iphone-surface__facts">
           <dt>Runs as</dt><dd>A {TEST_IPHONE.width} by {TEST_IPHONE.height} page in Sotto’s browser with iOS Safari’s user agent and touch. It is not iOS.</dd>
-          {page ? <><dt>Agent</dt><dd>{agentToolsUnavailable ? 'This Devin client does not support Sotto browser tools.'
+          {page ? <><dt>Agent</dt><dd>{agentToolsUnavailable ? 'This provider does not support Sotto browser tools.'
             : page.sharedOrigin ? 'Can read and screenshot this page.' : 'Cannot see this page until you share it.'}
             {!agentToolsUnavailable ? <button type="button" className="browser-review-link tt-focusable" aria-pressed={Boolean(page.sharedOrigin)} disabled={busy} onClick={() => void share()}
               title={page.sharedOrigin ? 'Stop sharing the test iPhone with the agent' : 'Let the agent in this thread read the test iPhone and take screenshots'}>
