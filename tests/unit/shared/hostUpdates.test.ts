@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { hostIsNewer, hostIsOlder } from '../../../src/shared/hostProtocol'
-import { HOST_ARCHIVE_PATTERN, hostArchiveName, hostUpdateCommandSchema, threadKeepsHostBusy } from '../../../src/shared/hostUpdates'
+import { HOST_ARCHIVE_PATTERN, HOST_VERSION_PATTERN, hostArchiveName, hostUpdateCommandSchema, threadKeepsHostBusy } from '../../../src/shared/hostUpdates'
 import { hostsCommandSchema } from '../../../src/shared/hosts'
 
 describe('comparing a host\'s Sotto version with this computer\'s', () => {
@@ -46,5 +46,14 @@ describe('the archive and the command', () => {
     }
     expect(hostUpdateCommandSchema.safeParse({ type: 'host-update', id, action: 'install' }).success).toBe(false)
     expect(hostUpdateCommandSchema.safeParse({ type: 'host-update', id, action: 'update', version: '9.9.9' }).success).toBe(false)
+  })
+  it('admits only stable or fully numbered Owl installation paths and archive names', () => {
+    const owl = '0.1.38-owl.20261012.10'
+    expect(HOST_VERSION_PATTERN.test(owl)).toBe(true)
+    expect(HOST_ARCHIVE_PATTERN.test(hostArchiveName(owl))).toBe(true)
+    for (const version of ['../0.1.38', '0.1.38/bad', '0.1.38-beta.1', '0.1.38-owl.20261012.0', '0.1.38-owl.20261012.01', '0.1.38-owl.20261012.1/escape', '0.1.38-owl.20261012.1\n']) {
+      expect(HOST_VERSION_PATTERN.test(version), version).toBe(false)
+      expect(HOST_ARCHIVE_PATTERN.test(hostArchiveName(version)), version).toBe(false)
+    }
   })
 })

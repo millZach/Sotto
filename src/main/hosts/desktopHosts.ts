@@ -253,6 +253,7 @@ export class DesktopHosts {
    */
   async start(): Promise<void> {
     this.saved = await this.store.read()
+    this.options.router.setUsageSavedHosts(this.saved.map(host => host.hostId ?? host.id))
     this.retainedDrafts.setSavedHosts(this.saved.flatMap(host => host.hostId ? [{ hostId: host.hostId, registrationId: host.id }] : []))
     await this.tailnet.load()
     for (const host of this.saved) this.status.set(host.id, { ...this.fields(host), ...(host.hostId ? { hostId: host.hostId } : {}), ...(host.clientId ? { clientId: host.clientId } : {}), phase: 'disconnected' })
@@ -501,7 +502,10 @@ export class DesktopHosts {
     const entry = this.tailnet.get(host.id)
     return { prefer: entry.prefer, tailnetAddress: entry.address, tailnetSeen: entry.addressSeen }
   }
-  private emit(): void { const state = this.get(); for (const listener of this.listeners) listener(state) }
+  private emit(): void {
+    this.options.router.setUsageSavedHosts(this.saved.map(host => host.hostId ?? host.id))
+    const state = this.get(); for (const listener of this.listeners) listener(state)
+  }
   private update(id: string, patch: Partial<HostStatus>): void { const current = this.status.get(id); if (current) { this.status.set(id, { ...current, ...patch }); this.emit() } }
   private save(): Promise<void> {
     const value = structuredClone(this.saved)

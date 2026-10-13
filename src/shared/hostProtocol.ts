@@ -15,6 +15,7 @@ import { PASTED_CODE_MAX } from './hostProviders'
 import type { AgentActivity } from './agentActivity'
 import { phoneTerminalAnswerSchema, phoneTerminalListSchema, type PhoneTerminal } from './phoneTerminals'
 import { providerIdSchema, type ProviderClientUpdate } from './agents'
+import { usageLocalClearRequestSchema, usageLocalQuerySchema, usageProviderIdSchema } from './usageDashboard'
 
 /**
  * Protocol version 1 is frozen (ADR-0025; every message is listed in docs/host-protocol.md). A later host
@@ -163,7 +164,7 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * `terminal-approval` reads a bounded live approval preview, `observe-terminals` reports foreground details, and
  * `answer-terminal` delivers one exact reviewed answer through the local hook (ADR-0066). No screen stream or input.
  */
-export const HOST_FEATURES = ['terminals', 'client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'watcher-phone', 'watcher-phone-stop-all'] as const
+export const HOST_FEATURES = ['terminals', 'client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
@@ -324,6 +325,9 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   /** A page of a thread's agents, and one agent's assignments, for Agents; read on request. */
   z.object({ ...base, op: z.literal('subagent-page'), request: subagentPageRequestSchema }).strict(),
   z.object({ ...base, op: z.literal('subagent-assignments'), request: subagentAssignmentsRequestSchema }).strict(),
+  z.object({ ...base, op: z.literal('usage-read'), query: usageLocalQuerySchema }).strict(),
+  z.object({ ...base, op: z.literal('usage-refresh'), providerIds: z.array(usageProviderIdSchema).max(4).optional() }).strict(),
+  z.object({ ...base, op: z.literal('usage-clear'), request: usageLocalClearRequestSchema }).strict(),
   /**
    * A provider's sign-in on the host, for the client that asks and for no other (ADR-0037): start one, read where it
    * stands, hand its client a code pasted from the sign-in page, or cancel it. Each answers with the sign-in, or null.

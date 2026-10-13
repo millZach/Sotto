@@ -17,7 +17,8 @@ import type { ToolListRequest, ToolsResult } from '../../shared/tools'
 import { listHostFolders } from './hostFolders'
 import type { HostThreadToolReads } from './threadToolReads'
 import type { HostAnswerTarget, HostErrorCode } from '../../shared/hostProtocol'
-import { REMOTE_PERMISSION_DENIED } from './authority'
+import { mayGrantLocally, REMOTE_PERMISSION_DENIED } from './authority'
+import { usageLocalClearRequestSchema, usageLocalQuerySchema, usageProviderIdSchema, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery } from '../../shared/usageDashboard'
 
 type RequestAnswerCheckRefusalReason = 'stale-question' | 'provider-disconnected' | 'forbidden' | 'unsupported' | 'answer-in-progress' | 'answer-changed'
 const requestAnswerCheckRefusals: Record<RequestAnswerCheckRefusalReason, { code: HostErrorCode; message: string }> = {
@@ -64,6 +65,11 @@ export interface ClientIdentity {
 export interface HostService {
   readonly watcherPhone?: WatcherPhoneService | undefined
   watcherPhoneExclusions?(): { threadIds: string[]; projectIds: string[] }
+  /** Numeric usage belongs to this host and exists only when its own startup gate is on. */
+  readonly supportsUsage?: boolean
+  usageRead?(query: UsageLocalQuery): Promise<UsageLocalHostRead>
+  usageRefresh?(providerIds?: ProviderId[]): Promise<UsageLocalHostRead>
+  usageClear?(request: UsageLocalClearRequest, client: ClientIdentity): Promise<UsageLocalClearResult>
   readonly supportsWatcherControl?: boolean
   readonly supportsWatcherReads?: boolean
   subscribeWatcher?(listener: (projection: WatcherHostProjection) => void): () => void
@@ -131,6 +137,13 @@ export interface ThreadEventSource {
   eventsAfter(seq: number, threadId?: string, limit?: number): StoredThreadEvent[]
 }
 
+/** A numeric archive and cached native allowance reads, without provider handles or message text. */
+export interface HostUsageReads {
+  read(query: UsageLocalQuery): Promise<UsageLocalHostRead>
+  refresh(providerIds?: ProviderId[]): Promise<UsageLocalHostRead>
+  clear(request: UsageLocalClearRequest): Promise<UsageLocalClearResult>
+}
+
 export const DESKTOP_WINDOW_CLIENT_ID = 'desktop-window'
 
 /** The account Sotto is running as. Recorded locally; never logged, never sent. */
@@ -175,6 +188,7 @@ export interface LocalHostControl {
 export class LocalHostService implements HostService {
   watcherPhoneExclusions(): { threadIds: string[]; projectIds: string[] } { return this.control.watcherPhoneExclusions?.() ?? { threadIds: [], projectIds: [] } }
   get watcherPhone(): WatcherPhoneService | undefined { return this.options.watcherPhone }
+  readonly supportsUsage: boolean
   get supportsWatcherControl(): boolean { return this.options.watcher !== undefined }
   get supportsWatcherReads(): boolean { return this.options.watcher !== undefined }
   watcherControl(request: WatcherHostControl, client: ClientIdentity, guard: () => void): Promise<unknown> { return this.options.watcher!.admitRemote(request, client.clientId, guard) }
@@ -193,13 +207,32 @@ export class LocalHostService implements HostService {
   private readonly control: LocalHostControl
   private readonly eventSource: ThreadEventSource | undefined
   private readonly tools: HostThreadToolReads | undefined
+  private readonly usage: HostUsageReads | undefined
+  private readonly mayClearUsage: (client: ClientIdentity) => boolean
 
   /** `tools` are the runtime's reads of its threads' Files, Changes and Agents, for a paired client (ADR-0025, October 5 amendment). */
-  constructor(private readonly options: { control: LocalHostControl; events?: ThreadEventSource; tools?: HostThreadToolReads; babysitting?: boolean; watcher?: WatcherService; watcherPhone?: WatcherPhoneService }) {
+  constructor(private readonly options: { control: LocalHostControl; events?: ThreadEventSource; tools?: HostThreadToolReads; babysitting?: boolean; usage?: HostUsageReads; mayClearUsage?: (client: ClientIdentity) => boolean; watcher?: WatcherService; watcherPhone?: WatcherPhoneService }) {
     this.control = options.control
     this.supportsBabysitting = options.babysitting === true
     this.eventSource = options.events
     this.tools = options.tools
+    this.usage = options.usage
+    this.supportsUsage = options.usage !== undefined
+    this.mayClearUsage = options.mayClearUsage ?? (client => mayGrantLocally(client).allowed)
+  }
+
+  usageRead(query: UsageLocalQuery): Promise<UsageLocalHostRead> {
+    if (!this.usage) return Promise.reject(new Error('Usage is unavailable on this host.'))
+    return this.usage.read(usageLocalQuerySchema.parse(query))
+  }
+  usageRefresh(providerIds?: ProviderId[]): Promise<UsageLocalHostRead> {
+    if (!this.usage) return Promise.reject(new Error('Usage is unavailable on this host.'))
+    return this.usage.refresh(providerIds === undefined ? undefined : usageProviderIdSchema.array().max(4).parse(providerIds))
+  }
+  usageClear(request: UsageLocalClearRequest, client: ClientIdentity): Promise<UsageLocalClearResult> {
+    if (!this.usage) return Promise.reject(new Error('Usage is unavailable on this host.'))
+    if (!this.mayClearUsage(client)) return Promise.reject(new Error(REMOTE_PERMISSION_DENIED))
+    return this.usage.clear(usageLocalClearRequestSchema.parse(request))
   }
 
   /** Empty when no event source is wired: the window reads history through the thread detail today. */

@@ -1,9 +1,9 @@
 // @vitest-environment node
 import { collectLaunchScript as collect, launchScriptChild, type LaunchScriptOutcome as Outcome } from '../fixtures/launchScriptRunner'
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
-import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createServer } from 'node:http'
 import { describe, afterEach, expect, it, vi } from 'vitest'
@@ -98,6 +98,75 @@ it('downloads, checks and installs a version beside a flat install, then restart
   expect(await launch(configuration)).toMatchObject({ owned: true, pid: ready.pid })
   // No update lock is left behind.
   expect(await readdir(join(configuration.installPath, 'versions'))).toEqual(expect.not.arrayContaining(['.update-lock']))
+})
+
+it('receives and installs a full Owl archive, reuses identical retries and never replaces different published version files', async () => {
+  const configuration = await fixture(), version = '9.9.9-owl.20261012.10', file = localArchiveName(version)
+  const entry = await fakeHost(), archive = tarGz(hostRelease(version, entry))
+  const install = () => run(configuration, { op: 'update-install', version, file, sha256: sha256(archive) })
+  expect(last(await receive(configuration, file, archive))).toMatchObject({ type: 'update-received' })
+  expect(last(await install())).toMatchObject({ type: 'update-installed', version })
+  expect(last(await receive(configuration, file, archive))).toMatchObject({ type: 'update-received' })
+  expect(last(await install())).toMatchObject({ type: 'update-installed', version })
+  const changed = tarGz(hostRelease(version, 'changed build under published version'))
+  expect(last(await receive(configuration, file, changed))).toMatchObject({ type: 'update-received' })
+  expect(last(await run(configuration, { op: 'update-install', version, file, sha256: sha256(changed) }))).toMatchObject({ type: 'error', reason: 'update-version-conflict' })
+  expect(await readFile(join(configuration.installPath, 'versions', version, 'host', 'index.js'), 'utf8')).toBe(entry)
+  await writeFile(join(configuration.installPath, 'current'), version + '\n')
+  const ready = await launch(configuration)
+  expect(ready).toMatchObject({ type: 'ready', owned: true })
+  expect((await descriptor(configuration)).entry).toContain(version)
+  // A pointer at a running version cannot bypass the same-build check.
+  expect(last(await receive(configuration, file, changed))).toMatchObject({ type: 'update-received' })
+  expect(last(await run(configuration, { op: 'update-install', version, file, sha256: sha256(changed) }))).toMatchObject({ type: 'error', reason: 'update-version-conflict' })
+  expect(alive(ready.pid as number)).toBe(true)
+  expect(await pointer(configuration)).toBe(version + '\n')
+  expect(await readFile(join(configuration.installPath, 'versions', version, 'host', 'index.js'), 'utf8')).toBe(entry)
+  await writeFile(join(configuration.installPath, 'versions', version, 'runtime-manifest.json'), JSON.stringify({ sottoVersion: version, node: '>=99 <100' }))
+  expect(spawnSync(process.execPath, ['-e', NODE_CHECK_SOURCE, JSON.stringify({ installPath: configuration.installPath })], { encoding: 'utf8', windowsHide: true })).toMatchObject({ status: 3 })
+})
+
+it('keeps a conflicting Owl build intact and installs a retry only after the owner backs its folder up', async () => {
+  const configuration = await fixture(), version = '9.9.9-owl.20261012.2', file = localArchiveName(version)
+  const entry = await fakeHost(), original = hostRelease(version, entry), replacement = hostRelease(version, entry + '\n// Published source\n')
+  original['runtime-manifest.json'] = JSON.stringify({ ...JSON.parse(original['runtime-manifest.json']!), sourceCommit: 'a'.repeat(40) })
+  replacement['runtime-manifest.json'] = JSON.stringify({ ...JSON.parse(replacement['runtime-manifest.json']!), sourceCommit: 'b'.repeat(40) })
+  const archive = tarGz(original), updated = tarGz(replacement)
+  const install = (bytes: Uint8Array) => run(configuration, { op: 'update-install', version, file, sha256: sha256(bytes) })
+  await receive(configuration, file, archive)
+  expect(last(await install(archive))).toMatchObject({ type: 'update-installed', version })
+  await receive(configuration, file, updated)
+  expect(last(await install(updated))).toEqual({ type: 'error', reason: 'update-version-conflict' })
+  const target = join(configuration.installPath, 'versions', version), backup = target + '.saved-by-owner'
+  for (const [name, contents] of Object.entries(original)) expect(await readFile(join(target, name), 'utf8')).toBe(contents)
+  await expect(readFile(target + '.partial')).rejects.toMatchObject({ code: 'ENOENT' })
+  expect(await pointer(configuration)).toBeNull()
+  // The owner resolves the explicit folder conflict while the host is stopped, preserving the old build's bytes.
+  expect(dirname(resolve(target))).toBe(resolve(configuration.installPath, 'versions'))
+  expect(dirname(resolve(backup))).toBe(resolve(configuration.installPath, 'versions'))
+  await rename(target, backup)
+  expect(last(await install(updated))).toMatchObject({ type: 'update-installed', version })
+  for (const [name, contents] of Object.entries(original)) expect(await readFile(join(backup, name), 'utf8')).toBe(contents)
+  for (const [name, contents] of Object.entries(replacement)) expect(await readFile(join(target, name), 'utf8')).toBe(contents)
+  expect(await pointer(configuration)).toBeNull()
+  expect(await readdir(join(configuration.installPath, 'versions', '.incoming'))).toEqual([])
+  await launch(configuration)
+  const ready = last(await run(configuration, { op: 'update-restart', hostId: HOST_ID, version }))
+  expect(ready).toMatchObject({ type: 'ready', owned: true })
+  hosts.push(ready.pid as number)
+  expect(await pointer(configuration)).toBe(version + '\n')
+  expect((await descriptor(configuration)).entry).toBe(join(target, 'host', 'index.js'))
+  // Successful-restart pruning leaves the owner's backup and its immutable source metadata alone.
+  for (const [name, contents] of Object.entries(original)) expect(await readFile(join(backup, name), 'utf8')).toBe(contents)
+})
+
+it('refuses an Owl archive whose package and runtime manifest versions disagree', async () => {
+  const configuration = await fixture(), version = '9.9.9-owl.20261012.1', file = localArchiveName(version)
+  const files = hostRelease(version, await fakeHost()); files['runtime-manifest.json'] = JSON.stringify({ sottoVersion: '9.9.9', node: '>=24 <25' })
+  const archive = tarGz(files)
+  await receive(configuration, file, archive)
+  expect(last(await run(configuration, { op: 'update-install', version, file, sha256: sha256(archive) }))).toMatchObject({ type: 'error', reason: 'archive-invalid' })
+  await expect(readFile(join(configuration.installPath, 'versions', version, 'package.json'))).rejects.toMatchObject({ code: 'ENOENT' })
 })
 
 it('starts the old version again, and points back at it, when the new one does not start', async () => {

@@ -15,7 +15,8 @@ import { resolveModel } from '../shared/modelCatalog'
 import { version as packageVersion } from '../../package.json'
 import { REMOTE_PERMISSION_DENIED } from '../main/agents/authority'
 import { commandFromProtocolV1, managementCommandRefusal } from '../shared/hostProtocol'
-import { REMOTE_SIGN_IN_OPERATIONS, remoteCommandRefusal } from './remoteCommands'
+import { REMOTE_SIGN_IN_OPERATIONS, remoteCommandRefusal, remoteUsageRefusal } from './remoteCommands'
+import { usageLocalClearResultSchema, usageLocalHostReadSchema } from '../shared/usageDashboard'
 import { ProviderSignInRefusal, type ProviderSignIns } from './providerSignIn'
 import { SocketFrames } from './socketFrames'
 import { hostPhonesCommandSchema, type HostPhonesCommand, type PhonesState } from '../shared/phones'
@@ -194,6 +195,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'atomic-send' || service.supportsAtomicSend === true)
     && (feature !== 'draft-revisions' || service.supportsDraftRevisions === true)
     && (feature !== 'client-updates' || options.clientUpdates === true)
+    && (feature !== 'usage-dashboard' || (service.supportsUsage === true && service.usageRead !== undefined && service.usageRefresh !== undefined && service.usageClear !== undefined))
     && (feature !== 'pull-request-babysit' || service.supportsBabysitting === true))
   /** What this listener offers a client: every feature to a desktop, and to a phone all but the desktop-only ones (ADR-0053). */
   const featuresFor = (peer: Peer): string[] => (peer.desktop ? [...features] : features.filter(feature => !HOST_DESKTOP_FEATURES.includes(feature)))
@@ -772,6 +774,16 @@ export async function startSocketServer(options: SocketServerOptions) {
       case 'subagent-assignments':
         if (!service.subagentAssignments) throw new Refusal('invalid_request')
         return toolRead(() => service.subagentAssignments!(request.request))
+      case 'usage-read':
+        if (!offers(peer, 'usage-dashboard') || !service.usageRead) throw new Refusal('invalid_request')
+        try { return usageLocalHostReadSchema.parse(await service.usageRead(request.query)) } catch { throw new Refusal('unavailable') }
+      case 'usage-refresh':
+        if (!offers(peer, 'usage-dashboard') || !service.usageRefresh) throw new Refusal('invalid_request')
+        try { return usageLocalHostReadSchema.parse(await service.usageRefresh(request.providerIds)) } catch { throw new Refusal('unavailable') }
+      case 'usage-clear':
+        if (!offers(peer, 'usage-dashboard') || !service.usageClear) throw new Refusal('invalid_request')
+        if (remoteUsageRefusal(request.op, options.mayAnswer?.(peer.client) ?? false)) throw new Refusal('forbidden')
+        try { return usageLocalClearResultSchema.parse(await service.usageClear(request.request, peer.client)) } catch { throw new Refusal('unavailable') }
       case 'stage-attachment': {
         if (!service.stageAttachment) throw new Refusal('invalid_request')
         // Up to about 14 MB of base64 in, and 10 MiB held until it is kept: one at a time per peer, on the preview's guard.

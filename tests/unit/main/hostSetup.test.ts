@@ -57,6 +57,12 @@ function fixture(busy?: () => string | undefined) {
 afterEach(() => vi.restoreAllMocks())
 
 describe('the host setup brief', () => {
+  it('names the exact matching Owl host archive when Owl is the explicit target', () => {
+    const version = '0.1.38-owl.20261012.10'
+    const brief = hostSetupBrief({ name: 'forge', target: 'zach@forge', installPath: '~/.local/share/sotto-host', dataDirectory: '~/.sotto', version })
+    expect(brief).toContain(`Sotto Owl ${version}`)
+    expect(brief).toContain(`Sotto-host-${version}-linux-x64.tar.gz`)
+  })
   it('names the device, its route, its folders and the failure, and carries no key, token or password', () => {
     const brief = hostSetupBrief({ name: 'forge', target: 'zach@forge', sshPort: 2222, installPath: '~/.local/share/sotto-host', dataDirectory: '~/.sotto', version: '0.1.21',
       failure: { step: 'install', reason: 'node-too-new' } })

@@ -82,7 +82,30 @@ To switch from stable to Owl, close Sotto and run the Owl installer over the exi
 
 To return, close Owl and install stable over it. Stable builds carrying the October 10 Watcher gate show and start none of Watcher and keep its saved record, thread kinds, settings and histories whole for a later return to Owl, even with Keep local history off in stable. A pane layout or selection pointing at Watcher does not survive the stable session; stable treats those views like missing threads rather than preserving or restoring hidden panes. The main records remain whole. To clear Watcher history, turn that setting off in Owl. The [gate verification](../verification/2026-10-10-watcher-owl-gate.md) exercises the real load/save paths. Older published stable builds, including 0.1.35 and 0.1.36, still drop Watcher's control record, thread kinds and capacity when saving; back up the closed profile before returning to one. The [October 9 note](../verification/2026-10-09-sotto-owl.md) records that older behavior.
 
-Owl packaging and updates are Windows only for now. Mac stable ships the same checked main commit without a Mac Owl stage; it has no updater (ADR-0001). Linux is outside this preview track.
+Owl desktop packaging and updates are Windows only for now. Mac stable ships the same checked main commit without a Mac Owl stage; it has no updater (ADR-0001). Linux has no Owl desktop build.
+
+### Matching Owl host archives
+
+Usage is an Owl feature on every owning computer (ADR-0078). Plain Node Owl host archives can accompany the Windows desktop on the same prerelease; this adds no macOS or Linux Owl desktop. Each host enables features from its own packaged full version. An Owl desktop never activates a collector in a stable host.
+
+On each host archive's native release machine, use the reviewed Windows Owl's exact full version and source commit from its provenance:
+
+```sh
+npm run package:host:owl -- --version 0.1.38-owl.20261012.1 --source <full-source-sha>
+```
+
+The command requires the requested clean checkout, preserves source manifests, verifies and smoke-tests the native archive, and writes its checksum sidecar and an Owl receipt. It refuses an existing output of that version. A Windows archive cannot serve as Linux evidence. The host and desktop inventories differ, so compare their full source commit and full version rather than their build-input hashes.
+
+Bring each verified native archive and its `.sha256` sidecar to the release preparation machine, then pass each archive explicitly:
+
+```sh
+npm run release:owl -- --notes-file release/notes.md --host-archive release/Sotto-host-0.1.38-owl.20261012.1-linux-x64.tar.gz
+```
+
+Repeat `--host-archive` for other native platforms. Preparation inspects and verifies the archive's bytes, contents, own version, source and platform agreement; a receipt alone is insufficient. The printed create command attaches those archives and sidecars to the same Owl prerelease, and the combined checksum file still uploads last. Preparation never publishes, installs or restarts a host.
+
+After publication, the user can choose the matching host update from the desktop. Busy-host and restart checks still apply. Equal-base stable hosts can explicitly switch to the chosen Owl target; Owl date and daily number order numerically, and newer hosts are not downgraded. Older hosts remain connected while Usage says unavailable. Returning to stable preserves the dormant Usage database. Stable release hosts use the checked main source and stable version described above; offline `package:host` remains available for verification.
+
 ## Speech model
 
 The speech model is not in any installer (ADR-0071). Its four files are release assets on `millZach/Sotto-releases` under their own tag, `speech-model-parakeet-tdt-0.6b-v3-int8-1`, and every Sotto downloads them on first run. Publish that release once, and again only when the model changes:

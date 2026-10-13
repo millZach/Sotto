@@ -19,8 +19,8 @@ async function capture(launched: LaunchedSotto, name: string, check: () => Promi
 }
 import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
 import { isBuiltin } from 'node:module'
-import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { join, resolve, sep } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { build } from 'vite'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
@@ -210,8 +210,22 @@ test('an older host shows a pill on the Threads page, fails an update with its o
     expect((await readdir(join(installPath, 'versions')).catch(() => [])).filter(name => name !== '.incoming')).toEqual([])
     await expect.poll(async () => (await page.evaluate(() => window.sotto!.hosts!.get())).hosts[0]).toMatchObject({ phase: 'connected', version: OLD })
 
-    // The release is put right; Try again installs it beside the old version, restarts forge's host and reconnects.
+    // A valid release cannot overwrite a different existing version folder. The failure names it and preserves it.
     published.set(`/v${desktopVersion}/${file}.sha256`, sidecar(archive, file))
+    const conflicting = join(installPath, 'versions', desktopVersion)
+    await mkdir(conflicting, { recursive: true })
+    await writeFile(join(conflicting, 'package.json'), 'Synthetic preserved build')
+    await panel.getByRole('button', { name: 'Try again to update forge' }).click()
+    await expect(panel.getByText(`The existing versions/${desktopVersion} folder on forge differs from the release. Sotto kept it unchanged.`)).toBeVisible({ timeout: 90_000 })
+    await expect(panel.getByText('Use a newer Sotto build, or stop the host on forge, keep that folder as a backup and move it aside before trying again.')).toBeVisible()
+    await expect(panel.getByText(`forge still runs ${OLD}. Nothing was lost.`)).toBeVisible()
+    await capture(launched, 'panel-version-conflict', async () => { expect(await inside(panel)).toBe(true) })
+    expect(await readFile(join(conflicting, 'package.json'), 'utf8')).toBe('Synthetic preserved build')
+    await expect.poll(async () => (await page.evaluate(() => window.sotto!.hosts!.get())).hosts[0]).toMatchObject({ phase: 'connected', version: OLD })
+    // Owner recovery in this isolated profile keeps the conflicting bytes, then permits the same validated retry.
+    const backup = conflicting + '.saved-by-owner'
+    expect(resolve(backup).startsWith(resolve(installPath) + sep)).toBe(true)
+    await rename(conflicting, backup)
     await panel.getByRole('button', { name: 'Try again to update forge' }).click()
     await expect(panel.getByText(`forge runs Sotto ${desktopVersion}.`)).toBeVisible({ timeout: 90_000 })
     await expect(page.getByRole('button', { name: 'forge updated. Hide host updates' })).toBeVisible()
@@ -222,7 +236,8 @@ test('an older host shows a pill on the Threads page, fails an update with its o
     await expect(readFile(join(installPath, 'host', 'index.js'), 'utf8')).resolves.toBeTruthy()
     await expect.poll(async () => (await page.evaluate(() => window.sotto!.hosts!.get())).hosts[0]).toMatchObject({ phase: 'connected', version: desktopVersion })
     await expect.poll(async () => (await agentState(page)).host.threads.filter(thread => thread.clientConnected).map(thread => thread.id)).toEqual(expect.arrayContaining(threads))
-    expect(releases.requests.filter(path => path.endsWith('.tar.gz')).length).toBe(2)
+    expect(await readFile(join(backup, 'package.json'), 'utf8')).toBe('Synthetic preserved build')
+    expect(releases.requests.filter(path => path.endsWith('.tar.gz')).length).toBe(3)
 
     // Dismiss puts it away, and nothing is offered for a host that is up to date.
     await panel.getByRole('button', { name: 'Dismiss the note that forge was updated' }).click()

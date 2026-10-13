@@ -6,13 +6,15 @@ import { existingWorkingDirectory } from './threadWorktrees'
 import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
 import { randomUUID } from 'node:crypto'
 import { NativeUsage } from './nativeUsage'
+import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
+import { mergeCodexQuota, parseCodexQuota, unavailableProviderQuota } from './providerQuota'
 import { bracketCompaction } from './compactionActivity'
 import { compactionPending, compactionSchema } from '../../shared/compaction'
 import { stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
-import { agentAttachmentReferenceSchema, agentProjectSchema, agentRuntimeModeSchema, type AgentRuntimeMode, type AgentHostSnapshot, type AgentMessage, type AgentThread } from '../../shared/agents'
+import { agentAttachmentReferenceSchema, agentProjectSchema, agentRuntimeModeSchema, type AgentRuntimeMode, type AgentHostSnapshot, type AgentMessage, type AgentThread, type ProviderId } from '../../shared/agents'
 import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentSkillCatalog, AgentSkillReference } from '../../shared/agentSkills'
@@ -145,6 +147,8 @@ const heldKey = (server: CodexProcess, id: string | number): string => `rpc:${se
 type ModelList = AgentHostSnapshot['models']
 
 export interface CodexAppServerHostOptions {
+  /** Immutable startup Owl answer; stable never installs a collector or reads account limits. */
+  usageEnabled?: boolean
   userDataPath: string; executable?: string; args?: string[]; codexHome?: string; requestTimeoutMs?: number; pollIntervalMs?: number
   /** Session reaper cadence and idle threshold; see `sessionReaper.ts`. */
   reaperSweepMs?: number; sessionIdleMs?: number
@@ -152,6 +156,13 @@ export interface CodexAppServerHostOptions {
 
 /** Provider session aliases isolate server-assigned Codex thread IDs from Sotto's thread interface. */
 export class CodexAppServerHost implements AgentHost {
+  readonly subscribeUsage?: (listener: (record: UsageTokenObservation) => void) => () => void
+  readonly visitUsage?: (id: string, visitor: (record: UsageTokenObservation) => void) => void
+  readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean) => Promise<UsageQuotaRead>
+  private quota: UsageQuotaRead | undefined
+  private quotaReading: Promise<UsageQuotaRead> | undefined
+  private readonly usageTurnStarts = new Map<string, string>()
+  private readonly usageEnabled: boolean
   private launchProfiles: ThreadLaunchProfiles | undefined
   private readonly watcherProfiles = new Map<string, WatcherLaunchProfile>()
   useLaunchProfiles(profiles: ThreadLaunchProfiles): void { this.launchProfiles = profiles }
@@ -295,7 +306,19 @@ export class CodexAppServerHost implements AgentHost {
     capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true, skills: true, steer: true, compact: true } }
 
   constructor(private readonly options: CodexAppServerHostOptions) {
-    this.usage = new NativeUsage(options.userDataPath, 'codex')
+    this.usageEnabled = options.usageEnabled === true
+    this.usage = new NativeUsage(options.userDataPath, 'codex', options.usageEnabled)
+    if (options.usageEnabled) {
+      this.subscribeUsage = listener => this.usage.subscribeUsage(listener)
+      this.visitUsage = (id, visitor) => this.usage.visitUsage(id, visitor)
+      this.readProviderQuota = async (providerId, refresh) => {
+        if (providerId !== 'codex') return unavailableProviderQuota(providerId, 'unsupported')
+        if (!this.state.connected || !this.provider?.alive) return unavailableProviderQuota('codex', 'not-connected')
+        if (!refresh) return this.quota ?? unavailableProviderQuota('codex', 'not-read', true)
+        this.quotaReading ??= this.readQuota().finally(() => { this.quotaReading = undefined })
+        return this.quotaReading
+      }
+    }
     // Compact: it holds an identity for every turn of every thread, and is rewritten whole.
     this.aliasStore = AtomicJsonStore.compact(join(options.userDataPath, 'codex-threads.json'), preserveLegacyAliases(aliasesSchema.parse), () => ({}))
     this.projectStore = new AtomicJsonStore(join(options.userDataPath, 'codex-projects.json'), z.array(agentProjectSchema).parse, () => [])
@@ -306,6 +329,19 @@ export class CodexAppServerHost implements AgentHost {
       isBusy: id => this.busy(id),
       stop: id => this.stopSession(id),
     })
+  }
+  private async readQuota(): Promise<UsageQuotaRead> {
+    const generation = this.generation, server = this.provider
+    if (!server?.alive) return unavailableProviderQuota('codex', 'not-connected')
+    try {
+      let answer = unavailableProviderQuota('codex', 'not-reported', true)
+      await server.rpc('account/rateLimits/read', undefined, value => { answer = parseCodexQuota(value, new Date().toISOString()) })
+      if (generation !== this.generation || this.provider !== server) return unavailableProviderQuota('codex', 'not-connected')
+      this.quota = answer; return answer
+    } catch {
+      if (generation !== this.generation || this.provider !== server) return unavailableProviderQuota('codex', 'not-connected')
+      return { ...(this.quota ?? unavailableProviderQuota('codex', 'read-failed', true)), status: 'error', reason: 'read-failed' }
+    }
   }
   /**
    * A turn, an unanswered request, an unconfirmed write, a thread still being created, a command mid-dispatch or a
@@ -601,6 +637,7 @@ export class CodexAppServerHost implements AgentHost {
     this.outdatedTimer = setImmediate(() => { this.outdatedTimer = undefined; this.stopOutdated() })
   }
   async connect(): Promise<AgentHostSnapshot> {
+    if (this.usageEnabled) { this.quota = undefined; this.usageTurnStarts.clear() }
     this.shutdown(false); await this.closed()
     const generation = this.generation
     await this.usage.load()
@@ -1137,6 +1174,9 @@ export class CodexAppServerHost implements AgentHost {
    * sorted the whole window once a turn, so a whole read grew with the square of the thread (#352).
    */
   private applyTurn(id: string, turn: Turn, live = false, order = true): void {
+    if (this.usageEnabled && typeof turn.startedAt === 'number' && Number.isFinite(turn.startedAt) && turn.startedAt >= 0) {
+      this.usageTurnStarts.set(JSON.stringify([id, turn.id]), new Date(turn.startedAt * 1000).toISOString())
+    }
     if (this.aliases[id]!.rewoundTurnIds.includes(turn.id)) return
     const thread = this.ensureThread(id)
     const alias = this.aliases[id]!
@@ -1529,6 +1569,7 @@ export class CodexAppServerHost implements AgentHost {
                 ...(alias.reasoningEffort ? { effort: alias.reasoningEffort } : {}) }, value => {
                 const { turn } = z.object({ turn: turnSchema }).parse(value)
                 origin.turnId = turn.id
+                if (this.usageEnabled) this.usageTurnStarts.set(JSON.stringify([id, turn.id]), origin.createdAt)
                 this.applyTurn(id, turn)
                 if (!this.log.has(id, origin.messageId)) this.addMessage(id, { id: origin.messageId, commandId: origin.commandId, role: 'user', text: command.text, createdAt: origin.createdAt, ...(origin.attachments ? { attachments: origin.attachments } : {}) })
                 this.unconfirmedDispatchSessionIds.delete(id)
@@ -1554,7 +1595,11 @@ export class CodexAppServerHost implements AgentHost {
   }
   /** A notification or request from `server`; its responses to Sotto's own requests were settled by the process. */
   private async frame(server: CodexProcess, frame: RpcFrame): Promise<void> {
+    if (this.usageEnabled && frame.method === 'account/rateLimits/updated') {
+      this.quota = mergeCodexQuota(this.quota, frame.params, new Date().toISOString()); return
+    }
     if (frame.method === 'skills/changed' || frame.method === 'account/updated') {
+      if (frame.method === 'account/updated' && this.usageEnabled) this.quota = undefined
       this.skillsRevision++; this.loadedSkillCwds.clear(); return
     }
     if (frame.method === 'thread/settings/updated') {
@@ -1609,7 +1654,10 @@ export class CodexAppServerHost implements AgentHost {
       const params = frame.params as { threadId?: string } | undefined
       const id = params?.threadId ? this.sessionId(params.threadId) : undefined
       if (id) {
-        this.usage.codex(id, this.ensureThread(id).modelId, frame.params)
+        const turnId = (frame.params as { turnId?: string } | undefined)?.turnId
+        const startedAt = turnId ? this.usageTurnStarts.get(JSON.stringify([id, turnId])) : undefined
+        this.usage.codex(id, this.ensureThread(id).modelId, frame.params, { phase: 'live',
+          ...(startedAt ? { at: startedAt, groupStartedAt: startedAt } : {}) })
         const thread = this.ensureThread(id)
         // The first size reported after a compaction closes the bracket the item opened.
         if (thread.usage?.contextUsed !== undefined) thread.activities = bracketCompaction(thread.activities, { after: thread.usage.contextUsed })
@@ -1638,6 +1686,9 @@ export class CodexAppServerHost implements AgentHost {
         this.ensureThread(id)
         await this.persist()
       }
+    }
+    if (params.turn && this.usageEnabled && typeof params.turn.startedAt === 'number' && Number.isFinite(params.turn.startedAt)) {
+      this.usageTurnStarts.set(JSON.stringify([id, params.turn.id]), new Date(params.turn.startedAt * 1000).toISOString())
     }
     if (params.turn) this.applyTurn(id, params.turn, true)
     if (params.turn?.durationMs !== undefined) { this.usage.elapsed(id, params.turn.durationMs); this.ensureThread(id) }

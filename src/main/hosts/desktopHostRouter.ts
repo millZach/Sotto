@@ -19,13 +19,14 @@ import type { SubagentAssignmentsPage, SubagentAssignmentsRequest, SubagentPage,
 import type { ToolListRequest, ToolsResult } from '../../shared/tools'
 import type { HostThreadToolReads } from '../agents/threadToolReads'
 import { HostConnectionError, REMOTE_COMPOSE_UNSAVED } from '../agents/socketHostService'
+import { USAGE_HOSTS_MAX, usageClearQuerySchema, usageDashboardReadSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageQuerySchema, usageRefreshQuerySchema, type UsageClearQuery, type UsageClearResult, type UsageDashboardRead, type UsageHostRead, type UsageQuery, type UsageRefreshQuery } from '../../shared/usageDashboard'
 
 /** A thread's Files, Changes and Agents reads (ADR-0025, October 5 amendment), by the host's own IDs; absent on a connection that has none. */
 export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   hostId: string
   name: string
   kind: 'local' | 'remote'
-  service: Pick<HostService, 'shell' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead'>
+  service: Pick<HostService, 'shell' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead'>
   refreshRequestAnswer?(decisionId: string, target: HostAnswerTarget): Promise<void>
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
@@ -82,11 +83,21 @@ export function hostAbsolutePath(root: string, path: string): string {
 type RouterNotice = { message: string; answer?: { hostId: string; decisionId: string; target: HostAnswerTarget }; unsupportedCompose?: DesktopHostConnection }
 type RequestDraftRecovery = Pick<RequestDraftService, 'heldThreadAnswers' | 'reconcile'>
 
+/** Numeric requests have no replay. A late clear may have succeeded; the next read supplies its current revision. */
+async function usageDeadline<T>(read: () => Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([read(), new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('Usage could not be read.')), 20000) })])
+  } finally { if (timer !== undefined) clearTimeout(timer) }
+}
+
 /** The shortest gap between two answer recovery passes that published states ask for. */
 export const REQUEST_DRAFT_PASS_INTERVAL_MS = 500
 
 /** Routing happens in main, before host-local IDs or privileged command schemas are decoded. */
 export class DesktopHostRouter {
+  /** Saved host identities keep an offline computer visible when it has no live thread connection. */
+  private usageSavedHostIds: readonly string[] = []
   private readonly watcherListeners = new Set<(hostId?: string, force?: boolean) => void>()
   watcherHosts(): WatcherRemoteHosts {
     const allowed = () => { if (this.options.watcherEnabled !== true) throw new Error(WATCHER_DISABLED) }
@@ -141,6 +152,59 @@ export class DesktopHostRouter {
     { running: false, gap: undefined, wanted: undefined, disposed: false }
 
   constructor(private readonly empty: () => AgentState, private readonly options: { bindRequestDraftDecision?: BindRequestDraftDecision; watcherEnabled?: boolean } = {}) {}
+
+  setUsageSavedHosts(hostIds: readonly string[]): void { this.usageSavedHostIds = [...new Set(hostIds)].slice(0, USAGE_HOSTS_MAX) }
+  private usageHostIds(requested?: string[]): string[] {
+    return [...new Set(requested ?? [...this.hosts.keys(), ...this.usageSavedHostIds])].slice(0, USAGE_HOSTS_MAX)
+  }
+  private usageStatus(hostId: string): { connection?: DesktopHostConnection; status?: 'offline' | 'unsupported' } {
+    const connection = this.hosts.get(hostId)?.connection
+    if (!connection || connection.available?.() === false) return { status: 'offline' }
+    if (connection.service.supportsUsage !== true || !connection.service.usageRead || !connection.service.usageRefresh || !connection.service.usageClear) return { status: 'unsupported' }
+    return { connection }
+  }
+  /** Four host reads at a time. One lost or older connection leaves every other host's answer intact. */
+  private async usageFanout<T>(hostIds: string[], read: (hostId: string) => Promise<T>): Promise<T[]> {
+    const results: T[] = new Array(hostIds.length)
+    let next = 0
+    await Promise.all(Array.from({ length: Math.min(4, hostIds.length) }, async () => {
+      while (next < hostIds.length) { const index = next++; results[index] = await read(hostIds[index]!) }
+    }))
+    return results
+  }
+  private async usageHostRead(hostId: string, read: (connection: DesktopHostConnection) => Promise<unknown>): Promise<UsageHostRead> {
+    const { connection, status } = this.usageStatus(hostId)
+    if (!connection) return { hostId, status: status!, quotas: [] }
+    try {
+      const answer = usageLocalHostReadSchema.parse(await usageDeadline(() => read(connection)))
+      // A connection replaced during a read no longer speaks for this host's current session.
+      if (this.hosts.get(hostId)?.connection !== connection || connection.available?.() === false) return { hostId, status: 'offline', quotas: [] }
+      return { hostId, ...answer }
+    } catch { return { hostId, status: connection.available?.() === false ? 'offline' : 'error', quotas: [] } }
+  }
+  async usageRead(input: UsageQuery): Promise<UsageDashboardRead> {
+    const { hostIds, ...query } = usageQuerySchema.parse(input)
+    const hosts = await this.usageFanout(this.usageHostIds(hostIds), id => this.usageHostRead(id, connection => connection.service.usageRead!(query)))
+    return usageDashboardReadSchema.parse({ hosts })
+  }
+  async usageRefresh(input: UsageRefreshQuery): Promise<UsageDashboardRead> {
+    const { hostIds, providerIds } = usageRefreshQuerySchema.parse(input)
+    const hosts = await this.usageFanout(this.usageHostIds(hostIds), id => this.usageHostRead(id, connection => connection.service.usageRefresh!(providerIds)))
+    return usageDashboardReadSchema.parse({ hosts })
+  }
+  async usageClear(input: UsageClearQuery, client: ClientIdentity = desktopWindowClient()): Promise<UsageClearResult[]> {
+    const { hosts } = usageClearQuerySchema.parse(input)
+    if (new Set(hosts.map(host => host.hostId)).size !== hosts.length) throw new Error('Choose each computer once before clearing usage.')
+    const revisions = new Map(hosts.map(host => [host.hostId, host.expectedRevision]))
+    return this.usageFanout<UsageClearResult>(hosts.map(host => host.hostId), async hostId => {
+      const { connection, status } = this.usageStatus(hostId)
+      if (!connection) return { hostId, status: status! }
+      try {
+        const answer = usageLocalClearResultSchema.parse(await usageDeadline(() => connection.service.usageClear!({ expectedRevision: revisions.get(hostId)! }, client)))
+        return { hostId, ...answer }
+      } catch { return { hostId, status: connection.available?.() === false ? 'offline' : 'error' } }
+    })
+  }
 
   /** Asks the host for the thread's kind as it is now. Reading its shell for that copied the whole state, and this runs for
    * every detail a streaming thread sends (#917); a host that cannot answer more cheaply is still read that way. */

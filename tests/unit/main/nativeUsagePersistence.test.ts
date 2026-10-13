@@ -43,7 +43,7 @@ it('does no archive writes or total recomputation for 100 identical historical f
   expect(write).not.toHaveBeenCalled()
   expect(usage.get('thread')).toEqual(view)
   expect(usage.get('thread')!.total).toBe(total)
-  expect(total).toEqual({ input: 300_000, output: 10_000, cached: 200_000 })
+  expect(total).toEqual({ input: 300_000, output: 10_000, cached: 200_000, cacheWrite: 0 })
 })
 
 it('skips repeated latest frames, stream deltas, elapsed results and compaction snapshots', async () => {
