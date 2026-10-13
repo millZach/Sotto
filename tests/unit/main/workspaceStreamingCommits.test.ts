@@ -31,14 +31,14 @@ afterEach(async () => {
   for (const close of cleanup.splice(0).reverse()) await close()
 })
 
-async function fixture() {
+async function fixture(streamingPublishCost = true) {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-streaming-commits-'))
   cleanup.push(async () => {
     if (dirname(resolve(directory)) !== resolve(tmpdir()) || !directory.includes('sotto-streaming-commits-')) throw new Error('Unexpected test directory')
     await rm(directory, { recursive: true, force: true })
   })
   const adapter = new EventProvider()
-  const host = new WorkspaceHost(adapter, directory, () => true)
+  const host = new WorkspaceHost(adapter, directory, () => true, undefined, false, streamingPublishCost)
   cleanup.push(async () => { host.disconnect(); host.dispose() })
   await host.initialize()
   await host.connect()
@@ -54,6 +54,18 @@ function storedText(directory: string, threadId: string): string[] {
 }
 
 describe('streamed appends on the write window (#991)', () => {
+  it('writes as stable always has while the Owl feature is off: every publish, nothing folded', async () => {
+    const { directory, adapter, host } = await fixture(false)
+    host.observeThreads(['session-workshop'])
+    adapter.publish(added('reply', 'First'))
+    adapter.publish(appended('reply', ' streamed'))
+    adapter.publish(appended('reply', ' words'))
+    host.workspaceSnapshot()
+    expect(storedText(directory, 'session-workshop')).toEqual(['First streamed words'])
+    expect(host.eventsAfter(0, 'session-workshop').map(row => row.event.kind))
+      .toEqual(['message-added', 'message-text-appended', 'message-text-appended'])
+    expect(host.flushEvents('session-workshop')).toBe(true)
+  })
   it('shows a pane its reply at once while the appends commit folded at the flush', async () => {
     const { directory, adapter, host } = await fixture()
     host.observeThreads(['session-workshop'])

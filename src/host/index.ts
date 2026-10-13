@@ -90,6 +90,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   const watcherEnabled = true
   // A host reads its Owl list from its own version, so it resumes threads once the feature reaches stable (ADR-0076).
   const resumeAfterRestart = isOwlFeatureEnabled('resume-after-restart', getReleaseTrack(options.sottoVersion ?? packageVersion))
+  const streamingPublishCost = isOwlFeatureEnabled('streaming-publish-cost', getReleaseTrack(options.sottoVersion ?? packageVersion))
   const repositories = createStorageRepositories(directory, recovery, Date.now, undefined, undefined, watcherEnabled)
   const settings = new SecureSettings(repositories.settings, credentials)
   if ((await repositories.settings.get()).llmApiKey && !credentials.available()) {
@@ -108,7 +109,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     // A paired client with an open socket is the host's window in front: while none is connected, no remote is fetched.
     let peersConnected = (): boolean => false
     const runtime = await createAgentRuntime({
-      observeActiveThread: false, directory, credentials, watcherEnabled, resumeAfterRestart, settings: () => startup, writingSettings: () => settings.get(),
+      observeActiveThread: false, directory, credentials, watcherEnabled, resumeAfterRestart, streamingPublishCost, settings: () => startup, writingSettings: () => settings.get(),
       historyEnabled: () => startup.historyEnabled,
       gitStatus: { fetchIntervalMs: () => startup.gitFetchIntervalSeconds * 1000, foreground: () => peersConnected(), log: event => options.log?.(event) },
       ...(policy ? { authority: policy } : {}),

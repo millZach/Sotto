@@ -43,6 +43,8 @@ export interface AgentRuntimeOptions {
   watcherEnabled?: boolean
   /** The Owl list's answer for resuming threads after a restart (ADR-0076), read once by the process owner. Absent fails closed. */
   resumeAfterRestart?: boolean
+  /** The Owl list's answer for cheaper publish windows while streaming (#991), read once by the process owner. Absent fails closed. */
+  streamingPublishCost?: boolean
   claudeHistoryModulePath?: string
   credentials: ControlDependencies['credentials']
   settings: () => AppSettings
@@ -113,7 +115,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     provider: () => agentControl.configuration().provider,
     enabledProviders: () => { const configuration = agentControl.configuration(); return configuration.enabledProviders ?? [configuration.provider] },
     threadProvider: threadId => threadRegistry?.byThread(threadId)?.provider,
-  }), directory, options.historyEnabled, undefined, options.watcherEnabled ?? false)
+  }), directory, options.historyEnabled, undefined, options.watcherEnabled ?? false, options.streamingPublishCost ?? false)
   agentHost.setWorkingCopyDefaults(projectId => options.settings().projectThreadWorkingCopyDefaults[projectId] ?? options.settings().threadWorkingCopyDefault)
   let gitStatus: GitStatusReader | undefined
   let gitHubRateLimit: GitHubRateLimit | undefined

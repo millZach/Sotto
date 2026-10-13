@@ -40,7 +40,7 @@ async function fixture(history: () => boolean = () => true, initialize = true) {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-history-retry-'))
   cleanup.push(() => rm(directory, { recursive: true, force: true }))
   const adapter = new EventProvider()
-  const host = new WorkspaceHost(adapter, directory, history)
+  const host = new WorkspaceHost(adapter, directory, history, undefined, false, true)
   cleanup.push(async () => { await host.close().catch(() => undefined) })
   if (initialize) {
     await host.initialize()

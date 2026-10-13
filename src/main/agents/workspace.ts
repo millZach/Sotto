@@ -1294,7 +1294,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
 
   constructor(private readonly inner: AgentHost, private readonly directory: string, private readonly historyEnabled: () => boolean = () => true,
-    private readonly worktreeRefreshDelayMs: number = WORKTREE_REFRESH_DELAY_MS, private readonly watcherEnabled = false) {
+    private readonly worktreeRefreshDelayMs: number = WORKTREE_REFRESH_DELAY_MS, private readonly watcherEnabled = false,
+    /** The Owl list's answer for cheaper publish windows (#991), read once by the process owner. Absent fails closed. */
+    private readonly streamingPublishCostEnabled = false) {
     this.concurrentProviders = inner.concurrentProviders === true
     this.launchProfiles = new WatcherLaunchProfiles(directory, () => this.hostId,
       id => this.state.snapshot.threads.find(thread => thread.id === id), watcherEnabled)
@@ -1586,6 +1588,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * from, exactly as it was when every publish committed first.
    */
   private withWaitingAppends<T extends { messages: AgentMessage[] }>(threadId: string, window: T): T {
+    if (!this.streamingPublishCostEnabled) return window
     const waiting = this.pendingEvents.get(threadId)
     if (!waiting?.length || this.failedEventThreads.has(threadId)) return window
     let messages: AgentMessage[] | undefined
@@ -1601,6 +1604,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   /** The sidebar's excerpts with the same waiting appends laid over them, capped as excerpts are. */
   private withWaitingExcerpts(threadId: string, summary: AgentThreadSummary): AgentThreadSummary {
+    if (!this.streamingPublishCostEnabled) return summary
     const waiting = this.pendingEvents.get(threadId)
     if (!waiting?.length || this.failedEventThreads.has(threadId)) return summary
     let out = summary
@@ -1714,14 +1718,15 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
           console.warn('thread-history-event-invalid')
         }
       }
-      const folded = foldAppends(events)
+      // With the feature off, nothing folds and nothing waits: stable writes as it always has.
+      const folded = this.streamingPublishCostEnabled ? foldAppends(events) : events
       // A batch validation emptied has nothing left to write; keeping it would wait forever.
       if (folded.length === 0) { this.pendingEvents.delete(threadId); continue }
       this.pendingEvents.set(threadId, folded)
       if (!force && this.historyRetryTimer && this.failedEventThreads.has(threadId)) continue
       let take = folded.length
       // A failed thread's batch is one retry unit, trailing appends included, as it was when it failed.
-      if (!includeAppends && !this.failedEventThreads.has(threadId)) {
+      if (this.streamingPublishCostEnabled && !includeAppends && !this.failedEventThreads.has(threadId)) {
         take = 0
         for (let index = folded.length - 1; index >= 0; index--) {
           if (folded[index]!.kind !== 'message-text-appended') { take = index + 1; break }
@@ -1731,8 +1736,15 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     }
     if (due.size > 0) {
       let failed: Set<string>
-      try { failed = this.threadStore.appendBatches(due).failed }
-      catch { failed = new Set(due.keys()) }
+      if (this.streamingPublishCostEnabled) {
+        try { failed = this.threadStore.appendBatches(due).failed }
+        catch { failed = new Set(due.keys()) }
+      } else {
+        failed = new Set<string>()
+        for (const [threadId, events] of due) {
+          try { this.threadStore.appendMany(threadId, events) } catch { failed.add(threadId) }
+        }
+      }
       for (const [threadId, events] of due) {
         if (failed.has(threadId)) {
           this.failedEventThreads.add(threadId)
@@ -1753,7 +1765,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     }
     // Appends left waiting still need their write: the write window's flush includes them. A batch
     // a failed write left behind keeps its own retry's pace instead (#378).
-    if (!includeAppends && !this.stopping && [...this.pendingEvents.keys()].some(threadId => !this.failedEventThreads.has(threadId))) this.writeSoon()
+    if (this.streamingPublishCostEnabled && !includeAppends && !this.stopping && [...this.pendingEvents.keys()].some(threadId => !this.failedEventThreads.has(threadId))) this.writeSoon()
     if (this.failedEventThreads.size === 0) {
       clearTimeout(this.historyRetryTimer)
       this.historyRetryTimer = undefined
@@ -1803,6 +1815,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * a saved cursor skip words the store never received (ADR-0016).
    */
   flushEvents(threadId: string): boolean {
+    // With the feature off nothing waits past a publish, so no cursor is held back, as before.
+    if (!this.streamingPublishCostEnabled) return true
     if (!this.threadVisible(threadId)) return true
     if (this.storeUnavailable) return !this.pendingEvents.has(threadId)
     this.writeEvents(false, true)
@@ -2003,7 +2017,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (!this.threadVisible(threadId)) return
     if (this.storeUnavailable) return
     // The answer lands in the log after the words it answered, held appends included.
-    this.writeEvents(false, true)
+    if (this.streamingPublishCostEnabled) this.writeEvents(false, true)
     try { this.threadStore.append(threadId, event) }
     catch { this.saveError = HISTORY_SAVE_ERROR }
   }
@@ -2260,7 +2274,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       this.writeTimer = undefined
       void this.flush()
         // A commit this flush made for a stream that has since gone quiet still owes its publish.
-        .then(() => { if (this.eventChanged.size > 0) this.publishSoon() })
+        .then(() => { if (this.streamingPublishCostEnabled && this.eventChanged.size > 0) this.publishSoon() })
         .catch(() => { this.saveError = 'Workspace history could not be saved. Restore access to local storage and refresh.'; this.publish() })
     }, WRITE_WINDOW_MS)
     this.writeTimer.unref?.()

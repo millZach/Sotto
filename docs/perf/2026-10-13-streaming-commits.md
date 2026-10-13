@@ -45,6 +45,10 @@ streaming (0.06 per 16 ms window), so the commit cost no longer grows with the n
 threads, and a reply's appends over one write window fold into one event: about fourteen times fewer
 append rows for the same words.
 
+All of it sits behind the Owl switch as the `streaming-publish-cost` feature until Zach sends it to
+stable (ADR-0072); the benchmark and the tests below run with it on, and one case pins stable's
+unchanged behaviour with it off.
+
 ## What changed
 
 - **One transaction per publish window.** `ThreadStore.appendBatches` writes every thread's due events
