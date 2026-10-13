@@ -179,6 +179,28 @@ final class WatcherModelTests: XCTestCase {
         model.phase(.background)
     }
 
+    @MainActor func testAReadAskedForDuringAFailedReadStillRuns() async throws {
+        let model = try await fixture()
+        var reads = 0
+        var held: CheckedContinuation<JSONValue, Error>?
+        HostConnection.watcherHandler = { op, _, _ in
+            guard op == "watcher-phone-read" else { return .null }
+            reads += 1
+            if reads == 1 { return try await withCheckedThrowingContinuation { held = $0 } }
+            return try self.ok(self.page(Spec(working: false, status: "idle", observedAt: "2026-10-11T09:05:00.000Z")))
+        }
+        let first = Task { await model.readWatcher(laptop) }
+        await until { held != nil }
+        // A pull to refresh asks for another read while the first is on its way; then the first fails.
+        await model.readWatcher(laptop)
+        held?.resume(throwing: ClientError.disconnected)
+        await first.value
+        XCTAssertEqual(reads, 2, "The read asked for while the first was on its way still runs after the first fails")
+        XCTAssertEqual(model.watcherPage(laptop)?.working, false, "And its page shows")
+        XCTAssertNil(model.watcherReadProblems[laptop], "The read that worked clears the first one's problem")
+        model.phase(.background)
+    }
+
     @MainActor func testTheTabsDotAndBadgeSayWhatOnlyWatchersPageShows() async throws {
         // Fix login test's card is on Threads too, so the badge counts Watcher's own request and the forge thread's.
         let model = try await fixture(spec: Spec(ownCard: true, remoteCard: true))

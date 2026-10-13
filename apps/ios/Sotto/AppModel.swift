@@ -237,7 +237,8 @@ extension AppModel {
 
     /// Reads Watcher's page again, when the user pulls to refresh, after an unconfirmed action, or when a hello came
     /// without it. Every shell from the computer carries it otherwise. One read at a time on each computer; a request
-    /// during a read asks for one more after it. A read that fails says so, on the page and in the box, until one works.
+    /// during a read asks for one more after it, which runs even when this one fails or its connection changes. A read that
+    /// fails says so, on the page and in the box, until one works.
     func readWatcher(_ hostID: String) async {
         #if DEBUG && os(iOS)
         if isUIFixture { refreshFixtureWatcher(on: hostID); return }
@@ -250,7 +251,8 @@ extension AppModel {
             guard online(hostID), let connection = connections[hostID], let epoch = generations[hostID] else { return }
             do {
                 let reply = try await connection.call(WatcherWire.read, as: WatcherPhoneResult.self)
-                guard generations[hostID] == epoch else { return }
+                // Over a connection that has since changed: its page is left, and a read asked for meanwhile still runs.
+                guard generations[hostID] == epoch else { continue }
                 switch reply {
                 case .ok(let page):
                     if !applyWatcher(page, from: hostID) { setWatcherReadProblem(Self.watcherUnreadable(name(hostID)), on: hostID) }
@@ -259,10 +261,10 @@ extension AppModel {
                 }
             } catch let refusal as HostRefusal {
                 if generations[hostID] == epoch { setWatcherReadProblem(refusal.localizedDescription, on: hostID) }
-                return
+                continue
             } catch {
                 if generations[hostID] == epoch { setWatcherReadProblem(Self.watcherUnreadable(name(hostID)), on: hostID) }
-                return
+                continue
             }
         } while watcherRereads.contains(hostID)
     }
