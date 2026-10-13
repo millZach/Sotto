@@ -138,6 +138,17 @@ describe('NativeSettingsCoordinator', () => {
     expect(harness.settingsChanged).not.toHaveBeenCalled()
   })
 
+  it('republishes projected state without writing settings or running native effects', async () => {
+    const harness = createHarness()
+    await harness.coordinator.republish()
+    expect(harness.settingsChanged).toHaveBeenCalledExactlyOnceWith(harness.persisted)
+    expect(harness.repository.update).not.toHaveBeenCalled()
+    expect(harness.repository.save).not.toHaveBeenCalled()
+    expect(harness.autoPasteChanged).not.toHaveBeenCalled()
+    expect(harness.hotkeys.replace).not.toHaveBeenCalled()
+    expect(harness.startup.set).not.toHaveBeenCalled()
+  })
+
   it('registers a hotkey before persisting it and rolls native state back on write failure', async () => {
     const harness = createHarness()
     harness.repository.update.mockRejectedValueOnce(new Error('secret settings path'))

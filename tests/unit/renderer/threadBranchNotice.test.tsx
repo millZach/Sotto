@@ -9,6 +9,7 @@ import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadBranchNotice, resetBranchNoticeDismissals, type WorkingCopyThread } from '../../../src/renderer/src/agents/ThreadWorkingCopy'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
+import type { PromptEditorElement } from '../../../src/renderer/src/agents/promptSelection'
 import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
@@ -18,13 +19,20 @@ const worktreePath = 'C:\\Users\\zache\\AppData\\Roaming\\Sotto\\agents\\thread-
 const moved: AgentWorktree = { mode: 'shared', status: 'ready', path: worktreePath, repositoryRoot: project.path,
   branch: 'feat/agent-chose', sentBranch: 'sotto/thread-7f1c', dirty: false }
 const thread: WorkingCopyThread = { id: 'thread-1', nativeSessionStarted: true, workingDirectory: worktreePath, worktree: moved }
+const mountedEditors = new Set<PromptEditorElement['editor']>()
 function snapshot(): AgentState {
   return threadsStateFixture({ cloneOverrides: false,
     configuration: defaultAgentConfiguration(),
     host: { projects: [], threads: [], models: [] },
     topLevel: { activeThreadId: null, activeProjectId: null,  } })
 }
-afterEach(() => { cleanup(); resetBranchNoticeDismissals() })
+afterEach(() => {
+  cleanup()
+  // Tiptap defers destruction by a tick; finish it before Vitest removes document.
+  for (const editor of mountedEditors) editor.destroy()
+  mountedEditors.clear()
+  resetBranchNoticeDismissals()
+})
 
 describe('the branch-changed notice', () => {
   it('says nothing until the composer has something to send, and dismisses by button or Escape', async () => {
@@ -132,6 +140,7 @@ describe('a thread pane whose worktree moved', () => {
     const live = liveAgentState(state)
     vi.mocked(useAgents).mockImplementation(live.useLive)
     render(<ThreadsView now={E2E_THREADS_NOW} />)
+    mountedEditors.add((screen.getByRole('textbox', { name: 'Prompt' }) as PromptEditorElement).editor)
     fireEvent(window, new Event('focus'))
     // The window's own read, which asks GitHub only as the timer would (#820).
     await waitFor(() => expect(live.command).toHaveBeenCalledWith({ type: 'refresh-thread-worktree', threadId: THREAD, background: true }))
@@ -142,6 +151,7 @@ describe('a thread pane whose worktree moved', () => {
     const live = liveAgentState(stateWith(moved))
     vi.mocked(useAgents).mockImplementation(live.useLive)
     render(<ThreadsView now={E2E_THREADS_NOW} />)
+    mountedEditors.add((screen.getByRole('textbox', { name: 'Prompt' }) as PromptEditorElement).editor)
     expect(screen.queryByText(/Branch changed/u)).toBeNull()
     const reads = (): AgentCommand[] => live.command.mock.calls.map(([request]) => request).filter(request => request.type === 'refresh-thread-worktree')
     expect(reads()).toEqual([])

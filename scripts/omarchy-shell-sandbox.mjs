@@ -62,6 +62,25 @@ export function removePlainTree(path) {
   rmSync(path, { recursive: true, force: true })
 }
 
+// An isolated bus must not activate a desktop portal, keyring or session service.
+export function prepareSandboxBus(root) {
+  assertPlainPath(root)
+  assert.equal(lstatSync(root).mode & 0o777, 0o700)
+  const config = join(root, 'dbus.conf')
+  const escaped = root.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+  writeFileSync(config, `<busconfig>
+  <type>session</type>
+  <listen>unix:tmpdir=${escaped}</listen>
+  <auth>EXTERNAL</auth>
+  <policy context="default">
+    <allow send_destination="*" eavesdrop="true"/>
+    <allow eavesdrop="true"/>
+    <allow own="*"/>
+  </policy>
+</busconfig>\n`, { flag: 'wx', mode: 0o600 })
+  return config
+}
+
 export function prepareSandboxHome(home, omarchyPath) {
   assertPlainTree(home)
   for (const folder of ['.config/omarchy/plugins', '.local/state/omarchy/current', '.local/share', '.cache']) {
@@ -190,5 +209,6 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   else if (action === 'configure' && args.length === 2) rewriteSandboxConfig(...args)
   else if (action === 'validate' && args.length === 2) validateSandboxConfig(...args)
   else if (action === 'temporary' && args.length === 1) console.log(prepareSandboxTmp(args[0]))
-  else throw new Error('Expected setup, check, copy, remove, stamp, configure, validate or temporary with sandbox paths')
+  else if (action === 'bus' && args.length === 1) console.log(prepareSandboxBus(args[0]))
+  else throw new Error('Expected setup, check, copy, remove, stamp, configure, validate, temporary or bus with sandbox paths')
 }

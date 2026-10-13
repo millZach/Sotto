@@ -4,9 +4,10 @@ import type { Stats } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { lstat, readlink, connect } = vi.hoisted(() => ({ lstat: vi.fn(), readlink: vi.fn(), connect: vi.fn() }))
+const { lstat, readlink, connect, notify } = vi.hoisted(() => ({ lstat: vi.fn(), readlink: vi.fn(), connect: vi.fn(), notify: vi.fn() }))
 vi.mock('node:fs', () => ({ lstatSync: lstat, readlinkSync: readlink }))
 vi.mock('node:net', () => ({ createConnection: connect }))
+vi.mock('../../../src/main/hotkeys/dictationUnavailableNotice', () => ({ notifyDictationUnavailable: notify }))
 
 describe('dictation command client endpoint validation', () => {
   const entries = new Map<string, Stats>()
@@ -48,7 +49,7 @@ describe('dictation command client endpoint validation', () => {
     else process.getuid = originalGetuid
     vi.restoreAllMocks()
     vi.unstubAllEnvs()
-    lstat.mockReset(); readlink.mockReset(); connect.mockReset()
+    lstat.mockReset(); readlink.mockReset(); connect.mockReset(); notify.mockReset()
   })
   async function refuses(): Promise<void> {
     await import('../../../src/main/hotkeys/dictationClient')
@@ -72,6 +73,48 @@ describe('dictation command client endpoint validation', () => {
     entries.set(privatePath, stat(kind)); await refuses()
   })
   it('refuses a missing private target', async () => { entries.delete(privatePath); await refuses() })
+  it.each([folder, endpoint, privatePath])('notifies when %s is missing', async path => {
+    entries.delete(path)
+    await refuses()
+    expect(notify).toHaveBeenCalledExactlyOnceWith('start')
+  })
+  it('does not notify for an unsafe endpoint', async () => {
+    entries.set(endpoint, stat('file'))
+    await refuses()
+    expect(notify).not.toHaveBeenCalled()
+  })
+  it('does not describe an invalid runtime as a closed app', async () => {
+    entries.delete('/run/user/1000')
+    await import('../../../src/main/hotkeys/dictationClient')
+    expect(process.exitCode).toBe(1)
+    expect(notify).not.toHaveBeenCalled()
+    expect(connect).not.toHaveBeenCalled()
+  })
+  it.each(['ENOENT', 'ECONNREFUSED'])('notifies once when the socket reports %s', async code => {
+    const socket = Object.assign(new EventEmitter(), {
+      setTimeout: vi.fn(), setEncoding: vi.fn(), write: vi.fn(), destroy: vi.fn(),
+    })
+    connect.mockReturnValue(socket)
+    await import('../../../src/main/hotkeys/dictationClient')
+    socket.emit('error', Object.assign(new Error('private failure'), { code }))
+    socket.emit('close')
+    expect(process.exitCode).toBe(1)
+    expect(notify).toHaveBeenCalledExactlyOnceWith('start')
+    expect(guidance).toHaveBeenCalledTimes(1)
+  })
+  it.each(['timeout', 'rejected', 'EACCES', 'closed'])('keeps %s failures on stderr without claiming Sotto is closed', async failure => {
+    const socket = Object.assign(new EventEmitter(), {
+      setTimeout: vi.fn(), setEncoding: vi.fn(), write: vi.fn(), destroy: vi.fn(),
+    })
+    connect.mockReturnValue(socket)
+    await import('../../../src/main/hotkeys/dictationClient')
+    if (failure === 'timeout') socket.setTimeout.mock.calls[0]![1]!()
+    else if (failure === 'rejected') { socket.emit('data', 'unavailable\n'); socket.emit('end') }
+    else if (failure === 'closed') socket.emit('close')
+    else socket.emit('error', Object.assign(new Error('private failure'), { code: failure }))
+    expect(process.exitCode).toBe(1)
+    expect(notify).not.toHaveBeenCalled()
+  })
   it.each(['link', 'socket'] as const)('sends the command and accepts the reply through an owned %s', async kind => {
     entries.set(endpoint, stat(kind, 1000, 0o600))
     const socket = Object.assign(new EventEmitter(), {
@@ -86,6 +129,7 @@ describe('dictation command client endpoint validation', () => {
     socket.emit('end')
     expect(process.exitCode).toBeUndefined()
     expect(guidance).not.toHaveBeenCalled()
+    expect(notify).not.toHaveBeenCalled()
   })
   it.each([
     ['retry'], ['discard'], ['place', 'top'], ['place', 'bottom'], ['place', 'left'], ['place', 'right'],
@@ -104,6 +148,7 @@ describe('dictation command client endpoint validation', () => {
     await import('../../../src/main/hotkeys/dictationClient')
     expect(connect).not.toHaveBeenCalled()
     expect(process.exitCode).toBe(2)
+    expect(notify).not.toHaveBeenCalled()
   })
   it('passes the binding stamp through without replacing it with client startup time', async () => {
     process.argv.push('--at', '1791486000123456789')

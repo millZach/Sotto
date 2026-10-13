@@ -38,7 +38,7 @@ function inspections() {
     inspect,
     /** Until `count` inspections have begun since the watch began, and every one begun has finished. */
     async settled(count: number) {
-      await vi.waitFor(() => expect(inspect.mock.calls.length).toBeGreaterThanOrEqual(count))
+      await expect.poll(() => inspect.mock.calls.length).toBeGreaterThanOrEqual(count)
       await Promise.allSettled(inspect.mock.results.map(result => result.value))
     },
   }
@@ -95,7 +95,7 @@ describe('a send and Git', () => {
     // Once the remote call is done, the read that takes what it brought lands in the thread's lane after the send and
     // the inspection the send owes, and finds the branch the send went to.
     done.resolve()
-    await vi.waitFor(() => expect(record(f).worktree?.git?.branch).toBe('feat/terminal'))
+    await expect.poll(() => record(f).worktree?.git?.branch).toBe('feat/terminal')
     expect(record(f).worktree).toMatchObject({ branch: 'feat/terminal', sentBranch: 'feat/terminal' })
   })
 
@@ -108,7 +108,7 @@ describe('a send and Git', () => {
     const sent = await send(f, 1)
     expect(sent.git).toBe(0)
     await watch.settled(1)
-    await vi.waitFor(() => expect(record(f).worktree?.dirty).toBe(true))
+    await expect.poll(() => record(f).worktree?.dirty).toBe(true)
   })
 
   it('asks Git before the prompt when an inspection after a send could not confirm the folder', async () => {

@@ -21,5 +21,6 @@ export interface WatcherControlHooks {
   wakeDue?(event: WatcherEvent): boolean
   wakeReady?(): boolean
   pullRequestObserved?(read: PullRequestObservation): void
+  restoreCheckpoint?(read: CheckpointObservation): void
   checkpointObserved?(read: CheckpointObservation): void
 }

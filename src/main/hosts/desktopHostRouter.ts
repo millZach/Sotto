@@ -2,12 +2,13 @@ import { visibleWatcherState } from '../../shared/watcherVisibility'
 import type { WatcherRemoteHosts } from '../../shared/watcherHost'
 import { WATCHER_DISABLED } from '../agents/watcherLaunchProfiles'
 import { randomUUID } from 'node:crypto'
-import { agentCommandSchema, MAX_DELIVERED_DRAFTS, HOST_CANNOT_STAGE_SCREENSHOTS, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
+import { agentCommandSchema, defaultNewThreadModelId, MAX_DELIVERED_DRAFTS, HOST_CANNOT_STAGE_SCREENSHOTS, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import { clientAgentState, hostEntityKey, mapHostReferences, parseHostEntityKey } from '../../shared/clientIdentity'
 import { desktopWindowClient, type ClientIdentity, type HostService, type RequestAnswerRecovery } from '../agents/hostService'
 import { requestDraftProvider, requestDraftQuestions, type RequestDraftOwner, type RequestDraftTarget } from '../../shared/requestDrafts'
 import { requestQuestionsDigest, type BindRequestDraftDecision, type RequestDraftOwnerState, type RequestDraftService } from '../agents/requestDrafts'
-import { LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, type HostAnswerTarget } from '../../shared/hostProtocol'
+import { LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, type HostAnswerTarget, type HostClientShell } from '../../shared/hostProtocol'
+import { NEW_THREAD_DEFAULT_FIELDS } from '../../shared/newThreadDefaults'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 import type { GitPullRequestRead, GitPullRequestRequest } from '../../shared/gitPullRequests'
@@ -251,7 +252,8 @@ export class DesktopHostRouter {
       return { connection, original, state: clientAgentState(original) }
     })
     const selected = entries.find(item => item.connection.hostId === this.selectedHostId)
-    const named = selected ? this.named(selected.connection, selected.state) : this.empty()
+    const local = entries.find(item => item.connection.kind === 'local')
+    const named = selected ? this.withNewThreadDefaults(this.named(selected.connection, selected.state), selected === local ? undefined : local?.state) : this.empty()
     // The corner card and Settings > Providers are this computer's own clients. A remote host's client updates reach the
     // window only through its `clientHosts` entry, for its tiles in Settings > Hosts (#480).
     const base = selected?.connection.kind === 'remote' ? withoutClientUpdates(named) : named
@@ -278,6 +280,9 @@ export class DesktopHostRouter {
           ...(connection.offersClientUpdates?.() && original.clientUpdates ? { clientUpdates: original.clientUpdates } : {}),
           ...(connection.offersClientUpdates?.() && original.clientUpdateRun ? { clientUpdateRun: original.clientUpdateRun } : {}),
           ...(connection.offersBabysitting?.() ? { pullRequestBabysit: true as const } : {}),
+          projectsDirectory: original.configuration.projectsDirectory,
+          // This computer may always answer its own host; a remote one says so in the shell it sends this client.
+          mayAnswer: connection.kind === 'local' || (original as HostClientShell).clientCapabilities?.mayAnswer === true,
         })),
       },
       threadDrafts: entries.flatMap(item => item.state.threadDrafts ?? []),
@@ -636,20 +641,54 @@ export class DesktopHostRouter {
       await this.openCreated(connection, command.threadId, client)
     }
     if (!repeatedUnsupportedCompose) this.emit()
-    return agentShell(this.shell())
+    const shell = agentShell(this.shell())
+    // A settings save may go to a host other than the selected one, so it answers with its own outcome, never with the
+    // selected host's last error, which belongs to some other command (ADR-0074).
+    return command.type === 'configure' ? { ...shell, error: refused ? this.notice?.message ?? null : null } : shell
   }
   /** The host a command's references name, or the selected host, and the command in that host's own IDs. */
   private route(input: unknown): { connection: DesktopHostConnection; command: AgentCommand } {
     const references = new Set<string>()
     mapHostReferences(input, value => { const key = parseHostEntityKey(value); if (key) references.add(key.hostId); return value })
     if (references.size > 1) throw new Error('This action includes items from different hosts. Select items from one host.')
+    const command = agentCommandSchema.parse(mapHostReferences(input, id => parseHostEntityKey(id)?.id ?? id))
+    if (command.type === 'configure') return this.configurationRoute(command)
     const hostId = [...references][0] ?? this.selectedHostId
     const { connection } = this.target(hostId ? hostEntityKey(hostId, '_') : undefined)
-    const command = agentCommandSchema.parse(mapHostReferences(input, id => parseHostEntityKey(id)?.id ?? id))
     const threadId = 'threadId' in command ? command.threadId ?? undefined : command.type === 'send' ? command.draft?.threadId : undefined
     const defaultThread = command.type === 'send' || command.type === 'compose' ? connection.service.shell().draftThreadId ?? connection.service.shell().activeThreadId ?? undefined : undefined
     if (!this.watcherAvailable(connection, threadId ?? defaultThread)) throw new Error(WATCHER_DISABLED)
     return { connection, command }
+  }
+  /**
+   * Where a settings patch goes (ADR-0074). New-thread defaults alone go to this computer's own host, since they are
+   * this computer's and apply on every host; anything else goes to the host the patch names, or the selected one.
+   * The host's ID is read here and never sent on.
+   */
+  private configurationRoute(command: Extract<AgentCommand, { type: 'configure' }>): { connection: DesktopHostConnection; command: AgentCommand } {
+    const { hostId, ...forwarded } = command
+    const keys = Object.keys(command.patch)
+    const local = [...this.hosts.values()].find(entry => entry.connection.kind === 'local')?.connection
+    if (local && keys.length > 0 && keys.every(key => (NEW_THREAD_DEFAULT_FIELDS as readonly string[]).includes(key))) return { connection: local, command: forwarded }
+    if (hostId === undefined) return { connection: this.target().connection, command: forwarded }
+    const named = this.hosts.get(hostId)?.connection
+    if (!named) throw new Error('This host is not connected. Connect it in Settings > Hosts, then try again. Nothing was changed.')
+    return { connection: named, command: forwarded }
+  }
+  /**
+   * This computer's own new-thread defaults over another selected host's, so Settings shows and New thread uses the
+   * same ones on every host. The model is resolved here from this computer's own settings and accounts, chosen or
+   * inherited, and the window takes it as it is: empty means this computer has no model to offer, never a cue to infer
+   * one from the selected host's reasoning provider. With this computer selected its settings are already the
+   * window's, as saved. With no local host running, the selected host's own apply.
+   */
+  private withNewThreadDefaults(state: AgentState, local: AgentState | undefined): AgentState {
+    if (!local) return state
+    const { newThreadRuntimeMode: _mode, ...configuration } = state.configuration
+    void _mode
+    const own = local.configuration
+    return { ...state, configuration: { ...configuration, newThreadModelId: defaultNewThreadModelId(own, local.host.models, local.reasoningAccounts),
+      newThreadReasoningEffort: own.newThreadReasoningEffort, ...(own.newThreadRuntimeMode !== undefined ? { newThreadRuntimeMode: own.newThreadRuntimeMode } : {}) } }
   }
   /**
    * Early start (#769) goes to the thread's own host and changes nothing here. It asks for nothing the user must know

@@ -39,6 +39,7 @@ await build({
   },
 })
 run(resolve(root, 'scripts/verify-packaged-resources.mjs'), [resolve(root, 'release/win-unpacked'), '--installer', installer])
+run(resolve(root, 'scripts/verify-owl-features-package.mjs'), [resolve(root, 'release/win-unpacked'), 'owl'])
 // GitHub's provider resolves spaces as dashes. Attach these exact manifest names.
 await copyFile(installer, safeInstaller)
 await copyFile(`${installer}.blockmap`, `${safeInstaller}.blockmap`)

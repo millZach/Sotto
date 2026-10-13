@@ -10,8 +10,15 @@ export function visibleWatcherState(state: AgentState, enabled: boolean): AgentS
 export function visibleWatcherState(state: AgentState | null, enabled: boolean): AgentState | null
 export function visibleWatcherState(state: AgentState | null, enabled: boolean): AgentState | null {
   if (state === null || enabled) return state
-  const hidden = new Set(state.host.threads.filter(thread => !watcherThreadVisible(thread, enabled)).map(thread => thread.id))
-  if (hidden.size === 0) return state
+  return withoutThreads(state, new Set(state.host.threads.filter(thread => !watcherThreadVisible(thread, enabled)).map(thread => thread.id)))
+}
+
+/**
+ * The state with these threads left out of view: their rows, their drafts and deliveries, and the selection and
+ * composer when either names one of them. Main's records are untouched.
+ */
+export function withoutThreads(state: AgentState, hidden: ReadonlySet<string>): AgentState {
+  if (hidden.size === 0 || !state.host.threads.some(thread => hidden.has(thread.id))) return state
   const hiddenDraft = state.draftThreadId !== null && hidden.has(state.draftThreadId)
   const visible = {
     ...state,

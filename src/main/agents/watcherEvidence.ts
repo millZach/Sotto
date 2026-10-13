@@ -4,36 +4,57 @@ import { pullRequestKey } from '../../shared/gitPullRequests'
 import { watcherEvidenceSchema, type WatcherEvidence, type WatcherThreadTarget } from '../../shared/watcher'
 
 export const observationDigest = (value: unknown): string => createHash('sha256').update(JSON.stringify(value)).digest('hex')
+const evidenceIdentity = (slot: string, input: Omit<WatcherEvidence, 'id'>): string =>
+  observationDigest([slot, input.target, { ...input, url: input.source === 'github' && input.url ? pullRequestKey(input.url) : input.url, observedAt: undefined, fetchedAt: undefined }])
 export const targetKey = (target: WatcherThreadTarget): string => JSON.stringify([target.hostId, target.threadId])
 export interface PullRequestObservation {
   url: string; observedAt: string; head: string | null; state?: 'open' | 'closed' | 'merged'
   availability: 'available' | 'unavailable'; reason?: 'read-failed' | 'rate-limited'
-  checks?: 'passed' | 'failed' | 'pending' | 'unknown'; checkCount?: number; reviewApproved?: boolean
+  checks?: 'passed' | 'failed' | 'pending' | 'unknown'; checksObservedAt?: string; checkCount?: number; reviewApproved?: boolean
   autoMerge?: boolean
 }
 export interface CheckpointObservation {
   threadId: string; checkpointId: string; observedAt: string; turnId?: string; changedFiles?: number
   availability: 'available' | 'unavailable' | 'unsupported'; reason?: 'capture-unavailable' | 'shared-checkout' | 'unsupported'
 }
+const EVIDENCE_CACHE_MAX = 300 // Fifty linked PRs can each supply five independent facts, plus local facts.
+const EVIDENCE_PROJECTION_MAX = 100
+
 /** Bounded in-memory facts only. Never keep raw errors, file paths, tool inputs, output or review bodies. */
 export class WatcherEvidenceStore {
   private readonly entries = new Map<string, Map<string, WatcherEvidence>>()
   put(slot: string, input: Omit<WatcherEvidence, 'id'>): boolean {
-    const id = observationDigest([slot, input.target, { ...input, observedAt: undefined }])
+    const id = evidenceIdentity(slot, input)
     const parsed = watcherEvidenceSchema.safeParse({ ...input, id })
     if (!parsed.success) return false
     const item = parsed.data
     const key = targetKey(item.target), entries = this.entries.get(key) ?? new Map<string, WatcherEvidence>()
     const previous = entries.get(slot)
-    entries.delete(slot); entries.set(slot, item)
-    while (entries.size > 100) entries.delete(entries.keys().next().value!)
+    // Clock-only refreshes preserve ordering; only a real change becomes a recent fact.
+    if (previous?.id !== id) entries.delete(slot)
+    entries.set(slot, item)
+    while (entries.size > EVIDENCE_CACHE_MAX) entries.delete(entries.keys().next().value!)
     this.entries.set(key, entries)
     return previous?.id !== id
   }
   read(target: WatcherThreadTarget, connected = true, now = Date.now()): WatcherEvidence[] {
-    return [...this.entries.get(targetKey(target))?.values() ?? []].map(item => ({ ...item,
-      ...connected ? (['github', 'working-copy'].includes(item.source) && now - Date.parse(item.observedAt) > 5 * 60_000 ? { freshness: 'stale' as const } : {})
-        : { freshness: 'stale' as const, availability: 'unavailable' as const, reason: 'disconnected' as const } }))
+    const entries = this.entries.get(targetKey(target))
+    return [...entries?.entries() ?? []].slice(-EVIDENCE_PROJECTION_MAX).map(([slot, item]) => {
+      const prefix = slot.startsWith('host:github:') ? 'host:github:' : 'pr:'
+      const unread = item.source === 'github' && item.url ? entries?.get(prefix + pullRequestKey(item.url)) : undefined
+      return { ...item,
+        ...connected ? (['github', 'working-copy'].includes(item.source) && now - Date.parse(item.observedAt) > 5 * 60_000 ? { freshness: 'stale' as const } : {})
+          : { freshness: 'stale' as const, availability: 'unavailable' as const, reason: 'disconnected' as const },
+        ...connected && unread?.availability === 'unavailable' && (unread.reason === 'read-failed' || unread.reason === 'rate-limited') ? { freshness: 'stale' as const, availability: 'unavailable' as const, ...(unread.reason ? { reason: unread.reason } : {}) } : {},
+      }
+    })
+  }
+  knownIdentities(target: WatcherThreadTarget): string[] {
+    return [...this.entries.get(targetKey(target))?.values() ?? []]
+      .filter(item => !(item.availability === 'unavailable' && item.reason === 'checks-unavailable')).map(item => item.id)
+  }
+  identities(target: WatcherThreadTarget): ReadonlySet<string> {
+    return new Set([...this.entries.get(targetKey(target))?.values() ?? []].map(item => item.id))
   }
   removeMissing(targets: ReadonlySet<string>): void { for (const key of this.entries.keys()) if (!targets.has(key)) this.entries.delete(key) }
   observeThread(thread: AgentThread, target: WatcherThreadTarget, observedAt: string): boolean {
@@ -47,38 +68,85 @@ export class WatcherEvidenceStore {
     const git = thread.worktree?.git
     if (git) changed = this.put('working-copy', { target, source: 'working-copy', observedAt: git.readAt,
       freshness: 'fresh', availability: 'available', fact: 'files-changed', branch: git.branch,
-      changedFiles: git.changedFiles, insertions: git.insertions, deletions: git.deletions, fetchedAt: git.fetchedAt }) || changed
+      changedFiles: git.changedFiles, insertions: git.insertions, deletions: git.deletions, ahead: git.ahead, behind: git.behind, fetchedAt: git.fetchedAt }) || changed
     const prs = [...thread.pullRequests ?? [], ...git?.pullRequest ? [git.pullRequest] : []]
     const links = new Set(prs.map(pr => pullRequestKey(pr.url)))
     const entries = this.entries.get(targetKey(target))
-    for (const slot of entries?.keys() ?? []) if (slot.startsWith('pr:') && !links.has(slot.slice(3))) { entries!.delete(slot); changed = true }
+    for (const slot of entries?.keys() ?? []) if (slot.startsWith('pr:') && ![...links].some(link => slot === 'pr:' + link || slot.startsWith('pr:' + link + ':'))) { entries!.delete(slot); changed = true }
     for (const pr of prs) {
       const slot = `pr:${pullRequestKey(pr.url)}`
       const branchObserved = !!git?.pullRequest && pullRequestKey(git.pullRequest.url) === pullRequestKey(pr.url)
-      // A saved link proves an association; only a read proves checks. Preserve a more detailed observer snapshot.
-      if (!entries?.has(slot) || entries.get(slot)?.pullRequestState !== pr.state && Date.parse(git?.readAt ?? '') > Date.parse(entries.get(slot)!.observedAt)) {
-        changed = this.put(slot, { target, source: 'github', observedAt: git?.readAt ?? ('linkedAt' in pr && typeof pr.linkedAt === 'string' ? pr.linkedAt : observedAt),
-          freshness: branchObserved ? 'fresh' : 'unknown', availability: branchObserved ? 'available' : 'unavailable', reason: 'checks-unavailable', url: pr.url,
-          pullRequestState: pr.state, fact: branchObserved && pr.state === 'merged' ? 'merge-observed' : 'pull-request-observed' }) || changed
+      // A link or Git state read observes association/state, not checks, approval or auto-merge.
+      const state = entries?.get(slot + ':state')
+      if (!entries?.has(slot) || state?.pullRequestState !== pr.state && Date.parse(git?.readAt ?? '') > (state ? Date.parse(state.observedAt) : -Infinity)) {
+        changed = this.pullRequest(target, { url: pr.url, head: entries?.get(slot)?.headId ?? null,
+          observedAt: git?.readAt ?? ('linkedAt' in pr && typeof pr.linkedAt === 'string' ? pr.linkedAt : observedAt),
+          availability: branchObserved ? 'available' : 'unavailable', state: pr.state }) || changed
       }
     }
     return changed
   }
   pullRequest(target: WatcherThreadTarget, read: PullRequestObservation): boolean {
-    const available = read.availability === 'available'
-    const fact = read.state === 'merged' ? 'merge-observed' : read.autoMerge ? 'auto-merge-observed' : read.checks === 'failed' ? 'checks-failed'
-      : read.checks === 'passed' ? 'checks-passed' : read.reviewApproved ? 'review-approved' : 'pull-request-observed'
-    return this.put(`pr:${pullRequestKey(read.url)}`, { target, source: 'github', observedAt: read.observedAt,
-      freshness: available ? 'fresh' : 'stale', availability: read.availability, fact, url: read.url,
-      ...(read.head ? { headId: read.head } : {}), ...(read.state ? { pullRequestState: read.state } : {}),
-      ...(read.reason ? { reason: read.reason } : read.checks === 'unknown' ? { reason: 'checks-unavailable' as const } : {}),
-      ...(read.checks ? { checksState: read.checks } : {}), ...(read.reviewApproved !== undefined ? { githubReviewApproved: read.reviewApproved } : {}),
-      ...(read.checkCount !== undefined ? { checkCount: read.checkCount } : {}) })
+    return this.observePullRequest(target, read, 'pr:')
+  }
+  /** Paired observations share fact replacement rules, but shell link summaries cannot erase owning-host facts. */
+  paired(fact: WatcherEvidence): boolean {
+    if (fact.source === 'github' && fact.url) return this.observePullRequest(fact.target, {
+      url: fact.url, head: fact.headId ?? null, observedAt: fact.observedAt,
+      availability: fact.availability === 'available' ? 'available' : 'unavailable',
+      ...(fact.reason === 'read-failed' || fact.reason === 'rate-limited' ? { reason: fact.reason } : {}),
+      ...(fact.pullRequestState !== undefined ? { state: fact.pullRequestState } : {}),
+      ...(fact.checksState !== undefined ? { checks: fact.checksState } : {}),
+      ...(fact.checkCount !== undefined ? { checkCount: fact.checkCount } : {}),
+      ...(fact.githubReviewApproved !== undefined ? { reviewApproved: fact.githubReviewApproved } : {}),
+      ...(fact.githubAutoMergeEnabled !== undefined ? { autoMerge: fact.githubAutoMergeEnabled } : {}),
+    }, 'host:github:')
+    const { id: _id, ...input } = fact; void _id
+    return this.put(`host:${fact.source}:${fact.referenceId ?? fact.url ?? ''}`, input)
+  }
+  private observePullRequest(target: WatcherThreadTarget, read: PullRequestObservation, prefix: string): boolean {
+    const slot = prefix + pullRequestKey(read.url), entries = this.entries.get(targetKey(target))
+    const previous = entries?.get(slot), available = read.availability === 'available'
+    const head = available ? read.head ?? undefined : previous?.headId ?? read.head ?? undefined
+    // A late answer for an earlier head cannot replace the head a newer read established.
+    if (previous && previous.headId !== head && Date.parse(previous.observedAt) > Date.parse(read.observedAt)) return false
+    let changed = false
+    if (available && previous?.headId !== head) {
+      for (const key of entries?.keys() ?? []) if (key.startsWith(slot + ':')) { entries!.delete(key); changed = true }
+    }
+    const put = (key: string, input: Omit<WatcherEvidence, 'id'>) => {
+      const prior = this.entries.get(targetKey(target))?.get(key)
+      if (prior && prior.headId === input.headId && Date.parse(prior.observedAt) > Date.parse(input.observedAt)) return
+      changed = this.put(key, input) || changed
+    }
+    const common = { target, source: 'github' as const, observedAt: read.observedAt, freshness: 'fresh' as const,
+      availability: read.availability, url: read.url, ...(head ? { headId: head } : {}) }
+    if (available) {
+      if (read.checks !== undefined) put(slot + ':checks', { ...common, observedAt: read.checksObservedAt ?? read.observedAt,
+        fact: read.checks === 'failed' ? 'checks-failed' : read.checks === 'passed' ? 'checks-passed' : 'pull-request-observed',
+        checksState: read.checks, ...(read.checks === 'unknown' ? { reason: 'checks-unavailable' as const } : {}),
+        ...(read.checkCount !== undefined ? { checkCount: read.checkCount } : {}) })
+      if (read.state !== undefined) put(slot + ':state', { ...common,
+        fact: read.state === 'merged' ? 'merge-observed' : 'pull-request-observed', pullRequestState: read.state })
+      if (head && read.reviewApproved !== undefined) put(slot + ':review', { ...common,
+        fact: read.reviewApproved ? 'review-approved' : 'pull-request-observed', githubReviewApproved: read.reviewApproved })
+      if (head && read.autoMerge !== undefined) put(slot + ':auto-merge', { ...common,
+        fact: read.autoMerge ? 'auto-merge-observed' : 'pull-request-observed', githubAutoMergeEnabled: read.autoMerge })
+    }
+    put(slot, { ...common, fact: 'pull-request-observed', freshness: available ? 'fresh' : read.reason ? 'stale' : 'unknown',
+      ...(read.reason ? { reason: read.reason } : !available ? { reason: 'checks-unavailable' as const } : {}) })
+    return changed
+  }
+  checkpointIdentity(target: WatcherThreadTarget, read: CheckpointObservation): string {
+    return evidenceIdentity('checkpoint', this.checkpointFact(target, read))
   }
   checkpoint(target: WatcherThreadTarget, read: CheckpointObservation): boolean {
-    return this.put('checkpoint', { target, source: 'checkpoint', observedAt: read.observedAt, freshness: 'fresh',
+    return this.put('checkpoint', this.checkpointFact(target, read))
+  }
+  private checkpointFact(target: WatcherThreadTarget, read: CheckpointObservation): Omit<WatcherEvidence, 'id'> {
+    return { target, source: 'checkpoint', observedAt: read.observedAt, freshness: 'fresh',
       availability: read.availability, fact: 'files-changed', checkpointId: read.checkpointId,
       ...(read.turnId ? { turnId: read.turnId } : {}), ...(read.changedFiles !== undefined && read.availability === 'available' ? { changedFiles: read.changedFiles } : {}),
-      ...(read.reason ? { reason: read.reason } : {}) })
+      ...(read.reason ? { reason: read.reason } : {}) }
   }
 }

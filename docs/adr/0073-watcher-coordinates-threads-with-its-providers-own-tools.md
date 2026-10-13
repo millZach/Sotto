@@ -8,11 +8,24 @@ Sotto has one current **Watcher** on this computer, identified by main's durable
 
 Zach chose the name **Watcher** on October 9, 2026. Watcher is a bare name, shown as Sotto's owl. The source of these picks is the [approved owl mock-up](C:/Users/zache/AppData/Local/zstack-scratch/owl-prototype/); it stays outside the repository.
 
-- The owl, icon only, sits in the sidebar foot switch between Dictate and Threads. Its tooltip and accessible name are **Watcher**.
+- The owl, icon only, sits in the room switch between Dictate and Threads: in the sidebar foot, and in Watcher's room in its floating switch (below). Its tooltip and accessible name are **Watcher**.
 - A watched thread shows the owl right after its provider logo in the sidebar row and pane header, in the row's muted text colour. Teal belongs only to the Sotto Owl header tile and the switch while Watcher's room is open.
 - The badge's tooltip and accessible name are **Watched by Watcher**. The pane-header owl is an image, not a control.
 - The watched thread's composer says **Watched by Watcher. If you send here, Watcher stops sending to it.**
 - The room header's limit reads **3 of 4 watched**. Stop all asks **Stop the 2 threads Watcher started?** with the actual eligible count.
+
+### Watcher's room without a sidebar
+
+After seeing the built room, Zach decided on October 11, 2026 that Watcher's room has no sidebar: "The navigation at the bottom should be there still but no side bar. That makes it unique and truly like a command center." He asked for an easy way to reach a thread from the room, and no Kanban. He then picked from the [no-sidebar mock-up](C:/Users/zache/AppData/Local/zstack-scratch/watcher-room-no-sidebar/index.html), which stays outside the repository with its captures and notes:
+
+- **Navigation (1C).** In Watcher's room the switch (Dictate, the owl, Threads) and the page links float in a pill at the bottom centre. Every other page keeps its sidebar and its switch where they are.
+- **Reaching a thread (2D).** **All threads**, beside Watcher's name, opens the Overview as a light list over the room. Escape or a press outside closes it. No Kanban and no columns.
+- **At a glance (3A).** One line under Watcher's header names each thread that needs the user and why: a question, a permission or a failed turn. It is gone when nothing waits.
+- **First entry (4C).** Watcher's composer, ready, with its model chip for Codex, Claude Code or Grok Build. The first message starts Watcher; there is no separate start screen.
+- **A press on a thread (5A).** The thread opens in its real pane beside Watcher, at its question or permission when opened from Open to answer or the needs-you line. Shift with the press, or **Open in Threads** in the pane's header, goes to the Threads room with the thread selected.
+- **The corner (6A).** The Sotto Owl tile and its night sky keep the window's top-left corner, as on every other Owl page, and the small owl before Watcher's name goes.
+
+Without a sidebar, Watcher and a thread fit side by side even at the 820 by 560 minimum, so the room uses no tabs. This replaces the plan's sidebar Overview and its narrow-width tabs; the Overview's groups and what the beside pane does are unchanged.
 
 ## Provider tools and pinned permissions
 
@@ -108,3 +121,12 @@ October 11, 2026: Zach reversed the October 8 choice to hide Watcher on phones. 
 - **7A:** dictation uses the keyboard's own microphone key; nothing new listens.
 
 Watcher lives on the desktop running it, available to paired phones only in Owl. A phone paired directly to forge sees forge's workers. The laptop's Watcher page supplies its view of watched forge workers without adding the aggregate roster to the laptop's ordinary phone Threads list. Current and historical Watcher threads are omitted from an old phone's ordinary rows, details and events so it cannot mistake their permission boundary for an ordinary worker. Named optional host-v1 features and optional display fields preserve protocol version 1. Stable serves nothing of Watcher and keeps its records whole. Ticket 8a owns the host and core-wire foundation; ticket 8b owns the iPhone UI and native/device verification; Android UI is later.
+October 12 review fixes separate recipient availability from persistence failure. Missing hooks or a missing, disconnected, settled or archived current master hold bounded, still-current news without a delivery timer; a later available observation resumes the existing batch. Busy turns and pending requests still accept queued news. Failed queue or event-ID saves retain their pending data and retry exponentially, from two seconds to a sixty-second delay, with eight automatic attempts total. After that, a recipient availability transition or new real news renews the retry budget; shell republishing alone does not. These owned retry deadlines read no provider, Git or GitHub state and add no polling.
+
+GitHub state, checks, current review decision and auto-merge are separate evidence facts for one URL and head, each retaining its own observation time and freshness. A reader updates only what it observed; carrying known checks through an unrequested read retains their original time. Explicit false values revoke approval/auto-merge facts, and a newer head clears earlier-head facts. Late older-head or older-field reads cannot restore superseded evidence.
+
+Restart reconciliation uses the waiting queue's text-free evidence references while source observations are incomplete. An unobserved fact is unknown and cannot withdraw that waiting news; newly observed changes, explicit removals and ownership fences still invalidate it. Checkpoint initialization republishes the newest retained ready/unavailable capture for each thread once, through the gated observer, so saved captures repopulate evidence without polling or restoring prose.
+
+The bounded source cache retains up to three hundred facts per target, enough for fifty linked PRs with independent facts. The existing evidence projection remains at one hundred entries, favoring recent actual changes. Clock-only refreshes update observation times without moving facts through that projection, so its limit cannot turn unchanged background reads into news.
+
+Recovery compares actual source changes against the bounded cache, so projection omissions are not removals. First materialization remains unknown until the saved occurrence is reconciled; explicit new/removed PR associations and changed already-observed facts still supersede it. Before the newest checkpoint is published, retained captures are offered to the private restorer; only a capture referenced by the waiting occurrence seeds its comparison. This lets a newer saved capture supersede older waiting news without replaying unrelated historical captures.

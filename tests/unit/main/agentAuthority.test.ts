@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { classifyRiskyAction, mayGrantLocally, UNPAIRED_CLIENT_ERROR, type Authority, type RiskyAction } from '../../../src/main/agents/authority'
+import { classifyRiskyAction, mayGrantLocally, REMOTE_PERMISSION_DENIED, UNPAIRED_CLIENT_ERROR, type Authority, type RiskyAction } from '../../../src/main/agents/authority'
 import { AgentControl } from '../../../src/main/agents/control'
 
 import type { AgentHostCommand } from '../../../src/main/agents/host'
@@ -217,6 +217,18 @@ describe('authority at dispatch', () => {
     const sent = await f.control.commandShell({ type: 'send' }, client)
     expect(sent.error).toContain('Answer the pending question')
     expect(f.host.executed.filter(command => command.type === 'answer')).toEqual([])
+  })
+
+  it.each([false, true])('saves a new-thread permission default that grants only while the client may answer, when permitted is %s (ADR-0074)', async allowed => {
+    const client: ClientIdentity = { clientId: 'fixture-client', user: 'Fixture client', transport: 'socket' }
+    const f = await fixture({ authorizes: () => ({ allowed: false, reason: 'no-policy' }),
+      mayGrant: identity => identity.transport === 'ipc' ? { allowed: true, reason: 'local-window' }
+        : { allowed, reason: allowed ? 'paired-client' : 'no-policy' } })
+    const result = await f.control.command({ type: 'configure', patch: { newThreadRuntimeMode: 'full-access' } }, client)
+    expect(result.error).toBe(allowed ? null : REMOTE_PERMISSION_DENIED)
+    expect(f.control.get().configuration.newThreadRuntimeMode).toBe(allowed ? 'full-access' : undefined)
+    // Asking grants nothing, so it needs no policy.
+    expect((await f.control.command({ type: 'configure', patch: { newThreadRuntimeMode: 'approval-required' } }, client)).error).toBeNull()
   })
 
   it('keeps the compose client check consistent with send', async () => {

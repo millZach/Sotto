@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { execFileSync } from 'node:child_process'
-import { lstat, readFile, symlink, unlink, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, readdir, readFile, symlink, unlink, writeFile } from 'node:fs/promises'
 
 import { basename, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -156,6 +156,45 @@ describe("independent working-copy allocation", () => {
     await expect(new ThreadWorktrees(f.root, run).ensure(allocation)).rejects.toThrow('Retry setup to continue on the same branch')
     await expect(lstat(allocation.path!)).rejects.toThrow()
     expect((await git(f.project, ['worktree', 'list', '--porcelain'])).match(/worktree /gu)).toHaveLength(1)
+  })
+  it('asks only for a retry when a timed-out restore leaves its held folder empty', async () => {
+    const f = await fixture(); const a = await f.service.ensure(await f.service.allocate(f.project, 'independent'))
+    const recorded = await f.service.inspect(a)
+    await git(f.project, ['worktree', 'remove', '--', a.path!]); await mkdir(a.path!)
+    let timeout = true
+    const run: RunGit = async (cwd, args) => {
+      if (args[0] === 'worktree' && args[1] === 'remove' && args.includes('--force')) {
+        // Windows: Git empties and unregisters a folder another process uses, then fails on the folder itself.
+        await git(cwd, args); await mkdir(a.path!)
+        throw new Error('Synthetic failure to delete the held folder')
+      }
+      const result = await git(cwd, args)
+      if (timeout && args[0] === 'worktree' && args[1] === 'add') {
+        timeout = false
+        await git(f.project, ['worktree', 'lock', '--reason', 'initializing', a.path!])
+        throw Object.assign(new Error('Synthetic Git timeout'), { timedOut: true })
+      }
+      return result
+    }
+    const service = new ThreadWorktrees(f.root, run)
+    const failure = await service.restore(recorded).then(() => undefined, (error: Error) => error)
+    expect(failure?.message).toContain('Retry setup to continue on the same branch')
+    expect(failure?.message).not.toContain('Move any local files out')
+    expect(await readdir(a.path!)).toEqual([])
+    expect((await git(f.project, ['worktree', 'list', '--porcelain'])).match(/worktree /gu)).toHaveLength(1)
+    const restored = await service.inspect(await service.restore(recorded))
+    expect(restored).toMatchObject({ status: 'ready', branch: recorded.branch })
+    expect(await readFile(join(a.path!, 'tracked.txt'), 'utf8')).toBe('committed baseline')
+  })
+  it('sets up a new worktree in an empty folder at its reserved path, and refuses one with anything in it', async () => {
+    const f = await fixture()
+    const empty = await f.service.allocate(f.project, 'independent'); await mkdir(empty.path!, { recursive: true })
+    const ready = await f.service.ensure(empty)
+    expect(ready).toMatchObject({ status: 'ready', branch: empty.branch })
+    expect(await readFile(join(ready.path!, 'tracked.txt'), 'utf8')).toBe('committed baseline')
+    const used = await f.service.allocate(f.project, 'independent'); await mkdir(used.path!); await writeFile(join(used.path!, 'notes.txt'), 'not Sotto’s')
+    await expect(f.service.ensure(used)).rejects.toThrow('already exists but is not this thread’s Git worktree')
+    expect(await readdir(used.path!)).toEqual(['notes.txt'])
   })
   it('does not reuse a checkout while Git reports it locked', async () => {
     const f = await fixture(); const a = await f.service.ensure(await f.service.allocate(f.project, 'independent'))

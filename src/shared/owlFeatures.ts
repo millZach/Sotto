@@ -1,0 +1,27 @@
+import type { ReleaseTrack } from './releaseTrack'
+
+export interface OwlFeature {
+  readonly id: string
+  readonly name: string
+  readonly owlSince: string
+  readonly owner: string
+  readonly sentToStable: boolean
+}
+
+/** Zach marks a feature here; sending it to stable changes only sentToStable (ADR-0072). */
+export const OWL_FEATURES = [
+  { id: 'watcher', name: 'Watcher', owlSince: '2026-10-10', owner: 'docs/adr/0073-watcher-coordinates-threads-with-its-providers-own-tools.md', sentToStable: false },
+] as const satisfies readonly OwlFeature[]
+
+export type OwlFeatureId = typeof OWL_FEATURES[number]['id']
+export type OwlFeatureStates = Readonly<Record<OwlFeatureId, boolean>>
+
+/** Unknown features stay off. The optional list lets tests exercise graduation without changing Watcher. */
+export function isOwlFeatureEnabled(id: string, track: ReleaseTrack, features: readonly OwlFeature[] = OWL_FEATURES): boolean {
+  const feature = features.find(entry => entry.id === id)
+  return feature !== undefined && (track === 'owl' || feature.sentToStable)
+}
+
+export function owlFeaturesForTrack(track: ReleaseTrack): OwlFeatureStates {
+  return Object.freeze(Object.fromEntries(OWL_FEATURES.map(feature => [feature.id, isOwlFeatureEnabled(feature.id, track)])) as Record<OwlFeatureId, boolean>)
+}
