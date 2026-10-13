@@ -311,7 +311,7 @@ export class WatcherService implements WatcherControlHooks {
 
   guardPhoneSend(threadId: string): void {
     this.checkCaller(threadId)
-    if (this.changing) refuse('THREAD_BUSY', 'Wait for Watcher?s provider change before sending an instruction.', true)
+    if (this.changing) refuse('THREAD_BUSY', 'Wait for Watcher’s provider change before sending an instruction.', true)
   }
   userCommand(command: AgentCommand, threadId: string | undefined, answersQuestion: boolean): void {
     if (!threadId || answersQuestion) return
