@@ -147,11 +147,13 @@ const sameRecord = (left: BabysitRecord, right: BabysitRecord): boolean => left.
 const sameTold = (left: BabysitTold, right: BabysitTold): boolean => JSON.stringify(left) === JSON.stringify(right)
 
 /** A read GitHub answered with a failure, by what it answered: the sign-in refused, or anything else. */
-type Failed = 'failed-sign-in' | 'failed'
-const isFailed = (answer: unknown): answer is Failed => answer === 'failed-sign-in' || answer === 'failed'
-const failureOf = (message: string): Failed => isSignInRefusal(message) ? 'failed-sign-in' : 'failed'
+type Failed = 'failed-sign-in' | 'failed-no-answer' | 'failed'
+const isFailed = (answer: unknown): answer is Failed => answer === 'failed-sign-in' || answer === 'failed-no-answer' || answer === 'failed'
+/** GitHub took the request and then hung or dropped it: no answer, which counts, as a GitHub that keeps hanging should end it. */
+const NO_ANSWER = /did not finish in time|context deadline exceeded|unexpected EOF|: EOF\b|connection reset|forcibly closed|\bi\/o timeout\b/iu
+const failureOf = (message: string): Failed => isSignInRefusal(message) ? 'failed-sign-in' : NO_ANSWER.test(message) ? 'failed-no-answer' : 'failed'
 /** What a failed read says of GitHub for the last wake-up: the sign-in, or an answer that made no sense. A detail read naming no pull request is told apart by the reader. */
-const unreadableOf = (failed: Failed): BabysitUnreadable => failed === 'failed-sign-in' ? 'sign-in' : 'answer'
+const unreadableOf = (failed: Failed): BabysitUnreadable => failed === 'failed-sign-in' ? 'sign-in' : failed === 'failed-no-answer' ? 'no-answer' : 'answer'
 /** Bot remarks whose words were read, by remark and edit, kept for as many remarks as one detail read can return. */
 const NOTICES_KEPT = 2_000
 
@@ -474,7 +476,7 @@ export class Babysitter {
     })
     let landed = true
     for (const target of group.targets) {
-      const finding = findNews(target.record.told, { fingerprint, head: detail?.head ?? null, checks: detail?.checks ?? null, requiredChecks: detail?.requiredChecks ?? null,
+      const finding = findNews(target.record.told, { fingerprint, head: detail?.head ?? null, checks: detail?.checks ?? null, requiredChecks: detail?.requiredChecks ?? null, checksComplete: detail?.checksComplete ?? true,
         remarks: remarksHeld ? null : detail?.remarks ?? null, ...(notices ? { notices } : {}), viewer })
       if (finding.changes.length === 0) {
         if (!sameTold(finding.told, target.record.told)) landed = await this.record(target, finding.told) && landed
@@ -498,7 +500,9 @@ export class Babysitter {
     const own = viewer?.toLowerCase() ?? null
     const since = Math.min(...group.targets.map(target => Date.parse(target.record.told.remarksThrough)).filter(Number.isFinite))
     const version = (remark: BabysitRemark): string => `${remark.id}@${remark.editedAt ?? remark.createdAt}`
-    const unread = remarks.filter(remark => remark.bot && remark.author?.toLowerCase() !== own && !this.noticesByVersion.has(version(remark))
+    // A notice is a comment, or a review that only commented: never a comment on code, an approval or a request for changes.
+    const unread = remarks.filter(remark => remark.bot && (remark.kind === 'comment' || remark.review === 'commented')
+      && remark.author?.toLowerCase() !== own && !this.noticesByVersion.has(version(remark))
       && Date.parse(remark.editedAt ?? remark.createdAt) >= since)
     for (let start = 0; start < unread.length; start += REMARK_WORDS_PER_QUERY) {
       const chunk = unread.slice(start, start + REMARK_WORDS_PER_QUERY), ids = chunk.map(remark => remark.id)

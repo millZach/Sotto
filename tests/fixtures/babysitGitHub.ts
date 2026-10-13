@@ -26,6 +26,10 @@ export interface ScriptedPull {
   checks?: ScriptedCheck[]; comments?: ScriptedRemark[]; reviews?: ScriptedReview[]; threads?: Array<{ path: string; comments: ScriptedRemark[] }>
   /** The checks the base branch's rules require by name, which GitHub lists whether or not they have reported. */
   requiredChecks?: string[]
+  /** GitHub does not show the sign-in the base branch's rules, so it answers no base branch. */
+  rulesUnreadable?: boolean
+  /** The head has more checks than one read returns, so the list read is the first page. */
+  moreChecks?: boolean
   /**
    * GitHub refuses the head's checks in the detail read, the way a partial refusal does: the whole rollup nulled, the
    * check list nulled, or one check nulled, each with an error naming where. gh then fails with that answer on its output.
@@ -81,7 +85,7 @@ export function scriptedGitHub(pulls: ScriptedPull[], options: { viewer?: string
     : { __typename: 'CheckRun', name: check.name, status: RUNNING.has(check.state) ? check.state : 'COMPLETED', conclusion: RUNNING.has(check.state) ? null : check.state,
       detailsUrl: check.url ?? `https://github.com/o/r/actions/runs/${check.name}`, isRequired: check.required === true, checkSuite: null })
   const rollupOf = (pull: ScriptedPull) => pull.refuseChecks === 'rollup' || !(pull.checks ?? []).length ? null
-    : { contexts: { nodes: pull.refuseChecks === 'list' ? null : checkNodes(pull) } }
+    : { contexts: { pageInfo: { hasNextPage: pull.moreChecks === true }, nodes: pull.refuseChecks === 'list' ? null : checkNodes(pull) } }
   const ROLLUP_PATH = ['repository', 'pullRequest', 'commits', 'nodes', 0, 'commit', 'statusCheckRollup']
   /** Where GitHub says it refused the checks: the rollup, the list, or a part of the first check that cannot be empty. */
   const checksErrorPath = (refused: NonNullable<ScriptedPull['refuseChecks']>) =>
@@ -89,7 +93,7 @@ export function scriptedGitHub(pulls: ScriptedPull[], options: { viewer?: string
   const detailOf = (pull: ScriptedPull, checks: boolean, remarks: boolean) => ({
     headRefOid: pull.head ?? 'head-1',
     ...checks ? { commits: { nodes: [{ commit: { oid: pull.head ?? 'head-1', statusCheckRollup: rollupOf(pull) } }] } } : {},
-    ...checks ? { baseRef: { rules: { nodes: pull.requiredChecks
+    ...checks ? { baseRef: pull.rulesUnreadable ? null : { rules: { nodes: pull.requiredChecks
       ? [{ type: 'REQUIRED_STATUS_CHECKS', parameters: { requiredStatusChecks: pull.requiredChecks.map(context => ({ context })) } }] : [] } } } : {},
     ...remarks ? {
       comments: { nodes: (pull.comments ?? []).map(remarkNode) },

@@ -96,6 +96,12 @@ describe('the GraphQL babysitting asks', () => {
     expect(couldNotRunNotice('The usage limit never resets after renewal; reset the counter in quota.ts.')).toBe(false)
     expect(couldNotRunNotice('The usage limit check runs after the paid request. Move it before the request.')).toBe(false)
     expect(couldNotRunNotice('This test could not run on Windows because the path is too long.')).toBe(false)
+    // Sotto Bug Bot's examples: a review about code that has limits opens on the code, not on the bot's run.
+    expect(couldNotRunNotice('This retry loop spins forever once the GitHub rate limit is exceeded; add a backoff.')).toBe(false)
+    expect(couldNotRunNotice('Bug: when the user\'s trial has ended, `canExport` still returns true.')).toBe(false)
+    expect(couldNotRunNotice('The handler cannot run when the usage limit is zero, so the plan check never fires.')).toBe(false)
+    expect(couldNotRunNotice('Possible crash: if the account is out of 0 credits the division by credits fails.')).toBe(false)
+    expect(couldNotRunNotice('> [!WARNING]\n> ## Rate limit exceeded\n> @someone has exceeded the limit for the number of commits that can be reviewed per hour.')).toBe(true)
     expect(couldNotRunNotice('<!-- BUGBOT_TOO_LARGE_TO_REVIEW -->\n' + 'A long review. '.repeat(200))).toBe(false)
   })
 })
@@ -737,8 +743,7 @@ describe('the checks the rules require, reruns, and what is not news', () => {
     for (const error of [new Error('error connecting to api.github.com\ncheck your internet connection or https://githubstatus.com'),
       new Error('Post "https://api.github.com/graphql": dial tcp: lookup api.github.com: no such host'),
       new Error('Post "https://api.github.com/graphql": tls: failed to verify certificate: x509: certificate signed by unknown authority'),
-      new Error('Post "https://api.github.com/graphql": read tcp 10.0.0.2:51234->140.82.112.6:443: wsarecv: An existing connection was forcibly closed by the remote host.'),
-      Object.assign(new Error('gh did not finish in time.'), { code: 'ETIMEDOUT' })]) {
+      new Error('Post "https://api.github.com/graphql": dial tcp 140.82.112.6:443: connectex: No connection could be made because the target machine actively refused it.')]) {
       h.github.fail(error)
       for (let index = 0; index < FAILED_READ_LIMIT + 2; index++) await h.pass()
     }
@@ -841,6 +846,63 @@ describe('the checks the rules require, reruns, and what is not news', () => {
     h.github.failWords(new Error('HTTP 403: Resource not accessible by integration'))
     await h.pass()
     expect(h.changes().at(-1)).toEqual({ kind: 'remarks', remarks: [expect.objectContaining({ author: 'cursor' })] })
+  })
+
+  it('counts a GitHub that takes the request and then hangs or drops it, and says it stopped answering', async () => {
+    for (const error of [Object.assign(new Error('gh did not finish in time.'), { code: 'ETIMEDOUT' }),
+      new Error('Post "https://api.github.com/graphql": read tcp 10.0.0.2:51234->140.82.112.6:443: wsarecv: An existing connection was forcibly closed by the remote host.'),
+      new Error('Post "https://api.github.com/graphql": unexpected EOF')]) {
+      const h = harness([{ number: 1 }], { a: { links: [url(1)] } })
+      await h.babysitter.start('a', url(1), 'agent')
+      h.github.fail(error)
+      for (let index = 0; index < FAILED_READ_LIMIT; index++) await h.pass()
+      expect(h.delivered.map(item => [item.news.ended, item.news.unreadable])).toEqual([['unreadable', 'no-answer']])
+    }
+  })
+
+  it('takes a rule as met only by a check GitHub flags required, so another app\'s check of that name passes nothing', async () => {
+    const pull: ScriptedPull = { number: 1, requiredChecks: ['Gates (Windows)'], checks: [{ name: 'Gates (Windows)', state: 'SUCCESS' }] }
+    const h = harness([pull], { a: { links: [url(1)] } })
+    await h.babysitter.start('a', url(1), 'agent')
+    await h.pass()
+    expect(h.changes()).toEqual([])
+    pull.checks = [{ name: 'Gates (Windows)', state: 'SUCCESS' }, { name: 'Gates (Windows)', state: 'SUCCESS', required: true }]
+    await h.pass()
+    expect(h.changes()).toEqual([{ kind: 'checks-passed', count: 1, required: true }])
+  })
+
+  it('tells a pass read without the rules and then with them once, and counts a name two checks share once', async () => {
+    const pull: ScriptedPull = { number: 1, rulesUnreadable: true, checks: [{ name: 'build', state: 'SUCCESS', required: true }, { name: 'build', state: 'SUCCESS', required: true }] }
+    const h = harness([pull], { a: { links: [url(1)] } })
+    await h.babysitter.start('a', url(1), 'agent')
+    await h.pass()
+    expect(h.changes()).toEqual([{ kind: 'checks-passed', count: 1, required: true }])
+    pull.rulesUnreadable = false; pull.requiredChecks = ['build']; pull.mergeable = 'UNKNOWN'
+    await h.pass()
+    expect(h.delivered).toHaveLength(1)
+  })
+
+  it('tells no pass from a head with more checks than one read returns, and its failures all the same', async () => {
+    const pull: ScriptedPull = { number: 1, moreChecks: true, checks: [{ name: 'build', state: 'SUCCESS', required: true }] }
+    const h = harness([pull], { a: { links: [url(1)] } })
+    await h.babysitter.start('a', url(1), 'agent')
+    await h.pass()
+    expect(h.changes()).toEqual([])
+    pull.checks = [{ name: 'build', state: 'FAILURE', required: true }]
+    await h.pass()
+    expect(h.changes()).toEqual([{ kind: 'checks-failed', checks: [expect.objectContaining({ name: 'build' })] }])
+  })
+
+  it('never takes a comment on code, an approval or a request for changes for a notice', async () => {
+    const pull: ScriptedPull = { number: 1, comments: [], reviews: [], threads: [] }
+    const h = harness([pull], { a: { links: [url(1)] } })
+    await h.babysitter.start('a', url(1), 'agent')
+    await h.pass()
+    pull.threads!.push({ path: 'src/a.ts', comments: [{ id: 'inline', author: 'cursor', bot: true, at: at(3), body: 'Your trial has ended.' }] })
+    pull.reviews!.push({ id: 'changes', author: 'greptile-apps', bot: true, at: at(3), state: 'CHANGES_REQUESTED', body: 'Your trial has ended.' })
+    await h.pass()
+    expect(h.changes()).toEqual([{ kind: 'remarks', remarks: [expect.objectContaining({ kind: 'review', review: 'changes-requested' }), expect.objectContaining({ kind: 'review-comment' })] }])
+    expect(h.github.count('words')).toBe(0)
   })
 
   it("counts GitHub's own servers failing as failed reads, as it counts any answer, and ends with what they said", async () => {

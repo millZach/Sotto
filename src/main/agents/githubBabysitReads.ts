@@ -152,8 +152,8 @@ export const DETAIL_QUERY = `query BabysitDetail($owner: String!, $name: String!
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
       headRefOid
-      baseRef @include(if: $checks) { rules(first: 50) { nodes { type parameters { ... on RequiredStatusChecksParameters { requiredStatusChecks { context } } } } } }
-      commits(last: 1) @include(if: $checks) { nodes { commit { oid statusCheckRollup { contexts(first: 100) { nodes {
+      baseRef @include(if: $checks) { rules(first: 50) { pageInfo { hasNextPage } nodes { type parameters { ... on RequiredStatusChecksParameters { requiredStatusChecks { context } } } } } }
+      commits(last: 1) @include(if: $checks) { nodes { commit { oid statusCheckRollup { contexts(first: 100) { pageInfo { hasNextPage } nodes {
         __typename
         ... on CheckRun { name status conclusion detailsUrl isRequired(pullRequestNumber: $number) checkSuite { workflowRun { workflow { name } } } }
         ... on StatusContext { context state targetUrl isRequired(pullRequestNumber: $number) }
@@ -171,9 +171,9 @@ const detailAnswerSchema = z.object({ data: z.object({
   rateLimit: rateLimitSchema,
   repository: z.object({ pullRequest: loose(z.object({
     headRefOid: loose(z.string()),
-    baseRef: loose(z.object({ rules: loose(z.object({ nodes: loose(z.array(loose(z.object({ type: loose(z.string()),
+    baseRef: loose(z.object({ rules: loose(z.object({ pageInfo: loose(z.object({ hasNextPage: loose(z.boolean()) })), nodes: loose(z.array(loose(z.object({ type: loose(z.string()),
       parameters: loose(z.object({ requiredStatusChecks: loose(z.array(loose(z.object({ context: loose(z.string()) })))) })) })))) })) })),
-    commits: loose(z.object({ nodes: loose(z.array(loose(z.object({ commit: loose(z.object({ oid: loose(z.string()), statusCheckRollup: loose(z.object({ contexts: loose(z.object({ nodes: loose(z.array(loose(z.object({
+    commits: loose(z.object({ nodes: loose(z.array(loose(z.object({ commit: loose(z.object({ oid: loose(z.string()), statusCheckRollup: loose(z.object({ contexts: loose(z.object({ pageInfo: loose(z.object({ hasNextPage: loose(z.boolean()) })), nodes: loose(z.array(loose(z.object({
       __typename: loose(z.string()), name: loose(z.string()), context: loose(z.string()), status: loose(z.string()), conclusion: loose(z.string()), state: loose(z.string()),
       detailsUrl: loose(z.string()), targetUrl: loose(z.string()), isRequired: loose(z.boolean()),
       checkSuite: loose(z.object({ workflowRun: loose(z.object({ workflow: loose(z.object({ name: loose(z.string()) })) })) })),
@@ -224,6 +224,8 @@ export interface DetailAnswer {
    * or GitHub did not say (no base branch, or rules the sign-in cannot read), and then only `required` on each check counts.
    */
   readonly requiredChecks: readonly string[] | null
+  /** Whether the checks and rules read are all there are: false past the first 100 checks or 50 rules, when no pass can be told. */
+  readonly checksComplete: boolean
   /** Every remark read, or null when they were not asked for. */
   readonly remarks: readonly BabysitRemark[] | null
 }
@@ -295,7 +297,9 @@ export function readDetail(text: string, asked: { readonly checks: boolean; read
       }
     }
   }
-  return { rateLimit: answer.data.rateLimit, head, checks, requiredChecks, remarks }
+  const checksComplete = pullRequest.commits?.nodes?.at(-1)?.commit?.statusCheckRollup?.contexts?.pageInfo?.hasNextPage !== true
+    && pullRequest.baseRef?.rules?.pageInfo?.hasNextPage !== true
+  return { rateLimit: answer.data.rateLimit, head, checks, requiredChecks, checksComplete, remarks }
 }
 const isBot = (author: z.infer<typeof authorSchema>): boolean => author?.__typename === 'Bot'
 

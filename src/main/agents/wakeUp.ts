@@ -44,7 +44,7 @@ export const babysitNewsSchema = z.object({
   head: z.string().max(100).nullable(),
   changes: z.array(changeSchema).max(8),
   ended: z.enum(['merged', 'closed', 'comment-limit', 'unreadable']).nullable(),
-  unreadable: z.enum(['sign-in', 'not-found', 'answer']).optional(),
+  unreadable: z.enum(['sign-in', 'not-found', 'no-answer', 'answer']).optional(),
 })
 
 /** Old queue files remain readable; Watcher never impersonates a pull request. */
@@ -158,6 +158,7 @@ const ENDING: Record<Exclude<NonNullable<BabysitNews['ended']>, 'unreadable'>, s
 const UNREADABLE: Record<NonNullable<BabysitNews['unreadable']> | 'unknown', string> = {
   'sign-in': 'GitHub refused the sign-in eight times in a row, so Sotto has stopped babysitting it: nothing was being checked. Check the GitHub sign-in with gh auth status.',
   'not-found': 'GitHub did not show it to this sign-in eight times in a row, so Sotto has stopped babysitting it: it may have been deleted, or the sign-in may have lost access to it.',
+  'no-answer': 'GitHub stopped answering for it eight times in a row, so Sotto has stopped babysitting it: nothing was being checked.',
   answer: 'GitHub answered with something Sotto could not read eight times in a row, so Sotto has stopped babysitting it: nothing was being checked.',
   unknown: 'GitHub could not be read for it eight times in a row, so Sotto has stopped babysitting it: nothing was being checked.',
 }

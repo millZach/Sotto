@@ -70,8 +70,11 @@ export type BabysitChange =
   | { readonly kind: 'conflicting'; readonly base: string }
 /** Why babysitting ended on its own, which the last wake-up says (decision 9). */
 export type BabysitEnding = 'merged' | 'closed' | 'comment-limit' | 'unreadable'
-/** What GitHub kept answering when babysitting ended unreadable: the sign-in refused, the pull request not shown, or an answer that made no sense. */
-export type BabysitUnreadable = 'sign-in' | 'not-found' | 'answer'
+/**
+ * What GitHub kept answering when babysitting ended unreadable: the sign-in refused, the pull request not shown, no
+ * answer in time (taken and then hung or dropped), or an answer that made no sense.
+ */
+export type BabysitUnreadable = 'sign-in' | 'not-found' | 'no-answer' | 'answer'
 
 /**
  * What one thread is to be woken with about one pull request: structured, never worded. #824 words the wake-up from it.
@@ -114,6 +117,8 @@ export interface BabysitReading {
   readonly checks: readonly BabysitCheck[] | null
   /** The checks the base branch's rules require by name, read with the checks; null when GitHub did not say. */
   readonly requiredChecks?: readonly string[] | null
+  /** False when GitHub had more checks or rules than one read returns: failures are told, a pass is not. */
+  readonly checksComplete?: boolean
   readonly remarks: readonly BabysitRemark[] | null
   /** The remarks that are a bot's notice that it could not run: told as read, and news to nobody. */
   readonly notices?: ReadonlySet<string>
@@ -130,13 +135,15 @@ export interface BabysitFinding {
 
 /**
  * The checks that must pass, as GitHub decides it can merge: each the rules require, which holds while GitHub has no
- * check of it yet (a job waiting on others), and any other GitHub flags required; where neither, every check.
+ * check of it yet (a job waiting on others), and any other GitHub flags required; where neither, every check. A rule is
+ * met only by a check of its name that GitHub also flags required, so another app's check of the same name cannot pass
+ * it. Each is named by its context in every case, so a gate read without the rules and then with them is one gate.
  */
 function gateOf(checks: readonly BabysitCheck[], ruled: readonly string[]): { readonly names: readonly string[]; readonly required: boolean; readonly passed: boolean } {
   const flagged = checks.filter(check => check.required && !ruled.includes(check.context))
-  if (!ruled.length && !flagged.length) return { names: checks.map(check => check.name), required: false, passed: checks.length > 0 && checks.every(isPassed) }
-  const ruledPassed = ruled.every(context => { const named = checks.filter(check => check.context === context); return named.length > 0 && named.every(isPassed) })
-  return { names: [...ruled, ...flagged.map(check => check.context)], required: true, passed: ruledPassed && flagged.every(isPassed) }
+  if (!ruled.length && !flagged.length) return { names: [...new Set(checks.map(check => check.context))], required: false, passed: checks.length > 0 && checks.every(isPassed) }
+  const ruledPassed = ruled.every(context => { const named = checks.filter(check => check.context === context && check.required); return named.length > 0 && named.every(isPassed) })
+  return { names: [...new Set([...ruled, ...flagged.map(check => check.context)])], required: true, passed: ruledPassed && flagged.every(isPassed) }
 }
 
 /**
@@ -162,7 +169,9 @@ export function findNews(told: BabysitTold, reading: BabysitReading): BabysitFin
     const failed = failing.filter(check => !failedChecks.includes(check.name))
     if (failed.length) changes.push({ kind: 'checks-failed', checks: failed.map(check => ({ name: printable(check.name), status: check.status, url: check.url })) })
     failedChecks = [...new Set(failing.map(check => check.name))].slice(-LIST_MAX)
-    const gate = gateOf(reading.checks, reading.requiredChecks ?? [])
+    const whole = gateOf(reading.checks, reading.requiredChecks ?? [])
+    // Past what one read returns, a check left out may be one the gate needs.
+    const gate = reading.checksComplete === false ? { ...whole, passed: false } : whole
     // A record kept before the gate's names were takes the gate as it is now, so it does not tell the pass again.
     const toldGate = passed && passedGate.length === 0 ? gate.names : passedGate
     const grew = gate.required && gate.names.some(name => !toldGate.includes(name))
@@ -210,23 +219,31 @@ export function findNews(told: BabysitTold, reading: BabysitReading): BabysitFin
 }
 
 /**
- * A bot's notice that it could not review: it hit a usage, spend, rate or credit limit, its trial ended, or the change
- * is too large for it (ADR-0061 decision 7). Each phrase says what happened to the bot's own run, not what code does,
- * so a review that mentions a limit is still news, and only words as short as such notices count: Cursor's Bugbot and
- * Greptile's were a few sentences, CodeRabbit's rate-limit notice a few paragraphs, a real review longer.
+ * A bot's notice that it could not review: it hit a usage or rate limit, its trial ended, its credits ran out, or the
+ * change is too large for it (ADR-0061 decision 7). Each notice opens on what happened to the bot's own run, so each
+ * phrase is matched where the words begin, never later in them: a review that says code misbehaves "once the rate limit
+ * is exceeded" or "when the user's trial has ended" is still news. Only words as short as such notices count: Cursor's
+ * Bugbot and Greptile's were a few sentences, a real review is longer.
  */
 const NOTICE_MARKER = /<!--\s*BUGBOT_TOO_LARGE_TO_REVIEW\s*-->/u
+/** Up to three words before the phrase: the bot's name, or a heading such as "[!WARNING]". */
+const LEAD = String.raw`^(?:\S+\s+){0,3}`
 const NOTICE_WORDS = [
-  /\b(?:couldn['’]?t|could not|cannot|can['’]t|unable to) (?:run|review)\b.{0,80}\b(?:limits?|credits?|quota|plan|trial|billing|spend|usage)\b/iu,
-  /\b(?:usage|spend|spending|billing|rate) limits? (?:was |has been |is )?(?:reached|hit|exceeded)\b/iu,
-  /\bhit (?:a|its|the|your) (?:usage|spend|spending|billing|rate)(?: or (?:usage|spend|spending))? limit\b/iu,
-  /\btrial (?:has )?(?:ended|expired)\b/iu,
-  /\b(?:used all|used up|run out of|ran out of|out of)(?: (?:the|your|its))?(?: \d+)? (?:\w+ )?credits\b/iu,
-  /\btoo large (?:for \S+ )?to review\b/iu,
+  // Cursor's Bugbot: "Bugbot couldn't run - usage limit reached".
+  new RegExp(`${LEAD}(?:couldn['’]?t|could not|cannot|can['’]t|was unable to|is unable to) (?:run|review)\\b\\W{0,5}(?:\\S+\\s+){0,3}(?:limit|quota)s? (?:was |has been )?(?:reached|hit|exceeded)\\b`, 'iu'),
+  // A heading that says so: "Rate limit exceeded", "Usage limit reached".
+  new RegExp(`${LEAD}(?:usage|spend|spending|billing|rate) limits? (?:was |has been )?(?:reached|hit|exceeded)\\b`, 'iu'),
+  // Greptile: "Your trial has ended", "Your organization has used all 50 credits included in the free plan".
+  /^your (?:free )?trial (?:has )?(?:ended|expired)\b/iu,
+  /^your (?:organization|organisation|account|team|workspace) (?:has |have )?(?:used (?:all|up)|run out of|exhausted)\b.{0,40}\bcredits\b/iu,
+  // Cursor's Bugbot: "This PR is too large for Bugbot to review".
+  /^this (?:pr|pull request|change) is too large (?:for \S+ )?to review\b/iu,
 ]
 const NOTICE_MAX = 2_000
 export function couldNotRunNotice(words: string): boolean {
-  const text = words.replace(/<!--[\s\S]*?-->/gu, ' ').replace(/<[^>]*>/gu, ' ').replace(/\[([^\]]*)\]\([^)]*\)/gu, '$1').replace(/\s+/gu, ' ').trim()
+  // Quote and heading marks lead the lines of a notice laid out as a warning box; they are not words.
+  const text = words.replace(/<!--[\s\S]*?-->/gu, ' ').replace(/<[^>]*>/gu, ' ').replace(/\[([^\]]*)\]\([^)]*\)/gu, '$1')
+    .replace(/^[\s>#*_-]+/gmu, '').replace(/\s+/gu, ' ').trim()
   if (text.length > NOTICE_MAX) return false
   return NOTICE_MARKER.test(words) || (text.length > 0 && NOTICE_WORDS.some(pattern => pattern.test(text)))
 }
