@@ -36,6 +36,7 @@ const env = { ...parent, HOME: home, XDG_CONFIG_HOME: join(home, '.config'), XDG
   XDG_DATA_HOME: join(home, '.local/share'), XDG_CACHE_HOME: join(home, '.cache'), XDG_RUNTIME_DIR: runtime,
   TMPDIR: temporary, TMP: temporary, TEMP: temporary, PATH: `${bin}:${join(home, '.local/bin')}:${omarchy}/bin:${systemBin}`, OMARCHY_PATH: omarchy,
   QS_DISABLE_FILE_WATCHER: '1', QS_NO_RELOAD_POPUP: '1', QT_QPA_PLATFORM: 'wayland', SOTTO_OMARCHY_SETUP_PROOF: '1',
+  SOTTO_E2E_EVIDENCE: 'publish',
   SOTTO_SETUP_PROOF_HOME: home, SOTTO_SETUP_PROOF_ROOT: root, SOTTO_SETUP_PROOF_PACKAGE: process.argv.includes('--package') ? '1' : '0' }
 delete env.ELECTRON_RUN_AS_NODE
 delete env.DISPLAY; delete env.XAUTHORITY

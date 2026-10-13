@@ -48,6 +48,31 @@ describe('Omarchy setup rows', () => {
     await user.click(screen.getByRole('dialog').querySelector('button:last-child')!)
     expect(f.calls).toEqual([{ type: 'update-owl' }])
   })
+  it('offers a key choice when an owned update meets a new conflict', async () => {
+    const initial = setupState('done'); initial.pieces.keys.status = 'stale'
+    initial.keyConflicts = ['F9 runs “Record the screen”.']
+    const f = setupBridgeFixture(initial), user = userEvent.setup()
+    render(<OmarchySetupPanel bridge={f.bridge} />)
+    expect(await screen.findByRole('radio', { name: 'Give F9 to Sotto' })).toBeChecked()
+    await user.click(screen.getByRole('button', { name: 'Set up the keys' }))
+    expect(f.calls).toEqual([{ type: 'setup', pieces: ['keys'], keys: 'give' }])
+  })
+  it('collapses its file disclosure with Escape and returns focus', async () => {
+    const f = setupBridgeFixture(), user = userEvent.setup()
+    render(<OmarchySetupPanel bridge={f.bridge} />)
+    await user.click(screen.getByRole('button', { name: 'Show the files it changes' }))
+    expect(screen.getByRole('button', { name: 'Hide the files it changes' })).toHaveAttribute('aria-expanded', 'true')
+    await user.keyboard('{Escape}')
+    expect(screen.getByRole('button', { name: 'Show the files it changes' })).toHaveFocus()
+  })
+  it('keeps removal available for owned keys left alone after a new conflict', async () => {
+    const initial = setupState(); initial.pieces.keys = { status: 'skipped', owned: true, message: 'Left alone.' }
+    initial.keyConflicts = ['F9 runs “Record the screen”.']
+    const f = setupBridgeFixture(initial), user = userEvent.setup()
+    render(<OmarchySetupPanel bridge={f.bridge} />)
+    await user.click(await screen.findByRole('button', { name: 'Remove the keys' }))
+    expect(f.calls).toEqual([{ type: 'remove', pieces: ['keys'] }])
+  })
   it('reports working and failed rows, offers a retry and gives focus somewhere to continue', async () => {
     const f = setupBridgeFixture(), user = userEvent.setup()
     render(<OmarchySetupPanel bridge={f.bridge} />)

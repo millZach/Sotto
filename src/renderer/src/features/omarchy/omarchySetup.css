@@ -34,4 +34,9 @@
   .onboarding-card .omarchy-setup__side { grid-column: 3; grid-row: 1 / span 2; justify-content: end; max-width: 150px; }
 }
 @media (prefers-reduced-motion: reduce) { .omarchy-setup__spin { animation: none; } }
+@media (max-height: 640px) {
+  .onboarding-card:has(.omarchy-setup) .onboarding-card__body { padding-block: 12px; }
+  .onboarding-card .omarchy-setup { gap: 8px; }
+  .onboarding-card .omarchy-setup__piece { padding-block: 7px; }
+}
 :root[data-reduced-motion=on] .omarchy-setup__spin { animation: none; }

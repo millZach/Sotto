@@ -55,11 +55,13 @@ export function OmarchySetupPanel({ surface = 'settings', controller, bridge }: 
   const [files, setFiles] = useState(false)
   const [updateQuestion, setUpdateQuestion] = useState(false)
   const root = useRef<HTMLDivElement>(null)
+  const filesButton = useRef<HTMLButtonElement>(null)
   const label = useId()
   const all = state && OMARCHY_PIECES.every(piece => ['done', 'manual'].includes(state.pieces[piece].status))
   const todo = state ? OMARCHY_PIECES.filter(piece => state.pieces[piece].status === 'missing' ||
-    (piece === 'keys' && !state.pieces.keys.owned && (state.pieces.keys.status === 'conflict' && state.keyConflicts.length > 0 || state.pieces.keys.status === 'skipped' && keyChoice === 'give'))) : []
-  const owned = state ? OMARCHY_PIECES.filter(piece => state.pieces[piece].owned && ['done', 'stale', 'missing', 'failed'].includes(state.pieces[piece].status)) : []
+    (piece === 'keys' && (state.pieces.keys.status === 'conflict' && !state.pieces.keys.owned && state.keyConflicts.length > 0 ||
+      state.pieces.keys.status === 'stale' && state.keyConflicts.length > 0 || state.pieces.keys.status === 'skipped' && keyChoice === 'give'))) : []
+  const owned = state ? OMARCHY_PIECES.filter(piece => state.pieces[piece].owned && ['done', 'stale', 'missing', 'failed', 'skipped'].includes(state.pieces[piece].status)) : []
   const act = async (command: OmarchySetupCommand): Promise<void> => {
     const focused = document.activeElement
     await setup.command(command)
@@ -83,7 +85,8 @@ export function OmarchySetupPanel({ surface = 'settings', controller, bridge }: 
       conflict: 'Needs your choice', skipped: 'Left alone', queued: 'Waiting', working: current.message === 'Removing' ? 'Removing' : 'Setting up' }[current.status]
   }
 
-  return <div className="omarchy-setup" ref={root} tabIndex={-1} aria-label="Omarchy setup" aria-busy={busy}>
+  return <div className="omarchy-setup" ref={root} tabIndex={-1} aria-label="Omarchy setup" aria-busy={busy}
+    onKeyDown={event => { if (event.key === 'Escape' && files && !updateQuestion) { event.stopPropagation(); setFiles(false); filesButton.current?.focus() } }}>
     {surface === 'settings' ? <div className="omarchy-setup__head"><div>
       <p className="tt-field__label">Omarchy</p><p className="tt-field__description">Sotto’s keys, its owl in the bar and the Omarchy theme.</p>
     </div>{owned.length > 0 ? <Button variant="ghost" disabled={busy} onClick={() => void act({ type: 'remove', pieces: owned })}>Remove all</Button> : null}</div> : null}
@@ -93,7 +96,8 @@ export function OmarchySetupPanel({ surface = 'settings', controller, bridge }: 
     <ul className="omarchy-setup__pieces">
       {OMARCHY_PIECES.map(piece => {
         const current = state?.pieces[piece], definition = PIECES[piece]
-        const conflict = piece === 'keys' && !current?.owned && state && state.keyConflicts.length > 0 && ['missing', 'conflict', 'skipped'].includes(current?.status ?? '')
+        const conflict = piece === 'keys' && state && state.keyConflicts.length > 0 &&
+          (['missing', 'stale', 'skipped'].includes(current?.status ?? '') || current?.status === 'conflict' && !current.owned)
         return <li key={piece} className="omarchy-setup__piece" data-piece={piece} data-state={current?.status ?? 'checking'}>
           <span className="omarchy-setup__icon">{piece === 'keys' ? <Keyboard size={20} /> : piece === 'theme' ? <Palette size={20} /> : <SottoGlyph />}</span>
           <strong className="omarchy-setup__name">{definition.title}</strong>
@@ -124,7 +128,7 @@ export function OmarchySetupPanel({ surface = 'settings', controller, bridge }: 
       {todo.length > 0 || busy ? <Button data-next disabled={busy} onClick={() => void install(todo)}>
         {busy ? 'Setting up' : todo.length === 3 ? 'Set up all three' : `Set up ${todo.map(piece => PIECES[piece].short).join(' and ')}`}
       </Button> : null}
-      <Button variant="ghost" aria-expanded={files} onClick={() => setFiles(!files)}>{files ? 'Hide the files it changes' : 'Show the files it changes'}</Button>
+      <Button ref={filesButton} variant="ghost" aria-expanded={files} onClick={() => setFiles(!files)}>{files ? 'Hide the files it changes' : 'Show the files it changes'}</Button>
     </div>
     {updateQuestion ? <ConfirmationDialog title="Update the owl?" description="Updating restarts the bar for a moment."
       confirmLabel="Update the owl" cancelLabel="Cancel" danger={false}

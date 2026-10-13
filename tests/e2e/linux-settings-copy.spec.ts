@@ -1,4 +1,4 @@
-// Built-app proof that Settings says what applies on Linux: the bindings' setup steps, pacman updates, and the
+// Built-app proof that Settings says what applies on Linux: Omarchy setup, pacman updates, and the
 // idle widget row with and without the shell pill. Run inside the owned nested Hyprland of
 // scripts/verify-linux-window-minimum.mjs --exec, it also floats its own window there and captures it with grim,
 // into the shared evidence folder (tests/fixtures/evidence.ts).
@@ -9,7 +9,6 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { _electron as electron, expect, test, type Locator } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
-import { LINUX_BINDINGS_GUIDE_URL } from '../../src/renderer/src/platformCopy'
 import { closeSotto, firstSottoWindow, launchSotto, openPage, type LaunchedSotto } from './support/sottoLaunch'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { evidenceDirectory } from '../fixtures/evidence'
@@ -55,19 +54,17 @@ test('Linux Settings says what applies, with and without the shell pill', async 
     await openPage(page, 'Settings')
     const tab = (name: string) => page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name, exact: true })
     const widgetSwitch = page.getByRole('switch', { name: 'Show floating widget when idle' })
-    const bindingsButton = page.getByRole('button', { name: 'Open setup steps in your browser' })
     const updates = page.locator('#settings-updates')
 
-    // Dictation: the bindings say where they live and open their setup steps; nothing edits Hyprland.
-    await expect(page.getByText('Compositor bindings', { exact: true })).toBeVisible()
-    await expect(page.getByText('Compositor bindings live in Hyprland, not in Sotto. Once Sotto’s bindings are installed, hold F9 to talk, or press Super+Ctrl+X to start and stop.')).toBeVisible()
-    await app.evaluate(({ shell }) => {
-      const state = globalThis as unknown as { openedLinks: string[] }
-      state.openedLinks = []
-      shell.openExternal = async url => { state.openedLinks.push(url) }
-    })
-    await bindingsButton.click()
-    expect(await app.evaluate(() => (globalThis as unknown as { openedLinks: string[] }).openedLinks)).toEqual([LINUX_BINDINGS_GUIDE_URL])
+    // Dictation offers the three setup pieces; inspecting their files writes nothing.
+    await expect(page.getByText('Sotto’s keys, its owl in the bar and the Omarchy theme.')).toBeVisible()
+    await expect(page.getByText('F9 and Super+Ctrl+X', { exact: true })).toBeVisible()
+    await expect(page.getByText('The owl in the bar', { exact: true })).toBeVisible()
+    const files = page.getByRole('button', { name: 'Show the files it changes' })
+    await files.click()
+    await expect(page.getByText('~/.config/hypr/sotto-bindings.lua', { exact: true })).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(files).toBeFocused()
     await expect(page.getByRole('alert')).toHaveCount(0)
     // Linux has no in-app updater, so the sidebar foot offers nothing to press.
     await expect(page.locator('.update-control')).toHaveCount(0)
@@ -123,8 +120,8 @@ test('Linux Settings says what applies, with and without the shell pill', async 
 
     await eachLook(async suffix => {
       await tab('Dictation').click()
-      await expect(bindingsButton).toBeVisible()
-      await capture(bindingsButton, `bindings-${suffix}.png`)
+      await expect(files).toBeVisible()
+      await capture(files, `setup-${suffix}.png`)
       await tab('Application').click()
       await expect(widgetSwitch).toBeEnabled()
       await capture(widgetSwitch, `widget-without-plugin-${suffix}.png`)
@@ -146,17 +143,6 @@ test('Linux Settings says what applies, with and without the shell pill', async 
       await expect(widgetSwitch).toBeDisabled()
       await capture(widgetSwitch, `widget-with-plugin-${suffix}.png`)
     })
-
-    // A browser that cannot open the steps leaves the user knowing where they are.
-    await app.evaluate(({ shell }) => { shell.openExternal = async () => { throw new Error('No browser') } })
-    await tab('Dictation').click()
-    await bindingsButton.click()
-    await expect(page.getByRole('alert')).toHaveText(`The setup steps could not open in your browser. They are at ${LINUX_BINDINGS_GUIDE_URL}`)
-    if (output) {
-      await page.evaluate(async () => { await window.sotto!.updateSettings({ appearance: 'dark' }) })
-      await resize(820, 560)
-      await capture(bindingsButton, 'bindings-open-failed-820x560-dark.png')
-    }
 
     // Removing the plugin brings the widget, and the switch, back.
     await rm(plugin, { recursive: true })

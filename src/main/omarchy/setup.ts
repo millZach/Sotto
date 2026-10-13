@@ -178,15 +178,20 @@ export class OmarchySetup {
           const file = await contents(this.bindings)
           if (ours && installed !== null && !file?.includes(REQUIRE)) next = state('conflict', 'The line Sotto added to bindings.lua changed. Sotto leaves your file alone.', true)
           if (keys?.manual && !ours) next = state('manual', 'Your bindings.lua already gives F9 and Super+Ctrl+X to Sotto. Leaving those lines alone.')
-          else if (next.status === 'missing' && keys && keys.conflicts.length) next = state('conflict')
+          else if (keys && !keys.manual && next.status === 'manual') next = state('conflict', 'A key snippet was installed by hand, but Hyprland is not using it. Sotto leaves it alone.')
+          else if (keys && !keys.manual && next.status === 'done') next = state('missing', 'Hyprland is not using Sotto’s keys.', true)
+          else if (next.status === 'missing' && keys && keys.conflicts.length && !ours) next = state('conflict')
           if (!keys) next = state('failed', 'Sotto could not read Hyprland’s keys. Open Sotto in your Omarchy desktop session, then try again.', !!ours)
         }
         if (piece === 'owl' && ['done', 'manual', 'stale'].includes(next.status) && !await this.onBar()) {
-          next = ours ? state('missing', 'The owl is not on the bar.', true)
+          next = ours ? state(next.status === 'stale' ? 'stale' : 'missing', 'The owl is not on the bar.', true)
             : state('conflict', 'A plugin was installed by hand, but it is not on the bar. Sotto leaves it alone.')
         }
         if (piece === 'theme' && next.status === 'manual' && await contents(this.rendered) === null) {
           next = state('conflict', 'A template was installed by hand, but its colours have not been rendered. Sotto leaves it alone.')
+        }
+        if (piece === 'theme' && ['done', 'stale'].includes(next.status) && await contents(this.rendered) === null) {
+          next = state('missing', 'Omarchy has not rendered Sotto’s colours.', true)
         }
         if (piece === 'theme' && installed === null && !ours && await contents(this.rendered) !== null) {
           next = state('manual', 'An Omarchy palette was installed by hand. Sotto leaves it alone.')
@@ -195,7 +200,7 @@ export class OmarchySetup {
         // Operation outcomes stay visible while detection continues to see that same outcome.
         const note = this.notes[piece]
         if (note && (note.status === next.status || (note.status === 'failed' && ['missing', 'stale'].includes(next.status)) ||
-          (note.status === 'skipped' && ['missing', 'conflict'].includes(next.status)))) next = { ...note, owned: next.owned }
+          (note.status === 'skipped' && ['missing', 'conflict', 'stale'].includes(next.status)))) next = { ...note, owned: next.owned }
         this.snapshot.pieces[piece] = next
       } catch (error) { this.snapshot.pieces[piece] = state('failed', this.explain(error), !!this.receipt.pieces[piece]) }
     }
@@ -236,7 +241,7 @@ export class OmarchySetup {
           if (piece === 'keys' && command.type === 'setup' && this.snapshot.keyConflicts.length) {
             if (command.keys !== 'give') {
               this.notes.keys = state(command.keys === 'keep' ? 'skipped' : 'conflict', command.keys === 'keep'
-                ? 'Left alone. Your keys still run what they did before.' : 'Choose whether to give these keys to Sotto first.')
+                ? 'Left alone. Your keys still run what they did before.' : 'Choose whether to give these keys to Sotto first.', previous.owned)
               this.snapshot.pieces.keys = this.notes.keys
               this.publish()
               continue

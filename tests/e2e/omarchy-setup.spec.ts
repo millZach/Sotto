@@ -7,12 +7,13 @@ import { ownedE2EProfile } from './support/e2eProfile'
 import { firstRunForwardButton, firstSottoWindow, launchSotto, closeSotto, openPage, type LaunchedSotto } from './support/sottoLaunch'
 import type { OmarchySetupState } from '../../src/shared/omarchySetup'
 import { inspectDictationBindings } from '../../src/main/omarchy/setup'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 const enabled = process.platform === 'linux' && process.env.SOTTO_OMARCHY_SETUP_PROOF === '1'
 const packaged = process.env.SOTTO_SETUP_PROOF_PACKAGE === '1'
 const home = process.env.SOTTO_SETUP_PROOF_HOME ?? ''
 const root = process.env.SOTTO_SETUP_PROOF_ROOT ?? ''
-const evidence = resolve('artifacts/omarchy-setup')
+const evidence = evidenceDirectory('artifacts/omarchy-setup')
 const proofs: unknown[] = []
 const hypr = (args: string[]) => execFileSync('hyprctl', args, { env: process.env, encoding: 'utf8', timeout: 15000 })
 const bindings = join(home, '.config/hypr/bindings.lua'), snippet = join(home, '.config/hypr/sotto-bindings.lua')
@@ -89,6 +90,7 @@ test('set up Omarchy, handle every decision, undo and update through the real wi
       await size(app, width!, height!)
       for (const appearance of ['dark', 'light'] as const) {
         await page.evaluate(appearance => window.sotto!.updateSettings({ appearance }), appearance)
+        await expect(page.getByRole('button', { name: 'Set up all three' })).toBeInViewport({ ratio: 1 })
         await capture(page, `offer-${width}x${height}-${appearance}`)
       }
     }
@@ -207,7 +209,12 @@ test('set up Omarchy, handle every decision, undo and update through the real wi
     await writeFile(join(root, 'after-update.json'), JSON.stringify(await state(page), null, 2))
     await expect.poll(async () => (await state(page)).pieces.owl.status).toBe('done')
     proofs.push({ journey: 'package update refreshes keys and theme; owl waits; Escape cancels; press restarts private bar', passed: true })
-    const owlVisible = await bar('bar-installed')
+    const inkPixels = (pixels: Buffer): number => {
+      let ink = 0
+      for (let at = 0; at < pixels.length; at += 3) if (pixels[at]! > 100 && pixels[at + 1]! > 100 && pixels[at + 2]! > 100) ink++
+      return ink
+    }
+    await expect.poll(async () => inkPixels(await bar('bar-installed'))).toBeGreaterThan(100)
 
     // Uninstall fallback without removing any real package: hide just the owned PATH launcher.
     await rename(join(home, 'bin/sotto'), join(home, 'bin/sotto-off'))
@@ -215,12 +222,11 @@ test('set up Omarchy, handle every decision, undo and update through the real wi
     expect(inspectDictationBindings(JSON.parse(hypr(['binds', '-j']))).manual).toBe(false)
     expect(inspectDictationBindings(JSON.parse(hypr(['binds', '-j']))).voxtype).toBe(true)
     await expect.poll(async () => {
-      const hidden = await bar('bar-uninstalled')
-      return hidden.filter((channel, at) => channel !== owlVisible[at]).length
-    }, { timeout: 15000 }).toBeGreaterThan(20)
+      return inkPixels(await bar('bar-uninstalled'))
+    }, { timeout: 15000 }).toBeLessThan(10)
     await capture(page, 'uninstalled-1280x800-dark')
     await rename(join(home, 'bin/sotto-off'), join(home, 'bin/sotto')); hypr(['reload'])
-    proofs.push({ journey: 'sotto removed from PATH; keys fall back to Voxtype', passed: true })
+    proofs.push({ journey: 'sotto removed from PATH; owl disappears; keys fall back to Voxtype', passed: true })
     await removeAll(page)
 
     // Hand-installed files stay byte-for-byte whole, even across a request to remove all.
