@@ -17,6 +17,7 @@ import { createToolsBridges } from './tools'
 import { createCloudIphoneBridge } from './cloudIphone'
 import { createTerminalWorkspaceBridge } from './terminals'
 import { createThemesBridge } from './themes'
+import { OMARCHY_SETUP_GET, OMARCHY_SETUP_COMMAND, OMARCHY_SETUP_CHANGED, omarchySetupCommandSchema, omarchySetupStateSchema, type OmarchySetupBridge } from '../shared/omarchySetup'
 import { speechModelStatusSchema } from '../shared/speechModel'
 import { FILES_LIST, FILES_PREVIEW, FILES_COPY_PATH, FILES_REVEAL, fileListRequestSchema, fileRequestSchema, fileListingSchema, filePreviewSchema, filePathSchema, filesResultSchema, type FilesBridge } from '../shared/files'
 import { AGENT_CHOOSE_PROJECT_DIRECTORY, AGENT_WORKING_COPY_OPTIONS, agentWorkingCopyOptionsSchema, agentWorkingCopyOptionsRequestSchema } from '../shared/agents'
@@ -339,6 +340,11 @@ export function createSottoBridge(
     cloudIphone: createCloudIphoneBridge(renderer),
     terminals: createTerminalWorkspaceBridge(renderer),
     themes: createThemesBridge(renderer),
+    ...(platform === 'linux' ? { omarchySetup: Object.freeze<OmarchySetupBridge>({
+      get: () => invokeParsed(renderer, OMARCHY_SETUP_GET, omarchySetupStateSchema),
+      command: command => invokeParsed(renderer, OMARCHY_SETUP_COMMAND, omarchySetupStateSchema, omarchySetupCommandSchema.parse(command)),
+      onChanged: listener => subscribe(renderer, OMARCHY_SETUP_CHANGED, omarchySetupStateSchema, listener),
+    }) } : {}),
     subagents: Object.freeze<SubagentsBridge>({
       page: request => invokeParsed(renderer, SUBAGENTS_PAGE, subagentPageSchema, subagentPageRequestSchema.parse(request)),
       assignments: request => invokeParsed(renderer, SUBAGENTS_ASSIGNMENTS, subagentAssignmentsPageSchema, subagentAssignmentsRequestSchema.parse(request)),

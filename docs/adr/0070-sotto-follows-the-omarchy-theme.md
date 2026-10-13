@@ -24,6 +24,8 @@ Windows and macOS reject `__omarchy` in either selection over IPC before any set
 
 ## Consequences
 
+October 12, 2026 amendment: the setup button from ADR-0062 now installs and renders the bundled template on a press, then selects Omarchy in both Appearance columns with Match Linux. Removing the owned template restores the preceding choices while preserving later user selections. Startup refreshes only a template recorded as installed by Sotto and unchanged since then, leaving Appearance choices as they are. Hand-installed templates and palettes remain read-only to Sotto.
+
 The Linux verification note records real nested-session captures, live theme replacement and pixel contrast. Linux evidence is separate from the Windows design baselines (ADR-0062). No production dependency, new network host, packaging target or permission changes.
 
 October 11, 2026 correction: the surface audit found the 22% selection wash layered over added and removed Changes lines was missing from the guard. Context, added and removed lines now include both hover and selection layers. Body text settles against those layers before it becomes the repair target; the derived green and error signs settle with their own tints. Compositing keeps fractional sRGB channels until the final pixel, and both that pixel and the unrounded colour must read. The selected and hovered thread rows and message bubbles remain covered. An appearance cache saved by an older guard is checked again before the first renderer paint; an unreadable hint falls back to Sotto until fresh settings arrive. The twelve built-in halves and their shared tokens are pinned unchanged. See [the muted-text verification](../verification/omarchy-muted-surfaces.md).

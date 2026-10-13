@@ -5,6 +5,7 @@ export default tseslint.config(
   {
     ignores: [
       'artifacts/watcher-paired-hosts/**',
+      'artifacts/omarchy-setup/**',
       '.t/**',
       'artifacts/omarchy-theme/**',
       'artifacts/omarchy-muted/**',

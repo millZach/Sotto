@@ -263,6 +263,13 @@ export class ClaudeActivity {
     }
     // A turn that ends with a block still open (stopped mid-thought) settles its row, and those of subagents it ran in the foreground.
     if (frame.type === 'result' && !parentTool) rows.push(...this.thinking.turnEnded(turnEnd ?? (frame.is_error === true ? 'failed' : 'completed'), observedAt))
+    // A call still being written when its turn ended, cut by a stop or a steer, was never made, and nothing will answer it.
+    if (frame.type === 'result' && !parentTool) for (const [key, open] of this.blocks) {
+      if (!key.startsWith('main:')) continue
+      this.blocks.delete(key)
+      const old = typeof open.block.id === 'string' ? previous.find(row => row.id === `claude-tool-${open.block.id}`) ?? this.readActivity?.(`claude-tool-${open.block.id}`) : undefined
+      if (old && !isTerminalActivity(old.status)) rows.push({ ...old, status: (turnEnd ?? (frame.is_error === true ? 'failed' : 'interrupted')) === 'failed' ? 'failed' : 'interrupted', ...(observedAt ? { completedAt: observedAt } : {}) })
+    }
     if (frame.type === 'system' && ['task_started', 'task_progress', 'task_notification'].includes(String(frame.subtype)) && typeof frame.task_id === 'string') {
       const status = frame.subtype === 'task_notification' ? frame.status === 'completed' ? 'completed' : frame.status === 'failed' ? 'failed' : ['stopped', 'cancelled', 'canceled', 'killed', 'interrupted'].includes(String(frame.status)) ? 'interrupted' : 'unknown' : 'running'
       // A task that ended ends the stream of the subagent it ran, whatever else this notification is kept from changing.

@@ -22,6 +22,7 @@ Item {
   property string commandSetting: ""
   readonly property string command: commandSetting !== ""
     ? commandSetting : Model.commandFrom(shell ? shell.barConfig : null, "sotto.dictation")
+  CommandAvailable { id: commandAvailable; command: root.command }
 
   function useCommand(value) {
     commandSetting = Model.cleanCommand(value)
@@ -50,7 +51,7 @@ Item {
   // be read among them.
   readonly property string pillNotice: Model.noticeFor(notice, dictation.unreadable, dictation.status)
 
-  readonly property bool shown: dictation.active || notice !== ""
+  readonly property bool shown: commandAvailable.available && (dictation.active || notice !== "")
   // The display the pill is on, by name, chosen by Model.displayFor.
   property string pillScreenName: ""
   readonly property var pillScreen: screenNamed(pillScreenName)

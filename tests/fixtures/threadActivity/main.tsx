@@ -7,11 +7,9 @@ import { defaultAgentConfiguration, type AgentState, type AgentThread } from '..
 import { designThreadsFixture, E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { publishFixtureState } from './agentContextStub'
+import type { Scenario } from './scenarios'
 import '../../../src/renderer/src/styles/global.css'
 import '../../../src/renderer/src/agents/threads.css'
-
-export type Scenario = 'settled' | 'live' | 'disconnected' | 'restored'
-declare global { interface Window { activityFixture?: { show: (scenario: Scenario) => void } } }
 
 const THREAD = 'wav-preview'
 const at = (minute: number): string => new Date(E2E_THREADS_NOW - (60 - minute) * 60_000).toISOString()
@@ -82,13 +80,31 @@ function liveActivities(): AgentActivity[] {
   ]
 }
 
+/** A follow-up turn a steer cut while Claude was thinking, then the steer's own turn (ADR-0075). */
+function steeredTurns(): { messages: AgentThread['messages']; activities: AgentActivity[] } {
+  const settled = settledActivities(false)
+  return {
+    messages: [...messages(true),
+      { id: 'm5', role: 'user', createdAt: at(59), text: 'Skip the suite. Just check the callers of patchLength.' },
+      { id: 'm6', role: 'assistant', createdAt: at(59), text: 'Only wavStream.ts calls patchLength, and nothing reads the length before close. Nothing else relied on close-time patching.' }],
+    activities: [...settled,
+      lifecycle({ turnId: 'turn-2', afterMessageId: 'm4', status: 'interrupted', steered: true, durationMs: 65_000 }),
+      record({ turnId: 'turn-2', id: 's-reason', kind: 'reasoning', title: 'Thinking', status: 'interrupted', afterMessageId: 'm4', text: 'The whole audio suite runs first; the callers of patchLength come after.' }),
+      lifecycle({ turnId: 'turn-3', afterMessageId: 'm5', status: 'completed', durationMs: 9_000 }),
+      record({ turnId: 'turn-3', id: 's-search', afterMessageId: 'm5', command: 'rg -n "patchLength" src', cwd: 'D:\\Projects\\sotto', durationMs: 420,
+        output: 'src/main/audio/wavStream.ts:24:  private patchLength(bytes: number): void {\nsrc/main/audio/wavStream.ts:44:    this.patchLength(this.written)' }),
+    ],
+  }
+}
+
 function state(scenario: Scenario): AgentState {
   const fixture = designThreadsFixture()
   const live = scenario === 'live' || scenario === 'disconnected'
+  const steered = scenario === 'steered' ? steeredTurns() : undefined
   const thread: AgentThread = {
-    id: THREAD, title: 'WAV preview stall', projectId: 'workshop', modelId: 'codex:gpt', status: live ? 'running' : 'idle', nativeSessionStarted: true,
-    updatedAt: at(live ? 58 : 14), messages: messages(live), requests: [],
-    activities: live ? liveActivities() : settledActivities(scenario === 'restored'),
+    id: THREAD, title: 'WAV preview stall', projectId: 'workshop', modelId: steered ? 'claude:sonnet' : 'codex:gpt', status: live ? 'running' : 'idle', nativeSessionStarted: true,
+    updatedAt: at(live || steered ? 59 : 14), messages: steered?.messages ?? messages(live), requests: [],
+    activities: steered?.activities ?? (live ? liveActivities() : settledActivities(scenario === 'restored')),
   }
   return threadsStateFixture({
     configuration: { ...defaultAgentConfiguration(), enabled: true, defaultModelId: 'codex:gpt' },
