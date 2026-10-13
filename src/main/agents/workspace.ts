@@ -3079,6 +3079,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * set drops to its summary, one joining it is given the first window of its history from the store.
    */
   observeThreads(ids: readonly string[]): void {
+    if (this.stopping) return
     if ((!this.watcherEnabled || !this.museEnabled) && !this.ready) { void this.initialize().then(() => this.observeThreads(ids)).catch(() => undefined); return }
     ids = ids.filter(id => { const thread = this.state.snapshot.threads.find(thread => thread.id === id); return !thread || this.visible(thread) })
     // A thread coming into view reads its stored records back before its provider hears of it, so the pane's first

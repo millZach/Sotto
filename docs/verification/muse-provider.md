@@ -53,6 +53,8 @@ The captures were opened and inspected: [Settings dark](../../artifacts/muse-pro
 
 ## Gates
 
+Workspace observation now stops at shutdown before starting initialization or reading provider/store state. A late Watcher observation previously requeued the completed initialization promise after disposal, starving timer deadlines when Muse was disabled. Fourteen deterministic lifecycle cases cover direct and queued observations across shutdown and preserve gated startup filtering; the old code failed eleven cases without hanging the runner. The fix and neighboring gate/history tests pass all 43 cases, and the original stalled Watcher tool case exits normally.
+
 Typecheck, lint, notices verification and build pass locally. Final full-suite and packaged-build results are recorded in PR 973 after those gates finish. Independent Standards and Spec reviews have no unresolved findings after their closure checks.
 
 **Not verified with native Muse on Windows:** the installed command is a WSL shim. No native installation, sign-in, installer update or live handoff was performed. Update UI states are covered by renderer tests and the prototype, and installer behavior by fixtures. Native iOS compile/tests run in macOS CI, not locally; Android was not built. Linux/macOS desktop journeys were not driven here. Design baselines were not regenerated.
