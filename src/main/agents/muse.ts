@@ -24,7 +24,6 @@ import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotP
 import { ReadsBeforeSend } from './readsBeforeSend'
 import { markSendStage } from './sendStages'
 import { SessionReaper } from './sessionReaper'
-import { SIDE_WRITING_TIMEOUT_MS, sideWritingEffort } from './sideWriting'
 import { ThreadMessageLog } from './threadMessageLog'
 import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { existingWorkingDirectory } from './threadWorktrees'
@@ -120,7 +119,7 @@ function clientRefusal(client: MuseClient): MuseUnsupported | undefined {
 /** How Sotto spawns the native client: one MSP host per thread (`muse serve`, ADR-0038, ADR-0075). */
 export function museServeArguments(): string[] { return ['serve'] }
 
-interface ThreadProcess { rpc: MuseRpc; ready: Promise<ThreadProcess>; clientRevision: number; closing: boolean; lost: boolean; sessionId?: string }
+interface ThreadProcess { rpc: MuseRpc; ready: Promise<ThreadProcess>; clientRevision: number; closing: boolean; lost: boolean; sessionId?: string; resync?: Promise<void> }
 type Pending = MusePending & { rpc: MuseRpc; answerCommandId?: string }
 interface Fold {
   /** The newest copy of each item, so a delta or an update folds onto what came before it. */
@@ -194,7 +193,7 @@ export class MuseMspHost implements AgentHost {
   private aliases: Record<string, Alias> = {}
   private readonly threads = new Map<string, AgentThread>()
   private readonly pending = new Map<string, Pending>()
-  private readonly deliveries = new Map<string, { resolve(): void; reject(error: Error): void }>()
+  private readonly deliveries = new Map<string, { threadId: string; resolve(): void; reject(error: Error): void }>()
   private readonly activePrompts = new Set<string>()
   /** The turn each thread is running, by MSP turn ID, with the Sotto ID of the message that opened it. */
   private readonly activeTurns = new Map<string, { turnId: string; messageId?: string }>()
@@ -359,6 +358,12 @@ export class MuseMspHost implements AgentHost {
     this.processes.delete(id); this.outdated.delete(id)
     this.loaded.delete(id); this.folds.delete(id); this.log.release(id); this.reaper.forget(id)
     for (const pending of [...this.pending.values()]) if (pending.threadId === id) this.pending.delete(pending.request.id)
+    const sending = this.activePrompts.delete(id)
+    for (const [messageId, delivery] of this.deliveries) {
+      if (delivery.threadId !== id) continue
+      delivery.reject(new MuseUncertain('Muse stopped before confirming this prompt.'))
+      this.deliveries.delete(messageId)
+    }
     const active = this.activeTurns.get(id); this.activeTurns.delete(id)
     const thread = this.threads.get(id), alias = this.aliases[id]
     if (thread) {
@@ -366,10 +371,12 @@ export class MuseMspHost implements AgentHost {
       if (active) {
         if (alias) alias.endedTurn = { turnId: active.turnId, outcome: 'failed' }
         void this.persist().catch(() => undefined)
-        if (!this.activePrompts.has(id)) { thread.status = 'error'; this.markTurn(id, 'failed', active.messageId, THREAD_PROCESS_LOST) }
+        thread.status = 'error'; this.markTurn(id, 'failed', active.messageId, THREAD_PROCESS_LOST)
         if (active.messageId) thread.lastTurn = { id: active.messageId, status: 'failed' }
-      }
+      } else if (sending) thread.status = 'error'
     }
+    // This also handles an unreadable notification: it must end the host, not just forget a live child.
+    this.closeProcess(entry)
     this.emit()
   }
   private closeProcess(entry: ThreadProcess): void { entry.closing = true; entry.rpc.close() }
@@ -660,7 +667,7 @@ export class MuseMspHost implements AgentHost {
     if (merged.kind === 'userMessage') {
       const origin = merged.commandId ? alias.origins.find(candidate => candidate.nativeCommandId === merged.commandId) : undefined
       const messageId = origin?.messageId ?? `muse-msg-${merged.itemId}`
-      if (merged.turnId) {
+      if (merged.turnId && !merged.steered && !fold.turnMessages.has(merged.turnId)) {
         fold.turnMessages.set(merged.turnId, messageId)
         const active = this.activeTurns.get(id)
         if (active?.turnId === merged.turnId) active.messageId = messageId
@@ -674,7 +681,10 @@ export class MuseMspHost implements AgentHost {
       this.log.add(id, message)
       if (origin && !origin.confirmed) { origin.confirmed = true; void this.persist().catch(() => undefined) }
       if (origin) this.deliveries.get(origin.messageId)?.resolve()
-      if (!museTerminal(merged.status) || this.activeTurns.has(id)) { thread.status = 'running'; this.markTurn(id, 'running', messageId) }
+      if (!museTerminal(merged.status) || this.activeTurns.has(id)) {
+        thread.status = 'running'
+        this.markTurn(id, 'running', (merged.turnId ? fold.turnMessages.get(merged.turnId) : undefined) ?? messageId)
+      }
       return
     }
     if (merged.kind === 'agentMessage') {
@@ -922,14 +932,14 @@ export class MuseMspHost implements AgentHost {
           // The stream dropped events Sotto cannot reconstruct from deltas: read the session afresh. The
           // fold is the log's, so what was already recorded is recognised rather than recorded twice.
           if (!this.aliases[owner]?.museSessionId || !entry.sessionId) return
-          const resumed = sessionResumeSchema.parse(await entry.rpc.request('session/resume', {
-            commandId: museCommandId(), sessionId: entry.sessionId, excludeItems: false,
-          }))
-          if (!current()) return
-          const items = resumed.history.items ?? resumed.history.snapshot?.state.items ?? []
-          for (const item of items) this.foldItem(owner, item)
-          this.fold(owner).viewCursor = resumed.viewCursor
-          this.emit()
+          // Replies share the transport's serial frame queue. Release this notification before awaiting
+          // the resume reply, and coalesce gaps while the same host is already recovering.
+          if (!entry.resync) {
+            const recovery = this.resync(owner, entry).then(() => { if (current()) this.emit() })
+              .catch(() => { if (current()) this.processLost(owner, entry) })
+              .finally(() => { if (entry.resync === recovery) delete entry.resync })
+            entry.resync = recovery
+          }
           return
         }
         default:
@@ -1100,10 +1110,11 @@ export class MuseMspHost implements AgentHost {
             digest: digest(command.text), createdAt: new Date().toISOString(), confirmed: false,
             attachments: attachments.map(({ id, name, mimeType, sizeBytes }) => ({ id, name, mimeType, sizeBytes })),
           }
+          const entry = await this.threadProcess(command.threadId)
+          this.assertGeneration(generation)
           alias.origins.push(origin)
           this.activePrompts.add(command.threadId)
           release()
-          const entry = await this.threadProcess(command.threadId)
           try {
             await this.persist()
             if (command.expectedLastUserMessageId !== undefined && (this.log.lastUserMessageId(command.threadId) ?? null) !== command.expectedLastUserMessageId) throw new Error('The latest user message changed. Review the thread before replying.')
@@ -1115,7 +1126,7 @@ export class MuseMspHost implements AgentHost {
           }
           let timer: ReturnType<typeof setTimeout> | undefined
           const delivery = new Promise<void>((resolve, reject) => {
-            this.deliveries.set(command.messageId, { resolve, reject })
+            this.deliveries.set(command.messageId, { threadId: command.threadId, resolve, reject })
             timer = setTimeout(() => reject(new MuseUncertain('Muse prompt delivery is uncertain.')), this.options.requestTimeoutMs ?? 15_000)
           })
           // The wait below may never be reached when the write itself fails; the rejection is still its answer.
@@ -1140,7 +1151,9 @@ export class MuseMspHost implements AgentHost {
             }
             throw error
           }
-          try { await delivery } finally { clearTimeout(timer); this.deliveries.delete(command.messageId) }
+          try { await delivery }
+          catch (error) { this.activePrompts.delete(command.threadId); throw error }
+          finally { clearTimeout(timer); this.deliveries.delete(command.messageId) }
           markSendStage(command.commandId, 'acknowledged')
           this.reaper.touch(command.threadId)
         } else if (command.type === 'answer') {
@@ -1150,6 +1163,11 @@ export class MuseMspHost implements AgentHost {
           if (pending.answering) return { accepted: false, uncertain: true }
           const entry = this.processes.get(command.threadId)
           if (!entry || pending.rpc !== entry.rpc || !alias.museSessionId) return { accepted: false, uncertain: true }
+          // Validate the user's answer before recording a delivery attempt. A local validation failure
+          // sends nothing and leaves the request immediately answerable.
+          const decision = pending.kind === 'approval' ? museApprovalChoice(pending, command.approved, command.permissionChoice) : undefined
+          const answers = pending.kind === 'userInput' && command.approved !== false
+            ? museUserInputAnswers(pending, command.answer, command.questionAnswers) : undefined
           pending.answerCommandId ??= museCommandId()
           const remembered = alias.answeredRequestIds.includes(pending.request.id)
           if (!remembered) alias.answeredRequestIds.push(pending.request.id)
@@ -1161,7 +1179,7 @@ export class MuseMspHost implements AgentHost {
           delete pending.request.answerRetryReady
           try {
             if (pending.kind === 'approval') {
-              const choiceId = museApprovalChoice(pending, command.approved, command.permissionChoice)
+              const choiceId = decision!
               const choice = pending.approval.availableChoices.find(candidate => candidate.choiceId === choiceId)
               await entry.rpc.request('approval/decide', {
                 commandId: pending.answerCommandId, sessionId: alias.museSessionId, approvalId: pending.approval.approvalId,
@@ -1173,7 +1191,7 @@ export class MuseMspHost implements AgentHost {
             } else {
               await entry.rpc.request('userInput/answer', {
                 commandId: pending.answerCommandId, sessionId: alias.museSessionId, userInputId: pending.input.userInputId,
-                answers: museUserInputAnswers(pending, command.answer, command.questionAnswers),
+                answers,
               })
             }
             this.removeRequest(pending)
@@ -1211,87 +1229,25 @@ export class MuseMspHost implements AgentHost {
     finally { release?.() }
   }
   /** Re-read a loaded session whole: the fold recognises what it already holds and records only what is new. */
-  private async resync(id: string): Promise<void> {
+  private async resync(id: string, expected?: ThreadProcess): Promise<void> {
+    const generation = this.generation
     const entry = this.processes.get(id), alias = this.aliases[id]
-    if (!entry || !alias?.museSessionId || !this.loaded.has(id)) return
+    if (!entry || (expected && entry !== expected) || !alias?.museSessionId || (!expected && !this.loaded.has(id))) return
     const resumed = sessionResumeSchema.parse(await entry.rpc.request('session/resume', {
       commandId: museCommandId(), sessionId: alias.museSessionId, excludeItems: false,
     }))
-    const items = resumed.history.items ?? resumed.history.snapshot?.state.items ?? []
+    if (generation !== this.generation || this.processes.get(id) !== entry) return
+    const items = resumed.history.items ?? resumed.history.snapshot?.state.items
+    if (!items) throw new MuseUnreadable('Muse did not serve this thread’s history.')
     for (const item of items) this.foldItem(id, item)
     this.fold(id).viewCursor = resumed.viewCursor
     this.confirmSession(id, alias, resumed.session)
     this.settleEndedTurn(id, resumed.session)
   }
-  /**
-   * A side call on this thread's client, account and model, in its folder (ADR-0026): its own memory-only
-   * host, so no session is left behind for Muse to list and the thread's own session never hears of it. The
-   * throwaway session starts under the strictest approval mode the host allows, so it can use no tools.
-   */
+  /** MSP cannot disable all tools independently of native policy, so side writing stays unavailable (ADR-0075). */
   async writeShortText(id: string, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
-    const generation = this.generation
-    await this.refuseWatcher(id)
-    this.assertGeneration(generation)
-    const alias = this.aliases[id]
-    if (!this.state.connected || !alias?.museSessionId || !this.executable) return null
-    const workingDirectory = await existingWorkingDirectory(alias.cwd)
-    this.assertGeneration(generation)
-    let text = ''
-    let settled: (() => void) | undefined
-    let failed: ((error: Error) => void) | undefined
-    const done = new Promise<void>((resolve, reject) => { settled = resolve; failed = reject })
-    const rpc: MuseRpc = new MuseRpc(this.executable, [...(this.options.args ?? []), ...museServeArguments(), '--no-session-log'],
-      this.userDataDirectory, museEnvironment(this.options.environment), this.options.requestTimeoutMs ?? 15_000,
-      frame => {
-        try {
-          if (frame.method === 'item/delta') {
-            const parsed = museItemDeltaSchema.parse(frame.params)
-            if ((parsed.field ?? 'text') === 'text') text += parsed.delta
-          } else if (frame.method === 'item/completed') {
-            const parsed = museItemEventSchema.parse(frame.params)
-            if (parsed.item.kind === 'agentMessage' && (parsed.item.text ?? '').length >= text.length) text = parsed.item.text ?? text
-          } else if (frame.method === 'turn/completed') {
-            const parsed = museTurnCompletedSchema.parse(frame.params)
-            if (parsed.terminal === 'completed') settled?.()
-            else failed?.(new Error('Muse could not write this.'))
-          } else if (frame.method && frame.id !== undefined) this.unsupported(rpc, frame)
-        } catch { failed?.(new MuseUnreadable('Muse sent an invalid response.')) }
-      }, () => failed?.(new MuseUncertain('Muse disconnected before answering.')))
-    const exit = rpc.closed.finally(() => { this.exits.delete(exit) }); this.exits.add(exit)
-    const abort = (): void => { rpc.close(); failed?.(new MuseUncertain('Muse side call was stopped.')) }
-    signal?.addEventListener('abort', abort, { once: true })
-    const timer = setTimeout(abort, SIDE_WRITING_TIMEOUT_MS); timer.unref?.()
-    try {
-      const client = await this.identify(rpc)
-      const refusal = clientRefusal(client)
-      if (refusal) throw refusal
-      let started: z.infer<typeof sessionStartSchema>
-      try {
-        started = sessionStartSchema.parse(await rpc.request('session/start', { commandId: museCommandId(), workspaceRoot: workingDirectory, approvalMode: 'denyUnmatched', modelId: alias.modelId }))
-      } catch {
-        started = sessionStartSchema.parse(await rpc.request('session/start', { commandId: museCommandId(), workspaceRoot: workingDirectory, modelId: alias.modelId }))
-        // The mode the host sealed is the strictest available here; anything it still asks about is never
-        // answered by this host, so the call can only write text or fail.
-        await rpc.request('session/setApprovalMode', { commandId: museCommandId(), sessionId: started.session.sessionId, mode: 'denyUnmatched' }).catch(() => undefined)
-      }
-      if (started.session.modelId !== alias.modelId) {
-        await rpc.request('session/setModel', { commandId: museCommandId(), sessionId: started.session.sessionId, model: { modelId: alias.modelId } })
-      }
-      const effort = sideWritingEffort(this.state.models, alias.modelId)
-      await rpc.request('turn/start', {
-        commandId: museCommandId(), sessionId: started.session.sessionId,
-        input: [{ type: 'text', text: `${prompt.instruction}\n\n${prompt.material}` }],
-        ...(effort && MUSE_EFFORTS.includes(effort) ? { reasoningEffort: effort } : {}),
-      }, SIDE_WRITING_TIMEOUT_MS)
-      await done
-      const written = text.trim()
-      return written || null
-    } finally {
-      clearTimeout(timer)
-      signal?.removeEventListener('abort', abort)
-      rpc.close()
-      await rpc.closed.catch(() => undefined)
-    }
+    void id; void prompt; void signal
+    return null
   }
   private disconnecting = false
   disconnect(): void {
@@ -1305,6 +1261,7 @@ export class MuseMspHost implements AgentHost {
     this.pending.clear(); for (const thread of this.threads.values()) thread.requests = []
     for (const delivery of this.deliveries.values()) delivery.reject(new MuseUncertain('Muse disconnected before acknowledgement.'))
     this.deliveries.clear()
+    this.activePrompts.clear()
     let ended = false
     for (const [id, active] of this.activeTurns) {
       const alias = this.aliases[id]
@@ -1325,7 +1282,7 @@ export class MuseMspHost implements AgentHost {
  */
 export class MuseDisabledHost implements AgentHost {
   private readonly snapshotValue: AgentHostSnapshot = { ...structuredClone(EMPTY_AGENT_HOST), name: 'Muse' }
-  async connect(): Promise<AgentHostSnapshot> { return structuredClone(this.snapshotValue) }
+  async connect(): Promise<AgentHostSnapshot> { throw new Error('Muse is available in Sotto Owl; it is not in this build.') }
   async snapshot(): Promise<AgentHostSnapshot> { return structuredClone(this.snapshotValue) }
   async execute(): Promise<AgentHostResult> { throw new Error('Muse is available in Sotto Owl.') }
   subscribe(): () => void { return () => undefined }

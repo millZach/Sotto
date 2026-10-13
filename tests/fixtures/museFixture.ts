@@ -16,23 +16,6 @@ async function readLog(path: string): Promise<string> {
   try { return await readFile(path, 'utf8') }
   catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return ''; throw error }
 }
-/**
- * What Sotto's side calls were given, from the memory-only hosts' own record: a call is the session a
- * `turn/start` ran on (the connect probe starts sessions there too, and never a turn).
- */
-async function sideCalls(root: string): Promise<{ cwd: string; model: string | undefined; material: string }[]> {
-  const frames = parseProviderRecords<{ method?: string; params?: Record<string, unknown>; process?: number }>(await readLog(join(root, 'oneshot.jsonl')))
-  return frames.filter(frame => frame.method === 'turn/start').map(turn => {
-    const before = frames.slice(0, frames.indexOf(turn)).filter(frame => frame.process === turn.process)
-    const start = before.findLast(frame => frame.method === 'session/start')
-    const setModel = before.findLast(frame => frame.method === 'session/setModel')
-    return {
-      cwd: String(start?.params?.workspaceRoot),
-      model: (setModel?.params?.model as { modelId?: string } | undefined)?.modelId ?? start?.params?.modelId as string | undefined,
-      material: ((turn.params?.input as { text?: string }[] | undefined) ?? []).map(part => part.text ?? '').join(''),
-    }
-  })
-}
 // The deadline also covers the fake agent's process start; see the note on claudeFixture.
 export async function museFixture(root?: string, requestTimeoutMs = 2000, session: AdapterSessionOptions = {}, options: MuseMspOptions = {}) {
   root ??= await mkdtemp(join(tmpdir(), 'sotto-muse-thread-'))
@@ -51,7 +34,6 @@ export async function museFixture(root?: string, requestTimeoutMs = 2000, sessio
     settings: { snapshot: true },
     // Every Muse process started from now on reports the newer client.
     clientUpdate: { provider: 'muse' as const, install: async () => { await writeFile(join(root, 'script.json'), JSON.stringify({ cliVersion: '1.2.0' })); return '1.2.0' } },
-    sideWriting: { answer: (text: string) => writeFile(join(root, 'oneshot.json'), JSON.stringify({ text })), calls: () => sideCalls(root) },
     protocol: { promptMethod: 'turn/start', resumeMethod: 'session/resume', permissionDecision: (record: RecordedRpc): boolean | undefined =>
       record.method === 'approval/decide' ? record.params?.choiceId === 'yes' : undefined },
     sessions: {

@@ -101,7 +101,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       ...(options.claudeSettingsLog ? { logEvent: options.claudeSettingsLog } : {}) }),
     grok: options.providers?.grok ?? new GrokAcpHost(directory),
     devin: options.providers?.devin ?? new DevinAcpHost(directory),
-    muse: options.providers?.muse ?? (options.museEnabled === true ? new MuseMspHost(directory) : new MuseDisabledHost()),
+    muse: options.museEnabled === true ? options.providers?.muse ?? new MuseMspHost(directory) : new MuseDisabledHost(),
   }
   const agentHost = new WorkspaceHost(options.host ?? new ConfiguredProviderHost({
     directory,
@@ -115,7 +115,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     provider: () => agentControl.configuration().provider,
     enabledProviders: () => { const configuration = agentControl.configuration(); return configuration.enabledProviders ?? [configuration.provider] },
     threadProvider: threadId => threadRegistry?.byThread(threadId)?.provider,
-  }), directory, options.historyEnabled, undefined, options.watcherEnabled ?? false)
+  }), directory, options.historyEnabled, undefined, options.watcherEnabled ?? false, options.museEnabled ?? false)
   agentHost.setWorkingCopyDefaults(projectId => options.settings().projectThreadWorkingCopyDefaults[projectId] ?? options.settings().threadWorkingCopyDefault)
   let gitStatus: GitStatusReader | undefined
   let gitHubRateLimit: GitHubRateLimit | undefined
@@ -155,7 +155,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       grok: new GrokSubscriptionClient(join(directory, 'reasoning', 'grok')),
     })
   const agentControl: AgentControl = new AgentControl({
-    directory, host: agentHost, credentials, turns, watcherEnabled: options.watcherEnabled ?? false,
+    directory, host: agentHost, credentials, turns, watcherEnabled: options.watcherEnabled ?? false, museEnabled: options.museEnabled ?? false,
     historyEnabled: options.historyEnabled,
     ...(options.observeActiveThread === undefined ? {} : { observeActiveThread: options.observeActiveThread }),
     ...(options.authority ? { authority: options.authority } : {}),

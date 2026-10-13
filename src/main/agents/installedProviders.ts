@@ -8,10 +8,10 @@ import { findDevinExecutable } from './devinRpc'
 import { findMuseExecutable } from './museRpc'
 
 /** Which native thread clients are on this machine. Presence only: no sign-in and no session. */
-export async function detectInstalledProviders(): Promise<ProviderId[]> {
+export async function detectInstalledProviders(options: { museEnabled?: boolean } = {}): Promise<ProviderId[]> {
   const claude = new ClaudeSubscriptionClient(join(tmpdir(), 'sotto-provider-detect'))
   const [codex, claudeExecutable, grok, devin, muse] = await Promise.all([
-    findCodexExecutable(), claude.findExecutable(), findGrokExecutable(), findDevinExecutable(), findMuseExecutable(),
+    findCodexExecutable(), claude.findExecutable(), findGrokExecutable(), findDevinExecutable(), options.museEnabled === true ? findMuseExecutable() : undefined,
   ])
   const installed: ProviderId[] = []
   if (codex) installed.push('codex')

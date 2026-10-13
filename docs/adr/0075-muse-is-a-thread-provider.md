@@ -6,7 +6,7 @@ Muse joins Codex, Claude Code, Grok Build and Devin as a thread provider, id `mu
 
 ## The gate
 
-Muse is an Owl feature (`muse` in `src/shared/owlFeatures.ts`). On stable, main and the headless host register a stand-in host that connects nothing, lists nothing and refuses work in words, the renderer's provider lists ask the gate before showing a Muse tile or row, and the adapter's saved records (`muse-threads.json`, `muse-projects.json`, thread bindings) stay on disk untouched, so returning to Owl restores the provider whole. Sending it to stable is the one-line `sentToStable` change ADR-0072 describes.
+Muse is an Owl feature (`muse` in `src/shared/owlFeatures.ts`). On stable, main and the headless host register a stand-in host that connects nothing, lists nothing and refuses work in words, the renderer's provider lists ask the gate before showing a Muse tile or row, and the adapter's saved records (`muse-threads.json`, `muse-projects.json`, thread bindings) stay on disk untouched, so returning to Owl restores the provider whole. Its saved workspace organization, history, drafts, follow-ups and answer ownership are dormant too, including when stable clears ordinary history. Stable ignores Muse during provider discovery and uses an available ordinary default; saved Muse defaults stay parked until Owl restores them. Sending it to stable is the one-line `sentToStable` change ADR-0072 describes.
 
 ## Sign-in and the floor
 
@@ -18,10 +18,14 @@ MSP splits permission into a sandbox posture sealed when the host starts and an 
 
 ## What a Muse thread can and cannot do in this first version
 
-Streaming replies with reasoning, tools, file changes, commands, subagents, workflows, plans and compaction as thread activity; steering; images; effort per turn from MSP's closed tier list; model and permission changes on the live session; side calls for titles and commit drafts on a memory-only host at the lowest effort under the strictest approval mode, so they can use no tools (ADR-0026); message origins through MSP's idempotency command IDs, which also finish a creation or a send whose acknowledgement was lost without repeating it.
+Streaming replies with reasoning, tools, file changes, commands, subagents, workflows, plans and compaction as thread activity; steering; images; effort per turn from MSP's closed tier list; model and permission changes on the live session; message origins through MSP's idempotency command IDs, which also finish a creation or a send whose acknowledgement was lost without repeating it.
 
 MSP v1 has no way to attach tool servers to a session, so a Muse thread cannot be given Sotto's browser or thread tools, and cannot host Watcher: the adapter refuses a Watcher thread in plain words before its process starts, as Devin's does, and the browser surfaces say this provider does not support Sotto browser tools. Skills are not offered: MSP has no skill catalog a client may read. Token counts are shown without a price, because the catalog carries none Sotto could check. Muse is not a subscription reasoning provider: dictation cleanup and Watcher reasoning stay on the accounts ADR-0069 names, as Devin is outside them too. There is no terminal-mode entry yet.
 
 ## Hosts and phones
 
 The headless host runs the same adapter under the same gate, read from its own release track, so a paired host offers Muse where the host machine has the client installed and signed in. The iPhone and Android clients name the provider and may open threads on it like any other; host protocol version 1 already carries provider IDs without a closed list on the desktop side, so no protocol change was needed.
+
+## After review: side writing stays unavailable
+
+The approval mode `denyUnmatched` denies only unmatched actions; a native policy may still allow matched tools. MSP at the checked floor publishes no independently enforced all-tools disable control. Muse therefore does not generate thread titles, branch names, commit messages or pull request drafts: side writing returns no text before any host is started, and the existing opening words, temporary branch or stand-in subject remain (ADR-0026). This replaces the earlier assumption that the strictest approval mode meant no tools. A future side-writing implementation needs a checked native mechanism that disables every tool before sending material. [Muse’s approval documentation](https://meta-models.github.io/muse-code-sdk/next/guides/msp-concepts/approvals/) and [the stable MSP schema](https://github.com/meta-models/muse-code-sdk/blob/a0c8611b382584eb5091942b477f30e92e1c8d18/schema/msp/stable/msp.schema.json) record the distinction.

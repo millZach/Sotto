@@ -49,11 +49,19 @@ export type MusePending =
 
 const bounded = (text: string, limit = 4_000): string => text.length > limit ? text.slice(0, limit) : text
 
-function choiceKind(choice: z.infer<typeof choiceSchema>): NonNullable<AgentRequest['permissionChoices']>[number]['kind'] {
-  if (choice.decision.startsWith('approved')) {
-    return choice.scope === 'session' ? 'allow-session' : choice.scope === 'localPersistent' ? 'allow-always' : 'allow-once'
+function choiceKind(choice: z.infer<typeof choiceSchema>): NonNullable<AgentRequest['permissionChoices']>[number]['kind'] | undefined {
+  // A wider decision cannot become one-time merely because its scope contradicts its meaning.
+  if (choice.decision === 'approvedForSession' && choice.scope !== 'session') return undefined
+  if (['approvedPolicyAmendment', 'deniedPolicyAmendment'].includes(choice.decision) && choice.scope !== 'localPersistent') return undefined
+  if (['approved', 'approvedForSession', 'approvedPolicyAmendment'].includes(choice.decision)) {
+    if (choice.scope === 'once') return 'allow-once'
+    if (choice.scope === 'session') return 'allow-session'
+    if (choice.scope === 'localPersistent') return 'allow-always'
+    return undefined
   }
-  return choice.decision === 'abort' ? 'cancel' : 'deny'
+  if (choice.decision === 'abort') return 'cancel'
+  if (['denied', 'deniedPolicyAmendment', 'timedOut'].includes(choice.decision)) return 'deny'
+  return undefined
 }
 
 /** What the action is, in one sentence the request card can show. An unknown subject kind stays generic. */
@@ -69,10 +77,13 @@ function approvalText(approval: MuseApproval): string {
 export function museApprovalPending(threadId: string, approval: MuseApproval): MusePending {
   const request: AgentRequest = {
     id: approval.approvalId, kind: 'permission', text: approvalText(approval), options: [],
-    permissionChoices: approval.availableChoices.map(choice => ({
-      id: choice.choiceId, label: bounded(choice.label, 200), kind: choiceKind(choice),
-      ...(choice.rulePreview ? { description: bounded(choice.rulePreview, 500) } : {}),
-    })),
+    permissionChoices: approval.availableChoices.flatMap(choice => {
+      const kind = choiceKind(choice)
+      return kind ? [{
+        id: choice.choiceId, label: bounded(choice.label, 200), kind,
+        ...(choice.rulePreview ? { description: bounded(choice.rulePreview, 500) } : {}),
+      }] : []
+    }),
     context: {
       toolName: approval.toolName, toolCallId: approval.toolCallId,
       ...(approval.subject.kind === 'shell' && approval.subject.command ? { command: bounded(approval.subject.command) } : {}),
@@ -89,15 +100,17 @@ export function museApprovalRefreshed(pending: Extract<MusePending, { kind: 'app
   pending.request = { ...fresh.request, ...(pending.request.delivery ? { delivery: pending.request.delivery } : {}) }
 }
 
-/** One structured question as Sotto shows it. Option IDs are the labels Muse answers by. */
+const optionId = (index: number): string => `option-${index}`
+
+/** One structured question as Sotto shows it. IDs name positions, keeping native labels out of IDs. */
 export function museUserInputPending(threadId: string, input: MuseUserInput): MusePending {
   const request: AgentRequest = {
     id: input.userInputId, kind: 'question', text: bounded(input.questions[0]!.question, 2_000), options: [],
     questions: input.questions.map(question => ({
       id: question.id, question: bounded(question.question, 2_000),
       ...(question.header ? { header: bounded(question.header, 200) } : {}),
-      options: question.options.map(option => ({
-        id: option.label, label: bounded(option.label, 500),
+      options: question.options.map((option, index) => ({
+        id: optionId(index), label: bounded(option.label, 500),
         ...(option.description ? { description: bounded(option.description, 1_000) } : {}),
         ...(option.preview ? { preview: bounded(option.preview.content, 2_000) } : {}),
       })),
@@ -120,9 +133,10 @@ export function museApprovalChoice(pending: Extract<MusePending, { kind: 'approv
     return permissionValue(pending.request, permissionChoice, approved ?? chosen?.kind.startsWith('allow-'))
   }
   if (typeof approved !== 'boolean') throw new Error('Explicitly allow or deny this permission request.')
-  const wants: readonly string[] = approved ? ['allow-once', 'allow-session', 'allow-always'] : ['deny', 'cancel']
+  const wants: readonly string[] = approved ? ['allow-once'] : ['deny', 'cancel']
   const offered = pending.request.permissionChoices ?? []
-  const choice = wants.flatMap(kind => offered.filter(candidate => candidate.kind === kind))[0]
+  const choice = wants.flatMap(kind => offered.filter(candidate => candidate.kind === kind
+    && pending.approval.availableChoices.some(native => native.choiceId === candidate.id && native.scope === 'once')))[0]
   if (!choice) throw new Error(approved ? 'Muse did not offer a way to allow this. Answer in Muse.' : 'Muse did not offer a way to deny this. Answer in Muse.')
   return choice.id
 }
@@ -134,16 +148,29 @@ export function museUserInputAnswers(pending: Extract<MusePending, { kind: 'user
   if (!supplied) {
     if (questions.length !== 1) throw new Error('Answer every question.')
     const question = questions[0]!
-    supplied = { [question.id]: question.options.some(option => option.label === answer) ? { optionIds: [answer] } : { optionIds: [], text: answer } }
+    const selected = question.options.findIndex(option => option.label === answer)
+    supplied = { [question.id]: selected >= 0 ? { optionIds: [optionId(selected)] } : { optionIds: [], text: answer } }
   }
   questionValues(pending.request, supplied)
   return questions.map(question => {
-    const given = supplied![question.id]!
-    const labels = given.optionIds.map(id => pending.request.questions!.find(item => item.id === question.id)!.options.find(option => option.id === id)!.label)
+    const given = supplied![question.id]
+    // Optional questions are deliberately omitted by the form when they have no answer.
+    // MSP still needs one answer per question, with an empty selection or text for those entries.
+    if (!given || (!given.optionIds.length && !given.text?.trim())) return question.selection.mode === 'multiple'
+      ? { questionId: question.id, selectedLabels: [] }
+      : { questionId: question.id, freeText: '' }
+    const nativeLabels = new Map(question.options.map((option, index) => [optionId(index), option.label]))
+    const labels = given.optionIds.map(id => nativeLabels.get(id)!)
     const note = given.text?.trim()
-    if (!labels.length) return { questionId: question.id, freeText: bounded(note ?? '', 500) }
+    if (note && note.length > 500) throw new Error(`Muse accepts up to 500 characters for ${labels.length ? 'a note' : 'an answer'}. Nothing was sent. Shorten it and try again.`)
+    if (!labels.length) return { questionId: question.id, freeText: note ?? '' }
+    if (question.selection.mode === 'multiple') {
+      const minimum = question.selection.minSelections ?? 1
+      if (labels.length < minimum) throw new Error(`Choose at least ${minimum} options for this question.`)
+      if (question.selection.maxSelections !== undefined && labels.length > question.selection.maxSelections) throw new Error(`Choose no more than ${question.selection.maxSelections} options for this question.`)
+    }
     return question.selection.mode === 'multiple'
-      ? { questionId: question.id, selectedLabels: labels, ...(note ? { note: bounded(note, 500) } : {}) }
-      : { questionId: question.id, selectedLabel: labels[0]!, ...(note ? { note: bounded(note, 500) } : {}) }
+      ? { questionId: question.id, selectedLabels: labels, ...(note ? { note } : {}) }
+      : { questionId: question.id, selectedLabel: labels[0]!, ...(note ? { note } : {}) }
   })
 }

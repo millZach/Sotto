@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest'
 import { MuseMspHost } from '../../src/main/agents/muse'
 
 describe('requires SOTTO_MUSE_LIVE=1', () => {
-  it.skipIf(process.env.SOTTO_MUSE_LIVE !== '1')('native Muse creates, prompts, writes on the side, and resumes an owned synthetic session', async () => {
+  it.skipIf(process.env.SOTTO_MUSE_LIVE !== '1')('native Muse creates, prompts, skips unsafe side writing, and resumes an owned synthetic session', async () => {
     const root = await mkdtemp(join(tmpdir(), 'sotto-muse-live-'))
     let host = new MuseMspHost(root)
     try {
@@ -25,7 +25,7 @@ describe('requires SOTTO_MUSE_LIVE=1', () => {
       expect(before.messages.some(message => message.role === 'assistant' && message.text.includes('SOTTO_MUSE_SMOKE'))).toBe(true)
       expect(before.messages.filter(message => message.role === 'user')).toHaveLength(1)
       const title = await host.writeShortText(threadId, { instruction: 'Name this conversation in a few words.', material: 'First message:\nReply with exactly SOTTO_MUSE_SMOKE.' })
-      expect(title).toBeTruthy()
+      expect(title).toBeNull()
       expect((await host.snapshot()).threads).toHaveLength(1)
       host.disconnect(); await host.closed()
       host = new MuseMspHost(root)

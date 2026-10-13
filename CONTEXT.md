@@ -8,6 +8,8 @@ Sotto is a desktop dictation app with manual coding threads across native provid
 
 **Owl feature.** A feature Zach has chosen to keep in Sotto Owl until he is confident it can go to stable; Watcher is the first. Stable shows and starts none of it while keeping its saved records whole (ADR-0072).
 
+**Dormant thread.** A saved thread whose Owl feature is off in the running build. It is hidden and cannot receive work, while its organization, history, drafts and pending records stay whole for a return to Owl. Clearing ordinary history leaves dormant threads alone. A disconnected ordinary thread is not dormant.
+
 **Sending a feature to stable.** Zach's decision to make an Owl feature available on both tracks, reaching Owl first and stable at the next promotion. It is distinct from promoting an Owl build, which chooses the source of a stable release (ADR-0072).
 
 ## Threads

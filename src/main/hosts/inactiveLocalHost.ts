@@ -27,6 +27,7 @@ export async function inactiveLocalHost(directory: string): Promise<Awaited<Retu
   const state = emptyDesktopState(await loadHostIdentity(directory))
   // Ownership remains readable while providers are off. No saved data is migrated or written here.
   const retained = new Set<string>()
+  const dormant = new Set<string>()
   let retentionError: unknown
   const read = async (name: string): Promise<unknown> => {
     try { return JSON.parse(await readFile(join(directory, name), 'utf8')) }
@@ -38,8 +39,10 @@ export async function inactiveLocalHost(directory: string): Promise<Awaited<Retu
     if (watcher) for (const identity of [watcher.current, watcher.creation?.identity, ...watcher.history]) {
       if (identity) retained.add(identity.target.threadId)
     }
-    const threads = z.object({ snapshot: z.object({ threads: z.array(z.object({ id: z.string(), kind: z.string().optional() })).optional() }).optional() }).parse(workspace).snapshot?.threads ?? []
+    const threads = z.object({ snapshot: z.object({ threads: z.array(z.object({ id: z.string(), kind: z.string().optional(), providerId: z.string().optional() })).optional() }).optional() }).parse(workspace).snapshot?.threads ?? []
     for (const thread of threads) if (thread.kind === 'watcher' || thread.kind === 'watcher-history') retained.add(thread.id)
+    for (const id of retained) dormant.add(id)
+    for (const thread of threads) if (thread.providerId === 'muse') dormant.add(thread.id)
   } catch (error) { retentionError = error }
   const watcherThreadIds = (): readonly string[] => {
     // Unreadable ownership blocks answer cleanup rather than treating a saved Watcher answer as ordinary.
@@ -59,6 +62,7 @@ export async function inactiveLocalHost(directory: string): Promise<Awaited<Retu
   }
   const host = {
     watcherThreadIds,
+    dormantThreadIds: (): readonly string[] => { watcherThreadIds(); return [...dormant] },
     workspaceSnapshot: () => structuredClone(state.host), snapshot: async () => structuredClone(state.host),
     subscribe: unsubscribe, subscribeSubagents: unsubscribe, setCheckpointHooks: idle,
     useBrowserTools: idle, useThreadTools: idle,

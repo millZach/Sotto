@@ -69,7 +69,7 @@ const stamp = () => new Date(Date.UTC(2026, 9, 12, 12, 0, clock++)).toISOString(
 function openTurn(session, commandId, text, steered = false) {
   const turnId = session.activeTurnId ?? `turn-${randomUUID()}`
   if (!session.activeTurnId) { session.activeTurnId = turnId; session.turns = (session.turns ?? 0) + 1; notify('turn/started', { sessionId: session.sessionId, turnId, ...(commandId ? { commandId } : {}), viewCursor: cursor(session) }) }
-  addItem(session, { itemId: `item-${randomUUID()}`, kind: 'userMessage', status: 'completed', revision: 1, turnId, recordedAt: stamp(), text, ...(commandId ? { commandId } : {}), ...(steered ? { steered: true } : {}) })
+  addItem(session, { itemId: `item-${randomUUID()}`, kind: 'userMessage', status: 'completed', revision: 1, turnId, recordedAt: stamp(), text, ...(commandId ? { commandId } : {}), ...(steered ? { steered: true } : {}) }, !read('script.json', {}).suppressUserMessage)
   return turnId
 }
 function endTurn(session, terminal = 'completed') {
@@ -97,11 +97,21 @@ function check() {
   rmSync(path('control.json'), { force: true })
   if (action.type === 'takeover') openTurn(session, undefined, action.text)
   else if (action.type === 'complete') completeReply(session, action.text)
+  else if (action.type === 'exit') process.exit(0)
+  else if (action.type === 'malformed') notify('item/delta', { sessionId: session.sessionId, itemId: 1 })
+  else if (action.type === 'gap') {
+    if (action.text) addItem(session, { itemId: `item-${randomUUID()}`, kind: 'agentMessage', status: 'completed', revision: 1,
+      turnId: session.activeTurnId ?? null, recordedAt: stamp(), text: action.text }, false)
+    notify('view/gap', { sessionId: session.sessionId })
+    if (action.repeat) notify('view/gap', { sessionId: session.sessionId })
+  }
   else if (action.type === 'question') {
     const userInputId = `input-${randomUUID()}`
-    session.pendingInputs = [...(session.pendingInputs ?? []), { userInputId, text: action.text }]; save()
+    const questions = [{ id: 'q1', header: 'Fixture', question: action.text, selection: { mode: 'single' }, options: [] },
+      ...(action.optional ? [{ id: 'q2', header: 'Optional', question: 'Anything else?', selection: { mode: 'single', minSelections: 0 }, options: [] }] : [])]
+    session.pendingInputs = [...(session.pendingInputs ?? []), { userInputId, text: action.text, questions }]; save()
     notify('userInput/requested', { userInputId, sessionId: session.sessionId, turnId: session.activeTurnId ?? 'unknown', toolName: 'request_user_input',
-      questions: [{ id: 'q1', header: 'Fixture', question: action.text, selection: { mode: 'single' }, options: [] }] })
+      questions })
   } else if (action.type === 'permission') {
     const approvalId = `approval-${randomUUID()}`
     const approval = { approvalId, sessionId: session.sessionId, turnId: session.activeTurnId ?? 'unknown', toolName: 'bash', toolCallId: `call-${approvalId}`,
@@ -141,6 +151,7 @@ createInterface({ input: process.stdin }).on('line', line => {
     }
     result({ session: view(session), viewCursor: cursor(session) })
   } else if (frame.method === 'session/resume') {
+    if (script.rejectResume) { fail('commandRejected', 'Scripted resume refusal'); return }
     const session = hold(p.sessionId)
     if (!session) { fail('sessionNotFound', 'Unknown session'); return }
     held.add(session.sessionId); holding(session.sessionId, true)
@@ -178,7 +189,7 @@ createInterface({ input: process.stdin }).on('line', line => {
     endTurn(session, 'cancelled')
   } else if (frame.method === 'approval/listPending') {
     const session = hold(p.sessionId); if (!session) { fail('sessionNotFound', 'Unknown session'); return }
-    result({ approvals: session.pendingApprovals ?? [], userInputs: (session.pendingInputs ?? []).map(item => ({ userInputId: item.userInputId, sessionId: session.sessionId, turnId: session.activeTurnId ?? 'unknown', toolName: 'request_user_input', questions: [{ id: 'q1', header: 'Fixture', question: item.text, selection: { mode: 'single' }, options: [] }] })) })
+    result({ approvals: session.pendingApprovals ?? [], userInputs: (session.pendingInputs ?? []).map(item => ({ userInputId: item.userInputId, sessionId: session.sessionId, turnId: session.activeTurnId ?? 'unknown', toolName: 'request_user_input', questions: item.questions ?? [{ id: 'q1', header: 'Fixture', question: item.text, selection: { mode: 'single' }, options: [] }] })) })
   } else if (frame.method === 'approval/decide') {
     const session = hold(p.sessionId); if (!session) { fail('sessionNotFound', 'Unknown session'); return }
     if (!(session.pendingApprovals ?? []).some(item => item.approvalId === p.approvalId)) { fail('approvalAlreadyResolved', 'Already decided'); return }
