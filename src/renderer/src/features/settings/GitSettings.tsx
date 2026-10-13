@@ -41,7 +41,7 @@ export function gitSettingDescriptions(settings: AppSettings): GitSettingDescrip
   return {
     style: drafting ? style : `${style} Drafting is off under Cleanup.`,
     templates: settings.followPullRequestTemplates
-      ? 'Drafted pull requests follow the repository\'s template when it has one.'
+      ? 'Drafted pull requests follow the repository\'s template when Sotto finds one.'
       : 'Drafted pull requests use Sotto\'s own sections.',
     merge: settings.defaultMergeMethod === 'last'
       ? 'The pull request checklist starts on the method you used last, or Merge the first time.'
@@ -59,7 +59,7 @@ export function gitSettingDescriptions(settings: AppSettings): GitSettingDescrip
       ? 'Files start as headers; press one to read it.'
       : 'Files start open.',
     proactive: settings.proactivePanels
-      ? 'Changes opens on its own after a turn changes 3 or more files or 50 or more lines.'
+      ? 'While Tools is closed, Changes opens on its own when a turn leaves 3 more changed files or 50 more changed lines.'
       : 'Changes opens only when you open it.',
     fetch: settings.gitFetchIntervalSeconds === 0
       ? 'Sotto never fetches, even before a Git action. Ahead and behind use the last fetch.'
@@ -181,7 +181,7 @@ export function GitSettings({ settings, onSave }: GitSettingsProps): ReactNode {
       </Field>
       <Toggle label="Auto-settle merged threads" checked={settings.autoSettleMergedThreads} onCheckedChange={checked => void onSave({ autoSettleMergedThreads: checked })} description={says.settle} />
     </SettingsGroup>
-    <SettingsGroup title="When you read Changes" icon={FileDiff} note="How Changes first opens. A choice made in Changes lasts until Sotto restarts.">
+    <SettingsGroup title="When you read Changes" icon={FileDiff} note="How Changes first opens. A choice made in Changes lasts until you change one of these or restart Sotto.">
       <Field label="Diff layout" description={says.layout}>
         <SegmentedControl label="Diff layout" value={settings.diffLayout} onChange={value => void onSave({ diffLayout: value as DiffLayout })} options={[{ value: 'stacked', label: 'Stacked' }, { value: 'split', label: 'Split' }]} />
       </Field>

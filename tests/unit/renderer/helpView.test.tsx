@@ -13,7 +13,7 @@ describe('HelpView', () => {
     render(<HelpView shortcut="CommandOrControl+Shift+Space" platform="linux" version="3.4.0" />)
     expect(screen.getByText(/Sotto 3.4.0, Linux/)).toBeVisible()
     expect(screen.getByText(/Hold F9 to talk, or press Super\+Ctrl\+X to start and stop/)).toBeVisible()
-    expect(screen.getByText(copy.settingsGlobalShortcutDescription)).toBeVisible()
+    expect(screen.getByText(/^Compositor bindings live in Hyprland, not in Sotto\./u)).toBeVisible()
     expect(screen.getByText(copy.helpPasteFallback)).toBeVisible()
     expect(screen.queryByLabelText('Ctrl+Shift+Space')).not.toBeInTheDocument()
     expect(screen.queryByText(/anywhere to begin/)).not.toBeInTheDocument()

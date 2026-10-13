@@ -157,7 +157,7 @@ export function PhonesSettings({ phoneAccess, phoneAccessName, onUpdateSettings,
     <div className="phones-switch">
       <Toggle label="Let phones connect" checked={phoneAccess} disabled={!bridge || (!localHostRunning && !phoneAccess)}
         onCheckedChange={enabled => { setError(null); void onUpdateSettings({ phoneAccess: enabled }).then(saved => setAccessSaveFailed(!saved)) }}
-        description="Adds this computer to Tailscale Serve, on port 8443 or 10000, until you turn it off. Only phones you pair can connect." />
+        description="Adds this computer to Tailscale Serve, on port 8443 or 10000, while this is on and Sotto is open. Only phones you pair can connect." />
       {accessSaveFailed ? <p className="tt-field__error" role="alert">Phone access could not be saved. Nothing was changed. Try again.</p> : null}
     </div>
     <ol className="phones-steps" aria-label="Setup" aria-busy={starting || undefined}>

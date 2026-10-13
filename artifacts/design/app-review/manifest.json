@@ -297,7 +297,7 @@
       "relativePath": "artifacts/design/app-review/baseline/focus-switch.png",
       "width": 1080,
       "height": 720,
-      "sha256": "4f556f612324db8a7257b25822e9fd3ec2a2539de1ec84fb12b740cbabe71f1c"
+      "sha256": "2eddaa06738d6e7e956dc8557a9286bcd0397a87b311f362c7c43ccea1bc7ef3"
     },
     {
       "theme": "light",
@@ -311,7 +311,7 @@
       "relativePath": "artifacts/design/app-review/baseline/focus-switch-light.png",
       "width": 1080,
       "height": 720,
-      "sha256": "8bfa19434aca4f1fd478f0d44e7583270e4201573dbf5bbae26f17130789b310"
+      "sha256": "a59245afd17e55613c386a8bceec7a1407de1e4946afc4a198b9e09431ee8428"
     },
     {
       "theme": "dark",
@@ -1136,8 +1136,8 @@
       "state": "application-privacy",
       "relativePath": "artifacts/design/app-review/baseline/settings-application-privacy.png",
       "width": 791,
-      "height": 2228,
-      "sha256": "630d9a75fb4d3754546c823c2bcbef453f5677cb98b4f5962704e47554d62cf4"
+      "height": 2247,
+      "sha256": "a7812db8c4ffa9dcaa795895eb661f61e79ae331466795cc3d7f2bdd90085af9"
     },
     {
       "theme": "light",
@@ -1150,8 +1150,8 @@
       "state": "application-privacy",
       "relativePath": "artifacts/design/app-review/baseline/settings-application-privacy-light.png",
       "width": 791,
-      "height": 2228,
-      "sha256": "2a106bbefb724a3b504dc1dcc7b637b3db84253eab464409555f5f87d5dbd159"
+      "height": 2247,
+      "sha256": "1cab28324fac05fd442e6678ff7e98fdaadb4023c89db5b12ef3660721a3c188"
     },
     {
       "theme": "dark",
@@ -1192,8 +1192,8 @@
       "state": "cleanup",
       "relativePath": "artifacts/design/app-review/baseline/settings-cleanup.png",
       "width": 791,
-      "height": 845,
-      "sha256": "eba92aa69653d5ffe42337177391e27514998b8bd0216bb4080a4d9c5f6faaeb"
+      "height": 864,
+      "sha256": "4758b9f824408771ea110f1fa0eab6258607ab143a6ae86fcd97910dc4a163e5"
     },
     {
       "theme": "dark",
@@ -1235,7 +1235,7 @@
       "relativePath": "artifacts/design/app-review/baseline/settings-git.png",
       "width": 791,
       "height": 1360,
-      "sha256": "cfba0e17fac2729508acb7e40cae76baff28c96e12e477e91d24c65a2b0fb7a9"
+      "sha256": "753bae6e0d3b8afcffcf9898ce8db277020567c3668a9aa645b2db991a0c568b"
     },
     {
       "theme": "light",
@@ -1249,7 +1249,7 @@
       "relativePath": "artifacts/design/app-review/baseline/settings-git-light.png",
       "width": 791,
       "height": 1360,
-      "sha256": "3a6f2160a38e1d91295625087ed747d5f249122b620ef3c8ec363e98e1d7d57b"
+      "sha256": "6cac60afecc074f84484343f41675924f13d6b9143b77ccc9a8a42f54751b904"
     },
     {
       "theme": "dark",
@@ -1263,7 +1263,7 @@
       "relativePath": "artifacts/design/app-review/baseline/settings-key-verified.png",
       "width": 1080,
       "height": 720,
-      "sha256": "9e185e8ff5e2d1d6593c74f9ffac197d5128e858eacd1951070ac3190b405115"
+      "sha256": "896b832106eaa142cfb7ea9d393391f23bf64fe5dc58aa5254de0b29121187f8"
     },
     {
       "theme": "dark",
@@ -1277,7 +1277,7 @@
       "relativePath": "artifacts/design/app-review/baseline/settings-output.png",
       "width": 791,
       "height": 475,
-      "sha256": "210ecd29c452904c48900a0ea5b647ba90c85e14f6099670d0f2804a2c94d6c0"
+      "sha256": "12fe10f919eec9e5306ed1616d93330bb7766769fc7ef16623ab161e1c1ba30d"
     },
     {
       "theme": "dark",
@@ -1333,7 +1333,7 @@
       "relativePath": "artifacts/design/app-review/baseline/settings-validation-error.png",
       "width": 1080,
       "height": 720,
-      "sha256": "597459912cc43a9caa339af7f8ffaac4550e6c1ccf55151e9fd295d9a92e31ad"
+      "sha256": "90b4267c8ffa3a7de506051abd4808a8eee9da580a8bab6c6a6ef0d64e0f960a"
     },
     {
       "theme": "light",
@@ -1347,7 +1347,7 @@
       "relativePath": "artifacts/design/app-review/baseline/settings-validation-error-light.png",
       "width": 1080,
       "height": 720,
-      "sha256": "42495daff2efb933643f76cb461318aa5e1cfeb9769f0474ec1891380f7e39cf"
+      "sha256": "e8a89a8bf67cc72337da945f03cc035bcfca9dc19f2b95d1b69154a3d90a4339"
     },
     {
       "theme": "dark",

@@ -55,7 +55,7 @@ test('uses Devin through the native adapter and preserves explicit thread decisi
     await page.getByRole('button', { name: 'Devin', exact: true }).click()
     await expect(page.getByRole('switch', { name: 'Enable Devin' })).toHaveAttribute('aria-checked', 'false')
     await expect(panel).toContainText('devin auth login')
-    await expect(panel).toContainText('usage analytics')
+    await expect(panel).toContainText('history and analytics, outside Sotto')
     for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
       await resizeWindow(launched, width, height)
       for (const appearance of ['dark', 'light'] as const) {

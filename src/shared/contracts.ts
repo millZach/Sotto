@@ -242,7 +242,7 @@ export type TranscriptionRequest = z.infer<typeof transcriptionRequestSchema>
 export type TranscriptionResult = z.infer<typeof transcriptionResultSchema>
 export type OpenRouterKeyCheck = z.infer<typeof openRouterKeyCheckSchema>
 
-export const UPDATE_CHECK_PRIVACY_NOTICE = 'Asks GitHub whether a newer Sotto is out. GitHub sees your IP address and version, and nothing else is sent.' as const
+export const UPDATE_CHECK_PRIVACY_NOTICE = 'Asks GitHub whether a newer Sotto is out. GitHub sees your IP address, your version and a random ID for this install.' as const
 
 const updateVersionSchema = z.string().min(1).max(64)
 /** One sentence from the updater, already trimmed to something a tooltip can hold. */

@@ -305,7 +305,7 @@ export function HostBootOffer({ host, view, bridge }: { readonly host: HostStatu
     body = <>
       <p><b>Start {name}’s host at boot</b></p>
       <p className="host-boot__quiet">Brings {name}’s threads back after it restarts. Sotto adds a systemd user unit for {user ?? 'your account'}{status.linger ? '' : ' and turns on linger'}{restartsHost(host, 'install')
-        ? '; the host restarts once now, stopping turns in progress.' : `, which takes over the next time ${name} starts.`}</p>
+        ? '; the host restarts once now, stopping turns in progress.' : `. The unit takes over the next time ${name} starts.`}</p>
       <div className="host-boot__actions">{start}</div>
     </>
   }
