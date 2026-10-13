@@ -197,7 +197,7 @@ import { registerThemesIpc } from './themes/ipc'
 import { OmarchyThemeMonitor, initializeOmarchySelection } from './themes/omarchy'
 import { OmarchySetup, findOmarchyResources } from './omarchy/setup'
 import { registerOmarchySetupIpc } from './omarchy/ipc'
-import { OMARCHY_SETUP_CHANGED } from '../shared/omarchySetup'
+import { OMARCHY_SETUP_CHANGED, OMARCHY_SETUP_FOCUS } from '../shared/omarchySetup'
 import { OpenVsxClient } from './themes/openVsx'
 import { createOpenVsxFixtureFetch } from './themes/openVsxFixture'
 import { TerminalService } from './tools/terminal'
@@ -991,7 +991,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     onShowTurnRecords: showTurnRecords,
   })
   if (applicationMenuTemplate !== null) {
-    // Windows keeps Electron's default menu: installing null would also drop the
+    // Windows and Linux keep Electron's default menu: installing null would also drop the
     // reload/devtools accelerators the app ships with today.
     Menu.setApplicationMenu(Menu.buildFromTemplate(applicationMenuTemplate))
   }
@@ -1394,7 +1394,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         settings: { get: () => settingsCoordinator.getSettings(), update: patch => settingsCoordinator.updateSettings(patch) },
         onChanged: state => windows.sendToMain(OMARCHY_SETUP_CHANGED, state),
       }) : null
-      const cleanupOmarchySetup = registerOmarchySetupIpc(ipcMain, platform, omarchySetup, () => windows.getTrustedRenderers())
+      const cleanupOmarchySetup = registerOmarchySetupIpc(ipcMain, platform, omarchySetup, () => windows.getTrustedRenderers(), { follow: listener => {
+        const focus = (_event: unknown, window: BrowserWindow): void => { if (window.webContents === windows.getMainWebContents()) listener() }
+        app.on('browser-window-focus', focus)
+        return () => { app.removeListener('browser-window-focus', focus) }
+      }, notify: () => windows.sendToMain(OMARCHY_SETUP_FOCUS, null) })
       // No shell restart at startup. Files changed by hand are never refreshed.
       void omarchySetup?.refreshAtStart().catch(() => undefined)
       // Theme export and Open VSX (ADR-0011). End-to-end runs use an offline Open VSX and a fixed export folder.

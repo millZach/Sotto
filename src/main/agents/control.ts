@@ -149,6 +149,8 @@ export interface WakeUpGuard {
   /** False once the babysitting the news is of ended quietly or by the switch; a last wake-up for an ending still goes. */
   due(threadId: string, news: BabysitNews): boolean
   tool(threadId: string): boolean
+  /** The news as it stands as it goes: what it says of the checks on a commit the branch has left is taken out (ADR-0061 decision 8). */
+  current?(threadId: string, news: BabysitNews): BabysitNews | undefined
 }
 class RefusedInterrupt extends Error {}
 const PRIVACY_CLEANUP_ERROR = 'Could not finish applying history privacy. Sotto will retry when local storage is available.'
@@ -1845,13 +1847,13 @@ export class AgentControl {
     const guard = this.wakeUpGuard
     return item.wakeUp === true && (item.news ?? []).some(news => isWatcherNews(news)
       ? this.dependencies.watcherEnabled !== true || news.events.some(event => !this.watcherHooks?.wakeDue?.(event))
-      : guard !== undefined && !guard.due(threadId, news))
+      : guard !== undefined && (!guard.due(threadId, news) || (guard.current !== undefined && JSON.stringify(guard.current(threadId, news)) !== JSON.stringify(news))))
   }
   private pruneWakeUp(threadId: string, id: string): Promise<void> {
     const guard = this.wakeUpGuard
     return this.followupStore.pruneWakeUp(id, news => isWatcherNews(news) ? news.events.length > 0 : !guard || guard.due(threadId, news),
       items => queuedWakeUpText(items, { tool: guard?.tool(threadId) ?? false }), news => {
-        if (!isWatcherNews(news)) return news
+        if (!isWatcherNews(news)) return guard?.current ? guard.current(threadId, news) : news
         const events = news.events.filter(event => this.dependencies.watcherEnabled === true && this.watcherHooks?.wakeDue?.(event))
         return events.length ? { ...news, events } : undefined
       })

@@ -11,6 +11,7 @@ import { prepareSandboxBus, prepareSandboxHome, rewriteSandboxConfig } from './o
 import { createOwnedProofProcesses, installProofCleanup, terminateThenCleanup } from './owned-proof-processes.mjs'
 
 const checkout = resolve(import.meta.dirname, '..')
+const findings = process.argv.includes('--findings')
 assert.equal(process.platform, 'linux')
 assert.ok(process.env.SOTTO_PACKAGE_NESTED_PID, 'Use with-nested-hyprland.mjs')
 assert.notEqual(process.env.HOME, '', 'A parent HOME is required')
@@ -39,6 +40,11 @@ const env = { ...parent, HOME: home, XDG_CONFIG_HOME: join(home, '.config'), XDG
   SOTTO_E2E_EVIDENCE: 'publish',
   SOTTO_SETUP_PROOF_HOME: home, SOTTO_SETUP_PROOF_ROOT: root, SOTTO_SETUP_PROOF_PACKAGE: process.argv.includes('--package') ? '1' : '0' }
 delete env.ELECTRON_RUN_AS_NODE
+if (findings) {
+  // Keep Node/Git fixture sockets in the normal short temporary directory.
+  delete env.TMPDIR; delete env.TMP; delete env.TEMP
+  env.SOTTO_LINUX_FINDINGS_PROOF = '1'
+}
 delete env.DISPLAY; delete env.XAUTHORITY
 const log = name => ['ignore', openSync(join(root, `${name}.log`), 'a'), openSync(join(root, `${name}.log`), 'a')]
 const run = (command, args = [], environment = env) => execFileSync(command, args, { env: environment, encoding: 'utf8', timeout: 30000, stdio: ['ignore', 'pipe', 'pipe'] })
@@ -86,9 +92,15 @@ try {
   writeFileSync(join(root, 'shell-pid'), String(shell.pid))
   // Route restart to an explicitly owned nested process. Never call Omarchy's any-display restart in a proof.
   writeFileSync(join(bin, 'omarchy'), `#!/bin/bash\nif [[ $1 == restart && $2 == shell ]]; then\n  exec '${process.execPath}' '${join(checkout, 'scripts/verify-omarchy-setup-restart.mjs')}' >>'${join(root, 'restart.log')}' 2>&1\nfi\nexec '${omarchy}/bin/omarchy' "$@"\n`, { mode: 0o755 })
-  const proof = startIsolated('journeys', process.execPath, [join(checkout, 'node_modules/@playwright/test/cli.js'), 'test', 'tests/e2e/omarchy-setup.spec.ts'], 'inherit')
+  const proof = startIsolated('journeys', process.execPath, [join(checkout, 'node_modules/@playwright/test/cli.js'), 'test', findings ? 'tests/e2e/linux-test-findings.spec.ts' : 'tests/e2e/omarchy-setup.spec.ts'], 'inherit')
   const code = await new Promise((resolveExit, reject) => { proof.once('error', reject); proof.once('exit', resolveExit) })
   assert.equal(code, 0, 'Omarchy setup journeys must pass')
+  if (findings && process.argv.includes('--package')) {
+    const verifier = startIsolated('package resources', process.execPath, [join(checkout, 'scripts/verify-packaged-resources.mjs'),
+      join(checkout, 'release/linux-unpacked'), '--installer', join(checkout, 'release', `Sotto-${JSON.parse(readFileSync(join(checkout, 'package.json'), 'utf8')).version}-linux-x64.tar.gz`)], 'inherit')
+    const verified = await new Promise((resolveExit, reject) => { verifier.once('error', reject); verifier.once('exit', resolveExit) })
+    assert.equal(verified, 0, 'Packaged resources and external dependency inventory must pass')
+  }
   const shellLog = readFileSync(join(root, 'shell.log'), 'utf8')
   assert.ok(!/Type .* unavailable|ReferenceError|SyntaxError|Cannot assign to non-existent property|is not a type/.test(shellLog), 'No QML loading error')
   console.log(`Verified only private HOME ${home}; shell and compositor belong to this proof.`)
