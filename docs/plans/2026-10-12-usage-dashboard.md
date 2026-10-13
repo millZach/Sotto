@@ -36,14 +36,14 @@ Actual Windows Owl host and desktop packages at `0.1.38-owl.20261013.1`, plus st
 
 ## Authorized merge phase
 
-Current integration is `9d7b66b5b46b2e018570a18b3c0b36d9aa6274f3`, including main `2ff23cc1db51c9a33c13a6f7d9f6ab08b1717b99`. Usage's ADR is now 0076; the prototype choice and numeric boundaries are unchanged. Both fixed-head Standards and Spec reviewers report zero unresolved findings. Combined typecheck, lint and notices passed. The integrated full suite is running in session 27918; no result or count is claimed yet. The only subsequent source diff is the remote-command test's ADR comment changing from 0075 to 0076.
+The pre-PR integration checkpoint includes main `2ff23cc1db51c9a33c13a6f7d9f6ab08b1717b99` at `9d7b66b5b46b2e018570a18b3c0b36d9aa6274f3`. Usage's ADR is now 0076; the prototype choice and numeric boundaries are unchanged. Both fixed-head Standards and Spec reviewers report zero unresolved findings. Combined typecheck, lint and notices passed. The integrated full suite passed 10,207 tests with 316 skipped across 807 passing files and 63 skipped files, exit code 0 after 1,436.13 seconds. All five affected Electron journeys passed after rebuilding, and the lead and independent reviewer inspected the refreshed captures. The only subsequent source diff at `400d6cb7863752e523425ba32862c5b672e4dcf9` is the remote-command test's ADR comment changing from 0075 to 0076.
 
 - [x] Integrate current main and resolve the ADR number collision.
 - [x] Recheck the integrated fixed head on both review axes.
 - [x] Run combined typecheck, lint and notices.
-- [ ] Complete the integrated full suite with two workers.
-- [ ] Rebuild and repeat the affected Usage and Claude-steering Electron journeys; record current surface/package evidence.
+- [x] Complete the integrated full suite with two workers.
+- [x] Rebuild and repeat the affected Usage and Claude-steering Electron journeys; inspect current captures and record actual Owl host, Owl desktop and stable preservation packages of source `400d6cb7863752e523425ba32862c5b672e4dcf9`.
 - [ ] Open the PR and resolve required Windows CI and review feedback on its latest revision.
 - [ ] Merge with a merge commit, confirm main's CI and delete the owned remote branch.
 
-The earlier package JSON continues to identify source `1b013f26ea4a7fdaa4f9b2932203464f447ad8e2`. Current integration checks still pending are not inherited from that proof. No installation or publication has occurred; PR opening and merge are active authorized steps.
+The earlier package JSON continues to identify source `1b013f26ea4a7fdaa4f9b2932203464f447ad8e2`; the [new integration package JSON](../../artifacts/usage-dashboard/package-integration-verification.json) identifies source `400d6cb7863752e523425ba32862c5b672e4dcf9`. No installation or publication has occurred. The remaining checkboxes record the pre-PR checkpoint; GitHub records the later required checks, review resolution and merge. Its current main ruleset requires Gates (Windows), Package result and Desktop result.

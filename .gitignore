@@ -509,6 +509,8 @@ artifacts/usage-dashboard/*
 !artifacts/usage-dashboard/verified.json
 !artifacts/usage-dashboard/usage-owl-package.png
 !artifacts/usage-dashboard/package-verification.json
+!artifacts/usage-dashboard/usage-owl-integration-package.png
+!artifacts/usage-dashboard/package-integration-verification.json
 
 # Full Omarchy test findings; commit only evidence cited in the verification note.
 artifacts/linux-test-findings/*
