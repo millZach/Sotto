@@ -16,6 +16,7 @@ import { spawn } from 'node:child_process'
 import { join } from 'node:path'
 import process from 'node:process'
 import { setTimeout as delay } from 'node:timers/promises'
+import { installFakeHostSignalCleanup } from './fakeHostSignalCleanup.mjs'
 
 const [command, ...args] = process.argv.slice(2)
 const statePath = process.env.FAKE_SYSTEMD_STATE
@@ -98,6 +99,10 @@ async function systemctl(state, words) {
     if (state.startExit) { process.stderr.write('Job for sotto-host.service failed.\n'); return state.startExit }
     if (state.unit?.ActiveState === 'failed' && state.unit.Result === 'start-limit-hit') { process.stderr.write('Start request repeated too quickly.\n'); return 1 }
     if (state.mainPid && alive(state.mainPid)) return 0
+    if (state.startBarrier) {
+      writeFileSync(state.startBarrier.entered, JSON.stringify({ pid: process.pid }))
+      while (!existsSync(state.startBarrier.release)) await delay(10)
+    }
     const after = state.afterStart
     // `once`: the script holds for this start alone, and the unit runs the host from the next one on.
     if (state.once) { state.afterStart = 'run'; delete state.once }
@@ -138,6 +143,7 @@ function loginctl(state, words) {
 }
 
 const state = read()
+if (typeof state.data === 'string') installFakeHostSignalCleanup(state.data)
 record({ command, args })
 const code = command === 'systemctl' ? await systemctl(state, args) : command === 'loginctl' ? loginctl(state, args) : 127
 write(state)

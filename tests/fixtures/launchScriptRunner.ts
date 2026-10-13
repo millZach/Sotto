@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { resolve } from 'node:path'
 import { LAUNCH_SCRIPT_SOURCE } from '../../src/main/hosts/launchScript'
 
 export interface LaunchScriptOutcome {
@@ -21,6 +22,8 @@ export function launchScriptChild(configuration: Record<string, unknown>, env?: 
   const child = spawn(process.execPath, ['--input-type=commonjs', '-', JSON.stringify(configuration)],
     { shell: false, windowsHide: true, ...(env ? { env } : {}) })
   track(child)
-  child.stdin!.end(LAUNCH_SCRIPT_SOURCE)
+  const fixtureCleanup = process.platform === 'win32' && typeof configuration.dataDirectory === 'string'
+    ? `'use strict';\nrequire(${JSON.stringify(resolve('tests/fixtures/fakeHostSignalCleanup.mjs'))}).installFakeHostSignalCleanup(${JSON.stringify(configuration.dataDirectory)});\n` : ''
+  child.stdin!.end(fixtureCleanup + LAUNCH_SCRIPT_SOURCE)
   return child
 }

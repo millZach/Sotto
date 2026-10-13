@@ -12,10 +12,12 @@ const data = args[args.indexOf('--data') + 1]
 const descriptorPath = path.join(data, 'host-listener.json')
 const lockPath = path.join(data, 'host-listener.lock')
 const hostId = '11111111-1111-4111-8111-111111111111'
+const fixture = 'sotto-fake-ssh-host'
+const instance = randomUUID()
 const alive = pid => { try { process.kill(pid, 0); return true } catch (error) { return error.code === 'EPERM' } }
 async function lock() {
   for (let attempt = 0; attempt < 2; attempt++) {
-    try { const handle = await fs.open(lockPath, 'wx'); if (process.env.FAKE_HOST_LOCK_WRITE_DELAY_MS) await delay(Number(process.env.FAKE_HOST_LOCK_WRITE_DELAY_MS)); await handle.writeFile(JSON.stringify({ pid: process.pid, nonce: String(Math.random()) })); await handle.close(); return true }
+    try { const handle = await fs.open(lockPath, 'wx'); if (process.env.FAKE_HOST_LOCK_WRITE_DELAY_MS) await delay(Number(process.env.FAKE_HOST_LOCK_WRITE_DELAY_MS)); await handle.writeFile(JSON.stringify({ pid: process.pid, nonce: String(Math.random()), fixture, instance })); await handle.close(); return true }
     catch (error) { if (error.code !== 'EEXIST') throw error }
     try {
       const lease = JSON.parse(await fs.readFile(lockPath, 'utf8'))
@@ -53,12 +55,12 @@ async function main() {
   // Holding the lock before listening leaves a window in which a second launch finds the folder taken.
   await new Promise(resolve => setTimeout(resolve, Number(process.env.FAKE_HOST_START_DELAY_MS ?? 0)))
   const port = Number(args[args.indexOf('--port') + 1])
-  const server = http.createServer((_request, response) => { response.setHeader('content-type', 'application/json'); response.end(JSON.stringify({ v: 1, status: 'ready', hostId, pid: process.pid, port: server.address().port })) })
+  const server = http.createServer((_request, response) => { response.setHeader('content-type', 'application/json'); response.end(JSON.stringify({ v: 1, status: 'ready', hostId, pid: process.pid, port: server.address().port, fixture, instance })) })
   await new Promise(resolve => server.listen(port, '127.0.0.1', resolve))
   // `entry` says which installed version is running, for the host update tests; the launch script ignores it.
   const descriptor = { v: 1, hostId, pid: process.pid, port: server.address().port, adminToken: 'remote-only-secret', entry: process.argv[1],
     // `instance` tells this start from any other, even one Windows gave the same PID; the launch script ignores it.
-    instance: randomUUID(),
+    fixture, instance,
     // FAKE_HOST_BEFORE_BOOT_MARK stands in for a host release from before the 'boot' mark, which records only a launch script's start.
     ...((process.env.FAKE_HOST_BEFORE_BOOT_MARK ? ['launch-script'] : ['launch-script', 'boot']).includes(process.env.SOTTO_HOST_STARTED_BY) ? { startedBy: process.env.SOTTO_HOST_STARTED_BY } : {}),
     // The address Tailscale Serve carries the host's tailnet listener at, which the real host records once Serve is on.
