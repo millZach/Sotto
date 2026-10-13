@@ -53,13 +53,16 @@ extension WatcherPhoneState {
 
 // MARK: - Asking Watcher
 
-/// The draft IDs the Watcher box sent with that its computer hasn't said Watcher took, each with its exact words. The
-/// same words go with the same ID until then, even after other words were sent in between: a message whose
-/// acknowledgement was lost keeps its ID through any edits, so sending it again can't deliver it twice.
+/// The draft IDs the Watcher box sent with that its computer may still deliver, each with its exact words. The same
+/// words go with the same ID until a page read after their send says where that draft stands, even after other words
+/// were sent in between: a message whose acknowledgement was lost keeps its ID through any edits, so sending it again
+/// can't deliver it twice. Once a later page shows it is no longer on its way, the same words are a new message.
 struct WatcherDrafts: Equatable, Sendable {
     struct Sent: Equatable, Sendable {
         let text: String
         let draftID: String
+        /// Its send has ended, so a page read from now on says where it stands.
+        var ended = false
     }
     /// The most kept for one computer. Past it the oldest is let go, after this many other messages went unconfirmed.
     static let limit = 32
@@ -68,7 +71,10 @@ struct WatcherDrafts: Equatable, Sendable {
     init() {}
     /// The ID these exact words go with: the one they last went with, or a new one.
     mutating func id(for text: String, minting: () -> String = { UUID().uuidString.lowercased() }) -> String {
-        if let sent = unresolved.first(where: { $0.text == text }) { return sent.draftID }
+        if let index = unresolved.firstIndex(where: { $0.text == text }) {
+            unresolved[index].ended = false
+            return unresolved[index].draftID
+        }
         let draftID = minting()
         unresolved.append(Sent(text: text, draftID: draftID))
         if unresolved.count > Self.limit { unresolved.removeFirst(unresolved.count - Self.limit) }
@@ -80,6 +86,28 @@ struct WatcherDrafts: Equatable, Sendable {
     }
     /// The drafts a page says Watcher took, oldest first.
     func taken(in page: WatcherPage) -> [Sent] { unresolved.filter { page.delivery(of: $0.draftID) == "accepted" } }
+    /// This draft's send ended: a page read from now on says where it stands.
+    mutating func end(_ draftID: String) {
+        for index in unresolved.indices where unresolved[index].draftID.lowercased() == draftID.lowercased() {
+            unresolved[index].ended = true
+        }
+    }
+    /// Lets go of drafts whose send has ended that this page, read since, no longer shows on their way, and says which
+    /// of them Watcher took. Watcher's computer lists a draft from the moment it takes it until Watcher took it or it
+    /// failed, and won't take again one whose result it doesn't know. So a draft it shows neither queued, submitting nor
+    /// uncertain was taken, failed or never reached it, and the same words sent again can't arrive twice.
+    mutating func retire(after page: WatcherPage) -> [Sent] {
+        var taken: [Sent] = []
+        unresolved.removeAll { sent in
+            guard sent.ended else { return false }
+            switch page.delivery(of: sent.draftID) {
+            case "queued", "submitting", "uncertain": return false
+            case "accepted": taken.append(sent); return true
+            default: return true
+            }
+        }
+        return taken
+    }
 }
 
 /// Words that didn't reach Watcher, or that it didn't confirm, kept while newer words are in its box (CONTEXT.md, Sent

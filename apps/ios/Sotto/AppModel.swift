@@ -294,7 +294,7 @@ extension AppModel {
         if let shown = watcherStore.pages[hostID], page.isOlder(than: shown) { return true }
         showWatcher(page, on: hostID)
         noticeWatcher(page, from: hostID)
-        settleWatcherDraft(page, on: hostID)
+        settleWatcherDraft(page, on: hostID, fresh: true)
         // A card that left the page settles the answer this iPhone sent it, unless that answer is still being checked.
         for item in scoped(hostID) where item.kind == "watcher-answer" {
             if connecting.contains(hostID) || dispatchingOperations.keys.contains(item.id) || (deliveryChecks[hostID] ?? 0) > 0 { continue }
@@ -356,9 +356,10 @@ extension AppModel {
         watcherSending[hostID] = text; drafts[key] = ""
         defer {
             watcherSending[hostID] = nil
+            watcherDrafts[hostID]?.end(draftID)
             // The page read after a lost acknowledgement came while the words were still on their way, and may say
             // Watcher took them: settled now, they leave the box.
-            if let page = watcherPage(hostID) { settleWatcherDraft(page, on: hostID) }
+            if let page = watcherPage(hostID) { settleWatcherDraft(page, on: hostID, fresh: false) }
         }
         #if DEBUG && os(iOS)
         if isUIFixture { await sendToFixtureWatcher(text, on: hostID); watcherDrafts[hostID]?.resolve(draftID); return }
@@ -417,12 +418,21 @@ extension AppModel {
         kept.remove(at: index)
         watcherSetAside[hostID] = kept.isEmpty ? nil : kept
     }
-    /// Words put back after an unconfirmed send leave the box once Watcher's computer says it took them.
-    private func settleWatcherDraft(_ page: WatcherPage, on hostID: String) {
-        guard watcherSending[hostID] == nil, let taken = watcherDrafts[hostID]?.taken(in: page), !taken.isEmpty else { return }
+    /// Words put back after an unconfirmed send leave the box once Watcher's computer says it took them. A `fresh` page,
+    /// one that came after the last send ended, also lets go of draft IDs it no longer shows on their way, so the same
+    /// words sent again later go as a new message; a page held from before a send ended can only say Watcher took them.
+    private func settleWatcherDraft(_ page: WatcherPage, on hostID: String, fresh: Bool) {
+        guard watcherSending[hostID] == nil, watcherDrafts[hostID] != nil else { return }
+        var taken: [WatcherDrafts.Sent] = []
+        if fresh {
+            taken = watcherDrafts[hostID]?.retire(after: page) ?? []
+        } else {
+            taken = watcherDrafts[hostID]?.taken(in: page) ?? []
+            for sent in taken { watcherDrafts[hostID]?.resolve(sent.draftID) }
+        }
+        guard !taken.isEmpty else { return }
         let key = watcherDraftKey(hostID)
         for sent in taken {
-            watcherDrafts[hostID]?.resolve(sent.draftID)
             if drafts[key] == sent.text { drafts[key] = "" }
             if let kept = watcherSetAside[hostID] {
                 let left = kept.filter { $0.text != sent.text }

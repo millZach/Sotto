@@ -610,6 +610,43 @@ final class WatcherModelTests: XCTestCase {
         XCTAssertNotEqual(drafts.id(for: "Other 5"), other, "Taken, the same words get a new ID")
     }
 
+    @MainActor func testTheSameWordsGoAsANewMessageOnceAPageSaysTheFirstIsNoLongerOnItsWay() async throws {
+        let model = try await fixture(spec: Spec(workerCard: false))
+        var requests: [JSONValue] = []
+        HostConnection.watcherHandler = { op, operation, _ in
+            guard op == "watcher-phone-send", let request = operation["request"] else { return try self.ok(self.page(Spec(workerCard: false))) }
+            requests.append(request)
+            throw ClientError.uncertain
+        }
+        let key = model.watcherDraftKey(laptop)
+        model.drafts[key] = "Yes"
+        await model.sendToWatcher(laptop)
+        let first = try XCTUnwrap(requests.last?["draftId"].string)
+        // Watcher's computer says that draft is still on its way: the same words keep its ID.
+        try push(Spec(workerCard: false, observedAt: "2026-10-11T09:01:00.000Z", deliveries: [first: "uncertain"]))
+        await until { model.watcherPage(laptop)?.observedAt == "2026-10-11T09:01:00.000Z" }
+        await model.sendToWatcher(laptop)
+        XCTAssertEqual(requests.last?["draftId"].string, first, "A draft the computer may still deliver keeps its ID, so it can't arrive twice")
+        // A later page no longer shows it: it never arrived, or it failed. The same words now go as a new message.
+        try push(Spec(workerCard: false, observedAt: "2026-10-11T09:02:00.000Z"))
+        await until { model.watcherPage(laptop)?.observedAt == "2026-10-11T09:02:00.000Z" }
+        XCTAssertEqual(model.drafts[key], "Yes", "Words that didn't reach Watcher stay in the box")
+        await model.sendToWatcher(laptop)
+        XCTAssertEqual(requests.count, 3, "Nothing is sent again on its own")
+        XCTAssertNotEqual(requests.last?["draftId"].string, first,
+                          "Once a later page shows the first is no longer on its way, the same words go with a new ID")
+        model.phase(.background)
+
+        // Watcher's computer lists a draft until Watcher took it or it failed; only one still on its way is kept.
+        var drafts = WatcherDrafts()
+        let onItsWay = drafts.id(for: "One"), taken = drafts.id(for: "Two"), failed = drafts.id(for: "Three")
+        let inFlight = drafts.id(for: "Four")
+        for id in [onItsWay, taken, failed] { drafts.end(id) }
+        let page = try decoded(Spec(deliveries: [onItsWay: "submitting", taken: "accepted", failed: "failed", inFlight: "accepted"]))
+        XCTAssertEqual(drafts.retire(after: page).map(\.text), ["Two"], "Watcher took Two")
+        XCTAssertEqual(drafts.unresolved.map(\.text), ["One", "Four"], "One is still on its way, and Four's send hasn't ended")
+    }
+
     @MainActor func testThePageReadAfterALostAcknowledgementSettlesTheWords() async throws {
         let model = try await fixture(spec: Spec(workerCard: false))
         var sends = 0
