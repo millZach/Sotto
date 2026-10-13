@@ -60,3 +60,16 @@ Current typecheck, lint and notices passed; 257 focused tests and all 35 paired-
 - [ ] Merge with a merge commit, verify main's CI and remove the owned branch.
 
 The remaining states are recorded by GitHub after this checkpoint. No release, stable promotion or real installation is authorized by the merge instruction.
+
+## Review follow-up checkpoint
+
+All six public review findings are fixed at `b807d72`: indexed/cached archive reads, bounded batched pending recovery, incremental Codex bucket preservation, Claude partial-reading age/order, reuse of recent refreshable allowances on open, and explicit immutable host-version recovery. The combined twelve-file run passed 214 tests with one skip. Both fixed-head review axes have zero unresolved findings. Typecheck, lint, notices and twelve rebuilt Electron journeys passed, including real host conflict/backup/retry and the three terminal surfaces.
+
+Main's Settings wording at `302f2c0` overlapped the shared contracts, so it was integrated without conflict at `82d6f9d`. Both bounded seam reviews report zero findings. Combined typecheck, lint, notices and build passed, followed by three Usage/host Electron journeys. The preceding iPhone rerun was canceled by this main push, so current GitHub checks remain the readiness source. The [verification note](../verification/2026-10-13-usage-dashboard.md) separates these results from earlier exact-source full-suite and package receipts.
+
+- [x] Fix and independently review the six public findings; preserve exact accounting assertions.
+- [x] Drive and inspect the host conflict, owner backup and successful retry in the real app at all sizes and themes.
+- [x] Integrate current Settings wording, recheck the overlapping seams and repeat combined app checks.
+- [x] Verify actual Windows host, Owl desktop and stable preservation packages of follow-up source `82d6f9d`; retain separate exact-source receipts and inspected captures.
+- [ ] Resolve current GitHub checks and review threads.
+- [ ] Merge, watch main's CI and clean the owned branch and verification checkout.
