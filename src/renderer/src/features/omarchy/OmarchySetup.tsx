@@ -23,14 +23,14 @@ export function useOmarchySetup(enabled: boolean, bridge = typeof window === 'un
   const pendingRef = useRef(false)
   const busyRef = useRef(false)
   const changesRef = useRef(0)
-  const refreshRef = useRef<(() => Promise<void>) | null>(null)
+  const refreshRef = useRef<((recover?: boolean) => Promise<void>) | null>(null)
   useEffect(() => {
     if (!enabled || !bridge) return
     let active = true, reading = false
     const unsubscribe = bridge.onChanged(next => { changesRef.current++; if (active) { busyRef.current = next.busy; setState(next); setError(false) } })
-    const refresh = async (shown = false): Promise<void> => {
-      // After a hidden interval, main's get returns current progress without inspecting changing files.
-      if (reading || pendingRef.current || busyRef.current && !shown) return
+    const refresh = async (recover = false): Promise<void> => {
+      // A shown panel or retry may recover cached busy state. Main returns progress during an operation.
+      if (reading || pendingRef.current || busyRef.current && !recover) return
       reading = true
       const before = changesRef.current
       try {
@@ -40,21 +40,22 @@ export function useOmarchySetup(enabled: boolean, bridge = typeof window === 'un
       finally { reading = false }
     }
     const focus = (): void => { void refresh() }
+    const unsubscribeFocus = bridge.onFocus(focus)
     refreshRef.current = refresh
     void refresh(true)
     window.addEventListener('focus', focus)
-    return () => { active = false; refreshRef.current = null; unsubscribe(); window.removeEventListener('focus', focus) }
+    return () => { active = false; refreshRef.current = null; unsubscribe(); unsubscribeFocus(); window.removeEventListener('focus', focus) }
   }, [bridge, enabled])
   const command = async (command: OmarchySetupCommand): Promise<void> => {
     if (!bridge || pendingRef.current || busyRef.current) return
     changesRef.current++
     pendingRef.current = true; setPending(true); setRemoving(command.type === 'remove'); setError(false)
     try { const next = await bridge.command(command); changesRef.current++; busyRef.current = next.busy; setState(next) }
-    catch { setError(true) }
+    catch { busyRef.current = false; setError(true) }
     finally { pendingRef.current = false; setPending(false); setRemoving(false) }
   }
   const retryRead = async (): Promise<void> => {
-    await refreshRef.current?.()
+    await refreshRef.current?.(true)
   }
   return { state, error, busy: pending || state?.busy === true, removing: removing || state?.operation === 'remove', available: !!bridge, command, retryRead }
 }

@@ -60,6 +60,20 @@ describe('Omarchy setup in main', () => {
     } finally { resume.resolve(); await installing }
     expect((await installing).operation).toBeUndefined()
   })
+  it('publishes idle failed rows when the final inspection throws, then can inspect again', async () => {
+    let failInspection = false
+    const engine = f.make(async (command, args) => {
+      if (command === 'hyprctl' && failInspection) { failInspection = false; throw new Error('Desktop inspection failed') }
+      const result = await f.run(command, args)
+      if (command === 'bash') failInspection = true
+      return result
+    })
+    const result = await engine.command({ type: 'setup', pieces: ['theme'], keys: 'give' })
+    expect(result.busy).toBe(false)
+    expect(result.operation).toBeUndefined()
+    expect(f.changes.at(-1)).toMatchObject({ busy: false, pieces: { theme: { status: 'failed', message: 'Desktop inspection failed' } } })
+    expect((await engine.get()).pieces.theme).toMatchObject({ status: 'done', owned: true })
+  })
   it('sets up all three, backs up keys, selects both Appearance columns and skips a second run', async () => {
     const engine = f.make(), beforeAppearance = f.settings().appearance
     const result = await engine.command({ type: 'setup', pieces: [...OMARCHY_PIECES], keys: 'give' })

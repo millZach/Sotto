@@ -9,18 +9,18 @@ describe('Omarchy setup IPC', () => {
   it.each(['win32', 'darwin'] as const)('registers nothing and performs no detection on %s', platform => {
     const registry = ipcRegistry(), engine = { get: vi.fn(), command: vi.fn() }
     const focus = vi.fn()
-    registerOmarchySetupIpc(registry.ipc, platform, engine as unknown as OmarchySetup, registry.trustedSenders, focus)()
+    registerOmarchySetupIpc(registry.ipc, platform, engine as unknown as OmarchySetup, registry.trustedSenders, { follow: focus, notify: vi.fn() })()
     expect(registry.handlers.size).toBe(0)
     expect(engine.get).not.toHaveBeenCalled()
     expect(focus).not.toHaveBeenCalled()
   })
-  it('rechecks on native main-window focus and stops following it during cleanup', () => {
+  it('notifies the renderer on native main-window focus without inspecting and stops following it during cleanup', () => {
     const registry = ipcRegistry(), engine = { get: vi.fn(async () => 'state'), command: vi.fn() }
     let focus: (() => void) | undefined
-    const unsubscribe = vi.fn(() => { focus = undefined })
+    const unsubscribe = vi.fn(() => { focus = undefined }), notify = vi.fn()
     const cleanup = registerOmarchySetupIpc(registry.ipc, 'linux', engine as unknown as OmarchySetup, registry.trustedSenders,
-      listener => { focus = listener; return unsubscribe })
-    focus!(); expect(engine.get).toHaveBeenCalledOnce()
+      { follow: listener => { focus = listener; return unsubscribe }, notify })
+    focus!(); expect(notify).toHaveBeenCalledOnce(); expect(engine.get).not.toHaveBeenCalled()
     cleanup(); expect(focus).toBeUndefined(); expect(unsubscribe).toHaveBeenCalledOnce()
   })
   it('accepts only a trusted main frame, exact arguments and the bounded command schema', async () => {

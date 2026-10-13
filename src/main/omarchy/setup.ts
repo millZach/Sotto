@@ -235,23 +235,24 @@ export class OmarchySetup {
     if (error instanceof Error && !('code' in error) && !(error instanceof z.ZodError) && !(error instanceof SyntaxError)) return error.message.slice(0, 8000)
     return 'Sotto could not read or change these files. Check that your configuration is readable and writable, then try again.'
   }
+  private async inspect(): Promise<boolean> {
+    try { await this.detect(); return true } catch (error) {
+      for (const piece of OMARCHY_PIECES) this.snapshot.pieces[piece] = state('failed', this.explain(error))
+      return false
+    }
+  }
   get(): Promise<OmarchySetupState> {
     // A get during a run sees progress without starting a second inspection over changing files.
     if (this.snapshot.busy) return Promise.resolve(structuredClone(this.snapshot))
     return this.enqueue(async () => {
-      try { await this.detect() } catch (error) {
-        for (const piece of OMARCHY_PIECES) this.snapshot.pieces[piece] = state('failed', this.explain(error))
-      }
+      await this.inspect()
       return this.publish()
     })
   }
 
   command(command: OmarchySetupCommand): Promise<OmarchySetupState> {
     return this.enqueue(async () => {
-      try { await this.detect() } catch (error) {
-        for (const piece of OMARCHY_PIECES) this.snapshot.pieces[piece] = state('failed', this.explain(error))
-        return this.publish()
-      }
+      if (!await this.inspect()) return this.publish()
       const pieces = command.type === 'update-owl' ? ['owl'] as const : OMARCHY_PIECES.filter(piece => command.pieces.includes(piece))
       const keyBackup = command.type === 'remove' ? this.receipt.pieces.keys?.backup : undefined
       this.snapshot.busy = true
@@ -289,7 +290,7 @@ export class OmarchySetup {
       } finally {
         this.snapshot.busy = false
         delete this.snapshot.operation
-        await this.detect()
+        await this.inspect()
       }
       if (command.type === 'remove' && pieces.length === 3 && keyBackup && !this.receipt.pieces.keys && this.notes.keys?.status === 'missing' &&
         (await lstat(keyBackup).catch(() => null))?.isFile()) this.snapshot.notice = 'Sotto kept the copy of bindings.lua it made at setup, in ~/.config/hypr.'

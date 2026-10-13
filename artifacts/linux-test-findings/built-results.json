@@ -3,7 +3,7 @@
     "build": {
       "version": "43.1.0",
       "packaged": false,
-      "mainSha256": "d51992719384338ce553d90096594853ffce17409e87d711130522f78144a158"
+      "mainSha256": "5c58819e77a5282a7de8bcfa5a8bca8e46726824478cae584c770373ef7ef328"
     }
   },
   {
@@ -75,7 +75,7 @@
     "environment": {
       "OMARCHY_PATH": "/usr/share/omarchy",
       "WAYLAND_DISPLAY": "w",
-      "XDG_RUNTIME_DIR": "/home/zach/Projects/Sotto/.worktrees/linux-test-fixes/.cache/r35",
+      "XDG_RUNTIME_DIR": "/home/zach/Projects/Sotto/.worktrees/linux-test-fixes/.cache/r38",
       "HYPRLAND_INSTANCE_SIGNATURE": "s"
     }
   },
@@ -84,8 +84,8 @@
     "packaged": false,
     "environment": {
       "OMARCHY_PATH": null,
-      "WAYLAND_DISPLAY": "/home/zach/Projects/Sotto/.worktrees/linux-test-fixes/.cache/r35/w",
-      "XDG_RUNTIME_DIR": "/home/zach/Projects/Sotto/.worktrees/linux-test-fixes/.cache/r35",
+      "WAYLAND_DISPLAY": "/home/zach/Projects/Sotto/.worktrees/linux-test-fixes/.cache/r38/w",
+      "XDG_RUNTIME_DIR": "/home/zach/Projects/Sotto/.worktrees/linux-test-fixes/.cache/r38",
       "HYPRLAND_INSTANCE_SIGNATURE": "s"
     }
   },
@@ -95,7 +95,7 @@
     "environment": {
       "OMARCHY_PATH": null,
       "WAYLAND_DISPLAY": "w",
-      "XDG_RUNTIME_DIR": "/home/zach/Projects/Sotto/.worktrees/linux-test-fixes/.cache/r35",
+      "XDG_RUNTIME_DIR": "/home/zach/Projects/Sotto/.worktrees/linux-test-fixes/.cache/r38",
       "HYPRLAND_INSTANCE_SIGNATURE": "s"
     }
   },

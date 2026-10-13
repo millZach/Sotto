@@ -11,6 +11,42 @@ import { baseProps } from '../../fixtures/renderer/settingsViewHarness'
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 describe('Omarchy setup rows', () => {
+  it('recovers from progress followed by a rejected command through Try again', async () => {
+    const f = setupBridgeFixture(), get = vi.spyOn(f.bridge, 'get')
+    const hook = renderHook(() => useOmarchySetup(true, f.bridge))
+    await waitFor(() => expect(hook.result.current.state).not.toBeNull())
+    vi.spyOn(f.bridge, 'command').mockImplementationOnce(async () => {
+      const progress = setupState(); progress.busy = true; progress.operation = 'setup'
+      f.change(progress)
+      throw new Error('The command reply failed')
+    })
+    await act(async () => hook.result.current.command({ type: 'setup', pieces: ['keys'], keys: 'give' }))
+    expect(hook.result.current.error).toBe(true)
+    get.mockResolvedValueOnce(setupState())
+    await act(async () => hook.result.current.retryRead())
+    expect(get).toHaveBeenCalledTimes(2)
+    expect(hook.result.current.busy).toBe(false)
+    await act(async () => hook.result.current.command({ type: 'setup', pieces: ['keys'], keys: 'give' }))
+    expect(hook.result.current.state?.pieces.keys.status).toBe('done')
+  })
+  it('coalesces native and DOM focus and ignores native focus while hidden or operating', async () => {
+    const f = setupBridgeFixture(), get = vi.spyOn(f.bridge, 'get')
+    const hook = renderHook(({ enabled }) => useOmarchySetup(enabled, f.bridge), { initialProps: { enabled: true } })
+    await waitFor(() => expect(hook.result.current.state).not.toBeNull())
+    const reading = Promise.withResolvers<ReturnType<typeof setupState>>()
+    get.mockReturnValueOnce(reading.promise)
+    act(() => f.focus())
+    expect(get).toHaveBeenCalledTimes(2)
+    act(() => window.dispatchEvent(new Event('focus')))
+    expect(get).toHaveBeenCalledTimes(2)
+    await act(async () => reading.resolve(setupState('manual')))
+    expect(hook.result.current.state?.pieces.keys.status).toBe('manual')
+    const progress = setupState(); progress.busy = true
+    act(() => f.change(progress)); act(() => f.focus())
+    expect(get).toHaveBeenCalledTimes(2)
+    hook.rerender({ enabled: false }); act(() => f.focus())
+    expect(get).toHaveBeenCalledTimes(2)
+  })
   it('re-detects outside changes when the actual Settings tabs return to Dictation', async () => {
     const f = setupBridgeFixture(setupState('manual')), user = userEvent.setup()
     const get = vi.spyOn(f.bridge, 'get')

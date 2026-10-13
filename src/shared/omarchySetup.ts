@@ -2,6 +2,7 @@ import { z } from 'zod'
 
 export const OMARCHY_SETUP_GET = 'omarchy-setup:get'
 export const OMARCHY_SETUP_COMMAND = 'omarchy-setup:command'
+export const OMARCHY_SETUP_FOCUS = 'omarchy-setup:focus'
 export const OMARCHY_SETUP_CHANGED = 'omarchy-setup:changed'
 export const OMARCHY_PIECES = ['keys', 'owl', 'theme'] as const
 export type OmarchyPiece = typeof OMARCHY_PIECES[number]
@@ -35,5 +36,6 @@ export type OmarchySetupCommand = z.infer<typeof omarchySetupCommandSchema>
 export interface OmarchySetupBridge {
   get(): Promise<OmarchySetupState>
   command(command: OmarchySetupCommand): Promise<OmarchySetupState>
+  onFocus(listener: () => void): () => void
   onChanged(listener: (state: OmarchySetupState) => void): () => void
 }

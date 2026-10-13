@@ -3,7 +3,7 @@ import { expect, it, vi } from 'vitest'
 import { preloadElectron } from '../../fixtures/preloadElectron'
 vi.mock('electron', async () => (await import('../../fixtures/preloadElectron')).preloadElectron())
 import { createSottoBridge, createSottoWidgetBridge } from '../../../src/preload'
-import { OMARCHY_SETUP_GET, OMARCHY_SETUP_COMMAND } from '../../../src/shared/omarchySetup'
+import { OMARCHY_SETUP_GET, OMARCHY_SETUP_COMMAND, OMARCHY_SETUP_FOCUS } from '../../../src/shared/omarchySetup'
 import { setupState } from '../../fixtures/renderer/omarchySetup'
 
 it('exposes setup only to Linux main and validates both sides of the bridge', async () => {
@@ -22,4 +22,16 @@ it('exposes setup only to Linux main and validates both sides of the bridge', as
   expect(() => bridge.command({ ...command, approved: true } as never)).toThrow()
   ipc.invoke.mockResolvedValue({ arbitrary: true })
   await expect(bridge.get()).rejects.toThrow()
+})
+
+it('subscribes to bounded native focus notifications and removes its listener', () => {
+  const ipc = preloadElectron().ipcRenderer, listener = vi.fn()
+  const unsubscribe = createSottoBridge(ipc, 'linux').omarchySetup!.onFocus(listener)
+  const [channel, wrapped] = ipc.on.mock.calls.at(-1)!
+  expect(channel).toBe(OMARCHY_SETUP_FOCUS)
+  wrapped({}, { unexpected: true }); wrapped({}); wrapped({}, null, null)
+  expect(listener).not.toHaveBeenCalled()
+  wrapped({}, null); expect(listener).toHaveBeenCalledOnce()
+  unsubscribe(); unsubscribe()
+  expect(ipc.removeListener).toHaveBeenCalledOnce()
 })
