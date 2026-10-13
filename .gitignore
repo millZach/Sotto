@@ -1,5 +1,10 @@
 node_modules/
 artifacts/watcher-live/
+artifacts/codex-reasoning-rows/*
+!artifacts/codex-reasoning-rows/before.png
+!artifacts/codex-reasoning-rows/before.json
+!artifacts/codex-reasoning-rows/after.png
+!artifacts/codex-reasoning-rows/after.json
 artifacts/sotto-owl-release/*
 !artifacts/sotto-owl-release/runtime.png
 !artifacts/sotto-owl-release/update-status.json
