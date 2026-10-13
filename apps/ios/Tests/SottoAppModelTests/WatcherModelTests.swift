@@ -506,9 +506,11 @@ final class WatcherModelTests: XCTestCase {
         let firstReads = try connection.operations.filter { $0 == "receipt" }.count
         XCTAssertGreaterThan(firstReads, 1, "A pending receipt is read again")
         // A reconnect asks for it while another read of it runs: only one reads.
-        async let one: Void = model.recoverWatcherStop(laptop)
-        async let two: Void = model.recoverWatcherStop(laptop)
-        _ = await (one, two)
+        let host = laptop
+        async let one: Void = model.recoverWatcherStop(host)
+        async let two: Void = model.recoverWatcherStop(host)
+        await one
+        await two
         let reads = try connection.operations.filter { $0 == "receipt" }.count - firstReads
         XCTAssertEqual(reads, firstReads, "A second read of the same Stop all's receipt while one runs reads nothing")
         XCTAssertEqual(model.feedback, "Stop all isn’t confirmed. Check Watched before you stop anything again.")
