@@ -82,7 +82,7 @@ describe('a press of Update all', () => {
     expect(updateAllView(sources({ local: [failedBefore] }), pass([key], { ranBefore: new Map([[key, 'earlier']]) })).items[0]).toMatchObject({ state: 'running' })
     const failedNow = client({ state: 'failed', ranAt: 'now', error: 'EBUSY' })
     expect(updateAllView(sources({ local: [failedNow] }), pass([key], { ranBefore: new Map([[key, 'earlier']]) })).items[0])
-      .toMatchObject({ state: 'failed', detail: 'The installer said: EBUSY. Nothing was changed.' })
+      .toMatchObject({ state: 'failed', detail: 'Claude Code did not update. Nothing was changed. Settings → Providers shows what the installer said.' })
   })
 
   it('asks to restart once Sotto is downloaded and nothing it started is still going, and says what happens to working threads', () => {
@@ -99,7 +99,9 @@ describe('a press of Update all', () => {
     const view = updateAllView(sources({ app: status({ phase: 'downloaded', version: '0.1.38', problem: null }), hostUpdates: [hostUpdate({ phase: 'waiting', working: 1 })] }),
       pass(['sotto', hostKey(FORGE)]))
     expect(view.phase).toBe('restart')
-    expect(updateAllWords(view, { working: 0, resumes: true }).sub).toBe('forge updates once its threads finish.')
+    // Its wait lasts only while Sotto is open, and the card says so.
+    expect(updateAllWords(view, { working: 0, resumes: true }).sub).toBe('forge is waiting for its threads. If Sotto restarts first, Update all offers it again.')
+    expect(view.items.find(item => item.kind === 'host')).toMatchObject({ state: 'waiting', cancellable: true })
   })
 
   it('ends without a restart when Sotto itself had nothing new, naming what did not update', () => {
@@ -108,7 +110,25 @@ describe('a press of Update all', () => {
     expect(view.phase).toBe('done')
     const words = updateAllWords(view, { working: 0, resumes: true })
     expect(words).toMatchObject({ title: 'Not everything updated', sub: 'forge’s host did not update.', pill: '1 update did not finish' })
-    expect(view.items[0]!.detail).toBe('forge could not download it. It still runs 0.1.35.')
+    expect(view.items[0]).toMatchObject({ detail: 'forge could not download it. It still runs 0.1.35. Try again.', commands: 'sotto-host update' })
+  })
+
+  it('counts an install that finished with its provider disconnected as finished', () => {
+    const key = clientKey('local', 'claude')
+    const view = updateAllView(sources({ local: [client({ state: 'idle', ranAt: 'now' })] }), pass([key], { ranBefore: new Map([[key, 'earlier']]) }))
+    expect(view.phase).toBe('done')
+    expect(view.items[0]).toMatchObject({ state: 'done', detail: 'The installer finished. Connect Claude Code to see the version it runs now.' })
+  })
+
+  it('offers what is still out of date before asking to restart, when Sotto was downloaded on its own', () => {
+    const view = updateAllView(sources({ app: status({ phase: 'downloaded', version: '0.1.38', problem: null }), local: [client()] }), null)
+    expect(view.phase).toBe('offer')
+    expect(updateAllWords(view, { working: 0, resumes: true }).notes).toContain('Sotto 0.1.38 is downloaded. It restarts last, when you say.')
+  })
+
+  it('offers Cancel update while a host downloads and checks, and not once it installs', () => {
+    const at = (step: HostUpdateState['step']) => updateAllView(sources({ hostUpdates: [hostUpdate({ phase: 'updating', step })] }), pass([hostKey(FORGE)])).items[0]!.cancellable
+    expect([at('download'), at('check'), at('install'), at('restart')]).toEqual([true, true, false, false])
   })
 
   it('says why an updater refused part of the press', () => {

@@ -38,8 +38,9 @@ all behind.
 - One press of **Update all** queued all three on forge. Codex's download was made to drop and Grok Build held at its
   second step. The card read **Updating**, 2 of 3, with Codex failed, Claude Code done and Grok Build on step 2 of 2,
   `updating-light-1280.png`.
-- Once Grok Build was let go, the card read **Not everything updated**, "forge's Codex did not update.", with the
-  installer's words and **Try again** on Codex's row, `one-failed-dark-1280.png`. Try again finished it, the card read
+- Once Grok Build was let go, the card read **Not everything updated**, "forge's Codex did not update.". Codex's row
+  says nothing was changed and that Settings → Hosts shows what the installer said, with **Try again** and **Copy
+  commands**, `one-failed-dark-1280.png`. Try again finished it, the card read
   **Updated**, and Dismiss put it away.
 
 `host-update.spec.ts` and `host-client-updates.spec.ts` still pass on the stable track, where nothing changed, and the

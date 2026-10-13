@@ -42,17 +42,22 @@ copy. Neither counts toward the press.
 **4. A host's working threads finish first.** Restarting a host stops its threads, and a host runs a stable host build
 that cannot resume them yet (ADR-0076 decision 8). So a host with working threads updates once they finish, the way
 Update when they finish does (ADR-0040), and the card offers Stop N threads and update for anyone who would rather not
-wait. The restart of Sotto does not wait for such a host.
+wait, and Cancel update, as the pill did, while the host waits or downloads. The restart of Sotto does not wait for such
+a host. The wait lives in this running Sotto, so the restart prompt says that if Sotto restarts first, Update all offers
+that host again.
 
-**5. Restart now, last.** Once Sotto's download is ready and nothing the press started is still running, the card asks
-to restart. It says how many threads on this computer are working, and whether they carry on after (ADR-0076). Restart
+**5. Restart now, last.** Once Sotto's download is ready, nothing the press started is still running and nothing is
+left to offer, the card asks to restart; Sotto downloaded from the update control waits behind what is still offered. It says how many threads on this computer are working, and whether they carry on after (ADR-0076). Restart
 now installs at once: the card is the question the install dialog would have asked. Later folds the card, and the
 update control keeps the download. Where Sotto cannot update itself (macOS, Linux, a development run), the card covers
 clients and hosts and never asks to restart.
 
 **6. It drives what exists, from the window.** The card sends the commands the update control, the client update card,
 the host tiles and the host update pill already send, and reads the state they already publish. It adds no channel and
-no updater. A host updates to the version this running Sotto asks for; when a restart brings a newer one, the card
+no updater. Two things change underneath: this computer's client updates also ride its own `clientHosts` entry, so the
+card lists them whichever host is selected, and `queue-client-updates` takes a `hostId` the desktop's router reads and
+never sends on, as `configure` does (ADR-0074), so the press reaches this computer whichever host is selected. A failed
+client says what happened and points to Settings → Providers or Settings → Hosts for what the installer printed. A host updates to the version this running Sotto asks for; when a restart brings a newer one, the card
 offers it after the restart.
 
 **7. Settings follows.** On Owl, Settings → Application → Updates offers Update all where it offered Download, and it

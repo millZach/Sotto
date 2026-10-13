@@ -127,6 +127,29 @@ describe('the Update all card', () => {
     expect(screen.getByRole('region', { name: 'Updates' })).toBeTruthy()
   })
 
+  it('updates this computer’s clients by name, from its own entry, while a remote host is selected', async () => {
+    const LOCAL = '9c1f4b2e-7a3d-4e5f-8b6a-0d2c4e6f8a1b'
+    provideApp({ ...available, phase: { phase: 'unsupported' } })
+    const state = agentState()
+    const command = provideAgents({ ...state, clientUpdates: undefined, connections: [{ hostId: LOCAL, name: 'This computer', kind: 'local', connected: true }],
+      host: { ...state.host, clientHosts: [{ hostId: LOCAL, connected: true, models: [], capabilities: caps, clientUpdates: [behind()] }] } })
+    render(<UpdateAllCard hosts={hostsBridge({ hosts: [], localHostEnabled: true, localHostRunning: true }).asBridge} />)
+    expect(screen.getByRole('region', { name: 'This computer' })).toHaveTextContent('Claude Code')
+    fireEvent.click(screen.getByRole('button', { name: 'Update all: 1 client' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'queue-client-updates', providers: ['claude'], hostId: LOCAL }))
+  })
+
+  it('cancels a host’s waiting update, keeping focus in the card', async () => {
+    provideApp({ ...available, phase: { phase: 'unsupported' } })
+    provideAgents(agentState())
+    const hosts = hostsBridge({ hosts: [forge], localHostEnabled: true, localHostRunning: true, updates: [hostUpdate({ phase: 'waiting', working: 2 })] })
+    render(<UpdateAllCard hosts={hosts.asBridge} />)
+    const cancel = await screen.findByRole('button', { name: 'Cancel update, and leave forge on 0.1.35' })
+    cancel.focus(); fireEvent.click(cancel)
+    await waitFor(() => expect(hosts.bridge.command).toHaveBeenCalledWith({ type: 'host-update', id: FORGE, action: 'cancel' }))
+    expect(screen.getByRole('button', { name: 'Stop 2 threads on forge and update its host now' })).toBeTruthy()
+  })
+
   it('runs the same press when Settings asks for it', async () => {
     const actions = provideApp(available)
     provideAgents(agentState())

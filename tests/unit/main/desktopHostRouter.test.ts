@@ -579,6 +579,19 @@ describe('a host restarting for an update (ADR-0040)', () => {
     local.state.clientUpdates = [reading]; own.add(local.connection)
     expect(own.shell().clientUpdates).toEqual([reading])
   })
+  it('keeps this computer’s client updates on its own entry and sends Update all’s press to the host it names (ADR-0077)', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    const reading = { id: 'claude' as const, installed: '2.1.40', published: '2.1.42', behind: true, channel: 'npm' as const, canInstall: true, checkedAt: '2026-10-12T00:00:00.000Z', state: 'idle' as const }
+    local.state.clientUpdates = [reading]
+    router.add(local.connection); router.add(remote.connection)
+    // With the remote host selected, the top level drops this computer's clients; its own entry still carries them.
+    router.select(REMOTE)
+    expect(router.shell()).not.toHaveProperty('clientUpdates')
+    expect(router.shell().host.clientHosts!.find(item => item.hostId === LOCAL)).toMatchObject({ clientUpdates: [reading] })
+    await router.command({ type: 'queue-client-updates', providers: ['claude'], hostId: LOCAL }, desktopWindowClient())
+    expect(local.command).toHaveBeenCalledWith({ type: 'queue-client-updates', providers: ['claude'] }, desktopWindowClient())
+    expect(remote.command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'queue-client-updates' }), expect.anything())
+  })
   it('marks the hosts that babysit pull requests, so the window offers Babysit pull request only on their threads (ADR-0061)', async () => {
     const router = new DesktopHostRouter(emptyDesktopState), older = fixture(LOCAL, 'remote'), newer = fixture(REMOTE, 'remote')
     router.add(older.connection); router.add({ ...newer.connection, offersBabysitting: () => true })

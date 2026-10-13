@@ -8,6 +8,7 @@ import { SottoMark } from '../../components/SottoMark'
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { ProviderMark } from '../../agents/ProviderMark'
 import { useTransientFlag, writeClipboard } from '../../agents/richActions'
+import { focusedComposerField } from '../../agents/promptSelection'
 import { useOptionalApp } from '../../state/AppContext'
 import { useOwlFeature } from '../../state/owlFeature'
 import { APP_KEY, clientKey, hostKey, updateAllView, updateAllWords, type UpdateAllItem, type UpdateAllPass, type UpdateAllPhase } from './updateAll'
@@ -55,9 +56,9 @@ const STATE_WORDS: Record<UpdateAllItem['state'], string> = {
   offered: 'update available', running: 'updating', waiting: 'waiting for its threads', done: 'updated', failed: 'not updated', 'by-hand': 'update it yourself',
 }
 
-function ItemRow({ item, busy, onRetry, onStopThreads }: {
+function ItemRow({ item, busy, onRetry, onStopThreads, onCancel }: {
   readonly item: UpdateAllItem; readonly busy: boolean
-  readonly onRetry: (item: UpdateAllItem) => void; readonly onStopThreads: (item: UpdateAllItem) => void
+  readonly onRetry: (item: UpdateAllItem) => void; readonly onStopThreads: (item: UpdateAllItem) => void; readonly onCancel: (item: UpdateAllItem) => void
 }): ReactNode {
   const [copied, showCopied] = useTransientFlag()
   const where = item.machine.kind === 'host' ? ` on ${item.machine.name}` : ''
@@ -66,6 +67,7 @@ function ItemRow({ item, busy, onRetry, onStopThreads }: {
   const actions = [
     item.state === 'failed' ? <Button key="retry" variant="secondary" disabled={busy} aria-label={`Try again to update ${item.name}${where}`} onClick={() => onRetry(item)}>Try again</Button> : null,
     item.state === 'waiting' ? <Button key="stop" variant="secondary" disabled={busy} aria-label={`Stop ${threads}${where} and update its host now`} onClick={() => onStopThreads(item)}>Stop {threads} and update</Button> : null,
+    item.cancellable ? <Button key="cancel" variant="ghost" disabled={busy} aria-label={`Cancel update, and leave ${item.machine.kind === 'host' ? item.machine.name : item.name} on ${item.versions.split(' → ')[0]}`} onClick={() => onCancel(item)}>Cancel update</Button> : null,
     item.commands ? <Button key="copy" variant="ghost" aria-label={`Copy the commands that update ${item.name}${where}`} onClick={copy}><Copy size={13} aria-hidden="true" />{copied ?? 'Copy commands'}</Button> : null,
   ].filter(Boolean)
   return <div className="update-all__item" data-state={item.state}>
@@ -121,9 +123,12 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts }: { re
   const pill = useRef<HTMLButtonElement>(null)
   const titleId = useId()
   const state = agents?.state ?? null
+  // This computer's own clients come from its own entry, whichever host the window has selected; the top level carries
+  // them only while this computer is the one selected.
+  const localHostId = state?.connections?.find(connection => connection.kind === 'local')?.hostId
   const sources = {
-    app: app?.update ?? null, local: state?.clientUpdates ?? [], hosts: hostsState?.hosts ?? [], localHostId: hostsState?.localHostId,
-    clientHosts: state?.host.clientHosts ?? [], hostUpdates: hostsState?.updates ?? [],
+    app: app?.update ?? null, hosts: hostsState?.hosts ?? [], localHostId, clientHosts: state?.host.clientHosts ?? [], hostUpdates: hostsState?.updates ?? [],
+    local: state?.host.clientHosts?.find(host => host.hostId === localHostId)?.clientUpdates ?? state?.clientUpdates ?? [],
   }
   const view = updateAllView(sources, pass)
   const working = (state?.host.threads ?? []).filter(thread => thread.remoteHost !== true && threadKeepsHostBusy(thread)).length
@@ -150,7 +155,8 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts }: { re
     if (!providers.length) return
     const keys = providers.map(provider => clientKey(machine, provider))
     if (machine === 'local') {
-      void agents?.command({ type: 'queue-client-updates', providers: [...providers] }).then(
+      // Named, so the router sends it to this computer even while a remote host is selected.
+      void agents?.command({ type: 'queue-client-updates', providers: [...providers], ...latest.current.sources.localHostId ? { hostId: latest.current.sources.localHostId } : {} }).then(
         result => { if (result?.error) refuse(keys, result.error) }, () => refuse(keys, UNREACHABLE))
     } else if (hostsBridge) {
       void hostsBridge.updateClients({ id: machine, action: 'update', providers: [...providers] }).then(
@@ -201,6 +207,16 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts }: { re
     for (const id of due) void updateHost(id)
   }, [pass, view, updateHost])
 
+  /** A press whose button goes with it leaves focus on the card's own first control, never on the page behind. */
+  const keepFocus = useCallback((): void => {
+    requestAnimationFrame(() => { if (!card.current?.contains(document.activeElement)) card.current?.querySelector<HTMLElement>('.update-all__head button')?.focus() })
+  }, [])
+  /** Focus leaves a card that is going: to the focused thread's composer, as after any page-level dismissal. */
+  const leave = useCallback((): void => {
+    if (!card.current?.contains(document.activeElement)) return
+    const composer = focusedComposerField() ?? document.querySelector<HTMLElement>('.thread-prompt :is(.prompt-editor, textarea)')
+    composer?.focus()
+  }, [])
   const retry = useCallback((item: UpdateAllItem): void => {
     setPass(current => {
       const base = current ?? EMPTY_PASS
@@ -211,13 +227,20 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts }: { re
     if (item.kind === 'app') download()
     else if (item.kind === 'client') queueClients(item.machine.kind === 'host' ? item.machine.id : 'local', [item.provider!])
     else if (item.machine.kind === 'host') void updateHost(item.machine.id)
-  }, [clientUpdate, download, queueClients, updateHost])
+    keepFocus()
+  }, [clientUpdate, download, keepFocus, queueClients, updateHost])
   const stopThreads = useCallback((item: UpdateAllItem): void => {
     if (item.machine.kind !== 'host' || !hostsBridge) return
     const id = item.machine.id
     setPass(current => ({ ...current ?? EMPTY_PASS, touched: new Set([...(current ?? EMPTY_PASS).touched, item.key]) }))
     void hostsBridge.command({ type: 'host-update', id, action: 'stop-threads' }).catch(error => refuse([item.key], ipcMessage(error, UNREACHABLE)))
-  }, [hostsBridge, refuse])
+    keepFocus()
+  }, [hostsBridge, keepFocus, refuse])
+  const cancel = useCallback((item: UpdateAllItem): void => {
+    if (item.machine.kind !== 'host' || !hostsBridge) return
+    void hostsBridge.command({ type: 'host-update', id: item.machine.id, action: 'cancel' }).catch(error => refuse([item.key], ipcMessage(error, UNREACHABLE)))
+    keepFocus()
+  }, [hostsBridge, keepFocus, refuse])
   const restart = useCallback(async (): Promise<void> => {
     setBusy(true); setFailure(null)
     try {
@@ -233,9 +256,11 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts }: { re
     if (hostsBridge) for (const item of latest.current.view.items) {
       if (item.kind === 'host' && item.state === 'done' && item.machine.kind === 'host') void hostsBridge.command({ type: 'host-update', id: item.machine.id, action: 'dismiss' }).catch(() => undefined)
     }
+    leave()
     setPass(null)
     setDismissed(updateAllView(latest.current.sources, null).fingerprint)
-  }, [hostsBridge])
+  }, [hostsBridge, leave])
+  const notNow = useCallback((): void => { leave(); setDismissed(latest.current.view.fingerprint) }, [leave])
 
   useEffect(() => {
     const listener = (): void => { setFolded(false); setDismissed(null); start() }
@@ -290,8 +315,8 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts }: { re
   const actions = view.phase === 'offer'
     ? offered
       ? <><Button variant="primary" disabled={busy} aria-label={`Update all: ${words.sub}`} onClick={start}>Update all</Button>
-        <Button variant="ghost" aria-label="Not now: hide these updates until something new is published" onClick={() => setDismissed(view.fingerprint)}>Not now</Button></>
-      : <Button variant="ghost" aria-label="Dismiss: hide these until something new is published" onClick={() => setDismissed(view.fingerprint)}>Dismiss</Button>
+        <Button variant="ghost" aria-label="Not now: hide these updates until something new is published" onClick={notNow}>Not now</Button></>
+      : <Button variant="ghost" aria-label="Dismiss: hide these until something new is published" onClick={notNow}>Dismiss</Button>
     : view.phase === 'restart'
       ? <><Button variant="primary" disabled={busy} aria-label={`Restart Sotto now and install ${view.ready}`} onClick={() => void restart()}>Restart now</Button>
         <Button variant="ghost" aria-label="Later: fold this card. The update control keeps the download." onClick={() => setFolded(true)}>Later</Button></>
@@ -305,7 +330,7 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts }: { re
     <div className="update-all__list">
       {groupsOf(view.items).map(group => <section key={group.key} className="update-all__machine" aria-label={group.heading}>
         <h3>{group.icon}{group.heading}</h3>
-        {group.items.map(item => <ItemRow key={item.key} item={item} busy={busy} onRetry={retry} onStopThreads={stopThreads} />)}
+        {group.items.map(item => <ItemRow key={item.key} item={item} busy={busy} onRetry={retry} onStopThreads={stopThreads} onCancel={cancel} />)}
       </section>)}
     </div>
     {words.notes.length ? <div className="update-all__notes">{words.notes.map(note => <p key={note}>{note}</p>)}</div> : null}
