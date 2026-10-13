@@ -80,7 +80,7 @@ export class WatcherService implements WatcherControlHooks {
   }
   useRemoteHosts(remote: WatcherRemoteHosts): void {
     this.remoteOff?.(); this.remote = remote
-    this.remoteOff = remote.subscribe(() => { void this.reconcileRemote().catch(() => { this.recoveryNotice = 'A paired host could not be reconciled. Its pending slots remain held.' }) })
+    this.remoteOff = remote.subscribe((hostId, force = true) => this.scheduleRemote(hostId, force))
     void this.reconcileRemote().catch(() => undefined)
   }
   private thread(target: WatcherThreadTarget): AgentThread {
@@ -550,7 +550,8 @@ export class WatcherService implements WatcherControlHooks {
         return { operation: existing, retry: true }
       }
       if (request.state !== 'active' && !(imported && this.confirmedWorkerStop(imported, request))) {
-        if ('target' in input && record.requests.some(item => item.participants.some(participant => key(participant.target) === key(input.target) && participant.state === 'taken-over'))) refuse('THREAD_TAKEN_OVER', 'You took over this thread. Watcher stopped sending to it.')
+        const stoppedTarget = 'target' in input ? input.target : undefined
+        if (stoppedTarget && record.requests.some(item => item.participants.some(participant => key(participant.target) === key(stoppedTarget) && participant.state === 'taken-over'))) refuse('THREAD_TAKEN_OVER', 'You took over this thread. Watcher stopped sending to it.')
         refuse('REQUEST_NOT_ACTIVE', 'This request is not active. Only a user Send to Watcher can start a request.')
       }
       const start = name === 'start_thread', send = name === 'send_to_thread'
@@ -633,7 +634,7 @@ export class WatcherService implements WatcherControlHooks {
     if (admitted.retry) { const active = this.active.get(admitted.operation.id); if (active) return await active; return this.operationResult(name, admitted.operation, input) }
     const running = admitted.operation.target.hostId !== this.hostId() ? this.executeRemote(name, admitted.operation, input) : this.executeOperation(name, admitted.operation, input)
     this.active.set(admitted.operation.id, running)
-    try { return await running } finally { this.active.delete(admitted.operation.id); this.dispatchRefusals.delete(admitted.operation.id); this.pruneRemoteGuards(); this.publish() }
+    try { return await running } finally { this.active.delete(admitted.operation.id); this.dispatchRefusals.delete(admitted.operation.id); this.pruneRemoteGuards(); if (admitted.operation.target.hostId !== this.hostId() && this.record().operations.find(item => item.id === admitted.operation.id)?.deliveryState === 'uncertain') this.scheduleRemote(admitted.operation.target.hostId, true); this.publish() }
   }
   private async executeOperation(name: WatcherToolName, operation: WatcherOperation, input: WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>): Promise<unknown> {
     let dispatchRefusal: Refusal | undefined
@@ -798,25 +799,66 @@ export class WatcherService implements WatcherControlHooks {
     own.updatedAt = receipt.updatedAt
     if (!wasFailed && own.deliveryState === 'failed') this.refundPrompt(record, own, own.refusalCode ?? 'PROVIDER_UNAVAILABLE')
   }
+  private readonly remotePending = new Map<string, boolean>()
+  private readonly remoteFailures = new Map<string, { count: number; until: number }>()
+  private remoteTimer: ReturnType<typeof setTimeout> | undefined
+  private remoteFlushing = false
+  private scheduleRemote(hostId?: string, force = true): void {
+    if (this.closed || !this.remote) return
+    for (const id of hostId ? [hostId] : this.remote.hosts().map(host => host.hostId)) {
+      if (force) this.remoteFailures.delete(id)
+      this.remotePending.set(id, force || this.remotePending.get(id) === true)
+    }
+    this.armRemote()
+  }
+  private retryRemote(hostId: string): void {
+    if (this.closed) return
+    const count = (this.remoteFailures.get(hostId)?.count ?? 0) + 1
+    this.remoteFailures.set(hostId, { count, until: Date.now() + Math.min(30_000, 1_000 * 2 ** Math.min(count - 1, 5)) })
+    this.remotePending.set(hostId, true); this.armRemote()
+  }
+  private armRemote(): void {
+    if (this.closed || this.remoteTimer || this.remoteFlushing || !this.remotePending.size) return
+    const time = Date.now(), due = Math.min(...[...this.remotePending.keys()].map(id => Math.max(time + 250, this.remoteFailures.get(id)?.until ?? 0)))
+    this.remoteTimer = setTimeout(() => {
+      this.remoteTimer = undefined; this.remoteFlushing = true
+      void (async () => {
+        for (const [id, force] of [...this.remotePending]) {
+          if ((this.remoteFailures.get(id)?.until ?? 0) > Date.now()) continue
+          this.remotePending.delete(id)
+          await this.reconcileRemote(id, force)
+        }
+      })().catch(() => { this.recoveryNotice = 'A paired host could not be reconciled. Its pending slots remain held.' })
+        .finally(() => { this.remoteFlushing = false; this.armRemote() })
+    }, Math.max(0, due - time))
+    this.remoteTimer.unref?.()
+  }
   private reconciling: Promise<void> | undefined
   private reconcileAgain = false
-  private reconcileRemote(hostId?: string): Promise<void> {
-    if (this.reconciling) { this.reconcileAgain = true; return hostId ? this.reconciling.catch(() => this.reconcileRemote(hostId)) : this.reconciling }
+  private reconcileForce = false
+  private reconcileRemote(hostId?: string, force = true): Promise<void> {
+    if (this.reconciling) { this.reconcileAgain = true; this.reconcileForce ||= force; return this.reconciling }
     this.reconciling = (async () => {
-      do { this.reconcileAgain = false; await this.reconcileRemoteNow(hostId); hostId = undefined } while (this.reconcileAgain && !this.closed)
+      do { this.reconcileAgain = false; const refresh = force || this.reconcileForce; this.reconcileForce = false; await this.reconcileRemoteNow(hostId, refresh); hostId = undefined; force = false } while (this.reconcileAgain && !this.closed)
     })().finally(() => { this.reconciling = undefined })
     return this.reconciling
   }
-  private async reconcileRemoteNow(hostId?: string): Promise<void> {
+  private async reconcileRemoteNow(hostId?: string, force = true): Promise<void> {
     const master = this.record().current
     if (!master || !this.remote || this.closed) return
     for (const host of this.remote.hosts().filter(item => item.reads && item.connected && (!hostId || item.hostId === hostId))) {
+      const owned = this.record().requests.filter(request => key(request.watcher) === key(master.target))
+      if (!owned.some(request => request.participants.some(item => item.target.hostId === host.hostId)
+        || this.record().operations.some(item => item.requestId === request.id && item.target.hostId === host.hostId))) continue
+      let receiptFailed = false
       try {
         const stoppedRequests = this.record().requests.filter(request => request.state === 'stopped' && key(request.watcher) === key(master.target)
           && (request.participants.some(item => item.target.hostId === host.hostId) || this.record().operations.some(item => item.requestId === request.id && item.target.hostId === host.hostId)))
           .slice(-1_000).map(request => ({ request: { id: request.id, watcher: request.watcher, rootUserMessageId: request.rootUserMessageId, createdAt: request.createdAt },
             ceiling: request.pairedPermissionCeiling ?? this.options.control.configuration().newThreadRuntimeMode ?? 'approval-required' as const }))
-        const projection = await this.remote.read(host.hostId, { master, ...(stoppedRequests.length ? { stoppedRequests } : {}) }) as WatcherHostProjection
+        const cached = !force ? this.remote.projection?.(host.hostId, master) : undefined
+        const projection = cached ?? await this.remote.read(host.hostId, { master, ...(stoppedRequests.length ? { stoppedRequests } : {}) }) as WatcherHostProjection
+        if (this.closed || JSON.stringify(this.record().current) !== JSON.stringify(master)) return
         if (projection.hostId !== host.hostId || JSON.stringify(projection.master) !== JSON.stringify(master)) throw new Error('wrong-watcher-host')
         const exact = new Map<string, Extract<ReturnType<typeof watcherToolSchemas.read_operation.output.parse>, { status: 'ok' }>['receipt'] | null>()
         const projected = new Set(projection.operations.map(item => item.id))
@@ -827,9 +869,9 @@ export class WatcherService implements WatcherControlHooks {
             if (result.status === 'refused' && result.code === 'OPERATION_NOT_RECORDED') exact.set(operation.id, null)
             else if (result.status === 'ok' && result.receipt.operationId === operation.id && result.receipt.requestId === operation.requestId
               && key(result.receipt.target) === key(operation.target)) exact.set(operation.id, result.receipt)
-          } catch { this.recoveryNotice = 'An exact host receipt could not be read. Its pending slot remains held.' }
+          } catch { receiptFailed = true; this.recoveryNotice = 'An exact host receipt could not be read. Its pending slot remains held.' }
         }
-        await this.options.control.updateWatcher(record => {
+        const apply = (record: WatcherRecord) => {
           for (const [id, receipt] of exact) {
             const own = record.operations.find(item => item.id === id)!
             if (this.active.has(id) || !['dispatching', 'uncertain'].includes(own.deliveryState)) continue
@@ -868,7 +910,9 @@ export class WatcherService implements WatcherControlHooks {
             if (!this.connected(thread)) return true
             return thread.status === 'running' || thread.lastTurn?.status === 'running' || Boolean(thread.requests.length || thread.backgroundWork?.length || thread.monitoring?.length)
           })
-        })
+        }
+        const before = this.record(), next = structuredClone(before); apply(next)
+        if (digest(before) !== digest(next)) await this.options.control.updateWatcher(apply)
         for (const [target, progress] of this.remoteProgress) if (progress.hostId === host.hostId) this.remoteProgress.delete(target)
         const targets = new Set(projection.requests.flatMap(request => request.participants.map(item => key(item.target))))
         for (const progress of projection.progress ?? []) if (progress.target.hostId === host.hostId && targets.has(key(progress.target))) {
@@ -876,11 +920,16 @@ export class WatcherService implements WatcherControlHooks {
         }
         while (this.remoteProgress.size > 1_000) this.remoteProgress.delete(this.remoteProgress.keys().next().value!)
         this.wakes.pairedEvidence(host.hostId, projection.evidence)
+        if (receiptFailed) this.retryRemote(host.hostId)
+        else this.remoteFailures.delete(host.hostId)
       } catch {
+        this.retryRemote(host.hostId)
         this.recoveryNotice = 'A paired host could not be reconciled. Its pending slots remain held. Other hosts continue to refresh.'
       }
     }
+    const beforeObservation = digest(this.record())
     this.observe(this.options.control.watcherSnapshot(), new Set())
+    if (beforeObservation !== digest(this.record())) await this.options.control.updateWatcher(() => undefined)
     this.publish()
   }
   /** The socket supplies the authenticated client and live guard; neither can be submitted as an argument. */
@@ -962,7 +1011,7 @@ export class WatcherService implements WatcherControlHooks {
       })
       guard?.()
     })
-    if (this.options.control.shell().followups?.some(item => item.watcherOperationId && operations.has(item.watcherOperationId))) await this.options.control.cancelWatcherQueue(operations)
+    if (this.options.control.hasWatcherQueue(operations)) await this.options.control.cancelWatcherQueue(operations)
   }
   async readRemote(raw: WatcherHostRead, clientId: string, guard?: () => void): Promise<unknown> {
     try {
@@ -1200,5 +1249,5 @@ export class WatcherService implements WatcherControlHooks {
     }
     this.publish(); return { status: 'ok', state: this.state(), results }
   }
-  close(): void { this.closed = true; this.remoteOff?.(); this.remoteGuards.clear(); this.remoteProgress.clear(); this.wakes.close(); this.unsubscribe(); this.listeners.clear(); this.confirmations.clear(); this.pages.clear(); this.copyChoices.clear() }
+  close(): void { this.closed = true; this.remoteOff?.(); clearTimeout(this.remoteTimer); this.remotePending.clear(); this.remoteFailures.clear(); this.remoteGuards.clear(); this.remoteProgress.clear(); this.wakes.close(); this.unsubscribe(); this.listeners.clear(); this.confirmations.clear(); this.pages.clear(); this.copyChoices.clear() }
 }

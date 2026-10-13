@@ -1,5 +1,6 @@
 import { userInfo } from 'node:os'
 import type { WatcherHostControl, WatcherHostRead, WatcherHostProjection } from '../../shared/watcherHost'
+import type { WatcherIdentity } from '../../shared/watcher'
 import type { WatcherService } from './watcher'
 
 import { HOST_CANNOT_STAGE_SCREENSHOTS, type ProviderId, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThread, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
@@ -62,6 +63,8 @@ export interface ClientIdentity {
 export interface HostService {
   readonly supportsWatcherControl?: boolean
   readonly supportsWatcherReads?: boolean
+  subscribeWatcher?(listener: (projection: WatcherHostProjection) => void): () => void
+  cachedWatcherProjection?(master: WatcherIdentity): WatcherHostProjection | undefined
   watcherControl?(request: WatcherHostControl, client: ClientIdentity, guard: () => void): Promise<unknown>
   watcherRead?(request: WatcherHostRead, client: ClientIdentity, guard?: () => void): Promise<unknown>
   watcherProjection?(request: WatcherHostRead, client: ClientIdentity): WatcherHostProjection

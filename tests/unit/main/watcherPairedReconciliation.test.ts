@@ -1,6 +1,9 @@
 // @vitest-environment node
 import { afterEach, expect, it, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
+import { SocketHostService } from '../../../src/main/agents/socketHostService'
+import { DesktopHostRouter } from '../../../src/main/hosts/desktopHostRouter'
+import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
 import { WatcherService } from '../../../src/main/agents/watcher'
 import type { AgentHostSnapshot } from '../../../src/shared/agents'
 import type { WatcherHostProjection, WatcherRemoteHosts } from '../../../src/shared/watcherHost'
@@ -9,7 +12,7 @@ import { workspaceFixture } from '../../fixtures/workspaceFixture'
 import { agentControlFixture } from '../../fixtures/agentControlFixture'
 
 const cleanups: (() => Promise<void>)[] = []
-afterEach(async () => { vi.restoreAllMocks(); for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
+afterEach(async () => { vi.useRealTimers(); vi.restoreAllMocks(); for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 async function fixture() {
   const workspace = await workspaceFixture(undefined, { history: false })
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host, credentialOptions: { mode: 'unavailable' }, control: { historyEnabled: () => false, watcherEnabled: true } })
@@ -23,13 +26,14 @@ async function fixture() {
   await f.control.updateWatcher(next => Object.assign(next, structuredClone(record)))
   const localSnapshot = f.control.watcherSnapshot(), native = localSnapshot.threads[0]!
   const snapshot: AgentHostSnapshot = { ...localSnapshot, hostId, connected: true, threads: [{ ...native, id: 'worker', hostId, status: 'running' }] }
-  let projection: WatcherHostProjection = { hostId, master: record.current!, revision: 'initial', observedAt: new Date().toISOString(), requests: [], operations: [], evidence: [] }
+  let projection: WatcherHostProjection = { hostId, master: record.current!, revision: 'initial', observedAt: new Date().toISOString(), requests: record.requests, operations: record.operations, evidence: [] }
   const read = vi.fn<WatcherRemoteHosts['read']>(async (_hostId, _request) => { void _hostId; void _request; return structuredClone(projection) })
   const hosts: ReturnType<WatcherRemoteHosts['hosts']> = [{ hostId, connected: true, reads: true, control: true, permissionCeiling: 'approval-required' }]
-  const remote: WatcherRemoteHosts = { hosts: () => hosts, snapshot: id => id === hostId ? snapshot : undefined, read, control: vi.fn(), subscribe: () => () => undefined }
+  let changed: ((hostId?: string, force?: boolean) => void) | undefined
+  const remote: WatcherRemoteHosts = { hosts: () => hosts, snapshot: id => id === hostId ? snapshot : undefined, read, control: vi.fn(), subscribe: listener => { changed = listener; return () => { changed = undefined } } }
   const reconcile = () => (watcher as unknown as { reconcileRemote(): Promise<void> }).reconcileRemote()
   watcher.useRemoteHosts(remote); await reconcile()
-  return { ...f, workspace, watcher, record, local, hostId, snapshot, hosts, remote, read, reconcile, projection: (value: WatcherHostProjection) => { projection = value } }
+  return { ...f, workspace, watcher, record, local, hostId, snapshot, hosts, remote, read, reconcile, emit: (id?: string, force?: boolean) => changed?.(id, force), drained: () => (watcher as unknown as { reconciling?: Promise<void> }).reconciling ?? Promise.resolve(), projection: (value: WatcherHostProjection) => { projection = value } }
 }
 
 it('accepts only owning-host state fields and never lets a projection lower budgets or rewrite operation identity', async () => {
@@ -71,17 +75,24 @@ it('keeps a validated accepted control receipt when its follow-up projection rea
 })
 
 it('continues to another owning host when the first projection read fails', async () => {
-  const f = await fixture(), other = randomUUID(), record = f.control.watcherRecord()
-  await f.control.updateWatcher(next => { next.requests[0]!.participants[0]!.target.hostId = other; next.operations[0]!.target.hostId = other; next.reservations[0]!.target.hostId = other })
+  const f = await fixture(), other = randomUUID()
+  await f.control.updateWatcher(next => {
+    const target = { hostId: other, threadId: 'other-worker' }
+    next.requests[0]!.participants.push({ ...next.requests[0]!.participants[0]!, target })
+    next.operations.push({ ...next.operations[0]!, id: randomUUID(), retryKey: randomUUID(), receiptId: randomUUID(), cardId: randomUUID(), messageId: randomUUID(), target })
+    next.reservations.push({ ...next.reservations[0]!, target, operationId: next.operations[1]!.id })
+  })
   const own = f.control.watcherRecord()
   f.hosts.push({ ...f.hosts[0]!, hostId: other })
   f.read.mockImplementation(async id => {
     if (id === f.hostId) throw new Error('synthetic-offline')
-    return { hostId: other, master: own.current!, revision: 'accepted', observedAt: new Date().toISOString(), requests: [], operations: [{ ...own.operations[0]!, deliveryState: 'accepted' }], evidence: [] }
+    return { hostId: other, master: own.current!, revision: 'accepted', observedAt: new Date().toISOString(), requests: [], operations: [{ ...own.operations[1]!, deliveryState: 'accepted' }], evidence: [] }
   })
-  await f.reconcile().catch(() => undefined)
-  expect(f.read).toHaveBeenCalledWith(other, { master: record.current })
-  expect(f.control.watcherRecord().operations[0]!.deliveryState).toBe('accepted')
+  await f.reconcile()
+  expect(f.read).toHaveBeenCalledWith(f.hostId, { master: own.current })
+  expect(f.read).toHaveBeenCalledWith(other, { master: own.current })
+  expect(f.control.watcherRecord().operations[0]!.deliveryState).toBe('uncertain')
+  expect(f.control.watcherRecord().operations[1]!.deliveryState).toBe('accepted')
 })
 
 it('closes a request when its connected owning-host worker is settled', async () => {
@@ -137,7 +148,7 @@ it.each(['removed', 'reads-unavailable'])('holds an uncertain slot when its host
 it.each(['owner', 'foreign'])('stopped request feedback from %s preserves user queues and rejects other clients', async caller => {
   const f = await fixture(), thread = f.control.watcherSnapshot().threads[0]!
   await f.control.commandShell({ type: 'queue-followup', threadId: thread.id, draftId: randomUUID(), text: 'Synthetic retained user queue' })
-  const userIds = f.control.shell().followups!.filter(item => !item.watcherOperationId).map(item => item.id)
+  const userIds = f.control.shell().followups!.map(item => item.id)
   expect(userIds.length).toBeGreaterThan(0)
   const master = { ...f.control.watcherRecord().current!, target: { hostId: randomUUID(), threadId: 'remote-master' } }
   await f.control.updateWatcher(record => {
@@ -151,5 +162,53 @@ it.each(['owner', 'foreign'])('stopped request feedback from %s preserves user q
   const result = await f.watcher.readRemote({ master, stoppedRequests: [{ request: { id: request.id, watcher: request.watcher, rootUserMessageId: request.rootUserMessageId, createdAt: request.createdAt }, ceiling: 'approval-required' }] }, caller)
   expect(f.control.watcherRecord().requests[0]!.state).toBe(caller === 'owner' ? 'stopped' : 'active')
   if (caller === 'foreign') expect(result).toMatchObject({ code: 'RETRY_KEY_CONFLICT' })
-  expect(f.control.shell().followups!.filter(item => !item.watcherOperationId).map(item => item.id)).toEqual(userIds)
+  expect(f.control.shell().followups!.map(item => item.id)).toEqual(userIds)
+})
+
+it('coalesces progress-only owning pushes without reads or persistence and skips unused hosts', async () => {
+  const f = await fixture(), record = f.control.watcherRecord()
+  const projection: WatcherHostProjection = { hostId: f.hostId, master: record.current!, revision: 'progress', observedAt: new Date().toISOString(), requests: record.requests, operations: record.operations, evidence: [], progress: [{ target: record.operations[0]!.target, fingerprint: 'a'.repeat(64) }] }
+  const cached = vi.fn(() => projection)
+  Object.assign(f.remote, { projection: cached })
+  f.hosts.push({ ...f.hosts[0]!, hostId: randomUUID() })
+  const writes = vi.spyOn(f.control, 'updateWatcher'); f.read.mockClear()
+  vi.useFakeTimers()
+  for (let n = 0; n < 100; n++) f.emit(undefined, false)
+  await vi.advanceTimersByTimeAsync(250); await f.drained()
+  expect(cached).toHaveBeenCalledOnce()
+  expect(cached).toHaveBeenCalledWith(f.hostId, record.current)
+  expect(f.read).not.toHaveBeenCalled()
+  expect(writes).not.toHaveBeenCalled()
+  vi.useRealTimers()
+})
+
+it('does not turn ordinary shell streaming into Watcher reads and exposes typed owning pushes', async () => {
+  const f = await fixture(), state = f.control.shell(), master = f.control.watcherRecord().current!
+  const socket = new SocketHostService({ url: 'http://127.0.0.1:1', token: 'synthetic', watcherEnabled: true })
+  const internal = socket as unknown as { cached: typeof state; features: string[]; notifyState(): void; receive(text: string): void }
+  internal.cached = { ...state, stale: false, host: { ...state.host, hostId: f.hostId } }; internal.features = ['watcher-control', 'watcher-reads']
+  const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: true })
+  cleanups.push(async () => { router.dispose(); await socket.close() })
+  router.add({ hostId: f.hostId, name: 'Synthetic', kind: 'remote', service: socket, detail: id => socket.readThreadDetail(id), preview: () => null })
+  const changed = vi.fn(); router.watcherHosts().subscribe(changed)
+  for (let n = 0; n < 100; n++) internal.notifyState()
+  expect(changed).not.toHaveBeenCalled()
+  internal.receive(JSON.stringify({ v: 1, event: 'watcher-state', projection: { hostId: f.hostId, master, revision: 'typed', observedAt: new Date().toISOString(), requests: [], operations: [], evidence: [] } }))
+  expect(changed).toHaveBeenCalledOnce()
+  expect(changed).toHaveBeenCalledWith(f.hostId, false)
+})
+
+it('backs off a failing owning read while further pushes are coalesced', async () => {
+  const f = await fixture()
+  f.read.mockClear(); f.read.mockRejectedValue(new Error('synthetic-retry'))
+  vi.useFakeTimers()
+  f.emit(f.hostId, false)
+  await vi.advanceTimersByTimeAsync(250); await f.drained()
+  expect(f.read).toHaveBeenCalledTimes(1)
+  for (let n = 0; n < 100; n++) f.emit(f.hostId, false)
+  await vi.advanceTimersByTimeAsync(999); await f.drained()
+  expect(f.read).toHaveBeenCalledTimes(1)
+  await vi.advanceTimersByTimeAsync(1); await f.drained()
+  expect(f.read).toHaveBeenCalledTimes(2)
+  vi.useRealTimers()
 })

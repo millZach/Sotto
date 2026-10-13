@@ -628,7 +628,7 @@ it.each(['Stop', 'Stop all'])('%s fences the owning request and removes its admi
   }
   const worker = (remote.host.service as unknown as { options: { watcher: WatcherService } }).options.watcher
   await vi.waitFor(() => expect(worker.remoteProjection(f.control.watcherRecord().current!, f.pairing.clientId).requests.find(request => request.id === f.requestId)?.state).toBe('stopped'))
-  expect(remote.host.service.state().followups?.some(item => item.watcherOperationId === queued.receipt!.operationId)).toBe(false)
+  expect(remote.host.service.state().followups?.some(item => item.draftId === queued.receipt!.draftId)).toBe(false)
   expect(worker.remoteProjection(f.control.watcherRecord().current!, f.pairing.clientId).operations.find(item => item.id === queued.receipt!.operationId)).toMatchObject({ deliveryState: 'failed', refusalCode: 'REQUEST_NOT_ACTIVE' })
   expect((await native.driver.requests()).filter(item => item.method === 'turn/start')).toHaveLength(1)
 })

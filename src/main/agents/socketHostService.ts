@@ -2,8 +2,8 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import type { z } from 'zod'
-import { watcherHostProjectionSchema, type WatcherHostControl, type WatcherHostRead } from '../../shared/watcherHost'
-import { watcherToolSchemas } from '../../shared/watcher'
+import { watcherHostProjectionSchema, type WatcherHostControl, type WatcherHostRead, type WatcherHostProjection } from '../../shared/watcherHost'
+import { type WatcherIdentity, watcherToolSchemas } from '../../shared/watcher'
 import { SocketFrames } from '../../host/socketFrames'
 import { PROVIDER_CONNECTION_NOTICES, providerConnectionNotice, agentAttachmentHandleSchema, agentThreadDetailResultSchema, agentAttachmentPreviewResultSchema, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import { applyAgentThreadDetailDelta } from '../../shared/agentThreadDetail'
@@ -108,6 +108,8 @@ export class SocketHostService implements HostService {
   private readonly resyncing = new Set<string>()
   /** Threads the host said are too large to send. No delta asks for one again until it is observed again or arrives whole. */
   private readonly tooLarge = new Set<string>()
+  private cachedWatcher: WatcherHostProjection | undefined
+  private readonly watcherListeners = new Set<(projection: WatcherHostProjection) => void>()
   private readonly listeners = new Set<(state: AgentState) => void>()
   private readonly detailListeners = new Set<(detail: AgentThreadDetailUpdate) => void>()
   private readonly pending = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout>; command: boolean }>()
@@ -247,6 +249,7 @@ export class SocketHostService implements HostService {
     } catch (error) { this.frames?.close(); throw error }
   }
   private disconnected(frames: SocketFrames): void {
+    this.cachedWatcher = undefined
     if (this.frames !== frames) return
     this.frames = undefined
     this.resetComposeQueue()
@@ -268,7 +271,13 @@ export class SocketHostService implements HostService {
       if ('event' in message) {
         if (message.event === 'shell') { if (message.eventPage && this.catchesUp) { this.cacheEvents(message.eventPage); if (message.eventPage.hasMore) this.catchUp() } this.publish(this.read(protocolAgentStateSchema, message.state), true) }
         else if (message.event === 'answer-receipt') { if (this.cacheAcceptedAnswer(message.acceptedAnswer) && this.cached) this.notifyState() }
-        else if (message.event === 'watcher-state') { if (this.options.watcherEnabled === true && this.cached) this.notifyState() }
+        else if (message.event === 'watcher-state') {
+          if (this.options.watcherEnabled === true && this.supportsWatcherReads && this.cached) {
+            this.cachedWatcher = message.projection
+            for (const listener of this.watcherListeners) listener(message.projection)
+            this.notifyState()
+          }
+        }
         else if (message.event === 'detail') this.cacheDetail(message.threadId, agentThreadDetailResultSchema.parse(message.detail))
         else if (message.event === 'detail-delta') this.applyDelta(message.threadId, message.delta)
         else { this.pushErrorThread = message.threadId ?? null; if (message.threadId) this.tooLarge.add(message.threadId); this.options.onPushError?.(message.error.message) }
@@ -499,10 +508,18 @@ export class SocketHostService implements HostService {
     if (!this.supportsWatcherControl || !this.supportsWatcherReads) throw new HostConnectionError('Update this host before Watcher directs its threads. Nothing was sent.', 'invalid_request')
     return watcherToolSchemas[request.call.name].output.parse(await this.call({ op: 'watcher-control', request }))
   }
+  subscribeWatcher(listener: (projection: WatcherHostProjection) => void): () => void { this.watcherListeners.add(listener); return () => this.watcherListeners.delete(listener) }
+  cachedWatcherProjection(master: WatcherIdentity): WatcherHostProjection | undefined {
+    const projection = this.cachedWatcher
+    return this.options.watcherEnabled === true && projection && projection.hostId === this.cached?.host.hostId
+      && JSON.stringify(projection.master) === JSON.stringify(master) ? projection : undefined
+  }
   async watcherRead(request: WatcherHostRead): Promise<unknown> {
     if (!this.supportsWatcherReads) throw new HostConnectionError('Update this host before Watcher reads its threads.', 'invalid_request')
     const result = await this.call({ op: 'watcher-read', request })
-    return request.call ? watcherToolSchemas[request.call.name].output.parse(result) : watcherHostProjectionSchema.parse(result)
+    if (request.call) return watcherToolSchemas[request.call.name].output.parse(result)
+    this.cachedWatcher = watcherHostProjectionSchema.parse(result)
+    return this.cachedWatcher
   }
   get supportsDraftRevisions(): boolean { return this.features.includes('draft-revisions') }
   /** The host lists `pull-request-babysit`: it babysits and takes the user's Babysit pull request (ADR-0061 decision 11). */
@@ -986,5 +1003,5 @@ export class SocketHostService implements HostService {
     if (!response.ok) throw refusal(response.status, 'The host could not forget this device. Connect again and retry.', 'unavailable')
     await this.close()
   }
-  async close(): Promise<void> { this.resetComposeQueue(); this.generation++; this.opening?.abort(); this.frames?.close() }
+  async close(): Promise<void> { this.cachedWatcher = undefined; this.watcherListeners.clear(); this.resetComposeQueue(); this.generation++; this.opening?.abort(); this.frames?.close() }
 }
