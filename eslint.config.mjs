@@ -4,6 +4,7 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   {
     ignores: [
+      'artifacts/omarchy-setup/**',
       '.t/**',
       'artifacts/omarchy-theme/**',
       'artifacts/omarchy-muted/**',
