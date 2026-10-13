@@ -61,6 +61,14 @@ Two verification-run issues were resolved: an initial inline Node runner passed 
 
 ## Gates and review
 
-The required commands ran with Node 24.21.0 and two Vitest workers. The full suite subsequently passed: 803 files passed, 57 skipped; 10,226 tests passed, 200 skipped. The focused release/package/ADR tests passed before the full suite. Typecheck, lint and third-party notices passed. The external dependency allowlist passed in the real packaged-resource check.
+The required commands ran with Node 24.21.0 and two Vitest workers. The full suite subsequently passed: 803 files passed, 57 skipped; 10,227 tests passed, 200 skipped. The focused release/package/ADR tests passed before the full suite. Typecheck, lint and third-party notices passed. The external dependency allowlist passed in the real packaged-resource check.
 
 Independent Standards and Spec reviewers inherited the session model and effort per Zach's models file. The initial reviews found no actionable issues; the final Standards pass caught premature wording about pending PR results, corrected here. The final Spec review also inspected the shorter probe working directory and saved evidence. No UI change or design baseline regeneration was made. Linux release-script verification uses the real packaged probes above rather than an unrelated Electron spec. PR checks and external reviews were still pending when this local note was written. The PR is the record for their final results.
+
+## External review
+
+Sotto Bug Bot reviewed `e5d1f0ec45c25db12185f29cf389a20aa9404dea`: no blockers or likely bugs, two nits. The existing Owl/stable host-version window is now documented in the release procedure and exercised by a mixed-track client regression. Owl retains the currently published source-manifest host version before the next stable host exists; installing a new Owl after the Release PR closes that window. No runtime host-version policy changed.
+
+The proposed additional mandatory Linux and host CI checks were not adopted: the brief explicitly names Gates (Windows) and Package result, matching the repository's required checks. Linux result is informational in `docs/ci.md`; making it mandatory is the owner's decision. This PR's Linux, host, Windows desktop and package checks all passed, and local Linux artifact proof passed.
+
+After the review changes, the four local gates passed again. The focused mixed-track/client/release-check run passed 39 tests; the full rerun passed 10,227 tests with 200 skipped across 803 passing and 57 skipped files (552.03 seconds). The real packaged external-dependency inventory passed again. Both independent axes found no actionable issues in this small review delta.
