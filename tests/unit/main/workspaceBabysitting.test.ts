@@ -170,16 +170,19 @@ describe('babysitting on the thread\'s record', () => {
   it('ends babysitting quietly at once when the provider archives the thread', async () => {
     const f = await fixture()
     await linkedThread(f)
-    const { babysitter, delivered, events } = babysitterOver(f.host, { number: 1 }, { now: () => START })
-    await babysitter.start('local', url, 'agent')
-    await f.host.execute({ type: 'send', commandId: 'first', threadId: 'local', messageId: 'first', text: 'Start.' })
-    const session = f.adapters.codex.state.threads.find(thread => thread.id === f.registry.byThread('local')!.sessionId)!
-    session.archivedAt = new Date(START).toISOString()
-    f.adapters.codex.emit()
-    await expect.poll(() => babysitter.list()).toEqual([])
-    expect(events).toEqual(['babysit-started', 'babysit-ended-archived'])
-    expect(delivered).toEqual([])
-    await babysitter.close()
+    const { babysitter, delivered, events, github } = babysitterOver(f.host, { number: 1 }, { now: () => START })
+    try {
+      await babysitter.start('local', url, 'agent')
+      await f.host.execute({ type: 'send', commandId: 'first', threadId: 'local', messageId: 'first', text: 'Start.' })
+      const session = f.adapters.codex.state.threads.find(thread => thread.id === f.registry.byThread('local')!.sessionId)!
+      session.archivedAt = new Date(START).toISOString()
+      f.adapters.codex.emit()
+      await expect.poll(() => babysitter.list()).toEqual([])
+      // The list changes before persistence finishes; the ending is logged only after the save.
+      await expect.poll(() => events).toEqual(['babysit-started', 'babysit-ended-archived'])
+      expect(delivered).toEqual([])
+      expect(github.questions).toEqual([])
+    } finally { await babysitter.endClosed(); await babysitter.close() }
   })
 
   it('keeps why babysitting ended on its own through a restart, until the pull request is babysat again', async () => {
