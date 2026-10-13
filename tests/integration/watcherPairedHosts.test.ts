@@ -315,6 +315,14 @@ it('attributes returning paired evidence to its host, queues news after user wor
   const f = await master(), first = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start-refused')
   let checks: 'failed' | 'passed' = 'failed'
+  const shell = f.socket.shell.bind(f.socket)
+  // The synthetic evidence belongs to a PR the owning roster still links.
+  vi.spyOn(f.socket, 'shell').mockImplementation(() => {
+    const state = shell()
+    return { ...state, host: { ...state.host, threads: state.host.threads.map(thread => thread.id !== first.target.threadId ? thread
+      : { ...thread, pullRequests: [{ url: 'https://github.com/synthetic/project/pull/5', number: 5, title: 'Synthetic PR',
+        state: 'open' as const, draft: false, source: 'linked' as const, linkedAt: new Date().toISOString() }] }) } }
+  })
   const original = f.socket.watcherRead.bind(f.socket)
   vi.spyOn(f.socket, 'watcherRead').mockImplementation(async packet => {
     const result = await original(packet)

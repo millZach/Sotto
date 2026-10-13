@@ -42,7 +42,7 @@ A dropped reply leaves the master's operation uncertain and its slot held until 
 
 The owning host retains checkpoint and GitHub facts without running a master wake-up loop. The scoped projection may carry up to one thousand `progress` entries, each only a target and opaque fingerprint from the shared progress classifier. Plan-step changes update that fingerprint even when the ordinary shell summary is unchanged. The desktop reconciles ownership before importing facts and progress into its existing wake-up observer. News follows the user's queue and cannot resume a stopped worker.
 
-Paired GitHub state, checks, review and auto-merge remain separate sourced facts, with their own head and observation time. A checks-only read or unchanged projection cannot erase or refresh the other facts. Waiting news stays held while sources are unknown after restart or omitted by a bounded projection. An observed change to an already-known owning-host fact supersedes the older occurrence, using the host ID and Sotto thread ID together.
+Paired GitHub state, checks, review and auto-merge remain separate sourced facts, with their own head and observation time. A checks-only read or unchanged projection cannot erase or refresh the other facts. Waiting news stays held while sources are unknown after restart or omitted by a bounded projection. An observed change to an already-known owning-host fact supersedes the older occurrence, using the host ID and Sotto thread ID together. A connected owning-host roster that removes a PR also removes its local and paired GitHub facts, including approval and auto-merge, before the next Landing classification. An empty or bounded evidence projection, or a disconnected roster, does not confirm an unlink.
 
 ## Versions and features
 
