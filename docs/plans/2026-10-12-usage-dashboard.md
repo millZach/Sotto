@@ -36,7 +36,7 @@ Actual Windows Owl host and desktop packages at `0.1.38-owl.20261013.1`, plus st
 
 ## Authorized merge phase
 
-The pre-PR integration checkpoint includes main `2ff23cc1db51c9a33c13a6f7d9f6ab08b1717b99` at `9d7b66b5b46b2e018570a18b3c0b36d9aa6274f3`. Usage's ADR is now 0076; the prototype choice and numeric boundaries are unchanged. Both fixed-head Standards and Spec reviewers report zero unresolved findings. Combined typecheck, lint and notices passed. The integrated full suite passed 10,207 tests with 316 skipped across 807 passing files and 63 skipped files, exit code 0 after 1,436.13 seconds. All five affected Electron journeys passed after rebuilding, and the lead and independent reviewer inspected the refreshed captures. The only subsequent source diff at `400d6cb7863752e523425ba32862c5b672e4dcf9` is the remote-command test's ADR comment changing from 0075 to 0076.
+The pre-PR integration checkpoint includes main `2ff23cc1db51c9a33c13a6f7d9f6ab08b1717b99` at `9d7b66b5b46b2e018570a18b3c0b36d9aa6274f3`. Usage's ADR is now 0078; the prototype choice and numeric boundaries are unchanged. Both fixed-head Standards and Spec reviewers report zero unresolved findings. Combined typecheck, lint and notices passed. The integrated full suite passed 10,207 tests with 316 skipped across 807 passing files and 63 skipped files, exit code 0 after 1,436.13 seconds. All five affected Electron journeys passed after rebuilding, and the lead and independent reviewer inspected the refreshed captures. The only subsequent source diff at `400d6cb7863752e523425ba32862c5b672e4dcf9` is the remote-command test's ADR comment changing from 0075 to 0076.
 
 - [x] Integrate current main and resolve the ADR number collision.
 - [x] Recheck the integrated fixed head on both review axes.
@@ -73,3 +73,17 @@ Main's Settings wording at `302f2c0` overlapped the shared contracts, so it was 
 - [x] Verify actual Windows host, Owl desktop and stable preservation packages of follow-up source `82d6f9d`; retain separate exact-source receipts and inspected captures.
 - [ ] Resolve current GitHub checks and review threads.
 - [ ] Merge, watch main's CI and clean the owned branch and verification checkout.
+
+## Current main and package checkpoint
+
+Main `32f8e477` is integrated at production source `88761a2b`, retaining restart resumption, Update all, tailnet reconnection and Codex activity. Usage is ADR-0078; the four Owl entries remain independent. Actual-runtime regressions cover distinct accepted user/wake-up identities across restart and discarded late answers from replaced hosts.
+
+- [x] Run all four normal gates on the combined production source: 10,350 passed, 317 skipped; typecheck, lint and notices189 passed.
+- [x] Complete both fixed-head review axes with zero findings.
+- [x] Rebuild all seven affected Electron specs; correct the client-only Update all fixture's installed Owl version and pass all four neighboring Update all/Usage/host-update journeys without weakening assertions or deadlines.
+- [x] Recheck typecheck/lint and both bounded fixture-review axes at test-only source `55aadf33f`.
+- [x] Open refreshed Usage and host-conflict captures and actual packaged Owl and stable screenshots.
+- [x] Verify exact-source Windows host/Owl and an offline stable0.1.38 override from clean source0.1.37, preserving manifests, lockfile and dormant numeric bytes. The [current proof](../../artifacts/usage-dashboard/package-stable-main-verification.json) keeps earlier receipts intact.
+- [ ] Resolve current main's failed Windows check and latest-head PR checks and feedback, merge with a merge commit, then verify main and clean owned work.
+
+The full suite is pinned to887 and current packages to55, which changes only the Update all fixture. The verification note records the initial Electron fixture failure and passing correction separately. Physical macOS/Linux, live allowances for every provider and real remote installation remain unverified. No release eligibility, installation or publication is claimed.
