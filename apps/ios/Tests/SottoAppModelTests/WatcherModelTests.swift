@@ -552,7 +552,11 @@ final class WatcherModelTests: XCTestCase {
         var requests: [JSONValue] = []
         var reply = "lose"
         HostConnection.watcherHandler = { op, operation, _ in
-            guard op == "watcher-phone-send", let request = operation["request"] else { return try self.ok(self.page(Spec(workerCard: false))) }
+            guard op == "watcher-phone-send", let request = operation["request"] else {
+                // The page read after a lost acknowledgement: the computer has the last draft, and may still deliver it.
+                let last = requests.last?["draftId"].string ?? ""
+                return try self.ok(self.page(Spec(workerCard: false, deliveries: [last: "uncertain"])))
+            }
             requests.append(request)
             switch reply {
             case "lose": throw ClientError.uncertain
@@ -608,7 +612,11 @@ final class WatcherModelTests: XCTestCase {
         var requests: [JSONValue] = []
         var reply = "lose"
         HostConnection.watcherHandler = { op, operation, _ in
-            guard op == "watcher-phone-send", let request = operation["request"] else { return try self.ok(self.page(Spec(workerCard: false))) }
+            guard op == "watcher-phone-send", let request = operation["request"] else {
+                // The page read after a lost acknowledgement: the computer has the last draft, and may still deliver it.
+                let last = requests.last?["draftId"].string ?? ""
+                return try self.ok(self.page(Spec(workerCard: false, deliveries: [last: "uncertain"])))
+            }
             requests.append(request)
             if reply == "lose" { throw ClientError.uncertain }
             return try self.json(#"{"status":"refused","code":"TARGET_CHANGED","message":"Watcher changed. Nothing new was sent.","retryable":true}"#)
@@ -645,38 +653,55 @@ final class WatcherModelTests: XCTestCase {
     @MainActor func testTheSameWordsGoAsANewMessageOnceAPageSaysTheFirstIsNoLongerOnItsWay() async throws {
         let model = try await fixture(spec: Spec(workerCard: false))
         var requests: [JSONValue] = []
+        // Where the page read after a send says its draft stands; nil when the computer has no record of it.
+        var listed: String? = "uncertain"
+        var reads = 0
         HostConnection.watcherHandler = { op, operation, _ in
-            guard op == "watcher-phone-send", let request = operation["request"] else { return try self.ok(self.page(Spec(workerCard: false))) }
-            requests.append(request)
-            throw ClientError.uncertain
+            if op == "watcher-phone-send", let request = operation["request"] {
+                requests.append(request)
+                throw ClientError.uncertain
+            }
+            reads += 1
+            let last = requests.last?["draftId"].string ?? ""
+            let deliveries = listed.map { [last: $0] } ?? [:]
+            return try self.ok(self.page(Spec(workerCard: false, observedAt: "2026-10-11T10:0\(reads):00.000Z", deliveries: deliveries)))
         }
         let key = model.watcherDraftKey(laptop)
         model.drafts[key] = "Yes"
         await model.sendToWatcher(laptop)
         let first = try XCTUnwrap(requests.last?["draftId"].string)
-        // Watcher's computer says that draft is still on its way: the same words keep its ID.
-        try push(Spec(workerCard: false, observedAt: "2026-10-11T09:01:00.000Z", deliveries: [first: "uncertain"]))
-        await until { model.watcherPage(laptop)?.observedAt == "2026-10-11T09:01:00.000Z" }
+        XCTAssertEqual(model.watcherPage(laptop)?.delivery(of: first), "uncertain", "The page read after the lost acknowledgement says it may still arrive")
+        // A page pushed with a shell proves nothing of it: the computer may have made it before it read the send.
+        try push(Spec(workerCard: false, observedAt: "2026-10-11T10:01:30.000Z"))
+        await until { model.watcherPage(laptop)?.observedAt == "2026-10-11T10:01:30.000Z" }
+        // This time the page read after the send has no record of the draft.
+        listed = nil
         await model.sendToWatcher(laptop)
-        XCTAssertEqual(requests.last?["draftId"].string, first, "A draft the computer may still deliver keeps its ID, so it can't arrive twice")
-        // A later page no longer shows it: it never arrived, or it failed. The same words now go as a new message.
-        try push(Spec(workerCard: false, observedAt: "2026-10-11T09:02:00.000Z"))
-        await until { model.watcherPage(laptop)?.observedAt == "2026-10-11T09:02:00.000Z" }
+        XCTAssertEqual(requests.last?["draftId"].string, first, "Words that may still arrive keep their ID, so they can't arrive twice")
         XCTAssertEqual(model.drafts[key], "Yes", "Words that didn't reach Watcher stay in the box")
+        // The page read after that send no longer shows the draft: it never arrived, or it failed.
         await model.sendToWatcher(laptop)
         XCTAssertEqual(requests.count, 3, "Nothing is sent again on its own")
         XCTAssertNotEqual(requests.last?["draftId"].string, first,
-                          "Once a later page shows the first is no longer on its way, the same words go with a new ID")
+                          "Once a page asked for after the send shows the draft is no longer on its way, the same words go with a new ID")
         model.phase(.background)
 
-        // Watcher's computer lists a draft until Watcher took it or it failed; only one still on its way is kept.
+        // Watcher's computer lists a draft until Watcher took it or it failed. Only a page asked for after a send ended
+        // lets go of a draft it doesn't show on its way, and a page that says nothing of drafts lets go of nothing.
         var drafts = WatcherDrafts()
-        let onItsWay = drafts.id(for: "One"), taken = drafts.id(for: "Two"), failed = drafts.id(for: "Three")
-        let inFlight = drafts.id(for: "Four")
-        for id in [onItsWay, taken, failed] { drafts.end(id) }
-        let page = try decoded(Spec(deliveries: [onItsWay: "submitting", taken: "accepted", failed: "failed", inFlight: "accepted"]))
-        XCTAssertEqual(drafts.retire(after: page).map(\.text), ["Two"], "Watcher took Two")
-        XCTAssertEqual(drafts.unresolved.map(\.text), ["One", "Four"], "One is still on its way, and Four's send hasn't ended")
+        let onItsWay = drafts.id(for: "One"), took = drafts.id(for: "Two"), failed = drafts.id(for: "Three")
+        let unasked = drafts.id(for: "Four"), unlisted = drafts.id(for: "Five")
+        for id in [onItsWay, took, failed, unlisted] { drafts.end(id) }
+        let proof = drafts.endedIDs
+        drafts.end(unasked)
+        let page = try decoded(Spec(deliveries: [onItsWay: "submitting", took: "accepted", failed: "failed"]))
+        let silent = try JSONDecoder().decode(WatcherPage.self, from: Data(self.page(Spec()).replacingOccurrences(of: #""draftDeliveries":[]"#, with: #""recoveryNotice":null"#).utf8))
+        XCTAssertNil(silent.draftDeliveries)
+        XCTAssertTrue(drafts.retire(after: silent, proof: proof).isEmpty)
+        XCTAssertEqual(drafts.unresolved.count, 5, "A page that says nothing of drafts lets go of nothing")
+        XCTAssertEqual(drafts.retire(after: page, proof: proof).map(\.text), ["Two"], "Watcher took Two")
+        XCTAssertEqual(drafts.unresolved.map(\.text), ["One", "Four"],
+                       "One is still on its way, Three failed, Five never arrived, and Four ended after the page was asked for")
     }
 
     @MainActor func testThePageReadAfterALostAcknowledgementSettlesTheWords() async throws {

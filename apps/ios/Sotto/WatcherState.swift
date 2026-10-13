@@ -54,9 +54,9 @@ extension WatcherPhoneState {
 // MARK: - Asking Watcher
 
 /// The draft IDs the Watcher box sent with that its computer may still deliver, each with its exact words. The same
-/// words go with the same ID until a page read after their send says where that draft stands, even after other words
-/// were sent in between: a message whose acknowledgement was lost keeps its ID through any edits, so sending it again
-/// can't deliver it twice. Once a later page shows it is no longer on its way, the same words are a new message.
+/// words go with the same ID until a page asked for after their send ended says where that draft stands, even after
+/// other words were sent in between: a message whose acknowledgement was lost keeps its ID through any edits, so sending
+/// it again can't deliver it twice. Once such a page shows it is no longer on its way, the same words are a new message.
 struct WatcherDrafts: Equatable, Sendable {
     struct Sent: Equatable, Sendable {
         let text: String
@@ -84,28 +84,32 @@ struct WatcherDrafts: Equatable, Sendable {
     mutating func resolve(_ draftID: String) {
         unresolved.removeAll { $0.draftID.lowercased() == draftID.lowercased() }
     }
-    /// The drafts a page says Watcher took, oldest first.
-    func taken(in page: WatcherPage) -> [Sent] { unresolved.filter { page.delivery(of: $0.draftID) == "accepted" } }
-    /// This draft's send ended: a page read from now on says where it stands.
+    /// The drafts whose send has ended, by lowercased ID: a page asked for from now on says where they stand.
+    var endedIDs: Set<String> { Set(unresolved.filter(\.ended).map { $0.draftID.lowercased() }) }
+    /// This draft's send ended: a page asked for from now on says where it stands.
     mutating func end(_ draftID: String) {
         for index in unresolved.indices where unresolved[index].draftID.lowercased() == draftID.lowercased() {
             unresolved[index].ended = true
         }
     }
-    /// Lets go of drafts whose send has ended that this page, read since, no longer shows on their way, and says which
-    /// of them Watcher took. Watcher's computer lists a draft from the moment it takes it until Watcher took it or it
-    /// failed, and won't take again one whose result it doesn't know. So a draft it shows neither queued, submitting nor
-    /// uncertain was taken, failed or never reached it, and the same words sent again can't arrive twice.
-    mutating func retire(after page: WatcherPage) -> [Sent] {
-        var taken: [Sent] = []
-        unresolved.removeAll { sent in
-            guard sent.ended else { return false }
+    /// Lets go of the drafts a page says Watcher took, and returns them, oldest first. With `proof`, the IDs whose send had
+    /// ended when the page was asked for, it also lets go of those it no longer shows on their way. Watcher's computer lists
+    /// a draft from the moment it reads its send until Watcher took it or it failed, and won't take again one whose result
+    /// it doesn't know, so a draft such a page shows neither queued, submitting nor uncertain was taken, failed or never
+    /// reached it: the same words sent again can't arrive twice. A page pushed with a shell is no proof, since the computer
+    /// may have made it before it read the send, and a page that says nothing of drafts is no proof either.
+    mutating func retire(after page: WatcherPage, proof: Set<String>) -> [Sent] {
+        guard page.draftDeliveries != nil else { return [] }
+        let taken = unresolved.filter { page.delivery(of: $0.draftID) == "accepted" }
+        let gone = unresolved.filter { sent in
+            guard proof.contains(sent.draftID.lowercased()) else { return false }
             switch page.delivery(of: sent.draftID) {
             case "queued", "submitting", "uncertain": return false
-            case "accepted": taken.append(sent); return true
             default: return true
             }
         }
+        let leaving = Set((taken + gone).map(\.draftID))
+        unresolved.removeAll { leaving.contains($0.draftID) }
         return taken
     }
 }
