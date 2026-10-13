@@ -304,8 +304,8 @@ export function HostBootOffer({ host, view, bridge }: { readonly host: HostStatu
     const user = account(host)
     body = <>
       <p><b>Start {name}’s host at boot</b></p>
-      <p className="host-boot__quiet">Then {name}’s threads come back after {name} restarts, without this computer signing in over SSH. Sotto adds a systemd user unit for {user ?? 'your account'} on {name}{status.linger ? '' : ' and turns on linger for that account'}; {restartsHost(host, 'install')
-        ? 'the host restarts once now, which stops turns running there.' : `the host running there keeps running, and the unit takes over the next time ${name} starts.`}{status.linger ? '' : ` If ${name} asks for an administrator, nothing changes there, and Sotto shows the command to run.`}</p>
+      <p className="host-boot__quiet">Brings {name}’s threads back after it restarts. Sotto adds a systemd user unit for {user ?? 'your account'}{status.linger ? '' : ' and turns on linger'}{restartsHost(host, 'install')
+        ? '; the host restarts once now, stopping turns in progress.' : `. The unit takes over the next time ${name} starts.`}</p>
       <div className="host-boot__actions">{start}</div>
     </>
   }

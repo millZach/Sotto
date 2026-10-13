@@ -102,7 +102,7 @@ test('compositor commands reach Linux dictation and Settings explains the bindin
     await expect(page.getByText(/Compositor bindings live in Hyprland/)).toBeVisible()
     await expect(page.getByLabel('Global shortcut', { exact: true })).toHaveCount(0)
     await page.getByRole('tab', { name: 'Output', exact: true }).click()
-    await expect(page.getByText(/Paste into the focused window on Hyprland, terminals included/)).toBeVisible()
+    await expect(page.getByText(/Pastes into the focused window, terminals included/)).toBeVisible()
     await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Dictation', exact: true }).click()
     for (const appearance of ['dark', 'light'] as const) {
       await page.evaluate(async appearance => window.sotto!.updateSettings({ appearance, reducedMotion: 'on' }), appearance)
@@ -112,7 +112,7 @@ test('compositor commands reach Linux dictation and Settings explains the bindin
         expect(await page.evaluate(() => innerWidth)).toBe(width)
         await expect(page.getByText(/Compositor bindings live in Hyprland/)).toBeVisible()
         await page.getByRole('tab', { name: 'Output', exact: true }).click()
-        await expect(page.getByText(/Paste into the focused window on Hyprland, terminals included/)).toBeVisible()
+        await expect(page.getByText(/Pastes into the focused window, terminals included/)).toBeVisible()
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
         if (width === 820 && appearance === 'dark') await capture('settings-820x560-dark.png')
         await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Dictation', exact: true }).click()
