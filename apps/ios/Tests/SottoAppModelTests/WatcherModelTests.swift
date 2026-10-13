@@ -441,6 +441,40 @@ final class WatcherModelTests: XCTestCase {
         model.phase(.background)
     }
 
+    @MainActor func testWordsThatDidntReachWatcherAreOfferedBackWhenNewerWordsAreInTheBox() async throws {
+        let model = try await fixture(spec: Spec(workerCard: false))
+        let key = model.watcherDraftKey(laptop)
+        var reply = "refuse"
+        HostConnection.watcherHandler = { op, _, _ in
+            guard op == "watcher-phone-send" else { return try self.ok(self.page(Spec(workerCard: false))) }
+            // The user writes something new while the first words are on their way.
+            model.drafts[key] = "And the webhook thread?"
+            if reply == "lose" { throw ClientError.uncertain }
+            return try self.json(#"{"status":"refused","code":"TARGET_CHANGED","message":"Watcher changed. Nothing new was sent.","retryable":true}"#)
+        }
+        model.drafts[key] = "Stop the release notes thread"
+        await model.sendToWatcher(laptop)
+        XCTAssertEqual(model.drafts[key], "And the webhook thread?", "The newer words stay in the box")
+        XCTAssertEqual(model.watcherSetAside[laptop], [WatcherSetAside(text: "Stop the release notes thread", unconfirmed: false)],
+                       "The refused words are kept, to be offered back")
+        XCTAssertEqual(model.feedback, "Watcher changed. Nothing new was sent.")
+        let refused = try XCTUnwrap(model.watcherSetAside[laptop]?.first)
+        model.restoreWatcherWords(refused, on: laptop)
+        XCTAssertEqual(model.drafts[key], "And the webhook thread?", "Put back only into an empty box")
+        model.drafts[key] = ""
+        model.restoreWatcherWords(refused, on: laptop)
+        XCTAssertEqual(model.drafts[key], "Stop the release notes thread")
+        XCTAssertNil(model.watcherSetAside[laptop])
+
+        // Unconfirmed, the message says where the words are, not that they are back in the box.
+        reply = "lose"
+        await model.sendToWatcher(laptop)
+        XCTAssertEqual(model.drafts[key], "And the webhook thread?")
+        XCTAssertEqual(model.watcherSetAside[laptop], [WatcherSetAside(text: "Stop the release notes thread", unconfirmed: true)])
+        XCTAssertEqual(model.feedback, AppModel.watcherUnconfirmedSetAside)
+        model.phase(.background)
+    }
+
     @MainActor func testWatcherWaitsForItsOwnRequestBeforeTakingMore() async throws {
         let model = try await fixture(spec: Spec(ownCard: true))
         model.drafts[model.watcherDraftKey(laptop)] = "And the webhook thread?"

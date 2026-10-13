@@ -233,6 +233,9 @@ private struct WatcherConversationPane: View {
                         }
                     }
                     if let sending { SendingBubble(text: sending).id(Self.sendingID) }
+                    ForEach(Array((model.watcherSetAside[hostID] ?? []).enumerated()), id: \.offset) { _, words in
+                        SetAsideCard(hostID: hostID, words: words)
+                    }
                     if let page { cards(page) }
                     if model.online(hostID), page?.working == true {
                         HStack(spacing: Space.s2) {
@@ -350,6 +353,33 @@ private struct SendingBubble: View {
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.leading, 48)
+    }
+}
+
+/// Words that didn't reach Watcher, or that it didn't confirm, kept here while newer words are in the box, as a thread
+/// keeps a reply that wasn't sent. Put back, they go with the draft ID they went with before.
+private struct SetAsideCard: View {
+    @EnvironmentObject var model: AppModel
+    /// Watched so Put it back follows what the box holds; typing publishes here, not on the model.
+    @EnvironmentObject var draftStore: DraftStore
+    let hostID: String
+    let words: WatcherSetAside
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            Text(words.unconfirmed ? "Watcher didn’t confirm this message" : "Your message to Watcher wasn’t sent")
+                .font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
+            Text(words.text).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
+            if words.unconfirmed {
+                Text("Check the conversation before you send it again.").font(.sotto(.small)).foregroundStyle(Palette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Button("Put it back in the box") { model.restoreWatcherWords(words, on: hostID) }
+                .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
+                .disabled(!(model.drafts[model.watcherDraftKey(hostID)] ?? "").isEmpty)
+                .accessibilityHint("Once the box is empty")
+        }
+        .card()
+        .accessibilityIdentifier("watcher-set-aside")
     }
 }
 

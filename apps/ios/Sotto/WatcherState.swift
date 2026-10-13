@@ -82,6 +82,14 @@ struct WatcherDrafts: Equatable, Sendable {
     func taken(in page: WatcherPage) -> [Sent] { unresolved.filter { page.delivery(of: $0.draftID) == "accepted" } }
 }
 
+/// Words that didn't reach Watcher, or that it didn't confirm, kept while newer words are in its box (CONTEXT.md, Sent
+/// message: a refused one is offered back when something newer is written there).
+struct WatcherSetAside: Equatable, Sendable {
+    let text: String
+    /// The computer didn't say: Watcher may have taken them.
+    let unconfirmed: Bool
+}
+
 // MARK: - The tab
 
 /// What the Watcher tab says on its icon: a dot while Watcher works, and a count of what needs the user that only
