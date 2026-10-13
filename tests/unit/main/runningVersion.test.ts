@@ -31,7 +31,9 @@ describe('Owl feature startup answers', () => {
     ['0.1.36', false, ' watcher = 1 ,watcher=0,watcher=bad', undefined, false],
     ['0.1.36', false, undefined, '1', true],
   ] as const)('reads %s once (packaged %s, overrides %s, alias %s)', (version, isPackaged, overrides, watcherOverride, expected) => {
-    expect(owlFeaturesForRun({ version, isPackaged, overrides, watcherOverride })).toEqual({ watcher: expected, usage: getReleaseTrack(version) === 'owl' })
+    // The other features follow the track: overrides here name only Watcher.
+    const track = getReleaseTrack(version) === 'owl'
+    expect(owlFeaturesForRun({ version, isPackaged, overrides, watcherOverride })).toEqual({ watcher: expected, usage: track, 'resume-after-restart': track, 'update-all': track })
   })
 
   it('passes a snapshot of every answer through update status and keeps the Watcher alias consistent', async () => {

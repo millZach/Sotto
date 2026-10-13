@@ -11,7 +11,9 @@ export interface OwlFeature {
 /** Zach marks a feature here; sending it to stable changes only sentToStable (ADR-0072). */
 export const OWL_FEATURES = [
   { id: 'watcher', name: 'Watcher', owlSince: '2026-10-10', owner: 'docs/adr/0073-watcher-coordinates-threads-with-its-providers-own-tools.md', sentToStable: false },
-  { id: 'usage', name: 'Usage', owlSince: '2026-10-12', owner: 'docs/adr/0076-usage-keeps-numeric-history-on-its-own-host.md', sentToStable: false },
+  { id: 'usage', name: 'Usage', owlSince: '2026-10-12', owner: 'docs/adr/0078-usage-keeps-numeric-history-on-its-own-host.md', sentToStable: false },
+  { id: 'resume-after-restart', name: 'Resume threads after a restart', owlSince: '2026-10-12', owner: 'docs/adr/0076-threads-resume-after-sotto-restarts.md', sentToStable: false },
+  { id: 'update-all', name: 'Update all', owlSince: '2026-10-12', owner: 'docs/adr/0077-update-all-updates-sotto-its-clients-and-hosts-together.md', sentToStable: false },
 ] as const satisfies readonly OwlFeature[]
 
 export type OwlFeatureId = typeof OWL_FEATURES[number]['id']

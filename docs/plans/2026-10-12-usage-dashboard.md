@@ -1,6 +1,6 @@
 # Usage in Sotto Owl
 
-Zach requested native subscription tracking and a Usage dashboard on October 12, 2026, explicitly as an Owl feature. He chose both account limits and Sotto activity, Overview first, independent retained numeric history with its own Clear action, and all connected computers with Owl host support. ADR-0076 records the boundaries.
+Zach requested native subscription tracking and a Usage dashboard on October 12, 2026, explicitly as an Owl feature. He chose both account limits and Sotto activity, Overview first, independent retained numeric history with its own Clear action, and all connected computers with Owl host support. ADR-0078 records the boundaries.
 
 The first prototype's overall visual feel was rejected. Zach asked Opus 5.5 at xhigh for an independent design pass and selected **C: Focus**: the headline index and one focused view, with shared Subscriptions and Models views. Both passes and verdicts are archived in the [`prototype/usage-dashboard` tag](https://github.com/millZach/Sotto/tree/prototype/usage-dashboard/docs/prototypes), commit `a01a355115903b7a22d62c363dbe0f5c3ba8263f`. The standalone HTML is evidence; the implementation is a production rewrite.
 

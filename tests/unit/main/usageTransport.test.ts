@@ -55,6 +55,26 @@ describe('Usage routing', () => {
       expect(JSON.stringify(partial)).not.toContain('private provider detail')
     } finally { router.dispose() }
   })
+  it('discards an in-flight reading when a host reconnects and reads the new connection next time', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState)
+    let finish!: (reading: UsageLocalHostRead) => void
+    const delayed = new Promise<UsageLocalHostRead>(resolve => { finish = resolve })
+    const previous = connection(REMOTE, { usageRead: vi.fn(() => delayed) })
+    const fresh = { ...result, activity: { ...result.activity!, metadata: { ...metadata, revision: 2 } } }
+    const reconnected = connection(REMOTE, { usageRead: vi.fn(async () => fresh) })
+    router.add(connection(LOCAL)); router.add(previous)
+    try {
+      const pending = router.usageRead({ hostIds: [LOCAL, REMOTE] })
+      await expect.poll(() => vi.mocked(previous.service.usageRead!).mock.calls.length).toBe(1)
+      router.replace(reconnected)
+      finish(result)
+      expect(await pending).toEqual({ hosts: [{ hostId: LOCAL, ...result }, { hostId: REMOTE, status: 'offline', quotas: [] }] })
+      expect(reconnected.service.usageRead).not.toHaveBeenCalled()
+      expect(await router.usageRead({ hostIds: [REMOTE] })).toEqual({ hosts: [{ hostId: REMOTE, ...fresh }] })
+      expect(previous.service.usageRead).toHaveBeenCalledTimes(1)
+      expect(reconnected.service.usageRead).toHaveBeenCalledTimes(1)
+    } finally { finish(result); router.dispose() }
+  })
   it('bounds concurrency, validates response schemas and leaves slow hosts independently unavailable', async () => {
     const router = new DesktopHostRouter(emptyDesktopState)
     let active = 0, peak = 0

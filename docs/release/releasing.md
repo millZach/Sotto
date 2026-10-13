@@ -86,7 +86,7 @@ Owl desktop packaging and updates are Windows only for now. Mac stable ships the
 
 ### Matching Owl host archives
 
-Usage is an Owl feature on every owning computer (ADR-0076). Plain Node Owl host archives can accompany the Windows desktop on the same prerelease; this adds no macOS or Linux Owl desktop. Each host enables features from its own packaged full version. An Owl desktop never activates a collector in a stable host.
+Usage is an Owl feature on every owning computer (ADR-0078). Plain Node Owl host archives can accompany the Windows desktop on the same prerelease; this adds no macOS or Linux Owl desktop. Each host enables features from its own packaged full version. An Owl desktop never activates a collector in a stable host.
 
 On each host archive's native release machine, use the reviewed Windows Owl's exact full version and source commit from its provenance:
 

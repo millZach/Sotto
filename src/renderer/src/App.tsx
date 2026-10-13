@@ -36,6 +36,7 @@ import type { SottoPlatform } from '../../shared/platform'
 import type { SystemSettingsPane } from '../../shared/systemSettings'
 import { AgentProvider } from './agents/AgentContext'
 import { ClientUpdateCard } from './agents/ClientUpdateCard'
+import { UpdateAllCard } from './features/updates/UpdateAllCard'
 import { PageSidebar } from './agents/PageSidebar'
 import { SidebarChromeProvider } from './agents/SidebarFrame'
 import { ThreadWorkspace } from './agents/ThreadWorkspace'
@@ -131,6 +132,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
   const app = useApp()
   const watcherEnabled = useWatcherEnabled()
   const usageEnabled = useOwlFeature('usage')
+  const updateAll = useOwlFeature('update-all')
   const downloadSpeechModel = useCallback((): void => { void app.actions.downloadSpeechModel() }, [app.actions])
   const memoryEnabled = useMemoryEnabled()
   const [microphoneState, setMicrophoneState] = useState<MicrophoneTestState>('idle')
@@ -546,7 +548,8 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
         </AppShell>
       )}
       </WatcherRoomProvider>
-      {management ? <ClientUpdateCard /> : null}
+      {/* Neither card speaks before first-run setup ends; on Owl, Update all takes the corner and speaks for clients too (ADR-0077). */}
+      {management ? updateAll ? <UpdateAllCard /> : <ClientUpdateCard /> : null}
     </AgentProvider>
   )
 }

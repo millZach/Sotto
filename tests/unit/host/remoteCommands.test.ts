@@ -7,7 +7,8 @@ import { hostRequestSchema, commandFromProtocolV1, protocolAgentCommandSchema } 
 /** Commands that stay on the host machine. A new command type must land here or in REMOTE_COMMANDS. */
 const HOST_LOCAL = ['credential', 'check-reasoning', 'update-client', 'open-thread-folder']
 /** Fields only the desktop window sends, which its router reads and never forwards to a host (ADR-0074). */
-const WINDOW_ONLY: Partial<Record<AgentCommand['type'], string[]>> = { configure: ['hostId'] }
+// The desktop's router reads these and never sends them on: the host a patch or Update all's press names (ADR-0074, ADR-0077).
+const WINDOW_ONLY: Partial<Record<AgentCommand['type'], string[]>> = { configure: ['hostId'], 'queue-client-updates': ['hostId'] }
 type Option = { shape: { type: { value?: string; options?: string[] } } & Record<string, unknown> }
 const schemaFields = new Map((agentCommandSchema.options as unknown as Option[]).flatMap(option => {
   const types = option.shape.type.options ?? [option.shape.type.value!]
@@ -71,7 +72,7 @@ describe('remote command allow-list', () => {
     expect([...REMOTE_USAGE_OPERATIONS]).toEqual(['usage-read', 'usage-refresh', 'usage-clear'])
     const decided = ['hello', 'shell', 'detail', 'events', 'observe', 'command', 'preview', 'receipt', 'git-refs', 'git-changed-files', 'git-pull-request',
       'stage-attachment', 'attachment-content', 'host-folders', ...REMOTE_SIGN_IN_OPERATIONS,
-      // Numeric Usage reads grant nothing; Clear requires the client's current remote-answer policy (ADR-0076).
+      // Numeric Usage reads grant nothing; Clear requires the client's current remote-answer policy (ADR-0078).
       ...REMOTE_USAGE_OPERATIONS,
       // Explicit native recovery requires answer-check and current remote-answer authority; it sends no answer.
       'check-answer',

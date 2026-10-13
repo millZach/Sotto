@@ -41,7 +41,7 @@ Stable release packaging on Windows and Mac, and Owl packaging on Windows, launc
 
 **The following Owl-first timing clause is superseded by the October 13 switch rule below.** Sending a feature to stable changes only its entry's `sentToStable: false` to `sentToStable: true`. The change passes through Owl before the next stable promotion. Once stable has carried the feature, its code's switches can be removed in a later change; keep the sent entry as the record of the decision.
 
-October 12, 2026: Zach chose Usage (ADR-0076) for every connected computer in its first Owl version. This extends the preview distribution to plain Node **host archives** built from the desktop Owl's exact source and full version, attached to the same prerelease. Each host gates its own features from its packaged version; a client cannot activate a stable collector. Desktop preview builds and their updater remain Windows only. macOS and Linux can run matching Owl headless hosts without gaining an Owl desktop release or updater.
+October 12, 2026: Zach chose Usage (ADR-0078) for every connected computer in its first Owl version. This extends the preview distribution to plain Node **host archives** built from the desktop Owl's exact source and full version, attached to the same prerelease. Each host gates its own features from its packaged version; a client cannot activate a stable collector. Desktop preview builds and their updater remain Windows only. macOS and Linux can run matching Owl headless hosts without gaining an Owl desktop release or updater.
 
 ## October 13, 2026: Linux stable uses the promoted source too
 

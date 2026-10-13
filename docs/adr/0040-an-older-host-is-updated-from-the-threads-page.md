@@ -2,7 +2,7 @@
 
 October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-management.md) records the removal. The voice gate described below has been removed. Update remains an explicit user action, with the same host restart, busy-work and recovery rules.
 
-October 12, 2026 amendment: [ADR-0076](0076-usage-keeps-numeric-history-on-its-own-host.md) adds matching Owl host archives for Usage on connected computers. An Owl desktop with Usage enabled targets its own full Owl version; other clients keep their previous target. For that target, an equal-core stable host can explicitly switch to Owl, and Owl dates and daily numbers compare numerically. Equal or newer Owl hosts are left alone. Version folders and `current` accept only strict stable or Owl versions; immutable installations, checksum checks, manifest/version agreement, busy-host questions and rollback remain in force. A host gates collection from its own packaged version, never the requesting client's track.
+October 12, 2026 amendment: [ADR-0078](0078-usage-keeps-numeric-history-on-its-own-host.md) adds matching Owl host archives for Usage on connected computers. An Owl desktop with Usage enabled targets its own full Owl version; other clients keep their previous target. For that target, an equal-core stable host can explicitly switch to Owl, and Owl dates and daily numbers compare numerically. Equal or newer Owl hosts are left alone. Version folders and `current` accept only strict stable or Owl versions; immutable installations, checksum checks, manifest/version agreement, busy-host questions and rollback remain in force. A host gates collection from its own packaged version, never the requesting client's track.
 
 ## Status
 
