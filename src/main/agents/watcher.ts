@@ -437,8 +437,13 @@ export class WatcherService implements WatcherControlHooks {
           && master.lastTurn.status !== 'running' && master.status !== 'running' && !this.options.control.hasPendingThreadWork(master.id)) { request.state = 'closed'; request.closedAt = now() }
       }
       for (const request of next.requests) if (request.state === 'active' && request.participants.length
-        && request.participants.every(item => item.state !== 'participating' || item.target.hostId === this.hostId() && snapshot.threads.some(thread => thread.id === item.target.threadId
-          && isWorkspaceThreadSettled(thread, snapshot.projects.find(project => project.id === thread.projectId))))
+        && request.participants.every(item => {
+          if (item.state !== 'participating') return true
+          const owner = item.target.hostId === this.hostId() ? snapshot : this.owningSnapshot(item.target.hostId)
+          const thread = owner?.threads.find(thread => thread.id === item.target.threadId)
+          return Boolean(owner?.connected && thread && this.connected(thread)
+            && isWorkspaceThreadSettled(thread, owner.projects.find(project => project.id === thread.projectId)))
+        })
         && (request.watcher.hostId !== this.hostId() || !this.options.control.hasPendingThreadWork(request.watcher.threadId))
         && !next.operations.some(item => item.requestId === request.id && ['queued', 'dispatching', 'uncertain'].includes(item.deliveryState))) {
         request.state = 'closed'; request.closedAt = now()
@@ -839,6 +844,7 @@ export class WatcherService implements WatcherControlHooks {
         this.recoveryNotice = 'A paired host could not be reconciled. Its pending slots remain held. Other hosts continue to refresh.'
       }
     }
+    this.observe(this.options.control.watcherSnapshot(), new Set())
     this.publish()
   }
   /** The socket supplies the authenticated client and live guard; neither can be submitted as an argument. */

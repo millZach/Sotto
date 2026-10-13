@@ -84,3 +84,14 @@ it('continues to another owning host when the first projection read fails', asyn
   expect(f.control.watcherRecord().operations[0]!.deliveryState).toBe('accepted')
 })
 
+it('closes a request when its connected owning-host worker is settled', async () => {
+  const f = await fixture()
+  await f.control.updateWatcher(next => { next.operations[0]!.deliveryState = 'accepted' })
+  f.snapshot.threads[0]!.status = 'idle'; f.snapshot.threads[0]!.workspaceSettledAt = new Date().toISOString()
+  f.snapshot.connected = false
+  f.watcher.observe(f.control.watcherSnapshot(), new Set())
+  expect(f.control.watcherRecord().requests[0]!.state).toBe('active')
+  f.snapshot.connected = true
+  await f.reconcile()
+  expect(f.control.watcherRecord().requests[0]!.state).toBe('closed')
+})
