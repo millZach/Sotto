@@ -294,6 +294,54 @@ final class WatcherModelTests: XCTestCase {
         model.phase(.background)
     }
 
+    @MainActor func testALostStopAllAcknowledgementReadsItsReceipt() async throws {
+        let model = try await fixture()
+        let confirmation = "cccccccc-0000-4000-8000-000000000002"
+        var stops: [String] = []
+        HostConnection.watcherHandler = { op, _, id in
+            switch op {
+            case "watcher-phone-prepare-stop-all":
+                return try self.json(#"{"status":"ok","confirmationId":"\#(confirmation)","targets":[{"hostId":"\#(self.laptop)","threadId":"t","title":"Fix login test","provider":"claude"},{"hostId":"\#(self.forge)","threadId":"r","title":"Add Android share sheet","provider":"claude"}],"expiresAt":"2026-10-11T09:10:00.000Z"}"#)
+            case "watcher-phone-stop-all":
+                stops.append(id)
+                // The computer stops what it can and keeps the outcome under this request's ID; the acknowledgement is lost.
+                HostConnection.receipts[id] = try self.json(#"{"status":"completed","watcherStop":{"status":"ok","results":[{"target":{"hostId":"\#(self.laptop)","threadId":"t"},"status":"stopped","message":"Stopped."},{"target":{"hostId":"\#(self.forge)","threadId":"r"},"status":"uncertain","message":"No answer."}]}}"#)
+                throw ClientError.uncertain
+            default:
+                return try self.ok(self.page(Spec(working: false, status: "idle", watched: false, observedAt: "2026-10-11T09:02:00.000Z")))
+            }
+        }
+        let prepared = await model.prepareWatcherStop(laptop)
+        let preview = try XCTUnwrap(prepared)
+        await model.confirmWatcherStop(preview, on: laptop)
+        XCTAssertEqual(stops.count, 1, "Stop all is never sent again on its own")
+        XCTAssertTrue(try connection.operations.contains("receipt"), "Its receipt is read")
+        XCTAssertEqual(model.feedback, "Stopped 1 of 2. Add Android share sheet isn’t confirmed.",
+                       "The receipt under Stop all's own request ID says what it did, thread by thread")
+        XCTAssertFalse(model.watchedByWatcher(worker), "And Watcher's page is read again")
+        XCTAssertTrue(model.watcherStopping.isEmpty)
+
+        // A receipt the computer no longer has leaves Stop all unconfirmed, and still nothing is sent again.
+        HostConnection.watcherHandler = { op, _, id in
+            switch op {
+            case "watcher-phone-prepare-stop-all":
+                return try self.json(#"{"status":"ok","confirmationId":"\#(confirmation)","targets":[{"hostId":"\#(self.laptop)","threadId":"t","title":"Fix login test","provider":"claude"}],"expiresAt":"2026-10-11T09:10:00.000Z"}"#)
+            case "watcher-phone-stop-all":
+                stops.append(id)
+                throw ClientError.uncertain
+            default:
+                return try self.ok(self.page(Spec(working: false, status: "idle", watched: false, observedAt: "2026-10-11T09:03:00.000Z")))
+            }
+        }
+        let again = await model.prepareWatcherStop(laptop)
+        let next = try XCTUnwrap(again)
+        await model.confirmWatcherStop(next, on: laptop)
+        XCTAssertEqual(stops.count, 2)
+        XCTAssertNotEqual(stops[1], stops[0], "Each Stop all the user confirms has its own request ID")
+        XCTAssertEqual(model.feedback, "Stop all isn’t confirmed. Check Watched before you stop anything again.")
+        model.phase(.background)
+    }
+
     @MainActor func testStopAllIsOnlyOfferedWhereTheComputerOffersIt() async throws {
         let model = try await fixture(features: ["host-folders", "watcher-phone"])
         XCTAssertNotNil(model.watcherHostID)

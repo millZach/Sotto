@@ -473,7 +473,8 @@ extension AppModel {
         return nil
     }
     /// Stops what the user confirmed: only threads Watcher started that it still works with. Each thread's result is said;
-    /// nothing is tried again on its own.
+    /// nothing is tried again on its own. The computer keeps what Stop all did under its request's ID for a few minutes,
+    /// so a lost acknowledgement reads that receipt rather than leave the outcome unsaid.
     func confirmWatcherStop(_ preview: WatcherStopPreview, on hostID: String) async {
         guard offersWatcherStop(hostID), online(hostID), !watcherStopping.contains(hostID) else { return }
         watcherStopping.insert(hostID)
@@ -483,9 +484,13 @@ extension AppModel {
         if isUIFixture { stopFixtureWatcher(preview, on: hostID, titles: titles); return }
         #endif
         guard let connection = connections[hostID], let epoch = generations[hostID] else { return }
+        let request = WatcherStopRequest(id: UUID().uuidString.lowercased(), titles: titles)
+        watcherStops[hostID] = request
         do {
-            let reply = try await connection.call(WatcherWire.stop(confirmationID: preview.confirmationId), as: WatcherStopResult.self)
+            let reply = try await connection.call(WatcherWire.stop(confirmationID: preview.confirmationId), as: WatcherStopResult.self, id: request.id)
+            // Over a connection that has since changed, the outcome is read from the receipt once the computer is back.
             guard generations[hostID] == epoch else { return }
+            watcherStops[hostID] = nil
             switch reply {
             case .ok(let state, let results):
                 applyWatcher(state, from: hostID)
@@ -494,11 +499,43 @@ extension AppModel {
                 feedback = refusal.message
             }
         } catch let refusal as HostRefusal {
+            if watcherStops[hostID]?.id == request.id { watcherStops[hostID] = nil }
             feedback = refusal.localizedDescription
         } catch {
-            feedback = "Stop all isn’t confirmed. Check Watched before you stop anything again."
-            await readWatcher(hostID)
+            // Said until its receipt says more; a connection that is gone reads it once the computer is back.
+            feedback = Self.watcherStopUnconfirmed
+            await recoverWatcherStop(hostID)
         }
+    }
+    static let watcherStopUnconfirmed = "Stop all isn’t confirmed. Check Watched before you stop anything again."
+    /// Reads what a Stop all whose acknowledgement was lost did, from the receipt its computer keeps under the request's
+    /// ID, then reads Watcher's page again. Still being carried out, or not read, it is kept and read again once the
+    /// computer is reached again. Nothing is stopped again.
+    func recoverWatcherStop(_ hostID: String) async {
+        guard let request = watcherStops[hostID], online(hostID), let connection = connections[hostID], let epoch = generations[hostID] else { return }
+        let marked = watcherStopping.insert(hostID).inserted
+        defer { if marked { watcherStopping.remove(hostID) } }
+        var receipt: Receipt?
+        for read in 1...Self.receiptReads {
+            do { receipt = try await connection.call(["op": .string("receipt"), "commandId": .string(request.id)], as: Receipt.self) }
+            catch { receipt = nil; break }
+            guard generations[hostID] == epoch, watcherStops[hostID]?.id == request.id else { return }
+            guard receipt?.stillWorking == true, read < Self.receiptReads else { break }
+            do { try await receiptSleep(Self.receiptInterval) } catch { return }
+        }
+        guard generations[hostID] == epoch, watcherStops[hostID]?.id == request.id else { return }
+        if let receipt, !receipt.stillWorking {
+            // What it did, what the computer refused, or that the computer doesn't know it: settled either way.
+            watcherStops[hostID] = nil
+            switch receipt.watcherStop {
+            case .ok(let results)?: feedback = WatcherWords.stopped(results, titles: request.titles)
+            case .refused(let refusal)?: feedback = refusal.message
+            case nil: feedback = Self.watcherStopUnconfirmed
+            }
+        } else {
+            feedback = Self.watcherStopUnconfirmed
+        }
+        await readWatcher(hostID)
     }
 }
 
@@ -588,6 +625,13 @@ struct FoundHost: Equatable {
     let endpoint: HostEndpoint; let health: Health
     /// The computer's own name, or its name on the tailnet from a host that sends none.
     var name: String { health.computerName ?? endpoint.machine }
+}
+
+/// A Stop all this iPhone confirmed: the request's ID, under which its computer keeps what it did for a few minutes, and
+/// the confirmed threads' titles, by `ThreadRef.id`, to say it with.
+struct WatcherStopRequest: Sendable {
+    let id: String
+    let titles: [String: String]
 }
 
 /// What this iPhone knows about one paired computer while the app runs. Nothing here is saved. Equatable, so a state
@@ -799,6 +843,8 @@ struct HeldDetail {
     /// Words that didn't reach Watcher, or that it didn't confirm, while newer words were in its box, by computer, oldest
     /// first. Each is offered back under the conversation, to go back in the box once it is empty. Nothing here is sent.
     @Published private(set) var watcherSetAside: [String: [WatcherSetAside]] = [:]
+    /// A Stop all whose outcome its computer hasn't told this iPhone yet, by computer.
+    private var watcherStops: [String: WatcherStopRequest] = [:]
     /// Computers whose Stop all is being checked or carried out.
     @Published private(set) var watcherStopping: Set<String> = []
     /// Whether the Watcher tab is on screen, so its own alerts stay quiet there.
@@ -1638,6 +1684,7 @@ struct HeldDetail {
         catch { if generations[hostID] == current { detailProblem = "This thread could not be loaded. Nothing was lost. Try again." } }
         try? await observeTerminals(hostID)
         if generations[hostID] == current, !helloCarriedWatcher { await readWatcher(hostID) }
+        if generations[hostID] == current { await recoverWatcherStop(hostID) }
         await checkDelivery(hostID)
     }
     /// A connection that failed or was lost. A computer that has been online is tried again quietly, reading
@@ -1818,7 +1865,7 @@ struct HeldDetail {
         connections[hostID]?.close(); connections[hostID] = nil
         let gone = Set(pending.filter { $0.hostID == hostID }.map(\.id))
         computers = rest; live[hostID] = nil; pending = markers; watches[hostID] = nil; watcherWatches[hostID] = nil
-        watcherDrafts[hostID] = nil; watcherSending[hostID] = nil; watcherSetAside[hostID] = nil
+        watcherDrafts[hostID] = nil; watcherSending[hostID] = nil; watcherSetAside[hostID] = nil; watcherStops[hostID] = nil
         if selected?.hostID == hostID { cancelDetailReload(); selected = nil; openDetail = nil; detailProblem = nil }
         if detailStore.held?.ref.hostID == hostID { detailStore.held = nil }
         if show == .only(hostID) { show = .all }
