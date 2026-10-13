@@ -1,10 +1,10 @@
 // @vitest-environment node
 import { afterEach, expect, it, vi } from 'vitest'
-import { EMPTY_AGENT_HOST, type AgentThread } from '../../../src/shared/agents'
-import { WATCHER_QUIET_MS } from '../../../src/shared/watcherOverview'
+import { EMPTY_AGENT_HOST, type AgentThread, type AgentHostSnapshot } from '../../../src/shared/agents'
+import { WATCHER_QUIET_MS, watcherOverview } from '../../../src/shared/watcherOverview'
 import type { WatcherNews } from '../../../src/shared/watcherNews'
-import { WatcherWakeUp } from '../../../src/main/agents/watcherWakeUp'
-import { observationDigest } from '../../../src/main/agents/watcherEvidence'
+import { WatcherWakeUp, type WatcherWakeOptions } from '../../../src/main/agents/watcherWakeUp'
+import { WatcherEvidenceStore, observationDigest } from '../../../src/main/agents/watcherEvidence'
 import { foldWatcherNews, watcherNewsText } from '../../../src/main/agents/watcherNews'
 import { queuedWakeUpText, wakeUpText } from '../../../src/main/agents/wakeUp'
 import type { BabysitNews } from '../../../src/main/agents/babysitNews'
@@ -12,13 +12,13 @@ import { centerTarget, centerTime, watcherRecordFixture } from '../../fixtures/w
 
 const cleanups: (() => void)[] = []
 afterEach(() => { cleanups.splice(0).forEach(cleanup => cleanup()) })
-function fixture() {
+function fixture(start = true, progress?: WatcherWakeOptions['progress']) {
   let clock = Date.parse('2026-10-11T10:00:00Z')
   const timers = new Set<{ at: number; callback: () => void }>()
   const record = watcherRecordFixture()
   const thread: AgentThread = { id: centerTarget.threadId, providerId: 'codex', projectId: 'project', modelId: 'model', title: 'Worker',
     status: 'running', lastTurn: { id: 'turn-1', status: 'running' }, messages: [], requests: [] }
-  const snapshot = { ...structuredClone(EMPTY_AGENT_HOST), connected: true, hostId: centerTarget.hostId,
+  const snapshot: AgentHostSnapshot = { ...structuredClone(EMPTY_AGENT_HOST), connected: true, hostId: centerTarget.hostId,
     capabilities: { ...EMPTY_AGENT_HOST.capabilities, observe: true }, threads: [thread], projects: [{ id: 'project', title: 'Project', path: 'synthetic' }] }
   const canDeliver = vi.fn(() => true)
   const delivered: WatcherNews[] = [], prune = vi.fn(async () => undefined), failed = vi.fn()
@@ -26,9 +26,9 @@ function fixture() {
   const remember = vi.fn(async (ids: string[]) => { record.wakeEventIds = [...record.wakeEventIds ?? [], ...ids] })
   const wakes = new WatcherWakeUp({ now: () => clock, snapshot: () => snapshot, record: () => record, prune,
     schedule: (callback, delay) => { const timer = { at: clock + delay, callback }; timers.add(timer); return () => { timers.delete(timer) } },
-    deliver, remember, failed, canDeliver })
+    deliver, remember, failed, canDeliver, ...progress ? { progress } : {} })
   cleanups.push(() => wakes.close())
-  wakes.start()
+  if (start) wakes.start()
   const advance = async (ms: number) => {
     const end = clock + ms
     while (true) {
@@ -320,6 +320,49 @@ it.each([0, 20])('retains the bounded pending batch after a failed save and %s s
   expect(f.record.wakeEventIds).toEqual(f.delivered[0]!.events.map(event => event.id))
 })
 
+
+it('keeps owning-host checkpoint causes without starting a master or a wake-up deadline', async () => {
+  const f = fixture(false)
+  f.wakes.checkpoint({ threadId: f.thread.id, checkpointId: 'synthetic-checkpoint', observedAt: new Date(f.now()).toISOString(),
+    availability: 'unavailable', reason: 'capture-unavailable' })
+  expect(f.wakes.evidence.read(centerTarget)).toEqual([expect.objectContaining({ target: centerTarget, source: 'checkpoint', reason: 'capture-unavailable' })])
+  expect(f.wakes.ready()).toBe(false)
+  expect(f.timers.size).toBe(0)
+  await f.advance(30_000)
+  expect(f.delivered).toHaveLength(0)
+  expect(f.wakes.news()).toHaveLength(0)
+})
+
+
+it('resets the quiet deadline from paired progress while an unchanged digest stays quiet', async () => {
+  let fingerprint = 'a'.repeat(64)
+  const f = fixture(true, () => fingerprint)
+  await f.advance(19 * 60_000)
+  fingerprint = 'b'.repeat(64); f.wakes.observe()
+  await f.advance(60_000 + 2_000)
+  expect(f.delivered.flatMap(news => news.events).filter(event => event.kind === 'quiet')).toHaveLength(0)
+  f.wakes.observe()
+  await f.advance(WATCHER_QUIET_MS - 60_000)
+  expect(f.delivered.flatMap(news => news.events).filter(event => event.kind === 'quiet')).toHaveLength(1)
+})
+
+it.each(['thread', 'project'] as const)('keeps remote quiet news on its host when %s IDs collide', async collision => {
+  const f = fixture(false), remoteHost = '55555555-5555-4555-8555-555555555555'
+  f.thread.hostId = remoteHost
+  f.record.requests[0]!.participants[0]!.target = { hostId: remoteHost, threadId: f.thread.id }
+  const localProjectId = collision === 'project' ? f.thread.projectId : 'local-project'
+  f.snapshot.projects = [
+    { id: localProjectId, hostId: centerTarget.hostId, title: 'Local settled project', path: 'local', workspaceSettledAt: new Date(f.now()).toISOString() },
+    { id: f.thread.projectId, hostId: remoteHost, title: 'Remote project', path: 'remote' }
+  ]
+  f.snapshot.threads.unshift({ ...f.thread, id: collision === 'thread' ? f.thread.id : 'local-worker', hostId: centerTarget.hostId,
+    projectId: localProjectId, status: 'idle', lastTurn: { id: 'local-turn', status: 'completed' } })
+  f.wakes.start()
+  await f.advance(WATCHER_QUIET_MS + 2_000)
+  const quiet = f.delivered.flatMap(news => news.events).filter(event => event.kind === 'quiet')
+  expect(quiet.map(event => event.target)).toEqual([{ hostId: remoteHost, threadId: f.thread.id }])
+})
+
 it('ignores background Git fetches but wakes for branch, diff and ahead/behind changes', async () => {
   const f = fixture()
   const git = { isRepository: true, branch: 'main', upstream: null, hasRemote: false,
@@ -421,9 +464,9 @@ it.each(['idle', 'question', 'disconnected'] as const)('uses the watched host at
 
 it('keeps remote same-ID participants out of this host provider residency and quiet deadlines', () => {
   const f = fixture()
-  f.record.requests[0]!.participants[0]!.target.hostId = '55555555-5555-4555-8555-555555555555'
+  f.record.requests[0]!.participants[0]!.target = { ...centerTarget, hostId: '55555555-5555-4555-8555-555555555555' }
   f.wakes.observe()
-  expect(f.wakes.watchedThreadIds()).toEqual([])
+  expect(f.wakes.watchedThreadIds(centerTarget.hostId)).toEqual([])
   expect(f.timers.size).toBe(0)
 })
 
@@ -544,4 +587,102 @@ it('supersedes waiting news when a newer saved checkpoint loads after its refere
   expect(recovered.due(saved)).toBe(true)
   recovered.checkpoint({ ...read, checkpointId: 'newest-capture', changedFiles: 2 })
   expect(recovered.due(saved)).toBe(false)
+})
+
+it('keeps independent paired GitHub facts on their host and replaces only the changed fact', async () => {
+  const f = fixture(false), remoteHost = '55555555-5555-4555-8555-555555555555'
+  const target = { hostId: remoteHost, threadId: f.thread.id }, owner = new WatcherEvidenceStore()
+  f.thread.hostId = remoteHost
+  f.record.requests[0]!.participants[0]!.target = target
+  f.snapshot.threads.unshift({ ...f.thread, hostId: centerTarget.hostId })
+  const read = { url: 'https://github.com/o/r/pull/1', head: 'head', observedAt: new Date(f.now()).toISOString(), availability: 'available' as const }
+  owner.pullRequest(target, { ...read, state: 'open', checks: 'passed', checkCount: 1, reviewApproved: true, autoMerge: true })
+  f.wakes.start()
+  f.wakes.pairedEvidence(remoteHost, owner.read(target, true, f.now()))
+  await f.advance(2_000)
+  const facts = () => f.wakes.evidence.read(target, true, f.now())
+  expect(facts()).toEqual(expect.arrayContaining([
+    expect.objectContaining({ target, checksState: 'passed' }),
+    expect.objectContaining({ target, githubReviewApproved: true }),
+    expect.objectContaining({ target, githubAutoMergeEnabled: true }),
+    expect.objectContaining({ target, pullRequestState: 'open' })
+  ]))
+  expect(f.wakes.evidence.read(centerTarget)).toEqual([])
+  const newsCount = f.delivered.length
+  f.wakes.pairedEvidence(remoteHost, owner.read(target, true, f.now())); await f.advance(2_000)
+  expect(f.delivered).toHaveLength(newsCount)
+  owner.pullRequest(target, { ...read, observedAt: new Date(f.now()).toISOString(), checks: 'failed' })
+  f.wakes.pairedEvidence(remoteHost, owner.read(target, true, f.now())); await f.advance(2_000)
+  expect(facts().filter(fact => fact.checksState !== undefined)).toEqual([expect.objectContaining({ checksState: 'failed' })])
+  expect(facts().some(fact => fact.githubReviewApproved === true)).toBe(true)
+  expect(facts().some(fact => fact.githubAutoMergeEnabled === true)).toBe(true)
+  expect(f.delivered.flatMap(news => news.events).every(event => event.target.hostId === remoteHost)).toBe(true)
+})
+
+it('supersedes partially restored paired news only when a known owning-host fact changes', async () => {
+  const f = fixture(false), remoteHost = '55555555-5555-4555-8555-555555555555'
+  const target = { hostId: remoteHost, threadId: f.thread.id }, owner = new WatcherEvidenceStore()
+  f.thread.status = 'idle'; f.thread.lastTurn = undefined
+  f.thread.hostId = remoteHost
+  f.record.requests[0]!.participants[0]!.target = target
+  f.snapshot.threads.unshift({ ...f.thread, hostId: centerTarget.hostId })
+  const capture = { threadId: f.thread.id, checkpointId: 'retained-capture', observedAt: new Date(f.now()).toISOString(), availability: 'available' as const, changedFiles: 1 }
+  owner.checkpoint(target, capture)
+  owner.pullRequest(target, { url: 'https://github.com/o/r/pull/1', head: 'head', observedAt: capture.observedAt, availability: 'available', checks: 'passed' })
+  f.wakes.start(); f.wakes.pairedEvidence(remoteHost, owner.read(target, true, f.now())); await f.advance(2_000)
+  const saved = f.delivered[0]!.events.find(event => event.kind === 'evidence-changed')!
+  f.wakes.close()
+  const deliver = vi.fn<(news: WatcherNews) => Promise<void>>(async () => undefined)
+  const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, canDeliver: () => true, now: f.now,
+    restoredEvents: () => f.delivered.flatMap(news => news.events), deliver, remember: async () => undefined,
+    prune: async () => undefined, schedule: callback => { callback(); return () => undefined } })
+  cleanups.push(() => recovered.close())
+  recovered.start()
+  recovered.restoreCheckpoint(capture)
+  expect(recovered.evidence.read(centerTarget)).toEqual([])
+  expect(recovered.due(saved)).toBe(true)
+  recovered.pairedEvidence(remoteHost, owner.read(target, true, f.now()).filter(fact => fact.source === 'checkpoint'))
+  await recovered.drained()
+  expect(recovered.due(saved)).toBe(true)
+  expect(deliver).not.toHaveBeenCalled()
+  owner.checkpoint(target, { ...capture, checkpointId: 'new-capture', changedFiles: 2 })
+  recovered.pairedEvidence(remoteHost, owner.read(target, true, f.now()).filter(fact => fact.source === 'checkpoint'))
+  await recovered.drained()
+  expect(recovered.due(saved)).toBe(false)
+  expect(deliver).toHaveBeenCalledTimes(1)
+  expect(deliver.mock.calls[0]![0].events.every(event => event.target.hostId === remoteHost)).toBe(true)
+})
+
+it('removes paired PR facts and Landing only after the connected owning roster explicitly unlinks it', async () => {
+  const f = fixture(false), remoteHost = '55555555-5555-4555-8555-555555555555'
+  const target = { hostId: remoteHost, threadId: f.thread.id }, owner = new WatcherEvidenceStore()
+  const url = 'https://github.com/o/r/pull/1', linkedAt = new Date(f.now()).toISOString()
+  f.thread.hostId = remoteHost; f.thread.status = 'idle'; f.thread.lastTurn = undefined
+  f.thread.pullRequests = [{ url, number: 1, title: 'Synthetic PR', state: 'open', draft: false, source: 'linked', linkedAt }]
+  f.record.requests[0]!.participants[0]!.target = target
+  const localTwin = { ...structuredClone(f.thread), hostId: centerTarget.hostId }
+  f.snapshot.threads.unshift(localTwin)
+  owner.pullRequest(target, { url, head: 'head', observedAt: linkedAt, availability: 'available', state: 'open', checks: 'passed', reviewApproved: true, autoMerge: true })
+  f.wakes.start(); f.wakes.pairedEvidence(remoteHost, owner.read(target, true, f.now())); f.wakes.observe()
+  f.wakes.pullRequest({ url, head: 'head', observedAt: linkedAt, availability: 'available', checks: 'passed', reviewApproved: true, autoMerge: true })
+  await f.advance(2_000)
+  const saved = f.delivered.flatMap(news => news.events).findLast(event => event.kind === 'evidence-changed')!
+  const facts = () => f.wakes.evidence.read(target, true, f.now())
+  const group = () => watcherOverview({ host: f.snapshot }, f.now(), f.wakes.observations).find(row => row.thread === f.thread)!.group
+  expect(group()).toBe('Landing')
+  f.wakes.pairedEvidence(remoteHost, []); f.wakes.observe()
+  expect(facts().some(fact => fact.githubReviewApproved)).toBe(true)
+  expect(facts().some(fact => fact.githubAutoMergeEnabled)).toBe(true)
+  expect(f.wakes.due(saved)).toBe(true)
+  // A disconnected shell is not confirmation of removal, even if its links are absent.
+  f.thread.clientConnected = false; f.thread.pullRequests = []
+  f.wakes.pairedEvidence(remoteHost, []); f.wakes.observe()
+  expect(facts().some(fact => fact.githubAutoMergeEnabled)).toBe(true)
+  f.thread.clientConnected = true; f.wakes.observe()
+  expect(facts().filter(fact => fact.source === 'github')).toEqual([])
+  expect(group()).toBe('Idle')
+  expect(f.wakes.due(saved)).toBe(false)
+  expect(f.wakes.evidence.read(centerTarget, true, f.now()).some(fact => fact.githubAutoMergeEnabled)).toBe(true)
+  await f.advance(2_000)
+  expect(f.delivered.at(-1)!.events).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'evidence-changed', target })]))
 })

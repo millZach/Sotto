@@ -23,7 +23,7 @@ import { DesktopClients } from './desktopClients'
 import { CommandReceipts } from './commandReceipts'
 import type { PhoneAccessTailscale } from '../main/phones/phoneAccess'
 import { version as packageVersion } from '../../package.json'
-import { getReleaseTrack, isWatcherEnabled } from '../shared/releaseTrack'
+import { getReleaseTrack } from '../shared/releaseTrack'
 import { isOwlFeatureEnabled } from '../shared/owlFeatures'
 import { startedBySotto, type HostStartedBy } from '../shared/hostConnection'
 
@@ -86,10 +86,10 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   await mkdir(directory, { recursive: true, mode: 0o700 })
   const credentials = await openHostCredentials(directory, options.keyFile)
   const recovery = new RecoveryNoticeCenter()
-  const track = getReleaseTrack(options.sottoVersion ?? packageVersion)
-  const watcherEnabled = isWatcherEnabled(track)
+  // Headless hosts enforce admitted workers on either release track; they never create a master.
+  const watcherEnabled = true
   // A host reads its Owl list from its own version, so it resumes threads once the feature reaches stable (ADR-0076).
-  const resumeAfterRestart = isOwlFeatureEnabled('resume-after-restart', track)
+  const resumeAfterRestart = isOwlFeatureEnabled('resume-after-restart', getReleaseTrack(options.sottoVersion ?? packageVersion))
   const repositories = createStorageRepositories(directory, recovery, Date.now, undefined, undefined, watcherEnabled)
   const settings = new SecureSettings(repositories.settings, credentials)
   if ((await repositories.settings.get()).llmApiKey && !credentials.available()) {
@@ -169,11 +169,13 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         // Phone access opens its own loopback listener, on a port it remembers, for Tailscale Serve to carry: the tailnet
         // listener, which carries desktops the launch script recorded as well as phones (ADR-0053). This one, with the
         // administrative routes, stays reachable only from this machine and through the desktop's SSH (ADR-0050).
+        const desktops = new DesktopClients(directory, options.log)
         phones = startHostPhoneAccess({ directory, service: runtime.hostService, pairing, policy, settings, startup,
-          desktops: new DesktopClients(directory, options.log), listener: { signIns, clientUpdates: true, receipts, about, ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}) },
+          desktops, listener: { signIns, watcherDesktops: desktops, clientUpdates: true, receipts, about, ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}) },
           ...(options.tailscale ? { tailscale: options.tailscale } : {}), ...(options.log ? { log: options.log } : {}) })
         const tailnet = phones
         listener = await startSocketServer({ service: runtime.hostService, pairing, port: options.port, signIns, clientUpdates: true, phones: tailnet.administration,
+          watcherDesktops: desktops,
           ...(options.origins ? { origins: options.origins } : {}), ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}),
           receipts, about, phoneAccess: () => tailnet.summary(), onRevoked: clientId => tailnet.revoked(clientId),
           mayAnswer: client => policy?.mayGrant(client).allowed ?? false,
