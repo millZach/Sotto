@@ -2,7 +2,7 @@
 
 October 12, 2026, on forge, Omarchy / Hyprland 0.56 and Electron 43.1.0.
 
-**Verified in the built app.** The real first-run and Settings journeys pass inside a private HOME and nested Omarchy shell. The first Linux tarball passed its resource, native-module, normal-startup and archive checks, and its packaged first-run, repeated setup and removal journey passed too. Final package rebuild, makepkg, full gates and independent review results are recorded below as they finish; this note does not establish those pending results.
+**Verified in the built and packaged app.** The real first-run and Settings journeys pass inside a private HOME and nested Omarchy shell. The final Linux tarball passed its resource, native-module, normal-startup and archive checks. Its packaged first-run, repeated setup and removal journey passed too. The Arch package was built and inspected without installing it. The local suite and review results are recorded below.
 
 The owner chose variant A and every recommendation, including straight to stable, on October 12. The [plan](../plans/omarchy-setup.md) records that choice and the [prototype](../prototypes/omarchy-setup-prototype.html) is carried from d07469e0 at the build brief’s request. Windows and macOS keep their shortcut field, nine first-run steps and resources; unit checks cover the absence of the setup bridge and handlers on both.
 
@@ -14,7 +14,7 @@ The owner chose variant A and every recommendation, including straight to stable
 TMPDIR="$PWD/.cache/omarchy-setup" mise exec node@24.21.0 -- node scripts/with-nested-hyprland.mjs .cache/omarchy-setup/outer node scripts/verify-omarchy-setup.mjs
 ```
 
-The current built journey passed all these checks (one Playwright test, 19.9 seconds):
+The built journey passed all these checks (one Playwright test):
 
 - Welcome → Omarchy → Set up all three, with Voxtype initially holding both keys. The real compositor exposes Sotto’s start, release and toggle afterwards, with no configuration errors. The Shortcut step says Hold F9 to try it. The journey finishes first-run setup and its Threads tour before opening Settings.
 - Running setup again leaves the key file unchanged and skips completed pieces.
@@ -23,7 +23,7 @@ The current built journey passed all these checks (one Playwright test, 19.9 sec
 - The private shell actually stopped: the owl fails without leaving a plugin folder. Restarting that shell and pressing Try again installs it.
 - A Lua-valid configuration that injects a real Hyprland error only once Sotto’s require is present. The row shows the compositor’s line, the original binding file returns and the snippet is removed. Correcting that configuration and retrying succeeds.
 - A simulated package update changes the bundled copies in the disposable profile and restarts the app. Keys and theme refresh quietly with notes in Settings. The owl stays on its old copy, Escape cancels the update question, and the affirmative press restarts only the owned private bar.
-- Simulated package removal takes the private sotto command off PATH. The guarded snippet leaves Voxtype holding both keys. The actual shell glyph disappears; the before/after bar pixels differ. The real installed `/usr/bin/sotto` is excluded from this proof’s command directory, without moving or changing it.
+- Simulated package removal takes the private sotto command off PATH. The guarded snippet leaves Voxtype holding both keys. The actual shell glyph disappears after its next five-second check. The proof waits until its bright foreground pixels disappear, rather than accepting changes to the bar background. The real installed `/usr/bin/sotto` is excluded from this proof’s command directory, without moving or changing it.
 - Keys, owl and theme installed by hand count as done. A request to remove all leaves their files byte for byte unchanged.
 
 Native `hyprctl binds -j` reports Lua callbacks as `__lua` and an opaque callback ID, rather than their command. New Sotto snippets use distinct descriptions; recognised loaded legacy snippets supplement the older generic descriptions. This was found in the real proof and is covered by the unit checks. Hyprland documents descriptions as the exposed bind metadata in [bind flags](https://wiki.hypr.land/configuring/core/binds/flags/).
@@ -32,9 +32,9 @@ Native `hyprctl binds -j` reports Lua callbacks as `__lua` and an opaque callbac
 
 The first-run offers at 1280×800 and 820×560, in both modes, are `built-offer-<size>-<mode>.png`. Settings has light and dark captures at 1600×1000, 1280×800 and 820×560 as `built-settings-<size>-<mode>.png`. Reduced motion is on. The card and Settings body scroll internally; the first-run footer stays visible. Geometry checks reject horizontal overflow or clipped controls.
 
-Additional states: `built-done-1280x800-dark.png`, `built-conflict-1280x800-light.png`, `built-shell-down-1280x800-light.png` (partly done), `built-rollback-1280x800-light.png` (failed), `built-undo-1280x800-light.png`, `built-update-1280x800-dark.png`, `built-uninstalled-1280x800-dark.png` and `built-by-hand-1280x800-dark.png`. `built-bar-installed.png` and `built-bar-uninstalled.png` show the actual owl disappearing. All live under [artifacts/omarchy-setup](../../artifacts/omarchy-setup); `built-results.json` records the successful journeys and capture geometry. Only cited evidence is retained. Windows design baselines are unchanged.
+Additional states: `built-working-1280x800-dark.png`, `built-done-1280x800-dark.png`, `built-conflict-1280x800-light.png`, `built-shell-down-1280x800-light.png` (partly done), `built-rollback-1280x800-light.png` (failed), `built-undo-1280x800-light.png`, `built-update-1280x800-dark.png`, `built-uninstalled-1280x800-dark.png` and `built-by-hand-1280x800-dark.png`. `built-bar-installed.png` and `built-bar-uninstalled.png` show the actual owl disappearing. All live under [artifacts/omarchy-setup](../../artifacts/omarchy-setup); `built-results.json` records the successful journeys, source revision and capture geometry. Only cited evidence is retained. Windows design baselines are unchanged.
 
-The packaged journey has the same first-run and Settings matrix, done and undo captures, with the `packaged-` prefix and `packaged-results.json`. It uses the actual packaged executable and resources, isolated password storage and no provider account. It proves setup and removal, rather than real microphone capture or transcription.
+The packaged journey has the same first-run and Settings matrix, working, done and undo captures, with the `packaged-` prefix and `packaged-results.json`. It uses the actual packaged executable and resources, isolated password storage and no provider account. It proves setup and removal, rather than real microphone capture or transcription.
 
 ## Isolation
 
@@ -42,4 +42,10 @@ Every written configuration lives under this checkout’s `.cache/su-*/h`. The s
 
 ## Package, gates and review
 
-The first `npm run package:linux` and packaged journey passed. The final rebuild, makepkg resource listing, full suite, notices and two-axis review remain to be recorded before the pull request opens. Targeted main, renderer, preload and process-integration checks pass; they use private files and scripted desktop commands, including real child processes for fake hyprctl and luac. Hyprland’s error text never enters an application log.
+`npm run package:linux` and the final packaged journey passed. `makepkg --cleanbuild --force --noconfirm` produced `sotto-bin-0.1.37-1-x86_64.pkg.tar.zst`, without installation. The recipe and .SRCINFO use the verified tarball checksum. `package-resources.json` records both archive hashes and 26 byte-for-byte checks across `/opt/sotto/resources/omarchy` and `/usr/share/sotto`. The packaged `chrome-sandbox` has root ownership and mode 4755. The build and packaged dependency inventories pass the external-dependency allowlist.
+
+Typecheck and lint pass. Notices verifies 189 components. Targeted setup checks pass: 38 tests across the engine, renderer and real-child-process integration. The neighboring onboarding microphone journeys pass (three tests), and Linux Settings passes (one test). Hyprland’s error text never enters an application log.
+
+The first full suite used a worktree-local TMPDIR and reported 10,037 passed, 194 skipped and 45 failures. Its Git fixtures discovered the enclosing project; its Unix listener names exceeded 108 bytes. All files remained within this worktree, but two Git fixture tests made local commits on this branch. Those commits were replaced while preserving their changes before any push. A private Bubblewrap namespace now presents `.cache/test-runtime` at `/run/sotto-tests`, with a private root owned by the test user, a read-only host filesystem and a writable worktree. This gives fixtures short paths without a parent repository while keeping their files physically in the ignored cache. All 13 affected files pass there: 328 tests, zero errors. An additional full-suite run awaits Zach’s decision because common-rules.md limits that command to one run.
+
+Independent Standards and Spec reviewers inspected the pinned-base diff and verified the fixes. Standards found the missing Escape collapse and shared evidence destination. Spec found inactive manual keys, missing theme renders, an off-bar owl bypassing its update question, new conflicts on owned key updates and removal after keeping such keys. All findings are fixed and both reviewers report zero unresolved findings. The minimum first-run setup button is fully visible, and its geometry is now asserted.

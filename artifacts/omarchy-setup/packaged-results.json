@@ -1,0 +1,110 @@
+{
+  "timestamp": "2026-10-13T03:45:44.973Z",
+  "home": "/home/zach/Projects/Sotto/.worktrees/omarchy-setup/.cache/su-y8BWnY/h",
+  "root": "/home/zach/Projects/Sotto/.worktrees/omarchy-setup/.cache/su-y8BWnY",
+  "sourceCommit": "a84d1e97283eecdf54ead29fa62ea3c28501bee6",
+  "worktreeChanges": [
+    "docs/verification/omarchy-setup.md"
+  ],
+  "proofs": [
+    {
+      "capture": "packaged-offer-1280x800-dark.png",
+      "width": 1280,
+      "height": 800,
+      "overflow": false,
+      "horizontalClips": []
+    },
+    {
+      "capture": "packaged-offer-1280x800-light.png",
+      "width": 1280,
+      "height": 800,
+      "overflow": false,
+      "horizontalClips": []
+    },
+    {
+      "capture": "packaged-offer-820x560-dark.png",
+      "width": 820,
+      "height": 560,
+      "overflow": false,
+      "horizontalClips": []
+    },
+    {
+      "capture": "packaged-offer-820x560-light.png",
+      "width": 820,
+      "height": 560,
+      "overflow": false,
+      "horizontalClips": []
+    },
+    {
+      "capture": "packaged-working-1280x800-dark.png",
+      "width": 1280,
+      "height": 800,
+      "overflow": false,
+      "horizontalClips": []
+    },
+    {
+      "capture": "packaged-done-1280x800-dark.png",
+      "width": 1280,
+      "height": 800,
+      "overflow": false,
+      "horizontalClips": []
+    },
+    {
+      "capture": "packaged-settings-1600x1000-dark.png",
+      "width": 1600,
+      "height": 1000,
+      "overflow": false,
+      "horizontalClips": []
+    },
+    {
+      "capture": "packaged-settings-1600x1000-light.png",
+      "width": 1600,
+      "height": 1000,
+      "overflow": false,
+      "horizontalClips": []
+    },
+    {
+      "capture": "packaged-settings-1280x800-dark.png",
+      "width": 1280,
+      "height": 800,
+      "overflow": false,
+      "horizontalClips": []
+    },
+    {
+      "capture": "packaged-settings-1280x800-light.png",
+      "width": 1280,
+      "height": 800,
+      "overflow": false,
+      "horizontalClips": []
+    },
+    {
+      "capture": "packaged-settings-820x560-dark.png",
+      "width": 820,
+      "height": 560,
+      "overflow": false,
+      "horizontalClips": []
+    },
+    {
+      "capture": "packaged-settings-820x560-light.png",
+      "width": 820,
+      "height": 560,
+      "overflow": false,
+      "horizontalClips": []
+    },
+    {
+      "journey": "fresh setup with Voxtype; first use; repeated setup; all sizes and modes",
+      "passed": true
+    },
+    {
+      "capture": "packaged-undo-1280x800-light.png",
+      "width": 1280,
+      "height": 800,
+      "overflow": false,
+      "horizontalClips": []
+    },
+    {
+      "journey": "each Remove; set up again; Remove all; Voxtype restored",
+      "passed": true
+    }
+  ]
+}
