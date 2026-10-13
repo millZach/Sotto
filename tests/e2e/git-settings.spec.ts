@@ -93,7 +93,7 @@ test('Settings → Git groups every Git setting by moment, fits every size in bo
     await page.keyboard.press('ArrowRight')
     await expect(layout.getByRole('radio', { name: 'Split', exact: true })).toBeFocused()
     await expect.poll(async () => (await settings()).diffLayout).toBe('split')
-    await expect(panel.getByText('Changes starts with each diff split, old on the left and new on the right.')).toBeVisible()
+    await expect(panel.getByText('Old on the left, new on the right.')).toBeVisible()
     await page.keyboard.press('ArrowLeft')
     await expect.poll(async () => (await settings()).diffLayout).toBe('stacked')
 

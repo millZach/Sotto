@@ -274,7 +274,7 @@ describe('Add host’s connected card', () => {
     const { bridge, command } = fixture([])
     const { rerender } = render(<div className="hosts-settings"><HostBootOffer host={forge({ bootStart: lingerOff })} view={undefined} bridge={bridge} /></div>)
     expect(screen.getByText('Start forge’s host at boot', { selector: 'b' })).toBeInTheDocument()
-    expect(screen.getByText(/Sotto adds a systemd user unit for zach on forge and turns on linger for that account; the host restarts once now/u)).toBeInTheDocument()
+    expect(screen.getByText(/Sotto adds a systemd user unit for zach and turns on linger; the host restarts once now/u)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Start forge’s host at boot' }))
     expect(boots(command)).toEqual([{ type: 'host-boot', id: FORGE, action: 'install' }])
     rerender(<div className="hosts-settings"><HostBootOffer host={forge()} view={change()} bridge={bridge} /></div>)
