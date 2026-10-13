@@ -24,7 +24,7 @@ async function fixture() {
   const localSnapshot = f.control.watcherSnapshot(), native = localSnapshot.threads[0]!
   const snapshot: AgentHostSnapshot = { ...localSnapshot, hostId, connected: true, threads: [{ ...native, id: 'worker', hostId, status: 'running' }] }
   let projection: WatcherHostProjection = { hostId, master: record.current!, revision: 'initial', observedAt: new Date().toISOString(), requests: [], operations: [], evidence: [] }
-  const read = vi.fn(async () => structuredClone(projection))
+  const read = vi.fn(async (_hostId: string, _request: unknown) => { void _hostId; void _request; return structuredClone(projection) })
   const hosts: ReturnType<WatcherRemoteHosts['hosts']> = [{ hostId, connected: true, reads: true, control: true, permissionCeiling: 'approval-required' }]
   const remote: WatcherRemoteHosts = { hosts: () => hosts, snapshot: id => id === hostId ? snapshot : undefined, read, control: vi.fn(), subscribe: () => () => undefined }
   const reconcile = () => (watcher as unknown as { reconcileRemote(): Promise<void> }).reconcileRemote()
@@ -69,3 +69,18 @@ it('keeps a validated accepted control receipt when its follow-up projection rea
   expect(result).toMatchObject({ status: 'ok', receipt: { deliveryState: 'accepted' } })
   expect(f.control.watcherRecord().operations[0]!.deliveryState).toBe('accepted')
 })
+
+it('continues to another owning host when the first projection read fails', async () => {
+  const f = await fixture(), other = randomUUID(), record = f.control.watcherRecord()
+  await f.control.updateWatcher(next => { next.requests[0]!.participants[0]!.target.hostId = other; next.operations[0]!.target.hostId = other; next.reservations[0]!.target.hostId = other })
+  const own = f.control.watcherRecord()
+  f.hosts.push({ ...f.hosts[0]!, hostId: other })
+  f.read.mockImplementation(async id => {
+    if (id === f.hostId) throw new Error('synthetic-offline')
+    return { hostId: other, master: own.current!, revision: 'accepted', observedAt: new Date().toISOString(), requests: [], operations: [{ ...own.operations[0]!, deliveryState: 'accepted' }], evidence: [] }
+  })
+  await f.reconcile().catch(() => undefined)
+  expect(f.read).toHaveBeenCalledWith(other, { master: record.current })
+  expect(f.control.watcherRecord().operations[0]!.deliveryState).toBe('accepted')
+})
+

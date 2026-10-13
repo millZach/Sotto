@@ -791,49 +791,53 @@ export class WatcherService implements WatcherControlHooks {
     const master = this.record().current
     if (!master || !this.remote || this.closed) return
     for (const host of this.remote.hosts().filter(item => item.reads && item.connected && (!hostId || item.hostId === hostId))) {
-      const projection = await this.remote.read(host.hostId, { master }) as WatcherHostProjection
-      if (projection.hostId !== host.hostId || JSON.stringify(projection.master) !== JSON.stringify(master)) throw new Error('wrong-watcher-host')
-      await this.options.control.updateWatcher(record => {
-        for (const remoteRequest of projection.requests) {
-          const request = record.requests.find(item => item.id === remoteRequest.id && key(item.watcher) === key(master.target))
-          if (!request || key(remoteRequest.watcher) !== key(master.target)
-            || remoteRequest.rootUserMessageId !== request.rootUserMessageId || remoteRequest.createdAt !== request.createdAt) continue
-          for (const participant of remoteRequest.participants) {
-            if (participant.target.hostId !== host.hostId) continue
-            const own = request.participants.find(item => key(item.target) === key(participant.target))
-            if (!own) continue
-            // The master owns prompt counts; only an exact failed receipt can refund one.
-            if (participant.generation < own.generation || own.state !== 'participating') continue
-            own.generation = participant.generation; own.state = participant.state
-            if (participant.automationStopped) own.automationStopped = true
-            if (participant.takeover) own.takeover = participant.takeover
-            if (participant.lastUserMessageId !== undefined) own.lastUserMessageId = participant.lastUserMessageId
+      try {
+        const projection = await this.remote.read(host.hostId, { master }) as WatcherHostProjection
+        if (projection.hostId !== host.hostId || JSON.stringify(projection.master) !== JSON.stringify(master)) throw new Error('wrong-watcher-host')
+        await this.options.control.updateWatcher(record => {
+          for (const remoteRequest of projection.requests) {
+            const request = record.requests.find(item => item.id === remoteRequest.id && key(item.watcher) === key(master.target))
+            if (!request || key(remoteRequest.watcher) !== key(master.target)
+              || remoteRequest.rootUserMessageId !== request.rootUserMessageId || remoteRequest.createdAt !== request.createdAt) continue
+            for (const participant of remoteRequest.participants) {
+              if (participant.target.hostId !== host.hostId) continue
+              const own = request.participants.find(item => key(item.target) === key(participant.target))
+              if (!own) continue
+              // The master owns prompt counts; only an exact failed receipt can refund one.
+              if (participant.generation < own.generation || own.state !== 'participating') continue
+              own.generation = participant.generation; own.state = participant.state
+              if (participant.automationStopped) own.automationStopped = true
+              if (participant.takeover) own.takeover = participant.takeover
+              if (participant.lastUserMessageId !== undefined) own.lastUserMessageId = participant.lastUserMessageId
+            }
           }
-        }
-        for (const receipt of projection.operations) {
-          if (receipt.target.hostId !== host.hostId) continue
-          const own = record.operations.find(item => item.id === receipt.id && item.requestId === receipt.requestId
-            && item.digest === receipt.digest && key(item.target) === key(receipt.target))
-          if (!own) continue
-          this.copyRemoteReceipt(record, own, receipt)
-        }
-        record.reservations = record.reservations.filter(reservation => {
-          if (reservation.target.hostId !== host.hostId) return true
-          const operations = record.operations.filter(item => key(item.target) === key(reservation.target))
-          if (operations.some(item => ['queued', 'dispatching', 'uncertain'].includes(item.deliveryState))) return true
-          const thread = this.owningSnapshot(host.hostId)?.threads.find(item => item.id === reservation.target.threadId)
-          if (!thread) return !operations.every(item => item.deliveryState === 'failed')
-          if (!this.connected(thread)) return true
-          return thread.status === 'running' || thread.lastTurn?.status === 'running' || Boolean(thread.requests.length || thread.backgroundWork?.length || thread.monitoring?.length)
+          for (const receipt of projection.operations) {
+            if (receipt.target.hostId !== host.hostId) continue
+            const own = record.operations.find(item => item.id === receipt.id && item.requestId === receipt.requestId
+              && item.digest === receipt.digest && key(item.target) === key(receipt.target))
+            if (!own) continue
+            this.copyRemoteReceipt(record, own, receipt)
+          }
+          record.reservations = record.reservations.filter(reservation => {
+            if (reservation.target.hostId !== host.hostId) return true
+            const operations = record.operations.filter(item => key(item.target) === key(reservation.target))
+            if (operations.some(item => ['queued', 'dispatching', 'uncertain'].includes(item.deliveryState))) return true
+            const thread = this.owningSnapshot(host.hostId)?.threads.find(item => item.id === reservation.target.threadId)
+            if (!thread) return !operations.every(item => item.deliveryState === 'failed')
+            if (!this.connected(thread)) return true
+            return thread.status === 'running' || thread.lastTurn?.status === 'running' || Boolean(thread.requests.length || thread.backgroundWork?.length || thread.monitoring?.length)
+          })
         })
-      })
-      for (const [target, progress] of this.remoteProgress) if (progress.hostId === host.hostId) this.remoteProgress.delete(target)
-      const targets = new Set(projection.requests.flatMap(request => request.participants.map(item => key(item.target))))
-      for (const progress of projection.progress ?? []) if (progress.target.hostId === host.hostId && targets.has(key(progress.target))) {
-        this.remoteProgress.set(key(progress.target), { hostId: host.hostId, fingerprint: progress.fingerprint })
+        for (const [target, progress] of this.remoteProgress) if (progress.hostId === host.hostId) this.remoteProgress.delete(target)
+        const targets = new Set(projection.requests.flatMap(request => request.participants.map(item => key(item.target))))
+        for (const progress of projection.progress ?? []) if (progress.target.hostId === host.hostId && targets.has(key(progress.target))) {
+          this.remoteProgress.set(key(progress.target), { hostId: host.hostId, fingerprint: progress.fingerprint })
+        }
+        while (this.remoteProgress.size > 1_000) this.remoteProgress.delete(this.remoteProgress.keys().next().value!)
+        this.wakes.pairedEvidence(host.hostId, projection.evidence)
+      } catch {
+        this.recoveryNotice = 'A paired host could not be reconciled. Its pending slots remain held. Other hosts continue to refresh.'
       }
-      while (this.remoteProgress.size > 1_000) this.remoteProgress.delete(this.remoteProgress.keys().next().value!)
-      this.wakes.pairedEvidence(host.hostId, projection.evidence)
     }
     this.publish()
   }
