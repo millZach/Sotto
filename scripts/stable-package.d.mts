@@ -6,9 +6,9 @@ export interface StablePromotion {
 
 export function checkedPromotion(promotion: StablePromotion, checkout: { sourceCommit: string; clean: boolean }): StablePromotion
 
-export function stablePackagePlan(platform: 'win' | 'mac', version: string): {
-  platform: 'win' | 'mac'
-  target: 'nsis' | 'dmg'
+export function stablePackagePlan(platform: 'win' | 'mac' | 'linux', version: string): {
+  platform: 'win' | 'mac' | 'linux'
+  target: 'nsis' | 'dmg' | 'tar.gz'
   unpacked: string
   installer: string
   config: { extraMetadata: { version: string }; npmRebuild?: boolean }

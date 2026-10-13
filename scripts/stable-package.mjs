@@ -12,5 +12,6 @@ export function stablePackagePlan(platform, version) {
   if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u.test(version)) throw new Error('Stable packaging needs the base version of the promoted Owl build.')
   if (platform === 'win') return { platform, target: 'nsis', unpacked: 'release/win-unpacked', installer: `release/Sotto Setup ${version}.exe`, config: { extraMetadata: { version } } }
   if (platform === 'mac') return { platform, target: 'dmg', unpacked: 'release/mac-arm64', installer: `release/Sotto-${version}-arm64.dmg`, config: { extraMetadata: { version }, npmRebuild: true } }
-  throw new Error('Stable release packaging supports win or mac.')
+  if (platform === 'linux') return { platform, target: 'tar.gz', unpacked: 'release/linux-unpacked', installer: `release/Sotto-${version}-linux-x64.tar.gz`, config: { extraMetadata: { version }, npmRebuild: true } }
+  throw new Error('Stable release packaging supports win, mac or linux.')
 }
