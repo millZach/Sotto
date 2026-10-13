@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { expect, expectTypeOf, it, vi } from 'vitest'
 import { FollowupStore, type WordWakeUp } from '../../../src/main/agents/followups'
 import type { BabysitNews } from '../../../src/main/agents/babysitNews'
-import { isWatcherNews, queuedWakeUpText, type WakeUpNews } from '../../../src/main/agents/wakeUp'
+import { isBabysitNews, isWatcherNews, queuedWakeUpText, type WakeUpNews } from '../../../src/main/agents/wakeUp'
 
 it('requires stored-news callbacks to handle both babysitting and Watcher news', () => {
   expectTypeOf<WordWakeUp>().toEqualTypeOf<(news: readonly WakeUpNews[]) => string>()
@@ -66,7 +66,7 @@ it.each(['paused', 'failed'] as const)('retains a %s wake-up explanation when pr
     const id = store.peek().items[0]!.id, error = 'Synthetic explanation for the held queue'
     if (status === 'paused') await store.pause('thread', error)
     else { await store.claim(id); await store.settle(id, 'failed', error) }
-    await store.pruneWakeUp(id, item => !isWatcherNews(item) && item.pullRequest.number === 2, word)
+    await store.pruneWakeUp(id, item => isBabysitNews(item) && item.pullRequest.number === 2, word)
     expect(store.peek().items[0]).toMatchObject({ id, status, error, news: [news(2)] })
     expect(store.peek().items[0]!.text).toBe(word([news(2)]))
     await store.resume('thread')

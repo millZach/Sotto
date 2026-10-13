@@ -25,6 +25,7 @@ import { WORKTREE_CLEANUP_DAYS } from '../../../../shared/settings'
 import { UPDATES_UNSUPPORTED_MESSAGE } from '../updates/updateControlLogic'
 import { releaseTrackName } from '../../../../shared/releaseTrack'
 import { releaseTrackOf } from '../../state/useReleaseTrack'
+import { useOwlFeature } from '../../state/owlFeature'
 import { Button } from '../../components/Button'
 import { OpenSystemSettingsButton } from '../../components/OpenSystemSettingsButton'
 import { Card } from '../../components/Card'
@@ -189,6 +190,7 @@ export function SettingsView({
   const [dictionaryPasteCut, setDictionaryPasteCut] = useState(false)
   const llmDictionaryDraft = useRevisionDraft(settings.llmDictionary, settings.llmDictionary)
   const [updateBusy, setUpdateBusy] = useState(false)
+  const resumeAfterRestart = useOwlFeature('resume-after-restart')
   const [clearFailure, setClearFailure] = useState<string | null>(null)
   const [resetFailure, setResetFailure] = useState<string | null>(null)
   const [resetOpen, setResetOpen] = useState(false)
@@ -589,6 +591,11 @@ export function SettingsView({
                     description={settings.babysitPullRequests
                       ? 'An agent can ask Sotto to babysit its pull request and stop checking GitHub itself. Sotto sends its thread a wake-up when the pull request needs it.'
                       : 'Agents cannot start babysitting, and Sotto stops what they started. You can still babysit a pull request from the Pull request surface.'} />
+                  {/* ADR-0076: an Owl feature, read when Sotto next starts. */}
+                  {resumeAfterRestart ? <Toggle label="Resume threads after a restart" checked={settings.resumeThreadsAfterRestart} onCheckedChange={checked => void save({ resumeThreadsAfterRestart: checked })}
+                    description={settings.resumeThreadsAfterRestart
+                      ? 'When Sotto closes while a thread is working, for an update, a quit, a crash or a restart of this computer, the thread carries on when Sotto opens again. Sotto sends it a short note, shown in the thread, saying it was stopped.'
+                      : 'A thread that was working when Sotto closed waits for you to send it a message.'} /> : null}
                   <Field label="Replies in threads" description="Stream a reply word by word as the agent writes it, or show it once it is finished. Commands and tool calls always appear as they run."><SegmentedControl label="Replies in threads" value={settings.responseStreaming} onChange={value => void save({ responseStreaming: value as AppSettings['responseStreaming'] })} options={[{ value: 'live', label: 'As written' }, { value: 'complete', label: 'When finished' }]} /></Field>
                   <Field label="New threads work in" description="Project defaults can override this. Existing threads keep their working folder."><Select value={settings.threadWorkingCopyDefault} onChange={event => void save({ threadWorkingCopyDefault: event.currentTarget.value as AppSettings['threadWorkingCopyDefault'] })}><option value="shared">Project folder</option><option value="independent">New worktree</option></Select></Field>
                   <Field label="Remove idle worktrees after" description="A thread's own worktree folder goes when the thread has been idle this long. The branch stays and sending puts the folder back. Only a folder with no uncommitted changes and nothing but installed dependencies in its ignored files is removed."><Select value={String(settings.worktreeCleanup.afterDays ?? 'never')} onChange={event => { const value = event.currentTarget.value; void save({ worktreeCleanup: { afterDays: value === 'never' ? null : Number(value) as WorktreeCleanupDays } }) }}><option value="never">Never</option>{WORKTREE_CLEANUP_DAYS.map(days => <option key={days} value={String(days)}>{days} days</option>)}</Select></Field>

@@ -17,7 +17,7 @@ import {
 import type { BabysitNews } from './babysitNews'
 import { BABYSIT_REFUSALS, type Babysitter } from './babysitting'
 import { pullRequestAddress } from '../../shared/gitPullRequests'
-import { queuedWakeUpText, isWatcherNews, type WakeUpNews } from './wakeUp'
+import { queuedWakeUpText, isRestartNews, isWatcherNews, type WakeUpNews } from './wakeUp'
 import type { WatcherEvent } from '../../shared/watcherNews'
 import type { CheckpointObservation, PullRequestObservation } from './watcherEvidence'
 import { nearestReasoningEffort, resolveNewThreadPermission } from '../../shared/newThreadDefaults'
@@ -1842,13 +1842,14 @@ export class AgentControl {
    */
   private wakeUpOutdated(threadId: string, item: Pick<QueuedFollowup, 'wakeUp' | 'news'>): boolean {
     const guard = this.wakeUpGuard
+    // A resume note stays due: the restart that stopped the turn cannot be taken back (ADR-0076).
     return item.wakeUp === true && (item.news ?? []).some(news => isWatcherNews(news)
       ? this.dependencies.watcherEnabled !== true || news.events.some(event => !this.watcherHooks?.wakeDue?.(event))
-      : guard !== undefined && !guard.due(threadId, news))
+      : !isRestartNews(news) && guard !== undefined && !guard.due(threadId, news))
   }
   private pruneWakeUp(threadId: string, id: string): Promise<void> {
     const guard = this.wakeUpGuard
-    return this.followupStore.pruneWakeUp(id, news => isWatcherNews(news) ? news.events.length > 0 : !guard || guard.due(threadId, news),
+    return this.followupStore.pruneWakeUp(id, news => isWatcherNews(news) ? news.events.length > 0 : isRestartNews(news) || !guard || guard.due(threadId, news),
       items => queuedWakeUpText(items, { tool: guard?.tool(threadId) ?? false }), news => {
         if (!isWatcherNews(news)) return news
         const events = news.events.filter(event => this.dependencies.watcherEnabled === true && this.watcherHooks?.wakeDue?.(event))

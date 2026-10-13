@@ -142,6 +142,7 @@ const settingKeys = [
   'browserWithoutAsking',
   'visualsInThreads',
   'babysitPullRequests',
+  'resumeThreadsAfterRestart',
   'watcherInFlightLimit',
   'memoryEnabled',
   'cloudIphoneMonthlyMinutes',

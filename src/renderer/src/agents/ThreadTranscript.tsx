@@ -16,6 +16,8 @@ import { ActivityGroupView, CompactionLine, foldOnEscape, LiveActivity, TurnChan
 import { isDrawableVisual, VisualCard } from './VisualCard'
 import { isWakeUpFollowup, isWakeUpMessage, wakeUpMarkdown } from './babysitting'
 import { SottoMark } from '../components/SottoMark'
+import { isResumeNoteText } from '../../../shared/restartResume'
+import { useOwlFeature } from '../state/owlFeature'
 import { WatcherOwl } from '../watcher/WatcherOwl'
 import { compactionOf, liveTurnId, nestActivities, placeActivities, splitTurns, turnChanges, workHeadline, type ActivityGroup, type ActivityPlacement, type TranscriptTurn, type TurnChange } from './threadActivityView'
 
@@ -139,9 +141,13 @@ function MessageCopy({ message, article }: { readonly message: AgentMessage; rea
   </>
 }
 
-/** Who sent a wake-up: Sotto, with its mark, and what it is. */
-function WakeUpWho(): ReactNode {
-  return <><span className="thread-message__who"><SottoMark className="thread-message__mark" />Sotto</span><span className="thread-message__tag">Wake-up</span></>
+/**
+ * Who sent a wake-up: Sotto, with its mark, and what it is. A wake-up that opens with the resume note is a resume
+ * (ADR-0076); the text is read only once the host's own record has made the message Sotto's.
+ */
+function WakeUpWho({ text }: { readonly text: string }): ReactNode {
+  const resumed = useOwlFeature('resume-after-restart') && isResumeNoteText(text)
+  return <><span className="thread-message__who"><SottoMark className="thread-message__mark" />Sotto</span><span className="thread-message__tag">{resumed ? 'Resumed' : 'Wake-up'}</span></>
 }
 
 /**
@@ -161,7 +167,7 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
   const wakeUp = isWakeUpMessage(message)
   const markdown = useMemo(() => wakeUp ? wakeUpMarkdown(message.text) : message.text, [wakeUp, message.text])
   return <article className="thread-message" data-role={message.role} data-from={wakeUp ? 'sotto' : undefined} data-message-id={message.id} ref={article}>
-    <header>{wakeUp ? <WakeUpWho />
+    <header>{wakeUp ? <WakeUpWho text={message.text} />
       : <span className="thread-message__who">{message.role === 'user' ? 'You' : message.role === 'assistant' ? speaker === 'watcher' ? <><WatcherOwl size={13} />Watcher</> : provider : 'System'}</span>}
       <time dateTime={message.createdAt}>{clockLabel(Date.parse(message.createdAt))}</time>
       {!writing && message.text.length > 0 && (message.role === 'user' || message.role === 'assistant') ? <MessageCopy message={message} article={article} /> : null}</header>
@@ -321,7 +327,7 @@ export function QueuedMessage({ item }: { readonly item: AgentFollowup }): React
   const wakeUp = isWakeUpFollowup(item)
   return <article className="thread-message thread-message--pending" data-role="user" data-from={wakeUp ? 'sotto' : undefined} data-status={echo.status}
     aria-label={wakeUp ? 'Queued wake-up from Sotto' : 'Queued message'}>
-    <header>{wakeUp ? <WakeUpWho /> : <span className="thread-message__who">You</span>}
+    <header>{wakeUp ? <WakeUpWho text={item.text} /> : <span className="thread-message__who">You</span>}
       <span className="thread-message__status" data-status={echo.status}><i aria-hidden="true" />{echo.label}</span></header>
     <MessageContent text={wakeUp ? wakeUpMarkdown(item.text) : item.text} /><AttachmentPreviews attachments={item.attachments} />
   </article>

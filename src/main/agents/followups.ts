@@ -7,7 +7,7 @@ import { agentAttachmentHandleSchema, agentAttachmentSchema, agentFollowupSchema
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { StageInline } from './attachmentStore'
 import { pullRequestKey } from '../../shared/gitPullRequests'
-import { wakeUpNewsSchema, foldWakeUpNews, isWatcherNews, WAKE_UP_NEWS_MAX, type WakeUpNews } from './wakeUp'
+import { wakeUpNewsSchema, foldWakeUpNews, isBabysitNews, WAKE_UP_NEWS_MAX, type WakeUpNews } from './wakeUp'
 
 /** Why a follow-up came back from a restart without an image it had, whatever the reason the image was not kept. */
 export const LOST_IMAGES = 'An image in this follow-up was no longer kept when Sotto started, so the follow-up was paused rather than sent without it. Attach the image again or remove the follow-up.'
@@ -226,7 +226,7 @@ export class FollowupStore {
     return this.change(state => {
       const waiting = state.items.find(item => waitingWakeUp(item, threadId))
       if (!waiting) return false
-      const kept = (waiting.news ?? []).filter(item => isWatcherNews(item) || key !== undefined && pullRequestKey(item.pullRequest.url) !== key)
+      const kept = (waiting.news ?? []).filter(item => !isBabysitNews(item) || key !== undefined && pullRequestKey(item.pullRequest.url) !== key)
       if (kept.length === (waiting.news ?? []).length) return false
       if (kept.length) Object.assign(waiting, { news: kept, text: word(kept), updatedAt: new Date().toISOString() })
       else state.items = state.items.filter(item => item !== waiting)
