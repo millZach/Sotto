@@ -193,3 +193,31 @@ it('rechecks the phone policy at the worker writer after an allowed card waits i
   expect(await pending).toMatchObject({ ok: false })
   expect(f.workspace.adapters.codex.commands.filter(row => row.type === 'answer')).toHaveLength(0)
 })
+
+
+it('fences phone instructions at admission and dispatch while Watcher changes provider', async () => {
+  const f = await fixture(), peer = await f.pair()
+  await f.control.commandShell({ type: 'connect', provider: 'claude' })
+  const model = f.control.shell().host.models.find(row => row.providerId === 'claude')!
+  const entered = deferred<void>(), release = deferred<void>()
+  const original = f.control.commandForWatcherRoom.bind(f.control)
+  vi.spyOn(f.control, 'commandForWatcherRoom').mockImplementation(async command => {
+    if (command.type === 'create-project' && command.provider === 'claude') { entered.resolve(); await release.promise }
+    return original(command)
+  })
+  const changing = f.watcher.open({ provider: 'claude', modelId: model.id })
+  try {
+    await entered.promise
+    const admitted = vi.spyOn(f.control, 'commandFromWatcherPhone')
+    expect(await peer.call('during-change', f.send(peer.paired.clientId))).toMatchObject({ ok: true, result: { status: 'refused' } })
+    expect(admitted).not.toHaveBeenCalled()
+    // Exercise dispatch independently: even a command already tagged with a phone origin must refuse.
+    const packet = f.send(peer.paired.clientId)
+    const late = await f.control.commandFromWatcherPhone({ type: 'send', draft: {
+      threadId: f.target.threadId, draftId: packet.request.draftId, text: packet.request.text, attachments: [],
+      binding: { requestId: null, questionsDigest: null } } }, { phoneOrigin: { ...packet.request.origin, kind: 'phone' }, guard: () => undefined },
+    { clientId: peer.paired.clientId, transport: 'socket', selectedThreadId: f.target.threadId })
+    expect(late.error).toContain('provider change')
+    expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'send')).toHaveLength(0)
+  } finally { release.resolve(); await changing }
+})

@@ -309,6 +309,10 @@ export class WatcherService implements WatcherControlHooks {
     await this.options.control.updateWatcher(next => { if (next.creation?.identity.target.threadId === identity.target.threadId) next.creation = null })
   }
 
+  guardPhoneSend(threadId: string): void {
+    this.checkCaller(threadId)
+    if (this.changing) refuse('THREAD_BUSY', 'Wait for Watcher?s provider change before sending an instruction.', true)
+  }
   userCommand(command: AgentCommand, threadId: string | undefined, answersQuestion: boolean): void {
     if (!threadId || answersQuestion) return
     if (threadId === this.record().current?.target.threadId && this.changing) refuse('THREAD_BUSY', 'Wait for Watcher’s provider change before sending an instruction.', true)
@@ -361,6 +365,7 @@ export class WatcherService implements WatcherControlHooks {
       && participant.state === 'participating' && (participant.automationStopped || request.state === 'stopped' && participant.startedBy === 'watcher')))
   }
   beforeDispatch(command: AgentHostCommand, _draftId: string | undefined, origin?: WatcherCommandOrigin): AgentHostCommand {
+    if (origin?.phoneOrigin && command.type === 'send') this.guardPhoneSend(command.threadId)
     if (origin?.operationId) {
       this.options.control.mutateWatcher(record => {
         const operation = record.operations.find(item => item.id === origin.operationId)!

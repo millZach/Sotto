@@ -79,6 +79,7 @@ export class WatcherPhoneService {
       const current = this.watcher.state().current
       if (!current || current.target.hostId !== request.target.hostId || current.target.threadId !== request.target.threadId
         || !this.watcher.isCurrent(request.target.threadId)) throw new Error('Watcher changed. Nothing was sent. Refresh Watcher before sending again.')
+      this.watcher.guardPhoneSend(request.target.threadId)
       const thread = this.control.watcherSnapshot().threads.find(row => row.id === request.target.threadId)
       if (thread?.requests.length) throw new Error('Watcher needs your answer on its request card. Nothing was sent.')
     }
