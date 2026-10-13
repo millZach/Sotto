@@ -54,6 +54,7 @@ describe('Stable package and Owl publication plans', () => {
   it('packages the Owl base as stable metadata and names outputs with it on Windows and Mac', () => {
     expect(stablePackagePlan('win', '0.1.37')).toMatchObject({ installer: 'release/Sotto Setup 0.1.37.exe', target: 'nsis', config: { extraMetadata: { version: '0.1.37' } } })
     expect(stablePackagePlan('mac', '0.1.37')).toMatchObject({ installer: 'release/Sotto-0.1.37-arm64.dmg', target: 'dmg', config: { extraMetadata: { version: '0.1.37' }, npmRebuild: true } })
+    expect(stablePackagePlan('linux', '0.1.38')).toEqual({ platform: 'linux', target: 'tar.gz', unpacked: 'release/linux-unpacked', installer: 'release/Sotto-0.1.38-linux-x64.tar.gz', config: { extraMetadata: { version: '0.1.38' }, npmRebuild: true } })
     expect(() => stablePackagePlan('win', '0.1.37-owl.20261011.1')).toThrow('base version')
   })
   it('rechecks the source and cleanliness before using the saved promotion', () => {
@@ -73,6 +74,7 @@ describe('Stable package and Owl publication plans', () => {
     const { scripts } = JSON.parse(await readFile(new URL('../../../package.json', import.meta.url), 'utf8'))
     expect(scripts['package:win']).toBe('npm run release:check && node scripts/package-stable.mjs win')
     expect(scripts['package:mac']).toBe('npm run release:check && node scripts/package-stable.mjs mac')
+    expect(scripts['package:linux:stable']).toBe('npm run release:check && node scripts/package-stable.mjs linux')
     for (const name of ['package:dir', 'package:dir:mac', 'package:linux']) {
       expect(scripts[name]).not.toMatch(/release:check|package-stable/u)
     }

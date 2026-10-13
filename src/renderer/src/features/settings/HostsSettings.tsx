@@ -353,7 +353,7 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
   return <div className="hosts-settings">
     <div className="hosts-local">
       <span className="hosts-row__icon hosts-row__icon--local" aria-hidden="true"><Laptop size={18} /></span>
-      <div className="hosts-local__copy"><h3>This computer</h3><p>Runs threads on this computer beside your remote hosts. A change takes effect after you restart Sotto. Saved data stays.</p></div>
+      <div className="hosts-local__copy"><h3>This computer</h3><p>Runs threads here as well as on remote hosts. Changes apply after a restart, and saved data stays.</p></div>
       <div>
         <Toggle label="Run the local host" checked={localHostEnabled} onCheckedChange={enabled => { void onLocalHostChange(enabled).then(saved => setLocalSaveFailed(!saved)) }} />
         {localSaveFailed ? <p className="tt-field__error" role="alert">The local host setting could not be saved. Nothing was changed. Try again.</p> : null}
@@ -361,9 +361,9 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
     </div>
     {bridge ? <TailscaleRow control={tailscale} /> : null}
     {state && state.localHostRunning !== localHostEnabled && <div className="hosts-restart"><p>Restart Sotto to apply the local host setting.</p><Button variant="secondary" onClick={() => void run({ type: 'restart' })}>Restart Sotto</Button></div>}
-    <p>Dictation and automatic paste always use this computer. They do not paste into a remote host.</p>
+    <p>Dictation and paste always happen on this computer, never on a remote host.</p>
     <div className="hosts-heading"><h3>Remote hosts</h3><Button ref={addButton} variant="secondary" disabled={!bridge} onClick={() => setDialog({ kind: 'add' })}><Plus size={16} aria-hidden="true" />Add host</Button></div>
-    <p>Connect to machines on your tailnet or over SSH. Sotto signs in with your SSH setup to add one, starts the host if needed and pairs this computer. Hosts that are on reconnect when Sotto starts, over your tailnet when they can, and a host Sotto started keeps running until you stop it.</p>
+    <p>Run threads on other machines over your tailnet or SSH. Sotto sets each one up with your SSH access, and a host it starts keeps running until you stop it.</p>
     {/* A setup the dialog was closed on carries on in its thread, and one that ended stays until put away: this is the way back to it. */}
     {state?.setup && !dialog ? <HostSetupLine setup={state.setup} onShow={() => setDialog({ kind: 'setup' })} onDismiss={() => void run({ type: 'dismiss-setup', id: state.setup!.id })} /> : null}
     {state?.forgotten?.map(forgotten => <ForgottenNotice key={forgotten.id} forgotten={forgotten}

@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
 
 import type { AgentHost, AgentHostCommand, AgentHostResult } from '../../../src/main/agents/host'
-import type { BabysitNews } from '../../../src/main/agents/babysitNews'
+import { stillCurrent, type BabysitNews } from '../../../src/main/agents/babysitNews'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import type { AgentHostSnapshot, AgentThread } from '../../../src/shared/agents'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
@@ -196,6 +196,25 @@ describe('a wake-up', () => {
     expect(sends(f.host)[0]!.text).not.toContain('Pull request #1')
     expect(stopped).toBe(true)
     await expect.poll(() => f.control.get().followups ?? []).toEqual([])
+  })
+
+  it('takes out, as it goes, what it says of the checks on a commit the branch has left, and sends the rest', async () => {
+    const f = await fixture(); f.host.update('workshop', { status: 'running', lastTurn: { id: 'turn', status: 'running' } })
+    let head = 'head-1'
+    f.control.useBabysitting({ start: async () => { throw new Error('unused') }, stop: async () => 0 },
+      { due: () => true, tool: () => true, current: (_threadId, item) => stillCurrent(item, head) })
+    await f.control.deliverWakeUp('workshop', news(1), { tool: true })
+    await f.control.deliverWakeUp('workshop', news(2, { changes: [...news(2).changes,
+      { kind: 'remarks', remarks: [{ kind: 'comment', author: 'reviewer', review: null, path: null, url: null, edited: false }] }] }), { tool: true })
+    // The agent pushes while the wake-up waits, and the babysitter reads the new head.
+    head = 'head-2'
+    complete(f.host)
+    await expect.poll(() => sends(f.host).length).toBe(1)
+    const text = sends(f.host)[0]!.text
+    expect(text).not.toContain('Pull request #1')
+    expect(text).toContain('Pull request #2')
+    expect(text).toContain('reviewer commented')
+    expect(text).not.toContain('build-2')
   })
 
   it('does not put the thread in the watched set or hold its working copy while only Sotto\'s item waits', async () => {

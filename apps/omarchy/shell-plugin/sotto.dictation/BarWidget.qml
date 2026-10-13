@@ -8,6 +8,8 @@ import "Model.mjs" as Model
 BarWidget {
   id: root
   moduleName: "sotto.dictation"
+  visible: commandAvailable.available
+  CommandAvailable { id: commandAvailable; command: root.commandSetting }
 
   readonly property string commandSetting: Model.cleanCommand(root.setting("command", "sotto"))
 

@@ -32,41 +32,41 @@ type GitSettingDescriptions = Record<'style' | 'templates' | 'merge' | 'settle' 
  */
 export function gitSettingDescriptions(settings: AppSettings): GitSettingDescriptions {
   const style = {
-    repository: 'The thread\'s own model writes commit messages and pull request text the way each repository\'s recent commits and AGENTS.md do.',
-    conventional: 'Each commit subject and pull request title starts with a type and scope, like feat(threads):.',
-    custom: 'Sotto sends your instructions to the thread\'s own model with every commit message and pull request draft; they take precedence over the repository\'s style.',
+    repository: 'Follows each repository\'s recent commits and AGENTS.md.',
+    conventional: 'Subjects and titles start with a type and scope, like feat(threads):.',
+    custom: 'Your instructions go to the thread\'s own model with every draft and win over the repository\'s style.',
   }[settings.gitWritingStyle]
   const drafting = settings.commitMessages || settings.pullRequestText
   const every = settings.gitFetchIntervalSeconds === 60 ? 'minute' : fetchIntervalLabel(settings.gitFetchIntervalSeconds)
   return {
-    style: drafting ? style : `${style} Nothing is drafted while Generated commit messages and Generated pull request text are off under Cleanup.`,
+    style: drafting ? style : `${style} Drafting is off under Cleanup.`,
     templates: settings.followPullRequestTemplates
-      ? 'When a Git action drafts a pull request, the thread\'s own model follows the repository\'s pull request template, if Sotto finds one.'
-      : 'When a Git action drafts a pull request, it skips the template and uses Sotto\'s own sections.',
+      ? 'Drafted pull requests follow the repository\'s template when Sotto finds one.'
+      : 'Drafted pull requests use Sotto\'s own sections.',
     merge: settings.defaultMergeMethod === 'last'
-      ? 'The merge in the pull request checklist starts on the method you used last, Merge the first time.'
-      : `The merge in the pull request checklist starts on ${GIT_MERGE_METHOD_LABELS[settings.defaultMergeMethod]}.`,
+      ? 'The pull request checklist starts on the method you used last, or Merge the first time.'
+      : `The pull request checklist starts on ${GIT_MERGE_METHOD_LABELS[settings.defaultMergeMethod]}.`,
     settle: settings.autoSettleMergedThreads
-      ? 'Once a thread\'s pull request is merged, Sotto settles the thread. It asks GitHub through gh once an hour and removes no folder unless a worktree rule under Application says so.'
-      : 'A thread stays where it is after its pull request merges, until you settle it.',
+      ? 'Settles a thread once its pull request merges, checking GitHub through gh hourly. Folders follow the worktree rules under Application.'
+      : 'A merged thread stays put until you settle it.',
     layout: settings.diffLayout === 'stacked'
-      ? 'Changes starts with each diff stacked, removed lines above added ones.'
-      : 'Changes starts with each diff split, old on the left and new on the right.',
+      ? 'Removed lines above added ones.'
+      : 'Old on the left, new on the right.',
     whitespace: settings.diffHideWhitespace
-      ? 'Changes starts with edits that only change spacing hidden.'
-      : 'Changes starts showing every edit, spacing included.',
+      ? 'Edits that only change spacing are hidden.'
+      : 'Every edit shows, spacing included.',
     fileState: settings.diffFileState === 'collapsed'
-      ? 'Files in Changes start collapsed to their headers. Press one to read it.'
-      : 'Files in Changes start expanded.',
+      ? 'Files start as headers; press one to read it.'
+      : 'Files start open.',
     proactive: settings.proactivePanels
-      ? 'Changes opens on its own if Tools is closed and a turn leaves its folder with at least 3 more changed files or 50 more changed lines. It counts only while the Threads page is open.'
+      ? 'While Tools is closed, Changes opens on its own when a turn leaves 3 more changed files or 50 more changed lines.'
       : 'Changes opens only when you open it.',
     fetch: settings.gitFetchIntervalSeconds === 0
-      ? 'Sotto never fetches, not even on a refresh or before a Git action. Ahead and behind compare with the remote as it was last fetched, and the pull request updates when you refresh.'
-      : `Sotto asks origin every ${every} whether a thread's branch is ahead or behind, while this window is in front.`,
+      ? 'Sotto never fetches, even before a Git action. Ahead and behind use the last fetch.'
+      : `Checks origin every ${every} for ahead and behind, while this window is in front.`,
     autoPull: settings.gitAutoPull
-      ? 'Sotto pulls a thread\'s folder on the default branch when it is clean and only behind. Fast-forward only; nothing is merged or rebased.'
-      : 'Sotto shows when the default branch is behind and leaves the pull to you.',
+      ? 'Fast-forwards a clean folder on the default branch when it falls behind. Nothing is merged or rebased.'
+      : 'Shows when the default branch is behind and leaves the pull to you.',
   }
 }
 
@@ -181,7 +181,7 @@ export function GitSettings({ settings, onSave }: GitSettingsProps): ReactNode {
       </Field>
       <Toggle label="Auto-settle merged threads" checked={settings.autoSettleMergedThreads} onCheckedChange={checked => void onSave({ autoSettleMergedThreads: checked })} description={says.settle} />
     </SettingsGroup>
-    <SettingsGroup title="When you read Changes" icon={FileDiff} note="These set where Changes starts. A choice made in Changes holds until one of these settings changes or Sotto restarts.">
+    <SettingsGroup title="When you read Changes" icon={FileDiff} note="How Changes first opens. A choice made in Changes lasts until you change one of these or restart Sotto.">
       <Field label="Diff layout" description={says.layout}>
         <SegmentedControl label="Diff layout" value={settings.diffLayout} onChange={value => void onSave({ diffLayout: value as DiffLayout })} options={[{ value: 'stacked', label: 'Stacked' }, { value: 'split', label: 'Split' }]} />
       </Field>

@@ -98,7 +98,7 @@ describe('New threads start with (issue #347)', () => {
     provide(twoComputers({ newThreadModelId: 'grok:test' }))
     render(<AgentSetupFields />)
     expect(screen.getByRole('combobox', { name: 'Thread model' })).toHaveTextContent('Grok Test')
-    expect(screen.getByText('A new thread in a project opens straight away with these, on every connected computer. Change them for one thread under its composer.')).toBeInTheDocument()
+    expect(screen.getByText('New threads start with these on every connected computer. Change them for one thread in its composer.')).toBeInTheDocument()
   })
 
   it('names a host that holds back a permission that lets a thread act without asking, and only while it does', () => {

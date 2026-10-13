@@ -1,5 +1,5 @@
 export interface ReleasePlatformProfile {
-  readonly key: 'win32' | 'darwin'
+  readonly key: 'win32' | 'darwin' | 'linux'
   readonly packagedDirName: string
   readonly executableLabel: string
   readonly distributableLabel: string

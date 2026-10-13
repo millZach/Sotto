@@ -43,7 +43,7 @@ function NewThreadDefaultsRow({ state, command }: { readonly state: AgentState; 
     : `${new Intl.ListFormat('en', { type: 'conjunction' }).format(holding)} ${holding.length === 1 ? 'doesn’t' : 'don’t'} let this computer answer permission requests yet, so ${holding.length === 1 ? 'its' : 'their'} new threads start on "${RUNTIME_LABELS['approval-required']}".`
   const save = (patch: Extract<AgentCommand, { type: 'configure' }>['patch']): void => { void command({ type: 'configure', patch }) }
   return <div className="account-row account-row--chips">
-    <span className="account-row__heading"><strong>New threads start with</strong><span>Model, reasoning effort and permissions, as the composer shows them.</span></span>
+    <span className="account-row__heading"><strong>New threads start with</strong><span>Model, reasoning effort and permissions.</span></span>
     <fieldset className="account-row__control">
       <legend className="tt-visually-hidden">New threads start with</legend>
       <ModelPicker models={models} modelId={modelId} disabled={false} onChange={pressed => save({ newThreadModelId: chosenModelId(models, pressed, modelId) })} />
@@ -85,8 +85,8 @@ export function AgentSetupFields(): ReactNode {
   const computers = (state.connections?.length ?? 0) > 1 ? state.connections ?? [] : null
   return <div className="account-settings"><div className="account-rows">
     <h3 className="account-rows__heading account-rows__heading--first">New threads</h3>
-    <p className="account-rows__subheading">{computers ? 'A new thread in a project opens straight away with these, on every connected computer. Change them for one thread under its composer.'
-      : 'A new thread in a project opens straight away with these. Change them for one thread under its composer.'}</p>
+    <p className="account-rows__subheading">{computers ? 'New threads start with these on every connected computer. Change them for one thread in its composer.'
+      : 'New threads start with these. Change them for one thread in its composer.'}</p>
     <NewThreadDefaultsRow state={state} command={command} />
     <ProviderUpgradeNotice state={state} command={command} />
     <h3 className="account-rows__heading">Projects</h3>
