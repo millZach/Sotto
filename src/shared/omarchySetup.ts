@@ -10,6 +10,7 @@ export const omarchyPieceStateSchema = z.object({
   status: z.enum(['missing', 'done', 'manual', 'stale', 'conflict', 'failed', 'working', 'queued', 'skipped']),
   message: z.string().max(8000),
   owned: z.boolean(),
+  retry: z.enum(['setup', 'remove']).optional(),
 }).strict()
 export type OmarchyPieceState = z.infer<typeof omarchyPieceStateSchema>
 export const omarchySetupStateSchema = z.object({

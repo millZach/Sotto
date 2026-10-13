@@ -45,6 +45,8 @@ With the Omarchy shell stopped, owl setup copies nothing. Start the shell, then 
 
 Each owned piece has **Remove**, and **Remove all** undoes the pieces Sotto installed. Removing keys takes out only Sotto’s line, preserving later edits and keeping the backup. Removing the owl takes it off the bar before deleting its folder. Removing the theme restores the Appearance choices from before setup; a later choice you made stays yours.
 
+If Sotto closes mid-operation, its saved record keeps the piece removable. **Try again** finishes the interrupted setup or removal. Updates retain the first key backup and existing file permissions. A bindings file created by setup is removed again only if it has no later edits.
+
 After a package update, Sotto refreshes its own unchanged keys and theme quietly and says so in Settings. **Update the owl** asks first because it restarts the bar. A file changed outside Sotto is left alone. The Linux tarball carries all three pieces in `resources/omarchy/`; `sotto-bin` also keeps copies under `/usr/share/sotto/`.
 
 **Press Remove all before `pacman -R`**. pacman cannot clean files in your home. Without that press, the guarded keys fall back to Voxtype and the owl hides itself when `sotto` is no longer on PATH, but the files stay.

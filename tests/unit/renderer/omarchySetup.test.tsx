@@ -73,6 +73,17 @@ describe('Omarchy setup rows', () => {
     await user.click(await screen.findByRole('button', { name: 'Remove the keys' }))
     expect(f.calls).toEqual([{ type: 'remove', pieces: ['keys'] }])
   })
+  it('retries an interrupted removal as removal, with any current key conflict visible', async () => {
+    const initial = setupState('done')
+    initial.pieces.keys = { status: 'failed', owned: true, message: 'Removal stopped before it finished.', retry: 'remove' }
+    initial.keyConflicts = ['F9 runs “Record the screen”.']
+    const f = setupBridgeFixture(initial), user = userEvent.setup()
+    render(<OmarchySetupPanel bridge={f.bridge} />)
+    expect(await screen.findByText('F9 runs “Record the screen”.')).toBeVisible()
+    expect(screen.queryByRole('radio', { name: 'Give F9 to Sotto' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Try the keys again' }))
+    expect(f.calls).toEqual([{ type: 'remove', pieces: ['keys'] }])
+  })
   it('reports working and failed rows, offers a retry and gives focus somewhere to continue', async () => {
     const f = setupBridgeFixture(), user = userEvent.setup()
     render(<OmarchySetupPanel bridge={f.bridge} />)

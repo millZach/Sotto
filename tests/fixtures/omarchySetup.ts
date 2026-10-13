@@ -50,11 +50,20 @@ export async function omarchySetupFixture() {
     if (command === 'luac') return desktop.lua ? ok() : no()
     if (key === 'omarchy-shell shell ping') return desktop.shell ? ok() : no()
     if (key === 'omarchy-shell shell listPlugins') return ok('[{"id":"sotto.dictation"}]')
-    if (key.startsWith('omarchy bar put') || key.startsWith('omarchy plugin disable')) {
+    if (key.startsWith('omarchy bar set')) {
       const settings = JSON.parse(await readFile(config, 'utf8'))
-      settings.bar.layout.center = key.startsWith('omarchy bar put')
+      const entry = settings.bar.layout.center.find((entry: { id: string }) => entry.id === 'sotto.dictation')
+      entry[args[3]!] = JSON.parse(args[4]!)
+      await writeFile(config, JSON.stringify(settings))
+      return ok()
+    }
+    if (key.startsWith('omarchy bar put') || key.startsWith('omarchy bar move') || key.startsWith('omarchy plugin disable')) {
+      const settings = JSON.parse(await readFile(config, 'utf8'))
+      if (key.startsWith('omarchy bar put') && settings.plugins?.some((entry: string | { id: string }) => entry === 'sotto.dictation' || typeof entry === 'object' && entry.id === 'sotto.dictation')) return ok()
+      if (key.startsWith('omarchy plugin disable')) settings.plugins = settings.plugins?.filter((entry: string | { id: string }) => entry !== 'sotto.dictation' && (typeof entry !== 'object' || entry.id !== 'sotto.dictation'))
+      settings.bar.layout.center = key.startsWith('omarchy bar')
         ? [{ id: 'omarchy.indicators' }, { id: 'sotto.dictation' }] : [{ id: 'omarchy.indicators' }]
-      desktop.onBar = key.startsWith('omarchy bar put')
+      desktop.onBar = key.startsWith('omarchy bar')
       await writeFile(config, JSON.stringify(settings))
       return ok()
     }

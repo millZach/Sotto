@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { lstat, readdir, readFile, mkdir, rename, writeFile, rm } from 'node:fs/promises'
+import { lstat, readdir, readFile, mkdir, rename, open, rm } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 
 /** Refuse links and special files before writing a user's configuration. */
@@ -55,13 +55,33 @@ export async function treeDigest(path: string): Promise<string | null> {
   return digest(entries.join('\n'))
 }
 
-export async function atomicWrite(path: string, value: string, mode = 0o644): Promise<void> {
+async function syncDirectory(path: string): Promise<void> {
+  if (process.platform === 'win32') return // Directory handles cannot be synced on Windows; setup runs only on Linux.
+  const handle = await open(path, 'r')
+  try { await handle.sync() } finally { await handle.close() }
+}
+async function syncedWrite(path: string, value: string, mode: number): Promise<void> {
+  const handle = await open(path, 'wx', mode)
+  try { await handle.writeFile(value); await handle.chmod(mode); await handle.sync() }
+  finally { await handle.close() }
+}
+/** A backup keeps its original name and permissions, and exists durably before it is recorded. */
+export async function exclusiveWrite(path: string, value: string, mode: number): Promise<void> {
   await plainPath(path)
   await mkdir(dirname(path), { recursive: true })
+  await syncedWrite(path, value, mode)
+  await syncDirectory(dirname(path))
+}
+export async function atomicWrite(path: string, value: string, mode?: number): Promise<void> {
+  await plainPath(path)
+  await mkdir(dirname(path), { recursive: true })
+  const previous = await lstat(path).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return null; throw error })
+  const permissions = mode ?? (previous ? previous.mode & 0o777 : 0o644)
   const temporary = `${path}.sotto-${process.pid}-${Date.now()}`
   try {
-    await writeFile(temporary, value, { flag: 'wx', mode })
+    await syncedWrite(temporary, value, permissions)
     await plainPath(path)
     await rename(temporary, path)
+    await syncDirectory(dirname(path))
   } finally { await rm(temporary, { force: true }) }
 }

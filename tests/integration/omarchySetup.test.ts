@@ -1,7 +1,9 @@
 // @vitest-environment node
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
+import { spawn } from 'node:child_process'
 import { dirname, join, resolve } from 'node:path'
+import { build } from 'esbuild'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { OmarchySetup } from '../../src/main/omarchy/setup'
 import { DEFAULT_SETTINGS, type SettingsPatch } from '../../src/shared/settings'
@@ -30,7 +32,7 @@ describe.runIf(process.platform === 'linux')('Omarchy setup across real child pr
     await write(join(home, '.local/state/omarchy/current/theme/colors.toml'), 'background = "#1e1e2e"\n')
     await write(stateFile, JSON.stringify({ calls: [], shell: true, lua: true, oldError: '', newError: '', rendered: JSON.stringify(omarchyThemes.themes.catppuccin.rendered) }))
     const quote = (text: string) => `'${text.replaceAll("'", "'\\''")}'`
-    for (const command of ['hyprctl', 'luac', 'omarchy', 'omarchy-shell', 'omarchy-theme-set-templates']) {
+    for (const command of ['bash', 'hyprctl', 'luac', 'omarchy', 'omarchy-shell', 'omarchy-theme-set-templates']) {
       const path = command === 'omarchy-theme-set-templates' ? join(root, 'omarchy/bin', command) : join(bin, command)
       await write(path, `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(resolve('tests/fixtures/fakeOmarchySetupCommand.mjs'))} ${quote(command)} "$@"\n`)
       await chmod(path, 0o755)
@@ -64,5 +66,58 @@ describe.runIf(process.platform === 'linux')('Omarchy setup across real child pr
     expect(result.pieces.theme.status).toBe('failed')
     expect(await readFile(join(home, '.config/omarchy/themed/sotto.json.tpl'), 'utf8').catch(() => null)).toBeNull()
     expect(settings.lightTheme).toBe(DEFAULT_SETTINGS.lightTheme)
+  })
+  it.each([
+    ['keys', 'setup', 'hyprctl reload', '.config/hypr/sotto-bindings.lua'],
+    ['owl', 'setup', 'omarchy-shell shell rescanPlugins', '.config/omarchy/plugins/sotto.dictation/manifest.json'],
+    ['owl', 'setup', 'after omarchy plugin disable sotto.dictation', '.config/omarchy/plugins/sotto.dictation/manifest.json'],
+    ['owl', 'setup', 'after omarchy bar put sotto.dictation --section center --after omarchy.indicators', '.config/omarchy/plugins/sotto.dictation/manifest.json'],
+    ['theme', 'setup', 'omarchy-theme-set-templates', '.config/omarchy/themed/sotto.json.tpl'],
+    ['keys', 'remove', 'hyprctl reload', '.config/hypr/sotto-bindings.lua'],
+    ['owl', 'remove', 'after omarchy plugin disable sotto.dictation', '.config/omarchy/plugins/sotto.dictation/manifest.json'],
+    ['theme', 'remove', 'bash after', '.config/omarchy/themed/sotto.json.tpl'],
+  ] as const)('keeps %s removable after %s is killed during a slow command', async (piece, operation, blockAt, installed) => {
+    if (operation === 'remove') await make().command({ type: 'setup', pieces: [piece], keys: 'give' })
+    const serviceRepair = operation === 'setup' && blockAt.startsWith('after omarchy ')
+    if (serviceRepair) {
+      await make().command({ type: 'setup', pieces: ['owl'], keys: 'give' })
+      await write(join(home, '.config/omarchy/shell.json'), JSON.stringify({ plugins: [{ id: 'sotto.dictation', command: '/my/sotto', pillEdge: 'bottom' }],
+        bar: { layout: { center: [{ id: 'omarchy.indicators' }] } } }))
+    }
+    await desktop({ blockAt, reached: false })
+    const runner = join(root, 'crash-runner.mjs'), optionsFile = join(root, 'options.json')
+    await build({ entryPoints: [resolve('tests/fixtures/omarchySetupCrash.ts')], outfile: runner, bundle: true, platform: 'node', format: 'esm' })
+    await writeFile(optionsFile, JSON.stringify({ home, data, resources: resolve('apps/omarchy'),
+      environment: { PATH: `${bin}:/usr/bin:/bin`, OMARCHY_PATH: join(root, 'omarchy'), XDG_RUNTIME_DIR: join(root, 'runtime'), SOTTO_SETUP_FIXTURE_STATE: stateFile } }))
+    const child = spawn(process.execPath, [runner, optionsFile, piece, operation], { detached: true, stdio: 'ignore' })
+    const exited = new Promise<void>((resolveExit, reject) => { child.once('exit', () => resolveExit()); child.once('error', reject) })
+    try {
+      await expect.poll(async () => JSON.parse(await readFile(stateFile, 'utf8')).reached).toBe(true)
+      if (operation === 'setup') expect(await readFile(join(home, installed), 'utf8')).not.toBe('')
+      process.kill(-child.pid!, 'SIGKILL') // Only this explicitly created fixture group, including its blocked command.
+      await exited
+      await desktop({ blockAt: '', reached: false })
+      const laterBarEdit = blockAt.startsWith('after omarchy bar put')
+      if (laterBarEdit) {
+        const configPath = join(home, '.config/omarchy/shell.json'), config = JSON.parse(await readFile(configPath, 'utf8'))
+        config.bar.layout.center[0].command = '/later/sotto'
+        await writeFile(configPath, JSON.stringify(config))
+      }
+      try { settings = JSON.parse(await readFile(join(data, 'settings.json'), 'utf8')) } catch { /* No appearance update. */ }
+      const reopened = make(), state = await reopened.get()
+      expect(state.pieces[piece]).toMatchObject({ status: 'failed', owned: true, retry: operation })
+      if (serviceRepair) {
+        expect((await reopened.command({ type: 'setup', pieces: ['owl'], keys: 'give' })).pieces.owl.status).toBe('done')
+        const config = JSON.parse(await readFile(join(home, '.config/omarchy/shell.json'), 'utf8'))
+        expect(config.bar.layout.center).toContainEqual({ id: 'sotto.dictation', command: laterBarEdit ? '/later/sotto' : '/my/sotto', pillEdge: 'bottom' })
+      }
+      expect((await reopened.command({ type: 'remove', pieces: [piece] })).pieces[piece].status).toBe('missing')
+      expect(await readFile(join(home, installed), 'utf8').catch(() => null)).toBeNull()
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) {
+        try { process.kill(-child.pid!, 'SIGKILL') } catch { /* Already stopped. */ }
+        await exited
+      }
+    }
   })
 })

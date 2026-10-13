@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { cp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, cp, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { inspectDictationBindings } from '../../../src/main/omarchy/setup'
@@ -158,12 +158,12 @@ describe('Omarchy setup in main', () => {
     const engine = f.make()
     await engine.command({ type: 'setup', pieces: ['owl'], keys: 'give' })
     const config = JSON.parse(await readFile(f.config, 'utf8'))
-    config.plugins = [{ id: 'sotto.dictation' }]
+    config.plugins = [{ id: 'sotto.dictation', command: '/my/sotto' }]
     config.bar.layout.center = [{ id: 'omarchy.indicators' }]
     await writeFile(f.config, JSON.stringify(config))
     expect((await engine.get()).pieces.owl).toMatchObject({ status: 'missing', owned: true })
     expect((await engine.command({ type: 'setup', pieces: ['owl'], keys: 'unconfirmed' })).pieces.owl.status).toBe('done')
-    expect(JSON.parse(await readFile(f.config, 'utf8')).bar.layout.center).toContainEqual({ id: 'sotto.dictation' })
+    expect(JSON.parse(await readFile(f.config, 'utf8')).bar.layout.center).toContainEqual({ id: 'sotto.dictation', command: '/my/sotto' })
   })
   it('asks about new conflicts on owned keys after an update', async () => {
     const engine = f.make()
@@ -207,6 +207,50 @@ describe('Omarchy setup in main', () => {
     const updated = await engine.command({ type: 'update-owl' })
     expect(updated.pieces.owl.status).toBe('done')
     expect(f.desktop.restartCount).toBe(1)
+  })
+  it('keeps the initial key backup in its record after an update', async () => {
+    const engine = f.make()
+    await engine.command({ type: 'setup', pieces: ['keys'], keys: 'give' })
+    const first = JSON.parse(await readFile(join(f.data, 'omarchy-setup.json'), 'utf8')).pieces.keys
+    await f.write(join(f.resources, 'bindings.lua'), `${await readFile(join(f.resources, 'bindings.lua'), 'utf8')}\n-- update\n`)
+    await engine.refreshAtStart()
+    const current = JSON.parse(await readFile(join(f.data, 'omarchy-setup.json'), 'utf8')).pieces.keys
+    expect(current.backup).toBe(first.backup)
+    expect(await readFile(current.backup, 'utf8')).toBe('-- My keys\n')
+  })
+  it('restores an originally absent key file after removal and keeps later edits', async () => {
+    await rm(f.bindings)
+    const engine = f.make()
+    await engine.command({ type: 'setup', pieces: ['keys'], keys: 'give' })
+    await engine.command({ type: 'remove', pieces: ['keys'] })
+    expect(await readFile(f.bindings, 'utf8').catch(() => null)).toBeNull()
+    await engine.command({ type: 'setup', pieces: ['keys'], keys: 'give' })
+    await writeFile(f.bindings, `${await readFile(f.bindings, 'utf8')}-- Added later\n`)
+    await engine.command({ type: 'remove', pieces: ['keys'] })
+    expect(await readFile(f.bindings, 'utf8')).toBe('-- Added later\n')
+  })
+  it('does not claim a key backup after removing only hand setup', async () => {
+    f.desktop.binds = sottoBinds
+    const removed = await f.make().command({ type: 'remove', pieces: [...OMARCHY_PIECES] })
+    expect(removed.notice).toBe('')
+  })
+  it.runIf(process.platform !== 'win32')('preserves private key-file permissions and protects its backup', async () => {
+    await chmod(f.bindings, 0o600)
+    await f.make().command({ type: 'setup', pieces: ['keys'], keys: 'give' })
+    expect((await stat(f.bindings)).mode & 0o777).toBe(0o600)
+    const receipt = JSON.parse(await readFile(join(f.data, 'omarchy-setup.json'), 'utf8')).pieces.keys
+    expect((await stat(receipt.backup)).mode & 0o777).toBe(0o600)
+  })
+  it('refuses another process’s leftover owl folder without stranding or replacing it', async () => {
+    const engine = f.make()
+    await engine.command({ type: 'setup', pieces: ['owl'], keys: 'give' })
+    const leftover = join(f.home, '.config/omarchy/plugins/.sotto.dictation.previous-1234')
+    const { rename } = await import('node:fs/promises')
+    await rename(f.plugin, leftover)
+    const result = await f.make().command({ type: 'setup', pieces: ['owl'], keys: 'give' })
+    expect(result.pieces.owl.status).toBe('failed')
+    expect(await readFile(join(f.plugin, 'manifest.json'), 'utf8').catch(() => null)).toBeNull()
+    expect(await readFile(join(leftover, 'manifest.json'), 'utf8')).toContain('sotto.dictation')
   })
   it('restores the previous owl and bar if placement fails', async () => {
     const before = await readFile(f.config, 'utf8')

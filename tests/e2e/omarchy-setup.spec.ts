@@ -145,7 +145,9 @@ test('set up Omarchy, handle every decision, undo and update through the real wi
     await expect.poll(async () => (await state(page)).pieces.owl.status).toBe('missing')
     await capture(page, 'service-only-1280x800-light')
     await page.getByRole('button', { name: 'Set up the owl', exact: true }).click()
-    await expect.poll(async () => (await state(page)).pieces.owl.status).toBe('done')
+    await expect.poll(async () => (await state(page)).busy, { timeout: 30000 }).toBe(false)
+    await writeFile(join(root, 'service-repair.json'), JSON.stringify(await state(page), null, 2))
+    expect((await state(page)).pieces.owl.status).toBe('done')
     expect(JSON.parse(await readFile(shellConfig, 'utf8')).bar.layout.center).toContainEqual({ id: 'sotto.dictation' })
     proofs.push({ journey: 'service-only owned plugin is incomplete; setup restores its owl to the bar', passed: true })
     for (const piece of ['keys', 'owl', 'theme']) {

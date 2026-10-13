@@ -663,6 +663,8 @@ The Omarchy rows show each piece’s state before setup changes a file. **Set up
 
 **Remove** undoes one owned piece; **Remove all** undoes all owned pieces, preserving files installed or changed by hand and the key backup. The theme’s previous Appearance choices return unless you chose another since setup. After an app update, unchanged owned keys and theme refresh at startup, with a note in Settings. Updating the owl asks first because it restarts the bar. Press **Remove all** before `pacman -R`; without it, guarded bindings fall back to Voxtype and the owl hides once `sotto` leaves PATH, but the files remain.
 
+If Sotto closes during setup or removal, the row says it stopped before finishing. **Try again** continues that operation; **Remove** can undo unfinished setup. The first key backup stays through updates. Later file edits stay yours.
+
 The unpackaged desktop app starts on Omarchy (Arch Linux and Hyprland on Wayland). Prepare a source checkout with Node 24:
 
 ```sh

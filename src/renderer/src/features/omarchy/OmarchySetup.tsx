@@ -97,7 +97,7 @@ export function OmarchySetupPanel({ surface = 'settings', controller, bridge }: 
       {OMARCHY_PIECES.map(piece => {
         const current = state?.pieces[piece], definition = PIECES[piece]
         const conflict = piece === 'keys' && state && state.keyConflicts.length > 0 &&
-          (['missing', 'stale', 'skipped'].includes(current?.status ?? '') || current?.status === 'conflict' && !current.owned)
+          (['missing', 'stale', 'skipped', 'failed'].includes(current?.status ?? '') || current?.status === 'conflict' && !current.owned)
         return <li key={piece} className="omarchy-setup__piece" data-piece={piece} data-state={current?.status ?? 'checking'}>
           <span className="omarchy-setup__icon">{piece === 'keys' ? <Keyboard size={20} /> : piece === 'theme' ? <Palette size={20} /> : <SottoGlyph />}</span>
           <strong className="omarchy-setup__name">{definition.title}</strong>
@@ -109,14 +109,15 @@ export function OmarchySetupPanel({ surface = 'settings', controller, bridge }: 
             {current?.status === 'stale' && piece === 'owl' ? <Button variant="secondary" disabled={busy} onClick={() => setUpdateQuestion(true)}>Update the owl</Button> : null}
           </div>
           {conflict ? <div className="omarchy-setup__detail"><p id={`${label}-keys`}>{state.keyConflicts.join(' ')}</p>
-            <div className="omarchy-setup__choices" role="radiogroup" aria-labelledby={`${label}-keys`}>
+            {current?.retry !== 'remove' ? <div className="omarchy-setup__choices" role="radiogroup" aria-labelledby={`${label}-keys`}>
               <label><input type="radio" name={`${label}-choice`} checked={keyChoice === 'give'} disabled={busy} onChange={() => setKeyChoice('give')} />Give F9 to Sotto</label>
               <label><input type="radio" name={`${label}-choice`} checked={keyChoice === 'keep'} disabled={busy} onChange={() => setKeyChoice('keep')} />Leave my keys alone</label>
-            </div>
+            </div> : null}
           </div> : null}
           {piece === 'keys' && state?.voxtype && current?.status === 'missing' ? <p className="omarchy-setup__detail">Voxtype has these keys now. Sotto takes them over; Voxtype stays installed.</p> : null}
           {current?.message && current.status !== 'working' ? <div className="omarchy-setup__detail" role={current.status === 'failed' ? 'alert' : undefined}><p>{current.message}</p>
-            {current.status === 'failed' ? <Button data-next variant="secondary" disabled={busy} aria-label={`Try ${definition.short} again`} onClick={() => void install([piece])}>Try again</Button> : null}
+            {current.status === 'failed' ? <Button data-next variant="secondary" disabled={busy} aria-label={`Try ${definition.short} again`}
+              onClick={() => void (current.retry === 'remove' ? act({ type: 'remove', pieces: [piece] }) : install([piece]))}>Try again</Button> : null}
           </div> : null}
           {files ? <ul className="omarchy-setup__files">{definition.files.map(file => <li key={file}>{file}</li>)}</ul> : null}
         </li>
