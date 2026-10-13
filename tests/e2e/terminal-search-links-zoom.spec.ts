@@ -214,6 +214,18 @@ process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x
       await linkControl.press('Escape')
       await expect(search).toBeHidden(); await expect(input).toBeFocused()
       const before = await grid()
+      await input.press('Control+Shift+=')
+      await expect.poll(() => page.evaluate(async () => (await window.sotto!.getSettings()).terminalFontSize)).toBe(14)
+      await app.evaluate(({ BrowserWindow }) => {
+        const contents = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!.webContents
+        contents.sendInputEvent({ type: 'keyDown', keyCode: '+', modifiers: ['control'] })
+        contents.sendInputEvent({ type: 'keyUp', keyCode: '+', modifiers: ['control'] })
+      })
+      await expect.poll(() => page.evaluate(async () => (await window.sotto!.getSettings()).terminalFontSize)).toBe(15)
+      expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!.webContents.getZoomFactor())).toBe(1)
+      await input.press('Control+-')
+      await input.press('Control+0')
+      await expect.poll(() => page.evaluate(async () => (await window.sotto!.getSettings()).terminalFontSize)).toBe(13)
       await input.press('Control+=')
       await expect.poll(() => page.evaluate(async () => (await window.sotto!.getSettings()).terminalFontSize)).toBe(14)
       await expect.poll(grid).toBeLessThan(before)

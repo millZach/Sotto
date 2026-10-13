@@ -131,7 +131,7 @@ export function Onboarding({
   const [index, setIndex] = useState(0)
   const steps = platform === 'linux' ? LINUX_STEPS : STEPS
   const step = steps[index]!
-  const omarchy = useOmarchySetup(platform === 'linux')
+  const omarchy = useOmarchySetup(platform === 'linux' && step.id === 'omarchy')
   const keysSet = omarchy.state && ['done', 'manual'].includes(omarchy.state.pieces.keys.status)
 
   // Main starts the download when Sotto opens; this step starts it too if nothing has yet.

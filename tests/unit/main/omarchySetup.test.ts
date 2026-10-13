@@ -45,6 +45,52 @@ describe('Omarchy setup in main', () => {
     expect(await readFile(f.bindings, 'utf8')).toBe('-- My keys\n')
     expect(await readdir(join(f.home, '.config/hypr'))).toEqual(['bindings.lua'])
   })
+  it('returns current progress to focus reads without inspecting while keys change', async () => {
+    const reached = Promise.withResolvers<void>(), resume = Promise.withResolvers<void>()
+    const engine = f.make(async (command, args) => {
+      if (command === 'luac') { reached.resolve(); await resume.promise }
+      return f.run(command, args)
+    })
+    const installing = engine.command({ type: 'setup', pieces: ['keys'], keys: 'give' })
+    try {
+      await reached.promise
+      const calls = f.calls.length
+      expect(await engine.get()).toMatchObject({ busy: true, operation: 'setup', pieces: { keys: { status: 'working' } } })
+      expect(f.calls).toHaveLength(calls)
+    } finally { resume.resolve(); await installing }
+    expect((await installing).operation).toBeUndefined()
+  })
+  it('publishes idle failed rows when the final inspection throws, then can inspect again', async () => {
+    let failInspection = false
+    const engine = f.make(async (command, args) => {
+      if (command === 'hyprctl' && failInspection) { failInspection = false; throw new Error('Desktop inspection failed') }
+      const result = await f.run(command, args)
+      if (command === 'bash') failInspection = true
+      return result
+    })
+    const result = await engine.command({ type: 'setup', pieces: ['theme'], keys: 'give' })
+    expect(result.busy).toBe(false)
+    expect(result.operation).toBeUndefined()
+    expect(f.changes.at(-1)).toMatchObject({ busy: false, pieces: { theme: { status: 'failed', message: 'Desktop inspection failed' } } })
+    expect((await engine.get()).pieces.theme).toMatchObject({ status: 'done', owned: true })
+  })
+  it.each([true, false])('retries inspection after removal without setting up again (removed=%s)', async removed => {
+    let failInspection = false
+    const engine = f.make(async (command, args) => {
+      if (command === 'hyprctl' && failInspection) { failInspection = false; throw new Error('Desktop inspection failed') }
+      const result = await f.run(command, args)
+      if (command === 'bash' && args.includes('--uninstall')) failInspection = true
+      return result
+    })
+    await engine.command({ type: 'setup', pieces: ['theme'], keys: 'give' })
+    f.desktop.theme = removed
+    const result = await engine.command({ type: 'remove', pieces: ['theme'] })
+    expect(result.pieces.theme).toMatchObject({ status: 'failed', retry: 'inspect' })
+    const mutations = f.calls.filter(call => call.startsWith('bash')).length
+    const refreshed = await engine.get()
+    expect(refreshed.pieces.theme).toMatchObject(removed ? { status: 'missing', owned: false } : { status: 'failed', owned: true, retry: 'remove' })
+    expect(f.calls.filter(call => call.startsWith('bash'))).toHaveLength(mutations)
+  })
   it('sets up all three, backs up keys, selects both Appearance columns and skips a second run', async () => {
     const engine = f.make(), beforeAppearance = f.settings().appearance
     const result = await engine.command({ type: 'setup', pieces: [...OMARCHY_PIECES], keys: 'give' })

@@ -134,8 +134,8 @@ function windowMenu(): ApplicationMenuItem {
 }
 
 /**
- * Builds the application menu template for a platform. Windows returns null:
- * the app ships without an application menu today and the caller installs null.
+ * Builds macOS's application menu. Windows and Linux return null so the caller
+ * retains Electron's default menu and its zoom and developer-tool accelerators.
  */
 export function buildApplicationMenuTemplate(
   options: ApplicationMenuTemplateOptions,

@@ -9,6 +9,7 @@ import { OMARCHY_PIECES, type OmarchyPiece, type OmarchyPieceState, type Omarchy
 import type { AppSettings, SettingsPatch } from '../../shared/settings'
 import { OMARCHY_THEME_ID, parseOmarchyTheme } from '../../shared/themes/omarchy'
 import { atomicWrite, contents, digest, exclusiveWrite, plainPath, treeDigest } from './files'
+import { omarchySetupEnvironment } from './environment'
 
 const ID = 'sotto.dictation'
 const REQUIRE = '-- Sotto Omarchy setup\nrequire("hypr.sotto-bindings")\n-- End Sotto Omarchy setup\n'
@@ -38,7 +39,7 @@ export interface OmarchySetupOptions {
   readonly onChanged?: (state: OmarchySetupState) => void
 }
 
-function state(status: OmarchyPieceState['status'], message = '', owned = false, retry?: 'setup' | 'remove'): OmarchyPieceState {
+function state(status: OmarchyPieceState['status'], message = '', owned = false, retry?: OmarchyPieceState['retry']): OmarchyPieceState {
   return { status, message, owned, ...(retry ? { retry } : {}) }
 }
 function ownedHash(hash: string | null, receipt: PieceReceipt | undefined): boolean {
@@ -103,7 +104,7 @@ export class OmarchySetup {
     this.rendered = join(options.home, '.local/state/omarchy/current/theme/sotto.json')
     this.shellConfig = join(options.home, '.config/omarchy/shell.json')
     this.run = options.run ?? ((command, args) => new Promise(resolveRun => {
-      execFile(command, [...args], { env: { ...process.env, ...options.environment, HOME: options.home }, timeout: 30_000, maxBuffer: 128 * 1024 },
+      execFile(command, [...args], { env: omarchySetupEnvironment({ ...process.env, ...options.environment }, options.home), timeout: 30_000, maxBuffer: 128 * 1024 },
         (error, stdout, stderr) => resolveRun({ ok: !error, stdout: String(stdout), stderr: String(stderr) }))
     }))
   }
@@ -234,26 +235,28 @@ export class OmarchySetup {
     if (error instanceof Error && !('code' in error) && !(error instanceof z.ZodError) && !(error instanceof SyntaxError)) return error.message.slice(0, 8000)
     return 'Sotto could not read or change these files. Check that your configuration is readable and writable, then try again.'
   }
+  private async inspect(): Promise<boolean> {
+    try { await this.detect(); return true } catch (error) {
+      for (const piece of OMARCHY_PIECES) this.snapshot.pieces[piece] = state('failed', this.explain(error), false, 'inspect')
+      return false
+    }
+  }
   get(): Promise<OmarchySetupState> {
     // A get during a run sees progress without starting a second inspection over changing files.
     if (this.snapshot.busy) return Promise.resolve(structuredClone(this.snapshot))
     return this.enqueue(async () => {
-      try { await this.detect() } catch (error) {
-        for (const piece of OMARCHY_PIECES) this.snapshot.pieces[piece] = state('failed', this.explain(error))
-      }
+      await this.inspect()
       return this.publish()
     })
   }
 
   command(command: OmarchySetupCommand): Promise<OmarchySetupState> {
     return this.enqueue(async () => {
-      try { await this.detect() } catch (error) {
-        for (const piece of OMARCHY_PIECES) this.snapshot.pieces[piece] = state('failed', this.explain(error))
-        return this.publish()
-      }
+      if (!await this.inspect()) return this.publish()
       const pieces = command.type === 'update-owl' ? ['owl'] as const : OMARCHY_PIECES.filter(piece => command.pieces.includes(piece))
       const keyBackup = command.type === 'remove' ? this.receipt.pieces.keys?.backup : undefined
       this.snapshot.busy = true
+      this.snapshot.operation = command.type
       this.snapshot.notice = ''
       this.publish()
       try {
@@ -286,7 +289,8 @@ export class OmarchySetup {
         }
       } finally {
         this.snapshot.busy = false
-        await this.detect()
+        delete this.snapshot.operation
+        await this.inspect()
       }
       if (command.type === 'remove' && pieces.length === 3 && keyBackup && !this.receipt.pieces.keys && this.notes.keys?.status === 'missing' &&
         (await lstat(keyBackup).catch(() => null))?.isFile()) this.snapshot.notice = 'Sotto kept the copy of bindings.lua it made at setup, in ~/.config/hypr.'
