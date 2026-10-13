@@ -24,6 +24,7 @@ interface BuilderTarget {
 interface BuilderResource {
   from: string
   to: string
+  filter?: string[]
 }
 
 interface BuilderConfig {
@@ -33,7 +34,7 @@ interface BuilderConfig {
   asarUnpack: string[]
   extraResources: BuilderResource[]
   win: { target: BuilderTarget[] }
-  linux: { target: BuilderTarget[]; executableName: string; icon: string; category: string; artifactName: string }
+  linux: { target: BuilderTarget[]; executableName: string; icon: string; category: string; artifactName: string; extraResources: BuilderResource[] }
   mac: {
     identity: string | null
     target: BuilderTarget[]
@@ -113,6 +114,9 @@ describe('release contract', () => {
     expect(builderConfig.linux).toEqual({
       executableName: 'sotto', icon: 'build/icon.png', category: 'Utility',
       target: [{ target: 'tar.gz', arch: ['x64'] }], artifactName: '${productName}-${version}-linux-${arch}.${ext}',
+      extraResources: [{ from: 'apps/omarchy', to: 'omarchy', filter: [
+        'bindings.lua', 'sotto.json.tpl', 'install-theme.sh', 'install-shell-plugin.sh', 'shell-plugin/sotto.dictation/**', '!**/*.d.mts',
+      ] }],
     })
     expect(builderConfig.npmRebuild).toBe(false)
     expect(packageManifest.scripts['package:win']).not.toContain('--config.npmRebuild=true')

@@ -36,6 +36,12 @@ Amends [ADR-0025](0025-headless-host-and-client-identity.md), which says "Linux 
 
 ## Decision
 
+**October 12, 2026 amendment: one-press Omarchy setup.** Zach chose variant A and every recommendation in the approved [prototype](../prototypes/omarchy-setup-prototype.html). This goes straight to stable; Linux has no Owl build. After Welcome, Linux first-run setup offers the keys, owl and theme with **Set up all three**. Settings → Dictation keeps the same rows. No `sotto setup` CLI is added yet.
+
+Sotto may write these Omarchy files only on the user’s press, with a `bindings.lua.bak.<epoch>` copy before changing keys. Main checks ownership, active compositor bindings and the shell first. Manual pieces count as done and stay untouched. New Hyprland errors roll keys back and appear only in the row, never in logs. A stopped shell leaves the owl wholly absent. Theme setup renders under Omarchy’s switch lock, chooses Omarchy in both Appearance columns with Match Linux and keeps the previous choices for removal. Remove takes out only Sotto’s key line and its own unchanged pieces, retaining unrelated edits and the backup.
+
+That press also authorizes quiet startup refreshes of Sotto’s unchanged keys and theme when a package changes them, reported in Settings. A new key conflict waits for a choice. Updating the owl asks first because it restarts the bar. The snippet runs only with `sotto` on PATH and the owl hides without it. Before `pacman -R`, Remove all cleans the home files; pacman itself never writes or cleans a home. The three pieces and helper scripts ship as Linux-only resources, with public copies in `/usr/share/sotto/`. This amends the earlier statement below that nothing in `apps/omarchy/` is loaded by the app. Windows and macOS retain their resources, IPC and first-run journeys.
+
 **Linux is a desktop platform, and Omarchy is the Linux desktop Sotto supports.** On another Linux desktop, whatever happens to work is welcome, but nothing is checked there. Linux is x64 only, as the host archive is.
 
 **A Linux platform profile** (built in #848 for #835). `SottoPlatform` gains `linux`. Other platforms still fall back to the Windows profile on purpose (`src/shared/platform.ts`), and are not supported. The profile has:

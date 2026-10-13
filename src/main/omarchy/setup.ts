@@ -1,0 +1,489 @@
+import { execFile } from 'node:child_process'
+import { cp, lstat, mkdir, rename, rm, writeFile } from 'node:fs/promises'
+import { dirname, join, resolve } from 'node:path'
+import { setTimeout as wait } from 'node:timers/promises'
+import { z } from 'zod'
+
+import { OMARCHY_PIECES, type OmarchyPiece, type OmarchyPieceState, type OmarchySetupCommand, type OmarchySetupState } from '../../shared/omarchySetup'
+import type { AppSettings, SettingsPatch } from '../../shared/settings'
+import { OMARCHY_THEME_ID, parseOmarchyTheme } from '../../shared/themes/omarchy'
+import { atomicWrite, contents, digest, plainPath, treeDigest } from './files'
+
+const ID = 'sotto.dictation'
+const REQUIRE = '-- Sotto Omarchy setup\nrequire("hypr.sotto-bindings")\n-- End Sotto Omarchy setup\n'
+const appearanceSchema = z.object({ appearance: z.enum(['system', 'light', 'dark']), theme: z.enum(['system', 'light', 'dark']), lightTheme: z.string(), darkTheme: z.string() }).strict()
+const pieceReceiptSchema = z.object({ hash: z.string().regex(/^[a-f0-9]{64}$/), backup: z.string().optional(),
+  originalMissing: z.boolean().optional(), appearance: appearanceSchema.optional() }).strict()
+const receiptSchema = z.object({ version: z.literal(1), pieces: z.object({
+  keys: pieceReceiptSchema.optional(), owl: pieceReceiptSchema.optional(), theme: pieceReceiptSchema.optional(),
+}).strict() }).strict()
+type Receipt = z.infer<typeof receiptSchema>
+type PieceReceipt = z.infer<typeof pieceReceiptSchema>
+
+export interface CommandOutput { readonly ok: boolean; readonly stdout: string; readonly stderr: string }
+export type SetupRun = (command: string, args: readonly string[]) => Promise<CommandOutput>
+export interface OmarchySetupOptions {
+  readonly home: string
+  readonly data: string
+  readonly resources: string
+  readonly version: string
+  readonly settings: { get(): Promise<AppSettings>; update(patch: SettingsPatch): Promise<unknown> }
+  readonly run?: SetupRun
+  readonly environment?: NodeJS.ProcessEnv
+  readonly onChanged?: (state: OmarchySetupState) => void
+}
+
+function state(status: OmarchyPieceState['status'], message = '', owned = false): OmarchyPieceState { return { status, message, owned } }
+const bindSchema = z.object({ key: z.string(), modmask: z.number(), dispatcher: z.string(), arg: z.string(),
+  release: z.boolean().optional(), description: z.string().optional() }).passthrough()
+
+/** Who owns each exact chord, including F9's release binding. */
+export function inspectDictationBindings(value: unknown, legacySotto = false): { conflicts: string[]; voxtype: boolean; manual: boolean } {
+  const binds = z.array(bindSchema).parse(value).filter(bind =>
+    (bind.key.toUpperCase() === 'F9' && bind.modmask === 0) || (bind.key.toUpperCase() === 'X' && bind.modmask === 68))
+  const verb = (bind: z.infer<typeof bindSchema>): 'start' | 'stop' | 'toggle' => bind.modmask === 68 ? 'toggle' : bind.release ? 'stop' : 'start'
+  const labels = { start: 'Start dictation (push-to-talk)', stop: 'Stop dictation (push-to-talk)', toggle: 'Toggle dictation' }
+  const sottoLabels = { start: 'Start Sotto dictation (push-to-talk)', stop: 'Stop Sotto dictation (push-to-talk)', toggle: 'Toggle Sotto dictation' }
+  // Lua binds expose only callback IDs. Sotto's labels identify new snippets;
+  // the old shared labels are Sotto's only with a recognised, loaded legacy snippet.
+  const isSotto = (bind: z.infer<typeof bindSchema>): boolean => /(?:^|[\s/'"])sotto(?:['"])?\s+dictation\s+(start|stop|toggle)\b/.test(bind.arg) ||
+    bind.dispatcher === '__lua' && (bind.description === sottoLabels[verb(bind)] || legacySotto && bind.description === labels[verb(bind)])
+  const isVoxtype = (bind: z.infer<typeof bindSchema>): boolean => /(?:^|[\s/'"])voxtype(?:['"])?\s/.test(bind.arg) ||
+    bind.dispatcher === '__lua' && !legacySotto && bind.description === labels[verb(bind)]
+  const conflicts = binds.filter(bind => !isSotto(bind) && !isVoxtype(bind))
+    .map(bind => `${bind.key.toUpperCase() === 'F9' ? 'F9' : 'Super+Ctrl+X'} runs “${(bind.description || bind.dispatcher).slice(0, 800)}”.`)
+  return { conflicts: [...new Set(conflicts)].slice(0, 100), voxtype: binds.some(isVoxtype),
+    manual: conflicts.length === 0 && ['start', 'stop', 'toggle'].every(verb => binds.some(bind =>
+      isSotto(bind) && (bind.dispatcher === '__lua' || new RegExp(`dictation\\s+${verb}\\b`).test(bind.arg)) &&
+      (verb === 'toggle' ? bind.modmask === 68 : bind.modmask === 0 && (verb === 'stop' ? bind.release === true : !bind.release)))) }
+}
+
+/** Resources are outside ASAR on Linux; development uses the same checked-in pieces. */
+export async function findOmarchyResources(resourcesPath: string, checkout: string): Promise<string> {
+  const bundled = join(resourcesPath, 'omarchy')
+  if (await contents(join(bundled, 'bindings.lua')) !== null) return bundled
+  return join(resolve(checkout), 'apps/omarchy')
+}
+
+/** Main owns setup, file ownership and its single operation lane. No command output enters a log. */
+export class OmarchySetup {
+  private receipt: Receipt = { version: 1, pieces: {} }
+  private loaded = false
+  private lane: Promise<unknown> = Promise.resolve()
+  private readonly notes: Partial<Record<OmarchyPiece, OmarchyPieceState>> = {}
+  private snapshot: OmarchySetupState = { pieces: { keys: state('missing'), owl: state('missing'), theme: state('missing') },
+    busy: false, keyConflicts: [], voxtype: false, shellRunning: false, notice: '' }
+  private readonly receiptPath: string
+  private readonly hypr: string
+  private readonly bindings: string
+  private readonly snippet: string
+  private readonly plugin: string
+  private readonly template: string
+  private readonly rendered: string
+  private readonly shellConfig: string
+  private readonly run: SetupRun
+
+  constructor(private readonly options: OmarchySetupOptions) {
+    this.receiptPath = join(options.data, 'omarchy-setup.json')
+    this.hypr = join(options.home, '.config/hypr')
+    this.bindings = join(this.hypr, 'bindings.lua')
+    this.snippet = join(this.hypr, 'sotto-bindings.lua')
+    this.plugin = join(options.home, '.config/omarchy/plugins', ID)
+    this.template = join(options.home, '.config/omarchy/themed/sotto.json.tpl')
+    this.rendered = join(options.home, '.local/state/omarchy/current/theme/sotto.json')
+    this.shellConfig = join(options.home, '.config/omarchy/shell.json')
+    this.run = options.run ?? ((command, args) => new Promise(resolveRun => {
+      execFile(command, [...args], { env: { ...process.env, ...options.environment, HOME: options.home }, timeout: 30_000, maxBuffer: 128 * 1024 },
+        (error, stdout, stderr) => resolveRun({ ok: !error, stdout: String(stdout), stderr: String(stderr) }))
+    }))
+  }
+
+  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
+    const next = this.lane.then(operation)
+    this.lane = next.catch(() => undefined)
+    return next
+  }
+  private publish(): OmarchySetupState {
+    const result = structuredClone(this.snapshot)
+    this.options.onChanged?.(result)
+    return result
+  }
+  private async load(): Promise<void> {
+    if (this.loaded) return
+    const saved = await contents(this.receiptPath)
+    if (saved !== null) {
+      const parsed = receiptSchema.safeParse(JSON.parse(saved))
+      if (!parsed.success) throw new Error('Sotto could not read its Omarchy setup record. Your files were left alone. Restore the record, then try again.')
+      this.receipt = parsed.data
+    }
+    this.loaded = true
+  }
+  private async save(piece: OmarchyPiece, receipt?: PieceReceipt): Promise<void> {
+    const next = structuredClone(this.receipt)
+    if (receipt) next.pieces[piece] = receipt
+    else delete next.pieces[piece]
+    await atomicWrite(this.receiptPath, JSON.stringify(next), 0o600)
+    this.receipt = next
+  }
+  private async checked(command: string, args: readonly string[], message: string): Promise<string> {
+    const result = await this.run(command, args)
+    if (!result.ok) throw new Error(message)
+    return result.stdout
+  }
+  private async bundledHash(piece: OmarchyPiece): Promise<string> {
+    const value = piece === 'owl' ? await treeDigest(join(this.options.resources, 'shell-plugin', ID))
+      : await contents(join(this.options.resources, piece === 'keys' ? 'bindings.lua' : 'sotto.json.tpl'))
+    if (value === null) throw new Error('This Sotto install is missing its Omarchy files. Install Sotto again, then try again.')
+    return piece === 'owl' ? value : digest(value)
+  }
+  private async installedHash(piece: OmarchyPiece): Promise<string | null> {
+    if (piece === 'owl') return treeDigest(this.plugin)
+    const value = await contents(piece === 'keys' ? this.snippet : this.template)
+    return value === null ? null : digest(value)
+  }
+  private async onBar(): Promise<boolean> {
+    const value = await contents(this.shellConfig)
+    if (value === null) return false
+    const config = z.object({ bar: z.object({ layout: z.record(z.string(), z.array(z.unknown())).optional() }).optional(),
+      plugins: z.array(z.unknown()).optional() }).passthrough().parse(JSON.parse(value))
+    return [...Object.values(config.bar?.layout ?? {}).flat(), ...(config.plugins ?? [])].some(entry =>
+      entry === ID || (typeof entry === 'object' && entry !== null && 'id' in entry && entry.id === ID))
+  }
+
+  private async detect(): Promise<void> {
+    await this.load()
+    const binds = await this.run('hyprctl', ['binds', '-j'])
+    let keys: ReturnType<typeof inspectDictationBindings> | null = null
+    if (binds.ok) {
+      try {
+        const file = await contents(this.bindings), snippet = await contents(this.snippet)
+        const knownSnippet = (text: string): boolean => /local\s+sotto\s*=\s*["'][^\n]*sotto/.test(text) &&
+          ['start', 'stop', 'toggle'].every(verb => new RegExp(`dictation\\(["']${verb}["']\\)`).test(text))
+        const legacy = !!file && (snippet !== null && !snippet.includes('Sotto dictation') && knownSnippet(snippet) && /require\(["']hypr\.sotto-bindings["']\)\s*(?:-- End Sotto Omarchy setup\s*)?$/.test(file.trim()) || !file.includes('Sotto dictation') && knownSnippet(file))
+        keys = inspectDictationBindings(JSON.parse(binds.stdout), legacy)
+      } catch { /* A malformed response is unavailable, never permission to replace keys. */ }
+    }
+    this.snapshot.keyConflicts = keys?.conflicts ?? []
+    this.snapshot.voxtype = keys?.voxtype ?? false
+    this.snapshot.shellRunning = (await this.run('omarchy-shell', ['shell', 'ping'])).ok
+    for (const piece of OMARCHY_PIECES) {
+      try {
+        const installed = await this.installedHash(piece), ours = this.receipt.pieces[piece]
+        let next: OmarchyPieceState
+        if (installed === null) next = state('missing', '', !!ours)
+        else if (!ours) next = state('manual', 'Set up by hand. Sotto leaves these files alone.')
+        else if (installed !== ours.hash) next = state('conflict', 'These files changed outside Sotto. Sotto leaves them alone.', true)
+        else next = state(installed === await this.bundledHash(piece) ? 'done' : 'stale', '', true)
+        if (piece === 'keys') {
+          const file = await contents(this.bindings)
+          if (ours && installed !== null && !file?.includes(REQUIRE)) next = state('conflict', 'The line Sotto added to bindings.lua changed. Sotto leaves your file alone.', true)
+          if (keys?.manual && !ours) next = state('manual', 'Your bindings.lua already gives F9 and Super+Ctrl+X to Sotto. Leaving those lines alone.')
+          else if (next.status === 'missing' && keys && keys.conflicts.length) next = state('conflict')
+          if (!keys) next = state('failed', 'Sotto could not read Hyprland’s keys. Open Sotto in your Omarchy desktop session, then try again.', !!ours)
+        }
+        if (piece === 'owl' && ['done', 'manual', 'stale'].includes(next.status) && !await this.onBar()) {
+          next = ours ? state('missing', 'The owl is not on the bar.', true)
+            : state('conflict', 'A plugin was installed by hand, but it is not on the bar. Sotto leaves it alone.')
+        }
+        if (piece === 'theme' && next.status === 'manual' && await contents(this.rendered) === null) {
+          next = state('conflict', 'A template was installed by hand, but its colours have not been rendered. Sotto leaves it alone.')
+        }
+        if (piece === 'theme' && installed === null && !ours && await contents(this.rendered) !== null) {
+          next = state('manual', 'An Omarchy palette was installed by hand. Sotto leaves it alone.')
+        }
+        if (next.status === 'stale' && piece === 'owl') next.message = `Sotto ${this.options.version} has a newer owl. Updating restarts the bar for a moment.`
+        // Operation outcomes stay visible while detection continues to see that same outcome.
+        const note = this.notes[piece]
+        if (note && (note.status === next.status || (note.status === 'failed' && ['missing', 'stale'].includes(next.status)) ||
+          (note.status === 'skipped' && ['missing', 'conflict'].includes(next.status)))) next = { ...note, owned: next.owned }
+        this.snapshot.pieces[piece] = next
+      } catch (error) { this.snapshot.pieces[piece] = state('failed', this.explain(error), !!this.receipt.pieces[piece]) }
+    }
+  }
+  private explain(error: unknown): string {
+    if (error instanceof Error && !('code' in error) && !(error instanceof z.ZodError) && !(error instanceof SyntaxError)) return error.message.slice(0, 8000)
+    return 'Sotto could not read or change these files. Check that your configuration is readable and writable, then try again.'
+  }
+  get(): Promise<OmarchySetupState> {
+    // A get during a run sees progress without starting a second inspection over changing files.
+    if (this.snapshot.busy) return Promise.resolve(structuredClone(this.snapshot))
+    return this.enqueue(async () => {
+      try { await this.detect() } catch (error) {
+        for (const piece of OMARCHY_PIECES) this.snapshot.pieces[piece] = state('failed', this.explain(error))
+      }
+      return this.publish()
+    })
+  }
+
+  command(command: OmarchySetupCommand): Promise<OmarchySetupState> {
+    return this.enqueue(async () => {
+      try { await this.detect() } catch (error) {
+        for (const piece of OMARCHY_PIECES) this.snapshot.pieces[piece] = state('failed', this.explain(error))
+        return this.publish()
+      }
+      const pieces = command.type === 'update-owl' ? ['owl'] as const : OMARCHY_PIECES.filter(piece => command.pieces.includes(piece))
+      this.snapshot.busy = true
+      this.snapshot.notice = ''
+      this.publish()
+      try {
+        for (const piece of pieces) {
+          const previous = this.snapshot.pieces[piece]
+          if (previous.status === 'manual') continue
+          if (command.type === 'remove' && !previous.owned) continue
+          if (command.type !== 'remove' && previous.status === 'done') continue
+          if (previous.status === 'conflict' && (piece !== 'keys' || previous.owned || !this.snapshot.keyConflicts.length)) continue
+          if (piece === 'owl' && previous.status === 'stale' && command.type !== 'update-owl' && command.type !== 'remove') continue
+          if (piece === 'keys' && command.type === 'setup' && this.snapshot.keyConflicts.length) {
+            if (command.keys !== 'give') {
+              this.notes.keys = state(command.keys === 'keep' ? 'skipped' : 'conflict', command.keys === 'keep'
+                ? 'Left alone. Your keys still run what they did before.' : 'Choose whether to give these keys to Sotto first.')
+              this.snapshot.pieces.keys = this.notes.keys
+              this.publish()
+              continue
+            }
+          }
+          delete this.notes[piece]
+          this.snapshot.pieces[piece] = state('working', command.type === 'remove' ? 'Removing' : 'Setting up', previous.owned)
+          this.publish()
+          try {
+            if (command.type === 'remove') await this.remove(piece)
+            else await this.install(piece, command.type === 'update-owl')
+          } catch (error) { this.notes[piece] = state(piece === 'owl' && command.type === 'update-owl' && previous.owned ? 'stale' : 'failed', this.explain(error), !!this.receipt.pieces[piece]) }
+          this.snapshot.pieces[piece] = this.notes[piece] ?? state('done', '', true)
+          this.publish()
+        }
+      } finally {
+        this.snapshot.busy = false
+        await this.detect()
+      }
+      if (command.type === 'remove' && pieces.length === 3) this.snapshot.notice = 'Sotto kept the copy of bindings.lua it made at setup, in ~/.config/hypr.'
+      return this.publish()
+    })
+  }
+
+  /** Existing ownership authorizes only keys and theme refreshes. Restarting the bar always waits for a press. */
+  refreshAtStart(): Promise<OmarchySetupState> {
+    return this.enqueue(async () => {
+      await this.detect()
+      for (const piece of ['keys', 'theme'] as const) {
+        if (this.snapshot.pieces[piece].status !== 'stale') continue
+        // A newly conflicting chord is new authority: ask in Settings instead.
+        if (piece === 'keys' && this.snapshot.keyConflicts.length) continue
+        try {
+          await this.install(piece, false, true)
+          this.notes[piece] = state('done', `Updated for Sotto ${this.options.version}.`, true)
+        } catch (error) { this.notes[piece] = state('failed', this.explain(error), true) }
+      }
+      await this.detect()
+      return this.publish()
+    })
+  }
+
+  private async install(piece: OmarchyPiece, restart: boolean, refresh = false): Promise<void> {
+    if (piece === 'keys') await this.changeKeys(false)
+    else if (piece === 'owl') await this.changeOwl(false, restart)
+    else await this.changeTheme(false, refresh)
+  }
+  private async remove(piece: OmarchyPiece): Promise<void> {
+    if (piece === 'keys') await this.changeKeys(true)
+    else if (piece === 'owl') await this.changeOwl(true, false)
+    else await this.changeTheme(true, false)
+  }
+
+  private async configErrors(): Promise<string[]> {
+    return (await this.checked('hyprctl', ['configerrors'], 'Sotto could not check Hyprland’s configuration. Your keys were left alone.'))
+      .split('\n').map(line => line.trim()).filter(Boolean)
+  }
+  private async reload(before: readonly string[]): Promise<void> {
+    await this.checked('hyprctl', ['reload'], 'Hyprland could not reload. Try again in your desktop session.')
+    const added = (await this.configErrors()).filter(line => !before.includes(line))
+    if (added.length) throw new Error(`Hyprland reported an error after Sotto’s change. Hyprland said: “${added.join('\n').slice(0, 6000)}”.`)
+  }
+  private async changeKeys(removing: boolean): Promise<void> {
+    const original = await contents(this.bindings), snippet = await contents(this.snippet), ours = this.receipt.pieces.keys
+    if (snippet !== null && (!ours || digest(snippet) !== ours.hash)) throw new Error('These keys were changed by hand. Sotto left them alone.')
+    if (ours && original !== null && !original.includes(REQUIRE)) throw new Error('The line Sotto added changed. Your keys were left alone.')
+    const without = (original ?? '').replace(REQUIRE, '')
+    const next = removing ? without : `${without}${without.endsWith('\n') || !without ? '' : '\n'}${REQUIRE}`
+    const bundled = await contents(join(this.options.resources, 'bindings.lua'))
+    if (!removing && bundled === null) throw new Error('This Sotto install is missing its keys. Install Sotto again.')
+    await mkdir(this.hypr, { recursive: true })
+    const check = join(this.hypr, `.sotto-keys-${process.pid}.lua`)
+    try {
+      await writeFile(check, next, { flag: 'wx' })
+      await this.checked('luac', ['-p', check], 'Sotto could not check bindings.lua with luac. Your file is as it was. Check its syntax and that Lua is installed, then try again.')
+      await rm(check)
+      if (!removing) {
+        await writeFile(check, bundled!, { flag: 'wx' })
+        await this.checked('luac', ['-p', check], 'Sotto’s keys could not be checked with luac. Your file is as it was. Install Sotto again, then try again.')
+      }
+    } finally { await rm(check, { force: true }) }
+    const before = await this.configErrors()
+    let backup = ours?.backup
+    if (!removing) {
+      let epoch = Math.floor(Date.now() / 1000)
+      for (;;) {
+        backup = join(this.hypr, `bindings.lua.bak.${epoch++}`)
+        try { await writeFile(backup, original ?? '', { flag: 'wx' }); break }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error }
+      }
+    }
+    try {
+      if (removing) {
+        await atomicWrite(this.bindings, next)
+        await rm(this.snippet, { force: true })
+      } else {
+        await atomicWrite(this.snippet, bundled!)
+        await atomicWrite(this.bindings, next)
+      }
+      await this.reload(before)
+      if (!removing) {
+        const active = await this.checked('hyprctl', ['binds', '-j'], 'Sotto could not check the reloaded keys. Try again in your desktop session.')
+        if (!inspectDictationBindings(JSON.parse(active)).manual) throw new Error('Hyprland did not load Sotto’s keys. Check that bindings.lua loads after Omarchy’s defaults, then try again.')
+      }
+      await this.save('keys', removing ? undefined : { hash: digest(bundled!), backup: backup!, originalMissing: ours?.originalMissing ?? original === null })
+    } catch (error) {
+      try {
+        if (original === null) await rm(this.bindings, { force: true }); else await atomicWrite(this.bindings, original)
+        if (snippet === null) await rm(this.snippet, { force: true }); else await atomicWrite(this.snippet, snippet)
+        await this.reload(before)
+      } catch { throw new Error(`${this.explain(error)} Sotto could not restore the keys. Restore bindings.lua from its .bak copy, then reload Hyprland.`) }
+      throw new Error(`${this.explain(error)} Sotto restored your files. Fix the error, then try again.`, { cause: error })
+    }
+    if (removing) {
+      let message = 'Your keys run what they did before.'
+      try {
+        const keys = inspectDictationBindings(JSON.parse((await this.run('hyprctl', ['binds', '-j'])).stdout))
+        if (!keys.conflicts.length) message = keys.voxtype ? 'F9 and Super+Ctrl+X are Voxtype’s again.' : 'F9 and Super+Ctrl+X do nothing now.'
+      } catch { /* Do not guess a key owner after an unavailable read. */ }
+      this.notes.keys = state('missing', message)
+    } else this.notes.keys = state('done', 'Hyprland reloaded with no new errors.' + (this.snapshot.voxtype ? ' Voxtype keeps running without these keys.' : ''), true)
+  }
+
+  private async changeOwl(removing: boolean, restart: boolean): Promise<void> {
+    if (!(await this.run('omarchy-shell', ['shell', 'ping'])).ok) throw new Error('The Omarchy shell isn’t running, so the owl can’t go on the bar. Nothing was copied or removed. Start the shell with omarchy restart shell, then try again.')
+    const before = await contents(this.shellConfig), hash = await treeDigest(this.plugin), ours = this.receipt.pieces.owl
+    if (hash !== null && (!ours || hash !== ours.hash)) throw new Error('The owl was changed by hand. Sotto left it alone.')
+    const source = join(this.options.resources, 'shell-plugin', ID)
+    const bundledHash = removing ? null : await this.bundledHash('owl')
+    const staging = join(dirname(this.plugin), `.${ID}.sotto-${process.pid}`)
+    const previous = join(dirname(this.plugin), `.${ID}.previous-${process.pid}`)
+    await plainPath(staging); await plainPath(previous)
+    if (await lstat(staging).catch(() => null) || await lstat(previous).catch(() => null)) throw new Error('An earlier owl setup is still waiting. Your files were left alone. Restore or remove its temporary folder, then try again.')
+    let moved = false, placed = false
+    try {
+      if (removing) {
+        await this.checked('omarchy', ['plugin', 'disable', ID], 'The shell could not take the owl off the bar. Nothing else was removed. Try again.')
+        await this.waitForBar(false)
+      } else {
+        await this.checked('omarchy', ['plugin', 'validate', source], 'Sotto’s owl did not pass Omarchy’s plugin check. Install Sotto again, then try again.')
+        await mkdir(join(this.options.home, '.config/omarchy/plugins'), { recursive: true })
+        await cp(source, staging, { recursive: true, filter: path => !path.endsWith('.d.mts') })
+      }
+      if (hash !== null) { await rename(this.plugin, previous); moved = true }
+      if (!removing) {
+        await rename(staging, this.plugin); placed = true
+        await this.checked('omarchy-shell', ['shell', 'rescanPlugins'], 'The shell could not find Sotto’s owl. Try again.')
+        let found = false
+        for (let attempt = 0; attempt < 50; attempt++) {
+          const result = await this.run('omarchy-shell', ['shell', 'listPlugins'])
+          try { found = result.ok && z.array(z.object({ id: z.string() }).passthrough()).parse(JSON.parse(result.stdout)).some(plugin => plugin.id === ID) } catch { found = false }
+          if (found) break
+          await wait(100)
+        }
+        if (!found) throw new Error('The shell did not pick up Sotto’s owl. Try again in your desktop session.')
+        await this.checked('omarchy', ['bar', 'put', ID, '--section', 'center', '--after', 'omarchy.indicators'], 'The shell could not put the owl on the bar. Try again.')
+        await this.waitForBar(true)
+        if (restart) await this.checked('omarchy', ['restart', 'shell'], 'The bar could not restart with the newer owl. Your previous owl was restored. Try again.')
+      }
+      await this.save('owl', removing ? undefined : { hash: bundledHash! })
+    } catch (error) {
+      try {
+        if (placed) await rm(this.plugin, { recursive: true, force: true })
+        if (moved) await rename(previous, this.plugin)
+        await this.restoreOwlConfiguration(before)
+        await this.run('omarchy-shell', ['shell', 'rescanPlugins'])
+      } catch { throw new Error(`${this.explain(error)} Sotto could not restore the bar. Restore shell.json and the previous owl folder before trying again.`) }
+      throw error
+    } finally {
+      await rm(staging, { recursive: true, force: true })
+    }
+    await rm(previous, { recursive: true, force: true })
+    this.notes.owl = removing ? state('missing', 'The owl is off the bar and the floating widget is back.')
+      : state('done', restart ? 'Updated. The bar restarted with the newer owl.' : 'The owl is on the bar. The shell pill takes the floating widget’s place.', true)
+  }
+  private async waitForBar(present: boolean): Promise<void> {
+    for (let attempt = 0; attempt < 50; attempt++) {
+      if (await this.onBar() === present) return
+      await wait(100)
+    }
+    throw new Error('The shell did not save the owl’s place on the bar. Sotto restored the previous setup. Try again.')
+  }
+
+  private async restoreOwlConfiguration(before: string | null): Promise<void> {
+    const current = await contents(this.shellConfig)
+    if (current === before) return
+    if (current === null) return // A later deletion belongs to the user.
+    const object = z.record(z.string(), z.unknown())
+    const saved = before === null ? {} : object.parse(JSON.parse(before))
+    const latest = object.parse(JSON.parse(current))
+    const isOwl = (entry: unknown): boolean => entry === ID || typeof entry === 'object' && entry !== null && 'id' in entry && entry.id === ID
+    const restoreEntries = (prior: unknown, now: unknown): unknown[] => {
+      const result = Array.isArray(now) ? now.filter(entry => !isOwl(entry)) : []
+      if (Array.isArray(prior)) prior.forEach((entry, index) => { if (isOwl(entry)) result.splice(Math.min(index, result.length), 0, entry) })
+      return result
+    }
+    // The shell and the user can save other settings during a failed command.
+    // Restore only Sotto's membership, retaining every unrelated field and entry.
+    for (const key of ['plugins', 'disabledPlugins']) {
+      if (key in latest || key in saved) latest[key] = restoreEntries(saved[key], latest[key])
+    }
+    const oldBar = object.safeParse(saved.bar), bar = object.safeParse(latest.bar)
+    if (bar.success) {
+      const oldLayout = object.safeParse(oldBar.success ? oldBar.data.layout : undefined)
+      const layout = object.safeParse(bar.data.layout)
+      if (layout.success) {
+        for (const section of Object.keys(layout.data)) layout.data[section] = restoreEntries(oldLayout.success ? oldLayout.data[section] : undefined, layout.data[section])
+        bar.data.layout = layout.data
+      }
+      latest.bar = bar.data
+    }
+    await atomicWrite(this.shellConfig, JSON.stringify(latest))
+  }
+
+  private async changeTheme(removing: boolean, refresh: boolean): Promise<void> {
+    const original = await contents(this.template), rendered = await contents(this.rendered), ours = this.receipt.pieces.theme
+    if (original !== null && (!ours || digest(original) !== ours.hash)) throw new Error('The theme template was changed by hand. Sotto left it alone.')
+    const settings = await this.options.settings.get()
+    const appearance = { appearance: settings.appearance, theme: settings.theme, lightTheme: settings.lightTheme, darkTheme: settings.darkTheme }
+    const previous = ours?.appearance ?? appearance
+    try {
+      if (removing) {
+        // Only restore a half still following Omarchy; later choices belong to the user.
+        await this.options.settings.update({ ...(settings.appearance === 'system' ? { appearance: previous.appearance } : {}), ...(settings.theme === 'system' ? { theme: previous.theme } : {}),
+          ...(settings.lightTheme === OMARCHY_THEME_ID ? { lightTheme: previous.lightTheme } : {}),
+          ...(settings.darkTheme === OMARCHY_THEME_ID ? { darkTheme: previous.darkTheme } : {}) })
+        await plainPath(this.template); await plainPath(this.rendered)
+        await this.checked('bash', [join(this.options.resources, 'install-theme.sh'), '--uninstall'], 'Sotto could not remove the Omarchy theme. Finish any theme switch in progress, then try again. Your files and Appearance choices were restored.')
+        await this.save('theme')
+      } else {
+        await plainPath(this.template); await plainPath(this.rendered)
+        await this.checked('bash', [join(this.options.resources, 'install-theme.sh')], 'Sotto could not render the Omarchy theme. Choose an Omarchy theme and finish any switch in progress, then try again.')
+        const colours = await contents(this.rendered)
+        if (colours === null) throw new Error('Omarchy did not render Sotto’s colours. Choose another theme, then try again.')
+        try { parseOmarchyTheme(JSON.parse(colours), 'Omarchy') }
+        catch { throw new Error('This Omarchy theme left Sotto’s colours unreadable. Choose another theme, then try again.') }
+        if (!refresh) await this.options.settings.update({ appearance: 'system', theme: 'system', lightTheme: OMARCHY_THEME_ID, darkTheme: OMARCHY_THEME_ID })
+        await this.save('theme', { hash: await this.bundledHash('theme'), appearance: previous })
+      }
+    } catch (error) {
+      try {
+        if (original === null) await rm(this.template, { force: true }); else await atomicWrite(this.template, original)
+        if (rendered === null) await rm(this.rendered, { force: true }); else await atomicWrite(this.rendered, rendered)
+        await this.options.settings.update(appearance)
+      } catch { throw new Error(`${this.explain(error)} Sotto could not restore the theme. Choose your previous themes in Settings › Appearance.`) }
+      throw error
+    }
+    this.notes.theme = removing ? state('missing', 'Sotto wears the theme it had before.') : state('done', 'Sotto follows the Omarchy theme.', true)
+  }
+}

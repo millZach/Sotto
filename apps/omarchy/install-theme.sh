@@ -5,12 +5,17 @@ source_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 omarchy_path=${OMARCHY_PATH:-/usr/share/omarchy}
 current=$HOME/.local/state/omarchy/current
 next=$current/next-theme
+action=${1:-install}
+if (( $# > 1 )) || [[ $action != install && $action != --uninstall ]]; then
+  echo 'Use install-theme.sh [--uninstall].' >&2
+  exit 1
+fi
 
-if [[ ! -f $current/theme/colors.toml ]]; then
+if [[ $action != --uninstall && ! -f $current/theme/colors.toml ]]; then
   echo 'Choose an Omarchy theme first, then run this script again.' >&2
   exit 1
 fi
-if [[ ! -x $omarchy_path/bin/omarchy-theme-set-templates ]]; then
+if [[ $action != --uninstall && ! -x $omarchy_path/bin/omarchy-theme-set-templates ]]; then
   echo 'Omarchy’s template command is unavailable. Update Omarchy, then try again.' >&2
   exit 1
 fi
@@ -20,6 +25,10 @@ flock 9
 if [[ -e $next || -L $next ]]; then
   echo 'Omarchy has a theme waiting to be applied. Finish switching it, then try again.' >&2
   exit 1
+fi
+if [[ $action == --uninstall ]]; then
+  rm -f -- "$HOME/.config/omarchy/themed/sotto.json.tpl" "$current/theme/sotto.json"
+  exit 0
 fi
 mkdir -p "$HOME/.config/omarchy/themed"
 install -m 0644 "$source_dir/sotto.json.tpl" "$HOME/.config/omarchy/themed/sotto.json.tpl"

@@ -1,7 +1,7 @@
 # The release owner updates pkgver and the archive checksum after verifying a release on forge.
 pkgname=sotto-bin
-pkgver=0.1.34
-pkgrel=3
+pkgver=0.1.37
+pkgrel=1
 pkgdesc='Dictation and manual coding threads'
 arch=('x86_64')
 url='https://github.com/millZach/Sotto-releases'
@@ -22,11 +22,16 @@ if [[ -n ${SOTTO_TARBALL:-} ]]; then
   _source_url="file://${SOTTO_TARBALL}"
 fi
 source=("${_archive}::${_source_url}"
-        'sotto' 'sotto.desktop' 'bindings.lua' 'install.sh'
+        'sotto' 'sotto.desktop' 'install.sh'
         'sotto-48.png' 'sotto-128.png' 'sotto-256.png')
 # Filled from the verified archive and package sources; never use SKIP for the release archive.
-sha256sums=('2a0c29b3a79f7fea239d20ecb33dcc20a3be5d3b01cc90397be3f05e3166a326' 'b6c787d65d76cb6d3b249e237361b5991d70a96e762f8893c96cd6d567e70e86' '79b1f65a213d781994e77d887a451e19ad6282cc352e91507aaf8b6ca97d92d0' '206490341a40be0fa88ca4b1cc29082e2d3f4d618c7ad7443d16bb283fdb512b'
-            '8b01049ac54c6d02301a181b939ff994c009583c36e29d745f9c5ae6cf9f94ed' '2c3f081fbb8de1d668efc065d8e1dd43b37a290062b985db237a6b4a6d56daad' '598060d14b5155dba4587679e768571ecdc30f15072ac7ab4d6dc1e074f27256' '0f8c2997a268265291192476d8b97a19bcdd125ed6d6944d1ddf7a4292baa645')
+sha256sums=('71a110e89bd99d3016642107e6d7135ea556ec31d35df9963a812dccdf208d6c'
+            'b6c787d65d76cb6d3b249e237361b5991d70a96e762f8893c96cd6d567e70e86'
+            '79b1f65a213d781994e77d887a451e19ad6282cc352e91507aaf8b6ca97d92d0'
+            '35c949114cc26f1e34500cd853b8e0aee2fe770789b19247002095df07d394e6'
+            '2c3f081fbb8de1d668efc065d8e1dd43b37a290062b985db237a6b4a6d56daad'
+            '598060d14b5155dba4587679e768571ecdc30f15072ac7ab4d6dc1e074f27256'
+            '0f8c2997a268265291192476d8b97a19bcdd125ed6d6944d1ddf7a4292baa645')
 
 package() {
   install -d "${pkgdir}/opt/sotto"
@@ -41,6 +46,8 @@ package() {
     install -Dm644 "${srcdir}/sotto-${size}.png" "${pkgdir}/usr/share/icons/hicolor/${size}x${size}/apps/sotto.png"
   done
   install -Dm644 "${pkgdir}/opt/sotto/resources/LICENSE.md" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE.md"
-  install -Dm644 "${srcdir}/bindings.lua" "${pkgdir}/usr/share/sotto/bindings.lua"
+  # The tarball carries every setup piece. Keep the public helper paths too.
+  install -d "${pkgdir}/usr/share/sotto"
+  cp -a "${pkgdir}/opt/sotto/resources/omarchy/." "${pkgdir}/usr/share/sotto/"
   install -Dm755 "${srcdir}/install.sh" "${pkgdir}/usr/share/sotto/install.sh"
 }
