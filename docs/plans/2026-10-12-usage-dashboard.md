@@ -47,3 +47,16 @@ The pre-PR integration checkpoint includes main `2ff23cc1db51c9a33c13a6f7d9f6ab0
 - [ ] Merge with a merge commit, confirm main's CI and delete the owned remote branch.
 
 The earlier package JSON continues to identify source `1b013f26ea4a7fdaa4f9b2932203464f447ad8e2`; the [new integration package JSON](../../artifacts/usage-dashboard/package-integration-verification.json) identifies source `400d6cb7863752e523425ba32862c5b672e4dcf9`. No installation or publication has occurred. The remaining checkboxes record the pre-PR checkpoint; GitHub records the later required checks, review resolution and merge. Its current main ruleset requires Gates (Windows), Package result and Desktop result.
+
+## Latest pull request checkpoint
+
+[PR #985](https://github.com/millZach/Sotto/pull/985) is open. Main's paired-host Watcher changes subsequently required another integration, main `503991806efa249e12b33b9f3213c424afa5fc9f` at source `77b19c0965f5616413b3a1b410ad74fe6cf14f22`. The resolution preserves both host capabilities, independent Usage gating and ADR-0073's admitted headless worker on either track. A new real paired-host numeric test verifies four Watcher prompts and one user continuation across retries, steering, queue/now, changed model and restart.
+
+Current typecheck, lint and notices passed; 257 focused tests and all 35 paired-host tests passed. Rebuilding and nine affected Electron journeys passed, including the Watcher gate. Both fixed-head review axes have zero unresolved findings; the five refreshed captures have no material visible defect. The [latest package proof](../../artifacts/usage-dashboard/package-watcher-merge-verification.json) pins actual Windows host, Owl desktop and stable preservation checks to `77b19c096`, separately from the earlier full-suite and package evidence. The verification note gives exact provenance and the physical macOS/Linux/remote gaps.
+
+- [x] Open the pull request and integrate paired-host Watcher without changing the accepted design or numeric boundaries.
+- [x] Complete focused cross-feature checks, fresh rendered journeys, both review axes and actual packages of the latest integration.
+- [ ] Resolve main's failing iPhone Focus journey and all latest-head PR checks and feedback.
+- [ ] Merge with a merge commit, verify main's CI and remove the owned branch.
+
+The remaining states are recorded by GitHub after this checkpoint. No release, stable promotion or real installation is authorized by the merge instruction.
