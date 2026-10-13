@@ -1,10 +1,10 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { Babysitter, type BabysitEvent, type BabysitStore, type BabysitThread } from '../../../src/main/agents/babysitting'
-import { COMMENT_ONLY_LIMIT, FAILED_READ_LIMIT, wakeUpPartDue, type BabysitNews, type BabysitRecord } from '../../../src/main/agents/babysitNews'
+import { COMMENT_ONLY_LIMIT, FAILED_READ_LIMIT, couldNotRunNotice, wakeUpPartDue, type BabysitNews, type BabysitRecord } from '../../../src/main/agents/babysitNews'
 import { GitHubRateLimit } from '../../../src/main/agents/github'
 import type { PullRequestObservation } from '../../../src/main/agents/watcherEvidence'
-import { DETAIL_QUERY, fingerprintQuery } from '../../../src/main/agents/githubBabysitReads'
+import { DETAIL_QUERY, fingerprintQuery, remarkWordsQuery } from '../../../src/main/agents/githubBabysitReads'
 import { pullRequestKey } from '../../../src/shared/gitPullRequests'
 import { scriptedGitHub, type ScriptedPull } from '../../fixtures/babysitGitHub'
 import { deferred } from '../../fixtures/deferred'
@@ -37,7 +37,7 @@ function memoryStore(threads: Record<string, ThreadSetup>) {
   return { store, records, threads, unlink }
 }
 
-function harness(pulls: ScriptedPull[], threads: Record<string, ThreadSetup>, options: { viewer?: string; observe?: boolean } = {}) {
+function harness(pulls: ScriptedPull[], threads: Record<string, ThreadSetup>, options: { viewer?: string; observe?: boolean; atDelivery?: (threadId: string, news: BabysitNews) => void } = {}) {
   let now = START
   const clock = { now: () => now, advance: (minutes: number) => { now += minutes * 60_000 } }
   const github = scriptedGitHub(pulls, { now: clock.now, ...options })
@@ -49,7 +49,7 @@ function harness(pulls: ScriptedPull[], threads: Record<string, ThreadSetup>, op
   const rateLimit = new GitHubRateLimit({ now: clock.now })
   const babysitter = new Babysitter({ store: memory.store, rateLimit, run: github.run, now: clock.now, log: event => events.push(event),
     ...(options.observe ? { observed: (read: PullRequestObservation) => observations.push(read) } : {}),
-    deliver: async (threadId, news) => { if (refuse > 0) { refuse--; throw new Error('not sent') } delivered.push({ threadId, news }) } })
+    deliver: async (threadId, news) => { if (refuse > 0) { refuse--; throw new Error('not sent') } options.atDelivery?.(threadId, news); delivered.push({ threadId, news }) } })
   /** One pass two minutes after the last, as the timer runs them. */
   const pass = async () => { clock.advance(2); await babysitter.pass() }
   return { babysitter, github, memory, delivered, events, observations, clock, rateLimit, pass, refuseDeliveries: (count: number) => { refuse = count },
@@ -75,6 +75,34 @@ describe('the GraphQL babysitting asks', () => {
     expect(DETAIL_QUERY).toContain('reviewThreads(last: 50) @include(if: $remarks)')
     expect(DETAIL_QUERY).toContain('comments(last: 20) { nodes { id url createdAt publishedAt lastEditedAt')
     expect(DETAIL_QUERY).not.toMatch(/\bbody\b|\bbodyText\b/u)
+  })
+  it('asks with the checks the ones the base branch requires by name, and whether each remark is a bot\'s', () => {
+    expect(DETAIL_QUERY).toContain('baseRef @include(if: $checks) { rules(first: 50)')
+    expect(DETAIL_QUERY).toContain('... on RequiredStatusChecksParameters { requiredStatusChecks { context } }')
+    expect(DETAIL_QUERY).toContain('author { __typename login }')
+  })
+  it('asks bot remarks\' words by ID, and nothing else of them', () => {
+    const query = remarkWordsQuery(2)
+    expect(query).toContain('query BabysitRemarkWords($n0: ID!, $n1: ID!)')
+    expect(query).toContain('n1: node(id: $n1) { ... on IssueComment { body } ... on PullRequestReview { body } ... on PullRequestReviewComment { body } }')
+    expect(query).not.toMatch(/author|login|url|comments/u)
+  })
+  it('tells a bot\'s notice that it could not run only by short words, so a real review that mentions a limit is news', () => {
+    expect(couldNotRunNotice('Your trial has ended. [Reactivate Greptile](https://app.greptile.com/-/pull-requests) to resume code reviews.')).toBe(true)
+    expect(couldNotRunNotice('Rate limit exceeded. Please wait 12 minutes before requesting another review.')).toBe(true)
+    expect(couldNotRunNotice(`<!-- greptile_summary -->\n${'The change reads the rate limit before each pass and stops below the usage limit. '.repeat(20)}`)).toBe(false)
+    expect(couldNotRunNotice('')).toBe(false)
+    // Short reviews about code that has limits, which Sol's review used to show the first rule was too broad.
+    expect(couldNotRunNotice('The usage limit never resets after renewal; reset the counter in quota.ts.')).toBe(false)
+    expect(couldNotRunNotice('The usage limit check runs after the paid request. Move it before the request.')).toBe(false)
+    expect(couldNotRunNotice('This test could not run on Windows because the path is too long.')).toBe(false)
+    // Sotto Bug Bot's examples: a review about code that has limits opens on the code, not on the bot's run.
+    expect(couldNotRunNotice('This retry loop spins forever once the GitHub rate limit is exceeded; add a backoff.')).toBe(false)
+    expect(couldNotRunNotice('Bug: when the user\'s trial has ended, `canExport` still returns true.')).toBe(false)
+    expect(couldNotRunNotice('The handler cannot run when the usage limit is zero, so the plan check never fires.')).toBe(false)
+    expect(couldNotRunNotice('Possible crash: if the account is out of 0 credits the division by credits fails.')).toBe(false)
+    expect(couldNotRunNotice('> [!WARNING]\n> ## Rate limit exceeded\n> @someone has exceeded the limit for the number of commits that can be reviewed per hour.')).toBe(true)
+    expect(couldNotRunNotice('<!-- BUGBOT_TOO_LARGE_TO_REVIEW -->\n' + 'A long review. '.repeat(200))).toBe(false)
   })
 })
 
@@ -126,7 +154,7 @@ describe('starting, stopping and listing', () => {
 })
 
 describe('finding each event once', () => {
-  it('tells a failed check once per head commit, as soon as it fails, and again on a new head', async () => {
+  it('tells a failed check once while it stays failed, as soon as it fails, again after a rerun fails, and again on a new head', async () => {
     const pull: ScriptedPull = { number: 1, checks: [{ name: 'lint', state: 'IN_PROGRESS' }, { name: 'test', state: 'IN_PROGRESS' }] }
     const h = harness([pull], { a: { links: [url(1)] } })
     await h.babysitter.start('a', url(1), 'agent')
@@ -135,8 +163,10 @@ describe('finding each event once', () => {
     pull.checks = [{ name: 'lint', state: 'FAILURE', url: 'https://github.com/o/r/actions/runs/9' }, { name: 'test', state: 'IN_PROGRESS' }]
     await h.pass()
     expect(h.changes()).toEqual([{ kind: 'checks-failed', checks: [{ name: 'lint', status: 'failure', url: 'https://github.com/o/r/actions/runs/9' }] }])
-    // A check that never finishes holds nothing back, and the failure already told is not told again.
+    // A check that never finishes holds nothing back, and a failure still standing is not told again.
     await h.pass()
+    expect(h.delivered).toHaveLength(1)
+    // Rerun, lint fails again: news again, as T3 tells it.
     pull.checks = [{ name: 'lint', state: 'IN_PROGRESS' }, { name: 'test', state: 'CANCELLED' }]
     await h.pass()
     pull.checks = [{ name: 'lint', state: 'FAILURE' }, { name: 'test', state: 'CANCELLED' }]
@@ -144,15 +174,16 @@ describe('finding each event once', () => {
     expect(h.changes()).toEqual([
       { kind: 'checks-failed', checks: [expect.objectContaining({ name: 'lint' })] },
       { kind: 'checks-failed', checks: [expect.objectContaining({ name: 'test', status: 'cancelled' })] },
+      { kind: 'checks-failed', checks: [expect.objectContaining({ name: 'lint' })] },
     ])
     // A push starts the count again; the push itself is not news.
     pull.head = 'head-2'; pull.checks = [{ name: 'lint', state: 'QUEUED' }]
     await h.pass()
-    expect(h.delivered).toHaveLength(2)
+    expect(h.delivered).toHaveLength(3)
     pull.checks = [{ name: 'lint', state: 'FAILURE' }]
     await h.pass()
     expect(h.changes().at(-1)).toEqual({ kind: 'checks-failed', checks: [expect.objectContaining({ name: 'lint' })] })
-    expect(h.delivered.map(item => item.news.head)).toEqual(['head-1', 'head-1', 'head-2'])
+    expect(h.delivered.map(item => item.news.head)).toEqual(['head-1', 'head-1', 'head-1', 'head-2'])
   })
 
   it('tells the required checks passing once per head, and every check passing where none is required', async () => {
@@ -502,7 +533,7 @@ describe('when GitHub cannot be read', () => {
     // A pull request GitHub answers nothing for is a failed read too.
     pull.number = 99
     for (let index = 0; index < FAILED_READ_LIMIT; index++) await h.pass()
-    expect(h.delivered.map(item => item.news)).toEqual([{ pullRequest: { url: url(1), number: 1, title: null }, startedBy: 'agent', startedAt: at(0).replace('Z', '.000Z'), head: 'head-1', changes: [], ended: 'unreadable' }])
+    expect(h.delivered.map(item => item.news)).toEqual([{ pullRequest: { url: url(1), number: 1, title: null }, startedBy: 'agent', startedAt: at(0).replace('Z', '.000Z'), head: 'head-1', changes: [], ended: 'unreadable', unreadable: 'not-found' }])
     expect(h.babysitter.list()).toEqual([])
     expect(h.events.filter(event => event === 'babysit-read-failed')).toHaveLength(2 * FAILED_READ_LIMIT - 1)
     expect(h.events.at(-1)).toBe('babysit-ended-unreadable')
@@ -655,4 +686,230 @@ it('keeps same-head check evidence across remarks-only and unchanged reads witho
   pull.refuseChecks = 'rollup'
   await h.pass()
   expect(h.observations.at(-1)).toMatchObject({ head: 'new-head', checks: 'unknown' })
+})
+
+/**
+ * What PR #964 showed, set beside T3 Code's watcher (`docs/research/2026-10-13-t3-and-sotto-babysitters.md`): the
+ * required checks counted only once they exist, a pass told once per head whatever came after, a rerun that failed
+ * again left untold, a computer offline counted as GitHub refusing, and bots' "could not run" notices waking agents.
+ */
+describe('the checks the rules require, reruns, and what is not news', () => {
+  const REQUIRED = ['Package result', 'Desktop result', 'Gates (Windows)']
+  const green = (name: string) => ({ name, state: 'SUCCESS' as const, required: true })
+
+  it('waits for every check the rules require, one that has not started yet included', async () => {
+    // Gates (Windows) waits on other jobs, so GitHub has no check of it until they finish.
+    const pull: ScriptedPull = { number: 1, requiredChecks: REQUIRED, checks: [green('Package result'), green('Desktop result'), { name: 'Tests', state: 'IN_PROGRESS' }] }
+    const h = harness([pull], { a: { links: [url(1)] } })
+    await h.babysitter.start('a', url(1), 'agent')
+    await h.pass()
+    pull.checks = [green('Package result'), green('Desktop result'), { name: 'Tests', state: 'SUCCESS' }]
+    await h.pass()
+    expect(h.changes()).toEqual([])
+    pull.checks = [...pull.checks, { name: 'Gates (Windows)', state: 'IN_PROGRESS', required: true }]
+    await h.pass()
+    expect(h.changes()).toEqual([])
+    pull.checks = [green('Package result'), green('Desktop result'), { name: 'Tests', state: 'SUCCESS' }, green('Gates (Windows)')]
+    await h.pass()
+    expect(h.changes()).toEqual([{ kind: 'checks-passed', count: 3, required: true }])
+  })
+
+  it('tells the required checks passing again once a rerun turns a failed one green, and a rerun failing again', async () => {
+    const pull: ScriptedPull = { number: 1, requiredChecks: REQUIRED, checks: REQUIRED.map(green) }
+    const h = harness([pull], { a: { links: [url(1)] } })
+    await h.babysitter.start('a', url(1), 'agent')
+    await h.pass()
+    expect(h.changes()).toEqual([{ kind: 'checks-passed', count: 3, required: true }])
+    const gates = (state: 'IN_PROGRESS' | 'FAILURE' | 'SUCCESS', run: number) => { pull.checks = [green('Package result'), green('Desktop result'),
+      { name: 'Gates (Windows)', state, required: true, url: `https://github.com/o/r/actions/runs/${run}` }] }
+    // Someone reruns Gates: it fails, is rerun, fails again, is rerun and passes.
+    gates('IN_PROGRESS', 2); await h.pass()
+    gates('FAILURE', 2); await h.pass()
+    gates('IN_PROGRESS', 3); await h.pass()
+    gates('FAILURE', 3); await h.pass()
+    gates('IN_PROGRESS', 4); await h.pass()
+    gates('SUCCESS', 4); await h.pass()
+    expect(h.changes().map(change => change.kind)).toEqual(['checks-passed', 'checks-failed', 'checks-failed', 'checks-passed'])
+    expect(h.changes().flatMap(change => change.kind === 'checks-failed' ? [change.checks[0]!.url] : []))
+      .toEqual(['https://github.com/o/r/actions/runs/2', 'https://github.com/o/r/actions/runs/3'])
+  })
+
+  it('goes on babysitting while GitHub cannot be reached, counting none of it, and reads on when it can', async () => {
+    const pull: ScriptedPull = { number: 1, checks: [{ name: 'build', state: 'IN_PROGRESS', required: true }] }
+    const h = harness([pull], { a: { links: [url(1)] } })
+    await h.babysitter.start('a', url(1), 'agent')
+    await h.pass()
+    // This computer offline, asleep, or behind a proxy that answers nothing; and gh giving up on a read that hung.
+    for (const error of [new Error('error connecting to api.github.com\ncheck your internet connection or https://githubstatus.com'),
+      new Error('Post "https://api.github.com/graphql": dial tcp: lookup api.github.com: no such host'),
+      new Error('Post "https://api.github.com/graphql": tls: failed to verify certificate: x509: certificate signed by unknown authority'),
+      new Error('Post "https://api.github.com/graphql": dial tcp 140.82.112.6:443: connectex: No connection could be made because the target machine actively refused it.')]) {
+      h.github.fail(error)
+      for (let index = 0; index < FAILED_READ_LIMIT + 2; index++) await h.pass()
+    }
+    expect(h.told('a')?.failedReads).toBe(0)
+    expect(h.babysitter.list()).toHaveLength(1)
+    expect(h.delivered).toEqual([])
+    expect(h.events).toContain('babysit-unreachable')
+    expect(h.events).not.toContain('babysit-read-failed')
+    h.github.fail(null)
+    pull.checks = [{ name: 'build', state: 'SUCCESS', required: true }]
+    await h.pass()
+    expect(h.changes()).toEqual([{ kind: 'checks-passed', count: 1, required: true }])
+  })
+
+  it('says why it stopped when GitHub keeps refusing: the sign-in, or a pull request it no longer shows', async () => {
+    const signIn = harness([{ number: 1 }], { a: { links: [url(1)] } })
+    await signIn.babysitter.start('a', url(1), 'agent')
+    signIn.github.fail(new Error('HTTP 401: Bad credentials (https://api.github.com/graphql)\nTry authenticating with:  gh auth login'))
+    for (let index = 0; index < FAILED_READ_LIMIT; index++) await signIn.pass()
+    expect(signIn.delivered.map(item => [item.news.ended, item.news.unreadable])).toEqual([['unreadable', 'sign-in']])
+    const gone = harness([{ number: 99 }], { a: { links: [url(1)] } })
+    await gone.babysitter.start('a', url(1), 'agent')
+    for (let index = 0; index < FAILED_READ_LIMIT; index++) await gone.pass()
+    expect(gone.delivered.map(item => [item.news.ended, item.news.unreadable])).toEqual([['unreadable', 'not-found']])
+  })
+
+  it("wakes nobody for a bot's notice that it could not run, and counts it toward nothing", async () => {
+    const pull: ScriptedPull = { number: 1, comments: [], reviews: [] }
+    const h = harness([pull], { a: { links: [url(1)] } })
+    await h.babysitter.start('a', url(1), 'agent')
+    await h.pass()
+    // Word for word as Cursor's Bugbot and Greptile left them on this repository's pull requests.
+    pull.comments!.push(
+      { id: 'cursor-limit', author: 'cursor', bot: true, at: at(3), body: '<h3>Bugbot couldn\'t run - usage limit reached</h3>\n\nBugbot is counted against Cursor usage for this user or team, and this run hit a usage or spend limit.\n\nA user or team admin can review and increase usage limits in the [Cursor dashboard](https://www.cursor.com/dashboard/spending).\n\n(requestId: 764c40a7-254f-4d9e-9354-cb7f997d05d0)' },
+      { id: 'cursor-large', author: 'cursor', bot: true, at: at(3), body: '<!-- BUGBOT_TOO_LARGE_TO_REVIEW -->\nThis PR is too large for Bugbot to review. It changes 55,749 lines and 3,601,592 characters. Split the change into smaller pull requests to get a review.' })
+    pull.reviews!.push(
+      { id: 'greptile-trial', author: 'greptile-apps', bot: true, at: at(3), state: 'COMMENTED', body: 'Your trial has ended. [Reactivate Greptile](https://app.greptile.com/-/pull-requests) to resume code reviews.' },
+      { id: 'greptile-credits', author: 'greptile-apps', bot: true, at: at(3), state: 'COMMENTED', body: 'Your organization has used all 50 credits included in the free plan this billing period. To keep receiving reviews, [upgrade your plan](https://app.greptile.com/review/github).' })
+    await h.pass()
+    expect(h.delivered).toEqual([])
+    expect(h.told('a')?.commentOnly).toBe(0)
+    // Read once: the next pass does not ask for their words again.
+    await h.pass()
+    expect(h.github.count('words')).toBe(1)
+    // A bot's real review, a person quoting a notice, and a short bot comment saying something else all still wake it.
+    pull.comments!.push(
+      { id: 'cursor-review', author: 'cursor', bot: true, at: at(9), body: '<!-- BUGBOT_REVIEW -->\nCursor Bugbot has reviewed your changes and found 1 potential issue.' },
+      { id: 'person', author: 'reviewer', at: at(9), body: 'Bugbot couldn\'t run - usage limit reached. Can you look anyway?' },
+      { id: 'bot-ok', author: 'renovate', bot: true, at: at(9), body: 'This PR updates zod to 4.1.2.' })
+    await h.pass()
+    expect(h.changes()).toEqual([{ kind: 'remarks', remarks: [
+      expect.objectContaining({ author: 'cursor' }), expect.objectContaining({ author: 'reviewer' }), expect.objectContaining({ author: 'renovate' })] }])
+    expect(JSON.stringify(h.delivered)).not.toMatch(/Bugbot|usage limit|zod/u)
+  })
+
+  it('takes check news about a commit the branch has left out of a wake-up still waiting, and keeps the rest', async () => {
+    const pull: ScriptedPull = { number: 1, checks: [{ name: 'build', state: 'FAILURE', required: true }], comments: [] }
+    const h = harness([pull], { a: { links: [url(1)] } })
+    await h.babysitter.start('a', url(1), 'agent')
+    await h.pass()
+    const waiting = h.delivered[0]!.news
+    expect(waiting).toMatchObject({ head: 'head-1', changes: [{ kind: 'checks-failed' }] })
+    expect(h.babysitter.current('a', waiting)).toEqual(waiting)
+    pull.head = 'head-2'; pull.checks = [{ name: 'build', state: 'IN_PROGRESS', required: true }]
+    await h.pass()
+    expect(h.babysitter.current('a', waiting)).toBeUndefined()
+    const withRemark: BabysitNews = { ...waiting, changes: [...waiting.changes, { kind: 'remarks', remarks: [{ kind: 'comment', author: 'reviewer', review: null, path: null, url: null, edited: false }] }] }
+    expect(h.babysitter.current('a', withRemark)).toEqual({ ...waiting, changes: [withRemark.changes[1]] })
+  })
+
+  it("keeps news of the new head whole when it goes at once, before the thread's record of that head is written", async () => {
+    const pull: ScriptedPull = { number: 1, checks: [{ name: 'build', state: 'FAILURE', required: true }] }
+    const atDelivery: Array<BabysitNews | undefined> = []
+    // The callback runs only once a pass delivers, by when h is set.
+    const h = harness([pull], { a: { links: [url(1)] } }, { atDelivery: (threadId, news) => atDelivery.push(h.babysitter.current(threadId, news)) })
+    await h.babysitter.start('a', url(1), 'agent')
+    await h.pass()
+    pull.head = 'head-2'; pull.checks = [{ name: 'build', state: 'SUCCESS', required: true }]
+    await h.pass()
+    expect(h.delivered.map(item => item.news.head)).toEqual(['head-1', 'head-2'])
+    expect(atDelivery).toEqual(h.delivered.map(item => item.news))
+  })
+
+  it("holds a pass's remarks while a bot's words cannot be read for now, and tells them once they can", async () => {
+    const pull: ScriptedPull = { number: 1, comments: [] }
+    const h = harness([pull], { a: { links: [url(1)] } })
+    await h.babysitter.start('a', url(1), 'agent')
+    await h.pass()
+    pull.comments!.push({ id: 'notice', author: 'cursor', bot: true, at: at(3), body: 'Bugbot couldn\'t run - usage limit reached. Bugbot hit a usage or spend limit.' },
+      { id: 'real', author: 'reviewer', at: at(3) })
+    h.github.failWords(new Error('error connecting to api.github.com'))
+    await h.pass(); await h.pass()
+    expect(h.delivered).toEqual([])
+    expect(h.told('a')?.remarksThrough).toBe(at(0).replace('Z', '.000Z'))
+    h.github.failWords(null)
+    await h.pass()
+    expect(h.changes()).toEqual([{ kind: 'remarks', remarks: [expect.objectContaining({ author: 'reviewer' })] }])
+    // Words GitHub refuses are no notice, so the remark is told rather than held for good.
+    pull.comments!.push({ id: 'refused', author: 'cursor', bot: true, at: at(9), body: 'Bugbot couldn\'t run - usage limit reached.' })
+    h.github.failWords(new Error('HTTP 403: Resource not accessible by integration'))
+    await h.pass()
+    expect(h.changes().at(-1)).toEqual({ kind: 'remarks', remarks: [expect.objectContaining({ author: 'cursor' })] })
+  })
+
+  it('counts a GitHub that takes the request and then hangs or drops it, and says it stopped answering', async () => {
+    for (const error of [Object.assign(new Error('gh did not finish in time.'), { code: 'ETIMEDOUT' }),
+      new Error('Post "https://api.github.com/graphql": read tcp 10.0.0.2:51234->140.82.112.6:443: wsarecv: An existing connection was forcibly closed by the remote host.'),
+      new Error('Post "https://api.github.com/graphql": unexpected EOF')]) {
+      const h = harness([{ number: 1 }], { a: { links: [url(1)] } })
+      await h.babysitter.start('a', url(1), 'agent')
+      h.github.fail(error)
+      for (let index = 0; index < FAILED_READ_LIMIT; index++) await h.pass()
+      expect(h.delivered.map(item => [item.news.ended, item.news.unreadable])).toEqual([['unreadable', 'no-answer']])
+    }
+  })
+
+  it('takes a rule as met only by a check GitHub flags required, so another app\'s check of that name passes nothing', async () => {
+    const pull: ScriptedPull = { number: 1, requiredChecks: ['Gates (Windows)'], checks: [{ name: 'Gates (Windows)', state: 'SUCCESS' }] }
+    const h = harness([pull], { a: { links: [url(1)] } })
+    await h.babysitter.start('a', url(1), 'agent')
+    await h.pass()
+    expect(h.changes()).toEqual([])
+    pull.checks = [{ name: 'Gates (Windows)', state: 'SUCCESS' }, { name: 'Gates (Windows)', state: 'SUCCESS', required: true }]
+    await h.pass()
+    expect(h.changes()).toEqual([{ kind: 'checks-passed', count: 1, required: true }])
+  })
+
+  it('tells a pass read without the rules and then with them once, and counts a name two checks share once', async () => {
+    const pull: ScriptedPull = { number: 1, rulesUnreadable: true, checks: [{ name: 'build', state: 'SUCCESS', required: true }, { name: 'build', state: 'SUCCESS', required: true }] }
+    const h = harness([pull], { a: { links: [url(1)] } })
+    await h.babysitter.start('a', url(1), 'agent')
+    await h.pass()
+    expect(h.changes()).toEqual([{ kind: 'checks-passed', count: 1, required: true }])
+    pull.rulesUnreadable = false; pull.requiredChecks = ['build']; pull.mergeable = 'UNKNOWN'
+    await h.pass()
+    expect(h.delivered).toHaveLength(1)
+  })
+
+  it('tells no pass from a head with more checks than one read returns, and its failures all the same', async () => {
+    const pull: ScriptedPull = { number: 1, moreChecks: true, checks: [{ name: 'build', state: 'SUCCESS', required: true }] }
+    const h = harness([pull], { a: { links: [url(1)] } })
+    await h.babysitter.start('a', url(1), 'agent')
+    await h.pass()
+    expect(h.changes()).toEqual([])
+    pull.checks = [{ name: 'build', state: 'FAILURE', required: true }]
+    await h.pass()
+    expect(h.changes()).toEqual([{ kind: 'checks-failed', checks: [expect.objectContaining({ name: 'build' })] }])
+  })
+
+  it('never takes a comment on code, an approval or a request for changes for a notice', async () => {
+    const pull: ScriptedPull = { number: 1, comments: [], reviews: [], threads: [] }
+    const h = harness([pull], { a: { links: [url(1)] } })
+    await h.babysitter.start('a', url(1), 'agent')
+    await h.pass()
+    pull.threads!.push({ path: 'src/a.ts', comments: [{ id: 'inline', author: 'cursor', bot: true, at: at(3), body: 'Your trial has ended.' }] })
+    pull.reviews!.push({ id: 'changes', author: 'greptile-apps', bot: true, at: at(3), state: 'CHANGES_REQUESTED', body: 'Your trial has ended.' })
+    await h.pass()
+    expect(h.changes()).toEqual([{ kind: 'remarks', remarks: [expect.objectContaining({ kind: 'review', review: 'changes-requested' }), expect.objectContaining({ kind: 'review-comment' })] }])
+    expect(h.github.count('words')).toBe(0)
+  })
+
+  it("counts GitHub's own servers failing as failed reads, as it counts any answer, and ends with what they said", async () => {
+    const h = harness([{ number: 1 }], { a: { links: [url(1)] } })
+    await h.babysitter.start('a', url(1), 'agent')
+    h.github.fail(new Error('HTTP 502: Bad Gateway (https://api.github.com/graphql)'))
+    for (let index = 0; index < FAILED_READ_LIMIT; index++) await h.pass()
+    expect(h.delivered.map(item => [item.news.ended, item.news.unreadable])).toEqual([['unreadable', 'answer']])
+  })
 })

@@ -207,7 +207,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const wakeUpDue = (threadId: string, news: BabysitNews): boolean =>
     babysitter ? wakeUpPartDue(news, babysitter.list(threadId), options.babysitting?.agentTool?.() !== false) : true
   // Given before start, so a wake-up restored from the queue is asked about too, even when taking it back failed.
-  if (babysitter) agentControl.useBabysitting(babysitter, { due: wakeUpDue, tool: babysitTool })
+  if (babysitter) agentControl.useBabysitting(babysitter, { due: wakeUpDue, tool: babysitTool, current: (threadId, news) => babysitter.current(threadId, news) })
   let closingWatcherTools: Promise<void> | undefined
   let watcherStopped = false
   const stopWatcher = (): void => {
