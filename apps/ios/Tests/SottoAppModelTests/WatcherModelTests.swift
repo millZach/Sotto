@@ -1,4 +1,5 @@
 import XCTest
+import Combine
 import SottoCore
 
 /// The Watcher tab on the real AppModel, against a scripted computer that runs Watcher (ADR-0073, amended October 11,
@@ -35,6 +36,8 @@ final class WatcherModelTests: XCTestCase {
         var observedAt = "2026-10-11T09:00:00.000Z"
         /// Where drafts this iPhone sent stand, by draft ID, as the computer says.
         var deliveries: [String: String] = [:]
+        /// Watcher's answer so far, after its first reply.
+        var answer: String?
     }
     private static let workerRequest = #"{"id":"q1","kind":"question","text":"Which account?","options":[{"id":"a","label":"A fresh account"},{"id":"b","label":"The seeded user"}]}"#
     private static let ownRequest = #"{"id":"p1","kind":"permission","text":"Wants to run gh pr checks 845.","options":[]}"#
@@ -53,9 +56,10 @@ final class WatcherModelTests: XCTestCase {
             cards.append(#"{"target":{"hostId":"\#(laptop)","threadId":"w"},"title":"Watcher","provider":"codex","request":\#(Self.ownRequest),"connected":true,"mayAnswer":\#(spec.mayAnswer)}"#)
         }
         let deliveries = spec.deliveries.map { draft, status in #"{"draftId":"\#(draft)","status":"\#(status)"}"# }.joined(separator: ",")
+        let answer = spec.answer.map { #",{"id":"more","role":"assistant","text":"\#($0)","createdAt":"2026-10-11T08:02:00.000Z"}"# } ?? ""
         return #"""
         {"hostId":"\#(laptop)","current":{"target":{"hostId":"\#(laptop)","threadId":"w"},"provider":"codex","modelId":"m","reasoningEffort":"high","status":"\#(spec.status)","connected":true},
-         "conversation":{"messages":[{"id":"ask","role":"user","text":"Fix the login test.","createdAt":"2026-10-11T08:00:00.000Z"},{"id":"started","role":"assistant","text":"Started it.","createdAt":"2026-10-11T08:01:00.000Z"}],"earlierAvailable":false,"revision":2},
+         "conversation":{"messages":[{"id":"ask","role":"user","text":"Fix the login test.","createdAt":"2026-10-11T08:00:00.000Z"},{"id":"started","role":"assistant","text":"Started it.","createdAt":"2026-10-11T08:01:00.000Z"}\#(answer)],"earlierAvailable":false,"revision":\#(spec.answer == nil ? 2 : 3)},
          "receiptGroups":[{"replyMessageId":"started","requestId":"aaaaaaaa-0000-4000-8000-000000000001","rows":[{"operationId":"bbbbbbbb-0000-4000-8000-000000000001","target":{"hostId":"\#(laptop)","threadId":"t"},"title":"Fix login test","provider":"claude","action":"start","deliveryState":"accepted","createdAt":"2026-10-11T08:01:00.000Z","updatedAt":"2026-10-11T08:01:00.000Z"}]}],
          "watchedThreads":[{"target":{"hostId":"\#(laptop)","threadId":"t"},"title":"Fix login test","provider":"claude","status":"running","connected":true,"watched":\#(spec.watched),"takenOver":\#(spec.takenOver),"backgroundWorkCount":0}],
          "needsYou":[\#(cards.joined(separator: ","))],"inFlight":1,"inFlightLimit":4,"working":\#(spec.working),"observedAt":"\#(spec.observedAt)",
@@ -72,12 +76,17 @@ final class WatcherModelTests: XCTestCase {
         return try json(#"{"hostId":"\#(laptop)","clientCapabilities":{"mayAnswer":\#(mayAnswer)},"host":{"hostId":"\#(laptop)","name":"Laptop","threads":[{"id":"t","projectId":"p","title":"Fix login test","providerId":"claude","status":"running","requests":[\#(requests)]}],"projects":[],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true}}\#(watcher)}"#)
     }
     private func ok(_ page: String) throws -> JSONValue { try json(#"{"status":"ok","state":\#(page)}"#) }
+    /// Forge's shell, when this iPhone is paired with it too: Add Android share sheet, waiting on these requests.
+    private func forgeShell(_ requests: String) throws -> JSONValue {
+        try json(#"{"hostId":"\#(forge)","clientCapabilities":{"mayAnswer":true},"host":{"hostId":"\#(forge)","name":"Forge","threads":[{"id":"r","projectId":"p","title":"Add Android share sheet","providerId":"claude","status":"running","requests":[\#(requests)]}],"projects":[],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true}}}"#)
+    }
     private func refusal(_ code: String, _ message: String) throws -> HostRefusal {
         HostRefusal(failure: try json(#"{"code":"\#(code)","message":"\#(message)"}"#).decode(WireFailure.self))
     }
 
+    /// With `forge`, this iPhone is paired with forge too, and forge's thread waits on those requests.
     @MainActor private func fixture(features: [String] = WatcherModelTests.watcherFeatures, mayAnswer: Bool = true, spec: Spec? = Spec(),
-                                    alerts: FakeAlerts? = nil, switches: [String: Bool] = [:]) async throws -> AppModel {
+                                    alerts: FakeAlerts? = nil, switches: [String: Bool] = [:], forge forgeRequests: String? = nil) async throws -> AppModel {
         TestKeychain.items = [:]; HostConnection.instances = []; HostConnection.afterGreeting = nil
         HostConnection.failDetail = false; HostConnection.failConnect = false; HostConnection.holdDetail = false
         HostConnection.connectAttempts = 0
@@ -90,10 +99,16 @@ final class WatcherModelTests: XCTestCase {
         HostConnection.detail = try json(#"{"threadId":"t","revision":1,"messages":[]}"#)
         HostConnection.shells[laptop] = try shell(spec.map { page($0) }, mayAnswer: mayAnswer)
         let store = TestKeychain.store
-        try store.write([laptop], account: ComputerStore.indexAccount)
+        try store.write(forgeRequests == nil ? [laptop] : [laptop, forge], account: ComputerStore.indexAccount)
         let pairing = try json(#"{"v":1,"hostId":"\#(laptop)","clientId":"phone","token":"fixture"}"#).decode(Pairing.self)
         try store.write(SavedComputer(address: "https://laptop.example.ts.net:8443", pairing: pairing, reportedName: "Laptop"),
                         account: ComputerStore.account(laptop))
+        if let forgeRequests {
+            HostConnection.shells[forge] = try forgeShell(forgeRequests)
+            let paired = try json(#"{"v":1,"hostId":"\#(forge)","clientId":"phone","token":"fixture"}"#).decode(Pairing.self)
+            try store.write(SavedComputer(address: "https://forge.example.ts.net:8443", pairing: paired, reportedName: "Forge"),
+                            account: ComputerStore.account(forge))
+        }
         let model = AppModel(keychain: store, receiptSleep: { _ in })
         if let alerts {
             let suite = "sotto-watcher-tests-" + UUID().uuidString
@@ -141,6 +156,29 @@ final class WatcherModelTests: XCTestCase {
         owl.phase(.background)
     }
 
+    @MainActor func testAPageThatCantBeReadSaysWhatHappened() async throws {
+        // Hello came without Watcher's page, and the read after it fails.
+        let model = try await fixture(spec: nil)
+        await until { model.watcherReadProblems[laptop] != nil }
+        XCTAssertNil(model.watcherPage(laptop))
+        XCTAssertEqual(model.watcherReadProblems[laptop], "Watcher on Laptop couldn’t be read. Nothing was lost. Pull down to read it again.",
+                       "It says what happened, rather than reading for good")
+        XCTAssertEqual(model.watcherSendHeld(laptop), model.watcherReadProblems[laptop], "The box says why it can't send")
+        // Refused, the computer's own words say why.
+        HostConnection.watcherHandler = { _, _, _ in
+            try self.json(#"{"status":"refused","code":"UNAVAILABLE","message":"Watcher is starting on Laptop. Try again in a moment.","retryable":true}"#)
+        }
+        await model.readWatcher(laptop)
+        XCTAssertEqual(model.watcherReadProblems[laptop], "Watcher is starting on Laptop. Try again in a moment.")
+        // Read, the page shows and the problem goes.
+        HostConnection.watcherHandler = { _, _, _ in try self.ok(self.page()) }
+        await model.readWatcher(laptop)
+        XCTAssertNotNil(model.watcherPage(laptop))
+        XCTAssertNil(model.watcherReadProblems[laptop])
+        XCTAssertNil(model.watcherSendHeld(laptop))
+        model.phase(.background)
+    }
+
     @MainActor func testTheTabsDotAndBadgeSayWhatOnlyWatchersPageShows() async throws {
         // Fix login test's card is on Threads too, so the badge counts Watcher's own request and the forge thread's.
         let model = try await fixture(spec: Spec(ownCard: true, remoteCard: true))
@@ -174,6 +212,28 @@ final class WatcherModelTests: XCTestCase {
         XCTAssertFalse(model.watchedByWatcher(worker), "A thread the user took over loses the owl and the line")
         XCTAssertEqual(model.watcherPage(laptop)?.noLongerWatched.map(\.title), ["Fix login test"])
         XCTAssertEqual(WatcherWords.left(try XCTUnwrap(model.watcherPage(laptop)?.noLongerWatched.first)), "You took it over")
+        model.phase(.background)
+    }
+
+    @MainActor func testWatchersGrowingConversationPublishesOnlyOnItsStore() async throws {
+        let model = try await fixture(spec: Spec(workerCard: false))
+        var onModel = 0, onStore = 0
+        let watchingModel = model.objectWillChange.sink { onModel += 1 }
+        let watchingStore = model.watcherStore.objectWillChange.sink { onStore += 1 }
+        defer { watchingModel.cancel(); watchingStore.cancel() }
+        // Watcher's answer grows with each shell its computer sends.
+        try push(Spec(workerCard: false, observedAt: "2026-10-11T09:01:00.000Z", answer: "Checking"))
+        try push(Spec(workerCard: false, observedAt: "2026-10-11T09:01:01.000Z", answer: "Checking the release notes"))
+        await until { model.watcherPage(laptop)?.conversation.messages.last?.text == "Checking the release notes" }
+        XCTAssertEqual(model.watcherPage(laptop)?.conversation.messages.last?.text, "Checking the release notes")
+        XCTAssertGreaterThan(onStore, 0)
+        XCTAssertEqual(onModel, 0, "Watcher's conversation growing redraws the Watcher tab, not every view that watches the model")
+        XCTAssertTrue(try connection.watcherCalls.isEmpty, "The page came with the shells")
+        // What the rest of the app reads still publishes on the model when it changes.
+        try push(Spec(working: false, status: "idle", workerCard: false, observedAt: "2026-10-11T09:01:02.000Z"))
+        await until { !model.watcherTab.working }
+        XCTAssertGreaterThan(onModel, 0)
+        XCTAssertFalse(model.watcherTab.working)
         model.phase(.background)
     }
 
@@ -261,6 +321,33 @@ final class WatcherModelTests: XCTestCase {
         model.phase(.background)
     }
 
+    @MainActor func testACardForAThreadOnAnotherComputerIsAnsweredOnlyWhileThatComputerHoldsIt() async throws {
+        let remote = #"{"id":"q2","kind":"question","text":"Which device?","options":[{"id":"x","label":"Pixel"}]}"#
+        let model = try await fixture(spec: Spec(remoteCard: true), forge: remote)
+        let ref = ThreadRef(hostID: forge, threadID: "r")
+        await until { model.thread(ref) != nil }
+        let card = try XCTUnwrap(model.watcherPage(laptop)?.needsYou.first { $0.target.hostId == forge })
+        XCTAssertEqual(model.watcherCardPlace(card, on: laptop), .thread(ref), "Its answer goes to its own computer")
+        guard case .answer(let place, let request) = model.watcherCardRoute(card, on: laptop) else {
+            return XCTFail("Forge holds the request, so the card can be answered")
+        }
+        XCTAssertEqual(place, .thread(ref))
+        XCTAssertEqual(request.id, "q2", "With forge's own copy of the request")
+
+        // Forge no longer holds it, though Watcher's page still shows the card: nothing is offered, and the card says why.
+        let forgeConnection = try XCTUnwrap(HostConnection.instances.last { $0.hostID == forge })
+        let answered = try forgeShell("")
+        HostConnection.shells[forge] = answered
+        forgeConnection.push(.shell(try answered.decode(Shell.self)))
+        await until { model.thread(ref)?.requests.isEmpty == true }
+        XCTAssertNotNil(model.watcherPage(laptop)?.card(ref, requestID: "q2"), "Watcher's page still shows its card")
+        XCTAssertEqual(model.watcherCardRoute(card, on: laptop), .note("This request is no longer waiting on Forge. Nothing was answered."))
+        // A computer this iPhone can't reach now can't say it still holds it.
+        forgeConnection.onDisconnect?()
+        XCTAssertEqual(model.watcherCardRoute(card, on: laptop), .note("Reconnect to Forge to answer this one."))
+        model.phase(.background)
+    }
+
     // MARK: Stop all
 
     @MainActor func testStopAllAsksFirstAndStopsOnlyWhatWasConfirmed() async throws {
@@ -291,6 +378,54 @@ final class WatcherModelTests: XCTestCase {
         XCTAssertEqual(model.feedback, "Stopped 1 thread Watcher started.")
         XCTAssertFalse(model.watchedByWatcher(worker))
         XCTAssertTrue(model.watcherStopping.isEmpty)
+        model.phase(.background)
+    }
+
+    @MainActor func testALostStopAllAcknowledgementReadsItsReceipt() async throws {
+        let model = try await fixture()
+        let confirmation = "cccccccc-0000-4000-8000-000000000002"
+        var stops: [String] = []
+        HostConnection.watcherHandler = { op, _, id in
+            switch op {
+            case "watcher-phone-prepare-stop-all":
+                return try self.json(#"{"status":"ok","confirmationId":"\#(confirmation)","targets":[{"hostId":"\#(self.laptop)","threadId":"t","title":"Fix login test","provider":"claude"},{"hostId":"\#(self.forge)","threadId":"r","title":"Add Android share sheet","provider":"claude"}],"expiresAt":"2026-10-11T09:10:00.000Z"}"#)
+            case "watcher-phone-stop-all":
+                stops.append(id)
+                // The computer stops what it can and keeps the outcome under this request's ID; the acknowledgement is lost.
+                HostConnection.receipts[id] = try self.json(#"{"status":"completed","watcherStop":{"status":"ok","results":[{"target":{"hostId":"\#(self.laptop)","threadId":"t"},"status":"stopped","message":"Stopped."},{"target":{"hostId":"\#(self.forge)","threadId":"r"},"status":"uncertain","message":"No answer."}]}}"#)
+                throw ClientError.uncertain
+            default:
+                return try self.ok(self.page(Spec(working: false, status: "idle", watched: false, observedAt: "2026-10-11T09:02:00.000Z")))
+            }
+        }
+        let prepared = await model.prepareWatcherStop(laptop)
+        let preview = try XCTUnwrap(prepared)
+        await model.confirmWatcherStop(preview, on: laptop)
+        XCTAssertEqual(stops.count, 1, "Stop all is never sent again on its own")
+        XCTAssertTrue(try connection.operations.contains("receipt"), "Its receipt is read")
+        XCTAssertEqual(model.feedback, "Stopped 1 of 2. Add Android share sheet isn’t confirmed.",
+                       "The receipt under Stop all's own request ID says what it did, thread by thread")
+        XCTAssertFalse(model.watchedByWatcher(worker), "And Watcher's page is read again")
+        XCTAssertTrue(model.watcherStopping.isEmpty)
+
+        // A receipt the computer no longer has leaves Stop all unconfirmed, and still nothing is sent again.
+        HostConnection.watcherHandler = { op, _, id in
+            switch op {
+            case "watcher-phone-prepare-stop-all":
+                return try self.json(#"{"status":"ok","confirmationId":"\#(confirmation)","targets":[{"hostId":"\#(self.laptop)","threadId":"t","title":"Fix login test","provider":"claude"}],"expiresAt":"2026-10-11T09:10:00.000Z"}"#)
+            case "watcher-phone-stop-all":
+                stops.append(id)
+                throw ClientError.uncertain
+            default:
+                return try self.ok(self.page(Spec(working: false, status: "idle", watched: false, observedAt: "2026-10-11T09:03:00.000Z")))
+            }
+        }
+        let again = await model.prepareWatcherStop(laptop)
+        let next = try XCTUnwrap(again)
+        await model.confirmWatcherStop(next, on: laptop)
+        XCTAssertEqual(stops.count, 2)
+        XCTAssertNotEqual(stops[1], stops[0], "Each Stop all the user confirms has its own request ID")
+        XCTAssertEqual(model.feedback, "Stop all isn’t confirmed. Check Watched before you stop anything again.")
         model.phase(.background)
     }
 
@@ -377,6 +512,104 @@ final class WatcherModelTests: XCTestCase {
         XCTAssertEqual(model.drafts[key], "", "Watcher took them")
         XCTAssertNil(model.feedback, "Nothing is left to check")
         XCTAssertEqual(requests.count, 5, "Nothing was sent again")
+        model.phase(.background)
+    }
+
+    @MainActor func testUnconfirmedWordsKeepTheirDraftIDThroughOtherWords() async throws {
+        let model = try await fixture(spec: Spec(workerCard: false))
+        var requests: [JSONValue] = []
+        var reply = "lose"
+        HostConnection.watcherHandler = { op, operation, _ in
+            guard op == "watcher-phone-send", let request = operation["request"] else { return try self.ok(self.page(Spec(workerCard: false))) }
+            requests.append(request)
+            if reply == "lose" { throw ClientError.uncertain }
+            return try self.json(#"{"status":"refused","code":"TARGET_CHANGED","message":"Watcher changed. Nothing new was sent.","retryable":true}"#)
+        }
+        let key = model.watcherDraftKey(laptop)
+        // The first words' acknowledgement is lost: Watcher may have taken them.
+        model.drafts[key] = "Stop the webhook thread"
+        await model.sendToWatcher(laptop)
+        XCTAssertEqual(model.drafts[key], "Stop the webhook thread")
+        // The user writes something else instead, and the computer refuses it.
+        reply = "refuse"
+        model.drafts[key] = "Check the webhook thread first"
+        await model.sendToWatcher(laptop)
+        XCTAssertNotEqual(requests[1]["draftId"], requests[0]["draftId"], "Other words get a new draft ID")
+        // Back to the first words: they go with their first ID, so the computer can't deliver them twice.
+        model.drafts[key] = "Stop the webhook thread"
+        await model.sendToWatcher(laptop)
+        XCTAssertEqual(requests.count, 3, "Nothing is sent again on its own")
+        XCTAssertEqual(requests[2]["draftId"], requests[0]["draftId"], "Unconfirmed words keep their draft ID through other words")
+        model.phase(.background)
+
+        var drafts = WatcherDrafts()
+        let first = drafts.id(for: "One")
+        for index in 0..<WatcherDrafts.limit - 1 { _ = drafts.id(for: "Other \(index)") }
+        XCTAssertEqual(drafts.id(for: "One"), first, "Kept while fewer than the limit went unconfirmed after it")
+        _ = drafts.id(for: "One more")
+        XCTAssertEqual(drafts.unresolved.count, WatcherDrafts.limit, "Never more than the limit")
+        XCTAssertNotEqual(drafts.id(for: "One"), first, "Past the limit, the oldest is let go")
+        let other = drafts.id(for: "Other 5")
+        drafts.resolve(other.uppercased())
+        XCTAssertNotEqual(drafts.id(for: "Other 5"), other, "Taken, the same words get a new ID")
+    }
+
+    @MainActor func testThePageReadAfterALostAcknowledgementSettlesTheWords() async throws {
+        let model = try await fixture(spec: Spec(workerCard: false))
+        var sends = 0
+        var sentDraft = ""
+        HostConnection.watcherHandler = { op, operation, _ in
+            if op == "watcher-phone-send" {
+                sends += 1
+                guard let request = operation["request"] else { throw ClientError.invalidRequest }
+                sentDraft = request["draftId"].string ?? ""
+                throw ClientError.uncertain
+            }
+            // Watcher took the words before their acknowledgement was lost, and the page read after it says so.
+            return try self.ok(self.page(Spec(workerCard: false, observedAt: "2026-10-11T09:05:00.000Z", deliveries: [sentDraft: "accepted"])))
+        }
+        let key = model.watcherDraftKey(laptop)
+        model.drafts[key] = "Stop the webhook thread"
+        await model.sendToWatcher(laptop)
+        XCTAssertTrue(try connection.operations.contains("watcher-phone-read"), "The page is read after the lost acknowledgement")
+        XCTAssertEqual(model.watcherPage(laptop)?.delivery(of: sentDraft), "accepted")
+        XCTAssertEqual(model.drafts[key], "", "That page says Watcher took the words, so they leave the box")
+        XCTAssertNil(model.feedback, "Nothing is left to check")
+        XCTAssertEqual(sends, 1, "Nothing was sent again")
+        model.phase(.background)
+    }
+
+    @MainActor func testWordsThatDidntReachWatcherAreOfferedBackWhenNewerWordsAreInTheBox() async throws {
+        let model = try await fixture(spec: Spec(workerCard: false))
+        let key = model.watcherDraftKey(laptop)
+        var reply = "refuse"
+        HostConnection.watcherHandler = { op, _, _ in
+            guard op == "watcher-phone-send" else { return try self.ok(self.page(Spec(workerCard: false))) }
+            // The user writes something new while the first words are on their way.
+            model.drafts[key] = "And the webhook thread?"
+            if reply == "lose" { throw ClientError.uncertain }
+            return try self.json(#"{"status":"refused","code":"TARGET_CHANGED","message":"Watcher changed. Nothing new was sent.","retryable":true}"#)
+        }
+        model.drafts[key] = "Stop the release notes thread"
+        await model.sendToWatcher(laptop)
+        XCTAssertEqual(model.drafts[key], "And the webhook thread?", "The newer words stay in the box")
+        XCTAssertEqual(model.watcherSetAside[laptop], [WatcherSetAside(text: "Stop the release notes thread", unconfirmed: false)],
+                       "The refused words are kept, to be offered back")
+        XCTAssertEqual(model.feedback, "Watcher changed. Nothing new was sent.")
+        let refused = try XCTUnwrap(model.watcherSetAside[laptop]?.first)
+        model.restoreWatcherWords(refused, on: laptop)
+        XCTAssertEqual(model.drafts[key], "And the webhook thread?", "Put back only into an empty box")
+        model.drafts[key] = ""
+        model.restoreWatcherWords(refused, on: laptop)
+        XCTAssertEqual(model.drafts[key], "Stop the release notes thread")
+        XCTAssertNil(model.watcherSetAside[laptop])
+
+        // Unconfirmed, the message says where the words are, not that they are back in the box.
+        reply = "lose"
+        await model.sendToWatcher(laptop)
+        XCTAssertEqual(model.drafts[key], "And the webhook thread?")
+        XCTAssertEqual(model.watcherSetAside[laptop], [WatcherSetAside(text: "Stop the release notes thread", unconfirmed: true)])
+        XCTAssertEqual(model.feedback, AppModel.watcherUnconfirmedSetAside)
         model.phase(.background)
     }
 

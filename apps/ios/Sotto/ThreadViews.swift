@@ -473,7 +473,7 @@ private struct Conversation: View {
     }
 }
 
-private extension View {
+extension View {
     /// Says whether the user is moving the page: dragging it or letting a flick run out. A finger that rests or taps is
     /// not moving it, so pressing a run of steps at the bottom still keeps the page there. iOS 17 can't say, so there the
     /// page follows as it did before.
@@ -1637,8 +1637,8 @@ private struct FollowupStack: View {
     }
 }
 
-/// One queued message: where it stands, its words on one line, and what can be done with it. Steer now sends it into
-/// the running turn instead of after it, where the provider takes that; Remove takes it out unsent. Neither answers
+/// One queued message: where it stands, its words on one line, and what can be done with it. Steer now sends it at once
+/// instead of after the running turn, where the provider takes that; Remove takes it out unsent. Neither answers
 /// anything for the user, and neither is sent again on its own.
 private struct FollowupCard: View {
     @EnvironmentObject var model: AppModel
@@ -1670,7 +1670,7 @@ private struct FollowupCard: View {
                         }
                         .buttonStyle(PillButtonStyle(kind: .primary))
                         .disabled(!model.canSteer(item, in: ref))
-                        .accessibilityHint("Sends this message into the running turn instead of after it.")
+                        .accessibilityHint("Sends this message now instead of after the turn.")
                     }
                     if removable {
                         Button("Remove") { Task { await model.removeFollowup(item, in: ref) } }
@@ -1722,6 +1722,9 @@ struct RequestSheet: View {
     /// Watched so the agent's message, and the links the sheet lifts from it, show when the thread's history arrives
     /// after the sheet opens: the history publishes on its own store, not on the model.
     @EnvironmentObject var detailStore: DetailStore
+    /// Watched so a card in Watcher's page that is answered or changes elsewhere shows here: Watcher's page publishes on
+    /// its own store.
+    @EnvironmentObject var watcherStore: WatcherStore
     @Environment(\.dismiss) var dismiss
     let place: RequestPlace
     let request: AgentRequest

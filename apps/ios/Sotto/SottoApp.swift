@@ -14,6 +14,7 @@ import UserNotifications
     var body: some Scene {
         WindowGroup {
             RootView().environmentObject(model).environmentObject(model.draftStore).environmentObject(model.detailStore)
+                .environmentObject(model.watcherStore)
                 .environmentObject(previews)
                 .font(.sotto(.body))
                 .foregroundStyle(Palette.ink)

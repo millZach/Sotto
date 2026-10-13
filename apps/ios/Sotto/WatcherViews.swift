@@ -76,6 +76,8 @@ struct WatcherView: View {
 /// Watcher's name, its model and computer, its state, and Conversation | Watched, pinned over the page in glass.
 private struct WatcherHeader: View {
     @EnvironmentObject var model: AppModel
+    /// Watched for Watcher's page, which publishes on its own store, not on the model.
+    @EnvironmentObject var watcherStore: WatcherStore
     @Environment(\.dynamicTypeSize) private var typeSize
     let hostID: String
     @Binding var section: WatcherView.Pane
@@ -136,6 +138,8 @@ private struct WatcherHeader: View {
 /// Watcher's state in a word, as a thread's bar says its own.
 private struct WatcherStatePill: View {
     @EnvironmentObject var model: AppModel
+    /// Watched for Watcher's page, which publishes on its own store, not on the model.
+    @EnvironmentObject var watcherStore: WatcherStore
     let hostID: String
     var body: some View {
         let state = self.state
@@ -205,34 +209,92 @@ private struct SectionSwitch: View {
 
 // MARK: - Conversation
 
+/// Where Watcher's conversation stands, kept outside SwiftUI's state so scrolling never redraws it. Frames are global.
+private final class WatcherFollow {
+    /// How near the box, or the header, the newest words must be to count as in view.
+    static let slack: CGFloat = 56
+    /// The bottom of the newest words, and of the page.
+    var newest: CGFloat = 0
+    var end: CGFloat = 0
+    /// The bottom of the header, and the top of the box.
+    var top: CGFloat = 0
+    var dockTop: CGFloat = .greatestFiniteMagnitude
+    /// The reader sees the newest words, or the page's end where it opens, so the page follows Watcher's new words.
+    /// Decided where the user lets go of the page, or the box moves, never as the content grows: new words judged by
+    /// where they pushed the page would stop it following them.
+    var following = true
+    /// The user is dragging the page or letting a flick run out, so it never moves under them.
+    var userScrolling = false
+    /// New words came while the user moved the page; followed once they let go, if they let go where it follows.
+    var missedFollow = false
+    /// Counts requests to follow, so requests made in the same moment scroll once.
+    var followRequests = 0
+    func settle() {
+        let seesNewest = newest >= top - Self.slack && newest <= dockTop + Self.slack
+        following = seesNewest || end <= dockTop + Self.slack
+    }
+}
+
+private extension View {
+    /// Opens at the page's end, and sits a short conversation at the bottom, as a chat does. On iOS 18 and later that is
+    /// all the anchor does, so a page that grows keeps a reader's place and follows new words only for a reader who sees
+    /// them (`WatcherFollow`). iOS 17 can't separate the anchor's roles, so there it does as it did before.
+    @ViewBuilder func watcherScrollAnchor() -> some View {
+        if #available(iOS 18.0, *) {
+            defaultScrollAnchor(.bottom, for: .initialOffset).defaultScrollAnchor(.bottom, for: .alignment)
+        } else {
+            defaultScrollAnchor(.bottom)
+        }
+    }
+}
+
+/// What the conversation follows: the page's revision, and words of the user's own on their way.
+private struct WatcherTail: Equatable {
+    let revision: Int
+    let sending: Bool
+}
+
 private struct WatcherConversationPane: View {
     @EnvironmentObject var model: AppModel
+    /// Watched for Watcher's page, which publishes on its own store, not on the model.
+    @EnvironmentObject var watcherStore: WatcherStore
     let hostID: String
     let review: (ReviewedCard) -> Void
     @Environment(\.sottoDensity) private var density
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var follow = WatcherFollow()
     private static let end = "watcher-end"
     private static let sendingID = "watcher-sending"
 
     var body: some View {
         let page = model.watcherPage(hostID)
         let sending = model.watcherSending[hostID]
+        let items = page.map { WatcherConversation.items($0) } ?? []
+        let newest = sending != nil ? Self.sendingID : items.last?.id ?? Self.end
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: Space.dense(Space.s5, density)) {
                     notes(page)
-                    if let page {
-                        ForEach(WatcherConversation.items(page)) { item in
-                            Group {
-                                switch item {
-                                case .message(let message): WatcherMessage(message: message)
-                                case .receipts(let group, _): ReceiptCard(hostID: hostID, group: group)
+                    if !items.isEmpty || sending != nil {
+                        // The conversation and the words on their way, whose bottom is the newest words.
+                        VStack(alignment: .leading, spacing: Space.dense(Space.s5, density)) {
+                            ForEach(items) { item in
+                                Group {
+                                    switch item {
+                                    case .message(let message): WatcherMessage(message: message)
+                                    case .receipts(let group, _): ReceiptCard(hostID: hostID, group: group)
+                                    }
                                 }
+                                .id(item.id)
                             }
-                            .id(item.id)
+                            if let sending { SendingBubble(text: sending).id(Self.sendingID) }
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(reader { follow.newest = $0.maxY })
                     }
-                    if let sending { SendingBubble(text: sending).id(Self.sendingID) }
+                    ForEach(Array((model.watcherSetAside[hostID] ?? []).enumerated()), id: \.offset) { _, words in
+                        SetAsideCard(hostID: hostID, words: words)
+                    }
                     if let page { cards(page) }
                     if model.online(hostID), page?.working == true {
                         HStack(spacing: Space.s2) {
@@ -242,28 +304,93 @@ private struct WatcherConversationPane: View {
                         .accessibilityElement(children: .combine)
                     }
                     Color.clear.frame(height: 1).id(Self.end)
+                        .background(reader { follow.end = $0.maxY })
                 }
                 .padding(.horizontal, Space.s4)
                 .padding(.top, Space.s4)
                 .padding(.bottom, Space.s4)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .defaultScrollAnchor(.bottom)
+            .watcherScrollAnchor()
             .scrollDismissesKeyboard(.interactively)
             .refreshable { await model.readWatcher(hostID) }
-            .safeAreaInset(edge: .bottom, spacing: 0) { WatcherDock(hostID: hostID) }
-            // New words, the user's own or Watcher's, are scrolled to just above the box. Cards waiting on the user sit
-            // after the whole conversation, where the page opens, so scrolling to the end would leave the new words
-            // under the header on a small phone.
-            .onChange(of: (page?.conversation.revision ?? 0) * 2 + (sending == nil ? 0 : 1)) { _, _ in
-                let newest: String? = model.watcherSending[hostID] != nil ? Self.sendingID
-                    : model.watcherPage(hostID).flatMap { WatcherConversation.items($0).last?.id }
-                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.3)) { proxy.scrollTo(newest ?? Self.end, anchor: .bottom) }
+            .onUserScrolling { scrolling in
+                follow.userScrolling = scrolling
+                guard !scrolling else { return }
+                // Where they let go decides whether the page follows. What arrived while they moved it is followed then,
+                // if they let go where it follows; a page moved to earlier messages is left where they put it.
+                follow.settle()
+                guard follow.missedFollow else { return }
+                follow.missedFollow = false
+                if follow.following { toNewest(proxy, to: newest) }
+            }
+            .background(barReader)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                WatcherDock(hostID: hostID).background(dockReader(proxy, newest: newest))
+            }
+            // New words, the user's own or Watcher's, are scrolled to just above the box, for a reader who sees the newest
+            // words or the page's end. Cards waiting on the user sit after the whole conversation, where the page opens,
+            // so scrolling to the end would leave the new words under the header on a small phone. A reader of earlier
+            // messages is left there, and the user's own words are always shown as they send them (ADR-0051).
+            .onChange(of: WatcherTail(revision: page?.conversation.revision ?? 0, sending: sending != nil)) { before, after in
+                if after.sending && !before.sending { follow.following = true }
+                if follow.following { toNewest(proxy, to: newest) }
             }
         }
     }
 
+    /// Reads a frame, in global coordinates, as it moves. Nothing redraws for it, and nothing is decided by it.
+    private func reader(_ moved: @escaping (CGRect) -> Void) -> some View {
+        GeometryReader { proxy in
+            Color.clear
+                .onAppear { moved(proxy.frame(in: .global)) }
+                .onChange(of: proxy.frame(in: .global)) { _, frame in moved(frame) }
+        }
+    }
+    /// The bottom of the header, which sits over the page's top.
+    private var barReader: some View {
+        GeometryReader { proxy in
+            let bottom = proxy.frame(in: .global).minY + proxy.safeAreaInsets.top
+            Color.clear
+                .onAppear { follow.top = bottom; follow.settle() }
+                .onChange(of: bottom) { _, value in follow.top = value; follow.settle() }
+        }
+    }
+    /// The top of the box, which moves when it changes height or the keyboard opens or closes. A reader who saw the newest
+    /// words before it moved still sees them after.
+    private func dockReader(_ scroll: ScrollViewProxy, newest: String) -> some View {
+        GeometryReader { proxy in
+            Color.clear
+                .onAppear { follow.dockTop = proxy.frame(in: .global).minY }
+                .onChange(of: proxy.frame(in: .global).minY) { _, value in
+                    let wasFollowing = follow.following
+                    follow.dockTop = value
+                    if wasFollowing { toNewest(scroll, to: newest) } else { follow.settle() }
+                }
+        }
+    }
+    /// Scrolls the newest words, `target`, to just above the box once the new layout is in, and once more after that
+    /// scroll has run, for words whose height settled after it. Requests made in the same moment scroll once, and only the
+    /// latest looks again. None scrolls while the user moves the page; the page owes it to them for when they let go.
+    private func toNewest(_ scroll: ScrollViewProxy, to target: String) {
+        let box = follow
+        guard !box.userScrolling else { box.missedFollow = true; return }
+        box.followRequests += 1
+        let request = box.followRequests
+        let still = reduceMotion
+        Task { @MainActor in
+            await Task.yield()
+            guard box.followRequests == request else { return }
+            guard !box.userScrolling else { box.missedFollow = true; return }
+            withAnimation(still ? nil : .easeOut(duration: 0.3)) { scroll.scrollTo(target, anchor: .bottom) }
+            try? await Task.sleep(nanoseconds: still ? 120_000_000 : 360_000_000)
+            if box.followRequests == request, box.following, !box.userScrolling { scroll.scrollTo(target, anchor: .bottom) }
+        }
+    }
+
     @ViewBuilder private func notes(_ page: WatcherPage?) -> some View {
+        // A read that failed while a page is shown says so over the page it left.
+        if page != nil, model.online(hostID), let problem = model.watcherReadProblems[hostID] { note(problem) }
         if let notice = page?.recoveryNotice, !notice.isEmpty { note(notice) }
         if page?.conversation.earlierAvailable == true { note("Earlier messages are in Sotto on \(model.name(hostID)).") }
         if let page, page.current == nil {
@@ -271,7 +398,8 @@ private struct WatcherConversationPane: View {
         } else if let page, page.conversation.messages.isEmpty, model.watcherSending[hostID] == nil {
             note("Ask Watcher to start, check on or stop your threads. It answers nothing for you.")
         } else if page == nil {
-            note(model.online(hostID) ? "Reading Watcher on \(model.name(hostID))…" : "Reconnect to \(model.name(hostID)) to read Watcher.")
+            note(model.online(hostID) ? model.watcherReadProblems[hostID] ?? "Reading Watcher on \(model.name(hostID))…"
+                 : "Reconnect to \(model.name(hostID)) to read Watcher.")
         }
     }
     private func note(_ words: String) -> some View {
@@ -350,6 +478,33 @@ private struct SendingBubble: View {
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.leading, 48)
+    }
+}
+
+/// Words that didn't reach Watcher, or that it didn't confirm, kept here while newer words are in the box, as a thread
+/// keeps a reply that wasn't sent. Put back, they go with the draft ID they went with before.
+private struct SetAsideCard: View {
+    @EnvironmentObject var model: AppModel
+    /// Watched so Put it back follows what the box holds; typing publishes here, not on the model.
+    @EnvironmentObject var draftStore: DraftStore
+    let hostID: String
+    let words: WatcherSetAside
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            Text(words.unconfirmed ? "Watcher didn’t confirm this message" : "Your message to Watcher wasn’t sent")
+                .font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
+            Text(words.text).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
+            if words.unconfirmed {
+                Text("Check the conversation before you send it again.").font(.sotto(.small)).foregroundStyle(Palette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Button("Put it back in the box") { model.restoreWatcherWords(words, on: hostID) }
+                .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
+                .disabled(!(model.drafts[model.watcherDraftKey(hostID)] ?? "").isEmpty)
+                .accessibilityHint("Once the box is empty")
+        }
+        .card()
+        .accessibilityIdentifier("watcher-set-aside")
     }
 }
 
@@ -466,6 +621,8 @@ private struct ReceiptRow: View {
 /// the thread's own page would send it. Anything more opens the request sheet. Watcher answers nothing.
 private struct WatcherRequestCard: View {
     @EnvironmentObject var model: AppModel
+    /// Watched for Watcher's page, which publishes on its own store, not on the model.
+    @EnvironmentObject var watcherStore: WatcherStore
     let hostID: String
     let card: WatcherPage.RequestCard
     let own: Bool
@@ -485,13 +642,14 @@ private struct WatcherRequestCard: View {
     }
 
     /// Where the answer goes, or nil for a thread on a computer this iPhone isn't paired with.
-    private var place: RequestPlace? {
-        if card.target.hostId == hostID { return .watcher(hostID: hostID, target: card.target.ref) }
-        if model.thread(card.target.ref) != nil { return .thread(card.target.ref) }
-        return nil
+    private var place: RequestPlace? { model.watcherCardPlace(card, on: hostID) }
+    /// Whether it can be answered from here now: only while the computer that holds the request still has it.
+    private var route: WatcherCardRoute { model.watcherCardRoute(card, on: hostID) }
+    /// The request as its computer holds it now, or as Watcher's page shows it when this iPhone can't read that.
+    private var request: AgentRequest {
+        if case .answer(_, let current) = route { return current }
+        return card.request
     }
-    /// The request as its computer holds it now.
-    private var request: AgentRequest { place.flatMap { model.waitingRequest(card.request.id, at: $0) } ?? card.request }
     private var isPermission: Bool { request.kind == "permission" }
     private var tag: String { isPermission ? "Permission" : "Question" }
     private var ask: String { isPermission ? request.text : (request.questions?.first?.question ?? request.text) }
@@ -583,22 +741,26 @@ private struct WatcherRequestCard: View {
         }
     }
 
+    /// Answers are offered only once the computer that holds the request has it, as the card shows it; otherwise the card
+    /// says why there are none.
     @ViewBuilder private var idleActions: some View {
-        if let place, request.supported {
-            let ready = model.canAnswer(request, at: place) && !model.answering(place.hostID)
-            if !model.mayAnswer(at: place) {
+        switch route {
+        case .note(let words):
+            note(words, reviews: false)
+        case .answer(let place, let current):
+            if !current.supported {
+                note("Answer this one in Sotto on \(model.name(place.hostID)).", reviews: false)
+            } else if !model.mayAnswer(at: place) {
                 note("This iPhone can’t answer on \(model.name(place.hostID)) yet.", reviews: true)
             } else if !card.connected {
                 note("\(AgentNames.name(card.provider)) isn’t connected on \(model.computerName(card.target.hostId) ?? computer). Answer once it’s back.", reviews: false)
             } else if isPermission {
-                permissionActions(enabled: ready)
-            } else if let options = request.oneTapOptions {
-                questionActions(options, enabled: ready)
+                permissionActions(enabled: model.canAnswer(current, at: place) && !model.answering(place.hostID))
+            } else if let options = current.oneTapOptions {
+                questionActions(options, enabled: model.canAnswer(current, at: place) && !model.answering(place.hostID))
             } else {
                 note(nil, reviews: true)
             }
-        } else {
-            note("Answer this one in Sotto on \(computer).", reviews: false)
         }
     }
 
@@ -617,27 +779,11 @@ private struct WatcherRequestCard: View {
     }
 
     private func questionActions(_ options: [RequestOption], enabled: Bool) -> some View {
-        VStack(alignment: .leading, spacing: Space.s3) {
-            FlowLayout(spacing: Space.s2) {
-                ForEach(options) { option in
-                    Button { picked = picked == option.id ? nil : option.id } label: { Text(option.label) }
-                        .buttonStyle(ChipStyle(selected: picked == option.id))
-                        .accessibilityAddTraits(picked == option.id ? .isSelected : [])
-                }
-            }
-            .disabled(!enabled)
-            HStack(spacing: Space.s2) {
-                Button(request.questions?.first?.allowFreeText == true ? "Write your own" : reviewWords, action: openReview)
-                    .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
-                Spacer(minLength: 0)
-                Button("Send answer") {
-                    guard let picked else { return }
-                    send(choice: picked, answers: ThreadsView.oneTapAnswers(request, choice: picked))
-                }
-                .buttonStyle(PillButtonStyle(kind: .primary, compact: true))
-                .disabled(!enabled || picked == nil)
-                .accessibilityIdentifier("watcher-card-send")
-            }
+        OneTapQuestion(options: options, enabled: enabled, picked: $picked, sendID: "watcher-card-send") { choice in
+            send(choice: choice, answers: ThreadsView.oneTapAnswers(request, choice: choice))
+        } more: {
+            Button(request.questions?.first?.allowFreeText == true ? "Write your own" : reviewWords, action: openReview)
+                .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
         }
     }
 
@@ -662,22 +808,8 @@ private struct WatcherRequestCard: View {
     }
 
     /// Deny, then Allow once, in the provider's own words. A request with no choices of its own takes Deny and Allow.
-    @ViewBuilder private func permissionButtons(enabled: Bool) -> some View {
-        if let choices = request.cardPermissionChoices {
-            let ordered: [PermissionChoice] = choices.sorted { $0.kind == "deny" && $1.kind != "deny" }
-            ForEach(ordered) { choice in
-                Button(choice.label) { send(choice: choice.id) }
-                    .buttonStyle(PillButtonStyle(kind: choice.kind == "deny" ? .soft : .primary, compact: true))
-                    .disabled(!enabled)
-            }
-        } else if request.permissionChoices == nil {
-            Button("Deny") { send(choice: "deny") }
-                .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
-                .disabled(!enabled)
-            Button("Allow") { send(choice: "allow") }
-                .buttonStyle(PillButtonStyle(kind: .primary, compact: true))
-                .disabled(!enabled)
-        }
+    private func permissionButtons(enabled: Bool) -> some View {
+        CardPermissionButtons(request: request, enabled: enabled) { choice, _ in send(choice: choice) }
     }
 }
 
@@ -686,6 +818,8 @@ private struct WatcherRequestCard: View {
 /// Asking Watcher: the box in glass over the conversation's end. The keyboard's own microphone key dictates into it.
 private struct WatcherDock: View {
     @EnvironmentObject var model: AppModel
+    /// Watched for Watcher's page, which publishes on its own store, not on the model.
+    @EnvironmentObject var watcherStore: WatcherStore
     /// The box's words, watched here alone, so a keystroke redraws the box and nothing else.
     @EnvironmentObject var draftStore: DraftStore
     let hostID: String
@@ -790,6 +924,8 @@ private struct WatcherDock: View {
 /// ones it no longer watches.
 private struct WatchedPane: View {
     @EnvironmentObject var model: AppModel
+    /// Watched for Watcher's page, which publishes on its own store, not on the model.
+    @EnvironmentObject var watcherStore: WatcherStore
     let hostID: String
     let stopAll: () -> Void
     var body: some View {
@@ -823,8 +959,10 @@ private struct WatchedPane: View {
                         .sottoCard(.plain)
                     }
                 } else {
-                    Text(model.online(hostID) ? "Reading Watcher on \(model.name(hostID))…" : "Reconnect to \(model.name(hostID)) to read Watcher.")
-                        .font(.sotto(.body)).foregroundStyle(Palette.muted).padding(.vertical, Space.s7)
+                    Text(model.online(hostID) ? model.watcherReadProblems[hostID] ?? "Reading Watcher on \(model.name(hostID))…"
+                         : "Reconnect to \(model.name(hostID)) to read Watcher.")
+                        .font(.sotto(.body)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                        .padding(.vertical, Space.s7)
                 }
             }
             .padding(.horizontal, Space.gutter)
