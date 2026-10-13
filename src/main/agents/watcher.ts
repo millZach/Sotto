@@ -871,6 +871,7 @@ export class WatcherService implements WatcherControlHooks {
               && key(result.receipt.target) === key(operation.target)) exact.set(operation.id, result.receipt)
           } catch { receiptFailed = true; this.recoveryNotice = 'An exact host receipt could not be read. Its pending slot remains held.' }
         }
+        if (this.closed || JSON.stringify(this.record().current) !== JSON.stringify(master)) return
         const apply = (record: WatcherRecord) => {
           for (const [id, receipt] of exact) {
             const own = record.operations.find(item => item.id === id)!
