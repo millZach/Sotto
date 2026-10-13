@@ -24,11 +24,11 @@ export async function usageDashboardHarness() {
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ onboardingComplete: true, historyEnabled: true, threadTitles: false, appearance: 'dark', reducedMotion: 'on' }))
   let app: ElectronApplication | undefined, page: Page | undefined
   const pageErrors: string[] = []
-  const captures: Array<{ name: string; width: number; height: number; appearance: string; minimumContrast: number }> = []
+  const captures: Array<{ name: string; width: number; height: number; targetWidth: number; targetHeight: number; appearance: string; minimumContrast: number }> = []
   const currentPage = (): Page => { if (!page) throw new Error('Usage fixture window is not running'); return page }
   const currentApp = (): ElectronApplication => { if (!app) throw new Error('Usage fixture app is not running'); return app }
   const launch = async (dashboard = true): Promise<Page> => {
-    const inherited = new Set(['systemroot', 'windir', 'comspec', 'temp', 'tmp', 'lang', 'lc_all', 'display', 'xauthority', 'wayland_display', 'xdg_runtime_dir'])
+    const inherited = new Set(['systemroot', 'systemdrive', 'windir', 'comspec', 'temp', 'tmp', 'lang', 'lc_all', 'display', 'xauthority', 'wayland_display', 'xdg_runtime_dir'])
     app = await electron.launch({ args: [resolve('tests/fixtures/nativeUsageElectronMain.cjs')], env: {
       ...Object.fromEntries(Object.entries(process.env).filter(([key, value]) => value !== undefined && inherited.has(key.toLowerCase()))),
       HOME: home, USERPROFILE: home, APPDATA: join(home, 'appdata'), LOCALAPPDATA: join(home, 'localappdata'),
@@ -83,7 +83,9 @@ export async function usageDashboardHarness() {
       const window = BrowserWindow.getAllWindows().find(value => value.webContents.getURL().endsWith('/index.html'))!
       window.setContentSize(size.width, size.height)
     }, { width, height })
-    await expect.poll(() => currentPage().evaluate(() => ({ width: innerWidth, height: innerHeight }))).toEqual({ width, height })
+    // Windows' minimum content size can round by two pixels at the current display scale.
+    await expect.poll(() => currentPage().evaluate(size => Math.max(Math.abs(innerWidth - size.width), Math.abs(innerHeight - size.height)), { width, height }))
+      .toBeLessThanOrEqual(2)
   }
   const appearance = async (value: 'light' | 'dark'): Promise<void> => {
     await currentPage().evaluate(async value => { await window.sotto!.updateSettings({ appearance: value, reducedMotion: 'on' }) }, value)
@@ -106,12 +108,14 @@ export async function usageDashboardHarness() {
           .filter(element => element.scrollWidth > element.clientWidth + 1).map(element => element.className) }
     })
     expect(layout).toEqual({ documentOverflow: false, roomOverflow: false, scrollOverflow: false, clippedNumbers: [] })
-    const ratios = await textContrast(currentPage().locator('.usage-view'), 'h1,h2,h3,p,dt,dd,button,select,label,summary,th,td,.usage-index__label,.usage-index__note')
+    // Closed native details defer descendant styles; measure the rendered text.
+    const ratios = await textContrast(currentPage().locator('.usage-view'), 'h1,h2,h3,p,dt,dd,button,select,label,summary,th,td,.usage-index__label,.usage-index__note', true)
     const nonempty = ratios.filter(row => row.text.trim().length > 0)
     expect(nonempty.filter(row => row.ratio < 4.5)).toEqual([])
     const minimumContrast = Math.min(...nonempty.map(row => row.ratio))
     await currentPage().screenshot({ path: join(directory, name), animations: 'disabled' })
-    captures.push({ name, width, height, appearance: mode, minimumContrast })
+    const actual = await currentPage().evaluate(() => ({ width: innerWidth, height: innerHeight }))
+    captures.push({ name, width: actual.width, height: actual.height, targetWidth: width, targetHeight: height, appearance: mode, minimumContrast })
   }
   return { root, profile, project, client, home, currentPage, currentApp, launch, connect, close, cleanup, action, read, activity, open, resize, appearance, capture, pageErrors, captures }
 }

@@ -33,10 +33,16 @@ export const usageTokenObservationSchema = z.object({
   providerId: usageProviderIdSchema, threadId: identity, recordKey: hash, groupKey: hash.optional(),
   modelId, tokens: usageTokensSchema.strict(), at: timestamp.optional(), groupStartedAt: timestamp.optional(),
   phase: z.enum(['live', 'replay', 'seed']), partial: z.boolean(),
+  /** Retire an ambiguous aggregate once exact model rows replace it; retain only its hash. */
+  removed: z.literal(true).optional(),
+  /** Full Grok breakdown membership, hashed from sorted exact row keys for replay reconciliation. */
+  groupRecordsHash: hash.optional(),
   /** Adapter proof of a new native group beginning live, not an observation-time guess. */
   liveNewGroup: z.boolean().optional(),
 }).strict().refine(value => value.liveNewGroup !== true || (value.phase === 'live' && value.groupKey !== undefined), {
   message: 'Live new-group evidence requires a live observation and group key',
+}).refine(value => value.groupRecordsHash === undefined || (value.providerId === 'grok' && value.removed === true && value.groupKey !== undefined), {
+  message: 'Group membership evidence requires a retired Grok aggregate and group key',
 }).refine(value => value.tokens.input === undefined || value.tokens.output === undefined || Number.isSafeInteger(value.tokens.input + value.tokens.output), {
   message: 'Combined input and output exceed the supported token range',
 })

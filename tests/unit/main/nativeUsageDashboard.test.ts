@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -33,9 +34,9 @@ async function fixture(provider: 'claude' | 'codex' | 'grok', enabled = true) {
 const claudeFrame = (id: string, output = 3) => ({ type: 'assistant', message: { id, model: 'claude-sonnet-4-6',
   usage: { input_tokens: 5, output_tokens: output, cache_read_input_tokens: 10, cache_creation_input_tokens: 20,
     cache_creation: { ephemeral_5m_input_tokens: 8, ephemeral_1h_input_tokens: 12 } } } })
-const grokFrame = (ticks: number | undefined = 100) => ({ _meta: { agentTimestampMs: Date.parse('2026-10-12T10:01:00Z') },
+const grokFrame = (ticks: number | null = 100) => ({ _meta: { agentTimestampMs: Date.parse('2026-10-12T10:01:00Z') },
   update: { sessionUpdate: 'turn_completed', prompt_id: 'native-prompt-secret', usage: { inputTokens: 50, outputTokens: 8,
-    cachedReadTokens: 5, cacheCreationTokens: 2, ...(ticks !== undefined ? { costUsdTicks: ticks } : {}),
+    cachedReadTokens: 5, cacheCreationTokens: 2, ...(ticks !== null ? { costUsdTicks: ticks } : {}),
     modelUsage: { 'grok-a': { inputTokens: 30, outputTokens: 5, cachedReadTokens: 5, cacheCreationTokens: 0 },
       'grok-b': { inputTokens: 20, outputTokens: 3, cachedReadTokens: 0, cacheCreationTokens: 2 } } } } })
 
@@ -124,7 +125,7 @@ describe('Owl native numeric projection', () => {
     restarted.grok('thread', 'selected-model', grokFrame(), { phase: 'replay' })
     const read = store.query({}); expect(read.totals.tokens.total.value).toBe(58); expect(read.totals.tokenRecords).toBe(2)
     expect(read.models.map(model => [model.modelId, model.tokens.total.value])).toEqual([['grok-a', 35], ['grok-b', 23]])
-    restarted.grok('thread', 'selected-model', grokFrame(undefined), { phase: 'replay' })
+    restarted.grok('thread', 'selected-model', grokFrame(null), { phase: 'replay' })
     expect(store.query({}).totals.tokens.total.value).toBe(58)
     expect(restarted.get('thread')?.estimatedUsd).toBe(100 / 10_000_000_000)
     expect(restarted.get('thread')?.rateVersions).toEqual(['grok-reported-cost'])
@@ -132,7 +133,7 @@ describe('Owl native numeric projection', () => {
     restarted.grok('thread', 'selected-model', grokFrame(), { phase: 'replay' })
     expect(store.query({}).totals.tokenRecords).toBe(0)
   })
-  it('does not replace a saved exact Grok model anchor with an aggregate legacy seed on the next restart', async () => {
+  it('does not revive a retired Grok aggregate over exact model rows on the next restart', async () => {
     const { usage, root } = await fixture('grok')
     const store = new UsageStore(join(root, 'usage.sqlite')); store.open(); drains.push(async () => store.close())
     usage.subscribeUsage(row => store.observeTokens(row))
@@ -141,7 +142,7 @@ describe('Owl native numeric projection', () => {
     const before = store.query({}); expect(before.totals.tokens.total.value).toBe(58)
     const revision = before.metadata.revision
     const restarted = new NativeUsage(root, 'grok', true); await restarted.load(); drains.push(() => restarted.flushed())
-    restarted.visitUsage('thread', row => { expect(row.phase).toBe('seed'); expect(store.observeTokens(row).status).toBe('unchanged') })
+    restarted.visitUsage('thread', row => { expect(row.phase).toBe('seed'); expect(store.observeTokens(row).status).toBe('suppressed') })
     expect(store.query({}).totals.tokens.total.value).toBe(58); expect(store.metadata().revision).toBe(revision)
     expect(store.query({}).models).toEqual(before.models)
     restarted.subscribeUsage(row => store.observeTokens(row))
@@ -196,15 +197,217 @@ describe('Owl native numeric projection', () => {
     expect(usage.get('thread')?.estimatedUsd).toBe(100 / 10_000_000_000)
     expect(usage.get('thread')?.total).toMatchObject({ input: 50, output: 8 })
   })
-  it('keeps the same Grok anchor and model keys with or without aggregate cost and on a seed visit', async () => {
+  it('keeps exact Grok model identities independent of reported cost and retires only the separate aggregate', async () => {
     const { usage, rows } = await fixture('grok')
-    usage.grok('thread', 'selected-model', grokFrame(undefined), { phase: 'live' })
-    const keys = rows.map(row => row.recordKey).sort()
+    usage.grok('thread', 'selected-model', grokFrame(null), { phase: 'live' })
+    const keys = rows.filter(row => !row.removed).map(row => row.recordKey).sort()
+    expect(rows[0]?.removed).toBe(true)
+    expect(rows[0]?.groupRecordsHash).toBe(createHash('sha256').update(JSON.stringify(keys)).digest('hex'))
     usage.grok('thread', 'selected-model', grokFrame(), { phase: 'replay' })
     expect(rows.slice(-2).map(row => row.recordKey).sort()).toEqual(keys)
     const seed: UsageTokenObservation[] = []; usage.visitUsage('thread', row => seed.push(row))
-    expect(seed.map(row => row.recordKey).sort()).toEqual(keys)
+    expect(seed.filter(row => !row.removed).map(row => row.recordKey).sort()).toEqual(keys)
     expect(seed.reduce((sum, row) => sum + (row.tokens.input ?? 0) + (row.tokens.output ?? 0), 0)).toBe(58)
+  })
+  it('keeps Grok b-only then a+b model identities stable through repeated cost-bearing restarts', async () => {
+    const { usage, root } = await fixture('grok')
+    const store = new UsageStore(join(root, 'usage.sqlite')); store.open(); drains.push(async () => store.close())
+    usage.subscribeUsage(row => store.observeTokens(row))
+    const onlyB = grokFrame()
+    onlyB.update.usage.modelUsage = { 'grok-b': onlyB.update.usage.modelUsage['grok-b'] } as typeof onlyB.update.usage.modelUsage
+    Object.assign(onlyB.update.usage, { inputTokens: 20, outputTokens: 3, cachedReadTokens: 0, cacheCreationTokens: 2 })
+    usage.grok('thread', 'selected-model', onlyB, { phase: 'live' })
+    expect(store.query({}).totals.tokens.total.value).toBe(23)
+    usage.grok('thread', 'selected-model', grokFrame(), { phase: 'replay' })
+    expect(store.query({}).totals.tokens.total.value).toBe(58)
+    await usage.flushed()
+    for (let restart = 0; restart < 2; restart++) {
+      const native = new NativeUsage(root, 'grok', true); await native.load(); drains.push(() => native.flushed())
+      native.visitUsage('thread', row => store.observeTokens(row))
+      expect(store.query({}).totals.tokens.total.value).toBe(58)
+      native.subscribeUsage(row => store.observeTokens(row)); native.grok('thread', 'selected-model', grokFrame(), { phase: 'replay' })
+      const read = store.query({})
+      expect(read.totals.tokens.total.value).toBe(58); expect(read.totals.tokenRecords).toBe(2)
+      expect(read.models.map(model => [model.modelId, model.tokens.total.value])).toEqual([['grok-a', 35], ['grok-b', 23]])
+      expect(native.get('thread')?.total).toMatchObject({ input: 20, output: 3 })
+      expect(native.get('thread')?.estimatedUsd).toBe(100 / 10_000_000_000)
+    }
+  })
+  it('makes a cost-bearing restart shrink unknown and repairs it only with the complete native group', async () => {
+    const { usage, root } = await fixture('grok')
+    const store = new UsageStore(join(root, 'usage.sqlite')); store.open(); drains.push(async () => store.close())
+    usage.subscribeUsage(row => store.observeTokens(row))
+    usage.grok('thread', 'selected-model', grokFrame(), { phase: 'live' }); await usage.flushed()
+    expect(store.query({}).totals.tokens.total.value).toBe(58)
+    const native = new NativeUsage(root, 'grok', true); await native.load(); drains.push(() => native.flushed())
+    native.visitUsage('thread', row => store.observeTokens(row))
+    const before = store.query({}); expect(before.totals.tokens.total.value).toBe(58); expect(before.totals.tokens.total.partial).toBe(false)
+    native.subscribeUsage(row => store.observeTokens(row))
+    const onlyB = grokFrame()
+    onlyB.update.usage.modelUsage = { 'grok-b': onlyB.update.usage.modelUsage['grok-b'] } as typeof onlyB.update.usage.modelUsage
+    Object.assign(onlyB.update.usage, { inputTokens: 20, outputTokens: 3, cachedReadTokens: 0, cacheCreationTokens: 2 })
+    native.grok('thread', 'selected-model', onlyB, { phase: 'replay' })
+    let read = store.query({})
+    expect(read.totals.tokens.total.value).toBeUndefined(); expect(read.totals.tokens.total.partial).toBe(true)
+    expect(read.models).toHaveLength(2)
+    expect(read.models.every(model => model.tokens.input.value === undefined && model.tokens.output.value === undefined)).toBe(true)
+    native.grok('thread', 'selected-model', grokFrame(), { phase: 'replay' })
+    read = store.query({}); expect(read.totals.tokens.total.value).toBe(58); expect(read.totals.tokens.total.partial).toBe(false)
+    expect(read.totals.tokenRecords).toBe(2)
+    expect(native.get('thread')?.estimatedUsd).toBe(100 / 10_000_000_000)
+    expect(native.get('thread')?.total).toMatchObject({ input: 50, output: 8 })
+  })
+  it('reconciles an equal-total model-set replacement after a cost-bearing restart without adding old models', async () => {
+    const { usage, root } = await fixture('grok')
+    const store = new UsageStore(join(root, 'usage.sqlite')); store.open(); drains.push(async () => store.close())
+    usage.subscribeUsage(row => store.observeTokens(row))
+    usage.grok('thread', 'selected-model', grokFrame(), { phase: 'live' }); await usage.flushed()
+    const native = new NativeUsage(root, 'grok', true); await native.load(); drains.push(() => native.flushed())
+    native.visitUsage('thread', row => store.observeTokens(row)); native.subscribeUsage(row => store.observeTokens(row))
+    const changed = grokFrame()
+    const modelC = { inputTokens: 50, outputTokens: 8, cachedReadTokens: 5, cacheCreationTokens: 2 }
+    Object.assign(changed.update.usage, { modelUsage: { 'grok-c': modelC } })
+    native.grok('thread', 'selected-model', changed, { phase: 'replay' })
+    let read = store.query({})
+    expect(read.totals.tokens.total.value).toBe(58); expect(read.totals.tokens.total.partial).toBe(true)
+    expect(read.models.find(model => model.modelId === 'grok-a')!.tokens.total.value).toBeUndefined()
+    expect(read.models.find(model => model.modelId === 'grok-b')!.tokens.total.value).toBeUndefined()
+    expect(read.models.find(model => model.modelId === 'grok-c')!.tokens.total.value).toBe(58)
+    const complete = grokFrame()
+    Object.assign(complete.update.usage.modelUsage, { 'grok-c': modelC })
+    Object.assign(complete.update.usage, { inputTokens: 100, outputTokens: 16, cachedReadTokens: 10, cacheCreationTokens: 4 })
+    native.grok('thread', 'selected-model', complete, { phase: 'replay' })
+    read = store.query({}); expect(read.totals.tokens.total.value).toBe(116); expect(read.totals.tokens.total.partial).toBe(false)
+    expect(read.totals.tokenRecords).toBe(3)
+    expect(native.get('thread')?.total).toMatchObject({ input: 50, output: 8 })
+  })
+  it('makes the same-model downward evidence unknown after a cost-bearing restart and restores complete higher evidence', async () => {
+    const { usage, root } = await fixture('grok')
+    const store = new UsageStore(join(root, 'usage.sqlite')); store.open(); drains.push(async () => store.close())
+    usage.subscribeUsage(row => store.observeTokens(row))
+    const frame = (input: number) => {
+      const value = grokFrame()
+      Object.assign(value.update.usage, { inputTokens: input, outputTokens: 5, cachedReadTokens: 5, cacheCreationTokens: 0,
+        modelUsage: { 'grok-a': { inputTokens: input, outputTokens: 5, cachedReadTokens: 5, cacheCreationTokens: 0 } } })
+      return value
+    }
+    usage.grok('thread', 'selected-model', frame(30), { phase: 'live' }); await usage.flushed()
+    const native = new NativeUsage(root, 'grok', true); await native.load(); drains.push(() => native.flushed())
+    native.visitUsage('thread', row => store.observeTokens(row)); native.subscribeUsage(row => store.observeTokens(row))
+    native.grok('thread', 'selected-model', frame(10), { phase: 'replay' })
+    expect(store.query({}).totals.tokens.total.value).toBeUndefined()
+    expect(store.query({}).totals.partialTokenRecords).toBe(1)
+    native.grok('thread', 'selected-model', frame(31), { phase: 'replay' })
+    expect(store.query({}).totals.tokens.total.value).toBe(36)
+    expect(store.query({}).totals.tokens.total.partial).toBe(false)
+    expect(native.get('thread')?.total).toMatchObject({ input: 30, output: 5 })
+  })
+  it('keeps repeated lower same-membership evidence incomplete across adapter and SQLite restarts until full evidence repairs it', async () => {
+    const { usage, root } = await fixture('grok')
+    const path = join(root, 'usage.sqlite')
+    let store = new UsageStore(path); store.open(); drains.push(async () => store.close())
+    usage.subscribeUsage(row => store.observeTokens(row))
+    const onlyB = grokFrame()
+    onlyB.update.usage.modelUsage = { 'grok-b': onlyB.update.usage.modelUsage['grok-b'] } as typeof onlyB.update.usage.modelUsage
+    Object.assign(onlyB.update.usage, { inputTokens: 20, outputTokens: 3, cachedReadTokens: 0, cacheCreationTokens: 2 })
+    usage.grok('thread', 'selected-model', onlyB, { phase: 'live' })
+    usage.grok('thread', 'selected-model', grokFrame(), { phase: 'replay' }); await usage.flushed()
+    expect(store.query({}).totals.tokens.total.value).toBe(58)
+    const native = new NativeUsage(root, 'grok', true); await native.load(); drains.push(() => native.flushed())
+    native.visitUsage('thread', row => store.observeTokens(row)); native.subscribeUsage(row => store.observeTokens(row))
+    const lowered = grokFrame()
+    lowered.update.usage.modelUsage['grok-a'].inputTokens = 10; lowered.update.usage.inputTokens = 30
+    for (let replay = 0; replay < 3; replay++) {
+      native.grok('thread', 'selected-model', lowered, { phase: 'replay' })
+      const read = store.query({})
+      expect(read.totals.tokens.total.partial).toBe(true)
+      expect(read.models.find(model => model.modelId === 'grok-a')!.tokens.total.value).toBeUndefined()
+      expect(read.models.find(model => model.modelId === 'grok-b')!.tokens.total.value).toBe(23)
+      expect(read.totals.tokens.total.value).toBe(23)
+    }
+    // Neither the persisted legacy aggregate nor the fresh adapter remembers A's prior 30.
+    // SQLite's numeric confidence must survive reopening the actual database as well.
+    store.close(); store = new UsageStore(path); store.open()
+    const afterRestart = new NativeUsage(root, 'grok', true); await afterRestart.load(); drains.push(() => afterRestart.flushed())
+    afterRestart.visitUsage('thread', row => store.observeTokens(row)); afterRestart.subscribeUsage(row => store.observeTokens(row))
+    for (let replay = 0; replay < 2; replay++) {
+      afterRestart.grok('thread', 'selected-model', lowered, { phase: 'replay' })
+      const read = store.query({})
+      expect(read.totals.tokens.total.value).toBe(23); expect(read.totals.tokens.total.partial).toBe(true)
+      expect(read.models.find(model => model.modelId === 'grok-a')!.tokens.total.value).toBeUndefined()
+    }
+    afterRestart.grok('thread', 'selected-model', grokFrame(), { phase: 'replay' })
+    expect(store.query({}).totals.tokens.total.value).toBe(58)
+    expect(store.query({}).totals.tokens.total.partial).toBe(false)
+    const higher = grokFrame()
+    higher.update.usage.modelUsage['grok-a'].inputTokens = 40; higher.update.usage.inputTokens = 60
+    afterRestart.grok('thread', 'selected-model', higher, { phase: 'replay' })
+    expect(store.query({}).totals.tokens.total.value).toBe(68)
+    expect(store.query({}).totals.tokens.total.partial).toBe(false)
+    expect(afterRestart.get('thread')?.total).toMatchObject({ input: 20, output: 3 })
+  })
+  it('seeds legacy Grok per-model identities once and makes a later model-free report unknown without restoring an aggregate', async () => {
+    const { usage, root } = await fixture('grok')
+    usage.grok('thread', 'selected-model', grokFrame(null), { phase: 'live' }); await usage.flushed()
+    const native = new NativeUsage(root, 'grok', true); await native.load(); drains.push(() => native.flushed())
+    const store = new UsageStore(join(root, 'usage.sqlite')); store.open(); drains.push(async () => store.close())
+    const seed: UsageTokenObservation[] = []
+    native.visitUsage('thread', row => { seed.push(row); store.observeTokens(row) })
+    expect(seed[0]?.removed).toBe(true)
+    expect(seed.filter(row => !row.removed)).toHaveLength(2)
+    expect(store.query({}).totals.tokens.total.value).toBe(58)
+    const initialKeys = seed.filter(row => !row.removed).map(row => row.recordKey).sort()
+    native.subscribeUsage(row => store.observeTokens(row))
+    const withoutModels = grokFrame(null); delete (withoutModels.update.usage as { modelUsage?: unknown }).modelUsage
+    native.grok('thread', 'selected-model', withoutModels, { phase: 'replay' })
+    expect(store.query({}).totals.tokens.total.value).toBeUndefined()
+    expect(store.query({}).totals.tokenRecords).toBe(2)
+    native.grok('thread', 'selected-model', grokFrame(null), { phase: 'replay' })
+    expect(store.query({}).totals.tokens.total.value).toBe(58)
+    const restored: UsageTokenObservation[] = []; native.visitUsage('thread', row => restored.push(row))
+    expect(restored.filter(row => !row.removed).map(row => row.recordKey).sort()).toEqual(initialKeys)
+    expect(restored.filter(row => !row.removed).every(row => row.phase === 'replay')).toBe(true)
+    store.clear(store.metadata().revision)
+    native.visitUsage('thread', row => store.observeTokens(row))
+    expect(store.query({}).totals.tokenRecords).toBe(0)
+  })
+  it('makes a same-model downward Grok report unknown instead of publishing an old high-water vector as complete', async () => {
+    const { usage, root } = await fixture('grok')
+    const store = new UsageStore(join(root, 'usage.sqlite')); store.open(); drains.push(async () => store.close())
+    usage.subscribeUsage(row => store.observeTokens(row))
+    const frame = (input: number) => {
+      const value = grokFrame()
+      const model = { ...value.update.usage.modelUsage['grok-a'], inputTokens: input }
+      Object.assign(value.update.usage, { inputTokens: input, outputTokens: 5, cachedReadTokens: 5, cacheCreationTokens: 0,
+        modelUsage: { 'grok-a': model } })
+      return value
+    }
+    usage.grok('thread', 'selected-model', frame(30), { phase: 'live' })
+    expect(store.query({}).totals.tokens.total.value).toBe(35)
+    usage.grok('thread', 'selected-model', frame(10), { phase: 'replay' })
+    let read = store.query({})
+    expect(read.totals.tokens.input.value).toBeUndefined(); expect(read.totals.tokens.total.value).toBeUndefined()
+    expect(read.totals.partialTokenRecords).toBe(1)
+    usage.grok('thread', 'selected-model', frame(31), { phase: 'replay' })
+    read = store.query({}); expect(read.totals.tokens.total.value).toBe(36); expect(read.totals.tokens.total.partial).toBe(false)
+    expect(usage.get('thread')?.total).toMatchObject({ input: 30, output: 5 })
+  })
+  it('keeps native prompt and model boundaries unambiguous inside the hashed Grok row identity', async () => {
+    const { usage, rows } = await fixture('grok')
+    const frame = (prompt: string, model: string) => {
+      const value = grokFrame()
+      value.update.prompt_id = prompt
+      Object.assign(value.update.usage, { inputTokens: 10, outputTokens: 1, cachedReadTokens: 0, cacheCreationTokens: 0,
+        modelUsage: { [model]: { inputTokens: 10, outputTokens: 1, cachedReadTokens: 0, cacheCreationTokens: 0 } } })
+      return value
+    }
+    usage.grok('thread', 'selected', frame('a:model:b', 'c'), { phase: 'live' })
+    usage.grok('thread', 'selected', frame('a', 'b:model:c'), { phase: 'live' })
+    const exact = rows.filter(row => !row.removed)
+    expect(exact).toHaveLength(2)
+    expect(exact[0]!.recordKey).not.toBe(exact[1]!.recordKey)
+    expect(exact[0]!.groupKey).not.toBe(exact[1]!.groupKey)
+    expect(JSON.stringify(exact)).not.toContain('a:model:b')
   })
 })
 

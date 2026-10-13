@@ -90,6 +90,7 @@ export class UsageService implements UsagePromptRecorder {
     if (this.closed) return
     if (!usagePromptIdentitySchema.safeParse({ threadId, messageId }).success) return
     const key = promptKey(threadId, messageId)
+    if (this.prompts.get(key)?.action === 'accept') { this.flush(); return }
     this.put(this.prompts, key, { ...this.prompts.get(key), action: 'discard' })
     this.flush()
   }

@@ -89,6 +89,15 @@ describe('host usage collection service', () => {
     expect((await f.service.read()).activity!.totals.prompts.total).toBe(1)
     expect(f.fake.commands).toHaveLength(0)
   })
+  it('keeps a buffered exact acceptance when later native cleanup tries to discard it', async () => {
+    const f = fixture()
+    f.service.submitPrompt(submission)
+    vi.spyOn(f.store, 'acceptSubmittedPrompt').mockImplementationOnce(() => { throw new Error('synthetic commit failure') })
+    f.service.acceptPrompt(submission.threadId, submission.messageId)
+    f.service.discardPrompt(submission.threadId, submission.messageId)
+    expect((await f.service.read()).activity!.totals.prompts.user).toBe(1)
+    expect(f.fake.commands).toHaveLength(0)
+  })
 
   it('drops a definitive refusal and keeps uncertainty uncounted until the echo', async () => {
     const f = fixture()

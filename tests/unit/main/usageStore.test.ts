@@ -51,6 +51,67 @@ async function fixture() {
 }
 
 describe('host numeric usage store', () => {
+  it('rejects a downward Grok exact row after restart even when membership and legacy aggregate are unchanged', async () => {
+    const f = await fixture()
+    const a = token({ providerId: 'grok', modelId: 'model-a', tokens: { input: 30, output: 10 } })
+    const b = token({ providerId: 'grok', modelId: 'model-b', recordKey: hash('model-b'), tokens: { input: 15, output: 3 } })
+    f.store.observeTokens(a); f.store.observeTokens(b)
+    f.store.observeTokens({ ...a, phase: 'replay', tokens: { input: 10, output: 10 } })
+    expect(f.store.query().totals.tokens.total.value).toBeUndefined()
+    f.store.observeTokens({ ...b, phase: 'replay' })
+    expect(f.store.query().totals.tokens.total).toMatchObject({ value: 18, partial: true })
+    expect(f.store.query().models.find(row => row.modelId === 'model-a')!.tokens.total.value).toBeUndefined()
+    f.store.close()
+    const reopened = new UsageStore(f.path); stores.push(reopened); reopened.open()
+    for (let replay = 0; replay < 2; replay++) {
+      reopened.observeTokens({ ...a, phase: 'replay', tokens: { input: 10, output: 10 } }); reopened.observeTokens({ ...b, phase: 'replay' })
+      expect(reopened.query().totals.tokens.total).toMatchObject({ value: 18, partial: true })
+    }
+    reopened.observeTokens({ ...a, phase: 'replay' })
+    expect(reopened.query().totals.tokens.total).toMatchObject({ value: 58, partial: false })
+    reopened.observeTokens({ ...a, phase: 'replay', tokens: { input: 10, output: 10 } })
+    reopened.clear(reopened.metadata().revision)
+    const database = new DatabaseSync(f.path)
+    try { expect(database.prepare('SELECT COUNT(*) AS count FROM grok_conflict_floors').get()!.count).toBe(0) }
+    finally { database.close() }
+  })
+  it('reconciles full Grok membership even after aggregate retirement and repairs reported models', async () => {
+    const f = await fixture()
+    const a = token({ providerId: 'grok', modelId: 'model-a', recordKey: hash('model-a'), tokens: { input: 30, output: 10 } })
+    const b = token({ providerId: 'grok', modelId: 'model-b', recordKey: hash('model-b'), tokens: { input: 15, output: 3 } })
+    const members = (...rows: UsageTokenObservation[]) => hash(JSON.stringify(rows.map(row => row.recordKey).sort()))
+    const retirement = token({ providerId: 'grok', modelId: 'unknown', recordKey: hash('aggregate'), tokens: {}, removed: true,
+      phase: 'replay', partial: true, groupRecordsHash: members(a, b) })
+    f.store.observeTokens(a); f.store.observeTokens(b); f.store.observeTokens(retirement)
+    const before = f.store.metadata().revision
+    expect(f.store.observeTokens(retirement)).toEqual({ status: 'suppressed', revision: before })
+    f.store.observeTokens({ ...retirement, phase: 'seed', groupRecordsHash: members(b) })
+    expect(f.store.query().totals.tokens.total).toMatchObject({ value: 58, partial: false })
+    f.store.observeTokens({ ...retirement, groupRecordsHash: members(b) })
+    expect(f.store.query().totals.tokens.total.value).toBeUndefined()
+    f.store.observeTokens({ ...b, phase: 'replay', tokens: { input: 20, output: 3 } })
+    expect(f.store.query().totals.tokens.total).toMatchObject({ value: 23, partial: true })
+    f.store.observeTokens(retirement); f.store.observeTokens(a); f.store.observeTokens({ ...b, tokens: { input: 20, output: 3 } })
+    expect(f.store.query().totals.tokens.total).toMatchObject({ value: 63, partial: false })
+    f.store.clear(f.store.metadata().revision)
+    const cleared = f.store.metadata().revision
+    expect(f.store.observeTokens({ ...retirement, groupRecordsHash: members(b) })).toEqual({ status: 'suppressed', revision: cleared })
+    expect(f.store.observeTokens(b).status).toBe('suppressed')
+    expect(f.store.query().totals.tokenRecords).toBe(0)
+  })
+  it('retires an ambiguous aggregate without retaining its vector or reviving it through seed', async () => {
+    const f = await fixture()
+    const aggregate = token({ providerId: 'grok', modelId: 'unknown', tokens: { input: 45, output: 13 }, partial: true })
+    f.store.observeTokens(aggregate)
+    f.store.observeTokens({ ...aggregate, tokens: {}, removed: true })
+    expect(f.store.query().totals.tokenRecords).toBe(0)
+    f.store.observeTokens({ ...aggregate, phase: 'seed' })
+    f.store.observeTokens(token({ providerId: 'grok', modelId: 'model-a', recordKey: hash('model-a'), tokens: { input: 30, output: 10 } }))
+    f.store.observeTokens(token({ providerId: 'grok', modelId: 'model-b', recordKey: hash('model-b'), tokens: { input: 15, output: 3 } }))
+    expect(f.store.query().totals.tokens.total.value).toBe(58)
+    const before = f.store.metadata().revision
+    expect(f.store.observeTokens({ ...aggregate, tokens: {}, removed: true })).toEqual({ status: 'suppressed', revision: before })
+  })
   it('imports legacy seed rows without replacing exact native model evidence after restart', async () => {
     const f = await fixture()
     f.store.observeTokens(token({ providerId: 'grok', modelId: 'model-a', tokens: { input: 30, output: 10 } }))

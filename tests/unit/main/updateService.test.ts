@@ -111,7 +111,7 @@ describe('UpdateService', () => {
     await expect(service.check('manual')).resolves.toEqual({
       currentVersion: '3.4.0',
       releaseTrack: 'stable',
-      owlFeatures: { watcher: false },
+      owlFeatures: { watcher: false, usage: false },
       watcherEnabled: false,
       phase: available,
       checkedAt: 1_000,
@@ -138,7 +138,7 @@ describe('UpdateService', () => {
     await expect(service.check('manual')).resolves.toEqual({
       currentVersion: '3.4.0',
       releaseTrack: 'stable',
-      owlFeatures: { watcher: false },
+      owlFeatures: { watcher: false, usage: false },
       watcherEnabled: false,
       phase: { phase: 'up-to-date' },
       checkedAt: 5_000,
@@ -280,7 +280,7 @@ describe('UpdateService', () => {
     await expect(service.check('manual')).resolves.toEqual({
       currentVersion: '3.4.0',
       releaseTrack: 'stable',
-      owlFeatures: { watcher: false },
+      owlFeatures: { watcher: false, usage: false },
       watcherEnabled: false,
       phase: { phase: 'unsupported' },
       checkedAt: null,
@@ -301,7 +301,7 @@ describe('UpdateService', () => {
     await expect(service.check('manual')).resolves.toEqual({
       currentVersion: '3.4.0',
       releaseTrack: 'stable',
-      owlFeatures: { watcher: false },
+      owlFeatures: { watcher: false, usage: false },
       watcherEnabled: false,
       phase: { phase: 'unsupported' },
       checkedAt: null,
@@ -319,7 +319,7 @@ describe('UpdateService', () => {
     await expect(service.check('manual')).resolves.toEqual({
       currentVersion: '3.4.0',
       releaseTrack: 'stable',
-      owlFeatures: { watcher: false },
+      owlFeatures: { watcher: false, usage: false },
       watcherEnabled: false,
       phase: { phase: 'failed', problem: 'net::ERR_NAME_NOT_RESOLVED' },
       checkedAt: 1_000,
@@ -568,7 +568,7 @@ describe('UpdateService', () => {
     await expect(service.check('manual')).resolves.toEqual({
       currentVersion: '3.4.0',
       releaseTrack: 'stable',
-      owlFeatures: { watcher: false },
+      owlFeatures: { watcher: false, usage: false },
       watcherEnabled: false,
       phase: { phase: 'idle' },
       checkedAt: null,

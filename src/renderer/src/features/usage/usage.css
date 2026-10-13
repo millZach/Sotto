@@ -39,6 +39,7 @@
 .usage-chart { margin-top: 16px; }
 .usage-chart__caption { min-height: 22px; margin: 0 0 14px; color: var(--tt-text-muted); font-size: 13px; }
 .usage-chart__plot { display: flex; align-items: end; gap: 3px; height: 230px; padding-top: 8px; border-bottom: 1px solid var(--tt-hairline); border-radius: 3px; }
+.usage-chart__plot[data-dense] { gap: 0; }
 .usage-chart__column { display: flex; flex: 1; align-items: end; height: 100%; min-width: 0; }
 .usage-chart__column > i { display: block; width: 100%; min-height: 2px; border-radius: 3px 3px 0 0; background: var(--tt-accent); opacity: .65; transition: opacity .12s; }
 .usage-chart__column[data-selected] > i { opacity: 1; }

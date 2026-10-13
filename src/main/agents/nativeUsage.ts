@@ -125,6 +125,9 @@ export class NativeUsage {
   private key(kind: 'row' | 'group', id: string, identity: string): string {
     return createHash('sha256').update(JSON.stringify(['sotto-usage', this.provider, kind, id, identity])).digest('hex')
   }
+  private grokRecord(identity: string, model?: string): string {
+    return JSON.stringify(model === undefined ? ['aggregate', identity] : ['model', identity, model])
+  }
   private projected(id: string, key: string, model: string, tokens: UsageTokens, context?: NativeUsageContext, partial = false, group?: string): UsageTokenObservation {
     const groupId = context?.groupId ?? group
     return { providerId: this.provider, threadId: id, recordKey: this.key('row', id, key),
@@ -134,12 +137,15 @@ export class NativeUsage {
       phase: context?.phase ?? 'seed', partial: partial || tokens.input === undefined || tokens.output === undefined,
       ...(context?.phase === 'live' && context.liveNewGroup && groupId ? { liveNewGroup: true } : {}) }
   }
-  private publishUsage(id: string, key: string, model: string, tokens: UsageTokens, context?: NativeUsageContext, partial = false, group?: string, ambiguous = false): void {
-    if (!this.usageEnabled || model === SYNTHETIC || !ambiguous && !Object.values(tokens).some(value => value !== undefined)) return
+  private publishUsage(id: string, key: string, model: string, tokens: UsageTokens, context?: NativeUsageContext, partial = false, group?: string, ambiguous = false, removed = false, groupRecordsHash?: string): void {
+    if (!this.usageEnabled || model === SYNTHETIC || !ambiguous && !removed && !Object.values(tokens).some(value => value !== undefined)) return
     const rows = this.projections.get(id) ?? new Map<string, UsageTokenObservation>(); this.projections.set(id, rows)
     const current = this.projected(id, key, model, tokens, context, partial, group)
+    if (removed) current.removed = true
+    if (removed && groupRecordsHash !== undefined) current.groupRecordsHash = groupRecordsHash
     const previous = rows.get(key)
-    if (this.provider === 'grok' && !ambiguous && previous?.modelId === current.modelId) {
+    if (previous?.removed && !removed) return
+    if (this.provider === 'grok' && !ambiguous && !removed && previous?.modelId === current.modelId) {
       for (const field of Object.keys(previous.tokens) as (keyof UsageTokens)[]) {
         const known = previous.tokens[field]
         if (known !== undefined && (current.tokens[field] === undefined || current.tokens[field]! < known)) current.tokens[field] = known
@@ -161,21 +167,36 @@ export class NativeUsage {
     const projected = this.projections.get(id)
     const emitted = new Set<string>()
     if (this.provider === 'grok') {
-      for (const identity of ledger.seen) {
-        const entries = Object.entries(ledger.entries).filter(([key]) => key === identity || key.startsWith(`${identity}:`))
-          .sort(([, a], [, b]) => a.model.localeCompare(b.model))
-        for (const [index, [key, entry]] of entries.entries()) {
-          const anchor = index === 0 ? `${identity}:anchor` : `${identity}:model:${entry.model}`
-          const existing = projected?.get(anchor)
-          const aggregate = key === identity
-          const row = existing ?? this.projected(id, anchor, aggregate ? 'unknown' : entry.model, entry.tokens, undefined,
-            ledger.incomplete || aggregate, identity)
-          emitted.add(anchor)
-          const seed = { ...row, tokens: { ...row.tokens } }; delete seed.liveNewGroup
-          visitor(seed)
+      const grokProjected = projected ?? new Map<string, UsageTokenObservation>()
+      const identities = new Set(ledger.seen)
+      for (const [key, entry] of Object.entries(ledger.entries)) {
+        const aggregate = identities.has(key)
+        // Legacy per-model entries are prompt identity + ':' + the exact saved model.
+        const candidate = key.endsWith(`:${entry.model}`) ? key.slice(0, -entry.model.length - 1) : undefined
+        const identity = aggregate ? key : candidate && identities.has(candidate) ? candidate : undefined
+        if (!identity) continue
+        const record = this.grokRecord(identity, aggregate ? undefined : entry.model)
+        if (!aggregate) {
+          this.detailedGrokGroups.add(JSON.stringify([id, identity]))
+          const aggregateKey = this.grokRecord(identity)
+          const retirement = grokProjected.get(aggregateKey)?.removed ? grokProjected.get(aggregateKey)!
+            : { ...this.projected(id, aggregateKey, 'unknown', {}, undefined, true, identity), removed: true as const }
+          grokProjected.set(aggregateKey, retirement); this.projections.set(id, grokProjected)
+          if (!emitted.has(aggregateKey)) {
+            const seed = { ...retirement, tokens: { ...retirement.tokens } }; delete seed.liveNewGroup
+            visitor(seed); emitted.add(aggregateKey)
+          }
         }
+        if (emitted.has(record)) continue
+        const existing = grokProjected.get(record)
+        const row = existing ?? this.projected(id, record, aggregate ? 'unknown' : entry.model, entry.tokens, undefined,
+          ledger.incomplete || aggregate, identity)
+        if (!aggregate && !existing) { grokProjected.set(record, row); this.projections.set(id, grokProjected) }
+        emitted.add(record)
+        const seed = { ...row, tokens: { ...row.tokens } }; delete seed.liveNewGroup
+        visitor(seed)
       }
-      for (const [key, row] of projected ?? []) {
+      for (const [key, row] of grokProjected) {
         if (emitted.has(key)) continue
         const seed = { ...row, tokens: { ...row.tokens } }; delete seed.liveNewGroup
         visitor(seed)
@@ -414,38 +435,51 @@ export class NativeUsage {
       const at = count(meta.agentTimestampMs)
       const facts = { phase: context?.phase ?? 'replay', ...context,
         at: at !== undefined ? new Date(at).toISOString() : context?.at, groupId: identity } satisfies NativeUsageContext
-      // The first model replaces a legacy aggregate anchor; other models are additional exact rows.
+      // Aggregate fallback and each exact model have independent identities. The aggregate retires
+      // before exact rows arrive; a model's identity never depends on which model was observed first.
       // Reported aggregate cost remains exclusively in the old ledger.
       const detailedKey = JSON.stringify([id, identity])
       if (rows.length) {
         this.detailedGrokGroups.add(detailedKey)
+        const groupRecordsHash = createHash('sha256').update(JSON.stringify(rows.map(([model]) =>
+          this.key('row', id, this.grokRecord(identity, model))).sort())).digest('hex')
+        this.publishUsage(id, this.grokRecord(identity), 'unknown', {}, facts, true, identity, false, true, groupRecordsHash)
         const aggregate = tokens(usage)
-        const priorRows = [...(this.projections.get(id) ?? [])].filter(([, row]) => row.groupKey === this.key('group', id, identity))
+        // Cost-bearing legacy rows retain the whole turn, even when exact model projections were lost
+        // on restart. A lower native aggregate is contradictory evidence, not a complete replacement.
+        const legacyAggregate = ledger.entries[identity]?.tokens
+        const aggregateRegresses = legacyAggregate !== undefined && (Object.keys(legacyAggregate) as (keyof UsageTokens)[]).some(field =>
+          legacyAggregate[field] !== undefined && aggregate[field] !== undefined && aggregate[field]! < legacyAggregate[field]!)
+        const priorRows = [...(this.projections.get(id) ?? [])].filter(([, row]) => !row.removed && row.modelId !== 'unknown' && row.groupKey === this.key('group', id, identity))
         const reportedModels = new Set(rows.map(([model]) => model))
         const missingKnownModel = priorRows.some(([, row]) => row.modelId !== 'unknown' && !reportedModels.has(row.modelId))
+        const regresses = rows.some(([model, source]) => {
+          const previous = this.projections.get(id)?.get(this.grokRecord(identity, model))?.tokens
+          const reported = tokens(object(source))
+          return previous !== undefined && (Object.keys(previous) as (keyof UsageTokens)[]).some(field =>
+            previous[field] !== undefined && reported[field] !== undefined && reported[field]! < previous[field]!)
+        })
         const incomplete = ledger.incomplete || (Object.keys(aggregate) as (keyof UsageTokens)[]).some(field => {
           if (aggregate[field] === undefined) return false
           const values = rows.map(([, row]) => tokens(object(row))[field])
           return values.some(value => value === undefined) || values.reduce<number>((sum, value) => sum + (value ?? 0), 0) !== aggregate[field]
         })
-        const previousAnchor = this.projections.get(id)?.get(`${identity}:anchor`)
-        const anchorModel = previousAnchor && previousAnchor.modelId !== 'unknown' ? previousAnchor.modelId : rows[0]![0]
-        if (missingKnownModel || this.ambiguousGrokGroups.has(detailedKey) && incomplete) this.ambiguousGrokGroups.add(detailedKey)
+        if (missingKnownModel || regresses || aggregateRegresses || this.ambiguousGrokGroups.has(detailedKey) && incomplete) this.ambiguousGrokGroups.add(detailedKey)
         else this.ambiguousGrokGroups.delete(detailedKey)
         const ambiguous = this.ambiguousGrokGroups.has(detailedKey)
         if (ambiguous) for (const [key, row] of priorRows) this.publishUsage(id, key, row.modelId, {}, facts, true, identity, true)
         for (const [model, row] of rows) {
-          this.publishUsage(id, model === anchorModel ? `${identity}:anchor` : `${identity}:model:${model}`,
+          this.publishUsage(id, this.grokRecord(identity, model),
             model, ambiguous ? {} : tokens(object(row)), facts, ambiguous || incomplete, identity, ambiguous)
         }
       } else if (this.detailedGrokGroups.has(detailedKey)) {
         // An aggregate without model evidence cannot replace any individual model's count.
         this.ambiguousGrokGroups.add(detailedKey)
         for (const [key, row] of this.projections.get(id) ?? []) {
-          if (row.groupKey === this.key('group', id, identity)) this.publishUsage(id, key, row.modelId, {}, facts, true, identity, true)
+          if (!row.removed && row.modelId !== 'unknown' && row.groupKey === this.key('group', id, identity)) this.publishUsage(id, key, row.modelId, {}, facts, true, identity, true)
         }
       } else if (!this.detailedGrokGroups.has(detailedKey)) {
-        this.publishUsage(id, `${identity}:anchor`, 'unknown', tokens(usage), facts, true, identity)
+        this.publishUsage(id, this.grokRecord(identity), 'unknown', tokens(usage), facts, true, identity)
       }
     }
     if (identity && ledger.seen.includes(identity)) { this.writePending(); return }

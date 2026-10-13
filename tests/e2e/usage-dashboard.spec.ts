@@ -6,6 +6,7 @@ import { expect, test } from '@playwright/test'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { fillPrompt, promptField } from './support/prompt'
 import { openThreads } from './support/sottoLaunch'
+import { textContrast } from './support/textContrast'
 import {
   REPORTED_USAGE_MODEL, SELECTED_USAGE_MODEL, usageAssistantFrame, usageDashboardHarness,
   usageResultFrame, usageWait, waitForNativePrompt,
@@ -104,7 +105,20 @@ test('Owl Usage counts real accepted sends and native cache tokens, filters and 
     await expect(claude).toContainText('100%'); await expect(claude).toContainText('80%')
     await expect(claude).toContainText('Updates when Claude Code reports limits.')
     await expect(page.locator('.usage-subscription').filter({ has: page.getByRole('heading', { name: 'Devin', exact: true }) })).toContainText('not connected')
+    await page.getByRole('combobox', { name: 'Provider', exact: true }).selectOption('claude')
+    await expect(page.locator('.usage-subscription')).toHaveCount(1)
+    await harness.appearance('light'); await harness.resize(820, 560)
+    await claude.locator('.usage-window').last().scrollIntoViewIfNeeded()
     await harness.capture(artifacts, 'subscriptions-light-820.png', 820, 560, 'light')
+    const about = page.getByText('About these figures', { exact: true })
+    await about.click()
+    await expect(page.locator('.usage-about[open]')).toBeVisible()
+    const aboutContrast = await textContrast(page.locator('.usage-about'), 'p', true)
+    expect(aboutContrast).toHaveLength(3)
+    expect(aboutContrast.filter(row => row.ratio < 4.5)).toEqual([])
+    await about.press('Escape'); await expect(about).toBeFocused()
+    await expect(page.locator('.usage-about[open]')).toHaveCount(0)
+    await page.getByRole('combobox', { name: 'Provider', exact: true }).selectOption('all')
     await views().getByRole('tab', { name: 'Subscriptions', exact: true }).press('ArrowRight')
     await expect(views().getByRole('tab', { name: 'Models', exact: true })).toHaveAttribute('aria-selected', 'true')
     await expect(page.locator('.usage-model')).toHaveCount(2)
@@ -128,9 +142,14 @@ test('Owl Usage counts real accepted sends and native cache tokens, filters and 
       const format = (value: Date) => `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
       const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1)
       const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1)
-      return { tomorrow: format(tomorrow), yesterday: format(yesterday) }
+      const yearStart = new Date(); yearStart.setDate(yearStart.getDate() - 365)
+      return { tomorrow: format(tomorrow), yesterday: format(yesterday), today: format(new Date()), yearStart: format(yearStart) }
     })
     await page.getByRole('combobox', { name: 'Date range', exact: true }).selectOption('custom')
+    await page.getByLabel('From', { exact: true }).fill(dates.yearStart); await page.getByLabel('Through', { exact: true }).fill(dates.today)
+    await expect(page.locator('.usage-chart__column')).toHaveCount(366)
+    await harness.resize(820, 560)
+    expect(await page.locator('.usage-chart__plot').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
     await page.getByLabel('From', { exact: true }).fill(dates.tomorrow); await page.getByLabel('Through', { exact: true }).fill(dates.tomorrow)
     await expect(measures().getByRole('tab', { name: /^Prompts 0 /u })).toBeVisible()
     await expect(measures().getByRole('tab', { name: /^Tokens — /u })).toBeVisible()
@@ -140,6 +159,19 @@ test('Owl Usage counts real accepted sends and native cache tokens, filters and 
     await page.getByRole('combobox', { name: 'Provider', exact: true }).selectOption('all')
     await page.getByRole('combobox', { name: 'Computer', exact: true }).selectOption('all')
     await expect(measures().getByRole('tab', { name: /^Tokens 3,600 /u })).toBeVisible()
+    await harness.resize(820, 560)
+    await measures().getByRole('tab', { selected: true }).focus()
+    await page.keyboard.press('Home')
+    for (let index = 0; index < 6; index++) {
+      await expect.poll(async () => JSON.stringify(await measures().evaluate(element => {
+        const strip = element.getBoundingClientRect()
+        const selected = element.querySelector('[aria-selected="true"]')!.getBoundingClientRect()
+        return { fits: selected.left >= strip.left - 1 && selected.right <= strip.right + 1,
+          left: selected.left, right: selected.right, stripLeft: strip.left, stripRight: strip.right,
+          index: [...element.children].findIndex(child => child.getAttribute('aria-selected') === 'true') }
+      }))).toContain('"fits":true')
+      if (index < 5) await page.keyboard.press('ArrowRight')
+    }
     await measures().getByRole('tab', { name: /^Prompts /u }).click()
     await harness.capture(artifacts, 'overview-dark-820.png', 820, 560, 'dark')
 
@@ -203,6 +235,7 @@ test('Owl Usage counts real accepted sends and native cache tokens, filters and 
     expect(harness.pageErrors).toEqual([])
     await writeFile(join(artifacts, 'verified.json'), JSON.stringify({ surface: 'production Electron main and native Claude adapter, scripted external client',
       version: '0.1.38-owl.20261012.1', syntheticOnly: true, networkDisabled: true, productTestBridgeAbsent: true,
+      contentSizeTolerance: 2, contrastVisibleOnly: true, openedAboutContrast: aboutContrast,
       selectedModel: SELECTED_USAGE_MODEL, reportedModel: REPORTED_USAGE_MODEL, initial: initial.totals, afterClear: afterClear.totals,
       newTurn: beforeQuit.totals, afterRestart: restored.totals, afterReplay: afterReplay.totals, captures: harness.captures,
       historyOffRetained: true, staleClearRefused: true, activeAndReplayedGroupsSuppressed: true, pageErrorCount: harness.pageErrors.length }, null, 2))

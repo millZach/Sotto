@@ -26,7 +26,7 @@ export function TokenBreakdown({ tokens }: { readonly tokens: UsageTokenTotals }
     <p className="usage-total">{formatField(tokens.total, true)}<span>tokens reported</span></p>
     {total > 0 ? <div className="usage-token-bar" aria-hidden="true"><i className="usage-token-bar__input" style={{ flexGrow: tokens.input.value ?? 0 }} /><i className="usage-token-bar__output" style={{ flexGrow: tokens.output.value ?? 0 }} /></div> : null}
     <dl className="usage-token-facts">{fields.map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{formatField(tokens[key], true)}</dd></div>)}</dl>
-    <p className="usage-note">Total is input plus output. Cache reads and writes are already part of input. A dash means the provider has not reported a count; ≥ marks a lower bound.</p>
+    <p className="usage-note">Total is input plus output. Cache reads and writes are already part of input. A dash means a count is unavailable; ≥ marks a lower bound.</p>
   </>
 }
 
@@ -57,7 +57,7 @@ export function DailyChart({ rows, metric, complete, from, to }: {
   if (days.length === 0) return <p className="usage-note">No dated activity in this range.</p>
   return <div className="usage-chart">
     <p id={description} className="usage-chart__caption" aria-live="polite">{selected === null ? 'Point to a day, or use the arrow keys to read it.' : facts(selected)}</p>
-    <div className="usage-chart__plot tt-focusable" tabIndex={0} role="group" aria-label={`${metric === 'prompts' ? 'Your prompts' : 'Reported tokens'} per day`} aria-describedby={description}
+    <div className="usage-chart__plot tt-focusable" data-dense={days.length > 90 || undefined} tabIndex={0} role="group" aria-label={`${metric === 'prompts' ? 'Your prompts' : 'Reported tokens'} per day`} aria-describedby={description}
       onMouseLeave={() => setSelectedDay(null)} onKeyDown={event => {
         if (event.key === 'Escape') { event.preventDefault(); setSelectedDay(null); return }
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return

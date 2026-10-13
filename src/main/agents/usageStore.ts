@@ -68,6 +68,11 @@ export class UsageStore {
         CREATE INDEX IF NOT EXISTS token_rows_date ON token_rows(day);
         CREATE INDEX IF NOT EXISTS token_rows_model ON token_rows(provider, model_id);
         CREATE INDEX IF NOT EXISTS token_rows_group ON token_rows(provider, thread_id, group_key);
+        CREATE TABLE IF NOT EXISTS grok_conflict_floors (
+          thread_id TEXT NOT NULL, record_key TEXT NOT NULL,
+          input INTEGER, output INTEGER, cached INTEGER, cache_write INTEGER, cache_write_5m INTEGER, cache_write_1h INTEGER,
+          PRIMARY KEY(thread_id, record_key)
+        );
         CREATE TABLE IF NOT EXISTS prompt_rows (
           thread_id TEXT NOT NULL, message_id TEXT NOT NULL, provider TEXT NOT NULL, model_id TEXT NOT NULL,
           at TEXT NOT NULL, day TEXT NOT NULL, kind TEXT NOT NULL, input_kind TEXT NOT NULL,
@@ -116,31 +121,34 @@ export class UsageStore {
       const identity = [observation.providerId, observation.threadId, observation.recordKey]
       const rowHash = exclusion('row', ...identity)
       const groupHash = observation.groupKey === undefined ? undefined : exclusion('group', observation.providerId, observation.threadId, observation.groupKey)
-      if (this.excluded(db, rowHash) || (groupHash !== undefined && this.excluded(db, groupHash))) return { status: 'suppressed', revision: metadata.revision }
+      if (groupHash !== undefined && this.excluded(db, groupHash)) return { status: 'suppressed', revision: metadata.revision }
+      const rowExcluded = this.excluded(db, rowHash)
+      if (observation.removed === true) {
+        const removed = db.prepare('DELETE FROM token_rows WHERE provider=? AND thread_id=? AND record_key=?').run(...identity).changes > 0
+        const floorRemoved = observation.providerId === 'grok' && db.prepare('DELETE FROM grok_conflict_floors WHERE thread_id=? AND record_key=?')
+          .run(observation.threadId, observation.recordKey).changes > 0
+        // Retirement is permanent, but later full reports must still reconcile this group's
+        // membership after a restart whose legacy cost ledger knows only its aggregate.
+        const reconciled = observation.phase !== 'seed' && observation.groupRecordsHash !== undefined
+          && this.reconcileGrokMembers(db, observation)
+        if (rowExcluded && !removed && !floorRemoved && !reconciled) return { status: 'suppressed', revision: metadata.revision }
+        db.prepare('INSERT OR IGNORE INTO exclusions VALUES (?)').run(rowHash)
+        return { status: 'written', revision: this.bumpRevision(db, metadata.revision) }
+      }
+      if (rowExcluded) {
+        if (observation.phase !== 'seed' && unknownGrok(observation)) {
+          const result = this.markGrokAmbiguous(db, observation, metadata.revision)
+          if (result !== undefined) return result
+        }
+        return { status: 'suppressed', revision: metadata.revision }
+      }
       const previous = db.prepare('SELECT * FROM token_rows WHERE provider=? AND thread_id=? AND record_key=?').get(...identity)
       // The old accounting file is a one-time import, not newer native evidence. In particular,
       // Grok's aggregate cost row must not overwrite an exact model row after a restart.
       if (observation.phase === 'seed' && previous !== undefined) return { status: 'unchanged', revision: metadata.revision }
-      if (observation.providerId === 'grok' && observation.partial
-        && (observation.modelId === 'unknown' || observation.modelId === 'native:grok:model:unknown')
+      if (unknownGrok(observation)
         && previous !== undefined && previous.model_id !== observation.modelId) {
-        // A replay without model breakdown cannot turn one exact model row back into a whole-turn aggregate.
-        const reportedTotal = observation.tokens.input !== undefined && observation.tokens.output !== undefined
-          ? observation.tokens.input + observation.tokens.output : undefined
-        const groupTotal = observation.groupKey === undefined
-          ? typeof previous.input === 'number' && typeof previous.output === 'number' ? previous.input + previous.output : undefined
-          : db.prepare('SELECT SUM(input+output) AS total FROM token_rows WHERE provider=? AND thread_id=? AND group_key=?')
-            .get(observation.providerId, observation.threadId, observation.groupKey)?.total
-        if (reportedTotal !== undefined && typeof groupTotal === 'number' && reportedTotal < groupTotal) {
-          // Contradictory totals do not establish a lower bound. Wait for exact model evidence.
-          const scope = observation.groupKey === undefined ? 'record_key' : 'group_key'
-          db.prepare(`UPDATE token_rows SET partial=1,${columns.map(column => `${column}=NULL`).join(',')}
-            WHERE provider=? AND thread_id=? AND ${scope}=?`).run(observation.providerId, observation.threadId, observation.groupKey ?? observation.recordKey)
-          return { status: 'written', revision: this.bumpRevision(db, metadata.revision) }
-        }
-        if (previous.partial === 1) return { status: 'unchanged', revision: metadata.revision }
-        db.prepare('UPDATE token_rows SET partial=1 WHERE provider=? AND thread_id=? AND record_key=?').run(...identity)
-        return { status: 'written', revision: this.bumpRevision(db, metadata.revision) }
+        return this.markGrokAmbiguous(db, observation, metadata.revision) ?? { status: 'unchanged', revision: metadata.revision }
       }
       if (metadata.clearedAt !== undefined && previous === undefined) {
         const admittedGroup = observation.groupKey !== undefined && db.prepare('SELECT 1 FROM token_rows WHERE provider=? AND thread_id=? AND group_key=? LIMIT 1')
@@ -148,17 +156,30 @@ export class UsageStore {
         const provedStart = observation.groupStartedAt !== undefined && canonicalDate(observation.groupStartedAt) > metadata.clearedAt
         if (!admittedGroup && !provedStart && observation.liveNewGroup !== true) return { status: 'suppressed', revision: metadata.revision }
       }
+      const regresses = observation.providerId === 'grok' && previous !== undefined && fields.some((field, index) =>
+        typeof previous[columns[index]!] === 'number' && observation.tokens[field] !== undefined
+        && observation.tokens[field]! < (previous[columns[index]!] as number))
+      const floor = observation.providerId === 'grok' ? db.prepare('SELECT * FROM grok_conflict_floors WHERE thread_id=? AND record_key=?')
+        .get(observation.threadId, observation.recordKey) : undefined
+      const belowFloor = floor !== undefined && fields.some((field, index) => typeof floor[columns[index]!] === 'number'
+        && (observation.tokens[field] === undefined || observation.tokens[field]! < (floor[columns[index]!] as number)))
+      if (regresses) this.invalidateGrokGroup(db, observation)
+      const uncertain = regresses || belowFloor
+      // A duplicate lower replay cannot certify the same contradiction after unknown vectors
+      // replace it. Only a complete vector meeting its durable numeric floor repairs the row.
+      const floorRepaired = !uncertain && floor !== undefined && db.prepare('DELETE FROM grok_conflict_floors WHERE thread_id=? AND record_key=?')
+        .run(observation.threadId, observation.recordKey).changes > 0
       const at = earliest(previous?.at, observation.at ?? observation.groupStartedAt)
       const groupStartedAt = earliest(previous?.group_started_at, observation.groupStartedAt)
       // Replays may learn an older genuine date; observation time never fills an undated row.
       const values: SQLInputValue[] = [
         observation.groupKey ?? (typeof previous?.group_key === 'string' ? previous.group_key : null),
-        observation.modelId, at, groupStartedAt, at?.slice(0, 10) ?? null, observation.partial ? 1 : 0,
-        ...fields.map(field => observation.tokens[field] ?? null),
+        observation.modelId, at, groupStartedAt, at?.slice(0, 10) ?? null, observation.partial || uncertain ? 1 : 0,
+        ...fields.map(field => uncertain ? null : observation.tokens[field] ?? null),
       ]
       const storedColumns = ['group_key', 'model_id', 'at', 'group_started_at', 'day', 'partial', ...columns]
       if (previous !== undefined && storedColumns.every((column, index) => previous[column] === values[index])) {
-        return { status: 'unchanged', revision: metadata.revision }
+        return { status: floorRepaired ? 'written' : 'unchanged', revision: floorRepaired ? this.bumpRevision(db, metadata.revision) : metadata.revision }
       }
       db.prepare(`INSERT INTO token_rows (provider,thread_id,record_key,${storedColumns.join(',')})
         VALUES (${[...identity, ...values].map(() => '?').join(',')})
@@ -258,7 +279,7 @@ export class UsageStore {
         ...metadata, revision: nextCount(metadata.revision), generation: nextCount(metadata.generation),
         clearedAt: metadata.clearedAt !== undefined && metadata.clearedAt > clearedAt ? metadata.clearedAt : clearedAt,
       })
-      db.exec('DELETE FROM token_rows; DELETE FROM prompt_rows; DELETE FROM pending_prompt_rows;')
+      db.exec('DELETE FROM token_rows; DELETE FROM grok_conflict_floors; DELETE FROM prompt_rows; DELETE FROM pending_prompt_rows;')
       db.prepare('UPDATE usage_meta SET revision=?,generation=?,cleared_at=? WHERE singleton=1').run(next.revision, next.generation, next.clearedAt!)
       return { status: 'cleared', metadata: next }
     })
@@ -309,6 +330,25 @@ export class UsageStore {
     }
   }
 
+  /** Missing breakdown cannot revive a retired aggregate or silently certify its old model vectors. */
+  private markGrokAmbiguous(db: DatabaseSync, observation: UsageTokenObservation, revision: number): UsageWriteResult | undefined {
+    const scope = observation.groupKey === undefined ? 'record_key' : 'group_key'
+    const parameters = [observation.providerId, observation.threadId, observation.groupKey ?? observation.recordKey]
+    const existing = db.prepare(`SELECT COUNT(*) AS rows,SUM(input+output) AS total FROM token_rows
+      WHERE provider=? AND thread_id=? AND ${scope}=?`).get(...parameters)!
+    if (existing.rows === 0) return undefined
+    const reportedTotal = observation.tokens.input !== undefined && observation.tokens.output !== undefined
+      ? observation.tokens.input + observation.tokens.output : undefined
+    const contradictory = reportedTotal !== undefined && typeof existing.total === 'number' && reportedTotal < existing.total
+    if (contradictory) {
+      const changed = this.invalidateGrokGroup(db, observation)
+      return { status: changed ? 'written' : 'unchanged', revision: changed ? this.bumpRevision(db, revision) : revision }
+    }
+    const changed = db.prepare(`UPDATE token_rows SET partial=1 WHERE provider=? AND thread_id=? AND ${scope}=?
+      AND partial<>1`).run(...parameters).changes
+    return { status: changed === 0 ? 'unchanged' : 'written', revision: changed === 0 ? revision : this.bumpRevision(db, revision) }
+  }
+
   private requireOpen(): DatabaseSync {
     if (this.db === undefined) throw new Error('Usage store is closed')
     return this.db
@@ -343,6 +383,34 @@ export class UsageStore {
   private excluded(db: DatabaseSync, identityHash: string): boolean {
     return db.prepare('SELECT 1 FROM exclusions WHERE identity_hash=?').get(identityHash) !== undefined
   }
+  private reconcileGrokMembers(db: DatabaseSync, observation: UsageTokenObservation): boolean {
+    const scope = [observation.providerId, observation.threadId, observation.groupKey!]
+    // Hash in SQL order without materialising an unbounded group's rows.
+    const digest = createHash('sha256').update('[')
+    let count = 0
+    for (const row of db.prepare('SELECT record_key FROM token_rows WHERE provider=? AND thread_id=? AND group_key=? ORDER BY record_key').iterate(...scope)) {
+      if (count++) digest.update(',')
+      digest.update(JSON.stringify(row.record_key))
+    }
+    if (!count || digest.update(']').digest('hex') === observation.groupRecordsHash) return false
+    // An absent old model is contradictory evidence, not a proved lower bound. Current
+    // exact rows can repair their fields; missing members stay unknown until reported again.
+    return this.invalidateGrokGroup(db, observation)
+  }
+  private invalidateGrokGroup(db: DatabaseSync, observation: UsageTokenObservation): boolean {
+    const scope = observation.groupKey === undefined ? 'record_key' : 'group_key'
+    const parameters = [observation.providerId, observation.threadId, observation.groupKey ?? observation.recordKey]
+    db.prepare(`INSERT INTO grok_conflict_floors (thread_id,record_key,${columns.join(',')})
+      SELECT thread_id,record_key,${columns.join(',')} FROM token_rows
+      WHERE provider=? AND thread_id=? AND ${scope}=? AND (${columns.map(column => `${column} IS NOT NULL`).join(' OR ')})
+      ON CONFLICT(thread_id,record_key) DO UPDATE SET ${columns.map(column => `${column}=CASE
+        WHEN excluded.${column} IS NULL THEN grok_conflict_floors.${column}
+        WHEN grok_conflict_floors.${column} IS NULL THEN excluded.${column}
+        ELSE MAX(grok_conflict_floors.${column},excluded.${column}) END`).join(',')}`).run(...parameters)
+    return db.prepare(`UPDATE token_rows SET ${columns.map(column => `${column}=NULL`).join(',')},partial=1
+      WHERE provider=? AND thread_id=? AND ${scope}=? AND (partial=0 OR ${columns.map(column => `${column} IS NOT NULL`).join(' OR ')})`)
+      .run(...parameters).changes > 0
+  }
   private bumpRevision(db: DatabaseSync, revision: number): number {
     const next = nextCount(revision)
     db.prepare('UPDATE usage_meta SET revision=? WHERE singleton=1').run(next)
@@ -357,6 +425,11 @@ export class UsageStore {
       return result
     } catch (error) { db.exec('ROLLBACK'); throw error }
   }
+}
+
+function unknownGrok(observation: UsageTokenObservation): boolean {
+  return observation.providerId === 'grok' && observation.partial
+    && (observation.modelId === 'unknown' || observation.modelId === 'native:grok:model:unknown')
 }
 
 function queryFilters(query: UsageLocalQuery): { sql: string; parameters: SQLInputValue[] } {
