@@ -26,6 +26,7 @@ import { UPDATES_UNSUPPORTED_MESSAGE } from '../updates/updateControlLogic'
 import { releaseTrackName } from '../../../../shared/releaseTrack'
 import { releaseTrackOf } from '../../state/useReleaseTrack'
 import { useOwlFeature } from '../../state/owlFeature'
+import { requestUpdateAll } from '../updates/UpdateAllCard'
 import { Button } from '../../components/Button'
 import { OpenSystemSettingsButton } from '../../components/OpenSystemSettingsButton'
 import { Card } from '../../components/Card'
@@ -191,6 +192,7 @@ export function SettingsView({
   const llmDictionaryDraft = useRevisionDraft(settings.llmDictionary, settings.llmDictionary)
   const [updateBusy, setUpdateBusy] = useState(false)
   const resumeAfterRestart = useOwlFeature('resume-after-restart')
+  const updateAll = useOwlFeature('update-all')
   const [clearFailure, setClearFailure] = useState<string | null>(null)
   const [resetFailure, setResetFailure] = useState<string | null>(null)
   const [resetOpen, setResetOpen] = useState(false)
@@ -633,7 +635,10 @@ export function SettingsView({
                         : <p className="settings-update-status">{copy.settingsUpdatesByHand}</p>}
                     </div>
                     {copy.settingsUpdatesByHand === null ? <div className="settings-update-actions">
-                      {updateStatus?.phase.phase === 'available' ? <Button variant="secondary" disabled={updateBusy} onClick={() => void runUpdateAction(onDownloadUpdate)}>Download</Button> : null}
+                      {/* On Owl, Update all runs the corner card's press: Sotto, its clients and its hosts (ADR-0077). */}
+                      {updateStatus?.phase.phase === 'available' ? updateAll
+                        ? <Button variant="secondary" disabled={updateBusy} aria-label="Update all: Sotto, its clients and its hosts" onClick={requestUpdateAll}>Update all</Button>
+                        : <Button variant="secondary" disabled={updateBusy} onClick={() => void runUpdateAction(onDownloadUpdate)}>Download</Button> : null}
                       {updateStatus?.phase.phase === 'downloaded' ? <Button variant="secondary" disabled={updateBusy} onClick={() => void runUpdateAction(onInstallUpdate)}>Restart and install</Button> : null}
                       <Button variant="secondary" disabled={updateBusy} onClick={() => void runUpdateAction(onCheckForUpdates)}>{updateBusy ? 'Working...' : 'Check now'}</Button>
                     </div> : null}

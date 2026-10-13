@@ -6,6 +6,7 @@ import { Button } from '../components/Button'
 import { PageWindowControls } from '../components/WindowControls'
 import { useOptionalApp } from '../state/AppContext'
 import { useWatcherEnabled } from '../state/watcherFeature'
+import { useOwlFeature } from '../state/owlFeature'
 import { visibleWatcherState, withoutRoomWatcher } from './watcherVisibility'
 import { useRoomWatcherThreadId } from '../watcher/watcherRoom'
 import { useAgents, type AgentConnection } from './AgentContext'
@@ -88,6 +89,8 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
   const agents = useAgents()
   const app = useOptionalApp()
   const watcherEnabled = useWatcherEnabled()
+  // On Owl the Update all card speaks for older hosts (ADR-0077).
+  const updateAll = useOwlFeature('update-all')
   const now = useClock(fixedNow)
   const [mode, setMode] = useSidebarMode()
   const [query, setQuery] = useState('')
@@ -306,7 +309,7 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
       newThreadError={newThreadError} onDismissNewThreadError={dismissNewThreadError} newThreadShortcut={newThreadShortcutLabel} />
     <section className="thread-workspace" aria-label="Thread workspace">
       {/* Before the panes, so it comes first in keyboard order; it sits in the top strip beside the window controls. */}
-      <HostUpdateControl />
+      {updateAll ? null : <HostUpdateControl />}
       {recoveredDraft ? <ProviderUpgradeNotice state={state} command={recoverCommand} threadId={focusedId ?? undefined} localDraftPresent={localDraftPresent} /> : null}
       <div className="thread-workspace__body">
         {paneIds.length || dragging !== null
