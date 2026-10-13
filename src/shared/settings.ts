@@ -135,6 +135,11 @@ export interface AppSettings {
    * started ends at once; what the user started from the Pull request surface stays.
    */
   babysitPullRequests: boolean
+  /**
+   * On by default, an Owl feature (ADR-0076): a thread working when Sotto closed, for an update, a quit, a crash or a
+   * restart of the computer, is sent a resume note when Sotto opens again. Asked once at start.
+   */
+  resumeThreadsAfterRestart: boolean
   /** Computer-wide watcher capacity; lowering it holds admission and stops nothing. */
   watcherInFlightLimit: number
   /** Applies only to new threads; existing provider sessions keep their working folder. */
@@ -295,6 +300,7 @@ const fieldSchemas = {
   browserWithoutAsking: z.boolean(),
   visualsInThreads: z.boolean(),
   babysitPullRequests: z.boolean(),
+  resumeThreadsAfterRestart: z.boolean(),
   watcherInFlightLimit: z.number().int().min(1).max(8),
   reducedMotion: z.enum(['system', 'on']),
   microphoneId: z.string().min(1).nullable(),
@@ -378,6 +384,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   browserWithoutAsking: true,
   visualsInThreads: true,
   babysitPullRequests: true,
+  resumeThreadsAfterRestart: true,
   watcherInFlightLimit: 4,
   reducedMotion: 'system',
   microphoneId: null,
@@ -502,6 +509,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     browserWithoutAsking: parseField(persisted, 'browserWithoutAsking', defaults),
     visualsInThreads: parseField(persisted, 'visualsInThreads', defaults),
     babysitPullRequests: parseField(persisted, 'babysitPullRequests', defaults),
+    resumeThreadsAfterRestart: parseField(persisted, 'resumeThreadsAfterRestart', defaults),
     watcherInFlightLimit: parseField(persisted, 'watcherInFlightLimit', defaults),
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),
     microphoneId: parseField(persisted, 'microphoneId', defaults),

@@ -264,7 +264,8 @@ export class DesktopHostRouter {
     const local = entries.find(item => item.connection.kind === 'local')
     const named = selected ? this.withNewThreadDefaults(this.named(selected.connection, selected.state), selected === local ? undefined : local?.state) : this.empty()
     // The corner card and Settings > Providers are this computer's own clients. A remote host's client updates reach the
-    // window only through its `clientHosts` entry, for its tiles in Settings > Hosts (#480).
+    // window only through its `clientHosts` entry, for its tiles in Settings > Hosts (#480). This computer's are on its own
+    // entry too, so Update all lists them whichever host is selected (ADR-0077).
     const base = selected?.connection.kind === 'remote' ? withoutClientUpdates(named) : named
     const multiple = entries.length > 1
     const threads = entries.flatMap(({ connection, original, state }) => state.host.threads.map((thread, index) => {
@@ -286,8 +287,8 @@ export class DesktopHostRouter {
           connected: connection.available?.() !== false && original.host.connected,
           models: state.host.models, capabilities: original.host.capabilities,
           ...(original.host.providers ? { providers: original.host.providers } : {}),
-          ...(connection.offersClientUpdates?.() && original.clientUpdates ? { clientUpdates: original.clientUpdates } : {}),
-          ...(connection.offersClientUpdates?.() && original.clientUpdateRun ? { clientUpdateRun: original.clientUpdateRun } : {}),
+          ...((connection.kind === 'local' || connection.offersClientUpdates?.()) && original.clientUpdates ? { clientUpdates: original.clientUpdates } : {}),
+          ...((connection.kind === 'local' || connection.offersClientUpdates?.()) && original.clientUpdateRun ? { clientUpdateRun: original.clientUpdateRun } : {}),
           ...(connection.offersBabysitting?.() ? { pullRequestBabysit: true as const } : {}),
           projectsDirectory: original.configuration.projectsDirectory,
           // This computer may always answer its own host; a remote one says so in the shell it sends this client.
@@ -662,6 +663,13 @@ export class DesktopHostRouter {
     if (references.size > 1) throw new Error('This action includes items from different hosts. Select items from one host.')
     const command = agentCommandSchema.parse(mapHostReferences(input, id => parseHostEntityKey(id)?.id ?? id))
     if (command.type === 'configure') return this.configurationRoute(command)
+    // Update all names the machine whose clients it updates, which need not be the selected one (ADR-0077).
+    if (command.type === 'queue-client-updates' && command.hostId !== undefined) {
+      const { hostId, ...forwarded } = command
+      const named = this.hosts.get(hostId)?.connection
+      if (!named) throw new Error('This host is not connected. Connect it in Settings > Hosts, then try again. Nothing was changed.')
+      return { connection: named, command: forwarded }
+    }
     const hostId = [...references][0] ?? this.selectedHostId
     const { connection } = this.target(hostId ? hostEntityKey(hostId, '_') : undefined)
     const threadId = 'threadId' in command ? command.threadId ?? undefined : command.type === 'send' ? command.draft?.threadId : undefined
