@@ -43,6 +43,7 @@ export class WrongHostError extends HostConnectionError {
 export interface SocketHostServiceOptions {
   url: string; token: string; expectedHostId?: string
   watcherEnabled?: boolean
+  museEnabled?: boolean
   /** The running packaged version, which may override the source manifest during promotion. */
   clientVersion?: string
   retainedDrafts?: RetainedDraftStore
@@ -127,14 +128,19 @@ export class SocketHostService implements HostService {
   private retainedRefreshRequested = false
   private wireAdmission: Promise<void> | undefined
   constructor(private readonly options: SocketHostServiceOptions) {
-    this.endpoint('/v1/health'); this.retainedDrafts = options.retainedDrafts ?? new RetainedDraftStore({ watcherEnabled: options.watcherEnabled === true })
+    this.endpoint('/v1/health'); this.retainedDrafts = options.retainedDrafts ?? new RetainedDraftStore({ watcherEnabled: options.watcherEnabled === true, museEnabled: options.museEnabled === true })
     this.retainedRegistrationId = options.retainedRegistrationId
       ?? (options.expectedHostId ? this.retainedDrafts.registrationForHost(options.expectedHostId) : undefined)
   }
   private threadAvailable(threadId: string | null | undefined): boolean {
-    if (this.options.watcherEnabled === true || !threadId) return true
-    const kind = this.cached?.host.threads.find(thread => thread.id === threadId)?.kind
-    return kind !== 'watcher' && kind !== 'watcher-history'
+    if (!threadId) return true
+    const thread = this.cached?.host.threads.find(thread => thread.id === threadId)
+    if (thread && this.options.museEnabled !== true && requestDraftProvider(this.cached!.host, thread, this.cached!.configuration.provider) === 'muse') return false
+    return this.options.watcherEnabled === true || thread?.kind !== 'watcher' && thread?.kind !== 'watcher-history'
+  }
+  private threadRefusal(threadId: string | null | undefined): string {
+    const thread = this.cached?.host.threads.find(thread => thread.id === threadId)
+    return `${thread && requestDraftProvider(this.cached!.host, thread, this.cached!.configuration.provider) === 'muse' ? 'Muse' : 'Watcher'} is available in Sotto Owl. Nothing was sent.`
   }
   private commandThreadId(command: { type: string }): string | null | undefined {
     if ('threadId' in command && typeof command.threadId === 'string') return command.threadId
@@ -351,7 +357,7 @@ export class SocketHostService implements HostService {
   private call(operation: HostOperation, id: string = randomUUID(), onPlacement?: () => void): Promise<unknown> {
     const threadId = 'threadId' in operation ? operation.threadId : 'request' in operation && 'threadId' in operation.request ? operation.request.threadId
       : 'answer' in operation && operation.answer && 'threadId' in operation.answer ? operation.answer.threadId : operation.op === 'command' ? this.commandThreadId(operation.command) : undefined
-    if (!this.threadAvailable(threadId)) return Promise.reject(new Error('Watcher is available in Sotto Owl. Nothing was sent.'))
+    if (!this.threadAvailable(threadId)) return Promise.reject(new Error(this.threadRefusal(threadId)))
     const frames = this.frames, session = this.session
     if (!frames || !session) return Promise.reject(new HostConnectionError('The host is disconnected. Connect again before sending.', 'disconnected'))
     if (this.pending.has(id) || this.pending.size >= 32) return Promise.reject(new HostConnectionError('Wait for the pending host request to finish.', 'busy'))
@@ -375,6 +381,8 @@ export class SocketHostService implements HostService {
     if (!this.quietConnectionNotices.has(state.notice)) this.preserveConnectionFeedback(state.notice)
     delete state.clientScoped; delete state.connections
     if (authoritative) this.snapshotEpoch++
+    this.retainedDrafts.identifyThreads(this.retainedHostId(), state.host.threads.map(thread => ({ id: thread.id, kind: thread.kind,
+      providerId: requestDraftProvider(state.host, thread, state.configuration.provider) })))
     for (let edit of this.retainedDrafts.list(this.retainedHostId())) {
       const attempt = edit.sendAttempt
       if (attempt?.packetDigest && state.deliveries?.some(item => item.threadId === edit.draft.threadId
@@ -478,7 +486,7 @@ export class SocketHostService implements HostService {
   }
   async checkRequestAnswer(answer: HostAnswerTarget, _client?: ClientIdentity): Promise<void> {
     void _client // The socket's authenticated pairing supplies authority on the host.
-    if (!this.threadAvailable(answer.threadId)) throw new Error('Watcher is available in Sotto Owl. Nothing was sent.')
+    if (!this.threadAvailable(answer.threadId)) throw new Error(this.threadRefusal(answer.threadId))
     if (!this.features.includes('answer-check')) throw new Error('Update the host before checking this unconfirmed answer. Your saved answer is kept.')
     this.flushCompose()
     const generation = this.generation
@@ -495,7 +503,7 @@ export class SocketHostService implements HostService {
   get supportsBabysitting(): boolean { return this.features.includes('pull-request-babysit') }
   async command(command: AgentCommand, _client?: ClientIdentity, commandId?: string): Promise<AgentState> {
     const threadId = this.commandThreadId(command)
-    if (!this.threadAvailable(threadId)) throw new Error('Watcher is available in Sotto Owl. Nothing was sent.')
+    if (!this.threadAvailable(threadId)) throw new Error(this.threadRefusal(threadId))
     const refusal = managementCommandRefusal(command)
     if (refusal) throw new HostConnectionError(refusal, 'forbidden')
     if (this.shell().legacyManagement && !LEGACY_MANAGEMENT_ALLOWED_COMMANDS.has(command.type)) {
@@ -666,6 +674,7 @@ export class SocketHostService implements HostService {
       : saved?.draftId ?? this.cached?.threadDraftPersistence?.find(item => item.threadId === command.threadId)?.draftId ?? null
     const registrationId = this.retainedRegistrationId
     const edit: RetainedDraft = { hostId: this.retainedHostId(), ...(registrationId ? { registrationId } : {}),
+      ...(thread ? { providerId: requestDraftProvider(state.host, thread, state.configuration.provider) } : {}),
       ...(thread?.kind === 'watcher' || thread?.kind === 'watcher-history' ? { threadKind: thread.kind } : {}), draft: { threadId: command.threadId, draftId: command.draftId ?? randomUUID(),
       text: command.text, attachments: command.attachments ?? previous?.draft.attachments ?? saved?.attachments
         ?? (state.draftThreadId === command.threadId ? state.draftAttachments : undefined) ?? [],
@@ -744,7 +753,7 @@ export class SocketHostService implements HostService {
     this.recoverDrafts()
   }
   private async commandNow(command: AgentCommand, _client?: ClientIdentity, commandId?: string, retainedId?: string, admission: Promise<void> | null | undefined = this.wireAdmission, onPlacement?: () => void): Promise<AgentState> {
-    if (!this.threadAvailable(this.commandThreadId(command))) throw new Error('Watcher is available in Sotto Owl. Nothing was sent.')
+    if (!this.threadAvailable(this.commandThreadId(command))) throw new Error(this.threadRefusal(this.commandThreadId(command)))
     const admittedGeneration = this.generation
     if (admission) await admission
     this.sameGeneration(admittedGeneration)

@@ -1,5 +1,6 @@
 import { createInterface } from 'node:readline'
 import { randomUUID } from 'node:crypto'
+import { setImmediate } from 'node:timers'
 import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
 // A scripted `muse serve` (MSP over stdio), in the shape Sotto's Muse adapter speaks. Files in the root
@@ -57,6 +58,27 @@ const view = session => ({
   activeTurnId: session.activeTurnId ?? null, turnCount: session.turns ?? 0, createdAt: session.createdAt, updatedAt: session.createdAt,
 })
 const notify = (method, params) => send({ method, params })
+function approvalUpdate(approval) {
+  return { approvalId: approval.approvalId, sessionId: approval.sessionId, subject: approval.subject,
+    availableChoices: approval.availableChoices, currentRequirementId: approval.currentRequirementId,
+    change: { kind: 'requirementAdvanced', requirementId: approval.currentRequirementId } }
+}
+function advanceApproval(approval) {
+  const sourceIndex = approval.currentRequirementId.sourceIndex + 1
+  approval.currentRequirementId = { approvalId: approval.approvalId, sourceIndex }
+  approval.subject = { ...approval.subject, command: `${approval.fixtureCommand} (stage ${sourceIndex + 1})` }
+}
+function requestApproval(session, action) {
+  const approvalId = `approval-${randomUUID()}`
+  const approval = { approvalId, sessionId: session.sessionId, turnId: session.activeTurnId ?? 'unknown', toolName: 'bash', toolCallId: `call-${approvalId}`,
+    itemId: `item-${approvalId}`, rawArgs: JSON.stringify({ command: action.text }), streamSeq: 1, subject: { kind: 'shell', command: action.text },
+    warnings: [], judge: { lane: 'policy', verdict: 'prompt', adopted: true }, requirements: [{ approvalId, sourceIndex: 0, promptSeq: 1, status: 'current' }],
+    availableChoices: [{ choiceId: 'yes', decision: 'approved', label: 'Allow once', scope: 'once' }, { choiceId: 'no', decision: 'denied', label: 'Deny', scope: 'once' }],
+    currentRequirementId: { approvalId, sourceIndex: 0 }, askedAt: stamp(), fixtureCommand: action.text,
+    fixtureStages: action.stages ?? 1, fixtureUpdateTiming: action.updateTiming ?? 'before' }
+  session.pendingApprovals = [...(session.pendingApprovals ?? []), approval]; save()
+  notify('approval/requested', approval)
+}
 function addItem(session, item, tell = true) {
   const at = session.items.findIndex(candidate => candidate.itemId === item.itemId)
   if (at >= 0) session.items[at] = item; else session.items.push(item)
@@ -76,7 +98,7 @@ function endTurn(session, terminal = 'completed') {
   const turnId = session.activeTurnId
   if (!turnId) return
   session.activeTurnId = undefined; save()
-  notify('turn/completed', { sessionId: session.sessionId, turnId, terminal, durationMs: 1, viewCursor: cursor(session) })
+  if (!read('script.json', {}).suppressTurnCompleted) notify('turn/completed', { sessionId: session.sessionId, turnId, terminal, durationMs: 1, viewCursor: cursor(session) })
 }
 function completeReply(session, text) {
   const itemId = `item-${randomUUID()}`
@@ -86,7 +108,7 @@ function completeReply(session, text) {
   addItem(session, { ...base, status: 'completed', revision: 2, text })
   endTurn(session)
 }
-let seenAction
+let seenAction, pendingListReply
 function check() {
   if (ephemeral) return
   const action = read('control.json', undefined)
@@ -110,17 +132,16 @@ function check() {
     const questions = [{ id: 'q1', header: 'Fixture', question: action.text, selection: { mode: 'single' }, options: [] },
       ...(action.optional ? [{ id: 'q2', header: 'Optional', question: 'Anything else?', selection: { mode: 'single', minSelections: 0 }, options: [] }] : [])]
     session.pendingInputs = [...(session.pendingInputs ?? []), { userInputId, text: action.text, questions }]; save()
-    notify('userInput/requested', { userInputId, sessionId: session.sessionId, turnId: session.activeTurnId ?? 'unknown', toolName: 'request_user_input',
-      questions })
+    if (!read('script.json', {}).suppressQuestion) notify('userInput/requested', { userInputId, sessionId: session.sessionId, turnId: session.activeTurnId ?? 'unknown', toolName: 'request_user_input', questions })
+  } else if (action.type === 'permission-update') {
+    const approval = session.pendingApprovals?.[0]
+    if (!approval) return
+    advanceApproval(approval); save()
+    if (!action.silent) notify('approval/updated', approvalUpdate(approval))
+  } else if (action.type === 'permission-read-release') {
+    pendingListReply?.(); pendingListReply = undefined
   } else if (action.type === 'permission') {
-    const approvalId = `approval-${randomUUID()}`
-    const approval = { approvalId, sessionId: session.sessionId, turnId: session.activeTurnId ?? 'unknown', toolName: 'bash', toolCallId: `call-${approvalId}`,
-      itemId: `item-${approvalId}`, rawArgs: JSON.stringify({ command: action.text }), streamSeq: 1, subject: { kind: 'shell', command: action.text },
-      warnings: [], judge: { lane: 'policy', verdict: 'prompt', adopted: true }, requirements: [{ approvalId, sourceIndex: 0, promptSeq: 1, status: 'current' }],
-      availableChoices: [{ choiceId: 'yes', decision: 'approved', label: 'Allow once', scope: 'once' }, { choiceId: 'no', decision: 'denied', label: 'Deny', scope: 'once' }],
-      currentRequirementId: { approvalId, sourceIndex: 0 }, askedAt: stamp() }
-    session.pendingApprovals = [...(session.pendingApprovals ?? []), approval]; save()
-    notify('approval/requested', approval)
+    requestApproval(session, action)
   }
 }
 setInterval(check, 20)
@@ -140,15 +161,20 @@ createInterface({ input: process.stdin }).on('line', line => {
   else if (frame.method === 'session/start') {
     if (script.ceiling && ['allowAll', 'onRequest'].includes(p.approvalMode)) { fail('commandRejected', 'Refused by the fixture ceiling', 'approval_mode_ceiling'); return }
     let sessionId = p.sessionId
-    if (!sessionId && !ephemeral) sessionId = current().starts[p.commandId]
+    if (!sessionId && !ephemeral) {
+      const all = current()
+      sessionId = all.starts[p.commandId]
+      if (sessionId && all.startRequests?.[p.commandId] !== JSON.stringify(p)) { fail('commandRejected', 'Changed replay payload', 'command_id_conflict'); return }
+    }
     if (!sessionId) sessionId = ephemeral ? `side-${randomUUID()}` : randomUUID()
     let session = hold(sessionId)
     if (!session) {
       session = { sessionId, cwd: p.workspaceRoot, modelId: p.modelId ?? 'fixture-model', mode: p.approvalMode ?? 'promptUnmatched', items: [], createdAt: stamp(), pendingApprovals: [], pendingInputs: [] }
       sessions[sessionId] = session
-      if (!ephemeral) locked(() => { const all = stored(); all.starts[p.commandId] = sessionId; all.sessions[sessionId] = session; writeFileSync(path('native-sessions.json'), JSON.stringify(all)) })
+      if (!ephemeral) locked(() => { const all = stored(); all.starts[p.commandId] = sessionId; (all.startRequests ??= {})[p.commandId] = JSON.stringify(p); all.sessions[sessionId] = session; writeFileSync(path('native-sessions.json'), JSON.stringify(all)) })
       held.add(sessionId); holding(sessionId, true)
     }
+    if (!ephemeral && script.loseStartAckOnce) { writeFileSync(path('script.json'), JSON.stringify({ ...script, loseStartAckOnce: false })); return }
     result({ session: view(session), viewCursor: cursor(session) })
   } else if (frame.method === 'session/resume') {
     if (script.rejectResume) { fail('commandRejected', 'Scripted resume refusal'); return }
@@ -157,7 +183,14 @@ createInterface({ input: process.stdin }).on('line', line => {
     held.add(session.sessionId); holding(session.sessionId, true)
     const pendingRequests = [...(session.pendingApprovals ?? []).map(item => ({ kind: 'approval', approvalId: item.approvalId })),
       ...(session.pendingInputs ?? []).map(item => ({ kind: 'userInput', userInputId: item.userInputId }))]
-    result({ session: view(session), history: { mode: 'inline', items: p.excludeItems ? null : session.items, totalItemCount: session.items.length, nextCursor: null, snapshot: null }, pendingRequests, viewCursor: cursor(session) })
+    const snapshot = globalThis.structuredClone({ session: view(session), history: { mode: 'inline', items: p.excludeItems ? null : session.items, totalItemCount: session.items.length, nextCursor: null, snapshot: null }, pendingRequests, viewCursor: cursor(session) })
+    if (script.resumeTurnRace) {
+      writeFileSync(path('script.json'), JSON.stringify({ ...script, resumeTurnRace: undefined }))
+      if (script.resumeTurnRace === 'start') openTurn(session, undefined, 'A newer native turn')
+      else if (script.resumeTurnRace === 'complete') completeReply(session, 'Finished after the resume snapshot')
+      result(snapshot)
+      notify('session/contextUsage', { sessionId: session.sessionId, usedTokens: 654 })
+    } else result(snapshot)
   } else if (frame.method === 'session/list') result({ sessions: Object.values(ephemeral ? sessions : current().sessions).map(view) })
   else if (frame.method === 'session/setModel') {
     const session = hold(p.sessionId); if (!session) { fail('sessionNotFound', 'Unknown session'); return }
@@ -189,13 +222,53 @@ createInterface({ input: process.stdin }).on('line', line => {
     endTurn(session, 'cancelled')
   } else if (frame.method === 'approval/listPending') {
     const session = hold(p.sessionId); if (!session) { fail('sessionNotFound', 'Unknown session'); return }
-    result({ approvals: session.pendingApprovals ?? [], userInputs: (session.pendingInputs ?? []).map(item => ({ userInputId: item.userInputId, sessionId: session.sessionId, turnId: session.activeTurnId ?? 'unknown', toolName: 'request_user_input', questions: item.questions ?? [{ id: 'q1', header: 'Fixture', question: item.text, selection: { mode: 'single' }, options: [] }] })) })
+    const snapshot = globalThis.structuredClone({ approvals: session.pendingApprovals ?? [], userInputs: (session.pendingInputs ?? []).map(item => ({ userInputId: item.userInputId, sessionId: session.sessionId, turnId: session.activeTurnId ?? 'unknown', toolName: 'request_user_input', questions: item.questions ?? [{ id: 'q1', header: 'Fixture', question: item.text, selection: { mode: 'single' }, options: [] }] })) })
+    if (script.pendingListRace) {
+      writeFileSync(path('script.json'), JSON.stringify({ ...script, pendingListRace: undefined, holdPendingList: undefined }))
+      if (script.pendingListRace === 'request') requestApproval(session, { text: 'A new approval after the read' })
+      else if (script.pendingListRace === 'stage') {
+        const approval = session.pendingApprovals[0]; advanceApproval(approval); save()
+        notify('approval/updated', approvalUpdate(approval))
+      } else if (script.pendingListRace === 'resolved') {
+        const approval = session.pendingApprovals.shift(); save()
+        notify('approval/resolved', { sessionId: session.sessionId, approvalId: approval.approvalId, decision: 'denied' })
+      }
+      const reply = () => {
+        result(snapshot)
+        // A later observable stream fact proves the preceding stale read response was drained.
+        notify('session/contextUsage', { sessionId: session.sessionId, usedTokens: 789 })
+      }
+      if (script.holdPendingList) pendingListReply = reply
+      else reply()
+    } else result(snapshot)
   } else if (frame.method === 'approval/decide') {
     const session = hold(p.sessionId); if (!session) { fail('sessionNotFound', 'Unknown session'); return }
-    if (!(session.pendingApprovals ?? []).some(item => item.approvalId === p.approvalId)) { fail('approvalAlreadyResolved', 'Already decided'); return }
-    session.pendingApprovals = session.pendingApprovals.filter(item => item.approvalId !== p.approvalId); save()
-    notify('approval/resolved', { approvalId: p.approvalId, sessionId: session.sessionId, decision: p.choiceId === 'yes' ? 'approved' : 'denied' })
-    result({ state: 'applied' })
+    const previous = session.approvalDecisions?.[p.commandId]
+    if (previous) {
+      if (previous.payload !== JSON.stringify(p)) fail('commandRejected', 'Changed replay payload', 'command_id_conflict')
+      else result(previous.ack)
+      return
+    }
+    const approval = (session.pendingApprovals ?? []).find(item => item.approvalId === p.approvalId)
+    if (!approval) { fail('approvalAlreadyResolved', 'Already decided'); return }
+    if (p.requirementId?.approvalId !== approval.currentRequirementId.approvalId
+      || p.requirementId?.sourceIndex !== approval.currentRequirementId.sourceIndex) { fail('approvalRequirementStale', 'The requirement changed'); return }
+    if (script.rejectApprovalChoice || !approval.availableChoices.some(choice => choice.choiceId === p.choiceId)) { fail('approvalChoiceInvalid', 'This choice was rejected'); return }
+    const terminal = p.choiceId !== 'yes' || approval.currentRequirementId.sourceIndex + 1 >= approval.fixtureStages
+    const ack = { commandId: p.commandId, status: 'accepted', approvalId: p.approvalId, terminal }
+    const acknowledge = () => result(script.unreadableApprovalAck ? { commandId: p.commandId, status: 'accepted' } : ack)
+    session.approvalDecisions ??= {}
+    session.approvalDecisions[p.commandId] = { payload: JSON.stringify(p), ack }
+    if (terminal) {
+      session.pendingApprovals = session.pendingApprovals.filter(item => item.approvalId !== p.approvalId); save()
+      notify('approval/resolved', { approvalId: p.approvalId, sessionId: session.sessionId, decision: p.choiceId === 'yes' ? 'approved' : 'denied' })
+      acknowledge()
+    } else {
+      advanceApproval(approval); save()
+      if (approval.fixtureUpdateTiming === 'before') notify('approval/updated', approvalUpdate(approval))
+      acknowledge()
+      if (approval.fixtureUpdateTiming === 'after') setImmediate(() => notify('approval/updated', approvalUpdate(approval)))
+    }
   } else if (frame.method === 'userInput/answer' || frame.method === 'userInput/cancel') {
     const session = hold(p.sessionId); if (!session) { fail('sessionNotFound', 'Unknown session'); return }
     if (!(session.pendingInputs ?? []).some(item => item.userInputId === p.userInputId)) { fail('userInputAlreadySettled', 'Already settled'); return }

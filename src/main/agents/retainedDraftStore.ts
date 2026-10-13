@@ -1,10 +1,10 @@
 import { join } from 'node:path'
 import { readFile, readdir, unlink } from 'node:fs/promises'
 import { z } from 'zod'
-import { agentThreadDraftSchema, agentThreadKindSchema, type AgentThreadDraft } from '../../shared/agents'
+import { agentThreadDraftSchema, agentThreadKindSchema, providerIdSchema, type AgentThread, type AgentThreadDraft, type ProviderId } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 
-const retainedDraftSchema = z.object({ hostId: z.uuid(), registrationId: z.uuid().optional(), threadKind: agentThreadKindSchema.optional(), draft: agentThreadDraftSchema,
+const retainedDraftSchema = z.object({ hostId: z.uuid(), registrationId: z.uuid().optional(), providerId: providerIdSchema.optional(), threadKind: agentThreadKindSchema.optional(), draft: agentThreadDraftSchema,
   questionsDigest: z.string().regex(/^[a-f0-9]{64}$/u).nullable(),
   saved: z.boolean(), recovery: z.boolean(), editing: z.boolean().optional(), hostDraftId: z.uuid().optional(),
   baseDraftId: z.uuid().nullable().optional(),
@@ -18,6 +18,8 @@ const owner = (hostId: string, threadId: string): string => JSON.stringify([host
 export class RetainedDraftStore {
   private readonly edits = new Map<string, RetainedDraft>()
   private readonly dormant = new Map<string, RetainedDraft>()
+  /** Older disk copies stay private until a host names the provider that owns their thread. */
+  private readonly unclassified = new Map<string, RetainedDraft>()
   private readonly diskOrder = new Map<string, number>()
   private readonly disk?: AtomicJsonStore<RetainedDraft[]>
   private loading: Promise<void> | undefined
@@ -28,10 +30,23 @@ export class RetainedDraftStore {
   private savedHosts: Map<string, string> | undefined
   private loadFailure: unknown
   private protectedUnread = false
-  constructor(private readonly options: { directory?: string; historyEnabled?: () => boolean; watcherEnabled?: boolean; onRecovery?: () => void; onWriteFailure?: () => void } = {}) {
+  constructor(private readonly options: { directory?: string; historyEnabled?: () => boolean; watcherEnabled?: boolean; museEnabled?: boolean; onRecovery?: () => void; onWriteFailure?: () => void } = {}) {
     if (options.directory) this.disk = new AtomicJsonStore(join(options.directory, 'remote-drafts.json'), retainedDraftsSchema.parse, () => [], undefined, undefined, options.onRecovery)
   }
-  private parksWatcher(edit: RetainedDraft): boolean { return this.options.watcherEnabled !== true && (edit.threadKind === 'watcher' || edit.threadKind === 'watcher-history') }
+  private parksFeature(edit: Pick<RetainedDraft, 'threadKind' | 'providerId'>): boolean {
+    return this.options.watcherEnabled !== true && (edit.threadKind === 'watcher' || edit.threadKind === 'watcher-history')
+      || this.options.museEnabled !== true && edit.providerId === 'muse'
+  }
+  private parksLegacy(edit: Pick<RetainedDraft, 'providerId'>): boolean { return this.options.museEnabled !== true && !providerIdSchema.safeParse(edit.providerId).success }
+  private needsPreservation(value: unknown): boolean {
+    if (!value || typeof value !== 'object') return false
+    const record = value as Pick<RetainedDraft, 'threadKind' | 'providerId'>
+    return this.parksFeature(record) || this.parksLegacy(record)
+  }
+  private mayHoldDormantWords(text: string): boolean {
+    return this.options.watcherEnabled !== true && /"threadKind"\s*:\s*"watcher(?:-history)?"/u.test(text)
+      || this.options.museEnabled !== true && (/"providerId"\s*:\s*"muse"/u.test(text) || /"(?:hostId|draft)"\s*:/u.test(text))
+  }
   private get keepsHistory(): boolean { return this.options.historyEnabled?.() !== false }
   /** History-on unread files stay untouched; history off uses only this window's memory edits. */
   get storageAvailable(): boolean { return !this.protectedUnread && (!this.keepsHistory || this.loadFailure === undefined) }
@@ -41,7 +56,7 @@ export class RetainedDraftStore {
     const task = (async () => {
       if (!this.disk) return
       if (!this.keepsHistory) {
-        if (this.options.watcherEnabled !== true) {
+        if (this.options.watcherEnabled !== true || this.options.museEnabled !== true) {
           let text = ''
           try {
             text = await readFile(join(this.options.directory!, 'remote-drafts.json'), 'utf8')
@@ -49,13 +64,15 @@ export class RetainedDraftStore {
             // One damaged ordinary entry cannot make valid parked records disappear.
             if (Array.isArray(saved)) for (const value of saved) {
               const parsed = retainedDraftSchema.safeParse(value)
-              if (parsed.success && this.parksWatcher(parsed.data)) this.dormant.set(owner(parsed.data.hostId, parsed.data.draft.threadId), parsed.data)
-              else if (value && typeof value === 'object' && 'threadKind' in value && (value.threadKind === 'watcher' || value.threadKind === 'watcher-history')) throw new Error('A saved Watcher draft could not be read.')
+              if (parsed.success && this.parksFeature(parsed.data)) this.dormant.set(owner(parsed.data.hostId, parsed.data.draft.threadId), parsed.data)
+              else if (parsed.success && this.parksLegacy(parsed.data)) this.unclassified.set(owner(parsed.data.hostId, parsed.data.draft.threadId), parsed.data)
+              else if (!parsed.success && this.needsPreservation(value)) throw new Error('A saved remote draft could not be read.')
             }
+            else if (this.needsPreservation(saved)) throw new Error('Saved remote drafts could not be read.')
             this.protectedUnread = false
           } catch (error) {
             const missing = error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT'
-            if (!missing && (!text || /"threadKind"\s*:\s*"watcher(?:-history)?"/u.test(text))) {
+            if (!missing && (!text || this.mayHoldDormantWords(text))) {
               this.protectedUnread = true; this.loadFailure = error
               try { this.options.onRecovery?.() } catch { /* A notice cannot alter the unread original. */ }
               return
@@ -80,7 +97,12 @@ export class RetainedDraftStore {
       if (this.keepsHistory) for (const [index, edit] of saved.entries()) {
         const key = owner(edit.hostId, edit.draft.threadId)
         this.diskOrder.set(key, index)
-        if (this.parksWatcher(edit)) { this.dormant.set(key, edit); continue }
+        if (this.parksFeature(edit)) { this.dormant.set(key, edit); continue }
+        if (this.parksLegacy(edit)) {
+          if (this.acceptsEdit(edit) && (this.savedHosts || !this.retiredDiskHosts.has(edit.hostId))) this.unclassified.set(key, edit)
+          else removed = true
+          continue
+        }
         if (!this.acceptsEdit(edit) || !this.savedHosts && this.retiredDiskHosts.has(edit.hostId)) { removed = true; continue }
         if (!this.edits.has(key)) this.edits.set(key, { ...edit, recovery: !edit.saved || edit.recovery })
       }
@@ -100,6 +122,7 @@ export class RetainedDraftStore {
     this.savedHosts = new Map(hosts.map(host => [host.hostId, host.registrationId]))
     let removed = false
     for (const [key, edit] of this.edits) if (!this.acceptsEdit(edit)) { this.edits.delete(key); removed = true }
+    for (const [key, edit] of this.unclassified) if (!this.acceptsEdit(edit)) { this.unclassified.delete(key); removed = true }
     if (removed) this.changed()
   }
   /** Only a completed Add admits a new host; canceled Forget never changes its admission. */
@@ -113,6 +136,27 @@ export class RetainedDraftStore {
     if (removed) this.changed()
   }
   registrationForHost(hostId: string): string | undefined { return this.savedHosts?.get(hostId) }
+  /** A real host snapshot resolves old provider-less disk copies; a missing thread proves nothing. */
+  identifyThreads(hostId: string, threads: readonly (Pick<AgentThread, 'id' | 'kind'> & { providerId: ProviderId })[]): void {
+    let changed = false
+    const identities = new Map(threads.map(thread => [thread.id, thread]))
+    for (const [key, edit] of this.unclassified) {
+      if (edit.hostId !== hostId) continue
+      const thread = identities.get(edit.draft.threadId)
+      if (!thread) continue
+      this.unclassified.delete(key); changed = true
+      if (this.parksFeature({ providerId: thread.providerId, threadKind: thread.kind })) this.dormant.set(key, edit)
+      else if (this.keepsHistory && this.acceptsEdit(edit) && !this.edits.has(key)) this.edits.set(key, { ...edit, providerId: thread.providerId,
+        ...(thread.kind === 'watcher' || thread.kind === 'watcher-history' ? { threadKind: thread.kind } : {}), recovery: !edit.saved || edit.recovery })
+    }
+    // A live socket may have retained an edit before its provider metadata arrived.
+    for (const [key, edit] of this.edits) {
+      if (edit.hostId !== hostId) continue
+      const thread = identities.get(edit.draft.threadId)
+      if (thread && this.parksFeature({ providerId: thread.providerId, threadKind: thread.kind })) { this.edits.delete(key); this.dormant.set(key, edit); changed = true }
+    }
+    if (changed) this.changed()
+  }
   private acceptsHost(hostId: string): boolean { return !this.forgottenHosts.has(hostId) && (!this.savedHosts || this.savedHosts.has(hostId)) }
   private acceptsEdit(edit: RetainedDraft): boolean { return this.acceptsHost(edit.hostId) && (!this.savedHosts || edit.registrationId === this.savedHosts.get(edit.hostId)) }
   get(hostId: string, threadId: string): RetainedDraft | undefined {
@@ -123,7 +167,7 @@ export class RetainedDraftStore {
     return structuredClone([...this.edits.values()].filter(edit => edit.hostId === hostId && this.acceptsEdit(edit)))
   }
   put(edit: RetainedDraft): void {
-    if (this.parksWatcher(edit) || !this.acceptsEdit(edit)) return
+    if (this.parksFeature(edit) || !this.acceptsEdit(edit)) return
     const key = owner(edit.hostId, edit.draft.threadId)
     if (!this.edits.has(key) && this.edits.size >= 512) throw new Error('This computer has too many unsent remote drafts. Save or clear a draft before starting another.')
     this.edits.set(key, retainedDraftSchema.parse(structuredClone(edit)))
@@ -150,6 +194,7 @@ export class RetainedDraftStore {
     this.retiredDiskHosts.add(hostId)
     this.savedHosts?.delete(hostId)
     for (const [key, edit] of this.edits) if (edit.hostId === hostId) this.edits.delete(key)
+    for (const [key, edit] of this.unclassified) if (edit.hostId === hostId) this.unclassified.delete(key)
     this.changed(); await this.close().catch(() => undefined)
   }
   /** Turning history off removes disk copies; current window edits remain in memory. */
@@ -169,8 +214,8 @@ export class RetainedDraftStore {
       while (this.dirty) {
         this.dirty = false
         if (this.disk) {
-          const snapshot = structuredClone([...this.dormant.values(), ...(this.keepsHistory ? this.edits.values() : [])])
-          if (this.dormant.size && this.keepsHistory) snapshot.sort((a, b) => (this.diskOrder.get(owner(a.hostId, a.draft.threadId)) ?? Infinity) - (this.diskOrder.get(owner(b.hostId, b.draft.threadId)) ?? Infinity))
+          const snapshot = structuredClone([...this.dormant.values(), ...this.unclassified.values(), ...(this.keepsHistory ? this.edits.values() : [])])
+          if ((this.dormant.size || this.unclassified.size) && this.keepsHistory) snapshot.sort((a, b) => (this.diskOrder.get(owner(a.hostId, a.draft.threadId)) ?? Infinity) - (this.diskOrder.get(owner(b.hostId, b.draft.threadId)) ?? Infinity))
           try {
             await this.disk.write(snapshot)
             if (!this.keepsHistory) await this.removeLeftovers()
@@ -192,26 +237,25 @@ export class RetainedDraftStore {
     try { this.options.onWriteFailure?.() } catch { /* A notice cannot discard a retryable edit. */ }
   }
   private async clearHistory(): Promise<void> {
-    try { await this.disk!.write(structuredClone([...this.dormant.values()])); await this.removeLeftovers() }
+    try { await this.disk!.write(structuredClone([...this.dormant.values(), ...this.unclassified.values()])); await this.removeLeftovers() }
     catch (error) { this.reportWriteFailure(); throw error }
   }
   private async removeLeftovers(): Promise<void> {
     if (!this.options.directory) return
     for (const name of await readdir(this.options.directory)) {
       if (name.startsWith('remote-drafts.json.tmp-') || name.startsWith('remote-drafts.json.corrupt-')) {
-        if (this.options.watcherEnabled !== true) {
+        if (this.options.watcherEnabled !== true || this.options.museEnabled !== true) {
           let text: string
           try { text = await readFile(join(this.options.directory, name), 'utf8') }
           catch (error) { if (!(error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT')) throw error; continue }
           try {
             const saved: unknown = JSON.parse(text)
-            const parked = Array.isArray(saved) ? saved.filter(value => value && typeof value === 'object' && 'threadKind' in value
-              && (value.threadKind === 'watcher' || value.threadKind === 'watcher-history')) : []
+            const parked = Array.isArray(saved) ? saved.filter(value => this.needsPreservation(value)) : []
             if (parked.length) {
               await new AtomicJsonStore(join(this.options.directory, name), retainedDraftsSchema.parse, () => []).write(parked)
               continue
             }
-          } catch { if (/"threadKind"\s*:\s*"watcher(?:-history)?"/u.test(text)) continue }
+          } catch { if (this.mayHoldDormantWords(text)) continue }
         }
         await unlink(join(this.options.directory, name)).catch(error => {
           if (!(error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT')) throw error

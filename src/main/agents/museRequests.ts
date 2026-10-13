@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import type { AgentQuestionAnswers, AgentRequest } from '../../shared/agents'
 import { permissionValue, questionValues } from './nativeRequests'
@@ -27,6 +28,9 @@ export type MuseApproval = z.infer<typeof museApprovalSchema>
 export const museApprovalUpdatedSchema = z.looseObject({
   approvalId: z.string().min(1), sessionId: z.string().min(1), subject: subjectSchema,
   availableChoices: z.array(choiceSchema).min(1), currentRequirementId: requirementSchema,
+})
+export const museApprovalDecidedSchema = z.looseObject({
+  approvalId: z.string().min(1), commandId: z.string().min(1), status: z.string().min(1), terminal: z.boolean(),
 })
 const questionSchema = z.looseObject({
   id: z.string().min(1), header: z.string().default(''), question: z.string().min(1),
@@ -74,9 +78,13 @@ function approvalText(approval: MuseApproval): string {
 }
 
 /** One approval as Sotto shows it. The native choices keep their own labels; Sotto only sorts them by kind. */
-export function museApprovalPending(threadId: string, approval: MuseApproval): MusePending {
+export function museApprovalPending(threadId: string, approval: MuseApproval): Extract<MusePending, { kind: 'approval' }> {
+  // A shell approval may ask about several requirements under one native ID. Each is a new request to
+  // the user, with its own answer ownership and delivery record, including after a reconnect.
+  const stageId = createHash('sha256').update(JSON.stringify([approval.approvalId,
+    approval.currentRequirementId.approvalId, approval.currentRequirementId.sourceIndex])).digest('hex')
   const request: AgentRequest = {
-    id: approval.approvalId, kind: 'permission', text: approvalText(approval), options: [],
+    id: `muse-approval-${stageId}`, kind: 'permission', text: approvalText(approval), options: [],
     permissionChoices: approval.availableChoices.flatMap(choice => {
       const kind = choiceKind(choice)
       return kind ? [{
@@ -93,11 +101,10 @@ export function museApprovalPending(threadId: string, approval: MuseApproval): M
   return { kind: 'approval', threadId, request, approval }
 }
 
-/** Refresh a pending approval in place when Muse moves it to its next stage (`approval/updated`). */
-export function museApprovalRefreshed(pending: Extract<MusePending, { kind: 'approval' }>, updated: z.infer<typeof museApprovalUpdatedSchema>): void {
-  pending.approval = { ...pending.approval, subject: updated.subject, availableChoices: updated.availableChoices, currentRequirementId: updated.currentRequirementId }
-  const fresh = museApprovalPending(pending.threadId, pending.approval)
-  pending.request = { ...fresh.request, ...(pending.request.delivery ? { delivery: pending.request.delivery } : {}) }
+/** An updated native approval as its current requirement; the host decides whether it replaces a stage. */
+export function museApprovalRefreshed(pending: Extract<MusePending, { kind: 'approval' }>, updated: z.infer<typeof museApprovalUpdatedSchema>): Extract<MusePending, { kind: 'approval' }> {
+  return museApprovalPending(pending.threadId, { ...pending.approval, subject: updated.subject,
+    availableChoices: updated.availableChoices, currentRequirementId: updated.currentRequirementId })
 }
 
 const optionId = (index: number): string => `option-${index}`

@@ -48,6 +48,18 @@ function databaseRows(root: string, name: string, tables: readonly string[], id:
 }
 const threadTables = ['events', 'messages', 'activities', 'activity_epochs', 'visuals', 'wake_ups']
 const subagentTables = ['subagent_threads', 'subagent_rows', 'subagent_assignments', 'subagent_classifications']
+it('keeps enabled Watcher work available on a legacy host while Muse is disabled', async () => {
+  const root = await directory()
+  const host = Object.assign(new FakeProviderHost(), { watcherThreadIds: () => ['session-workshop'] })
+  const control = await agentControlFixture({ directory: root, host, credentialOptions: { mode: 'unavailable' },
+    control: { watcherEnabled: true, museEnabled: false } })
+  cleanup.push(control.dispose)
+  await control.control.start()
+  await control.control.command({ type: 'connect', provider: 'codex' })
+  const result = await control.control.command({ type: 'select-thread', threadId: 'session-workshop' })
+  expect(result.error).toBeNull()
+  expect(control.control.shell().activeThreadId).toBe('session-workshop')
+})
 it('keeps certified catalog sharing after hiding cached Muse and leaves ordinary catalogs whole', () => {
   const models = immutableModels(snapshot('synthetic').models)
   const visible = modelsWithoutMuse(models)
@@ -174,6 +186,8 @@ it('a stable desktop hides Muse from a paired Owl host and refuses its provider 
   expect(shell.draft).toBe(''); expect(shell.configuration.provider).toBe('codex')
   expect(router.preservesDormantThread(hostEntityKey(hostId, MUSE))).toBe(true)
   await expect(router.command({ type: 'connect', provider: 'muse' })).rejects.toThrow('Sotto Owl')
+  await expect(router.command({ type: 'queue-client-updates', providers: ['muse'] })).rejects.toThrow('Sotto Owl')
+  await expect(router.command({ type: 'cancel-client-updates', providers: ['muse'] })).rejects.toThrow('Sotto Owl')
   await expect(router.threadDetail(hostEntityKey(hostId, MUSE))).rejects.toThrow('Sotto Owl')
   expect(command).not.toHaveBeenCalled(); expect(detail).not.toHaveBeenCalled()
   router.dispose()

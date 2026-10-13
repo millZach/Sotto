@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { defaultNewThreadModelId, type AgentCommand, type AgentModel, type AgentState } from '../../shared/agents'
+import { defaultNewThreadModelId, providerTakesSottoTools, type AgentCommand, type AgentModel, type AgentState } from '../../shared/agents'
 import { hostEntityKey } from '../../shared/clientIdentity'
 import type { HostSetupChoice } from '../../shared/hosts'
 import { resolveModel } from '../../shared/modelCatalog'
@@ -29,7 +29,7 @@ export function coordinatorSetupThreads(options: { coordinator: HostSetupCoordin
   const sameFolder = (left: string, right: string): boolean => process.platform === 'win32' ? resolve(left).toLowerCase() === resolve(right).toLowerCase() : resolve(left) === resolve(right)
   const project = (providerId: string | undefined) => state().host.projects.find(item => sameFolder(item.path, folder) && (!item.providerId || !providerId || item.providerId === providerId))
   /** A model the tool can reach: ready, and not Devin, whose client ignores the tool servers Sotto offers. */
-  const usable = (model: AgentModel): boolean => model.ready && model.providerId !== 'devin'
+  const usable = (model: AgentModel): boolean => model.ready && providerTakesSottoTools(model.providerId)
   return {
     choice(): HostSetupChoice {
       if (!options.localHostRunning) return { unavailable: 'An agent sets a host up from a thread on this computer, which needs the local host. Turn on Run the local host above and restart Sotto.', models: [] }
@@ -49,7 +49,7 @@ export function coordinatorSetupThreads(options: { coordinator: HostSetupCoordin
     async start({ title, modelId, brief, created }) {
       await mkdir(folder, { recursive: true })
       const model = resolveModel(state().host.models, modelId)
-      if (!model) throw new Error('That model is not ready on this computer. Choose another one.')
+      if (!model || !usable(model)) throw new Error('That model cannot set up a host. Choose a ready Claude Code, Codex or Grok Build model.')
       if (!project(model.providerId)) {
         await coordinator.command({ type: 'create-project', ...(model.providerId ? { provider: model.providerId } : {}), title: HOST_SETUP_PROJECT_TITLE, path: folder, useExisting: true })
         latest = coordinator.shell()

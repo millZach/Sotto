@@ -33,6 +33,64 @@ it('recovers missed history after a view gap without blocking its resume reply o
   } finally { await f.cleanup() }
 })
 
+it('reconciles a missed turn ending without inventing its outcome and restores a missed question', async () => {
+  const { f, id } = await open()
+  try {
+    await f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'first', text: 'Synthetic prompt' })
+    await f.script({ suppressQuestion: true })
+    await f.driver.raiseQuestion(id, 'A question missed by the stream')
+    expect((await thread(f, id)).requests).toHaveLength(0)
+    await f.action(id, { type: 'gap' })
+    await expect.poll(async () => (await thread(f, id)).requests[0]?.text).toBe('A question missed by the stream')
+    const request = (await thread(f, id)).requests[0]!
+    await f.host.execute({ type: 'answer', threadId: id, commandId: randomUUID(), requestId: request.id, answer: 'Blue' })
+    await f.script({ suppressTurnCompleted: true })
+    await f.driver.completeTurn(id, 'The terminal event was missed')
+    await expect.poll(async () => (await thread(f, id)).messages.some(message => message.text === 'The terminal event was missed')).toBe(true)
+    expect((await thread(f, id)).status).toBe('running')
+    await f.action(id, { type: 'gap' })
+    await expect.poll(async () => (await thread(f, id)).status).toBe('idle')
+    expect((await thread(f, id)).lastTurn).toBeUndefined()
+    expect((await thread(f, id)).activities?.find(activity => activity.kind === 'turn')?.status).toBe('unknown')
+    await f.script({})
+    await expect(f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'next', text: 'Continue' })).resolves.toEqual({ accepted: true })
+    await f.driver.completeTurn(id, 'A normal completion')
+    await expect.poll(async () => (await thread(f, id)).status).toBe('idle')
+  } finally { await f.cleanup() }
+})
+
+it.each(['approval-required', 'auto', 'full-access'] as const)('replays the exact creation envelope after a lost acknowledgement in %s mode', async runtimeMode => {
+  const f = await museFixture(), id = randomUUID()
+  try {
+    await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+    await f.script({ loseStartAckOnce: true })
+    await expect(f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId,
+      modelId: f.modelId, title: 'Replay thread', runtimeMode })).resolves.toEqual({ accepted: false, uncertain: true })
+    await f.host.refreshThread!(id)
+    const starts = (await f.driver.requests()).filter(record => record.method === 'session/start')
+    expect(starts).toHaveLength(2)
+    expect(starts[1]?.params).toEqual(starts[0]?.params)
+    expect((await thread(f, id)).runtimeMode).toBe(runtimeMode)
+    expect((await thread(f, id)).status).toBe('idle')
+  } finally { await f.cleanup() }
+})
+
+it('keeps its catalog and working process when an updated client has no signed-in models', async () => {
+  const { f, id } = await open()
+  try {
+    await f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'first', text: 'Synthetic prompt' })
+    const before = await f.host.snapshot()
+    await f.script({ models: [] })
+    await expect(f.host.clientUpdated!()).rejects.toThrow('new client is not signed in')
+    expect((await f.host.snapshot()).models).toEqual(before.models)
+    expect((await f.host.snapshot()).version).toBe(before.version)
+    await f.driver.completeTurn(id, 'The working client carries on')
+    await expect.poll(async () => (await thread(f, id)).status).toBe('idle')
+    expect((await f.driver.requests()).filter(record => record.method === 'fixture/process')).toHaveLength(1)
+  } finally { await f.cleanup() }
+})
+
 it.each(['malformed', 'gap'] as const)('closes a lost host after %s and lets its thread restart', async type => {
   const { f, id } = await open()
   try {

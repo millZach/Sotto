@@ -479,7 +479,9 @@ export class AgentControl {
     if (this.dependencies.watcherEnabled !== true || this.dependencies.museEnabled !== true) {
       // The workspace retains special kinds that its public snapshots omit. They must be known before saved work is normalized.
       await this.dependencies.host.initialize?.()
-      for (const id of this.dependencies.host.dormantThreadIds?.() ?? this.dependencies.host.watcherThreadIds?.() ?? []) this.dormantThreadIds.add(id)
+      const dormant = this.dependencies.host.dormantThreadIds?.()
+        ?? (this.dependencies.watcherEnabled !== true ? this.dependencies.host.watcherThreadIds?.() : undefined) ?? []
+      for (const id of dormant) this.dormantThreadIds.add(id)
       if (this.dependencies.watcherEnabled !== true) for (const id of this.dependencies.host.watcherThreadIds?.() ?? []) this.dormantWatcherIds.add(id)
       const snapshot = this.dependencies.host.workspaceSnapshot?.()
       if (snapshot) this.withSottoRequests(snapshot)

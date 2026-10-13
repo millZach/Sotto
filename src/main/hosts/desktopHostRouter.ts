@@ -654,7 +654,8 @@ export class DesktopHostRouter {
       || command.type === 'create-thread' && parsePublicProviderEntityId(command.modelId ?? '')?.provider === 'muse'
       || command.type === 'configure' && (command.patch.provider === 'muse' || command.patch.enabledProviders?.includes('muse')
         || parsePublicProviderEntityId(command.patch.defaultModelId ?? '')?.provider === 'muse'
-        || parsePublicProviderEntityId(command.patch.newThreadModelId ?? '')?.provider === 'muse'))) throw new Error('Muse is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
+        || parsePublicProviderEntityId(command.patch.newThreadModelId ?? '')?.provider === 'muse')
+      || (command.type === 'queue-client-updates' || command.type === 'cancel-client-updates') && command.providers.includes('muse'))) throw new Error('Muse is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
     if (command.type === 'configure') return this.configurationRoute(command)
     const hostId = [...references][0] ?? this.selectedHostId
     const { connection } = this.target(hostId ? hostEntityKey(hostId, '_') : undefined)

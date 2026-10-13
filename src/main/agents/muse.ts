@@ -13,7 +13,7 @@ import { compareClientVersions } from './clientVersions'
 import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft, WatcherLaunchProfile } from './host'
 import { preserveLegacyAliases } from './legacyAliases'
 import { museItemActivity, museItemDeltaSchema, museItemEventSchema, museItemSchema, musePlanActivity, museTerminal, museTurnCompletedSchema, museTurnEventSchema, type MuseItem } from './museActivity'
-import { museApprovalChoice, museApprovalPending, museApprovalRefreshed, museApprovalSchema, museApprovalUpdatedSchema, museUserInputAnswers, museUserInputPending, museUserInputSchema, type MusePending } from './museRequests'
+import { museApprovalChoice, museApprovalDecidedSchema, museApprovalPending, museApprovalRefreshed, museApprovalSchema, museApprovalUpdatedSchema, museUserInputAnswers, museUserInputPending, museUserInputSchema, type MusePending } from './museRequests'
 import { MUSE_CLI_VERSION, MUSE_MSP_VERSION, MuseRejected, MuseRpc, MuseTooOld, MuseUncertain, MuseUnreadable, MuseUnsupported, findMuseExecutable, museCommandId, museEnvironment, type MuseFrame } from './museRpc'
 import { needsPerson, unreadableRequest } from './nativeRequests'
 import { OpenSessions } from './openSessions'
@@ -119,7 +119,7 @@ function clientRefusal(client: MuseClient): MuseUnsupported | undefined {
 /** How Sotto spawns the native client: one MSP host per thread (`muse serve`, ADR-0038, ADR-0075). */
 export function museServeArguments(): string[] { return ['serve'] }
 
-interface ThreadProcess { rpc: MuseRpc; ready: Promise<ThreadProcess>; clientRevision: number; closing: boolean; lost: boolean; sessionId?: string; resync?: Promise<void> }
+interface ThreadProcess { rpc: MuseRpc; ready: Promise<ThreadProcess>; clientRevision: number; turnRevision: number; closing: boolean; lost: boolean; sessionId?: string; resync?: Promise<void> }
 type Pending = MusePending & { rpc: MuseRpc; answerCommandId?: string }
 interface Fold {
   /** The newest copy of each item, so a delta or an update folds onto what came before it. */
@@ -181,6 +181,7 @@ export class MuseMspHost implements AgentHost {
   private revokeProfile(id: string, reason: string): void {
     const entry = this.processes.get(id)
     this.processes.delete(id); this.loaded.delete(id); this.outdated.delete(id); this.folds.delete(id); this.reaper.forget(id)
+    this.requestChanges.delete(id); this.requestReads.delete(id)
     this.activePrompts.delete(id); this.activeTurns.delete(id); this.log.release(id)
     for (const [requestId, pending] of this.pending) if (pending.threadId === id) this.pending.delete(requestId)
     const thread = this.threads.get(id)
@@ -193,6 +194,10 @@ export class MuseMspHost implements AgentHost {
   private aliases: Record<string, Alias> = {}
   private readonly threads = new Map<string, AgentThread>()
   private readonly pending = new Map<string, Pending>()
+  /** Only the current processes' request facts; a pending-list reply cannot overwrite a newer stream fact. */
+  private readonly requestChanges = new Map<string, Map<string, number>>()
+  private readonly requestReads = new Map<string, { count: number }>()
+  private requestRevision = 0
   private readonly deliveries = new Map<string, { threadId: string; resolve(): void; reject(error: Error): void }>()
   private readonly activePrompts = new Set<string>()
   /** The turn each thread is running, by MSP turn ID, with the Sotto ID of the message that opened it. */
@@ -332,7 +337,7 @@ export class MuseMspHost implements AgentHost {
     const executable = this.executable
     if (!this.state.connected || !executable) return Promise.reject(new Error('Connect Muse before managing threads.'))
     const replacement = this.processes.get(id); if (replacement) return replacement.ready
-    const entry = { clientRevision: this.clientRevision, closing: false, lost: false } as ThreadProcess
+    const entry = { clientRevision: this.clientRevision, turnRevision: 0, closing: false, lost: false } as ThreadProcess
     entry.rpc = this.spawn(executable, () => this.processLost(id, entry))
     entry.ready = (async () => {
       try {
@@ -355,7 +360,7 @@ export class MuseMspHost implements AgentHost {
     if (entry.closing) return
     entry.lost = true
     if (this.processes.get(id) !== entry) return
-    this.processes.delete(id); this.outdated.delete(id)
+    this.processes.delete(id); this.outdated.delete(id); this.requestChanges.delete(id); this.requestReads.delete(id)
     this.loaded.delete(id); this.folds.delete(id); this.log.release(id); this.reaper.forget(id)
     for (const pending of [...this.pending.values()]) if (pending.threadId === id) this.pending.delete(pending.request.id)
     const sending = this.activePrompts.delete(id)
@@ -385,7 +390,7 @@ export class MuseMspHost implements AgentHost {
     if (this.loaded.delete(id)) this.emit()
     this.folds.delete(id); this.log.release(id)
     if (!entry) return
-    this.processes.delete(id); this.outdated.delete(id)
+    this.processes.delete(id); this.outdated.delete(id); this.requestChanges.delete(id); this.requestReads.delete(id)
     // Ending the host ends its session with it; Muse's own log keeps the conversation for the next resume.
     this.closeProcess(entry)
     await entry.rpc.closed
@@ -441,8 +446,8 @@ export class MuseMspHost implements AgentHost {
       // A client with no sign-in resolves no catalog: that is the refusal a host's tile offers the sign-in command for.
       if (!catalog.models.length) throw new ProviderUnavailable('signed-out', 'Sign in to Muse on this machine with muse login, then connect it again.', client.serverInfo.version)
       await this.probeModes(probe)
-      this.applyClient(client, catalog.models)
       if (generation !== this.generation) throw new Error('Muse connection was cancelled.')
+      this.applyClient(client, catalog.models)
       this.log.forgetAll()
       for (const id of Object.keys(this.aliases)) { this.thread(id); this.log.seed(id, this.history?.messageIdentities(id) ?? []) }
       this.state.connected = true; delete this.state.error
@@ -477,12 +482,14 @@ export class MuseMspHost implements AgentHost {
       const refusal = clientRefusal(client)
       if (refusal) throw new Error(`Muse was updated, but Sotto cannot run the new version. ${refusal.message} Threads that are working carry on and nothing was lost. Install a Muse version Sotto supports, then connect Muse again.`, { cause: refusal })
       catalog = modelListSchema.parse(await probe.request('model/list', {}))
+      if (!catalog.models.length) throw new Error('Muse was updated, but its new client is not signed in. Working threads carry on and nothing was lost. Run muse login, then connect Muse again.')
       await this.probeModes(probe)
     } catch (error) {
       if (generation !== this.generation || !this.state.connected) return
       throw error instanceof Error && error.message.startsWith('Muse was updated') ? error
         : new Error('Muse was updated, but the new version did not answer. Threads that are working carry on and nothing was lost. Connect Muse again to try the new version.', { cause: error })
     } finally { probe.close() }
+    if (generation !== this.generation || !this.state.connected) return
     if (generation !== this.generation || !this.state.connected) return
     this.executable = executable; this.clientRevision++
     this.applyClient(client, catalog.models)
@@ -542,17 +549,29 @@ export class MuseMspHost implements AgentHost {
   private async retryUncertainAnswers(id: string, only?: string): Promise<void> {
     const entry = this.processes.get(id), alias = this.aliases[id]
     if (!entry || !alias?.museSessionId) return
-    const listed = listPendingSchema.parse(await entry.rpc.request('approval/listPending', { sessionId: alias.museSessionId }))
-    const open = new Set([...listed.approvals.map(item => item.approvalId), ...listed.userInputs.map(item => item.userInputId)])
-    let changed = false
-    for (const pending of [...this.pending.values()]) {
-      if (pending.threadId !== id || pending.request.delivery !== 'uncertain') continue
-      if (only && pending.request.id !== only) continue
-      changed = true
-      if (!open.has(pending.request.id)) this.removeRequest(pending)
-      else { pending.answering = false; delete pending.request.delivery; pending.request.answerRetryReady = true }
-    }
-    if (changed) this.emit()
+    const releaseRead = this.holdPendingRead(id)
+    try {
+      const generation = this.generation, revision = this.requestRevision
+      const held = [...this.pending.values()].filter(pending => pending.threadId === id)
+      const listed = listPendingSchema.parse(await entry.rpc.request('approval/listPending', { sessionId: alias.museSessionId }))
+      if (generation !== this.generation || this.processes.get(id) !== entry) return
+      const restored = listed.approvals.map(approval => museApprovalPending(id, approval)).filter(pending => this.requestUnchanged(pending, revision))
+      const unchanged = held.filter(pending => this.pending.get(pending.request.id) === pending && this.requestUnchanged(pending, revision))
+      const open = new Set([...listed.approvals.map(item => museApprovalPending(id, item).request.id), ...listed.userInputs.map(item => item.userInputId)])
+      let changed = false
+      for (const pending of unchanged) {
+        if (pending.request.delivery !== 'uncertain') continue
+        if (only && pending.request.id !== only) continue
+        changed = true
+        if (!open.has(pending.request.id)) this.removeRequest(pending)
+        else {
+          pending.answering = false; delete pending.answerCommandId; delete pending.request.delivery; pending.request.answerRetryReady = true
+          this.recordRequestChange(pending)
+        }
+      }
+      for (const approval of restored) this.showRequest(approval, entry)
+      if (changed) this.emit()
+    } finally { releaseRead() }
   }
   /**
    * Open this thread's session on its own host, once per connection. A creation whose acknowledgement was
@@ -573,6 +592,7 @@ export class MuseMspHost implements AgentHost {
       if (!alias.museSessionId && alias.startCommandId) {
         const started = sessionStartSchema.parse(await entry.rpc.request('session/start', {
           commandId: alias.startCommandId, workspaceRoot: alias.cwd, modelId: alias.modelId,
+          ...(alias.runtimeMode ? { approvalMode: MSP_MODE[alias.runtimeMode] } : {}),
         }))
         alias.museSessionId = started.session.sessionId
         entry.sessionId = alias.museSessionId
@@ -581,6 +601,7 @@ export class MuseMspHost implements AgentHost {
       }
       if (!alias.museSessionId) return
       entry.sessionId = alias.museSessionId
+      const turnRevision = entry.turnRevision
       const resumed = sessionResumeSchema.parse(await entry.rpc.request('session/resume', {
         commandId: museCommandId(), sessionId: alias.museSessionId, excludeItems: false,
       }))
@@ -592,14 +613,20 @@ export class MuseMspHost implements AgentHost {
       fold.viewCursor = resumed.viewCursor
       for (const item of items) this.foldItem(id, item)
       this.confirmSession(id, alias, resumed.session)
+      if (entry.turnRevision === turnRevision) this.reconcileLiveSession(id, resumed.session)
       this.settleEndedTurn(id, resumed.session)
       await this.persist()
       // Requests Muse still holds open are shown again, except one an uncertain answer may have settled.
       if (resumed.pendingRequests.length) {
-        const listed = listPendingSchema.parse(await entry.rpc.request('approval/listPending', { sessionId: alias.museSessionId }))
-        if (this.processes.get(id) !== entry) return
-        for (const approval of listed.approvals) this.showRequest(museApprovalPending(id, approval), entry)
-        for (const input of listed.userInputs) this.showRequest(museUserInputPending(id, input), entry)
+        const releaseRead = this.holdPendingRead(id)
+        try {
+          const revision = this.requestRevision
+          const listed = listPendingSchema.parse(await entry.rpc.request('approval/listPending', { sessionId: alias.museSessionId }))
+          if (generation !== this.generation || this.processes.get(id) !== entry) return
+          const restored = [...listed.approvals.map(approval => museApprovalPending(id, approval)),
+            ...listed.userInputs.map(input => museUserInputPending(id, input))].filter(pending => this.requestUnchanged(pending, revision))
+          for (const pending of restored) this.showRequest(pending, entry)
+        } finally { releaseRead() }
       }
       this.loaded.add(id); this.log.pin(id); this.reaper.touch(id); this.emit()
     })().finally(() => { if (this.loading.get(id) === work) this.loading.delete(id); this.stopOutdated() })
@@ -633,17 +660,68 @@ export class MuseMspHost implements AgentHost {
     this.markTurn(id, alias.endedTurn.outcome, messageId, alias.endedTurn.outcome === 'failed' ? THREAD_PROCESS_LOST : undefined)
     delete alias.endedTurn
   }
+  private requestKey(pending: MusePending): string {
+    return JSON.stringify([pending.kind, pending.kind === 'approval' ? pending.approval.approvalId : pending.input.userInputId])
+  }
+  private holdPendingRead(id: string): () => void {
+    const reads = this.requestReads.get(id) ?? { count: 0 }
+    reads.count++; this.requestReads.set(id, reads)
+    return () => {
+      if (this.requestReads.get(id) !== reads || --reads.count !== 0) return
+      this.requestReads.delete(id)
+      const changes = this.requestChanges.get(id)
+      if (!changes) return
+      const live = new Set([...this.pending.values()].filter(pending => pending.threadId === id).map(pending => this.requestKey(pending)))
+      for (const key of changes.keys()) if (!live.has(key)) changes.delete(key)
+      if (!changes.size) this.requestChanges.delete(id)
+    }
+  }
+  private recordNativeRequestChange(id: string, kind: MusePending['kind'], nativeId: string): void {
+    const key = JSON.stringify([kind, nativeId])
+    if (!this.requestReads.has(id) && ![...this.pending.values()].some(pending => pending.threadId === id && this.requestKey(pending) === key)) {
+      const changes = this.requestChanges.get(id)
+      changes?.delete(key)
+      if (!changes?.size) this.requestChanges.delete(id)
+      return
+    }
+    let changes = this.requestChanges.get(id)
+    if (!changes) { changes = new Map(); this.requestChanges.set(id, changes) }
+    changes.set(key, ++this.requestRevision)
+  }
+  private recordRequestChange(pending: MusePending): void {
+    this.recordNativeRequestChange(pending.threadId, pending.kind, pending.kind === 'approval' ? pending.approval.approvalId : pending.input.userInputId)
+  }
+  private requestUnchanged(pending: MusePending, revision: number): boolean {
+    return (this.requestChanges.get(pending.threadId)?.get(this.requestKey(pending)) ?? 0) <= revision
+  }
   private showRequest(pending: MusePending, entry: ThreadProcess): void {
     const alias = this.aliases[pending.threadId]; if (!alias) return
+    if (pending.kind === 'approval') {
+      const previous = [...this.pending.values()].find(candidate => candidate.kind === 'approval'
+        && candidate.threadId === pending.threadId && candidate.approval.approvalId === pending.approval.approvalId)
+      if (previous?.kind === 'approval') {
+        if (previous.approval.currentRequirementId.sourceIndex > pending.approval.currentRequirementId.sourceIndex) return
+        if (previous.request.id === pending.request.id) {
+          previous.approval = pending.approval
+          previous.request = { ...pending.request, ...(previous.request.delivery ? { delivery: previous.request.delivery } : {}),
+            ...(previous.request.answerRetryReady !== undefined ? { answerRetryReady: previous.request.answerRetryReady } : {}) }
+          this.thread(pending.threadId).requests = this.thread(pending.threadId).requests.map(request => request.id === previous.request.id ? previous.request : request)
+          this.recordRequestChange(previous)
+          this.emit(); return
+        }
+        this.removeRequest(previous)
+      }
+    }
     const held: Pending = { ...pending, rpc: entry.rpc }
     if (alias.answeredRequestIds.includes(held.request.id)) { held.answering = true; held.request.delivery = 'uncertain' }
     if (this.pending.has(held.request.id)) return
     this.pending.set(held.request.id, held)
+    this.recordRequestChange(held)
     this.thread(held.threadId).requests.push(held.request)
     this.emit()
   }
   private removeRequest(pending: Pending): void {
-    this.pending.delete(pending.request.id)
+    if (this.pending.delete(pending.request.id)) this.recordRequestChange(pending)
     const thread = this.threads.get(pending.threadId)
     if (thread) thread.requests = thread.requests.filter(request => request.id !== pending.request.id)
     this.emit()
@@ -806,6 +884,7 @@ export class MuseMspHost implements AgentHost {
         case 'turn/started': {
           const parsed = museTurnEventSchema.parse(frame.params)
           if (!sessionOf(parsed)) return
+          entry.turnRevision++
           this.fold(owner).viewCursor = parsed.viewCursor
           const messageId = this.fold(owner).turnMessages.get(parsed.turnId)
           this.activeTurns.set(owner, { turnId: parsed.turnId, ...(messageId ? { messageId } : {}) })
@@ -818,6 +897,7 @@ export class MuseMspHost implements AgentHost {
         case 'turn/completed': {
           const parsed = museTurnCompletedSchema.parse(frame.params)
           if (!sessionOf(parsed)) return
+          entry.turnRevision++
           this.fold(owner).viewCursor = parsed.viewCursor
           const outcome = parsed.terminal === 'completed' ? 'completed' : parsed.terminal === 'cancelled' ? 'interrupted' : 'failed'
           const said = parsed.error?.kind === 'authRequired' ? 'Muse is not signed in on this machine. Run muse login, then send again.'
@@ -837,19 +917,19 @@ export class MuseMspHost implements AgentHost {
         case 'approval/updated': {
           const parsed = museApprovalUpdatedSchema.parse(frame.params)
           if (!sessionOf(parsed)) return
-          const pending = this.pending.get(parsed.approvalId)
+          const pending = [...this.pending.values()].find(candidate => candidate.kind === 'approval'
+            && candidate.threadId === owner && candidate.approval.approvalId === parsed.approvalId)
           if (pending?.kind === 'approval') {
-            museApprovalRefreshed(pending, parsed)
-            const thread = this.thread(owner)
-            thread.requests = thread.requests.map(request => request.id === parsed.approvalId ? pending.request : request)
-            this.emit()
+            this.showRequest(museApprovalRefreshed(pending, parsed), entry)
           }
           return
         }
         case 'approval/resolved': {
           const parsed = approvalResolvedSchema.parse(frame.params)
-          const pending = this.pending.get(parsed.approvalId)
-          if (pending) this.removeRequest(pending)
+          if (!sessionOf(parsed)) return
+          this.recordNativeRequestChange(owner, 'approval', parsed.approvalId)
+          for (const pending of [...this.pending.values()]) if (pending.kind === 'approval'
+            && pending.threadId === owner && pending.approval.approvalId === parsed.approvalId) this.removeRequest(pending)
           return
         }
         case 'userInput/requested': {
@@ -862,6 +942,8 @@ export class MuseMspHost implements AgentHost {
         }
         case 'userInput/settled': {
           const parsed = userInputSettledSchema.parse(frame.params)
+          if (!sessionOf(parsed)) return
+          this.recordNativeRequestChange(owner, 'userInput', parsed.userInputId)
           const pending = this.pending.get(parsed.userInputId)
           if (pending) this.removeRequest(pending)
           return
@@ -1181,11 +1263,17 @@ export class MuseMspHost implements AgentHost {
             if (pending.kind === 'approval') {
               const choiceId = decision!
               const choice = pending.approval.availableChoices.find(candidate => candidate.choiceId === choiceId)
-              await entry.rpc.request('approval/decide', {
+              const decided = museApprovalDecidedSchema.parse(await entry.rpc.request('approval/decide', {
                 commandId: pending.answerCommandId, sessionId: alias.museSessionId, approvalId: pending.approval.approvalId,
                 choiceId, requirementId: pending.approval.currentRequirementId,
                 ...(choice?.acceptsFeedback && command.answer.trim() ? { feedback: command.answer.trim() } : {}),
-              })
+              }))
+              if (!decided.terminal) {
+                // This answer settled one requirement, not the entire approval. Read the next stage if
+                // its update has not arrived yet; its new request ID requires another explicit answer.
+                await this.resync(command.threadId)
+                return { accepted: true }
+              }
             } else if (command.approved === false) {
               await entry.rpc.request('userInput/cancel', { commandId: pending.answerCommandId, sessionId: alias.museSessionId, userInputId: pending.input.userInputId, ...(command.answer.trim() ? { reason: command.answer.trim() } : {}) })
             } else {
@@ -1199,10 +1287,17 @@ export class MuseMspHost implements AgentHost {
             if (error instanceof MuseRejected && (error.kind === 'approvalAlreadyResolved' || error.kind === 'userInputAlreadySettled')) { this.removeRequest(pending); return { accepted: true } }
             if (error instanceof MuseRejected && error.kind === 'approvalRequirementStale') {
               pending.answering = false
-              void this.resync(command.threadId).catch(() => undefined)
+              delete pending.answerCommandId
+              alias.answeredRequestIds = alias.answeredRequestIds.filter(id => id !== pending.request.id)
+              await this.persist()
+              await this.resync(command.threadId).catch(() => undefined)
               throw new Error('This request changed. Review it and answer again.', { cause: error })
             }
-            if (error instanceof MuseRejected) { pending.answering = false; throw error }
+            if (error instanceof MuseRejected) {
+              pending.answering = false; delete pending.answerCommandId
+              alias.answeredRequestIds = alias.answeredRequestIds.filter(id => id !== pending.request.id)
+              await this.persist(); throw error
+            }
             pending.request.delivery = 'uncertain'; this.emit()
             return { accepted: false, uncertain: true }
           }
@@ -1233,6 +1328,7 @@ export class MuseMspHost implements AgentHost {
     const generation = this.generation
     const entry = this.processes.get(id), alias = this.aliases[id]
     if (!entry || (expected && entry !== expected) || !alias?.museSessionId || (!expected && !this.loaded.has(id))) return
+    const turnRevision = entry.turnRevision
     const resumed = sessionResumeSchema.parse(await entry.rpc.request('session/resume', {
       commandId: museCommandId(), sessionId: alias.museSessionId, excludeItems: false,
     }))
@@ -1242,7 +1338,44 @@ export class MuseMspHost implements AgentHost {
     for (const item of items) this.foldItem(id, item)
     this.fold(id).viewCursor = resumed.viewCursor
     this.confirmSession(id, alias, resumed.session)
+    if (entry.turnRevision === turnRevision) this.reconcileLiveSession(id, resumed.session)
     this.settleEndedTurn(id, resumed.session)
+    const releaseRead = this.holdPendingRead(id)
+    try {
+      const revision = this.requestRevision
+      const held = [...this.pending.values()].filter(pending => pending.threadId === id)
+      const listed = listPendingSchema.parse(await entry.rpc.request('approval/listPending', { sessionId: alias.museSessionId }))
+      if (generation !== this.generation || this.processes.get(id) !== entry) return
+      const restored = [...listed.approvals.map(approval => museApprovalPending(id, approval)),
+        ...listed.userInputs.map(input => museUserInputPending(id, input))].filter(pending => this.requestUnchanged(pending, revision))
+      const unchanged = held.filter(pending => this.pending.get(pending.request.id) === pending && this.requestUnchanged(pending, revision))
+      const openApprovals = new Set(listed.approvals.map(approval => approval.approvalId))
+      const openInputs = new Set(listed.userInputs.map(input => input.userInputId))
+      for (const pending of unchanged) {
+        if (pending.kind === 'approval' ? !openApprovals.has(pending.approval.approvalId) : !openInputs.has(pending.input.userInputId)) this.removeRequest(pending)
+      }
+      for (const pending of restored) this.showRequest(pending, entry)
+    } finally { releaseRead() }
+  }
+  /** A resume can prove that work ended even when the stream lost its terminal event; its outcome remains unknown. */
+  private reconcileLiveSession(id: string, session: MuseSession): void {
+    const active = this.activeTurns.get(id), thread = this.thread(id)
+    if (active && active.turnId !== session.activeTurnId) {
+      this.activeTurns.delete(id); this.activePrompts.delete(id)
+      if (thread.lastTurn?.status === 'running') delete thread.lastTurn
+      const messageId = this.fold(id).turnMessages.get(active.turnId) ?? active.messageId
+      if (messageId) {
+        this.markTurn(id, 'unknown', messageId)
+        thread.activities = thread.activities?.map(activity => activity.turnId === messageId && activity.status === 'running'
+          ? { ...activity, status: 'unknown' } : activity)
+      }
+    }
+    if (session.activeTurnId) {
+      const messageId = this.fold(id).turnMessages.get(session.activeTurnId)
+      this.activeTurns.set(id, { turnId: session.activeTurnId, ...(messageId ? { messageId } : {}) })
+      thread.status = 'running'; thread.lastTurn = { id: messageId ?? session.activeTurnId, status: 'running' }
+      this.markTurn(id, 'running', messageId ?? session.activeTurnId)
+    } else if (!this.activePrompts.has(id)) thread.status = this.aliases[id]?.settingsConfirmed ? 'idle' : 'error'
   }
   /** MSP cannot disable all tools independently of native policy, so side writing stays unavailable (ADR-0075). */
   async writeShortText(id: string, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
@@ -1258,7 +1391,8 @@ export class MuseMspHost implements AgentHost {
   private finishDisconnect(): void {
     this.generation++; this.reaper.dispose(); this.loaded.clear(); this.loading.clear()
     // A pending approval is Muse's to settle when its host ends; Sotto sends no decision for it here.
-    this.pending.clear(); for (const thread of this.threads.values()) thread.requests = []
+    this.pending.clear(); this.requestChanges.clear(); this.requestReads.clear(); this.requestRevision = 0
+    for (const thread of this.threads.values()) thread.requests = []
     for (const delivery of this.deliveries.values()) delivery.reject(new MuseUncertain('Muse disconnected before acknowledgement.'))
     this.deliveries.clear()
     this.activePrompts.clear()
