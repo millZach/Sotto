@@ -912,7 +912,8 @@ import XCTest
         XCTAssertTrue(first.waitForExistence(timeout: 5), "Watcher's conversation starts with the user's first message")
         // The header and the box don't move here; where the band begins and ends is read once.
         let band = watcherBand
-        let conversation = app.scrollViews.firstMatch
+        // The scroll view that holds Watcher's conversation, whatever else is on screen.
+        let conversation = app.scrollViews.containing(NSPredicate(format: "label BEGINSWITH %@", "The login test fails")).firstMatch
         for _ in 0..<8 where first.frame.minY < band.top { conversation.swipeDown(velocity: .fast) }
         XCTAssertGreaterThanOrEqual(first.frame.minY, band.top, "The conversation's start is in view")
         // A pull past the start reads Watcher's page again.

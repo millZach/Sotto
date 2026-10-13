@@ -546,9 +546,12 @@ final class WatcherModelTests: XCTestCase {
         let first = drafts.id(for: "One")
         for index in 0..<WatcherDrafts.limit - 1 { _ = drafts.id(for: "Other \(index)") }
         XCTAssertEqual(drafts.id(for: "One"), first, "Kept while fewer than the limit went unconfirmed after it")
-        drafts.resolve(first.uppercased())
-        XCTAssertNotEqual(drafts.id(for: "One"), first, "Taken, the same words get a new ID")
+        _ = drafts.id(for: "One more")
         XCTAssertEqual(drafts.unresolved.count, WatcherDrafts.limit, "Never more than the limit")
+        XCTAssertNotEqual(drafts.id(for: "One"), first, "Past the limit, the oldest is let go")
+        let other = drafts.id(for: "Other 5")
+        drafts.resolve(other.uppercased())
+        XCTAssertNotEqual(drafts.id(for: "Other 5"), other, "Taken, the same words get a new ID")
     }
 
     @MainActor func testThePageReadAfterALostAcknowledgementSettlesTheWords() async throws {
