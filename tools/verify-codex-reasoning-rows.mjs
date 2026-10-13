@@ -1,6 +1,8 @@
 // Usage: npm run build && SOTTO_NATIVE_THREADS_LIVE=1 node tools/verify-codex-reasoning-rows.mjs <out-dir>
 // Sends one real Codex turn that takes a few steps in the built app, on an owned throwaway profile, and records how many
 // Reasoning summary rows the thread draws, beside how many reasoning items Codex wrote for the turn in its own session file.
+import console from 'node:console'
+import process from 'node:process'
 import { _electron as electron } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { mkdir, mkdtemp, readdir, readFile, stat, writeFile } from 'node:fs/promises'
@@ -26,18 +28,18 @@ try {
   const page = first.url().endsWith('/index.html') ? first : app.windows().find(item => item.url().endsWith('/index.html'))
     ?? await app.waitForEvent('window', { predicate: async item => { await item.waitForLoadState('domcontentloaded'); return item.url().endsWith('/index.html') } })
   await page.setViewportSize({ width: 1600, height: 1000 })
-  await page.waitForFunction(() => !!window.sotto?.agents)
+  await page.waitForFunction(() => !!globalThis.sotto?.agents)
   const model = await page.evaluate(async () => {
-    await window.sotto.agents.command({ type: 'configure', patch: { provider: 'codex', enabled: true, enabledProviders: ['codex'], reasoning: 'none' } })
-    const connected = await window.sotto.agents.command({ type: 'connect', provider: 'codex' })
+    await globalThis.sotto.agents.command({ type: 'configure', patch: { provider: 'codex', enabled: true, enabledProviders: ['codex'], reasoning: 'none' } })
+    const connected = await globalThis.sotto.agents.command({ type: 'connect', provider: 'codex' })
     if (connected.error) throw new Error(connected.error)
-    const ready = (await window.sotto.agents.get()).host.models.filter(item => item.providerId === 'codex' && item.ready)
+    const ready = (await globalThis.sotto.agents.get()).host.models.filter(item => item.providerId === 'codex' && item.ready)
     const chosen = ready.find(item => /sol/i.test(item.name)) ?? ready[0]
-    await window.sotto.agents.command({ type: 'configure', patch: { defaultModelId: chosen.id } })
+    await globalThis.sotto.agents.command({ type: 'configure', patch: { defaultModelId: chosen.id } })
     return chosen.name
   })
   await page.reload()
-  await page.waitForFunction(() => !!window.sotto?.agents)
+  await page.waitForFunction(() => !!globalThis.sotto?.agents)
   const threads = page.getByRole('link', { name: 'Threads', exact: true })
   if (!await page.locator('.threads-view').isVisible()) await (await threads.count() ? threads : page.getByRole('tab', { name: 'Threads', exact: true })).click()
   await page.getByRole('button', { name: 'New thread', exact: true }).first().click()
@@ -58,7 +60,7 @@ try {
   await page.keyboard.type('Run git status in this folder, then count the lines in notes.txt with a command, then reply with the one word DONE. Change nothing.')
   await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
   await page.getByLabel('Thread transcript').locator('[data-role="assistant"]').filter({ hasText: 'DONE' }).waitFor({ timeout: 240_000 })
-  await page.waitForFunction(async () => { const state = await window.sotto.agents.get(); return state.host.threads.find(item => item.id === state.activeThreadId)?.status === 'idle' }, undefined, { timeout: 60_000, polling: 1_000 })
+  await page.waitForFunction(async () => { const state = await globalThis.sotto.agents.get(); return state.host.threads.find(item => item.id === state.activeThreadId)?.status === 'idle' }, undefined, { timeout: 60_000, polling: 1_000 })
   await page.waitForTimeout(1_500)
   // Open every fold so each row the thread holds is drawn.
   for (const name of [/^Worked for/u, /^Show \d+ earlier/u, /^(Ran|Changed|Used|Updated) /u]) {
@@ -69,15 +71,17 @@ try {
   }
   await page.waitForTimeout(500)
   const activities = await page.evaluate(async () => {
-    const state = await window.sotto.agents.get()
+    const state = await globalThis.sotto.agents.get()
     const thread = state.host.threads.find(item => item.id === state.activeThreadId)
-    const details = await window.sotto.agents.threadDetail?.(state.activeThreadId).catch(() => undefined)
+    const details = await globalThis.sotto.agents.threadDetail?.(state.activeThreadId).catch(() => undefined)
     const records = details?.activities ?? thread?.activities ?? []
-    return records.map(record => ({ kind: record.kind, title: record.title, status: record.status, words: (record.text ?? '').trim().length }))
+    return records.map(record => ({ kind: record.kind, title: record.title, status: record.status, textLength: (record.text ?? '').trim().length }))
   })
   const drawn = await page.getByLabel('Thread transcript').getByText('Reasoning summary', { exact: true }).count()
-  // A fold names what it holds: "Ran 2 commands, 1 reasoning summary".
-  const folds = await page.getByLabel('Thread transcript').getByText(/reasoning summar/iu).allTextContents()
+  // A fold names what it holds: "Ran 2 commands, 1 reasoning summary". Only Sotto's own fold labels are kept, never
+  // transcript text, since the result is printed.
+  const folds = (await page.getByRole('button', { name: /^(Ran|Changed|Used|Updated|Worked) /u }).allTextContents())
+    .filter(label => /^[\w ,.]+$/u.test(label) && label.length < 120)
   await page.screenshot({ path: join(out, 'thread.png') })
   // Codex's own record of the turn: every session file it wrote since this run began.
   const sessions = join(homedir(), '.codex', 'sessions')
@@ -99,5 +103,5 @@ try {
   }
   const result = { model, drawn, folds, activities, codexReasoningItems: reasoning, codexWordless: wordless, sessionFiles: files.length }
   await writeFile(join(out, 'result.json'), JSON.stringify(result, null, 2))
-  console.log(JSON.stringify({ ...result, activities: activities.map(item => `${item.kind}:${item.status}:${item.words}`) }))
+  console.log(JSON.stringify({ ...result, activities: activities.map(item => `${item.kind}:${item.status}:${item.textLength}`) }))
 } catch (error) { for (const [index, item] of app.windows().entries()) await item.screenshot({ path: join(out, `failure-${index}.png`) }).catch(() => undefined); throw error } finally { await app.close() }

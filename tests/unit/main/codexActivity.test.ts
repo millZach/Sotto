@@ -68,7 +68,8 @@ describe('Codex activity projection', () => {
     // A wordless row an earlier Sotto saved goes when native history is read again.
     const saved = thread(); const reread = new CodexActivityProjection()
     const id = `codex-activity-${createHash('sha256').update(JSON.stringify(['old', 'wordless'])).digest('hex')}`
-    saved.activities = [{ id, turnId: 'old', sequence: 0, kind: 'reasoning', title: 'Reasoning summary', status: 'completed' }]
+    // An earlier Sotto kept an empty summary's parts as blank text.
+    saved.activities = [{ id, turnId: 'old', sequence: 0, kind: 'reasoning', title: 'Reasoning summary', status: 'completed', text: '\n\n' }]
     reread.item(saved, codexItemSchema.parse(wordless), { turnId: 'old', phase: 'history', terminal: true })
     expect(saved.activities).toEqual([])
   })

@@ -10,25 +10,25 @@
       "kind": "turn",
       "title": "Turn completed",
       "status": "completed",
-      "words": 0
+      "textLength": 0
     },
     {
       "kind": "command",
       "title": "Command",
       "status": "completed",
-      "words": 0
+      "textLength": 0
     },
     {
       "kind": "command",
       "title": "Command",
       "status": "completed",
-      "words": 0
+      "textLength": 0
     },
     {
       "kind": "reasoning",
       "title": "Reasoning summary",
       "status": "completed",
-      "words": 0
+      "textLength": 0
     }
   ],
   "codexReasoningItems": 1,

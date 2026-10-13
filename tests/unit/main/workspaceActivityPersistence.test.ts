@@ -474,3 +474,23 @@ it.each(['none', 'before-activity', 'after-activity'])('keeps legacy messages an
   expect(reopened.workspaceSnapshot().threads[0]?.activities).toEqual(activities)
   await f.close(reopened)
 })
+
+it('drops a wordless Codex reasoning summary an earlier Sotto saved once the thread’s activity is read again', async () => {
+  const f = await fixture(() => true, true)
+  const thread = f.provider.state.threads[0]!
+  const wordless: AgentActivity = { id: 'wordless', turnId: 'turn', sequence: 1, kind: 'reasoning', title: 'Reasoning summary', status: 'completed', text: '\n\n' }
+  const summary: AgentActivity = { id: 'summary', turnId: 'turn', sequence: 2, kind: 'reasoning', title: 'Reasoning summary', status: 'completed', text: 'Checking the interface.' }
+  const thought: AgentActivity = { id: 'thought', turnId: 'turn', sequence: 3, kind: 'reasoning', title: 'Thinking', status: 'completed' }
+  thread.activities = [activity('old', 'Retained tool output'), wordless, summary, thought]
+  await writeFile(join(f.directory, 'workspace.json'), JSON.stringify({ snapshot: f.provider.state, creations: [], projectAliases: [] }))
+  const host = await f.open()
+  await host.connect()
+  // The adapter reads the thread again and reports what it keeps now, which has no wordless summary.
+  thread.activities = [activity('old', 'Retained tool output'), summary, thought]
+  f.provider.emit()
+  await host.snapshot()
+  expect(host.workspaceSnapshot().threads[0]!.activities?.map(record => record.id)).toEqual(['old', 'summary', 'thought'])
+  await f.close(host)
+  const reopened = await f.open()
+  expect(reopened.workspaceSnapshot().threads[0]!.activities?.map(record => record.id)).toEqual(['old', 'summary', 'thought'])
+})

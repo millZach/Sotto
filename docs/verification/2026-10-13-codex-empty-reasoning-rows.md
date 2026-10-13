@@ -8,7 +8,7 @@ A Codex thread on GPT-6.1-Sol filled with rows reading **Reasoning summary** and
 
 ## What changed
 
-`CodexActivityProjection.item()` makes no record for a reasoning item without summary words, and drops one an earlier Sotto saved when the thread's native history is read again. A row starts with the first streamed summary words (`delta()`, which now stamps its start time), and a finished item with no summary leaves the streamed words in place.
+`CodexActivityProjection.item()` makes no record for a reasoning item without summary words. `wordlessReasoningSummary()` in `src/shared/agentActivity.ts` names such a record, and the workspace drops any an earlier Sotto saved when it next merges the thread's activity, so the saved copy and phones lose them too. A row starts with the first streamed summary words (`delta()`, which now stamps its start time), and a finished item with no summary leaves the streamed words in place.
 
 ## Proved in the built app
 
@@ -25,4 +25,4 @@ A Codex thread on GPT-6.1-Sol filled with rows reading **Reasoning summary** and
 
 The JSON beside each image (`before.json`, `after.json`) is the script's record: counts, kinds and statuses only, no text.
 
-Dropping a row an earlier read kept is covered by `tests/unit/main/codexActivity.test.ts`, not driven here. It happens the next time Sotto reads the thread's Codex history.
+Dropping a row an earlier Sotto saved is covered by `tests/unit/main/workspaceActivityPersistence.test.ts` and `tests/unit/main/codexActivity.test.ts`, not driven here. It happens the next time Sotto reads the thread's Codex history.
