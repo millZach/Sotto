@@ -38,7 +38,7 @@ import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 import { branchPullRequestUrl, GIT_PULL_REQUEST_LINKS_MAX, parsePullRequestReference, pullRequestAddress, pullRequestKey, type GitPullRequestAction, type GitPullRequestDetail, type GitPullRequestLink, type GitPullRequestLinkSource, type GitPullRequestMergeMethod, type GitPullRequestRead, type GitPullRequestRequest } from '../../shared/gitPullRequests'
 import { GitPullRequestLimited, GitPullRequestRefusal, PULL_REQUEST_ACTION_DONE, type GitPullRequests, type GitPullRequestView } from './gitPullRequests'
-import { MAX_AGENT_ACTIVITIES, isTerminalActivity, mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
+import { MAX_AGENT_ACTIVITIES, isTerminalActivity, mergeAgentActivities, wordlessReasoningSummary, type AgentActivity } from '../../shared/agentActivity'
 import { markSendStage } from './sendStages'
 import { babysitRecordSchema, publishedBabysitting, type BabysitRecord } from './babysitNews'
 import type { BabysitStore, BabysitThread } from './babysitting'
@@ -2100,7 +2100,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       && old.historyEpoch === thread.historyEpoch && old.activities === previous.output
     if (reusable && previous.input === input) return previous.output
     const incoming = reusable ? input!.filter(record => previous.records.get(record.id) !== record) : input ?? []
-    const merged = old?.historyEpoch !== thread.historyEpoch ? input ?? [] : mergeAgentActivities(old?.activities, incoming)
+    const combined = old?.historyEpoch !== thread.historyEpoch ? input ?? [] : mergeAgentActivities(old?.activities, incoming)
+    // A wordless Codex reasoning summary an earlier Sotto saved goes once the thread's activity is read again.
+    const merged = combined.some(wordlessReasoningSummary) ? combined.filter(record => !wordlessReasoningSummary(record)) : combined
     // Legacy input cannot be reused on the next update. Keep its full reconciliation path
     // without adding an ownership copy that every subsequent publication must replace.
     const output = stable ? immutableActivities(merged) : merged
