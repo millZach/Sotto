@@ -1,82 +1,158 @@
 // @vitest-environment node
-import { readFile } from 'node:fs/promises'
+import { execFileSync } from 'node:child_process'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { URL } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
-import { decideStablePromotion, newestOwlRelease, publishedReleases } from '../../../scripts/stable-promotion.mjs'
+import { decideStablePromotion, newestOwlRelease, publishedCheckRuns, publishedReleases, releaseCheckout } from '../../../scripts/stable-promotion.mjs'
 import { checkedPromotion, stablePackagePlan } from '../../../scripts/stable-package.mjs'
+import { checkRelease, stableReleaseArguments } from '../../../scripts/check-release.mjs'
 import { owlPublication } from '../../../scripts/owl-publication.mjs'
+import { cleanStableCheckout as checkout, successfulStableChecks as checks, sourceCommit, stableReleaseRecord } from '../../fixtures/stableReleaseFixture.mjs'
 
-const sourceCommit = 'a'.repeat(40)
-const checkout = { sourceCommit, clean: true }
-const release = (overrides = {}) => ({ id: 2, tag_name: 'v0.1.37-owl.20261011.1', body: `Preview\n\nSource commit: ${sourceCommit}\n`,
-  draft: false, prerelease: true, published_at: '2026-10-11T12:00:00Z', ...overrides })
+const release = (overrides = {}) => ({ tag_name: 'v0.1.37', draft: false, prerelease: false, published_at: '2026-10-11T12:00:00Z', ...overrides })
 
-describe('Stable promotion', () => {
-  it('uses the newest published Owl, ignoring newer stable and drafts regardless of feed order', () => {
-    const newest = release()
-    const feed = [release({ id: 4, tag_name: 'v0.1.37', published_at: '2026-10-12T12:00:00Z' }), newest,
-      release({ id: 8, draft: true, published_at: '2026-10-13T12:00:00Z' }), release({ id: 1, published_at: '2026-10-10T12:00:00Z' })]
-    expect(newestOwlRelease(feed)).toBe(newest)
-    expect(decideStablePromotion(feed, checkout)).toEqual({ owlVersion: '0.1.37-owl.20261011.1', stableVersion: '0.1.37', sourceCommit })
+describe('Stable from main', () => {
+  it('uses the next source patch without any Owl release, independently of feed order', () => {
+    const feed = [release({ tag_name: 'v0.1.39', draft: true }), release({ tag_name: 'v0.1.36', prerelease: true }),
+      release({ tag_name: 'v9.0.0-owl.20261013.1' }), release(), release({ tag_name: 'speech-model-parakeet-1' })]
+    expect(decideStablePromotion(feed, checkout, checks)).toEqual(stableReleaseRecord)
+    expect(decideStablePromotion([], checkout, checks)).toMatchObject({ stableVersion: '0.1.38', latestStableVersion: null })
   })
-  it('requires exactly the commit named by the newest build', () => {
-    expect(() => decideStablePromotion([release()], { ...checkout, sourceCommit: 'b'.repeat(40) })).toThrow(`Check out ${sourceCommit}, the commit Sotto Owl 0.1.37-owl.20261011.1 carried, or publish an Owl build of this commit first.`)
+  it('requires a clean main commit', () => {
+    expect(() => decideStablePromotion([], { ...checkout, clean: false }, checks)).toThrow('uncommitted changes')
+    expect(() => decideStablePromotion([], { ...checkout, onMain: false }, checks)).toThrow('is not on origin/main')
+    expect(() => decideStablePromotion([], { ...checkout, mainCommit: null }, checks)).toThrow('is not on origin/main')
   })
-  it('requires a clean tree even at the promoted commit', () => {
-    expect(() => decideStablePromotion([release()], { ...checkout, clean: false })).toThrow('uncommitted changes')
+  it('checks real Git main membership, dirty files and a branch-only commit', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-stable-checkout-'))
+    const git = args => execFileSync('git', args, { cwd: root, encoding: 'utf8', windowsHide: true }).trim()
+    try {
+      git(['init']); git(['config', 'user.name', 'Release test']); git(['config', 'user.email', 'release@example.test'])
+      await writeFile(join(root, 'package.json'), '{"version":"0.1.37"}\n'); git(['add', '.']); git(['commit', '-m', 'Initial'])
+      git(['update-ref', 'refs/remotes/origin/main', 'HEAD'])
+      expect(releaseCheckout(root)).toMatchObject({ onMain: true, clean: true, sourceVersion: '0.1.37' })
+      await writeFile(join(root, 'pending.txt'), 'pending')
+      expect(releaseCheckout(root).clean).toBe(false)
+      git(['add', '.']); git(['commit', '-m', 'Branch only'])
+      expect(releaseCheckout(root)).toMatchObject({ onMain: false, clean: true })
+    } finally { await rm(root, { recursive: true, force: true }) }
   })
-  it('does not infer Owl 1 source from its tag target or use older source records', () => {
-    const unnamed = release({ body: 'First Owl', target_commitish: sourceCommit })
-    expect(() => decideStablePromotion([unnamed, release({ published_at: '2026-10-10T12:00:00Z' })], checkout)).toThrow('names no single full source commit')
+  it.each(['failure', 'cancelled', 'skipped', 'neutral', null])('refuses a required check concluded %s', conclusion => {
+    expect(() => decideStablePromotion([], checkout, [{ ...checks[0], conclusion }, checks[1]])).toThrow('has not succeeded')
   })
-  it.each(['', 'Source commit: abc123', `Source commit: ${sourceCommit}\nSource commit: ${'b'.repeat(40)}`, `Source commit: ${'a'.repeat(39)}`, `Source commit: ${sourceCommit}extra`])('refuses missing, short or ambiguous sources: %s', body => {
-    expect(() => decideStablePromotion([release({ body })], checkout)).toThrow('full source commit')
+  it('refuses missing, pending, foreign-app and wrong-commit CI; a newer red retry wins', () => {
+    expect(() => decideStablePromotion([], checkout, [null])).toThrow('unreadable')
+    for (const candidate of [checks.slice(1), [{ ...checks[0], head_sha: 'b'.repeat(40) }, checks[1]],
+      [{ ...checks[0], app: { slug: 'other-app' } }, checks[1]]]) {
+      expect(() => decideStablePromotion([], checkout, candidate)).toThrow('is missing')
+    }
+    expect(() => decideStablePromotion([], checkout, [{ ...checks[0], status: 'in_progress' }, checks[1]])).toThrow('has not succeeded')
+    expect(() => decideStablePromotion([], checkout, [...checks, { ...checks[0], id: 10, conclusion: 'failure' }])).toThrow('has not succeeded')
   })
-  it('refuses no Owl and a malformed newest Owl tag', () => {
-    expect(() => decideStablePromotion([], checkout)).toThrow('No published Sotto Owl')
-    expect(() => decideStablePromotion([release({ tag_name: 'v0.1.37-owl.bad' })], checkout)).toThrow('invalid Owl version')
+  it('accepts an explicit newer version and compares numbers, including superseded stable prereleases', () => {
+    expect(decideStablePromotion([release()], checkout, checks, '0.2.0')).toMatchObject({ stableVersion: '0.2.0', explicitVersion: true })
+    expect(decideStablePromotion([release({ tag_name: 'v0.1.9' })], checkout, checks, '0.1.10').stableVersion).toBe('0.1.10')
+    for (const version of ['0.1.36', '0.1.37']) expect(() => decideStablePromotion([release({ prerelease: true })], checkout, checks, version)).toThrow('not newer')
+    expect(() => decideStablePromotion([release({ tag_name: 'v0.1.38' })], checkout, checks)).toThrow('not newer')
+    for (const version of ['01.1.38', '0.1', '0.1.38-owl.20261013.1', '9007199254740992.0.0']) {
+      expect(() => decideStablePromotion([], checkout, checks, version)).toThrow('plain stable')
+    }
   })
-  it('reads a paginated public feed without a token or gh credentials', async () => {
-    const fetchFeed = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => Array.from({ length: 100 }, () => release({ tag_name: 'v0.1.36' })) })
-      .mockResolvedValueOnce({ ok: true, json: async () => [release()] })
-    expect(decideStablePromotion(await publishedReleases(fetchFeed), checkout).stableVersion).toBe('0.1.37')
-    expect(fetchFeed).toHaveBeenCalledTimes(2)
-    expect(fetchFeed.mock.calls[1][0]).toBe('https://api.github.com/repos/millZach/Sotto-releases/releases?per_page=100&page=2')
-    expect(fetchFeed.mock.calls[0][1].headers).not.toHaveProperty('Authorization')
+  it('parses only an optional explicit stable version', () => {
+    expect(stableReleaseArguments([])).toEqual({})
+    expect(stableReleaseArguments(['--version', '0.1.38'])).toEqual({ version: '0.1.38' })
+    for (const args of [['--version'], ['0.1.38'], ['--version', '0.1.38', '--version', '0.1.39']]) expect(() => stableReleaseArguments(args)).toThrow('Usage')
   })
-  it('refuses network and HTTP failures plainly', async () => {
-    await expect(publishedReleases(async () => { throw new Error('secret upstream prose') })).rejects.toThrow('Check your connection')
-    await expect(publishedReleases(async () => ({ ok: false, status: 403 }))).rejects.toThrow('HTTP 403')
+  it('records successful live Git eligibility and invalidates the record after any failed check', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-stable-record-'))
+    const git = args => execFileSync('git', args, { cwd: root, encoding: 'utf8', windowsHide: true }).trim()
+    let fetchSpy
+    try {
+      git(['init']); git(['config', 'user.name', 'Release test']); git(['config', 'user.email', 'release@example.test'])
+      await writeFile(join(root, '.gitignore'), 'release/\n')
+      await writeFile(join(root, 'package.json'), '{"version":"0.1.37"}\n'); git(['add', '.']); git(['commit', '-m', 'Initial'])
+      git(['branch', '-M', 'main']); git(['remote', 'add', 'origin', root]); git(['fetch', 'origin', 'main'])
+      const actualCommit = git(['rev-parse', 'HEAD'])
+      let ci = checks.map(check => ({ ...check, head_sha: actualCommit }))
+      fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async url => ({ ok: true,
+        json: async () => String(url).includes('/check-runs?') ? { check_runs: ci } : [release()],
+      }))
+      const recordPath = join(root, 'release/stable-promotion.json')
+      const record = await checkRelease({ root })
+      expect(JSON.parse(await readFile(recordPath, 'utf8'))).toEqual(record)
+      expect(record).toMatchObject({ sourceCommit: actualCommit, stableVersion: '0.1.38', checkedAt: expect.any(String) })
+      for (const bad of [[], [{ ...ci[0], conclusion: 'failure' }, ci[1]]]) {
+        ci = bad
+        await expect(checkRelease({ root })).rejects.toThrow(/CI check/u)
+        await expect(readFile(recordPath)).rejects.toMatchObject({ code: 'ENOENT' })
+      }
+      ci = checks.map(check => ({ ...check, head_sha: actualCommit }))
+      await expect(checkRelease({ root, version: '0.1.37' })).rejects.toThrow('not newer')
+      await expect(readFile(recordPath)).rejects.toMatchObject({ code: 'ENOENT' })
+      // Source changes while waiting for the public APIs must not earn a record.
+      fetchSpy.mockImplementation(async url => {
+        await writeFile(join(root, 'pending.txt'), 'changed during check')
+        return { ok: true, json: async () => String(url).includes('/check-runs?') ? { check_runs: ci } : [release()] }
+      })
+      await expect(checkRelease({ root })).rejects.toThrow('uncommitted changes')
+      await expect(readFile(recordPath)).rejects.toMatchObject({ code: 'ENOENT' })
+    } finally { fetchSpy?.mockRestore(); await rm(root, { recursive: true, force: true }) }
+  })
+  it('reads paginated public releases and check runs without credentials', async () => {
+    const feed = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => Array.from({ length: 100 }, () => release()) })
+      .mockResolvedValueOnce({ ok: true, json: async () => [] })
+    expect(await publishedReleases(feed)).toHaveLength(100)
+    expect(feed.mock.calls[1][0]).toContain('page=2')
+    const ci = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ check_runs: Array.from({ length: 100 }, () => ({ name: 'unrelated' })) }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ check_runs: checks }) })
+    expect(await publishedCheckRuns(sourceCommit, ci)).toHaveLength(102)
+    expect(ci.mock.calls[1][0]).toBe(`https://api.github.com/repos/millZach/Sotto/commits/${sourceCommit}/check-runs?filter=latest&per_page=100&page=2`)
+    for (const call of [feed.mock.calls[0], ci.mock.calls[0]]) expect(call[1].headers).not.toHaveProperty('Authorization')
+  })
+  it('refuses network, rate limit, HTTP and malformed response failures plainly', async () => {
+    for (const read of [publishedReleases, fetcher => publishedCheckRuns(sourceCommit, fetcher)]) {
+      await expect(read(async () => { throw new Error('secret upstream prose') })).rejects.toThrow('Check your connection')
+      for (const status of [403, 429]) await expect(read(async () => ({ ok: false, status }))).rejects.toThrow('rate limit')
+      await expect(read(async () => ({ ok: false, status: 500 }))).rejects.toThrow('HTTP 500')
+      await expect(read(async () => ({ ok: true, json: async () => { throw new SyntaxError() } }))).rejects.toThrow('unreadable')
+      await expect(read(async () => ({ ok: true, json: async () => ({}) }))).rejects.toThrow('did not return')
+    }
   })
 })
 
 describe('Stable package and Owl publication plans', () => {
-  it('packages the Owl base as stable metadata and names outputs with it on Windows and Mac', () => {
-    expect(stablePackagePlan('win', '0.1.37')).toMatchObject({ installer: 'release/Sotto Setup 0.1.37.exe', target: 'nsis', config: { extraMetadata: { version: '0.1.37' } } })
-    expect(stablePackagePlan('mac', '0.1.37')).toMatchObject({ installer: 'release/Sotto-0.1.37-arm64.dmg', target: 'dmg', config: { extraMetadata: { version: '0.1.37' }, npmRebuild: true } })
+  it('overrides stable metadata and output names on Windows, Mac and Linux', () => {
+    expect(stablePackagePlan('win', '0.1.38')).toMatchObject({ installer: 'release/Sotto Setup 0.1.38.exe', target: 'nsis', config: { extraMetadata: { version: '0.1.38' } } })
+    expect(stablePackagePlan('mac', '0.1.38')).toMatchObject({ installer: 'release/Sotto-0.1.38-arm64.dmg', target: 'dmg', config: { extraMetadata: { version: '0.1.38' }, npmRebuild: true } })
     expect(stablePackagePlan('linux', '0.1.38')).toEqual({ platform: 'linux', target: 'tar.gz', unpacked: 'release/linux-unpacked', installer: 'release/Sotto-0.1.38-linux-x64.tar.gz', config: { extraMetadata: { version: '0.1.38' }, npmRebuild: true } })
-    expect(() => stablePackagePlan('win', '0.1.37-owl.20261011.1')).toThrow('base version')
+    expect(() => stablePackagePlan('win', '0.1.37-owl.20261011.1')).toThrow('plain stable')
   })
-  it('rechecks the source and cleanliness before using the saved promotion', () => {
-    const promotion = decideStablePromotion([release()], checkout)
-    expect(checkedPromotion(promotion, checkout)).toEqual(promotion)
-    expect(() => checkedPromotion(promotion, { ...checkout, clean: false })).toThrow('uncommitted changes')
-    expect(() => checkedPromotion({ ...promotion, stableVersion: '0.1.99' }, checkout)).toThrow('does not match')
+  it('rechecks saved source, version, main membership and CI evidence, refusing old Owl records', () => {
+    expect(checkedPromotion(stableReleaseRecord, checkout)).toEqual(stableReleaseRecord)
+    expect(() => checkedPromotion(stableReleaseRecord, { ...checkout, clean: false })).toThrow('uncommitted changes')
+    expect(() => checkedPromotion(stableReleaseRecord, { ...checkout, onMain: false })).toThrow('not on origin/main')
+    expect(() => checkedPromotion(stableReleaseRecord, { ...checkout, sourceVersion: '0.1.39' })).toThrow('does not match')
+    expect(() => checkedPromotion({ ...stableReleaseRecord, stableVersion: '0.1.99' }, checkout)).toThrow('does not match')
+    expect(() => checkedPromotion({ ...stableReleaseRecord, latestStableVersion: 'garbage' }, checkout)).toThrow('does not match')
+    expect(() => checkedPromotion({ ...stableReleaseRecord, checks: checks.slice(1) }, checkout)).toThrow('is missing')
+    expect(() => checkedPromotion({ owlVersion: '0.1.38-owl.20261013.1', stableVersion: '0.1.38', sourceCommit }, checkout)).toThrow('outdated')
   })
-  it('takes publication source from provenance and includes full source in body and short source in title', () => {
+  it('keeps newest Owl selection and source publication independent of stable eligibility', () => {
+    const owl = release({ tag_name: 'v0.1.37-owl.20261011.1' })
+    expect(newestOwlRelease([release(), owl])).toBe(owl)
     const publication = owlPublication('0.1.37-owl.20261011.1', { sourceCommit }, 'Preview notes')
     expect(publication.title).toBe('Sotto Owl 0.1.37-owl.20261011.1 (aaaaaaaaaaaa)')
     expect(publication.body).toBe(`Preview notes\n\nSource commit: ${sourceCommit}\n`)
     expect(() => owlPublication('0.1.37-owl.20261011.1', {}, 'Preview')).toThrow('full source commit')
     expect(() => owlPublication('0.1.37-owl.20261011.1', { sourceCommit }, `Preview\nSource commit: ${'b'.repeat(40)}`)).toThrow('out of custom notes')
   })
-  it('keeps nonrelease package commands offline and unchanged', async () => {
+  it('keeps nonrelease package commands offline and routes stable commands through fresh checks', async () => {
     const { scripts } = JSON.parse(await readFile(new URL('../../../package.json', import.meta.url), 'utf8'))
-    expect(scripts['package:win']).toBe('npm run release:check && node scripts/package-stable.mjs win')
-    expect(scripts['package:mac']).toBe('npm run release:check && node scripts/package-stable.mjs mac')
-    expect(scripts['package:linux:stable']).toBe('npm run release:check && node scripts/package-stable.mjs linux')
-    for (const name of ['package:dir', 'package:dir:mac', 'package:linux']) {
-      expect(scripts[name]).not.toMatch(/release:check|package-stable/u)
-    }
+    expect(scripts['package:win']).toBe('node scripts/package-stable.mjs win')
+    expect(scripts['package:mac']).toBe('node scripts/package-stable.mjs mac')
+    expect(scripts['package:linux:stable']).toBe('node scripts/package-stable.mjs linux')
+    for (const name of ['package:dir', 'package:dir:mac', 'package:linux']) expect(scripts[name]).not.toMatch(/release:check|package-stable/u)
   })
 })

@@ -49,7 +49,7 @@ interface BuilderConfig {
 
 const packageManifest = JSON.parse(read('package.json')) as PackageManifest
 const builderConfig = parse(read('electron-builder.yml')) as BuilderConfig
-const promotedVersion = '0.1.37'
+const stableVersion = '0.1.38'
 const stablePackager = read('scripts/package-stable.mjs')
 
 const releaseContracts = [
@@ -59,7 +59,7 @@ const releaseContracts = [
     stablePlatform: 'win' as const,
     distributableScript: 'package:win',
     outDir: 'release/win-unpacked',
-    installer: `release/Sotto Setup ${promotedVersion}.exe`,
+    installer: `release/Sotto Setup ${stableVersion}.exe`,
   },
   {
     platform: 'macOS',
@@ -67,7 +67,7 @@ const releaseContracts = [
     stablePlatform: 'mac' as const,
     distributableScript: 'package:mac',
     outDir: 'release/mac-arm64',
-    installer: `release/Sotto-${promotedVersion}-arm64.dmg`,
+    installer: `release/Sotto-${stableVersion}-arm64.dmg`,
   },
   {
     platform: 'Linux',
@@ -90,8 +90,8 @@ describe.each(releaseContracts)(
         expect(command).toContain(`node scripts/verify-packaged-resources.mjs ${outDir}`)
       }
       if (stablePlatform) {
-        expect(packageManifest.scripts[distributableScript]).toBe(`npm run release:check && node scripts/package-stable.mjs ${stablePlatform}`)
-        expect(stablePackagePlan(stablePlatform, promotedVersion).unpacked).toBe(outDir)
+        expect(packageManifest.scripts[distributableScript]).toBe(`node scripts/package-stable.mjs ${stablePlatform}`)
+        expect(stablePackagePlan(stablePlatform, stableVersion).unpacked).toBe(outDir)
         const stages = ["['run', 'assets:verify']", "['run', 'build']", "'scripts/write-build-provenance.mjs'", 'await build(', "'scripts/verify-packaged-resources.mjs'"]
         const positions = stages.map(stage => stablePackager.indexOf(stage))
         expect(positions.every(position => position >= 0)).toBe(true)
@@ -101,7 +101,7 @@ describe.each(releaseContracts)(
 
     it('points the distributable verification at the artifact name electron-builder emits', () => {
       if (stablePlatform) {
-        expect(stablePackagePlan(stablePlatform, promotedVersion).installer).toBe(installer)
+        expect(stablePackagePlan(stablePlatform, stableVersion).installer).toBe(installer)
         expect(stablePackager).toContain("'--installer', resolve(root, plan.installer)")
       } else expect(packageManifest.scripts[distributableScript]).toContain(`--installer "${installer}"`)
     })
@@ -130,8 +130,8 @@ describe('release contract', () => {
     // The speech engine's addon and its per-platform native package load outside ASAR too (ADR-0071).
     expect(builderConfig.asarUnpack).toEqual(expect.arrayContaining(['node_modules/sherpa-onnx-node/**', 'node_modules/sherpa-onnx-*/**']))
     expect(packageManifest.scripts['package:dir:mac']).toContain('--config.npmRebuild=true')
-    expect(stablePackagePlan('mac', promotedVersion).config.npmRebuild).toBe(true)
-    expect(stablePackagePlan('win', promotedVersion).config.npmRebuild).toBeUndefined()
+    expect(stablePackagePlan('mac', stableVersion).config.npmRebuild).toBe(true)
+    expect(stablePackagePlan('win', stableVersion).config.npmRebuild).toBeUndefined()
   })
 
   it('packages only runtime-external dependencies and verifies source and packaged resources', () => {

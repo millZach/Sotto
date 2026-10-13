@@ -1,5 +1,7 @@
 # Watcher gate and Owl promotion, October 10, 2026
 
+The release-source rule recorded here is historical, superseded by ADR-0072's October 13 switch rule. Stable now ships a clean, CI-green main commit without an Owl prerequisite. The checks and results below record what was verified at the time.
+
 Scope: Windows x64 in the `command-center` worktree, starting at `a940ad79f`. Local changes, verification and commits. Stable 0.1.36 was published from `f3e5e2041` while this work was in progress; new examples use 0.1.37. The source manifest stays at this branch's 0.1.35 until the lead merges main.
 
 ## Watcher gate

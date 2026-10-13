@@ -525,3 +525,9 @@ artifacts/linux-release-command/*
 !artifacts/linux-release-command/linux-release-verification.json
 !artifacts/linux-release-command/SHA256SUMS.txt
 !artifacts/linux-release-command/stable-rejection.txt
+
+artifacts/stable-from-main/*
+!artifacts/stable-from-main/owl-features-stable.png
+!artifacts/stable-from-main/release-check.json
+!artifacts/stable-from-main/linux-verification.json
+!artifacts/stable-from-main/SHA256SUMS.txt

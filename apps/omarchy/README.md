@@ -108,7 +108,7 @@ This takes the glyph off the bar, checks that `shell.json` no longer names it, a
 `scripts/verify-omarchy-shell-plugin.sh <out-dir>`, from the checkout's root, checks all of this in an owned, nested copy of the Omarchy shell without touching the running desktop. `docs/verification/omarchy-shell-plugin.md` records a run.
 ## Build and install the package
 
-`PKGBUILD` makes `sotto-bin` for x86_64, using Sotto's own Electron. The first Linux release and AUR publication are pending; the recipe's initial archive checksum belongs to the local verification build. Release owners use `npm run package:linux:stable` followed by `node scripts/release-linux.mjs` on forge from the promoted Owl source. Those commands build and check the tarball and pacman package, then write the updated recipe, `.SRCINFO` and checksum lines into `release/`; they never install or publish. The [release guide](../../docs/release/releasing.md#linux-desktop-package) includes the explicit rehearsal mode.
+`PKGBUILD` makes `sotto-bin` for x86_64, using Sotto's own Electron. The first Linux release and AUR publication are pending; the recipe's initial archive checksum belongs to the local verification build. Release owners use `npm run package:linux:stable` followed by `node scripts/release-linux.mjs` on forge from a clean, CI-green main commit. Those commands build and check the tarball and pacman package, then write the updated recipe, `.SRCINFO` and checksum lines into `release/`; they never install or publish. The [release guide](../../docs/release/releasing.md#linux-desktop-package) includes the explicit rehearsal mode.
 
 To build from the recipe recorded for a published release, run:
 

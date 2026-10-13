@@ -1,5 +1,7 @@
 # Linux stable release command
 
+The release-source rule recorded here is historical, superseded by ADR-0072's October 13 switch rule. Stable now ships a clean, CI-green main commit without an Owl prerequisite. The checks and results below record what was verified at the time.
+
 VERIFIED on forge (Omarchy, x64), October 13, 2026, with Node 24.21.0 and Electron 43.1.0. The complete `0.1.38` rehearsal used clean source commit `02026faccaff42048ebd2cd39e7e5c74f0a77d9e` on `chore/linux-stable-package`, after the external review fixes. These are rehearsal artifacts: **not publishable**. Nothing was installed, uploaded, published or merged.
 
 ## The two commands

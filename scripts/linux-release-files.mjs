@@ -35,12 +35,12 @@ export async function readLinuxPromotion(release, checkout, expected) {
   let saved
   try { saved = JSON.parse(await readFile(join(release, 'stable-promotion.json'), 'utf8')) }
   catch (error) {
-    if (error.code === 'ENOENT' || error instanceof SyntaxError) throw new Error('The checked promotion is missing or unreadable. Run npm run package:linux:stable before finishing the Linux release.', { cause: error })
+    if (error.code === 'ENOENT' || error instanceof SyntaxError) throw new Error('The stable release check is missing or unreadable. Run npm run package:linux:stable before finishing the Linux release.', { cause: error })
     throw error
   }
   const promotion = checkedPromotion(saved, checkout)
   if (expected && JSON.stringify(promotion) !== JSON.stringify(expected)) {
-    throw new Error('The checked promotion changed during the Linux release. Run npm run package:linux:stable again.')
+    throw new Error('The stable release check changed during the Linux release. Run npm run package:linux:stable again.')
   }
   return promotion
 }

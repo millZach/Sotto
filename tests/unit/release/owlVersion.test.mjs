@@ -4,6 +4,7 @@ import { owlBuildArguments, resolveOwlVersion } from '../../../scripts/owl-relea
 
 describe('Owl build version', () => {
   it('uses the next stable patch and an explicit daily number', () => {
+    expect(resolveOwlVersion('0.1.37', '20261013', '1')).toBe('0.1.38-owl.20261013.1')
     expect(resolveOwlVersion('0.1.36', '20261011', '1')).toBe('0.1.37-owl.20261011.1')
     expect(resolveOwlVersion('0.1.36', '20261011', '10')).toBe('0.1.37-owl.20261011.10')
     expect(resolveOwlVersion('1.2.99', '20261012', '2')).toBe('1.2.100-owl.20261012.2')

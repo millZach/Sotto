@@ -1,6 +1,6 @@
 import { stablePackagePlan } from './stable-package.mjs'
 
-export const REHEARSAL_WARNING = 'REHEARSAL ONLY — NOT PUBLISHABLE. Owl promotion was not checked. Do not install, upload or publish these artifacts.'
+export const REHEARSAL_WARNING = 'REHEARSAL ONLY — NOT PUBLISHABLE. Main, CI and stable version were not checked. Do not install, upload or publish these artifacts.'
 
 /** Both Linux commands must choose the same explicit rehearsal version. */
 export function linuxReleaseArguments(args) {

@@ -9,36 +9,34 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { packageHost } from '../../../scripts/package-host.mjs'
 import { packageStableHost } from '../../../scripts/package-stable-host.mjs'
 import { verifyHostArchive, sha256 } from '../../../scripts/verify-host-archive.mjs'
+import { cleanStableCheckout as clean, stableReleaseRecord as promotion } from '../../fixtures/stableReleaseFixture.mjs'
 import { rawPeer } from '../../fixtures/rawHostPeer'
 
 const root = resolve(import.meta.dirname, '../../..')
 const roots = []
-const sourceCommit = 'a'.repeat(40)
-const promotion = { owlVersion: '0.1.37-owl.20261011.1', stableVersion: '0.1.37', sourceCommit }
-const clean = { sourceCommit, clean: true }
 afterEach(async () => { await Promise.all(roots.splice(0).map(directory => rm(directory, { recursive: true, force: true }))) })
 
-describe('promoted stable host', () => {
-  it('packages the checked base version and verifies the checkout before and after, without a feed', async () => {
+describe('stable host from main', () => {
+  it('packages the checked stable version and verifies the checkout before and after, without a feed', async () => {
     const readPromotion = vi.fn(async () => promotion), checkout = vi.fn(() => clean), packageArchive = vi.fn(async () => 'promoted.tar.gz')
     expect(await packageStableHost({ readPromotion, checkout, packageArchive })).toEqual({ archive: 'promoted.tar.gz', promotion })
     expect(readPromotion).toHaveBeenCalledTimes(1)
     expect(checkout).toHaveBeenCalledTimes(2)
-    expect(packageArchive).toHaveBeenCalledExactlyOnceWith({ version: '0.1.37' })
+    expect(packageArchive).toHaveBeenCalledExactlyOnceWith({ version: '0.1.38' })
     expect(checkout.mock.invocationCallOrder[0]).toBeLessThan(packageArchive.mock.invocationCallOrder[0])
     expect(checkout.mock.invocationCallOrder[1]).toBeGreaterThan(packageArchive.mock.invocationCallOrder[0])
   })
 
   it.each([
-    { checkout: { sourceCommit: 'b'.repeat(40), clean: true }, reason: 'Check out' },
-    { checkout: { sourceCommit, clean: false }, reason: 'uncommitted changes' },
-  ])('refuses an unpromoted or dirty checkout before building', async ({ checkout, reason }) => {
+    { checkout: { ...clean, sourceCommit: 'b'.repeat(40) }, reason: 'does not match' },
+    { checkout: { ...clean, clean: false }, reason: 'uncommitted changes' },
+  ])('refuses a different or dirty checkout before building', async ({ checkout, reason }) => {
     const packageArchive = vi.fn()
     await expect(packageStableHost({ readPromotion: async () => promotion, checkout: () => checkout, packageArchive })).rejects.toThrow(reason)
     expect(packageArchive).not.toHaveBeenCalled()
   })
 
-  it('refuses a saved base that disagrees with its Owl version', async () => {
+  it('refuses a saved version that disagrees with its source patch', async () => {
     const packageArchive = vi.fn()
     await expect(packageStableHost({ readPromotion: async () => ({ ...promotion, stableVersion: '0.1.99' }), checkout: () => clean, packageArchive })).rejects.toThrow('does not match')
     expect(packageArchive).not.toHaveBeenCalled()
@@ -52,15 +50,15 @@ describe('promoted stable host', () => {
   it('keeps the offline command and adds the checked release command', async () => {
     const { scripts } = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
     expect(scripts['package:host']).toBe('node scripts/package-host.mjs')
-    expect(scripts['package:host:release']).toBe('npm run release:check && node scripts/package-stable-host.mjs')
+    expect(scripts['package:host:release']).toBe('node scripts/package-stable-host.mjs')
   })
 
-  it('makes real default and promoted archives with matching bundled listener versions, without changing source versions', async () => {
+  it('makes real default and overridden archives with matching bundled listener versions, without changing source versions', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'sotto-promoted-host-')); roots.push(directory)
     const manifestBytes = await readFile(join(root, 'package.json')), lockBytes = await readFile(join(root, 'package-lock.json'))
     const sourceVersion = JSON.parse(manifestBytes.toString('utf8')).version
     const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8', windowsHide: true }).trim()
-    for (const version of [undefined, '0.1.37']) {
+    for (const version of [undefined, '0.1.38']) {
       const expectedVersion = version ?? sourceVersion
       const buildDirectory = join(directory, version ? 'promoted' : 'default')
       const releaseDir = join(buildDirectory, 'release'), unpacked = join(buildDirectory, 'unpacked'), data = join(buildDirectory, 'data')
