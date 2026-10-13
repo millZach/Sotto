@@ -4,22 +4,27 @@ import { readFile, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, resolve } from 'node:path'
 import process from 'node:process'
 import { Arch, build, Platform } from 'electron-builder'
-import { stablePackagePlan, checkedPromotion } from './stable-package.mjs'
+import { stablePackagePlan, checkedPromotion, withStableManifestGuard } from './stable-package.mjs'
 import { releaseCheckout } from './stable-promotion.mjs'
 import { fileSha256 } from './release-provenance.mjs'
 import { linuxReleaseArguments, REHEARSAL_WARNING, requireCleanLinuxCheckout } from './linux-release.mjs'
+import { clearLinuxFinishOutputs } from './linux-release-files.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 const platform = process.argv[2]
 const options = linuxReleaseArguments(process.argv.slice(3))
 if (options.rehearsal && platform !== 'linux') throw new Error('Release rehearsal is available only for Linux.')
+if (platform === 'linux') {
+  if (process.platform !== 'linux' || process.arch !== 'x64') throw new Error('Build the Linux release on x64 forge.')
+  await clearLinuxFinishOutputs(resolve(root, 'release'))
+  await rm(resolve(root, 'release/linux-desktop-package.json'), { force: true })
+}
 if (options.rehearsal) process.stderr.write(`${REHEARSAL_WARNING}\n`)
 const checkout = releaseCheckout(root)
 const promotion = options.rehearsal ? null : checkedPromotion(JSON.parse(await readFile(resolve(root, 'release/stable-promotion.json'), 'utf8')), checkout)
 if (options.rehearsal) requireCleanLinuxCheckout(checkout)
 const version = promotion?.stableVersion ?? options.version
 const plan = stablePackagePlan(platform, version)
-if (platform === 'linux' && (process.platform !== 'linux' || process.arch !== 'x64')) throw new Error('Build the Linux release on x64 forge.')
 const manifestPath = resolve(root, 'package.json')
 const originalManifest = await readFile(manifestPath)
 const originalLock = await readFile(resolve(root, 'package-lock.json'))
@@ -41,8 +46,7 @@ async function verifySourceManifests() {
     throw new Error('The source package manifests changed during packaging.')
   }
 }
-if (platform === 'linux') await rm(receiptPath, { force: true })
-try {
+await withStableManifestGuard(async () => {
   run(npm, ['run', 'assets:verify'])
   run(npm, ['run', 'build'])
   run(resolve(root, 'scripts/write-build-provenance.mjs'))
@@ -54,9 +58,7 @@ try {
   run(resolve(root, 'scripts/verify-packaged-resources.mjs'), [resolve(root, plan.unpacked), '--installer', resolve(root, plan.installer)])
   run(resolve(root, 'scripts/verify-owl-features-package.mjs'), [resolve(root, plan.unpacked), 'stable'])
   recheck()
-} finally {
-  await verifySourceManifests()
-}
+}, verifySourceManifests)
 if (platform === 'linux') {
   const { sha256 } = await fileSha256(resolve(root, plan.installer))
   await writeFile(receiptPath, JSON.stringify({ version, sourceCommit: checkout.sourceCommit, rehearsal: options.rehearsal, tarball: plan.installer, sha256 }, null, 2) + '\n')

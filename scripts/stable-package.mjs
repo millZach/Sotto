@@ -15,3 +15,18 @@ export function stablePackagePlan(platform, version) {
   if (platform === 'linux') return { platform, target: 'tar.gz', unpacked: 'release/linux-unpacked', installer: `release/Sotto-${version}-linux-x64.tar.gz`, config: { extraMetadata: { version }, npmRebuild: true } }
   throw new Error('Stable release packaging supports win, mac or linux.')
 }
+
+/** Always check manifests, retaining both failures when packaging also failed. */
+export async function withStableManifestGuard(packageFiles, verifyManifests) {
+  let result
+  try { result = await packageFiles() }
+  catch (packagingError) {
+    try { await verifyManifests() }
+    catch (manifestError) {
+      throw new AggregateError([packagingError, manifestError], 'Packaging failed and the source package manifests changed.', { cause: manifestError })
+    }
+    throw packagingError
+  }
+  await verifyManifests()
+  return result
+}

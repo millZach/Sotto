@@ -2,27 +2,26 @@
 // Builds and checks artifacts only: never installs, uploads or publishes.
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
 import process from 'node:process'
-import { checkedPromotion } from './stable-package.mjs'
 import { releaseCheckout } from './stable-promotion.mjs'
 import { fileSha256 } from './release-provenance.mjs'
 import { readAsarText } from './asar-entries.mjs'
 import { verifyLinuxArchiveContents } from './verify-linux-tarball.mjs'
 import { checkedLinuxPackage, linuxChecksumLines, linuxPackageSources, linuxReleaseArguments, REHEARSAL_WARNING, rewriteLinuxPkgbuild } from './linux-release.mjs'
+import { clearLinuxFinishOutputs, readLinuxPackageInputs, readLinuxPromotion } from './linux-release-files.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 const release = join(root, 'release')
 const options = linuxReleaseArguments(process.argv.slice(2))
 if (process.platform !== 'linux' || process.arch !== 'x64') throw new Error('Finish the Linux release on x64 forge.')
 if (options.rehearsal) process.stderr.write(`${REHEARSAL_WARNING}\n`)
-const promotion = options.rehearsal ? null : checkedPromotion(JSON.parse(await readFile(join(release, 'stable-promotion.json'), 'utf8')), releaseCheckout(root))
+await clearLinuxFinishOutputs(release)
+const promotion = options.rehearsal ? null : await readLinuxPromotion(release, releaseCheckout(root))
 const version = promotion?.stableVersion ?? options.version
-const receipt = JSON.parse(await readFile(join(release, 'linux-desktop-package.json'), 'utf8'))
 const tarballName = `Sotto-${version}-linux-x64.tar.gz`
-const tarball = join(release, tarballName)
-const archiveHash = await fileSha256(tarball)
+const { receipt, tarball, archiveHash } = await readLinuxPackageInputs(release, version)
 checkedLinuxPackage(receipt, { checkout: releaseCheckout(root), version, rehearsal: options.rehearsal, sha256: archiveHash.sha256 })
 const recipe = await readFile(join(root, 'apps/omarchy/PKGBUILD'), 'utf8')
 const sources = linuxPackageSources(recipe)
@@ -79,18 +78,23 @@ try {
   run(process.execPath, [join(root, 'scripts/with-nested-hyprland.mjs'), join(cache, 'extracted-nested'), process.execPath,
     join(root, 'scripts/verify-linux-package.mjs'), join(app, 'bin/sotto'), join(stage, 'profile'), '--dictation'], { cwd: root })
   // Recheck after the GUI proof; a source edit or replaced tarball cannot become a finished release.
+  if (promotion) await readLinuxPromotion(release, releaseCheckout(root), promotion)
   checkedLinuxPackage(receipt, { checkout: releaseCheckout(root), version, rehearsal: options.rehearsal, sha256: (await fileSha256(tarball)).sha256 })
   const packageHash = await fileSha256(packagePath)
-  await copyFile(packagePath, join(release, packageName))
-  await copyFile(join(stage, 'PKGBUILD'), join(release, 'PKGBUILD'))
-  await copyFile(join(stage, '.SRCINFO'), join(release, '.SRCINFO'))
-  await writeFile(join(release, 'SHA256SUMS.txt'), linuxChecksumLines([
+  await writeFile(join(stage, 'SHA256SUMS.txt'), linuxChecksumLines([
     { name: tarballName, sha256: archiveHash.sha256 }, { name: packageName, sha256: packageHash.sha256 },
   ]))
-  await writeFile(join(release, 'linux-release-verification.json'), JSON.stringify({ version, sourceCommit: receipt.sourceCommit,
+  await writeFile(join(stage, 'linux-release-verification.json'), JSON.stringify({ version, sourceCommit: receipt.sourceCommit,
     rehearsal: options.rehearsal, publishable: !options.rehearsal, packageName, sandbox, required, setup,
     launch: JSON.parse(await readFile(join(stage, 'profile/result.json'), 'utf8')) }, null, 2) + '\n')
+  // The completion record arrives last; failure removes any partially moved bundle.
+  for (const name of [packageName, 'PKGBUILD', '.SRCINFO', 'SHA256SUMS.txt', 'linux-release-verification.json']) {
+    await rename(join(stage, name), join(release, name))
+  }
   process.stdout.write(`${options.rehearsal ? `${REHEARSAL_WARNING}\n` : ''}Linux artifacts checked in release/: ${tarballName}, ${packageName}, PKGBUILD, .SRCINFO and SHA256SUMS.txt.\n`)
+} catch (error) {
+  await clearLinuxFinishOutputs(release)
+  throw error
 } finally {
   await rm(stage, { recursive: true, force: true })
 }
