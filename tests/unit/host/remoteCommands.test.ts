@@ -71,7 +71,7 @@ describe('remote command allow-list', () => {
     expect([...REMOTE_USAGE_OPERATIONS]).toEqual(['usage-read', 'usage-refresh', 'usage-clear'])
     const decided = ['hello', 'shell', 'detail', 'events', 'observe', 'command', 'preview', 'receipt', 'git-refs', 'git-changed-files', 'git-pull-request',
       'stage-attachment', 'attachment-content', 'host-folders', ...REMOTE_SIGN_IN_OPERATIONS,
-      // Numeric Usage reads grant nothing; Clear requires the client's current remote-answer policy (ADR-0075).
+      // Numeric Usage reads grant nothing; Clear requires the client's current remote-answer policy (ADR-0076).
       ...REMOTE_USAGE_OPERATIONS,
       // Explicit native recovery requires answer-check and current remote-answer authority; it sends no answer.
       'check-answer',
