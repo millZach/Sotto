@@ -816,3 +816,80 @@ describe('Watcher threads on a streaming detail (#917)', () => {
     router.dispose()
   })
 })
+
+describe('settings on several computers (ADR-0074)', () => {
+  function twoComputers() {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    router.add(local.connection); router.add(remote.connection); router.select(REMOTE)
+    return { router, local, remote }
+  }
+  it('keeps new-thread defaults on this computer while another host is selected', async () => {
+    const { router, local, remote } = twoComputers()
+    for (const patch of [{ newThreadModelId: 'claude:sonnet' }, { newThreadReasoningEffort: 'high' }, { newThreadRuntimeMode: null }] as const)
+      await router.command({ type: 'configure', patch }, desktopWindowClient())
+    expect(local.command.mock.calls.map(([command]) => command)).toEqual([{ type: 'configure', patch: { newThreadModelId: 'claude:sonnet' } },
+      { type: 'configure', patch: { newThreadReasoningEffort: 'high' } }, { type: 'configure', patch: { newThreadRuntimeMode: null } }])
+    expect(remote.command).not.toHaveBeenCalled()
+    router.dispose()
+  })
+  it('changes the named computer’s own settings without telling it which host it is, and the selected one’s when none is named', async () => {
+    const { router, local, remote } = twoComputers()
+    router.select(LOCAL)
+    await router.command({ type: 'configure', patch: { projectsDirectory: '/srv/projects' }, hostId: REMOTE }, desktopWindowClient())
+    expect(remote.command).toHaveBeenCalledWith({ type: 'configure', patch: { projectsDirectory: '/srv/projects' } }, desktopWindowClient())
+    await router.command({ type: 'configure', patch: { projectsDirectory: 'D:\\Projects' } }, desktopWindowClient())
+    expect(local.command).toHaveBeenCalledWith({ type: 'configure', patch: { projectsDirectory: 'D:\\Projects' } }, desktopWindowClient())
+    await expect(router.command({ type: 'configure', patch: { projectsDirectory: '/x' }, hostId: randomUUID() }, desktopWindowClient()))
+      .rejects.toThrow('This host is not connected. Connect it in Settings > Hosts, then try again. Nothing was changed.')
+    router.dispose()
+  })
+  it('answers a save with its own outcome, not the selected host’s last error', async () => {
+    const { router, remote } = twoComputers()
+    remote.state.error = 'An earlier command on forge failed.'
+    const saved = await router.command({ type: 'configure', patch: { projectsDirectory: 'D:\\Projects' }, hostId: LOCAL }, desktopWindowClient())
+    expect(saved.error).toBeNull()
+    expect((await router.command({ type: 'configure', patch: { newThreadModelId: 'claude:sonnet' } }, desktopWindowClient())).error).toBeNull()
+    remote.command.mockImplementationOnce(async () => ({ ...remote.state, error: 'This action is not allowed from this device.' }))
+    const refused = await router.command({ type: 'configure', patch: { projectsDirectory: '/srv' }, hostId: REMOTE }, desktopWindowClient())
+    expect(refused.error).toMatch(/not allowed/u)
+    router.dispose()
+  })
+  it('resolves the model this computer inherits from its own settings, not the selected host’s', () => {
+    const { router, local, remote } = twoComputers()
+    const models = [{ id: 'codex:gpt', provider: 'Codex', providerId: 'codex' as const, name: 'GPT', ready: true },
+      { id: 'claude:sonnet', provider: 'Claude', providerId: 'claude' as const, name: 'Sonnet', ready: true }]
+    local.state.host.models = models; remote.state.host.models = models
+    Object.assign(local.state.configuration, { provider: 'claude', reasoning: 'none', newThreadModelId: '' })
+    Object.assign(remote.state.configuration, { provider: 'codex', reasoning: 'none', newThreadModelId: '' })
+    expect(router.shell().configuration.newThreadModelId).toBe('claude:sonnet')
+    // With this computer selected, its settings reach the window as saved, and the window resolves the model itself.
+    router.select(LOCAL)
+    expect(router.shell().configuration).toEqual(local.state.configuration)
+    // With no model to offer here, the window is told so, rather than left to infer one from forge's settings.
+    local.state.host.models = []
+    router.select(REMOTE)
+    expect(router.shell().configuration.newThreadModelId).toBe('')
+    router.dispose()
+  })
+  it('sends new-thread defaults to the selected host when this computer runs no local host', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), remote = fixture(REMOTE, 'remote')
+    router.add(remote.connection)
+    await router.command({ type: 'configure', patch: { newThreadModelId: 'claude:sonnet' } }, desktopWindowClient())
+    expect(remote.command).toHaveBeenCalledWith({ type: 'configure', patch: { newThreadModelId: 'claude:sonnet' } }, desktopWindowClient())
+    router.dispose()
+  })
+  it('shows this computer’s new-thread defaults over the selected host’s, and each computer’s folder and answer policy', () => {
+    const { router, local, remote } = twoComputers()
+    Object.assign(local.state.configuration, { projectsDirectory: 'D:\\Projects', newThreadModelId: 'claude:sonnet', newThreadReasoningEffort: 'high', newThreadRuntimeMode: undefined })
+    Object.assign(remote.state.configuration, { projectsDirectory: '/home/zach/projects', newThreadModelId: 'codex:gpt', newThreadReasoningEffort: 'low', newThreadRuntimeMode: 'full-access' })
+    Object.assign(remote.state, { clientCapabilities: { mayAnswer: false } })
+    const state = router.shell()
+    expect(state.configuration).toMatchObject({ projectsDirectory: '/home/zach/projects', newThreadModelId: 'claude:sonnet', newThreadReasoningEffort: 'high' })
+    expect(state.configuration).not.toHaveProperty('newThreadRuntimeMode')
+    expect(state.host.clientHosts?.map(({ hostId, projectsDirectory, mayAnswer }) => ({ hostId, projectsDirectory, mayAnswer }))).toEqual([
+      { hostId: LOCAL, projectsDirectory: 'D:\\Projects', mayAnswer: true }, { hostId: REMOTE, projectsDirectory: '/home/zach/projects', mayAnswer: false }])
+    Object.assign(remote.state, { clientCapabilities: { mayAnswer: true } })
+    expect(router.shell().host.clientHosts?.[1]?.mayAnswer).toBe(true)
+    router.dispose()
+  })
+})

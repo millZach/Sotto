@@ -53,7 +53,7 @@
 .account-row__heading span { display: block; margin-top: 2px; color: var(--tt-text-muted); font-size: 13px; }
 .account-row__control { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; min-width: 0; border: 0; padding: 0; margin: 0; }
 .account-row__note { grid-column: 1 / -1; margin: -4px 0 0; color: var(--tt-text-muted); font-size: 12px; }
-.agent-saved-field > span { color: var(--tt-error); grid-column: 1 / -1; font-size: 13px; }
+.agent-saved-field > [role='alert'] { color: var(--tt-error); grid-column: 1 / -1; font-size: 13px; }
 .help-view { width: min(100%, 800px); margin: 0 auto; padding: 28px 40px 48px; }
 .help-view > h1 { margin: 0 0 24px; font-size: 28px; font-weight: 500; letter-spacing: -.9px; }
 .help-grid { display: flex; flex-direction: column; gap: 42px; }
@@ -129,6 +129,10 @@
 .settings-view .segmented-control button { padding-inline: 10px; }
 .settings-view .settings-input-action:has(> .tt-button) { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
 .settings-view .settings-input-action > .tt-button { justify-self: end; }
+/* A row whose control is a button rather than an input: Linux's compositor bindings, which open their setup steps.
+   Its label is a paragraph, not a label element, so it sheds the paragraph's margins to sit tight on its description. */
+.settings-view .settings-rows .tt-field > .tt-button { grid-area: control; justify-self: end; }
+.settings-view .settings-rows p.tt-field__label { margin: 0; }
 .settings-feedback { flex: none; padding: 16px 6vw 0; }
 .settings-view .settings-notice { width: 100%; max-width: 790px; margin: 0 auto; padding: 10px 14px; border-radius: 8px; font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
 .settings-view .settings-detail:has(.settings-feedback) .settings-scroll { padding-top: 20px; }
@@ -136,6 +140,13 @@
 .settings-view .settings-updates .settings-section__heading { border: 0; padding-bottom: 4px; }
 .settings-view .settings-updates .settings-section__heading h2 { font-size: 20px; letter-spacing: -.4px; }
 .settings-view .settings-updates .settings-section__heading p { font-size: 14px; }
+/* A group of rows under a small heading with its icon (SettingsGroup), as Git and Cloud iPhone group theirs. */
+.settings-view .settings-group { margin-top: 26px; }
+.settings-view .settings-group:first-child { margin-top: 22px; }
+.settings-view .settings-group > h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; color: var(--tt-text-2); font-size: 14px; font-weight: 600; line-height: 1.35; }
+.settings-view .settings-group > h3 > svg { flex: none; color: var(--tt-text-muted); }
+.settings-view .settings-group > .settings-rows { border-top: 1px solid var(--tt-hairline); }
+.settings-view .settings-group__note { margin: 0 0 8px; color: var(--tt-text-muted); font-size: 13px; line-height: 1.45; }
 .settings-view .settings-danger-row { gap: 24px; }
 .settings-view .settings-danger-row h3 { font-size: 15px; }
 .settings-view .settings-danger-row p { font-size: 13px; line-height: 1.5; }
@@ -207,6 +218,7 @@
   [data-platform='linux'] .settings-view .settings-feedback { padding-right: 20px; }
   .settings-view .settings-rows .tt-field, .settings-view .account-rows > label, .settings-view .account-rows > .account-row, .settings-view .provider-default { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'label' 'description' 'control' 'error'; gap: 9px; }
   .settings-view .settings-rows .tt-field > .tt-input, .settings-view .settings-rows .tt-field > .tt-select { grid-area: control; }
+  .settings-view .settings-rows .tt-field > .tt-button { justify-self: start; }
   .settings-view .account-row__control { justify-content: flex-start; }
   .settings-view .providers-list { grid-template-columns: 1fr; }
 }

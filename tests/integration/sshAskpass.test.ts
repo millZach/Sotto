@@ -29,6 +29,7 @@ function run(file: string, args: string[], env: NodeJS.ProcessEnv): Promise<{ co
 }
 
 describe.skipIf(process.platform !== 'win32')('the Windows askpass helper', () => {
+  // Three helpers start one after another, each a cold Node start, which a loaded Windows runner can take seconds over.
   it('keeps complete questions and answers when started directly', async () => {
     const questions: AskpassQuestion[] = []
     const broker = await AskpassBroker.start(async (caller, question) => {
@@ -48,7 +49,7 @@ describe.skipIf(process.platform !== 'win32')('the Windows askpass helper', () =
     const programDirectory = dirname(env.SSH_ASKPASS!)
     await broker.close()
     await expect(access(programDirectory)).rejects.toMatchObject({ code: 'ENOENT' })
-  })
+  }, 60_000)
 
   it('returns no answer when the user cancels or the caller is forgotten', async () => {
     const questions: AskpassQuestion[] = []

@@ -41,6 +41,26 @@ function setup(initial: CloudIphoneStatus = status(), update: (patch: Record<str
 }
 
 describe('Settings > Cloud iPhone', () => {
+  it('groups its rows under run.cloud, Spending and Recent sessions, as Git groups its own', async () => {
+    setup()
+    await screen.findByLabelText('Key')
+    expect(screen.getAllByRole('heading', { level: 3 }).map(heading => heading.textContent)).toEqual(['run.cloud', 'Spending', 'Recent sessions'])
+    expect(screen.getByRole('region', { name: 'run.cloud' })).toHaveAccessibleDescription('Agents test native iOS builds on a run.cloud simulator, and each session asks you first. The build is uploaded to run.cloud, in the EU, and deleted when the session ends.')
+    expect(screen.getByRole('region', { name: 'Spending' })).toHaveAccessibleDescription('About $0.02 a minute; your first $15 each month is free.')
+    for (const label of ['Key', 'Monthly cap', 'Idle sessions end after']) expect(screen.getByLabelText(label).closest('.settings-group')).not.toBeNull()
+  })
+
+  it('says a saved key is saved, with its buttons after the field in reading order', async () => {
+    setup(status({ keySaved: true }))
+    await screen.findByRole('button', { name: 'Replace key' })
+    const input = screen.getByLabelText('Key')
+    expect(input).toHaveAttribute('placeholder', 'Key saved')
+    const order = [input, screen.getByRole('button', { name: 'Remove key' }), screen.getByRole('button', { name: 'Replace key' })]
+    for (let index = 1; index < order.length; index += 1) {
+      expect(order[index - 1]!.compareDocumentPosition(order[index]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    }
+  })
+
   it('saves a key, checked with run.cloud, and shows it saved', async () => {
     const { bridge } = setup()
     const input = await screen.findByLabelText('Key')
@@ -74,6 +94,7 @@ describe('Settings > Cloud iPhone', () => {
     const meter = screen.getByRole('meter', { name: 'Cloud iPhone minutes used this month' })
     expect(meter).toHaveAttribute('aria-valuenow', '38')
     expect(meter).toHaveAttribute('aria-valuemax', '750')
+    expect(meter).toHaveAttribute('aria-valuetext', '38 of 750 minutes')
   })
 
   it('rejects an out-of-range monthly cap without saving', async () => {

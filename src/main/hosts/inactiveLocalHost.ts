@@ -54,7 +54,7 @@ export async function inactiveLocalHost(directory: string): Promise<Awaited<Retu
     get: shell, shell, hostId: () => state.hostId, configuration: () => state.configuration, command: async () => unavailable(),
     threadDetail: () => null, attachmentPreview: unavailable, stageAttachment: async () => unavailable(), attachmentContent: async () => null, gitRefs: async () => unavailable(), gitChangedFiles: async () => unavailable(), gitPullRequest: async () => unavailable(),
     subscribe: unsubscribe, subscribeThreadDetail: unsubscribe, dispose: idle, closed: async () => undefined,
-    privacyChanged: async () => undefined, hasPendingThreadWork: () => false, useSottoRequests: idle,
+    privacyChanged: async () => undefined, hasPendingThreadWork: () => false, watcherObservationsEnabled: () => false, useSottoRequests: idle,
     requestAnswerRecovery: () => ({ uncertainRequestIds: [], completed: [] }), refreshRequestDraft: async () => unavailable(),
   }
   const host = {

@@ -475,7 +475,11 @@ export const agentClientHostSchema = z.object({ hostId: z.uuid(), connected: z.b
   /** The host's client updates and its update line, sent only from a host that offers `client-updates` (ADR-0042). */
   clientUpdates: z.array(providerClientUpdateSchema).max(4).optional(), clientUpdateRun: clientUpdateRunSchema.optional(),
   /** The host lists `pull-request-babysit`: the Pull request surface offers Babysit pull request on its threads (ADR-0061 decision 11). */
-  pullRequestBabysit: z.literal(true).optional() })
+  pullRequestBabysit: z.literal(true).optional(),
+  /** Where a new project goes on this host, in its own format, for Settings → Agents' row per computer (ADR-0074). */
+  projectsDirectory: z.string().max(4_096).optional(),
+  /** Whether this host lets this computer answer, so a permission default that grants applies there (ADR-0074). */
+  mayAnswer: z.boolean().optional() })
 export type AgentClientHost = z.infer<typeof agentClientHostSchema>
 
 export const agentHostSnapshotSchema = z.object({
@@ -856,7 +860,11 @@ export function agentShell(state: AgentState): AgentState {
 }
 export const agentCommandSchema = z.discriminatedUnion('type', [
   // Re-extend defaulted fields: Zod 4 applies defaults through partial(), resetting omitted settings.
-  z.object({ type: z.literal('configure'), patch: agentConfigurationSchema.partial().extend({ provider: providerIdSchema.optional(), reasoningEffort: z.string().max(64).optional(), checkClientUpdates: z.boolean().optional(), newThreadReasoningEffort: z.string().max(64).optional() }) }).strict(),
+  // `newThreadRuntimeMode: null` puts the default back to the provider's own: unlike undefined, JSON carries it to a host.
+  // `hostId` is the desktop window's alone: the connected host whose own settings the patch changes, which the router
+  // reads and never sends on (ADR-0074). Without it a patch goes to the selected host, and new-thread defaults to this computer.
+  z.object({ type: z.literal('configure'), patch: agentConfigurationSchema.partial().extend({ provider: providerIdSchema.optional(), reasoningEffort: z.string().max(64).optional(), checkClientUpdates: z.boolean().optional(), newThreadReasoningEffort: z.string().max(64).optional(),
+    newThreadRuntimeMode: agentRuntimeModeSchema.nullable().optional() }), hostId: z.uuid().optional() }).strict(),
   z.object({ type: z.literal('credential'), slot: z.enum(['reasoning']), value: z.string().max(16_384) }).strict(),
   // Setup and Settings show connection status themselves; this can only suppress the Threads notice.
   z.object({ type: z.literal('connect'), provider: providerIdSchema.optional(), notice: z.literal(false).optional() }).strict(),

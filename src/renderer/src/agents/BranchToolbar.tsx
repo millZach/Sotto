@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import React, { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { Check, ChevronDown, Folder, GitBranch, GitMerge, GitPullRequest, GitPullRequestArrow, GitPullRequestClosed, GitPullRequestDraft, Laptop, Plus, Search, Server } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
 import type { GitPullRequestSummary } from '../../../shared/gitStatus'
@@ -29,6 +29,18 @@ function refsBridge(): ((request: { threadId: string; query?: string; cursor?: n
 export const PR_ICONS: Record<GitPullRequestSummary['state'], typeof GitPullRequest> = { open: GitPullRequest, closed: GitPullRequestClosed, merged: GitMerge }
 
 /**
+ * Where the pull request badge takes a press, and the words its name ends with. On the Threads page it opens the
+ * Pull request surface in Tools, beside the panes. A page with no Tools panel provides its own: Watcher's room takes
+ * the thread to the Threads page, selected, with Tools open on its pull request.
+ */
+export interface PullRequestOpener {
+  readonly open: (threadId: string) => void
+  readonly where: string
+}
+const IN_TOOLS: PullRequestOpener = { open: threadId => toolsPanelStore.showPullRequest(threadId), where: 'in Tools' }
+export const PullRequestOpenerContext = createContext<PullRequestOpener>(IN_TOOLS)
+
+/**
  * T3's branch toolbar, under the composer of a thread whose folder is a Git repository. Run on and Workspace
  * on the left, the pull request badge and the branch picker on the right. Workspace and Run on read as static
  * text once the thread has a message or a session; the picker keeps working for as long as the folder does.
@@ -47,6 +59,7 @@ export function BranchToolbar({ row, state, command, focused = true, onExplained
   const app = useOptionalApp()
   const platform = app?.platform ?? 'win32'
   const hotkey = app?.settings?.hotkey
+  const opener = useContext(PullRequestOpenerContext)
   const [busy, setBusy] = useState<'workspace' | 'branch' | null>(null)
   const [notice, setNotice] = useState<{ readonly text: string; readonly tone: 'error' | 'status' } | null>(null)
   const workspaceTrigger = useRef<HTMLButtonElement>(null)
@@ -138,7 +151,7 @@ export function BranchToolbar({ row, state, command, focused = true, onExplained
         options={options} disabled={busy !== null} onChoose={choice => void chooseWorkspace(choice)} />}
     {/* The badge and the picker wrap as one onto the next line at the 820px minimum, still at the right. */}
     <span className="branch-toolbar__end">
-      {pullRequest ? <PullRequestBadge pullRequest={pullRequest} onOpen={() => toolsPanelStore.showPullRequest(thread.id)} /> : null}
+      {pullRequest ? <PullRequestBadge pullRequest={pullRequest} where={opener.where} onOpen={() => opener.open(thread.id)} /> : null}
       <BranchPicker threadId={thread.id} triggerRef={branchTrigger} open={branchOpen} onOpenChange={setBranchOpen} label={branchLabel(thread)} busy={busy === 'branch'} disabled={busy !== null}
         draftWorktree={draftWorktree} startFromOrigin={thread.worktree?.startFromOrigin !== false}
         onPick={pick} onCreate={create} onCopy={copyName} onStartFromOrigin={value => void setStartFromOrigin(value)} onCheckoutPullRequest={reference => setCheckout(reference)} />
@@ -157,12 +170,15 @@ function LabelPill({ icon: Icon, label, value, title }: { readonly icon: typeof 
   return <span className="branch-toolbar__static" title={title}><Icon size={13} aria-hidden="true" /><span className="tt-visually-hidden">{label} </span><span>{value}</span></span>
 }
 
-/** The badge: the pull request's state as an icon and its number, its title in the tooltip, and a press that opens the Pull request surface in Tools. */
-function PullRequestBadge({ pullRequest, onOpen }: { readonly pullRequest: GitPullRequestSummary; readonly onOpen: () => void }): ReactNode {
+/**
+ * The badge: the pull request's state as an icon and its number, its title in the tooltip, and a press that opens the
+ * Pull request surface in Tools, on this page or, where `where` says so, on the Threads page.
+ */
+function PullRequestBadge({ pullRequest, where, onOpen }: { readonly pullRequest: GitPullRequestSummary; readonly where: string; readonly onOpen: () => void }): ReactNode {
   const Icon = pullRequest.draft && pullRequest.state === 'open' ? GitPullRequestDraft : PR_ICONS[pullRequest.state]
   const title = pullRequestTitle(pullRequest)
   return <button type="button" className="branch-toolbar__pr tt-focusable" data-state={pullRequest.draft && pullRequest.state === 'open' ? 'draft' : pullRequest.state}
-    title={title} aria-label={`Open ${title} in Tools`} onClick={onOpen}>
+    title={title} aria-label={`Open ${title} ${where}`} onClick={onOpen}>
     <Icon size={13} aria-hidden="true" /><span>#{pullRequest.number}</span>
   </button>
 }

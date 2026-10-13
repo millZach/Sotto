@@ -1637,8 +1637,8 @@ private struct FollowupStack: View {
     }
 }
 
-/// One queued message: where it stands, its words on one line, and what can be done with it. Steer now sends it into
-/// the running turn instead of after it, where the provider takes that; Remove takes it out unsent. Neither answers
+/// One queued message: where it stands, its words on one line, and what can be done with it. Steer now sends it at once
+/// instead of after the running turn, where the provider takes that; Remove takes it out unsent. Neither answers
 /// anything for the user, and neither is sent again on its own.
 private struct FollowupCard: View {
     @EnvironmentObject var model: AppModel
@@ -1670,7 +1670,7 @@ private struct FollowupCard: View {
                         }
                         .buttonStyle(PillButtonStyle(kind: .primary))
                         .disabled(!model.canSteer(item, in: ref))
-                        .accessibilityHint("Sends this message into the running turn instead of after it.")
+                        .accessibilityHint("Sends this message now instead of after the turn.")
                     }
                     if removable {
                         Button("Remove") { Task { await model.removeFollowup(item, in: ref) } }
@@ -1719,6 +1719,9 @@ private struct FollowupCard: View {
 /// card in Watcher's page (4B), where the answer is still the user's own, to the thread that asked.
 struct RequestSheet: View {
     @EnvironmentObject var model: AppModel
+    /// Watched so the agent's message, and the links the sheet lifts from it, show when the thread's history arrives
+    /// after the sheet opens: the history publishes on its own store, not on the model.
+    @EnvironmentObject var detailStore: DetailStore
     @Environment(\.dismiss) var dismiss
     let place: RequestPlace
     let request: AgentRequest
@@ -1784,10 +1787,10 @@ struct RequestSheet: View {
             Text(explanation).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true).padding(.top, Space.s3)
         }
-        // Every link in a question, together above its choices. Opening one answers nothing, so it shows on an iPhone
-        // that can't answer too.
+        // Every link in a question, and in the agent's message the sheet covers, together above its choices. Opening one
+        // answers nothing, so it shows on an iPhone that can't answer too.
         if !permission {
-            let links = WebLinks.find(in: current)
+            let links = WebLinks.find(in: current, after: model.shown(for: ref)?.messages ?? [])
             if !links.isEmpty { LinkRows(links: links).padding(.top, Space.s4) }
         }
         if let context = current.context {

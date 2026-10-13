@@ -16,6 +16,8 @@ const special = [
   { id: 'watcher-current', kind: 'watcher' as const, title: 'Saved Watcher' },
   { id: 'watcher-earlier', kind: 'watcher-history' as const, title: 'Saved Watcher history' },
 ]
+/** On Owl the current Watcher lives in Watcher's room, not in the Threads list; its history stays listed. Stable lists neither. */
+const listed = (track: 'stable' | 'owl', thread: typeof special[number]): number => track === 'owl' && thread.kind === 'watcher-history' ? 1 : 0
 
 async function settle(page: Page): Promise<void> {
   await page.mouse.move(0, 0)
@@ -56,7 +58,7 @@ test.describe('Watcher follows the running release track', () => {
         if (track === 'owl') expect(await page.evaluate(() => window.sotto!.watcher!.get())).toMatchObject({ status: 'ok', state: { current: null } })
         const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
         await expect(sidebar.getByRole('button', { name: 'Workshop', exact: true })).toBeVisible()
-        for (const thread of special) await expect(sidebar.getByRole('button', { name: thread.title, exact: true })).toHaveCount(track === 'owl' ? 1 : 0)
+        for (const thread of special) await expect(sidebar.getByRole('button', { name: thread.title, exact: true })).toHaveCount(listed(track, thread))
         if (track === 'stable') {
           await expect(page.getByLabel('Thread transcript')).toHaveCount(0)
           await sidebar.getByRole('searchbox').fill('Saved Watcher')
@@ -76,8 +78,8 @@ test.describe('Watcher follows the running release track', () => {
           }, special.map(thread => thread.id))
           expect(outcomes.every(result => !result.visible && result.refusal?.includes('Sotto Owl'))).toBe(true)
         }
-        // The branch has no separate Watcher room or capacity control yet. Preserve its ordinary page switch.
-        await expect(page.getByRole('tab', { name: 'Watcher', exact: true })).toHaveCount(0)
+        // Owl's switch is Dictate | Watcher | Threads; stable keeps Dictate | Threads.
+        await expect(page.getByRole('tab', { name: 'Watcher', exact: true })).toHaveCount(track === 'owl' ? 1 : 0)
         await sidebar.getByRole('button', { name: 'Workshop', exact: true }).click()
         await expect(page.getByRole('region', { name: 'Workshop', exact: true })).toBeVisible()
         const workshopId = await page.evaluate(async () => (await window.sotto!.agents!.get()).activeThreadId!)
@@ -91,10 +93,11 @@ test.describe('Watcher follows the running release track', () => {
           await page.evaluate(async appearance => { await window.sotto!.updateSettings({ appearance }) }, appearance)
           await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
           for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
+            // Leave native frame and scaling space below the exact content size we capture.
             await resizeContentWindow(launched, width, height, [800, 540])
             await settle(page)
             expect(await pageBoundProblems(page)).toEqual([])
-            for (const thread of special) await expect(sidebar.getByRole('button', { name: thread.title, exact: true })).toHaveCount(track === 'owl' ? 1 : 0)
+            for (const thread of special) await expect(sidebar.getByRole('button', { name: thread.title, exact: true })).toHaveCount(listed(track, thread))
             await mkdir(evidence, { recursive: true })
             await page.screenshot({ path: join(evidence, `${track}-${appearance}-${width}x${height}.png`), animations: 'disabled' })
           }
@@ -150,7 +153,7 @@ test.describe('Watcher follows the running release track', () => {
             await expect(restored).toHaveCount(1)
             for (const thread of special) {
               await expect(launched.page.getByRole('region', { name: thread.title, exact: true })).toHaveCount(0)
-              await expect(launched.page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: thread.title, exact: true })).toBeVisible()
+              await expect(launched.page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: thread.title, exact: true })).toHaveCount(listed('owl', thread))
             }
             await expect(launched.page.getByRole('region', { name: paneIds.otherTitle, exact: true })).toHaveCount(0)
           })
