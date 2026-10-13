@@ -45,10 +45,9 @@ async function nativeZoomKey(launched: LaunchedSotto, key: string, shift = false
 async function clientNotice(launched: LaunchedSotto, ready = false) {
   const state = await launched.page.evaluate(() => window.sotto!.agents!.get())
   delete state.clientUpdatesDismissedAt
-  const providers = ready ? [{ id: 'codex', name: 'Codex', version: '0.162.1', connection: 'connected', capabilities: state.host.capabilities }] : state.host.providers
-  const broadcast = { ...state, ...(ready ? { connections: undefined } : {}),
-    host: { ...state.host, providers, models: { revision: 0, models: state.host.models },
-      clientHosts: state.host.clientHosts?.map(host => ({ ...host, providers: ready ? providers : host.providers, models: { revision: 0, models: host.models } })) },
+  const broadcast = { ...state,
+    host: { ...state.host, models: { revision: 0, models: state.host.models },
+      clientHosts: state.host.clientHosts?.map(host => ({ ...host, models: { revision: 0, models: host.models } })) },
     clientUpdates: [{ id: 'grok', installed: '1.0.50', published: '1.0.52', behind: true, channel: 'npm',
       command: 'npm install -g @xai-official/grok@latest', canInstall: true, checkedAt: new Date().toISOString(), state: 'idle' }],
   }

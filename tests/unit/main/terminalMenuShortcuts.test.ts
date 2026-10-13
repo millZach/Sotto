@@ -2,9 +2,9 @@
 import { expect, it } from 'vitest'
 import { terminalTakesMenuShortcut } from '../../../src/main/terminals/menuShortcuts'
 
-it.each(['win32', 'darwin', 'linux'] as const)('yields Plus accelerators only to the focused terminal on %s', platform => {
+it.each(['win32', 'linux'] as const)('yields Plus accelerators only to the focused terminal on %s', platform => {
   for (const [key, shift] of [['+', true], ['=', true], ['+', false]] as const) {
-    const input = { key, shift, control: platform !== 'darwin', meta: platform === 'darwin', alt: false }
+    const input = { key, shift, control: true, meta: false, alt: false }
     expect(terminalTakesMenuShortcut(input, true, platform)).toBe(true)
     expect(terminalTakesMenuShortcut(input, false, platform)).toBe(false)
     expect(terminalTakesMenuShortcut({ ...input, alt: true }, true, platform)).toBe(false)
@@ -17,7 +17,13 @@ it.each(['win32', 'darwin', 'linux'] as const)('yields native zoom only in a foc
     expect(terminalTakesMenuShortcut({ ...input, key }, true, platform)).toBe(true)
     expect(terminalTakesMenuShortcut({ ...input, key }, false, platform)).toBe(false)
     expect(terminalTakesMenuShortcut({ ...input, key, alt: true }, true, platform)).toBe(false)
-    expect(terminalTakesMenuShortcut({ ...input, key, shift: true }, true, platform)).toBe(key === '=')
+    expect(terminalTakesMenuShortcut({ ...input, key, shift: true }, true, platform)).toBe(platform !== 'darwin' && key === '=')
   }
   for (const key of ['c', 'v', 'a', 'f', 'j', 'k', 'Tab']) expect(terminalTakesMenuShortcut({ ...input, key }, true, platform)).toBe(false)
+})
+
+it('preserves macOS menu matching for Plus and shifted Equals', () => {
+  for (const [key, shift] of [['+', false], ['+', true], ['=', true]] as const) {
+    expect(terminalTakesMenuShortcut({ key, shift, control: false, meta: true, alt: false }, true, 'darwin')).toBe(false)
+  }
 })

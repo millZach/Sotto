@@ -48,16 +48,17 @@ export async function zoomTerminal(action: 'larger' | 'smaller' | 'reset'): Prom
 /** Only the focused terminal takes these chords, and a configured dictation chord always wins. */
 export function terminalShortcut(event: KeyboardEvent, platform: SottoPlatform): 'search' | 'larger' | 'smaller' | 'reset' | null {
   if (event.isComposing || event.defaultPrevented) return null
+  const configuredHotkey = platform === 'darwin' ? confirmed.hotkey : confirmed.hotkey.replace(/\+\s*plus\s*$/iu, '+=')
   // Plus is Shift+Equals on most keyboards; keypad Plus has no Shift.
-  if (event.key === '+' || event.key === '=' && event.shiftKey && event.code === 'Equal') {
+  if (platform !== 'darwin' && (event.key === '+' || event.key === '=' && event.shiftKey && event.code === 'Equal')) {
     const chord = event.shiftKey ? 'mod+shift+=' : 'mod+='
-    const hotkey = event.code === 'NumpadAdd' ? confirmed.hotkey.replace(/\+\s*numadd\s*$/iu, '+=') : confirmed.hotkey
+    const hotkey = event.code === 'NumpadAdd' ? configuredHotkey.replace(/\+\s*numadd\s*$/iu, '+=') : configuredHotkey
     if (chordClaimed(chord, hotkey, platform) && chordMatches({ key: '=', ctrlKey: event.ctrlKey, metaKey: event.metaKey, altKey: event.altKey, shiftKey: event.shiftKey }, chord, platform)) return 'larger'
     return null
   }
   // Electron names keypad accelerators differently from the DOM key; compare the actual keypad press.
-  const hotkey = event.code === 'NumpadSubtract' ? confirmed.hotkey.replace(/\+\s*numsub\s*$/iu, '+-')
-    : event.code === 'Numpad0' ? confirmed.hotkey.replace(/\+\s*num0\s*$/iu, '+0') : confirmed.hotkey
+  const hotkey = event.code === 'NumpadSubtract' ? configuredHotkey.replace(/\+\s*numsub\s*$/iu, '+-')
+    : event.code === 'Numpad0' ? configuredHotkey.replace(/\+\s*num0\s*$/iu, '+0') : configuredHotkey
   for (const [chord, action] of [['mod+f', 'search'], ['mod+=', 'larger'], ['mod+-', 'smaller'], ['mod+0', 'reset']] as const) {
     if (chordClaimed(chord, hotkey, platform) && chordMatches(event, chord, platform)) return action
   }
