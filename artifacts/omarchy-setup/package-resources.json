@@ -1,12 +1,15 @@
 {
-  "timestamp": "2026-10-13T03:36:03.581Z",
-  "tarballSha256": "f8c14ad6366b526cdce98cdae47508aa38ed9cfb4a55f329156eec3050950ce7",
-  "packageSha256": "88b41741a9e78eae4a16406effbdfba46afc2ea8d1d2823a84400441a5898dc9",
+  "timestamp": "2026-10-13T05:40:48.404493+00:00",
+  "sourceCommit": "1f1166d8b68c85fe865061c2d5b42b90b235ebf0",
+  "tarballSha256": "b05b066ae238b50a8ab62c4e07d6d333a8faac99a43d1a02b3e617bba6ca8848",
+  "packageSha256": "d4ebe48b48f411d5ed4ec0ecb78c254c184143863bf39a7599e1bbd24a270dfd",
   "checks": [
     "opt/sotto/resources/omarchy/bindings.lua",
     "usr/share/sotto/bindings.lua",
-    "opt/sotto/resources/omarchy/sotto.json.tpl",
-    "usr/share/sotto/sotto.json.tpl",
+    "opt/sotto/resources/omarchy/install-shell-plugin.sh",
+    "usr/share/sotto/install-shell-plugin.sh",
+    "opt/sotto/resources/omarchy/install-theme.sh",
+    "usr/share/sotto/install-theme.sh",
     "opt/sotto/resources/omarchy/shell-plugin/sotto.dictation/BarWidget.qml",
     "usr/share/sotto/shell-plugin/sotto.dictation/BarWidget.qml",
     "opt/sotto/resources/omarchy/shell-plugin/sotto.dictation/CommandAvailable.qml",
@@ -28,8 +31,11 @@
     "opt/sotto/resources/omarchy/shell-plugin/sotto.dictation/Service.qml",
     "usr/share/sotto/shell-plugin/sotto.dictation/Service.qml",
     "opt/sotto/resources/omarchy/shell-plugin/sotto.dictation/manifest.json",
-    "usr/share/sotto/shell-plugin/sotto.dictation/manifest.json"
+    "usr/share/sotto/shell-plugin/sotto.dictation/manifest.json",
+    "opt/sotto/resources/omarchy/sotto.json.tpl",
+    "usr/share/sotto/sotto.json.tpl"
   ],
+  "chromeSandbox": "-rwsr-xr-x  0 root   root    15232 Oct 12 22:40 opt/sotto/chrome-sandbox",
   "externalDependencyAllowlist": "passed",
   "installed": false
 }
