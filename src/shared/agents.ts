@@ -244,7 +244,7 @@ export const agentMessageSchema = z.object({
  * What the sidebar reads about a thread's history without holding that history. The shell stream
  * carries it in place of `messages`; a thread whose messages are present derives the same facts.
  */
-const AGENT_THREAD_EXCERPT_MAX = 2_000
+export const AGENT_THREAD_EXCERPT_MAX = 2_000
 const excerpt = z.string().max(AGENT_THREAD_EXCERPT_MAX)
 const threadExcerptSchema = z.object({ id, text: excerpt, createdAt: z.string() }).strict()
 const agentThreadSummarySchema = z.object({

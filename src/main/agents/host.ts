@@ -142,6 +142,12 @@ export interface ThreadHistorySource {
   hasActivities?(threadId: string, historyEpoch?: string): boolean
   /** Indexed text-free classification for a native task older than the activity window. */
   activity?(threadId: string, activityId: string, historyEpoch?: string): AgentActivity | undefined
+  /**
+   * Commit every event still waiting for this thread and say whether the store now holds them all.
+   * An adapter saves no provider transcript cursor past text this has not committed, so a crash
+   * cannot leave a saved cursor ahead of the history it stands for (ADR-0016).
+   */
+  flushEvents?(threadId: string): boolean
 }
 /**
  * What a thread whose native session has not started will be created with on its first send, for an early start of

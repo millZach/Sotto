@@ -2,9 +2,10 @@
 import { randomUUID } from 'node:crypto'
 import { appendFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { claudeFixture } from '../fixtures/claudeFixture'
 import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
+import { ThreadStore } from '../../src/main/agents/threadStore'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
 
 // A thread's Claude transcript used to be read from its first byte on every connect. Each authored entry
@@ -72,6 +73,42 @@ describe('Claude transcript catch-up', () => {
     const after = (await f.host.snapshot()).threads.find(thread => thread.id === id)!.messages
     expect(after.map(message => message.text)).toEqual([...before.map(message => message.text), 'Typed in Claude after the restart'])
     expect(after.some(message => message.text.includes('TAMPERED'))).toBe(false)
+  })
+
+  it('saves no transcript cursor past words the event store has not committed (#991)', async () => {
+    const registry = new ThreadRegistry(join(f.root, 'identity'))
+    await registry.load()
+    const sottoId = randomUUID()
+    registry.reserve(sottoId, 'claude', id, f.projectId)
+    await registry.flush()
+    const workspace = new WorkspaceHost(new SottoThreadHost('claude', f.host, registry), join(f.root, 'workspace'))
+    await workspace.connect()
+    try {
+      const failing = vi.spyOn(ThreadStore.prototype, 'appendBatches')
+        .mockImplementation(() => { throw new Error('Synthetic unavailable storage') })
+      const session = await f.realId(id)
+      const folder = join(f.root, 'home', 'projects', f.root.replace(/[^a-zA-Z0-9]/gu, '-'))
+      await mkdir(folder, { recursive: true })
+      const path = join(folder, `${session}.jsonl`)
+      await appendFile(path, `${JSON.stringify({ type: 'user', uuid: randomUUID(), sessionId: session, timestamp: new Date().toISOString(), message: { role: 'user', content: 'Words the store could not take' } })}\n`)
+      await f.adapter.pollSessionLogs()
+      expect((await f.host.snapshot()).threads.find(thread => thread.id === id)!.messages.at(-1)?.text).toBe('Words the store could not take')
+
+      f.adapter.disconnect(); await f.adapter.closed()
+      const heldBack = JSON.parse(await readFile(join(f.root, 'claude-threads.json'), 'utf8'))[id]
+      expect(heldBack.transcriptCursor).toBeUndefined()
+
+      failing.mockRestore()
+      await f.host.connect()
+      await expect.poll(() => workspace.flushEvents(sottoId), { timeout: 10_000 }).toBe(true)
+      f.adapter.disconnect(); await f.adapter.closed()
+      const saved = JSON.parse(await readFile(join(f.root, 'claude-threads.json'), 'utf8'))[id]
+      expect(saved.transcriptCursor.offset).toBe((await readFile(path)).byteLength)
+      expect(workspace.threadMessages(sottoId).map(message => message.text)).toContain('Words the store could not take')
+    } finally {
+      vi.restoreAllMocks()
+      workspace.dispose()
+    }
   })
 
   it.each(['same-process', 'legacy', 'event-store'] as const)('retains task classification behind the transcript cursor across %s reconnect', async mode => {

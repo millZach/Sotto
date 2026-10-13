@@ -50,7 +50,7 @@ async function fixture(history: () => boolean = () => true, initialize = true) {
   return { directory, adapter, host }
 }
 function failWrites() {
-  return vi.spyOn(ThreadStore.prototype, 'appendMany').mockImplementation(() => { throw new Error('Synthetic unavailable storage') })
+  return vi.spyOn(ThreadStore.prototype, 'appendBatches').mockImplementation(() => { throw new Error('Synthetic unavailable storage') })
 }
 
 it('withholds identity repair evidence while newer words are waiting to be saved', async () => {
@@ -146,13 +146,16 @@ it('never writes retained failures to disk after history is turned off or back o
 it('keeps normal streaming coalesced and commits each event exactly once', async () => {
   const { adapter, host } = await fixture()
   vi.useFakeTimers()
-  const append = vi.spyOn(ThreadStore.prototype, 'appendMany')
+  const append = vi.spyOn(ThreadStore.prototype, 'appendBatches')
   const unsubscribe = host.subscribe(() => undefined)
   adapter.publish(added())
   for (let i = 0; i < 600; i++) adapter.publish(appended('x'))
   await vi.advanceTimersByTimeAsync(16)
   expect(append.mock.calls.length).toBeLessThanOrEqual(2)
-  expect(host.eventsAfter(0, undefined, 1_000)).toHaveLength(601)
+  // The 600 appends of one reply commit as one folded append, their text whole (#991).
+  const stored = host.eventsAfter(0, undefined, 1_000)
+  expect(stored.map(row => row.event.kind)).toEqual(['message-added', 'message-text-appended'])
+  expect(stored[1]?.event).toMatchObject({ appendText: 'x'.repeat(600) })
   expect(host.threadMessages('session-workshop')[0]?.text).toBe('First chunk' + 'x'.repeat(600))
   unsubscribe()
 })
@@ -160,10 +163,12 @@ it('keeps normal streaming coalesced and commits each event exactly once', async
 it('keeps a failed thread warning while another thread commits, then restores reset order', async () => {
   const { adapter, host } = await fixture()
   vi.useFakeTimers()
-  const original = ThreadStore.prototype.appendMany
-  const append = vi.spyOn(ThreadStore.prototype, 'appendMany').mockImplementation(function (this: ThreadStore, threadId, events) {
-    if (threadId === 'session-workshop') throw new Error('Synthetic failure for one thread')
-    return original.call(this, threadId, events)
+  const original = ThreadStore.prototype.appendBatches
+  const append = vi.spyOn(ThreadStore.prototype, 'appendBatches').mockImplementation(function (this: ThreadStore, batches) {
+    const rest = new Map([...batches].filter(([threadId]) => threadId !== 'session-workshop'))
+    const result = original.call(this, rest)
+    if (batches.has('session-workshop')) result.failed.add('session-workshop')
+    return result
   })
   adapter.publish(added())
   host.workspaceSnapshot()

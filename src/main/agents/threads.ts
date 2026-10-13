@@ -271,6 +271,10 @@ export class SottoThreadHost implements AgentHost {
         const binding = this.registry.bySession(this.provider, sessionId)
         return binding ? source.hasActivities?.(binding.threadId, historyEpoch) === true : false
       } } : {}),
+      ...(source.flushEvents ? { flushEvents: (sessionId: string) => {
+        const binding = this.registry.bySession(this.provider, sessionId)
+        return binding ? source.flushEvents?.(binding.threadId) === true : true
+      } } : {}),
     })
   }
 
