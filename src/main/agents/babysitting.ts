@@ -1,12 +1,14 @@
 import { homedir } from 'node:os'
 import { z } from 'zod'
 import { BABYSITTING_PER_THREAD_MAX, type AgentBabysitting, type BabysitStarter } from '../../shared/babysitting'
-import { isRateLimitAnswer, refusalReading, type GitHubRateLimit, type GitHubRateLimitReading } from './github'
-import { DETAIL_QUERY, FINGERPRINT_PER_QUERY, fingerprintQuery, readDetail, readFingerprint, pullRequestObservation, type DetailAnswer, type PullRequestFingerprint } from './githubBabysitReads'
+import { isRateLimitAnswer, isSignInRefusal, isUnreachableAnswer, refusalReading, type GitHubRateLimit, type GitHubRateLimitReading } from './github'
+import { DETAIL_QUERY, FINGERPRINT_PER_QUERY, REMARK_WORDS_PER_QUERY, fingerprintQuery, readDetail, readFingerprint, readRemarkWords, remarkWordsQuery, pullRequestObservation,
+  type BabysitRemark, type DetailAnswer, type PullRequestFingerprint } from './githubBabysitReads'
 import type { PullRequestObservation } from './watcherEvidence'
 import { pullRequestAddress, pullRequestKey } from '../../shared/gitPullRequests'
 import { runGitStatusCommand, type RunGitCommand } from './gitStatus'
-import { FAILED_READ_LIMIT, findNews, printable, publishedBabysitting, toldAtStart, type BabysitEnding, type BabysitNews, type BabysitRecord, type BabysitTold } from './babysitNews'
+import { FAILED_READ_LIMIT, couldNotRunNotice, findNews, printable, publishedBabysitting, stillCurrent, toldAtStart,
+  type BabysitEnding, type BabysitNews, type BabysitRecord, type BabysitTold, type BabysitUnreadable } from './babysitNews'
 
 /**
  * Babysitting on the thread's host (ADR-0061): the reader that finds, every two minutes, what changed on each pull
@@ -16,7 +18,8 @@ import { FAILED_READ_LIMIT, findNews, printable, publishedBabysitting, toldAtSta
  * - One fingerprint query per repository, 25 pull requests to a query at one point, whatever number of threads babysit
  *   each; checks are read only when the status moved or a check is still running, and remarks only when they moved, or
  *   every 30 minutes for a pull request with review threads, whose edits the fingerprint cannot see (decision 13).
- * - Every read is a background read under #820's reserve and pause. A paused or refused pass is skipped and is not a failure.
+ * - Every read is a background read under #820's reserve and pause. A paused or refused pass is skipped and is not a
+ *   failure, and neither is one gh could not get through at all: this computer offline or asleep says nothing of GitHub.
  * - What each thread was last told is on its record in the host's `workspace.json` (`BabysitStore`), recorded only once
  *   the news is handed over, so a crash between the two reports the news twice rather than never (decision 8).
  */
@@ -40,7 +43,7 @@ export type BabysitStopReason = 'agent' | 'user' | 'switch'
 /** Why babysitting a pull request ended, as its log says. */
 export type BabysitEndReason = BabysitEnding | 'stopped-by-agent' | 'stopped-by-user' | 'switched-off' | 'settled' | 'archived' | 'unlinked' | 'forgotten'
 /** Stable event names only (decision 16): never a title, a link, a number, a login, a check's name or any text. */
-export type BabysitEvent = 'babysit-started' | `babysit-ended-${BabysitEndReason}` | 'babysit-read-failed' | 'babysit-rate-limited'
+export type BabysitEvent = 'babysit-started' | `babysit-ended-${BabysitEndReason}` | 'babysit-read-failed' | 'babysit-rate-limited' | 'babysit-unreachable'
 const STOPPED: Readonly<Record<BabysitStopReason, BabysitEndReason>> = { agent: 'stopped-by-agent', user: 'stopped-by-user', switch: 'switched-off' }
 
 /** One thread as babysitting sees it. */
@@ -125,6 +128,8 @@ interface Group { readonly key: string; readonly owner: string; readonly name: s
 /** What the last successful read of a pull request saw, kept in memory: after a restart each is read whole once. */
 interface LastRead {
   readonly observation?: PullRequestObservation
+  /** The head commit this read saw, before any thread's record of it: news a wake-up holds about another is stale. */
+  readonly head: string | null
   /** The fingerprint's status its checks were read against; empty when the checks still need reading. */
   readonly status: string
   /** The fingerprint's remarks the remarks were read against; empty when they still need reading. */
@@ -140,6 +145,15 @@ interface LastRead {
 const recordKey = (threadId: string, record: BabysitRecord): string => `${threadId}\0${pullRequestKey(record.url) ?? record.url}\0${record.startedAt}`
 const sameRecord = (left: BabysitRecord, right: BabysitRecord): boolean => left.startedAt === right.startedAt && pullRequestKey(left.url) === pullRequestKey(right.url)
 const sameTold = (left: BabysitTold, right: BabysitTold): boolean => JSON.stringify(left) === JSON.stringify(right)
+
+/** A read GitHub answered with a failure, by what it answered: the sign-in refused, or anything else. */
+type Failed = 'failed-sign-in' | 'failed'
+const isFailed = (answer: unknown): answer is Failed => answer === 'failed-sign-in' || answer === 'failed'
+const failureOf = (message: string): Failed => isSignInRefusal(message) ? 'failed-sign-in' : 'failed'
+/** What a failed read says of GitHub for the last wake-up: the sign-in, or an answer that made no sense. A detail read naming no pull request is told apart by the reader. */
+const unreadableOf = (failed: Failed): BabysitUnreadable => failed === 'failed-sign-in' ? 'sign-in' : 'answer'
+/** Bot remarks whose words were read, by remark and edit, kept for as many remarks as one detail read can return. */
+const NOTICES_KEPT = 2_000
 
 /** What gh printed before it failed, read as an answer when it is one; null otherwise. */
 function partialAnswer<T>(error: unknown, read: (text: string) => T): T | null {
@@ -159,6 +173,10 @@ export class Babysitter {
   private closed = false
   /** Whether this pass already logged a rate limit, so a paused pass logs it once. */
   private limitLogged = false
+  /** Whether this pass already logged that gh could not reach GitHub, so an offline pass logs it once. */
+  private unreachableLogged = false
+  /** Bot remarks by `id@edit`, and whether each is its notice that it could not run (decision 7). */
+  private readonly noticesByVersion = new Map<string, boolean>()
   private readonly stopListening: (() => void) | undefined
   private readonly stopClosedListening: (() => void) | undefined
   /** Ending what settled or archived threads babysat, and whether another thread closed while it ran. */
@@ -298,6 +316,7 @@ export class Babysitter {
 
   private async runPass(): Promise<void> {
     this.limitLogged = false
+    this.unreachableLogged = false
     const store = this.options.store
     const groups = new Map<string, Group>()
     const seen = new Map<string, string>()
@@ -329,6 +348,19 @@ export class Babysitter {
     }
   }
 
+  /**
+   * A waiting wake-up's news as it stands as it goes (decision 8): what it says of the checks on a commit the branch has
+   * left since is taken out, and with nothing left the part goes. News of a babysitting that no longer stands is the
+   * guard's `due` to refuse, so it is given back as it came.
+   */
+  current(_threadId: string, news: BabysitNews): BabysitNews | undefined {
+    // The head the reader last saw, not the record's: news is handed over before the record of it is written, so a
+    // wake-up going at once would otherwise be judged against the commit it moved on from. With nothing read since a
+    // restart, nothing is known to be stale.
+    const read = this.lastReads.get(pullRequestKey(news.pullRequest.url) ?? news.pullRequest.url)
+    return read ? stillCurrent(news, read.head) : news
+  }
+
   /** May a background read go now? A pause or the reserve says no, and the pass skips it without counting a failure. */
   private mayRead(): boolean {
     if (this.options.rateLimit.retryAt(HOST, 'background') === null) return true
@@ -339,14 +371,19 @@ export class Babysitter {
     if (!this.limitLogged) this.options.log?.('babysit-rate-limited')
     this.limitLogged = true
   }
+  private unreachable(): void {
+    if (!this.unreachableLogged) this.options.log?.('babysit-unreachable')
+    this.unreachableLogged = true
+  }
 
   /**
-   * gh's answer, or what it was: a rate-limit refusal pauses the host and is `limited`, anything else is a failed read.
+   * gh's answer, or what it was: a rate-limit refusal pauses the host and is `limited`, gh not reaching GitHub at all is
+   * `unreachable` and skips the pass, and anything else is a failed read of the kind GitHub's answer says.
    * Only gh's own error is read for the rate limit: an answer that failed to parse names its fields, `rateLimit` among
    * them. GitHub can answer a query and refuse a part of it, one pull request it cannot find among 25 say; gh then fails
    * with what it did read on its output, and that answer stands, so one pull request gone does not fail the rest.
    */
-  private async ask<T extends { readonly rateLimit?: GitHubRateLimitReading | null | undefined }>(args: readonly string[], read: (text: string) => T, viewer?: (answer: T) => string | null): Promise<T | 'limited' | 'failed'> {
+  private async ask<T extends { readonly rateLimit?: GitHubRateLimitReading | null | undefined }>(args: readonly string[], read: (text: string) => T, viewer?: (answer: T) => string | null): Promise<T | 'limited' | 'unreachable' | Failed> {
     const asked = this.options.rateLimit.asking()
     let answer: T
     try { answer = read(await this.run(homedir(), 'gh', ['api', 'graphql', ...args], { timeoutMs: READ_TIMEOUT_MS })) }
@@ -357,8 +394,9 @@ export class Babysitter {
         this.rateLimited()
         return 'limited'
       }
+      if (isUnreachableAnswer(message)) { this.unreachable(); return 'unreachable' }
       const partial = partialAnswer(error, read)
-      if (!partial) return 'failed'
+      if (!partial) return failureOf(message)
       answer = partial
     }
     this.options.rateLimit.answered(HOST, asked, answer.rateLimit, viewer?.(answer) ?? null)
@@ -372,12 +410,13 @@ export class Babysitter {
     const first = groups[0]!
     const answer = await this.ask(['-f', `query=${fingerprintQuery(numbers.length)}`, '-f', `owner=${first.owner}`, '-f', `name=${first.name}`,
       ...numbers.flatMap((number, index) => ['-F', `p${index}=${number}`])], text => readFingerprint(text, numbers), fingerprint => fingerprint.viewer)
-    if (answer === 'limited') { for (const group of groups) this.observationUnavailable(group, 'rate-limited'); return }
+    if (answer === 'limited' || answer === 'unreachable') { for (const group of groups) this.observationUnavailable(group, answer === 'limited' ? 'rate-limited' : 'read-failed'); return }
     for (const group of groups) {
       if (this.closed) return
-      const fingerprint = answer === 'failed' ? undefined : answer.pullRequests.get(group.number)
+      if (isFailed(answer)) { await this.failedRead(group, unreadableOf(answer)); continue }
+      const fingerprint = answer.pullRequests.get(group.number)
       // A pull request GitHub answered nothing for is gone, or not visible to the sign-in: a failed read like any other.
-      if (!fingerprint || answer === 'failed') await this.failedRead(group)
+      if (!fingerprint) await this.failedRead(group, 'not-found')
       else await this.readGroup(group, fingerprint, answer.viewer)
     }
   }
@@ -407,9 +446,15 @@ export class Babysitter {
       const answer = await this.ask(['-f', `query=${DETAIL_QUERY}`, '-f', `owner=${group.owner}`, '-f', `name=${group.name}`,
         '-F', `number=${group.number}`, '-F', `checks=${checks}`, '-F', `remarks=${remarks}`], text => readDetail(text, { checks, remarks }))
       if (answer === 'limited') { this.observationUnavailable(group, 'rate-limited'); return }
-      if (answer === 'failed') { this.lastReads.delete(group.key); await this.failedRead(group); return }
+      if (answer === 'unreachable') { this.observationUnavailable(group, 'read-failed'); return }
+      if (isFailed(answer)) { this.lastReads.delete(group.key); await this.failedRead(group, unreadableOf(answer)); return }
       detail = answer
     }
+    const notices = detail?.remarks ? await this.notices(group, detail.remarks, viewer) : undefined
+    // Bot words that could not be read for now (a rate limit, GitHub out of reach) hold this pass's remarks, which are
+    // read again next pass rather than told with a notice among them or passed by.
+    const remarksHeld = notices === null
+    const remarksRead = remarks && !remarksHeld
     // Checks asked for and not read (a check refused, or the head moved under the read) are asked again next pass, and
     // once refused REFUSED_CHECKS_BEFORE_BACK_OFF times in a row, when the status moves or every REMARKS_REREAD_MS.
     const checksRead = checks ? detail?.checks != null : true
@@ -419,16 +464,18 @@ export class Babysitter {
     if (observation) this.options.observed?.(observation)
     this.lastReads.set(group.key, {
       ...(observation ? { observation } : {}),
+      head: detail?.head ?? fingerprint.head,
       status: checksRead || backOff ? fingerprint.status : '',
       refusedChecks,
       checksDueAt: !checks ? last?.checksDueAt ?? null : backOff ? now + REMARKS_REREAD_MS : null,
-      remarks: remarks ? fingerprint.remarks : last?.remarks ?? '',
-      remarksAt: remarks ? now : last?.remarksAt ?? now,
+      remarks: remarksRead ? fingerprint.remarks : last?.remarks ?? '',
+      remarksAt: remarksRead ? now : last?.remarksAt ?? now,
       records: new Set(group.targets.map(target => recordKey(target.threadId, target.record))),
     })
     let landed = true
     for (const target of group.targets) {
-      const finding = findNews(target.record.told, { fingerprint, head: detail?.head ?? null, checks: detail?.checks ?? null, remarks: detail?.remarks ?? null, viewer })
+      const finding = findNews(target.record.told, { fingerprint, head: detail?.head ?? null, checks: detail?.checks ?? null, requiredChecks: detail?.requiredChecks ?? null,
+        remarks: remarksHeld ? null : detail?.remarks ?? null, ...(notices ? { notices } : {}), viewer })
       if (finding.changes.length === 0) {
         if (!sameTold(finding.told, target.record.told)) landed = await this.record(target, finding.told) && landed
         continue
@@ -441,18 +488,47 @@ export class Babysitter {
     if (!landed) this.lastReads.delete(group.key)
   }
 
+  /**
+   * The bot remarks in a read that are its notice that it could not run (decision 7), asked by ID only for those no
+   * thread was told of yet, and each only once for the words it has now. Null when they could not be read for now (a
+   * rate limit or pause, GitHub out of reach), so the pass holds its remarks for the next. Words GitHub refused count
+   * as no notice, so the remark is told as it would have been rather than held for good.
+   */
+  private async notices(group: Group, remarks: readonly BabysitRemark[], viewer: string | null): Promise<ReadonlySet<string> | null> {
+    const own = viewer?.toLowerCase() ?? null
+    const since = Math.min(...group.targets.map(target => Date.parse(target.record.told.remarksThrough)).filter(Number.isFinite))
+    const version = (remark: BabysitRemark): string => `${remark.id}@${remark.editedAt ?? remark.createdAt}`
+    const unread = remarks.filter(remark => remark.bot && remark.author?.toLowerCase() !== own && !this.noticesByVersion.has(version(remark))
+      && Date.parse(remark.editedAt ?? remark.createdAt) >= since)
+    for (let start = 0; start < unread.length; start += REMARK_WORDS_PER_QUERY) {
+      const chunk = unread.slice(start, start + REMARK_WORDS_PER_QUERY), ids = chunk.map(remark => remark.id)
+      if (!this.mayRead()) return null
+      const answer = await this.ask(['-f', `query=${remarkWordsQuery(ids.length)}`, ...ids.flatMap((id, index) => ['-f', `n${index}=${id}`])], text => readRemarkWords(text, ids))
+      if (answer === 'limited' || answer === 'unreachable') return null
+      if (isFailed(answer)) break
+      for (const remark of chunk) {
+        const words = answer.words.get(remark.id)
+        if (words !== undefined) this.noticesByVersion.set(version(remark), couldNotRunNotice(words))
+      }
+    }
+    // Kept for the remarks a read can still return, so a long-lived host forgets the oldest first.
+    while (this.noticesByVersion.size > NOTICES_KEPT) this.noticesByVersion.delete(this.noticesByVersion.keys().next().value!)
+    return new Set(remarks.filter(remark => this.noticesByVersion.get(version(remark)) === true).map(remark => remark.id))
+  }
+
   /** A pass that could not read the pull request, for a reason other than a rate limit. The eighth in a row ends it. */
   private observationUnavailable(group: Group, reason: 'read-failed' | 'rate-limited'): void {
     this.options.observed?.({ url: group.targets[0]!.record.url, head: this.lastReads.get(group.key)?.observation?.head ?? null,
       availability: 'unavailable', reason, observedAt: new Date(this.now()).toISOString() })
   }
-  private async failedRead(group: Group): Promise<void> {
+  private async failedRead(group: Group, unreadable: BabysitUnreadable): Promise<void> {
     this.observationUnavailable(group, 'read-failed')
     this.options.log?.('babysit-read-failed')
     for (const target of group.targets) {
       const failedReads = target.record.told.failedReads + 1
       if (failedReads < FAILED_READ_LIMIT) { await this.record(target, { ...target.record.told, failedReads }); continue }
-      const news: BabysitNews = { pullRequest: { url: target.record.url, number: target.record.number, title: null }, startedBy: target.record.startedBy, startedAt: target.record.startedAt, head: target.record.told.head, changes: [], ended: 'unreadable' }
+      const news: BabysitNews = { pullRequest: { url: target.record.url, number: target.record.number, title: null }, startedBy: target.record.startedBy, startedAt: target.record.startedAt,
+        head: target.record.told.head, changes: [], ended: 'unreadable', unreadable }
       // A wake-up that could not be handed over still counts the failure, so the next failed pass tries again.
       if (!await this.tellAndEnd(target, news, 'unreadable')) await this.record(target, { ...target.record.told, failedReads })
     }

@@ -55,9 +55,9 @@ That move added problems of its own. Open [#16171](https://github.com/pingdotgg/
 
 - a check fails (each one as soon as it fails)
 - the required checks pass (GitHub's `isRequired`, or every check where none is marked required)
-- someone other than the user or the agent comments or reviews, with edits counted ([#15415](https://github.com/pingdotgg/t3code/pull/15415))
+- someone other than the user or the agent comments or reviews, with edits counted ([#15415](https://github.com/pingdotgg/t3code/pull/15415)). Corrected October 13, 2026: only the signed-in account, or the pull request's author when the sign-in is unknown, is left out, so a second account of the user's wakes the watch (`docs/research/2026-10-13-t3-and-sotto-babysitters.md`)
 - the branch starts to conflict
-- the pull request merges or closes, which ends the watch
+- the pull request closes, which ends the watch. Corrected October 13, 2026: a merge ends it without a wake-up, at this commit and at `e9221e44`
 
 "A wake is news, not a merge decision": the server finds events, and the agent judges them.
 

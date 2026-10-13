@@ -142,31 +142,37 @@ export const REMARKS_READ_MAX = COMMENTS_READ + REVIEWS_READ + REVIEW_THREADS_RE
 /**
  * The detail of one pull request: its head's checks, each with whether the base branch requires it, and its remarks,
  * each switched on only when the fingerprint says it moved. `isRequired` is asked on github.com, which is the only host
- * Sotto links pull requests from (ADR-0027). No remark's text is asked for: a wake-up never carries it (ADR-0061 decision 7).
+ * Sotto links pull requests from (ADR-0027). With the checks go the checks the base branch's rules require by name,
+ * which GitHub lists before a required job has started: `isRequired` can only be asked of a check that exists. No
+ * remark's text is asked for: a wake-up never carries it (ADR-0061 decision 7). Whether its author is a bot is, since a
+ * bot's notice that it could not run is read apart (`remarkWordsQuery`).
  */
 export const DETAIL_QUERY = `query BabysitDetail($owner: String!, $name: String!, $number: Int!, $checks: Boolean!, $remarks: Boolean!) {
   ${RATE_LIMIT_SELECTION}
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
       headRefOid
+      baseRef @include(if: $checks) { rules(first: 50) { nodes { type parameters { ... on RequiredStatusChecksParameters { requiredStatusChecks { context } } } } } }
       commits(last: 1) @include(if: $checks) { nodes { commit { oid statusCheckRollup { contexts(first: 100) { nodes {
         __typename
         ... on CheckRun { name status conclusion detailsUrl isRequired(pullRequestNumber: $number) checkSuite { workflowRun { workflow { name } } } }
         ... on StatusContext { context state targetUrl isRequired(pullRequestNumber: $number) }
       } } } } } }
-      comments(first: ${COMMENTS_READ}, orderBy: { field: UPDATED_AT, direction: DESC }) @include(if: $remarks) { nodes { id url createdAt lastEditedAt author { login } } }
-      reviews(last: ${REVIEWS_READ}) @include(if: $remarks) { nodes { id url state createdAt submittedAt lastEditedAt author { login } comments { totalCount } } }
-      reviewThreads(last: ${REVIEW_THREADS_READ}) @include(if: $remarks) { nodes { path comments(last: ${THREAD_COMMENTS_READ}) { nodes { id url createdAt publishedAt lastEditedAt author { login } } } } }
+      comments(first: ${COMMENTS_READ}, orderBy: { field: UPDATED_AT, direction: DESC }) @include(if: $remarks) { nodes { id url createdAt lastEditedAt author { __typename login } } }
+      reviews(last: ${REVIEWS_READ}) @include(if: $remarks) { nodes { id url state createdAt submittedAt lastEditedAt author { __typename login } comments { totalCount } } }
+      reviewThreads(last: ${REVIEW_THREADS_READ}) @include(if: $remarks) { nodes { path comments(last: ${THREAD_COMMENTS_READ}) { nodes { id url createdAt publishedAt lastEditedAt author { __typename login } } } } }
     }
   }
 }`
 
-const authorSchema = loose(z.object({ login: loose(z.string()) }))
+const authorSchema = loose(z.object({ __typename: loose(z.string()), login: loose(z.string()) }))
 const remarkFields = { id: z.string(), url: loose(z.string()), createdAt: z.string(), publishedAt: loose(z.string()), lastEditedAt: loose(z.string()), author: authorSchema }
 const detailAnswerSchema = z.object({ data: z.object({
   rateLimit: rateLimitSchema,
   repository: z.object({ pullRequest: loose(z.object({
     headRefOid: loose(z.string()),
+    baseRef: loose(z.object({ rules: loose(z.object({ nodes: loose(z.array(loose(z.object({ type: loose(z.string()),
+      parameters: loose(z.object({ requiredStatusChecks: loose(z.array(loose(z.object({ context: loose(z.string()) })))) })) })))) })) })),
     commits: loose(z.object({ nodes: loose(z.array(loose(z.object({ commit: loose(z.object({ oid: loose(z.string()), statusCheckRollup: loose(z.object({ contexts: loose(z.object({ nodes: loose(z.array(loose(z.object({
       __typename: loose(z.string()), name: loose(z.string()), context: loose(z.string()), status: loose(z.string()), conclusion: loose(z.string()), state: loose(z.string()),
       detailsUrl: loose(z.string()), targetUrl: loose(z.string()), isRequired: loose(z.boolean()),
@@ -181,14 +187,19 @@ const detailAnswerSchema = z.object({ data: z.object({
   errors: loose(z.array(loose(z.object({ path: loose(z.array(z.union([z.string(), z.number()]))) })))),
 })
 
-/** One check on the head commit, as babysitting needs it. */
-export interface BabysitCheck { readonly name: string; readonly status: GitPullRequestCheck['status']; readonly url: string | null; readonly required: boolean }
+/**
+ * One check on the head commit, as babysitting needs it. `context` is the name rules require it by: a check run's own
+ * name, or a status's context, without the workflow's name that `name` leads with.
+ */
+export interface BabysitCheck { readonly name: string; readonly context: string; readonly status: GitPullRequestCheck['status']; readonly url: string | null; readonly required: boolean }
 /** One comment or review on the pull request, without what it says. */
 export interface BabysitRemark {
   readonly id: string
   readonly kind: 'comment' | 'review' | 'review-comment'
   /** The login of whoever wrote it; null for an account GitHub no longer names. */
   readonly author: string | null
+  /** Written by an app's bot account, whose notice that it could not run is told apart (ADR-0061). */
+  readonly bot: boolean
   /** A review's side; null for a comment. */
   readonly review: 'approved' | 'changes-requested' | 'commented' | 'dismissed' | null
   /** The file a review comment is on. */
@@ -208,6 +219,11 @@ export interface DetailAnswer {
    * refused them. Null is never no checks: the reader asks again next pass.
    */
   readonly checks: readonly BabysitCheck[] | null
+  /**
+   * The checks the base branch's rules require, by `context`, read with the checks; null when they were not asked for,
+   * or GitHub did not say (no base branch, or rules the sign-in cannot read), and then only `required` on each check counts.
+   */
+  readonly requiredChecks: readonly string[] | null
   /** Every remark read, or null when they were not asked for. */
   readonly remarks: readonly BabysitRemark[] | null
 }
@@ -249,15 +265,19 @@ export function readDetail(text: string, asked: { readonly checks: boolean; read
         if (!node) return []
         const check = checkOf({ __typename: node.__typename, name: node.name, context: node.context, status: node.status, conclusion: node.conclusion, state: node.state,
           detailsUrl: node.detailsUrl, targetUrl: node.targetUrl, description: null, workflowName: node.checkSuite?.workflowRun?.workflow?.name })
-        return [{ name: check.name, status: check.status, url: check.url, required: node.isRequired === true }]
+        const own = node.__typename === 'StatusContext' || (node.context != null && node.name == null) ? node.context : node.name
+        return [{ name: check.name, context: own?.trim() || check.name, status: check.status, url: check.url, required: node.isRequired === true }]
       })
     }
   }
+  const rules = asked.checks ? pullRequest.baseRef?.rules?.nodes : undefined
+  const requiredChecks = rules ? [...new Set(rules.flatMap(rule => rule?.type === 'REQUIRED_STATUS_CHECKS'
+    ? (rule.parameters?.requiredStatusChecks ?? []).flatMap(check => check?.context?.trim() ? [check.context.trim()] : []) : []))] : null
   let remarks: BabysitRemark[] | null = null
   if (asked.remarks) {
     remarks = []
     for (const node of pullRequest.comments?.nodes ?? []) {
-      if (node) remarks.push({ id: node.id, kind: 'comment', author: node.author?.login ?? null, review: null, path: null, url: linkOf(node.url), ...remarkTimes(node.createdAt, node.publishedAt, node.lastEditedAt) })
+      if (node) remarks.push({ id: node.id, kind: 'comment', author: node.author?.login ?? null, bot: isBot(node.author), review: null, path: null, url: linkOf(node.url), ...remarkTimes(node.createdAt, node.publishedAt, node.lastEditedAt) })
     }
     for (const node of pullRequest.reviews?.nodes ?? []) {
       const review = node?.state ? REVIEW_STATES[node.state.toUpperCase()] : undefined
@@ -267,13 +287,44 @@ export function readDetail(text: string, asked: { readonly checks: boolean; read
       // A review that only commented, with comments on the code, is told through those comments, each on its file: a
       // reply in a review thread is such a review. Once its own text is edited after it went out, the review is news itself.
       if (review === 'commented' && (node.comments?.totalCount ?? 0) > 0 && times.editedAt === null) continue
-      remarks.push({ id: node.id, kind: 'review', author: node.author?.login ?? null, review, path: null, url: linkOf(node.url), ...times })
+      remarks.push({ id: node.id, kind: 'review', author: node.author?.login ?? null, bot: isBot(node.author), review, path: null, url: linkOf(node.url), ...times })
     }
     for (const thread of pullRequest.reviewThreads?.nodes ?? []) {
       for (const node of thread?.comments?.nodes ?? []) {
-        if (node) remarks.push({ id: node.id, kind: 'review-comment', author: node.author?.login ?? null, review: null, path: thread?.path ?? null, url: linkOf(node.url), ...remarkTimes(node.createdAt, node.publishedAt, node.lastEditedAt) })
+        if (node) remarks.push({ id: node.id, kind: 'review-comment', author: node.author?.login ?? null, bot: isBot(node.author), review: null, path: thread?.path ?? null, url: linkOf(node.url), ...remarkTimes(node.createdAt, node.publishedAt, node.lastEditedAt) })
       }
     }
   }
-  return { rateLimit: answer.data.rateLimit, head, checks, remarks }
+  return { rateLimit: answer.data.rateLimit, head, checks, requiredChecks, remarks }
+}
+const isBot = (author: z.infer<typeof authorSchema>): boolean => author?.__typename === 'Bot'
+
+/**
+ * The words of bot remarks, asked by ID and only for remarks a bot left since what a thread was told, so its notice that
+ * it could not run can be told apart (ADR-0061). They are read here and never passed on: a wake-up carries none of them.
+ */
+export const REMARK_WORDS_PER_QUERY = 25
+export function remarkWordsQuery(count: number): string {
+  const declarations = Array.from({ length: count }, (_, index) => `$n${index}: ID!`)
+  const selections = Array.from({ length: count }, (_, index) =>
+    `  n${index}: node(id: $n${index}) { ... on IssueComment { body } ... on PullRequestReview { body } ... on PullRequestReviewComment { body } }`)
+  return `query BabysitRemarkWords(${declarations.join(', ')}) {\n  ${RATE_LIMIT_SELECTION}\n${selections.join('\n')}\n}`
+}
+const remarkWordsSchema = z.object({ data: z.record(z.string(), z.unknown()) })
+const bodySchema = loose(z.object({ body: loose(z.string()) }))
+export interface RemarkWordsAnswer {
+  readonly rateLimit: z.infer<typeof rateLimitSchema>
+  /** By the ID asked about; a remark GitHub answered nothing for is absent. */
+  readonly words: ReadonlyMap<string, string>
+}
+/** Reads the words answer, given the IDs in the order they were asked. Throws when it is not GitHub's answer. */
+export function readRemarkWords(text: string, ids: readonly string[]): RemarkWordsAnswer {
+  const answer = remarkWordsSchema.parse(JSON.parse(text))
+  const rateLimit = rateLimitSchema.parse(answer.data['rateLimit'])
+  const words = new Map<string, string>()
+  ids.forEach((id, index) => {
+    const node = bodySchema.safeParse(answer.data[`n${index}`])
+    if (node.success && typeof node.data?.body === 'string') words.set(id, node.data.body)
+  })
+  return { rateLimit, words }
 }

@@ -14,19 +14,25 @@ export type ScriptedCheck = { name: string; required?: boolean; url?: string } &
  * A comment or review. `at` is when it was written; `publishedAt`, when it differs, is when a comment drafted in a pending
  * review went out with that review, which on GitHub keeps the comment's `createdAt` at the drafting.
  */
-export interface ScriptedRemark { id: string; author: string | null; at: string; publishedAt?: string; editedAt?: string; url?: string }
+export interface ScriptedRemark {
+  id: string; author: string | null; at: string; publishedAt?: string; editedAt?: string; url?: string
+  /** Written by an app's bot account, which GitHub names as a `Bot`; its words are what `body` holds. */
+  bot?: boolean; body?: string
+}
 export interface ScriptedReview extends ScriptedRemark { state: 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | 'PENDING'; inline?: number }
 export interface ScriptedPull {
   number: number; owner?: string; name?: string; title?: string
   state?: 'OPEN' | 'CLOSED' | 'MERGED'; mergeable?: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN'; head?: string; base?: string
   checks?: ScriptedCheck[]; comments?: ScriptedRemark[]; reviews?: ScriptedReview[]; threads?: Array<{ path: string; comments: ScriptedRemark[] }>
+  /** The checks the base branch's rules require by name, which GitHub lists whether or not they have reported. */
+  requiredChecks?: string[]
   /**
    * GitHub refuses the head's checks in the detail read, the way a partial refusal does: the whole rollup nulled, the
    * check list nulled, or one check nulled, each with an error naming where. gh then fails with that answer on its output.
    */
   refuseChecks?: 'rollup' | 'list' | 'check'
 }
-export interface GhQuestion { readonly kind: 'fingerprint' | 'detail'; readonly variables: Readonly<Record<string, string>>; readonly query: string }
+export interface GhQuestion { readonly kind: 'fingerprint' | 'detail' | 'words'; readonly variables: Readonly<Record<string, string>>; readonly query: string }
 
 const RUNNING: ReadonlySet<CheckState> = new Set(['QUEUED', 'IN_PROGRESS', 'WAITING'])
 
@@ -46,6 +52,8 @@ export function scriptedGitHub(pulls: ScriptedPull[], options: { viewer?: string
   const questions: GhQuestion[] = []
   /** Set to make gh fail the next questions with this error; cleared by setting null. */
   let failure: Error | null = null
+  /** The same for the words of bot remarks alone. */
+  let wordsFailure: Error | null = null
   const find = (owner: string, name: string, number: number): ScriptedPull | undefined =>
     pulls.find(pull => (pull.owner ?? 'o') === owner && (pull.name ?? 'r') === name && pull.number === number)
   const rateLimit = () => ({ limit: 5000, remaining: 4000, resetAt: new Date((options.now?.() ?? Date.now()) + 3_600_000).toISOString() })
@@ -54,7 +62,7 @@ export function scriptedGitHub(pulls: ScriptedPull[], options: { viewer?: string
     for (const check of checks) counts.set(check.state, (counts.get(check.state) ?? 0) + 1)
     return [...counts].map(([state, count]) => ({ state, count }))
   }
-  const remarkNode = (remark: ScriptedRemark) => ({ id: remark.id, url: remark.url ?? `https://github.com/o/r/pull/1#${remark.id}`, createdAt: remark.at, publishedAt: remark.publishedAt ?? remark.at, lastEditedAt: remark.editedAt ?? null, author: remark.author === null ? null : { login: remark.author } })
+  const remarkNode = (remark: ScriptedRemark) => ({ id: remark.id, url: remark.url ?? `https://github.com/o/r/pull/1#${remark.id}`, createdAt: remark.at, publishedAt: remark.publishedAt ?? remark.at, lastEditedAt: remark.editedAt ?? null, author: remark.author === null ? null : { login: remark.author, __typename: remark.bot ? 'Bot' : 'User' } })
   const fingerprintOf = (pull: ScriptedPull) => {
     const comments = pull.comments ?? [], reviews = pull.reviews ?? [], threads = pull.threads ?? []
     return {
@@ -81,6 +89,8 @@ export function scriptedGitHub(pulls: ScriptedPull[], options: { viewer?: string
   const detailOf = (pull: ScriptedPull, checks: boolean, remarks: boolean) => ({
     headRefOid: pull.head ?? 'head-1',
     ...checks ? { commits: { nodes: [{ commit: { oid: pull.head ?? 'head-1', statusCheckRollup: rollupOf(pull) } }] } } : {},
+    ...checks ? { baseRef: { rules: { nodes: pull.requiredChecks
+      ? [{ type: 'REQUIRED_STATUS_CHECKS', parameters: { requiredStatusChecks: pull.requiredChecks.map(context => ({ context })) } }] : [] } } } : {},
     ...remarks ? {
       comments: { nodes: (pull.comments ?? []).map(remarkNode) },
       reviews: { nodes: (pull.reviews ?? []).map(review => ({ ...remarkNode(review), state: review.state, submittedAt: review.publishedAt ?? review.at, comments: { totalCount: review.inline ?? 0 } })) },
@@ -91,9 +101,18 @@ export function scriptedGitHub(pulls: ScriptedPull[], options: { viewer?: string
     if (command !== 'gh' || args[0] !== 'api' || args[1] !== 'graphql') throw new Error(`Unexpected command: ${command} ${args.join(' ')}`)
     const variables = graphqlVariables(args)
     const query = variables['query'] ?? ''
-    const kind = query.includes('BabysitFingerprint') ? 'fingerprint' : 'detail'
+    const kind = query.includes('BabysitFingerprint') ? 'fingerprint' : query.includes('BabysitRemarkWords') ? 'words' : 'detail'
     questions.push({ kind, variables, query })
     if (failure) throw failure
+    if (kind === 'words' && wordsFailure) throw wordsFailure
+    if (kind === 'words') {
+      const remarks = pulls.flatMap(pull => [...pull.comments ?? [], ...pull.reviews ?? [], ...(pull.threads ?? []).flatMap(thread => thread.comments)])
+      const nodes = Object.fromEntries(Object.entries(variables).filter(([key]) => /^n\d+$/u.test(key)).map(([key, id]) => {
+        const remark = remarks.find(candidate => candidate.id === id)
+        return [key, remark ? { __typename: 'IssueComment', body: remark.body ?? '' } : null]
+      }))
+      return JSON.stringify({ data: { rateLimit: rateLimit(), ...nodes } })
+    }
     const owner = variables['owner']!, name = variables['name']!
     if (kind === 'fingerprint') {
       const repository: Record<string, unknown> = {}
@@ -119,6 +138,7 @@ export function scriptedGitHub(pulls: ScriptedPull[], options: { viewer?: string
   return {
     run, questions,
     fail(error: Error | null) { failure = error },
+    failWords(error: Error | null) { wordsFailure = error },
     count(kind: GhQuestion['kind']) { return questions.filter(question => question.kind === kind).length },
     reset() { questions.length = 0 },
   }

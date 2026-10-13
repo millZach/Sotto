@@ -204,6 +204,19 @@ export class GitHubRateLimited extends Error {
 export function isRateLimitAnswer(message: string): boolean {
   return /\bAPI rate limit\b|\bsecondary rate limit\b|\brate limit (?:already )?exceeded\b|\bRATE_LIMITED\b|abuse detection|\bHTTP 429\b|too many requests/iu.test(message)
 }
+/**
+ * gh could not reach GitHub at all: this computer offline or asleep, its name lookup or a proxy failing, a connection
+ * cut, a certificate a guest network's sign-in page put in GitHub's place, or a read that hung until gh gave up on it.
+ * No answer from GitHub says anything about the pull request, so babysitting skips the pass rather than count it
+ * (ADR-0061 decision 9). GitHub's own servers failing is an answer, and counts.
+ */
+export function isUnreachableAnswer(message: string): boolean {
+  return /\berror connecting to\b|\bdial tcp\b|\bno such host\b|\bgetaddrinfo|could not resolve host|\bconnectex\b|connection (?:refused|reset|timed out)|actively refused|forcibly closed|network is unreachable|unreachable network|\bi\/o timeout\b|TLS handshake timeout|\bx509:|tls: failed to verify|certificate (?:signed by unknown authority|has expired|is not valid)|\bproxyconnect\b|unexpected EOF|: EOF\b|context deadline exceeded|did not finish in time/iu.test(message)
+}
+/** GitHub refused the sign-in: an expired or revoked token, or gh not signed in. */
+export function isSignInRefusal(message: string): boolean {
+  return /\bHTTP 401\b|Bad credentials|gh auth login|authentication required|not logged in|requires authentication/iu.test(message)
+}
 const isPrimaryLimit = (message: string): boolean => /API rate limit (?:already )?exceeded|RATE_LIMITED/iu.test(message) && !/secondary/iu.test(message)
 
 /** Background reads stop below this share of the points (T3's `RESERVE_RATIO`); the rest is the user's. */

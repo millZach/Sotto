@@ -25,10 +25,12 @@ const LIST_MAX = 200
 export const babysitToldSchema = z.object({
   /** The head commit the checks below are about; null before the first read. */
   head: z.string().max(100).nullable(),
-  /** The checks reported failed on that head, by name. */
+  /** The checks failing on that head when it was last read, by name, each told once while it stays failing. */
   failedChecks: z.array(z.string().max(500)).max(LIST_MAX),
-  /** Whether the required checks passing was reported on that head. */
+  /** Whether the required checks were passing when last read, which was told as they began to. */
   passed: z.boolean(),
+  /** The checks that pass was of, so a required check that appears passed later is told; absent from records kept before. */
+  passedGate: z.array(z.string().max(500)).max(LIST_MAX).optional(),
   remarksThrough: z.string().max(64),
   remarkIds: z.array(z.string().max(200)).max(REMARKS_READ_MAX),
   /** Whether the branch conflicting was reported, and it has not stopped conflicting since. */
@@ -51,13 +53,13 @@ export const publishedBabysitting = (record: BabysitRecord): AgentBabysitting =>
  * made in the second babysitting started is told rather than lost, even one made a moment before it.
  */
 export const toldAtStart = (startedAt: string): BabysitTold =>
-  ({ head: null, failedChecks: [], passed: false, remarksThrough: wholeSecond(startedAt), remarkIds: [], conflicting: false, commentOnly: 0, failedReads: 0 })
+  ({ head: null, failedChecks: [], passed: false, passedGate: [], remarksThrough: wholeSecond(startedAt), remarkIds: [], conflicting: false, commentOnly: 0, failedReads: 0 })
 const wholeSecond = (time: string): string => { const at = Date.parse(time); return Number.isFinite(at) ? new Date(Math.floor(at / 1000) * 1000).toISOString() : time }
 
 /** A check that finished failed, was cancelled or needs someone: news as soon as it is, so a check that never finishes cannot hold it back. */
 export type BabysitCheckNews = Pick<BabysitCheck, 'name' | 'url'> & { readonly status: 'failure' | 'cancelled' | 'action-required' }
 /** A comment or review by someone other than the gh sign-in, without what it says (decision 7). */
-export type BabysitRemarkNews = Omit<BabysitRemark, 'id' | 'createdAt' | 'editedAt'> & { readonly edited: boolean }
+export type BabysitRemarkNews = Omit<BabysitRemark, 'id' | 'createdAt' | 'editedAt' | 'bot'> & { readonly edited: boolean }
 /** One change worth a wake-up (decision 6). */
 export type BabysitChange =
   | { readonly kind: 'checks-failed'; readonly checks: readonly BabysitCheckNews[] }
@@ -68,6 +70,8 @@ export type BabysitChange =
   | { readonly kind: 'conflicting'; readonly base: string }
 /** Why babysitting ended on its own, which the last wake-up says (decision 9). */
 export type BabysitEnding = 'merged' | 'closed' | 'comment-limit' | 'unreadable'
+/** What GitHub kept answering when babysitting ended unreadable: the sign-in refused, the pull request not shown, or an answer that made no sense. */
+export type BabysitUnreadable = 'sign-in' | 'not-found' | 'answer'
 
 /**
  * What one thread is to be woken with about one pull request: structured, never worded. #824 words the wake-up from it.
@@ -88,6 +92,8 @@ export interface BabysitNews {
   readonly changes: readonly BabysitChange[]
   /** Set when this wake-up ends babysitting, with why; null when babysitting goes on. */
   readonly ended: BabysitEnding | null
+  /** For an unreadable ending, what GitHub kept answering; absent from news queued before it was kept. */
+  readonly unreadable?: BabysitUnreadable | undefined
 }
 
 /** A line of printable characters at most `max` long: a name or login cannot carry a second line into a wake-up. */
@@ -106,7 +112,11 @@ export interface BabysitReading {
   readonly fingerprint: PullRequestFingerprint
   readonly head: string | null
   readonly checks: readonly BabysitCheck[] | null
+  /** The checks the base branch's rules require by name, read with the checks; null when GitHub did not say. */
+  readonly requiredChecks?: readonly string[] | null
   readonly remarks: readonly BabysitRemark[] | null
+  /** The remarks that are a bot's notice that it could not run: told as read, and news to nobody. */
+  readonly notices?: ReadonlySet<string>
   /** The gh sign-in's login on the host: its own remarks are the user's and the agent's, and wake nobody. */
   readonly viewer: string | null
 }
@@ -119,11 +129,25 @@ export interface BabysitFinding {
 }
 
 /**
- * The news in a read against what the thread was last told. Checks are news once per head commit: each failure once,
- * and the gate passing once, the gate being the required checks or every check where none is required. A new head
- * starts both again and is not news on its own. A remark is news when someone other than the gh sign-in wrote or edited
- * it after the last one told. A conflict is news once, and again only after it stopped conflicting; GitHub's "unknown"
- * while it computes after a push keeps what was known. News of checks or a conflict resets the comment-only count.
+ * The checks that must pass, as GitHub decides it can merge: each the rules require, which holds while GitHub has no
+ * check of it yet (a job waiting on others), and any other GitHub flags required; where neither, every check.
+ */
+function gateOf(checks: readonly BabysitCheck[], ruled: readonly string[]): { readonly names: readonly string[]; readonly required: boolean; readonly passed: boolean } {
+  const flagged = checks.filter(check => check.required && !ruled.includes(check.context))
+  if (!ruled.length && !flagged.length) return { names: checks.map(check => check.name), required: false, passed: checks.length > 0 && checks.every(isPassed) }
+  const ruledPassed = ruled.every(context => { const named = checks.filter(check => check.context === context); return named.length > 0 && named.every(isPassed) })
+  return { names: [...ruled, ...flagged.map(check => check.context)], required: true, passed: ruledPassed && flagged.every(isPassed) }
+}
+
+/**
+ * The news in a read against what the thread was last told. A check is news as it begins to fail, and again if it
+ * fails again after running once more; the gate is news as it begins to pass, and again after a rerun or a failure
+ * took it back, or when a required check appears already passed. The gate is the checks the base branch's rules
+ * require, those GitHub flags required, or every check where none is (`gateOf`). A new head starts both again and is
+ * not news on its own. A remark is news when someone other than the gh sign-in wrote or edited it after the last one
+ * told, unless it is a bot's notice that it could not run, which is told as read. A conflict is news once, and again
+ * only after it stopped conflicting; GitHub's "unknown" while it computes after a push keeps what was known. News of
+ * checks or a conflict resets the comment-only count.
  */
 export function findNews(told: BabysitTold, reading: BabysitReading): BabysitFinding {
   const changes: BabysitChange[] = []
@@ -131,16 +155,20 @@ export function findNews(told: BabysitTold, reading: BabysitReading): BabysitFin
   const moved = head !== told.head
   let failedChecks = moved ? [] : told.failedChecks
   let passed = moved ? false : told.passed
+  let passedGate = moved ? [] : told.passedGate ?? []
   if (reading.checks) {
-    const failed = reading.checks.filter(isFailed).filter(check => !failedChecks.includes(check.name))
+    const failing = reading.checks.filter(isFailed)
+    // A check running again leaves the list, so a rerun that fails again is told (T3's rule).
+    const failed = failing.filter(check => !failedChecks.includes(check.name))
     if (failed.length) changes.push({ kind: 'checks-failed', checks: failed.map(check => ({ name: printable(check.name), status: check.status, url: check.url })) })
-    failedChecks = [...failedChecks, ...failed.map(check => check.name)].slice(-LIST_MAX)
-    const required = reading.checks.filter(check => check.required)
-    const gate = required.length ? required : reading.checks
-    if (!passed && gate.length > 0 && gate.every(isPassed)) {
-      changes.push({ kind: 'checks-passed', count: gate.length, required: required.length > 0 })
-      passed = true
-    }
+    failedChecks = [...new Set(failing.map(check => check.name))].slice(-LIST_MAX)
+    const gate = gateOf(reading.checks, reading.requiredChecks ?? [])
+    // A record kept before the gate's names were takes the gate as it is now, so it does not tell the pass again.
+    const toldGate = passed && passedGate.length === 0 ? gate.names : passedGate
+    const grew = gate.required && gate.names.some(name => !toldGate.includes(name))
+    if (gate.passed && (!passed || grew)) changes.push({ kind: 'checks-passed', count: gate.names.length, required: gate.required })
+    passed = gate.passed
+    passedGate = gate.passed ? [...gate.names].slice(-LIST_MAX) : []
   }
 
   let remarksThrough = told.remarksThrough, remarkIds = told.remarkIds
@@ -154,9 +182,12 @@ export function findNews(told: BabysitTold, reading: BabysitReading): BabysitFin
       if (time < through || (time === through && told.remarkIds.includes(remark.id))) return false
       return own === null || remark.author?.toLowerCase() !== own
     }).sort((left, right) => at(left) - at(right))
-    if (fresh.length) {
-      changes.push({ kind: 'remarks', remarks: fresh.map(remark => ({ kind: remark.kind, author: remark.author === null ? null : printable(remark.author, 100),
+    const news = fresh.filter(remark => !reading.notices?.has(remark.id))
+    if (news.length) {
+      changes.push({ kind: 'remarks', remarks: news.map(remark => ({ kind: remark.kind, author: remark.author === null ? null : printable(remark.author, 100),
         review: remark.review, path: remark.path === null ? null : printable(remark.path, 300), url: remark.url, edited: remark.editedAt !== null })) })
+    }
+    if (fresh.length) {
       const latest = at(fresh.at(-1)!)
       const atLatest = fresh.filter(remark => at(remark) === latest).map(remark => remark.id)
       remarksThrough = new Date(latest).toISOString()
@@ -173,9 +204,43 @@ export function findNews(told: BabysitTold, reading: BabysitReading): BabysitFin
   const commentOnly = progress ? 0 : told.commentOnly + (commentsOnly ? 1 : 0)
   return {
     changes,
-    told: { head, failedChecks, passed, remarksThrough, remarkIds, conflicting, commentOnly, failedReads: 0 },
+    told: { head, failedChecks, passed, passedGate, remarksThrough, remarkIds, conflicting, commentOnly, failedReads: 0 },
     exhausted: commentsOnly && commentOnly >= COMMENT_ONLY_LIMIT,
   }
+}
+
+/**
+ * A bot's notice that it could not review: it hit a usage, spend, rate or credit limit, its trial ended, or the change
+ * is too large for it (ADR-0061 decision 7). Each phrase says what happened to the bot's own run, not what code does,
+ * so a review that mentions a limit is still news, and only words as short as such notices count: Cursor's Bugbot and
+ * Greptile's were a few sentences, CodeRabbit's rate-limit notice a few paragraphs, a real review longer.
+ */
+const NOTICE_MARKER = /<!--\s*BUGBOT_TOO_LARGE_TO_REVIEW\s*-->/u
+const NOTICE_WORDS = [
+  /\b(?:couldn['’]?t|could not|cannot|can['’]t|unable to) (?:run|review)\b.{0,80}\b(?:limits?|credits?|quota|plan|trial|billing|spend|usage)\b/iu,
+  /\b(?:usage|spend|spending|billing|rate) limits? (?:was |has been |is )?(?:reached|hit|exceeded)\b/iu,
+  /\bhit (?:a|its|the|your) (?:usage|spend|spending|billing|rate)(?: or (?:usage|spend|spending))? limit\b/iu,
+  /\btrial (?:has )?(?:ended|expired)\b/iu,
+  /\b(?:used all|used up|run out of|ran out of|out of)(?: (?:the|your|its))?(?: \d+)? (?:\w+ )?credits\b/iu,
+  /\btoo large (?:for \S+ )?to review\b/iu,
+]
+const NOTICE_MAX = 2_000
+export function couldNotRunNotice(words: string): boolean {
+  const text = words.replace(/<!--[\s\S]*?-->/gu, ' ').replace(/<[^>]*>/gu, ' ').replace(/\[([^\]]*)\]\([^)]*\)/gu, '$1').replace(/\s+/gu, ' ').trim()
+  if (text.length > NOTICE_MAX) return false
+  return NOTICE_MARKER.test(words) || (text.length > 0 && NOTICE_WORDS.some(pattern => pattern.test(text)))
+}
+
+/**
+ * A waiting wake-up's news as it stands, given the head the thread's record was last read on: what it says of the
+ * checks on a commit the branch has left goes, since the next read tells the new head's (decision 8). With nothing
+ * left, the part goes with it. An ending always stands.
+ */
+export function stillCurrent(news: BabysitNews, head: string | null): BabysitNews | undefined {
+  if (news.ended !== null || head === null || news.head === null || news.head === head) return news
+  const changes = news.changes.filter(change => change.kind !== 'checks-failed' && change.kind !== 'checks-passed')
+  if (changes.length === news.changes.length) return news
+  return changes.length ? { ...news, changes } : undefined
 }
 
 /**
