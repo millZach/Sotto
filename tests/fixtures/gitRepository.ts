@@ -24,8 +24,10 @@ export function runFixtureGit(cwd: string, ...args: string[]): string {
 async function configure(directory: string, options: GitRepositoryOptions, bare = false): Promise<void> {
   const config = join(directory, bare ? 'config' : '.git/config')
   const identity = options.identity ?? { name: 'Fixture', email: 'fixture@example.invalid' }
+  // A finished fixture command must not leave maintenance changing metadata while a seed is copied.
+  // Keep this local so Git invoked by the service under test has the same rule as fixture commands.
   // JSON strings use the same quoting/escaping for these simple Git config values.
-  await writeFile(config, await readFile(config, 'utf8') + `\n[user]\n name = ${JSON.stringify(identity.name)}\n email = ${JSON.stringify(identity.email)}\n[commit]\n gpgSign = false\n[tag]\n gpgSign = false\n[core]\n autocrlf = false\n eol = lf\n hooksPath = ${bare ? 'hooks' : '.git/hooks'}\n`)
+  await writeFile(config, await readFile(config, 'utf8') + `\n[user]\n name = ${JSON.stringify(identity.name)}\n email = ${JSON.stringify(identity.email)}\n[commit]\n gpgSign = false\n[tag]\n gpgSign = false\n[core]\n autocrlf = false\n eol = lf\n hooksPath = ${bare ? 'hooks' : '.git/hooks'}\n[maintenance]\n auto = false\n[gc]\n auto = 0\n`)
 }
 
 /** Borrowed directory: used by workspaceFixture/sendGit, whose owner already removes the enclosing root. */
@@ -51,7 +53,8 @@ async function addRemote(root: string, repo: string, options: GitRepositoryOptio
     runFixtureGit(repo, 'push', '-q', '-u', 'origin', options.branch ?? 'main')
     runFixtureGit(repo, 'remote', 'set-head', 'origin', options.branch ?? 'main')
     if (options.secondClone) {
-      runFixtureGit(root, 'clone', '--template=', '-q', '-b', options.branch ?? 'main', remote, other)
+      // Apply the rule during clone's initial fetch, before configure() can see its metadata.
+      runFixtureGit(root, 'clone', '--template=', '--config', 'maintenance.auto=false', '--config', 'gc.auto=0', '-q', '-b', options.branch ?? 'main', remote, other)
       await configure(other, options)
     }
   }
