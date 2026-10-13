@@ -267,6 +267,8 @@ private struct WatcherConversationPane: View {
     }
 
     @ViewBuilder private func notes(_ page: WatcherPage?) -> some View {
+        // A read that failed while a page is shown says so over the page it left.
+        if page != nil, model.online(hostID), let problem = model.watcherReadProblems[hostID] { note(problem) }
         if let notice = page?.recoveryNotice, !notice.isEmpty { note(notice) }
         if page?.conversation.earlierAvailable == true { note("Earlier messages are in Sotto on \(model.name(hostID)).") }
         if let page, page.current == nil {
@@ -274,7 +276,8 @@ private struct WatcherConversationPane: View {
         } else if let page, page.conversation.messages.isEmpty, model.watcherSending[hostID] == nil {
             note("Ask Watcher to start, check on or stop your threads. It answers nothing for you.")
         } else if page == nil {
-            note(model.online(hostID) ? "Reading Watcher on \(model.name(hostID))…" : "Reconnect to \(model.name(hostID)) to read Watcher.")
+            note(model.online(hostID) ? model.watcherReadProblems[hostID] ?? "Reading Watcher on \(model.name(hostID))…"
+                 : "Reconnect to \(model.name(hostID)) to read Watcher.")
         }
     }
     private func note(_ words: String) -> some View {
@@ -853,8 +856,10 @@ private struct WatchedPane: View {
                         .sottoCard(.plain)
                     }
                 } else {
-                    Text(model.online(hostID) ? "Reading Watcher on \(model.name(hostID))…" : "Reconnect to \(model.name(hostID)) to read Watcher.")
-                        .font(.sotto(.body)).foregroundStyle(Palette.muted).padding(.vertical, Space.s7)
+                    Text(model.online(hostID) ? model.watcherReadProblems[hostID] ?? "Reading Watcher on \(model.name(hostID))…"
+                         : "Reconnect to \(model.name(hostID)) to read Watcher.")
+                        .font(.sotto(.body)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                        .padding(.vertical, Space.s7)
                 }
             }
             .padding(.horizontal, Space.gutter)

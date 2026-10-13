@@ -141,6 +141,29 @@ final class WatcherModelTests: XCTestCase {
         owl.phase(.background)
     }
 
+    @MainActor func testAPageThatCantBeReadSaysWhatHappened() async throws {
+        // Hello came without Watcher's page, and the read after it fails.
+        let model = try await fixture(spec: nil)
+        await until { model.watcherReadProblems[laptop] != nil }
+        XCTAssertNil(model.watcherPage(laptop))
+        XCTAssertEqual(model.watcherReadProblems[laptop], "Watcher on Laptop couldn’t be read. Nothing was lost. Pull down to read it again.",
+                       "It says what happened, rather than reading for good")
+        XCTAssertEqual(model.watcherSendHeld(laptop), model.watcherReadProblems[laptop], "The box says why it can't send")
+        // Refused, the computer's own words say why.
+        HostConnection.watcherHandler = { _, _, _ in
+            try self.json(#"{"status":"refused","code":"UNAVAILABLE","message":"Watcher is starting on Laptop. Try again in a moment.","retryable":true}"#)
+        }
+        await model.readWatcher(laptop)
+        XCTAssertEqual(model.watcherReadProblems[laptop], "Watcher is starting on Laptop. Try again in a moment.")
+        // Read, the page shows and the problem goes.
+        HostConnection.watcherHandler = { _, _, _ in try self.ok(self.page()) }
+        await model.readWatcher(laptop)
+        XCTAssertNotNil(model.watcherPage(laptop))
+        XCTAssertNil(model.watcherReadProblems[laptop])
+        XCTAssertNil(model.watcherSendHeld(laptop))
+        model.phase(.background)
+    }
+
     @MainActor func testTheTabsDotAndBadgeSayWhatOnlyWatchersPageShows() async throws {
         // Fix login test's card is on Threads too, so the badge counts Watcher's own request and the forge thread's.
         let model = try await fixture(spec: Spec(ownCard: true, remoteCard: true))

@@ -233,7 +233,7 @@ extension AppModel {
 
     /// Reads Watcher's page again, when the user pulls to refresh, after an unconfirmed action, or when a hello came
     /// without it. Every shell from the computer carries it otherwise. One read at a time on each computer; a request
-    /// during a read asks for one more after it.
+    /// during a read asks for one more after it. A read that fails says so, on the page and in the box, until one works.
     func readWatcher(_ hostID: String) async {
         #if DEBUG && os(iOS)
         if isUIFixture { return }
@@ -247,14 +247,34 @@ extension AppModel {
             do {
                 let reply = try await connection.call(WatcherWire.read, as: WatcherPhoneResult.self)
                 guard generations[hostID] == epoch else { return }
-                if case .ok(let page) = reply { applyWatcher(page, from: hostID) }
-            } catch { return }
+                switch reply {
+                case .ok(let page):
+                    if !applyWatcher(page, from: hostID) { setWatcherReadProblem(Self.watcherUnreadable(name(hostID)), on: hostID) }
+                case .refused(let refusal):
+                    setWatcherReadProblem(refusal.message, on: hostID)
+                }
+            } catch let refusal as HostRefusal {
+                if generations[hostID] == epoch { setWatcherReadProblem(refusal.localizedDescription, on: hostID) }
+                return
+            } catch {
+                if generations[hostID] == epoch { setWatcherReadProblem(Self.watcherUnreadable(name(hostID)), on: hostID) }
+                return
+            }
         } while watcherRereads.contains(hostID)
     }
-    /// Takes a page from its computer, unless it names another computer or is older than the one shown.
-    private func applyWatcher(_ page: WatcherPage, from hostID: String) {
-        guard offersWatcher(hostID), (try? page.validate(hostID: hostID)) != nil else { return }
-        if let shown = live[hostID]?.watcher, page.isOlder(than: shown) { return }
+    static func watcherUnreadable(_ computer: String) -> String {
+        "Watcher on \(computer) couldn’t be read. Nothing was lost. Pull down to read it again."
+    }
+    /// Why Watcher's page couldn't be read, or nil once it is. Set only when it changes, so nothing redraws for nothing.
+    private func setWatcherReadProblem(_ problem: String?, on hostID: String) {
+        if watcherReadProblems[hostID] != problem { watcherReadProblems[hostID] = problem }
+    }
+    /// Takes a page from its computer, unless it names another computer or is older than the one shown. False when the
+    /// page doesn't belong to the computer that sent it.
+    @discardableResult private func applyWatcher(_ page: WatcherPage, from hostID: String) -> Bool {
+        guard offersWatcher(hostID), (try? page.validate(hostID: hostID)) != nil else { return false }
+        setWatcherReadProblem(nil, on: hostID)
+        if let shown = live[hostID]?.watcher, page.isOlder(than: shown) { return true }
         update(hostID) { $0.watcher = page }
         noticeWatcher(page, from: hostID)
         settleWatcherDraft(page, on: hostID)
@@ -263,6 +283,7 @@ extension AppModel {
             if connecting.contains(hostID) || dispatchingOperations.keys.contains(item.id) || (deliveryChecks[hostID] ?? 0) > 0 { continue }
             do { try settle(item, shell: live[hostID]?.shell) } catch { feedback = error.localizedDescription }
         }
+        return true
     }
     /// Watcher's own requests and errors alert under the switches every thread uses; its finished turns never do.
     private func noticeWatcher(_ page: WatcherPage, from hostID: String) {
@@ -285,7 +306,7 @@ extension AppModel {
     /// its own banner.
     func watcherSendHeld(_ hostID: String) -> String? {
         guard online(hostID) else { return nil }
-        guard let page = watcherPage(hostID) else { return "Reading Watcher on \(name(hostID))…" }
+        guard let page = watcherPage(hostID) else { return watcherReadProblems[hostID] ?? "Reading Watcher on \(name(hostID))…" }
         guard let current = page.current else { return "Watcher isn’t running on \(name(hostID)). Start it in Sotto on \(name(hostID)), then ask it here." }
         if !current.connected { return "\(AgentNames.name(current.provider)) isn’t connected on \(name(hostID)), so Watcher can’t take messages. Nothing was sent." }
         if page.needsYou.contains(where: { page.isOwn($0) }) { return "Answer Watcher’s request first." }
@@ -843,6 +864,8 @@ struct HeldDetail {
     /// Words that didn't reach Watcher, or that it didn't confirm, while newer words were in its box, by computer, oldest
     /// first. Each is offered back under the conversation, to go back in the box once it is empty. Nothing here is sent.
     @Published private(set) var watcherSetAside: [String: [WatcherSetAside]] = [:]
+    /// Why each computer's Watcher page couldn't be read, until a read works.
+    @Published private(set) var watcherReadProblems: [String: String] = [:]
     /// A Stop all whose outcome its computer hasn't told this iPhone yet, by computer.
     private var watcherStops: [String: WatcherStopRequest] = [:]
     /// Computers whose Stop all is being checked or carried out.
@@ -1865,7 +1888,7 @@ struct HeldDetail {
         connections[hostID]?.close(); connections[hostID] = nil
         let gone = Set(pending.filter { $0.hostID == hostID }.map(\.id))
         computers = rest; live[hostID] = nil; pending = markers; watches[hostID] = nil; watcherWatches[hostID] = nil
-        watcherDrafts[hostID] = nil; watcherSending[hostID] = nil; watcherSetAside[hostID] = nil; watcherStops[hostID] = nil
+        watcherDrafts[hostID] = nil; watcherSending[hostID] = nil; watcherSetAside[hostID] = nil; watcherStops[hostID] = nil; watcherReadProblems[hostID] = nil
         if selected?.hostID == hostID { cancelDetailReload(); selected = nil; openDetail = nil; detailProblem = nil }
         if detailStore.held?.ref.hostID == hostID { detailStore.held = nil }
         if show == .only(hostID) { show = .all }
