@@ -47,9 +47,11 @@ export class WatcherPhoneService {
         createdAt: operation.createdAt, updatedAt: operation.updatedAt,
         ...(operation.delivery ? { delivery: operation.delivery } : {}), ...(operation.refusalCode ? { refusalCode: operation.refusalCode } : {}) })
     }
+    const activeRequests = new Set(room.requests.filter(request => request.state === 'active'
+      && request.watcher.hostId === room.current?.target.hostId && request.watcher.threadId === room.current?.target.threadId).map(request => request.id))
     const watchedThreads = room.watchedThreads.map(row => ({ target: row.target, title: row.title,
       provider: thread(row.target)?.providerId ?? null, status: row.status, connected: row.connected,
-      watched: row.participation.some(part => part.state === 'participating' && !part.automationStopped),
+      watched: row.participation.some(part => activeRequests.has(part.requestId) && part.state === 'participating' && !part.automationStopped),
       takenOver: row.participation.some(part => part.state === 'taken-over'), backgroundWorkCount: row.backgroundWorkCount }))
     const targets = [...room.watchedThreads.map(row => row.target), ...room.current ? [room.current.target] : []]
     const needsYou = targets.flatMap(target => {

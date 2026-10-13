@@ -258,3 +258,24 @@ it('reconciles a lost Stop all reply from a client-bound receipt with partial re
   resumed.messages.splice(resumed.messages.findIndex(message => message.id === 'lost-stop'), 1)
   expect(await resumed.call('lost-stop', { ...packet, confirmationId: randomUUID() })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
 })
+
+
+it('marks workers watched only for active requests belonging to the current host-qualified Watcher', async () => {
+  const f = await fixture(), peer = await f.pair()
+  await peer.call('send', f.send(peer.paired.clientId)); const worker = await f.start()
+  const watched = () => f.phone.state(false).watchedThreads.find(row => row.target.threadId === worker.threadId)!.watched
+  expect(watched()).toBe(true)
+  const preview = await peer.call('preview', { op: 'watcher-phone-prepare-stop-all' })
+  await peer.call('stop', { op: 'watcher-phone-stop-all', confirmationId: (preview.result as { confirmationId: string }).confirmationId })
+  expect(f.watcher.state().requests.at(-1)?.state).toBe('stopped')
+  expect(watched()).toBe(false)
+  const shell = await peer.call('after-stop', { op: 'shell' })
+  expect((shell.result as { host: { threads: { id: string; watchedByWatcher?: boolean }[] } }).host.threads.find(row => row.id === worker.threadId)?.watchedByWatcher).toBe(false)
+  // Historical participation remains retained, including a host-local ID collision with another master.
+  await f.control.updateWatcher(record => { const request = record.requests.at(-1)!; request.state = 'active'; request.closedAt = null; request.watcher.hostId = randomUUID() })
+  expect(watched()).toBe(false)
+  await f.control.updateWatcher(record => { const request = record.requests.at(-1)!; request.watcher = f.target; request.state = 'closed'; request.closedAt = new Date().toISOString() })
+  expect(watched()).toBe(false)
+  await f.control.updateWatcher(record => { const request = record.requests.at(-1)!; request.state = 'active'; request.closedAt = null })
+  expect(watched()).toBe(true)
+})
