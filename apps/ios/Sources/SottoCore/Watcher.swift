@@ -118,6 +118,20 @@ public enum WatcherStopResult: Decodable, Sendable {
         }
     }
 }
+/// A Stop all receipt keeps the exact mutation outcome; read the page again for current state.
+public enum WatcherStopReceipt: Decodable, Sendable {
+    case ok([WatcherStopResult.StoppedTarget])
+    case refused(WatcherRefusal)
+    private enum Keys: String, CodingKey { case status, results }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        switch try c.decode(String.self, forKey: .status) {
+        case "ok": self = .ok(try c.decode([WatcherStopResult.StoppedTarget].self, forKey: .results))
+        case "refused": self = .refused(try WatcherRefusal(from: decoder))
+        default: throw ClientError.invalidProtocol
+        }
+    }
+}
 public enum WatcherWire {
     public static let feature = "watcher-phone"
     public static let stopFeature = "watcher-phone-stop-all"

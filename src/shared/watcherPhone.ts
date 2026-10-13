@@ -35,8 +35,12 @@ export const watcherPhoneStateSchema = z.object({ hostId: z.uuid(),
 }).strict()
 export const watcherPhoneResultSchema = z.union([z.object({ status: z.literal('ok'), state: watcherPhoneStateSchema }).strict(), watcherRefusalSchema])
 export const watcherPhoneSendResultSchema = z.union([z.object({ status: z.literal('ok'), draftId: z.uuid(), state: watcherPhoneStateSchema }).strict(), watcherRefusalSchema])
+const stoppedTargets = z.array(z.object({ target: watcherThreadTargetSchema,
+  status: z.enum(['stopped', 'requested', 'refused', 'uncertain']), message: z.string() }).strict())
+/** A retained mutation outcome has no stale page snapshot; consumers read fresh state separately. */
+export const watcherPhoneStopOutcomeSchema = z.union([z.object({ status: z.literal('ok'), results: stoppedTargets }).strict(), watcherRefusalSchema])
 export const watcherPhoneStopResultSchema = z.union([z.object({ status: z.literal('ok'), state: watcherPhoneStateSchema,
-  results: z.array(z.object({ target: watcherThreadTargetSchema, status: z.enum(['stopped', 'requested', 'refused', 'uncertain']), message: z.string() }).strict()) }).strict(), watcherRefusalSchema])
+  results: stoppedTargets }).strict(), watcherRefusalSchema])
 export const watcherPhoneStopPreviewSchema = watcherStopAllPreviewSchema.extend({ targets: z.array(z.object({
   hostId: z.uuid(), threadId: z.string(), title: z.string(), provider: providerIdSchema.nullable() }).strict()) })
 export const watcherPhonePrepareStopResultSchema = z.union([watcherPhoneStopPreviewSchema, watcherRefusalSchema])
@@ -47,4 +51,5 @@ export type WatcherPhoneAnswer = z.infer<typeof watcherPhoneAnswerSchema>
 export type WatcherPhoneResult = z.infer<typeof watcherPhoneResultSchema>
 export type WatcherPhoneSendResult = z.infer<typeof watcherPhoneSendResultSchema>
 export type WatcherPhoneStopResult = z.infer<typeof watcherPhoneStopResultSchema>
+export type WatcherPhoneStopOutcome = z.infer<typeof watcherPhoneStopOutcomeSchema>
 export type WatcherPhonePrepareStopResult = z.infer<typeof watcherPhonePrepareStopResultSchema>

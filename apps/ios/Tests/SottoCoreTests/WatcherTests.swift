@@ -60,6 +60,17 @@ final class WatcherTests: XCTestCase {
         else { XCTFail("Missing stop result") }
         XCTAssertThrowsError(try decode(WatcherPhoneResult.self, #"{"status":"automatic"}"#))
     }
+    func testStopReceiptKeepsPartialResultsWithoutAStalePage() throws {
+        XCTAssertNil(try decode(Receipt.self, #"{"status":"completed"}"#).watcherStop)
+        let text = #"{"status":"completed","watcherStop":{"status":"ok","results":[{"target":{"hostId":"host","threadId":"worker"},"status":"uncertain","message":"Check this worker."}]}}"#
+        let receipt = try decode(Receipt.self, text)
+        XCTAssertFalse(receipt.confirmsAnswer)
+        guard case .ok(let results)? = receipt.watcherStop else { return XCTFail("Missing Stop all outcome") }
+        XCTAssertEqual(results.first?.status, "uncertain")
+        let refused = #"{"status":"completed","watcherStop":{"status":"refused","code":"TARGET_CHANGED","message":"Review again.","retryable":false}}"#
+        guard case .refused(let value)? = try decode(Receipt.self, refused).watcherStop else { return XCTFail("Missing refusal") }
+        XCTAssertEqual(value.code, "TARGET_CHANGED")
+    }
     func testOptionalPageCannotBreakAnOrdinaryShell() throws {
         let base = #"{"hostId":"00000000-0000-4000-8000-000000000001","host":{"name":"Laptop","threads":[],"projects":[],"models":[],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true}}"#
         XCTAssertNil(try decode(Shell.self, base + "}").watcher)

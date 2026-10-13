@@ -8,6 +8,7 @@ import { LocalHostService } from '../../src/main/agents/hostService'
 import { PairedClients } from '../../src/main/agents/pairing'
 import { startSocketServer } from '../../src/host/socketServer'
 import { watcherPhoneResultSchema, watcherPhoneSendResultSchema } from '../../src/shared/watcherPhone'
+import { hostReceiptSchema } from '../../src/shared/hostProtocol'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
 import { rawPeer } from '../fixtures/rawHostPeer'
@@ -220,4 +221,40 @@ it('fences phone instructions at admission and dispatch while Watcher changes pr
     expect(late.error).toContain('provider change')
     expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'send')).toHaveLength(0)
   } finally { release.resolve(); await changing }
+})
+
+
+it('reconciles a lost Stop all reply from a client-bound receipt with partial results and no repeated stop', async () => {
+  const f = await fixture(), peer = await f.pair(), other = await f.pair()
+  await peer.call('send', f.send(peer.paired.clientId)); const first = await f.start(), second = await f.start()
+  const preview = await peer.call('preview', { op: 'watcher-phone-prepare-stop-all' })
+  const packet = { op: 'watcher-phone-stop-all', confirmationId: (preview.result as { confirmationId: string }).confirmationId }
+  const entered = deferred<void>(), release = deferred<void>(), original = f.workspace.host.execute.bind(f.workspace.host)
+  vi.spyOn(f.workspace.host, 'execute').mockImplementation(async (command, ...rest) => {
+    if (command.type === 'interrupt' && command.threadId === first.threadId) { entered.resolve(); await release.promise }
+    if (command.type === 'interrupt' && command.threadId === second.threadId) throw new Error('Synthetic stop unavailable')
+    return original(command, ...rest)
+  })
+  const resumed = await rawPeer(f.server.descriptor.port, f.pairing.signSession(peer.paired.clientId, Date.now()))
+  cleanups.push(async () => resumed.frames.close())
+  await resumed.call('hello', { op: 'hello', accepts: ['watcher-phone', 'watcher-phone-stop-all'] })
+  const pending = peer.call('lost-stop', packet)
+  try {
+    await entered.promise
+    expect(await resumed.call('pending-receipt', { op: 'receipt', commandId: 'lost-stop' })).toMatchObject({ ok: true, result: { status: 'pending' } })
+    expect(await other.call('private-receipt', { op: 'receipt', commandId: 'lost-stop' })).toMatchObject({ ok: true, result: { status: 'unknown' } })
+  } finally { release.resolve() }
+  const completed = await pending
+  expect(completed).toMatchObject({ ok: true, result: { status: 'ok', results: expect.arrayContaining([
+    expect.objectContaining({ target: first, status: 'stopped' }), expect.objectContaining({ target: second, status: 'uncertain' })]) } })
+  // Discard the acknowledgement and close its connection; recover through the same pairing.
+  peer.messages.splice(peer.messages.findIndex(message => message.id === 'lost-stop'), 1); peer.frames.close()
+  const result = completed.result as { results: unknown[] }
+  const recovered = await resumed.call('completed-receipt', { op: 'receipt', commandId: 'lost-stop' })
+  expect(hostReceiptSchema.parse(recovered.result)).toMatchObject({ status: 'completed', watcherStop: { status: 'ok', results: result.results } })
+  const before = f.workspace.adapters.codex.commands.filter(command => command.type === 'interrupt').length
+  expect(await resumed.call('lost-stop', packet)).toMatchObject({ ok: true, result: { status: 'ok', results: result.results } })
+  expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'interrupt')).toHaveLength(before)
+  resumed.messages.splice(resumed.messages.findIndex(message => message.id === 'lost-stop'), 1)
+  expect(await resumed.call('lost-stop', { ...packet, confirmationId: randomUUID() })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
 })
