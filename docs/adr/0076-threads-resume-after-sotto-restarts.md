@@ -41,9 +41,12 @@ and the next start reads it the same way.
 
 **4. What the next start does.** With the setting on, each recorded thread that is not settled or archived is sent
 a resume note once its provider is connected and reports the thread not running. The note goes through the wake-up
-path babysitting built (ADR-0061 decision 8): Sotto's own item in the thread's follow-up queue, after anything of the
-user's, sent when the thread is ready. With the setting off, the record is cleared and nothing is sent. A record
-older than seven days is cleared unsent.
+path babysitting built (ADR-0061 decision 8): Sotto's own item in the thread's follow-up queue, sent when the thread is
+ready. Unlike other wake-ups it goes ahead of the user's follow-ups, which were queued behind the turn it resumes, so
+the turn ends before they go; a queue paused because that turn did not finish takes the note as its review. With the
+setting off, the record is cleared and nothing is sent. A record older than seven days is cleared unsent. A note
+already saved in a queue goes only while the feature and the setting are both on, so a build or a setting without them
+sends nothing.
 
 **5. The note.** Every provider receives the same words:
 

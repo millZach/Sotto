@@ -215,6 +215,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // on, so the threads this process's close stops are sent the resume note when it next starts.
   const restartResume = options.resumeAfterRestart === true
     ? new RestartResume({ directory, control: agentControl, enabled: () => options.settings().resumeThreadsAfterRestart, tool: babysitTool }) : undefined
+  // A note already waiting in a queue goes only while both are still on; without the feature, none goes.
+  if (restartResume) agentControl.useRestartResume(() => options.settings().resumeThreadsAfterRestart)
   let closingWatcherTools: Promise<void> | undefined
   let watcherStopped = false
   const stopWatcher = (): void => {
@@ -231,8 +233,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     const resumeFrozen = restartResume?.freeze()
     agentControl.dispose()
     stoppingProviders = (async () => {
-      await resumeFrozen
-      const results = await Promise.allSettled([reasoner.close?.(), shortTextWriter.close(), ...Object.values(providers).map(provider => provider.closed?.()), ...(closingWatcherTools ? [closingWatcherTools] : [])])
+      // The record's last write runs beside the providers' closing; nothing they do changes it now.
+      const results = await Promise.allSettled([reasoner.close?.(), shortTextWriter.close(), ...Object.values(providers).map(provider => provider.closed?.()),
+        ...(closingWatcherTools ? [closingWatcherTools] : []), ...(resumeFrozen ? [resumeFrozen] : [])])
       await agentControl.closed()
       // A connection already starting when stop was requested has now settled. Stop and drain
       // once more so it cannot leave a late child outside the first provider closure snapshot.

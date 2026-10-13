@@ -51,6 +51,8 @@ export class RestartResume {
   /** Threads the last close stopped, waiting for their provider to be back before the note goes. */
   private readonly pending = new Set<string>()
   private readonly delivering = new Set<string>()
+  /** Hand-overs under way, which closing waits for, so a note saved in the queue is recorded as queued. */
+  private readonly handing = new Set<Promise<void>>()
   private readonly now: () => number
   private off: (() => void) | undefined
   private frozen = false
@@ -81,12 +83,17 @@ export class RestartResume {
     this.observe(this.options.control.get())
   }
 
-  /** Sotto is closing: the record keeps what is working now, and nothing closing does to a thread changes it. */
-  freeze(): Promise<void> {
+  /**
+   * Sotto is closing: the record keeps what is working now, and nothing closing does to a thread changes it. A hand-over
+   * already under way finishes first, and the record is written once more, so the file is what this run last knew.
+   */
+  async freeze(): Promise<void> {
     this.frozen = true
     this.off?.()
     this.off = undefined
-    return this.writing ?? Promise.resolve()
+    await Promise.allSettled([...this.handing])
+    this.save()
+    await this.writing
   }
 
   private observe(state: AgentState): void {
@@ -128,11 +135,12 @@ export class RestartResume {
     }
     const news: RestartNews = { source: 'restart', since: record.since, resumes: record.resumes + 1 }
     this.delivering.add(thread.id)
-    void this.options.control.deliverWakeUp(thread.id, news, { tool: this.options.tool(thread.id) }).then(
+    const handing: Promise<void> = this.options.control.deliverWakeUp(thread.id, news, { tool: this.options.tool(thread.id) }).then(
       () => { this.working.set(thread.id, { threadId: thread.id, since: record.since, resumes: news.resumes, queued: true }) },
       // Nothing was queued. A thread that went is dropped; one Sotto closed on is kept for the next start.
       () => { if (!this.frozen) this.working.delete(thread.id) },
-    ).finally(() => { this.pending.delete(thread.id); this.delivering.delete(thread.id); this.save() })
+    ).finally(() => { this.pending.delete(thread.id); this.delivering.delete(thread.id); this.handing.delete(handing); this.save() })
+    this.handing.add(handing)
   }
 
   private save(): void {
@@ -140,6 +148,7 @@ export class RestartResume {
     const next = JSON.stringify(working)
     if (next === this.saved) return
     this.saved = next
-    this.writing = this.store.writeLatest(() => ({ version: 1, working: [...this.working.values()].slice(-WORKING_MAX) })).catch(() => undefined)
+    // A write that fails is tried again at the next change, and at the latest when Sotto closes.
+    this.writing = this.store.writeLatest(() => ({ version: 1, working: [...this.working.values()].slice(-WORKING_MAX) })).catch(() => { this.saved = '' })
   }
 }

@@ -240,6 +240,8 @@ export class AgentControl {
   private readonly followupStore: FollowupStore
   private babysitting: Pick<Babysitter, 'start' | 'stop'> | undefined
   private wakeUpGuard: WakeUpGuard | undefined
+  /** Whether a resume note may still go (ADR-0076): absent where the Owl list keeps the feature off. */
+  private restartDue: (() => boolean) | undefined
   private readonly threadActions = new Map<string, Promise<unknown>>()
   /** How many lanes of each thread's own work are running; ephemeral, like the global lane's own flag. */
   private readonly busyThreads = new Map<string, number>()
@@ -1836,20 +1838,22 @@ export class AgentControl {
    * wake-up goes. Given before `start`, so no wake-up restored from the queue can go unasked.
    */
   useBabysitting(babysitting: Pick<Babysitter, 'start' | 'stop'>, guard?: WakeUpGuard): void { this.babysitting = babysitting; this.wakeUpGuard = guard }
+  /** Resuming after a restart (ADR-0076): given before start, so a resume note restored from the queue is asked about too. */
+  useRestartResume(due: () => boolean): void { this.restartDue = due }
   /**
    * Whether a wake-up holds news that may no longer go: the last line of defence behind withdrawal, so that whatever
    * order a stop, the switch and the queue run in, a babysitting ended quietly or by the switch sends nothing after.
    */
   private wakeUpOutdated(threadId: string, item: Pick<QueuedFollowup, 'wakeUp' | 'news'>): boolean {
     const guard = this.wakeUpGuard
-    // A resume note stays due: the restart that stopped the turn cannot be taken back (ADR-0076).
+    // A resume note goes only while the feature and its setting are on (ADR-0076), so one saved in the queue goes nowhere else.
     return item.wakeUp === true && (item.news ?? []).some(news => isWatcherNews(news)
       ? this.dependencies.watcherEnabled !== true || news.events.some(event => !this.watcherHooks?.wakeDue?.(event))
-      : !isRestartNews(news) && guard !== undefined && !guard.due(threadId, news))
+      : isRestartNews(news) ? this.restartDue?.() !== true : guard !== undefined && !guard.due(threadId, news))
   }
   private pruneWakeUp(threadId: string, id: string): Promise<void> {
     const guard = this.wakeUpGuard
-    return this.followupStore.pruneWakeUp(id, news => isWatcherNews(news) ? news.events.length > 0 : isRestartNews(news) || !guard || guard.due(threadId, news),
+    return this.followupStore.pruneWakeUp(id, news => isWatcherNews(news) ? news.events.length > 0 : isRestartNews(news) ? this.restartDue?.() === true : !guard || guard.due(threadId, news),
       items => queuedWakeUpText(items, { tool: guard?.tool(threadId) ?? false }), news => {
         if (!isWatcherNews(news)) return news
         const events = news.events.filter(event => this.dependencies.watcherEnabled === true && this.watcherHooks?.wakeDue?.(event))

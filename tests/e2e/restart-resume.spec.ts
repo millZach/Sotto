@@ -74,7 +74,7 @@ test('a thread working when Sotto quits carries on, with the resume note, when S
       await expect(page.getByRole('switch', { name: 'Resume threads after a restart' })).toBeChecked()
 
       // A turn starts and is still running: the fake CLI holds it open.
-      let { pane, transcript } = await openThread(page, 'Lighthouse essay')
+      const { pane } = await openThread(page, 'Lighthouse essay')
       await expect(pane).toHaveAttribute('data-thread-id', threadId)
       const prompt = promptField(pane)
       await fillPrompt(prompt, 'Write a long essay on the history of the lighthouse.')
@@ -100,7 +100,7 @@ test('a thread working when Sotto quits carries on, with the resume note, when S
           : (frame.message?.content as { type: string; text?: string }[] | undefined)?.find(item => item.type === 'text')?.text)
       expect(sent).toEqual(['Write a long essay on the history of the lighthouse.', RESUME_NOTE])
 
-      ;({ pane, transcript } = await openThread(page, 'Lighthouse essay'))
+      const { transcript } = await openThread(page, 'Lighthouse essay')
       const note = transcript.locator('.thread-message[data-from="sotto"]')
       await expect(note).toHaveCount(1, { timeout: 30_000 })
       await expect(note.locator('.thread-message__tag')).toHaveText('Resumed')

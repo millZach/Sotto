@@ -9,6 +9,7 @@ import type { AgentHost, AgentHostCommand, AgentHostResult } from '../../../src/
 import type { BabysitNews } from '../../../src/main/agents/babysitNews'
 import { RESUME_RECORD_MAX_AGE_MS, RestartResume } from '../../../src/main/agents/restartResume'
 import { foldWakeUpNews, queuedWakeUpText } from '../../../src/main/agents/wakeUp'
+import { FollowupStore } from '../../../src/main/agents/followups'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import type { AgentHostSnapshot, AgentThread } from '../../../src/shared/agents'
 import { RESUME_NOTE, RESUMES_IN_A_ROW_MAX, isResumeNoteText, type RestartNews } from '../../../src/shared/restartResume'
@@ -51,13 +52,15 @@ class Host implements AgentHost {
   }
 }
 interface Saved { version: 1; working: { threadId: string; since: string; resumes: number; queued?: true }[] }
-async function fixture(options: { saved?: Saved['working']; enabled?: boolean; host?: Host } = {}) {
+async function fixture(options: { saved?: Saved['working']; enabled?: boolean; host?: Host; gate?: boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-restart-resume-')); roots.push(root)
   if (options.saved) await writeFile(join(root, 'restart-resume.json'), JSON.stringify({ version: 1, working: options.saved }))
   const host = options.host ?? new Host()
   const credentials = await testCredentials(root, { mode: 'unavailable' })
   const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner }); controls.push(control)
   const resume = new RestartResume({ directory: root, control, enabled: () => options.enabled ?? true, tool: () => false }); resumes.push(resume)
+  // As the runtime does; a test of the gate leaves it out, as a build without the feature does.
+  if (options.gate !== false) control.useRestartResume(() => options.enabled ?? true)
   await resume.start()
   await control.start(); await control.command({ type: 'connect' })
   return { root, host, control, resume }
@@ -130,6 +133,29 @@ describe('resuming threads after a restart', () => {
     const f = await fixture({ saved: [stopped()], host })
     await expect.poll(() => saved(f.root)).toEqual([])
     expect(sends(f.host)).toEqual([])
+  })
+})
+
+describe('a resume note waiting in the queue', () => {
+  const restart: RestartNews = { source: 'restart', since: new Date().toISOString(), resumes: 1 }
+  it('goes nowhere where the feature is off, so a note saved by Owl is not sent by stable', async () => {
+    const f = await fixture({ gate: false })
+    await f.control.deliverWakeUp('workshop', restart, { tool: false })
+    await expect.poll(() => f.control.get().followups ?? []).toEqual([])
+    expect(sends(f.host)).toEqual([])
+  })
+
+  it('goes ahead of the user’s follow-ups, which waited on the turn it resumes', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-restart-resume-')); roots.push(root)
+    const store = new FollowupStore(root); await store.load()
+    const word = (items: readonly unknown[]) => queuedWakeUpText(items as never, { tool: false })
+    await store.enqueue({ threadId: 'workshop', draftId: randomUUID(), text: 'queued before Sotto closed', attachments: [] })
+    await store.queueWakeUp('workshop', restart, word, 'turn-1')
+    await store.enqueue({ threadId: 'workshop', draftId: randomUUID(), text: 'queued after', attachments: [] })
+    expect(store.peek().items.map(item => item.wakeUp ? 'note' : item.text)).toEqual(['note', 'queued before Sotto closed', 'queued after'])
+    const ids = store.peek().items.map(item => item.id)
+    await store.reorder('workshop', [ids[2]!, ids[1]!, ids[0]!])
+    expect(store.peek().items.map(item => item.wakeUp ? 'note' : item.text)).toEqual(['note', 'queued after', 'queued before Sotto closed'])
   })
 })
 
