@@ -412,6 +412,23 @@ describe('Owl native numeric projection', () => {
 })
 
 describe('native subscription metadata seam', () => {
+  it.each(['codex', 'claude', 'grok'] as const)('refuses Muse quota reads in the %s adapter without starting native work', async provider => {
+    const { root } = await fixture(provider)
+    const host = provider === 'codex' ? new CodexAppServerHost({ userDataPath: root, usageEnabled: true })
+      : provider === 'claude' ? new ClaudeStreamJsonHost({ userDataPath: root, usageEnabled: true })
+        : new GrokAcpHost(root, { usageEnabled: true })
+    const connect = vi.spyOn(host, 'connect')
+    const execute = vi.spyOn(host, 'execute')
+    const read = provider === 'claude'
+      ? vi.spyOn((host as unknown as { client: { findExecutable(): Promise<string | null> } }).client, 'findExecutable')
+      : vi.spyOn(host as unknown as { readQuota(): Promise<unknown> }, 'readQuota')
+    for (const refresh of [false, true]) {
+      await expect(host.readProviderQuota!('muse', refresh)).rejects.toThrow('Usage is not available for this provider.')
+    }
+    expect(read).not.toHaveBeenCalled()
+    expect(connect).not.toHaveBeenCalled()
+    expect(execute).not.toHaveBeenCalled()
+  })
   it('leaves every adapter seam absent on stable and keeps the startup answer immutable', async () => {
     const { root } = await fixture('claude', false)
     const options = { userDataPath: root, usageEnabled: false }

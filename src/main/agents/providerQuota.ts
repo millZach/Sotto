@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
+import type { ProviderId } from '../../shared/agents'
 import {
-  USAGE_QUOTA_WINDOWS_MAX, usageQuotaReadSchema,
+  USAGE_QUOTA_WINDOWS_MAX, isUsageProviderId, usageQuotaReadSchema,
   type UsageQuotaRead, type UsageQuotaWindow,
 } from '../../shared/usageDashboard'
 
@@ -53,8 +54,9 @@ function read(providerId: UsageQuotaRead['providerId'], windows: UsageQuotaWindo
     ...(at ? { observedAt: at } : {}), refreshable, ...(!windows.length ? { reason: 'not-reported' } : {}) })
 }
 /** Caller-owned connection/read state. Reasons are fixed words, never native exception text. */
-export function unavailableProviderQuota(providerId: UsageQuotaRead['providerId'], reason: NonNullable<UsageQuotaRead['reason']>,
+export function unavailableProviderQuota(providerId: ProviderId, reason: NonNullable<UsageQuotaRead['reason']>,
   refreshable = false, observedAt?: string): UsageQuotaRead {
+  if (!isUsageProviderId(providerId)) throw new Error('Usage is not available for this provider.')
   const at = timestamp(observedAt)
   return usageQuotaReadSchema.parse({ providerId, status: reason === 'read-failed' ? 'error' : 'unavailable', windows: [],
     refreshable, reason, ...(at ? { observedAt: at } : {}) })
