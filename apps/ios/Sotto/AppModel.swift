@@ -352,7 +352,11 @@ extension AppModel {
         let operation = WatcherWire.send(target: current.target, clientID: computer.pairing.clientId, draftID: draftID, text: text)
         do {
             let reply = try await connection.call(operation, as: WatcherSendResult.self)
-            guard generations[hostID] == epoch else { restoreWatcherDraft(text, on: hostID, unconfirmed: true); return }
+            // A reply over a connection that has since changed doesn't say what happened to the words.
+            guard generations[hostID] == epoch else {
+                feedback = restoreWatcherDraft(text, on: hostID, unconfirmed: true) ? Self.watcherUnconfirmed : Self.watcherUnconfirmedSetAside
+                return
+            }
             switch reply {
             case .ok(_, let state):
                 watcherDrafts[hostID]?.resolve(draftID)
