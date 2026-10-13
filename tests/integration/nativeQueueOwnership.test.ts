@@ -22,13 +22,20 @@ async function fixture() {
   return { f, threadId, control, create, dispose: stack.dispose }
 }
 
+async function startNativeTurn(control: AgentControl, threadId: string, text: string): Promise<string> {
+  const sent = await control.command({ type: 'manual-send', threadId, draftId: randomUUID(), text })
+  // A refused or uncertain first send is not a queue-ownership result. Report its actual error first.
+  expect(sent.error, 'The first native send must succeed before testing its queued follow-up').toBeNull()
+  await expect.poll(() => control.get().host.threads.find(thread => thread.id === threadId)?.lastTurn?.status).toBe('running')
+  return control.get().host.threads.find(thread => thread.id === threadId)!.lastTurn!.id
+}
+
 it.each(['before idle', 'after idle'] as const)('waits for native completion when a follow-up is queued %s and the last turn is still running', async admission => {
   const { f, threadId, control, dispose } = await fixture()
   const pause = vi.spyOn(FollowupStore.prototype, 'pause')
   const claim = vi.spyOn(FollowupStore.prototype, 'claim')
   try {
-    await control.command({ type: 'manual-send', threadId, draftId: randomUUID(), text: 'First native turn' })
-    const turnId = control.get().host.threads.find(t => t.id === threadId)!.lastTurn!.id
+    const turnId = await startNativeTurn(control, threadId, 'First native turn')
     const command = { type: 'queue-followup' as const, threadId, draftId: randomUUID(), text: 'After authoritative completion' }
     if (admission === 'before idle') await control.command(command)
     await f.action(threadId, { type: 'notify', method: 'thread/status/changed', params: { status: { type: 'idle' } } })
@@ -100,7 +107,7 @@ it('does not start a second native turn when the same manual revision is queued 
 it('keeps queued input out of native steering and sends it once after completion', async () => {
   const { f, threadId, control, dispose } = await fixture()
   try {
-    await control.command({ type: 'manual-send', threadId, draftId: randomUUID(), text: 'First turn' })
+    await startNativeTurn(control, threadId, 'First turn')
     const command = { type: 'queue-followup' as const, threadId, draftId: randomUUID(), text: 'Next turn' }
     await control.command(command)
     expect((await control.command({ ...command, type: 'steer' })).error).toBeNull()
@@ -117,7 +124,7 @@ it('keeps queued input out of native steering and sends it once after completion
 it.each(['failed', 'interrupted'] as const)('pauses for an authoritative %s outcome after native idle and requires explicit resume', async outcome => {
   const { f, threadId, control, dispose } = await fixture()
   try {
-    await control.command({ type: 'manual-send', threadId, draftId: randomUUID(), text: 'First native turn' })
+    await startNativeTurn(control, threadId, 'First native turn')
     const command = { type: 'queue-followup' as const, threadId, draftId: randomUUID(), text: 'Requires review after terminal failure' }
     await control.command(command)
     await f.action(threadId, { type: 'notify', method: 'thread/status/changed', params: { status: { type: 'idle' } } })
