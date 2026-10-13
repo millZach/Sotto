@@ -3,14 +3,20 @@ import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
+import { desktopWindowClient } from '../../src/main/agents/hostService'
 import { WatcherService } from '../../src/main/agents/watcher'
+import { WatcherPhoneService } from '../../src/main/agents/watcherPhone'
+import { LocalHostService } from '../../src/main/agents/hostService'
+import { PairedClients } from '../../src/main/agents/pairing'
+import { startSocketServer } from '../../src/host/socketServer'
+import { rawPeer } from '../fixtures/rawHostPeer'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
 import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
 import { DESKTOP_CLIENTS_FILE } from '../../src/shared/desktopClients'
 import { watcherToolSchemas, type WatcherToolName, type WatcherToolOutput } from '../../src/shared/watcher'
-import type { WatcherHostControl } from '../../src/shared/watcherHost'
+import { watcherHostControlSchema, type WatcherHostControl, type WatcherHostProjection } from '../../src/shared/watcherHost'
 import type { HostOperation } from '../../src/shared/hostProtocol'
 import { useSocketHostFixture } from '../fixtures/socketHostFixture'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
@@ -95,7 +101,9 @@ it('starts, reads positions, sends, stops and settles through the owning host wi
   expect(await f.call('send_to_thread', afterSettlement)).toMatchObject({ code: 'REQUEST_NOT_ACTIVE' })
   // A stale master projection must not revive participation on the owning host.
   await f.control.updateWatcher(record => {
-    const participant = record.requests.find(item => item.id === f.requestId)!.participants[0]!
+    const request = record.requests.find(item => item.id === f.requestId)!
+    request.state = 'active'; request.closedAt = null
+    const participant = request.participants[0]!
     participant.state = 'participating'; delete participant.automationStopped
   })
   const writes = vi.spyOn(f.socket, 'watcherControl')
@@ -270,6 +278,35 @@ it('enforces the narrower owning-host default and keeps a confirmed remote Stop 
   expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'now', text: 'Synthetic stopped request refusal' })).toMatchObject({ code: 'REQUEST_NOT_ACTIVE' })
 })
 
+it.each(['queued', 'dispatching'])('rechecks a revoked phone after remote Stop all %s persistence', async phase => {
+  const f = await master(), started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok') throw new Error('start-refused')
+  const phone = new WatcherPhoneService(f.control, f.watcher), pairing = new PairedClients(f.workspace.root)
+  await pairing.load()
+  const server = await startSocketServer({ service: new LocalHostService({ control: f.control, watcherPhone: phone }), pairing, admin: false })
+  cleanups.push(() => server.close())
+  const paired = await pairing.redeem(pairing.issuePairingCode().code, 'Synthetic phone')
+  const peer = await rawPeer(server.descriptor.port, pairing.signSession(paired.clientId, Date.now()))
+  cleanups.push(async () => peer.frames.close())
+  await peer.call('hello', { op: 'hello', accepts: ['watcher-phone', 'watcher-phone-stop-all'] })
+  const preview = await peer.call('preview', { op: 'watcher-phone-prepare-stop-all' })
+  const held = heldOperation(), original = f.control.updateWatcher.bind(f.control)
+  let paused = false
+  vi.spyOn(f.control, 'updateWatcher').mockImplementation(async update => {
+    await original(update)
+    if (!paused && f.control.watcherRecord().operations.some(operation => operation.action === 'stop' && operation.deliveryState === phase)) {
+      paused = true; await held.wait()
+    }
+  })
+  const writes = vi.spyOn(f.socket, 'watcherControl')
+  const stopping = peer.call('stop', { op: 'watcher-phone-stop-all', confirmationId: (preview.result as { confirmationId: string }).confirmationId })
+  try { await held.entered; await pairing.revoke(paired.clientId) } finally { held.release() }
+  // Revocation may lose the phone's reply; the owning host must still receive no stop.
+  await stopping.catch(() => undefined)
+  expect(writes).not.toHaveBeenCalled()
+  expect((await remote.native.snapshot()).threads.find(thread => thread.title === 'Synthetic remote worker')?.status).toBe('running')
+})
+
 it('refuses closed remote entry points with the same code as local tools and no coordinator effects', async () => {
   const f = await master(), original = f.socket.watcherControl.bind(f.socket)
   let packet: WatcherHostControl | undefined
@@ -305,4 +342,224 @@ it('refuses a remote mutation before transmission when the master closes during 
     expect(await f.call('start_thread', input)).toMatchObject({ code: 'NOT_CURRENT_WATCHER' })
     expect(f.watcher.state().requests[0]!.participants[0]!.promptCount).toBe(1)
   } finally { gate.release(); await start }
+})
+
+
+it('attributes returning paired evidence to its host, queues news after user work and withdraws it on Stop', async () => {
+  const f = await master(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start-refused')
+  let checks: 'failed' | 'passed' = 'failed'
+  const original = f.socket.watcherRead.bind(f.socket)
+  vi.spyOn(f.socket, 'watcherRead').mockImplementation(async packet => {
+    const result = await original(packet)
+    if (packet.call) return result
+    const projection = result as WatcherHostProjection
+    return { ...projection, evidence: [...projection.evidence, { id: 'synthetic-host-fact', target: first.target,
+      source: 'github', observedAt: new Date().toISOString(), freshness: 'fresh', availability: 'available',
+      fact: checks === 'failed' ? 'checks-failed' : 'checks-passed', checksState: checks,
+      headId: 'synthetic-head', url: 'https://github.com/synthetic/project/pull/5' }] }
+  })
+  await f.control.commandShell({ type: 'queue-followup', threadId: f.id, draftId: randomUUID(), text: 'Synthetic user continuation' })
+  const occurrences: string[] = []
+  for (const state of ['failed', 'passed', 'failed'] as const) {
+    checks = state; f.router.replace(f.connection)
+    await vi.waitFor(() => {
+      const facts = f.watcher.state().watchedThreads.find(item => item.target.threadId === first.target.threadId)!.evidence ?? []
+      const fact = facts.find(item => item.source === 'github' && item.checksState === state)!
+      expect(fact).toBeDefined()
+      const event = f.watcher.state().news?.find(item => item.kind === 'evidence-changed' && item.evidenceIds?.includes(fact.id))
+      expect(event).toMatchObject({ target: first.target, requestId: f.requestId })
+      expect(occurrences).not.toContain(event!.id)
+    }, { timeout: 15_000 })
+    const event = f.watcher.state().news!.find(item => item.kind === 'evidence-changed' && item.target.threadId === first.target.threadId)!
+    occurrences.push(event.id)
+    await vi.waitFor(() => expect(f.control.shell().followups?.filter(item => item.threadId === f.id).at(-1)?.wakeUp).toBe(true), { timeout: 15_000 })
+    expect(f.control.shell().followups!.filter(item => item.threadId === f.id)[0]!.text).toBe('Synthetic user continuation')
+  }
+  expect(new Set(occurrences).size).toBe(3)
+  expect(await f.call('stop_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target })).toMatchObject({ status: 'ok' })
+  checks = 'passed'; f.router.replace(f.connection)
+  await vi.waitFor(() => expect(f.watcher.state().news?.some(item => item.target.threadId === first.target.threadId)).toBe(false))
+  await vi.waitFor(() => expect(f.control.shell().followups?.some(item => item.threadId === f.id && item.wakeUp)).toBe(false))
+  expect(f.control.shell().followups!.find(item => item.threadId === f.id)?.text).toBe('Synthetic user continuation')
+  expect(f.watcher.state().watchedThreads.find(item => item.target.threadId === first.target.threadId)!.participation[0]).toMatchObject({ automationStopped: true, promptCount: 1 })
+  expect((await remote.native.snapshot()).threads.find(item => item.title === 'Synthetic remote worker')!.messages.filter(item => item.role === 'user')).toHaveLength(1)
+  expect(f.workspace.adapters.codex.commands.filter(item => item.type === 'answer')).toHaveLength(0)
+}, 60_000)
+
+
+it('resets paired quiet progress when an owning-host plan step completes without changing its shell summary', async () => {
+  const f = await master(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start-refused')
+  const nativeId = (await remote.native.snapshot()).threads.find(item => item.title === 'Synthetic remote worker')!.id
+  const plan = { id: 'synthetic-plan', turnId: 'synthetic-progress-turn', kind: 'plan' as const, status: 'running' as const, sequence: 0, title: 'Synthetic plan',
+    steps: [{ text: 'Synthetic step', status: 'running' as 'running' | 'completed' }] }
+  remote.native.event({ type: 'stream', threadId: nativeId, messageId: 'synthetic-progress', text: '', status: 'running', activities: [plan] })
+  await f.socket.command({ type: 'refresh', provider: 'codex' })
+  const observationKey = JSON.stringify([first.target.hostId, first.target.threadId])
+  await vi.waitFor(() => expect(f.watcher.wakes.observations.has(observationKey)).toBe(true))
+  await f.call('read_operation', { operationId: first.receipt.operationId })
+  const before = f.watcher.wakes.observations.get(observationKey)!.lastProgressAt
+  const shell = f.socket.shell().host.threads.find(item => item.id === first.target.threadId)!
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 19 * 60_000)
+  try {
+    plan.steps[0]!.status = 'completed'
+    remote.native.event({ type: 'stream', threadId: nativeId, messageId: 'synthetic-progress', text: '', status: 'running', activities: [plan] })
+    await f.socket.command({ type: 'refresh', provider: 'codex' })
+    expect(f.socket.shell().host.threads.find(item => item.id === first.target.threadId)!.summary).toEqual(shell.summary)
+    await vi.waitFor(() => expect(f.watcher.wakes.observations.get(observationKey)!.lastProgressAt).not.toBe(before), { timeout: 5_000 })
+  } finally { clock.mockRestore() }
+}, 60_000)
+
+
+it.each(['stopped', 'closed'] as const)('fences a request %s during remote dispatch persistence before the wire', async state => {
+  const f = await master(), gate = heldOperation(), writes = vi.spyOn(f.socket, 'watcherControl')
+  const update = f.control.updateWatcher.bind(f.control)
+  let held = false
+  vi.spyOn(f.control, 'updateWatcher').mockImplementation(async mutator => {
+    const result = await update(mutator)
+    if (!held && f.watcher.state().receipts.some(item => item.deliveryState === 'dispatching' && item.target.hostId === f.pairing.hostId)) {
+      held = true; await gate.wait()
+    }
+    return result
+  })
+  const input = f.start(), start = f.call('start_thread', input)
+  try {
+    await gate.entered
+    if (state === 'stopped') await f.control.commandShell({ type: 'interrupt', threadId: f.id })
+    else await update(record => { const request = record.requests.find(item => item.id === f.requestId)!; request.state = 'closed'; request.closedAt = new Date().toISOString() })
+    expect(f.watcher.state().requests.find(item => item.id === f.requestId)?.state).toBe(state)
+    gate.release()
+    expect(await start).toMatchObject({ code: 'REQUEST_NOT_ACTIVE', receipt: { deliveryState: 'failed' } })
+    expect(writes).not.toHaveBeenCalled(); expect(f.watcher.state().inFlight).toBe(0)
+    expect((await remote.native.snapshot()).threads.some(item => item.title === input.title)).toBe(false)
+    expect(await f.call('start_thread', input)).toMatchObject({ code: 'REQUEST_NOT_ACTIVE', receipt: { deliveryState: 'failed' } })
+  } finally { gate.release(); await start }
+})
+
+
+it('keeps restored queues paused after retrying another receipt on the same request', async () => {
+  const f = await master(), input = f.start(), original = f.socket.watcherControl.bind(f.socket)
+  let packet: WatcherHostControl | undefined
+  vi.spyOn(f.socket, 'watcherControl').mockImplementation(async request => { if (request.call.name === 'start_thread') packet = request; return original(request) })
+  const first = await f.call('start_thread', input)
+  if (first.status !== 'ok') throw new Error('start-refused')
+  const queued = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'queue', text: 'Synthetic restored machine queue' })
+  expect(queued).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
+  const nativeId = (await remote.native.snapshot()).threads.find(item => item.title === input.title)!.id
+  await f.socket.close(); await remote.host.close()
+  remote.host = await startFixtureHeadlessHost({ dataDirectory: remote.root, port: 0, providers: { codex: remote.native } })
+  remote.url = 'http://127.0.0.1:' + remote.host.descriptor!.port
+  const socket = new SocketHostService({ url: remote.url, token: f.pairing.token, watcherEnabled: true }); remote.clients.push(socket)
+  await socket.connect(); await socket.command({ type: 'connect', provider: 'codex' })
+  expect(remote.host.service.state().followups?.some(item => item.threadId === first.target.threadId && item.status === 'queued')).toBe(true)
+  expect(await socket.watcherControl(packet!)).toMatchObject({ receipt: { operationId: first.receipt.operationId } })
+  remote.native.event({ type: 'ready', threadId: nativeId, text: 'Synthetic completion after restart' })
+  await socket.command({ type: 'refresh', provider: 'codex' })
+  await vi.waitFor(() => expect(remote.host.service.state().followups?.find(item => item.threadId === first.target.threadId)?.status).toBe('paused'))
+  expect((await remote.native.snapshot()).threads.find(item => item.id === nativeId)!.messages.filter(item => item.role === 'user')).toHaveLength(1)
+}, 60_000)
+
+
+it('keeps operation-specific restart fences when another receipt or a new operation reconnects its request', async () => {
+  const workspace = await workspaceFixture(undefined, { history: true })
+  const f = await agentControlFixture({ directory: workspace.root, host: workspace.host, credentialOptions: { mode: 'unavailable' },
+    control: { historyEnabled: () => true, watcherEnabled: true } })
+  let control = f.control
+  let worker = new WatcherService({ directory: f.root, host: workspace.host, control, historyEnabled: () => true, limit: () => 1, workerHost: true })
+  cleanups.push(async () => { worker.close(); await f.dispose(); await workspace.stop(); await workspace.remove() })
+  await control.start(); await control.commandShell({ type: 'connect', provider: 'codex' }); await worker.recover()
+  const master = { target: { hostId: randomUUID(), threadId: randomUUID() }, projectId: 'synthetic-master-project', provider: 'codex' as const,
+    creationOperationId: randomUUID(), createdAt: new Date().toISOString() }
+  const request = { id: randomUUID(), watcher: master.target, rootUserMessageId: randomUUID(), createdAt: master.createdAt }
+  const target = { hostId: control.hostId()!, threadId: randomUUID() }, clientId = randomUUID()
+  const packet = (call: Extract<WatcherHostControl['call'], { name: 'start_thread' | 'send_to_thread' }>): WatcherHostControl => ({ master, request, call,
+    ceiling: 'approval-required', operation: { id: randomUUID(), requestId: request.id, retryKey: call.input.retryKey,
+      digest: createHash('sha256').update(JSON.stringify([call.name, watcherToolSchemas[call.name].input.parse(call.input)])).digest('hex'), action: call.name === 'start_thread' ? 'start' : 'send', target,
+      generation: 0, deliveryState: 'queued', delivery: call.name === 'start_thread' ? 'now' : call.input.delivery, createdAt: request.createdAt, updatedAt: request.createdAt,
+      receiptId: randomUUID(), cardId: randomUUID(), draftId: randomUUID(), messageId: randomUUID(), anchorMessageId: request.rootUserMessageId,
+      ...call.name === 'start_thread' ? { creationReceiptId: randomUUID(), firstPromptReceiptId: randomUUID() } : {} } })
+  const snapshot = control.watcherSnapshot()
+  const start = packet({ name: 'start_thread', input: { requestId: request.id, retryKey: randomUUID(), project: { hostId: target.hostId, projectId: snapshot.projects.find(item => item.providerId === 'codex')!.id },
+    modelId: snapshot.models.find(item => item.providerId === 'codex' && item.ready)!.id, title: 'Synthetic owned worker', firstPrompt: 'Synthetic first machine prompt', workingCopy: { kind: 'shared' } } })
+  watcherHostControlSchema.parse(start)
+  const started = await worker.admitRemote(start, clientId, () => undefined) as { status: string; code?: string }
+  expect(started.status, started.code).toBe('ok')
+  const queued = packet({ name: 'send_to_thread', input: { requestId: request.id, retryKey: randomUUID(), target, text: 'Synthetic saved queue', delivery: 'queue' } })
+  expect(await worker.admitRemote(queued, clientId, () => undefined)).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
+  worker.close(); control.dispose(); await control.closed()
+  control = f.create()
+  worker = new WatcherService({ directory: f.root, host: workspace.host, control, historyEnabled: () => true, limit: () => 1, workerHost: true })
+  await control.start(); await control.commandShell({ type: 'connect', provider: 'codex' }); await worker.recover()
+  const code = (id: string) => { try { worker.guardOperation(id); return undefined } catch (error) { return (error as { result?: { code: string } }).result?.code } }
+  expect(control.watcherRecord().operations.find(item => item.id === queued.operation.id)?.deliveryState).toBe('queued')
+  expect(code(queued.operation.id)).toBe('HOST_DISCONNECTED')
+  expect(await worker.admitRemote(start, clientId, () => undefined)).toMatchObject({ receipt: { operationId: start.operation.id } })
+  expect(code(queued.operation.id)).toBe('HOST_DISCONNECTED')
+  if (queued.call.name !== 'send_to_thread') throw new Error('Synthetic queue packet mismatch')
+  const fresh = packet({ name: 'send_to_thread', input: { ...queued.call.input, retryKey: randomUUID() } })
+  expect(await worker.admitRemote(fresh, clientId, () => undefined)).toMatchObject({ status: 'ok' })
+  expect(code(fresh.operation.id)).toBeUndefined()
+  expect(code(queued.operation.id)).toBe('HOST_DISCONNECTED')
+})
+
+
+it.each([
+  { desktop: 'approval-required', host: 'full-access' },
+  { desktop: 'full-access', host: 'approval-required' },
+] as const)('uses the common narrower default with desktop $desktop and host $host when permission is omitted', async defaults => {
+  const f = await master()
+  await f.control.commandShell({ type: 'configure', patch: { newThreadRuntimeMode: defaults.desktop } })
+  await remote.host.service.command({ type: 'configure', patch: { newThreadRuntimeMode: defaults.host } }, desktopWindowClient())
+  const first = await f.call('start_thread', f.start())
+  expect(first.status, first.status === 'refused' ? first.code : undefined).toBe('ok')
+  expect(first).toMatchObject({ effectiveChoices: { permission: { kind: 'runtime', mode: 'approval-required' } } })
+  if (first.status !== 'ok') throw new Error('start-refused')
+  expect(f.socket.shell().host.threads.find(item => item.id === first.target.threadId)?.runtimeMode).toBe('approval-required')
+})
+
+
+it.each(['list_projects', 'list_threads'] as const)('applies the explicit local host filter to %s while keeping the aggregate available', async name => {
+  const f = await master()
+  expect(await f.call('start_thread', f.start())).toMatchObject({ status: 'ok' })
+  const aggregate = await f.call(name, {})
+  if (aggregate.status !== 'ok') throw new Error('list-refused')
+  const all = 'projects' in aggregate ? aggregate.projects : aggregate.rows
+  expect(all.some(item => item.target.hostId === f.pairing.hostId)).toBe(true)
+  const local = await f.call(name, { hostId: f.control.hostId()! })
+  if (local.status !== 'ok') throw new Error('list-refused')
+  const rows = 'projects' in local ? local.projects : local.rows
+  expect(rows.every(item => item.target.hostId === f.control.hostId())).toBe(true)
+  expect(rows.some(item => item.target.hostId === f.pairing.hostId)).toBe(false)
+})
+
+it.each(['retention', 'project filter', 'settlement', 'protection', 'queue preservation'] as const)('keeps paired identities separate for %s when local IDs collide', async check => {
+  const f = await master()
+  const started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok') throw new Error('Synthetic remote creation was refused')
+  const hostId = f.control.hostId()!, local = f.control.watcherSnapshot()
+  const twin = { ...f.socket.shell().host.threads.find(thread => thread.id === started.target.threadId)!, hostId,
+    title: 'Local identity twin', status: 'idle' as const, messages: [], requests: [] }
+  const project = { ...f.project, hostId, title: 'Local reserved twin', path: join(f.root, 'watcher', 'workspace'), workspaceSettledAt: new Date().toISOString() }
+  vi.spyOn(f.control, 'watcherSnapshot').mockReturnValue({ ...local, threads: [...local.threads, twin], projects: [...local.projects, project] })
+  const shell = f.control.shell()
+  vi.spyOn(f.control, 'shell').mockReturnValue({ ...shell, host: { ...shell.host, projects: [...shell.host.projects, project] } })
+  if (check === 'queue preservation') {
+    await f.control.updateWatcher(record => { record.requests.find(request => request.id === f.requestId)!.participants[0]!.automationStopped = true })
+    expect(f.watcher.preserveUserQueue(twin.id)).toBe(false)
+    return
+  }
+  if (check === 'retention') {
+    expect(f.watcher.watchedThreadIds()).not.toContain(twin.id)
+    return
+  }
+  const list = await f.call('list_threads', check === 'project filter' ? { project: { hostId, projectId: f.project.id } }
+    : check === 'settlement' ? { includeSettled: false } : {})
+  if (list.status !== 'ok') throw new Error('Synthetic catalog read was refused')
+  if (check === 'project filter') expect(list.rows.map(row => row.target)).toEqual([{ hostId, threadId: twin.id }])
+  if (check === 'settlement') {
+    expect(list.rows.map(row => row.target)).toContainEqual(started.target)
+    expect(list.rows.map(row => row.target)).not.toContainEqual({ hostId, threadId: twin.id })
+  }
+  if (check === 'protection') expect(list.rows.find(row => row.target.hostId === started.target.hostId && row.target.threadId === twin.id)?.protected).toBe(false)
 })

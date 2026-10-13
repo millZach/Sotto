@@ -22,7 +22,8 @@ export function connectCheckpoints(options: { files: FilesService; directory: st
   // A capture may precede the next native turn. Keep its checkpoint identity rather than guessing from the current turn.
   const observed: import('./checkpointTypes').CheckpointDependencies['observed'] = control.watcherObservationsEnabled?.()
     ? read => control.checkpointObserved(read) : undefined
-  const checkpoints = new CheckpointService({ ...(observed ? { observed } : {}), report: options.report, ...(preserveThread ? { preserveThread } : {}), ...(options.historyEnabled ? { historyEnabled: options.historyEnabled } : {}), files: options.files, directory: join(options.directory, 'checkpoints'),
+  const restore: import('./checkpointTypes').CheckpointDependencies['restore'] = observed ? read => control.restoreCheckpoint?.(read) : undefined
+  const checkpoints = new CheckpointService({ ...(observed && restore ? { observed, restore } : {}), report: options.report, ...(preserveThread ? { preserveThread } : {}), ...(options.historyEnabled ? { historyEnabled: options.historyEnabled } : {}), files: options.files, directory: join(options.directory, 'checkpoints'),
     resolveThread: async (threadId, held) => {
       const snapshot = host.workspaceSnapshot(), thread = snapshot.threads.find(item => item.id === threadId)
       if (!thread?.providerId) return null

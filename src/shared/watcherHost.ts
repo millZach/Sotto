@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { agentRuntimeModeSchema, type AgentHostSnapshot } from './agents'
-import { watcherIdentitySchema, watcherOperationSchema, watcherRequestSchema, watcherToolSchemas, watcherEvidenceSchema } from './watcher'
+import { watcherIdentitySchema, watcherOperationSchema, watcherRequestSchema, watcherToolSchemas, watcherEvidenceSchema, watcherThreadTargetSchema } from './watcher'
 
 /** Text-free attribution, bound by the host to its authenticated SSH-recorded desktop. No local tool token travels. */
 export const watcherHostScopeSchema = watcherIdentitySchema
@@ -24,7 +24,8 @@ export const watcherHostReadSchema = z.object({ master: watcherHostScopeSchema,
 export const watcherHostProjectionSchema = z.object({ hostId: z.uuid(), master: watcherHostScopeSchema,
   revision: z.string().min(1).max(512), observedAt: z.string().datetime(),
   requests: z.array(watcherRequestSchema).max(1_000), operations: z.array(watcherOperationSchema).max(1_000),
-  evidence: z.array(watcherEvidenceSchema).max(1_000) }).strict()
+  evidence: z.array(watcherEvidenceSchema).max(1_000),
+  progress: z.array(z.object({ target: watcherThreadTargetSchema, fingerprint: z.string().regex(/^[a-f0-9]{64}$/u) }).strict()).max(1_000).optional() }).strict()
 export type WatcherHostControl = z.infer<typeof watcherHostControlSchema>
 export type WatcherHostRead = z.infer<typeof watcherHostReadSchema>
 export type WatcherHostProjection = z.infer<typeof watcherHostProjectionSchema>

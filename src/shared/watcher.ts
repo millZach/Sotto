@@ -22,6 +22,7 @@ const utf8 = (max: number) => z.string().max(max).refine(value => new TextEncode
 const prompt = utf8(WATCHER_PROMPT_BYTES_MAX).refine(value => value.trim().length > 0, 'A prompt is required.')
 export const watcherProviderSchema = z.enum(['codex', 'claude', 'grok'])
 export const watcherThreadTargetSchema = z.object({ hostId: z.uuid(), threadId: id }).strict()
+export const watcherPhoneOriginSchema = z.object({ kind: z.literal('phone'), hostId: z.uuid(), clientId: id }).strict()
 export const watcherProjectTargetSchema = z.object({ hostId: z.uuid(), projectId: entityId }).strict()
 export type WatcherThreadTarget = z.infer<typeof watcherThreadTargetSchema>
 export type WatcherProjectTarget = z.infer<typeof watcherProjectTargetSchema>
@@ -70,9 +71,9 @@ export const watcherEvidenceSchema = z.object({ id, source: z.enum(['sotto-deliv
   changedFiles: counter.optional(), insertions: counter.optional(), deletions: counter.optional(),
   reason: z.enum(['disconnected', 'read-failed', 'rate-limited', 'checks-unavailable', 'capture-unavailable', 'shared-checkout', 'unsupported']).optional(),
   failureCategory: z.literal('provider-turn-failed').optional(), url: z.string().url().max(2_048).optional(),
-  branch: z.string().max(512).nullable().optional(), fetchedAt: time.nullable().optional(),
+  branch: z.string().max(512).nullable().optional(), ahead: counter.optional(), behind: counter.optional(), fetchedAt: time.nullable().optional(),
   pullRequestState: z.enum(['open', 'closed', 'merged']).optional(), checkCount: counter.optional(),
-  checksState: z.enum(['passed', 'failed', 'pending', 'unknown']).optional(), githubReviewApproved: z.boolean().optional() }).strict()
+  checksState: z.enum(['passed', 'failed', 'pending', 'unknown']).optional(), githubReviewApproved: z.boolean().optional(), githubAutoMergeEnabled: z.boolean().optional() }).strict()
 export type WatcherEvidence = z.infer<typeof watcherEvidenceSchema>
 const takeover = z.object({ reason: z.enum(['user-send', 'native-user-send', 'user-stop', 'user-settle', 'user-reconfigure']), at: time }).strict()
 const participation = z.object({ requestId: z.uuid(), startedBy: z.enum(['watcher', 'user']), generation: counter,
@@ -161,7 +162,7 @@ export const watcherParticipantSchema = participation.extend({ target: watcherTh
   lastUserMessageId: id.nullable().optional(),
   promptCount: z.number().int().min(0).max(WATCHER_PROMPTS_PER_THREAD) }).strict()
 export const watcherRequestSchema = z.object({ id: z.uuid(), watcher: watcherThreadTargetSchema, rootUserMessageId: id,
-  phoneOrigin: z.object({ kind: z.literal('phone'), hostId: z.uuid(), clientId: id }).strict().optional(),
+  phoneOrigin: watcherPhoneOriginSchema.optional(),
   pairedPermissionCeiling: agentRuntimeModeSchema.optional(),
   remoteOrigin: z.object({ clientId: id, master: watcherIdentitySchema, creationOperationId: z.uuid(), ceiling: agentRuntimeModeSchema }).strict().optional(),
   state: z.enum(['active', 'stopped', 'closed']), createdAt: time, closedAt: time.nullable(),

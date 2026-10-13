@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import type { BrowserBridge } from '../../../shared/browser'
+import type { BrowserBridge, BrowserPage } from '../../../shared/browser'
 import { toolsPanelStore, type ToolsPanelStore } from './toolsPanelStore'
 import './webLinks.css'
 
@@ -38,11 +38,22 @@ export function useWebLinkRouter(): WebLinkRouter {
 }
 
 /**
+ * Where a page opened in a thread's own browser is shown, for a page with no Tools panel beside its panes (Watcher's
+ * room). Left unset, Tools > Browser beside the panes shows it. A function takes the page where it can be seen and
+ * says so when that needs words. `null` means the thread's browser cannot be shown from anywhere, so its links open
+ * in the system browser and Open in Sotto browser is not offered.
+ */
+export type BrowserPageRoute = ((page: BrowserPage) => WebLinkResult) | null
+export const BrowserPageRouteContext = createContext<BrowserPageRoute | undefined>(undefined)
+
+/**
  * Builds the router for one thread's transcript: web links follow the setting, or the reader's choice for one link.
  * `focused` is whether this is the focused pane (split view can show more than one); an unfocused pane's own click
  * still opens the page, but never pulls the focused thread's Tools open onto a thread the user is not looking at (#331).
+ * `show`, when given, takes an opened page where it can be seen instead of Tools beside the panes.
  */
-export function threadLinkRouter(threadId: string, threadTitle: string, bridge: BrowserBridge | undefined, store: ToolsPanelStore = toolsPanelStore, focused = true): WebLinkRouter {
+export function threadLinkRouter(threadId: string, threadTitle: string, bridge: BrowserBridge | undefined, store: ToolsPanelStore = toolsPanelStore, focused = true,
+  show?: (page: BrowserPage) => WebLinkResult): WebLinkRouter {
   return {
     canEmbed: bridge !== undefined,
     async open(url, destination) {
@@ -57,6 +68,7 @@ export function threadLinkRouter(threadId: string, threadTitle: string, bridge: 
           return { ok: false }
         }
         if (result.value.destination === 'external' || !result.value.page) return { ok: true }
+        if (show) return show(result.value.page)
         const shown = store.showBrowserPage(result.value.page, focused)
         if (shown === 'opened') return { ok: true }
         // Pinned elsewhere: the page opened here, but Tools is looking at another thread, not this one.
@@ -74,8 +86,10 @@ export function ThreadWebLinks({ threadId, threadTitle, children, bridge, store,
   readonly threadId: string; readonly threadTitle: string; readonly children: ReactNode; readonly bridge?: BrowserBridge | undefined; readonly store?: ToolsPanelStore
   readonly focused?: boolean
 }): ReactNode {
-  const resolved = bridge ?? bridgeBrowser()
-  const router = useMemo(() => threadLinkRouter(threadId, threadTitle, resolved, store, focused), [threadId, threadTitle, resolved, store, focused])
+  const route = useContext(BrowserPageRouteContext)
+  // A thread whose browser cannot be shown from here has none to open links in.
+  const resolved = route === null ? undefined : bridge ?? bridgeBrowser()
+  const router = useMemo(() => threadLinkRouter(threadId, threadTitle, resolved, store, focused, route ?? undefined), [threadId, threadTitle, resolved, store, focused, route])
   return <WebLinkRouterContext.Provider value={router}>{children}</WebLinkRouterContext.Provider>
 }
 

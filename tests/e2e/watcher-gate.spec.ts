@@ -16,6 +16,8 @@ const special = [
   { id: 'watcher-current', kind: 'watcher' as const, title: 'Saved Watcher' },
   { id: 'watcher-earlier', kind: 'watcher-history' as const, title: 'Saved Watcher history' },
 ]
+/** On Owl the current Watcher lives in Watcher's room, not in the Threads list; its history stays listed. Stable lists neither. */
+const listed = (track: 'stable' | 'owl', thread: typeof special[number]): number => track === 'owl' && thread.kind === 'watcher-history' ? 1 : 0
 
 async function settle(page: Page): Promise<void> {
   await page.mouse.move(0, 0)
@@ -56,7 +58,7 @@ test.describe('Watcher follows the running release track', () => {
         if (track === 'owl') expect(await page.evaluate(() => window.sotto!.watcher!.get())).toMatchObject({ status: 'ok', state: { current: null } })
         const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
         await expect(sidebar.getByRole('button', { name: 'Workshop', exact: true })).toBeVisible()
-        for (const thread of special) await expect(sidebar.getByRole('button', { name: thread.title, exact: true })).toHaveCount(track === 'owl' ? 1 : 0)
+        for (const thread of special) await expect(sidebar.getByRole('button', { name: thread.title, exact: true })).toHaveCount(listed(track, thread))
         if (track === 'stable') {
           await expect(page.getByLabel('Thread transcript')).toHaveCount(0)
           await sidebar.getByRole('searchbox').fill('Saved Watcher')
@@ -76,8 +78,8 @@ test.describe('Watcher follows the running release track', () => {
           }, special.map(thread => thread.id))
           expect(outcomes.every(result => !result.visible && result.refusal?.includes('Sotto Owl'))).toBe(true)
         }
-        // The branch has no separate Watcher room or capacity control yet. Preserve its ordinary page switch.
-        await expect(page.getByRole('tab', { name: 'Watcher', exact: true })).toHaveCount(0)
+        // Owl's switch is Dictate | Watcher | Threads; stable keeps Dictate | Threads.
+        await expect(page.getByRole('tab', { name: 'Watcher', exact: true })).toHaveCount(track === 'owl' ? 1 : 0)
         await sidebar.getByRole('button', { name: 'Workshop', exact: true }).click()
         await expect(page.getByRole('region', { name: 'Workshop', exact: true })).toBeVisible()
         const workshopId = await page.evaluate(async () => (await window.sotto!.agents!.get()).activeThreadId!)
@@ -95,7 +97,7 @@ test.describe('Watcher follows the running release track', () => {
             await resizeContentWindow(launched, width, height, [800, 540])
             await settle(page)
             expect(await pageBoundProblems(page)).toEqual([])
-            for (const thread of special) await expect(sidebar.getByRole('button', { name: thread.title, exact: true })).toHaveCount(track === 'owl' ? 1 : 0)
+            for (const thread of special) await expect(sidebar.getByRole('button', { name: thread.title, exact: true })).toHaveCount(listed(track, thread))
             await mkdir(evidence, { recursive: true })
             await page.screenshot({ path: join(evidence, `${track}-${appearance}-${width}x${height}.png`), animations: 'disabled' })
           }
@@ -151,7 +153,7 @@ test.describe('Watcher follows the running release track', () => {
             await expect(restored).toHaveCount(1)
             for (const thread of special) {
               await expect(launched.page.getByRole('region', { name: thread.title, exact: true })).toHaveCount(0)
-              await expect(launched.page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: thread.title, exact: true })).toBeVisible()
+              await expect(launched.page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: thread.title, exact: true })).toHaveCount(listed('owl', thread))
             }
             await expect(launched.page.getByRole('region', { name: paneIds.otherTitle, exact: true })).toHaveCount(0)
           })
@@ -182,6 +184,29 @@ test('Owl refuses the private room actions plainly when the local host is off', 
       })
       for (const result of results) expect(result).toMatchObject({ status: 'refused', code: 'HOST_FEATURE_UNAVAILABLE', message: expect.stringContaining('Run the local host') })
       expect(await launched.page.evaluate(async () => (await window.sotto!.getSettings()).watcherInFlightLimit)).toBe(DEFAULT_SETTINGS.watcherInFlightLimit)
+    } finally { if (launched) await closeSotto(launched); await profile.dispose() }
+  })
+})
+
+test('Owl applies a changed in-flight limit to the running Watcher at once', async () => {
+  await onReleaseTrack('owl', async () => {
+    const profile = await ownedE2EProfile({ prefix: 'sotto-e2e-watcher-gate-', settings: {
+      ...DEFAULT_SETTINGS, onboardingComplete: true, showWidgetWhenIdle: false,
+    } })
+    let launched: Awaited<ReturnType<typeof launchSotto>> | undefined
+    try {
+      launched = await launchSotto('success', profile.directory)
+      const [before, changed, after, saved] = await launched.page.evaluate(async () => {
+        const room = window.sotto!.watcher!
+        const before = await room.get()
+        const changed = await room.setLimit({ limit: 1 })
+        return [before, changed, await room.get(), (await window.sotto!.getSettings()).watcherInFlightLimit]
+      })
+      expect(before).toMatchObject({ status: 'ok', state: { inFlightLimit: DEFAULT_SETTINGS.watcherInFlightLimit } })
+      // The running Watcher reads the new limit, not only the saved settings file.
+      expect(changed).toMatchObject({ status: 'ok', state: { inFlightLimit: 1 } })
+      expect(after).toMatchObject({ status: 'ok', state: { inFlightLimit: 1 } })
+      expect(saved).toBe(1)
     } finally { if (launched) await closeSotto(launched); await profile.dispose() }
   })
 })

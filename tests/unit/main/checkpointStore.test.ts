@@ -171,3 +171,17 @@ describe('checkpoint storage and its journal', () => {
     expect(f.store.measure([])).toBe(Buffer.byteLength(await readFile(f.store.path)))
   })
 })
+
+it('keeps structured unavailability separately from display prose and reads legacy records without it', async () => {
+  const f = await fixture(), legacy = record()
+  const overlap: CheckpointRecord = { ...record('thread-b'), reason: 'Another thread also worked here.', unavailableReason: 'shared-checkout' }
+  await f.store.write([legacy])
+  await f.store.append([overlap], [legacy, overlap])
+  const loaded = await f.open().load()
+  expect(loaded.setAside).toBeUndefined()
+  expect(loaded.records).toEqual([legacy, overlap])
+  expect(loaded.records[0]).not.toHaveProperty('unavailableReason')
+  overlap.reason = 'Review this working copy before attributing the files.'
+  await f.store.write([legacy, overlap])
+  expect((await f.open().load()).records[1]).toEqual(overlap)
+})

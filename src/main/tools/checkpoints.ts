@@ -12,6 +12,7 @@ import { CheckpointCapture } from './checkpointCapture'
 import { LINK_MESSAGE, blobName, checkpointPathSchema, isInside } from './checkpointPaths'
 import { CheckpointStore, type CheckpointRecord, type Snapshot } from './checkpointStore'
 import { CheckpointReferences } from './checkpointReferences'
+import type { CheckpointObservation } from '../agents/watcherEvidence'
 import type { CheckpointDependencies, CheckpointThread } from './checkpointTypes'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 
@@ -46,7 +47,7 @@ export class CheckpointService extends ToolOperations {
       if (setAside) this.setAside(setAside)
       for (const record of records) {
         if (record.status === 'capturing' && !this.dependencies.preserveThread?.(record.threadId)) {
-          record.status = 'unavailable'
+          record.status = 'unavailable'; record.unavailableReason = 'capture-unavailable'
           record.reason = 'Checkpoint capture was interrupted before its completed file snapshot was saved. Later edits cannot be safely attributed to that turn.'
         }
         this.records.set(record.id, record)
@@ -58,7 +59,23 @@ export class CheckpointService extends ToolOperations {
     this.recoveryNotice = `Sotto set aside a checkpoint file it could not read as ${basename(backup)} and kept the rest.`
     try { this.dependencies.report?.(this.recoveryNotice) } catch { /* Reporting cannot prevent recovery. */ }
   }
-  initialize(): Promise<void> { if (this.initialized) return Promise.resolve(); return this.serial(async () => { await this.load(); if (!this.initialized) { await this.save(); this.initialized = true } }) }
+  initialize(): Promise<void> {
+    if (this.initialized) return Promise.resolve()
+    return this.serial(async () => {
+      await this.load()
+      if (this.initialized) return
+      await this.save(); this.initialized = true
+      if (!this.dependencies.observed || this.historyOff()) return
+      const latest = new Map<string, CheckpointRecord>()
+      for (const record of this.records.values()) {
+        if (this.dependencies.preserveThread?.(record.threadId) || !['ready', 'unavailable'].includes(record.status)) continue
+        this.dependencies.restore?.(this.observation(record))
+        const previous = latest.get(record.threadId)
+        if (!previous || Date.parse(previous.createdAt) <= Date.parse(record.createdAt)) latest.set(record.threadId, record)
+      }
+      for (const record of latest.values()) this.publishObservation(record)
+    })
+  }
   private async refreshRecoveryNotice(): Promise<void> {
     if (!this.recoveryBackup) return
     const exists = await lstat(this.recoveryBackup).catch(error => { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; this.dependencies.report?.('checkpoint-cleanup-failed'); return true })
@@ -306,10 +323,10 @@ export class CheckpointService extends ToolOperations {
     const sameCheckout = await Promise.all(candidates.map(record => this.sharesCheckout(record, checkout)))
     const overlapping = candidates.filter((_record, index) => sameCheckout[index])
     const overlapReason = overlapping.length ? 'Other thread work overlapped in this shared working copy. Its files cannot be safely attributed to this turn.' : undefined
-    for (const other of overlapping) other.reason = overlapReason
+    for (const other of overlapping) { other.reason = overlapReason; other.unavailableReason = 'shared-checkout' }
     const record: CheckpointRecord = { id: randomUUID(), threadId, workspaceId: owner.workspaceId, cwd: canonical, checkout, providerId: thread.providerId, bindingId: thread.bindingId, beforeUsers: [...thread.userMessageIds], before, status: 'capturing', createdAt: new Date(this.dependencies.now?.() ?? Date.now()).toISOString() }
-    if (overlapReason) record.reason = overlapReason
-    if (reason) { record.status = 'unavailable'; record.reason = reason.slice(0, 2000) }
+    if (overlapReason) { record.reason = overlapReason; record.unavailableReason = 'shared-checkout' }
+    if (reason) { record.status = 'unavailable'; record.unavailableReason = 'capture-unavailable'; record.reason = reason.slice(0, 2000) }
     this.records.set(record.id, record)
     await this.save(pending ? undefined : [record, ...overlapping])
     if (record.status === 'unavailable') this.publishObservation(record)
@@ -322,24 +339,27 @@ export class CheckpointService extends ToolOperations {
     if (!record) return
     const thread = await this.dependencies.resolveThread(threadId, { historyOnly: true })
     if (!thread || (thread.running ?? thread.busy) !== false) return
-    if (!this.matches(record, thread) || !equal(thread.userMessageIds.slice(0, record.beforeUsers.length), record.beforeUsers)) { record.status = 'unavailable'; record.reason = 'The native conversation binding changed during this turn.'; await this.save(); this.publishObservation(record); return }
+    if (!this.matches(record, thread) || !equal(thread.userMessageIds.slice(0, record.beforeUsers.length), record.beforeUsers)) { record.status = 'unavailable'; record.unavailableReason = 'capture-unavailable'; record.reason = 'The native conversation binding changed during this turn.'; await this.save(); this.publishObservation(record); return }
     if (thread.userMessageIds.length === record.beforeUsers.length) return
     await workspace(this.dependencies.files, threadId, record.workspaceId)
     const release = await this.dependencies.acquireRead?.(threadId)
     try { record.after = await this.capture.snapshot(record.cwd, { reuse: true }) }
-    catch (error) { record.status = 'unavailable'; record.reason = error instanceof Error ? error.message.slice(0, 2000) : 'Completed file snapshot was unavailable.'; await this.save(); this.publishObservation(record); return }
+    catch (error) { record.status = 'unavailable'; record.unavailableReason = 'capture-unavailable'; record.reason = error instanceof Error ? error.message.slice(0, 2000) : 'Completed file snapshot was unavailable.'; await this.save(); this.publishObservation(record); return }
     finally { release?.() }
     record.afterUsers = [...thread.userMessageIds]
     record.status = record.reason ? 'unavailable' : 'ready'
-    if (record.before.index !== record.after.index || record.before.head !== record.after.head) { record.status = 'unavailable'; record.reason = 'This turn changed Git history or staging. Review and restore it with Git.' }
+    if (record.before.index !== record.after.index || record.before.head !== record.after.head) { record.status = 'unavailable'; record.unavailableReason = 'capture-unavailable'; record.reason = 'This turn changed Git history or staging. Review and restore it with Git.' }
     await this.save()
     this.publishObservation(record)
   }) }
   private publishObservation(record: CheckpointRecord): void {
     if (!this.dependencies.observed) return
-    this.dependencies.observed({ threadId: record.threadId, checkpointId: record.id, observedAt: new Date(this.dependencies.now?.() ?? Date.now()).toISOString(),
+    this.dependencies.observed(this.observation(record))
+  }
+  private observation(record: CheckpointRecord): CheckpointObservation {
+    return { threadId: record.threadId, checkpointId: record.id, observedAt: new Date(this.dependencies.now?.() ?? Date.now()).toISOString(),
       availability: record.status === 'ready' ? 'available' : 'unavailable',
-      ...(record.status === 'ready' ? { changedFiles: this.changes(record).length } : { reason: record.reason?.includes('overlapped') ? 'shared-checkout' : 'capture-unavailable' }) })
+      ...(record.status === 'ready' ? { changedFiles: this.changes(record).length } : { reason: record.unavailableReason ?? 'capture-unavailable' }) }
   }
   private matches(record: CheckpointRecord, thread: CheckpointThread): boolean { return record.threadId === thread.threadId && record.providerId === thread.providerId && record.bindingId === thread.bindingId }
   private changes(record: CheckpointRecord): Checkpoint['files'] {

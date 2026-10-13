@@ -10,7 +10,7 @@ import { appendFileSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, 
 import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { setTimeout as wait } from 'node:timers/promises'
-import { assertPlainTree, copyRegularTree, prepareSandboxHome, prepareSandboxTmp, rewriteSandboxConfig, snapshotTree, validateSandboxConfig } from './omarchy-shell-sandbox.mjs'
+import { assertPlainTree, copyRegularTree, prepareSandboxBus, prepareSandboxHome, prepareSandboxTmp, rewriteSandboxConfig, snapshotTree, validateSandboxConfig } from './omarchy-shell-sandbox.mjs'
 import { assertProofInstancesPreserved, createOwnedProofProcesses, installProofCleanup, isProofProcessAlive, snapshotProofInstances, terminateThenCleanup } from './owned-proof-processes.mjs'
 
 const run = promisify(execFile)
@@ -245,7 +245,9 @@ async function orchestrate() {
     writeFileSync(join(home, '.local/state/omarchy/current/theme.name'), 'tokyo-night\n')
     assertPlainTree(join(home, '.config/omarchy'))
     validateSandboxConfig(home, omarchy)
-    startIsolated('nested Omarchy shell', 'dbus-run-session', ['--', 'quickshell', '-p', join(omarchy, 'shell')], logOptions('shell'))
+    // Private buses that activate nothing, so no desktop portal starts on either.
+    const busConfig = prepareSandboxBus(root)
+    startIsolated('nested Omarchy shell', 'dbus-run-session', [`--config-file=${busConfig}`, '--', 'quickshell', '-p', join(omarchy, 'shell')], logOptions('shell'))
     await until('isolated shell answers', async () => { try { await run('omarchy-shell', ['shell', 'ping'], { env }); return true } catch { return false } }, 30000)
     assertPlainTree(join(home, '.config/omarchy'))
     const installed = await run('bash', [join(checkout, 'apps/omarchy/install-shell-plugin.sh'), '--command', join(checkout, 'apps/omarchy/sotto')], { env })
@@ -258,7 +260,8 @@ async function orchestrate() {
     const details = { root, home, runtime, evidence, proof, liveSignature: live.HYPRLAND_INSTANCE_SIGNATURE, liveDisplay: live.WAYLAND_DISPLAY, signature: b.instance, display: b.wl_socket }
     const configPath = join(root, 'journey.json')
     writeFileSync(configPath, JSON.stringify(details))
-    const worker = startIsolated('real app integration journey', process.execPath, [script, '--journey', configPath], { stdio: 'inherit' })
+    // Electron must not reach the live session's desktop portal, even in nested Wayland, nor start one of its own.
+    const worker = startIsolated('real app integration journey', 'dbus-run-session', [`--config-file=${busConfig}`, '--', process.execPath, script, '--journey', configPath], { stdio: 'inherit' })
     const code = await new Promise((resolve, reject) => { worker.once('error', reject); worker.once('exit', resolve) })
     assert.equal(code, 0, 'The real app integration journey must pass')
     await curate(evidence)
@@ -419,7 +422,9 @@ async function journey(configPath) {
     await begin('d-start-for-retry')
     await capture('d-listening')
     await button('d-listening', 'Stop', 103)
-    await state('d-failed-kept', 'failed', { kept: true, detail: 'The transcription service is busy. Recording kept.' })
+    // The local TranscriptionError('failed') maps to keptFailureDetail.TRANSCRIPTION_FAILED
+    // in src/main/hotkeys/dictationStateFile.ts.
+    await state('d-failed-kept', 'failed', { kept: true, detail: 'Could not transcribe. Recording kept.' })
     await wait(350); await move(1599, 999); await capture('d-failed-kept')
     await button('d-failed-kept', 'Try again (real retry)', 126)
     await state('d-retry-copied', 'copied', { kept: false })

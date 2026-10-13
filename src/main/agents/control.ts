@@ -18,6 +18,7 @@ import type { BabysitNews } from './babysitNews'
 import { BABYSIT_REFUSALS, type Babysitter } from './babysitting'
 import { pullRequestAddress } from '../../shared/gitPullRequests'
 import { queuedWakeUpText, isWatcherNews, type WakeUpNews } from './wakeUp'
+import type { WatcherEvent } from '../../shared/watcherNews'
 import type { CheckpointObservation, PullRequestObservation } from './watcherEvidence'
 import { nearestReasoningEffort, resolveNewThreadPermission } from '../../shared/newThreadDefaults'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
@@ -48,7 +49,7 @@ import { FinishedUnread } from './finishedUnread'
 import { withoutLegacyManagement, type HostAnswerTarget } from '../../shared/hostProtocol'
 import { agentCommandSchema } from '../../shared/agents'
 import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from './watcherCommands'
-import { watcherRecordSchema, emptyWatcherRecord, type WatcherRecord } from '../../shared/watcher'
+import { watcherRecordSchema, emptyWatcherRecord, type WatcherRecord, type WatcherThreadTarget } from '../../shared/watcher'
 import { migrateWatcherRecord } from './watcherRecords'
 
 /** One shared empty array stands in for every shell thread's history; the clone that follows copies nothing. */
@@ -1434,6 +1435,13 @@ export class AgentControl {
   private queuedThreadIds(): string[] {
     return this.followupStore.peek().items.filter(item => !isWaitingWakeUp(item)).map(item => item.threadId)
   }
+  canDeliverWatcherNews(target: WatcherThreadTarget): boolean {
+    if (this.disposed || this.dependencies.watcherEnabled !== true || !this.watcherHooks
+      || this.watcher.current?.target.hostId !== target.hostId || this.watcher.current.target.threadId !== target.threadId) return false
+    const thread = this.state.host.threads.find(item => item.id === target.threadId && (item.hostId ?? this.state.host.hostId) === target.hostId)
+    return !!thread && this.state.host.connected && thread.clientConnected !== false && isThreadProviderConnected(this.state.host, thread)
+      && !isThreadClosed(thread) && !isWorkspaceThreadSettled(thread, this.state.host.projects.find(project => project.id === thread.projectId))
+  }
   /**
    * Hands a thread babysitting's news as a wake-up (ADR-0061 decision 8): Sotto's own item in the thread's follow-up
    * queue, which sends it at once when the thread is ready and otherwise when the queue would send the next one,
@@ -1442,7 +1450,7 @@ export class AgentControl {
    */
   async deliverWakeUp(threadId: string, news: WakeUpNews, options: { readonly tool: boolean }): Promise<void> {
     if (this.disposed) throw new Error('Sotto is closing.')
-    if (isWatcherNews(news) && (this.dependencies.watcherEnabled !== true || !this.watcherHooks || this.watcher.current?.target.threadId !== threadId)) throw new Error('Watcher is unavailable.')
+    if (isWatcherNews(news) && (news.watcher.threadId !== threadId || !this.canDeliverWatcherNews(news.watcher))) throw new Error('Watcher is unavailable.')
     const thread = this.state.host.threads.find(item => item.id === threadId)
     if (!thread) throw new Error('This thread is not on this host.')
     if (isThreadClosed(thread) || isWorkspaceThreadSettled(thread, this.state.host.projects.find(project => project.id === thread.projectId))) throw new Error('This thread is settled or archived.')
@@ -1463,6 +1471,7 @@ export class AgentControl {
   /** Main observers only; these carry sourced facts, never user command authority. */
   pullRequestObserved(read: PullRequestObservation): void { if (this.dependencies.watcherEnabled === true) this.watcherHooks?.pullRequestObserved?.(read) }
   watcherObservationsEnabled(): boolean { return this.dependencies.watcherEnabled === true && this.watcherHooks !== undefined }
+  restoreCheckpoint(read: CheckpointObservation): void { if (this.dependencies.watcherEnabled === true) this.watcherHooks?.restoreCheckpoint?.(read) }
   checkpointObserved(read: CheckpointObservation): void { if (this.dependencies.watcherEnabled === true) this.watcherHooks?.checkpointObserved?.(read) }
   private watcherObservedIds = ''
   refreshWatcherObservation(): void {
@@ -1470,6 +1479,13 @@ export class AgentControl {
     const ids = JSON.stringify(this.watcherHooks?.watchedThreadIds?.() ?? [])
     if (this.watcherObservedIds === ids) return
     this.watcherObservedIds = ids; this.observe()
+  }
+  restoredWatcherEvents(): WatcherEvent[] {
+    if (this.dependencies.watcherEnabled !== true || !this.watcherHooks || !this.watcher.current) return []
+    const target = this.watcher.current.target
+    return this.followupStore.peek().items.filter(item => isWaitingWakeUp(item) && item.threadId === target.threadId)
+      .flatMap(item => item.news?.flatMap(news => isWatcherNews(news) && news.watcher.hostId === target.hostId
+        && news.watcher.threadId === target.threadId ? news.events : []) ?? []).slice(-400)
   }
   async pruneWatcherWakeUps(): Promise<void> {
     if (this.dependencies.watcherEnabled !== true || this.disposed || !this.watcherHooks?.wakeReady?.()) return
@@ -1851,7 +1867,7 @@ export class AgentControl {
   }
   private pruneWakeUp(threadId: string, id: string): Promise<void> {
     const guard = this.wakeUpGuard
-    return this.followupStore.pruneWakeUp<WakeUpNews>(id, news => isWatcherNews(news) ? news.events.length > 0 : !guard || guard.due(threadId, news),
+    return this.followupStore.pruneWakeUp(id, news => isWatcherNews(news) ? news.events.length > 0 : !guard || guard.due(threadId, news),
       items => queuedWakeUpText(items, { tool: guard?.tool(threadId) ?? false }), news => {
         if (!isWatcherNews(news)) return news
         const events = news.events.filter(event => this.dependencies.watcherEnabled === true && this.watcherHooks?.wakeDue?.(event))
@@ -2390,6 +2406,8 @@ export class AgentControl {
     const reviewed = thread && this.followupStore.peek().items.find(i => i.threadId === threadId)?.resumeAfterTurnId === (thread.lastTurn?.id ?? 'unknown')
     return Boolean(thread && isThreadProviderConnected(this.state.host, thread) && (thread.status === 'idle' || thread.status === 'error' && reviewed)
       && thread.lastTurn?.status !== 'running'
+      // A machine Stop holds saved user prompts even when native completion arrives before its interrupt.
+      && !this.watcherHooks?.preserveUserQueue(threadId)
       && (thread.nativeSessionStarted === false || thread.lastTurn?.status === 'completed' || reviewed) && !thread.requests.length
       && (!thread.historyStatus || thread.historyStatus === 'ready') && !isThreadClosed(thread)
       && !isWorkspaceThreadSettled(thread, this.state.host.projects.find(p => p.id === thread.projectId))
@@ -2470,8 +2488,15 @@ export class AgentControl {
           validate()
           this.sendStages(turn)?.addRead(readMs)
           if (turn) { turn.threadId = threadId; turn.projectId = this.thread(threadId).projectId }
+          // A saved user prompt keeps its user origin. Only its Watcher stop fence travels to the native writer.
+          const queueGuard = !item.watcherOperationId && this.watcherHooks ? () => {
+            if (this.watcherHooks?.preserveUserQueue(threadId)) throw new Error('Watcher stopped this thread. Review it and resume its queue when ready.')
+          } : undefined
+          // News freshness and stopped participation both reach the native writer without changing origin.
+          const writeGuard = item.news?.some(isWatcherNews) ? () => { validate(); queueGuard?.() } : queueGuard
           await this.dispatch({ type: 'send', commandId: item.commandId!, threadId, messageId: item.messageId!, text: item.text.trim(), attachments: item.attachments, ...(item.skills ? { skills: item.skills } : {}), ...(item.files ? { files: item.files } : {}),
-            expectedLastUserMessageId: lastUserMessageIdOf(this.thread(threadId)), ...(item.wakeUp ? { wakeUp: true as const } : {}) }, turn, validate, item.wakeUp ? undefined : item.draftId, undefined, undefined, item.news?.some(isWatcherNews) ? { guard: validate } : undefined)
+            expectedLastUserMessageId: lastUserMessageIdOf(this.thread(threadId)), ...(item.wakeUp ? { wakeUp: true as const } : {}) }, turn, validate, item.wakeUp ? undefined : item.draftId,
+            this.localClient, undefined, undefined, writeGuard)
           await this.followupStore.settle(item.id, 'accepted')
         } catch (error) {
           failure = error instanceof CheckoutSendRefusal ? error.queuedMessage() : error instanceof Error ? error.message : first.wakeUp ? 'Could not send this wake-up.' : 'Could not dispatch this follow-up.'
@@ -2703,7 +2728,13 @@ export class AgentControl {
     }
     switch (command.type) {
       case 'configure': {
-        let next = agentConfigurationSchema.parse({ ...this.state.configuration, ...command.patch })
+        // A null permission default is the wire's way to unset it, back to the provider's own.
+        const { newThreadRuntimeMode, ...rest } = command.patch
+        // Every new thread would start on it, so a default that lets threads act unasked is a grant, checked here as a
+        // thread's own permission is, so a policy revoked since the host admitted the command still refuses it (ADR-0074).
+        if (newThreadRuntimeMode != null && newThreadRuntimeMode !== 'approval-required') this.guardClientGrant(client, REMOTE_PERMISSION_DENIED)
+        const patch = newThreadRuntimeMode === null ? { ...rest, newThreadRuntimeMode: undefined } : command.patch
+        let next = agentConfigurationSchema.parse({ ...this.state.configuration, ...patch })
         const before = this.state.configuration
         // Coordinator account selection has no authority over native thread connections.
         if (next.reasoning !== before.reasoning) await this.dependencies.credentials.set('reasoning', '')
@@ -3146,13 +3177,13 @@ export class AgentControl {
     return () => { activity.active.delete(token) }
   }
   private async dispatch(command: DispatchCommand, turn?: ActiveTurn, validate?: () => void, draftId?: string,
-    client: ClientIdentity = this.localClient, atomicDigest?: string, machineOrigin?: WatcherCommandOrigin): Promise<void> {
+    client: ClientIdentity = this.localClient, atomicDigest?: string, machineOrigin?: WatcherCommandOrigin, queueGuard?: () => void): Promise<void> {
     const releaseAnswer = command.type === 'answer' ? this.holdAnswer(command.threadId, command.commandId) : () => undefined
-    try { await this.dispatchPending(command, turn, validate, draftId, client, atomicDigest, machineOrigin) }
+    try { await this.dispatchPending(command, turn, validate, draftId, client, atomicDigest, machineOrigin, queueGuard) }
     finally { releaseAnswer(); this.settingsDispatching.delete(command.commandId) }
   }
   private async dispatchPending(command: DispatchCommand, turn?: ActiveTurn, validate?: () => void, draftId?: string,
-    client: ClientIdentity = this.localClient, atomicDigest?: string, machineOrigin?: WatcherCommandOrigin): Promise<void> {
+    client: ClientIdentity = this.localClient, atomicDigest?: string, machineOrigin?: WatcherCommandOrigin, queueGuard?: () => void): Promise<void> {
     // A prompt or an answer stays as a draft when this refuses; a create, a setting or a stop has none.
     const draftKept = promptOf(command) !== null || command.type === 'answer'
     this.canAct(undefined, draftKept)
@@ -3163,6 +3194,7 @@ export class AgentControl {
     const operation = draftId ? this.watcher.operations.find(item => item.draftId === draftId) : undefined
     const origin = machineOrigin ?? (operation ? { operationId: operation.id, guard: () => this.watcherHooks!.guardOperation(operation.id) } : undefined)
     origin?.guard()
+    const writeGuard = origin?.guard ?? queueGuard
     const provider = command.type === 'create-project' ? command.provider ?? this.state.configuration.provider
       : command.type === 'create-thread' || (command.type === 'configure-thread' && command.modelId && this.thread(command.threadId).nativeSessionStarted === false)
         ? resolveModel(this.state.host.models, command.modelId)?.providerId : command.type === 'answer'
@@ -3251,9 +3283,9 @@ export class AgentControl {
           this.firstOutputs.watch(prompt.threadId, stages, this.state.host.threads.find(item => item.id === prompt.threadId))
           endLoan = lendSendStages(command.commandId, stages)
         }
-        origin?.guard()
-        result = await (origin && this.dependencies.host.executeFromWatcher
-          ? this.dependencies.host.executeFromWatcher(hostCommand, origin.guard) : this.dependencies.host.execute(hostCommand)).catch(error => {
+        writeGuard?.()
+        result = await (writeGuard && this.dependencies.host.executeFromWatcher
+          ? this.dependencies.host.executeFromWatcher(hostCommand, writeGuard) : this.dependencies.host.execute(hostCommand)).catch(error => {
           if (turn) turn.failureCode = 'provider-failed'
           throw error
         })

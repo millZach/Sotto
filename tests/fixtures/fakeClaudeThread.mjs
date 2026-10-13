@@ -195,7 +195,7 @@ const act = () => {
 }
 const timer = setInterval(act, 10)
 const lines = createInterface({ input: process.stdin })
-lines.on('line', line => {
+lines.on('line', async line => {
   const frame = JSON.parse(line); record(frame.request?.subtype ?? frame.type, frame)
   if (frame.type === 'control_request') {
     if (frame.request.subtype === 'initialize') {
@@ -266,8 +266,11 @@ lines.on('line', line => {
     }
     else if (frame.request.subtype === 'interrupt') {
       // interrupt-script.json `error`: close the stopped turn as Claude Code does, with an error result.
-      const error = existsSync(join(root, 'interrupt-script.json')) && JSON.parse(readFileSync(join(root, 'interrupt-script.json'), 'utf8')).error === true
+      const script = existsSync(join(root, 'interrupt-script.json')) ? JSON.parse(readFileSync(join(root, 'interrupt-script.json'), 'utf8')) : {}
+      const error = script.error === true
       output({ type: 'control_response', response: { subtype: 'success', request_id: frame.request_id, response: steered.length ? { still_queued: steered.map(held => held.uuid) } : {} } })
+      // Acknowledging Stop and delivering the turn result are distinct native events.
+      if (script.holdResult) await released(script.holdResult)
       output(error ? { type: 'result', subtype: 'error_during_execution', session_id: session, is_error: true, result: '' } : { type: 'result', subtype: 'success', session_id: session, is_error: false, result: '' })
       turnEnded()
     } else violation('Unknown control request')
@@ -290,14 +293,26 @@ lines.on('line', line => {
       const command = typeof frame.message.content === 'string' ? frame.message.content : ''
       const stdout = `<local-command-stdout>${script.localCommand}</local-command-stdout>`
       const lifecycle = state => { if (!script.evidence) output({ type: 'command_lifecycle', command_uuid: frame.uuid, state, uuid: randomUUID(), session_id: session }) }
-      persist({ type: 'system', subtype: 'local_command', content: command, level: 'info', uuid: randomUUID() })
-      persist({ type: 'system', subtype: 'local_command', content: stdout, level: 'info', uuid: randomUUID() })
-      lifecycle('queued'); lifecycle('started')
-      output({ type: 'assistant', uuid: randomUUID(), session_id: session, parent_tool_use_id: null, message: { id: randomUUID(), model: '<synthetic>', role: 'assistant', content: [{ type: 'text', text: script.localCommand }] },
-        local_command_source: stdout, local_command_outcome: { kind: 'unavailable_headless' } })
-      output({ type: 'result', subtype: 'success', session_id: session, is_error: false, num_turns: 0, result: script.localCommand,
-        ...(script.evidence === 'none' ? {} : { user_message_uuid: frame.uuid, user_message_uuids: [frame.uuid] }) })
-      lifecycle('completed'); return
+      const transcript = () => {
+        persist({ type: 'system', subtype: 'local_command', content: command, level: 'info', uuid: randomUUID() })
+        persist({ type: 'system', subtype: 'local_command', content: stdout, level: 'info', uuid: randomUUID() })
+        if (script.holdLocalCommandTranscript || script.holdLocalCommandStream) writeFileSync(join(root, 'local-command-transcript-written'), '')
+      }
+      const stream = () => {
+        lifecycle('queued'); lifecycle('started')
+        output({ type: 'assistant', uuid: randomUUID(), session_id: session, parent_tool_use_id: null, message: { id: script.localCommandReplyId ?? randomUUID(), model: '<synthetic>', role: 'assistant', content: [{ type: 'text', text: script.localCommand }] },
+          local_command_source: stdout, local_command_outcome: { kind: 'unavailable_headless' } })
+        output({ type: 'result', subtype: 'success', session_id: session, is_error: false, num_turns: 0, result: script.localCommand,
+          ...(script.evidence === 'none' ? {} : { user_message_uuid: frame.uuid, user_message_uuids: [frame.uuid] }) })
+        lifecycle('completed')
+      }
+      // Hold either source until the test has consumed the other, without guessing how fast the adapter runs.
+      if (script.holdLocalCommandTranscript) {
+        stream(); await released(script.holdLocalCommandTranscript); transcript()
+      } else {
+        transcript(); if (script.holdLocalCommandStream) await released(script.holdLocalCommandStream); stream()
+      }
+      return
     }
     if (script.steering && turnOpen) { steered.push(frame); lifecycleOf(frame.uuid, 'queued'); return }
     turnOpen = true

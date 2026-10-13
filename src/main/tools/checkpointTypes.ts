@@ -16,6 +16,7 @@ export interface CheckpointThread {
   unsupportedReason?: string
 }
 export interface CheckpointDependencies {
+  restore?: (read: CheckpointObservation) => void
   observed?: (read: CheckpointObservation) => void
   report?: (message: string) => void
   historyEnabled?: () => boolean

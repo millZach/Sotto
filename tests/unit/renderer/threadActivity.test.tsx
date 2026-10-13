@@ -114,6 +114,28 @@ describe('settled activity in the transcript', () => {
     await user.click(within(transcript).getByRole('button', { name: 'Edited src/voice.ts, completed' }))
     expect(within(transcript).getByLabelText('diff code block')).toHaveTextContent('-old +new')
   })
+
+  it('folds what Escape is inside, one level at a time, with focus on the button that opened it', async () => {
+    const user = userEvent.setup()
+    const { transcript } = mount(stateWith({ activities: settled() }))
+    const work = within(transcript).getByRole('button', { name: 'Worked for 2m 04s' })
+    await user.click(work)
+    const summary = within(transcript).getByRole('button', { name: 'Ran 2 commands, changed 1 file' })
+    await user.click(summary)
+    const row = within(transcript).getByRole('button', { name: 'npm test -- --run, completed in 4.2s' })
+    await user.click(row)
+    const copy = within(document.getElementById(row.getAttribute('aria-controls')!)!).getAllByRole('button', { name: /^Copy/ })[0]!
+    copy.focus()
+    await user.keyboard('{Escape}')
+    expect(row).toHaveAttribute('aria-expanded', 'false')
+    expect(row).toHaveFocus()
+    await user.keyboard('{Escape}')
+    expect(summary).toHaveAttribute('aria-expanded', 'false')
+    expect(summary).toHaveFocus()
+    await user.keyboard('{Escape}')
+    expect(work).toHaveAttribute('aria-expanded', 'false')
+    expect(work).toHaveFocus()
+  })
 })
 
 describe('the running turn', () => {

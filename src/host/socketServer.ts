@@ -602,9 +602,31 @@ export async function startSocketServer(options: SocketServerOptions) {
         case 'watcher-phone-prepare-stop-all':
           if (!peer.watcherPhoneStop || !offers(peer, 'watcher-phone-stop-all')) throw new Refusal('invalid_request')
           return service.watcherPhone.prepareStop(peer.client)
-        case 'watcher-phone-stop-all':
+        case 'watcher-phone-stop-all': {
           if (!peer.watcherPhoneStop || !offers(peer, 'watcher-phone-stop-all')) throw new Refusal('invalid_request')
-          return service.watcherPhone.stop(request.confirmationId, peer.client, guard, mayAnswer)
+          const digest = createHash('sha256').update(JSON.stringify([request.op, request.confirmationId])).digest('hex')
+          const previous = receipts.get(peer.client.clientId, request.id)
+          if (previous) {
+            if (previous.digest !== digest) throw new Refusal('invalid_request')
+            await previous.task
+            guard()
+            if (previous.receipt.error) throw new Refusal(previous.receipt.error.code)
+            const outcome = previous.receipt.watcherStop!
+            return outcome.status === 'refused' ? outcome : { ...outcome, state: service.watcherPhone.state(mayAnswer()) }
+          }
+          if (!receipts.makeRoom()) throw new Refusal('busy')
+          const receipt: HostReceipt = { status: 'pending' }
+          const task = service.watcherPhone.stop(request.confirmationId, peer.client, guard, mayAnswer).then(result => {
+            receipt.watcherStop = result.status === 'refused' ? result : { status: 'ok', results: result.results }
+            receipt.status = 'completed'
+            return result
+          }).catch(() => {
+            receipt.status = 'completed'; receipt.error = { code: 'unavailable', message: errors.unavailable }
+            throw new Refusal('unavailable')
+          })
+          receipts.record(peer.client.clientId, request.id, { digest, receipt, task })
+          return task
+        }
         case 'watcher-phone-answer': {
           const { target, command: input } = request.request
           if (target.hostId !== hostId || input.threadId !== target.threadId) throw new Refusal('forbidden')

@@ -6,7 +6,8 @@ import { Button } from '../components/Button'
 import { PageWindowControls } from '../components/WindowControls'
 import { useOptionalApp } from '../state/AppContext'
 import { useWatcherEnabled } from '../state/watcherFeature'
-import { visibleWatcherState } from './watcherVisibility'
+import { visibleWatcherState, withoutRoomWatcher } from './watcherVisibility'
+import { useRoomWatcherThreadId } from '../watcher/watcherRoom'
 import { useAgents, type AgentConnection } from './AgentContext'
 import { draftThreads, gateOnCreation, overlayDraftThreads, useDraftThreads } from './draftThreads'
 import { describeThreads, organizeWorkspace, type ThreadRow } from './threadFacts'
@@ -107,7 +108,10 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
   const drafts = useDraftThreads()
   const published = agents.state
   const publishedRef = useRef(published)
-  const state = useMemo(() => visibleWatcherState(overlayDraftThreads(published, drafts), watcherEnabled), [published, drafts, watcherEnabled])
+  // Watcher's room keeps the current Watcher; this page lists and selects only the other threads.
+  const roomWatcher = useRoomWatcherThreadId()
+  const state = useMemo(() => withoutRoomWatcher(visibleWatcherState(overlayDraftThreads(published, drafts), watcherEnabled), watcherEnabled, roomWatcher),
+    [published, drafts, watcherEnabled, roomWatcher])
   const command = useMemo(() => gateOnCreation(agents.command), [agents.command])
   useEffect(() => { publishedRef.current = published; draftThreads.reconcile(published) }, [published])
   // Derived facts are shared with the ones on screen: an update that did not touch a thread leaves its row,

@@ -29,6 +29,12 @@ class ProtocolTests {
         },
     )
 
+    @Test fun optionalWatcherStopOutcomeKeepsOrdinaryReceiptDecoding() {
+        val receipt = decode<Receipt>("""{"status":"completed","watcherStop":{"status":"ok","results":[{"target":{"hostId":"host","threadId":"worker"},"status":"uncertain","message":"Check this worker."}]}}""")
+        assertEquals("completed", receipt.status)
+        assertFalse(receipt.confirmsAnswer)
+    }
+
     @Test fun privateTLSRouteIsRequired() {
         val endpoint = HostEndpoint.parse("https://forge.example.ts.net")
         assertEquals("wss://forge.example.ts.net/v1/socket", endpoint.route("/v1/socket", socket = true))
