@@ -498,20 +498,63 @@ export class ThreadStore {
   appendMany(threadId: string, events: readonly ThreadEvent[]): number {
     const db = this.requireOpen()
     if (events.length === 0) return this.latestSeq()
-    let seq = 0
     db.exec('BEGIN IMMEDIATE')
     try {
-      for (const event of events) {
-        const parsed = threadEventSchema.parse(event)
-        this.statement('INSERT INTO events (thread_id, kind, at, payload) VALUES (?, ?, ?, ?)')
-          .run(threadId, parsed.kind, parsed.at, JSON.stringify(parsed))
-        seq = Number(this.statement('SELECT last_insert_rowid() AS seq').get()!.seq)
-        applyEvent(db, threadId, parsed, sql => this.statement(sql))
-      }
+      const seq = this.insertEvents(db, threadId, events)
       db.exec('COMMIT')
+      return seq
     } catch (error) {
       db.exec('ROLLBACK')
       throw error
+    }
+  }
+
+  /**
+   * Every thread's waiting events in one transaction, so a publish window with several streaming
+   * threads pays one fsync rather than one per thread (#991). A savepoint per thread keeps the rule
+   * appendMany gave one batch: a thread whose batch fails rolls back alone and is named in `failed`,
+   * while the others commit. A failure of the commit itself throws, with nothing written.
+   */
+  appendBatches(batches: ReadonlyMap<string, readonly ThreadEvent[]>): { failed: Set<string> } {
+    const db = this.requireOpen()
+    const due = [...batches].filter(([, events]) => events.length > 0)
+    const failed = new Set<string>()
+    if (due.length === 0) return { failed }
+    db.exec('BEGIN IMMEDIATE')
+    try {
+      for (const [threadId, events] of due) {
+        db.exec('SAVEPOINT thread_batch')
+        try {
+          this.insertEvents(db, threadId, events)
+          db.exec('RELEASE SAVEPOINT thread_batch')
+        } catch {
+          try {
+            db.exec('ROLLBACK TO SAVEPOINT thread_batch')
+            db.exec('RELEASE SAVEPOINT thread_batch')
+          } catch (error) {
+            db.exec('ROLLBACK')
+            throw error
+          }
+          failed.add(threadId)
+        }
+      }
+      db.exec('COMMIT')
+    } catch (error) {
+      try { db.exec('ROLLBACK') } catch { /* The commit's own failure is the one to report. */ }
+      throw error
+    }
+    return { failed }
+  }
+
+  /** One thread's events into the log and the projection, inside the caller's transaction. */
+  private insertEvents(db: DatabaseSync, threadId: string, events: readonly ThreadEvent[]): number {
+    let seq = 0
+    for (const event of events) {
+      const parsed = threadEventSchema.parse(event)
+      this.statement('INSERT INTO events (thread_id, kind, at, payload) VALUES (?, ?, ?, ?)')
+        .run(threadId, parsed.kind, parsed.at, JSON.stringify(parsed))
+      seq = Number(this.statement('SELECT last_insert_rowid() AS seq').get()!.seq)
+      applyEvent(db, threadId, parsed, sql => this.statement(sql))
     }
     return seq
   }

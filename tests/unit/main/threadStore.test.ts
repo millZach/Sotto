@@ -5,6 +5,7 @@ import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DatabaseSync } from 'node:sqlite'
 import type { AgentMessage } from '../../../src/shared/agents'
+import type { ThreadEvent } from '../../../src/shared/threadEvents'
 import { prepareThreadDatabase, ThreadStore } from '../../../src/main/agents/threadStore'
 
 const open: ThreadStore[] = []
@@ -147,6 +148,29 @@ describe('thread store', () => {
     expect(after).toHaveLength(1)
     expect(after[0]?.event).toMatchObject({ kind: 'answer-given', attribution: { clientId: 'window-1', transport: 'ipc' } })
     expect(f.store.eventsAfter(0, 'other')).toEqual([])
+  })
+
+  it('commits several threads in one transaction and rolls a failed batch back alone', async () => {
+    const f = await store()
+    const added = (id: string, text: string): ThreadEvent => ({ kind: 'message-added', at, message: message(id, 'assistant', text) })
+    // One event the log's own limits refuse, after a good one in the same thread's batch.
+    const refused = { kind: 'message-text-appended', at, messageId: 'bad-1', appendText: 'x'.repeat(100_001) } as ThreadEvent
+    const result = f.store.appendBatches(new Map([
+      ['healthy', [added('good-1', 'Committed words')]],
+      ['failing', [added('bad-1', 'Rolled back words'), refused]],
+      ['also-healthy', [added('good-2', 'Also committed')]],
+      ['empty', []],
+    ]))
+    expect(result.failed).toEqual(new Set(['failing']))
+    expect(f.store.readMessages('healthy').messages).toMatchObject([{ id: 'good-1', text: 'Committed words' }])
+    expect(f.store.readMessages('also-healthy').messages).toMatchObject([{ id: 'good-2', text: 'Also committed' }])
+    // The failed thread kept none of its batch, not even the event ahead of the refused one.
+    expect(f.store.readMessages('failing').messages).toEqual([])
+    expect(f.store.eventsAfter(0).map(row => row.threadId)).toEqual(['healthy', 'also-healthy'])
+    // The connection is left clean: the failed thread's batch can be retried whole.
+    expect(f.store.appendBatches(new Map([['failing', [added('bad-1', 'Rolled back words')]]])).failed).toEqual(new Set())
+    expect(f.store.readMessages('failing').messages).toMatchObject([{ id: 'bad-1', text: 'Rolled back words' }])
+    expect(f.store.appendBatches(new Map())).toEqual({ failed: new Set() })
   })
 
   it('rebuilds the projection from the log alone', async () => {
