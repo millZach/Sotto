@@ -1,0 +1,28 @@
+{
+  "model": "GPT-6.1-Sol",
+  "drawn": 0,
+  "folds": [],
+  "activities": [
+    {
+      "kind": "turn",
+      "title": "Turn completed",
+      "status": "completed",
+      "words": 0
+    },
+    {
+      "kind": "command",
+      "title": "Command",
+      "status": "completed",
+      "words": 0
+    },
+    {
+      "kind": "command",
+      "title": "Command",
+      "status": "completed",
+      "words": 0
+    }
+  ],
+  "codexReasoningItems": 1,
+  "codexWordless": 1,
+  "sessionFiles": 1
+}
