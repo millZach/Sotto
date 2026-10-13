@@ -489,7 +489,7 @@ it.each([
   expect(first.status, first.status === 'refused' ? first.code : undefined).toBe('ok')
   expect(first).toMatchObject({ effectiveChoices: { permission: { kind: 'runtime', mode: 'approval-required' } } })
   if (first.status !== 'ok') throw new Error('start-refused')
-  expect(f.socket.shell().host.threads.find(item => item.id === first.target.threadId)?.runtimeMode).toBe('approval-required')
+  await expect.poll(() => f.socket.shell().host.threads.find(item => item.id === first.target.threadId)?.runtimeMode).toBe('approval-required')
 })
 
 
@@ -511,6 +511,8 @@ it.each(['retention', 'project filter', 'settlement', 'protection', 'queue prese
   const f = await master()
   const started = await f.call('start_thread', f.start())
   if (started.status !== 'ok') throw new Error('Synthetic remote creation was refused')
+  // The paired host's new thread reaches this computer's copy of the host a moment after the start returns.
+  await expect.poll(() => f.socket.shell().host.threads.some(thread => thread.id === started.target.threadId)).toBe(true)
   const hostId = f.control.hostId()!, local = f.control.watcherSnapshot()
   const twin = { ...f.socket.shell().host.threads.find(thread => thread.id === started.target.threadId)!, hostId,
     title: 'Local identity twin', status: 'idle' as const, messages: [], requests: [] }
@@ -564,5 +566,5 @@ it.each([
   const receipt = await f.socket.watcherControl(packet)
   expect(receipt).toMatchObject({ receipt: { operationId: first.receipt.operationId } })
   expect(remote.host.service.state().host.threads.filter(thread => thread.title === input.title)).toHaveLength(1)
-  expect(f.socket.shell().host.threads.find(thread => thread.id === first.target.threadId)?.reasoningEffort).toBe(expected)
+  await expect.poll(() => f.socket.shell().host.threads.find(thread => thread.id === first.target.threadId)?.reasoningEffort).toBe(expected)
 })
