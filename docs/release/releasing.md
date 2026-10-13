@@ -106,7 +106,7 @@ It checks the pacman file list, `/opt/sotto`, the launcher, desktop entry, icons
 
 After all checks pass, `release/` holds the tarball, `sotto-bin-X.Y.Z-1-x86_64.pkg.tar.zst`, updated `PKGBUILD`, `.SRCINFO`, and `SHA256SUMS.txt` containing the two distributable hashes (lower-case hex and two spaces before each filename). The recipe and `.SRCINFO` belong in step 5’s Release PR after publication. Source recipes stay untouched during packaging. `release/linux-release-verification.json` records the checks. Logs and working evidence stay in the ignored `.cache/` folder.
 
-For an offline rehearsal on any clean commit, give the same version to both commands:
+For a rehearsal on any clean commit, give the same version to both commands:
 
 ```sh
 mise exec node@24.21.0 -- npm run package:linux:rehearse -- 0.1.38
