@@ -74,6 +74,23 @@ describe('Omarchy setup in main', () => {
     expect(f.changes.at(-1)).toMatchObject({ busy: false, pieces: { theme: { status: 'failed', message: 'Desktop inspection failed' } } })
     expect((await engine.get()).pieces.theme).toMatchObject({ status: 'done', owned: true })
   })
+  it.each([true, false])('retries inspection after removal without setting up again (removed=%s)', async removed => {
+    let failInspection = false
+    const engine = f.make(async (command, args) => {
+      if (command === 'hyprctl' && failInspection) { failInspection = false; throw new Error('Desktop inspection failed') }
+      const result = await f.run(command, args)
+      if (command === 'bash' && args.includes('--uninstall')) failInspection = true
+      return result
+    })
+    await engine.command({ type: 'setup', pieces: ['theme'], keys: 'give' })
+    f.desktop.theme = removed
+    const result = await engine.command({ type: 'remove', pieces: ['theme'] })
+    expect(result.pieces.theme).toMatchObject({ status: 'failed', retry: 'inspect' })
+    const mutations = f.calls.filter(call => call.startsWith('bash')).length
+    const refreshed = await engine.get()
+    expect(refreshed.pieces.theme).toMatchObject(removed ? { status: 'missing', owned: false } : { status: 'failed', owned: true, retry: 'remove' })
+    expect(f.calls.filter(call => call.startsWith('bash'))).toHaveLength(mutations)
+  })
   it('sets up all three, backs up keys, selects both Appearance columns and skips a second run', async () => {
     const engine = f.make(), beforeAppearance = f.settings().appearance
     const result = await engine.command({ type: 'setup', pieces: [...OMARCHY_PIECES], keys: 'give' })

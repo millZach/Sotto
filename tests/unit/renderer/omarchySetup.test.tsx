@@ -29,6 +29,20 @@ describe('Omarchy setup rows', () => {
     await act(async () => hook.result.current.command({ type: 'setup', pieces: ['keys'], keys: 'give' }))
     expect(hook.result.current.state?.pieces.keys.status).toBe('done')
   })
+  it('retries an inspection failure by reading without reinstalling a removed piece', async () => {
+    const initial = setupState('done')
+    initial.pieces.theme = { status: 'failed', owned: false, message: 'The files could not be checked', retry: 'inspect' }
+    const f = setupBridgeFixture(initial), get = vi.spyOn(f.bridge, 'get')
+    render(<OmarchySetupPanel bridge={f.bridge} />)
+    await screen.findByRole('button', { name: 'Try the theme again' })
+    const next = setupState('done'); next.pieces.theme = setupState().pieces.theme
+    get.mockResolvedValueOnce(next)
+    await userEvent.click(screen.getByRole('button', { name: 'Try the theme again' }))
+    const nextAction = await screen.findByRole('button', { name: 'Set up the theme' })
+    await waitFor(() => expect(nextAction).toHaveFocus())
+    expect(get).toHaveBeenCalledTimes(2)
+    expect(f.calls).toEqual([])
+  })
   it('coalesces native and DOM focus and ignores native focus while hidden or operating', async () => {
     const f = setupBridgeFixture(), get = vi.spyOn(f.bridge, 'get')
     const hook = renderHook(({ enabled }) => useOmarchySetup(enabled, f.bridge), { initialProps: { enabled: true } })

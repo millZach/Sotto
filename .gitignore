@@ -512,5 +512,6 @@ artifacts/linux-test-findings/*
 !artifacts/linux-test-findings/packaged-onboarding-820x560-light.png
 !artifacts/linux-test-findings/packaged-removing-1280x800-dark.png
 !artifacts/linux-test-findings/packaged-removing-820x560-light.png
+!artifacts/linux-test-findings/packaged-inspection-retry-820x560-light.png
 !artifacts/linux-test-findings/packaged-terminal-1280x800-dark.png
 !artifacts/linux-test-findings/packaged-terminal-820x560-light.png

@@ -6,6 +6,7 @@ import { _electron as electron, expect, test, type Page } from '@playwright/test
 import { AGENT_STATE } from '../../src/shared/agents'
 import { closeSotto, firstRunForwardButton, firstSottoWindow, openPage, skipThreadsTour, type LaunchedSotto } from './support/sottoLaunch'
 import { forceDomTerminalRenderer } from './support/terminal'
+import { OMARCHY_SETUP_CHANGED } from '../../src/shared/omarchySetup'
 import { evidenceDirectory } from '../fixtures/evidence'
 import type { OmarchySetupState } from '../../src/shared/omarchySetup'
 
@@ -194,6 +195,19 @@ test('outside changes, removal, corner notice, launch environments and terminal 
     }
     await rm(join(root, 'hold-keys'))
     await expect(page.getByRole('button', { name: 'Set up the keys', exact: true })).toBeEnabled()
+    // Script a failed inspection through main's normal channel after real removal, then use the real read.
+    await app.evaluate(({ BrowserWindow }, { channel, state }) => {
+      const main = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!
+      main.webContents.send(channel, { ...state, pieces: { ...state.pieces,
+        keys: { status: 'failed', owned: false, message: 'Sotto could not check these files. Try again.', retry: 'inspect' } } })
+    }, { channel: OMARCHY_SETUP_CHANGED, state: await setup(page) })
+    await expect(page.getByRole('button', { name: 'Try the keys again', exact: true })).toBeVisible()
+    await page.locator('.omarchy-setup__piece[data-piece=keys]').scrollIntoViewIfNeeded()
+    await capture(page, 'inspection-retry-820x560-light')
+    await page.getByRole('button', { name: 'Try the keys again', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'Set up the keys', exact: true })).toBeFocused()
+    expect(await readFile(join(home, '.config/hypr/sotto-bindings.lua'), 'utf8').catch(() => null)).toBeNull()
+    proofs.push({ inspectionRetry: { filesStillAbsent: true, nextActionFocused: true } })
     await page.getByRole('button', { name: 'Set up the keys', exact: true }).click()
     await expect.poll(async () => (await setup(page)).busy).toBe(false)
     // Settings retains hidden panels. Returning through the actual tabs must inspect again without a window focus change.

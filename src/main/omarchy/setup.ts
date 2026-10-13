@@ -39,7 +39,7 @@ export interface OmarchySetupOptions {
   readonly onChanged?: (state: OmarchySetupState) => void
 }
 
-function state(status: OmarchyPieceState['status'], message = '', owned = false, retry?: 'setup' | 'remove'): OmarchyPieceState {
+function state(status: OmarchyPieceState['status'], message = '', owned = false, retry?: OmarchyPieceState['retry']): OmarchyPieceState {
   return { status, message, owned, ...(retry ? { retry } : {}) }
 }
 function ownedHash(hash: string | null, receipt: PieceReceipt | undefined): boolean {
@@ -237,7 +237,7 @@ export class OmarchySetup {
   }
   private async inspect(): Promise<boolean> {
     try { await this.detect(); return true } catch (error) {
-      for (const piece of OMARCHY_PIECES) this.snapshot.pieces[piece] = state('failed', this.explain(error))
+      for (const piece of OMARCHY_PIECES) this.snapshot.pieces[piece] = state('failed', this.explain(error), false, 'inspect')
       return false
     }
   }
