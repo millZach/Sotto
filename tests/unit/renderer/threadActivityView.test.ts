@@ -217,6 +217,9 @@ describe('activity wording', () => {
     expect(turnHeadline(turn({ status: 'completed', durationMs: 124_000 }), false)).toBe('Worked for 2m 04s')
     expect(turnHeadline(turn({ status: 'completed' }), false)).toBe('Worked')
     expect(turnHeadline(turn({ status: 'interrupted', startedAt: at, completedAt: '2026-09-12T10:00:12.000Z' }), false)).toBe('Stopped after 12s')
+    // A turn a steer cut short says so, rather than reading as one the user stopped.
+    expect(turnHeadline(turn({ status: 'interrupted', steered: true, startedAt: at, completedAt: '2026-09-12T10:00:12.000Z' }), false)).toBe('Steered after 12s')
+    expect(turnHeadline(turn({ status: 'interrupted', steered: true }), false)).toBe('Steered')
     expect(turnHeadline(turn({ status: 'running' }), false)).toBe('Last seen working')
     expect(turnHeadline(turn({ status: 'unknown' }), false)).toBe('Outcome unknown')
   })

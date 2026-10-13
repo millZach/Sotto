@@ -43,6 +43,8 @@ export const agentActivitySchema = z.object({
   })).max(200).optional(),
   /** Its native task ended or its identity was reassigned; retained history rejects later lifecycle events. */
   taskUpdatesExcluded: z.boolean().optional(),
+  /** An interrupted turn a steer ended: the provider cut the step it was on so the steer could run next (ADR-0075). */
+  steered: z.boolean().optional(),
   truncated: z.boolean().optional(),
 })
 export type AgentActivity = z.infer<typeof agentActivitySchema>
