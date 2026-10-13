@@ -1768,8 +1768,12 @@ struct HeldDetail {
         catch { if generations[hostID] == current { detailProblem = "This thread could not be loaded. Nothing was lost. Try again." } }
         try? await observeTerminals(hostID)
         if generations[hostID] == current, !helloCarriedWatcher { await readWatcher(hostID) }
-        if generations[hostID] == current { await recoverWatcherStop(hostID) }
         await checkDelivery(hostID)
+        // A Stop all whose outcome is still unknown is read once this attempt is over: a computer still carrying it out
+        // can keep its receipt pending for minutes, and connecting must not wait on that.
+        if generations[hostID] == current, watcherStops[hostID] != nil {
+            Task { [weak self] in await self?.recoverWatcherStop(hostID) }
+        }
     }
     /// A connection that failed or was lost. A computer that has been online is tried again quietly, reading
     /// Connecting, until its quiet retries run out; any other gives up: it reads Can't reach it, with the problem on its
