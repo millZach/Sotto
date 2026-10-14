@@ -28,7 +28,7 @@ function codexTokens(value: unknown): UsageTokens {
   const row = object(value)
   return { input: count(row.inputTokens), output: count(row.outputTokens), cached: count(row.cachedInputTokens), cacheWrite: count(row.cacheWriteInputTokens) }
 }
-function claudeTokens(value: unknown): UsageTokens {
+export function claudeTokens(value: unknown): UsageTokens {
   const row = object(value); const input = count(row.input_tokens); const cached = count(row.cache_read_input_tokens); const write = count(row.cache_creation_input_tokens)
   const creation = object(row.cache_creation)
   return { input: input !== undefined && cached !== undefined && write !== undefined ? input + cached + write : undefined,
@@ -48,6 +48,18 @@ function claudeModelUsage(modelUsage: unknown, model: string): unknown {
   const base = (name: string): string => name.replace(/\[[^\]]*\]$/u, '')
   const matches = Object.keys(rows).filter(key => base(key) === base(model))
   return matches.length === 1 ? rows[matches[0]!] : undefined
+}
+
+/**
+ * The identity of one usage row as the store holds it. History read from a provider's own records reuses it, so a row
+ * the ledger already counted learns its date instead of being counted again (ADR-0080).
+ */
+export function nativeUsageKey(provider: 'codex' | 'claude' | 'grok', kind: 'row' | 'group', id: string, identity: string): string {
+  return createHash('sha256').update(JSON.stringify(['sotto-usage', provider, kind, id, identity])).digest('hex')
+}
+/** A Codex request's ledger entry key: its turn and the thread's running totals once it was counted. */
+export function codexEntryKey(turnId: unknown, total: UsageTokens): string {
+  return createHash('sha256').update(JSON.stringify([turnId, total])).digest('hex')
 }
 
 /** How often the ledger is written while a reply streams. A turn's end is written at once. */
@@ -123,7 +135,7 @@ export class NativeUsage {
     return () => this.usageListeners.delete(listener)
   }
   private key(kind: 'row' | 'group', id: string, identity: string): string {
-    return createHash('sha256').update(JSON.stringify(['sotto-usage', this.provider, kind, id, identity])).digest('hex')
+    return nativeUsageKey(this.provider, kind, id, identity)
   }
   private grokRecord(identity: string, model?: string): string {
     return JSON.stringify(model === undefined ? ['aggregate', identity] : ['model', identity, model])
@@ -316,7 +328,7 @@ export class NativeUsage {
     const total = codexTokens(usage.total); const last = codexTokens(usage.last)
     if (!Object.values(last).some(value => value !== undefined)) return
     const ledger = this.ledger(id)
-    const key = createHash('sha256').update(JSON.stringify([params.turnId, total])).digest('hex')
+    const key = codexEntryKey(params.turnId, total)
     if (ledger.seen.includes(key)) {
       const entry = ledger.entries[key]
       if (entry) this.publishUsage(id, key, entry.model, entry.tokens, context, ledger.incomplete, String(params.turnId))

@@ -9,6 +9,7 @@ import { agentActivitySchema, MAX_AGENT_ACTIVITIES, type AgentActivity } from '.
 import { sameMessageContent, threadEventSchema, type StoredThreadEvent, type ThreadEvent } from '../../shared/threadEvents'
 import { isImmutableActivities } from './activitySnapshots'
 import { agentVisualSchema, type AgentVisual } from '../../shared/visuals'
+import { visitUserMessageInstants, type StoredUserMessageInstant } from './usageHistory/sottoPrompts'
 
 /** The first window a pane is given, and what each later request adds, both counted in turns. */
 export const FIRST_WINDOW_TURNS = 10
@@ -372,6 +373,11 @@ export class ThreadStore {
 
   markSubagentWordsMoved(): void {
     writeMeta(this.requireOpen(), 'subagentWordsMoved', '1')
+  }
+
+  /** Usage's history import (ADR-0080): each user message's identity, instant and wake-up mark. Reads no text. */
+  visitUserMessageInstants(visitor: (message: StoredUserMessageInstant) => void, before?: string): void {
+    visitUserMessageInstants(this.requireOpen(), visitor, before)
   }
 
   /** True once an authoritative list has been stored, even when that list is empty. */

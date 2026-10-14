@@ -12,12 +12,15 @@ import type { AgentHost } from './host'
 import { subscribeActivitySnapshots } from './activitySnapshots'
 import { unavailableProviderQuota } from './providerQuota'
 import { UsageStore, USAGE_PENDING_RECONCILIATION_BATCH_MAX } from './usageStore'
+import { UsageHistoryImporter, type UsageHistoryStore } from './usageHistory/importer'
 
 const PROVIDERS: readonly UsageProviderId[] = ['codex', 'claude', 'grok', 'devin']
 const BUFFER_MAX = 4_096
 const FLUSH_MS = 1_000
 const RETRY_MS = 5_000
 const RECONCILE_MS = 5_000
+/** How long a read waits for account limits before answering with the last ones it has; the read goes on behind it. */
+const QUOTA_READ_WAIT_MS = 6_000
 
 /** Numeric-only callbacks at the coordinator's durable intent and exact echo boundaries. */
 export interface UsagePromptRecorder {
@@ -28,6 +31,7 @@ export interface UsagePromptRecorder {
 
 type Store = Pick<UsageStore, 'open' | 'close' | 'metadata' | 'observeTokens' | 'submitPrompt' | 'acceptSubmittedPrompt' |
   'discardSubmittedPrompt' | 'pendingPromptReconciliationEnd' | 'pendingPromptIdentities' | 'markLegacySeedCompleted' | 'query' | 'clear'>
+  & Partial<Omit<UsageHistoryStore, 'metadata'>>
 interface PromptWrite { submission?: UsagePromptSubmission; action?: 'accept' | 'discard' }
 
 /** Created only by an owning host whose startup Usage answer is on. Never sends a provider prompt. */
@@ -40,6 +44,8 @@ export class UsageService implements UsagePromptRecorder {
   private readonly connected = new Set<UsageProviderId>()
   private readonly subscriptions: (() => void)[] = []
   private readonly refreshing = new Map<UsageProviderId, Promise<UsageQuotaRead>>()
+  private readonly reading = new Map<UsageProviderId, Promise<UsageQuotaRead>>()
+  private history: UsageHistoryImporter | undefined
   private timer: ReturnType<typeof setTimeout> | undefined
   private reconcileTimer: ReturnType<typeof setTimeout> | undefined
   private reconciliation: { after?: UsagePromptIdentity; through: UsagePromptIdentity } | undefined
@@ -78,6 +84,26 @@ export class UsageService implements UsagePromptRecorder {
     }
     this.started = true
     this.reconcilePending()
+    this.startHistory()
+  }
+
+  /** The owning host's provider records and Sotto's own stored prompts, read in the background (ADR-0080). */
+  private startHistory(): void {
+    const host = this.options.host
+    if (!host.scanUsageHistory && !host.visitRecordedUserMessages) return
+    if (!this.store.observeTokenBatch || !this.store.importPrompts || !this.store.historyCursor || !this.store.setHistoryCursors || !this.store.setHistoryStatus) return
+    this.history = new UsageHistoryImporter({
+      source: {
+        ...(host.scanUsageHistory ? { scanUsageHistory: (sink, signal) => host.scanUsageHistory!(sink, signal) } : {}),
+        ...(host.visitRecordedUserMessages ? { visitRecordedUserMessages: (visitor, before) => host.visitRecordedUserMessages!(visitor, before) } : {}),
+      },
+      store: () => {
+        // Live rows waiting in the buffer go first, so a history row never lands under a row about to replace it.
+        this.flush()
+        return this.opened && !this.closed ? this.store as Store & UsageHistoryStore : undefined
+      },
+    })
+    this.history.start()
   }
 
   submitPrompt(input: UsagePromptSubmission): void {
@@ -111,16 +137,20 @@ export class UsageService implements UsagePromptRecorder {
   async read(input: UsageLocalQuery = {}): Promise<UsageLocalHostRead> {
     const query = usageLocalQuerySchema.parse(input)
     this.flush()
-    const quotas = await this.readQuotas(query.providerIds, false)
+    this.history?.poke()
+    // Limits and activity are read together: a slow provider never holds the history back.
+    const quotas = this.readQuotas(query.providerIds, false)
+    let activity: UsageLocalHostRead['activity']
     try {
       if (!this.opened) throw new Error('Usage store is unavailable')
-      return usageLocalHostReadSchema.parse({ status: 'ready', activity: this.store.query(query), quotas,
-        persistence: this.failed || this.lost ? 'failed' : 'saved' })
+      activity = this.store.query(query)
     } catch {
       this.failed = true
       this.schedule(RETRY_MS)
-      return { status: 'error', quotas, persistence: 'failed' }
+      return { status: 'error', quotas: await quotas, persistence: 'failed' }
     }
+    return usageLocalHostReadSchema.parse({ status: 'ready', activity, quotas: await quotas,
+      persistence: this.failed || this.lost ? 'failed' : 'saved' })
   }
 
   async refresh(providerIds?: readonly UsageProviderId[]): Promise<UsageLocalHostRead> {
@@ -164,6 +194,7 @@ export class UsageService implements UsagePromptRecorder {
   close(): void {
     if (this.closed) return
     for (const unsubscribe of this.subscriptions.splice(0)) { try { unsubscribe() } catch { /* Collection is optional. */ } }
+    this.history?.close(); this.history = undefined
     this.flush()
     this.closed = true
     clearTimeout(this.timer); this.timer = undefined
@@ -262,13 +293,21 @@ export class UsageService implements UsagePromptRecorder {
           return { ...(previous ?? unavailableProviderQuota(providerId, 'read-failed')), status: 'error', reason: 'read-failed' }
         }
       }
-      if (!refresh) return read()
-      const existing = this.refreshing.get(providerId)
-      if (existing) return existing
-      const pending = read().finally(() => { this.refreshing.delete(providerId) })
-      this.refreshing.set(providerId, pending)
-      return pending
+      const inFlight = refresh ? this.refreshing : this.reading
+      const existing = inFlight.get(providerId)
+      if (existing) return refresh ? existing : this.waitForQuota(providerId, existing)
+      const pending = read().finally(() => { inFlight.delete(providerId) })
+      inFlight.set(providerId, pending)
+      return refresh ? pending : this.waitForQuota(providerId, pending)
     }))
+  }
+
+  /** A read answers with the last limits it has once a provider is slow; the reading still lands in the cache. */
+  private async waitForQuota(providerId: UsageProviderId, pending: Promise<UsageQuotaRead>): Promise<UsageQuotaRead> {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const late = new Promise<undefined>(resolve => { timer = setTimeout(() => resolve(undefined), QUOTA_READ_WAIT_MS); timer.unref?.() })
+    try { return await Promise.race([pending, late]) ?? this.quotas.get(providerId) ?? unavailableProviderQuota(providerId, 'not-read') }
+    finally { clearTimeout(timer) }
   }
 
   private put<T>(buffer: Map<string, T>, key: string, value: T): void {
