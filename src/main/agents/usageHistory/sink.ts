@@ -44,13 +44,17 @@ const HISTORY_THREAD_PREFIX = 'usage-history:'
  * leaves the adapter: only this hash does.
  */
 export function usageHistoryThreadId(providerId: UsageProviderId, nativeSessionId: string): string {
-  return HISTORY_THREAD_PREFIX + createHash('sha256').update(JSON.stringify(['sotto-usage-history', providerId, 'session', nativeSessionId])).digest('hex')
+  return HISTORY_THREAD_PREFIX + historyHash(providerId, 'session', nativeSessionId)
+}
+/** One hash for every history identity; the kind keeps a session, a row, a message and a file apart. */
+function historyHash(providerId: UsageProviderId, kind: 'session' | 'row' | 'message' | 'file', ...parts: string[]): string {
+  return createHash('sha256').update(JSON.stringify(['sotto-usage-history', providerId, kind, ...parts])).digest('hex')
 }
 export function isUsageHistoryThreadId(threadId: string): boolean { return threadId.startsWith(HISTORY_THREAD_PREFIX) }
 
 /** The record key of a row outside any Sotto thread, stable across passes and files. */
 export function usageHistoryRecordKey(providerId: UsageProviderId, threadId: string, identity: string): string {
-  return createHash('sha256').update(JSON.stringify(['sotto-usage-history', providerId, 'row', threadId, identity])).digest('hex')
+  return historyHash(providerId, 'row', threadId, identity)
 }
 
 /**
@@ -58,12 +62,12 @@ export function usageHistoryRecordKey(providerId: UsageProviderId, threadId: str
  * never leaves the reader. The same native message is the same identity on every pass and in every file.
  */
 export function usageHistoryMessageId(providerId: UsageProviderId, nativeMessageId: string): string {
-  return createHash('sha256').update(JSON.stringify(['sotto-usage-history', providerId, 'message', nativeMessageId])).digest('hex')
+  return historyHash(providerId, 'message', nativeMessageId)
 }
 
 /** A file's cursor key: a hash of the provider and the file's place under its client's folder, never the path itself. */
 export function usageHistoryCursorKey(providerId: UsageProviderId, relativePath: string): string {
-  return `${providerId}:` + createHash('sha256').update(JSON.stringify(['sotto-usage-history', providerId, 'file', relativePath.replaceAll('\\', '/')])).digest('hex')
+  return `${providerId}:` + historyHash(providerId, 'file', relativePath.replaceAll('\\', '/'))
 }
 
 /** Gives a send, a read or startup its turn between batches. */
