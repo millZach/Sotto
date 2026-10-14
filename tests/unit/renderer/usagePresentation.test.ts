@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   fmtTok, formatField, longDay, pct, presentUsage, providerLimits, rangeBounds, rangeLabel, readAge, relativeDay, resetLong, resetShort, scopeHost, sentFrom,
-  nounFor, sumFields, usagePlaces, windowView,
+  nounFor, sumFields, tokenParts, usagePlaces, windowView,
 } from '../../../src/renderer/src/features/usage/usagePresentation'
 import { servedModelName } from '../../../src/shared/modelCatalog'
 import { USAGE_NOW, USAGE_ZONE, dashboard, forgeHost, localHost, oldForgeHost } from '../../fixtures/renderer/usageReads'
@@ -30,6 +30,13 @@ describe('Usage numbers in words', () => {
     expect(presentUsage(dashboard(updated, older)).models.some(row => row.modelId.startsWith('native:'))).toBe(false)
   })
 
+  it('keeps the incomplete tokens of a place as a lower bound, and uncached input unknown while cache writes are', () => {
+    const places = usagePlaces([{ ...localHost().activity!.clients![0]!, tokens: { ...localHost().activity!.clients![0]!.tokens, total: { value: 500, knownRows: 1, rows: 2, partial: true } } }])
+    expect(places[0]!.tokenField).toMatchObject({ value: 500, partial: true })
+    const parts = tokenParts({ ...localHost().activity!.totals.tokens, cacheWrite: { knownRows: 0, rows: 4, partial: true } })
+    expect(parts.uncached.known).toBe(false)
+    expect(tokenParts(localHost().activity!.totals.tokens).uncached).toMatchObject({ known: true, value: 41_000_000 - 36_000_000 - 900_000 })
+  })
   it('names every served model in words the same way on every computer, never as an ID', () => {
     // A client catalog names some Claude models with "Claude" and some without, and differs between versions, so Usage
     // names a row from its served model alone.

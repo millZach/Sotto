@@ -318,6 +318,18 @@ describe('Usage page', () => {
     await user.tab()
     await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
   })
+  it('shows the unreported cache share of a model as a dash and asks an older host for its details by public ID', async () => {
+    const host = localHost()
+    host.activity = { ...host.activity!, models: host.activity!.models.map(row => row.modelId !== 'gpt-6.1-sol' ? row
+      : { ...row, tokens: { ...row.tokens, cached: { knownRows: 0, rows: 4, partial: true } } }) }
+    const { bridge, user } = await open(dashboard(host))
+    await user.click(screen.getByRole('tab', { name: 'Models' }))
+    const sol = await screen.findByRole('button', { name: /GPT-6\.1 Sol/u })
+    expect(sol).toHaveAccessibleName(/an unreported share from cache/u)
+    await user.click(sol)
+    await waitFor(() => expect(bridge.reads.some(query => query.modelIds?.includes('native:codex:model:gpt-6.1-sol'))).toBe(true))
+    expect(bridge.reads.find(query => query.modelIds !== undefined)?.modelIds).toEqual(['gpt-6.1-sol', 'native:codex:model:gpt-6.1-sol'])
+  })
   it('clears usage from the … menu with a confirmation, and asks again when figures changed', async () => {
     const { bridge, user } = await open()
     const clear = vi.spyOn(bridge, 'clear').mockResolvedValueOnce([{ hostId: 'laptop', status: 'stale' }])

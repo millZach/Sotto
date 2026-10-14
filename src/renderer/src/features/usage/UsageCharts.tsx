@@ -1,6 +1,6 @@
 import React, { type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
-import type { UsageFieldTotal, UsageTokenTotals } from '../../../../shared/usageDashboard'
-import { fmtInt, fmtTok, hourLabel, shortDay, WEEKDAYS_SHORT, weekdayOf, LOW_LEFT } from './usagePresentation'
+import type { UsageTokenTotals } from '../../../../shared/usageDashboard'
+import { fmtInt, fmtTok, hourLabel, shortDay, tokenParts, WEEKDAYS_SHORT, weekdayOf, LOW_LEFT, type TokenFigure } from './usagePresentation'
 
 type Style = CSSProperties & Record<`--${string}`, string | number>
 
@@ -58,7 +58,7 @@ function niceMax(value: number): number {
   return 10 * power
 }
 
-export interface DayValue { readonly day: string; readonly prompts: number; readonly input: number; readonly output: number }
+export interface DayValue { readonly day: string; readonly prompts: number; readonly input: number; readonly output: number; readonly tokensKnown: boolean; readonly tokensPartial: boolean }
 
 /**
  * Bars per day with two gridlines. The plot is one keyboard stop: Left and Right read a day, Home and End the ends,
@@ -135,19 +135,11 @@ export function HourGrid({ grid, cell, onCell, onKey, label }: {
 }
 
 /** One token figure as reported: a dash when no row reports it, "at least" when some rows leave it out. */
-interface TokenFigure { readonly value: number; readonly known: boolean; readonly partial: boolean }
-const figure = (field: UsageFieldTotal): TokenFigure => ({ value: field.value ?? 0, known: field.value !== undefined, partial: field.partial })
 function Figure({ of }: { readonly of: TokenFigure }): ReactNode {
   return of.known ? <>{of.partial ? <small>at least </small> : null}{fmtTok(of.value)}</> : <Dash />
 }
 const figureWords = (of: TokenFigure): string => of.known ? `${of.partial ? 'at least ' : ''}${fmtTok(of.value)}` : 'an unreported number of'
 
-/** Input, split into cache read, cache write and uncached input, beside output. Reads and writes are part of input. */
-export function tokenParts(tokens: UsageTokenTotals): { input: TokenFigure; output: TokenFigure; read: TokenFigure; write: TokenFigure; uncached: TokenFigure } {
-  const input = figure(tokens.input), output = figure(tokens.output), read = figure(tokens.cached), write = figure(tokens.cacheWrite)
-  return { input, output, read, write,
-    uncached: { value: Math.max(0, input.value - read.value - write.value), known: input.known && read.known, partial: input.partial || read.partial } }
-}
 
 /** The coloured pieces of input and output, each as wide as its amount. */
 function kindSegments(parts: ReturnType<typeof tokenParts>, className = ''): Record<'read' | 'write' | 'new' | 'out', ReactNode> {

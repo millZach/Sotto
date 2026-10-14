@@ -1,17 +1,19 @@
 import React, { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { publicProviderEntityId } from '../../../../shared/agents'
 import type { UsageDailyAggregate, UsageModelAggregate } from '../../../../shared/usageDashboard'
 import { ProviderMark } from '../../agents/ProviderMark'
 import { roomKeyTarget } from '../../components/AppShell'
 import { CompositionBar, Dash, Spark } from './UsageCharts'
 import { About, EmptyUsage } from './UsageOverview'
 import type { UsagePage } from './usagePage'
-import { NO_TOKENS, nounFor, PROVIDER_NAMES, fieldValue, fmtInt, fmtTok, isEmptyActivity, pct, relativeDay, share, sumActivity } from './usagePresentation'
+import { NO_TOKENS, cacheShare, fieldTokens, nounFor, PROVIDER_NAMES, fieldValue, fmtInt, fmtTok, isEmptyActivity, pct, relativeDay, sumActivity } from './usagePresentation'
 
 const SORTS = [['prompts', 'Prompts'], ['tokens', 'Tokens'], ['cache', 'Cache']] as const
 type Sort = typeof SORTS[number][0]
 const keyOf = (row: Pick<UsageModelAggregate, 'providerId' | 'modelId'>): string => `${row.providerId}:${row.modelId}`
-const reported = (row: UsageModelAggregate): boolean => !NO_TOKENS.has(row.providerId) && fieldValue(row.tokens.total) > 0
-const cacheOf = (row: UsageModelAggregate): number => fieldValue(row.tokens.input) > 0 ? fieldValue(row.tokens.cached) / fieldValue(row.tokens.input) : -1
+// A reported zero is a figure; only a total no row reports is missing.
+const reported = (row: UsageModelAggregate): boolean => !NO_TOKENS.has(row.providerId) && row.tokens.total.value !== undefined
+const cacheOf = (row: UsageModelAggregate): number => cacheShare(row.tokens) === undefined || fieldValue(row.tokens.input) === 0 ? -1 : fieldValue(row.tokens.cached) / fieldValue(row.tokens.input)
 
 export function Models({ page }: { readonly page: UsagePage }): ReactNode {
   const [sort, setSort] = useState<Sort>('prompts')
@@ -55,7 +57,7 @@ export function Models({ page }: { readonly page: UsagePage }): ReactNode {
         const name = page.modelName(row)
         const has = reported(row)
         const detail = `usage-model-${key.replace(/[^a-z0-9]+/giu, '-')}`
-        const words = `${name}, ${PROVIDER_NAMES[row.providerId]}: ${fmtInt(row.prompts.total)} ${nounFor(row.prompts.total, 'prompt')}${has ? `, ${fmtTok(fieldValue(row.tokens.total))} tokens, ${share(fieldValue(row.tokens.cached), fieldValue(row.tokens.input))} from cache` : ', tokens not reported'}`
+        const words = `${name}, ${PROVIDER_NAMES[row.providerId]}: ${fmtInt(row.prompts.total)} ${nounFor(row.prompts.total, 'prompt')}${has ? `, ${fieldTokens(row.tokens.total)} tokens, ${cacheShare(row.tokens) ?? 'an unreported share'} from cache` : ', tokens not reported'}`
         return <li key={key} className="usage-row" data-open={open || undefined} onKeyDown={event => {
           if (event.key !== 'Escape' || !open) return
           event.preventDefault(); event.stopPropagation(); setOpened(null)
@@ -65,8 +67,8 @@ export function Models({ page }: { readonly page: UsagePage }): ReactNode {
             <span className="usage-row__name"><ProviderMark provider={row.providerId} name={PROVIDER_NAMES[row.providerId]} size={18} /><span><span className="usage-row__model" title={name}>{name}</span><span className="usage-row__provider">{PROVIDER_NAMES[row.providerId]}</span></span></span>
             <span className="usage-row__bar"><CompositionBar tokens={row.tokens} maximum={maximum} reported={has} /></span>
             <span className="usage-row__n">{fmtInt(row.prompts.total)}</span>
-            <span className="usage-row__n">{has ? fmtTok(fieldValue(row.tokens.total)) : <Dash />}</span>
-            <span className="usage-row__n usage-row__cache">{has ? share(fieldValue(row.tokens.cached), fieldValue(row.tokens.input)) : <Dash />}</span>
+            <span className="usage-row__n">{has ? fieldTokens(row.tokens.total) : <Dash />}</span>
+            <span className="usage-row__n usage-row__cache">{has ? cacheShare(row.tokens) ?? <Dash /> : <Dash />}</span>
           </button>
           {open ? <ModelDetail id={detail} row={row} page={page} daily={daily} /> : null}
         </li>
@@ -87,7 +89,7 @@ function useModelDaily(page: UsagePage, row: UsageModelAggregate | undefined): U
   useEffect(() => {
     if (bridge === undefined || row === undefined || key === null) return
     let current = true
-    bridge.read({ ...query, includeDaily: true, providerIds: [row.providerId], modelIds: [row.modelId], ...(hostIds.length > 0 ? { hostIds: [...hostIds] } : {}) }).then(result => {
+    bridge.read({ ...query, includeDaily: true, providerIds: [row.providerId], modelIds: [row.modelId, publicProviderEntityId(row.providerId, 'model', row.modelId)], ...(hostIds.length > 0 ? { hostIds: [...hostIds] } : {}) }).then(result => {
       if (!current) return
       const rows = result.hosts.flatMap(host => host.status === 'ready' ? host.activity?.daily ?? [] : [])
       const days = new Map<string, UsageDailyAggregate[]>()
@@ -117,7 +119,7 @@ function ModelDetail({ id, row, page, daily }: { readonly id: string; readonly r
   return <div className="usage-detail" id={id}>
     <dl className="usage-detail__facts">
       {fact('Input', tokens('input'))}{fact('Cache read', tokens('cached'))}{fact('Cache write', tokens('cacheWrite'))}{fact('Output', tokens('output'))}
-      {fact('Tokens per prompt', has && prompts > 0 ? fmtTok(fieldValue(row.tokens.total) / prompts) : <Dash />)}
+      {fact('Tokens per prompt', has && prompts > 0 ? `${row.tokens.total.partial ? '≥ ' : ''}${fmtTok(fieldValue(row.tokens.total) / prompts)}` : <Dash />)}
       {fact('Provider sessions', fmtInt(row.activeThreads))}{fact('Days used', fmtInt(daysUsed))}{fact('Last used', last === undefined ? <Dash /> : relativeDay(last, page.today))}
     </dl>
     <div className="usage-detail__spark">{daily === undefined ? <span className="usage-detail__wait" aria-hidden="true" /> : <Spark values={values} width={220} height={40} />}<p>{usePrompts ? 'Prompts' : 'Tokens'} per day</p></div>

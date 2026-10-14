@@ -1,16 +1,16 @@
 import React, { useEffect, useId, useState, type CSSProperties, type ReactNode } from 'react'
 import { Clock } from 'lucide-react'
-import type { UsageActivityAggregate, UsageProviderId } from '../../../../shared/usageDashboard'
+import type { UsageActivityAggregate, UsageFieldTotal, UsageProviderId } from '../../../../shared/usageDashboard'
 import { ProviderMark } from '../../agents/ProviderMark'
 import { Ring } from './UsageCharts'
 import type { UsagePage } from './usagePage'
 import {
-  LOW_LEFT, PROVIDER_NAMES, READ_OUTSIDE_SOTTO, fieldTokens, nounFor, fieldValue, fmtInt, fmtTok, limitsMissing, predatesHistory, readAge, resetLong,
+  LOW_LEFT, PROVIDER_NAMES, READ_OUTSIDE_SOTTO, fieldTokens, nounFor, sumFields, fieldValue, fmtInt, limitsMissing, predatesHistory, readAge, resetLong,
   unknownUseNote, type UsageProviderLimits, type UsageWindowView,
 } from './usagePresentation'
 
 type Style = CSSProperties & Record<`--${string}`, string | number>
-interface Since { readonly totals: UsageActivityAggregate; readonly sottoTokens: number }
+interface Since { readonly totals: UsageActivityAggregate; readonly sottoTokens: UsageFieldTotal }
 
 export function Subscriptions({ page, refreshing, onReadAgain }: {
   readonly page: UsagePage
@@ -45,7 +45,7 @@ function useWindowActivity(page: UsagePage): ReadonlyMap<string, Since> {
       bridge.read({ since: new Date(Number(startedAt)).toISOString(), providerIds: [providerId], hostIds: [hostId], timeZone }).then(result => {
         const activity = result.hosts.find(host => host.hostId === hostId)?.activity
         if (!current || activity === undefined) return
-        const sottoTokens = (activity.clients ?? []).filter(row => row.source === 'sotto').reduce((sum, row) => sum + fieldValue(row.tokens.total), 0)
+        const sottoTokens = sumFields((activity.clients ?? []).filter(row => row.source === 'sotto').map(row => row.tokens.total))
         setFound(value => new Map(value).set(`${hostId}|${providerId}|${startedAt}`, { totals: activity.totals, sottoTokens }))
       }, () => undefined)
     }
@@ -75,7 +75,7 @@ function Provider({ limits, page, busy, onReadAgain, since }: {
     if (!READ_OUTSIDE_SOTTO.has(providerId)) {
       activity = <p className="usage-sub__activity">{prompts > 0 ? <>Since this window began: <b>{fmtInt(prompts)}</b> {nounFor(prompts, 'prompt')} in Sotto.</> : 'Since this window began: no prompts in Sotto.'} Sotto doesn't read {name}'s use outside Sotto.</p>
     } else if (prompts === 0 && fieldValue(tokens) === 0) activity = <p className="usage-sub__activity">Since this window began: nothing {onComputer}.</p>
-    else activity = <p className="usage-sub__activity">Since this window began: <b>{fmtInt(prompts)}</b> {nounFor(prompts, 'prompt')} and <b>{fieldTokens(tokens)}</b> tokens {onComputer}, <b>{fmtTok(since.sottoTokens)}</b> of them in Sotto.</p>
+    else activity = <p className="usage-sub__activity">Since this window began: <b>{fmtInt(prompts)}</b> {nounFor(prompts, 'prompt')} and <b>{fieldTokens(tokens)}</b> tokens {onComputer}, <b>{fieldTokens(since.sottoTokens)}</b> of them in Sotto.</p>
   }
   return <section className="usage-sub" id={`usage-sub-${providerId}`} aria-labelledby={heading}>
     <div className="usage-sub__id">

@@ -52,6 +52,22 @@ export function fieldTokens(field: UsageFieldTotal): string {
   return `${field.partial ? '≥ ' : ''}${fmtTok(field.value)}`
 }
 export const fieldValue = (field: UsageFieldTotal): number => field.value ?? 0
+/** One token figure as reported: unknown when no row reports it, partial when some rows leave it out. */
+export interface TokenFigure { readonly value: number; readonly known: boolean; readonly partial: boolean }
+const figure = (field: UsageFieldTotal): TokenFigure => ({ value: field.value ?? 0, known: field.value !== undefined, partial: field.partial })
+
+/** Input, split into cache read, cache write and uncached input, beside output. Reads and writes are part of input. */
+export function tokenParts(tokens: UsageTokenTotals): { input: TokenFigure; output: TokenFigure; read: TokenFigure; write: TokenFigure; uncached: TokenFigure } {
+  const input = figure(tokens.input), output = figure(tokens.output), read = figure(tokens.cached), write = figure(tokens.cacheWrite)
+  return { input, output, read, write,
+    // Input less cache reads and writes is known only when all three are reported in full.
+    uncached: { value: Math.max(0, input.value - read.value - write.value), partial: false, known: [input, read, write].every(part => part.known && !part.partial) } }
+}
+/** The share of input read from cache, or undefined when either figure is unreported or incomplete. */
+export function cacheShare(tokens: UsageTokenTotals): string | undefined {
+  const { cached, input } = tokens
+  return cached.value === undefined || input.value === undefined || cached.partial || input.partial ? undefined : share(cached.value, input.value)
+}
 export function formatField(field: UsageFieldTotal): string {
   if (field.value === undefined) return '—'
   return `${field.partial ? '≥ ' : ''}${fmtInt(field.value)}`
@@ -193,25 +209,29 @@ export interface UsagePlace {
   readonly wakeUps: number
   readonly tokens: number
   readonly subAgentTokens: number
+  /** The place's tokens and its subagents' as reported: unknown or incomplete figures stay so. */
+  readonly tokenField: UsageFieldTotal
+  readonly subAgentField: UsageFieldTotal
   readonly provider: UsageProviderId | undefined
   /** Every provider whose work the place holds, when the host says. */
   readonly providers: readonly UsageProviderId[]
 }
 export function usagePlaces(clients: readonly UsageClientAggregate[]): UsagePlace[] {
-  const places = new Map<string, { key: string; name: string; inSotto: boolean; subAgent: boolean; prompts: number; wakeUps: number; tokens: number; subAgentTokens: number; provider: UsageProviderId | undefined; providers: UsageProviderId[] }>()
+  const places = new Map<string, { key: string; name: string; inSotto: boolean; subAgent: boolean; prompts: number; wakeUps: number; tokens: number; subAgentTokens: number; fields: UsageFieldTotal[]; subAgentFields: UsageFieldTotal[]; provider: UsageProviderId | undefined; providers: UsageProviderId[] }>()
   for (const row of clients) {
     const inSotto = row.source === 'sotto'
     const key = inSotto ? (row.subAgent ? 'sotto-sub' : 'sotto') : row.clientId
     const place = places.get(key) ?? { key, name: inSotto ? (row.subAgent ? "Sotto's subagents" : 'Sotto threads') : CLIENT_NAMES[row.clientId],
-      inSotto, subAgent: inSotto && row.subAgent, prompts: 0, wakeUps: 0, tokens: 0, subAgentTokens: 0, provider: inSotto ? undefined : CLIENT_PROVIDER[row.clientId], providers: [] as UsageProviderId[] }
+      inSotto, subAgent: inSotto && row.subAgent, prompts: 0, wakeUps: 0, tokens: 0, subAgentTokens: 0, fields: [] as UsageFieldTotal[], subAgentFields: [] as UsageFieldTotal[], provider: inSotto ? undefined : CLIENT_PROVIDER[row.clientId], providers: [] as UsageProviderId[] }
     for (const provider of row.providerIds ?? []) if (!place.providers.includes(provider)) place.providers.push(provider)
     const tokens = fieldValue(row.tokens.total)
     if (!row.subAgent) { place.prompts += row.prompts.total; place.wakeUps += row.prompts.wakeUp }
-    place.tokens += tokens
-    if (row.subAgent) place.subAgentTokens += tokens
+    place.tokens += tokens; place.fields.push(row.tokens.total)
+    if (row.subAgent) { place.subAgentTokens += tokens; place.subAgentFields.push(row.tokens.total) }
     places.set(key, place)
   }
   return [...places.values()].filter(place => place.tokens > 0 || place.prompts > 0).sort((a, b) => b.tokens - a.tokens || b.prompts - a.prompts)
+    .map(({ fields, subAgentFields, ...place }) => ({ ...place, tokenField: sumFields(fields), subAgentField: sumFields(subAgentFields) }))
 }
 
 /** Prompts by the app that sent them. Subagents send none. */
