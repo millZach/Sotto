@@ -392,6 +392,68 @@ it('enforces the narrower owning-host default and keeps a confirmed remote Stop 
   expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'now', text: 'Synthetic stopped request refusal' })).toMatchObject({ code: 'REQUEST_NOT_ACTIVE' })
 })
 
+it('keeps a remote Stop all in flight while reconciliation reads the owning host', async () => {
+  const f = await master(), started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok') throw new Error('start-refused')
+  const confirmation = f.watcher.prepareStopAll()
+  if (confirmation.status !== 'ok') throw new Error('stop-preview-refused')
+  const original = f.socket.watcherControl.bind(f.socket)
+  let stopId: string | undefined
+  vi.spyOn(f.socket, 'watcherControl').mockImplementation(async packet => {
+    if (packet.call.name === 'stop_thread') {
+      stopId = packet.operation.id
+      // The master's stop is dispatching, but the owning host has not admitted it.
+      await (f.watcher as unknown as { reconcileRemote(hostId: string): Promise<void> }).reconcileRemote(packet.operation.target.hostId)
+    }
+    return original(packet)
+  })
+  expect(await f.watcher.stopAll(confirmation.confirmationId)).toMatchObject({ status: 'ok', results: [{ target: started.target, status: expect.stringMatching(/stopped|requested/u) }] })
+  expect(await f.socket.watcherRead({ master: f.control.watcherRecord().current!, call: { name: 'read_operation', input: { operationId: stopId! } } })).toMatchObject({ status: 'ok', receipt: { operationId: stopId, deliveryState: 'accepted' } })
+  expect(f.watcher.state().requests.find(item => item.id === f.requestId)?.state).toBe('stopped')
+})
+
+it('reconciles a remote Stop all after its acknowledgement is lost without sending it again', async () => {
+  const f = await master(), started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok') throw new Error('start-refused')
+  const confirmation = f.watcher.prepareStopAll()
+  if (confirmation.status !== 'ok') throw new Error('stop-preview-refused')
+  const original = f.socket.watcherControl.bind(f.socket)
+  let stopId: string | undefined
+  const writes = vi.spyOn(f.socket, 'watcherControl').mockImplementation(async packet => {
+    const reply = await original(packet)
+    if (packet.call.name === 'stop_thread') {
+      stopId = packet.operation.id
+      throw new Error('Synthetic lost stop acknowledgement')
+    }
+    return reply
+  })
+  expect(await f.watcher.stopAll(confirmation.confirmationId)).toMatchObject({ status: 'ok', results: [{ target: started.target, status: 'uncertain' }] })
+  await (f.watcher as unknown as { reconcileRemote(hostId: string): Promise<void> }).reconcileRemote(started.target.hostId)
+  await vi.waitFor(() => expect(f.control.watcherRecord().operations.find(item => item.id === stopId)?.deliveryState).toBe('accepted'))
+  expect(writes).toHaveBeenCalledTimes(1)
+})
+
+it('releases an uncertain remote Stop all so an exact absent receipt can settle it', async () => {
+  const f = await master(), started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok') throw new Error('start-refused')
+  const confirmation = f.watcher.prepareStopAll()
+  if (confirmation.status !== 'ok') throw new Error('stop-preview-refused')
+  const original = f.socket.watcherControl.bind(f.socket)
+  let stopPacket: WatcherHostControl | undefined
+  const writes = vi.spyOn(f.socket, 'watcherControl').mockImplementation(async packet => {
+    if (packet.call.name === 'stop_thread') {
+      stopPacket = packet
+      throw new Error('Synthetic unconfirmed transmission')
+    }
+    return original(packet)
+  })
+  expect(await f.watcher.stopAll(confirmation.confirmationId)).toMatchObject({ status: 'ok', results: [{ target: started.target, status: 'uncertain' }] })
+  await (f.watcher as unknown as { reconcileRemote(hostId: string): Promise<void> }).reconcileRemote(started.target.hostId)
+  await vi.waitFor(() => expect(f.control.watcherRecord().operations.find(item => item.id === stopPacket!.operation.id)).toMatchObject({ deliveryState: 'failed', refusalCode: 'OPERATION_NOT_RECORDED' }))
+  expect(await original(stopPacket!)).toMatchObject({ status: 'refused', code: 'OPERATION_NOT_RECORDED' })
+  expect(writes).toHaveBeenCalledTimes(1)
+})
+
 it.each(['queued', 'dispatching'])('rechecks a revoked phone after remote Stop all %s persistence', async phase => {
   const f = await master(), started = await f.call('start_thread', f.start())
   if (started.status !== 'ok') throw new Error('start-refused')
