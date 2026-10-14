@@ -34,3 +34,15 @@ it('fails when the latest source room never reaches the page', async () => {
   await result
   expect(cpu).not.toHaveBeenCalled()
 })
+
+it('rejects a pending completion when the CPU read throws and removes the waiter', async () => {
+  vi.useFakeTimers()
+  const error = new Error('Generated CPU read failure'), cpu = vi.fn(() => { throw error })
+  const page = createRoomCompletion<object>(cpu)
+  const result = expect(page.wait(2)).rejects.toBe(error)
+  expect(() => page.receive({}, 2)).not.toThrow()
+  await result
+  expect(vi.getTimerCount()).toBe(0)
+  page.receive({}, 3)
+  expect(cpu).toHaveBeenCalledTimes(1)
+})

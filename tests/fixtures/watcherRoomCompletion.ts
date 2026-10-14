@@ -17,7 +17,8 @@ export function createRoomCompletion<State>(readCpu: () => number) {
         const check = () => {
           if (room === undefined || revision < target) return
           clearTimeout(timer); waiting.delete(check)
-          resolve({ revision, room, cpuMs: readCpu() })
+          try { resolve({ revision, room, cpuMs: readCpu() }) }
+          catch (error) { reject(error) }
         }
         waiting.add(check); check()
       })
