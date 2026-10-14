@@ -1,9 +1,11 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import {
-  mergeClaudeQuota, mergeCodexQuota, parseClaudeQuota, parseCodexQuota, parseGrokQuota, unavailableProviderQuota,
+  dropExpiredQuotaWindows, mergeClaudeQuota, mergeCodexQuota, parseClaudeQuota, parseClaudeUsage, parseCodexQuota, parseGrokQuota,
+  quotaDurationLabel, unavailableProviderQuota,
 } from '../../../src/main/agents/providerQuota'
 import { usageQuotaReadSchema } from '../../../src/shared/usageDashboard'
+import recordedUsage from '../../fixtures/claudeUsageAnswer.json'
 
 const observedAt = '2026-10-12T18:00:00.000Z'
 const later = '2026-10-12T18:05:00.000Z'
@@ -17,7 +19,7 @@ describe('native Codex quota', () => {
   it('preserves fresh zero, actual duration and epoch seconds in the old single-bucket reply', () => {
     const result = parseCodexQuota({ rateLimits: codexBucket() }, observedAt)
     expect(result).toMatchObject({ providerId: 'codex', status: 'available', refreshable: true, observedAt,
-      windows: [{ label: 'Codex primary window', kind: 'primary', usedPercent: 0,
+      windows: [{ label: '5 hours', kind: 'primary', usedPercent: 0,
         durationMinutes: 300, resetsAt: '2026-10-12T23:00:00.000Z', observedAt }] })
     expect(result.windows).toHaveLength(1)
   })
@@ -40,7 +42,7 @@ describe('native Codex quota', () => {
     const explicit = parseCodexQuota({ rateLimits: codexBucket(10) }, observedAt)
     const implicit = parseCodexQuota({ rateLimits: { primary: codexBucket(0).primary } }, later)
     expect(implicit.windows[0]?.id).toBe(explicit.windows[0]?.id)
-    expect(implicit.windows[0]?.label).toBe('Codex primary window')
+    expect(implicit.windows[0]?.label).toBe('5 hours')
     const merged = mergeCodexQuota(explicit, { rateLimits: { primary: codexBucket(0).primary } }, later)
     expect(merged.windows).toHaveLength(1)
     expect(merged.windows[0]).toMatchObject({ usedPercent: 0, observedAt: later })
@@ -54,8 +56,8 @@ describe('native Codex quota', () => {
       rateLimits: codexBucket(0),
     } }, later)
     expect(merged.windows).toHaveLength(2)
-    expect(merged.windows.find(window => window.label === 'Codex primary window')).toMatchObject({ usedPercent: 0, observedAt: later })
-    expect(merged.windows.find(window => window.label === 'Other Codex limit primary window')).toEqual(before.windows[2])
+    expect(merged.windows.find(window => window.label === '5 hours')).toMatchObject({ usedPercent: 0, observedAt: later })
+    expect(merged.windows.find(window => window.label === 'Other limit, 1 hour')).toEqual(before.windows[2])
     expect(merged.windows.some(window => window.kind === 'secondary')).toBe(false)
     expect(before.windows).toHaveLength(3)
     // A subsequent complete read may legitimately omit the other bucket.
@@ -67,7 +69,8 @@ describe('native Codex quota', () => {
     } }, observedAt)
     const merged = mergeCodexQuota(before, { rateLimits: { primary: { resetsAt: resetSeconds }, secondary: null } }, later)
     expect(merged.windows).toHaveLength(2)
-    const changed = merged.windows.find(window => window.label === 'Codex primary window')
+    // The report lost its length, so the window is named for what it is rather than for an old length.
+    const changed = merged.windows.find(window => window.label === 'Limit')
     expect(changed).toMatchObject({ resetsAt: '2026-10-12T23:00:00.000Z', observedAt: later })
     expect(changed).not.toHaveProperty('usedPercent')
     expect(mergeCodexQuota(merged, { rateLimits: { primary: null, secondary: null } }, later).windows)
@@ -86,7 +89,7 @@ describe('native Codex quota', () => {
     ])) }, observedAt)
     const merged = mergeCodexQuota(before, { rateLimits: codexBucket(0) }, later)
     expect(merged.windows).toHaveLength(8)
-    expect(merged.windows.find(window => window.label === 'Codex primary window'))
+    expect(merged.windows.find(window => window.label === '5 hours'))
       .toMatchObject({ usedPercent: 0, observedAt: later })
   })
   it('falls back to a valid single bucket when a present multi-bucket map has no usable windows', () => {
@@ -126,7 +129,7 @@ describe('native Codex quota', () => {
     const result = parseCodexQuota({ rateLimitsByLimitId: { [secret]: { limitId: secret, limitName: '\u001b[31mBearer private-key',
       primary: { usedPercent: 1, nativeAccountId: secret }, credits: { balance: 100, secret }, planType: secret,
       account: { email: secret } } } }, observedAt)
-    expect(result.windows[0]?.label).toBe('Codex limit primary window')
+    expect(result.windows[0]?.label).toBe('Other limit')
     expect(JSON.stringify(result)).not.toMatch(/private-account|private-key|credits|balance|planType|nativeAccount|email|Bearer/u)
     expect(usageQuotaReadSchema.safeParse(result).success).toBe(true)
   })
@@ -143,7 +146,7 @@ describe('passive Claude quota events', () => {
     const result = parseClaudeQuota({ type: 'rate_limit_event', rate_limit_info: {
       rateLimitType: 'seven_day_opus', status: 'rejected' } }, observedAt)
     expect(result).toMatchObject({ status: 'available', windows: [{ id: 'claude-seven-day-opus', kind: 'model',
-      label: 'Claude Opus weekly limit', durationMinutes: 10_080, status: 'limited' }] })
+      label: 'Opus, week', durationMinutes: 10_080, status: 'limited' }] })
     expect(result.windows[0]).not.toHaveProperty('usedPercent')
     expect(result.windows[0]).not.toHaveProperty('modelId')
   })
@@ -249,13 +252,24 @@ describe('passive Claude quota events', () => {
   it('normalizes optional extra-usage status without financial or failure-text scraping', () => {
     const result = parseClaudeQuota({ type: 'rate_limit_event', rate_limit_info: {
       rateLimitType: 'seven_day_sonnet', utilization: 0.4, status: 'allowed_warning',
-      overageStatus: 'rejected', overageResetsAt: resetSeconds, overageDisabledReason: 'secret-key',
+      overageStatus: 'rejected', overageResetsAt: resetSeconds,
       account: { email: 'private@example.com' }, raw: { prompt: 'private prompt' } } }, observedAt)
-    expect(result.windows.map(window => [window.id, window.status])).toEqual([
-      ['claude-seven-day-sonnet', 'warning'], ['claude-overage', 'limited'],
+    expect(result.windows.map(window => [window.id, window.label, window.status])).toEqual([
+      ['claude-seven-day-sonnet', 'Sonnet, week', 'warning'], ['claude-overage', 'Extra usage', 'limited'],
     ])
     expect(result.windows[1]).not.toHaveProperty('usedPercent')
     expect(JSON.stringify(result)).not.toMatch(/secret|private|account|prompt|raw|overageDisabledReason/u)
+  })
+  it('drops extra usage that is turned off, even when its status is rejected, and never repeats the reason', () => {
+    const result = parseClaudeQuota({ type: 'rate_limit_event', rate_limit_info: {
+      rateLimitType: 'seven_day_sonnet', utilization: 0.4, status: 'allowed_warning',
+      overageStatus: 'rejected', overageResetsAt: resetSeconds, overageDisabledReason: 'secret-key' } }, observedAt)
+    expect(result.windows.map(window => window.id)).toEqual(['claude-seven-day-sonnet'])
+    expect(JSON.stringify(result)).not.toMatch(/secret|overageDisabledReason/u)
+    for (const reason of ['overage_not_provisioned', 'org_level_disabled', 'member_level_disabled', 'unknown']) {
+      expect(parseClaudeQuota({ type: 'rate_limit_event', rate_limit_info: { rateLimitType: 'five_hour', status: 'allowed',
+        overageStatus: 'rejected', overageDisabledReason: reason } }, observedAt).windows.map(window => window.id)).toEqual(['claude-five-hour'])
+    }
   })
   it('ignores unknown types and non-events, rejects invalid utilization, and retains over-limit fractions', () => {
     expect(parseClaudeQuota(claudeEvent('__proto__', 0.5), observedAt).windows).toEqual([])
@@ -266,13 +280,153 @@ describe('passive Claude quota events', () => {
   })
 })
 
+describe('Claude get_usage answers', () => {
+  const answerAt = '2099-10-14T18:00:00.000Z'
+  const answer = (limits: Record<string, unknown>) => ({ rate_limits_available: true, rate_limits: limits })
+  it('reads the documented windows as 0 to 100 percentages and drops every other key', () => {
+    const result = parseClaudeUsage(recordedUsage, answerAt)
+    expect(result).toMatchObject({ providerId: 'claude', status: 'available', refreshable: true, observedAt: answerAt })
+    expect(result.windows.map(window => [window.id, window.label, window.kind, window.usedPercent, window.durationMinutes, window.resetsAt]))
+      .toEqual([
+        ['claude-five-hour', '5 hours', 'primary', 41, 300, '2099-10-14T20:00:00.000Z'],
+        ['claude-seven-day', 'Week', 'weekly', 6, 10_080, '2099-10-21T13:00:00.000Z'],
+        [expect.stringMatching(/^claude-[a-f\d]{24}-model$/u), 'Fable, week', 'model', 0, 10_080, '2099-10-21T13:00:00.000Z'],
+      ])
+    // Extra usage is turned off; the codename window, the OAuth apps window, the plan and every cost figure are gone.
+    expect(JSON.stringify(result)).not.toMatch(/tangerine|blossom|otter|spend|cost|max|subscription|session|12\.5|1234|5000|24\.68|77|USD|Extra/u)
+    expect(result.windows.some(window => window.usedPercent === 13)).toBe(false)
+    expect(usageQuotaReadSchema.safeParse(result).success).toBe(true)
+  })
+  it('accepts the whole control_response frame and shows extra usage only when it is turned on', () => {
+    const frame = { type: 'control_response', response: { subtype: 'success', request_id: 'r', response: answer({
+      five_hour: { utilization: 12.5, resets_at: '2099-10-14T20:00:00Z' },
+      extra_usage: { is_enabled: true, monthly_limit: 100, used_credits: 30, utilization: 30, currency: 'USD' } }) } }
+    const result = parseClaudeUsage(frame, answerAt)
+    expect(result.windows.map(window => [window.id, window.label, window.usedPercent])).toEqual([
+      ['claude-five-hour', '5 hours', 12.5], ['claude-overage', 'Extra usage', 30]])
+    expect(result.windows[1]).not.toHaveProperty('resetsAt')
+    expect(JSON.stringify(result)).not.toMatch(/USD|credits|monthly/u)
+  })
+  it('keeps over-limit and zero figures, drops null and passed windows, and refuses plans without limits', () => {
+    const result = parseClaudeUsage(answer({ five_hour: { utilization: 0, resets_at: null }, seven_day: { utilization: 104, resets_at: '2099-10-21T13:00:00Z' },
+      seven_day_opus: { utilization: 50, resets_at: '2099-10-14T17:00:00Z' }, seven_day_sonnet: { utilization: -1, resets_at: 'soon' } }), answerAt)
+    expect(result.windows.map(window => [window.id, window.usedPercent])).toEqual([['claude-five-hour', 0], ['claude-seven-day', 104]])
+    expect(result.windows[0]).not.toHaveProperty('resetsAt')
+    expect(parseClaudeUsage({ rate_limits_available: false, rate_limits: { five_hour: { utilization: 5 } } }, answerAt))
+      .toMatchObject({ status: 'unavailable', reason: 'not-reported', refreshable: true, windows: [] })
+    expect(parseClaudeUsage(null, answerAt)).toMatchObject({ status: 'unavailable', windows: [] })
+  })
+  it('names model windows only from plain model names, folds Opus and Sonnet into their own windows and bounds the list', () => {
+    const scoped = [{ display_name: 'Opus', utilization: 9, resets_at: null }, { display_name: 'Bearer\u001b[31m secret', utilization: 1, resets_at: null },
+      ...Array.from({ length: 20 }, (_, index) => ({ display_name: `Model${index}`, utilization: index, resets_at: null }))]
+    const result = parseClaudeUsage(answer({ five_hour: { utilization: 1, resets_at: null }, model_scoped: scoped,
+      extra_usage: { is_enabled: true, utilization: 2 } }), answerAt)
+    expect(result.windows).toHaveLength(8)
+    expect(result.windows.map(window => window.label).slice(0, 3)).toEqual(['5 hours', 'Opus, week', 'Model, week'])
+    expect(result.windows.find(window => window.label === 'Opus, week')?.id).toBe('claude-seven-day-opus')
+    expect(result.windows.at(-1)?.label).toBe('Extra usage')
+    expect(JSON.stringify(result)).not.toMatch(/Bearer|secret/u)
+    const both = parseClaudeUsage(answer({ seven_day_opus: { utilization: 3, resets_at: null }, model_scoped: [{ display_name: 'opus', utilization: 9, resets_at: null }] }), answerAt)
+    expect(both.windows.map(window => [window.id, window.usedPercent])).toEqual([['claude-seven-day-opus', 3]])
+  })
+})
+
+describe('merging Claude readings', () => {
+  const at = (minute: number) => `2026-10-12T18:${String(minute).padStart(2, '0')}:00.000Z`
+  const usage = (limits: Record<string, unknown>, minute: number) => parseClaudeUsage({ rate_limits_available: true, rate_limits: limits }, at(minute))
+  const event = (info: Record<string, unknown>, minute: number) => parseClaudeQuota({ type: 'rate_limit_event', rate_limit_info: info }, at(minute))
+  const reset = '2026-10-12T23:00:00.000Z'
+  it('lets a get_usage answer replace older passive windows it speaks for and keep the ones it does not', () => {
+    let quota = event({ rateLimitType: 'seven_day_opus', status: 'rejected', overageStatus: 'rejected', resetsAt: resetSeconds }, 1)
+    quota = mergeClaudeQuota(quota, event({ rateLimitType: 'seven_day_overage_included', status: 'allowed_warning', utilization: 0.9, resetsAt: resetSeconds }, 2))
+    expect(quota.windows.map(window => window.id)).toEqual(['claude-seven-day-opus', 'claude-overage', 'claude-seven-day-overage-included'])
+    expect(quota.windows.find(window => window.id === 'claude-seven-day-overage-included'))
+      .toMatchObject({ label: 'Week, with extra usage', kind: 'weekly', usedPercent: 90 })
+    const merged = mergeClaudeQuota(quota, usage({ five_hour: { utilization: 40, resets_at: reset }, extra_usage: { is_enabled: false } }, 3))
+    expect(merged.windows.map(window => [window.id, window.usedPercent])).toEqual([['claude-seven-day-overage-included', 90], ['claude-five-hour', 40]])
+    expect(merged).toMatchObject({ status: 'available', refreshable: true, observedAt: at(3) })
+  })
+  it('keeps a passive window seen after the answer, and an older event cannot bring back what the answer removed', () => {
+    const newer = event({ rateLimitType: 'five_hour', status: 'allowed_warning', utilization: 0.7, resetsAt: resetSeconds }, 5)
+    const merged = mergeClaudeQuota(newer, usage({ five_hour: { utilization: 40, resets_at: reset } }, 4))
+    expect(merged.windows[0]).toMatchObject({ usedPercent: 70, status: 'warning', observedAt: at(5) })
+    const answered = mergeClaudeQuota(event({ rateLimitType: 'five_hour', status: 'allowed', resetsAt: resetSeconds }, 1),
+      usage({ seven_day: { utilization: 5, resets_at: reset } }, 4))
+    expect(answered.windows.map(window => window.id)).toEqual(['claude-seven-day'])
+    const late = mergeClaudeQuota(answered, event({ rateLimitType: 'five_hour', status: 'allowed', utilization: 0.1, resetsAt: resetSeconds }, 2))
+    expect(late.windows.map(window => window.id)).toEqual(['claude-seven-day'])
+  })
+  it('keeps the answer figure through a later status-only event, and a passive event never changes whether Claude can be read', () => {
+    const answered = mergeClaudeQuota(unavailableProviderQuota('claude', 'not-read', true), usage({ five_hour: { utilization: 40, resets_at: reset } }, 1))
+    const merged = mergeClaudeQuota(answered, event({ rateLimitType: 'five_hour', status: 'allowed', resetsAt: resetSeconds }, 2))
+    expect(merged).toMatchObject({ refreshable: true, status: 'available', windows: [{ usedPercent: 40, status: 'allowed', observedAt: at(1) }] })
+    expect(mergeClaudeQuota(merged, unavailableProviderQuota('claude', 'refresh-unavailable', false, at(3)))).toMatchObject({
+      refreshable: false, status: 'unavailable', reason: 'refresh-unavailable', windows: [{ usedPercent: 40 }] })
+  })
+  it('shows extra usage only near or at its limit, in use, or blocked, and removes it when a later event says otherwise', () => {
+    expect(event({ rateLimitType: 'five_hour', status: 'allowed', overageStatus: 'allowed' }, 1).windows.map(window => window.id)).toEqual(['claude-five-hour'])
+    expect(event({ rateLimitType: 'five_hour', status: 'allowed', overageStatus: 'allowed', isUsingOverage: true }, 1).windows.map(window => [window.id, window.status]))
+      .toEqual([['claude-five-hour', 'allowed'], ['claude-overage', 'allowed']])
+    expect(event({ rateLimitType: 'overage', status: 'allowed_warning', resetsAt: resetSeconds }, 1).windows)
+      .toMatchObject([{ id: 'claude-overage', label: 'Extra usage', status: 'warning' }])
+    expect(event({ rateLimitType: 'five_hour', status: 'rejected', overageStatus: 'rejected', overageDisabledReason: 'out_of_credits' }, 1).windows.map(window => [window.id, window.status]))
+      .toEqual([['claude-five-hour', 'limited'], ['claude-overage', 'limited']])
+    const shown = event({ rateLimitType: 'five_hour', status: 'allowed', overageStatus: 'allowed_warning', utilization: 0.2, resetsAt: resetSeconds }, 1)
+    expect(shown.windows.map(window => window.id)).toEqual(['claude-five-hour', 'claude-overage'])
+    const off = mergeClaudeQuota(shown, event({ overageStatus: 'rejected', overageDisabledReason: 'member_level_disabled' }, 2))
+    expect(off).toMatchObject({ status: 'available', windows: [{ id: 'claude-five-hour', usedPercent: 20 }] })
+    expect(off.windows).toHaveLength(1)
+    // An older event cannot bring it back.
+    expect(mergeClaudeQuota(off, shown).windows.map(window => window.id)).toEqual(['claude-five-hour'])
+    // Clearing the only window leaves nothing reported rather than an available reading with nothing in it.
+    const alone = event({ rateLimitType: 'overage', status: 'rejected' }, 1)
+    expect(mergeClaudeQuota(alone, event({ overageStatus: 'allowed', isUsingOverage: false }, 2)))
+      .toMatchObject({ status: 'unavailable', reason: 'not-reported', windows: [] })
+  })
+  it('drops windows whose reset has passed instead of carrying them', () => {
+    expect(parseClaudeQuota(claudeEvent('five_hour', 0.5), '2026-10-12T23:00:00.000Z').windows).toEqual([])
+    const before = parseClaudeQuota(claudeEvent('seven_day', 0.5), observedAt)
+    const after = mergeClaudeQuota(before, parseClaudeQuota({ type: 'rate_limit_event', rate_limit_info: {
+      rateLimitType: 'five_hour', status: 'allowed', resetsAt: resetSeconds + 3_600 } }, '2026-10-12T23:30:00.000Z'))
+    expect(after.windows.map(window => window.id)).toEqual(['claude-five-hour'])
+    const kept = parseClaudeUsage({ rate_limits_available: true, rate_limits: { five_hour: { utilization: 40, resets_at: reset },
+      seven_day: { utilization: 5, resets_at: '2026-10-19T13:00:00.000Z' } } }, observedAt)
+    expect(dropExpiredQuotaWindows(kept, later)).toBe(kept)
+    expect(dropExpiredQuotaWindows(kept, reset).windows.map(window => window.id)).toEqual(['claude-seven-day'])
+    expect(dropExpiredQuotaWindows(kept, '2026-10-20T00:00:00.000Z'))
+      .toMatchObject({ status: 'unavailable', reason: 'not-reported', windows: [], refreshable: true })
+  })
+})
+
+describe('window labels by length', () => {
+  it('names a window by its length, never by a native window name', () => {
+    expect([300, 60, 15, 1, 1_440, 4_320, 10_080, 40_320, 43_200, 44_640, 50_000, 90].map(quotaDurationLabel)).toEqual([
+      '5 hours', '1 hour', '15 minutes', '1 minute', 'Day', '3 days', 'Week', 'Month', 'Month', 'Month', '50000 minutes', '90 minutes'])
+    expect([undefined, 0, -5, 1.5].map(quotaDurationLabel)).toEqual([undefined, undefined, undefined, undefined])
+  })
+  it('labels Codex windows by their reported length, and other buckets as other limits', () => {
+    const result = parseCodexQuota({ rateLimitsByLimitId: {
+      codex: { limitId: 'codex', primary: { usedPercent: 1, windowDurationMins: 300 }, secondary: { usedPercent: 2, windowDurationMins: 10_080 } },
+      monthly: { primary: { usedPercent: 3, windowDurationMins: 43_200 }, secondary: { usedPercent: 4 } },
+    } }, observedAt)
+    expect(result.windows.map(window => window.label)).toEqual(['5 hours', 'Week', 'Other limit, month', 'Other second limit'])
+    expect(JSON.stringify(result)).not.toMatch(/primary window|secondary window|Codex/u)
+  })
+  it('labels Claude and Grok windows by length or model', () => {
+    expect(['five_hour', 'seven_day', 'seven_day_opus', 'seven_day_sonnet'].map(type => parseClaudeQuota(claudeEvent(type, 0.1), observedAt).windows[0]?.label))
+      .toEqual(['5 hours', 'Week', 'Opus, week', 'Sonnet, week'])
+    const grok = parseGrokQuota({ config: { currentPeriod: { type: 'FUTURE_PERIOD', start: '2026-10-12T00:00:00Z', end: '2026-10-13T00:00:00Z' } } }, observedAt)
+    expect(grok.windows[0]).toMatchObject({ id: 'grok-allowance', label: 'Day', durationMinutes: 1_440 })
+  })
+})
+
 describe('native Grok billing metadata', () => {
   const period = { type: 'USAGE_PERIOD_TYPE_WEEKLY', start: '2026-10-12T00:00:00Z', end: '2026-10-19T00:00:00Z' }
   it('preserves the live-tested missing percentage while retaining a real weekly reset', () => {
     const result = parseGrokQuota({ config: { currentPeriod: period, onDemandUsed: { val: 123 },
       prepaidBalance: { val: 456 }, isUnifiedBillingUser: true } }, observedAt)
     expect(result).toMatchObject({ providerId: 'grok', status: 'available', refreshable: true, windows: [{
-      id: 'grok-weekly', label: 'Grok weekly allowance', kind: 'weekly', durationMinutes: 10_080,
+      id: 'grok-weekly', label: 'Week', kind: 'weekly', durationMinutes: 10_080,
       resetsAt: '2026-10-19T00:00:00.000Z' }] })
     expect(result.windows[0]).not.toHaveProperty('usedPercent')
     expect(JSON.stringify(result)).not.toMatch(/onDemand|prepaid|Unified|123|456/u)
@@ -288,7 +442,7 @@ describe('native Grok billing metadata', () => {
   it('uses only verified legacy monthly Cent shapes and proto3 omitted zero', () => {
     const legacy = { monthlyLimit: { val: 2_000 }, used: { val: 500 }, billingPeriodEnd: '2026-11-01T00:00:00Z' }
     expect(parseGrokQuota({ config: legacy }, observedAt).windows[0]).toMatchObject({
-      id: 'grok-monthly', label: 'Grok monthly allowance', usedPercent: 25, resetsAt: '2026-11-01T00:00:00.000Z',
+      id: 'grok-monthly', label: 'Month', usedPercent: 25, resetsAt: '2026-11-01T00:00:00.000Z',
     })
     expect(parseGrokQuota({ config: { ...legacy, used: {} } }, observedAt).windows[0]?.usedPercent).toBe(0)
     expect(parseGrokQuota({ config: { ...legacy, monthlyLimit: {} } }, observedAt).windows[0]).not.toHaveProperty('usedPercent')
@@ -308,7 +462,7 @@ describe('native Grok billing metadata', () => {
     const result = parseGrokQuota({ config: { creditUsagePercent: 1, currentPeriod: {
       type: 'Bearer secret-key', end: '2026-02-30T00:00:00Z' }, accountId: 'private-account',
       subscriptionTier: 'private-plan' } }, observedAt)
-    expect(result.windows[0]).toMatchObject({ label: 'Grok allowance', kind: 'other', usedPercent: 1 })
+    expect(result.windows[0]).toMatchObject({ label: 'Allowance', kind: 'other', usedPercent: 1 })
     expect(result.windows[0]).not.toHaveProperty('resetsAt')
     expect(JSON.stringify(result)).not.toMatch(/Bearer|secret|private|config|account|subscription/u)
     expect(usageQuotaReadSchema.safeParse(result).success).toBe(true)
@@ -316,9 +470,9 @@ describe('native Grok billing metadata', () => {
   it('retains actual monthly duration and a reset for unknown future enum spellings without guessing a period', () => {
     const monthly = parseGrokQuota({ config: { currentPeriod: { type: 'USAGE_PERIOD_TYPE_MONTHLY',
       start: '2026-10-01T00:00:00Z', end: '2026-11-01T00:00:00Z' } } }, observedAt)
-    expect(monthly.windows[0]).toMatchObject({ id: 'grok-monthly', label: 'Grok monthly allowance', durationMinutes: 44_640 })
+    expect(monthly.windows[0]).toMatchObject({ id: 'grok-monthly', label: 'Month', durationMinutes: 44_640 })
     const unknown = parseGrokQuota({ config: { currentPeriod: { type: 'FUTURE_PERIOD_WEEKLY', end: period.end } } }, observedAt)
-    expect(unknown.windows[0]).toMatchObject({ id: 'grok-allowance', label: 'Grok allowance', kind: 'other', resetsAt: '2026-10-19T00:00:00.000Z' })
+    expect(unknown.windows[0]).toMatchObject({ id: 'grok-allowance', label: 'Allowance', kind: 'other', resetsAt: '2026-10-19T00:00:00.000Z' })
     expect(unknown.windows[0]).not.toHaveProperty('durationMinutes')
   })
 })
