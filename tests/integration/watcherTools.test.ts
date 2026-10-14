@@ -886,6 +886,28 @@ it.each(['manual-send', 'queue-followup'] as const)('keeps the Watcher request c
   expect(f.service.state().requests).toHaveLength(type === 'manual-send' ? 2 : 1)
 })
 
+it('shows an older Watcher message without the routing footer main once appended, and leaves other text alone', async () => {
+  const f = await fixture()
+  const native = f.workspace.adapters.codex.state.threads.find(row => row.id === f.workspace.registry.byThread(f.id)!.sessionId)!
+  const typed = 'Synthetic older instruction\n\nwith a second paragraph'
+  const footer = `\n\n[Sotto Watcher request: ${f.requestId}. Local host: ${f.control.hostId()}. Use this requestId for sotto_threads mutations. `
+    + `Known project IDs: ${f.project.id}, native:claude:project:${randomUUID()}. Call list_projects for choices.]`
+  const lookalike = 'Synthetic [Sotto Watcher request: typed by the user.]'
+  const createdAt = new Date().toISOString()
+  native.status = 'idle'
+  native.messages.push({ id: 'older-footed', role: 'user', text: typed + footer, createdAt },
+    { id: 'older-reply', role: 'assistant', text: `Synthetic reply quoting${footer}`, createdAt },
+    { id: 'lookalike', role: 'user', text: lookalike, createdAt })
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  await f.control.commandShell({ type: 'observe-threads', threadIds: [f.id] })
+  const shown = (id: string) => f.control.threadDetail(f.id)!.messages.find(message => message.id === id)?.text
+  await vi.waitFor(() => expect(shown('older-footed')).toBe(typed))
+  expect(shown('older-reply')).toBe(`Synthetic reply quoting${footer}`)
+  expect(shown('lookalike')).toBe(lookalike)
+  // The provider's own history keeps what it was sent; only what the user sees changes.
+  expect(native.messages.find(message => message.id === 'older-footed')!.text).toBe(typed + footer)
+})
+
 
 it('keeps the newest messages in an oversized initial read and the oldest prefix in a forward read', async () => {
   const f = await fixture(), first = await f.call('start_thread', f.start())

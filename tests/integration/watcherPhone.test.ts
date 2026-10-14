@@ -95,6 +95,22 @@ it('admits a paired phone origin without Can answer, keeps the computer defaults
   expect(await peer.call('generic', { op: 'command', command: { type: 'manual-send', threadId: f.target.threadId, text: 'Synthetic forged generic' } })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
 })
 
+it('shows an older phone instruction as typed, without the routing footer main once appended', async () => {
+  const f = await fixture(), peer = await f.pair(), packet = f.send(peer.paired.clientId)
+  await peer.call('send', packet); await f.finish(f.target.threadId)
+  const request = f.watcher.state().requests.at(-1)!
+  const footer = `\n\n[Sotto Watcher request: ${request.id}. Local host: ${f.target.hostId}. Use this requestId for sotto_threads mutations. `
+    + `Known project IDs: native:claude:project:${randomUUID()}. Call list_projects for choices.]`
+  const typed = 'Synthetic older phone instruction'
+  f.native(f.target.threadId).messages.push({ id: 'older-footed', role: 'user', text: typed + footer, createdAt: new Date(Date.now() + 1_000).toISOString() })
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  await vi.waitFor(() => expect(f.phone.state(false).conversation.messages.find(row => row.id === 'older-footed')?.text).toBe(typed))
+  const read = await peer.call('read', { op: 'watcher-phone-read' })
+  expect(watcherPhoneResultSchema.parse(read.result)).toMatchObject({ status: 'ok', state: { conversation: { messages: expect.arrayContaining([
+    expect.objectContaining({ id: 'older-footed', text: typed })]) } } })
+  expect(JSON.stringify(read.result)).not.toContain('Sotto Watcher request')
+})
+
 it('does not attach an old receipt to an assistant reply after a later user instruction', async () => {
   const f = await fixture(), peer = await f.pair(); await peer.call('first', f.send(peer.paired.clientId)); await f.start()
   const firstRequest = f.watcher.state().requests.at(-1)!.id

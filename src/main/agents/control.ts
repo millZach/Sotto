@@ -46,6 +46,7 @@ import { resolveFilesBinding } from '../files/binding'
 import { THREAD_SCOPED_COMMAND_TYPES } from '../../shared/threadLanes'
 import type { FilesBinding } from '../files/service'
 import { isSottoRequest, withSottoRequests, type SottoThreadRequests } from './sottoRequests'
+import { watcherMessagesAsTyped } from './watcherRequestNote'
 import { FinishedUnread } from './finishedUnread'
 import { withoutLegacyManagement, type HostAnswerTarget } from '../../shared/hostProtocol'
 import { agentCommandSchema } from '../../shared/agents'
@@ -508,7 +509,7 @@ export class AgentControl {
       await this.dependencies.host.initialize?.()
       for (const id of this.dependencies.host.watcherThreadIds?.() ?? []) this.disabledWatcherIds.add(id)
       const snapshot = this.dependencies.host.workspaceSnapshot?.()
-      if (snapshot) this.withSottoRequests(snapshot)
+      if (snapshot) this.shownSnapshot(snapshot)
     }
     try {
       await retireLegacyProvider({ directory: this.dependencies.directory, parse: input => this.parseSaved(input),
@@ -551,7 +552,7 @@ export class AgentControl {
     await this.followupStore.load(this.stageInline, handle => this.attachments.has(handle.digest), id => this.watcherAvailable(id))
     this.syncFollowups()
     await this.dependencies.host.initialize?.()
-    if (this.dependencies.host.workspaceSnapshot) this.state.host = this.withSottoRequests(this.dependencies.host.workspaceSnapshot())
+    if (this.dependencies.host.workspaceSnapshot) this.state.host = this.shownSnapshot(this.dependencies.host.workspaceSnapshot())
     const historyDisabled = this.dependencies.historyEnabled?.() === false
     this.privacyCleanupPending ||= historyDisabled
     // Before independent providers, every durable pending action belonged to the restored native provider.
@@ -623,11 +624,17 @@ export class AgentControl {
     // A change is taken like a new snapshot, so the thread carries the request at once.
     this.unsubscribeSottoRequests = requests.subscribe(() => this.acceptSnapshot(this.state.host))
   }
-  private withSottoRequests(snapshot: AgentHostSnapshot): AgentHostSnapshot {
+  /**
+   * A host's snapshot as everything in Sotto shows it: Watcher's threads only where the gate allows them (ADR-0072), its
+   * user messages as typed (ADR-0073), and Sotto's own requests among the provider's (ADR-0035).
+   */
+  private shownSnapshot(snapshot: AgentHostSnapshot): AgentHostSnapshot {
     if (this.dependencies.watcherEnabled !== true) {
       for (const thread of snapshot.threads) if (thread.kind === 'watcher' || thread.kind === 'watcher-history') this.disabledWatcherIds.add(thread.id)
       snapshot = { ...snapshot, threads: snapshot.threads.filter(thread => this.watcherAvailable(thread.id)) }
     }
+    // Without a line Sotto put after them, in Watcher's pane, Copy and the phone alike.
+    snapshot = watcherMessagesAsTyped(snapshot)
     return this.sottoRequests ? withSottoRequests(snapshot, this.sottoRequests.requests()) : snapshot
   }
   /**
@@ -3624,7 +3631,7 @@ export class AgentControl {
     this.firstOutputs.observe(incoming.threads)
     const connecting = this.state.connection === 'connecting'
     // Sotto's own requests join the provider's before anything below reads the threads (ADR-0035).
-    const snapshot = this.withSottoRequests(incoming)
+    const snapshot = this.shownSnapshot(incoming)
     this.state.host = snapshot
     this.watcherHooks?.observe(snapshot, new Set([...this.outbox.flatMap(item => item.messageId ? [item.messageId] : []),
       ...(this.state.deliveries ?? []).flatMap(item => item.messageId ? [item.messageId] : [])]))
