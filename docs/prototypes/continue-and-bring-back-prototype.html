@@ -1,0 +1,1313 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Not shipped, not tested, not wired to anything. Nothing here sends, forks, merges or reads.
+
+  Question: where does Zach start "continue this somewhere else", and how does he see what moved, what was
+  carried and what was left behind? Tickets E4 #1027, E5 #1028 and E7 #1030 in the map #1023.
+
+  Surfaces (the switch at the top):
+    1  Continue on another provider (E4), from the pane's menu and from a usage-limit error. The new thread's
+       first message is the handover (E3); the two threads link to each other; the source stays readable.
+    2  Continue a subagent as its own thread (E5): a Codex agent is forked natively, a Claude agent starts from a
+       thin handover. Fork from here (E5b) on a turn of a whole thread; Devin gets the handover only.
+    3  Bring changes back (E7): "Bring changes to main" on a child in a new worktree. Fast-forward when it can,
+       asks before a merge commit, refuses uncommitted work and conflicts in Git's own words.
+
+  Variants of where it lives (?variant=A|B|C, the bar at the bottom, or the arrow keys):
+    A  Menu and sheet.  A menu row or a button opens one dialog holding every choice and the handover.
+    B  In place.        No dialog: the error, the model chip, the roster row, the turn and the composer grow the
+                        choices where you are.
+    C  Lineage.         A Tools surface draws the thread's family (continued from, continued in, forks, agents)
+                        with each handover on the line between two threads. Starts and Bring changes back happen there.
+
+  The select at the top walks each surface through its states, refusals and empty states included.
+  URL: ?surface=1|2|3&state=<id>&variant=A|B|C&theme=dark|light&size=1600x1000|1280x800|820x560
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto — continue elsewhere and bring changes back, prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'); }
+
+/* Theme roles: the Sotto palette's two halves, copied from src/renderer/src/styles/tokens.css. */
+:root {
+  color-scheme: dark;
+  --theme-canvas: oklch(0.115 0.008 265);
+  --theme-surface: oklch(0.145 0.008 265);
+  --theme-surface-raised: oklch(0.185 0.008 265);
+  --theme-surface-overlay: oklch(0.215 0.008 265);
+  --theme-text: oklch(0.985 0.005 280);
+  --theme-text-muted: oklch(0.72 0.014 265);
+  --theme-border: oklch(0.305 0.02 265);
+  --theme-input: oklch(0.375 0.024 265);
+  --theme-focus: oklch(0.714403 0.104089 183.092);
+  --theme-accent: oklch(0.714403 0.104089 183.092);
+  --theme-accent-foreground: oklch(0.16 0.012 190);
+  --theme-muted: oklch(0.155 0.008 265);
+  --theme-muted-foreground: oklch(0.72 0.014 265);
+  --theme-placeholder: oklch(0.675 0.012 270);
+  --theme-error: oklch(0.655108 0.221148 23.473);
+  --theme-error-foreground: oklch(0.702184 0.189226 22.228);
+  --theme-error-surface: oklch(0.29 0.04 20);
+  --theme-update-foreground: oklch(0.83 0.08 183);
+  --theme-accent-surface: oklch(0.32 0.05 185);
+  --theme-accent-surface-foreground: oklch(0.985 0.005 280);
+  --theme-message-surface: oklch(0.205 0.014 265);
+  --theme-message-action: oklch(0.714403 0.104089 183.092);
+  --theme-message-action-foreground: oklch(0.16 0.012 190);
+  --theme-code-background: oklch(0.155 0.008 265);
+  --theme-code-foreground: oklch(0.985 0.005 280);
+  --theme-sidebar: oklch(0.235 0.003 265);
+  --theme-sidebar-foreground: oklch(0.985 0.005 280);
+  --theme-sidebar-muted-foreground: oklch(0.72 0.014 265);
+  --theme-sidebar-control-surface: oklch(0.295 0.003 265);
+  --theme-sidebar-row-selected: oklch(0.355 0.035 188);
+  --theme-sidebar-border: oklch(0.355 0.012 265);
+  --tt-success: oklch(0.79 0.13 165);
+  --tt-overlay: color-mix(in srgb, var(--theme-canvas) 64%, transparent);
+  --tt-shadow-lg: 0 24px 60px rgb(0 0 0 / 55%);
+  --tt-shadow-overlay: 0 24px 72px -20px rgb(0 0 0 / 90%);
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --theme-canvas: oklch(0.978 0.004 85);
+  --theme-surface: oklch(0.99 0.003 85);
+  --theme-surface-raised: oklch(0.955 0.006 85);
+  --theme-surface-overlay: oklch(0.945 0.007 85);
+  --theme-text: oklch(0.235 0.014 75);
+  --theme-text-muted: oklch(0.5 0.014 75);
+  --theme-border: oklch(0.86 0.012 80);
+  --theme-input: oklch(0.8 0.016 80);
+  --theme-focus: oklch(0.53 0.095 186);
+  --theme-accent: oklch(0.53 0.095 186);
+  --theme-accent-foreground: oklch(0.99 0.003 85);
+  --theme-muted: oklch(0.945 0.008 85);
+  --theme-muted-foreground: oklch(0.5 0.014 75);
+  --theme-placeholder: oklch(0.525 0.015 78);
+  --theme-error: oklch(0.637823 0.237287 25.436);
+  --theme-error-foreground: oklch(0.509494 0.208583 28.513);
+  --theme-error-surface: oklch(0.94 0.02 25);
+  --theme-update-foreground: oklch(0.43 0.08 186);
+  --theme-accent-surface: oklch(0.92 0.03 186);
+  --theme-accent-surface-foreground: oklch(0.235 0.014 75);
+  --theme-message-surface: oklch(0.93 0.012 85);
+  --theme-message-action: oklch(0.53 0.095 186);
+  --theme-message-action-foreground: oklch(0.99 0.003 85);
+  --theme-code-background: oklch(0.96 0.005 85);
+  --theme-code-foreground: oklch(0.235 0.014 75);
+  --theme-sidebar: oklch(0.955 0.008 85);
+  --theme-sidebar-foreground: oklch(0.235 0.014 75);
+  --theme-sidebar-muted-foreground: oklch(0.5 0.014 75);
+  --theme-sidebar-control-surface: oklch(0.995 0.002 85);
+  --theme-sidebar-row-selected: oklch(0.895 0.028 188);
+  --theme-sidebar-border: oklch(0.87 0.012 82);
+  --tt-success: oklch(0.445 0.11 158);
+  --tt-overlay: color-mix(in srgb, var(--theme-canvas) 60%, transparent);
+  --tt-shadow-lg: 0 24px 60px rgb(20 24 22 / 18%);
+  --tt-shadow-overlay: 0 24px 64px -24px rgb(0 0 0 / 45%);
+}
+/* The --tt-* tokens features read, derived the way tokens.css derives them at 100% contrast. */
+:root {
+  --tt-canvas: var(--theme-canvas);
+  --tt-surface: var(--theme-surface);
+  --tt-surface-elevated: var(--theme-surface-raised);
+  --tt-surface-overlay: var(--theme-surface-overlay);
+  --tt-surface-sunken: var(--theme-muted);
+  --tt-field: var(--theme-surface);
+  --tt-text: var(--theme-text);
+  --tt-text-2: color-mix(in oklab, var(--theme-text) 55%, var(--theme-muted-foreground));
+  --tt-text-muted: color-mix(in oklab, var(--theme-muted-foreground) 85%, var(--theme-text));
+  --tt-text-faint: var(--theme-placeholder);
+  --tt-hairline: var(--theme-border);
+  --tt-field-border: var(--theme-input);
+  --tt-border: color-mix(in oklab, var(--theme-input) 25%, var(--theme-muted-foreground));
+  --tt-hover: color-mix(in srgb, var(--theme-accent-surface) 70%, transparent);
+  --tt-bubble: var(--theme-message-surface);
+  --tt-pill: var(--tt-text);
+  --tt-pill-ink: var(--theme-canvas);
+  --tt-error: var(--theme-error-foreground);
+  --tt-error-surface: var(--theme-error-surface);
+  --tt-error-border: color-mix(in oklab, var(--theme-error) 38%, var(--theme-error-surface));
+  --tt-code-bg: var(--theme-code-background);
+  --tt-code-text: var(--theme-code-foreground);
+  --tt-accent: var(--theme-accent);
+  --tt-accent-text: var(--theme-update-foreground);
+  --tt-link: var(--tt-accent-text);
+  --tt-on-accent: var(--theme-accent-foreground);
+  --tt-focus-ring: var(--theme-focus);
+  --tt-primary: var(--theme-message-action);
+  --tt-primary-contrast: var(--theme-message-action-foreground);
+  --tt-accent-wash: color-mix(in srgb, var(--tt-accent) 14%, transparent);
+  --tt-accent-border: color-mix(in srgb, var(--tt-accent) 45%, var(--tt-field-border));
+  --tt-selected-border: color-mix(in srgb, var(--tt-accent) 30%, var(--tt-field-border));
+  --tt-accent-surface: var(--theme-accent-surface);
+  --tt-accent-surface-text: var(--theme-accent-surface-foreground);
+  --tt-sidebar: var(--theme-sidebar);
+  --tt-sidebar-text: var(--theme-sidebar-foreground);
+  --tt-sidebar-text-muted: var(--theme-sidebar-muted-foreground);
+  --tt-sidebar-control: var(--theme-sidebar-control-surface);
+  --tt-sidebar-row-selected: var(--theme-sidebar-row-selected);
+  --tt-sidebar-border: var(--theme-sidebar-border);
+  --tt-radius-sm: 6px; --tt-radius-md: 10px; --tt-radius-lg: 14px; --tt-radius-pill: 999px;
+  --tt-font: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  --tt-mono: ui-monospace, 'Cascadia Code', Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; background: #202020; font-family: var(--tt-font); }
+button { font: inherit; }
+svg { flex: none; }
+:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+.stage { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 112px 0 120px; }
+.window { zoom: var(--fit, 1); position: relative; flex: none; width: var(--w); height: var(--h); display: grid; grid-template-columns: var(--side) minmax(0, 1fr) auto; overflow: hidden; background: var(--tt-canvas); color: var(--tt-text); border: 1px solid #000; font-size: 14px; }
+.winctl { position: absolute; top: 0; right: 0; z-index: 5; display: flex; align-items: center; height: 46px; padding: 0 10px; gap: 2px; color: var(--tt-text-2); pointer-events: none; }
+.winctl span { display: grid; place-items: center; width: 36px; height: 30px; }
+
+/* Sidebar */
+.side { display: flex; flex-direction: column; min-width: 0; overflow: hidden; background: var(--tt-sidebar); color: var(--tt-sidebar-text); border-right: 1px solid var(--tt-sidebar-border); }
+.side-top { display: flex; align-items: center; gap: 4px; height: 46px; padding: 0 10px 0 14px; flex: none; }
+.side-top .brand { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; font-weight: 600; font-size: 15px; }
+.tile { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; background: var(--tt-accent); color: var(--tt-on-accent); }
+.side-top .ib { display: grid; place-items: center; width: 28px; height: 28px; color: var(--tt-sidebar-text-muted); }
+.window[data-narrow] .side-top .ib.wide { display: none; }
+.side-search { display: flex; align-items: center; gap: 8px; height: 34px; margin: 2px 10px 10px; padding: 0 10px; border: 1px solid var(--tt-sidebar-border); border-radius: 8px; background: var(--tt-sidebar-control); color: var(--tt-sidebar-text-muted); font-size: 13px; flex: none; }
+.side-scroll { flex: 1; min-height: 0; overflow: auto; }
+.side-group { display: flex; align-items: center; gap: 6px; padding: 8px 14px 6px; font-size: 14px; font-weight: 500; }
+.side-group .count { margin-left: auto; color: var(--tt-sidebar-text-muted); font-size: 12px; font-weight: 400; }
+.side-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 8px; margin: 0 6px 2px; padding: 8px 10px 8px 12px; border: 1px solid transparent; border-radius: 8px; font-size: 14px; }
+.side-row[aria-current] { background: var(--tt-sidebar-row-selected); border-color: var(--tt-selected-border); }
+.side-row .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.side-row .time, .side-row .status { color: var(--tt-sidebar-text-muted); font-size: 12.5px; text-align: right; white-space: nowrap; }
+.side-row .sub { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--tt-sidebar-text-muted); font-size: 12.5px; }
+.side-row .status[data-tone='live'] { color: var(--tt-sidebar-text); }
+/* On the selected row's tint, muted text steps toward the row's ink so it keeps 4.5:1. */
+.side-row[aria-current] :is(.time, .status, .sub) { color: color-mix(in oklab, var(--tt-sidebar-text-muted) 75%, var(--tt-sidebar-text)); }
+.side-settled { display: flex; align-items: center; gap: 6px; padding: 10px 16px; color: var(--tt-sidebar-text); font-size: 14px; }
+.side-foot { flex: none; padding: 8px 10px 10px; border-top: 1px solid var(--tt-sidebar-border); }
+.switch { display: grid; grid-template-columns: 1fr 1fr; padding: 3px; border-radius: 10px; background: var(--tt-sidebar-control); font-size: 13.5px; }
+.switch span { display: grid; place-items: center; height: 30px; border-radius: 8px; color: var(--tt-sidebar-text-muted); }
+.switch span[aria-current] { background: var(--tt-sidebar); color: var(--tt-sidebar-text); }
+.side-links { display: flex; gap: 10px; padding: 9px 6px 0; color: var(--tt-sidebar-text-muted); }
+
+/* Thread pane */
+.pane { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; container: pane / inline-size; }
+.head { display: flex; align-items: center; gap: 10px; height: 46px; flex: none; padding: 0 10px 0 20px; }
+.window[data-tools='0'] .head { padding-right: 132px; }
+.head .pm { color: var(--tt-text); }
+.head h2 { margin: 0; min-width: 40px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15.5px; font-weight: 600; flex: 0 1 auto; }
+.crumb { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto; overflow: hidden; color: var(--tt-text-muted); font-size: 13.5px; white-space: nowrap; }
+.crumb > span { display: inline-flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.crumb-link { display: inline-flex; align-items: center; gap: 5px; min-width: 0; height: 26px; padding: 0 8px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); background: none; color: var(--tt-text-2); font-size: 12.5px; cursor: pointer; overflow: hidden; }
+.crumb-link:hover { background: var(--tt-hover); color: var(--tt-text); }
+.crumb-link .t { overflow: hidden; text-overflow: ellipsis; color: var(--tt-text); }
+@container pane (max-width: 640px) { .crumb > span.wc { display: none; } .crumb:has(.crumb-link) > span:first-child { display: none; } .head h2 { flex-shrink: 0; max-width: 46%; } .crumb-link { flex: 0 1 auto; } .crumb-link .lead { display: none; } }
+.head .acts { position: relative; display: flex; align-items: center; gap: 6px; flex: none; margin-left: auto; }
+.ib-btn { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); cursor: pointer; }
+.ib-btn:hover, .ib-btn[aria-expanded='true'], .ib-btn[aria-pressed='true'] { background: var(--tt-hover); color: var(--tt-text); }
+.git { display: inline-flex; align-items: stretch; height: 30px; border: 1px solid var(--tt-hairline); border-radius: 8px; }
+.git .quick { display: inline-flex; align-items: center; gap: 6px; padding: 0 9px; border: 0; border-radius: 7px 0 0 7px; background: transparent; color: var(--tt-text-2); font-size: 12.5px; white-space: nowrap; cursor: pointer; }
+.git .quick:hover { background: var(--tt-hover); color: var(--tt-text); }
+.git .quick[data-lit] { color: var(--tt-text); }
+.git .more { width: 22px; display: grid; place-items: center; padding: 0; border: 0; border-left: 1px solid var(--tt-hairline); border-radius: 0 7px 7px 0; background: transparent; color: var(--tt-text-2); cursor: pointer; }
+.git .more[aria-expanded='true'] { background: var(--tt-hover); }
+/* As in the app: a narrow pane keeps the Git action's icon and drops its label from view. */
+@container pane (max-width: 720px) { .git .quick { padding: 0 7px; } .git .quick .lbl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } }
+
+.scroll { flex: 1; min-height: 0; overflow: auto; padding: 14px 24px 8px; }
+.col { max-width: 760px; margin: 0 auto; }
+.msg { position: relative; margin: 0 0 24px; }
+.msg header { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; color: var(--tt-text-muted); font-size: 12.5px; }
+.msg .who { display: inline-flex; align-items: center; gap: 6px; color: var(--tt-text-2); font-weight: 500; }
+.msg p { margin: 0 0 8px; color: var(--tt-text-2); font-size: 15px; line-height: 1.6; }
+.msg p:last-child { margin-bottom: 0; }
+.msg.user { margin-left: max(24px, 12%); padding: 12px 16px; border: 1px solid var(--tt-hairline); border-radius: 14px 14px 4px 14px; background: var(--tt-bubble); }
+.msg.user p { color: var(--tt-text); }
+.msg.sotto { border-color: var(--tt-accent-border); }
+.msg.sotto .who { color: var(--tt-text); }
+.msg.sotto p.fine { color: var(--tt-text-2); }
+.smark { display: grid; place-items: center; width: 16px; height: 16px; border-radius: 5px; background: var(--tt-accent); color: var(--tt-on-accent); }
+.tag { padding: 0 7px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); color: var(--tt-text-2); font-size: 11.5px; line-height: 18px; }
+.msg-acts { display: flex; gap: 2px; margin-left: auto; opacity: 0; }
+.msg:hover .msg-acts, .msg:focus-within .msg-acts, .msg-acts[data-on] { opacity: 1; }
+.msg-act { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 6px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text-muted); font-size: 12px; cursor: pointer; }
+.msg-act:hover, .msg-act[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
+.attach { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; padding: 4px 9px; border: 1px solid var(--tt-hairline); border-radius: 8px; color: var(--tt-text-2); font-size: 12.5px; }
+pre.code { max-height: 92px; margin: 6px 0 0; padding: 8px 10px; overflow: hidden; border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--tt-code-bg); color: var(--tt-code-text); font: 12.5px/1.5 var(--tt-mono); white-space: pre; -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent); mask-image: linear-gradient(to bottom, #000 55%, transparent); }
+.work { margin: 0 0 18px; padding-bottom: 10px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 14px; }
+.work .line { display: flex; align-items: center; gap: 6px; padding: 3px 0; color: var(--tt-text-2); }
+.work .line svg { color: var(--tt-text-muted); }
+.turn-error { margin: 4px 0 2px; color: var(--tt-error); font-size: 14px; line-height: 1.5; }
+.pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--tt-accent); animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
+.turn-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0 2px; }
+.turn-acts > span { color: var(--tt-text-2); font-size: 13.5px; }
+.empty { display: grid; place-items: center; height: 100%; text-align: center; color: var(--tt-text-muted); }
+.empty h3 { margin: 10px 0 6px; color: var(--tt-text); font-size: 17px; font-weight: 600; }
+.empty p { margin: 0; font-size: 14px; }
+
+/* Lines Sotto writes in a transcript that no provider received. */
+.sys-note { display: flex; align-items: flex-start; gap: 9px; margin: 0 0 22px; padding: 10px 12px; border: 1px dashed var(--tt-border); border-radius: var(--tt-radius-md); color: var(--tt-text-2); font-size: 13.5px; line-height: 1.5; }
+.sys-note svg { margin-top: 2px; color: var(--tt-text-muted); }
+.sys-note p { margin: 0; }
+.sys-note b { color: var(--tt-text); font-weight: 600; }
+.sys-note .linkbtn { margin-left: 4px; }
+.stays { margin: 0 0 0; padding: 4px 0 0 14px; border-left: 2px dashed var(--tt-hairline); }
+.stays-label { margin: 0 0 12px; color: var(--tt-text-muted); font-size: 12.5px; }
+
+/* Composer */
+.compose { flex: none; padding: 4px 24px 10px; }
+.card { padding: 12px 14px 10px; border: 1px solid var(--tt-field-border); border-radius: 16px; background: var(--tt-field); }
+.ph { min-height: 30px; color: var(--tt-text-faint); font-size: 15px; line-height: 1.4; }
+.chips { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); background: none; color: var(--tt-text); font-size: 13.5px; white-space: nowrap; cursor: pointer; }
+.chip:hover, .chip[aria-expanded='true'], .chip[aria-pressed='true'] { background: var(--tt-hover); }
+.chip[aria-disabled='true'] { color: var(--tt-text-muted); border-style: dashed; cursor: not-allowed; background: none; }
+.chip.static { cursor: default; }
+.chip.static:hover { background: none; }
+.chip small { color: var(--tt-text-muted); font-size: 12px; }
+.send { display: grid; place-items: center; width: 34px; height: 34px; margin-left: auto; padding: 0; border: 0; border-radius: 50%; background: var(--tt-primary); color: var(--tt-primary-contrast); cursor: pointer; }
+.send.wide { display: inline-flex; gap: 6px; width: auto; padding: 0 14px; border-radius: var(--tt-radius-pill); font-size: 13.5px; font-weight: 600; white-space: nowrap; }
+.send.stop { background: var(--tt-text); color: var(--tt-canvas); }
+.btoolbar { display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 7px 6px 0; color: var(--tt-text-muted); font-size: 12.5px; }
+.btoolbar b { display: inline-flex; align-items: center; gap: 5px; color: var(--tt-text-2); font-weight: 500; }
+.compose-note { margin: 7px 6px 0; color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.45; }
+
+/* Notices above the composer (the Git action's, and B's strips) */
+.notice { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 8px; padding: 10px 12px 10px 14px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-surface-elevated); color: var(--tt-text-2); font-size: 14px; line-height: 1.45; }
+.notice[data-tone='error'] { border-color: var(--tt-error-border); background: var(--tt-error-surface); color: var(--tt-error); }
+.notice[data-tone='ask'] { border-color: var(--tt-accent-border); }
+.notice > svg { align-self: flex-start; margin-top: 3px; }
+.notice .txt { flex: 1 1 260px; min-width: 0; }
+.notice p { margin: 0; }
+.notice p + p { margin-top: 4px; }
+.notice strong { color: var(--tt-text); font-weight: 600; }
+.notice[data-tone='error'] strong { color: inherit; }
+.notice .nacts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.notice .x { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: inherit; cursor: pointer; }
+.notice .x:hover { background: var(--tt-hover); }
+pre.git-said { margin: 6px 0 0; padding: 7px 10px; border: 1px solid var(--tt-error-border); border-radius: 6px; background: var(--tt-canvas); color: var(--tt-text); font: 12.5px/1.5 var(--tt-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* B: continuing from the composer */
+.cont { margin: 0 0 8px; padding: 10px 12px; border: 1px solid var(--tt-accent-border); border-radius: var(--tt-radius-md); background: var(--tt-accent-wash); font-size: 13.5px; }
+.cont .r1 { display: flex; align-items: center; gap: 8px; color: var(--tt-text); }
+.cont .r1 b { font-weight: 600; }
+.cont .r1 .x { margin-left: auto; }
+.cont .r2 { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.cont .r3 { margin: 8px 0 0; color: var(--tt-text-2); line-height: 1.45; }
+.cont .x { display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-2); cursor: pointer; }
+.cont .x:hover { background: var(--tt-hover); }
+.cont[data-tone='error'] { border-color: var(--tt-error-border); }
+
+/* Buttons and small controls */
+.btn { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 13px; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-pill); background: transparent; color: var(--tt-text); font-size: 13.5px; font-weight: 500; white-space: nowrap; cursor: pointer; }
+.btn:hover { background: var(--tt-hover); }
+.btn.primary { border-color: transparent; background: var(--tt-pill); color: var(--tt-pill-ink); }
+.btn.primary:hover { background: var(--tt-pill); filter: brightness(.92); }
+.btn.small { height: 30px; font-size: 13px; }
+.btn[aria-disabled='true'] { border-style: dashed; color: var(--tt-text-muted); cursor: not-allowed; background: none; filter: none; }
+.linkbtn { padding: 0; border: 0; background: none; color: var(--tt-link); font-size: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.disclose { display: inline-flex; align-items: center; gap: 4px; margin-top: 8px; padding: 2px 0; border: 0; background: none; color: var(--tt-link); font-size: 13px; cursor: pointer; }
+.disclose svg { transition: transform .15s ease; }
+.disclose[aria-expanded='true'] svg { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .disclose svg { transition: none; } }
+.fine { margin: 6px 0 0; color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.5; }
+.handover-text { max-height: 210px; margin-top: 8px; padding: 10px 12px; overflow: auto; border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--tt-surface-sunken); color: var(--tt-text-2); font-size: 13px; line-height: 1.55; white-space: pre-wrap; }
+
+/* Menus */
+.menu { position: absolute; z-index: 20; min-width: 250px; max-width: 320px; padding: 6px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-surface-overlay); box-shadow: var(--tt-shadow-lg); }
+.menu.below { top: 36px; right: 0; }
+.menu.above { bottom: 38px; left: 0; max-height: calc(var(--h) - 150px); overflow: auto; }
+.menu .mi { display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 7px 10px; border: 0; border-radius: 6px; background: none; color: var(--tt-text); font-size: 14px; text-align: left; cursor: pointer; }
+.menu .mi svg { margin-top: 2px; color: var(--tt-text-2); }
+.menu .mi:hover:not([aria-disabled='true']), .menu .mi:focus-visible { background: var(--tt-hover); }
+.menu .mi[aria-disabled='true'] { color: var(--tt-text-muted); cursor: default; }
+.menu .mi .hint { display: block; margin-top: 2px; color: var(--tt-text-muted); font-size: 12px; line-height: 1.4; }
+.menu .mi .end { margin-left: auto; color: var(--tt-text-muted); font-size: 12.5px; }
+.menu hr { margin: 6px 4px; border: 0; border-top: 1px solid var(--tt-hairline); }
+.menu .mh { padding: 7px 10px 3px; color: var(--tt-text-muted); font-size: 12px; font-weight: 600; }
+.menu .mfoot { padding: 6px 10px 4px; color: var(--tt-text-muted); font-size: 12px; line-height: 1.45; }
+
+/* Dialog */
+.backdrop { position: absolute; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center; padding: 16px; background: var(--tt-overlay); }
+.dialog { display: flex; flex-direction: column; width: min(600px, 100%); max-height: 100%; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-lg); background: var(--tt-surface); box-shadow: var(--tt-shadow-overlay); container: dialog / inline-size; }
+.dialog h3 { margin: 0; padding: 18px 22px 0; font-size: 17px; font-weight: 600; }
+.dialog .lede { margin: 6px 0 0; color: var(--tt-text-2); font-size: 14px; line-height: 1.5; }
+.dialog .body { min-height: 0; overflow: auto; padding: 4px 22px 14px; }
+.dialog .foot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; padding: 12px 22px 16px; border-top: 1px solid var(--tt-hairline); }
+.dialog .err { flex: 1 1 100%; margin: 0; color: var(--tt-error); font-size: 13.5px; line-height: 1.45; }
+.field { margin: 14px 0 0; }
+.field > .label { display: block; margin: 0 0 7px; color: var(--tt-text-2); font-size: 13px; font-weight: 600; }
+.seg { display: flex; flex-wrap: wrap; gap: 6px; }
+.opt { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); background: none; color: var(--tt-text); font-size: 13.5px; white-space: nowrap; cursor: pointer; }
+.opt:hover { background: var(--tt-hover); }
+.opt[aria-checked='true'] { border-color: var(--tt-accent-border); background: var(--tt-accent-surface); color: var(--tt-accent-surface-text); }
+.opt[aria-disabled='true'] { border-style: dashed; color: var(--tt-text-muted); cursor: not-allowed; background: none; }
+.opt small { color: var(--tt-text-muted); font-size: 12px; }
+.opt[aria-checked='true'] small { color: inherit; }
+.rows { display: grid; gap: 6px; }
+.rrow { display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 9px 12px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: none; color: var(--tt-text); text-align: left; cursor: pointer; }
+.rrow:hover { background: var(--tt-hover); }
+.rrow[aria-checked='true'] { border-color: var(--tt-accent-border); background: var(--tt-accent-wash); }
+.rrow .dot { flex: none; width: 14px; height: 14px; margin-top: 3px; border: 1.5px solid var(--tt-border); border-radius: 50%; }
+.rrow[aria-checked='true'] .dot { border: 4px solid var(--tt-accent); }
+.rrow strong { display: block; font-size: 14px; font-weight: 500; }
+.rrow .sub { display: block; margin-top: 2px; color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.45; }
+.ledger { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 18px; margin-top: 8px; }
+.ledger h4 { margin: 0 0 4px; color: var(--tt-text); font-size: 12.5px; font-weight: 600; }
+.ledger ul { margin: 0; padding-left: 17px; color: var(--tt-text-2); font-size: 13.5px; line-height: 1.5; }
+.ledger li + li { margin-top: 3px; }
+@container dialog (max-width: 470px) { .ledger { grid-template-columns: 1fr; } }
+@container tools (max-width: 470px) { .ledger { grid-template-columns: 1fr; } }
+@container pane (max-width: 560px) { .ledger { grid-template-columns: 1fr; } }
+
+/* Tools panel */
+.tools { display: grid; grid-template-columns: var(--tools-w) 62px; min-height: 0; border-left: 1px solid var(--tt-hairline); }
+.tools[hidden] { display: none; }
+.tools-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; container: tools / inline-size; }
+.tools-chrome { display: flex; align-items: center; gap: 8px; height: 46px; flex: none; padding: 0 140px 0 18px; border-bottom: 1px solid var(--tt-hairline); font-size: 14.5px; font-weight: 600; white-space: nowrap; overflow: hidden; }
+.tools-chrome .sub { overflow: hidden; text-overflow: ellipsis; color: var(--tt-text-muted); font-weight: 400; }
+.tools-body { position: relative; flex: 1; min-height: 0; overflow: auto; padding: 8px 14px 14px; }
+.tools-foot { display: flex; align-items: center; gap: 6px; height: 36px; flex: none; padding: 0 16px; overflow: hidden; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12.5px; white-space: nowrap; }
+.tools-foot code { color: var(--tt-text-2); font: 12px var(--tt-mono); }
+.rail { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 52px 4px 8px; border-left: 1px solid var(--tt-hairline); }
+.rail button { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; width: 54px; padding: 6px 0; border: 0; border-radius: 8px; background: none; color: var(--tt-text-2); font-size: 11px; cursor: pointer; }
+.rail button[aria-current] { background: var(--tt-accent-surface); color: var(--tt-accent-surface-text); }
+.rail button[data-dot]::after { content: ''; position: absolute; top: 5px; right: 11px; width: 6px; height: 6px; border-radius: 50%; background: var(--tt-accent); }
+.rail .low { display: flex; flex-direction: column; gap: 2px; margin-top: auto; padding-top: 6px; border-top: 1px solid var(--tt-hairline); }
+.rail .low span { display: grid; place-items: center; width: 36px; height: 30px; color: var(--tt-text-muted); }
+@media (max-height: 99999px) { .window[data-short] .rail button { padding: 4px 0; font-size: 10.5px; } .window[data-short] .rail .low span { height: 26px; } }
+
+/* Agents roster */
+.agents { margin: 0; padding: 0; list-style: none; }
+.agents > li { padding: 12px 4px; border-bottom: 1px solid var(--tt-hairline); }
+.ahead { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; gap: 3px 10px; width: 100%; padding: 0; border: 0; background: none; color: inherit; text-align: left; cursor: pointer; }
+.adot { width: 7px; height: 7px; margin-top: 7px; border-radius: 50%; background: var(--tt-text-muted); }
+.adot[data-s='running'] { background: var(--tt-accent); }
+.atitle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14.5px; font-weight: 500; }
+.adesc { display: block; color: var(--tt-text-2); font-size: 13.5px; line-height: 1.45; }
+.ameta { display: block; margin-top: 2px; color: var(--tt-text-muted); font-size: 12.5px; }
+.aright { color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.75; text-align: right; white-space: nowrap; }
+.adetails { margin: 10px 0 0 18px; padding: 2px 0 2px 12px; border-left: 2px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 13.5px; }
+.adetails h5 { margin: 6px 0 3px; color: var(--tt-text-muted); font-size: 12.5px; font-weight: 600; }
+.adetails p { margin: 0 0 6px; line-height: 1.5; }
+.aacts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.aacts .why { color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.45; }
+.ainline { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--tt-accent-border); border-radius: var(--tt-radius-md); background: var(--tt-accent-wash); }
+.ainline h6 { margin: 0 0 4px; color: var(--tt-text); font-size: 13.5px; font-weight: 600; }
+.ainline p { margin: 0 0 6px; }
+.ainline[data-tone='error'] { border-color: var(--tt-error-border); background: var(--tt-error-surface); }
+.ainline[data-tone='error'] p.err { color: var(--tt-error); }
+
+/* B: Fork from here, inline in the transcript */
+.fork-inline { margin: -6px 0 22px; padding: 12px 14px; border: 1px solid var(--tt-accent-border); border-radius: var(--tt-radius-md); background: var(--tt-accent-wash); font-size: 13.5px; color: var(--tt-text-2); }
+.fork-inline h4 { display: flex; align-items: center; gap: 7px; margin: 0 0 4px; color: var(--tt-text); font-size: 14px; font-weight: 600; }
+.fork-inline p { margin: 0 0 6px; line-height: 1.5; }
+.fork-inline .r2 { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
+.fork-inline .acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+
+/* C: Lineage */
+.lineage { padding: 4px 0 6px; }
+.node { position: relative; padding: 10px 12px 10px 36px; border: 1px solid transparent; border-radius: var(--tt-radius-md); }
+.node[data-here] { border-color: var(--tt-hairline); background: var(--tt-surface); }
+.node .pin { position: absolute; top: 12px; left: 11px; display: grid; place-items: center; width: 16px; height: 16px; color: var(--tt-text); }
+.node .nt { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 14.5px; font-weight: 600; }
+.node .nt .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.node .here { margin-left: auto; color: var(--tt-text-muted); font-size: 12px; font-weight: 400; white-space: nowrap; }
+.node .nm { color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.55; }
+.node .nm code { color: var(--tt-text-2); font: 12px var(--tt-mono); }
+.node .ns { margin-top: 4px; color: var(--tt-text-2); font-size: 13px; line-height: 1.45; }
+.node .nacts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+.node.agent .nt { font-weight: 500; font-size: 14px; }
+.node.draft { border: 1.5px dashed var(--tt-accent-border); background: var(--tt-accent-wash); }
+.node .err { margin: 8px 0 0; color: var(--tt-error); font-size: 13px; line-height: 1.45; }
+.node .say { margin-top: 8px; padding: 8px 10px; border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--tt-surface-elevated); color: var(--tt-text-2); font-size: 13px; line-height: 1.45; }
+.node .say[data-tone='error'] { border-color: var(--tt-error-border); background: var(--tt-error-surface); color: var(--tt-error); }
+.node .say[data-tone='ask'] { border-color: var(--tt-accent-border); }
+.node .say strong { color: var(--tt-text); font-weight: 600; }
+.node .say[data-tone='error'] strong { color: inherit; }
+.node .say p { margin: 0; }
+.node .say p + p { margin-top: 4px; }
+.edge { margin-left: 18px; padding: 6px 8px 8px 24px; border-left: 2px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 13px; line-height: 1.5; }
+.edge.dashed { border-left-style: dashed; border-left-color: var(--tt-accent-border); }
+.edge .k { color: var(--tt-text); font-weight: 600; }
+.edge .disclose { margin-top: 2px; }
+.lsec { margin: 14px 4px 4px; color: var(--tt-text-muted); font-size: 12px; font-weight: 600; }
+
+/* Prototype chrome: deliberately not Sotto's look. */
+.proto-top { position: fixed; top: 10px; left: 50%; z-index: 50; transform: translateX(-50%); display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; max-width: calc(100vw - 20px); padding: 7px 10px; border-radius: 14px; background: #fff; color: #111; box-shadow: 0 8px 30px rgb(0 0 0 / 50%); font: 13px/1.2 ui-sans-serif, system-ui, sans-serif; }
+.proto-top [role='tablist'] { display: flex; gap: 4px; }
+.proto-top [role='tab'], .proto-bar button, .proto-top select, .proto-bar select { padding: 5px 10px; border: 1px solid #bbb; border-radius: 999px; background: #f4f4f4; color: #111; color-scheme: light; font: inherit; cursor: pointer; }
+.proto-top [role='tab'][aria-selected='true'] { border-color: #111; background: #111; color: #fff; }
+.proto-top select { max-width: 330px; }
+.readout { max-width: min(1300px, calc(100vw - 20px)); color: #d6d6d6; font: 12px/1.5 ui-sans-serif, system-ui, sans-serif; text-align: center; }
+.readout b { color: #fff; font-weight: 600; }
+.proto-bar { position: fixed; bottom: 14px; left: 50%; z-index: 50; transform: translateX(-50%); display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; max-width: calc(100vw - 20px); padding: 8px 12px; border-radius: 999px; background: #fff; color: #111; box-shadow: 0 8px 30px rgb(0 0 0 / 50%); font: 13px/1.2 ui-sans-serif, system-ui, sans-serif; }
+.proto-bar .label { min-width: 200px; font-weight: 700; text-align: center; }
+</style>
+</head>
+<body>
+<div class="proto-top" role="toolbar" aria-label="Prototype surfaces">
+  <div role="tablist" aria-label="Surface">
+    <button role="tab" data-surface="1">1 · Continue on another provider</button>
+    <button role="tab" data-surface="2">2 · Agent as a thread, Fork from here</button>
+    <button role="tab" data-surface="3">3 · Bring changes back</button>
+  </div>
+  <label>State <select id="state" aria-label="State"></select></label>
+</div>
+<div class="stage">
+  <div class="readout" id="readout" aria-live="polite"></div>
+  <div class="window" id="window"></div>
+</div>
+<div class="proto-bar" role="toolbar" aria-label="Prototype variants">
+  <button id="prev" aria-label="Previous variant">←</button>
+  <span class="label" id="label"></span>
+  <button id="next" aria-label="Next variant">→</button>
+  <button id="theme"></button>
+  <select id="size" aria-label="Window size"><option value="1600x1000">1600×1000</option><option value="1280x800">1280×800</option><option value="820x560">820×560</option></select>
+</div>
+
+<script>
+'use strict'
+/* ---------- icons (lucide shapes) ---------- */
+const svg = (d, s = 16, w = 1.8) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`
+const D = {
+  more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+  down: '<path d="m6 9 6 6 6-6"/>', right: '<path d="m9 18 6-6-6-6"/>', x: '<path d="M18 6 6 18M6 6l12 12"/>',
+  copy: '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+  fork: '<circle cx="12" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><path d="M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9"/><path d="M12 12v3"/>',
+  merge: '<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/>',
+  branch: '<line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
+  folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  up: '<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>',
+  laptop: '<path d="M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m16 0H4m16 0 1.28 2.55a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45L4 16"/>',
+  server: '<rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01M6 18h.01"/>',
+  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  globe: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+  term: '<path d="m7 11 2-2-2-2"/><path d="M11 13h4"/><rect width="18" height="18" x="3" y="3" rx="2"/>',
+  files: '<path d="M20 10a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1h-2.5a1 1 0 0 1-.8-.4l-.9-1.2A1 1 0 0 0 15 3h-2a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1Z"/><path d="M20 21a1 1 0 0 0 1-1v-3a1 1 0 0 0-1-1h-2.9a1 1 0 0 1-.88-.55l-.42-.85a1 1 0 0 0-.92-.6H13a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1Z"/><path d="M3 5a2 2 0 0 0 2 2h3"/><path d="M3 3v13a2 2 0 0 0 2 2h3"/>',
+  changes: '<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><path d="M11 18H8a2 2 0 0 1-2-2V9"/>',
+  lineage: '<rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/>',
+  panel: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  pencil: '<path d="M21.17 6.81a1 1 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z"/>',
+  sparkles: '<path d="M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.13-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.13a.5.5 0 0 1 .96 0L14.06 8.5A2 2 0 0 0 15.5 9.94l6.13 1.58a.5.5 0 0 1 0 .96L15.5 14.06a2 2 0 0 0-1.44 1.44l-1.58 6.13a.5.5 0 0 1-.96 0z"/>',
+  columns: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M12 3v18"/>',
+  shrink: '<path d="m15 15 6 6m-6-6v4.8m0-4.8h4.8"/><path d="M9 19.8V15m0 0H4.2M9 15l-6 6"/><path d="M15 4.2V9m0 0h4.8M15 9l6-6"/><path d="M9 4.2V9m0 0H4.2M9 9 3 3"/>',
+  archive: '<rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>',
+  from: '<polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/>',
+  into: '<polyline points="15 10 20 15 15 20"/><path d="M4 4v7a4 4 0 0 0 4 4h12"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>', alert: '<circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>',
+  stop: '<rect width="10" height="10" x="7" y="7" rx="1.5" fill="currentColor"/>',
+  image: '<rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>',
+  clip: '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
+  msgs: '<path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/>',
+  folderPlus: '<path d="M12 10v6M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  newThread: '<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.4 2.6a2.1 2.1 0 1 1 3 3L12 15l-4 1 1-4Z"/>',
+  collapse: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="m16 15-3-3 3-3"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>', gear: '<circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/>',
+  help: '<circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01"/>', chart: '<path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-3"/>',
+  pin: '<path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/>',
+  expand: '<path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>', file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>',
+  bot: '<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/>',
+}
+const ic = Object.fromEntries(Object.entries(D).map(([k, d]) => [k, svg(d)]))
+const ics = (k, s) => svg(D[k], s)
+const MARK = {
+  claude: '<path d="M12 2.5v19M2.5 12h19M5.3 5.3l13.4 13.4M18.7 5.3 5.3 18.7"/>',
+  codex: '<path d="M12 2.5 20.5 7.3v9.4L12 21.5l-8.5-4.8V7.3Z"/><path d="M8.6 9.8 12 7.9l3.4 1.9v4.4L12 16.1l-3.4-1.9Z"/>',
+  grok: '<circle cx="12" cy="12" r="9"/><path d="M6.5 17.5 17.5 6.5"/>',
+  devin: '<path d="M12 3 21 12 12 21 3 12Z"/><circle cx="12" cy="12" r="2.6"/>',
+}
+const pm = (p, s = 16) => `<span class="pm" title="${P[p].name}">${svg(MARK[p], s, 1.9)}</span>`
+const sotto = `<span class="smark" aria-hidden="true">${svg('<path d="M8 6.5v11"/><path d="M11 14c1-3.4 2.4-3.4 3.4 0s2.4 3.4 3.4 0"/>', 12, 2.6)}</span>`
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+
+/* ---------- the world ---------- */
+const P = {
+  claude: { name: 'Claude Code', who: 'Claude', models: ['Opus 5.5', 'Sonnet 5.5'] },
+  codex: { name: 'Codex', who: 'Codex', models: ['GPT-5.5', 'GPT-5.4'] },
+  grok: { name: 'Grok Build', who: 'Grok', models: ['Grok 5'], off: 'Not signed in' },
+  devin: { name: 'Devin', who: 'Devin', models: ['Devin'] },
+}
+const LIMIT = 'Claude Code has reached your plan’s usage limit, so this turn stopped. Nothing in the thread was lost. Send again after it resets at 6:00 pm.'
+
+const STATES = {
+  1: [
+    ['limit', 'Stopped at the usage limit'],
+    ['menu', 'The entry is open'],
+    ['choose', 'Choosing where to continue'],
+    ['history-off', 'Choosing, with history off'],
+    ['failed', 'The new thread did not start'],
+    ['started', 'The new thread: its first message is the handover'],
+    ['source', 'The source thread afterwards'],
+    ['busy', 'Refused: a turn is running'],
+    ['empty', 'Refused: nothing to hand over'],
+  ],
+  2: [
+    ['roster', 'Agents roster: a Codex agent has finished'],
+    ['codex-choose', 'Continue a Codex agent (native fork)'],
+    ['codex-started', 'The thread forked from the Codex agent'],
+    ['claude-choose', 'Continue a Claude agent (thin handover)'],
+    ['claude-started', 'The thread from the Claude agent'],
+    ['running', 'Refused: the agent is still working'],
+    ['gone', 'Refused: Codex no longer has the agent'],
+    ['fork-choose', 'Fork from here (Claude Code, native)'],
+    ['fork-devin', 'Fork from here (Devin, handover only)'],
+    ['forked', 'The forked thread'],
+  ],
+  3: [
+    ['ready', 'Child ready: main can fast-forward'],
+    ['ff-done', 'Brought back by fast-forward'],
+    ['merge-ask', 'main moved on: asks before a merge commit'],
+    ['merged', 'Brought back with a merge commit'],
+    ['dirty', 'Refused: uncommitted work in the worktree'],
+    ['conflict', 'Refused: a conflict, in Git’s words'],
+    ['parent-dirty', 'Refused: uncommitted work where main is checked out'],
+    ['nothing', 'Nothing to bring back'],
+  ],
+}
+const VARIANTS = { A: 'Menu and sheet', B: 'In place', C: 'Lineage' }
+
+const q = new URLSearchParams(location.search)
+const S = {
+  surface: ['1', '2', '3'].includes(q.get('surface')) ? q.get('surface') : '1',
+  state: q.get('state'),
+  variant: (q.get('variant') ?? 'A').toUpperCase(),
+  theme: q.get('theme') === 'light' ? 'light' : 'dark',
+  size: ['1600x1000', '1280x800', '820x560'].includes(q.get('size')) ? q.get('size') : '1280x800',
+  target: 'codex', model: 'GPT-5.5', wc: 'same', read: false, closed: false, extraMenu: null, focus: null,
+}
+if (!VARIANTS[S.variant]) S.variant = 'A'
+if (!STATES[S.surface].some(([id]) => id === S.state)) S.state = STATES[S.surface][0][0]
+
+/* ---------- the handover's ledgers and words ---------- */
+const LEDGER = {
+  thread: {
+    carried: ['Your first message, 11:51 am', 'Your latest request, 3:58 pm. It has no answer: the turn stopped at the usage limit.', 'The 2 messages between them that fit'],
+    left: ['Claude’s reply at 12:40 pm: 31,000 characters, more than the whole handover holds (24,000)', '1 image', '9 tool calls and their output'],
+    short: ['4 messages', 'one reply too long to carry, 1 image and 9 tool calls'],
+  },
+  'history-off': {
+    note: 'History is off, so Sotto kept nothing on disk. The handover carries only what this window still holds.',
+    carried: ['Your message at 12:38 pm', 'Your latest request, 3:58 pm, with no answer'],
+    left: ['Everything before 12:38 pm: history is off, so it was never kept', 'Claude’s reply at 12:40 pm, too long to carry whole', '1 image', '4 tool calls and their output'],
+    short: ['2 messages', 'everything before 12:38 pm, one long reply, 1 image and 4 tool calls'],
+  },
+  thin: {
+    note: 'This handover is thin. Claude Code keeps a subagent’s working history inside its own session, where Sotto can’t fork it, so the new thread knows only the task and the result.',
+    carried: ['The task the agent was given (212 characters)', 'The result it reported (1,830 characters)'],
+    left: ['What it read, ran and decided along the way', 'Its 14 tool calls and their output'],
+    short: ['the task and the result', 'everything the agent did on the way'],
+  },
+  'codex-thin': {
+    note: 'This handover is thin: Codex kept the agent’s task encrypted, so Sotto has only its title, its description and its result.',
+    carried: ['The agent’s title and description', 'The result it reported (940 characters)'],
+    left: ['Its task, which Codex kept encrypted', 'What it did on the way, and its 11 tool calls'],
+    short: ['the title and the result', 'the task and everything the agent did'],
+  },
+  devin: {
+    note: 'Devin has no fork of its own, so the new Devin thread starts from a handover of this conversation up to 10:20 am.',
+    carried: ['Every message up to Devin’s reply at 10:20 am (4 in all)'],
+    left: ['The 2 messages after it', '5 tool calls and their output'],
+    short: ['4 messages', 'the 2 messages after 10:20 am and 5 tool calls'],
+  },
+}
+const HANDOVER = {
+  thread: (to) => `Handover from the Sotto thread “WAV preview stall” (Claude Code, Opus 5.5) in the project workshop. This is context, not a new request. The user’s request follows it.
+
+Carried, oldest first: the first message, the latest request, and the messages between them that fit in 24,000 characters.
+Left out: Claude Code’s reply at 12:40 pm (31,000 characters, longer than the whole handover), 1 image, and 9 tool calls with their output. Attachments and tool state are never carried.
+
+You, 11:51 am
+The WAV preview stalls after two seconds. Find out why, fix it and run the tests.
+
+Claude Code, 11:55 am
+Fixed. The length marker in the header was written once, before any audio arrived, so players stopped after the first chunk. It is now patched after every chunk, and the three new tests pass.
+
+You, 12:38 pm
+Paste the full test output and the diff so I can check them. This is what the player shows. [1 image left out]
+
+Claude Code, 12:40 pm
+[Left out: 31,000 characters]
+
+You, 3:58 pm. The latest request; the turn stopped at a usage limit before any answer.
+Also add a test for a stream that ends mid-chunk.`,
+  'history-off': () => `Handover from the Sotto thread “WAV preview stall” (Claude Code, Opus 5.5) in the project workshop. This is context, not a new request. The user’s request follows it.
+
+History was off in Sotto, so this carries only what its window still held. Everything before 12:38 pm was never kept. Left out besides: Claude Code’s reply at 12:40 pm (31,000 characters), 1 image, and 4 tool calls with their output.
+
+You, 12:38 pm
+Paste the full test output and the diff so I can check them. This is what the player shows. [1 image left out]
+
+Claude Code, 12:40 pm
+[Left out: 31,000 characters]
+
+You, 3:58 pm. The latest request; the turn stopped at a usage limit before any answer.
+Also add a test for a stream that ends mid-chunk.`,
+  thin: () => `Handover from a subagent of the Sotto thread “WAV preview stall” (Claude Code). The agent was “Verify history-off cleanup”, on Sonnet 5.5. This is context, not a new request. The user’s request follows it.
+
+This handover is thin. It carries only the task the agent was given and the result it reported. What it read, ran and decided along the way is left out, with its 14 tool calls.
+
+Task, 1:12 pm
+Confirm that saved task text is removed from threads.sqlite when history is turned off, and that nothing else is.
+
+Result, 1:19 pm
+Confirmed. Turning history off removes saved task text and leaves drafts and settings alone. Two tests cover it: …`,
+  'codex-thin': () => `Handover from a subagent of the Sotto thread “Audio pipeline review” (Codex). The agent was “Look for extra copies”, on GPT-5.5. This is context, not a new request. The user’s request follows it.
+
+This handover is thin. Codex kept the agent’s task encrypted, so it carries only the agent’s title, its description and its result.
+
+Look for extra copies: Find buffers copied more than once.
+
+Result, 2:14 pm
+One copy in resample() is avoidable; the other two are needed. …`,
+  devin: () => `Handover from the Sotto thread “Release notes” (Devin), up to Devin’s reply at 10:20 am. This is context, not a new request. The user’s request follows it.
+
+Carried, oldest first: every message up to 10:20 am. Left out: the 2 messages after it, and 5 tool calls with their output.
+
+You, 9:02 am
+Draft release notes for 1.42 from the merged pull requests.
+
+Devin, 9:10 am
+Here is a first draft, grouped by area: Threads, Git and iPhone. …
+
+You, 10:12 am
+Shorter, and lead with the Git changes.
+
+Devin, 10:20 am
+Shorter draft, Git first. …`,
+}
+
+/* ---------- small builders ---------- */
+const attr = (o) => Object.entries(o).filter(([, v]) => v !== undefined && v !== false && v !== null).map(([k, v]) => v === true ? k : `${k}="${esc(v)}"`).join(' ')
+const btn = (label, o = {}) => `<button type="button" class="btn${o.primary ? ' primary' : ''}${o.small ? ' small' : ''}" ${attr({ 'data-act': o.disabled ? undefined : o.act, 'aria-disabled': o.disabled ? 'true' : undefined, title: o.title, 'aria-label': o.aria, 'data-focus': o.focus })}>${o.icon ?? ''}${label}</button>`
+const userMsg = (time, text, extra = '') => `<article class="msg user"><header><span class="who">You</span><time>${time}</time></header><p>${text}</p>${extra}</article>`
+function reply(p, time, html, o = {}) {
+  const acts = `<span class="msg-acts" ${o.forkOn ? 'data-on' : ''}>
+    <button type="button" class="msg-act" aria-label="Copy reply as Markdown" title="Copy reply as Markdown">${ics('copy', 15)}</button>
+    <button type="button" class="msg-act" data-act="${o.forkAct ?? 'fork'}" aria-label="Fork from here: a new thread with this conversation up to this reply" ${o.forkOn ? 'aria-expanded="true"' : ''} data-focus="fork-${time}">${ics('fork', 15)}<span>Fork from here</span></button></span>`
+  return `<article class="msg" ${o.id ? `id="${o.id}"` : ''}><header><span class="who">${P[p].who}</span><time>${time}</time>${o.noActs ? '' : acts}</header>${html}</article>`
+}
+const work = (lines, err = '', after = '') => `<section class="work" aria-label="${esc(lines[0])}">${lines.map(l => `<div class="line">${l.startsWith('Changed') ? ics('file', 14) : ''}<span>${l}</span>${ics('right', 14)}</div>`).join('')}${err ? `<p class="turn-error">${err}</p>` : ''}${after}</section>`
+const live = (text) => `<section class="work" aria-label="${text}"><div class="line"><span class="pulse" aria-hidden="true"></span><span>${text}</span></div></section>`
+const imageChip = name => `<div class="attach">${ics('image', 14)}${name}</div>`
+const sysNote = (icon, html, focusable) => `<div class="sys-note" role="note">${ic[icon]}<p>${html}</p></div>`
+
+function ledgerHtml(kind, o = {}) {
+  const L = LEDGER[kind]
+  const to = o.to ?? 'the new thread'
+  return `${L.note && !o.noNote ? `<p class="fine">${L.note}</p>` : ''}
+    <div class="ledger"><div><h4>Carried</h4><ul>${L.carried.map(x => `<li>${x}</li>`).join('')}</ul></div>
+    <div><h4>Left out</h4><ul>${L.left.map(x => `<li>${x}</li>`).join('')}</ul></div></div>
+    ${o.never === false ? '' : '<p class="fine">Attachments and tool state are never carried.</p>'}
+    ${readToggle(kind, to)}`
+}
+function readToggle(kind, to) {
+  return `<button type="button" class="disclose" data-act="read" aria-expanded="${S.read}" data-focus="read">${ics('right', 14)}${S.read ? 'Hide the handover' : `Read the handover, word for word`}</button>
+    ${S.read ? `<div class="handover-text" tabindex="0" role="region" aria-label="The handover, as ${esc(to)} receives it">${esc(HANDOVER[kind](to))}</div>` : ''}`
+}
+function handoverMsg(kind, time, from, to) {
+  const L = LEDGER[kind]
+  return `<article class="msg user sotto" aria-label="Handover from ${esc(from.replace(/<[^>]+>/g, ''))}"><header><span class="who">${sotto}Sotto</span><span class="tag">${kind === 'thin' || kind === 'codex-thin' ? 'Handover, thin' : 'Handover'}</span><time>${time}</time></header>
+    <p>From ${from}. Context, not a new request.</p>
+    <p class="fine">Carried ${L.short[0]}. Left out ${L.short[1]}.</p>
+    ${readToggle(kind, to)}</article>`
+}
+
+/* Fields shared by A's dialog, B's strip menus and C's draft node. */
+function providerField(exclude) {
+  return field('Provider', `<div class="seg" role="radiogroup" aria-label="Provider">${['codex', 'devin', 'grok', 'claude'].map(id => {
+    const off = id === exclude ? 'This thread’s provider' : P[id].off
+    const on = !off && S.target === id
+    return `<button type="button" role="radio" class="opt" aria-checked="${on}" ${off ? `aria-disabled="true" title="${off}"` : `data-act="pick-p:${id}" data-focus="p-${id}"`}>${pm(id, 14)}<span>${P[id].name}</span>${off ? `<small>· ${off}</small>` : ''}</button>`
+  }).join('')}</div>${exclude === 'claude' && P.grok.off ? '<p class="fine">Grok Build isn’t signed in. Sign in under Settings → Providers to continue there.</p>' : ''}`)
+}
+function modelField(pid, note) {
+  const cur = P[pid].models.includes(S.model) ? S.model : P[pid].models[0]
+  return field('Model', `<div class="seg" role="radiogroup" aria-label="Model">${P[pid].models.map(m => `<button type="button" role="radio" class="opt" aria-checked="${cur === m}" data-act="pick-m:${m}" data-focus="m-${m}">${m}${note && m === P[pid].models[0] ? `<small>· ${note}</small>` : ''}</button>`).join('')}</div>`)
+}
+const runsOnField = () => field('Runs on', `<div class="seg"><span class="opt" aria-checked="true">${ics('laptop', 15)}This computer</span><span class="opt" aria-disabled="true" title="Not yet: work can’t move between machines yet">${ics('server', 15)}forge<small>· not yet</small></span></div><p class="fine">Starting on another machine isn’t available yet.</p>`)
+function wcField(o) {
+  const rows = [
+    ['same', `Same folder as ${o.source}`, `${o.folder}, on ${o.base}. Both threads change the same files${o.sameNote ?? ''}.`],
+    ['new', `New worktree from ${o.base}`, o.newNote ?? `Starts from ${o.base}’s last commit. The 2 uncommitted files in ${o.folder} stay there.`],
+  ]
+  return field('Working copy', `<div class="rows" role="radiogroup" aria-label="Working copy">${rows.map(([id, t, sub]) => `<button type="button" role="radio" class="rrow" aria-checked="${S.wc === id}" data-act="pick-wc:${id}" data-focus="wc-${id}"><span class="dot" aria-hidden="true"></span><span><strong>${t}</strong><span class="sub">${sub}</span></span></button>`).join('')}</div>${o.after ?? ''}`)
+}
+const field = (label, html) => `<div class="field"><span class="label">${label}</span>${html}</div>`
+
+function dialog(title, lede, body, foot, label) {
+  return `<div class="backdrop"><div class="dialog" role="dialog" aria-modal="true" aria-label="${esc(label ?? title)}">
+    <h3>${title}</h3><div class="body">${lede ? `<p class="lede">${lede}</p>` : ''}${body}</div><div class="foot">${foot}</div></div></div>`
+}
+function menu(groups, label, where = 'below') {
+  const shown = groups.filter(g => g.length)
+  return `<div class="menu ${where}" role="menu" aria-label="${esc(label)}">${shown.map((g, i) => `${i ? '<hr>' : ''}${g.join('')}`).join('')}</div>`
+}
+const mi = (label, icon, o = {}) => `<button type="button" role="menuitem" class="mi" ${attr({ 'data-act': o.disabled ? undefined : (o.act ?? 'close'), 'aria-disabled': o.disabled ? 'true' : undefined, 'data-focus': o.focus })}>${icon ? ic[icon] : ''}<span>${label}${o.hint ? `<span class="hint">${o.hint}</span>` : ''}</span>${o.end ? `<span class="end">${o.end}</span>` : ''}</button>`
+const mh = (t) => `<div class="mh" role="presentation">${t}</div>`
+
+/* ---------- the window's fixed parts ---------- */
+function sidebar(rows, selected) {
+  // At the minimum width an open Tools panel takes the sidebar's room, as in the app.
+  if (S._sideHidden) return '<span></span>'
+  return `<aside class="side" aria-label="Threads sidebar">
+    <div class="side-top"><span class="brand"><span class="tile">${svg('<path d="M8 6.5v11"/><path d="M11 14c1-3.4 2.4-3.4 3.4 0s2.4 3.4 3.4 0"/>', 13, 2.6)}</span>Sotto</span>
+      <span class="ib wide">${ic.msgs}</span><span class="ib wide">${ic.term}</span><span class="ib">${ic.folderPlus}</span><span class="ib">${ic.newThread}</span><span class="ib wide">${ic.collapse}</span></div>
+    <div class="side-search">${ics('search', 15)}Search threads</div>
+    <div class="side-scroll"><div class="side-group">${ics('down', 14)}${ics('folder', 15)}workshop<span class="count">${rows.length}</span></div>
+      ${rows.map(r => `<div class="side-row" ${r.id === selected ? 'aria-current="true"' : ''}><span class="t">${r.title}</span><span class="time">${r.time}</span><span class="sub">${pm(r.p, 14)}</span><span class="status" ${r.status === 'Working' ? 'data-tone="live"' : ''}>${r.status}</span></div>`).join('')}
+      <div class="side-settled">${ics('right', 14)}Settled</div></div>
+    <div class="side-foot"><div class="switch"><span>Dictate</span><span aria-current="true">Threads</span></div>
+      <div class="side-links">${ics('clock', 17)}${ics('chart', 17)}${ics('gear', 17)}${ics('help', 17)}</div></div></aside>`
+}
+function paneHead(t, o = {}) {
+  const git = o.git ? `<span class="git"><button type="button" class="quick" ${attr({ 'data-act': o.git.act ?? 'close', 'data-lit': o.git.lit, title: o.git.label, 'aria-label': o.git.label, 'data-focus': 'git-quick' })}>${o.git.icon ? ic[o.git.icon] : ''}<span class="lbl">${o.git.label}</span></button><button type="button" class="more" aria-label="More Git actions" aria-haspopup="menu" aria-expanded="${!!o.git.menu}" data-act="git-menu" data-focus="git-more">${ics('down', 14)}</button></span>${o.git.menu ?? ''}` : ''
+  return `<header class="head">${pm(t.p, 16)}<h2>${t.title}</h2>
+    <span class="crumb"><span>/ ${t.project ?? 'workshop'}</span><span class="wc">${ics(t.wcIcon ?? 'folder', 14)}${t.wc}</span>${t.branch ? `<span class="wc">${ics('branch', 14)}${t.branch}</span>` : ''}${o.link ?? ''}</span>
+    <span class="acts">${git}<button type="button" class="ib-btn" aria-label="${S._toolsOpen ? 'Hide Tools' : 'Show Tools'}" aria-pressed="${!!S._toolsOpen}" data-act="tools" data-focus="tools-toggle">${ic.panel}</button>
+      <button type="button" class="ib-btn" aria-label="More actions" aria-haspopup="menu" aria-expanded="${!!o.menu}" data-act="pane-menu" data-focus="pane-more">${ic.more}</button>${o.menu ?? ''}</span></header>`
+}
+function composer(o) {
+  return `<div class="compose"><div class="col">${o.above ?? ''}
+    <div class="card"><div class="ph">${o.placeholder ?? 'What would you like to do next?'}</div>
+      <div class="chips"><span style="color:var(--tt-text-muted)">${ics('clip', 17)}</span>
+        <button type="button" class="chip" aria-haspopup="menu" aria-expanded="${!!o.modelMenu}" data-act="${o.modelAct ?? 'model-menu'}" data-focus="model-chip" aria-label="Model: ${P[o.p].name}, ${o.model}">${pm(o.p, 14)}${o.model}${ics('down', 14)}</button>
+        <button type="button" class="chip">${o.effort ?? 'High'}${ics('down', 14)}</button>
+        <button type="button" class="chip">${o.perm ?? 'Allow edits'}${ics('down', 14)}</button>
+        ${o.send ?? `<button type="button" class="send${o.busy ? ' stop' : ''}" aria-label="${o.busy ? 'Stop this turn' : 'Send'}">${o.busy ? ic.stop : ic.up}</button>`}
+        ${o.modelMenu ?? ''}</div></div>
+    ${o.toolbar ?? ''}${o.note ? `<p class="compose-note">${o.note}</p>` : ''}</div></div>`
+}
+const btoolbar = (ws, branch) => `<div class="btoolbar"><span>Run on <b>${ics('laptop', 14)}This computer</b></span><span>Workspace <b>${ws}</b></span><span style="margin-left:auto"><b>${ics('branch', 14)}${branch}</b></span></div>`
+function tools(o) {
+  const tiles = [['browser', 'Browser', 'globe'], ['terminal', 'Terminal', 'term'], ['files', 'Files', 'files'], ['changes', 'Changes', 'changes'], ['agents', 'Agents', 'users'], ...(S.variant === 'C' ? [['lineage', 'Lineage', 'lineage']] : [])]
+  return `<section class="tools" aria-label="Tools">
+    <div class="tools-main"><header class="tools-chrome">${o.title}<span class="sub">${o.sub ?? ''}</span></header>
+      <div class="tools-body">${o.body}</div><footer class="tools-foot">${ics('folder', 14)}${o.foot}</footer></div>
+    <nav class="rail" aria-label="Tools surfaces">${tiles.map(([id, l, i]) => `<button type="button" ${id === o.tile ? 'aria-current="true"' : ''} ${o.dots?.includes(id) ? 'data-dot' : ''} data-act="tile:${id}" aria-label="${l}">${ic[i]}<span>${l}</span></button>`).join('')}
+      <div class="low"><span>${ic.pin}</span><span>${ic.expand}</span><span>${ic.x}</span></div></nav></section>`
+}
+
+/* ---------- surface 1: continue on another provider ---------- */
+function srcBody(o = {}) {
+  const parts = [
+    userMsg('11:51 am', 'The WAV preview stalls after two seconds. Find out why, fix it and run the tests.'),
+    work(['Worked for 3m 12s', 'Changed 2 files']),
+    reply('claude', '11:55 am', '<p>Fixed. The length marker in the header was written once, before any audio arrived, so players stopped after the first chunk. It is now patched after every chunk, and the three new tests pass.</p>', { id: 'fork-point', forkOn: o.forkOn }),
+  ]
+  if (o.forkInline) parts.push(o.forkInline)
+  const later = [
+    userMsg('12:38 pm', 'Paste the full test output and the diff so I can check them. This is what the player shows.', imageChip('player.png')),
+    work(['Worked for 22s', 'Ran 1 command']),
+    reply('claude', '12:40 pm', '<p>Here are the full test output and the diff of both files.</p><pre class="code">✓ tests/unit/wavStream.test.ts (3 tests) 41ms\n\n src/main/audio/wavStream.ts\n@@ -88,7 +88,12 @@ export function writeChunk(stream, chunk) {\n-  if (!stream.headerWritten) writeHeader(stream)\n+  writeHeader(stream, stream.bytes + chunk.length)</pre>'),
+    userMsg('3:58 pm', 'Also add a test for a stream that ends mid-chunk.'),
+    o.busy ? live('Working for 12s') : work(['Worked for 41s'], LIMIT, o.errorActs ?? ''),
+    o.tail ?? '',
+  ]
+  parts.push(o.staysHere ? `<div class="stays"><p class="stays-label">Not carried: this stays in WAV preview stall</p>${later.join('')}</div>` : later.join(''))
+  return parts.join('')
+}
+const SRC_T = { p: 'claude', title: 'WAV preview stall', wc: 'Project folder', branch: 'main' }
+const NEW_T = { p: 'codex', title: 'WAV preview stall', wc: 'Project folder', branch: 'main' }
+
+function rowsS1(st) {
+  const src = { id: 'src', title: 'WAV preview stall', p: 'claude', time: '3:58 pm', status: st === 'busy' ? 'Working' : 'Stopped' }
+  const rows = [src]
+  if (st === 'started' || st === 'source') { src.status = 'Continued'; rows.push({ id: 'new', title: 'WAV preview stall', p: S.target, time: '4:12 pm', status: 'Working' }) }
+  if (st === 'empty') rows.unshift({ id: 'empty', title: 'New thread', p: 'claude', time: '4:20 pm', status: 'New' })
+  rows.push({ id: 'f', title: 'Footer links', p: 'codex', time: '2:31 pm', status: 'Done' }, { id: 'w', title: 'Weekly note', p: 'grok', time: '1:05 pm', status: 'Working' })
+  return rows
+}
+function paneMenuS1(st, v) {
+  const busy = st === 'busy', empty = st === 'empty'
+  const hint = busy ? 'Wait for this turn to finish, or stop it. A handover carries finished turns.'
+    : empty ? 'Nothing to hand over: this thread has no messages yet. Pick another provider from its model chip instead.' : undefined
+  return menu([
+    [mi('Rename', 'pencil'), mi('Regenerate title', 'sparkles'), mi('Open beside', 'columns')],
+    [mi(v === 'C' ? 'Continue on another provider' : 'Continue on another provider…', 'into', { act: 'go:choose', disabled: busy || empty, hint, focus: 'mi-continue' })],
+    [mi('Compact context', 'shrink'), mi('Settle', 'archive')],
+  ], 'More actions')
+}
+function modelMenuB(st) {
+  const busy = st === 'busy', empty = st === 'empty'
+  const cur = empty ? 'claude' : 'claude'
+  const own = [mh('Claude Code'), ...P.claude.models.map(m => mi(m, null, { end: m === 'Opus 5.5' ? '✓' : '' }))]
+  const others = ['codex', 'grok', 'devin'].flatMap(id => P[id].off
+    ? [mi(`${P[id].name}`, null, { disabled: true, hint: `${P[id].off}. Sign in under Settings → Providers.` })]
+    : P[id].models.map(m => mi(id === 'devin' ? 'Devin' : `${P[id].name} · ${m}`, null, { act: busy ? undefined : `b-pick:${id}:${m}`, disabled: busy, focus: `bm-${id}-${m}` })))
+  if (empty) return menu([own, [mh('Other providers'), ...['codex', 'devin'].flatMap(id => P[id].models.map(m => mi(id === 'devin' ? 'Devin' : `${P[id].name} · ${m}`)))], [`<p class="mfoot">No messages yet, so this thread can still change provider. Nothing is handed over.</p>`]], 'Model', 'above')
+  return menu([own, [mh('Continue in a new thread on'), ...others], [`<p class="mfoot">${busy ? 'Wait for this turn to finish, or stop it. A handover carries finished turns.' : 'Picking one starts a new thread with a handover of this one. This thread stays as it is.'}</p>`]], 'Model', 'above')
+}
+function continueNowB(st) {
+  const chosen = ['choose', 'history-off', 'failed'].includes(st) && !S.closed
+  const chip = (id, m) => `<button type="button" class="chip" aria-pressed="${chosen && S.target === id}" data-act="b-pick:${id}:${m}" data-focus="cn-${id}">${pm(id, 14)}${id === 'devin' ? 'Devin' : `${P[id].name} · ${m}`}</button>`
+  return `<div class="turn-acts" role="group" aria-label="Continue now on another provider"><span>Or continue now on</span>${chip('codex', 'GPT-5.5')}${chip('devin', 'Devin')}<button type="button" class="chip" aria-disabled="true" title="Grok Build isn’t signed in">${pm('grok', 14)}Grok Build<small>· not signed in</small></button><button type="button" class="chip" data-act="model-menu" aria-label="More models to continue on">More${ics('down', 14)}</button></div>`
+}
+function contStripB(st) {
+  const tgt = P[S.target]
+  const kind = st === 'history-off' ? 'history-off' : 'thread'
+  const L = LEDGER[kind]
+  const err = st === 'failed' ? `<p class="r3" style="color:var(--tt-error)">${tgt.name} didn’t start, so no thread was made. WAV preview stall is unchanged. Check ${tgt.name} in Settings → Providers, then send again.</p>` : ''
+  return `<section class="cont" aria-label="Continue on ${tgt.name}" ${st === 'failed' ? 'data-tone="error"' : ''}>
+    <div class="r1">${ic.into}<span>Sending starts a <b>new ${tgt.name} thread</b> with a handover of this one.</span><button type="button" class="x" data-act="close" aria-label="Don’t continue: keep writing to this thread" title="Don’t continue: keep writing to this thread" data-focus="cont-x">${ic.x}</button></div>
+    <div class="r2"><button type="button" class="chip" data-act="model-menu" aria-label="Continue on: ${tgt.name}, ${S.model}. Change">${pm(S.target, 14)}${tgt.name} · ${S.model}${ics('down', 14)}</button>
+      <button type="button" class="chip" data-act="cycle-wc" aria-label="Working copy: ${S.wc === 'same' ? 'same folder as this thread' : 'new worktree from main'}. Change" data-focus="wc-chip">${ics('folder', 14)}${S.wc === 'same' ? 'Same folder' : 'New worktree from main'}${ics('down', 14)}</button>
+      <span class="chip static" title="Starting on another machine isn’t available yet">${ics('laptop', 14)}This computer</span></div>
+    <p class="r3">${L.note ? L.note + ' ' : ''}Handover first: carries ${L.short[0]}; leaves out ${L.short[1]}. <button type="button" class="linkbtn" data-act="read" aria-expanded="${S.read}" data-focus="read">${S.read ? 'Hide it' : 'Read it'}</button></p>
+    ${S.read ? `<div class="handover-text" tabindex="0" role="region" aria-label="The handover, word for word">${esc(HANDOVER[kind]())}</div>` : ''}${err}</section>`
+}
+function continueDialogA(st) {
+  const tgt = P[S.target]
+  const kind = st === 'history-off' ? 'history-off' : 'thread'
+  const body = providerField('claude') + modelField(S.target)
+    + field('The handover', `<p class="fine" style="margin-top:0">The new thread’s first message: context, not a new request. It goes to ${tgt.name} with your first message there.</p>${ledgerHtml(kind, { to: tgt.name })}`)
+    + wcField({ source: 'WAV preview stall', folder: 'Project folder', base: 'main', sameNote: '; this one is stopped at its usage limit' }) + runsOnField()
+  const err = st === 'failed' ? `<p class="err" role="alert">${tgt.name} didn’t start, so no thread was made. WAV preview stall is unchanged. Check ${tgt.name} in Settings → Providers, then try again.</p>` : ''
+  return dialog('Continue on another provider', 'Sotto starts a new thread in workshop and hands it this thread’s history. WAV preview stall stays as it is, readable and yours to come back to.', body,
+    `${err}${btn('Cancel', { act: 'close', focus: 'cancel' })}${btn(st === 'failed' ? 'Try again' : `Start the ${tgt.name} thread`, { act: 'go:started', primary: true, focus: 'start' })}`)
+}
+function draftNodeC(st) {
+  const tgt = P[S.target]
+  const kind = st === 'history-off' ? 'history-off' : 'thread'
+  const err = st === 'failed' ? `<p class="err" role="alert" data-scroll-here>${tgt.name} didn’t start, so no thread was made. WAV preview stall is unchanged. Check ${tgt.name} in Settings → Providers, then try again.</p>` : ''
+  return `<div class="edge dashed"><span class="k">Handover</span>, the new thread’s first message: context, not a new request. It goes with your first message there.
+      ${ledgerHtml(kind, { to: tgt.name })}</div>
+    <div class="node draft" aria-label="New thread, not started"><span class="pin">${ic.into}</span><div class="nt"><span class="t">New thread</span><span class="here">not started</span></div>
+      <div class="nm">Continues WAV preview stall in workshop</div>
+      ${providerField('claude')}${modelField(S.target)}${runsOnField()}
+      ${wcField({ source: 'WAV preview stall', folder: 'Project folder', base: 'main', sameNote: '; that one is stopped' })}
+      ${err}<div class="nacts">${btn(st === 'failed' ? 'Try again' : `Start the ${tgt.name} thread`, { act: 'go:started', primary: true, focus: 'start' })}${btn('Cancel', { act: 'close', focus: 'cancel' })}</div></div>`
+}
+const srcNode = (here, status) => `<div class="node" ${here ? 'data-here' : ''}><span class="pin">${pm('claude', 16)}</span><div class="nt"><span class="t">WAV preview stall</span>${here ? '<span class="here">This thread</span>' : btn('Open', { small: true, act: 'close', aria: 'Open WAV preview stall on Claude Code' })}</div>
+  <div class="nm">Claude Code · Opus 5.5</div><div class="nm">${ics('folder', 13)} Project folder · <code>main</code></div><div class="ns">${status}</div></div>`
+function newNode(here) {
+  const t = P[S.target]
+  return `<div class="node" ${here ? 'data-here' : ''}><span class="pin">${pm(S.target, 16)}</span><div class="nt"><span class="t">WAV preview stall</span>${here ? '<span class="here">This thread</span>' : btn('Open', { small: true, act: 'go:started', aria: `Open WAV preview stall on ${t.name}` })}</div>
+  <div class="nm">${t.name} · ${S.model}</div><div class="nm">${ics('folder', 13)} ${S.wc === 'same' ? 'Project folder · <code>main</code>' : 'New worktree · <code>sotto/wav-mid-chunk</code>'}</div><div class="ns">Working</div></div>`
+}
+const handoverEdge = (kind, time, to) => `<div class="edge"><span class="k">Continued in, ${time}.</span> Handover: carried ${LEDGER[kind].short[0]}; left out ${LEDGER[kind].short[1]}.<br>${readToggle(kind, to)}</div>`
+
+function scene1() {
+  const v = S.variant, st = S.state
+  const o = { rows: rowsS1(st), selected: 'src', thread: SRC_T }
+  const choosing = ['choose', 'history-off', 'failed'].includes(st) && !S.closed
+  const tgt = P[S.target]
+  o.readout = [['Source', 'WAV preview stall · Claude Code · Opus 5.5 · Project folder on main'], ['Target', `${tgt.name} · ${S.model} · ${S.wc === 'same' ? 'same folder' : 'new worktree from main'} · This computer`], ['Handover', st === 'history-off' ? 'history off: what the window holds' : 'sent with your first message there']]
+  o.composer = { p: 'claude', model: 'Opus 5.5', toolbar: btoolbar('Project folder', 'main') }
+
+  if (st === 'empty') {
+    o.selected = 'empty'
+    o.thread = { p: 'claude', title: 'New thread', wc: 'Project folder', branch: 'main' }
+    o.body = `<div class="empty"><div>${ics('msgs', 28)}<h3>What is next for this thread?</h3><p>Write a prompt below to start.</p></div></div>`
+    o.fill = true
+    if (!S.closed) { if (v === 'B') o.composer.modelMenu = modelMenuB(st); else o.menu = paneMenuS1(st, v) }
+    o.readout = [['Thread', 'New thread · Claude Code · no messages'], ['Refusal', 'nothing to hand over; an unstarted thread can still change provider from its model chip']]
+    return o
+  }
+  if (st === 'started') {
+    o.selected = 'new'
+    o.thread = { ...NEW_T, p: S.target, branch: S.wc === 'same' ? 'main' : 'sotto/wav-mid-chunk', wc: S.wc === 'same' ? 'Project folder' : 'New worktree' }
+    const top = v === 'B' ? sysNote('from', `Continued from ${pm('claude', 13)} <b>WAV preview stall</b> on Claude Code, which stopped at its usage limit. It stays readable there. <button type="button" class="linkbtn" data-act="go:source">Open it</button>`) : ''
+    o.body = top + handoverMsg('thread', '4:12 pm', '<b>WAV preview stall</b> on Claude Code, stopped at its usage limit', tgt.name)
+      + userMsg('4:12 pm', 'Carry on with the mid-chunk test.') + live('Working for 18s')
+    if (v === 'A') o.link = `<button type="button" class="crumb-link" data-act="go:source" aria-label="Continued from WAV preview stall on Claude Code. Open it">${ics('from', 13)}<span class="lead">Continued from</span>${pm('claude', 13)}<span class="t">WAV preview stall</span></button>`
+    o.composer = { p: S.target, model: S.model, busy: true, toolbar: btoolbar(S.wc === 'same' ? 'Project folder' : 'New worktree', S.wc === 'same' ? 'main' : 'sotto/wav-mid-chunk') }
+    if (v === 'C') o.tools = { tile: 'lineage', title: 'Lineage', sub: 'WAV preview stall', body: `<div class="lineage">${srcNode(false, 'Stopped at its usage limit, 3:58 pm')}${handoverEdge('thread', '4:12 pm', tgt.name)}${newNode(true)}</div>`, foot: `workshop · <code>main</code> · Project folder` }
+    o.readout = [['Thread', `WAV preview stall · ${tgt.name} · ${S.model} · new Sotto ID`], ['First message', 'the handover, sent with “Carry on with the mid-chunk test.”'], ['Linked', 'continued from WAV preview stall on Claude Code']]
+    return o
+  }
+  // The source thread, before or after.
+  const errorActs = st === 'source' || st === 'busy' ? '' : v === 'B' ? continueNowB(st) : `<div class="turn-acts">${btn('Continue on another provider', { small: true, icon: ics('into', 15), act: 'go:choose', focus: 'err-continue' })}</div>`
+  const tail = st === 'source' && v === 'B' ? sysNote('into', `Continued in ${pm(S.target, 13)} <b>WAV preview stall</b> on ${tgt.name}, 4:12 pm, with a handover of this thread. <button type="button" class="linkbtn" data-act="go:started">Open it</button>`) : ''
+  o.body = srcBody({ busy: st === 'busy', errorActs, tail })
+  if (st === 'source') {
+    o.composer.note = `Continued in a ${tgt.name} thread. You can still send here once Claude’s limit resets at 6:00 pm.`
+    if (v === 'A') o.link = `<button type="button" class="crumb-link" data-act="go:started" aria-label="Continued in WAV preview stall on ${tgt.name}. Open it">${ics('into', 13)}<span class="lead">Continued in</span>${pm(S.target, 13)}<span class="t">WAV preview stall</span></button>`
+    if (v === 'C') o.tools = { tile: 'lineage', title: 'Lineage', sub: 'WAV preview stall', body: `<div class="lineage">${srcNode(true, 'Stopped at its usage limit, 3:58 pm')}${handoverEdge('thread', '4:12 pm', tgt.name)}${newNode(false)}</div>`, foot: `workshop · <code>main</code> · Project folder` }
+    o.readout = [['Thread', 'WAV preview stall · Claude Code · readable, still sendable'], ['Linked', `continued in WAV preview stall on ${tgt.name}, 4:12 pm`]]
+  }
+  if (st === 'busy') {
+    o.rows[0].status = 'Working'
+    o.composer.busy = true
+    if (!S.closed) { if (v === 'B') o.composer.modelMenu = modelMenuB(st); else o.menu = paneMenuS1(st, v) }
+    o.readout = [['Thread', 'WAV preview stall · a turn is running'], ['Refusal', 'continue waits for the turn to finish or stop']]
+  }
+  if (st === 'menu' && !S.closed) { if (v === 'B') o.composer.modelMenu = modelMenuB(st); else o.menu = paneMenuS1(st, v) }
+  if (choosing) {
+    if (v === 'A') o.dialog = continueDialogA(st)
+    if (v === 'B') { o.composer.above = contStripB(st); o.composer.p = S.target; o.composer.model = S.model; o.composer.placeholder = `What should ${tgt.name} do next? It goes after the handover.`; o.composer.send = `<button type="button" class="send wide" data-act="go:${st === 'failed' ? 'started' : 'started'}" data-focus="send">${st === 'failed' ? 'Try again' : `Continue on ${tgt.name}`}${ics('up', 15)}</button>` }
+    if (v === 'C') o.tools = { tile: 'lineage', title: 'Lineage', sub: 'WAV preview stall', body: `<div class="lineage">${srcNode(true, 'Stopped at its usage limit, 3:58 pm')}${draftNodeC(st)}</div>`, foot: `workshop · <code>main</code> · Project folder` }
+  }
+  if (v === 'C' && ['choose', 'history-off', 'failed'].includes(st) && S.closed) o.tools = { tile: 'lineage', title: 'Lineage', sub: 'WAV preview stall', body: `<div class="lineage">${srcNode(true, 'Stopped at its usage limit, 3:58 pm')}</div><p class="fine">Nothing continues this thread yet.</p>`, foot: `workshop · <code>main</code> · Project folder` }
+  return o
+}
+
+/* ---------- surface 2: agents and Fork from here ---------- */
+const CODEX_AGENTS = [
+  { id: 'perf', title: 'Check streaming performance', desc: 'Time each chunk from decode to the player.', model: 'GPT-5.5', s: 'finished', time: '3m 13s', result: 'The player waits on a 64 KB buffer before it starts; the decoder is not the slow part. Halving the buffer cuts first sound from 410 ms to 190 ms.' },
+  { id: 'decode', title: 'Measure decode time', desc: 'Decode a 40 MB WAV and report the slowest step.', model: 'GPT-5.4', s: 'running', time: '1m 02s', result: '' },
+  { id: 'copies', title: 'Look for extra copies', desc: 'Find buffers copied more than once.', model: 'GPT-5.5', s: 'finished', time: '2m 40s', result: 'One copy in resample() is avoidable; the other two are needed.' },
+]
+const CLAUDE_AGENTS = [
+  { id: 'verify', title: 'Verify history-off cleanup', desc: 'Confirm saved task text is removed.', model: 'Sonnet 5.5', s: 'finished', time: '7m 04s', task: 'Confirm that saved task text is removed from threads.sqlite when history is turned off, and that nothing else is.', result: 'Confirmed. Turning history off removes saved task text and leaves drafts and settings alone. Two tests cover it.' },
+  { id: 'keys', title: 'Check keyboard navigation', desc: 'Review tabs, focus return and nested details.', model: 'Haiku 4.5', s: 'finished', time: '48s', task: 'Review tabs, focus return and nested details.', result: 'Focus returns to the row after Escape everywhere but the workflow page.' },
+]
+const STATUS = { finished: 'Finished', running: 'Working', failed: 'Failed' }
+function agentRow(a, open, action) {
+  return `<li><button type="button" class="ahead" aria-expanded="${open}" data-act="noop"><span class="adot" data-s="${a.s}" aria-hidden="true"></span>
+      <span style="min-width:0"><span class="atitle" style="display:block">${a.title}</span><span class="adesc">${a.desc}</span><span class="ameta">${a.model}</span></span>
+      <span class="aright">${a.time} ${ics('right', 12)}<br>${STATUS[a.s]}</span></button>
+    ${open ? `<div class="adetails" data-scroll-here><h5>Task</h5><p>${a.task ?? a.desc}</p><h5>${a.s === 'running' ? 'Latest update' : 'Result'}</h5><p>${a.result || 'No result reported yet.'}</p>${action}</div>` : ''}</li>`
+}
+const roster = (agents, openId, actionFor) => `<ul class="agents" aria-label="Spawned agents">${agents.map(a => agentRow(a, a.id === openId, a.id === openId ? actionFor(a) : '')).join('')}</ul>`
+const PARENT_CODEX = { p: 'codex', title: 'Audio pipeline review', wc: 'Project folder', branch: 'main' }
+const codexParentBody = () => userMsg('2:10 pm', 'Review the audio pipeline for slow spots. Give each stage its own agent.') + work(['Worked for 4m 30s', '3 agent actions']) + reply('codex', '2:15 pm', '<p>Two of the three agents have finished. The player’s start-up buffer is the slow part; decode time is still being measured.</p>')
+const claudeParentBody = () => userMsg('1:10 pm', 'Check the history-off cleanup and the keyboard paths before I merge. Use agents.') + work(['Worked for 7m 30s', '2 agent actions']) + reply('claude', '1:20 pm', '<p>Both agents finished. History-off cleanup is right; one focus return is missing on the workflow page.</p>')
+
+function agentActionA(a, st) {
+  if (a.s === 'running') return `<div class="aacts">${btn('Continue as a thread…', { small: true, icon: ics('into', 15), disabled: true })}<span class="why">It’s still working. Continue it once it finishes.</span></div>`
+  return `<div class="aacts">${btn('Continue as a thread…', { small: true, icon: ics('into', 15), act: a.id === 'copies' ? 'go:gone' : a.id === 'verify' ? 'go:claude-choose' : 'go:codex-choose', focus: 'agent-continue', aria: `Continue ${a.title} as its own thread` })}</div>`
+}
+function agentActionB(a, st) {
+  if (a.s === 'running') return `<div class="aacts">${btn('Continue as a thread', { small: true, icon: ics('into', 15), disabled: true })}<span class="why">It’s still working. Continue it once it finishes.</span></div>`
+  const open = !S.closed && ((st === 'codex-choose' && a.id === 'perf') || (st === 'claude-choose' && a.id === 'verify') || (st === 'gone' && a.id === 'copies'))
+  if (!open) return `<div class="aacts">${btn('Continue as a thread', { small: true, icon: ics('into', 15), act: a.id === 'copies' ? 'go:gone' : a.id === 'verify' ? 'go:claude-choose' : 'go:codex-choose', focus: 'agent-continue', aria: `Continue ${a.title} as its own thread` })}</div>`
+  if (st === 'gone') return `<div class="ainline" data-tone="error" role="alert"><h6>Codex can’t fork this agent</h6><p class="err">Codex no longer has this agent’s conversation, so nothing was made. Sotto still has its title and result: a new thread can start from a handover of those instead. It would be thin.</p><div class="aacts">${btn('Start from a handover', { small: true, primary: true, act: 'close', focus: 'start' })}${btn('Cancel', { small: true, act: 'close' })}</div></div>`
+  const codex = st === 'codex-choose'
+  const pills = `<div class="r2" style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0">${codex ? `<button type="button" class="chip" aria-label="Model: GPT-5.5. Change">${pm('codex', 14)}GPT-5.5${ics('down', 14)}</button>` : `<button type="button" class="chip" aria-label="Continue on Claude Code, Sonnet 5.5. Change">${pm('claude', 14)}Claude Code · Sonnet 5.5${ics('down', 14)}</button>`}
+    <button type="button" class="chip" data-act="cycle-wc" data-focus="wc-chip" aria-label="Working copy: ${S.wc === 'same' ? 'same folder' : 'new worktree from main'}. Change">${ics('folder', 14)}${S.wc === 'same' ? 'Same folder' : 'New worktree from main'}${ics('down', 14)}</button><span class="chip static">${ics('laptop', 14)}This computer</span></div>`
+  return `<div class="ainline"><h6>${codex ? 'Fork it into a new Codex thread' : 'Continue it from a handover'}</h6>
+    <p>${codex ? 'Codex copies this agent’s own conversation, task included, into a new thread. Codex keeps the task encrypted; the fork carries it and Sotto never reads it. The agent here stays as it is.' : LEDGER.thin.note}</p>
+    ${pills}${codex ? '' : `<p class="fine" style="margin-top:0">Carries ${LEDGER.thin.short[0]}. Leaves out ${LEDGER.thin.short[1]}. ${'<button type="button" class="linkbtn" data-act="read" data-focus="read" aria-expanded="' + S.read + '">' + (S.read ? 'Hide it' : 'Read it') + '</button>'}</p>${S.read ? `<div class="handover-text" tabindex="0" role="region" aria-label="The handover">${esc(HANDOVER.thin())}</div>` : ''}`}
+    <div class="aacts">${btn('Start the thread', { small: true, primary: true, act: codex ? 'go:codex-started' : 'go:claude-started', focus: 'start' })}${btn('Cancel', { small: true, act: 'close' })}</div></div>`
+}
+function agentActionC(a, st) {
+  if (a.s === 'running') return `<div class="aacts">${btn('Continue as a thread', { small: true, icon: ics('into', 15), disabled: true })}<span class="why">It’s still working. Continue it once it finishes.</span></div>`
+  return `<div class="aacts">${btn('Continue as a thread', { small: true, icon: ics('lineage', 15), act: a.id === 'copies' ? 'go:gone' : a.id === 'verify' ? 'go:claude-choose' : 'go:codex-choose', focus: 'agent-continue', aria: `Continue ${a.title} as its own thread, in Lineage` })}<span class="why">Opens in Lineage.</span></div>`
+}
+const parentNode = (p, title, here, meta) => `<div class="node" ${here ? 'data-here' : ''}><span class="pin">${pm(p, 16)}</span><div class="nt"><span class="t">${title}</span>${here ? '<span class="here">This thread</span>' : btn('Open', { small: true, act: 'close', aria: `Open ${title}` })}</div><div class="nm">${meta}</div></div>`
+const agentNode = (p, a) => `<div class="edge"><span class="k">Spawned this agent</span></div><div class="node agent"><span class="pin">${ics('bot', 16)}</span><div class="nt"><span class="t">${a.title}</span><span class="here">agent · ${STATUS[a.s]}</span></div><div class="nm">${P[p].name} · ${a.model} · seen in Agents, read only</div></div>`
+
+function scene2() {
+  const v = S.variant, st = S.state
+  const rows = [{ id: 'audio', title: 'Audio pipeline review', p: 'codex', time: '2:15 pm', status: 'Working' }, { id: 'src', title: 'WAV preview stall', p: 'claude', time: '1:20 pm', status: 'Done' }, { id: 'rel', title: 'Release notes', p: 'devin', time: '10:34 am', status: 'Done' }]
+  const o = { rows, selected: 'audio', thread: PARENT_CODEX, composer: { p: 'codex', model: 'GPT-5.5', toolbar: btoolbar('Project folder', 'main') } }
+  const action = v === 'A' ? agentActionA : v === 'B' ? agentActionB : agentActionC
+  const codexRoster = (openId) => ({ tile: 'agents', title: 'Agents', sub: 'Audio pipeline review', dots: ['agents'], body: roster(CODEX_AGENTS, openId, a => action(a, st)), foot: 'workshop · <code>main</code> · Project folder' })
+  const claudeRoster = (openId) => ({ tile: 'agents', title: 'Agents', sub: 'WAV preview stall', body: roster(CLAUDE_AGENTS, openId, a => action(a, st)), foot: 'workshop · <code>main</code> · Project folder' })
+  const choosing = !S.closed
+
+  if (['roster', 'codex-choose', 'running', 'gone'].includes(st)) {
+    o.body = codexParentBody()
+    const openId = st === 'running' ? 'decode' : st === 'gone' ? 'copies' : 'perf'
+    o.tools = codexRoster(openId)
+    o.readout = [['Thread', 'Audio pipeline review · Codex · 3 agents, 1 working'], ['Agent', CODEX_AGENTS.find(a => a.id === openId).title + ' · ' + STATUS[CODEX_AGENTS.find(a => a.id === openId).s]]]
+    if (st === 'codex-choose' && choosing) {
+      o.readout.push(['Route', 'Codex thread/fork of the agent’s own thread; the parent’s agent is untouched'])
+      if (v === 'A') o.dialog = dialog('Continue “Check streaming performance” as a thread', 'Codex forks this agent’s own conversation into a new Codex thread. The agent stays as it is in Audio pipeline review, and so does its row here.',
+        field('What moves', `<p class="fine" style="margin-top:0">The agent’s whole conversation, its task included. Codex keeps the task encrypted: the fork carries it, and Sotto passes it on without reading it. Nothing is left out.</p>`) + modelField('codex', 'the agent’s') + runsOnField() + wcField({ source: 'Audio pipeline review', folder: 'Project folder', base: 'main', newNote: 'Starts from main’s last commit.' }),
+        `${btn('Cancel', { act: 'close', focus: 'cancel' })}${btn('Start the thread', { act: 'go:codex-started', primary: true, focus: 'start' })}`)
+      if (v === 'C') o.tools = { tile: 'lineage', title: 'Lineage', sub: 'Audio pipeline review', body: `<div class="lineage">${parentNode('codex', 'Audio pipeline review', true, 'Codex · GPT-5.5 · Project folder · <code>main</code>')}${agentNode('codex', CODEX_AGENTS[0])}
+        <div class="edge dashed"><span class="k">Codex fork.</span> Carries the agent’s whole conversation, its task included, which Codex keeps encrypted and Sotto never reads. Nothing is left out.</div>
+        <div class="node draft"><span class="pin">${ic.into}</span><div class="nt"><span class="t">New thread</span><span class="here">not started</span></div><div class="nm">From the agent Check streaming performance</div>
+          ${modelField('codex', 'the agent’s')}${runsOnField()}${wcField({ source: 'Audio pipeline review', folder: 'Project folder', base: 'main', newNote: 'Starts from main’s last commit.' })}
+          <div class="nacts">${btn('Start the thread', { primary: true, act: 'go:codex-started', focus: 'start' })}${btn('Cancel', { act: 'close' })}</div></div></div>`, foot: 'workshop · <code>main</code> · Project folder' }
+    }
+    if (st === 'gone' && choosing) {
+      o.readout.push(['Refusal', 'Codex no longer has the agent’s thread; the fallback is a thin handover'])
+      if (v === 'A') o.dialog = dialog('Codex can’t fork this agent', '', `<p class="lede" role="alert">Codex no longer has this agent’s conversation, so it can’t be forked, and nothing was made. Sotto still has the agent’s title and result, so a new thread can start from a handover of those instead.</p>${field('If you start from a handover', ledgerHtml('codex-thin', { to: 'Codex' }))}`,
+        `${btn('Cancel', { act: 'close', focus: 'cancel' })}${btn('Start from a handover', { act: 'close', primary: true, focus: 'start' })}`)
+      if (v === 'C') o.tools = { tile: 'lineage', title: 'Lineage', sub: 'Audio pipeline review', body: `<div class="lineage">${parentNode('codex', 'Audio pipeline review', true, 'Codex · GPT-5.5 · Project folder · <code>main</code>')}${agentNode('codex', CODEX_AGENTS[2])}
+        <div class="node draft"><span class="pin">${ic.into}</span><div class="nt"><span class="t">New thread</span><span class="here">not started</span></div>
+          <div class="say" data-tone="error" role="alert"><p><strong>Codex can’t fork this agent.</strong> Codex no longer has its conversation, so nothing was made.</p><p>Sotto still has its title and result: a new thread can start from a handover of those instead.</p></div>
+          <div class="edge dashed" style="margin-top:8px">${ledgerHtml('codex-thin', { to: 'Codex' })}</div>
+          <div class="nacts">${btn('Start from a handover', { primary: true, act: 'close', focus: 'start' })}${btn('Cancel', { act: 'close' })}</div></div></div>`, foot: 'workshop · <code>main</code> · Project folder' }
+    }
+    return o
+  }
+  if (st === 'claude-choose') {
+    o.selected = 'src'; o.thread = SRC_T; o.composer = { p: 'claude', model: 'Opus 5.5', toolbar: btoolbar('Project folder', 'main') }
+    o.body = claudeParentBody()
+    o.tools = claudeRoster('verify')
+    o.readout = [['Thread', 'WAV preview stall · Claude Code · 2 agents, finished'], ['Agent', 'Verify history-off cleanup · Sonnet 5.5'], ['Route', 'handover from the stored assignment prompt and result: thin']]
+    if (choosing && v === 'A') {
+      const save = S.target; if (!['claude', 'codex', 'devin'].includes(S.target)) S.target = 'claude'
+      o.dialog = dialog('Continue “Verify history-off cleanup” as a thread', 'Sotto starts a new thread in workshop from a handover of what it saw this agent do. The agent stays as it is in WAV preview stall.',
+        field('The handover', ledgerHtml('thin', { to: P[S.target].name })) + field('Provider', `<div class="seg" role="radiogroup" aria-label="Provider">${['claude', 'codex', 'devin'].map(id => `<button type="button" role="radio" class="opt" aria-checked="${S.target === id}" data-act="pick-p:${id}">${pm(id, 14)}${P[id].name}</button>`).join('')}</div>`) + runsOnField() + wcField({ source: 'WAV preview stall', folder: 'Project folder', base: 'main' }),
+        `${btn('Cancel', { act: 'close', focus: 'cancel' })}${btn('Start the thread', { act: 'go:claude-started', primary: true, focus: 'start' })}`)
+    }
+    if (choosing && v === 'C') o.tools = { tile: 'lineage', title: 'Lineage', sub: 'WAV preview stall', body: `<div class="lineage">${parentNode('claude', 'WAV preview stall', true, 'Claude Code · Opus 5.5 · Project folder · <code>main</code>')}${agentNode('claude', CLAUDE_AGENTS[0])}
+      <div class="edge dashed"><span class="k">Handover, thin.</span> ${ledgerHtml('thin', { to: 'Claude Code' })}</div>
+      <div class="node draft"><span class="pin">${ic.into}</span><div class="nt"><span class="t">New thread</span><span class="here">not started</span></div><div class="nm">From the agent Verify history-off cleanup</div>
+        ${field('Provider', `<div class="seg" role="radiogroup" aria-label="Provider">${['claude', 'codex', 'devin'].map(id => `<button type="button" role="radio" class="opt" aria-checked="${(['claude', 'codex', 'devin'].includes(S.target) ? S.target : 'claude') === id}" data-act="pick-p:${id}">${pm(id, 14)}${P[id].name}</button>`).join('')}</div>`)}${runsOnField()}${wcField({ source: 'WAV preview stall', folder: 'Project folder', base: 'main' })}
+        <div class="nacts">${btn('Start the thread', { primary: true, act: 'go:claude-started', focus: 'start' })}${btn('Cancel', { act: 'close' })}</div></div></div>`, foot: 'workshop · <code>main</code> · Project folder' }
+    return o
+  }
+  if (st === 'codex-started' || st === 'claude-started') {
+    const codex = st === 'codex-started'
+    const a = codex ? CODEX_AGENTS[0] : CLAUDE_AGENTS[0]
+    const parent = codex ? 'Audio pipeline review' : 'WAV preview stall'
+    const pp = codex ? 'codex' : 'claude'
+    o.rows.splice(codex ? 1 : 2, 0, { id: 'cont', title: a.title, p: pp, time: '2:41 pm', status: 'Idle' })
+    o.selected = 'cont'
+    o.thread = { p: pp, title: a.title, wc: S.wc === 'same' ? 'Project folder' : 'New worktree', branch: S.wc === 'same' ? 'main' : 'sotto/stream-perf' }
+    o.composer = { p: pp, model: a.model, placeholder: `What should ${P[pp].name} do next?`, toolbar: btoolbar(S.wc === 'same' ? 'Project folder' : 'New worktree', S.wc === 'same' ? 'main' : 'sotto/stream-perf') }
+    o.body = codex
+      ? sysNote('fork', `Codex forked the agent <b>${a.title}</b> from <b>${parent}</b> into this thread, 2:41 pm. It carried the agent’s whole conversation, including its task, which Codex keeps encrypted, so Sotto can’t show it here. The agent’s row in ${parent} is unchanged.${v === 'B' ? ` <button type="button" class="linkbtn" data-act="go:roster">Open ${parent}</button>` : ''}`)
+        + reply('codex', '2:15 pm', `<p>${a.result}</p>`, { noActs: true }).replace('<article class="msg"', '<article class="msg" aria-label="The agent’s last reply, carried by the fork"')
+      : (v === 'B' ? sysNote('from', `Continued from the agent <b>${a.title}</b> in <b>${parent}</b>. <button type="button" class="linkbtn" data-act="go:claude-choose">Open ${parent}</button>`) : '') + handoverMsg('thin', '2:41 pm', `the agent <b>${a.title}</b> in <b>${parent}</b>`, 'Claude Code')
+    if (v === 'A') o.link = `<button type="button" class="crumb-link" data-act="${codex ? 'go:roster' : 'go:claude-choose'}" aria-label="Continued from the agent ${a.title} in ${parent}. Open ${parent}">${ics('from', 13)}<span class="lead">From an agent of</span>${pm(pp, 13)}<span class="t">${parent}</span></button>`
+    if (v === 'C') o.tools = { tile: 'lineage', title: 'Lineage', sub: a.title, body: `<div class="lineage">${parentNode(pp, parent, false, `${P[pp].name} · Project folder · <code>main</code>`)}${agentNode(pp, a)}
+      <div class="edge"><span class="k">${codex ? 'Codex fork, 2:41 pm.' : 'Handover, thin, 2:41 pm.'}</span> ${codex ? 'Carried the agent’s whole conversation, task included; Sotto never read the task.' : `Carried ${LEDGER.thin.short[0]}; left out ${LEDGER.thin.short[1]}.<br>${readToggle('thin', 'Claude Code')}`}</div>
+      <div class="node" data-here><span class="pin">${pm(pp, 16)}</span><div class="nt"><span class="t">${a.title}</span><span class="here">This thread</span></div><div class="nm">${P[pp].name} · ${a.model}</div><div class="nm">${ics('folder', 13)} ${S.wc === 'same' ? 'Project folder · <code>main</code>' : 'New worktree · <code>sotto/stream-perf</code>'}</div></div></div>`, foot: `workshop · <code>${S.wc === 'same' ? 'main' : 'sotto/stream-perf'}</code>` }
+    o.readout = [['Thread', `${a.title} · ${P[pp].name} · ${a.model} · new Sotto ID`], ['Carried', codex ? 'the agent’s whole conversation (Codex fork)' : 'task and result only (thin handover)'], ['Parent', `${parent}, its agent row unchanged`]]
+    return o
+  }
+  // Fork from here
+  if (st === 'fork-choose' || st === 'forked') {
+    o.selected = 'src'; o.thread = SRC_T; o.composer = { p: 'claude', model: 'Opus 5.5', toolbar: btoolbar('Project folder', 'main') }
+    o.rows[1].status = 'Stopped'
+    if (st === 'forked') {
+      o.rows.splice(2, 0, { id: 'fork', title: 'Fork of WAV preview stall', p: 'claude', time: '4:15 pm', status: 'Idle' })
+      o.selected = 'fork'
+      o.thread = { p: 'claude', title: 'Fork of WAV preview stall', wc: S.wc === 'same' ? 'Project folder' : 'New worktree', branch: S.wc === 'same' ? 'main' : 'sotto/wav-fork' }
+      o.body = userMsg('11:51 am', 'The WAV preview stalls after two seconds. Find out why, fix it and run the tests.') + work(['Worked for 3m 12s', 'Changed 2 files'])
+        + reply('claude', '11:55 am', '<p>Fixed. The length marker in the header was written once, before any audio arrived, so players stopped after the first chunk. It is now patched after every chunk, and the three new tests pass.</p>')
+        + sysNote('fork', `Forked from <b>WAV preview stall</b> at Claude’s reply, 11:55 am, through Claude Code’s own fork. The messages above are copied from there; nothing after that reply came along. Files weren’t rewound.${v === 'B' ? ' <button type="button" class="linkbtn" data-act="go:fork-choose">Open WAV preview stall</button>' : ''}`)
+      if (v === 'A') o.link = `<button type="button" class="crumb-link" data-act="go:fork-choose" aria-label="Forked from WAV preview stall at 11:55 am. Open it">${ics('fork', 13)}<span class="lead">Forked from</span>${pm('claude', 13)}<span class="t">WAV preview stall</span></button>`
+      if (v === 'C') o.tools = { tile: 'lineage', title: 'Lineage', sub: 'Fork of WAV preview stall', body: `<div class="lineage">${parentNode('claude', 'WAV preview stall', false, 'Claude Code · Opus 5.5 · Project folder · <code>main</code>')}<div class="edge"><span class="k">Forked at Claude’s reply, 11:55 am.</span> Claude Code’s own fork: the conversation up to there, nothing after. Files weren’t rewound.</div>
+        <div class="node" data-here><span class="pin">${pm('claude', 16)}</span><div class="nt"><span class="t">Fork of WAV preview stall</span><span class="here">This thread</span></div><div class="nm">Claude Code · Opus 5.5</div><div class="nm">${ics('folder', 13)} ${S.wc === 'same' ? 'Project folder · <code>main</code>' : 'New worktree · <code>sotto/wav-fork</code>'}</div></div></div>`, foot: 'workshop · <code>main</code> · Project folder' }
+      o.readout = [['Thread', 'Fork of WAV preview stall · Claude Code · new Sotto ID'], ['Carried', 'the conversation up to 11:55 am (native fork)'], ['Files', 'as they are now, not rewound']]
+      return o
+    }
+    const forkFields = modelField('claude') + runsOnField() + wcField({ source: 'WAV preview stall', folder: 'Project folder', base: 'main', sameNote: '. Files aren’t rewound: the fork sees them as they are now', newNote: 'Starts from main’s last commit. Files aren’t rewound to 11:55 am either.' })
+    const lede = 'A new Claude Code thread with this conversation up to Claude’s reply at 11:55 am, through Claude Code’s own fork. Nothing after that reply comes along, and WAV preview stall stays as it is.'
+    const inlineB = !S.closed && v === 'B' ? `<section class="fork-inline" aria-label="Fork from here"><h4>${ic.fork}Fork from here</h4><p>A new Claude Code thread with everything above this line, through Claude Code’s own fork. What’s below stays here, and this thread stays as it is.</p>
+      <div class="r2"><button type="button" class="chip" aria-label="Model: Opus 5.5. Change">${pm('claude', 14)}Opus 5.5${ics('down', 14)}</button><button type="button" class="chip" data-act="cycle-wc" data-focus="wc-chip" aria-label="Working copy: ${S.wc === 'same' ? 'same folder' : 'new worktree from main'}. Change">${ics('folder', 14)}${S.wc === 'same' ? 'Same folder' : 'New worktree from main'}${ics('down', 14)}</button><span class="chip static">${ics('laptop', 14)}This computer</span></div>
+      <p class="fine">Files aren’t rewound: the new thread sees the folder as it is now.</p><div class="acts">${btn('Fork', { primary: true, act: 'go:forked', focus: 'start' })}${btn('Cancel', { act: 'close' })}</div></section>` : ''
+    o.body = srcBody({ forkOn: !S.closed, forkInline: inlineB, staysHere: v === 'B' && !S.closed })
+    o.scrollTo = 'fork-point'
+    if (!S.closed && v === 'A') o.dialog = dialog('Fork from here', lede, forkFields, `${btn('Cancel', { act: 'close', focus: 'cancel' })}${btn('Fork', { act: 'go:forked', primary: true, focus: 'start' })}`)
+    if (!S.closed && v === 'C') o.tools = { tile: 'lineage', title: 'Lineage', sub: 'WAV preview stall', body: `<div class="lineage">${parentNode('claude', 'WAV preview stall', true, 'Claude Code · Opus 5.5 · Project folder · <code>main</code>')}
+      <div class="edge dashed"><span class="k">Fork at Claude’s reply, 11:55 am.</span> Claude Code’s own fork carries the conversation up to there. The 3 messages after it stay here.</div>
+      <div class="node draft"><span class="pin">${ic.fork}</span><div class="nt"><span class="t">New thread</span><span class="here">not started</span></div>${forkFields}<div class="nacts">${btn('Fork', { primary: true, act: 'go:forked', focus: 'start' })}${btn('Cancel', { act: 'close' })}</div></div></div>`, foot: 'workshop · <code>main</code> · Project folder' }
+    o.readout = [['Thread', 'WAV preview stall · Claude Code'], ['Fork at', 'Claude’s reply, 11:55 am'], ['Route', 'Claude Code’s own fork (the one rewind uses); files not rewound']]
+    return o
+  }
+  // fork-devin
+  o.selected = 'rel'
+  o.thread = { p: 'devin', title: 'Release notes', wc: 'Project folder', branch: 'main' }
+  o.composer = { p: 'devin', model: 'Devin', effort: 'Default', perm: 'Devin profile', toolbar: btoolbar('Project folder', 'main') }
+  const inline = !S.closed && v === 'B' ? `<section class="fork-inline" aria-label="Fork from here"><h4>${ic.fork}Fork from here</h4><p>${LEDGER.devin.note} What’s below stays here.</p><p class="fine" style="margin:0">Carries ${LEDGER.devin.short[0]}; leaves out ${LEDGER.devin.short[1]}. <button type="button" class="linkbtn" data-act="read" data-focus="read" aria-expanded="${S.read}">${S.read ? 'Hide it' : 'Read it'}</button></p>${S.read ? `<div class="handover-text" tabindex="0" role="region" aria-label="The handover">${esc(HANDOVER.devin())}</div>` : ''}
+    <div class="r2"><button type="button" class="chip" data-act="cycle-wc" data-focus="wc-chip" aria-label="Working copy: ${S.wc === 'same' ? 'same folder' : 'new worktree from main'}. Change">${ics('folder', 14)}${S.wc === 'same' ? 'Same folder' : 'New worktree from main'}${ics('down', 14)}</button><span class="chip static">${ics('laptop', 14)}This computer</span></div><div class="acts">${btn('Start the Devin thread', { primary: true, act: 'close', focus: 'start' })}${btn('Cancel', { act: 'close' })}</div></section>` : ''
+  const devMsgs = [userMsg('9:02 am', 'Draft release notes for 1.42 from the merged pull requests.'), work(['Worked for 6m 10s']), reply('devin', '9:10 am', '<p>Here is a first draft, grouped by area: Threads, Git and iPhone.</p>'), userMsg('10:12 am', 'Shorter, and lead with the Git changes.'), reply('devin', '10:20 am', '<p>Shorter draft, Git first. Six lines in all.</p>', { id: 'fork-point', forkOn: !S.closed })]
+  const after = [userMsg('10:31 am', 'Add the iPhone beta link at the end.'), reply('devin', '10:34 am', '<p>Added.</p>')]
+  o.body = devMsgs.join('') + inline + (v === 'B' && !S.closed ? `<div class="stays"><p class="stays-label">Not carried: this stays in Release notes</p>${after.join('')}</div>` : after.join(''))
+  o.scrollTo = 'fork-point'
+  if (!S.closed && v === 'A') o.dialog = dialog('Fork from here', LEDGER.devin.note + ' Release notes stays as it is.', field('The handover', ledgerHtml('devin', { to: 'Devin', noNote: true })) + runsOnField() + wcField({ source: 'Release notes', folder: 'Project folder', base: 'main' }), `${btn('Cancel', { act: 'close', focus: 'cancel' })}${btn('Start the Devin thread', { act: 'close', primary: true, focus: 'start' })}`)
+  if (!S.closed && v === 'C') o.tools = { tile: 'lineage', title: 'Lineage', sub: 'Release notes', body: `<div class="lineage">${parentNode('devin', 'Release notes', true, 'Devin · Project folder · <code>main</code>')}<div class="edge dashed"><span class="k">Handover up to Devin’s reply, 10:20 am.</span> ${ledgerHtml('devin', { to: 'Devin' })}</div>
+    <div class="node draft"><span class="pin">${ic.fork}</span><div class="nt"><span class="t">New Devin thread</span><span class="here">not started</span></div>${runsOnField()}${wcField({ source: 'Release notes', folder: 'Project folder', base: 'main' })}<div class="nacts">${btn('Start the Devin thread', { primary: true, act: 'close', focus: 'start' })}${btn('Cancel', { act: 'close' })}</div></div></div>`, foot: 'workshop · <code>main</code> · Project folder' }
+  o.readout = [['Thread', 'Release notes · Devin'], ['Fork at', 'Devin’s reply, 10:20 am'], ['Route', 'handover only: Devin has no fork of its own']]
+  return o
+}
+
+/* ---------- surface 3: bring changes back ---------- */
+const CHILD_T = { p: 'codex', title: 'WAV mid-chunk test', wc: 'New worktree', branch: 'sotto/wav-mid-chunk', wcIcon: 'folder' }
+const childBody = () => handoverMsg('thread', '2:05 pm', '<b>WAV preview stall</b> on Claude Code, stopped at its usage limit', 'Codex')
+  + userMsg('2:05 pm', 'Add a test for a stream that ends mid-chunk, and fix what it finds.') + work(['Worked for 4m 02s', 'Changed 2 files'])
+  + reply('codex', '2:09 pm', '<p>The new test failed: the last partial chunk was dropped when a stream ended inside it. Fixed, and committed as 3 commits on sotto/wav-mid-chunk.</p>')
+const OUT = {
+  ready: null,
+  'ff-done': { tone: 'ok', title: 'Brought 3 commits to main.', body: 'Git fast-forwarded main to a41c2e9; nothing else changed. WAV preview stall works on main in the project folder and sees them now.', cta: 'Open WAV preview stall' },
+  'merge-ask': { tone: 'ask', title: 'Make a merge commit on main?', body: 'main has 2 commits that sotto/wav-mid-chunk doesn’t, so Git can’t fast-forward. Sotto can make a merge commit on main that brings in this branch’s 3 commits. Nothing is rebased or forced, and this worktree stays as it is.' },
+  merged: { tone: 'ok', title: 'Brought 3 commits to main with a merge commit.', body: 'Merge commit 7c0e1d4 on main: “Merge branch ’sotto/wav-mid-chunk’ into main”.', cta: 'Open WAV preview stall' },
+  conflict: { tone: 'error', title: 'Nothing was brought to main, and main is unchanged.', body: 'Git found a conflict, and Sotto doesn’t resolve conflicts. Ask this thread to merge main into its branch and resolve it, then try again. Git said:', said: 'CONFLICT (content): Merge conflict in src/main/audio/wavStream.ts' },
+  'parent-dirty': { tone: 'error', title: 'Nothing was brought to main.', body: 'main is checked out in the project folder, which has uncommitted changes in 1 file, so Sotto didn’t touch it. Commit or set them aside in WAV preview stall, then try again.', cta: 'Open WAV preview stall' },
+  nothing: null,
+}
+function outcomeNotice(st, where) {
+  const x = OUT[st]
+  if (!x || S.closed) return ''
+  const icon = x.tone === 'error' ? ic.alert : x.tone === 'ask' ? ic.merge : ic.check
+  const acts = x.tone === 'ask'
+    ? `${btn('Make merge commit', { primary: true, act: 'go:merged', focus: 'start' })}${btn(where === 'B' ? 'Not now' : 'Cancel', { act: 'close' })}`
+    : x.cta ? btn(x.cta, { small: true, act: 'close' }) : ''
+  if (where === 'C') return `<div class="say" ${x.tone === 'error' ? 'data-tone="error" role="alert"' : x.tone === 'ask' ? 'data-tone="ask"' : 'role="status"'}><p><strong>${x.title}</strong> ${x.body}</p>${x.said ? `<pre class="git-said">${x.said}</pre>` : ''}<div class="nacts">${acts}</div></div>`
+  return `<div class="notice" ${x.tone === 'error' ? 'data-tone="error" role="alert"' : x.tone === 'ask' ? 'data-tone="ask"' : 'role="status"'}>${icon}<div class="txt"><p><strong>${x.title}</strong> ${x.body}</p>${x.said ? `<pre class="git-said">${x.said}</pre>` : ''}</div><div class="nacts">${acts}<button type="button" class="x" data-act="close" aria-label="Dismiss">${ic.x}</button></div></div>`
+}
+function scene3() {
+  const v = S.variant, st = S.state
+  const rows = [{ id: 'src', title: 'WAV preview stall', p: 'claude', time: '3:58 pm', status: 'Continued' }, { id: 'child', title: 'WAV mid-chunk test', p: 'codex', time: '2:09 pm', status: 'Done' }]
+  const o = { rows, selected: 'child', thread: CHILD_T, body: childBody(), composer: { p: 'codex', model: 'GPT-5.5', toolbar: btoolbar('New worktree', 'sotto/wav-mid-chunk') } }
+  const ahead = !['ff-done', 'merged', 'nothing'].includes(st)
+  o.readout = [['Child', 'WAV mid-chunk test · Codex · new worktree on sotto/wav-mid-chunk, made from main'],
+    ['Branch', st === 'nothing' || st === 'ff-done' || st === 'merged' ? 'main has every commit' : `3 commits main doesn’t have${st === 'merge-ask' || st === 'merged' ? '; main has 2 it doesn’t' : ''}`],
+    ['Worktree', st === 'dirty' ? '2 uncommitted files' : 'clean'], ['Project folder (main)', st === 'parent-dirty' ? '1 uncommitted file' : 'clean']]
+  if (v === 'A') {
+    const canBring = !['ff-done', 'merged', 'nothing', 'dirty'].includes(st)
+    const hint = st === 'dirty' ? 'This worktree has uncommitted changes in 2 files. Commit them first.' : st === 'nothing' || st === 'ff-done' || st === 'merged' ? 'main already has every commit on sotto/wav-mid-chunk.' : '3 commits from sotto/wav-mid-chunk.'
+    const gitMenu = (st === 'ready' || st === 'dirty' || st === 'nothing') && !S.closed ? menu([[mi('Bring changes to main', 'merge', { act: canBring ? 'go:ff-done' : undefined, disabled: !canBring, hint, focus: 'mi-bring' })], [mi('Commit', 'check', { disabled: st !== 'dirty', hint: st !== 'dirty' ? 'No changes to commit.' : undefined }), mi('Push', 'up'), mi('Create PR', 'branch', { disabled: st === 'dirty', hint: st === 'dirty' ? 'Commit local changes before creating a PR.' : undefined })]], 'More Git actions') : null
+    o.git = st === 'dirty' ? { label: 'Commit', icon: 'check' } : canBring ? { label: 'Bring changes to main', icon: 'merge', act: st === 'ready' ? 'go:ff-done' : 'close', lit: true } : { label: 'Commit', icon: 'check' }
+    o.git.menu = gitMenu
+    if (st === 'merge-ask' && !S.closed) o.dialog = dialog('Make a merge commit on main?', '', `<p class="lede">${OUT['merge-ask'].body}</p><p class="fine">Merge branch ’sotto/wav-mid-chunk’ into main</p>`, `${btn('Cancel', { act: 'close', focus: 'cancel' })}${btn('Make merge commit', { act: 'go:merged', primary: true, focus: 'start' })}`)
+    else o.composer.above = `<div aria-live="polite">${outcomeNotice(st, 'A')}</div>`
+    return o
+  }
+  o.git = { label: st === 'dirty' ? 'Commit' : ahead ? 'Push & create PR' : 'Commit', icon: st === 'dirty' || !ahead ? 'check' : 'up' }
+  if (v === 'B') {
+    let strip = ''
+    if (st === 'dirty' && !S.closed) strip = `<div class="notice" role="region" aria-label="Bring changes back">${ic.merge}<div class="txt"><p><strong>sotto/wav-mid-chunk</strong> has 3 commits that <strong>main</strong> doesn’t, and 2 files changed since. Commit them first; Sotto won’t bring back uncommitted work.</p></div><div class="nacts">${btn('Commit…', { small: true, act: 'close' })}${btn('Bring changes to main', { disabled: true, title: 'Commit the 2 changed files first.' })}</div></div>`
+    else if (st === 'ready' && !S.closed) strip = `<div class="notice" role="region" aria-label="Bring changes back">${ic.merge}<div class="txt"><p><strong>sotto/wav-mid-chunk</strong> has 3 commits that <strong>main</strong> doesn’t. main is checked out in the project folder, where WAV preview stall works.</p></div><div class="nacts">${btn('Bring changes to main', { primary: true, act: 'go:ff-done', focus: 'bring' })}<button type="button" class="x" data-act="close" aria-label="Hide until there are new commits">${ic.x}</button></div></div>`
+    else strip = outcomeNotice(st, 'B')
+    o.composer.above = `<div aria-live="polite">${strip}</div>`
+    return o
+  }
+  // C
+  const childStatus = st === 'dirty' ? '3 commits main doesn’t have · 2 uncommitted files' : ahead ? '3 commits main doesn’t have · nothing uncommitted' : st === 'nothing' ? 'main has every commit from this branch' : 'Its 3 commits are in main'
+  const bringBtn = st === 'ready' || st === 'conflict' || st === 'parent-dirty' ? btn('Bring changes to main', { primary: true, icon: ics('merge', 15), act: st === 'ready' ? 'go:ff-done' : 'close', focus: 'bring' }) : st === 'dirty' ? btn('Bring changes to main', { icon: ics('merge', 15), disabled: true }) : ''
+  const edgeBack = st === 'ff-done' ? '<div class="edge"><span class="k">Brought back, 4:31 pm.</span> 3 commits to main, by fast-forward.</div>' : st === 'merged' ? '<div class="edge"><span class="k">Brought back, 4:33 pm.</span> 3 commits to main, with merge commit 7c0e1d4.</div>' : ''
+  o.tools = { tile: 'lineage', title: 'Lineage', sub: 'WAV mid-chunk test', body: `<div class="lineage">
+    <div class="node"><span class="pin">${pm('claude', 16)}</span><div class="nt"><span class="t">WAV preview stall</span>${btn('Open', { small: true, act: 'close', aria: 'Open WAV preview stall' })}</div><div class="nm">Claude Code · Opus 5.5</div><div class="nm">${ics('folder', 13)} Project folder · <code>main</code>${st === 'parent-dirty' ? ' · 1 uncommitted file' : ''}</div></div>
+    <div class="edge"><span class="k">Continued in, 2:05 pm,</span> in a new worktree from main. Handover: carried 4 messages; left out one long reply, 1 image and 9 tool calls.</div>
+    <div class="node" data-here><span class="pin">${pm('codex', 16)}</span><div class="nt"><span class="t">WAV mid-chunk test</span><span class="here">This thread</span></div><div class="nm">Codex · GPT-5.5</div><div class="nm">${ics('folder', 13)} New worktree · <code>sotto/wav-mid-chunk</code></div>
+      <div class="ns">${childStatus}</div>${bringBtn || st === 'dirty' ? `<div class="nacts">${bringBtn}${st === 'dirty' ? '<span class="fine" style="margin:0">Commit the 2 changed files first.</span>' : ''}</div>` : ''}${outcomeNotice(st, 'C')}</div>${edgeBack}
+    ${edgeBack ? `<div class="node"><span class="pin">${ics('branch', 16)}</span><div class="nt"><span class="t">main</span></div><div class="nm">Now at ${st === 'merged' ? '7c0e1d4' : 'a41c2e9'}, in the project folder</div></div>` : ''}</div>`, foot: 'workshop · <code>sotto/wav-mid-chunk</code> · New worktree' }
+  return o
+}
+
+/* ---------- render ---------- */
+function render() {
+  const [w, h] = S.size.split('x').map(Number)
+  document.documentElement.dataset.theme = S.theme
+  const o = S.surface === '1' ? scene1() : S.surface === '2' ? scene2() : scene3()
+  if (S.toolsOverride === false) o.tools = null
+  const narrow = w <= 820
+  S._toolsOpen = !!o.tools
+  S._sideHidden = narrow && !!o.tools
+  const win = document.getElementById('window')
+  win.style.setProperty('--w', w + 'px'); win.style.setProperty('--h', h + 'px')
+  win.style.setProperty('--side', S._sideHidden ? '0px' : narrow ? '210px' : w >= 1600 ? '300px' : '280px')
+  win.style.setProperty('--tools-w', narrow ? '330px' : w >= 1600 ? '520px' : '440px')
+  win.style.setProperty('--fit', String(Math.min(1, (innerWidth - 16) / w)))
+  win.dataset.tools = o.tools ? '1' : '0'
+  if (h <= 600) win.dataset.short = ''; else delete win.dataset.short
+  if (narrow) win.dataset.narrow = ''; else delete win.dataset.narrow
+  const scrollBox = `<div class="scroll" id="scroll"><div class="col" ${o.fill ? 'style="height:100%"' : ''}>${o.body}</div></div>`
+  win.innerHTML = `${sidebar(o.rows, o.selected)}
+    <section class="pane" aria-label="${esc(o.thread.title)}">${paneHead(o.thread, { git: o.git ?? (S.surface === '3' ? null : { label: 'Commit', icon: 'check' }), menu: o.menu, link: o.link })}${scrollBox}${composer(o.composer)}</section>
+    ${o.tools ? tools(o.tools) : '<span></span>'}
+    <div class="winctl" aria-hidden="true"><span>–</span><span>□</span><span>×</span></div>${o.dialog ?? ''}`
+  // keep transcript at the end, or at the fork point
+  const sc = document.getElementById('scroll')
+  const point = o.scrollTo && document.getElementById(o.scrollTo)
+  if (point) sc.scrollTop = Math.max(0, point.offsetTop - sc.offsetTop - 60)
+  else sc.scrollTop = sc.scrollHeight
+  const tb = win.querySelector('.tools-body')
+  const here = tb?.querySelector('[data-scroll-here]')
+  if (here) {
+    const t = here.getBoundingClientRect(), b = tb.getBoundingClientRect()
+    const below = t.bottom - b.bottom + 12
+    if (below > 0) tb.scrollTop += Math.min(below, t.top - b.top - 8)
+  }
+  // bars
+  document.querySelectorAll('[data-surface]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.surface === S.surface)))
+  const sel = document.getElementById('state')
+  sel.innerHTML = STATES[S.surface].map(([id, l]) => `<option value="${id}" ${id === S.state ? 'selected' : ''}>${l}</option>`).join('')
+  document.getElementById('label').textContent = `${S.variant} — ${VARIANTS[S.variant]}`
+  document.getElementById('theme').textContent = S.theme === 'dark' ? 'Light' : 'Dark'
+  document.getElementById('theme').setAttribute('aria-label', `Switch to ${S.theme === 'dark' ? 'light' : 'dark'}`)
+  document.getElementById('size').value = S.size
+  document.getElementById('readout').innerHTML = (o.readout ?? []).map(([k, v]) => `<b>${k}</b> ${v}`).join(' &nbsp;·&nbsp; ')
+  const url = new URL(location.href)
+  Object.entries({ surface: S.surface, state: S.state, variant: S.variant, theme: S.theme, size: S.size }).forEach(([k, v]) => url.searchParams.set(k, v))
+  history.replaceState(null, '', url)
+  // focus: what the last press asked for, else the first thing a dialog or menu holds
+  const want = S.focus && win.querySelector(`[data-focus="${S.focus}"]`)
+  if (want) want.focus()
+  else {
+    // What just opened takes focus: a menu's first row, else the first control of a dialog, a draft or an inline form.
+    const opened = win.querySelector('.menu') ?? win.querySelector('.dialog, .node.draft, .ainline, .fork-inline, .cont')
+    // Continuing from the composer (B) puts focus where the next words go: its send button.
+    const target = opened?.matches('.cont') ? win.querySelector('.send.wide') : opened?.querySelector(opened.matches('.menu') ? '.mi:not([aria-disabled])' : 'button:not([aria-disabled]), [tabindex="0"]')
+    target?.focus({ preventScroll: true })
+  }
+  S.focus = null
+}
+
+function go(state) {
+  S.state = state; S.closed = false; S.read = false; S.toolsOverride = undefined
+  // Each route starts on its own provider: a Codex agent forks on Codex, a Claude agent's handover defaults to Claude Code,
+  // and continuing a Claude thread defaults to the first provider that isn't Claude Code.
+  if (state === 'codex-choose') { S.target = 'codex'; S.model = 'GPT-5.5' }
+  else if (state === 'claude-choose') { S.target = 'claude'; S.model = 'Sonnet 5.5' }
+  else if (S.surface === '1' && (S.target === 'claude' || P[S.target].off)) { S.target = 'codex'; S.model = 'GPT-5.5' }
+}
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-act]')
+  if (!t || !document.getElementById('window').contains(t)) return
+  const [act, a1, a2] = t.dataset.act.split(':')
+  if (act === 'go') { go(a1); S.focus = null }
+  else if (act === 'close') { S.closed = true; S.focus = 'pane-more' }
+  else if (act === 'read') { S.read = !S.read; S.focus = 'read' }
+  else if (act === 'pick-p') { S.target = a1; S.model = P[a1].models[0]; S.focus = `p-${a1}` }
+  else if (act === 'pick-m') { S.model = a1; S.focus = `m-${a1}` }
+  else if (act === 'pick-wc') { S.wc = a1; S.focus = `wc-${a1}` }
+  else if (act === 'cycle-wc') { S.wc = S.wc === 'same' ? 'new' : 'same'; S.focus = 'wc-chip' }
+  else if (act === 'b-pick') { S.target = a1; S.model = a2; go('choose'); S.focus = 'send' }
+  else if (act === 'pane-menu') {
+    if (S.surface === '1' && S.variant !== 'B') { if (['menu', 'busy', 'empty'].includes(S.state) && !S.closed) S.closed = true; else if (['busy', 'empty'].includes(S.state)) S.closed = false; else go('menu') }
+    S.focus = S.closed ? 'pane-more' : null
+  }
+  else if (act === 'model-menu') {
+    if (S.surface === '1' && S.variant === 'B') { if (['menu', 'busy', 'empty'].includes(S.state) && !S.closed) S.closed = true; else if (['busy', 'empty'].includes(S.state)) S.closed = false; else go('menu') }
+    S.focus = S.closed ? 'model-chip' : null
+  }
+  else if (act === 'git-menu') { if (S.surface === '3' && S.variant === 'A') { if (['ready', 'dirty', 'nothing'].includes(S.state)) S.closed = !S.closed }; S.focus = 'git-more' }
+  else if (act === 'fork') { S.surface = '2'; go('fork-choose') }
+  else if (act === 'tools') { S.toolsOverride = S._toolsOpen ? false : undefined; S.focus = 'tools-toggle' }
+  else if (act === 'tile') { /* surfaces other than these are not part of the question */ }
+  render()
+})
+document.addEventListener('keydown', e => {
+  const inWindow = document.getElementById('window').contains(document.activeElement)
+  if (e.key === 'Escape') {
+    const open = document.querySelector('#window .menu, #window .dialog, #window .cont, #window .ainline, #window .fork-inline, #window .node.draft, #window .notice[data-tone="ask"], #window .say[data-tone="ask"]')
+    if (open) { e.preventDefault(); S.closed = true; S.focus = document.querySelector('#window .dialog') ? 'pane-more' : (document.querySelector('#window .menu.above') ? 'model-chip' : 'pane-more'); render() }
+    return
+  }
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    const list = document.activeElement?.closest('.menu')
+    if (!list) return
+    const items = [...list.querySelectorAll('.mi:not([aria-disabled])')]
+    if (!items.length) return
+    e.preventDefault()
+    const i = items.indexOf(document.activeElement)
+    items[(i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length].focus()
+    return
+  }
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+  const el = document.activeElement
+  if (el && (el.matches('input, textarea, select, [contenteditable]') || el.closest('[role="radiogroup"], [role="menu"]'))) return
+  if (inWindow && el?.closest('.dialog')) return
+  const keys = Object.keys(VARIANTS)
+  S.variant = keys[(keys.indexOf(S.variant) + (e.key === 'ArrowRight' ? 1 : -1) + keys.length) % keys.length]
+  S.closed = false; S.toolsOverride = undefined
+  render()
+})
+document.querySelectorAll('[data-surface]').forEach(b => b.addEventListener('click', () => { S.surface = b.dataset.surface; go(STATES[S.surface][0][0]); render() }))
+document.getElementById('state').addEventListener('change', e => { go(e.target.value); render() })
+document.getElementById('prev').addEventListener('click', () => { const k = Object.keys(VARIANTS); S.variant = k[(k.indexOf(S.variant) + 2) % 3]; S.closed = false; S.toolsOverride = undefined; render() })
+document.getElementById('next').addEventListener('click', () => { const k = Object.keys(VARIANTS); S.variant = k[(k.indexOf(S.variant) + 1) % 3]; S.closed = false; S.toolsOverride = undefined; render() })
+document.getElementById('theme').addEventListener('click', () => { S.theme = S.theme === 'dark' ? 'light' : 'dark'; render() })
+document.getElementById('size').addEventListener('change', e => { S.size = e.target.value; render() })
+addEventListener('resize', () => render())
+render()
+</script>
+</body>
+</html>
