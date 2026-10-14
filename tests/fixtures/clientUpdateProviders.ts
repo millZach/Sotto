@@ -55,10 +55,14 @@ export function clientUpdateHost(directory: string, home: string) {
     grok: join(home, '.grok', 'bin', 'grok'), devin: join(home, 'nowhere', 'devin'),
   }
   const wait = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms))
-  const run: RunLike = async (_executable, args) => {
+  const run: RunLike = async (_executable, args, _asNode, options) => {
     if (args[0] === 'where') return { ok: true, stdout: join(installs, FOLDERS.grok, INSTALLED.grok) }
     if (args[0] === 'upgrade') {
       const id = (Object.keys(TOOLS) as (keyof typeof TOOLS)[]).find(key => TOOLS[key] === args[1])!
+      // A release less than 24 hours old is held back with exit 0 unless this explicit update removes the delay.
+      if (options?.env?.MISE_MINIMUM_RELEASE_AGE !== '0s') {
+        return { ok: true, stdout: 'mise All tools are up to date' }
+      }
       await wait(700)
       if (id === 'codex' && existsSync(join(directory, 'codex.fail'))) {
         rmSync(join(directory, 'codex.fail'))
@@ -78,7 +82,7 @@ export function clientUpdateHost(directory: string, home: string) {
     disk.grok = PUBLISHED.grok
     return { ok: true, stdout: '' }
   }
-  const clients = new ProviderClients({ run, misePath: async () => '/usr/bin/mise',
+  const clients = new ProviderClients({ run, misePath: async () => '/usr/bin/mise', miseReleaseAgeFlag: async () => true,
     fetchImpl: async url => new Response(JSON.stringify({ version: PUBLISHED[Object.entries(PACKAGES).find(([name]) => url.includes(name))![1]] }), { status: 200 }) })
   return {
     clients, locateClient: async (provider: ProviderId) => where[provider],

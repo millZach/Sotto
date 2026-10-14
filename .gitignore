@@ -122,6 +122,7 @@ coverage/
 playwright-report/
 test-results/
 artifacts/e2e-runs/
+artifacts/immediate-client-updates/
 .vite/
 .cache/
 

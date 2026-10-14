@@ -30,7 +30,7 @@ export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>
  * `stdout` is what it answered, for a run that is asked something (`mise where`).
  */
 export interface RunResult { readonly ok: boolean; readonly detail?: string; readonly printed?: string; readonly stdout?: string }
-export interface RunOptions { readonly cwd?: string }
+export interface RunOptions { readonly cwd?: string; readonly env?: Readonly<NodeJS.ProcessEnv> }
 export type RunLike = (executable: string, args: readonly string[], asNode?: boolean, options?: RunOptions) => Promise<RunResult>
 
 
@@ -231,14 +231,18 @@ export async function detectClientChannel(provider: ProviderId, executable: stri
 /** Grok Build's own install step, which mise's npm backend skips: it puts the new program in `~/.grok/bin`. */
 export const GROK_INSTALL_STEP = 'node bin/postinstall.js'
 /** The command to run on the machine by hand, a line each, or undefined when Sotto cannot name one. */
-export function byHandFor(provider: ProviderId, install: ClientInstall): readonly string[] | undefined {
+export function byHandFor(provider: ProviderId, install: ClientInstall, platform: NodeJS.Platform = process.platform,
+  releaseAgeFlag = false): readonly string[] | undefined {
   const packageName = CLIENT_PACKAGES[provider]
   switch (install.channel) {
     case 'npm': return packageName ? [`npm install -g --allow-scripts=${packageName} ${packageName}@latest`] : undefined
     case 'self-update': return provider === 'claude' || provider === 'grok' ? [`${provider} update`] : undefined
     case 'mise': {
       if (!install.miseTool) return undefined
-      const upgrade = `mise upgrade ${install.miseTool}`
+      const command = `mise upgrade ${install.miseTool}${releaseAgeFlag ? ' --minimum-release-age 0s' : ''}`
+      // A child cmd keeps the Windows override inside this one command, in either PowerShell or cmd.
+      const upgrade = platform === 'win32' ? `cmd /c "set MISE_MINIMUM_RELEASE_AGE=0s&& ${command}"`
+        : `MISE_MINIMUM_RELEASE_AGE=0s ${command}`
       // Checked on forge on September 29, 2026: the package's install step, run in the folder mise installed it in.
       return needsInstallStep(provider, install.miseTool) && packageName
         ? [upgrade, `cd "$(mise where ${install.miseTool})/node_modules/${packageName}"`, GROK_INSTALL_STEP] : [upgrade]
@@ -254,6 +258,8 @@ export interface UpdateAction {
   readonly byHand: readonly string[]
   /** Where to run it: mise from the home folder, so the global config applies and no project's own mise.toml does. */
   readonly cwd?: string
+  /** Overrides for this install process only, never this app's environment or a saved setting. */
+  readonly env?: Readonly<NodeJS.ProcessEnv>
   /** Grok Build under mise: after the upgrade, its package's install step, in the folder `mise where` names. */
   readonly installStep?: { readonly mise: string; readonly tool: string; readonly packageName: string }
 }
@@ -267,7 +273,8 @@ export interface UpdateAction {
  * mise is run as the mise binary itself, never through a shim, which would run the tool instead.
  */
 export async function updateActionFor(provider: ProviderId, install: ClientChannel | ClientInstall, executable: string | undefined,
-  npmPath: () => Promise<string | undefined> = defaultNpmPath, misePath: () => Promise<string | undefined> = defaultMisePath): Promise<UpdateAction | undefined> {
+  npmPath: () => Promise<string | undefined> = defaultNpmPath, misePath: () => Promise<string | undefined> = defaultMisePath,
+  miseReleaseAgeFlag: (executable: string) => Promise<boolean> = defaultMiseReleaseAgeFlag): Promise<UpdateAction | undefined> {
   const found: ClientInstall = typeof install === 'string' ? { channel: install } : install
   const byHand = byHandFor(provider, found)
   if (found.channel === 'npm') {
@@ -286,7 +293,14 @@ export async function updateActionFor(provider: ProviderId, install: ClientChann
     const mise = await misePath()
     if (!mise) return undefined
     const packageName = CLIENT_PACKAGES[provider]
-    return { command: byHand[0]!, byHand, executable: mise, args: ['upgrade', found.miseTool], cwd: homedir(),
+    const supportsFlag = await miseReleaseAgeFlag(mise)
+    const commands = byHandFor(provider, found, process.platform, supportsFlag)!
+    // Update is an explicit request to install now. mise's release-age delay can otherwise exit successfully
+    // without changing the client. Older mise rejects the CLI flag but ignores this environment variable.
+    // The flag also overrides a per-tool delay, which takes precedence over the global environment setting.
+    // Override only this process, on desktops and hosts alike; leave the app and mise's saved policy alone.
+    return { command: commands[0]!, byHand: commands, executable: mise,
+      args: ['upgrade', found.miseTool, ...(supportsFlag ? ['--minimum-release-age', '0s'] : [])], cwd: homedir(), env: { MISE_MINIMUM_RELEASE_AGE: '0s' },
       ...(needsInstallStep(provider, found.miseTool) && packageName ? { installStep: { mise, tool: found.miseTool, packageName } } : {}) }
   }
   return undefined
@@ -331,11 +345,18 @@ const defaultMisePath = async (): Promise<string | undefined> => {
   return findCli({ name: 'mise', accept: miseBinary, last: [...(installPath && isAbsolute(installPath) ? [dirname(installPath)] : []), '/usr/bin'] })
 }
 
+/** Help is a local read, not an install or a version lookup. Older mise has no release-age option. */
+const defaultMiseReleaseAgeFlag = (executable: string): Promise<boolean> => new Promise(resolve => {
+  execFile(executable, ['upgrade', '--help'], { env: withCliPath(process.env, executable), windowsHide: true, shell: false,
+    timeout: 5_000, killSignal: 'SIGKILL', maxBuffer: 64 * 1024, encoding: 'utf8' },
+  (error, stdout) => resolve(!error && /--minimum-release-age\b/u.test(String(stdout))))
+})
+
 const RUN_OUTPUT_BYTES = 1024 * 1024
 const defaultRun: RunLike = (executable, args, asNode, options) => new Promise(resolve => {
   // ELECTRON_RUN_AS_NODE turns this app's own binary into the Node that runs npm's CLI.
   // A client's own updater gets the PATH the CLI lookup gave the client (ADR-0036): a wrapper may need its manager.
-  const env = asNode ? { ...process.env, ELECTRON_RUN_AS_NODE: '1' } : withCliPath(process.env, executable)
+  const env = { ...(asNode ? { ...process.env, ELECTRON_RUN_AS_NODE: '1' } : withCliPath(process.env, executable)), ...options?.env }
   execFile(executable, [...args], { env, windowsHide: true, shell: false, timeout: UPDATE_TIMEOUT_MS, killSignal: 'SIGKILL', maxBuffer: RUN_OUTPUT_BYTES, encoding: 'utf8',
     ...(options?.cwd ? { cwd: options.cwd } : {}) },
     (error, stdout, stderr) => {
@@ -363,6 +384,8 @@ export interface ProviderClientsOptions {
   readonly npmPath?: () => Promise<string | undefined>
   /** Where mise is. Injected so a test never depends on the machine's own mise. */
   readonly misePath?: () => Promise<string | undefined>
+  /** Whether this mise accepts the release-age flag. Injected so fixtures do not read the machine's mise. */
+  readonly miseReleaseAgeFlag?: (executable: string) => Promise<boolean>
   /** The Node that runs Grok Build's install step: this process's own, by default. */
   readonly nodePath?: string
 }
@@ -379,6 +402,7 @@ export class ProviderClients {
   private readonly now: () => number
   private readonly npmPath: () => Promise<string | undefined>
   private readonly misePath: () => Promise<string | undefined>
+  private readonly miseReleaseAgeFlag: (executable: string) => Promise<boolean>
   private readonly nodePath: string
   constructor(options: ProviderClientsOptions = {}) {
     this.fetchImpl = options.fetchImpl ?? ((url, init) => fetch(url, init))
@@ -386,6 +410,7 @@ export class ProviderClients {
     this.now = options.now ?? Date.now
     this.npmPath = options.npmPath ?? defaultNpmPath
     this.misePath = options.misePath ?? defaultMisePath
+    this.miseReleaseAgeFlag = options.miseReleaseAgeFlag ?? defaultMiseReleaseAgeFlag
     this.nodePath = options.nodePath ?? process.execPath
   }
 
@@ -414,7 +439,7 @@ export class ProviderClients {
   async check(provider: ProviderId, installed: string, executable: string | undefined,
     environment: NodeJS.ProcessEnv = process.env): Promise<ProviderClientUpdate> {
     const install = await detectClientInstall(provider, executable, environment)
-    const action = await updateActionFor(provider, install, executable, this.npmPath, this.misePath)
+    const action = await updateActionFor(provider, install, executable, this.npmPath, this.misePath, this.miseReleaseAgeFlag)
     const byHand = action?.byHand ?? byHandFor(provider, install)
     const latest = install.channel === 'devin-app' ? undefined : await this.publishedVersion(provider)
     const behind = Boolean(installed && latest && isComparableVersion(installed) && isComparableVersion(latest)
@@ -434,7 +459,7 @@ export class ProviderClients {
   async install(provider: ProviderId, executable: string | undefined,
     environment: NodeJS.ProcessEnv = process.env, onStep?: (step: number) => void): Promise<InstallResult> {
     const install = await detectClientInstall(provider, executable, environment)
-    const action = await updateActionFor(provider, install, executable, this.npmPath, this.misePath)
+    const action = await updateActionFor(provider, install, executable, this.npmPath, this.misePath, this.miseReleaseAgeFlag)
     if (!action) {
       return { ok: false, detail: install.channel === 'devin-app'
         ? `${PROVIDER_LABELS[provider]} updates with the Devin app.`
@@ -448,7 +473,8 @@ export class ProviderClients {
       const folder = await npmPackageFolder(packageName, executable, environment)
       if (folder) await clearLeftoverPackage(folder)
     }
-    const upgrade = await this.run(action.executable, action.args, action.asNode, action.cwd ? { cwd: action.cwd } : undefined)
+    const upgrade = await this.run(action.executable, action.args, action.asNode, action.cwd || action.env
+      ? { ...(action.cwd ? { cwd: action.cwd } : {}), ...(action.env ? { env: action.env } : {}) } : undefined)
     if (!upgrade.ok) return { ...upgrade, step: 1, failure: DOWNLOAD_FAILED.test(upgrade.printed ?? upgrade.detail ?? '') ? 'download' : 'installer' }
     if (!action.installStep) return upgrade
     onStep?.(2)
