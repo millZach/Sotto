@@ -148,6 +148,8 @@ process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x
       await find.fill('needle')
       await expect(search.locator('output')).toHaveText('1 of 3')
       if (surface === 'drawer') {
+        await find.press('Enter')
+        await expect(search.locator('output')).toHaveText('2 of 3')
         await find.press('Control+j')
         await expect(scope).toBeHidden()
         await page.locator('[data-pane-terminal-toggle]').first().click()
@@ -155,6 +157,10 @@ process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x
         await input.press('Control+f')
         await expect(find).toHaveValue('needle')
         await expect(find).toBeFocused()
+        await expect(search.locator('output')).toHaveText('2 of 3')
+        await find.press('Enter'); await expect(search.locator('output')).toHaveText('3 of 3')
+        await find.press('Shift+Enter'); await expect(search.locator('output')).toHaveText('2 of 3')
+        await find.press('Shift+Enter'); await expect(search.locator('output')).toHaveText('1 of 3')
       }
       await find.press('Control+f')
       await expect(search.locator('output')).toHaveText('1 of 3')
