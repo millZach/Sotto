@@ -574,6 +574,32 @@ it.each(['desktop', 'native'] as const)('keeps watching through a %s user turn a
   expect(await f.call('send_to_thread', { ...automatic, retryKey: randomUUID() })).toMatchObject({ status: 'ok' })
 })
 
+it('ends the pause once the user’s own queued prompt settles after its turn has already finished', async () => {
+  const f = await fixture(), target = await f.create()
+  await f.service.watchThread({ target })
+  const watch = f.service.state().standingWatches![0]!
+  expect(await f.call('send_to_thread', { requestId: watch.id, retryKey: randomUUID(), target, text: 'Synthetic automatic prompt', delivery: 'now' })).toMatchObject({ status: 'ok' })
+  // The user's prompt waits behind Watcher's running turn, so it goes from the queue.
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: target.threadId, draftId: randomUUID(), text: 'Synthetic queued user prompt' })).error).toBeNull()
+  const store = (f.control as unknown as { followupStore: { settle(...args: unknown[]): Promise<unknown> } }).followupStore
+  const settle = store.settle.bind(store), held = deferred<void>(), reached = deferred<void>(), saved: Promise<unknown>[] = []
+  vi.spyOn(store, 'settle').mockImplementation(async (...args: unknown[]) => { reached.resolve(); await held.promise; const done = settle(...args); saved.push(done); return done })
+  await f.finish(target.threadId)
+  await expect.poll(() => f.native(target.threadId).messages.at(-1)?.text).toBe('Synthetic queued user prompt')
+  await reached.promise
+  // The user's turn finishes while its queue entry is still being saved, so Watcher still waits; and the provider has
+  // nothing more to say, so no later snapshot comes to end the wait.
+  await f.finish(target.threadId)
+  expect(f.service.state().watchedThreads.find(row => row.target.threadId === target.threadId)?.paused).toBe(true)
+  vi.spyOn(f.service, 'observe').mockImplementation(() => undefined)
+  held.resolve()
+  await vi.waitFor(() => expect(saved).not.toHaveLength(0))
+  await Promise.all(saved)
+  expect(f.control.hasPendingThreadWork(target.threadId)).toBe(false)
+  await expect.poll(() => f.service.state().watchedThreads.find(row => row.target.threadId === target.threadId)?.paused).toBe(false)
+  expect(f.control.watcherRecord().watches![0]!.pausedByUserMessageId).toBeNull()
+})
+
 it('persists the remembered permission before first creation and permits widening and narrowing', async () => {
   const f = await fixture(false, false)
   expect(await f.service.setPermission({ runtimeMode: 'full-access' })).toMatchObject({ status: 'ok', state: { current: null, runtimeMode: 'full-access' } })

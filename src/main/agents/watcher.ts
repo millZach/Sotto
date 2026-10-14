@@ -71,7 +71,7 @@ export class WatcherService implements WatcherControlHooks {
       deliver: news => options.control.deliverWakeUp(news.watcher.threadId, news, { tool: false }),
       prune: () => options.control.pruneWatcherWakeUps(), remember: ids => options.control.updateWatcher(record => { record.wakeEventIds = [...new Set([...record.wakeEventIds ?? [], ...ids])].slice(-1_000) }),
       changed: () => this.publish(), failed: () => { this.recoveryNotice = 'Watcher news could not be saved. Reconnect or refresh its threads to retry. Nothing was approved.' } })
-    const unhook = options.control.useWatcher(this), unsubscribe = options.control.subscribe(() => this.publish())
+    const unhook = options.control.useWatcher(this), unsubscribe = options.control.subscribe(() => { this.endFinishedPauses(); this.publish() })
     this.unsubscribe = () => { unhook(); unsubscribe() }
   }
   private record(): WatcherRecord { return this.options.control.watcherRecord() }
@@ -108,6 +108,24 @@ export class WatcherService implements WatcherControlHooks {
     try { this.checkCaller(threadId); return true } catch { return false }
   }
   subscribe(listener: (state: WatcherRoomState) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
+  /**
+   * A watch paused by the user's own turn waits for that turn and for the user's own sends with it. Those sends can
+   * settle after the provider's last snapshot, which observe read while they were still pending, and no snapshot may
+   * follow; so whenever main publishes, a pause whose turn is over and whose sends have settled ends.
+   */
+  private endFinishedPauses(): void {
+    const hostId = this.options.control.hostId()
+    if (this.closed || !hostId) return
+    const snapshot = this.options.control.watcherSnapshot()
+    const ended = (this.record().watches ?? []).filter(watch => {
+      if (!watch.pausedByUserMessageId || watch.target.hostId !== hostId) return false
+      const thread = snapshot.threads.find(item => item.id === watch.target.threadId)
+      return thread !== undefined && this.connected(thread) && !this.humanTurnRunning(thread) && !this.options.control.hasPendingThreadWork(thread.id)
+    }).map(watch => watch.id)
+    if (ended.length) void this.options.control.updateWatcher(record => {
+      for (const watch of record.watches ?? []) if (ended.includes(watch.id)) watch.pausedByUserMessageId = null
+    }).catch(() => undefined)
+  }
   private publish(): void { if (!this.closed) { if (!this.options.workerHost) this.wakes.observe(); this.options.control.refreshWatcherObservation(); for (const listener of this.listeners) listener(this.state()) } }
   watchedThreadIds(): string[] {
     return [...new Set([...this.wakes.watchedThreadIds(this.hostId()).filter(id => this.options.control.watcherSnapshot().threads.some(thread => thread.id === id)),
