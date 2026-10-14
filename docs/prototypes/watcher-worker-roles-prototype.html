@@ -1,0 +1,1371 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. Not shipped, not tested, not wired to anything.
+
+  Question (E13 #1041 with E14 #1042): how does Zach see and change which provider, model, effort and permissions each
+  kind of work gets, and understand where those choices apply?
+
+  Surfaces (switch at the top):
+    Settings -> Watcher   The machine tiles Zach picked (variant B of the tag prototype/watcher-delegation-placement),
+                          kept as they are, and the worker roles under them: Orchestrating (Watcher itself), Building,
+                          UI, Code review, Research and Computer use. Each picks a model, an effort and permissions.
+                          Reset for one role and for all. Where the roles apply, worked out for a thread on each provider.
+    Watcher's room        Watcher's composer chips are the Orchestrating role; receipts name the role each worker
+                          started as; a provider change or a disconnect says what happens to Watcher.
+
+  Variants for the roles (?variant=A|B|C, the bottom switcher, or the arrow keys):
+    A  Sentences.  One sentence per role with the composer's own chips inline, the way Agents says "New threads start
+                   with": "Building. Workers start on [Opus 5.5] at [Extra high] with [Allow edits]."
+    B  Table.      A row per role with columns for model, effort, permissions and the next default.
+    C  Cards.      A card per role with its defaults in order, so what happens when a provider disconnects is on the card,
+                   and Orchestrating drawn beside Watcher's composer.
+
+  Settled before this prototype (plan.md, Zach, October 14, 2026): the six roles; Zach's defaults with Claude Code, Codex,
+  Muse and Grok Build connected; every row's picker lists every model from every connected provider; a choice you made is
+  never overwritten; Reset to defaults; delegation goes two levels deep; roles are an Owl feature.
+
+  Stand-ins and proposals: the model lists and effort levels stand in for what each provider reports. Muse Wonder (the
+  smaller Muse model), each role's later defaults (after Zach's first) and the proposed permissions are for Zach to react
+  to. Every number and line is computed from one model: change a role and the room, the notes and the readout follow.
+  ?shot=1 hides the prototype's own bars for screenshots. Other params: surface, theme, size, prov (all | claude-off |
+  codex-only | none), choices (none | building | two | orch), ceiling (edits | ask | full), from (claude | codex | grok |
+  muse), open (model:<role> | effort:<role> | perm:<role> | cmodel | ceffort | cperm), pp (the picker's provider),
+  at (roles | apply).
+-->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>Sotto: worker roles in Settings, prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'); }
+
+/* Theme roles: the Sotto palette's two halves, copied from src/shared/themes/palettes.ts. */
+html[data-theme='dark'] {
+  color-scheme: dark;
+  --r-canvas: oklch(0.115 0.008 265);
+  --r-surface: oklch(0.145 0.008 265);
+  --r-raised: oklch(0.185 0.008 265);
+  --r-overlay: oklch(0.215 0.008 265);
+  --r-text: oklch(0.985 0.005 280);
+  --r-muted-fg: oklch(0.72 0.014 265);
+  --r-placeholder: oklch(0.675 0.012 270);
+  --r-border: oklch(0.305 0.02 265);
+  --r-input: oklch(0.375 0.024 265);
+  --r-accent: oklch(0.714403 0.104089 183.092);
+  --r-accent-fg: oklch(0.16 0.012 190);
+  --r-accent-surface: oklch(0.32 0.05 185);
+  --r-update-fg: oklch(0.83 0.08 183);
+  --r-warning-fg: oklch(0.829017 0.171221 81.038);
+  --r-error-fg: oklch(0.702184 0.189226 22.228);
+  --r-error-surface: oklch(0.29 0.04 20);
+  --r-message: oklch(0.205 0.014 265);
+  --r-secondary: oklch(0.155 0.008 265);
+  --r-sidebar: oklch(0.235 0.003 265);
+  --r-sidebar-control: oklch(0.295 0.003 265);
+  --r-sidebar-hover: oklch(0.28 0.003 265);
+  --r-sidebar-selected: oklch(0.355 0.035 188);
+  --r-sidebar-border: oklch(0.355 0.012 265);
+  --r-sidebar-muted: oklch(0.72 0.014 265);
+  --tt-shadow-color: rgb(0 0 0 / 73%);
+  --tt-shadow-overlay: 0 24px 72px -20px rgb(0 0 0 / 90%);
+  /* Provider marks: the constants src/renderer/src/styles/tokens.css sets per mode. Muse has none and takes the text. */
+  --tt-provider-codex: #d7dbe1;
+  --tt-provider-claude: #e3b58e;
+  --tt-provider-grok: #c9baff;
+}
+html[data-theme='light'] {
+  color-scheme: light;
+  --r-canvas: oklch(0.978 0.004 85);
+  --r-surface: oklch(0.99 0.003 85);
+  --r-raised: oklch(0.955 0.006 85);
+  --r-overlay: oklch(0.945 0.007 85);
+  --r-text: oklch(0.235 0.014 75);
+  --r-muted-fg: oklch(0.5 0.014 75);
+  --r-placeholder: oklch(0.525 0.015 78);
+  --r-border: oklch(0.86 0.012 80);
+  --r-input: oklch(0.8 0.016 80);
+  --r-accent: oklch(0.53 0.095 186);
+  --r-accent-fg: oklch(0.99 0.003 85);
+  --r-accent-surface: oklch(0.92 0.03 186);
+  --r-update-fg: oklch(0.43 0.08 186);
+  --r-warning-fg: oklch(0.530927 0.155556 45.359);
+  --r-error-fg: oklch(0.509494 0.208583 28.513);
+  --r-error-surface: oklch(0.94 0.02 25);
+  --r-message: oklch(0.93 0.012 85);
+  --r-secondary: oklch(0.93 0.01 85);
+  --r-sidebar: oklch(0.955 0.008 85);
+  --r-sidebar-control: oklch(0.995 0.002 85);
+  --r-sidebar-hover: oklch(0.93 0.01 85);
+  --r-sidebar-selected: oklch(0.895 0.028 188);
+  --r-sidebar-border: oklch(0.87 0.012 82);
+  --r-sidebar-muted: oklch(0.5 0.014 75);
+  --tt-shadow-color: rgb(20 24 22 / 18%);
+  --tt-shadow-overlay: 0 24px 64px -24px rgb(0 0 0 / 45%);
+  --tt-provider-codex: #c9ced6;
+  --tt-provider-claude: #e2ad80;
+  --tt-provider-grok: #bfaefc;
+}
+/* --tt-* tokens, derived from the roles the way src/renderer/src/styles/tokens.css does at 100% contrast. */
+html {
+  --tt-font: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  --tt-canvas: var(--r-canvas);
+  --tt-surface: var(--r-surface);
+  --tt-surface-elevated: var(--r-raised);
+  --tt-surface-overlay: var(--r-overlay);
+  --tt-field: var(--r-surface);
+  --tt-text: var(--r-text);
+  --tt-text-2: color-mix(in oklab, var(--r-text) 55%, var(--r-muted-fg));
+  --tt-text-muted: color-mix(in oklab, var(--r-muted-fg) 85%, var(--r-text));
+  --tt-text-faint: var(--r-placeholder);
+  --tt-hairline: var(--r-border);
+  --tt-field-border: var(--r-input);
+  --tt-accent: var(--r-accent);
+  --tt-accent-text: var(--r-update-fg);
+  --tt-activity: var(--tt-accent-text);
+  --tt-on-accent: var(--r-accent-fg);
+  --tt-accent-surface: var(--r-accent-surface);
+  --tt-accent-border: color-mix(in srgb, var(--r-accent) 45%, var(--r-input));
+  --tt-accent-wash: color-mix(in srgb, var(--r-accent) 14%, transparent);
+  --tt-hover: color-mix(in srgb, var(--r-accent-surface) 70%, transparent);
+  --tt-selected: var(--r-sidebar-selected);
+  --tt-track: color-mix(in srgb, var(--r-text) 12%, transparent);
+  --tt-bubble: var(--r-message);
+  --tt-warning: var(--r-warning-fg);
+  --tt-warning-on-tint: color-mix(in oklab, var(--r-warning-fg) 90%, var(--r-text));
+  --tt-error: var(--r-error-fg);
+  --tt-error-surface: var(--r-error-surface);
+  --tt-sidebar: var(--r-sidebar);
+  --tt-sidebar-text: var(--r-text);
+  --tt-sidebar-text-muted: var(--r-sidebar-muted);
+  --tt-sidebar-control: var(--r-sidebar-control);
+  --tt-sidebar-row-hover: var(--r-sidebar-hover);
+  --tt-sidebar-row-selected: var(--r-sidebar-selected);
+  --tt-sidebar-border: var(--r-sidebar-border);
+  --tt-secondary: var(--r-secondary);
+  --tt-focus-ring: var(--r-accent);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: #1b1b1e; font-family: var(--tt-font); }
+body.shot { background: var(--tt-canvas); overflow: hidden; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.ic { display: block; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+.owl { display: block; flex: none; fill: currentColor; }
+.pmk { display: block; flex: none; fill: currentColor; color: var(--tt-text-2); }
+.pmk[data-p='codex'] { color: var(--tt-provider-codex); }
+.pmk[data-p='claude'] { color: var(--tt-provider-claude); }
+.pmk[data-p='grok'] { color: var(--tt-provider-grok); }
+:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; }
+.grow { flex: 1 1 auto; min-width: 0; }
+.muted { color: var(--tt-text-muted); }
+.warn { color: var(--tt-warning); }
+
+.stage { display: flex; justify-content: center; padding: 92px 12px 96px; }
+body.shot .stage { padding: 0; }
+.win { position: relative; flex: none; width: var(--w); height: var(--h); zoom: var(--fit, 1); overflow: hidden; background: var(--tt-canvas); color: var(--tt-text); font-size: 14px; line-height: 1.45; border: 1px solid #000; }
+body.shot .win { border: 0; }
+
+/* Window controls: drawn, not live. */
+.wctl { position: absolute; top: 0; right: 0; z-index: 40; display: flex; align-items: center; height: 42px; padding: 0 6px; color: var(--tt-text-2); pointer-events: none; }
+.wctl span { display: grid; place-items: center; width: 34px; height: 30px; }
+
+/* Shared bits */
+.tile { display: inline-grid; place-items: center; flex: none; width: 24px; height: 24px; border-radius: 7px; background: var(--tt-accent); color: var(--tt-on-accent); }
+.link { display: inline; padding: 0; border: 0; border-radius: 3px; background: none; color: var(--tt-text); font-weight: 500; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); text-underline-offset: 3px; cursor: pointer; text-align: left; }
+.link:hover { text-decoration-color: currentColor; }
+.link--accent { color: var(--tt-accent-text); }
+.link:disabled { color: var(--tt-text-muted); text-decoration: none; cursor: default; }
+.iconbtn { display: inline-grid; place-items: center; flex: none; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); }
+.iconbtn:hover { background: var(--tt-hover); color: var(--tt-text); }
+.pill { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: transparent; color: var(--tt-text); font-size: 13px; white-space: nowrap; }
+.pill:hover:not(:disabled) { background: var(--tt-hover); }
+.pill:disabled { color: var(--tt-text-muted); cursor: default; opacity: .7; }
+.tag { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 999px; background: var(--tt-accent-surface); color: var(--tt-text); font-size: 11.5px; font-weight: 500; white-space: nowrap; }
+.tag--quiet { border: 1px solid var(--tt-hairline); background: transparent; color: var(--tt-text-muted); }
+.tag--moved { border: 1px solid var(--tt-field-border); background: transparent; color: var(--tt-text-2); }
+.ring { display: block; flex: none; width: 10px; height: 10px; border: 1.5px solid var(--tt-accent-text); border-right-color: transparent; border-radius: 50%; }
+@media (prefers-reduced-motion: no-preference) { .ring { animation: spin 1.1s linear infinite; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+.dot { color: var(--tt-text-muted); }
+.ow { color: var(--tt-accent-text); white-space: nowrap; }
+.ow[data-off='true'] { color: var(--tt-warning); }
+.ring[data-off='true'] { border-color: var(--tt-warning); border-style: dashed; animation: none; }
+
+/* ===== Option chips and their menus, as the composer and Settings > Agents draw them (threadChips.css, modelPicker.css). ===== */
+.popwrap { position: relative; display: inline-flex; vertical-align: middle; min-width: 0; max-width: 100%; }
+.tchip { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 220px; height: 28px; padding: 0 9px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: transparent; color: var(--tt-text-2); font-size: 13px; line-height: 1; white-space: nowrap; vertical-align: middle; }
+.tchip > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tchip > .ic { color: var(--tt-text-muted); }
+.tchip:hover:not(:disabled), .tchip[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
+.tchip[data-away='true'] { border-style: dashed; }
+.tchip:disabled { opacity: .55; cursor: default; }
+.nochip { display: inline-flex; align-items: center; height: 28px; color: var(--tt-text-muted); font-size: 13px; white-space: nowrap; }
+
+.menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; width: max-content; min-width: 220px; max-width: min(330px, calc(100vw - 24px)); max-height: var(--pop-max, 420px); overflow-y: auto; padding: 6px; border: 1px solid var(--tt-field-border); border-radius: 12px; background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); color: var(--tt-text); line-height: 1.4; white-space: normal; text-align: left; scrollbar-width: thin; }
+.menu[data-up='true'], .mp[data-up='true'] { top: auto; bottom: calc(100% + 6px); }
+.menu[data-right='true'], .mp[data-right='true'] { left: auto; right: 0; }
+.menu__title { margin: 2px 6px 6px; color: var(--tt-text-muted); font-size: 12px; font-weight: 500; }
+.menu__opt { display: grid; grid-template-columns: minmax(0, 1fr) 14px; align-items: center; column-gap: 10px; row-gap: 1px; width: 100%; min-height: 32px; padding: 6px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font-size: 13px; text-align: left; }
+.menu__opt > b { font-weight: 500; }
+.menu__opt > small { grid-column: 1; color: var(--tt-text-muted); font-size: 12px; line-height: 1.4; }
+.menu__opt > .ic { grid-row: 1; grid-column: 2; color: var(--tt-activity); }
+.menu__opt:hover:not(:disabled), .menu__opt:focus-visible { background: var(--tt-hover); color: var(--tt-text); outline: 0; }
+.menu__opt[aria-selected='true'] > b { color: var(--tt-activity); }
+.menu__opt:hover:not(:disabled)[aria-selected='true'] > b, .menu__opt:focus-visible[aria-selected='true'] > b { color: var(--tt-text); }
+.menu__opt:disabled { opacity: .55; cursor: default; }
+.menu__foot { margin: 6px 4px 2px; padding: 8px 6px 2px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; line-height: 1.45; }
+
+/* The model menu: a provider rail, then a search line over the list with one note under it. */
+.mp { position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; display: grid; grid-template-columns: 52px minmax(0, 1fr); width: min(340px, calc(100vw - 32px)); height: min(372px, var(--pop-max, 372px)); overflow: hidden; border: 1px solid var(--tt-field-border); border-radius: 14px; background: var(--tt-surface-elevated); color: var(--tt-text); box-shadow: 0 16px 48px var(--tt-shadow-color); line-height: 1.4; white-space: normal; text-align: left; }
+.mp[data-single='true'] { grid-template-columns: minmax(0, 1fr); width: min(300px, calc(100vw - 32px)); }
+.mp__rail { display: flex; flex-direction: column; gap: 4px; padding: 8px 6px; border-right: 1px solid var(--tt-hairline); background: var(--tt-surface); overflow-y: auto; scrollbar-width: none; }
+.mp__rail > button { position: relative; display: grid; place-items: center; flex: none; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 10px; background: transparent; }
+.mp__rail > button .pmk { opacity: .8; }
+.mp__rail > button:hover { background: var(--tt-hover); }
+.mp__rail > button[aria-selected='true'] { background: var(--tt-selected); }
+.mp__rail > button[aria-selected='true'] .pmk, .mp__rail > button:hover .pmk { opacity: 1; }
+.mp__rail > button[aria-selected='true']::before { content: ''; position: absolute; left: -6px; top: 10px; bottom: 10px; width: 2px; border-radius: 0 2px 2px 0; background: var(--tt-activity); }
+.mp__rail > button[data-off='true'] .pmk { opacity: .4; }
+.mp__rail > button[data-off='true']::after { content: ''; position: absolute; right: 5px; bottom: 5px; width: 9px; height: 9px; border: 1.5px dashed var(--tt-text-muted); border-radius: 50%; background: var(--tt-surface); }
+.mp__panel { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.mp__search { display: flex; flex: none; align-items: center; gap: 8px; height: 40px; padding: 0 6px 0 12px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); }
+.mp__search input { flex: 1; min-width: 0; padding: 4px 0; border: 0; outline: 0; background: transparent; color: var(--tt-text); font-size: 13px; }
+.mp__search input::placeholder { color: var(--tt-text-faint); }
+.mp__head { display: flex; flex: none; align-items: center; gap: 6px; padding: 9px 16px 3px; color: var(--tt-text-muted); font-size: 12px; font-weight: 500; }
+.mp__models { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 6px 6px; scrollbar-width: thin; }
+.mp__models > button { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 32px; padding: 6px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font-size: 13px; text-align: left; }
+.mp__models > button > span { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; }
+.mp__models > button small { color: var(--tt-text-muted); font-size: 11.5px; }
+.mp__models > button:hover:not(:disabled), .mp__models > button:focus-visible { background: var(--tt-hover); color: var(--tt-text); outline: 0; }
+.mp__models > button[aria-selected='true'] { color: var(--tt-activity); }
+.mp__models > button:hover:not(:disabled)[aria-selected='true'], .mp__models > button:focus-visible[aria-selected='true'] { color: var(--tt-text); }
+.mp__models > button:disabled { opacity: .55; cursor: default; }
+.mp__empty { margin: 0; padding: 12px 10px; color: var(--tt-text-muted); font-size: 13px; }
+.mp__note { flex: none; margin: 0; padding: 8px 12px 10px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; line-height: 1.45; }
+.mp__note .link { font-size: 12px; }
+
+/* ===== Settings ===== */
+.set { display: grid; grid-template-columns: 264px minmax(0, 1fr); height: 100%; }
+.win[data-size='s'] .set { grid-template-columns: 196px minmax(0, 1fr); }
+.snav { display: flex; flex-direction: column; min-height: 0; padding: 22px 10px 10px; background: var(--tt-sidebar); color: var(--tt-sidebar-text); }
+.snav__brand { display: flex; align-items: center; gap: 9px; padding: 0 12px; font-size: 15px; font-weight: 600; }
+.snav__title { margin: 20px 12px 14px; font-size: 26px; font-weight: 600; letter-spacing: -0.6px; }
+.win[data-size='s'] .snav__title { margin: 14px 12px 8px; font-size: 22px; }
+.snav__list { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
+.snav__item { display: flex; align-items: center; gap: 12px; width: 100%; height: 40px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-sidebar-text-muted); font-size: 14px; text-align: left; }
+.win[data-size='s'] .snav__item { height: 34px; }
+.snav__item:hover { background: var(--tt-sidebar-row-hover); color: var(--tt-sidebar-text); }
+.snav__item[aria-current='page'] { background: var(--tt-sidebar-row-selected); color: var(--tt-sidebar-text); }
+.snav__item[aria-current='page']::after { content: '›'; margin-left: auto; font-size: 18px; }
+.snav hr { margin: 8px 12px; border: 0; border-top: 1px solid var(--tt-sidebar-border); }
+.sfoot { display: grid; gap: 8px; padding-top: 10px; border-top: 1px solid var(--tt-sidebar-border); }
+.switch3 { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; height: 36px; padding: 3px; border-radius: 10px; background: var(--tt-sidebar-control); }
+.switch3 button { height: 30px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-sidebar-text); font-size: 13px; }
+.switch3 button[aria-current='page'] { background: var(--tt-canvas); }
+.switch3 .owlbtn { display: grid; place-items: center; width: 34px; padding: 0; }
+.iconrow { display: flex; align-items: center; gap: 2px; }
+.iconrow .iconbtn { width: 28px; height: 28px; color: var(--tt-sidebar-text-muted); }
+.iconrow .iconbtn[aria-current='page'] { background: var(--tt-sidebar-row-selected); color: var(--tt-sidebar-text); }
+
+.smainwrap { position: relative; display: grid; grid-template-rows: minmax(0, 1fr) auto; min-height: 0; }
+.smain { position: relative; min-height: 0; overflow-y: auto; padding: 44px 56px 64px; scrollbar-width: thin; }
+.win[data-size='s'] .smain { padding: 26px 26px 48px; }
+.spage { max-width: 790px; margin: 0 auto; }
+.sh2 { margin: 0 0 10px; font-size: 28px; font-weight: 500; letter-spacing: -1px; line-height: 1.2; }
+.ssub { margin: 0; padding-bottom: 20px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 16px; }
+.win[data-size='s'] .sh2 { font-size: 24px; margin-bottom: 6px; }
+.win[data-size='s'] .ssub { font-size: 14px; padding-bottom: 14px; }
+.group-h { margin: 28px 0 4px; font-size: 15px; font-weight: 600; }
+.group-p { max-width: 68ch; margin: 0 0 10px; color: var(--tt-text-muted); font-size: 13px; line-height: 1.55; }
+.srow__note { margin: 0; padding: 8px 12px; border-left: 2px solid var(--tt-warning); background: var(--tt-surface); color: var(--tt-text-2); font-size: 13px; line-height: 1.5; }
+.saved { margin: 0; padding: 6px 18px 10px; color: var(--tt-text-muted); font-size: 12px; text-align: right; }
+
+/* The machine tiles, as Zach picked them (variant B of prototype/watcher-delegation-placement). */
+.mtiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 12px; margin: 6px 0 0; }
+.win[data-size='s'] .mtiles { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+fieldset.plain { margin: 0; padding: 0; border: 0; min-width: 0; }
+fieldset.plain legend { padding: 0; }
+.mtile { display: grid; align-content: start; gap: 9px; padding: 14px 16px; border: 1px solid var(--tt-hairline); border-radius: 12px; background: var(--tt-surface); }
+.mtile[data-chosen='true'] { border-color: var(--tt-accent-border); box-shadow: inset 0 0 0 1px var(--tt-accent-border); }
+.mtile[data-off='true'] { background: transparent; border-style: dashed; }
+.mtile__head { display: flex; align-items: center; gap: 9px; font-size: 15px; font-weight: 600; cursor: pointer; }
+.mtile__head input { width: 16px; height: 16px; margin: 0; accent-color: var(--tt-accent); }
+.mtile__head .tag { margin-left: auto; }
+.mtile__facts { color: var(--tt-text-muted); font-size: 13px; }
+.mtile__stat { display: grid; grid-template-columns: 74px minmax(0, 1fr) auto; align-items: center; gap: 10px; color: var(--tt-text-2); font-size: 13px; }
+.mtile__stat > span:first-child { color: var(--tt-text-muted); }
+.mtile__limit { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 9px; border-top: 1px solid var(--tt-hairline); font-size: 13.5px; }
+.membar { display: block; height: 6px; overflow: hidden; border-radius: 3px; background: var(--tt-track); }
+.membar i { display: block; height: 100%; border-radius: 3px; background: var(--tt-text-muted); }
+.meter { display: inline-flex; gap: 3px; }
+.meter i { display: block; width: 6px; height: 13px; border: 1.5px solid var(--tt-text-muted); border-radius: 2px; }
+.meter i.on { border-color: var(--tt-accent-text); background: var(--tt-accent-text); }
+.step { display: inline-flex; align-items: center; border: 1px solid var(--tt-field-border); border-radius: 999px; }
+.step button { display: grid; place-items: center; width: 32px; height: 30px; padding: 0; border: 0; border-radius: 999px; background: transparent; color: var(--tt-text); }
+.step button:hover:not(:disabled) { background: var(--tt-hover); }
+.step button:disabled { color: var(--tt-text-muted); opacity: .55; cursor: not-allowed; }
+.step output { min-width: 22px; text-align: center; font-variant-numeric: tabular-nums; font-weight: 600; }
+
+/* ===== Worker roles: what every variant shares ===== */
+.roles { margin-top: 38px; }
+.roles__head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; padding-top: 22px; border-top: 1px solid var(--tt-hairline); }
+.roles__head .group-h { margin: 0; }
+.roles__all { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none; color: var(--tt-accent-text); font-size: 13px; font-weight: 500; }
+.roles__all:disabled { color: var(--tt-text-muted); cursor: default; }
+.roles__all:hover:not(:disabled) { text-decoration: underline; text-underline-offset: 3px; }
+.roles .group-p { margin-top: 4px; }
+.summary { margin: 4px 0 10px; }
+.rnote { margin: 6px 0 0; padding: 6px 10px; border-left: 2px solid var(--tt-field-border); color: var(--tt-text-2); font-size: 12.5px; line-height: 1.5; }
+.rnote[data-kind='away'], .rnote[data-kind='moved'] { border-left-color: var(--tt-warning); background: var(--tt-surface); }
+.rnote .link { font-size: 12.5px; }
+.rreset { padding: 0; border: 0; background: none; color: var(--tt-accent-text); font-size: 12.5px; font-weight: 500; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); text-underline-offset: 3px; white-space: nowrap; }
+.rempty { display: grid; justify-items: start; gap: 10px; margin-top: 10px; padding: 16px; border: 1px dashed var(--tt-field-border); border-radius: 12px; color: var(--tt-text-2); font-size: 13.5px; line-height: 1.55; }
+.toast { position: absolute; left: 50%; bottom: 36px; z-index: 25; display: flex; align-items: center; gap: 12px; padding: 7px 7px 7px 14px; border: 1px solid var(--tt-hairline); border-radius: 12px; background: var(--tt-surface-elevated); box-shadow: 0 10px 28px -10px var(--tt-shadow-color); color: var(--tt-text); font-size: 13px; transform: translateX(-50%); white-space: nowrap; }
+.toast .pill { height: 26px; padding: 0 10px; font-size: 12.5px; }
+
+/* A: one sentence per role */
+.sent { margin: 8px 0 0; padding: 0; list-style: none; }
+.sent > li { padding: 13px 0 14px; border-top: 1px solid var(--tt-hairline); }
+.sent__line { margin: 0; color: var(--tt-text-2); font-size: 15px; line-height: 34px; }
+.sent__line > b { color: var(--tt-text); font-weight: 600; }
+.sent__tail { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; margin: 0; color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; }
+.sent__tail .tag { height: 19px; }
+.sent__watcher { margin-top: 2px; }
+
+/* B: a table, one row per role */
+.rt { margin-top: 10px; }
+.rt__row { display: grid; grid-template-columns: minmax(130px, 1.05fr) minmax(0, 1.35fr) minmax(0, .9fr) minmax(0, 1.15fr) minmax(0, 1fr) 30px; align-items: center; column-gap: 12px; padding: 10px 0; border-top: 1px solid var(--tt-hairline); }
+.rt__row--head { padding: 6px 0; border-top: 0; color: var(--tt-text-muted); font-size: 12.5px; font-weight: 500; }
+.rt__row--group { display: block; padding: 14px 0 4px; border-top: 0; color: var(--tt-text-muted); font-size: 12px; font-weight: 600; }
+.rt__row--note { display: block; padding: 0 0 10px; border-top: 0; }
+.rt__row--note .rnote { margin: 0; }
+.rt__role { display: grid; gap: 1px; min-width: 0; }
+.rt__role b { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 14.5px; font-weight: 600; }
+.rt__role > span { color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.4; }
+.rt__role .rt__nextsub { display: none; }
+.rt .tchip { max-width: 100%; }
+.rt .popwrap { max-width: 100%; }
+.rt__next { display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: var(--tt-text-2); font-size: 13px; }
+.rt__next > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rt__foot { margin: 8px 0 0; color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.5; }
+.win[data-size='s'] .rt__row { grid-template-columns: minmax(0, 1.35fr) minmax(0, .9fr) minmax(0, 1.15fr) 30px; row-gap: 6px; }
+.win[data-size='s'] .rt__row--group, .win[data-size='s'] .rt__row--note { display: block; }
+.win[data-size='s'] .rt__role { grid-column: 1 / -1; }
+.win[data-size='s'] .rt__role .rt__nextsub { display: block; }
+.win[data-size='s'] .rt__nextcol, .win[data-size='s'] .rt__rolecol { display: none; }
+
+/* C: a card per role, with its defaults in order */
+.rc { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 12px; margin-top: 10px; }
+.win[data-size='s'] .rc { grid-template-columns: minmax(0, 1fr); }
+.rcard { display: grid; gap: 10px; min-width: 0; padding: 14px 16px; border: 1px solid var(--tt-hairline); border-radius: 12px; background: var(--tt-surface); }
+.rcard[data-chosen='true'] { border-color: var(--tt-accent-border); }
+.rcard--wide { grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) minmax(0, .9fr); column-gap: 22px; }
+.win[data-size='s'] .rcard--wide { grid-template-columns: minmax(0, 1fr); }
+.rcard__main { display: grid; gap: 10px; min-width: 0; }
+.rcard__head { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 15px; font-weight: 600; }
+.rcard__head > .ic, .rcard__head > .owl { color: var(--tt-text-2); }
+.rcard__head .tag { margin-left: auto; }
+.rcard__what { margin: -6px 0 0; color: var(--tt-text-muted); font-size: 13px; }
+.rfields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.rfield { display: grid; gap: 5px; min-width: 0; }
+.rfield--full { grid-column: 1 / -1; }
+.rfield > span:first-child { color: var(--tt-text-muted); font-size: 11.5px; }
+.rfield .popwrap { display: flex; }
+.rfield .tchip { justify-content: space-between; width: 100%; max-width: none; height: 34px; padding: 0 11px; border-radius: 8px; background: var(--tt-field); }
+.rfield .tchip > span { flex: 1; text-align: left; }
+.rfield .nochip { height: 34px; padding: 0 11px; border: 1px dashed var(--tt-hairline); border-radius: 8px; }
+.chainwrap { padding-top: 9px; border-top: 1px solid var(--tt-hairline); }
+.chain { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; counter-reset: chain; }
+.chain__h { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 8px; margin: 0 0 4px; color: var(--tt-text-muted); font-size: 11.5px; }
+.chain li { display: grid; grid-template-columns: 14px 14px minmax(0, 1fr) auto; align-items: center; gap: 7px; min-height: 22px; color: var(--tt-text-2); font-size: 12.5px; }
+.chain li::before { counter-increment: chain; content: counter(chain); color: var(--tt-text-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.chain li > span:nth-of-type(1) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chain li > span:nth-of-type(2) { color: var(--tt-text-muted); font-size: 12px; white-space: nowrap; }
+.chain li[data-use='true'] > span:nth-of-type(1) { color: var(--tt-text); font-weight: 600; }
+.chain li[data-use='true'] > span:nth-of-type(2) { color: var(--tt-accent-text); }
+.chain li[data-off='true'] > span:nth-of-type(1) { color: var(--tt-text-muted); }
+.chain li[data-off='true'] .pmk { opacity: .45; }
+.rcard__foot { display: flex; justify-content: flex-end; }
+.mirror { display: grid; align-content: start; gap: 8px; min-width: 0; }
+.mirror__box { display: grid; gap: 10px; padding: 12px 12px 10px; border: 1px solid var(--tt-field-border); border-radius: 12px; background: var(--tt-canvas); }
+.mirror__text { color: var(--tt-text-muted); font-size: 13px; }
+.mirror__chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.mirror__chips .tchip { cursor: default; }
+.mirror__cap { display: flex; gap: 8px; margin: 0; color: var(--tt-text-2); font-size: 12.5px; line-height: 1.5; }
+.mirror__cap .ic { margin-top: 2px; color: var(--tt-text-muted); }
+
+/* Where roles apply: the same in every variant */
+.apply { margin-top: 34px; padding-top: 22px; border-top: 1px solid var(--tt-hairline); }
+.apply .group-h { margin-top: 0; }
+.apply__list { display: grid; gap: 10px; margin: 8px 0 0; padding: 0; list-style: none; }
+.apply__list li { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 10px; color: var(--tt-text-2); font-size: 13.5px; line-height: 1.55; }
+.apply__list li > .ic { margin-top: 3px; color: var(--tt-text-muted); }
+.apply__list b { color: var(--tt-text); font-weight: 600; }
+.from { margin-top: 16px; padding: 12px 14px 8px; border: 1px solid var(--tt-hairline); border-radius: 12px; }
+.from__head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; color: var(--tt-text-2); font-size: 13.5px; }
+.seg { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 2px; border: 1px solid var(--tt-hairline); border-radius: 9px; }
+.seg button { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); font-size: 13px; white-space: nowrap; }
+.seg button[aria-pressed='true'] { background: var(--tt-surface-overlay); color: var(--tt-text); }
+.from__list { display: grid; margin: 8px 0 0; padding: 0; list-style: none; }
+.from__list li { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 10px; padding: 7px 0; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 13px; line-height: 1.5; }
+.from__list li > b { color: var(--tt-text); font-weight: 500; }
+.from__list li > span { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; }
+.win[data-size='s'] .from__list li { grid-template-columns: 96px minmax(0, 1fr); }
+
+/* ===== Watcher's room ===== */
+.room { position: relative; display: grid; grid-template-rows: 44px auto minmax(0, 1fr) auto 62px; height: 100%; }
+.sky { position: absolute; top: 0; left: 0; width: 520px; max-width: 100%; height: 110px; pointer-events: none; background: radial-gradient(90% 100% at 0 0, color-mix(in srgb, var(--tt-accent-surface) 75%, transparent), transparent 72%); }
+.sky i { position: absolute; width: 2px; height: 2px; border-radius: 50%; background: var(--tt-text-muted); opacity: .6; }
+.rhead { position: relative; z-index: 2; display: flex; align-items: center; gap: 6px; min-width: 0; padding: 0 130px 0 14px; }
+.rhead__name { margin: 0 6px 0 4px; font-size: 15px; font-weight: 600; }
+.hbtn { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 30px; padding: 0 8px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--tt-text-2); font-size: 13px; }
+.hbtn:hover { background: var(--tt-hover); }
+.tabs { display: inline-flex; flex: none; gap: 2px; margin-left: 4px; padding: 2px; border: 1px solid var(--tt-hairline); border-radius: 9px; }
+.tabs button { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); font-size: 13px; white-space: nowrap; }
+.tabs button[aria-selected='true'] { background: var(--tt-surface-overlay); color: var(--tt-text); }
+.col { width: min(760px, calc(100% - 48px)); margin: 0 auto; }
+.rscroll { min-height: 0; overflow-y: auto; scrollbar-width: thin; }
+.rscroll .col { padding: 6px 0 14px; }
+.msg { margin: 18px 0; }
+.msg__meta { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; color: var(--tt-text-muted); font-size: 12.5px; }
+.msg__meta b { color: var(--tt-text); font-weight: 600; }
+.msg p { margin: 0; font-size: 14.5px; line-height: 1.6; }
+.msg--you { width: fit-content; max-width: 80%; margin-left: auto; padding: 12px 18px; border: 1px solid var(--tt-hairline); border-radius: 12px; background: var(--tt-bubble); }
+.cards { display: grid; gap: 8px; margin-top: 12px; }
+.tcard { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; align-items: center; column-gap: 10px; row-gap: 3px; padding: 10px 8px 10px 14px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface); }
+.tcard__title { min-width: 0; overflow: hidden; font-size: 14px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.tcard__meta { grid-column: 2 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 7px; color: var(--tt-text-muted); font-size: 12.5px; }
+.tcard__role { color: var(--tt-text-2); font-weight: 500; }
+.tcard__note { grid-column: 2 / -1; margin-top: 2px; color: var(--tt-text-2); font-size: 12.5px; line-height: 1.5; }
+.tcard--refused { border-color: color-mix(in oklab, var(--tt-error) 45%, var(--tt-hairline)); }
+.tcard--refused .tcard__icon { color: var(--tt-error); }
+.tcard--refused .tcard__title { white-space: normal; }
+.rcomp { padding-bottom: 6px; }
+.wbanner { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 0 0 8px; padding: 8px 8px 8px 12px; border: 1px solid var(--tt-hairline); border-left: 2px solid var(--tt-warning); border-radius: 10px; background: var(--tt-surface); color: var(--tt-text-2); font-size: 13px; line-height: 1.5; }
+.wbanner > span { flex: 1 1 280px; min-width: 0; }
+.wbanner .pill { height: 26px; padding: 0 10px; font-size: 12.5px; }
+.composer { display: flex; flex-direction: column; border: 1px solid var(--tt-field-border); border-radius: 14px; background: var(--tt-surface); }
+.composer textarea { min-height: 62px; padding: 14px 16px 4px; border: 0; border-radius: 14px; background: transparent; color: var(--tt-text); font-size: 14.5px; resize: none; outline: none; }
+.composer:focus-within { border-color: var(--tt-accent-border); }
+.composer textarea::placeholder { color: var(--tt-text-muted); }
+.win[data-size='s'] .composer textarea { min-height: 44px; padding-top: 10px; }
+.composer__row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0 10px 10px; }
+.send { display: grid; place-items: center; flex: none; width: 30px; height: 30px; margin-left: auto; padding: 0; border: 0; border-radius: 50%; background: color-mix(in srgb, var(--tt-accent) 55%, var(--tt-surface)); color: var(--tt-on-accent); }
+.send:disabled { opacity: .55; cursor: default; }
+.empty { margin: 40px auto; max-width: 52ch; color: var(--tt-text-muted); font-size: 14px; line-height: 1.6; text-align: center; }
+.empty .owl { margin: 0 auto 12px; color: var(--tt-text-2); }
+.dock { display: flex; align-items: flex-start; justify-content: center; padding: 6px 8px 0; }
+.dock__pill { display: flex; align-items: center; gap: 2px; height: 42px; padding: 0 5px; border: 1px solid var(--tt-hairline); border-radius: 999px; background: var(--tt-surface-elevated); box-shadow: 0 8px 22px -10px var(--tt-shadow-color); }
+.dock__sep { width: 1px; height: 18px; margin: 0 5px; background: var(--tt-hairline); }
+.dock__switch { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; width: 236px; height: 34px; padding: 2px; border-radius: 999px; background: var(--tt-surface); }
+.dock__switch button { height: 30px; border: 0; border-radius: 999px; background: transparent; color: var(--tt-text-2); font-size: 13px; }
+.dock__switch button[aria-current='page'] { display: grid; place-items: center; width: 44px; background: var(--tt-surface-overlay); color: var(--tt-text); }
+
+/* The prototype's own bars: deliberately not Sotto's look. */
+.proto-top { position: fixed; top: 8px; left: 50%; z-index: 100; display: grid; gap: 6px; width: min(1180px, calc(100vw - 16px)); padding: 8px 12px; border-radius: 14px; background: #fff; color: #111; box-shadow: 0 8px 30px rgb(0 0 0 / 45%); transform: translateX(-50%); font: 12.5px/1.3 ui-sans-serif, system-ui, sans-serif; }
+.pt-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.proto-top button, .proto-top select { padding: 3px 9px; border: 1px solid #bbb; border-radius: 999px; background: #f4f4f4; color: #111; color-scheme: light; font: inherit; }
+.proto-top button[aria-pressed='true'] { background: #111; border-color: #111; color: #fff; }
+.proto-top label { display: inline-flex; align-items: center; gap: 5px; }
+.pt-state { color: #444; }
+.proto-switch { position: fixed; bottom: 16px; left: 50%; z-index: 100; display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 999px; background: #fff; color: #111; box-shadow: 0 8px 30px rgb(0 0 0 / 50%); transform: translateX(-50%); font: 13px/1.2 ui-sans-serif, system-ui, sans-serif; }
+.proto-switch button { padding: 4px 11px; border: 1px solid #bbb; border-radius: 999px; background: #f4f4f4; color: #111; font: inherit; }
+.proto-switch .label { min-width: 250px; font-weight: 700; text-align: center; }
+body.shot .proto-top, body.shot .proto-switch { display: none; }
+</style>
+</head>
+<body>
+<div class="proto-top" role="region" aria-label="Prototype controls, not part of the design">
+  <div class="pt-row">
+    <strong>Prototype</strong>
+    <span role="group" aria-label="Surface" id="pt-surface">
+      <button type="button" data-surface="settings">Settings → Watcher</button>
+      <button type="button" data-surface="room">Watcher's room</button>
+    </span>
+    <label>Providers
+      <select id="pt-prov">
+        <option value="all">Claude Code, Codex, Muse and Grok Build</option>
+        <option value="claude-off">Claude Code not connected</option>
+        <option value="codex-only">Only Codex set up</option>
+        <option value="none">None connected</option>
+      </select>
+    </label>
+    <label>Your choices
+      <select id="pt-choices">
+        <option value="none">None</option>
+        <option value="building">Building on Sonnet 5.5</option>
+        <option value="two">Building on Sonnet 5.5, Code review on Opus 5.5</option>
+        <option value="orch">Orchestrating on GPT-6.1 Sol</option>
+        <option value="custom" disabled>Your own changes</option>
+      </select>
+    </label>
+    <label>New-thread default
+      <select id="pt-ceiling"><option value="edits">Allow edits</option><option value="ask">Ask for approval</option><option value="full">Full access</option></select>
+    </label>
+    <button type="button" id="pt-roles">Jump to the roles</button>
+    <label>Size
+      <select id="pt-size"><option value="1280">1280×800</option><option value="820">820×560</option><option value="1600">1600×1000</option></select>
+    </label>
+    <button type="button" id="pt-theme"></button>
+  </div>
+  <div class="pt-state" id="pt-state" aria-live="polite"></div>
+</div>
+<div class="stage"><div class="win" id="win"></div></div>
+<div class="proto-switch" role="group" aria-label="Variant, prototype only">
+  <button type="button" id="pv-prev" aria-label="Previous variant">←</button>
+  <span class="label" id="pv-label" aria-live="polite"></span>
+  <button type="button" id="pv-next" aria-label="Next variant">→</button>
+</div>
+<script>
+(() => {
+'use strict';
+const P = new URLSearchParams(location.search);
+const pick = (v, allowed, d) => allowed.includes(v) ? v : d;
+
+/* ---------- the catalog: stand-ins for what each provider reports ---------- */
+const ALL_MODES = ['approval-required', 'auto-accept-edits', 'auto', 'full-access'];
+const PROV = {
+  codex: { name: 'Codex', modes: ALL_MODES },
+  claude: { name: 'Claude Code', modes: ALL_MODES },
+  grok: { name: 'Grok Build', modes: ['approval-required', 'auto', 'full-access'] },
+  muse: { name: 'Muse', modes: ALL_MODES },
+};
+const PROV_ORDER = ['codex', 'claude', 'grok', 'muse'];
+const FIVE = ['low', 'medium', 'high', 'xhigh', 'max'];
+const MUSE_E = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
+const MODELS = [
+  { id: 'sol', p: 'codex', name: 'GPT-6.1 Sol', efforts: FIVE, def: 'medium' },
+  { id: 'astra', p: 'codex', name: 'GPT-6 Astra', efforts: [...FIVE, 'ultra'], def: 'medium' },
+  { id: 'luna', p: 'codex', name: 'GPT-6 Luna', efforts: ['minimal', 'low', 'medium', 'high'], def: 'low' },
+  { id: 'opus', p: 'claude', name: 'Opus 5.5', efforts: FIVE, def: 'high' },
+  { id: 'sonnet', p: 'claude', name: 'Sonnet 5.5', efforts: FIVE, def: 'high' },
+  { id: 'haiku', p: 'claude', name: 'Haiku 5.5', efforts: [], def: null },
+  { id: 'fable', p: 'claude', name: 'Fable 5.1', efforts: FIVE, def: 'high' },
+  { id: 'grok47', p: 'grok', name: 'Grok 4.7', efforts: ['low', 'medium', 'high', 'xhigh'], def: 'high' },
+  { id: 'grok46', p: 'grok', name: 'Grok 4.6', efforts: ['low', 'medium', 'high'], def: 'medium' },
+  { id: 'wonderfull', p: 'muse', name: 'Muse Wonder Full', efforts: MUSE_E, def: 'medium' },
+  { id: 'wonder', p: 'muse', name: 'Muse Wonder', efforts: MUSE_E, def: 'low' },
+];
+const MOD = Object.fromEntries(MODELS.map(m => [m.id, m]));
+const MODE = { 'approval-required': 'Ask for approval', 'auto-accept-edits': 'Allow edits', auto: 'Auto', 'full-access': 'Full access' };
+const CEIL = { edits: 'auto-accept-edits', ask: 'approval-required', full: 'full-access' };
+
+/* Each role: Zach's default first, then the next defaults in order (proposed). The first one connected is in force. */
+const ROLES = [
+  { id: 'orchestrating', name: 'Orchestrating', pos: 'Watcher’s', icon: 'owl', what: 'Watcher itself.',
+    chain: [['opus', 'high'], ['sol', 'high'], ['grok47', 'high']], perm: null },
+  { id: 'building', name: 'Building', pos: 'Building’s', icon: 'hammer', what: 'Writing and changing code.',
+    chain: [['opus', 'xhigh'], ['sonnet', 'xhigh'], ['sol', 'xhigh'], ['wonderfull', 'xhigh'], ['grok47', 'xhigh']], perm: 'auto-accept-edits' },
+  { id: 'ui', name: 'UI', pos: 'UI’s', icon: 'palette', what: 'Screens, styles and how they look.',
+    chain: [['opus', 'xhigh'], ['sol', 'xhigh'], ['wonderfull', 'xhigh'], ['grok47', 'xhigh']], perm: 'auto-accept-edits' },
+  { id: 'review', name: 'Code review', pos: 'Code review’s', icon: 'review', what: 'Reading a change and saying what is wrong with it.',
+    chain: [['wonderfull', 'xhigh'], ['sol', 'xhigh'], ['opus', 'xhigh'], ['grok47', 'xhigh']], perm: 'approval-required' },
+  { id: 'research', name: 'Research', pos: 'Research’s', icon: 'book', what: 'Reading code, docs and the web, and reporting back.',
+    chain: [['haiku', null], ['luna', 'medium'], ['grok46', 'medium'], ['wonder', 'low']], perm: 'approval-required' },
+  { id: 'computer', name: 'Computer use', pos: 'Computer use’s', icon: 'pointer', what: 'Clicking and typing in apps and the browser.',
+    chain: [['astra', 'medium'], ['opus', 'high'], ['grok47', 'high']], perm: 'approval-required' },
+];
+const ROLE = Object.fromEntries(ROLES.map(r => [r.id, r]));
+const WORKERS = ROLES.filter(r => r.id !== 'orchestrating');
+
+const PRESETS = {
+  none: {},
+  building: { building: { model: 'sonnet', effort: 'xhigh', perm: 'auto-accept-edits' } },
+  two: { building: { model: 'sonnet', effort: 'xhigh', perm: 'auto-accept-edits' }, review: { model: 'opus', effort: 'xhigh', perm: 'approval-required' } },
+  orch: { orchestrating: { model: 'sol', effort: 'high' } },
+};
+function parseChoices(s) {
+  const out = {};
+  for (const part of (s || '').split(',').filter(Boolean)) {
+    const [id, model, effort, perm] = part.split(':');
+    if (!ROLE[id] || !MOD[model]) continue;
+    out[id] = { model, effort: effort && effort !== '-' ? effort : null, ...(perm && perm !== '-' ? { perm } : {}) };
+  }
+  return out;
+}
+
+const S = {
+  variant: pick(P.get('variant'), ['A', 'B', 'C'], 'A'),
+  surface: pick(P.get('surface'), ['settings', 'room'], 'settings'),
+  theme: P.get('theme') === 'light' ? 'light' : 'dark',
+  size: pick(P.get('size'), ['1280', '820', '1600'], '1280'),
+  prov: pick(P.get('prov'), ['all', 'claude-off', 'codex-only', 'none'], 'all'),
+  ceiling: pick(P.get('ceiling'), ['edits', 'ask', 'full'], 'edits'),
+  from: pick(P.get('from'), PROV_ORDER, 'claude'),
+  open: P.get('open') || null,
+  at: pick(P.get('at'), ['roles', 'apply'], ''),
+  shot: P.get('shot') === '1',
+  watcherMode: pick(P.get('wmode'), ALL_MODES, 'approval-required'),
+  choice: P.get('c') ? parseChoices(P.get('c')) : structuredClone(PRESETS[pick(P.get('choices'), Object.keys(PRESETS), 'none')]),
+  pickProv: pick(P.get('pp'), PROV_ORDER, null), query: '', toast: null, undo: null, opener: null, justOpened: !!P.get('open'),
+  placement: 'local', limits: { local: 4, forge: 4, studio: 4 },
+};
+const VARIANTS = { A: 'Sentences', B: 'Table', C: 'Cards with their defaults' };
+const SIZES = { '1280': [1280, 800, 'm'], '820': [820, 560, 's'], '1600': [1600, 1000, 'l'] };
+const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+const effLabel = e => e === 'xhigh' ? 'Extra high' : cap(e);
+const list = items => items.length < 2 ? items.join('') : items.slice(0, -1).join(', ') + ' and ' + items[items.length - 1];
+
+/* ---------- icons ---------- */
+const I = {
+  laptop: '<path d="M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m16 0H4m16 0 1.28 2.55a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45L4 16"/>',
+  server: '<rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01M6 18h.01"/>',
+  down: '<path d="m6 9 6 6 6-6"/>',
+  more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+  list: '<path d="M3 12h.01M3 18h.01M3 6h.01M8 12h13M8 18h13M8 6h13"/>',
+  open: '<path d="M7 7h10v10"/><path d="M7 17 17 7"/>',
+  alert: '<circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>',
+  fork: '<circle cx="12" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><path d="M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9M12 12v3"/>',
+  clip: '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
+  up: '<path d="m5 12 7-7 7 7M12 19V5"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+  chart: '<path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-3"/>',
+  gear: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+  help: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01"/>',
+  refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+  mic: '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/>',
+  wave: '<path d="M2 10v3M6 6v11M10 3v18M14 8v7M18 5v13M22 10v3"/>',
+  spark: '<path d="M9.94 14.06 4 20M14 4l1.5 3.5L19 9l-3.5 1.5L14 14l-1.5-3.5L9 9l3.5-1.5z"/>',
+  cmd: '<path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"/>',
+  phone: '<rect width="14" height="20" x="5" y="2" rx="2"/><path d="M12 18h.01"/>',
+  cloud: '<path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>',
+  flow: '<rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/>',
+  out: '<path d="M7 17 17 7M7 7h10v10"/>',
+  palette: '<circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.93 0 1.65-.75 1.65-1.69 0-.44-.18-.84-.44-1.13-.29-.29-.44-.65-.44-1.13a1.64 1.64 0 0 1 1.67-1.67h2c3.05 0 5.56-2.5 5.56-5.55C21.97 6.01 17.46 2 12 2z"/>',
+  sliders: '<path d="M20 7h-9M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/>',
+  branch: '<path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  x: '<path d="M18 6 6 18M6 6l12 12"/>',
+  min: '<path d="M5 12h14"/>',
+  max: '<rect width="14" height="14" x="5" y="5" rx="1"/>',
+  minus: '<path d="M5 12h14"/>',
+  plus: '<path d="M5 12h14M12 5v14"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  reset: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
+  play: '<path d="M6 3v18l14-9z"/>',
+  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
+  swap: '<path d="M8 3 4 7l4 4M4 7h16M16 21l4-4-4-4M20 17H4"/>',
+  hammer: '<path d="m15 12-8.373 8.373a1 1 0 1 1-3-3L12 9"/><path d="m18 15 4-4"/><path d="m21.5 11.5-1.914-1.914A2 2 0 0 1 19 8.172V7l-2.26-2.26a6 6 0 0 0-4.202-1.756L9 2.96l.92.82A6.18 6.18 0 0 1 12 8.4V10l2 2h1.172a2 2 0 0 1 1.414.586L18.5 14.5"/>',
+  review: '<path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M4.268 21a2 2 0 0 0 1.727 1H18a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v3"/><path d="m9 18-1.5-1.5"/><circle cx="5" cy="14" r="3"/>',
+  book: '<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>',
+  pointer: '<path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z"/>',
+};
+const ic = (n, s = 16) => `<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${I[n]}</svg>`;
+const OWL_PATH = 'M1.27 4.8C0.84 3.93 0.73 2.31 1.49 1.22C1.63 0.95 1.93 0.68 2.06 1.22C2.12 2.03 2.71 2.9 3.93 2.9C5.83 2.2 10.17 1.76 12.94 3.34C13.69 3.28 14.4 2.71 14.45 1.82C14.51 1.57 14.73 1.57 14.83 1.98C15.32 2.58 15.54 4.26 14.94 5.56C15.38 6.1 15.7 7.46 15.7 9.63C15.76 12.12 15.29 13.37 13.97 14.24C12.75 15.19 10.17 15.24 8 15.24C5.8 15.24 3.23 15.19 2.01 14.24C0.68 13.37 0.22 12.12 0.27 9.63C0.24 7.19 0.52 5.83 1.27 4.8ZM1.84 8.95C1.82 7.05 2.25 6.07 3.66 6.07C5.34 6.02 6.75 6.21 6.73 8.54C6.73 10.44 6.1 11.31 4.34 11.31C2.58 11.34 1.82 10.58 1.84 8.95ZM9.33 9.22C9.33 8.14 9.63 7.67 10.44 7.46L13.1 6.92C13.8 6.78 14.13 7.46 14.13 8.81C14.16 10.71 13.69 11.34 11.66 11.34C10.17 11.34 9.33 10.71 9.33 9.22Z';
+const owl = (s = 16) => `<svg class="owl" width="${s}" height="${s}" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="${OWL_PATH}" fill-rule="evenodd"/><circle cx="5.29" cy="8.22" r="1.19"/><circle cx="10.79" cy="8.87" r="1.19"/></svg>`;
+const roleIcon = (r, s = 16) => r.icon === 'owl' ? owl(s) : ic(r.icon, s);
+/* Provider marks, from src/renderer/src/agents/ProviderMark.tsx. */
+const MARKS = {
+  codex: ['0 0 256 260', 'M239.184 106.203a64.716 64.716 0 0 0-5.576-53.103C219.452 28.459 191 15.784 163.213 21.74A65.586 65.586 0 0 0 52.096 45.22a64.716 64.716 0 0 0-43.23 31.36c-14.31 24.602-11.061 55.634 8.033 76.74a64.665 64.665 0 0 0 5.525 53.102c14.174 24.65 42.644 37.324 70.446 31.36a64.72 64.72 0 0 0 48.754 21.744c28.481.025 53.714-18.361 62.414-45.481a64.767 64.767 0 0 0 43.229-31.36c14.137-24.558 10.875-55.423-8.083-76.483Zm-97.56 136.338a48.397 48.397 0 0 1-31.105-11.255l1.535-.87 51.67-29.825a8.595 8.595 0 0 0 4.247-7.367v-72.85l21.845 12.636c.218.111.37.32.409.563v60.367c-.056 26.818-21.783 48.545-48.601 48.601Zm-104.466-44.61a48.345 48.345 0 0 1-5.781-32.589l1.534.921 51.722 29.826a8.339 8.339 0 0 0 8.441 0l63.181-36.425v25.221a.87.87 0 0 1-.358.665l-52.335 30.184c-23.257 13.398-52.97 5.431-66.404-17.803ZM23.549 85.38a48.499 48.499 0 0 1 25.58-21.333v61.39a8.288 8.288 0 0 0 4.195 7.316l62.874 36.272-21.845 12.636a.819.819 0 0 1-.767 0L41.353 151.53c-23.211-13.454-31.171-43.144-17.804-66.405v.256Zm179.466 41.695-63.08-36.63L161.73 77.86a.819.819 0 0 1 .768 0l52.233 30.184a48.6 48.6 0 0 1-7.316 87.635v-61.391a8.544 8.544 0 0 0-4.4-7.213Zm21.742-32.69-1.535-.922-51.619-30.081a8.39 8.39 0 0 0-8.492 0L99.98 99.808V74.587a.716.716 0 0 1 .307-.665l52.233-30.133a48.652 48.652 0 0 1 72.236 50.391v.205ZM88.061 139.097l-21.845-12.585a.87.87 0 0 1-.41-.614V65.685a48.652 48.652 0 0 1 79.757-37.346l-1.535.87-51.67 29.825a8.595 8.595 0 0 0-4.246 7.367l-.051 72.697Zm11.868-25.58 28.138-16.217 28.188 16.218v32.434l-28.086 16.218-28.188-16.218-.052-32.434Z'],
+  claude: ['0 0 256 257', 'm50.228 170.321 50.357-28.257.843-2.463-.843-1.361h-2.462l-8.426-.518-28.775-.778-24.952-1.037-24.175-1.296-6.092-1.297L0 125.796l.583-3.759 5.12-3.434 7.324.648 16.202 1.101 24.304 1.685 17.629 1.037 26.118 2.722h4.148l.583-1.685-1.426-1.037-1.101-1.037-25.147-17.045-27.22-18.017-14.258-10.37-7.713-5.25-3.888-4.925-1.685-10.758 7-7.713 9.397.649 2.398.648 9.527 7.323 20.35 15.75L94.817 91.9l3.889 3.24 1.555-1.102.195-.777-1.75-2.917-14.453-26.118-15.425-26.572-6.87-11.018-1.814-6.61c-.648-2.723-1.102-4.991-1.102-7.778l7.972-10.823L71.42 0 82.05 1.426l4.472 3.888 6.61 15.101 10.694 23.786 16.591 32.34 4.861 9.592 2.592 8.879.973 2.722h1.685v-1.556l1.36-18.211 2.528-22.36 2.463-28.776.843-8.1 4.018-9.722 7.971-5.25 6.222 2.981 5.12 7.324-.713 4.73-3.046 19.768-5.962 30.98-3.889 20.739h2.268l2.593-2.593 10.499-13.934 17.628-22.036 7.778-8.749 9.073-9.657 5.833-4.601h11.018l8.1 12.055-3.628 12.443-11.342 14.388-9.398 12.184-13.48 18.147-8.426 14.518.778 1.166 2.01-.194 30.46-6.481 16.462-2.982 19.637-3.37 8.88 4.148.971 4.213-3.5 8.62-20.998 5.184-24.628 4.926-36.682 8.685-.454.324.519.648 16.526 1.555 7.065.389h17.304l32.21 2.398 8.426 5.574 5.055 6.805-.843 5.184-12.962 6.611-17.498-4.148-40.83-9.721-14-3.5h-1.944v1.167l11.666 11.406 21.387 19.314 26.767 24.887 1.36 6.157-3.434 4.86-3.63-.518-23.526-17.693-9.073-7.972-20.545-17.304h-1.36v1.814l4.73 6.935 25.017 37.59 1.296 11.536-1.814 3.76-6.481 2.268-7.13-1.297-14.647-20.544-15.1-23.138-12.185-20.739-1.49.843-7.194 77.448-3.37 3.953-7.778 2.981-6.48-4.925-3.436-7.972 3.435-15.749 4.148-20.544 3.37-16.333 3.046-20.285 1.815-6.74-.13-.454-1.49.194-15.295 20.999-23.267 31.433-18.406 19.702-4.407 1.75-7.648-3.954.713-7.064 4.277-6.286 25.47-32.405 15.36-20.092 9.917-11.6-.065-1.686h-.583L44.07 198.125l-12.055 1.555-5.185-4.86.648-7.972 2.463-2.593 20.35-13.999-.064.065Z'],
+  grok: ['0 0 24 24', 'M9.26905 15.284L17.2479 9.36086C17.6391 9.07047 18.1981 9.18374 18.3845 9.63478C19.3655 12.0135 18.9272 14.8721 16.9755 16.8349C15.0238 18.7976 12.3082 19.228 9.8261 18.2477L7.1146 19.5102C11.0037 22.1834 15.7263 21.5223 18.6774 18.5525C21.0182 16.1985 21.7432 12.9897 21.0653 10.0961L21.0714 10.1023C20.0884 5.85143 21.3131 4.15233 23.8218 0.677913C23.8812 0.595532 23.9406 0.513151 24 0.428711L20.6987 3.74866V3.73836L9.267 15.2861M7.62249 16.7237C4.83113 14.0422 5.3124 9.89222 7.69417 7.49905C9.45541 5.72786 12.341 5.00497 14.86 6.06768L17.5653 4.81138C17.0779 4.45714 16.4533 4.07613 15.7365 3.80839C12.4966 2.46764 8.6178 3.13492 5.98413 5.78141C3.45081 8.32904 2.65415 12.2463 4.02219 15.5889C5.04412 18.0871 3.36889 19.8541 1.68137 21.6377C1.08337 22.2699 0.483318 22.9022 0 23.5716L7.62045 16.7257'],
+  muse: ['0 0 100 100', 'M24.6257 16.1214C28.2365 16.1214 30.8187 18.9408 30.8187 23.3643C30.8185 27.7868 30.1055 31.7765 28.9225 40.2466C28.0743 46.1813 26.62 55.2418 26.0132 59.0088C27.1782 56.7815 29.9074 51.5757 30.3914 50.5982C36.1081 39.061 42.0657 28.7544 43.7826 26.0254C46.0594 22.382 48.062 20.9229 51.1597 20.9229C52.7685 20.923 54.6826 21.7357 55.6315 22.819C56.9178 24.2895 57.1859 26.6602 57.1411 29.244C57.0738 33.2073 56.5599 39.5264 55.8553 46.5698C55.5416 49.7057 54.9365 56.1066 54.5288 60.4004C58.1883 53.8532 64.9609 41.8109 67.6921 37.6058C70.0727 33.9402 72.466 31.5797 75.6836 31.5796C78.4595 31.5796 81.8809 33.5416 81.6772 38.7573C81.3774 46.4556 80.2673 63.2232 79.7607 70.7479C83.1662 65.7913 87.6377 58.4543 89.3148 55.6966C91.0104 52.908 92.75 50.6542 95.3898 50.5778C98.0987 50.4995 99.913 52.341 99.9959 55.1839C100.078 58.0277 98.3835 61.2256 96.1344 64.856C93.6937 68.7957 90.9621 73.0123 87.6383 76.9491C84.3148 80.8856 81.2604 83.8782 76.5991 83.8786C72.4243 83.8786 69.4869 81.1043 69.283 76.0254C69.1768 73.364 69.6804 67.6405 70.0602 63.1673C70.5 57.9875 71.0315 52.9861 71.403 49.6786C67.7337 56.3979 60.0101 70.4676 56.5348 75.9603C53.1343 81.3339 51.4774 83.2269 47.8882 83.2275C44.2977 83.2275 42.7226 80.6416 42.6717 76.7497C42.6142 72.5285 45.7852 47.1821 46.8587 38.737C45.1183 42.4616 40.839 51.6056 38.1551 57.0435C35.5587 62.3055 31.204 71.3978 28.0436 76.6357C25.7668 80.4094 23.2092 83.2273 19.4173 83.2275C15.6252 83.2275 13.4847 80.6784 13.4847 76.5788C13.4847 72.4794 14.6716 65.6492 15.9465 57.1777C16.5839 53.0781 17.3108 48.6133 18.1315 43.8761C18.7324 40.448 19.7764 34.4169 20.4183 30.7129C17.502 35.2539 12.2536 43.4278 10.6567 45.8903C8.88113 48.6291 7.28747 50.626 4.64681 50.6266C1.7329 50.6266 0.000532901 48.3522 0 45.7113C0 43.0703 1.34323 41.0344 3.52376 37.4512C6.32403 32.8465 11.3578 26.57 14.1154 23.2747C17.3656 19.3912 20.6139 16.1219 24.6257 16.1214Z'],
+};
+const pmk = (p, s = 14) => `<svg class="pmk" data-p="${p}" width="${s}" height="${s}" viewBox="${MARKS[p][0]}" aria-hidden="true" focusable="false"><path d="${MARKS[p][1]}"/></svg>`;
+const D = ' <span class="dot" aria-hidden="true">·</span> ';
+
+/* ---------- the one model ---------- */
+function status(p) {
+  if (S.prov === 'all') return 'on';
+  if (S.prov === 'claude-off') return p === 'claude' ? 'off' : 'on';
+  if (S.prov === 'codex-only') return p === 'codex' ? 'on' : 'absent';
+  return 'absent';
+}
+const on = p => status(p) === 'on';
+const pv = mid => MOD[mid].p;
+const pname = p => PROV[p].name;
+/* Watcher runs on Codex, Claude Code or Grok Build; Muse threads have no Sotto tools yet (ADR-0079). */
+const canRun = (role, mid) => !(role.id === 'orchestrating' && pv(mid) === 'muse');
+const usable = (role, mid) => on(pv(mid)) && canRun(role, mid);
+const ORDER = ALL_MODES;
+function nearestMode(desired, offered) {
+  if (offered.includes(desired)) return desired;
+  const at = ORDER.indexOf(desired);
+  let safest;
+  for (const m of offered) if (ORDER.indexOf(m) <= at && (safest === undefined || ORDER.indexOf(m) > ORDER.indexOf(safest))) safest = m;
+  return safest ?? offered.reduce((a, b) => ORDER.indexOf(a) < ORDER.indexOf(b) ? a : b);
+}
+function nearestEffort(desired, ref, offered) {
+  if (!offered.length) return null;
+  if (offered.includes(desired)) return desired;
+  const at = ref.indexOf(desired);
+  if (at === -1 || ref.length < 2) return null;
+  return offered[Math.round(at / (ref.length - 1) * (offered.length - 1))];
+}
+function fitEffort(e, mid) { const m = MOD[mid]; if (!m.efforts.length) return null; return e && m.efforts.includes(e) ? e : m.def; }
+function mapEffort(e, fromMid, toMid) { const to = MOD[toMid]; if (!to.efforts.length) return null; if (!e) return to.def; return nearestEffort(e, MOD[fromMid].efforts, to.efforts) ?? to.def; }
+
+function inForce(role) {
+  for (let i = 0; i < role.chain.length; i++) {
+    const [mid, e] = role.chain[i];
+    if (usable(role, mid)) return { model: mid, effort: fitEffort(e, mid), i };
+  }
+  for (const p of PROV_ORDER) {
+    const m = MODELS.find(x => x.p === p);
+    if (on(p) && canRun(role, m.id)) return { model: m.id, effort: m.def, i: -1 };
+  }
+  return null;
+}
+function offBefore(role, upto) {
+  const end = upto < 0 ? role.chain.length : upto;
+  return [...new Set(role.chain.slice(0, end).map(([mid]) => pv(mid)).filter(p => status(p) === 'off'))];
+}
+/* One role as Settings shows it: what is saved, what new workers start on, and what to say about the difference. */
+function row(role, choices = S.choice) {
+  const d = inForce(role), ch = choices[role.id];
+  const r = { role, d, ch, notes: [] };
+  if (ch) {
+    r.shown = { model: ch.model, effort: ch.effort };
+    if (usable(role, ch.model)) { r.status = 'chosen'; r.start = r.shown; }
+    else { r.status = 'away'; r.start = d ? { model: d.model, effort: d.effort } : null; }
+  } else if (d) {
+    r.shown = r.start = { model: d.model, effort: d.effort };
+    r.off = offBefore(role, d.i);
+    r.status = r.off.length ? 'moved' : 'default';
+  } else { r.status = 'none'; r.shown = r.start = null; }
+  const who = role.id === 'orchestrating' ? 'a new Watcher starts' : 'workers start';
+  if (role.id === 'orchestrating') r.perm = S.watcherMode;
+  else r.perm = ch && ch.perm ? ch.perm : role.perm;
+  if (r.start) {
+    const p = pv(r.start.model), offered = PROV[p].modes;
+    r.fit = nearestMode(r.perm, offered);
+    const ceil = CEIL[S.ceiling];
+    r.startPerm = role.id !== 'orchestrating' && ORDER.indexOf(r.fit) > ORDER.indexOf(ceil) ? nearestMode(ceil, offered) : r.fit;
+  }
+  const startName = r.start ? MOD[r.start.model].name : '';
+  if (r.status === 'moved') {
+    const top = MOD[role.chain[0][0]], offs = r.off.map(pname);
+    r.notes.push({ kind: 'moved', html: `${top.name} is on ${list(offs)}, which ${offs.length > 1 ? 'are' : 'is'} not connected. Until ${offs.length > 1 ? 'they connect' : 'it connects'}, ${who} on ${startName}, the next default.` });
+  }
+  if (r.status === 'away') {
+    const cm = MOD[ch.model], why = !canRun(role, ch.model) ? 'Watcher can’t run on Muse yet' : `${pname(cm.p)} is not connected`;
+    r.notes.push({ kind: 'away', html: r.start ? `Your choice, ${cm.name}, stays. ${why}, so until it is, ${who} on ${startName}, the next default.` : `Your choice, ${cm.name}, stays. ${why}, and no other connected provider can do this work.` });
+  }
+  if (r.start && r.fit !== r.perm) {
+    r.notes.push({ kind: 'fit', html: `${pname(pv(r.start.model))} has no “${MODE[r.perm]}”, so ${role.id === 'orchestrating' ? 'Watcher runs' : 'its workers start'} on “${MODE[r.fit]}”.` });
+  }
+  if (r.start && r.startPerm !== r.fit) {
+    r.notes.push({ kind: 'ceiling', html: `Workers never start wider than your new-thread default, so these start on “${MODE[r.startPerm]}”. <button type="button" class="link link--accent" data-act="nodraw" data-k="ceil-${role.id}">Change it in Agents</button>` });
+  }
+  if (role.id === 'computer' && r.start && pv(r.start.model) === 'codex' && r.startPerm !== 'full-access') {
+    r.notes.push({ kind: 'info', html: 'On Windows, Codex’s Computer Use can be stopped by its own sandbox below Full access. If it is, nothing is changed and the worker says so.' });
+  }
+  return r;
+}
+function nextAfter(r) {
+  if (!r.start) return null;
+  const here = pv(r.start.model);
+  for (const [mid, e] of r.role.chain) if (pv(mid) !== here && usable(r.role, mid)) return { model: mid, effort: fitEffort(e, mid) };
+  return null;
+}
+function setChoice(role, patch) {
+  const r = row(role);
+  const base = S.choice[role.id] || { model: r.shown.model, effort: r.shown.effort, ...(role.id === 'orchestrating' ? {} : { perm: r.perm }) };
+  const next = { ...base, ...patch };
+  if (patch.model && !('effort' in patch)) next.effort = mapEffort(base.effort, base.model, patch.model);
+  const d = r.d;
+  const same = d && next.model === d.model && next.effort === d.effort && (role.id === 'orchestrating' || next.perm === role.perm);
+  if (same) delete S.choice[role.id]; else S.choice[role.id] = next;
+}
+const chosenCount = () => Object.keys(S.choice).length;
+function resetWords(r) {
+  const d = r.d;
+  if (!d) return `Reset ${r.role.name} to its default`;
+  const m = MOD[d.model];
+  return `Reset ${r.role.name} to its default, ${m.name}${d.effort ? ` at ${effLabel(d.effort)}` : ''}${r.role.id === 'orchestrating' ? '' : ` with ${MODE[r.role.perm]}`}`;
+}
+function withProv(prov, fn) { const was = S.prov; S.prov = prov; try { return fn(); } finally { S.prov = was; } }
+
+/* ---------- chips and their menus ---------- */
+function modelChip(r, opts = {}) {
+  const id = r.role.id, key = opts.key || 'model:' + id, open = S.open === key;
+  if (!r.shown) return `<span class="nochip">No model</span>`;
+  const m = MOD[r.shown.model];
+  return `<span class="popwrap"><button type="button" class="tchip" data-act="open" data-open="${key}" data-k="${key}" aria-haspopup="dialog" aria-expanded="${open}" ${r.status === 'away' ? 'data-away="true"' : ''}
+    aria-label="Choose ${r.role.pos} model. Now ${m.name}${r.status === 'away' ? ', not available' : ''}.">${pmk(m.p, 13)}<span>${m.name}</span>${ic('down', 12)}</button>${open ? picker(r, opts) : ''}</span>`;
+}
+function effortChip(r, opts = {}) {
+  if (!r.shown) return '';
+  const m = MOD[r.shown.model];
+  if (!m.efforts.length) return '';
+  const key = opts.key || 'effort:' + r.role.id, open = S.open === key;
+  const e = r.shown.effort || m.def;
+  return `<span class="popwrap"><button type="button" class="tchip" data-act="open" data-open="${key}" data-k="${key}" aria-haspopup="listbox" aria-expanded="${open}" ${r.status === 'away' ? 'data-away="true"' : ''}
+    aria-label="Choose ${r.role.pos} reasoning effort. Now ${effLabel(e)}.">${'<span>' + effLabel(e) + '</span>'}${ic('down', 12)}</button>${open ? effortMenu(r, key, opts) : ''}</span>`;
+}
+function permChip(r, opts = {}) {
+  if (!r.shown) return '';
+  const key = opts.key || 'perm:' + r.role.id, open = S.open === key;
+  const orch = r.role.id === 'orchestrating';
+  return `<span class="popwrap"><button type="button" class="tchip" data-act="open" data-open="${key}" data-k="${key}" aria-haspopup="listbox" aria-expanded="${open}"
+    aria-label="${orch ? 'Choose what Watcher may do without asking' : `Choose what ${r.role.name} workers may do without asking`}. Now ${MODE[r.perm]}.">${'<span>' + MODE[r.perm] + '</span>'}${ic('down', 12)}</button>${open ? permMenu(r, key, opts) : ''}</span>`;
+}
+const EFFORT_LINES = { none: 'No extra thinking.', minimal: 'Fastest. For the smallest tasks.', low: 'Fast. For small, clear tasks.', medium: 'The usual balance of speed and care.', high: 'Takes longer and catches more.', xhigh: 'Much longer. For stubborn problems.', max: 'Near the model’s limit. Slow and costly.' };
+const effortLine = (e, i, n) => n > 1 && i === n - 1 ? 'Everything the model has. Slowest, costliest.' : EFFORT_LINES[e] || 'More time for difficult problems.';
+function effortMenu(r, key, opts) {
+  const m = MOD[r.shown.model], cur = r.shown.effort || m.def;
+  return `<div class="menu" role="listbox" aria-label="${r.role.pos} reasoning effort" data-pop ${opts.up ? 'data-prefer="up"' : ''}>
+    <p class="menu__title" aria-hidden="true">${m.name} offers</p>
+    ${m.efforts.map((e, i) => `<button type="button" class="menu__opt" role="option" aria-selected="${e === cur}" data-act="effort" data-role="${r.role.id}" data-v="${e}" data-k="${key}-${e}"><b>${effLabel(e)}</b><small>${effortLine(e, i, m.efforts.length)}</small>${e === cur ? ic('check', 14) : ''}</button>`).join('')}
+  </div>`;
+}
+function modeLine(mode, p, orch) {
+  const lines = {
+    'approval-required': 'Asks you before it edits a file or runs a command that changes something.',
+    'auto-accept-edits': 'Edits files without asking. Asks before a command that changes something.',
+    auto: `${pname(p)} decides what to ask you about.`,
+    'full-access': orch ? 'Edits files and runs any command without asking, anywhere on this computer.' : 'Edits files and runs any command without asking, anywhere on the machine it runs on.',
+  };
+  return lines[mode];
+}
+function permMenu(r, key, opts) {
+  const orch = r.role.id === 'orchestrating';
+  const p = pv((r.start || r.shown).model), offered = PROV[p].modes;
+  const foot = orch ? 'When Watcher asks, you can allow it once, not for good. Its instructions still tell it to hand changes to a thread.'
+    : `A worker never starts wider than your new-thread default, “${MODE[CEIL[S.ceiling]]}”, and a delegated thread never wider than the thread that delegates.`;
+  return `<div class="menu" role="listbox" aria-label="${orch ? 'Watcher’s permissions' : `${r.role.name} workers’ permissions`}" data-pop ${opts.up ? 'data-prefer="up"' : ''}>
+    ${ORDER.map(mode => {
+      const off = !offered.includes(mode);
+      return `<button type="button" class="menu__opt" role="option" aria-selected="${mode === r.perm}" ${off ? 'disabled' : ''} data-act="perm" data-role="${r.role.id}" data-v="${mode}" data-k="${key}-${mode}"><b>${MODE[mode]}</b><small>${off ? `${pname(p)} doesn’t offer it.` : modeLine(mode, p, orch)}</small>${mode === r.perm ? ic('check', 14) : ''}</button>`;
+    }).join('')}
+    <p class="menu__foot">${foot}</p>
+  </div>`;
+}
+function picker(r, opts) {
+  const role = r.role;
+  const rail = PROV_ORDER.filter(p => status(p) !== 'absent');
+  const sel = S.pickProv && rail.includes(S.pickProv) ? S.pickProv : pv(r.shown.model);
+  const q = S.query.trim().toLowerCase();
+  const models = MODELS.filter(m => m.p === sel && m.name.toLowerCase().includes(q));
+  const defId = r.d && r.d.model;
+  const opt = m => {
+    let small = '', disabled = false;
+    if (!on(m.p)) { small = 'Not available'; disabled = true; }
+    else if (!canRun(role, m.id)) { small = 'Watcher can’t run on Muse yet'; disabled = true; }
+    else if (m.id === defId) small = 'Default';
+    const selected = m.id === r.shown.model;
+    return `<button type="button" role="option" aria-selected="${selected}" ${disabled ? 'disabled' : ''} data-act="model" data-role="${role.id}" data-v="${m.id}" data-k="mp-${m.id}"><span>${m.name}${small ? `<small>${small}</small>` : ''}</span>${selected ? ic('check', 14) : ''}</button>`;
+  };
+  let note;
+  if (!on(sel)) note = `${pname(sel)} is not connected. Connect it in Providers to choose these. <button type="button" class="link link--accent" data-act="nodraw" data-k="mp-providers">Open Providers</button>`;
+  else if (opts.composer) note = `Watcher’s model is the Orchestrating role. A change here changes it in Settings, under Watcher. <button type="button" class="link link--accent" data-go="roles" data-k="mp-roles">Open the roles</button>`;
+  else if (role.id === 'orchestrating') note = 'This is Watcher’s model: the same choice as the model chip under Watcher’s composer.' + (sel === 'muse' ? ' Watcher can’t run on Muse yet.' : '');
+  else if (r.d) note = `${MOD[r.d.model].name}${r.d.effort ? ` at ${effLabel(r.d.effort)}` : ''} is ${role.pos} default${r.status === 'moved' ? ' while ' + list(r.off.map(pname)) + (r.off.length > 1 ? ' are' : ' is') + ' not connected' : ''}.`;
+  const single = rail.length < 2;
+  return `<div class="mp" role="dialog" aria-label="Choose ${role.pos} model" data-pop ${single ? 'data-single="true"' : ''} ${opts.up ? 'data-prefer="up"' : ''}>
+    ${single ? '' : `<div class="mp__rail" role="tablist" aria-label="Model providers" aria-orientation="vertical">${rail.map(p => `<button type="button" role="tab" aria-selected="${p === sel}" tabindex="${p === sel ? 0 : -1}" data-act="rail" data-v="${p}" data-k="rail-${p}" ${on(p) ? '' : 'data-off="true"'} aria-label="${pname(p)}${on(p) ? '' : ', not connected'}" title="${pname(p)}${on(p) ? '' : ', not connected'}">${pmk(p, 18)}</button>`).join('')}</div>`}
+    <div class="mp__panel">
+      <header class="mp__search">${ic('search', 15)}<input data-act="search" data-k="mp-search" aria-label="Search ${pname(sel)} models" placeholder="Search ${pname(sel)} models" value="${S.query.replace(/"/g, '&quot;')}"><button type="button" class="iconbtn" data-act="close" data-k="mp-close" aria-label="Close the model list">${ic('x', 15)}</button></header>
+      <div class="mp__head">${pmk(sel, 12)}<span>${pname(sel)}${on(sel) ? '' : ', not connected'}</span></div>
+      <div class="mp__models" role="listbox" aria-label="${pname(sel)} models">${models.length ? models.map(opt).join('') : '<p class="mp__empty">No matching models.</p>'}</div>
+      ${note ? `<p class="mp__note">${note}</p>` : ''}
+    </div>
+  </div>`;
+}
+
+/* ---------- shared chrome ---------- */
+const wctl = () => `<div class="wctl" aria-hidden="true"><span>${ic('min')}</span><span>${ic('max', 14)}</span><span>${ic('x')}</span></div>`;
+function switch3(current, cls = 'switch3') {
+  return `<div class="${cls}" role="group" aria-label="Rooms">
+    <button type="button" data-k="sw-dictate" data-act="nodraw" ${current === 'dictate' ? 'aria-current="page"' : ''}>Dictate</button>
+    <button type="button" class="owlbtn" data-k="sw-room" data-go="room" aria-label="Watcher's room" ${current === 'room' ? 'aria-current="page"' : ''}>${owl(17)}</button>
+    <button type="button" data-k="sw-threads" data-act="nodraw" ${current === 'threads' ? 'aria-current="page"' : ''}>Threads</button>
+  </div>`;
+}
+function iconrow(current) {
+  const b = (k, icn, label, go) => `<button type="button" class="iconbtn" data-k="ir-${k}" aria-label="${label}" ${go ? `data-go="${go}"` : 'data-act="nodraw"'} ${current === k ? 'aria-current="page"' : ''}>${ic(icn)}</button>`;
+  return `<div class="iconrow">${b('history', 'clock', 'History')}${b('usage', 'chart', 'Usage')}${b('settings', 'gear', 'Settings', 'settings')}${b('help', 'help', 'Help')}<span class="grow"></span>${b('update', 'refresh', 'Check for updates')}</div>`;
+}
+
+/* ---------- Settings: the machines, as Zach picked them ---------- */
+const MACHINES = [
+  { id: 'local', name: 'This computer', kind: 'local', connected: true, facts: true, os: 'Windows 11', arch: 'x64', cpus: 16, total: 32, free: 9.8, n: 2 },
+  { id: 'forge', name: 'forge', kind: 'remote', connected: true, facts: true, os: 'Omarchy', arch: 'x64', cpus: 24, total: 64, free: 41.2, n: 3 },
+  { id: 'studio', name: 'studio', kind: 'remote', connected: false, facts: false, n: 0 },
+];
+const mi = (m, s = 13) => ic(m.kind === 'remote' ? 'server' : 'laptop', s);
+function stepper(m) {
+  const L = S.limits[m.id];
+  return `<span class="step" role="group" aria-label="Threads in flight on ${m.name}">
+    <button type="button" data-act="step" data-m="${m.id}" data-d="-1" data-k="dn-${m.id}" aria-label="Lower ${m.name}’s limit to ${L - 1}" ${L <= 1 ? 'disabled' : ''}>${ic('minus', 14)}</button>
+    <output aria-live="polite">${L}</output>
+    <button type="button" data-act="step" data-m="${m.id}" data-d="1" data-k="up-${m.id}" aria-label="Raise ${m.name}’s limit to ${L + 1}" ${L >= 8 ? 'disabled' : ''}>${ic('plus', 14)}</button>
+  </span>`;
+}
+const meter = (n, L) => `<span class="meter" aria-hidden="true">${Array.from({ length: Math.max(L, n) }, (_, i) => `<i class="${i < n ? 'on' : ''}"></i>`).join('')}</span>`;
+function machinesSection() {
+  const choose = `<label class="mtile" data-chosen="${S.placement === 'watcher'}">
+      <span class="mtile__head"><input type="radio" name="place" value="watcher" data-act="place" data-k="pl-watcher" ${S.placement === 'watcher' ? 'checked' : ''}><span>${owl(15)}</span><span>Let Watcher choose</span>${S.placement === 'watcher' ? '<span class="tag">New workers start here</span>' : ''}</span>
+      <span class="mtile__facts">Watcher, or the thread that delegates, picks a machine from the facts on these tiles and the project’s notes, and says why.</span>
+    </label>`;
+  const tiles = MACHINES.map(m => {
+    const chosen = S.placement === m.id, L = S.limits[m.id];
+    const used = m.facts ? Math.round((1 - m.free / m.total) * 100) : 0;
+    return `<div class="mtile" data-chosen="${chosen}" data-off="${!m.connected}">
+      <label class="mtile__head"><input type="radio" name="place" value="${m.id}" data-act="place" data-k="pl-${m.id}" ${chosen ? 'checked' : ''} ${m.connected ? '' : 'disabled'} aria-describedby="facts-${m.id}"><span>${mi(m, 15)}</span><span>${m.name}</span>${chosen ? '<span class="tag">New workers start here</span>' : ''}</label>
+      <span class="mtile__facts" id="facts-${m.id}">${!m.connected ? 'Not connected. Connect it in Hosts to start work there. Its limit applies when it connects.' : `${m.os}${D}${m.arch}${D}${m.cpus} CPUs`}</span>
+      ${m.connected ? `<span class="mtile__stat"><span>Memory</span><span class="membar"><i style="width:${used}%"></i></span><span>${m.free} of ${m.total} GB free</span></span>
+      <span class="mtile__stat"><span>Working</span>${meter(m.n, L)}<span>${m.n} of ${L}</span></span>` : ''}
+      <span class="mtile__limit"><span>Threads in flight</span>${stepper(m)}</span>
+    </div>`;
+  }).join('');
+  return `<fieldset class="plain">
+    <legend class="group-h">Where new workers start</legend>
+    <p class="group-p">Workers are threads Watcher starts and threads another thread delegates. Name a machine in your message to start one somewhere else for that request. Each machine starts new work only while fewer than its limit work there; watching has no limit, and lowering one stops nothing.</p>
+    <div class="mtiles">${choose}${tiles}</div>
+  </fieldset>`;
+}
+
+/* ---------- Settings: the roles ---------- */
+function tagFor(r, quietDefault) {
+  if (r.status === 'chosen') return '<span class="tag">Your choice</span>';
+  if (r.status === 'away') return '<span class="tag tag--moved">Your choice, not available</span>';
+  if (r.status === 'moved') return '<span class="tag tag--moved">Next default</span>';
+  return quietDefault ? '<span class="tag tag--quiet">Default</span>' : '';
+}
+const resetBtn = r => S.choice[r.role.id] ? `<button type="button" class="rreset" data-act="reset" data-role="${r.role.id}" data-k="reset-${r.role.id}" aria-label="${resetWords(r)}">Reset to default</button>` : '';
+const notesHtml = r => r.notes.map(n => `<p class="rnote" data-kind="${n.kind}">${n.html}</p>`).join('');
+function summary(rows) {
+  const offs = [...new Set(rows.flatMap(r => r.status === 'moved' ? r.off : []).concat(rows.filter(r => r.status === 'away' && r.ch && !on(pv(r.ch.model))).map(r => pv(r.ch.model))))];
+  if (!offs.length) return '';
+  const moved = rows.filter(r => r.status === 'moved').length, away = rows.filter(r => r.status === 'away').length;
+  const names = list(offs.map(pname));
+  const n = moved + away;
+  return `<p class="srow__note summary">${names} ${offs.length > 1 ? 'are' : 'is'} not connected, so ${n} ${n === 1 ? 'role starts' : 'roles start'} new workers on ${n === 1 ? 'its' : 'their'} next default until ${offs.length > 1 ? 'they connect' : 'it connects'}. ${away ? 'Nothing you chose has changed.' : 'Nothing else changes.'}</p>`;
+}
+function rolesA(rows) {
+  return `<ul class="sent" aria-label="Worker roles">${rows.map(r => {
+    const id = r.role.id, e = effortChip(r);
+    const line = id === 'orchestrating'
+      ? `<b>Orchestrating.</b> Watcher itself runs on ${modelChip(r)}${e ? ` at ${e}` : ''} with ${permChip(r)}.`
+      : `<b>${r.role.name}.</b> Workers start on ${modelChip(r)}${e ? ` at ${e}` : r.shown ? ', which has no effort setting,' : ''} with ${permChip(r)}.`;
+    const tail = id === 'orchestrating'
+      ? `<span>These are the three chips under Watcher’s composer. A change in either place changes both.</span><button type="button" class="link link--accent" data-go="room" data-k="see-room-a">Show Watcher’s room</button>`
+      : `<span>${r.role.what}</span>`;
+    return `<li><div class="sent__line">${line}</div><p class="sent__tail">${tail}${tagFor(r)}${resetBtn(r)}</p>${notesHtml(r)}</li>`;
+  }).join('')}</ul>`;
+}
+function rolesB(rows) {
+  const next = r => { const n = nextAfter(r); return n ? `<span class="rt__next">${pmk(pv(n.model), 13)}<span>${MOD[n.model].name}</span></span>` : '<span class="muted">None connected</span>'; };
+  const nextWords = r => { const n = nextAfter(r); return n ? `Next default: ${MOD[n.model].name}` : 'No next default connected'; };
+  const rowHtml = r => {
+    const e = effortChip(r);
+    return `<div class="rt__row" role="row" data-role="${r.role.id}">
+      <div class="rt__role" role="rowheader"><b>${r.role.name}${tagFor(r)}</b><span>${r.role.what}</span><span class="rt__nextsub">${nextWords(r)}</span></div>
+      <div role="cell">${modelChip(r)}</div>
+      <div role="cell">${e || (r.shown ? '<span class="nochip">None offered</span>' : '')}</div>
+      <div role="cell">${permChip(r)}</div>
+      <div role="cell" class="rt__nextcol">${next(r)}</div>
+      <div role="cell">${S.choice[r.role.id] ? `<button type="button" class="iconbtn" data-act="reset" data-role="${r.role.id}" data-k="reset-${r.role.id}" aria-label="${resetWords(r)}" title="Reset to default">${ic('reset', 15)}</button>` : ''}</div>
+    </div>${r.notes.length ? `<div class="rt__row rt__row--note" role="row"><div role="cell">${notesHtml(r)}</div></div>` : ''}`;
+  };
+  return `<div class="rt" role="table" aria-label="Worker roles">
+    <div class="rt__row rt__row--head" role="row"><span role="columnheader" class="rt__rolecol">Role</span><span role="columnheader">Model</span><span role="columnheader">Effort</span><span role="columnheader">Permissions</span><span role="columnheader" class="rt__nextcol">Next default</span><span role="columnheader"><span class="sr-only">Reset</span></span></div>
+    <div class="rt__row rt__row--group" role="row"><span role="cell">Watcher</span></div>
+    ${rowHtml(rows[0])}
+    <div class="rt__row rt__row--group" role="row"><span role="cell">Workers</span></div>
+    ${rows.slice(1).map(rowHtml).join('')}
+  </div>
+  <p class="rt__foot">Next default: where new workers go if the model’s provider is not connected. Orchestrating’s chips are the ones under Watcher’s composer; a change in either place changes both. <button type="button" class="link link--accent" data-go="room" data-k="see-room-b">Show Watcher’s room</button></p>`;
+}
+function chainHtml(r) {
+  const inUse = r.start && r.start.model;
+  return `<div class="chainwrap"><p class="chain__h" id="ch-${r.role.id}"><span>Defaults, in order</span><span>The first one connected is used${r.ch ? ' if you reset' : ''}</span></p><ol class="chain" aria-labelledby="ch-${r.role.id}">
+    ${r.role.chain.map(([mid, e]) => {
+      const m = MOD[mid], st = status(m.p), use = !r.ch && mid === inUse;
+      const right = use ? 'In use' : r.ch && r.d && mid === r.d.model ? 'If you reset' : st === 'off' ? 'Not connected' : st === 'absent' ? 'Not set up' : '';
+      return `<li data-use="${use}" data-off="${st !== 'on'}">${pmk(m.p, 13)}<span>${m.name}${fitEffort(e, mid) ? `, ${effLabel(fitEffort(e, mid))}` : ''}</span><span>${right}</span></li>`;
+    }).join('')}
+  </ol></div>`;
+}
+function fields(r) {
+  const e = effortChip(r);
+  return `<div class="rfields">
+    <div class="rfield rfield--full"><span>Model</span>${modelChip(r)}</div>
+    <div class="rfield"><span>Effort</span>${e || (r.shown ? `<span class="nochip">${MOD[r.shown.model].name} has none</span>` : '')}</div>
+    <div class="rfield"><span>Permissions${r.role.id === 'orchestrating' ? ', Watcher’s own' : ''}</span>${permChip(r)}</div>
+  </div>`;
+}
+function rolesC(rows) {
+  const card = r => `<article class="rcard" data-chosen="${!!S.choice[r.role.id]}" aria-labelledby="rc-${r.role.id}">
+    <h4 class="rcard__head" id="rc-${r.role.id}">${roleIcon(r.role, 15)}${r.role.name}${tagFor(r, true)}</h4>
+    <p class="rcard__what">${r.role.what}</p>
+    ${fields(r)}${notesHtml(r)}${chainHtml(r)}
+    ${S.choice[r.role.id] ? `<div class="rcard__foot">${resetBtn(r)}</div>` : ''}
+  </article>`;
+  const o = rows[0];
+  const mm = o.shown ? MOD[o.shown.model] : null;
+  const orch = `<article class="rcard rcard--wide" data-chosen="${!!S.choice.orchestrating}" aria-labelledby="rc-orchestrating">
+    <div class="rcard__main">
+      <h4 class="rcard__head" id="rc-orchestrating">${owl(15)}Orchestrating${tagFor(o, true)}</h4>
+      <p class="rcard__what">Watcher itself.</p>
+      ${fields(o)}${notesHtml(o)}${chainHtml(o)}
+      ${S.choice.orchestrating ? `<div class="rcard__foot">${resetBtn(o)}</div>` : ''}
+    </div>
+    <div class="mirror">
+      <div class="mirror__box" aria-hidden="true"><span class="mirror__text">Ask about your threads, or say what to start or send</span>
+        <span class="mirror__chips">${mm ? `<span class="tchip">${pmk(mm.p, 13)}<span>${mm.name}</span>${ic('down', 12)}</span>${o.shown.effort ? `<span class="tchip"><span>${effLabel(o.shown.effort)}</span>${ic('down', 12)}</span>` : ''}<span class="tchip"><span>${MODE[o.perm]}</span>${ic('down', 12)}</span>` : '<span class="tchip"><span>No model</span></span>'}</span></div>
+      <p class="mirror__cap">${ic('swap', 14)}<span>Watcher’s composer shows these three. A change in either place changes both. <button type="button" class="link link--accent" data-go="room" data-k="see-room-c">Show Watcher’s room</button></span></p>
+    </div>
+  </article>`;
+  return `<div class="rc">${orch}${rows.slice(1).map(card).join('')}</div>`;
+}
+function howFrom(r, from) {
+  if (!r.start) return 'No connected provider can do it.';
+  const m = MOD[r.start.model], p = m.p, e = r.start.effort ? ` at ${effLabel(r.start.effort)}` : '';
+  if (p === from) {
+    if (from === 'claude' || from === 'codex') return `Its own sub-agent, on ${m.name}${e}.`;
+    return `Its own sub-agent, told to use ${m.name}. ${pname(from)} chooses for itself.`;
+  }
+  return `It delegates to a new ${pname(p)} thread on ${m.name}${e}.`;
+}
+function applyBlock(rows) {
+  const ceil = MODE[CEIL[S.ceiling]];
+  const provs = PROV_ORDER.filter(on);
+  const from = provs.includes(S.from) ? S.from : provs[0];
+  return `<section class="apply" aria-labelledby="apply-h">
+    <h3 class="group-h" id="apply-h">Where roles apply</h3>
+    <ul class="apply__list">
+      <li>${ic('play', 15)}<span><b>Starting work.</b> Watcher’s workers, and threads another thread delegates, start with their role’s model, effort and permissions. A worker never starts wider than your new-thread default, “${ceil}”, and a delegated thread never wider than the thread that delegates.</span></li>
+      <li>${ic('users', 15)}<span><b>Sub-agents.</b> A thread’s own sub-agents follow this table where its provider lets Sotto set them. Claude Code and Codex do. Grok Build and Muse are told the table and choose for themselves.</span></li>
+      <li>${ic('fork', 15)}<span><b>Other providers.</b> A role on another provider is reached by delegating: the thread starts a thread there. A delegated thread may delegate once more, and no further.</span></li>
+    </ul>
+    ${from ? `<div class="from">
+      <div class="from__head"><span id="from-l">A thread on</span><span class="seg" role="group" aria-labelledby="from-l">${provs.map(p => `<button type="button" aria-pressed="${p === from}" data-act="from" data-v="${p}" data-k="from-${p}">${pmk(p, 13)}${pname(p)}</button>`).join('')}</span><span>gets each kind of work like this:</span></div>
+      <ul class="from__list" aria-label="How a ${pname(from)} thread gets each role">${rows.slice(1).map(r => `<li><b>${r.role.name}</b><span>${howFrom(r, from)}</span></li>`).join('')}</ul>
+    </div>` : ''}
+  </section>`;
+}
+function rolesSection() {
+  const rows = ROLES.map(role => row(role));
+  const any = PROV_ORDER.some(on);
+  const head = `<div class="roles__head"><h3 class="group-h" id="roles-h">Worker roles</h3>
+    <button type="button" class="roles__all" data-act="reset-all" data-k="reset-all" ${chosenCount() ? '' : 'disabled'} aria-label="Reset all roles to their defaults${chosenCount() ? `, ${chosenCount()} changed` : ', none changed'}">${ic('reset', 14)}Reset all to defaults</button></div>
+    <p class="group-p">Each kind of work starts on its own model, effort and permissions. Watcher names the role when it starts a worker, and a thread names it when it delegates. Defaults come from the providers you have connected; a choice you make here stays until you reset it.</p>`;
+  if (!any) {
+    return `<section class="roles" id="roles" aria-labelledby="roles-h">${head}
+      <div class="rempty"><span>No provider is connected, so no role has a model yet. Connect Codex, Claude Code, Grok Build or Muse, and each role takes its first default from what you connect. Nothing you chose is lost.</span><button type="button" class="pill" data-act="nodraw" data-k="empty-providers">${ic('cmd', 14)}Open Providers</button></div>
+      ${applyBlock(rows)}</section>`;
+  }
+  const body = { A: rolesA, B: rolesB, C: rolesC }[S.variant](rows);
+  return `<section class="roles" id="roles" aria-labelledby="roles-h">${head}${summary(rows)}${body}${applyBlock(rows)}</section>`;
+}
+function renderSettings() {
+  const nav = [
+    ['mic', 'Dictation'], ['wave', 'Transcription'], ['spark', 'Cleanup'], null,
+    ['cmd', 'Providers'], ['server', 'Hosts'], ['phone', 'Phones'], ['cloud', 'Cloud iPhone'], null,
+    ['flow', 'Agents'], ['owl', 'Watcher'], ['out', 'Output'], null,
+    ['palette', 'Appearance'], ['sliders', 'Application'], ['branch', 'Git'],
+  ];
+  const items = nav.map(n => n === null ? '<hr>' : `<button type="button" class="snav__item" data-k="nav-${n[1]}" ${n[1] === 'Watcher' ? 'aria-current="page"' : 'data-act="nodraw"'}>${n[0] === 'owl' ? owl(16) : ic(n[0])}${n[1]}</button>`).join('');
+  return `<div class="set">
+    <nav class="snav" aria-label="Settings">
+      <div class="snav__brand"><span class="tile">${owl(15)}</span>Sotto</div>
+      <h1 class="snav__title">Settings</h1>
+      <div class="snav__list">${items}</div>
+      <div class="sfoot">${switch3('')}${iconrow('settings')}</div>
+    </nav>
+    <div class="smainwrap"><main class="smain" data-scroll="smain">
+      <div class="spage">
+        <h2 class="sh2">Watcher</h2>
+        <p class="ssub">Where workers start, and what each kind of work runs on</p>
+        ${machinesSection()}
+        ${rolesSection()}
+      </div>
+    </main>
+    <p class="saved">Changes save as you make them.</p>
+    ${toastHtml()}</div>
+  </div>`;
+}
+function toastHtml() {
+  if (!S.toast) return '';
+  return `<div class="toast" role="status">${S.toast}${S.undo ? `<button type="button" class="pill" data-act="undo" data-k="undo">Undo</button>` : ''}</div>`;
+}
+
+/* ---------- Watcher's room ---------- */
+const you = (t, text) => `<div class="msg msg--you"><div class="msg__meta"><b>You</b><span>${t}</span></div><p>${text}</p></div>`;
+const said = (t, text, extra = '') => `<div class="msg"><div class="msg__meta">${owl(14)}<b>Watcher</b><span>${t}</span></div><p>${text}</p>${extra}</div>`;
+function receipt(title, r, over) {
+  const s = over || r.start, m = MOD[s.model], live = on(m.p);
+  return `<div class="tcard"><span class="ring" ${live ? '' : 'data-off="true"'} aria-hidden="true"></span><span class="tcard__title">${title}</span>
+    <button type="button" class="iconbtn" data-act="nodraw" data-k="open-${title.replace(/\W+/g, '-')}" aria-label="Open ${title} beside Watcher">${ic('open', 14)}</button>
+    <span class="tcard__meta"><span class="tcard__role">${r.role.name}</span>${D}${pmk(m.p, 12)}${pname(m.p)}${D}${m.name}${s.effort ? `, ${effLabel(s.effort)}` : ''}${D}${MODE[r.startPerm]}${D}${live ? '<span class="ow">Working</span>' : `<span class="ow" data-off="true">Not connected</span>`}</span>
+    ${over ? `<span class="tcard__note">Your message chose ${m.name} for this one. New ${r.role.name} workers still start on ${MOD[r.start.model].name}.</span>` : ''}</div>`;
+}
+function watcherNow() {
+  if (!PROV_ORDER.some(on)) return null;
+  if (status('claude') !== 'absent') return 'opus';
+  const d = inForce(ROLE.orchestrating);
+  return d && d.model;
+}
+function roomConversation(now) {
+  if (!now) return `<div class="empty">${owl(28)}Watcher runs on Codex, Claude Code or Grok Build, and none is connected. Connect one in Providers, then pick its model here. Nothing you sent before is lost.</div>`;
+  const histProv = S.prov === 'codex-only' ? 'codex-only' : 'all';
+  const R = withProv(histProv, () => Object.fromEntries(ROLES.map(role => [role.id, row(role, {})])));
+  let out = you('12:29 pm', 'Fix the paste on Hyprland, have the fix reviewed, and find out how Omarchy handles clipboard managers.');
+  out += said('12:31 pm', 'Started three: the fix as Building, a review as Code review, and the clipboard question as Research. I will bring you anything that needs you.',
+    `<div class="cards">${receipt('Paste fix on Hyprland', R.building)}${receipt('Review the paste fix', R.review)}${receipt('Omarchy clipboard managers', R.research)}</div>`);
+  if (S.prov === 'all') {
+    out += you('12:40 pm', 'Do the footer links too, on Sonnet. It’s small.');
+    out += said('12:40 pm', 'Started it on Sonnet 5.5, as you asked, instead of Building’s Opus 5.5.', `<div class="cards">${receipt('Footer links', R.building, { model: 'sonnet', effort: 'xhigh' })}</div>`);
+  } else if (S.prov === 'codex-only') {
+    out += you('12:40 pm', 'Do the footer links too, on Sonnet. It’s small.');
+    out += said('12:40 pm', 'Sonnet 5.5 is on Claude Code, which is not set up on this computer, so I started nothing. Building’s default here is GPT-6.1 Sol. Say so and I will start it on that.',
+      `<div class="cards"><div class="tcard tcard--refused" role="note"><span class="tcard__icon">${ic('alert', 14)}</span><span class="tcard__title">Not started: Footer links</span><span></span><span class="tcard__note">Sonnet 5.5 is on Claude Code, which is not set up here. Nothing was sent.</span></div></div>`);
+  }
+  return out;
+}
+function banner(now, o) {
+  if (!now || !o.start) return '';
+  const was = MOD[now], to = MOD[o.start.model];
+  if (was.p === to.p) return '';
+  if (!on(was.p)) return `<div class="wbanner" role="status"><span>Watcher runs on ${pname(was.p)}, which is not connected, so it can’t answer now. Nothing was lost. Reconnect ${pname(was.p)}, or send to start a new Watcher on ${to.name}, the next default. This conversation then becomes Watcher history.</span><button type="button" class="pill" data-act="nodraw" data-k="banner-providers">Open Providers</button></div>`;
+  return `<div class="wbanner" role="status"><span>Your next message starts a new Watcher on ${to.name}. This conversation becomes Watcher history, and its workers keep working.</span><button type="button" class="pill" data-act="keep" data-k="banner-keep">Keep ${was.name}</button></div>`;
+}
+function renderRoom() {
+  const now = watcherNow(), o = row(ROLE.orchestrating);
+  const stars = [[40, 18], [90, 8], [150, 30], [210, 12], [300, 22], [70, 40]].map(([x, y]) => `<i style="left:${x}px;top:${y}px"></i>`).join('');
+  const chips = now && o.shown ? `${modelChip(o, { key: 'cmodel', composer: true, up: true })}${effortChip(o, { key: 'ceffort', up: true })}${permChip(o, { key: 'cperm', up: true })}` : '<span class="nochip">No model</span>';
+  return `<div class="room">
+    <div class="sky" aria-hidden="true">${stars}</div>
+    <header class="rhead">
+      <span class="tile">${owl(15)}</span>
+      <h1 class="rhead__name">Watcher</h1>
+      <button type="button" class="hbtn" data-act="nodraw" data-k="all" aria-label="All threads, 9">${ic('list', 15)}All threads <span class="muted">9</span>${ic('down', 14)}</button>
+      <div class="tabs" role="tablist" aria-label="Watcher's views"><button type="button" role="tab" aria-selected="true" data-k="tab-conv">Conversation</button><button type="button" role="tab" aria-selected="false" tabindex="-1" data-act="nodraw" data-k="tab-watched">Watched <span class="muted">1</span></button></div>
+      <span class="grow"></span>
+      <button type="button" class="iconbtn" data-act="nodraw" data-k="more" aria-label="More Watcher actions">${ic('more')}</button>
+    </header>
+    <div></div>
+    <div class="rscroll" data-scroll="room" data-bottom><div class="col">${roomConversation(now)}</div></div>
+    <div class="col rcomp">
+      ${banner(now, o)}
+      <div class="composer">
+        <label class="sr-only" for="wmsg">Watcher message</label>
+        <textarea id="wmsg" data-k="wmsg" placeholder="Ask about your threads, or say what to start or send" ${now ? '' : 'disabled'}></textarea>
+        <div class="composer__row">
+          <button type="button" class="iconbtn" data-act="nodraw" data-k="wattach" aria-label="Attach a file">${ic('clip', 15)}</button>
+          ${chips}
+          <button type="button" class="send" data-act="nodraw" data-k="wsend" aria-label="Send to Watcher" ${now ? '' : 'disabled'}>${ic('up', 15)}</button>
+        </div>
+      </div>
+    </div>
+    <nav class="dock" aria-label="Pages"><div class="dock__pill">
+      <button type="button" class="iconbtn" data-act="nodraw" data-k="d-history" aria-label="History">${ic('clock')}</button>
+      <button type="button" class="iconbtn" data-act="nodraw" data-k="d-usage" aria-label="Usage">${ic('chart')}</button>
+      <button type="button" class="iconbtn" data-k="d-settings" data-go="roles" aria-label="Settings">${ic('gear')}</button>
+      <button type="button" class="iconbtn" data-act="nodraw" data-k="d-help" aria-label="Help">${ic('help')}</button>
+      <span class="dock__sep"></span>
+      ${switch3('room', 'dock__switch')}
+      <span class="dock__sep"></span>
+      <button type="button" class="iconbtn" data-act="nodraw" data-k="d-update" aria-label="Check for updates">${ic('refresh')}</button>
+    </div></nav>
+  </div>`;
+}
+
+/* ---------- render ---------- */
+const win = document.getElementById('win');
+let lastKey = '';
+function render() {
+  const active = document.activeElement && document.activeElement.closest ? document.activeElement.closest('[data-k]') : null;
+  const k = active && win.contains(active) ? active.dataset.k : null;
+  const caret = active && active.tagName === 'INPUT' ? active.selectionStart : null;
+  const keep = {};
+  win.querySelectorAll('[data-scroll]').forEach(el => { keep[el.dataset.scroll] = el.scrollTop; });
+  const [w, h, sz] = SIZES[S.size];
+  document.documentElement.dataset.theme = S.theme;
+  document.body.classList.toggle('shot', S.shot);
+  win.dataset.size = sz;
+  S.fit = S.shot ? 1 : Math.min(1, (innerWidth - 24) / w);
+  win.style.setProperty('--w', S.shot ? '100vw' : w + 'px');
+  win.style.setProperty('--h', S.shot ? '100vh' : h + 'px');
+  win.style.setProperty('--fit', S.fit);
+  win.innerHTML = (S.surface === 'settings' ? renderSettings() : renderRoom()) + wctl();
+  const key = [S.surface, S.variant].join('|');
+  win.querySelectorAll('[data-scroll]').forEach(el => {
+    if (key === lastKey && keep[el.dataset.scroll] !== undefined) el.scrollTop = keep[el.dataset.scroll];
+    else if (el.hasAttribute('data-bottom')) el.scrollTop = el.scrollHeight;
+  });
+  lastKey = key;
+  if (S.at && S.surface === 'settings') {
+    const sm = win.querySelector('.smain'), at = win.querySelector(S.at === 'apply' ? '#apply-h' : '#roles');
+    if (sm && at) sm.scrollTop = at.offsetTop - 18;
+    S.at = '';
+  }
+  const pop = win.querySelector('[data-pop]');
+  if (pop && S.justOpened) {
+    const sm = pop.closest('[data-scroll]');
+    const chip = pop.parentElement.querySelector('.tchip');
+    if (sm && chip && sm.classList.contains('smain')) {
+      // Opening scrolls the page only when it must: the chip out of view, or no room for the menu on either side.
+      const cr = chip.getBoundingClientRect(), br = sm.getBoundingClientRect(), z = S.fit;
+      const below = (br.bottom - cr.bottom) / z, above = (cr.top - br.top) / z, need = pop.offsetHeight + 20;
+      if (above < 0 || below < 0 || (below < need && above < need)) sm.scrollTop += above - 16;
+    }
+  }
+  placePops();
+  if (S.justOpened && pop) {
+    const first = pop.querySelector('input') || pop.querySelector('[aria-selected="true"]:not(:disabled)') || pop.querySelector('button:not(:disabled)');
+    if (first) first.focus({ preventScroll: true });
+    S.justOpened = false;
+  } else if (k) {
+    const el = win.querySelector(`[data-k="${CSS.escape(k)}"]`);
+    if (el) { el.focus({ preventScroll: true }); if (caret !== null && el.setSelectionRange) el.setSelectionRange(caret, caret); }
+  }
+  syncBars();
+  syncURL();
+  if (!S.shot) document.querySelector('.stage').style.paddingTop = (document.querySelector('.proto-top').offsetHeight + 20) + 'px';
+}
+/* Anchored over its chip: below when there is room, above when there is more there, and kept inside the page. */
+function placePops() {
+  win.querySelectorAll('[data-pop]').forEach(pop => {
+    const box = (pop.closest('[data-scroll]') || win).getBoundingClientRect();
+    const anchor = pop.parentElement.getBoundingClientRect();
+    const z = S.fit;
+    const below = (box.bottom - anchor.bottom) / z - 14, above = (anchor.top - box.top) / z - 14;
+    const h = pop.offsetHeight;
+    const up = pop.dataset.prefer === 'up' ? above > 160 || above > below : h > below && above > below;
+    if (up) pop.dataset.up = 'true';
+    const room = up ? above : below;
+    if (h > room) pop.style.setProperty('--pop-max', Math.max(180, Math.floor(room)) + 'px');
+    let r = pop.getBoundingClientRect();
+    if (r.right > box.right - 8 * z) { pop.dataset.right = 'true'; r = pop.getBoundingClientRect(); }
+    if (r.left < box.left + 8 * z) { pop.dataset.right = ''; pop.style.left = ((box.left - anchor.left) / z + 8) + 'px'; }
+  });
+}
+function syncBars() {
+  document.querySelectorAll('#pt-surface button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.surface === S.surface)));
+  document.getElementById('pt-prov').value = S.prov;
+  const preset = Object.keys(PRESETS).find(key => JSON.stringify(PRESETS[key]) === JSON.stringify(S.choice));
+  document.getElementById('pt-choices').value = preset || 'custom';
+  document.getElementById('pt-ceiling').value = S.ceiling;
+  document.getElementById('pt-size').value = S.size;
+  document.getElementById('pt-roles').style.display = S.surface === 'settings' ? '' : 'none';
+  document.getElementById('pt-theme').textContent = S.theme === 'dark' ? 'Light' : 'Dark';
+  document.getElementById('pv-label').textContent = `${S.variant}: ${VARIANTS[S.variant]}`;
+  const line = ROLES.map(role => {
+    const r = row(role);
+    if (!r.start) return `${role.name}: nothing connected`;
+    const m = MOD[r.start.model];
+    return `${role.name}: ${m.name}${r.start.effort ? ' ' + effLabel(r.start.effort) : ''}, ${MODE[r.startPerm]}${role.id === 'orchestrating' ? ' (Watcher’s own)' : ''} [${r.status}]`;
+  }).join(' · ');
+  document.getElementById('pt-state').textContent = `New workers start as: ${line}  |  New-thread default: ${MODE[CEIL[S.ceiling]]}`;
+}
+function syncURL() {
+  const q = new URLSearchParams({ variant: S.variant, surface: S.surface, theme: S.theme, size: S.size, prov: S.prov, ceiling: S.ceiling, from: S.from });
+  const c = Object.entries(S.choice).map(([id, v]) => [id, v.model, v.effort || '-', v.perm || '-'].join(':')).join(',');
+  if (c) q.set('c', c);
+  if (S.watcherMode !== 'approval-required') q.set('wmode', S.watcherMode);
+  if (S.open) q.set('open', S.open);
+  if (S.shot) q.set('shot', '1');
+  history.replaceState(null, '', '?' + q.toString());
+}
+
+/* ---------- actions ---------- */
+function roleOf(t) { return ROLE[t.dataset.role] || ROLE.orchestrating; }
+function closePop(focusOpener = true) {
+  const opener = S.opener;
+  S.open = null; S.query = ''; S.pickProv = null;
+  render();
+  if (focusOpener && opener) { const el = win.querySelector(`[data-k="${CSS.escape(opener)}"]`); if (el) el.focus(); }
+}
+function changed() { S.toast = null; S.undo = null; }
+function navigate(go) {
+  S.open = null; S.query = ''; S.pickProv = null;
+  if (go === 'room') { S.surface = 'room'; render(); const t = win.querySelector('#wmsg'); if (t && !t.disabled) t.focus(); else { const s = win.querySelector('[data-k="sw-room"]'); if (s) s.focus(); } return; }
+  if (go === 'settings' || go === 'roles') {
+    S.surface = 'settings'; if (go === 'roles') S.at = 'roles'; render();
+    const t = win.querySelector(go === 'roles' ? '#roles-h' : '.snav__item[aria-current]');
+    if (t) { if (go === 'roles') { t.setAttribute('tabindex', '-1'); } t.focus(); }
+  }
+}
+win.addEventListener('click', e => {
+  const t = e.target.closest('[data-act], [data-go]');
+  if (!t || !win.contains(t)) { if (S.open && !e.target.closest('[data-pop]')) closePop(false); return; }
+  if (t.dataset.go) { navigate(t.dataset.go); return; }
+  const act = t.dataset.act;
+  if (act === 'open') {
+    if (S.open === t.dataset.open) { closePop(); return; }
+    S.open = t.dataset.open; S.opener = t.dataset.k; S.query = ''; S.pickProv = null; S.justOpened = true; render(); return;
+  }
+  if (act === 'close') { closePop(); return; }
+  if (act === 'rail') { S.pickProv = t.dataset.v; S.query = ''; render(); const s = win.querySelector('[data-k="mp-search"]'); if (s) s.focus(); return; }
+  if (act === 'model') { changed(); setChoice(roleOf(t), { model: t.dataset.v }); closePop(); return; }
+  if (act === 'effort') { changed(); setChoice(roleOf(t), { effort: t.dataset.v }); closePop(); return; }
+  if (act === 'perm') {
+    changed();
+    const role = roleOf(t);
+    if (role.id === 'orchestrating') S.watcherMode = t.dataset.v; else setChoice(role, { perm: t.dataset.v });
+    closePop(); return;
+  }
+  if (act === 'reset') {
+    const role = roleOf(t); changed();
+    S.undo = { [role.id]: S.choice[role.id] }; delete S.choice[role.id];
+    S.toast = `${role.name} is back on its default.`;
+    render();
+    const h = win.querySelector('#roles-h'); if (h) { h.setAttribute('tabindex', '-1'); h.focus(); }
+    return;
+  }
+  if (act === 'reset-all') {
+    const n = chosenCount(); changed();
+    S.undo = { ...S.choice }; S.choice = {};
+    S.toast = `Reset ${n} ${n === 1 ? 'role' : 'roles'} to ${n === 1 ? 'its default' : 'their defaults'}.`;
+    render(); const u = win.querySelector('[data-k="undo"]'); if (u) u.focus(); return;
+  }
+  if (act === 'undo') { Object.assign(S.choice, S.undo); S.toast = null; S.undo = null; render(); return; }
+  if (act === 'keep') { changed(); delete S.choice.orchestrating; render(); const t2 = win.querySelector('#wmsg'); if (t2) t2.focus(); return; }
+  if (act === 'from') { S.from = t.dataset.v; render(); return; }
+  if (act === 'step') { S.limits[t.dataset.m] = Math.min(8, Math.max(1, S.limits[t.dataset.m] + Number(t.dataset.d))); render(); return; }
+  if (act === 'nodraw') { S.toast = 'That page is not drawn in this prototype.'; S.undo = null; render(); return; }
+});
+win.addEventListener('change', e => { const t = e.target; if (t.dataset.act === 'place') { S.placement = t.value; render(); } });
+win.addEventListener('input', e => { const t = e.target; if (t.dataset.act === 'search') { S.query = t.value; render(); } });
+function cycle(d) {
+  const keys = Object.keys(VARIANTS);
+  S.variant = keys[(keys.indexOf(S.variant) + d + keys.length) % keys.length];
+  S.open = null; render();
+}
+function moveIn(container, selector, key) {
+  const items = [...container.querySelectorAll(selector)].filter(b => !b.disabled);
+  if (!items.length) return false;
+  const i = items.indexOf(document.activeElement);
+  let n;
+  if (key === 'Home') n = 0; else if (key === 'End') n = items.length - 1;
+  else n = (i + (key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+  items[n].focus();
+  return items[n];
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && S.open) { e.preventDefault(); closePop(); return; }
+  const t = e.target;
+  if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key) && t.closest) {
+    const rail = t.closest('.mp__rail');
+    if (rail) { e.preventDefault(); const b = moveIn(rail, '[role="tab"]', e.key); if (b) { S.pickProv = b.dataset.v; S.query = ''; render(); const now = win.querySelector(`[data-k="rail-${b.dataset.v}"]`); if (now) now.focus(); } return; }
+    const lb = t.closest('[role="listbox"]');
+    if (lb) { e.preventDefault(); moveIn(lb, '[role="option"]', e.key); return; }
+    if (t.dataset && t.dataset.act === 'search' && e.key === 'ArrowDown') { e.preventDefault(); const f = win.querySelector('.mp__models [role="option"]:not(:disabled)'); if (f) f.focus(); return; }
+  }
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  if (t.closest && t.closest('input, select, textarea, [contenteditable], [data-pop], [role="tablist"], [role="table"], .seg, .step, fieldset')) return;
+  e.preventDefault(); cycle(e.key === 'ArrowRight' ? 1 : -1);
+});
+document.getElementById('pv-prev').addEventListener('click', () => cycle(-1));
+document.getElementById('pv-next').addEventListener('click', () => cycle(1));
+document.querySelectorAll('#pt-surface button').forEach(b => b.addEventListener('click', () => { S.surface = b.dataset.surface; S.open = null; render(); }));
+document.getElementById('pt-prov').addEventListener('change', e => { S.prov = e.target.value; S.open = null; changed(); render(); });
+document.getElementById('pt-choices').addEventListener('change', e => { S.choice = structuredClone(PRESETS[e.target.value] || {}); S.open = null; changed(); render(); });
+document.getElementById('pt-ceiling').addEventListener('change', e => { S.ceiling = e.target.value; render(); });
+document.getElementById('pt-roles').addEventListener('click', () => { S.at = 'roles'; render(); });
+document.getElementById('pt-size').addEventListener('change', e => { S.size = e.target.value; render(); });
+document.getElementById('pt-theme').addEventListener('click', () => { S.theme = S.theme === 'dark' ? 'light' : 'dark'; render(); });
+addEventListener('resize', () => render());
+if (S.open) S.opener = S.open;
+render();
+})();
+</script>
+</body>
+</html>
